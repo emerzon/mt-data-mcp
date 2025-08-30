@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mtdata-mcp-server"
+version = "0.1.0"
+description = "MetaTrader5 MCP Server for market data retrieval"
+authors = [
+    {name = "MCP Developer", email = "dev@example.com"}
+]
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "MetaTrader5>=5.0.5200",
+    "mcp>=1.13.1", 
+    "fastmcp>=2.11.3",
+    "typing-extensions>=4.15.0",
+    "python-dotenv>=1.1.1",
+    "dateparser>=1.2.0",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+[tool.setuptools]
+py-modules = ["server", "config", "cli"]
+
+[project.scripts]
+mtdata-server = "server:main"
+mtdata-cli = "cli:main"
+
+[project.urls]
+Homepage = "https://github.com/yourusername/mtdata-mcp-server"
+Repository = "https://github.com/yourusername/mtdata-mcp-server"

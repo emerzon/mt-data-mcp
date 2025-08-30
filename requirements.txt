@@ -1,0 +1,11 @@
+# Core MetaTrader5 and MCP dependencies
+MetaTrader5>=5.0.5200
+mcp>=1.13.1
+fastmcp>=2.11.3
+
+# Python standard library backports
+typing-extensions>=4.15.0
+
+# Additional useful packages for development
+python-dotenv>=1.1.1
+dateparser>=1.2.0
