@@ -199,10 +199,31 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
             kwargs['type'] = str
             kwargs['choices'] = ['true', 'false']
             kwargs['metavar'] = 'bool'
-        elif param['type'] == str or param['optional']:
-            kwargs['type'] = str
         else:
-            kwargs['type'] = str
+            # Detect Literal and List[Literal] choices
+            try:
+                ptype = param.get('type')
+                origin = get_origin(ptype)
+                if origin in (list, tuple):
+                    inner = get_args(ptype)[0] if get_args(ptype) else None
+                    inner_origin = get_origin(inner)
+                    if inner_origin and str(inner_origin).endswith('Literal'):
+                        choices = [str(v) for v in get_args(inner)]
+                        if choices:
+                            kwargs['choices'] = choices
+                        kwargs['type'] = str
+                        kwargs['nargs'] = '+'
+                    else:
+                        kwargs['type'] = str
+                elif origin and str(origin).endswith('Literal'):
+                    choices = [str(v) for v in get_args(ptype)]
+                    if choices:
+                        kwargs['choices'] = choices
+                    kwargs['type'] = str
+                else:
+                    kwargs['type'] = str
+            except Exception:
+                kwargs['type'] = str
             
         # Handle defaults (do not force a default for tri-state bools)
         if not param['required'] and not (param['type'] == bool and param['default'] is None):
@@ -241,8 +262,8 @@ def create_command_function(func_info):
         if print_csv_result(result):
             return
         # No CSV in result; fall back to JSON
-        # Prefer pretty JSON only for small outputs like symbol info
-        if func_info['name'] == 'get_symbol_info':
+        # Prefer pretty JSON for info-heavy outputs
+        if func_info['name'] in ('get_symbol_info', 'get_indicators'):
             print(json.dumps(result, indent=2, default=str))
         else:
             print(json.dumps(result, separators=(',', ':'), default=str))

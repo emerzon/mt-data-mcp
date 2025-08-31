@@ -44,9 +44,10 @@ python server.py
 - `get_symbols(search_term, limit)` - Smart search for trading symbols (CSV output)
 - `get_symbol_groups(search_term, limit)` - Get available symbol groups (CSV output)
 - `get_symbol_info(symbol)` - Get detailed symbol information
-- `get_rates(symbol, timeframe, candles, start_datetime, end_datetime)` - Get historical OHLCV data in CSV format
+- `get_rates(symbol, timeframe, candles, start_datetime, end_datetime, ohlcv, ti)` - Get historical OHLCV data in CSV format
 - `get_ticks(symbol, count, start_datetime)` - Get tick data in CSV format
 - `get_market_depth(symbol)` - Get market depth (DOM)
+- `get_indicators()` - List supported technical indicators (dynamic from pandas_ta)
 
 ### Example Usage
 
@@ -111,8 +112,16 @@ Usage patterns for `get_rates`:
 Historical rates and tick data are returned in compact CSV format with intelligent column filtering:
 
 ### Historical Rates (`get_rates`)
-**Core columns**: `time,open,high,low,close` (always included)  
-**Optional columns**: `tick_volume,spread,real_volume` (included only if they contain meaningful data)
+By default returns: `time,open,high,low,close`, and optionally `tick_volume,spread,real_volume` if meaningful.
+
+Selecting OHLCV subset:
+- Use `ohlcv` with letters from `{O,H,L,C,V}` to choose columns (time is always included).
+- Examples: `ohlcv=OC` → time,open,close; `ohlcv=V` → time,tick_volume
+
+Technical indicators via `ti`:
+- Pass a comma-separated list like: `ti=sma(14),rsi(14),ema(50)`
+- Supported basics: `sma(length)`, `ema(length)`, `rsi(length)`, `macd(fast,slow,signal)`, `stoch(k,d,smooth)`, `bbands(length,std)`
+- Indicator columns are appended to the CSV after the requested OHLCV columns.
 
 ```csv
 time,open,high,low,close,tick_volume

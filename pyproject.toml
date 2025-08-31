@@ -18,6 +18,8 @@ dependencies = [
     "typing-extensions>=4.15.0",
     "python-dotenv>=1.1.1",
     "dateparser>=1.2.0",
+    "pandas>=2.0.0",
+    "pandas_ta>=0.3.14b0",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
