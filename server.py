@@ -3,7 +3,8 @@ import logging
 import atexit
 import functools
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional, List, Tuple, Literal, get_origin
+from typing import Any, Dict, Optional, List, Tuple, Literal
+from typing_extensions import TypedDict
 import io
 import csv
 import time
@@ -224,10 +225,6 @@ def _csv_from_rows(headers: List[str], rows: List[List[Any]]) -> Dict[str, str]:
         "csv_data": data_buf.getvalue().rstrip("\n"),
     }
 
-def _utc_iso(epoch_seconds: float) -> str:
-    """UTC ISO8601 without TZ suffix to match existing examples."""
-    return datetime.utcfromtimestamp(epoch_seconds).isoformat()
-
 def _format_time_minimal(epoch_seconds: float) -> str:
     """Format UTC time compactly by stripping trailing zero components.
 
@@ -300,7 +297,7 @@ def _optimal_decimals(values: List[float], rel_tol: float = PRECISION_REL_TOL, a
     if not values:
         return 0
     # Filter NaNs/None
-    nums = [float(v) for v in values if v is not None]
+    nums = [float(v) for v in values if v is not None and not pd.isna(v)]
     if not nums:
         return 0
     scale = max(1.0, max(abs(v) for v in nums))
@@ -518,15 +515,37 @@ def _parse_ti_specs(spec: str) -> List[Tuple[str, List[Any], Dict[str, Any]]]:
     Returns empty list on parse error.
     """
     results: List[Tuple[str, List[Any], Dict[str, Any]]] = []
-    for part in spec.split(','):
-        part = part.strip()
+    
+    # Split by commas but respect parentheses
+    parts = []
+    current_part = ""
+    paren_depth = 0
+    
+    for char in spec:
+        if char == '(':
+            paren_depth += 1
+        elif char == ')':
+            paren_depth -= 1
+        elif char == ',' and paren_depth == 0:
+            if current_part.strip():
+                parts.append(current_part.strip())
+            current_part = ""
+            continue
+        current_part += char
+    
+    if current_part.strip():
+        parts.append(current_part.strip())
+    
+    for part in parts:
+        # Tolerate surrounding quotes and whitespace
+        part = part.strip().strip("\"'")
         if not part:
             continue
         m = re.match(r"^([a-zA-Z_][a-zA-Z0-9_]*)(?:\((.*)\))?$", part)
         if not m:
             continue
-        name = m.group(1).lower()
-        inner = (m.group(2) or '').strip()
+        raw_name = m.group(1)
+        inner = (m.group(2) or '').strip().strip("\"'")
         args: List[Any] = []
         kwargs: Dict[str, Any] = {}
         if inner:
@@ -538,6 +557,17 @@ def _parse_ti_specs(spec: str) -> List[Tuple[str, List[Any], Dict[str, Any]]]:
                     kwargs[k.strip()] = _coerce_scalar(v.strip())
                 else:
                     args.append(_coerce_scalar(token))
+        # Flex: detect trailing numeric length in the indicator name (e.g., RSI_48 or EMA21)
+        base_name = raw_name
+        mlen = re.match(r"^([A-Za-z]+)[_-]?(\d+)$", raw_name)
+        if mlen and not inner:
+            base_name = mlen.group(1)
+            try:
+                length_val = int(mlen.group(2))
+                args = [length_val] + args
+            except Exception:
+                pass
+        name = base_name.lower()
         results.append((name, args, kwargs))
     return results
 
@@ -555,7 +585,8 @@ def _coerce_scalar(val: str) -> Any:
     except Exception:
         pass
     # Strip quotes if present
-    if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
+    if ((val.startswith('"') and val.endswith('"')) or
+        (val.startswith("'") and val.endswith("'"))):
         return val[1:-1]
     return val
 
@@ -569,6 +600,20 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:
     specs = _parse_ti_specs(ti_spec)
     if not specs:
         return added_cols
+    
+    # Always set up DatetimeIndex when we have epoch timestamps available
+    # This ensures compatibility with all datetime-dependent indicators
+    original_index = None
+    if '__epoch' in df.columns:
+        original_index = df.index
+        try:
+            # Create DatetimeIndex from epoch timestamps
+            dt_index = pd.to_datetime(df['__epoch'], unit='s')
+            df.index = dt_index
+        except Exception:
+            # If datetime index setup fails, continue with original index
+            pass
+    
     before = set(df.columns)
     for name, args, kwargs in specs:
         # Resolve method on accessor
@@ -595,6 +640,11 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:
         new_cols = [c for c in df.columns if c not in before]
         added_cols.extend(new_cols)
         before = set(df.columns)
+    
+    # Restore original index if we changed it
+    if original_index is not None:
+        df.index = original_index
+    
     return added_cols
 
 
@@ -668,9 +718,25 @@ if _CATEGORY_CHOICES:
 else:
     CategoryLiteral = str  # fallback
 
+# Build indicator name Literal so details endpoint has enum name choices
+try:
+    _INDICATOR_NAME_CHOICES = sorted({it.get('name') for it in _list_ta_indicators() if it.get('name')})
+except Exception:
+    _INDICATOR_NAME_CHOICES = []
+
+if _INDICATOR_NAME_CHOICES:
+    IndicatorNameLiteral = Literal[tuple(_INDICATOR_NAME_CHOICES)]  # type: ignore
+else:
+    IndicatorNameLiteral = str  # fallback
+
+class IndicatorSpec(TypedDict, total=False):
+    """Structured TI spec: name with optional numeric params."""
+    name: IndicatorNameLiteral  # type: ignore
+    params: List[float]
+
 @mcp.tool()
 def get_indicators(search_term: Optional[str] = None, category: Optional[CategoryLiteral] = None) -> Dict[str, Any]:  # type: ignore
-    """List available technical indicators. Optional filters: search_term, category."""
+    """List indicators as CSV with columns: name,category. Optional filters: search_term, category."""
     try:
         items = _list_ta_indicators()
         if search_term:
@@ -686,12 +752,26 @@ def get_indicators(search_term: Optional[str] = None, category: Optional[Categor
         if category:
             cat_q = category.strip().lower()
             items = [it for it in items if (it.get('category') or '').lower() == cat_q]
-        return {"success": True, "indicators": items}
+        items.sort(key=lambda x: (x.get('category') or '', x.get('name') or ''))
+        rows = [[it.get('name',''), it.get('category','')] for it in items]
+        return _csv_from_rows(["name", "category"], rows)
     except Exception as e:
         return {"error": f"Error listing indicators: {e}"}
 
 
 # Note: category annotation is set at definition time above to be captured in the MCP schema
+
+@mcp.tool()
+def get_indicator_details(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: ignore
+    """Return detailed indicator information (name, category, params, description)."""
+    try:
+        items = _list_ta_indicators()
+        target = next((it for it in items if it.get('name','').lower() == str(name).lower()), None)
+        if not target:
+            return {"error": f"Indicator '{name}' not found"}
+        return {"success": True, "indicator": target}
+    except Exception as e:
+        return {"error": f"Error getting indicator details: {e}"}
 
 # Removed grouping helper; get_symbols is simplified to CSV list only
 
@@ -897,13 +977,21 @@ def get_rates(
     candles: int = 10,
     start_datetime: Optional[str] = None,
     end_datetime: Optional[str] = None,
-    ohlcv: Optional[List[OhlcvCharLiteral]] = None,
-    ti: Optional[str] = None,
+    ohlcv: Optional[List[OhlcvCharLiteral]] = ('C',),
+    ti: Optional[List[IndicatorSpec]] = None,
 ) -> Dict[str, Any]:
     """Return historical candles as CSV.
        Can include OHLCV data, optionally along with technical indicators.
        Returns the last candles by default, unless a date range is specified.
-       The list of supported technical indicators can be retrieved from `get_indicators`.
+         Parameters:
+         - symbol: The symbol to retrieve data for (e.g., "EURUSD").
+         - timeframe: The timeframe to use (e.g., "H1", "M30").
+         - candles: The number of candles to retrieve (default is 10).
+         - start_datetime: Optional start date for the data (e.g., "2025-08-29").
+         - end_datetime: Optional end date for the data (e.g., "2025-08-30").
+         - ohlcv: Optional list of OHLCV fields to include (e.g., ["O", "H", "L", "C", "V"]).
+         - ti: Optional technical indicators to include (e.g., "rsi(20),macd(12,26,9),ema(26)")
+       The full list of supported technical indicators can be retrieved from `get_indicators`.
     """
     try:
         # Validate timeframe using the shared map
@@ -919,8 +1007,27 @@ def get_rates(
             return {"error": err}
         
         try:
+            # Normalize TI spec from structured list to string for internal processing
+            ti_spec = None
+            if ti is not None:
+                if isinstance(ti, (list, tuple)):
+                    parts = []
+                    for item in ti:
+                        if isinstance(item, dict) and 'name' in item:
+                            nm = str(item['name'])
+                            params = item.get('params') or []
+                            if isinstance(params, (list, tuple)) and len(params) > 0:
+                                args_str = ",".join(str(_coerce_scalar(str(p))) for p in params)
+                                parts.append(f"{nm}({args_str})")
+                            else:
+                                parts.append(nm)
+                        else:
+                            parts.append(str(item))
+                    ti_spec = ",".join(parts)
+                else:
+                    ti_spec = str(ti)
             # Determine warmup bars if technical indicators requested
-            warmup_bars = _estimate_warmup_bars(ti)
+            warmup_bars = _estimate_warmup_bars(ti_spec)
 
             if start_datetime and end_datetime:
                 from_date = _parse_start_datetime(start_datetime)
@@ -1066,8 +1173,8 @@ def get_rates(
 
         # Apply technical indicators if requested (dynamic)
         ti_cols: List[str] = []
-        if ti:
-            ti_cols = _apply_ta_indicators(df, ti)
+        if ti_spec:
+            ti_cols = _apply_ta_indicators(df, ti_spec)
             headers.extend([c for c in ti_cols if c not in headers])
 
         # Build final header list when not using OHLCV subset
@@ -1094,7 +1201,7 @@ def get_rates(
                 df = df.iloc[-candles:].copy()
 
         # If TI requested, check for NaNs and retry once with increased warmup
-        if ti and ti_cols:
+        if ti_spec and ti_cols:
             try:
                 if df[ti_cols].isna().any().any():
                     # Increase warmup and refetch once
@@ -1129,7 +1236,7 @@ def get_rates(
                                 warnings.simplefilter("ignore")
                                 df['volume'] = df['tick_volume']
                         # Re-apply indicators and re-extend headers
-                        ti_cols = _apply_ta_indicators(df, ti)
+                        ti_cols = _apply_ta_indicators(df, ti_spec)
                         headers.extend([c for c in ti_cols if c not in headers])
                         # Re-trim to target window
                         if start_datetime and end_datetime:
@@ -1342,3 +1449,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

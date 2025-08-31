@@ -47,7 +47,8 @@ python server.py
 - `get_rates(symbol, timeframe, candles, start_datetime, end_datetime, ohlcv, ti)` - Get historical OHLCV data in CSV format
 - `get_ticks(symbol, count, start_datetime)` - Get tick data in CSV format
 - `get_market_depth(symbol)` - Get market depth (DOM)
-- `get_indicators()` - List supported technical indicators (dynamic from pandas_ta)
+- `get_indicators()` - List indicators (CSV: name,category)
+-  - Indicator params + full help (JSON)
 
 ### Example Usage
 
@@ -112,36 +113,21 @@ Usage patterns for `get_rates`:
 Historical rates and tick data are returned in compact CSV format with intelligent column filtering:
 
 ### Historical Rates (`get_rates`)
-By default returns: `time,open,high,low,close`, and optionally `tick_volume,spread,real_volume` if meaningful.
+By default returns: `time,close` (using `ohlcv=["C"]`).
 
 Selecting OHLCV subset:
-- Use `ohlcv` with letters from `{O,H,L,C,V}` to choose columns (time is always included).
-- Examples: `ohlcv=OC` → time,open,close; `ohlcv=V` → time,tick_volume
+- Use `ohlcv` as a list of letters from `{O,H,L,C,V}`; time is always included (`V` maps to `tick_volume`).
+- CLI examples: `--ohlcv O C` → time,open,close; `--ohlcv V` → time,tick_volume
 
 Technical indicators via `ti`:
 - Pass a comma-separated list like: `ti=sma(14),rsi(14),ema(50)`
 - Supported basics: `sma(length)`, `ema(length)`, `rsi(length)`, `macd(fast,slow,signal)`, `stoch(k,d,smooth)`, `bbands(length,std)`
 - Indicator columns are appended to the CSV after the requested OHLCV columns.
 
-```csv
-time,open,high,low,close,tick_volume
-2025-08-29T14:00:00,1.16945,1.17072,1.16937,1.17017,2690
-2025-08-29T15:00:00,1.17017,1.17089,1.16964,1.16986,2156
-```
-*Note: `spread` and `real_volume` columns excluded because they contained only zeros*
 
-### Tick Data (`get_ticks`)
-**Core columns**: `time,bid,ask` (always included)  
-**Optional columns**: `last,volume,flags` (included only if they contain meaningful data)
+MCP structured payload example (preferred for programmatic clients):
 
-```csv
-time,bid,ask
-2025-08-29T15:30:15.123,1.16983,1.16985
-2025-08-29T15:30:16.456,1.16982,1.16986
-```
-*Note: `last`, `volume`, and `flags` columns excluded because they contained no meaningful data*
 
-### Intelligent Column Filtering
 - **Meaningful Data Check**: Columns are included only if they have at least one non-zero value OR multiple different values
 - **Space Efficiency**: Empty/constant columns are automatically excluded to reduce response size
 - **Consistency**: Core OHLC columns (rates) and bid/ask columns (ticks) are always included
