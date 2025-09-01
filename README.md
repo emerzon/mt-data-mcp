@@ -30,6 +30,11 @@ cp .env.example .env
 
 Edit the `.env` file with your broker credentials (optional - you can also connect without pre-configured credentials).
 
+Timezone configuration:
+- If your MT5 server time is not UTC, set `MT5_TIME_OFFSET_MINUTES` to the offset in minutes (can be negative).
+- Example: UTC+2 → `MT5_TIME_OFFSET_MINUTES=120`; UTC-4 → `-240`.
+- All MT5 timestamps are normalized to UTC using this offset.
+
 ## Usage
 
 ### Starting the MCP Server
@@ -51,6 +56,8 @@ python server.py
 -  - Indicator params + full help (JSON)
 - `get_denoise_methods()` - JSON with denoise methods, availability, and parameter docs
 - `get_candlestick_patterns(symbol, timeframe, candles)` - Detect candlestick patterns (CSV: time,pattern)
+- `get_forecast(symbol, timeframe, method, horizon, lookback?, as_of?, params?, ci_alpha?, target?, denoise?)` - Fast forecasts and optional intervals
+- `get_forecast_methods()` - Enumerate forecast methods, availability, and parameter docs
 
 ### Example Usage
 
@@ -81,6 +88,31 @@ rates = get_rates("EURUSD", "H1", 100)
 # Get tick data
 ticks = get_ticks("EURUSD", 50)
 ```
+
+### Forecasting
+
+Point forecasts for the next bars using training‑light methods. Discover available methods and params via `get_forecast_methods()`.
+
+- Methods:
+  - Baselines: `naive`, `drift`, `seasonal_naive`
+  - Fast models: `theta`, `fourier_ols`
+  - ETS (statsmodels): `ses`, `holt`, `holt_winters_add`, `holt_winters_mul`
+  - ARIMA (statsmodels): `arima`, `sarima`
+
+- Common parameters:
+  - `symbol`, `timeframe`, `horizon`
+  - `lookback` (optional) or auto lookback per method
+  - `params`: method‑specific, e.g., `{K:3}` for `fourier_ols`, `{alpha:0.2}` for `theta`, `{seasonality: m}` for seasonal methods (auto if omitted)
+  - `ci_alpha` (default 0.05; set null to disable intervals)
+  - `as_of`: forecast anchor in UTC for backtesting (e.g., `2025-08-29 14:30`)
+  - `denoise`: apply `get_denoise_methods` to smooth `close` before modeling
+  - `target`: `"price"` or `"return"` (log‑returns). When `return`, both return path and recomposed price path are included.
+
+- Output includes future `times[]`, `forecast_price[]`, optional `lower_price[]`/`upper_price[]`, and `params_used`.
+
+- Dependencies:
+  - Base methods require only NumPy/Pandas.
+  - ETS/ARIMA require `statsmodels` and `scipy` (declared in `requirements.txt`).
 
 ## Intelligent Symbol Search
 

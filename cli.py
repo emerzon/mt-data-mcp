@@ -11,6 +11,16 @@ import inspect
 from typing import get_type_hints, get_origin, get_args, Optional, Dict, Any
 
 # Import server module and attempt to discover tools dynamically
+try:
+    # Ensure .env is loaded for CLI runs too (redundant with server/config, but robust)
+    from dotenv import load_dotenv, find_dotenv  # type: ignore
+    _env_path = find_dotenv()
+    if _env_path:
+        load_dotenv(_env_path)
+    else:
+        load_dotenv()
+except Exception:
+    pass
 import server
 
 # Types for discovered metadata

@@ -111,6 +111,88 @@ mcp = FastMCP(SERVICE_NAME)
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
+def _mt5_epoch_to_utc(epoch_seconds: float) -> float:
+    """Convert MT5-reported epoch seconds to UTC.
+
+    If MT5_SERVER_TZ is set, interpret the epoch as server-local and convert to UTC with DST awareness.
+    Else, subtract configured static offset minutes.
+    """
+    try:
+        tz = mt5_config.get_server_tz()
+        if tz is not None:
+            # Treat epoch_seconds as seconds since 1970-01-01 in SERVER LOCAL time
+            # Build a naive local datetime and localize with tz, then convert to UTC
+            base = datetime(1970, 1, 1)
+            dt_local_naive = base + timedelta(seconds=float(epoch_seconds))
+            try:
+                # pytz timezones support localize
+                dt_local = tz.localize(dt_local_naive, is_dst=None)
+            except Exception:
+                # Fallback for non-pytz tzinfo
+                dt_local = dt_local_naive.replace(tzinfo=tz)
+            return dt_local.astimezone(timezone.utc).timestamp()
+        # Fallback: static offset in seconds
+        off = int(mt5_config.get_time_offset_seconds())
+        return float(epoch_seconds) - float(off)
+    except Exception:
+        return float(epoch_seconds)
+
+# ---- MT5 copy_* wrappers with timezone handling ----
+def _to_server_naive_dt(dt: datetime) -> datetime:
+    """Convert a UTC-naive datetime to server-local naive datetime if server TZ configured.
+
+    - Assumes incoming `dt` is UTC-naive.
+    - If MT5_SERVER_TZ is set, convert to that tz and strip tzinfo for MT5 APIs.
+    - Else, return as-is.
+    """
+    try:
+        tz = mt5_config.get_server_tz()
+        if tz is None:
+            return dt
+        aware_utc = dt.replace(tzinfo=timezone.utc)
+        aware_srv = aware_utc.astimezone(tz)
+        return aware_srv.replace(tzinfo=None)
+    except Exception:
+        return dt
+
+def _normalize_times_in_struct(arr):
+    try:
+        if arr is None:
+            return arr
+        names = getattr(getattr(arr, 'dtype', None), 'names', None)
+        if not names or 'time' not in names:
+            return arr
+        for i in range(len(arr)):
+            try:
+                arr[i]['time'] = _mt5_epoch_to_utc(float(arr[i]['time']))
+            except Exception:
+                continue
+        return arr
+    except Exception:
+        return arr
+
+def _mt5_copy_rates_from(symbol: str, timeframe, to_dt_utc: datetime, count: int):
+    dt_srv = _to_server_naive_dt(to_dt_utc)
+    data = mt5.copy_rates_from(symbol, timeframe, dt_srv, count)
+    return _normalize_times_in_struct(data)
+
+def _mt5_copy_rates_range(symbol: str, timeframe, from_dt_utc: datetime, to_dt_utc: datetime):
+    dt_from = _to_server_naive_dt(from_dt_utc)
+    dt_to = _to_server_naive_dt(to_dt_utc)
+    data = mt5.copy_rates_range(symbol, timeframe, dt_from, dt_to)
+    return _normalize_times_in_struct(data)
+
+def _mt5_copy_ticks_from(symbol: str, from_dt_utc: datetime, count: int, flags: int):
+    dt_from = _to_server_naive_dt(from_dt_utc)
+    data = mt5.copy_ticks_from(symbol, dt_from, count, flags)
+    return _normalize_times_in_struct(data)
+
+def _mt5_copy_ticks_range(symbol: str, from_dt_utc: datetime, to_dt_utc: datetime, flags: int):
+    dt_from = _to_server_naive_dt(from_dt_utc)
+    dt_to = _to_server_naive_dt(to_dt_utc)
+    data = mt5.copy_ticks_range(symbol, dt_from, dt_to, flags)
+    return _normalize_times_in_struct(data)
+
 class MT5Connection:
     def __init__(self):
         self.connected = False
@@ -252,6 +334,92 @@ def _format_time_minimal(epoch_seconds: float) -> str:
         return dt.strftime("%Y-%m-%dT%H:%M")
     return dt.strftime("%Y-%m-%dT%H:%M:%S")
 
+def _format_time_minimal_local(epoch_seconds: float) -> str:
+    """Format time in the client's local timezone with minimal components.
+
+    Mirrors _format_time_minimal but converts UTC epoch to local time first.
+    """
+    try:
+        tz = mt5_config.get_client_tz()
+        if tz is not None:
+            dt = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc).astimezone(tz)
+        else:
+            dt = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc).astimezone()
+        if dt.hour == 0 and dt.minute == 0 and dt.second == 0:
+            return dt.strftime("%Y-%m-%d")
+        if dt.minute == 0 and dt.second == 0:
+            return dt.strftime("%Y-%m-%d %Hh")
+        if dt.second == 0:
+            return dt.strftime("%Y-%m-%d %H:%M")
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        # Fallback to UTC formatting
+        return _format_time_minimal(epoch_seconds)
+
+def _use_client_tz(client_tz_param: object) -> bool:
+    """Resolve whether to format display times in client timezone.
+
+    - If `client_tz_param` is a string:
+      - 'client' -> True
+      - 'utc' -> False
+      - 'auto' (default) -> True if CLIENT_TZ is configured, else False
+    - If boolean, use it directly for backward leniency.
+    - Otherwise, default to False (UTC).
+    """
+    try:
+        if isinstance(client_tz_param, str):
+            v = client_tz_param.strip().lower()
+            if v == 'utc':
+                return False
+            # Any other string implies client/local display (either explicit tz name, 'client', or 'auto')
+            return True
+        if isinstance(client_tz_param, bool):
+            return bool(client_tz_param)
+    except Exception:
+        pass
+    return False
+
+def _resolve_client_tz(client_tz_param: object):
+    """Resolve a tzinfo to use for client display.
+
+    - If `client_tz_param` is a non-empty string other than 'utc', attempt to use it as a tz name.
+    - If 'auto' or 'client', use CLIENT_TZ from config if available; else system local tz (return None for system local).
+    - If boolean True, same as 'auto'; if False, return None to indicate UTC preferred.
+    """
+    try:
+        if isinstance(client_tz_param, str):
+            v = client_tz_param.strip()
+            vlow = v.lower()
+            if vlow == 'utc':
+                return None
+            if vlow in ('auto', 'client', ''):
+                tz = None
+                try:
+                    tz = mt5_config.get_client_tz()
+                except Exception:
+                    tz = None
+                return tz  # None means system local later
+            # Otherwise treat as explicit tz name
+            try:
+                import pytz  # type: ignore
+                return pytz.timezone(v)
+            except Exception:
+                # Fallback: try config tz
+                try:
+                    return mt5_config.get_client_tz()
+                except Exception:
+                    return None
+        if isinstance(client_tz_param, bool):
+            if client_tz_param:
+                try:
+                    return mt5_config.get_client_tz()
+                except Exception:
+                    return None
+            return None
+    except Exception:
+        pass
+    return None
+
 def _time_format_from_epochs(epochs: List[float]) -> str:
     """Choose a single consistent time format for a series of epoch timestamps.
 
@@ -307,6 +475,60 @@ def _style_time_format(fmt: str) -> str:
             fmt = fmt.replace('T', ' ')
         if fmt.endswith('%H'):
             fmt = fmt + 'h'
+    except Exception:
+        pass
+    return fmt
+
+def _time_format_from_epochs_local(epochs: List[float]) -> str:
+    """Choose a consistent local-time format for a series of UTC epoch timestamps.
+
+    Uses CLIENT_TZ if configured; otherwise system local timezone. Mirrors _time_format_from_epochs
+    but bases the decision on local-time components.
+    """
+    try:
+        tz = mt5_config.get_client_tz()
+    except Exception:
+        tz = None
+    any_sec = False
+    any_min = False
+    any_hour = False
+    for e in epochs:
+        try:
+            dt = datetime.fromtimestamp(e, tz=timezone.utc).astimezone(tz) if tz else datetime.fromtimestamp(e).astimezone()
+        except Exception:
+            # fallback to UTC
+            dt = datetime.utcfromtimestamp(e)
+        if dt.second != 0:
+            any_sec = True
+            break
+        if dt.minute != 0:
+            any_min = True
+        if dt.hour != 0:
+            any_hour = True
+    if any_sec:
+        return "%Y-%m-%d %H:%M:%S"
+    if any_min:
+        return "%Y-%m-%d %H:%M"
+    if any_hour:
+        return "%Y-%m-%d %H"
+    return "%Y-%m-%d"
+
+def _maybe_strip_year_local(fmt: str, epochs: List[float]) -> str:
+    """If all timestamps are in the same year in client/local tz, remove the year from the format."""
+    try:
+        tz = mt5_config.get_client_tz()
+    except Exception:
+        tz = None
+    try:
+        years = set()
+        for e in epochs:
+            try:
+                dt = datetime.fromtimestamp(e, tz=timezone.utc).astimezone(tz) if tz else datetime.fromtimestamp(e).astimezone()
+            except Exception:
+                dt = datetime.utcfromtimestamp(e)
+            years.add(dt.year)
+        if len(years) == 1 and fmt.startswith("%Y-"):
+            return fmt[3:]
     except Exception:
         pass
     return fmt
@@ -387,6 +609,42 @@ def _format_numeric_rows_from_df(df: pd.DataFrame, headers: List[str]) -> List[L
                 out_row.append(str(val))
         out_rows.append(out_row)
     return out_rows
+
+
+def _to_float_or_nan(x: Any) -> float:
+    """Best-effort conversion to float; returns NaN on None or conversion failure.
+
+    Handles scalars, sequences, numpy arrays, and pandas Series gracefully.
+    """
+    try:
+        if x is None:
+            return float('nan')
+        # If already a float/int
+        if isinstance(x, (float, int)):
+            return float(x)
+        # If numpy scalar
+        try:
+            import numpy as _np  # local import to avoid circulars
+            if isinstance(x, _np.generic):
+                return float(x)
+        except Exception:
+            pass
+        # If sequence/array/Series, take first element
+        try:
+            if hasattr(x, '__len__') and len(x) > 0:
+                # pandas Series/DataFrame .iloc if present
+                if hasattr(x, 'iloc'):
+                    try:
+                        return float(x.iloc[0])
+                    except Exception:
+                        pass
+                return float(list(x)[0])
+        except Exception:
+            pass
+        # Last resort
+        return float(x)
+    except Exception:
+        return float('nan')
 
 
 # ---- Technical Indicators (dynamic discovery and application) ----
@@ -1171,6 +1429,146 @@ def get_denoise_methods() -> Dict[str, Any]:
         return {"error": f"Error listing denoise methods: {e}"}
 
 @mcp.tool()
+def get_forecast_methods() -> Dict[str, Any]:
+    """Return JSON describing supported forecast methods, params, and defaults.
+
+    Provides availability flags depending on optional dependencies (statsmodels).
+    Each method entry includes: method, available, description, params, defaults.
+    """
+    try:
+        methods: List[Dict[str, Any]] = []
+
+        def add(method: str, available: bool, description: str, params: List[Dict[str, Any]], defaults: Dict[str, Any]) -> None:
+            methods.append({
+                "method": method,
+                "available": bool(available),
+                "description": description,
+                "params": params,
+                "defaults": defaults,
+            })
+
+        common_defaults = {
+            "timeframe": "H1",
+            "horizon": 12,
+            "lookback": None,
+            "as_of": None,
+            "ci_alpha": 0.05,  # null to disable intervals
+            "target": "price",
+        }
+
+        add(
+            "naive",
+            True,
+            "Repeat last observed value (random walk baseline).",
+            [],
+            common_defaults,
+        )
+        add(
+            "drift",
+            True,
+            "Linear drift from first to last observation; strong simple baseline.",
+            [],
+            common_defaults,
+        )
+        add(
+            "seasonal_naive",
+            True,
+            "Repeat last season's values; requires seasonality period m.",
+            [
+                {"name": "seasonality", "type": "int", "default": None, "description": "Season period m; auto from timeframe if omitted."},
+            ],
+            common_defaults,
+        )
+        add(
+            "theta",
+            True,
+            "Fast Theta-style: average of linear trend extrapolation and SES level.",
+            [
+                {"name": "alpha", "type": "float", "default": 0.2, "description": "SES smoothing for level component."},
+            ],
+            common_defaults,
+        )
+        add(
+            "fourier_ols",
+            True,
+            "Fourier regression with K harmonics and optional linear trend.",
+            [
+                {"name": "seasonality", "type": "int", "default": None, "description": "Season period m; auto by timeframe if omitted."},
+                {"name": "K", "type": "int", "default": "min(3, m/2)", "description": "Number of harmonics."},
+                {"name": "trend", "type": "bool", "default": True, "description": "Include linear trend term."},
+            ],
+            common_defaults,
+        )
+        add(
+            "ses",
+            _SM_ETS_AVAILABLE,
+            "Simple Exponential Smoothing (statsmodels).",
+            [
+                {"name": "alpha", "type": "float", "default": None, "description": "Smoothing level; optimized if None."},
+            ],
+            common_defaults,
+        )
+        add(
+            "holt",
+            _SM_ETS_AVAILABLE,
+            "Holt's linear trend with optional damping (statsmodels).",
+            [
+                {"name": "damped", "type": "bool", "default": True, "description": "Use damped trend."},
+            ],
+            common_defaults,
+        )
+        add(
+            "holt_winters_add",
+            _SM_ETS_AVAILABLE,
+            "Additive Holt-Winters with additive seasonality (statsmodels).",
+            [
+                {"name": "seasonality", "type": "int", "default": None, "description": "Season period m; required."},
+            ],
+            common_defaults,
+        )
+        add(
+            "holt_winters_mul",
+            _SM_ETS_AVAILABLE,
+            "Additive trend with multiplicative seasonality (statsmodels).",
+            [
+                {"name": "seasonality", "type": "int", "default": None, "description": "Season period m; required."},
+            ],
+            common_defaults,
+        )
+        add(
+            "arima",
+            _SM_SARIMAX_AVAILABLE,
+            "Non-seasonal ARIMA via SARIMAX (statsmodels).",
+            [
+                {"name": "p", "type": "int", "default": 1, "description": "AR order."},
+                {"name": "d", "type": "int", "default": "0 (return) or 1 (price)", "description": "Differencing order."},
+                {"name": "q", "type": "int", "default": 1, "description": "MA order."},
+                {"name": "trend", "type": "str", "default": "c", "description": "Trend: 'c' constant, 'n' none."},
+            ],
+            common_defaults,
+        )
+        add(
+            "sarima",
+            _SM_SARIMAX_AVAILABLE,
+            "Seasonal ARIMA via SARIMAX (statsmodels).",
+            [
+                {"name": "p", "type": "int", "default": 1, "description": "AR order."},
+                {"name": "d", "type": "int", "default": "0 (return) or 1 (price)", "description": "Differencing order."},
+                {"name": "q", "type": "int", "default": 1, "description": "MA order."},
+                {"name": "P", "type": "int", "default": 0, "description": "Seasonal AR order."},
+                {"name": "D", "type": "int", "default": "0 (return) or 1 (price)", "description": "Seasonal differencing order."},
+                {"name": "Q", "type": "int", "default": 0, "description": "Seasonal MA order."},
+                {"name": "seasonality", "type": "int", "default": None, "description": "Season period m; auto by timeframe if omitted."},
+                {"name": "trend", "type": "str", "default": "c", "description": "Trend: 'c' constant, 'n' none."},
+            ],
+            common_defaults,
+        )
+
+        return {"success": True, "schema_version": 1, "methods": methods}
+    except Exception as e:
+        return {"error": f"Error listing forecast methods: {e}"}
+
+@mcp.tool()
 def get_indicators(search_term: Optional[str] = None, category: Optional[CategoryLiteral] = None) -> Dict[str, Any]:  # type: ignore
     """List indicators as CSV with columns: name,category. Optional filters: search_term, category."""
     try:
@@ -1416,6 +1814,7 @@ def get_rates(
     ohlcv: Optional[List[OhlcvCharLiteral]] = ('C',),
     ti: Optional[List[IndicatorSpec]] = None,
     denoise: Optional[DenoiseSpec] = None,
+    client_tz: str = "auto",
 ) -> Dict[str, Any]:
     """Return historical candles as CSV.
        Can include OHLCV data, optionally along with technical indicators.
@@ -1479,7 +1878,7 @@ def get_rates(
                 from_date_internal = from_date - timedelta(seconds=seconds_per_bar * warmup_bars)
                 rates = None
                 for _ in range(FETCH_RETRY_ATTEMPTS):
-                    rates = mt5.copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date)
+                    rates = _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date)
                     if rates is not None and len(rates) > 0:
                         # Sanity: last bar should be close to end
                         last_t = rates[-1]["time"]
@@ -1500,7 +1899,7 @@ def get_rates(
                 from_date_internal = from_date - timedelta(seconds=seconds_per_bar * warmup_bars)
                 rates = None
                 for _ in range(FETCH_RETRY_ATTEMPTS):
-                    rates = mt5.copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date)
+                    rates = _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date)
                     if rates is not None and len(rates) > 0:
                         # Sanity: last bar should be close to computed to_date
                         last_t = rates[-1]["time"]
@@ -1515,7 +1914,7 @@ def get_rates(
                 rates = None
                 seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
                 for _ in range(FETCH_RETRY_ATTEMPTS):
-                    rates = mt5.copy_rates_from(symbol, mt5_timeframe, to_date, candles + warmup_bars)
+                    rates = _mt5_copy_rates_from(symbol, mt5_timeframe, to_date, candles + warmup_bars)
                     if rates is not None and len(rates) > 0:
                         # Sanity: last bar near end
                         last_t = rates[-1]["time"]
@@ -1528,7 +1927,7 @@ def get_rates(
                 rates = None
                 seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
                 for _ in range(FETCH_RETRY_ATTEMPTS):
-                    rates = mt5.copy_rates_from(symbol, mt5_timeframe, utc_now, candles + warmup_bars)
+                    rates = _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, candles + warmup_bars)
                     if rates is not None and len(rates) > 0:
                         last_t = rates[-1]["time"]
                         if last_t >= (utc_now.timestamp() - seconds_per_bar * SANITY_BARS_TOLERANCE):
@@ -1599,11 +1998,18 @@ def get_rates(
         
         # Construct DataFrame to support indicators and consistent CSV building
         df = pd.DataFrame(rates)
+        # Normalize MT5 epochs to UTC if configured
+        try:
+            if 'time' in df.columns:
+                df['time'] = df['time'].astype(float).apply(_mt5_epoch_to_utc)
+        except Exception:
+            pass
         # Keep epoch for filtering and convert readable time; ensure 'volume' exists for TA
         df['__epoch'] = df['time']
+        _use_ctz = _use_client_tz(client_tz)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            df["time"] = df["time"].apply(_format_time_minimal)
+            df["time"] = df["time"].apply(_format_time_minimal_local if _use_ctz else _format_time_minimal)
         if 'volume' not in df.columns and 'tick_volume' in df.columns:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
@@ -1654,25 +2060,25 @@ def get_rates(
                         target_from_dt = _parse_start_datetime(start_datetime)
                         target_to_dt = _parse_start_datetime(end_datetime)
                         from_date_internal = target_from_dt - timedelta(seconds=seconds_per_bar * warmup_bars_retry)
-                        rates = mt5.copy_rates_range(symbol, mt5_timeframe, from_date_internal, target_to_dt)
+                        rates = _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, target_to_dt)
                     elif start_datetime:
                         target_from_dt = _parse_start_datetime(start_datetime)
                         to_date_dt = target_from_dt + timedelta(seconds=seconds_per_bar * (candles + 2))
                         from_date_internal = target_from_dt - timedelta(seconds=seconds_per_bar * warmup_bars_retry)
-                        rates = mt5.copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date_dt)
+                        rates = _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date_dt)
                     elif end_datetime:
                         target_to_dt = _parse_start_datetime(end_datetime)
-                        rates = mt5.copy_rates_from(symbol, mt5_timeframe, target_to_dt, candles + warmup_bars_retry)
+                        rates = _mt5_copy_rates_from(symbol, mt5_timeframe, target_to_dt, candles + warmup_bars_retry)
                     else:
                         utc_now = datetime.utcnow()
-                        rates = mt5.copy_rates_from(symbol, mt5_timeframe, utc_now, candles + warmup_bars_retry)
+                        rates = _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, candles + warmup_bars_retry)
                     # Rebuild df and indicators with the larger window
                     if rates is not None and len(rates) > 0:
                         df = pd.DataFrame(rates)
                         df['__epoch'] = df['time']
                         with warnings.catch_warnings():
                             warnings.simplefilter("ignore")
-                            df['time'] = df['time'].apply(_format_time_minimal)
+                            df['time'] = df['time'].apply(_format_time_minimal_local if _use_ctz else _format_time_minimal)
                         if 'volume' not in df.columns and 'tick_volume' in df.columns:
                             with warnings.catch_warnings():
                                 warnings.simplefilter("ignore")
@@ -1712,15 +2118,43 @@ def get_rates(
         # Ensure headers are unique and exist in df
         headers = [h for h in headers if h in df.columns or h == 'time']
 
-        # Reformat time consistently across rows
+        # Reformat time consistently across rows for display
         if 'time' in headers and len(df) > 0:
             epochs_list = df['__epoch'].tolist()
-            fmt = _time_format_from_epochs(epochs_list)
-            fmt = _maybe_strip_year(fmt, epochs_list)
-            fmt = _style_time_format(fmt)
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                df['time'] = df['__epoch'].apply(lambda t: datetime.utcfromtimestamp(t).strftime(fmt))
+            if _use_ctz:
+                fmt = _time_format_from_epochs_local(epochs_list)
+                fmt = _maybe_strip_year_local(fmt, epochs_list)
+                fmt = _style_time_format(fmt)
+                tz = _resolve_client_tz(client_tz)
+                # Track used tz name and invalid explicit values
+                tz_used_name = None
+                tz_warning = None
+                if isinstance(client_tz, str):
+                    vlow = client_tz.strip().lower()
+                    if vlow not in ('auto','client','utc',''):
+                        try:
+                            import pytz  # type: ignore
+                            tz_explicit = pytz.timezone(client_tz.strip())
+                            tz = tz_explicit
+                        except Exception:
+                            tz_warning = f"Unknown timezone '{client_tz}', falling back to CLIENT_TZ or system"
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    if tz is not None:
+                        tz_used_name = getattr(tz, 'zone', None) or str(tz)
+                        df['time'] = df['__epoch'].apply(lambda t: datetime.fromtimestamp(t, tz=timezone.utc).astimezone(tz).strftime(fmt))
+                    else:
+                        tz_used_name = 'system'
+                        df['time'] = df['__epoch'].apply(lambda t: datetime.fromtimestamp(t, tz=timezone.utc).astimezone().strftime(fmt))
+                df.__dict__['_tz_used_name'] = tz_used_name
+                df.__dict__['_tz_warning'] = tz_warning
+            else:
+                fmt = _time_format_from_epochs(epochs_list)
+                fmt = _maybe_strip_year(fmt, epochs_list)
+                fmt = _style_time_format(fmt)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    df['time'] = df['__epoch'].apply(lambda t: datetime.utcfromtimestamp(t).strftime(fmt))
 
         # Assemble rows from DataFrame for selected headers with optimized precision
         rows = _format_numeric_rows_from_df(df, headers)
@@ -1733,13 +2167,14 @@ def get_rates(
             "timeframe": timeframe,
             "candles": len(df),
         })
+        payload["display_timezone"] = "client" if _use_ctz else "UTC"
         return payload
     except Exception as e:
         return {"error": f"Error getting rates: {str(e)}"}
 
 @mcp.tool()
 @_auto_connect_wrapper
-def get_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = None) -> Dict[str, Any]:
+def get_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = None, client_tz: str = "auto") -> Dict[str, Any]:
     """Return latest ticks as CSV with columns: time,bid,ask and optional last,volume,flags.
     - `count` limits the number of rows; `start_datetime` starts from a flexible date/time.
     """
@@ -1758,7 +2193,7 @@ def get_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = Non
                     return {"error": "Invalid date format. Try examples like '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00', '2 days ago'."}
                 ticks = None
                 for _ in range(FETCH_RETRY_ATTEMPTS):
-                    ticks = mt5.copy_ticks_from(symbol, from_date, count, mt5.COPY_TICKS_ALL)
+                    ticks = _mt5_copy_ticks_from(symbol, from_date, count, mt5.COPY_TICKS_ALL)
                     if ticks is not None and len(ticks) > 0:
                         break
                     time.sleep(FETCH_RETRY_DELAY)
@@ -1768,7 +2203,7 @@ def get_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = Non
                 from_date = to_date - timedelta(days=TICKS_LOOKBACK_DAYS)  # look back a configurable window
                 ticks = None
                 for _ in range(FETCH_RETRY_ATTEMPTS):
-                    ticks = mt5.copy_ticks_range(symbol, from_date, to_date, mt5.COPY_TICKS_ALL)
+                    ticks = _mt5_copy_ticks_range(symbol, from_date, to_date, mt5.COPY_TICKS_ALL)
                     if ticks is not None and len(ticks) > 0:
                         break
                     time.sleep(FETCH_RETRY_DELAY)
@@ -1809,13 +2244,19 @@ def get_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = Non
         
         # Build data rows with matching columns and escape properly
         # Choose a consistent time format for all rows (strip year if constant)
-        _epochs = [float(t["time"]) for t in ticks]
-        fmt = _time_format_from_epochs(_epochs)
-        fmt = _maybe_strip_year(fmt, _epochs)
-        fmt = _style_time_format(fmt)
+        # Normalize tick times to UTC
+        _epochs = [_mt5_epoch_to_utc(float(t["time"])) for t in ticks]
+        _use_ctz = _use_client_tz(client_tz)
+        if not _use_ctz:
+            fmt = _time_format_from_epochs(_epochs)
+            fmt = _maybe_strip_year(fmt, _epochs)
+            fmt = _style_time_format(fmt)
         rows = []
-        for tick in ticks:
-            time_str = datetime.utcfromtimestamp(tick["time"]).strftime(fmt)
+        for i, tick in enumerate(ticks):
+            if _use_ctz:
+                time_str = _format_time_minimal_local(_epochs[i])
+            else:
+                time_str = datetime.utcfromtimestamp(_epochs[i]).strftime(fmt)
             values = [time_str, str(tick['bid']), str(tick['ask'])]
             if has_last:
                 values.append(str(tick['last']))
@@ -1831,6 +2272,7 @@ def get_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = Non
             "symbol": symbol,
             "count": len(ticks),
         })
+        payload["display_timezone"] = "client" if _use_ctz else "UTC"
         return payload
     except Exception as e:
         return {"error": f"Error getting ticks: {str(e)}"}
@@ -1841,6 +2283,7 @@ def get_candlestick_patterns(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     candles: int = 10,
+    client_tz: str = "auto",
 ) -> Dict[str, Any]:
     """Detect candlestick patterns and return CSV rows of detections.
 
@@ -1867,9 +2310,9 @@ def get_candlestick_patterns(
             return {"error": err}
 
         try:
-            # Fetch last `candles` bars from now
+            # Fetch last `candles` bars from now (UTC anchor)
             utc_now = datetime.utcnow()
-            rates = mt5.copy_rates_from(symbol, mt5_timeframe, utc_now, candles)
+            rates = _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, candles)
         finally:
             # Restore original visibility if we changed it
             if _was_visible is False:
@@ -1885,13 +2328,25 @@ def get_candlestick_patterns(
 
         # Build DataFrame and format time
         df = pd.DataFrame(rates)
+        # Normalize epochs to UTC if server offset configured
+        try:
+            if 'time' in df.columns:
+                df['time'] = df['time'].astype(float).apply(_mt5_epoch_to_utc)
+        except Exception:
+            pass
         epochs = [float(t) for t in df['time'].tolist()] if 'time' in df.columns else []
-        time_fmt = _time_format_from_epochs(epochs) if epochs else "%Y-%m-%d %H:%M:%S"
-        time_fmt = _maybe_strip_year(time_fmt, epochs)
-        time_fmt = _style_time_format(time_fmt)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            df['time'] = df['time'].apply(lambda t: datetime.utcfromtimestamp(float(t)).strftime(time_fmt))
+        _use_ctz = _use_client_tz(client_tz)
+        if _use_ctz:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                df['time'] = df['time'].apply(_format_time_minimal_local)
+        else:
+            time_fmt = _time_format_from_epochs(epochs) if epochs else "%Y-%m-%d %H:%M:%S"
+            time_fmt = _maybe_strip_year(time_fmt, epochs)
+            time_fmt = _style_time_format(time_fmt)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                df['time'] = df['time'].apply(lambda t: datetime.utcfromtimestamp(float(t)).strftime(time_fmt))
 
         # Ensure required OHLC columns exist
         for col in ['open', 'high', 'low', 'close']:
@@ -1979,6 +2434,7 @@ def get_candlestick_patterns(
             "timeframe": timeframe,
             "candles": int(candles),
         })
+        payload["display_timezone"] = "client" if _use_ctz else "UTC"
         return payload
     except Exception as e:
         return {"error": f"Error detecting candlestick patterns: {str(e)}"}
@@ -1989,6 +2445,7 @@ def get_pivot_points(
     symbol: str,
     basis_timeframe: TimeframeLiteral = "D1",
     method: PivotMethodLiteral = "classic",
+    client_tz: str = "auto",
 ) -> Dict[str, Any]:
     """Compute pivot point levels from the last completed bar on `basis_timeframe`.
 
@@ -2018,16 +2475,17 @@ def get_pivot_points(
             return {"error": err}
 
         try:
-            # Use server tick time to avoid local/server time drift
+            # Use server tick time to avoid local/server time drift; normalize to UTC
             _tick = mt5.symbol_info_tick(symbol)
             if _tick is not None and getattr(_tick, "time", None):
-                server_now_dt = datetime.utcfromtimestamp(float(_tick.time))
-                server_now_ts = float(_tick.time)
+                t_utc = _mt5_epoch_to_utc(float(_tick.time))
+                server_now_dt = datetime.utcfromtimestamp(t_utc)
+                server_now_ts = t_utc
             else:
                 server_now_dt = datetime.utcnow()
                 server_now_ts = server_now_dt.timestamp()
             # Fetch last few bars up to server time and select last closed
-            rates = mt5.copy_rates_from(symbol, mt5_tf, server_now_dt, 5)
+            rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, 5)
         finally:
             # Restore original visibility if we changed it
             if _was_visible is False:
@@ -2068,6 +2526,7 @@ def get_pivot_points(
         L = float(src["low"]) if _has_field(src, "low") else float("nan")
         C = float(src["close"]) if _has_field(src, "close") else float("nan")
         period_start = float(src["time"]) if _has_field(src, "time") else float("nan")
+        period_start = _mt5_epoch_to_utc(period_start)
         period_end = period_start + float(tf_secs)
 
         # Round levels to symbol precision if available
@@ -2163,14 +2622,19 @@ def get_pivot_points(
                 "R1": _round(R1), "S1": _round(S1),
             }
 
+        # Format times per display preference
+        _use_ctz = _use_client_tz(client_tz)
+        start_str = _format_time_minimal_local(period_start) if _use_ctz else _format_time_minimal(period_start)
+        end_str = _format_time_minimal_local(period_end) if _use_ctz else _format_time_minimal(period_end)
+
         payload: Dict[str, Any] = {
             "success": True,
             "symbol": symbol,
             "method": method_l,
             "basis_timeframe": basis_timeframe,
             "period": {
-                "start": _format_time_minimal(period_start),
-                "end": _format_time_minimal(period_end),
+                "start": start_str,
+                "end": end_str,
             },
             "source": {
                 "high": _round(H),
@@ -2181,6 +2645,7 @@ def get_pivot_points(
             },
             "levels": levels,
         }
+        payload["display_timezone"] = "client" if _use_ctz else "UTC"
         return payload
     except Exception as e:
         return {"error": f"Error computing pivot points: {str(e)}"}
@@ -2237,6 +2702,64 @@ try:
 except Exception:
     _ARCH_AVAILABLE = False
 
+# ---- Fast Forecast methods (enums) ----
+_FORECAST_METHODS = (
+    "naive",
+    "seasonal_naive",
+    "drift",
+    "theta",
+    "fourier_ols",
+    "ses",
+    "holt",
+    "holt_winters_add",
+    "holt_winters_mul",
+    "arima",
+    "sarima",
+)
+
+try:
+    ForecastMethodLiteral = Literal[_FORECAST_METHODS]  # type: ignore
+except Exception:
+    ForecastMethodLiteral = str  # fallback for typing
+
+# Optional statsmodels for ETS/SARIMA
+try:
+    from statsmodels.tsa.holtwinters import SimpleExpSmoothing as _SES, ExponentialSmoothing as _ETS  # type: ignore
+    _SM_ETS_AVAILABLE = True
+except Exception:
+    _SM_ETS_AVAILABLE = False
+try:
+    from statsmodels.tsa.statespace.sarimax import SARIMAX as _SARIMAX  # type: ignore
+    _SM_SARIMAX_AVAILABLE = True
+except Exception:
+    _SM_SARIMAX_AVAILABLE = False
+
+def _default_seasonality_period(timeframe: str) -> int:
+    try:
+        sec = TIMEFRAME_SECONDS.get(timeframe)
+        if not sec or sec <= 0:
+            return 0
+        # Intraday: use daily cycle
+        if sec < 86400:
+            return int(round(86400.0 / float(sec)))
+        # Daily: trading week by default (Mon-Fri)
+        if timeframe == 'D1':
+            return 5
+        # Weekly: ~52 weeks
+        if timeframe == 'W1':
+            return 52
+        # Monthly: 12 months
+        if timeframe == 'MN1':
+            return 12
+        return 0
+    except Exception:
+        return 0
+
+def _next_times_from_last(last_epoch: float, tf_secs: int, horizon: int) -> List[float]:
+    base = float(last_epoch)
+    step = float(tf_secs)
+    return [base + step * (i + 1) for i in range(int(horizon))]
+
 @mcp.tool()
 @_auto_connect_wrapper
 def get_vol_forecast(
@@ -2292,10 +2815,11 @@ def get_vol_forecast(
             # Use server time for alignment
             _tick = mt5.symbol_info_tick(symbol)
             if _tick is not None and getattr(_tick, 'time', None):
-                server_now_dt = datetime.utcfromtimestamp(float(_tick.time))
+                t_utc = _mt5_epoch_to_utc(float(_tick.time))
+                server_now_dt = datetime.utcfromtimestamp(t_utc)
             else:
                 server_now_dt = datetime.utcnow()
-            rates = mt5.copy_rates_from(symbol, mt5_tf, server_now_dt, need)
+            rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
         finally:
             if _was_visible is False:
                 try:
@@ -2424,7 +2948,480 @@ def get_vol_forecast(
 
 @mcp.tool()
 @_auto_connect_wrapper
-def get_market_depth(symbol: str) -> Dict[str, Any]:
+def get_forecast(
+    symbol: str,
+    timeframe: TimeframeLiteral = "H1",
+    method: ForecastMethodLiteral = "theta",
+    horizon: int = 12,
+    lookback: Optional[int] = None,
+    as_of: Optional[str] = None,
+    params: Optional[Dict[str, Any]] = None,
+    ci_alpha: Optional[float] = 0.05,
+    target: Literal['price','return'] = 'price',  # type: ignore
+    denoise: Optional[DenoiseSpec] = None,
+    client_tz: str = "auto",
+) -> Dict[str, Any]:
+    """Fast forecasts for the next `horizon_bars` using lightweight methods.
+
+    Methods: naive, seasonal_naive, drift, theta, fourier_ols, ses, holt, holt_winters_add, holt_winters_mul, arima, sarima.
+    - `params`: method-specific settings; use `seasonality` inside params when needed (auto if omitted).
+    - `target`: 'price' or 'return' (log-return). Price forecasts operate on close prices.
+    - `ci_alpha`: confidence level (e.g., 0.05). Set to null to disable intervals.
+    """
+    try:
+        if timeframe not in TIMEFRAME_MAP:
+            return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+        mt5_tf = TIMEFRAME_MAP[timeframe]
+        tf_secs = TIMEFRAME_SECONDS.get(timeframe)
+        if not tf_secs:
+            return {"error": f"Unsupported timeframe seconds for {timeframe}"}
+
+        method_l = str(method).lower().strip()
+        if method_l not in _FORECAST_METHODS:
+            return {"error": f"Invalid method: {method}. Valid options: {list(_FORECAST_METHODS)}"}
+
+        p = dict(params or {})
+        # Prefer explicit seasonality inside params; otherwise auto by timeframe
+        m = int(p.get('seasonality')) if p.get('seasonality') is not None else _default_seasonality_period(timeframe)
+        if method_l == 'seasonal_naive' and (not m or m <= 0):
+            return {"error": "seasonal_naive requires a positive 'seasonality' in params or auto period"}
+
+        # Determine lookback
+        if lookback and lookback > 0:
+            need = int(lookback) + 2
+        else:
+            if method_l == 'seasonal_naive':
+                need = max(3 * m, int(horizon) + m + 2)
+            elif method_l in ('theta', 'fourier_ols'):
+                need = max(300, int(horizon) + (2 * m if m else 50))
+            else:  # naive, drift
+                need = max(100, int(horizon) + 10)
+
+        # Ensure symbol is ready; remember original visibility to restore later
+        _info_before = mt5.symbol_info(symbol)
+        _was_visible = bool(_info_before.visible) if _info_before is not None else None
+        err = _ensure_symbol_ready(symbol)
+        if err:
+            return {"error": err}
+
+        try:
+            # Use explicit as-of time if provided, else server time for alignment
+            if as_of:
+                to_dt = _parse_start_datetime(as_of)
+                if not to_dt:
+                    return {"error": "Invalid as_of_datetime. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."}
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, need)
+            else:
+                _tick = mt5.symbol_info_tick(symbol)
+                if _tick is not None and getattr(_tick, 'time', None):
+                    t_utc = _mt5_epoch_to_utc(float(_tick.time))
+                    server_now_dt = datetime.utcfromtimestamp(t_utc)
+                else:
+                    server_now_dt = datetime.utcnow()
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
+        finally:
+            if _was_visible is False:
+                try:
+                    mt5.symbol_select(symbol, False)
+                except Exception:
+                    pass
+
+        if rates is None or len(rates) < 3:
+            return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
+
+        df = pd.DataFrame(rates)
+        # Normalize MT5 epochs to UTC if server offset configured
+        try:
+            if 'time' in df.columns:
+                df['time'] = df['time'].astype(float).apply(_mt5_epoch_to_utc)
+        except Exception:
+            pass
+        # Drop forming last bar only when forecasting from 'now'; for historical as_of, keep all
+        if as_of is None and len(df) >= 2:
+            df = df.iloc[:-1]
+        if len(df) < 3:
+            return {"error": "Not enough closed bars to compute forecast"}
+
+        # Optionally denoise close
+        base_col = 'close'
+        if denoise:
+            added = _apply_denoise(df, denoise, default_when='pre_ti')
+            if len(added) > 0 and f"{base_col}_dn" in added:
+                base_col = f"{base_col}_dn"
+
+        y = df[base_col].astype(float).to_numpy()
+        t = np.arange(1, len(y) + 1, dtype=float)
+        last_time = float(df['time'].iloc[-1])
+        future_times = _next_times_from_last(last_time, int(tf_secs), int(horizon))
+
+        # Transform for return modeling if requested
+        use_returns = (str(target).lower() == 'return')
+        if use_returns:
+            with np.errstate(divide='ignore', invalid='ignore'):
+                x = np.diff(np.log(np.maximum(y, 1e-12)))
+            x = x[np.isfinite(x)]
+            if x.size < 5:
+                return {"error": "Not enough data to compute return-based forecast"}
+            series = x
+            origin_price = float(y[-1])
+        else:
+            series = y
+            origin_price = float(y[-1])
+
+        # Ensure finite numeric series for modeling
+        series = np.asarray(series, dtype=float)
+        series = series[np.isfinite(series)]
+        n = len(series)
+        if n < 3:
+            return {"error": "Series too short for forecasting"}
+
+        # Fit/forecast by method
+        fh = int(horizon)
+        f_vals = np.zeros(fh, dtype=float)
+        pre_ci: Optional[Tuple[np.ndarray, np.ndarray]] = None
+        model_fitted: Optional[np.ndarray] = None
+        params_used: Dict[str, Any] = {}
+
+        if method_l == 'naive':
+            last_val = float(series[-1])
+            f_vals[:] = last_val
+            params_used = {}
+
+        elif method_l == 'drift':
+            # Classic drift: y_{T+h} = y_T + h*(y_T - y_1)/(T-1)
+            slope = (float(series[-1]) - float(series[0])) / float(max(1, n - 1))
+            f_vals = float(series[-1]) + slope * np.arange(1, fh + 1, dtype=float)
+            params_used = {"slope": slope}
+
+        elif method_l == 'seasonal_naive':
+            m_eff = int(p.get('seasonality', m) or m)
+            if m_eff <= 0 or n < m_eff:
+                return {"error": f"Insufficient data for seasonal_naive (m={m_eff})"}
+            last_season = series[-m_eff:]
+            reps = int(np.ceil(fh / float(m_eff)))
+            f_vals = np.tile(last_season, reps)[:fh]
+            params_used = {"m": m_eff}
+
+        elif method_l == 'theta':
+            # Combine linear trend extrapolation with simple exponential smoothing (fast, fixed alpha)
+            alpha = float(p.get('alpha', 0.2))
+            # Linear trend via least squares on original series index
+            tt = np.arange(1, n + 1, dtype=float)
+            A = np.vstack([np.ones(n), tt]).T
+            coef, _, _, _ = np.linalg.lstsq(A, series, rcond=None)
+            a, b = float(coef[0]), float(coef[1])
+            trend_future = a + b * (tt[-1] + np.arange(1, fh + 1, dtype=float))
+            # SES on series
+            level = float(series[0])
+            for v in series[1:]:
+                level = alpha * float(v) + (1.0 - alpha) * level
+            ses_future = np.full(fh, level, dtype=float)
+            f_vals = 0.5 * (trend_future + ses_future)
+            params_used = {"alpha": alpha, "trend_slope": b}
+
+        elif method_l == 'fourier_ols':
+            m_eff = int(p.get('seasonality', m) or m)
+            K = int(p.get('K', min(3, max(1, (m_eff // 2) if m_eff else 2))))
+            use_trend = bool(p.get('trend', True))
+            tt = np.arange(1, n + 1, dtype=float)
+            X_list = [np.ones(n)]
+            if use_trend:
+                X_list.append(tt)
+            for k in range(1, K + 1):
+                w = 2.0 * math.pi * k / float(m_eff if m_eff else max(2, n))
+                X_list.append(np.sin(w * tt))
+                X_list.append(np.cos(w * tt))
+            X = np.vstack(X_list).T
+            coef, _, _, _ = np.linalg.lstsq(X, series, rcond=None)
+            # Future design
+            tt_f = tt[-1] + np.arange(1, fh + 1, dtype=float)
+            Xf_list = [np.ones(fh)]
+            if use_trend:
+                Xf_list.append(tt_f)
+            for k in range(1, K + 1):
+                w = 2.0 * math.pi * k / float(m_eff if m_eff else max(2, n))
+                Xf_list.append(np.sin(w * tt_f))
+                Xf_list.append(np.cos(w * tt_f))
+            Xf = np.vstack(Xf_list).T
+            f_vals = Xf @ coef
+            params_used = {"m": m_eff, "K": K, "trend": use_trend}
+
+        elif method_l == 'ses':
+            if not _SM_ETS_AVAILABLE:
+                return {"error": "SES requires statsmodels. Please install 'statsmodels'."}
+            alpha = p.get('alpha')
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    if alpha is None:
+                        res = _SES(series, initialization_method='heuristic').fit(optimized=True)
+                    else:
+                        res = _SES(series, initialization_method='heuristic').fit(smoothing_level=float(alpha), optimized=False)
+                f_vals = res.forecast(fh)
+                f_vals = np.asarray(f_vals, dtype=float)
+                try:
+                    model_fitted = np.asarray(res.fittedvalues, dtype=float)
+                except Exception:
+                    model_fitted = None
+                alpha_used = None
+                try:
+                    par = getattr(res, 'params', None)
+                    if par is not None:
+                        # pandas Series or dict-like
+                        if hasattr(par, 'get'):
+                            val = par.get('smoothing_level', None)
+                            if val is None:
+                                # fall back to first element if available
+                                try:
+                                    val = float(par.iloc[0]) if hasattr(par, 'iloc') else float(par[0])
+                                except Exception:
+                                    val = None
+                            alpha_used = val
+                        else:
+                            # array-like
+                            try:
+                                alpha_used = float(par[0]) if len(par) > 0 else None
+                            except Exception:
+                                alpha_used = None
+                    if alpha_used is None:
+                        mv = getattr(res.model, 'smoothing_level', None)
+                        alpha_used = mv if mv is not None else alpha
+                except Exception:
+                    alpha_used = alpha
+                params_used = {"alpha": _to_float_or_nan(alpha_used)}
+            except Exception as ex:
+                return {"error": f"SES fitting error: {ex}"}
+
+        elif method_l == 'holt':
+            if not _SM_ETS_AVAILABLE:
+                return {"error": "Holt requires statsmodels. Please install 'statsmodels'."}
+            damped = bool(p.get('damped', True))
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    model = _ETS(series, trend='add', damped_trend=damped, initialization_method='heuristic')
+                    res = model.fit(optimized=True)
+                f_vals = res.forecast(fh)
+                f_vals = np.asarray(f_vals, dtype=float)
+                try:
+                    model_fitted = np.asarray(res.fittedvalues, dtype=float)
+                except Exception:
+                    model_fitted = None
+                params_used = {"damped": damped}
+            except Exception as ex:
+                return {"error": f"Holt fitting error: {ex}"}
+
+        elif method_l in ('holt_winters_add', 'holt_winters_mul'):
+            if not _SM_ETS_AVAILABLE:
+                return {"error": "Holt-Winters requires statsmodels. Please install 'statsmodels'."}
+            m_eff = int(p.get('seasonality', m) or m)
+            if m_eff <= 0:
+                return {"error": "Holt-Winters requires a positive seasonality_period"}
+            seasonal = 'add' if method_l == 'holt_winters_add' else 'mul'
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    model = _ETS(series, trend='add', seasonal=seasonal, seasonal_periods=m_eff, initialization_method='heuristic')
+                    res = model.fit(optimized=True)
+                f_vals = res.forecast(fh)
+                f_vals = np.asarray(f_vals, dtype=float)
+                try:
+                    model_fitted = np.asarray(res.fittedvalues, dtype=float)
+                except Exception:
+                    model_fitted = None
+                params_used = {"seasonal": seasonal, "m": m_eff}
+            except Exception as ex:
+                return {"error": f"Holt-Winters fitting error: {ex}"}
+
+        elif method_l in ('arima', 'sarima'):
+            if not _SM_SARIMAX_AVAILABLE:
+                return {"error": "ARIMA/SARIMA require statsmodels. Please install 'statsmodels'."}
+            # Defaults: price: d=1, returns: d=0
+            d_default = 0 if use_returns else 1
+            p_ord = int(p.get('p', 1)); d_ord = int(p.get('d', d_default)); q_ord = int(p.get('q', 1))
+            if method_l == 'sarima':
+                m_eff = int(p.get('seasonality', m) or m)
+                P = int(p.get('P', 0)); D = int(p.get('D', 1 if not use_returns else 0)); Q = int(p.get('Q', 0))
+                # SARIMAX requires seasonal period >= 2; fall back to non-seasonal if < 2
+                if m_eff is None or m_eff < 2:
+                    seas = (0, 0, 0, 0)
+                else:
+                    seas = (P, D, Q, int(m_eff))
+            else:
+                seas = (0, 0, 0, 0)
+            trend = str(p.get('trend', 'c'))  # 'n' or 'c'
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    endog = pd.Series(series.astype(float))
+                    model = _SARIMAX(
+                        endog,
+                        order=(p_ord, d_ord, q_ord),
+                        seasonal_order=seas,
+                        trend=trend,
+                        enforce_stationarity=True,
+                        enforce_invertibility=True,
+                    )
+                    res = model.fit(method='lbfgs', disp=False, maxiter=100)
+                    pred = res.get_forecast(steps=fh)
+                f_vals = pred.predicted_mean.to_numpy()
+                ci = None
+                try:
+                    # Use configured CI alpha if provided; default to 0.05
+                    _alpha = float(ci_alpha) if ci_alpha is not None else 0.05
+                    ci_df = pred.conf_int(alpha=_alpha)
+                    ci = (ci_df.iloc[:, 0].to_numpy(), ci_df.iloc[:, 1].to_numpy())
+                except Exception:
+                    ci = None
+                params_used = {"order": (p_ord, d_ord, q_ord), "seasonal_order": seas if method_l=='sarima' else (0,0,0,0), "trend": trend}
+                if ci is not None:
+                    pre_ci = ci
+            except Exception as ex:
+                return {"error": f"SARIMAX fitting error: {ex}"}
+
+        # Compute residual scale for intervals (on modeling scale)
+        lower = upper = None
+        do_ci = (ci_alpha is not None)
+        _alpha = float(ci_alpha) if ci_alpha is not None else 0.05
+        if do_ci:
+            try:
+                # Prefer model-provided intervals if available (e.g., SARIMAX)
+                if pre_ci is not None:
+                    lo, hi = pre_ci
+                    lower = np.asarray(lo, dtype=float)
+                    upper = np.asarray(hi, dtype=float)
+                # Else compute from in-sample residuals
+                elif method_l == 'naive':
+                    fitted = np.roll(series, 1)[1:]
+                    resid = series[1:] - fitted
+                elif method_l == 'drift':
+                    slope = (float(series[-1]) - float(series[0])) / float(max(1, n - 1))
+                    fitted = series[:-1] + slope  # 1-step ahead approx
+                    resid = series[1:] - fitted
+                elif method_l == 'seasonal_naive':
+                    m_eff = int(params_used.get('m', m) or m)
+                    if n > m_eff:
+                        resid = series[m_eff:] - series[:-m_eff]
+                    else:
+                        resid = series - np.mean(series)
+                elif method_l == 'theta':
+                    alpha = float(params_used.get('alpha', 0.2))
+                    tt = np.arange(1, n + 1, dtype=float)
+                    A = np.vstack([np.ones(n), tt]).T
+                    coef, _, _, _ = np.linalg.lstsq(A, series, rcond=None)
+                    a, b = float(coef[0]), float(coef[1])
+                    trend = a + b * tt
+                    level = float(series[0])
+                    fitted_ses = [level]
+                    for v in series[1:]:
+                        level = alpha * float(v) + (1.0 - alpha) * level
+                        fitted_ses.append(level)
+                    fitted_theta = 0.5 * (trend + np.array(fitted_ses))
+                    resid = series - fitted_theta
+                elif method_l in ('ses','holt','holt_winters_add','holt_winters_mul') and model_fitted is not None:
+                    fitted = model_fitted
+                    if fitted.shape[0] > n:
+                        fitted = fitted[-n:]
+                    elif fitted.shape[0] < n:
+                        # pad with last fitted
+                        last = fitted[-1] if fitted.size > 0 else float('nan')
+                        fitted = np.pad(fitted, (n - fitted.shape[0], 0), mode='edge') if fitted.size > 0 else np.full(n, last)
+                    resid = series - fitted
+                else:  # fourier_ols fallback
+                    tt = np.arange(1, n + 1, dtype=float)
+                    m_eff = int(params_used.get('m', m) or m)
+                    K = int(params_used.get('K', min(3, (m_eff // 2) if m_eff else 2)))
+                    use_trend = bool(params_used.get('trend', True))
+                    X_list = [np.ones(n)]
+                    if use_trend:
+                        X_list.append(tt)
+                    for k in range(1, K + 1):
+                        w = 2.0 * math.pi * k / float(m_eff if m_eff else max(2, n))
+                        X_list.append(np.sin(w * tt))
+                        X_list.append(np.cos(w * tt))
+                    X = np.vstack(X_list).T
+                    coef, _, _, _ = np.linalg.lstsq(X, series, rcond=None)
+                    fitted = X @ coef
+                    resid = series - fitted
+                if pre_ci is None:
+                    resid = resid[np.isfinite(resid)]
+                    sigma = float(np.std(resid, ddof=1)) if resid.size >= 3 else float('nan')
+                    from scipy.stats import norm  # optional if available
+                    try:
+                        z = float(norm.ppf(1.0 - _alpha / 2.0))
+                    except Exception:
+                        z = 1.96
+                    lower = f_vals - z * sigma
+                    upper = f_vals + z * sigma
+            except Exception:
+                do_ci = False
+
+        # Map back to price if target was returns
+        if use_returns:
+            # Compose price path multiplicatively from origin_price
+            price_path = np.empty(fh, dtype=float)
+            price_path[0] = origin_price * math.exp(float(f_vals[0]))
+            for i in range(1, fh):
+                price_path[i] = price_path[i-1] * math.exp(float(f_vals[i]))
+            out_forecast_price = price_path
+            if do_ci and lower is not None and upper is not None:
+                # Convert return bands to price bands via lognormal mapping per-step
+                lower_price = np.empty(fh, dtype=float)
+                upper_price = np.empty(fh, dtype=float)
+                lower_price[0] = origin_price * math.exp(float(lower[0]))
+                upper_price[0] = origin_price * math.exp(float(upper[0]))
+                for i in range(1, fh):
+                    lower_price[i] = lower_price[i-1] * math.exp(float(lower[i]))
+                    upper_price[i] = upper_price[i-1] * math.exp(float(upper[i]))
+            else:
+                lower_price = upper_price = None
+        else:
+            out_forecast_price = f_vals
+            lower_price = lower
+            upper_price = upper
+
+        # Rounding based on symbol digits
+        digits = int(getattr(_info_before, "digits", 0) or 0)
+        def _round(v: float) -> float:
+            try:
+                return round(float(v), digits) if digits >= 0 else float(v)
+            except Exception:
+                return float(v)
+
+        _use_ctz = _use_client_tz(client_tz)
+        if _use_ctz:
+            times_fmt = [_format_time_minimal_local(ts) for ts in future_times]
+        else:
+            times_fmt = [_format_time_minimal(ts) for ts in future_times]
+        payload: Dict[str, Any] = {
+            "success": True,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "method": method_l,
+            "target": str(target),
+            "params_used": params_used,
+            "lookback_used": int(len(df)),
+            "horizon": int(horizon),
+            "seasonality_period": int(m or 0),
+            "as_of": as_of or None,
+            "times": times_fmt,
+            "forecast_price": [_round(v) for v in out_forecast_price.tolist()],
+        }
+        payload["display_timezone"] = "client" if _use_ctz else "UTC"
+        if use_returns:
+            payload["forecast_return"] = [float(v) for v in f_vals.tolist()]
+        if do_ci and lower_price is not None and upper_price is not None:
+            payload["lower_price"] = [_round(v) for v in lower_price.tolist()]
+            payload["upper_price"] = [_round(v) for v in upper_price.tolist()]
+            payload["ci_alpha"] = float(_alpha)
+
+        return payload
+    except Exception as e:
+        return {"error": f"Error computing forecast: {str(e)}"}
+
+@mcp.tool()
+@_auto_connect_wrapper
+def get_market_depth(symbol: str, client_tz: str = "auto") -> Dict[str, Any]:
     """Return DOM if available; otherwise current bid/ask snapshot for `symbol`."""
     try:
         # Ensure symbol is selected
@@ -2471,7 +3468,7 @@ def get_market_depth(symbol: str) -> Dict[str, Any]:
             if tick is None:
                 return {"error": f"Failed to get tick data for {symbol}"}
             
-            return {
+            out = {
                 "success": True,
                 "symbol": symbol,
                 "type": "tick_data",
@@ -2480,11 +3477,21 @@ def get_market_depth(symbol: str) -> Dict[str, Any]:
                     "ask": float(tick.ask) if tick.ask else None,
                     "last": float(tick.last) if tick.last else None,
                     "volume": int(tick.volume) if tick.volume else None,
-                    "time": int(tick.time) if tick.time else None,
+                    "time": int(_mt5_epoch_to_utc(float(tick.time))) if tick.time else None,
                     "spread": symbol_info.spread,
                     "note": "Full market depth not available, showing current bid/ask"
                 }
             }
+            try:
+                _use_ctz = _use_client_tz(client_tz)
+                if tick.time and _use_ctz:
+                    out["data"]["time_display"] = _format_time_minimal_local(_mt5_epoch_to_utc(float(tick.time)))
+                elif tick.time:
+                    out["data"]["time_display"] = _format_time_minimal(_mt5_epoch_to_utc(float(tick.time)))
+            except Exception:
+                pass
+            out["display_timezone"] = "client" if _use_ctz else "UTC"
+            return out
     except Exception as e:
         return {"error": f"Error getting market depth: {str(e)}"}
 

@@ -12,3 +12,7 @@ dateparser>=1.2.0
 pandas>=2.0.0
 pandas_ta>=0.3.14b0
 arch>=6.3
+python-dateutil>=2.9.0.post0
+pytz>=2022.1
+scipy>=1.10.0
+statsmodels>=0.14.0
