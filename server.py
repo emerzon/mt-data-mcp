@@ -12,6 +12,15 @@ import re
 import inspect
 import pydoc
 import pandas as pd
+import numpy as np
+try:
+    import pywt as _pywt  # type: ignore
+except Exception:
+    _pywt = None  # optional
+try:
+    from PyEMD import EMD as _EMD, EEMD as _EEMD, CEEMDAN as _CEEMDAN  # type: ignore
+except Exception:
+    _EMD = _EEMD = _CEEMDAN = None  # optional
 import warnings
 import pandas_ta as pta
 import dateparser
@@ -263,12 +272,43 @@ def _time_format_from_epochs(epochs: List[float]) -> str:
         if dt.hour != 0:
             any_hour = True
     if any_sec:
-        return "%Y-%m-%dT%H:%M:%S"
+        return "%Y-%m-%d %H:%M:%S"
     if any_min:
-        return "%Y-%m-%dT%H:%M"
+        return "%Y-%m-%d %H:%M"
     if any_hour:
-        return "%Y-%m-%dT%H"
+        return "%Y-%m-%d %H"
     return "%Y-%m-%d"
+
+def _maybe_strip_year(fmt: str, epochs: List[float]) -> str:
+    """If all timestamps are in the same year, remove the year from the format.
+
+    Example mappings when same year:
+    - %Y-%m-%d           -> %m-%d
+    - %Y-%m-%dT%H       -> %m-%dT%H
+    - %Y-%m-%dT%H:%M    -> %m-%dT%H:%M
+    - %Y-%m-%dT%H:%M:%S -> %m-%dT%H:%M:%S
+    """
+    try:
+        years = set(datetime.utcfromtimestamp(e).year for e in epochs)
+        if len(years) == 1 and fmt.startswith("%Y-"):
+            return fmt[3:]  # drop leading "%Y-"
+    except Exception:
+        pass
+    return fmt
+
+def _style_time_format(fmt: str) -> str:
+    """Apply stylistic tweaks to time format:
+    - Use space instead of 'T' separator (defensive)
+    - If format ends with hours only (%H), append 'h' (e.g., 09-03 03h)
+    """
+    try:
+        if 'T' in fmt:
+            fmt = fmt.replace('T', ' ')
+        if fmt.endswith('%H'):
+            fmt = fmt + 'h'
+    except Exception:
+        pass
+    return fmt
 
 def _extract_group_path(sym) -> str:
     """Extract pure group path from a symbol, stripping the symbol name if present.
@@ -734,6 +774,387 @@ class IndicatorSpec(TypedDict, total=False):
     name: IndicatorNameLiteral  # type: ignore
     params: List[float]
 
+# ---- Denoising (spec + application) ----
+# Allowed denoising methods for first phase (no extra dependencies)
+_DENOISE_METHODS = (
+    "none",        # no-op
+    "ema",         # exponential moving average
+    "sma",         # simple moving average
+    "median",      # rolling median
+    "lowpass_fft", # zero-phase FFT low-pass
+    "wavelet",     # wavelet shrinkage (PyWavelets optional)
+    "emd",         # empirical mode decomposition (PyEMD optional)
+    "eemd",        # ensemble EMD (PyEMD optional)
+    "ceemdan",     # complementary EEMD with adaptive noise (PyEMD optional)
+)
+
+try:
+    DenoiseMethodLiteral = Literal[_DENOISE_METHODS]  # type: ignore
+except Exception:
+    DenoiseMethodLiteral = str  # fallback for typing
+
+class DenoiseSpec(TypedDict, total=False):
+    method: DenoiseMethodLiteral  # type: ignore
+    params: Dict[str, Any]
+    columns: List[str]
+    when: Literal['pre_ti', 'post_ti']  # type: ignore
+    causality: Literal['causal', 'zero_phase']  # type: ignore
+    keep_original: bool
+    suffix: str
+
+def _denoise_series(
+    s: pd.Series,
+    method: str,
+    params: Optional[Dict[str, Any]] = None,
+    causality: Optional[str] = None,
+) -> pd.Series:
+    """Apply denoising to a single numeric Series and return the result.
+
+    Supported methods (no external deps): ema, sma, median, lowpass_fft.
+    - ema: params {span:int|None, alpha:float|None}
+    - sma: params {window:int}
+    - median: params {window:int}
+    - lowpass_fft: params {cutoff_ratio:float in (0, 0.5], taper:bool}
+    - wavelet: params {wavelet:str, level:int|None, threshold:float|"auto", mode:"soft"|"hard"}
+    - emd/eemd/ceemdan: params {drop_imfs:list[int], keep_imfs:list[int], max_imfs:int, noise_strength:float, trials:int, random_state:int}
+    """
+    if params is None:
+        params = {}
+    method = (method or 'none').lower()
+    if method == 'none':
+        return s
+
+    # Ensure float for numeric stability
+    x = s.astype('float64')
+
+    if method == 'ema':
+        span = params.get('span')
+        alpha = params.get('alpha')
+        if alpha is None and span is None:
+            span = 10
+        # Base forward EMA
+        y_fwd = x.ewm(span=span, alpha=alpha, adjust=False).mean()
+        if (causality or '').lower() == 'zero_phase':
+            # Two-pass EMA (forward + backward) to approximate zero-phase
+            y_bwd = y_fwd.iloc[::-1].ewm(span=span, alpha=alpha, adjust=False).mean().iloc[::-1]
+            return y_bwd
+        return y_fwd
+
+    if method == 'sma':
+        window = int(params.get('window', 10))
+        if window <= 1:
+            return x
+        if (causality or 'causal').lower() == 'causal':
+            return x.rolling(window=window, min_periods=1).mean()
+        # zero-phase via symmetric convolution with reflection padding
+        k = np.ones(window, dtype=float) / float(window)
+        pad = window // 2
+        xpad = np.pad(x.to_numpy(), (pad, pad), mode='reflect')
+        y = np.convolve(xpad, k, mode='same')[pad:-pad]
+        return pd.Series(y, index=x.index)
+
+    if method == 'median':
+        window = int(params.get('window', 7))
+        if window <= 1:
+            return x
+        center = (causality or '').lower() == 'zero_phase'
+        return x.rolling(window=window, min_periods=1, center=center).median()
+
+    if method == 'lowpass_fft':
+        # Zero-phase by construction; ignore 'causal' and document behavior
+        cutoff_ratio = float(params.get('cutoff_ratio', 0.1))
+        cutoff_ratio = max(1e-6, min(0.5, cutoff_ratio))
+        # Fill NaNs before FFT to avoid propagation
+        xnp = x.fillna(method='ffill').fillna(method='bfill').fillna(0.0).to_numpy()
+        n = len(xnp)
+        if n <= 2:
+            return x
+        X = np.fft.rfft(xnp)
+        freqs = np.fft.rfftfreq(n, d=1.0)  # normalized per-sample
+        cutoff = cutoff_ratio * 0.5 * 2.0  # interpret ratio vs. Nyquist; clamp in [0,0.5]
+        mask = freqs <= cutoff
+        X_filtered = X * mask
+        y = np.fft.irfft(X_filtered, n=n)
+        return pd.Series(y, index=x.index)
+
+    if method == 'wavelet':
+        if _pywt is None:
+            return s
+        wname = str(params.get('wavelet', 'db4'))
+        mode = str(params.get('mode', 'soft')).lower()
+        thr = params.get('threshold', 'auto')
+        # choose decomposition level if not provided
+        try:
+            w = _pywt.Wavelet(wname)
+            max_level = _pywt.dwt_max_level(len(x), w.dec_len)
+        except Exception:
+            w = _pywt.Wavelet('db4') if _pywt else None
+            max_level = 4
+        level = int(params.get('level', max(1, min(5, max_level))))
+        # Fill NaNs
+        xnp = x.fillna(method='ffill').fillna(method='bfill').fillna(0.0).to_numpy()
+        coeffs = _pywt.wavedec(xnp, w, mode='symmetric', level=level)
+        cA, cDs = coeffs[0], coeffs[1:]
+        if thr == 'auto':
+            # universal threshold using first detail level
+            d1 = cDs[-1] if len(cDs) > 0 else cA
+            sigma = np.median(np.abs(d1 - np.median(d1))) / 0.6745 if len(d1) else 0.0
+            lam = sigma * np.sqrt(2.0 * np.log(len(xnp) + 1e-9))
+        else:
+            try:
+                lam = float(thr)
+            except Exception:
+                lam = 0.0
+        new_coeffs = [cA]
+        for d in cDs:
+            if mode == 'hard':
+                d_new = d * (np.abs(d) >= lam)
+            else:
+                d_new = np.sign(d) * np.maximum(np.abs(d) - lam, 0.0)
+            new_coeffs.append(d_new)
+        y = _pywt.waverec(new_coeffs, w, mode='symmetric')
+        if len(y) != len(xnp):
+            y = y[:len(xnp)]
+        return pd.Series(y, index=x.index)
+
+    if method in ('emd', 'eemd', 'ceemdan'):
+        if _EMD is None and _EEMD is None and _CEEMDAN is None:
+            return s
+        xnp = x.fillna(method='ffill').fillna(method='bfill').fillna(0.0).to_numpy()
+        max_imfs = params.get('max_imfs')
+        if isinstance(max_imfs, str) and str(max_imfs).lower() == 'auto':
+            max_imfs = None
+        drop_imfs = params.get('drop_imfs')
+        keep_imfs = params.get('keep_imfs')
+        ns = params.get('noise_strength', 0.2)
+        trials = int(params.get('trials', 100))
+        rng = params.get('random_state')
+        # Sensible default for number of IMFs: ~log2(n), capped [2,10]
+        n = len(xnp)
+        if max_imfs is None:
+            try:
+                est = int(np.ceil(np.log2(max(8, n))))
+            except Exception:
+                est = 6
+            max_imfs = max(2, min(10, est))
+
+        try:
+            if method == 'eemd' and _EEMD is not None:
+                decomp = _EEMD()
+                if rng is not None:
+                    decomp.trials = trials
+                    decomp.noise_seed(rng)
+                else:
+                    decomp.trials = trials
+                decomp.noise_strength = ns
+                imfs = decomp.eemd(xnp, max_imf=max_imfs)
+            elif method == 'ceemdan' and _CEEMDAN is not None:
+                decomp = _CEEMDAN()
+                if rng is not None:
+                    decomp.random_seed = rng
+                decomp.noise_strength = ns
+                imfs = decomp.ceemdan(xnp, max_imf=int(max_imfs) if max_imfs is not None else None)
+            else:
+                # fallback to plain EMD
+                decomp = _EMD() if _EMD is not None else (_EEMD() if _EEMD is not None else _CEEMDAN())
+                imfs = decomp.emd(xnp, max_imf=int(max_imfs) if max_imfs is not None else None) if hasattr(decomp, 'emd') else decomp.eemd(xnp, max_imf=int(max_imfs) if max_imfs is not None else None)
+        except Exception:
+            return s
+
+        if imfs is None or len(imfs) == 0:
+            return s
+        imfs = np.atleast_2d(imfs)
+        # Residual (trend) component not returned explicitly; reconstruct it
+        resid = xnp - imfs.sum(axis=0)
+        k_all = list(range(imfs.shape[0]))
+        if isinstance(keep_imfs, (list, tuple)) and len(keep_imfs) > 0:
+            k_sel = [k for k in keep_imfs if 0 <= int(k) < imfs.shape[0]]
+        elif isinstance(drop_imfs, (list, tuple)) and len(drop_imfs) > 0:
+            drop = {int(k) for k in drop_imfs}
+            k_sel = [k for k in k_all if k not in drop]
+        else:
+            # Default: drop the first IMF (highest frequency)
+            k_sel = [k for k in k_all if k != 0]
+        y = resid + imfs[k_sel].sum(axis=0) if len(k_sel) > 0 else resid
+        return pd.Series(y, index=x.index)
+
+    # Unknown method: return original
+    return s
+
+
+def _apply_denoise(
+    df: pd.DataFrame,
+    spec: Optional[DenoiseSpec],
+    default_when: str = 'post_ti',
+) -> List[str]:
+    """Apply denoising per spec to selected columns in-place.
+
+    Returns list of columns added (if any). May also overwrite columns when keep_original=False.
+    """
+    added_cols: List[str] = []
+    if not spec or not isinstance(spec, dict):
+        return added_cols
+    method = str(spec.get('method', 'none')).lower()
+    if method == 'none':
+        return added_cols
+    params = spec.get('params') or {}
+    cols = spec.get('columns') or ['close']
+    when = str(spec.get('when') or default_when)
+    causality = str(spec.get('causality') or ('causal' if when == 'pre_ti' else 'zero_phase'))
+    keep_original = bool(spec.get('keep_original')) if 'keep_original' in spec else (when != 'pre_ti')
+    suffix = str(spec.get('suffix') or '_dn')
+
+    for col in cols:
+        if col not in df.columns:
+            continue
+        try:
+            y = _denoise_series(df[col], method=method, params=params, causality=causality)
+        except Exception:
+            continue
+        if keep_original:
+            new_col = f"{col}{suffix}"
+            df[new_col] = y
+            added_cols.append(new_col)
+        else:
+            df[col] = y
+    return added_cols
+
+
+@mcp.tool()
+def get_denoise_methods() -> Dict[str, Any]:
+    """Return JSON with supported denoise methods, availability, and parameter docs.
+
+    Response schema:
+    {
+      "success": true,
+      "schema_version": 1,
+      "methods": [
+        {
+          "method": "ema",
+          "available": true,
+          "requires": "",
+          "description": "...",
+          "params": [ {"name":"span","type":"int","default":10,"description":"..."}, ... ],
+          "supports": {"causal": true, "zero_phase": true},
+          "defaults": {"when":"post_ti","columns":["close"],"keep_original":true,"suffix":"_dn"}
+        }
+      ]
+    }
+    """
+    try:
+        def avail_requires(name: str) -> Tuple[bool, str]:
+            if name == 'wavelet':
+                return (_pywt is not None, 'PyWavelets')
+            if name in ('emd', 'eemd', 'ceemdan'):
+                return (any(x is not None for x in (_EMD, _EEMD, _CEEMDAN)), 'EMD-signal')
+            return (True, '')
+
+        methods: List[Dict[str, Any]] = []
+        base_defaults = {"when": "post_ti", "columns": ["close"], "keep_original": True, "suffix": "_dn"}
+
+        def add(method: str, description: str, params: List[Dict[str, Any]], supports: Dict[str, bool]):
+            available, requires = avail_requires(method)
+            methods.append({
+                "method": method,
+                "available": bool(available),
+                "requires": requires,
+                "description": description,
+                "params": params,
+                "supports": supports,
+                "defaults": base_defaults,
+            })
+
+        add(
+            "none",
+            "No denoising (identity).",
+            [],
+            {"causal": True, "zero_phase": True},
+        )
+        add(
+            "ema",
+            "Exponential moving average; causal by default; zero-phase via forward-backward pass.",
+            [
+                {"name": "span", "type": "int", "default": 10, "description": "Smoothing span; alternative to alpha."},
+                {"name": "alpha", "type": "float", "default": None, "description": "Direct smoothing factor in (0,1]; overrides span if set."},
+            ],
+            {"causal": True, "zero_phase": True},
+        )
+        add(
+            "sma",
+            "Simple moving average; causal or zero-phase (centered convolution).",
+            [
+                {"name": "window", "type": "int", "default": 10, "description": "Window length in samples."},
+            ],
+            {"causal": True, "zero_phase": True},
+        )
+        add(
+            "median",
+            "Rolling median; robust to spikes; causal or zero-phase (centered).",
+            [
+                {"name": "window", "type": "int", "default": 7, "description": "Window length in samples (odd recommended)."},
+            ],
+            {"causal": True, "zero_phase": True},
+        )
+        add(
+            "lowpass_fft",
+            "Zero-phase low-pass filtering in frequency domain; parameterized by cutoff ratio.",
+            [
+                {"name": "cutoff_ratio", "type": "float", "default": 0.1, "description": "Cutoff as fraction of Nyquist (0, 0.5]."},
+            ],
+            {"causal": False, "zero_phase": True},
+        )
+        add(
+            "wavelet",
+            "Wavelet shrinkage denoising using PyWavelets; preserves sharp changes better than linear filters.",
+            [
+                {"name": "wavelet", "type": "str", "default": "db4", "description": "Wavelet family, e.g., 'db4', 'sym5'."},
+                {"name": "level", "type": "int|null", "default": None, "description": "Decomposition level; auto if omitted."},
+                {"name": "threshold", "type": "float|\"auto\"", "default": "auto", "description": "Shrinkage threshold; 'auto' uses universal threshold."},
+                {"name": "mode", "type": "str", "default": "soft", "description": "Shrinkage mode: 'soft' or 'hard'."},
+            ],
+            {"causal": False, "zero_phase": True},
+        )
+        add(
+            "emd",
+            "Empirical Mode Decomposition; reconstruct after dropping high-frequency IMFs.",
+            [
+                {"name": "drop_imfs", "type": "int[]", "default": [0], "description": "IMF indices to drop (0 is highest frequency)."},
+                {"name": "keep_imfs", "type": "int[]", "default": None, "description": "Explicit list of IMFs to keep; overrides drop_imfs."},
+                {"name": "max_imfs", "type": "int|\"auto\"", "default": "auto", "description": "Max IMFs; 'auto' ≈ log2(n), capped to [2,10]."},
+            ],
+            {"causal": False, "zero_phase": True},
+        )
+        add(
+            "eemd",
+            "Ensemble EMD; averages decompositions with added noise for robustness.",
+            [
+                {"name": "drop_imfs", "type": "int[]", "default": [0], "description": "IMF indices to drop (0 is highest frequency)."},
+                {"name": "keep_imfs", "type": "int[]", "default": None, "description": "Explicit list of IMFs to keep; overrides drop_imfs."},
+                {"name": "max_imfs", "type": "int|\"auto\"", "default": "auto", "description": "Max IMFs; 'auto' ≈ log2(n), capped to [2,10]."},
+                {"name": "noise_strength", "type": "float", "default": 0.2, "description": "Relative noise amplitude used in ensembles."},
+                {"name": "trials", "type": "int", "default": 100, "description": "Number of ensemble trials."},
+                {"name": "random_state", "type": "int", "default": None, "description": "Random seed for reproducibility."},
+            ],
+            {"causal": False, "zero_phase": True},
+        )
+        add(
+            "ceemdan",
+            "Complementary EEMD with adaptive noise; improved reconstruction quality.",
+            [
+                {"name": "drop_imfs", "type": "int[]", "default": [0], "description": "IMF indices to drop (0 is highest frequency)."},
+                {"name": "keep_imfs", "type": "int[]", "default": None, "description": "Explicit list of IMFs to keep; overrides drop_imfs."},
+                {"name": "max_imfs", "type": "int|\"auto\"", "default": "auto", "description": "Max IMFs; 'auto' ≈ log2(n), capped to [2,10]."},
+                {"name": "noise_strength", "type": "float", "default": 0.2, "description": "Relative noise amplitude used in decomposition."},
+                {"name": "trials", "type": "int", "default": 100, "description": "Used if falling back to EEMD implementation."},
+                {"name": "random_state", "type": "int", "default": None, "description": "Random seed for reproducibility."},
+            ],
+            {"causal": False, "zero_phase": True},
+        )
+
+        return {"success": True, "schema_version": 1, "methods": methods}
+    except Exception as e:
+        return {"error": f"Error listing denoise methods: {e}"}
+
 @mcp.tool()
 def get_indicators(search_term: Optional[str] = None, category: Optional[CategoryLiteral] = None) -> Dict[str, Any]:  # type: ignore
     """List indicators as CSV with columns: name,category. Optional filters: search_term, category."""
@@ -979,6 +1400,7 @@ def get_rates(
     end_datetime: Optional[str] = None,
     ohlcv: Optional[List[OhlcvCharLiteral]] = ('C',),
     ti: Optional[List[IndicatorSpec]] = None,
+    denoise: Optional[DenoiseSpec] = None,
 ) -> Dict[str, Any]:
     """Return historical candles as CSV.
        Can include OHLCV data, optionally along with technical indicators.
@@ -991,6 +1413,7 @@ def get_rates(
          - end_datetime: Optional end date for the data (e.g., "2025-08-30").
          - ohlcv: Optional list of OHLCV fields to include (e.g., ["O", "H", "L", "C", "V"]).
          - ti: Optional technical indicators to include (e.g., "rsi(20),macd(12,26,9),ema(26)")
+         - denoise: Optional denoising spec to smooth selected columns either pre‑ or post‑TI
        The full list of supported technical indicators can be retrieved from `get_indicators`.
     """
     try:
@@ -1171,6 +1594,10 @@ def get_rates(
                 warnings.simplefilter("ignore")
                 df['volume'] = df['tick_volume']
 
+        # Optional pre-TI denoising (in-place by default)
+        if denoise and str(denoise.get('when', 'post_ti')).lower() == 'pre_ti':
+            _apply_denoise(df, denoise, default_when='pre_ti')
+
         # Apply technical indicators if requested (dynamic)
         ti_cols: List[str] = []
         if ti_spec:
@@ -1235,6 +1662,9 @@ def get_rates(
                             with warnings.catch_warnings():
                                 warnings.simplefilter("ignore")
                                 df['volume'] = df['tick_volume']
+                        # Optional pre-TI denoising on retried window
+                        if denoise and str(denoise.get('when', 'post_ti')).lower() == 'pre_ti':
+                            _apply_denoise(df, denoise, default_when='pre_ti')
                         # Re-apply indicators and re-extend headers
                         ti_cols = _apply_ta_indicators(df, ti_spec)
                         headers.extend([c for c in ti_cols if c not in headers])
@@ -1257,12 +1687,22 @@ def get_rates(
             except Exception:
                 pass
 
+        # Optional post-TI denoising (adds new columns by default)
+        if denoise and str(denoise.get('when', 'post_ti')).lower() == 'post_ti':
+            added_dn = _apply_denoise(df, denoise, default_when='post_ti')
+            for c in added_dn:
+                if c not in headers:
+                    headers.append(c)
+
         # Ensure headers are unique and exist in df
         headers = [h for h in headers if h in df.columns or h == 'time']
 
         # Reformat time consistently across rows
         if 'time' in headers and len(df) > 0:
-            fmt = _time_format_from_epochs(df['__epoch'].tolist())
+            epochs_list = df['__epoch'].tolist()
+            fmt = _time_format_from_epochs(epochs_list)
+            fmt = _maybe_strip_year(fmt, epochs_list)
+            fmt = _style_time_format(fmt)
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 df['time'] = df['__epoch'].apply(lambda t: datetime.utcfromtimestamp(t).strftime(fmt))
@@ -1353,8 +1793,11 @@ def get_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = Non
             headers.append("flags")
         
         # Build data rows with matching columns and escape properly
-        # Choose a consistent time format for all rows
-        fmt = _time_format_from_epochs([float(t["time"]) for t in ticks])
+        # Choose a consistent time format for all rows (strip year if constant)
+        _epochs = [float(t["time"]) for t in ticks]
+        fmt = _time_format_from_epochs(_epochs)
+        fmt = _maybe_strip_year(fmt, _epochs)
+        fmt = _style_time_format(fmt)
         rows = []
         for tick in ticks:
             time_str = datetime.utcfromtimestamp(tick["time"]).strftime(fmt)
@@ -1376,6 +1819,154 @@ def get_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = Non
         return payload
     except Exception as e:
         return {"error": f"Error getting ticks: {str(e)}"}
+
+@mcp.tool()
+@_auto_connect_wrapper
+def get_candlestick_patterns(
+    symbol: str,
+    timeframe: TimeframeLiteral = "H1",
+    candles: int = 10,
+) -> Dict[str, Any]:
+    """Detect candlestick patterns and return CSV rows of detections.
+
+    Inputs:
+    - `symbol`: Trading symbol (e.g., "EURUSD").
+    - `timeframe`: One of the supported MT5 timeframes (e.g., "M15", "H1").
+    - `candles`: Number of most recent candles to analyze.
+
+    Output CSV columns:
+    - `time`: UTC timestamp of the bar (compact format)
+    - `pattern`: Human-friendly pattern label (includes direction, e.g., "Bearish ENGULFING BEAR")
+    """
+    try:
+        # Validate timeframe
+        if timeframe not in TIMEFRAME_MAP:
+            return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+        mt5_timeframe = TIMEFRAME_MAP[timeframe]
+
+        # Ensure symbol is ready; remember original visibility to restore later
+        _info_before = mt5.symbol_info(symbol)
+        _was_visible = bool(_info_before.visible) if _info_before is not None else None
+        err = _ensure_symbol_ready(symbol)
+        if err:
+            return {"error": err}
+
+        try:
+            # Fetch last `candles` bars from now
+            utc_now = datetime.utcnow()
+            rates = mt5.copy_rates_from(symbol, mt5_timeframe, utc_now, candles)
+        finally:
+            # Restore original visibility if we changed it
+            if _was_visible is False:
+                try:
+                    mt5.symbol_select(symbol, False)
+                except Exception:
+                    pass
+
+        if rates is None:
+            return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}
+        if len(rates) == 0:
+            return {"error": "No candle data available"}
+
+        # Build DataFrame and format time
+        df = pd.DataFrame(rates)
+        epochs = [float(t) for t in df['time'].tolist()] if 'time' in df.columns else []
+        time_fmt = _time_format_from_epochs(epochs) if epochs else "%Y-%m-%d %H:%M:%S"
+        time_fmt = _maybe_strip_year(time_fmt, epochs)
+        time_fmt = _style_time_format(time_fmt)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            df['time'] = df['time'].apply(lambda t: datetime.utcfromtimestamp(float(t)).strftime(time_fmt))
+
+        # Ensure required OHLC columns exist
+        for col in ['open', 'high', 'low', 'close']:
+            if col not in df.columns:
+                return {"error": f"Missing '{col}' data from rates"}
+
+        # Prepare temp DataFrame with DatetimeIndex for pandas_ta compatibility
+        try:
+            temp = df.copy()
+            temp['__epoch'] = [float(e) for e in epochs]
+            temp.index = pd.to_datetime(temp['__epoch'], unit='s')
+        except Exception:
+            temp = df.copy()
+
+        # Discover callable cdl_* methods
+        pattern_methods: List[str] = []
+        try:
+            for attr in dir(temp.ta):
+                if not attr.startswith('cdl_'):
+                    continue
+                func = getattr(temp.ta, attr, None)
+                if callable(func):
+                    pattern_methods.append(attr)
+        except Exception:
+            pass
+
+        if not pattern_methods:
+            return {"error": "No candlestick pattern detectors (cdl_*) found in pandas_ta. Ensure pandas_ta (and TA-Lib if required) are installed."}
+
+        before_cols = set(temp.columns)
+        for name in sorted(pattern_methods):
+            try:
+                method = getattr(temp.ta, name)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    method(append=True)
+            except Exception:
+                continue
+
+        # Identify newly added pattern columns
+        pattern_cols = [c for c in temp.columns if c not in before_cols and c.lower().startswith('cdl_')]
+        if not pattern_cols:
+            return {"error": "No candle patterns produced any outputs."}
+
+        # Compile detection rows
+        rows: List[List[Any]] = []
+        for i in range(len(temp)):
+            t = df.iloc[i]['time']
+            for col in pattern_cols:
+                try:
+                    val = temp.iloc[i][col]
+                except Exception:
+                    continue
+                try:
+                    v = float(val)
+                except Exception:
+                    continue
+                if pd.isna(v) or v == 0:
+                    continue
+                direction = 'bullish' if v > 0 else 'bearish'
+                # Remove leading 'CDL_' or 'cdl_' prefix from pattern name
+                pat = col
+                if pat.lower().startswith('cdl_'):
+                    pat = pat[len('cdl_'):]
+                # Human-friendly label: "Bearish ENGULFING BEAR"
+                # Replace underscores with spaces and uppercase the pattern words
+                pat_human = pat.replace('_', ' ').strip()
+                if pat_human:
+                    pat_human = pat_human.upper()
+                dir_title = 'Bullish' if v > 0 else 'Bearish'
+                pattern_label = f"{dir_title} {pat_human}" if pat_human else dir_title
+                rows.append([t, pattern_label])
+
+        # Sort for stable output
+        try:
+            rows.sort(key=lambda r: (r[0], r[1]))
+        except Exception:
+            pass
+
+        headers = ["time", "pattern"]
+        payload = _csv_from_rows(headers, rows)
+        payload.update({
+            "success": True,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "candles": int(candles),
+        })
+        return payload
+    except Exception as e:
+        return {"error": f"Error detecting candlestick patterns: {str(e)}"}
 
 @mcp.tool()
 @_auto_connect_wrapper
@@ -1449,4 +2040,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

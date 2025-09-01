@@ -44,11 +44,13 @@ python server.py
 - `get_symbols(search_term, limit)` - Smart search for trading symbols (CSV output)
 - `get_symbol_groups(search_term, limit)` - Get available symbol groups (CSV output)
 - `get_symbol_info(symbol)` - Get detailed symbol information
-- `get_rates(symbol, timeframe, candles, start_datetime, end_datetime, ohlcv, ti)` - Get historical OHLCV data in CSV format
+- `get_rates(symbol, timeframe, candles, start_datetime, end_datetime, ohlcv, ti, denoise)` - Get historical OHLCV data in CSV format
 - `get_ticks(symbol, count, start_datetime)` - Get tick data in CSV format
 - `get_market_depth(symbol)` - Get market depth (DOM)
 - `get_indicators()` - List indicators (CSV: name,category)
 -  - Indicator params + full help (JSON)
+- `get_denoise_methods()` - JSON with denoise methods, availability, and parameter docs
+- `get_candlestick_patterns(symbol, timeframe, candles)` - Detect candlestick patterns (CSV: time,pattern)
 
 ### Example Usage
 
@@ -180,3 +182,14 @@ All functions return structured responses with success/error status:
 ## License
 
 MIT License
+Optional denoising via `denoise`:
+- JSON object: `{ "method": "ema|sma|median|lowpass_fft|none", "columns": ["close"], "when": "pre_ti|post_ti", "params": { ... }, "keep_original": bool, "suffix": "_dn" }`
+- Defaults: `method="none"`; if `post_ti`, keeps original columns and appends suffixed denoised columns.
+- Examples: pre-TI EMA on close: `{"method":"ema","params":{"span":10},"when":"pre_ti"}`; post-TI median on close and an indicator: `{"method":"median","columns":["close","rsi_14"],"when":"post_ti","params":{"window":7}}`.
+
+Wavelet/EMD options (optional dependencies):
+- Enable `method="wavelet"` by installing PyWavelets: `pip install PyWavelets`
+  - Params: `wavelet` (e.g., `"db4"`), `level` (auto if omitted), `threshold` (`"auto"` or number), `mode` (`"soft"|"hard"`)
+- Enable `method="emd|eemd|ceemdan"` by installing PyEMD: `pip install EMD-signal`
+  - Params: `drop_imfs` (e.g., `[0,1]`), `keep_imfs`, `max_imfs` (auto ≈ log2(n), capped [2,10]), `noise_strength` (EEMD/CEEMDAN), `trials`, `random_state`
+  - Default behavior: drops the first IMF (highest frequency) and keeps the rest plus the residual trend.
