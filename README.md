@@ -108,7 +108,13 @@ Point forecasts for the next bars using training‑light methods. Discover avail
   - `denoise`: apply `get_denoise_methods` to smooth `close` before modeling
   - `target`: `"price"` or `"return"` (log‑returns). When `return`, both return path and recomposed price path are included.
 
-- Output includes future `times[]`, `forecast_price[]`, optional `lower_price[]`/`upper_price[]`, and `params_used`.
+- Output includes:
+  - Future `times[]`
+  - `forecast_price[]` (and `forecast_return[]` when `target="return"`)
+  - Optional `lower_price[]`/`upper_price[]` when `ci_alpha` provided
+  - `params_used`, `lookback_used`, `seasonality_period`, `as_of`
+  - Training window timestamps: `train_start`, `train_end` (formatted per `client_tz`)
+  - Overall forecast trend label: `forecast_trend` (`"up"`, `"down"`, or `"flat"`)
 
 - Dependencies:
   - Base methods require only NumPy/Pandas.

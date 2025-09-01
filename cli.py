@@ -271,12 +271,12 @@ def create_command_function(func_info):
         # Handle output
         if print_csv_result(result):
             return
-        # No CSV in result; fall back to JSON
-        # Prefer pretty JSON for info-heavy outputs
-        if func_info['name'] in ('get_symbol_info', 'get_indicators'):
-            print(json.dumps(result, indent=2, default=str))
-        else:
-            print(json.dumps(result, separators=(',', ':'), default=str))
+        # No CSV in result; pretty-print JSON for all outputs
+        try:
+            print(json.dumps(result, indent=2, sort_keys=True, default=str, ensure_ascii=False))
+        except Exception:
+            # Fallback in unlikely case of serialization issue
+            print(str(result))
     
     return command_func
 

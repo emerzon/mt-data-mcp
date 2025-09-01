@@ -3393,6 +3393,39 @@ def get_forecast(
             times_fmt = [_format_time_minimal_local(ts) for ts in future_times]
         else:
             times_fmt = [_format_time_minimal(ts) for ts in future_times]
+
+        # Training window first/last candle timestamps (used for the forecast)
+        try:
+            train_first_epoch = float(df['time'].iloc[0])
+            train_last_epoch = float(df['time'].iloc[-1])
+        except Exception:
+            train_first_epoch = float('nan')
+            train_last_epoch = float('nan')
+        if _use_ctz:
+            train_first_time = _format_time_minimal_local(train_first_epoch) if math.isfinite(train_first_epoch) else None
+            train_last_time = _format_time_minimal_local(train_last_epoch) if math.isfinite(train_last_epoch) else None
+        else:
+            train_first_time = _format_time_minimal(train_first_epoch) if math.isfinite(train_first_epoch) else None
+            train_last_time = _format_time_minimal(train_last_epoch) if math.isfinite(train_last_epoch) else None
+
+        # Overall forecast trend based on net change over horizon
+        try:
+            if out_forecast_price.size >= 2:
+                delta = float(out_forecast_price[-1] - out_forecast_price[0])
+                # Use half a rounding unit as flat threshold
+                prec = max(0, int(getattr(_info_before, "digits", 0) or 0))
+                unit = 10.0 ** (-prec) if prec <= 12 else 0.0
+                thresh = 0.5 * unit if unit > 0 else 0.0
+                if delta > thresh:
+                    forecast_trend = "up"
+                elif delta < -thresh:
+                    forecast_trend = "down"
+                else:
+                    forecast_trend = "flat"
+            else:
+                forecast_trend = "flat"
+        except Exception:
+            forecast_trend = "flat"
         payload: Dict[str, Any] = {
             "success": True,
             "symbol": symbol,
@@ -3404,10 +3437,13 @@ def get_forecast(
             "horizon": int(horizon),
             "seasonality_period": int(m or 0),
             "as_of": as_of or None,
+            "train_start": train_first_time,
+            "train_end": train_last_time,
             "times": times_fmt,
             "forecast_price": [_round(v) for v in out_forecast_price.tolist()],
         }
         payload["display_timezone"] = "client" if _use_ctz else "UTC"
+        payload["forecast_trend"] = forecast_trend
         if use_returns:
             payload["forecast_return"] = [float(v) for v in f_vals.tolist()]
         if do_ci and lower_price is not None and upper_price is not None:
