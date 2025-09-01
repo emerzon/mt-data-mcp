@@ -13,6 +13,7 @@ import inspect
 import pydoc
 import pandas as pd
 import numpy as np
+import math
 try:
     import pywt as _pywt  # type: ignore
 except Exception:
@@ -801,6 +802,20 @@ class DenoiseSpec(TypedDict, total=False):
     causality: Literal['causal', 'zero_phase']  # type: ignore
     keep_original: bool
     suffix: str
+
+# ---- Pivot Point methods (enums) ----
+_PIVOT_METHODS = (
+    "classic",
+    "fibonacci",
+    "camarilla",
+    "woodie",
+    "demark",
+)
+
+try:
+    PivotMethodLiteral = Literal[_PIVOT_METHODS]  # type: ignore
+except Exception:
+    PivotMethodLiteral = str  # fallback for typing
 
 def _denoise_series(
     s: pd.Series,
@@ -1967,6 +1982,445 @@ def get_candlestick_patterns(
         return payload
     except Exception as e:
         return {"error": f"Error detecting candlestick patterns: {str(e)}"}
+
+@mcp.tool()
+@_auto_connect_wrapper
+def get_pivot_points(
+    symbol: str,
+    basis_timeframe: TimeframeLiteral = "D1",
+    method: PivotMethodLiteral = "classic",
+) -> Dict[str, Any]:
+    """Compute pivot point levels from the last completed bar on `basis_timeframe`.
+
+    - `basis_timeframe`: Timeframe to source H/L/C from (e.g., D1, W1, MN1).
+    - `method`: One of classic, fibonacci, camarilla, woodie, demark.
+
+    Returns JSON with period info, source H/L/C, and computed levels.
+    """
+    try:
+        # Validate timeframe
+        if basis_timeframe not in TIMEFRAME_MAP:
+            return {"error": f"Invalid timeframe: {basis_timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+        mt5_tf = TIMEFRAME_MAP[basis_timeframe]
+        tf_secs = TIMEFRAME_SECONDS.get(basis_timeframe)
+        if not tf_secs:
+            return {"error": f"Unsupported timeframe seconds for {basis_timeframe}"}
+
+        method_l = str(method).lower().strip()
+        if method_l not in _PIVOT_METHODS:
+            return {"error": f"Invalid method: {method}. Valid options: {list(_PIVOT_METHODS)}"}
+
+        # Ensure symbol is ready; remember original visibility to restore later
+        _info_before = mt5.symbol_info(symbol)
+        _was_visible = bool(_info_before.visible) if _info_before is not None else None
+        err = _ensure_symbol_ready(symbol)
+        if err:
+            return {"error": err}
+
+        try:
+            # Use server tick time to avoid local/server time drift
+            _tick = mt5.symbol_info_tick(symbol)
+            if _tick is not None and getattr(_tick, "time", None):
+                server_now_dt = datetime.utcfromtimestamp(float(_tick.time))
+                server_now_ts = float(_tick.time)
+            else:
+                server_now_dt = datetime.utcnow()
+                server_now_ts = server_now_dt.timestamp()
+            # Fetch last few bars up to server time and select last closed
+            rates = mt5.copy_rates_from(symbol, mt5_tf, server_now_dt, 5)
+        finally:
+            # Restore original visibility if we changed it
+            if _was_visible is False:
+                try:
+                    mt5.symbol_select(symbol, False)
+                except Exception:
+                    pass
+
+        if rates is None or len(rates) == 0:
+            return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}
+
+        # Identify last closed bar robustly:
+        # - If we have at least 2 bars, use the second-to-last (last closed),
+        #   since the last element is typically the forming bar.
+        # - If only 1 bar, verify it's closed via time-based check.
+        now_ts = server_now_ts
+        if len(rates) >= 2:
+            src = rates[-2]
+        else:
+            only = rates[-1]
+            if (float(only["time"]) + tf_secs) <= now_ts:
+                src = only
+            else:
+                return {"error": "No completed bars available to compute pivot points"}
+
+        # Access fields robustly for both dicts and NumPy structured rows
+        def _has_field(row, name: str) -> bool:
+            try:
+                if isinstance(row, dict):
+                    return name in row
+                dt = getattr(row, 'dtype', None)
+                names = getattr(dt, 'names', None) if dt is not None else None
+                return bool(names and name in names)
+            except Exception:
+                return False
+
+        H = float(src["high"]) if _has_field(src, "high") else float("nan")
+        L = float(src["low"]) if _has_field(src, "low") else float("nan")
+        C = float(src["close"]) if _has_field(src, "close") else float("nan")
+        period_start = float(src["time"]) if _has_field(src, "time") else float("nan")
+        period_end = period_start + float(tf_secs)
+
+        # Round levels to symbol precision if available
+        digits = int(getattr(_info_before, "digits", 0) or 0)
+        def _round(v: float) -> float:
+            try:
+                return round(float(v), digits) if digits >= 0 else float(v)
+            except Exception:
+                return float(v)
+
+        levels: Dict[str, float] = {}
+        pp_val: Optional[float] = None
+
+        if method_l == "classic":
+            PP = (H + L + C) / 3.0
+            R1 = 2 * PP - L
+            S1 = 2 * PP - H
+            R2 = PP + (H - L)
+            S2 = PP - (H - L)
+            # Use the common R3/S3 variant
+            R3 = H + 2 * (PP - L)
+            S3 = L - 2 * (H - PP)
+            pp_val = PP
+            levels = {
+                "PP": _round(PP),
+                "R1": _round(R1), "S1": _round(S1),
+                "R2": _round(R2), "S2": _round(S2),
+                "R3": _round(R3), "S3": _round(S3),
+            }
+        elif method_l == "fibonacci":
+            PP = (H + L + C) / 3.0
+            rng = (H - L)
+            R1 = PP + 0.382 * rng
+            R2 = PP + 0.618 * rng
+            R3 = PP + 1.000 * rng
+            S1 = PP - 0.382 * rng
+            S2 = PP - 0.618 * rng
+            S3 = PP - 1.000 * rng
+            pp_val = PP
+            levels = {
+                "PP": _round(PP),
+                "R1": _round(R1), "S1": _round(S1),
+                "R2": _round(R2), "S2": _round(S2),
+                "R3": _round(R3), "S3": _round(S3),
+            }
+        elif method_l == "camarilla":
+            rng = (H - L)
+            k = 1.1
+            R1 = C + (k * rng) / 12.0
+            R2 = C + (k * rng) / 6.0
+            R3 = C + (k * rng) / 4.0
+            R4 = C + (k * rng) / 2.0
+            S1 = C - (k * rng) / 12.0
+            S2 = C - (k * rng) / 6.0
+            S3 = C - (k * rng) / 4.0
+            S4 = C - (k * rng) / 2.0
+            pp_val = (H + L + C) / 3.0
+            levels = {
+                "PP": _round(pp_val),
+                "R1": _round(R1), "S1": _round(S1),
+                "R2": _round(R2), "S2": _round(S2),
+                "R3": _round(R3), "S3": _round(S3),
+                "R4": _round(R4), "S4": _round(S4),
+            }
+        elif method_l == "woodie":
+            PP = (H + L + 2 * C) / 4.0
+            R1 = 2 * PP - L
+            S1 = 2 * PP - H
+            R2 = PP + (H - L)
+            S2 = PP - (H - L)
+            pp_val = PP
+            levels = {
+                "PP": _round(PP),
+                "R1": _round(R1), "S1": _round(S1),
+                "R2": _round(R2), "S2": _round(S2),
+            }
+        elif method_l == "demark":
+            # DeMark uses open/close relationship to form X
+            # If we can't fetch open, approximate using the bar's 'open' if present
+            O = float(src["open"]) if _has_field(src, "open") else C
+            if C < O:
+                X = H + 2 * L + C
+            elif C > O:
+                X = 2 * H + L + C
+            else:
+                X = H + L + 2 * C
+            PP = X / 4.0
+            R1 = X / 2.0 - L
+            S1 = X / 2.0 - H
+            pp_val = PP
+            levels = {
+                "PP": _round(PP),
+                "R1": _round(R1), "S1": _round(S1),
+            }
+
+        payload: Dict[str, Any] = {
+            "success": True,
+            "symbol": symbol,
+            "method": method_l,
+            "basis_timeframe": basis_timeframe,
+            "period": {
+                "start": _format_time_minimal(period_start),
+                "end": _format_time_minimal(period_end),
+            },
+            "source": {
+                "high": _round(H),
+                "low": _round(L),
+                "close": _round(C),
+                "range": _round(H - L),
+                "pivot_basis": _round(pp_val) if pp_val is not None else None,
+            },
+            "levels": levels,
+        }
+        return payload
+    except Exception as e:
+        return {"error": f"Error computing pivot points: {str(e)}"}
+
+def _bars_per_year(timeframe: str) -> float:
+    try:
+        sec = TIMEFRAME_SECONDS.get(timeframe)
+        if not sec or sec <= 0:
+            return 0.0
+        seconds_per_year = 365.0 * 24.0 * 3600.0
+        return seconds_per_year / float(sec)
+    except Exception:
+        return 0.0
+
+def _log_returns_from_closes(closes: np.ndarray) -> np.ndarray:
+    with np.errstate(divide='ignore', invalid='ignore'):
+        r = np.diff(np.log(closes.astype(float)))
+    r = r[~np.isnan(r)]
+    r = r[np.isfinite(r)]
+    return r
+
+def _parkinson_sigma_sq(high: np.ndarray, low: np.ndarray) -> np.ndarray:
+    # (1/(4 ln 2)) * (ln(H/L))^2 per bar
+    with np.errstate(divide='ignore', invalid='ignore'):
+        x = np.log(np.maximum(high, 1e-12) / np.maximum(low, 1e-12))
+        v = (x * x) / (4.0 * math.log(2.0))
+    v[~np.isfinite(v)] = np.nan
+    return v
+
+def _garman_klass_sigma_sq(open_: np.ndarray, high: np.ndarray, low: np.ndarray, close: np.ndarray) -> np.ndarray:
+    # 0.5*(ln(H/L))^2 - (2 ln 2 - 1)*(ln(C/O))^2
+    with np.errstate(divide='ignore', invalid='ignore'):
+        hl = np.log(np.maximum(high, 1e-12) / np.maximum(low, 1e-12))
+        co = np.log(np.maximum(close, 1e-12) / np.maximum(open_, 1e-12))
+        v = 0.5 * (hl * hl) - (2.0 * math.log(2.0) - 1.0) * (co * co)
+    v[~np.isfinite(v)] = np.nan
+    return v
+
+def _rogers_satchell_sigma_sq(open_: np.ndarray, high: np.ndarray, low: np.ndarray, close: np.ndarray) -> np.ndarray:
+    # ln(H/C)*ln(H/O) + ln(L/C)*ln(L/O)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        hc = np.log(np.maximum(high, 1e-12) / np.maximum(close, 1e-12))
+        ho = np.log(np.maximum(high, 1e-12) / np.maximum(open_, 1e-12))
+        lc = np.log(np.maximum(low, 1e-12) / np.maximum(close, 1e-12))
+        lo = np.log(np.maximum(low, 1e-12) / np.maximum(open_, 1e-12))
+        v = (hc * ho) + (lc * lo)
+    v[~np.isfinite(v)] = np.nan
+    return v
+
+try:
+    # Optional GARCH support
+    from arch import arch_model as _arch_model  # type: ignore
+    _ARCH_AVAILABLE = True
+except Exception:
+    _ARCH_AVAILABLE = False
+
+@mcp.tool()
+@_auto_connect_wrapper
+def get_vol_forecast(
+    symbol: str,
+    timeframe: TimeframeLiteral = "H1",
+    horizon_bars: int = 1,
+    method: Literal['ewma','parkinson','gk','rs','garch'] = 'ewma',  # type: ignore
+    params: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Forecast volatility over `horizon_bars` using EWMA/range methods/GARCH.
+
+    - `method`: 'ewma' (RiskMetrics), 'parkinson', 'gk' (Garman–Klass), 'rs' (Rogers–Satchell), 'garch' (1,1 if `arch` installed)
+    - `params` (optional):
+        ewma: {"halflife": int|null, "lambda": float|null, "lookback": int}
+        parkinson/gk/rs: {"window": int}
+        garch: {"fit_bars": int, "mean": "Zero"|"Constant", "dist": "normal"}
+    Returns JSON with current per-bar sigma, annualized sigma, and horizon forecast.
+    """
+    try:
+        if timeframe not in TIMEFRAME_MAP:
+            return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+        mt5_tf = TIMEFRAME_MAP[timeframe]
+        tf_secs = TIMEFRAME_SECONDS.get(timeframe)
+        if not tf_secs:
+            return {"error": f"Unsupported timeframe seconds for {timeframe}"}
+        method_l = str(method).lower().strip()
+        if method_l not in {'ewma','parkinson','gk','rs','garch'}:
+            return {"error": f"Invalid method: {method}"}
+        if method_l == 'garch' and not _ARCH_AVAILABLE:
+            return {"error": "GARCH requires 'arch' package. Please install 'arch' to enable this method."}
+
+        p = dict(params or {})
+
+        # Determine bars required
+        if method_l == 'ewma':
+            lookback = int(p.get('lookback', 1500))
+            need = max(lookback + 2, 100)
+        elif method_l in ('parkinson','gk','rs'):
+            window = int(p.get('window', 20))
+            need = max(window + 2, 50)
+        else:  # garch
+            fit_bars = int(p.get('fit_bars', 2000))
+            need = max(fit_bars + 2, 500)
+
+        # Ensure symbol is ready; remember original visibility to restore later
+        _info_before = mt5.symbol_info(symbol)
+        _was_visible = bool(_info_before.visible) if _info_before is not None else None
+        err = _ensure_symbol_ready(symbol)
+        if err:
+            return {"error": err}
+
+        try:
+            # Use server time for alignment
+            _tick = mt5.symbol_info_tick(symbol)
+            if _tick is not None and getattr(_tick, 'time', None):
+                server_now_dt = datetime.utcfromtimestamp(float(_tick.time))
+            else:
+                server_now_dt = datetime.utcnow()
+            rates = mt5.copy_rates_from(symbol, mt5_tf, server_now_dt, need)
+        finally:
+            if _was_visible is False:
+                try:
+                    mt5.symbol_select(symbol, False)
+                except Exception:
+                    pass
+
+        if rates is None or len(rates) < 3:
+            return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
+
+        df = pd.DataFrame(rates)
+        # Drop forming last bar; keep closed bars only
+        if len(df) >= 2:
+            df = df.iloc[:-1]
+        if len(df) < 3:
+            return {"error": "Not enough closed bars to compute volatility"}
+
+        closes = df['close'].to_numpy(dtype=float)
+        highs = df['high'].to_numpy(dtype=float) if 'high' in df.columns else None
+        lows = df['low'].to_numpy(dtype=float) if 'low' in df.columns else None
+        opens = df['open'].to_numpy(dtype=float) if 'open' in df.columns else None
+        last_close = float(closes[-1])
+
+        bars_per_year = _bars_per_year(timeframe)
+        ann_factor = math.sqrt(bars_per_year) if bars_per_year > 0 else float('nan')
+
+        sigma_bar = float('nan')
+        sigma_ann = float('nan')
+        sigma_h_bar = float('nan')  # horizon sigma of sum of returns over k bars
+        params_used: Dict[str, Any] = {}
+
+        if method_l == 'ewma':
+            r = _log_returns_from_closes(closes)
+            if r.size < 5:
+                return {"error": "Not enough return observations for EWMA"}
+            lam = p.get('lambda')
+            hl = p.get('halflife')
+            if hl is not None:
+                try:
+                    hl = float(hl)
+                except Exception:
+                    hl = None
+            if lam is not None:
+                try:
+                    lam = float(lam)
+                except Exception:
+                    lam = None
+            if lam is not None and (hl is None):
+                alpha = 1.0 - float(lam)
+                var_series = pd.Series(r).ewm(alpha=alpha, adjust=False).var(bias=False)
+                params_used['lambda'] = float(lam)
+            else:
+                # default halflife if not provided
+                if hl is None:
+                    # heuristic per timeframe
+                    default_hl = 60 if timeframe.startswith('H') else (11 if timeframe == 'D1' else 180)
+                    hl = float(p.get('halflife', default_hl))
+                var_series = pd.Series(r).ewm(halflife=float(hl), adjust=False).var(bias=False)
+                params_used['halflife'] = float(hl)
+            v = float(var_series.iloc[-1])
+            v = v if math.isfinite(v) and v >= 0 else float('nan')
+            sigma_bar = math.sqrt(v) if math.isfinite(v) and v >= 0 else float('nan')
+            sigma_h_bar = math.sqrt(max(1, int(horizon_bars)) * v) if math.isfinite(v) and v >= 0 else float('nan')
+        elif method_l in ('parkinson','gk','rs'):
+            if highs is None or lows is None:
+                return {"error": "High/Low data required for range-based estimators"}
+            window = int(p.get('window', 20))
+            params_used['window'] = window
+            if method_l == 'parkinson':
+                var_bars = _parkinson_sigma_sq(highs, lows)
+            elif method_l == 'gk':
+                if opens is None:
+                    return {"error": "Open data required for Garman–Klass"}
+                var_bars = _garman_klass_sigma_sq(opens, highs, lows, closes)
+            else:  # rs
+                if opens is None:
+                    return {"error": "Open data required for Rogers–Satchell"}
+                var_bars = _rogers_satchell_sigma_sq(opens, highs, lows, closes)
+            s = pd.Series(var_bars)
+            v = float(s.tail(window).mean(skipna=True))
+            v = v if math.isfinite(v) and v >= 0 else float('nan')
+            sigma_bar = math.sqrt(v) if math.isfinite(v) and v >= 0 else float('nan')
+            sigma_h_bar = math.sqrt(max(1, int(horizon_bars)) * v) if math.isfinite(v) and v >= 0 else float('nan')
+        else:  # garch
+            r = _log_returns_from_closes(closes)
+            if r.size < 100:
+                return {"error": "Not enough return observations for GARCH (need >=100)"}
+            fit_bars = int(p.get('fit_bars', min(2000, r.size)))
+            mean_model = str(p.get('mean', 'Zero'))
+            dist = str(p.get('dist', 'normal'))
+            params_used.update({'fit_bars': fit_bars, 'mean': mean_model, 'dist': dist})
+            r_fit = pd.Series(r[-fit_bars:]) * 100.0  # scale to percent
+            try:
+                am = _arch_model(r_fit, mean=mean_model.lower(), vol='GARCH', p=1, q=1, dist=dist)
+                res = am.fit(disp='off')
+                # Current conditional variance (percent^2)
+                cond_vol = float(res.conditional_volatility.iloc[-1])  # percent
+                sigma_bar = cond_vol / 100.0
+                # k-step ahead variance forecasts (percent^2)
+                fc = res.forecast(horizon=max(1, int(horizon_bars)), reindex=False)
+                var_path = np.array(fc.variance.iloc[-1].values, dtype=float)  # shape (horizon,)
+                var_sum = float(np.nansum(var_path))  # percent^2
+                sigma_h_bar = math.sqrt(var_sum) / 100.0
+            except Exception as ex:
+                return {"error": f"GARCH fitting error: {ex}"}
+
+        sigma_ann = sigma_bar * ann_factor if math.isfinite(sigma_bar) and math.isfinite(ann_factor) else float('nan')
+        sigma_h_ann = sigma_h_bar * ann_factor if math.isfinite(sigma_h_bar) and math.isfinite(ann_factor) else float('nan')
+
+        return {
+            "success": True,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "method": method_l,
+            "params_used": params_used,
+            "bars_used": int(len(df)),
+            "horizon_bars": int(horizon_bars),
+            "last_close": last_close,
+            "sigma_bar_return": sigma_bar,
+            "sigma_annual_return": sigma_ann,
+            "horizon_sigma_return": sigma_h_bar,
+            "horizon_sigma_annual": sigma_h_ann,
+        }
+    except Exception as e:
+        return {"error": f"Error computing volatility forecast: {str(e)}"}
 
 @mcp.tool()
 @_auto_connect_wrapper
