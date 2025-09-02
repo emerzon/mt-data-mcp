@@ -53,7 +53,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import server functions
-from server import get_forecast_methods, get_forecast, get_rates, get_denoise_methods, TIMEFRAME_MAP
+from server import list_forecast_methods, forecast, fetch_candles, list_denoise_methods, TIMEFRAME_MAP
 
 # Setup logging with warning suppression for statsmodels
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -78,7 +78,7 @@ class ForecastTestSuite:
     def get_available_denoise_methods(self) -> List[str]:
         """Get list of available denoise methods."""
         try:
-            denoise_methods = get_denoise_methods()
+            denoise_methods = list_denoise_methods()
             if "error" in denoise_methods:
                 return ["none"]  # Fallback to no denoising
             
@@ -100,7 +100,7 @@ class ForecastTestSuite:
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                methods_data = get_forecast_methods()
+                methods_data = list_forecast_methods()
             
             if "error" in methods_data:
                 logger.error(f"Error getting forecast methods: {methods_data['error']}")
@@ -143,7 +143,7 @@ class ForecastTestSuite:
         """Get information about the training data period."""
         try:
             # Get historical data to determine training period
-            rates_result = get_rates(
+            rates_result = fetch_candles(
                 symbol=self.symbol,
                 timeframe=self.timeframe,
                 candles=max(lookback_bars, 50),  # Get at least the lookback amount
@@ -195,7 +195,7 @@ class ForecastTestSuite:
         try:
             # Fetch much more historical data for proper backtesting
             bars_needed = max(horizon + min_lookback_periods + 100, 500)
-            rates_result = get_rates(
+            rates_result = fetch_candles(
                 symbol=self.symbol,
                 timeframe=self.timeframe,
                 candles=bars_needed,

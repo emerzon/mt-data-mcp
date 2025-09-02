@@ -34,12 +34,13 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 
-[tool.setuptools]
-py-modules = ["server", "config", "cli"]
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["mtdata*"]
 
 [project.scripts]
-mtdata-server = "server:main"
-mtdata-cli = "cli:main"
+mtdata-server = "mtdata.core.server:main"
+mtdata-cli = "mtdata.core.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/yourusername/mtdata-mcp-server"

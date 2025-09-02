@@ -49,8 +49,8 @@ python server.py
 - `get_symbols(search_term, limit)` - Smart search for trading symbols (CSV output)
 - `get_symbol_groups(search_term, limit)` - Get available symbol groups (CSV output)
 - `get_symbol_info(symbol)` - Get detailed symbol information
-- `get_rates(symbol, timeframe, candles, start_datetime, end_datetime, ohlcv, ti, denoise)` - Get historical OHLCV data in CSV format
-- `get_ticks(symbol, count, start_datetime)` - Get tick data in CSV format
+- `get_rates(symbol, timeframe, candles, start_datetime, end_datetime, ohlcv, ti, denoise, simplify)` - Get historical OHLCV data in CSV format
+- `get_ticks(symbol, count, start_datetime, simplify)` - Get tick data in CSV format
 - `get_market_depth(symbol)` - Get market depth (DOM)
 - `get_indicators()` - List indicators (CSV: name,category)
 -  - Indicator params + full help (JSON)
@@ -87,6 +87,33 @@ rates = get_rates("EURUSD", "H1", 100)
 
 # Get tick data
 ticks = get_ticks("EURUSD", 50)
+
+# Downsample output for readability (LTTB):
+# Simplification represents all numeric columns (e.g., OHLC/volumes or tick fields) and
+# selects a common set of rows that preserves overall shape across them.
+rates_small = get_rates("EURUSD", "H1", 2000, simplify={"method": "lttb", "max_points": 200})
+ticks_small = get_ticks("EURUSD", 2000, simplify={"ratio": 0.1})
+
+# Alternative simplification methods
+# - RDP (Douglas–Peucker): preserve key bends via epsilon tolerance
+rates_rdp = get_rates("EURUSD", "M15", 5000, simplify={"method": "rdp", "epsilon": 0.0008})
+
+# - PLA (Piecewise Linear): segment by max perpendicular error or fixed segments
+rates_pla = get_rates("EURUSD", "H1", 3000, simplify={"method": "pla", "max_error": 0.001})
+rates_pla_fixed = get_rates("EURUSD", "H1", 3000, simplify={"method": "pla", "points": 150})
+
+# - APCA (Piecewise Constant): stepwise segments by max absolute deviation or fixed segments
+ticks_apca = get_ticks("EURUSD", 5000, simplify={"method": "apca", "max_error": 0.0005})
+
+# Threshold auto-tuning
+# For RDP/PLA/APCA, if you provide points/max_points/ratio without epsilon/max_error,
+# the server auto-tunes epsilon or max_error to hit the requested number of points.
+
+# CLI tips
+# - Showing JSON instead of CSV (to see simplify meta):
+#   python cli.py get_rates EURUSD --simplify lttb --simplify-params points=200 --output-format json
+# - CSV is default; pass points/ratio to actually reduce rows, e.g.:
+#   python cli.py get_ticks EURUSD --simplify lttb --simplify-params ratio=0.2
 ```
 
 ### Forecasting
