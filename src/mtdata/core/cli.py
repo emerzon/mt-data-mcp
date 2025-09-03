@@ -22,6 +22,7 @@ try:
 except Exception:
     pass
 from . import server
+from .unified_params import add_global_args_to_parser
 
 # Types for discovered metadata
 ToolInfo = Dict[str, Any]
@@ -35,6 +36,49 @@ def print_csv_result(result):
             print(result['csv_data'])
         return True
     return False
+
+def convert_csv_to_json(result):
+    """Convert CSV data in result to proper structured JSON"""
+    if 'csv_data' not in result or 'csv_header' not in result:
+        return result
+    
+    # Parse CSV header and data
+    header = result['csv_header']
+    data = result['csv_data']
+    
+    if not header or not data:
+        return result
+    
+    # Split header into columns
+    columns = [col.strip() for col in header.split(',')]
+    
+    # Split data into rows
+    rows = []
+    for line in data.split('\n'):
+        if line.strip():
+            values = [val.strip() for val in line.split(',')]
+            # Create a dictionary for each row
+            row_dict = {}
+            for i, col in enumerate(columns):
+                value = values[i] if i < len(values) else ''
+                # Try to convert numeric values
+                try:
+                    if '.' in value:
+                        row_dict[col] = float(value)
+                    elif value.isdigit():
+                        row_dict[col] = int(value)
+                    else:
+                        row_dict[col] = value
+                except (ValueError, TypeError):
+                    row_dict[col] = value
+            rows.append(row_dict)
+    
+    # Create new result with structured data
+    structured_result = {k: v for k, v in result.items() if k not in ['csv_data', 'csv_header']}
+    structured_result['data'] = rows
+    structured_result['count'] = len(rows)
+    
+    return structured_result
 
 def get_function_info(func):
     """Extract parameter information from a function"""
@@ -243,13 +287,28 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
         if param['required'] and param == param_info['params'][0]:
             parser.add_argument(param['name'], help=f"{param['name']} (required)")
         else:
-            parser.add_argument(arg_name, **kwargs)
+            # For mapping-like params (e.g., --simplify), allow bare flag: '--simplify' triggers defaults
+            try:
+                ptype = param.get('type')
+                origin = get_origin(ptype)
+                is_typed_dict = hasattr(ptype, '__annotations__') and isinstance(getattr(ptype, '__annotations__', {}), dict)
+                is_mapping_type = (ptype in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
+            except Exception:
+                is_mapping_type = False
+            if is_mapping_type:
+                local_kwargs = dict(kwargs)
+                local_kwargs['nargs'] = '?'
+                local_kwargs['const'] = '__PRESENT__'
+                parser.add_argument(arg_name, **local_kwargs)
+            else:
+                parser.add_argument(arg_name, **kwargs)
 
         # If this parameter is mapping-like, add a companion --<name>-params to pass extra kwargs
         try:
             ptype = param.get('type')
             origin = get_origin(ptype)
-            is_mapping = (ptype in (dict, Dict)) or (origin in (dict, Dict))
+            is_typed_dict = hasattr(ptype, '__annotations__') and isinstance(getattr(ptype, '__annotations__', {}), dict)
+            is_mapping = (ptype in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
         except Exception:
             is_mapping = False
         if is_mapping:
@@ -321,11 +380,15 @@ def create_command_function(func_info):
             try:
                 ptype = param.get('type')
                 origin = get_origin(ptype)
-                is_mapping = (ptype in (dict, Dict)) or (origin in (dict, Dict))
+                is_typed_dict = hasattr(ptype, '__annotations__') and isinstance(getattr(ptype, '__annotations__', {}), dict)
+                is_mapping = (ptype in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
                 is_sequence = (ptype in (list, tuple)) or (origin in (list, tuple))
             except Exception:
                 is_mapping = False
                 is_sequence = False
+            # Bare flag sentinel: treat as empty mapping to trigger defaults
+            if is_mapping and arg_value == '__PRESENT__':
+                arg_value = {}
             if isinstance(arg_value, str) and (is_mapping or is_sequence):
                 s = arg_value.strip()
                 if (s.startswith('{') and s.endswith('}')) or (s.startswith('[') and s.endswith(']')):
@@ -350,7 +413,7 @@ def create_command_function(func_info):
                         except Exception:
                             extra = None
                     if extra:
-                        if arg_value is None:
+                        if arg_value is None or arg_value == {}:
                             arg_value = extra
                         elif isinstance(arg_value, dict):
                             # merge without clobbering keys explicitly present in arg_value
@@ -371,17 +434,26 @@ def create_command_function(func_info):
         # Handle output
         # Respect global format preference
         try:
-            preferred = getattr(args, 'output_format', 'csv')
+            preferred = getattr(args, 'format', 'csv')
         except Exception:
             preferred = 'csv'
+            
         if preferred == 'csv' and print_csv_result(result):
             return
-        # No CSV in result; pretty-print JSON for all outputs
-        try:
-            print(json.dumps(result, indent=2, sort_keys=True, default=str, ensure_ascii=False))
-        except Exception:
-            # Fallback in unlikely case of serialization issue
-            print(str(result))
+        elif preferred == 'json':
+            # Convert CSV data to proper structured JSON if present
+            structured_result = convert_csv_to_json(result)
+            try:
+                print(json.dumps(structured_result, indent=2, sort_keys=True, default=str, ensure_ascii=False))
+            except Exception:
+                # Fallback in unlikely case of serialization issue
+                print(str(structured_result))
+        else:
+            # Fallback: print as JSON
+            try:
+                print(json.dumps(result, indent=2, sort_keys=True, default=str, ensure_ascii=False))
+            except Exception:
+                print(str(result))
     
     return command_func
 
@@ -454,16 +526,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=_build_epilog(functions),
     )
-    # Global output format flag
-    parser.add_argument('--format', dest='output_format', choices=['csv','json'], default='csv', help='Preferred output format when CSV is available')
-    
-    # Global options
-    parser.add_argument(
-        '--output-format',
-        choices=['csv', 'json'],
-        default='csv',
-        help='Preferred output format: csv (default) or json'
-    )
+    # Add unified global parameters
+    add_global_args_to_parser(parser)
 
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
     
@@ -489,6 +553,10 @@ def main():
             cmd_name, 
             help=(meta.get('description') or func_info['doc'].split('\n')[0] if func_info['doc'] else f"Execute {cmd_name}")
         )
+        
+        # Add global parameters to each subparser, excluding any that conflict with function params
+        existing_param_names = [p['name'] for p in func_info['params']]
+        add_global_args_to_parser(cmd_parser, exclude_params=existing_param_names)
         
         # Add dynamic arguments
         add_dynamic_arguments(cmd_parser, func_info, meta.get('param_docs'))

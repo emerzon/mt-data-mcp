@@ -91,8 +91,21 @@ ticks = get_ticks("EURUSD", 50)
 # Downsample output for readability (LTTB):
 # Simplification represents all numeric columns (e.g., OHLC/volumes or tick fields) and
 # selects a common set of rows that preserves overall shape across them.
-rates_small = get_rates("EURUSD", "H1", 2000, simplify={"method": "lttb", "max_points": 200})
+# Simplify (default method: LTTB)
+# Modes:
+# - select (default): keep representative rows
+# - approximate: aggregate numeric columns between selected breakpoints (means)
+# - resample: time-based bucketing by `bucket_seconds` (means)
+
+# Select (default)
+rates_small = get_rates("EURUSD", "H1", 2000, simplify={"method": "lttb", "points": 200})
 ticks_small = get_ticks("EURUSD", 2000, simplify={"ratio": 0.1})
+
+# Approximate (segment aggregation)
+rates_approx = get_rates("EURUSD", "H1", 2000, simplify={"method": "lttb", "mode": "approximate", "points": 150})
+
+# Resample (time buckets)
+rates_resampled = get_rates("EURUSD", "H1", 2000, simplify={"mode": "resample", "bucket_seconds": 6*3600})
 
 # Alternative simplification methods
 # - RDP (Douglas–Peucker): preserve key bends via epsilon tolerance
@@ -110,10 +123,13 @@ ticks_apca = get_ticks("EURUSD", 5000, simplify={"method": "apca", "max_error": 
 # the server auto-tunes epsilon or max_error to hit the requested number of points.
 
 # CLI tips
-# - Showing JSON instead of CSV (to see simplify meta):
-#   python cli.py get_rates EURUSD --simplify lttb --simplify-params points=200 --output-format json
+# - Show JSON instead of CSV (to see simplify meta):
+#   python cli.py fetch_candles EURUSD --simplify lttb --simplify-params points=200 --format json
+# - Modes:
+#   python cli.py fetch_candles EURUSD --simplify lttb --simplify-params "mode=approximate,points=150" --format json
+#   python cli.py fetch_candles EURUSD --simplify lttb --simplify-params "mode=resample,bucket_seconds=21600" --format json
 # - CSV is default; pass points/ratio to actually reduce rows, e.g.:
-#   python cli.py get_ticks EURUSD --simplify lttb --simplify-params ratio=0.2
+#   python cli.py fetch_ticks EURUSD --simplify lttb --simplify-params ratio=0.2
 ```
 
 ### Forecasting
@@ -138,6 +154,26 @@ Point forecasts for the next bars using training‑light methods. Discover avail
 - Output includes:
   - Future `times[]`
   - `forecast_price[]` (and `forecast_return[]` when `target="return"`)
+
+### Denoising
+
+- Defaults:
+  - when: `pre_ti` (applies before indicators and simplify)
+  - columns: `ohlcv` (all of open, high, low, close, plus volume or tick_volume)
+  - keep_original: `false` (overwrites columns in place)
+  - indicators: not denoised by default
+
+- Methods: `ema`, `sma`, `median`, `lowpass_fft`, `wavelet`, `emd`, `eemd`, `ceemdan` (availability depends on optional deps)
+
+- Examples:
+  - Overwrite all OHLCV with EMA smoothing:
+    - `python cli.py fetch_candles EURUSD --denoise ema --limit 200 --format csv`
+  - Denoise OHLCV and then reduce rows:
+    - `python cli.py fetch_candles EURUSD --denoise emd --simplify lttb --simplify-params points=50 --limit 1000 --format json`
+  - Also denoise indicators (post-TI), in place:
+    - `python cli.py fetch_candles EURUSD --indicators "rsi(14),ema(20)" --denoise ema --denoise-params apply_to_ti=true --limit 500 --format csv`
+  - Customize columns/timing:
+    - `--denoise-params "columns=open,high,low,close,volume,when=post_ti,keep_original=true"`
   - Optional `lower_price[]`/`upper_price[]` when `ci_alpha` provided
   - `params_used`, `lookback_used`, `seasonality_period`, `as_of`
   - Training window timestamps: `train_start`, `train_end` (formatted per `client_tz`)

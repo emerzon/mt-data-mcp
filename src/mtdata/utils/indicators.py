@@ -8,12 +8,25 @@ import pandas_ta as pta
 def _list_ta_indicators() -> List[Dict[str, Any]]:
     """Dynamically list TA indicators available via pandas_ta."""
     items: List[Dict[str, Any]] = []
-    try:
-        for name in dir(pta):
-            if name.startswith('_'):
+    
+    # Use pandas_ta's own indicator categories to find real indicators
+    categories = ['candles', 'momentum', 'overlap', 'performance', 'statistics', 'trend', 'volatility', 'volume', 'cycles']
+    
+    for category in categories:
+        try:
+            # Get the category module
+            cat_module = getattr(pta, category, None)
+            if not cat_module or not hasattr(cat_module, '__file__'):  # Check it's actually a module
                 continue
-            obj = getattr(pta, name)
-            if callable(obj):
+                
+            # Look for indicator functions in this category
+            for name in dir(cat_module):
+                if name.startswith('_'):
+                    continue
+                    
+                obj = getattr(cat_module, name, None)
+                if not callable(obj):
+                    continue
                 try:
                     sig = inspect.signature(obj)
                 except Exception:
@@ -25,18 +38,10 @@ def _list_ta_indicators() -> List[Dict[str, Any]]:
                     if p.name in ("close", "open", "high", "low", "volume", "length", "offset", "append", "talib", "mamode"):
                         default = None if p.default is inspect._empty else p.default
                         params.append({"name": p.name, "default": default})
-                # Heuristic category
-                cat = "momentum"
-                lname = name.lower()
-                if any(k in lname for k in ("rsi", "stoch", "macd")):
-                    cat = "momentum"
-                elif any(k in lname for k in ("ema", "sma", "ma", "vwma", "wma")):
-                    cat = "trend"
-                elif any(k in lname for k in ("bbands", "atr", "vol", "volume")):
-                    cat = "volatility"
-                items.append({"name": name, "params": params, "category": cat, "description": obj.__doc__ or ""})
-    except Exception:
-        pass
+                # Use the actual category
+                items.append({"name": name, "params": params, "category": category, "description": obj.__doc__ or ""})
+        except Exception:
+            continue
     return items
 
 

@@ -3,6 +3,7 @@ import logging
 import atexit
 import functools
 from datetime import datetime, timedelta, timezone
+import datetime as _dt
 from typing import Any, Dict, Optional, List, Tuple, Literal
 from typing_extensions import TypedDict
 import io
@@ -10,7 +11,6 @@ import csv
 import time
 import re
 import inspect
-import pydoc
 import pandas as pd
 import numpy as np
 import math
@@ -43,6 +43,9 @@ from .constants import (
     PRECISION_REL_TOL,
     PRECISION_ABS_TOL,
     PRECISION_MAX_DECIMALS,
+    SIMPLIFY_DEFAULT_METHOD,
+    SIMPLIFY_DEFAULT_MODE,
+    SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT,
     SIMPLIFY_DEFAULT_RATIO,
     SIMPLIFY_DEFAULT_MIN_POINTS,
     SIMPLIFY_DEFAULT_MAX_POINTS,
@@ -69,7 +72,6 @@ from ..utils.utils import (
     _format_numeric_rows_from_df as _format_numeric_rows_from_df_util,
     _parse_start_datetime as _parse_start_datetime_util,
 )
-from ..utils.simplify import _simplify_dataframe_rows as _simplify_dataframe_rows_util
 from ..utils.indicators import (
     _list_ta_indicators as _list_ta_indicators_util,
     _parse_ti_specs as _parse_ti_specs_util,
@@ -127,7 +129,7 @@ def _ensure_symbol_ready(symbol: str) -> Optional[str]:
     if tick is None:
         return f"Failed to refresh {symbol} data: {mt5.last_error()}"
     return None
-def _csv_from_rows(headers: List[str], rows: List[List[Any]]) -> Dict[str, str]:
+def _csv_from_rows(headers: List[str], rows: List[List[Any]]) -> Dict[str, Any]:
     return _csv_from_rows_util(headers, rows)
 
 def _format_time_minimal(epoch_seconds: float) -> str:
@@ -231,8 +233,10 @@ def _lttb_select_indices(x: List[float], y: List[float], n_out: int) -> List[int
     """
     try:
         m = len(x)
-        if n_out >= m or n_out <= 2 or m <= 2:
+        if n_out >= m:
             return list(range(m))
+        if n_out <= 2 or m <= 2:
+            return [0, max(0, m - 1)]
         # Ensure monotonic x
         # Assumes x are sorted; if not, sort and map back
         # For our usage, x is time so already sorted
@@ -503,12 +507,12 @@ def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optiona
     meta: Dict[str, Any] = {}
     if not spec:
         return list(range(len(x))), "none", meta
-    method = str(spec.get("method", "lttb")).lower().strip()
+    method = str(spec.get("method", SIMPLIFY_DEFAULT_METHOD)).lower().strip()
     if method in ("lttb", "default"):
         n_out = _choose_simplify_points(len(x), spec)
         idxs = _lttb_select_indices(x, y, n_out)
         meta.update({"points": n_out})
-        return idxs, "lttb", meta
+        return idxs, SIMPLIFY_DEFAULT_METHOD, meta
     if method == "rdp":
         eps = spec.get("epsilon", None)
         if eps is None:
@@ -547,8 +551,8 @@ def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optiona
         # Fallback to LTTB if neither epsilon nor target provided
         n_out = _choose_simplify_points(len(x), spec)
         idxs = _lttb_select_indices(x, y, n_out)
-        meta.update({"points": n_out, "fallback": "rdp->lttb"})
-        return idxs, "lttb", meta
+        meta.update({"points": n_out, "fallback": f"rdp->{SIMPLIFY_DEFAULT_METHOD}"})
+        return idxs, SIMPLIFY_DEFAULT_METHOD, meta
     if method == "pla":
         # Prefer error bound; else segments/points uniform
         max_error = spec.get("max_error", None)
@@ -582,8 +586,8 @@ def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optiona
         # Fallback to LTTB
         n_out = _choose_simplify_points(len(x), spec)
         idxs = _lttb_select_indices(x, y, n_out)
-        meta.update({"points": n_out, "fallback": "pla->lttb"})
-        return idxs, "lttb", meta
+        meta.update({"points": n_out, "fallback": f"pla->{SIMPLIFY_DEFAULT_METHOD}"})
+        return idxs, SIMPLIFY_DEFAULT_METHOD, meta
     if method == "apca":
         max_error = spec.get("max_error", None)
         try:
@@ -613,13 +617,13 @@ def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optiona
         # Fallback to LTTB
         n_out = _choose_simplify_points(len(x), spec)
         idxs = _lttb_select_indices(x, y, n_out)
-        meta.update({"points": n_out, "fallback": "apca->lttb"})
-        return idxs, "lttb", meta
+        meta.update({"points": n_out, "fallback": f"apca->{SIMPLIFY_DEFAULT_METHOD}"})
+        return idxs, SIMPLIFY_DEFAULT_METHOD, meta
     # Unknown method -> default LTTB
     n_out = _choose_simplify_points(len(x), spec)
     idxs = _lttb_select_indices(x, y, n_out)
-    meta.update({"points": n_out, "fallback": f"{method}->lttb"})
-    return idxs, "lttb", meta
+    meta.update({"points": n_out, "fallback": f"{method}->{SIMPLIFY_DEFAULT_METHOD}"})
+    return idxs, SIMPLIFY_DEFAULT_METHOD, meta
 
 
 def _rdp_autotune_epsilon(x: List[float], y: List[float], target_points: int, max_iter: int = 24) -> Tuple[List[int], float]:
@@ -750,12 +754,14 @@ def _apca_autotune_max_error(y: List[float], target_points: int, max_iter: int =
 
 
 def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Optional[Dict[str, Any]]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
-    """Apply row-wise downsampling to reduce output size while keeping readability.
+    """Reduce rows using selection, approximation, or resampling across numeric columns.
 
-    Always represents all numeric columns: union indices selected per column, then refine
-    to the requested target size using a composite metric across columns.
+    Modes (simplify['mode']):
+    - 'select' (default): pick representative existing rows using the chosen method.
+    - 'approximate': partition by selected breakpoints and aggregate numeric columns per segment.
+    - 'resample': time-based bucketing by '__epoch' with 'bucket_seconds'; aggregates numeric columns.
 
-    Returns (possibly reduced) DataFrame and a meta dict describing the reduction.
+    Aggregation: mean for numeric columns; first value for non-numeric columns like 'time'.
     """
     if not simplify:
         return df, None
@@ -763,16 +769,14 @@ def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Opt
         total = len(df)
         if total <= 3:
             return df, None
-        method = str(simplify.get("method", "lttb")).lower().strip()
-        # Determine number of points
-        n_out = _choose_simplify_points(total, simplify)
-        if n_out >= total:
-            return df, None
-        # Build candidate numeric columns (from headers first)
+        method = str(simplify.get("method", SIMPLIFY_DEFAULT_METHOD)).lower().strip()
+        mode = str(simplify.get("mode", SIMPLIFY_DEFAULT_MODE)).lower().strip() or SIMPLIFY_DEFAULT_MODE
+
+        # Helper: numeric columns in requested headers order, then any others
         def _numeric_columns_from_headers() -> List[str]:
             cols: List[str] = []
             for h in headers:
-                if h in ('time',) or h.startswith('_'):
+                if h in ('time',) or str(h).startswith('_'):
                     continue
                 try:
                     if h in df.columns and pd.api.types.is_numeric_dtype(df[h]):
@@ -790,12 +794,66 @@ def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Opt
                         continue
             return cols
 
+        # Aggregation helper for approximate/resample modes
+        def _aggregate_segment(i0: int, i1: int) -> Dict[str, Any]:
+            seg = df.iloc[i0:i1]
+            row: Dict[str, Any] = {}
+            if "time" in df.columns and "time" in headers:
+                row["time"] = seg.iloc[0]["time"]
+            for col in headers:
+                if col == "time":
+                    continue
+                if col in seg.columns and pd.api.types.is_numeric_dtype(seg[col]):
+                    row[col] = float(seg[col].mean())
+                elif col in seg.columns:
+                    try:
+                        row[col] = next((v for v in seg[col].tolist() if pd.notna(v)), seg.iloc[0][col])
+                    except Exception:
+                        row[col] = seg.iloc[0][col]
+            return row
+
+        # Determine target number of points early (used for select and to infer resample bucket)
+        n_out = _choose_simplify_points(total, simplify)
+        if mode == "resample" and "__epoch" in df.columns:
+            bs = simplify.get("bucket_seconds")
+            if bs is None or (isinstance(bs, (int, float)) and bs <= 0):
+                try:
+                    # Infer bucket by total time span / target buckets
+                    t0 = float(df["__epoch"].iloc[0])
+                    t1 = float(df["__epoch"].iloc[-1])
+                    span = max(1.0, t1 - t0)
+                    bs = max(1, int(round(span / max(1, n_out))))
+                except Exception:
+                    # Fallback to rough bucket from count
+                    bs = max(1, int(round(total / float(max(1, n_out)))))
+            try:
+                bs = max(1, int(bs))
+            except Exception:
+                bs = max(1, int(round(total / float(max(1, n_out)))))
+            grp = ((df["__epoch"].astype(float) - float(df["__epoch"].iloc[0])) // bs).astype(int)
+            out_rows: List[Dict[str, Any]] = []
+            for _, seg in df.groupby(grp):
+                i0 = seg.index[0]
+                i1 = seg.index[-1] + 1
+                out_rows.append(_aggregate_segment(i0, i1))
+            out_df = pd.DataFrame(out_rows)
+            meta = {
+                "mode": "resample",
+                "method": method or SIMPLIFY_DEFAULT_METHOD,
+                "bucket_seconds": int(bs),
+                "original_rows": total,
+                "returned_rows": len(out_df),
+                "points": len(out_df),
+            }
+            return out_df.reset_index(drop=True), meta
+
+        # Default/select: multi-column selection with union + refinement
         x = [float(v) for v in df['__epoch'].tolist()]
-        # Always multi-column selection
         cols = _numeric_columns_from_headers()
         if not cols:
             return df, None
-        # Allocate points roughly evenly across columns (keeping first/last overall)
+        if n_out >= total:
+            return df, None
         k = max(1, len(cols))
         base_points = max(3, int(round(n_out / k)))
         idx_set: set = set([0, total - 1])
@@ -817,7 +875,7 @@ def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Opt
             except Exception:
                 pass
         idxs_union = sorted(idx_set)
-        # Build composite normalized series for refinement/top-up
+        # Composite normalized series for refinement/top-up
         mins: Dict[str, float] = {}
         ranges: Dict[str, float] = {}
         for c in cols:
@@ -863,9 +921,50 @@ def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Opt
         idxs_final = [i for i in idxs_final if 0 <= i < total]
         if len(idxs_final) >= total:
             return df, None
+
+        if mode == "approximate":
+            # Aggregate between consecutive selected indices
+            segments: List[Tuple[int, int]] = []
+            for a, b in zip(idxs_final[:-1], idxs_final[1:]):
+                if b > a:
+                    segments.append((a, b))
+            if not segments:
+                out_df = df.iloc[idxs_final].reset_index(drop=True)
+                meta = {
+                    "mode": "approximate",
+                    "method": method_used_overall or method or "lttb",
+                    "original_rows": total,
+                    "returned_rows": len(out_df),
+                }
+                try:
+                    if params_meta_overall:
+                        meta.update(params_meta_overall)
+                except Exception:
+                    pass
+                return out_df, meta
+            rows: List[Dict[str, Any]] = []
+            for a, b in segments:
+                rows.append(_aggregate_segment(a, b))
+            out_df = pd.DataFrame(rows)
+            meta = {
+                "mode": "approximate",
+                "method": method_used_overall or method or SIMPLIFY_DEFAULT_METHOD,
+                "original_rows": total,
+                "returned_rows": len(out_df),
+                "points": len(out_df),
+            }
+            try:
+                if params_meta_overall:
+                    meta.update(params_meta_overall)
+            except Exception:
+                pass
+            return out_df.reset_index(drop=True), meta
+
+        # Default 'select' mode
         reduced = df.iloc[idxs_final].copy()
         meta = {
-            "method": (method_used_overall or str(simplify.get("method", "lttb")).lower()),
+            "mode": "select",
+            "method": (method_used_overall or method or SIMPLIFY_DEFAULT_METHOD),
             "columns": cols,
             "multi_column": True,
             "original_rows": total,
@@ -876,6 +975,8 @@ def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Opt
                 meta.update(params_meta_overall)
         except Exception:
             pass
+        # Normalize points to actual returned rows for clarity
+        meta["points"] = len(reduced)
         return reduced, meta
     except Exception:
         return df, None
@@ -919,79 +1020,77 @@ def _to_float_or_nan(x: Any) -> float:
 
 # ---- Technical Indicators (dynamic discovery and application) ----
 def _list_ta_indicators() -> List[Dict[str, Any]]:
-    """Dynamically list TA indicators available via pandas_ta.
+    """List TA indicators available via pandas_ta by inspecting the library directly.
 
     Returns a list of dicts with: name, params (name,type,default), description.
     """
-    # Create a minimal DataFrame to get the .ta accessor
-    tmp = pd.DataFrame({
-        'open': [1], 'high': [1], 'low': [1], 'close': [1], 'volume': [1]
-    })
     ind_list: List[Dict[str, Any]] = []
     seen = set()
-    for attr in dir(tmp.ta):
-        if attr.startswith('_'):
-            continue
-        func = getattr(tmp.ta, attr, None)
-        if not callable(func):
-            continue
-        name = attr.lower()
-        if name in seen:
-            continue
-        seen.add(name)
-        # Prefer original pandas_ta function (for better docs) if available
-        lib_func = getattr(pta, name, None)
-        target_for_sig = lib_func if callable(lib_func) else func
+    
+    # Use pandas_ta's own indicator categories to find real indicators
+    categories = ['candles', 'momentum', 'overlap', 'performance', 'statistics', 'trend', 'volatility', 'volume', 'cycles']
+    
+    for category in categories:
         try:
-            sig = inspect.signature(target_for_sig)
-        except (TypeError, ValueError):
-            continue
-        # Collect parameters excluding self and implicit OHLCV columns
-        params = []
-        for p in sig.parameters.values():
-            if p.name in {"self", "open", "high", "low", "close", "volume"}:
+            # Get the category module
+            cat_module = getattr(pta, category, None)
+            if not cat_module or not hasattr(cat_module, '__file__'):  # Check it's actually a module
                 continue
-            if p.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
-                continue
-            entry = {"name": p.name}
-            if p.default is not inspect._empty and p.default is not None:
-                entry["default"] = p.default
-            params.append(entry)
-        # Full help text: prefer library function docs if present
-        try:
-            if callable(lib_func):
-                raw = pydoc.render_doc(lib_func)
-                desc = _clean_help_text(raw, func_name=name, func=lib_func)
-            else:
-                raw = pydoc.render_doc(func)
-                desc = _clean_help_text(raw, func_name=name, func=func)
-        except Exception:
-            # Fallback to raw docstring
-            desc = inspect.getdoc(lib_func or func) or ''
+                
+            # Look for indicator functions in this category
+            for func_name in dir(cat_module):
+                if func_name.startswith('_'):
+                    continue
+                    
+                func = getattr(cat_module, func_name, None)
+                if not callable(func):
+                    continue
+                    
+                name = func_name.lower()
+                if name in seen:
+                    continue
+                seen.add(name)
+                
+                try:
+                    sig = inspect.signature(func)
+                except (TypeError, ValueError):
+                    continue
+                    
+                # Collect parameters excluding implicit OHLCV columns
+                params = []
+                for p in sig.parameters.values():
+                    if p.name in {"open", "high", "low", "close", "volume"}:
+                        continue
+                    if p.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                        continue
+                    entry = {"name": p.name}
+                    if p.default is not inspect._empty and p.default is not None:
+                        entry["default"] = p.default
+                    params.append(entry)
+                    
+                # Get description
+                try:
+                    raw = pydoc.render_doc(func)
+                    desc = _clean_help_text(raw, func_name=name, func=func)
+                except Exception:
+                    desc = inspect.getdoc(func) or ''
 
-        # Try to infer missing defaults from the doc text
-        try:
-            doc_text = inspect.getdoc(lib_func or func) or raw if 'raw' in locals() else ''
-            _infer_defaults_from_doc(name, doc_text, params)
-        except Exception:
-            pass
-        # Derive category from module path (e.g., pandas_ta.momentum.rsi -> momentum)
-        category = ''
-        try:
-            mod = (lib_func or func).__module__
-            parts = mod.split('.')
-            if len(parts) >= 2 and parts[0] == 'pandas_ta':
-                # usually pandas_ta.<category>.<func>
-                category = parts[1]
-        except Exception:
-            category = ''
+                # Try to infer missing defaults from the doc text
+                try:
+                    doc_text = inspect.getdoc(func) or raw if 'raw' in locals() else ''
+                    _infer_defaults_from_doc(name, doc_text, params)
+                except Exception:
+                    pass
 
-        ind_list.append({
-            "name": name,
-            "params": params,
-            "description": desc,
-            "category": category,
-        })
+                ind_list.append({
+                    "name": name,
+                    "params": params,
+                    "description": desc,
+                    "category": category,
+                })
+        except Exception:
+            continue
+    
     # Sort by name
     ind_list.sort(key=lambda x: x["name"])
     return ind_list
@@ -1816,6 +1915,11 @@ def fetch_candles(
        The full list of supported technical indicators can be retrieved from `get_indicators`.
     """
     try:
+        # Backward/compat mappings to internal variable names used in implementation
+        candles = int(limit)
+        start_datetime = start
+        end_datetime = end
+        ti = indicators
         # Validate timeframe using the shared map
         if timeframe not in TIMEFRAME_MAP:
             return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
@@ -1982,7 +2086,7 @@ def fetch_candles(
             pass
         # Keep epoch for filtering and convert readable time; ensure 'volume' exists for TA
         df['__epoch'] = df['time']
-        _use_ctz = _use_client_tz(client_tz)
+        _use_ctz = _use_client_tz(timezone)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             df["time"] = df["time"].apply(_format_time_minimal_local if _use_ctz else _format_time_minimal)
@@ -1992,7 +2096,7 @@ def fetch_candles(
                 df['volume'] = df['tick_volume']
 
         # Optional pre-TI denoising (in-place by default)
-        if denoise and str(denoise.get('when', 'post_ti')).lower() == 'pre_ti':
+        if denoise and str(denoise.get('when', 'pre_ti')).lower() == 'pre_ti':
             _apply_denoise(df, denoise, default_when='pre_ti')
 
         # Apply technical indicators if requested (dynamic)
@@ -2000,6 +2104,13 @@ def fetch_candles(
         if ti_spec:
             ti_cols = _apply_ta_indicators(df, ti_spec)
             headers.extend([c for c in ti_cols if c not in headers])
+            # Optional: denoise TI columns as well when requested
+            if denoise and bool(denoise.get('apply_to_ti') or denoise.get('ti')) and ti_cols:
+                dn_ti = dict(denoise)
+                dn_ti['columns'] = list(ti_cols)
+                dn_ti.setdefault('when', 'post_ti')
+                dn_ti.setdefault('keep_original', False)
+                _apply_denoise(df, dn_ti, default_when='post_ti')
 
         # Build final header list when not using OHLCV subset
         if requested is None:
@@ -2060,11 +2171,18 @@ def fetch_candles(
                                 warnings.simplefilter("ignore")
                                 df['volume'] = df['tick_volume']
                         # Optional pre-TI denoising on retried window
-                        if denoise and str(denoise.get('when', 'post_ti')).lower() == 'pre_ti':
+                        if denoise and str(denoise.get('when', 'pre_ti')).lower() == 'pre_ti':
                             _apply_denoise(df, denoise, default_when='pre_ti')
                         # Re-apply indicators and re-extend headers
                         ti_cols = _apply_ta_indicators(df, ti_spec)
                         headers.extend([c for c in ti_cols if c not in headers])
+                        # Optional: denoise TI columns on retried window
+                        if denoise and bool(denoise.get('apply_to_ti') or denoise.get('ti')) and ti_cols:
+                            dn_ti = dict(denoise)
+                            dn_ti['columns'] = list(ti_cols)
+                            dn_ti.setdefault('when', 'post_ti')
+                            dn_ti.setdefault('keep_original', False)
+                            _apply_denoise(df, dn_ti, default_when='post_ti')
                         # Re-trim to target window
                         if start_datetime and end_datetime:
                             target_from = _parse_start_datetime(start_datetime).timestamp()
@@ -2085,7 +2203,7 @@ def fetch_candles(
                 pass
 
         # Optional post-TI denoising (adds new columns by default)
-        if denoise and str(denoise.get('when', 'post_ti')).lower() == 'post_ti':
+        if denoise and str(denoise.get('when', 'pre_ti')).lower() == 'post_ti':
             added_dn = _apply_denoise(df, denoise, default_when='post_ti')
             for c in added_dn:
                 if c not in headers:
@@ -2101,27 +2219,27 @@ def fetch_candles(
                 fmt = _time_format_from_epochs_local(epochs_list)
                 fmt = _maybe_strip_year_local(fmt, epochs_list)
                 fmt = _style_time_format(fmt)
-                tz = _resolve_client_tz(client_tz)
+                tz = _resolve_client_tz(timezone)
                 # Track used tz name and invalid explicit values
                 tz_used_name = None
                 tz_warning = None
-                if isinstance(client_tz, str):
-                    vlow = client_tz.strip().lower()
+                if isinstance(timezone, str):
+                    vlow = timezone.strip().lower()
                     if vlow not in ('auto','client','utc',''):
                         try:
                             import pytz  # type: ignore
-                            tz_explicit = pytz.timezone(client_tz.strip())
+                            tz_explicit = pytz.timezone(timezone.strip())
                             tz = tz_explicit
                         except Exception:
-                            tz_warning = f"Unknown timezone '{client_tz}', falling back to CLIENT_TZ or system"
+                            tz_warning = f"Unknown timezone '{timezone}', falling back to CLIENT_TZ or system"
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     if tz is not None:
                         tz_used_name = getattr(tz, 'zone', None) or str(tz)
-                        df['time'] = df['__epoch'].apply(lambda t: datetime.fromtimestamp(t, tz=timezone.utc).astimezone(tz).strftime(fmt))
+                        df['time'] = df['__epoch'].apply(lambda t: datetime.fromtimestamp(t, tz=_dt.timezone.utc).astimezone(tz).strftime(fmt))
                     else:
                         tz_used_name = 'system'
-                        df['time'] = df['__epoch'].apply(lambda t: datetime.fromtimestamp(t, tz=timezone.utc).astimezone().strftime(fmt))
+                        df['time'] = df['__epoch'].apply(lambda t: datetime.fromtimestamp(t, tz=_dt.timezone.utc).astimezone().strftime(fmt))
                 df.__dict__['_tz_used_name'] = tz_used_name
                 df.__dict__['_tz_warning'] = tz_warning
             else:
@@ -2134,7 +2252,20 @@ def fetch_candles(
 
         # Optionally reduce number of rows for readability/output size
         original_rows = len(df)
-        df, simplify_meta = _simplify_dataframe_rows(df, headers, simplify)
+        simplify_eff = None
+        if simplify is not None:
+            simplify_eff = dict(simplify)
+            # Default mode
+            simplify_eff['mode'] = str(simplify_eff.get('mode', SIMPLIFY_DEFAULT_MODE)).lower().strip()
+            # If no explicit points/ratio provided, default to 10% of requested limit
+            has_points = any(k in simplify_eff and simplify_eff[k] is not None for k in ("points","target_points","max_points","ratio"))
+            if not has_points:
+                try:
+                    default_pts = max(3, int(round(int(limit) * SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT)))
+                except Exception:
+                    default_pts = max(3, int(round(original_rows * SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT)))
+                simplify_eff['points'] = default_pts
+        df, simplify_meta = _simplify_dataframe_rows(df, headers, simplify_eff if simplify_eff is not None else simplify)
 
         # Assemble rows from (possibly reduced) DataFrame for selected headers
         rows = _format_numeric_rows_from_df(df, headers)
@@ -2159,7 +2290,7 @@ def fetch_candles(
 
 @mcp.tool()
 @_auto_connect_wrapper
-def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = None, simplify: Optional[Dict[str, Any]] = None, client_tz: str = "auto") -> Dict[str, Any]:
+def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = None, simplify: Optional[Dict[str, Any]] = None, timezone: str = "auto") -> Dict[str, Any]:
     """Return latest ticks as CSV with columns: time,bid,ask and optional last,volume,flags.
     - `count` limits the number of rows; `start_datetime` starts from a flexible date/time.
     - `simplify`: reduce rows while preserving shape across all numeric columns.
@@ -2237,17 +2368,87 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
         # Choose a consistent time format for all rows (strip year if constant)
         # Normalize tick times to UTC
         _epochs = [_mt5_epoch_to_utc(float(t["time"])) for t in ticks]
-        _use_ctz = _use_client_tz(client_tz)
+        _use_ctz = _use_client_tz(timezone)
         if not _use_ctz:
             fmt = _time_format_from_epochs(_epochs)
             fmt = _maybe_strip_year(fmt, _epochs)
             fmt = _style_time_format(fmt)
+        # Build a DataFrame of ticks to support non-select simplify modes
+        def _tick_field(t, name: str):
+            try:
+                # numpy.void structured array element
+                return t[name]
+            except Exception:
+                pass
+            try:
+                # namedtuple-like from symbol_info_tick
+                return getattr(t, name)
+            except Exception:
+                pass
+            try:
+                # dict-like
+                return t.get(name)
+            except Exception:
+                return None
+
+        df_ticks = pd.DataFrame({
+            "__epoch": _epochs,
+            "bid": [float(_tick_field(t, "bid")) for t in ticks],
+            "ask": [float(_tick_field(t, "ask")) for t in ticks],
+        })
+        if has_last:
+            df_ticks["last"] = [float(_tick_field(t, "last")) for t in ticks]
+        if has_volume:
+            df_ticks["volume"] = [float(_tick_field(t, "volume")) for t in ticks]
+        if has_flags:
+            df_ticks["flags"] = [int(_tick_field(t, "flags")) for t in ticks]
+        # Add display time column
+        if _use_ctz:
+            df_ticks["time"] = [
+                _format_time_minimal_local(e) for e in _epochs
+            ]
+        else:
+            df_ticks["time"] = [
+                datetime.utcfromtimestamp(e).strftime(fmt) for e in _epochs
+            ]
+        # If simplify mode requests approximation or resampling, use shared path
+        original_count = len(df_ticks)
+        simplify_eff = None
+        if simplify is not None:
+            simplify_eff = dict(simplify)
+            simplify_eff['mode'] = str(simplify_eff.get('mode', SIMPLIFY_DEFAULT_MODE)).lower().strip()
+            has_points = any(k in simplify_eff and simplify_eff[k] is not None for k in ("points","target_points","max_points","ratio"))
+            if not has_points:
+                try:
+                    default_pts = max(3, int(round(int(count) * SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT)))
+                except Exception:
+                    default_pts = max(3, int(round(original_count * SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT)))
+                simplify_eff['points'] = default_pts
+        simplify_present = (simplify_eff is not None) or (simplify is not None)
+        simplify_used = simplify_eff if simplify_eff is not None else simplify
+        _mode = str((simplify_used or {}).get('mode', SIMPLIFY_DEFAULT_MODE)).lower().strip() if simplify_present else SIMPLIFY_DEFAULT_MODE
+        if simplify_present and _mode in ('approximate', 'resample'):
+            df_out, simplify_meta = _simplify_dataframe_rows(df_ticks, headers, simplify_used)
+            rows = _format_numeric_rows_from_df(df_out, headers)
+            payload = _csv_from_rows(headers, rows)
+            payload.update({
+                "success": True,
+                "symbol": symbol,
+                "count": len(rows),
+            })
+            payload["display_timezone"] = "client" if _use_ctz else "UTC"
+            if simplify_meta is not None and original_count > len(rows):
+                payload["simplified"] = True
+                meta = dict(simplify_meta)
+                meta["columns"] = [c for c in ["bid","ask"] + (["last"] if has_last else []) + (["volume"] if has_volume else [])]
+                payload["simplify"] = meta
+            return payload
         # Optional simplification based on a chosen y-series
         original_count = len(ticks)
         select_indices = list(range(original_count))
         _simp_method_used: Optional[str] = None
         _simp_params_meta: Optional[Dict[str, Any]] = None
-        if simplify and original_count > 3:
+        if simplify_present and original_count > 3:
             try:
                 # Always represent all available numeric columns (bid/ask/(last)/(volume))
                 cols: List[str] = ['bid', 'ask']
@@ -2255,7 +2456,7 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
                     cols.append('last')
                 if has_volume:
                     cols.append('volume')
-                n_out = _choose_simplify_points(original_count, simplify)
+                n_out = _choose_simplify_points(original_count, simplify_used)
                 per = max(3, int(round(n_out / max(1, len(cols)))))
                 idx_set: set = set([0, original_count - 1])
                 params_accum: Dict[str, Any] = {}
@@ -2263,7 +2464,7 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
                 for c in cols:
                     series: List[float] = []
                     for t in ticks:
-                        v = t.get(c)
+                        v = _tick_field(t, c)
                         try:
                             series.append(float(v))
                         except Exception:
@@ -2289,7 +2490,7 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
                     vals = []
                     for t in ticks:
                         try:
-                            vals.append(float(t.get(c)))
+                            vals.append(float(_tick_field(t, c)))
                         except Exception:
                             vals.append(0.0)
                     if vals:
@@ -2304,7 +2505,7 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
                     s = 0.0
                     for c in cols:
                         try:
-                            vv = (float(ticks[i].get(c)) - mins[c]) / ranges[c]
+                            vv = (float(_tick_field(ticks[i], c)) - mins[c]) / ranges[c]
                         except Exception:
                             vv = 0.0
                         s += abs(vv)
@@ -2328,7 +2529,7 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
                         select_indices = merged
                 else:
                     select_indices = union_idxs
-                _simp_method_used = method_used_overall or str(simplify.get('method', 'lttb')).lower()
+                _simp_method_used = method_used_overall or str((simplify_used or {}).get('method', SIMPLIFY_DEFAULT_METHOD)).lower()
                 _simp_params_meta = params_accum
             except Exception:
                 select_indices = list(range(original_count))
@@ -2356,10 +2557,10 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
             "count": len(rows),
         })
         payload["display_timezone"] = "client" if _use_ctz else "UTC"
-        if simplify and original_count > len(rows):
+        if simplify_present and original_count > len(rows):
             payload["simplified"] = True
             meta = {
-                "method": (_simp_method_used or str((simplify or {}).get('method', 'lttb')).lower()),
+                "method": (_simp_method_used or str((simplify_used or {}).get('method', SIMPLIFY_DEFAULT_METHOD)).lower()),
                 "original_rows": original_count,
                 "returned_rows": len(rows),
                 "multi_column": True,
@@ -2375,6 +2576,8 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
                             meta[key] = (simplify or {})[key]
             except Exception:
                 pass
+            # Normalize points to actual returned rows
+            meta["points"] = len(rows)
             payload["simplify"] = meta
         return payload
     except Exception as e:
@@ -2386,7 +2589,7 @@ def detect_candlestick_patterns(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     candles: int = 10,
-    client_tz: str = "auto",
+    timezone: str = "auto",
 ) -> Dict[str, Any]:
     """Detect candlestick patterns and return CSV rows of detections.
 
@@ -2438,7 +2641,7 @@ def detect_candlestick_patterns(
         except Exception:
             pass
         epochs = [float(t) for t in df['time'].tolist()] if 'time' in df.columns else []
-        _use_ctz = _use_client_tz(client_tz)
+        _use_ctz = _use_client_tz(timezone)
         if _use_ctz:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
@@ -2546,25 +2749,25 @@ def detect_candlestick_patterns(
 @_auto_connect_wrapper
 def compute_pivot_points(
     symbol: str,
-    basis_timeframe: TimeframeLiteral = "D1",
+    timeframe: TimeframeLiteral = "D1",
     method: PivotMethodLiteral = "classic",
-    client_tz: str = "auto",
+    timezone: str = "auto",
 ) -> Dict[str, Any]:
-    """Compute pivot point levels from the last completed bar on `basis_timeframe`.
+    """Compute pivot point levels from the last completed bar on `timeframe`.
 
-    - `basis_timeframe`: Timeframe to source H/L/C from (e.g., D1, W1, MN1).
+    - `timeframe`: Timeframe to source H/L/C from (e.g., D1, W1, MN1).
     - `method`: One of classic, fibonacci, camarilla, woodie, demark.
 
     Returns JSON with period info, source H/L/C, and computed levels.
     """
     try:
         # Validate timeframe
-        if basis_timeframe not in TIMEFRAME_MAP:
-            return {"error": f"Invalid timeframe: {basis_timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
-        mt5_tf = TIMEFRAME_MAP[basis_timeframe]
-        tf_secs = TIMEFRAME_SECONDS.get(basis_timeframe)
+        if timeframe not in TIMEFRAME_MAP:
+            return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+        mt5_tf = TIMEFRAME_MAP[timeframe]
+        tf_secs = TIMEFRAME_SECONDS.get(timeframe)
         if not tf_secs:
-            return {"error": f"Unsupported timeframe seconds for {basis_timeframe}"}
+            return {"error": f"Unsupported timeframe seconds for {timeframe}"}
 
         method_l = str(method).lower().strip()
         if method_l not in _PIVOT_METHODS:
@@ -2726,7 +2929,7 @@ def compute_pivot_points(
             }
 
         # Format times per display preference
-        _use_ctz = _use_client_tz(client_tz)
+        _use_ctz = _use_client_tz(timezone)
         start_str = _format_time_minimal_local(period_start) if _use_ctz else _format_time_minimal(period_start)
         end_str = _format_time_minimal_local(period_end) if _use_ctz else _format_time_minimal(period_end)
 
@@ -2734,7 +2937,7 @@ def compute_pivot_points(
             "success": True,
             "symbol": symbol,
             "method": method_l,
-            "basis_timeframe": basis_timeframe,
+            "timeframe": timeframe,
             "period": {
                 "start": start_str,
                 "end": end_str,
@@ -3062,7 +3265,7 @@ def forecast(
     ci_alpha: Optional[float] = 0.05,
     target: Literal['price','return'] = 'price',  # type: ignore
     denoise: Optional[DenoiseSpec] = None,
-    client_tz: str = "auto",
+    timezone: str = "auto",
 ) -> Dict[str, Any]:
     """Fast forecasts for the next `horizon_bars` using lightweight methods.
 
@@ -3491,7 +3694,7 @@ def forecast(
             except Exception:
                 return float(v)
 
-        _use_ctz = _use_client_tz(client_tz)
+        _use_ctz = _use_client_tz(timezone)
         if _use_ctz:
             times_fmt = [_format_time_minimal_local(ts) for ts in future_times]
         else:
@@ -3560,7 +3763,7 @@ def forecast(
 
 @mcp.tool()
 @_auto_connect_wrapper
-def fetch_market_depth(symbol: str, client_tz: str = "auto") -> Dict[str, Any]:
+def fetch_market_depth(symbol: str, timezone: str = "auto") -> Dict[str, Any]:
     """Return DOM if available; otherwise current bid/ask snapshot for `symbol`."""
     try:
         # Ensure symbol is selected
@@ -3622,7 +3825,7 @@ def fetch_market_depth(symbol: str, client_tz: str = "auto") -> Dict[str, Any]:
                 }
             }
             try:
-                _use_ctz = _use_client_tz(client_tz)
+                _use_ctz = _use_client_tz(timezone)
                 if tick.time and _use_ctz:
                     out["data"]["time_display"] = _format_time_minimal_local(_mt5_epoch_to_utc(float(tick.time)))
                 elif tick.time:
@@ -3655,7 +3858,6 @@ _optimal_decimals = _optimal_decimals_util
 _format_float = _format_float_util
 _format_numeric_rows_from_df = _format_numeric_rows_from_df_util
 _parse_start_datetime = _parse_start_datetime_util
-_simplify_dataframe_rows = _simplify_dataframe_rows_util
 _list_ta_indicators = _list_ta_indicators_util
 _parse_ti_specs = _parse_ti_specs_util
 _apply_ta_indicators = _apply_ta_indicators_util

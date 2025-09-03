@@ -15,6 +15,10 @@ TI_NAN_WARMUP_MIN_ADD = 50   # at least add this many bars on retry
 PRECISION_REL_TOL = 1e-6     # relative tolerance for rounding optimization
 PRECISION_ABS_TOL = 1e-12    # absolute tolerance for rounding optimization
 PRECISION_MAX_DECIMALS = 10  # upper bound on decimal places
+# Simplification defaults
+SIMPLIFY_DEFAULT_METHOD = "lttb"  # default simplify method when not specified
+SIMPLIFY_DEFAULT_MODE = "approximate"  # default simplify mode when not specified
+SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT = 0.10  # default points as a fraction of --limit/--count when unspecified
 SIMPLIFY_DEFAULT_RATIO = 0.25     # default ratio if no points/ratio provided
 SIMPLIFY_DEFAULT_MIN_POINTS = 100 # minimum target points for default simplify
 SIMPLIFY_DEFAULT_MAX_POINTS = 500 # maximum target points for default simplify
@@ -72,4 +76,3 @@ TIMEFRAME_SECONDS = {
     # For months, use a rough average of 30 days
     "MN1": 2592000,
 }
-

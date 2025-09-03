@@ -133,7 +133,34 @@ def _apply_denoise(
     if method == 'none':
         return added_cols
     params = spec.get('params') or {}
-    cols = spec.get('columns') or ['close']
+    cols = spec.get('columns') or 'ohlcv'
+    # Normalize columns selection
+    if isinstance(cols, str):
+        key = cols.strip().lower()
+        if key in ('ohlcv', 'ohlc', 'price'):
+            # Map to price + volume columns present
+            selected = []
+            for name in ('open', 'high', 'low', 'close'):
+                if name in df.columns:
+                    selected.append(name)
+            # Prefer real volume, else tick_volume
+            if 'volume' in df.columns:
+                selected.append('volume')
+            elif 'tick_volume' in df.columns:
+                selected.append('tick_volume')
+            cols = selected if selected else ['close']
+        elif key in ('all', '*', 'numeric'):
+            try:
+                cols = [
+                    c for c in df.columns
+                    if c != 'time' and not str(c).startswith('_') and pd.api.types.is_numeric_dtype(df[c])
+                ]
+            except Exception:
+                cols = ['close']
+        else:
+            # Support comma/space-separated list in CLI shorthand
+            parts = [p.strip() for p in cols.replace(',', ' ').split() if p.strip()]
+            cols = parts if parts else ['close']
     when = str(spec.get('when') or default_when)
     causality = str(spec.get('causality') or ('causal' if when == 'pre_ti' else 'zero_phase'))
     keep_original = bool(spec.get('keep_original')) if 'keep_original' in spec else (when != 'pre_ti')
@@ -164,7 +191,7 @@ def get_denoise_methods_data() -> Dict[str, Any]:
         return (True, '')
 
     methods: List[Dict[str, Any]] = []
-    base_defaults = {"when": "post_ti", "columns": ["close"], "keep_original": True, "suffix": "_dn"}
+    base_defaults = {"when": "pre_ti", "columns": ["close"], "keep_original": False, "suffix": "_dn"}
 
     def add(method: str, description: str, params: List[Dict[str, Any]], supports: Dict[str, bool]):
         available, requires = avail_requires(method)
@@ -221,4 +248,3 @@ def get_denoise_methods_data() -> Dict[str, Any]:
     ], {"causal": False, "zero_phase": True})
 
     return {"success": True, "schema_version": 1, "methods": methods}
-

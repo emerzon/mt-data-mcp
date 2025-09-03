@@ -10,7 +10,15 @@ from ..core.config import mt5_config
 from ..core.constants import PRECISION_ABS_TOL, PRECISION_MAX_DECIMALS, PRECISION_REL_TOL
 
 
-def _csv_from_rows(headers: List[str], rows: List[List[Any]]) -> Dict[str, str]:
+def _csv_from_rows(headers: List[str], rows: List[List[Any]]) -> Dict[str, Any]:
+    """Build a normalized CSV payload for tabular results.
+
+    Returns a dict with at least:
+    - csv_header: comma-separated column names
+    - csv_data: newline-separated CSV rows
+    - success: True
+    - count: number of data rows
+    """
     data_buf = io.StringIO()
     writer = csv.writer(data_buf, lineterminator="\n")
     for row in rows:
@@ -18,6 +26,8 @@ def _csv_from_rows(headers: List[str], rows: List[List[Any]]) -> Dict[str, str]:
     return {
         "csv_header": ",".join(headers),
         "csv_data": data_buf.getvalue().rstrip("\n"),
+        "success": True,
+        "count": len(rows),
     }
 
 
