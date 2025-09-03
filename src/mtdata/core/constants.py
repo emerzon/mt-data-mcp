@@ -15,6 +15,11 @@ TI_NAN_WARMUP_MIN_ADD = 50   # at least add this many bars on retry
 PRECISION_REL_TOL = 1e-6     # relative tolerance for rounding optimization
 PRECISION_ABS_TOL = 1e-12    # absolute tolerance for rounding optimization
 PRECISION_MAX_DECIMALS = 10  # upper bound on decimal places
+
+# Global parameter defaults
+DEFAULT_TIMEZONE = "auto"    # default timezone parameter
+DEFAULT_TIMEFRAME = "H1"     # default timeframe parameter  
+DEFAULT_FORMAT = "csv"       # default output format
 # Simplification defaults
 SIMPLIFY_DEFAULT_METHOD = "lttb"  # default simplify method when not specified
 SIMPLIFY_DEFAULT_MODE = "approximate"  # default simplify mode when not specified

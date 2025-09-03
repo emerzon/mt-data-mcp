@@ -2,8 +2,8 @@
 import logging
 import atexit
 import functools
-from datetime import datetime, timedelta, timezone
-import datetime as _dt
+from datetime import datetime, timedelta
+from datetime import timezone as dt_timezone
 from typing import Any, Dict, Optional, List, Tuple, Literal
 from typing_extensions import TypedDict
 import io
@@ -14,6 +14,7 @@ import inspect
 import pandas as pd
 import numpy as np
 import math
+import warnings
 try:
     import pywt as _pywt  # type: ignore
 except Exception:
@@ -22,7 +23,6 @@ try:
     from PyEMD import EMD as _EMD, EEMD as _EEMD, CEEMDAN as _CEEMDAN  # type: ignore
 except Exception:
     _EMD = _EEMD = _CEEMDAN = None  # optional
-import warnings
 import pandas_ta as pta
 import dateparser
 import MetaTrader5 as mt5
@@ -72,6 +72,7 @@ from ..utils.utils import (
     _format_numeric_rows_from_df as _format_numeric_rows_from_df_util,
     _parse_start_datetime as _parse_start_datetime_util,
 )
+from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from ..utils.indicators import (
     _list_ta_indicators as _list_ta_indicators_util,
     _parse_ti_specs as _parse_ti_specs_util,
@@ -79,7 +80,6 @@ from ..utils.indicators import (
     _estimate_warmup_bars as _estimate_warmup_bars_util,
 )
 from ..utils.denoise import _apply_denoise as _apply_denoise_util
-from ..utils.symbol import _extract_group_path as _extract_group_path_util
 
 _TIMEFRAME_CHOICES = tuple(sorted(TIMEFRAME_MAP.keys()))
 TimeframeLiteral = Literal[_TIMEFRAME_CHOICES]  # type: ignore
@@ -104,11 +104,6 @@ atexit.register(mt5_connection.disconnect)
 
 
 # Flexible datetime parsing helper using dateparser
-def _parse_start_datetime(value: str) -> Optional[datetime]:
-    """Thin wrapper delegating to utils._parse_start_datetime"""
-    return _parse_start_datetime_util(value)
-
-
 # Helpers
 def _ensure_symbol_ready(symbol: str) -> Optional[str]:
     """Ensure a symbol is selected and tick info is available. Returns error string or None."""
@@ -129,34 +124,18 @@ def _ensure_symbol_ready(symbol: str) -> Optional[str]:
     if tick is None:
         return f"Failed to refresh {symbol} data: {mt5.last_error()}"
     return None
-def _csv_from_rows(headers: List[str], rows: List[List[Any]]) -> Dict[str, Any]:
-    return _csv_from_rows_util(headers, rows)
 
-def _format_time_minimal(epoch_seconds: float) -> str:
-    return _format_time_minimal_util(epoch_seconds)
 
-def _format_time_minimal_local(epoch_seconds: float) -> str:
-    return _format_time_minimal_local_util(epoch_seconds)
 
-def _use_client_tz(client_tz_param: object) -> bool:
-    return _use_client_tz_util(client_tz_param)
 
-def _resolve_client_tz(client_tz_param: object):
-    return _resolve_client_tz_util(client_tz_param)
 
-def _time_format_from_epochs(epochs: List[float]) -> str:
-    return _time_format_from_epochs_util(epochs)
 
-def _maybe_strip_year(fmt: str, epochs: List[float]) -> str:
-    return _maybe_strip_year_util(fmt, epochs)
 
-def _style_time_format(fmt: str) -> str:
-    return _style_time_format_util(fmt)
 
-def _time_format_from_epochs_local(epochs: List[float]) -> str:
+def _time_format_from_epochs_util_local(epochs: List[float]) -> str:
     """Choose a consistent local-time format for a series of UTC epoch timestamps.
 
-    Uses CLIENT_TZ if configured; otherwise system local timezone. Mirrors _time_format_from_epochs
+    Uses CLIENT_TZ if configured; otherwise system local timezone. Mirrors _time_format_from_epochs_util
     but bases the decision on local-time components.
     """
     try:
@@ -168,7 +147,7 @@ def _time_format_from_epochs_local(epochs: List[float]) -> str:
     any_hour = False
     for e in epochs:
         try:
-            dt = datetime.fromtimestamp(e, tz=timezone.utc).astimezone(tz) if tz else datetime.fromtimestamp(e).astimezone()
+            dt = datetime.fromtimestamp(e, tz=dt_timezone.utc).astimezone(tz) if tz else datetime.fromtimestamp(e).astimezone()
         except Exception:
             # fallback to UTC
             dt = datetime.utcfromtimestamp(e)
@@ -187,7 +166,7 @@ def _time_format_from_epochs_local(epochs: List[float]) -> str:
         return "%Y-%m-%d %H"
     return "%Y-%m-%d"
 
-def _maybe_strip_year_local(fmt: str, epochs: List[float]) -> str:
+def _maybe_strip_year_util_local(fmt: str, epochs: List[float]) -> str:
     """If all timestamps are in the same year in client/local tz, remove the year from the format."""
     try:
         tz = mt5_config.get_client_tz()
@@ -197,7 +176,7 @@ def _maybe_strip_year_local(fmt: str, epochs: List[float]) -> str:
         years = set()
         for e in epochs:
             try:
-                dt = datetime.fromtimestamp(e, tz=timezone.utc).astimezone(tz) if tz else datetime.fromtimestamp(e).astimezone()
+                dt = datetime.fromtimestamp(e, tz=dt_timezone.utc).astimezone(tz) if tz else datetime.fromtimestamp(e).astimezone()
             except Exception:
                 dt = datetime.utcfromtimestamp(e)
             years.add(dt.year)
@@ -207,22 +186,13 @@ def _maybe_strip_year_local(fmt: str, epochs: List[float]) -> str:
         pass
     return fmt
 
-def _extract_group_path(sym) -> str:
-    return _extract_group_path_util(sym)
 
 
 # ---- Numeric formatting helpers ----
-def _optimal_decimals(values: List[float], rel_tol: float = PRECISION_REL_TOL, abs_tol: float = PRECISION_ABS_TOL,
-                      max_decimals: int = PRECISION_MAX_DECIMALS) -> int:
-    return _optimal_decimals_util(values, rel_tol, abs_tol, max_decimals)
 
 
-def _format_float(v: float, d: int) -> str:
-    return _format_float_util(v, d)
 
 
-def _format_numeric_rows_from_df(df: pd.DataFrame, headers: List[str]) -> List[List[str]]:
-    return _format_numeric_rows_from_df_util(df, headers)
 
 
 # ---- Timeseries simplification helpers ----
@@ -1175,96 +1145,12 @@ def _clean_help_text(text: str, func_name: Optional[str] = None, func: Optional[
     return "\n".join(kept).strip()
 
 
-def _parse_ti_specs(spec: str) -> List[Tuple[str, List[Any], Dict[str, Any]]]:
-    """Parse TI spec string into a list of (name, args, kwargs).
-
-    Supported formats:
-        "sma(14), ema(length=50), macd(12,26,9)"
-    Returns empty list on parse error.
-    """
-    results: List[Tuple[str, List[Any], Dict[str, Any]]] = []
-    
-    # Split by commas but respect parentheses
-    parts = []
-    current_part = ""
-    paren_depth = 0
-    
-    for char in spec:
-        if char == '(':
-            paren_depth += 1
-        elif char == ')':
-            paren_depth -= 1
-        elif char == ',' and paren_depth == 0:
-            if current_part.strip():
-                parts.append(current_part.strip())
-            current_part = ""
-            continue
-        current_part += char
-    
-    if current_part.strip():
-        parts.append(current_part.strip())
-    
-    for part in parts:
-        # Tolerate surrounding quotes and whitespace
-        part = part.strip().strip("\"'")
-        if not part:
-            continue
-        m = re.match(r"^([a-zA-Z_][a-zA-Z0-9_]*)(?:\((.*)\))?$", part)
-        if not m:
-            continue
-        raw_name = m.group(1)
-        inner = (m.group(2) or '').strip().strip("\"'")
-        args: List[Any] = []
-        kwargs: Dict[str, Any] = {}
-        if inner:
-            for token in re.split(r"[\s,;]+", inner):
-                if not token:
-                    continue
-                if '=' in token:
-                    k, v = token.split('=', 1)
-                    kwargs[k.strip()] = _coerce_scalar(v.strip())
-                else:
-                    args.append(_coerce_scalar(token))
-        # Flex: detect trailing numeric length in the indicator name (e.g., RSI_48 or EMA21)
-        base_name = raw_name
-        mlen = re.match(r"^([A-Za-z]+)[_-]?(\d+)$", raw_name)
-        if mlen and not inner:
-            base_name = mlen.group(1)
-            try:
-                length_val = int(mlen.group(2))
-                args = [length_val] + args
-            except Exception:
-                pass
-        name = base_name.lower()
-        results.append((name, args, kwargs))
-    return results
 
 
-def _coerce_scalar(val: str) -> Any:
-    """Best-effort type coercion for numeric strings."""
-    # Try int
-    try:
-        return int(val)
-    except Exception:
-        pass
-    # Try float
-    try:
-        return float(val)
-    except Exception:
-        pass
-    # Strip quotes if present
-    if ((val.startswith('"') and val.endswith('"')) or
-        (val.startswith("'") and val.endswith("'"))):
-        return val[1:-1]
-    return val
 
 
-def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:
-    return _apply_ta_indicators_util(df, ti_spec)
 
 
-def _estimate_warmup_bars(ti_spec: Optional[str]) -> int:
-    return _estimate_warmup_bars_util(ti_spec)
 
 
 # Build category Literal before tool registration so MCP captures it in the schema
@@ -1662,7 +1548,7 @@ def list_indicators(search_term: Optional[str] = None, category: Optional[Catego
             items = [it for it in items if (it.get('category') or '').lower() == cat_q]
         items.sort(key=lambda x: (x.get('category') or '', x.get('name') or ''))
         rows = [[it.get('name',''), it.get('category','')] for it in items]
-        return _csv_from_rows(["name", "category"], rows)
+        return _csv_from_rows_util(["name", "category"], rows)
     except Exception as e:
         return {"error": f"Error listing indicators: {e}"}
 
@@ -1710,7 +1596,7 @@ def list_symbols(
             # Get all unique groups
             groups = {}
             for symbol in all_symbols:
-                group_path = _extract_group_path(symbol)
+                group_path = _extract_group_path_util(symbol)
                 if group_path not in groups:
                     groups[group_path] = []
                 groups[group_path].append(symbol)
@@ -1779,7 +1665,7 @@ def list_symbols(
                 continue
             symbol_list.append({
                 "name": symbol.name,
-                "group": _extract_group_path(symbol),
+                "group": _extract_group_path_util(symbol),
                 "description": symbol.description,
             })
         
@@ -1788,7 +1674,7 @@ def list_symbols(
             symbol_list = symbol_list[:limit]
         # Convert to CSV format using proper escaping
         rows = [[s["name"], s["group"], s["description"]] for s in symbol_list]
-        return _csv_from_rows(["name", "group", "description"], rows)
+        return _csv_from_rows_util(["name", "group", "description"], rows)
     except Exception as e:
         return {"error": f"Error getting symbols: {str(e)}"}
 
@@ -1809,7 +1695,7 @@ def list_symbol_groups(search_term: Optional[str] = None, limit: Optional[int] =
         # Collect unique groups and counts
         groups = {}
         for symbol in all_symbols:
-            group_path = _extract_group_path(symbol)
+            group_path = _extract_group_path_util(symbol)
             if group_path not in groups:
                 groups[group_path] = {"count": 0}
             groups[group_path]["count"] += 1
@@ -1830,7 +1716,7 @@ def list_symbol_groups(search_term: Optional[str] = None, limit: Optional[int] =
         # Build CSV with only group names
         group_names = [name for name, _ in filtered_items]
         rows = [[g] for g in group_names]
-        return _csv_from_rows(["group"], rows)
+        return _csv_from_rows_util(["group"], rows)
     except Exception as e:
         return {"error": f"Error getting symbol groups: {str(e)}"}
 
@@ -1953,11 +1839,11 @@ def fetch_candles(
                 else:
                     ti_spec = str(ti)
             # Determine warmup bars if technical indicators requested
-            warmup_bars = _estimate_warmup_bars(ti_spec)
+            warmup_bars = _estimate_warmup_bars_util(ti_spec)
 
             if start_datetime and end_datetime:
-                from_date = _parse_start_datetime(start_datetime)
-                to_date = _parse_start_datetime(end_datetime)
+                from_date = _parse_start_datetime_util(start_datetime)
+                to_date = _parse_start_datetime_util(end_datetime)
                 if not from_date or not to_date:
                     return {"error": "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."}
                 if from_date > to_date:
@@ -1976,7 +1862,7 @@ def fetch_candles(
                             break
                     time.sleep(FETCH_RETRY_DELAY)
             elif start_datetime:
-                from_date = _parse_start_datetime(start_datetime)
+                from_date = _parse_start_datetime_util(start_datetime)
                 if not from_date:
                     return {"error": "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."}
                 # Fetch forward from the provided start by using a to_date window
@@ -1996,7 +1882,7 @@ def fetch_candles(
                             break
                     time.sleep(FETCH_RETRY_DELAY)
             elif end_datetime:
-                to_date = _parse_start_datetime(end_datetime)
+                to_date = _parse_start_datetime_util(end_datetime)
                 if not to_date:
                     return {"error": "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."}
                 # Get the last 'count' bars ending at end_datetime
@@ -2086,10 +1972,10 @@ def fetch_candles(
             pass
         # Keep epoch for filtering and convert readable time; ensure 'volume' exists for TA
         df['__epoch'] = df['time']
-        _use_ctz = _use_client_tz(timezone)
+        _use_ctz = _use_client_tz_util(timezone)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            df["time"] = df["time"].apply(_format_time_minimal_local if _use_ctz else _format_time_minimal)
+            df["time"] = df["time"].apply(_format_time_minimal_local_util if _use_ctz else _format_time_minimal_util)
         if 'volume' not in df.columns and 'tick_volume' in df.columns:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
@@ -2102,7 +1988,7 @@ def fetch_candles(
         # Apply technical indicators if requested (dynamic)
         ti_cols: List[str] = []
         if ti_spec:
-            ti_cols = _apply_ta_indicators(df, ti_spec)
+            ti_cols = _apply_ta_indicators_util(df, ti_spec)
             headers.extend([c for c in ti_cols if c not in headers])
             # Optional: denoise TI columns as well when requested
             if denoise and bool(denoise.get('apply_to_ti') or denoise.get('ti')) and ti_cols:
@@ -2120,11 +2006,11 @@ def fetch_candles(
         # Filter out warmup region to return the intended target window only
         if start_datetime and end_datetime:
             # Keep within original [from_date, to_date]
-            target_from = _parse_start_datetime(start_datetime).timestamp()
-            target_to = _parse_start_datetime(end_datetime).timestamp()
+            target_from = _parse_start_datetime_util(start_datetime).timestamp()
+            target_to = _parse_start_datetime_util(end_datetime).timestamp()
             df = df.loc[(df['__epoch'] >= target_from) & (df['__epoch'] <= target_to)].copy()
         elif start_datetime:
-            target_from = _parse_start_datetime(start_datetime).timestamp()
+            target_from = _parse_start_datetime_util(start_datetime).timestamp()
             df = df.loc[df['__epoch'] >= target_from].copy()
             if len(df) > candles:
                 df = df.iloc[:candles].copy()
@@ -2144,17 +2030,17 @@ def fetch_candles(
                     seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
                     # Refetch rates with larger warmup
                     if start_datetime and end_datetime:
-                        target_from_dt = _parse_start_datetime(start_datetime)
-                        target_to_dt = _parse_start_datetime(end_datetime)
+                        target_from_dt = _parse_start_datetime_util(start_datetime)
+                        target_to_dt = _parse_start_datetime_util(end_datetime)
                         from_date_internal = target_from_dt - timedelta(seconds=seconds_per_bar * warmup_bars_retry)
                         rates = _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, target_to_dt)
                     elif start_datetime:
-                        target_from_dt = _parse_start_datetime(start_datetime)
+                        target_from_dt = _parse_start_datetime_util(start_datetime)
                         to_date_dt = target_from_dt + timedelta(seconds=seconds_per_bar * (candles + 2))
                         from_date_internal = target_from_dt - timedelta(seconds=seconds_per_bar * warmup_bars_retry)
                         rates = _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date_dt)
                     elif end_datetime:
-                        target_to_dt = _parse_start_datetime(end_datetime)
+                        target_to_dt = _parse_start_datetime_util(end_datetime)
                         rates = _mt5_copy_rates_from(symbol, mt5_timeframe, target_to_dt, candles + warmup_bars_retry)
                     else:
                         utc_now = datetime.utcnow()
@@ -2165,7 +2051,7 @@ def fetch_candles(
                         df['__epoch'] = df['time']
                         with warnings.catch_warnings():
                             warnings.simplefilter("ignore")
-                            df['time'] = df['time'].apply(_format_time_minimal_local if _use_ctz else _format_time_minimal)
+                            df['time'] = df['time'].apply(_format_time_minimal_local_util if _use_ctz else _format_time_minimal_util)
                         if 'volume' not in df.columns and 'tick_volume' in df.columns:
                             with warnings.catch_warnings():
                                 warnings.simplefilter("ignore")
@@ -2174,7 +2060,7 @@ def fetch_candles(
                         if denoise and str(denoise.get('when', 'pre_ti')).lower() == 'pre_ti':
                             _apply_denoise(df, denoise, default_when='pre_ti')
                         # Re-apply indicators and re-extend headers
-                        ti_cols = _apply_ta_indicators(df, ti_spec)
+                        ti_cols = _apply_ta_indicators_util(df, ti_spec)
                         headers.extend([c for c in ti_cols if c not in headers])
                         # Optional: denoise TI columns on retried window
                         if denoise and bool(denoise.get('apply_to_ti') or denoise.get('ti')) and ti_cols:
@@ -2185,11 +2071,11 @@ def fetch_candles(
                             _apply_denoise(df, dn_ti, default_when='post_ti')
                         # Re-trim to target window
                         if start_datetime and end_datetime:
-                            target_from = _parse_start_datetime(start_datetime).timestamp()
-                            target_to = _parse_start_datetime(end_datetime).timestamp()
+                            target_from = _parse_start_datetime_util(start_datetime).timestamp()
+                            target_to = _parse_start_datetime_util(end_datetime).timestamp()
                             df = df[(df['__epoch'] >= target_from) & (df['__epoch'] <= target_to)]
                         elif start_datetime:
-                            target_from = _parse_start_datetime(start_datetime).timestamp()
+                            target_from = _parse_start_datetime_util(start_datetime).timestamp()
                             df = df[df['__epoch'] >= target_from]
                             if len(df) > candles:
                                 df = df.iloc[:candles]
@@ -2216,10 +2102,10 @@ def fetch_candles(
         if 'time' in headers and len(df) > 0:
             epochs_list = df['__epoch'].tolist()
             if _use_ctz:
-                fmt = _time_format_from_epochs_local(epochs_list)
-                fmt = _maybe_strip_year_local(fmt, epochs_list)
-                fmt = _style_time_format(fmt)
-                tz = _resolve_client_tz(timezone)
+                fmt = _time_format_from_epochs_util_local(epochs_list)
+                fmt = _maybe_strip_year_util_local(fmt, epochs_list)
+                fmt = _style_time_format_util(fmt)
+                tz = _resolve_client_tz_util(timezone)
                 # Track used tz name and invalid explicit values
                 tz_used_name = None
                 tz_warning = None
@@ -2236,16 +2122,16 @@ def fetch_candles(
                     warnings.simplefilter("ignore")
                     if tz is not None:
                         tz_used_name = getattr(tz, 'zone', None) or str(tz)
-                        df['time'] = df['__epoch'].apply(lambda t: datetime.fromtimestamp(t, tz=_dt.timezone.utc).astimezone(tz).strftime(fmt))
+                        df['time'] = df['__epoch'].apply(lambda t: datetime.fromtimestamp(t, tz=dt_timezone.utc).astimezone(tz).strftime(fmt))
                     else:
                         tz_used_name = 'system'
-                        df['time'] = df['__epoch'].apply(lambda t: datetime.fromtimestamp(t, tz=_dt.timezone.utc).astimezone().strftime(fmt))
+                        df['time'] = df['__epoch'].apply(lambda t: datetime.fromtimestamp(t, tz=dt_timezone.utc).astimezone().strftime(fmt))
                 df.__dict__['_tz_used_name'] = tz_used_name
                 df.__dict__['_tz_warning'] = tz_warning
             else:
-                fmt = _time_format_from_epochs(epochs_list)
-                fmt = _maybe_strip_year(fmt, epochs_list)
-                fmt = _style_time_format(fmt)
+                fmt = _time_format_from_epochs_util(epochs_list)
+                fmt = _maybe_strip_year_util(fmt, epochs_list)
+                fmt = _style_time_format_util(fmt)
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     df['time'] = df['__epoch'].apply(lambda t: datetime.utcfromtimestamp(t).strftime(fmt))
@@ -2268,10 +2154,10 @@ def fetch_candles(
         df, simplify_meta = _simplify_dataframe_rows(df, headers, simplify_eff if simplify_eff is not None else simplify)
 
         # Assemble rows from (possibly reduced) DataFrame for selected headers
-        rows = _format_numeric_rows_from_df(df, headers)
+        rows = _format_numeric_rows_from_df_util(df, headers)
 
         # Build CSV via writer for escaping
-        payload = _csv_from_rows(headers, rows)
+        payload = _csv_from_rows_util(headers, rows)
         payload.update({
             "success": True,
             "symbol": symbol,
@@ -2310,7 +2196,7 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
         
         try:
             if start_datetime:
-                from_date = _parse_start_datetime(start_datetime)
+                from_date = _parse_start_datetime_util(start_datetime)
                 if not from_date:
                     return {"error": "Invalid date format. Try examples like '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00', '2 days ago'."}
                 ticks = None
@@ -2368,11 +2254,11 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
         # Choose a consistent time format for all rows (strip year if constant)
         # Normalize tick times to UTC
         _epochs = [_mt5_epoch_to_utc(float(t["time"])) for t in ticks]
-        _use_ctz = _use_client_tz(timezone)
+        _use_ctz = _use_client_tz_util(timezone)
         if not _use_ctz:
-            fmt = _time_format_from_epochs(_epochs)
-            fmt = _maybe_strip_year(fmt, _epochs)
-            fmt = _style_time_format(fmt)
+            fmt = _time_format_from_epochs_util(_epochs)
+            fmt = _maybe_strip_year_util(fmt, _epochs)
+            fmt = _style_time_format_util(fmt)
         # Build a DataFrame of ticks to support non-select simplify modes
         def _tick_field(t, name: str):
             try:
@@ -2405,7 +2291,7 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
         # Add display time column
         if _use_ctz:
             df_ticks["time"] = [
-                _format_time_minimal_local(e) for e in _epochs
+                _format_time_minimal_local_util(e) for e in _epochs
             ]
         else:
             df_ticks["time"] = [
@@ -2429,8 +2315,8 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
         _mode = str((simplify_used or {}).get('mode', SIMPLIFY_DEFAULT_MODE)).lower().strip() if simplify_present else SIMPLIFY_DEFAULT_MODE
         if simplify_present and _mode in ('approximate', 'resample'):
             df_out, simplify_meta = _simplify_dataframe_rows(df_ticks, headers, simplify_used)
-            rows = _format_numeric_rows_from_df(df_out, headers)
-            payload = _csv_from_rows(headers, rows)
+            rows = _format_numeric_rows_from_df_util(df_out, headers)
+            payload = _csv_from_rows_util(headers, rows)
             payload.update({
                 "success": True,
                 "symbol": symbol,
@@ -2538,7 +2424,7 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
         for i in select_indices:
             tick = ticks[i]
             if _use_ctz:
-                time_str = _format_time_minimal_local(_epochs[i])
+                time_str = _format_time_minimal_local_util(_epochs[i])
             else:
                 time_str = datetime.utcfromtimestamp(_epochs[i]).strftime(fmt)
             values = [time_str, str(tick['bid']), str(tick['ask'])]
@@ -2550,7 +2436,7 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
                 values.append(str(tick['flags']))
             rows.append(values)
 
-        payload = _csv_from_rows(headers, rows)
+        payload = _csv_from_rows_util(headers, rows)
         payload.update({
             "success": True,
             "symbol": symbol,
@@ -2641,15 +2527,15 @@ def detect_candlestick_patterns(
         except Exception:
             pass
         epochs = [float(t) for t in df['time'].tolist()] if 'time' in df.columns else []
-        _use_ctz = _use_client_tz(timezone)
+        _use_ctz = _use_client_tz_util(timezone)
         if _use_ctz:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                df['time'] = df['time'].apply(_format_time_minimal_local)
+                df['time'] = df['time'].apply(_format_time_minimal_local_util)
         else:
-            time_fmt = _time_format_from_epochs(epochs) if epochs else "%Y-%m-%d %H:%M:%S"
-            time_fmt = _maybe_strip_year(time_fmt, epochs)
-            time_fmt = _style_time_format(time_fmt)
+            time_fmt = _time_format_from_epochs_util(epochs) if epochs else "%Y-%m-%d %H:%M:%S"
+            time_fmt = _maybe_strip_year_util(time_fmt, epochs)
+            time_fmt = _style_time_format_util(time_fmt)
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 df['time'] = df['time'].apply(lambda t: datetime.utcfromtimestamp(float(t)).strftime(time_fmt))
@@ -2733,7 +2619,7 @@ def detect_candlestick_patterns(
             pass
 
         headers = ["time", "pattern"]
-        payload = _csv_from_rows(headers, rows)
+        payload = _csv_from_rows_util(headers, rows)
         payload.update({
             "success": True,
             "symbol": symbol,
@@ -2929,9 +2815,9 @@ def compute_pivot_points(
             }
 
         # Format times per display preference
-        _use_ctz = _use_client_tz(timezone)
-        start_str = _format_time_minimal_local(period_start) if _use_ctz else _format_time_minimal(period_start)
-        end_str = _format_time_minimal_local(period_end) if _use_ctz else _format_time_minimal(period_end)
+        _use_ctz = _use_client_tz_util(timezone)
+        start_str = _format_time_minimal_local_util(period_start) if _use_ctz else _format_time_minimal_util(period_start)
+        end_str = _format_time_minimal_local_util(period_end) if _use_ctz else _format_time_minimal_util(period_end)
 
         payload: Dict[str, Any] = {
             "success": True,
@@ -3313,7 +3199,7 @@ def forecast(
         try:
             # Use explicit as-of time if provided, else server time for alignment
             if as_of:
-                to_dt = _parse_start_datetime(as_of)
+                to_dt = _parse_start_datetime_util(as_of)
                 if not to_dt:
                     return {"error": "Invalid as_of_datetime. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."}
                 rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, need)
@@ -3694,11 +3580,11 @@ def forecast(
             except Exception:
                 return float(v)
 
-        _use_ctz = _use_client_tz(timezone)
+        _use_ctz = _use_client_tz_util(timezone)
         if _use_ctz:
-            times_fmt = [_format_time_minimal_local(ts) for ts in future_times]
+            times_fmt = [_format_time_minimal_local_util(ts) for ts in future_times]
         else:
-            times_fmt = [_format_time_minimal(ts) for ts in future_times]
+            times_fmt = [_format_time_minimal_util(ts) for ts in future_times]
 
         # Training window first/last candle timestamps (used for the forecast)
         try:
@@ -3708,11 +3594,11 @@ def forecast(
             train_first_epoch = float('nan')
             train_last_epoch = float('nan')
         if _use_ctz:
-            train_first_time = _format_time_minimal_local(train_first_epoch) if math.isfinite(train_first_epoch) else None
-            train_last_time = _format_time_minimal_local(train_last_epoch) if math.isfinite(train_last_epoch) else None
+            train_first_time = _format_time_minimal_local_util(train_first_epoch) if math.isfinite(train_first_epoch) else None
+            train_last_time = _format_time_minimal_local_util(train_last_epoch) if math.isfinite(train_last_epoch) else None
         else:
-            train_first_time = _format_time_minimal(train_first_epoch) if math.isfinite(train_first_epoch) else None
-            train_last_time = _format_time_minimal(train_last_epoch) if math.isfinite(train_last_epoch) else None
+            train_first_time = _format_time_minimal_util(train_first_epoch) if math.isfinite(train_first_epoch) else None
+            train_last_time = _format_time_minimal_util(train_last_epoch) if math.isfinite(train_last_epoch) else None
 
         # Overall forecast trend based on net change over horizon
         try:
@@ -3825,11 +3711,11 @@ def fetch_market_depth(symbol: str, timezone: str = "auto") -> Dict[str, Any]:
                 }
             }
             try:
-                _use_ctz = _use_client_tz(timezone)
+                _use_ctz = _use_client_tz_util(timezone)
                 if tick.time and _use_ctz:
-                    out["data"]["time_display"] = _format_time_minimal_local(_mt5_epoch_to_utc(float(tick.time)))
+                    out["data"]["time_display"] = _format_time_minimal_local_util(_mt5_epoch_to_utc(float(tick.time)))
                 elif tick.time:
-                    out["data"]["time_display"] = _format_time_minimal(_mt5_epoch_to_utc(float(tick.time)))
+                    out["data"]["time_display"] = _format_time_minimal_util(_mt5_epoch_to_utc(float(tick.time)))
             except Exception:
                 pass
             out["display_timezone"] = "client" if _use_ctz else "UTC"
@@ -3844,23 +3730,7 @@ def main():
 if __name__ == "__main__":
     main()
 
-# Rebind selected helpers to extracted modules at import time to ensure all call sites
-# use the split implementations (lookups occur at call time).
-_csv_from_rows = _csv_from_rows_util
-_format_time_minimal = _format_time_minimal_util
-_format_time_minimal_local = _format_time_minimal_local_util
-_use_client_tz = _use_client_tz_util
-_resolve_client_tz = _resolve_client_tz_util
-_time_format_from_epochs = _time_format_from_epochs_util
-_maybe_strip_year = _maybe_strip_year_util
-_style_time_format = _style_time_format_util
-_optimal_decimals = _optimal_decimals_util
-_format_float = _format_float_util
-_format_numeric_rows_from_df = _format_numeric_rows_from_df_util
-_parse_start_datetime = _parse_start_datetime_util
+# Helper function assignments for backwards compatibility
 _list_ta_indicators = _list_ta_indicators_util
 _parse_ti_specs = _parse_ti_specs_util
-_apply_ta_indicators = _apply_ta_indicators_util
-_estimate_warmup_bars = _estimate_warmup_bars_util
 _apply_denoise = _apply_denoise_util
-_extract_group_path = _extract_group_path_util

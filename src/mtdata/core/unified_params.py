@@ -7,6 +7,7 @@ This module provides global parameters that work across all functions.
 
 from typing import Optional
 import argparse
+from .constants import DEFAULT_TIMEZONE, DEFAULT_TIMEFRAME, DEFAULT_FORMAT
 
 def add_global_args_to_parser(parser: argparse.ArgumentParser, exclude_params: Optional[list] = None) -> None:
     """Add all global parameters to an argument parser"""
@@ -18,7 +19,7 @@ def add_global_args_to_parser(parser: argparse.ArgumentParser, exclude_params: O
         parser.add_argument(
             '--format',
             choices=['csv', 'json'],
-            default='csv',
+            default=DEFAULT_FORMAT,
             help='Output format for results'
         )
     
@@ -26,7 +27,7 @@ def add_global_args_to_parser(parser: argparse.ArgumentParser, exclude_params: O
     if 'timezone' not in exclude_params:
         parser.add_argument(
             '--timezone',
-            default='auto',
+            default=DEFAULT_TIMEZONE,
             help='Timezone for timestamps (auto, UTC, or timezone name)'
         )
     
@@ -34,6 +35,6 @@ def add_global_args_to_parser(parser: argparse.ArgumentParser, exclude_params: O
     if 'timeframe' not in exclude_params:
         parser.add_argument(
             '--timeframe',
-            default='H1',
+            default=DEFAULT_TIMEFRAME,
             help='Timeframe for market data (H1, M30, D1, etc.)'
         )
