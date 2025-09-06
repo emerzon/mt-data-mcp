@@ -59,6 +59,12 @@ The following tools are available via `python cli.py <command>`:
 - `fetch_ticks <symbol> [--limit N]` - Get tick data.
 - `fetch_market_depth <symbol>` - Get market depth (DOM).
 - `list_indicators` - List available technical indicators.
+  - CSV: grouped rows (category shown once per group):
+    category,name
+    Momentum,RSI
+    ,MACD
+    ,Stoch
+  - JSON: grouped by category `{ "categories": { "Momentum": ["RSI", ...], ... } }`
 - `describe_indicator <name>` - Get detailed information for a specific indicator.
 - `list_denoise_methods` - List available denoising methods and their parameters.
 - `detect_candlestick_patterns <symbol> <timeframe> [--limit N]` - Detect candlestick patterns.

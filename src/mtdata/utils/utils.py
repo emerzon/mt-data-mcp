@@ -7,7 +7,7 @@ import pandas as pd
 import dateparser
 
 from ..core.config import mt5_config
-from ..core.constants import PRECISION_ABS_TOL, PRECISION_MAX_DECIMALS, PRECISION_REL_TOL
+from ..core.constants import PRECISION_ABS_TOL, PRECISION_MAX_DECIMALS, PRECISION_REL_TOL, TIME_DISPLAY_FORMAT
 
 
 def _csv_from_rows(headers: List[str], rows: List[List[Any]]) -> Dict[str, Any]:
@@ -32,30 +32,27 @@ def _csv_from_rows(headers: List[str], rows: List[List[Any]]) -> Dict[str, Any]:
 
 
 def _format_time_minimal(epoch_seconds: float) -> str:
+    """Format epoch seconds into a normalized UTC datetime string.
+
+    Normalized format everywhere: YYYY-MM-DD HH:MM:SS (UTC)
+    """
     dt = datetime.utcfromtimestamp(epoch_seconds)
-    if dt.hour == 0 and dt.minute == 0 and dt.second == 0:
-        return dt.strftime("%Y-%m-%d")
-    if dt.minute == 0 and dt.second == 0:
-        return dt.strftime("%Y-%m-%dT%H")
-    if dt.second == 0:
-        return dt.strftime("%Y-%m-%dT%H:%M")
-    return dt.strftime("%Y-%m-%dT%H:%M:%S")
+    return dt.strftime(TIME_DISPLAY_FORMAT)
 
 
 def _format_time_minimal_local(epoch_seconds: float) -> str:
+    """Format epoch seconds into a normalized local/client datetime string.
+
+    Normalized format everywhere: YYYY-MM-DD HH:MM:SS (local/client tz)
+    Falls back to UTC if tz resolution fails.
+    """
     try:
         tz = mt5_config.get_client_tz()
         if tz is not None:
             dt = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc).astimezone(tz)
         else:
             dt = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc).astimezone()
-        if dt.hour == 0 and dt.minute == 0 and dt.second == 0:
-            return dt.strftime("%Y-%m-%d")
-        if dt.minute == 0 and dt.second == 0:
-            return dt.strftime("%Y-%m-%d %Hh")
-        if dt.second == 0:
-            return dt.strftime("%Y-%m-%d %H:%M")
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
+        return dt.strftime(TIME_DISPLAY_FORMAT)
     except Exception:
         return _format_time_minimal(epoch_seconds)
 
@@ -109,43 +106,20 @@ def _resolve_client_tz(client_tz_param: object):
 
 
 def _time_format_from_epochs(epochs: List[float]) -> str:
-    any_sec = False
-    any_min = False
-    any_hour = False
-    for e in epochs:
-        dt = datetime.utcfromtimestamp(e)
-        if dt.second != 0:
-            any_sec = True
-            break
-        if dt.minute != 0:
-            any_min = True
-        if dt.hour != 0:
-            any_hour = True
-    if any_sec:
-        return "%Y-%m-%d %H:%M:%S"
-    if any_min:
-        return "%Y-%m-%d %H:%M"
-    if any_hour:
-        return "%Y-%m-%d %H"
-    return "%Y-%m-%d"
+    """Return the normalized display format regardless of epoch contents."""
+    return TIME_DISPLAY_FORMAT
 
 
 def _maybe_strip_year(fmt: str, epochs: List[float]) -> str:
-    try:
-        years = set(datetime.utcfromtimestamp(e).year for e in epochs)
-        if len(years) == 1 and fmt.startswith("%Y-"):
-            return fmt[3:]
-    except Exception:
-        pass
+    """No-op when normalization is requested; keep full year for consistency."""
     return fmt
 
 
 def _style_time_format(fmt: str) -> str:
+    """No special styling; keep normalized spacing."""
     try:
         if 'T' in fmt:
-            fmt = fmt.replace('T', ' ')
-        if fmt.endswith('%H'):
-            fmt = fmt + 'h'
+            return fmt.replace('T', ' ')
     except Exception:
         pass
     return fmt

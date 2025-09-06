@@ -52,6 +52,13 @@ from .constants import (
     SIMPLIFY_DEFAULT_MAX_POINTS,
     TIMEFRAME_MAP,
     TIMEFRAME_SECONDS,
+    TIME_DISPLAY_FORMAT,
+)
+from .schema import (
+    enrich_schema_with_shared_defs as _enrich_schema_with_shared_defs,
+    build_minimal_schema as _build_minimal_schema,
+    get_function_info as _get_function_info,
+    complex_defs as _complex_defs,
 )
 mcp = FastMCP(SERVICE_NAME)
 
@@ -134,57 +141,11 @@ def _ensure_symbol_ready(symbol: str) -> Optional[str]:
 
 
 def _time_format_from_epochs_util_local(epochs: List[float]) -> str:
-    """Choose a consistent local-time format for a series of UTC epoch timestamps.
-
-    Uses CLIENT_TZ if configured; otherwise system local timezone. Mirrors _time_format_from_epochs_util
-    but bases the decision on local-time components.
-    """
-    try:
-        tz = mt5_config.get_client_tz()
-    except Exception:
-        tz = None
-    any_sec = False
-    any_min = False
-    any_hour = False
-    for e in epochs:
-        try:
-            dt = datetime.fromtimestamp(e, tz=dt_timezone.utc).astimezone(tz) if tz else datetime.fromtimestamp(e).astimezone()
-        except Exception:
-            # fallback to UTC
-            dt = datetime.utcfromtimestamp(e)
-        if dt.second != 0:
-            any_sec = True
-            break
-        if dt.minute != 0:
-            any_min = True
-        if dt.hour != 0:
-            any_hour = True
-    if any_sec:
-        return "%Y-%m-%d %H:%M:%S"
-    if any_min:
-        return "%Y-%m-%d %H:%M"
-    if any_hour:
-        return "%Y-%m-%d %H"
-    return "%Y-%m-%d"
+    """Normalized local/client datetime format (constant for consistency)."""
+    return TIME_DISPLAY_FORMAT
 
 def _maybe_strip_year_util_local(fmt: str, epochs: List[float]) -> str:
-    """If all timestamps are in the same year in client/local tz, remove the year from the format."""
-    try:
-        tz = mt5_config.get_client_tz()
-    except Exception:
-        tz = None
-    try:
-        years = set()
-        for e in epochs:
-            try:
-                dt = datetime.fromtimestamp(e, tz=dt_timezone.utc).astimezone(tz) if tz else datetime.fromtimestamp(e).astimezone()
-            except Exception:
-                dt = datetime.utcfromtimestamp(e)
-            years.add(dt.year)
-        if len(years) == 1 and fmt.startswith("%Y-"):
-            return fmt[3:]
-    except Exception:
-        pass
+    """No-op to keep full year for normalized outputs."""
     return fmt
 
 
@@ -2098,7 +2059,8 @@ def list_denoise_methods() -> Dict[str, Any]:
     Parameters: none
     """
     try:
-        from denoise_utils import get_denoise_methods_data
+        # Use the shared utils module for denoise metadata
+        from ..utils.denoise import get_denoise_methods_data
         return get_denoise_methods_data()
     except Exception as e:
         return {"error": f"Error listing denoise methods: {e}"}
@@ -4422,3 +4384,116 @@ if __name__ == "__main__":
 _list_ta_indicators = _list_ta_indicators_util
 _parse_ti_specs = _parse_ti_specs_util
 _apply_denoise = _apply_denoise_util
+
+# --- Attach shared schemas to MCP tools for discoverability ---
+def _server_shared_defs() -> Dict[str, Any]:
+    defs: Dict[str, Any] = {}
+    try:
+        defs.update({
+            "OhlcvChar": {"type": "string", "enum": ["O","H","L","C","V"], "description": "OHLCV column code"},
+            "DenoiseMethod": {"type": "string", "enum": list(_DENOISE_METHODS)},
+            "SimplifyMode": {"type": "string", "enum": list(_SIMPLIFY_MODES)},
+            "SimplifyMethod": {"type": "string", "enum": list(_SIMPLIFY_METHODS)},
+            "EncodeSchema": {"type": "string", "enum": ["envelope","delta"]},
+            "SymbolicSchema": {"type": "string", "enum": ["sax"]},
+            "PivotMethod": {"type": "string", "enum": list(_PIVOT_METHODS)},
+            "ForecastMethod": {"type": "string", "enum": list(_FORECAST_METHODS)},
+            "VolatilityMethod": {"type": "string", "enum": ["ewma","parkinson","gk","rs","garch"]},
+            "WhenSpec": {"type": "string", "enum": ["pre_ti","post_ti"]},
+            "CausalitySpec": {"type": "string", "enum": ["causal","zero_phase"]},
+            "TargetSpec": {"type": "string", "enum": ["price","return"]},
+        })
+        if _CATEGORY_CHOICES:
+            defs["IndicatorCategory"] = {"type": "string", "enum": list(_CATEGORY_CHOICES)}
+        if _INDICATOR_NAME_CHOICES:
+            defs["IndicatorName"] = {"type": "string", "enum": list(_INDICATOR_NAME_CHOICES)}
+    except Exception:
+        pass
+    return defs
+
+def _extract_func_from_tool(tool_obj: Any):
+    for attr in ("func", "function", "callable", "handler", "wrapped", "_func"):
+        try:
+            val = getattr(tool_obj, attr)
+            if callable(val):
+                return val
+        except Exception:
+            continue
+    return tool_obj if callable(tool_obj) else None
+
+def _attach_schemas_to_tools():
+    try:
+        registry = None
+        for attr in ("tools", "_tools", "registry", "tool_registry", "_tool_registry"):
+            reg = getattr(mcp, attr, None)
+            if reg and hasattr(reg, 'items'):
+                registry = reg
+                break
+        if not registry:
+            return
+        shared_defs = _server_shared_defs()
+        for name, obj in list(registry.items()):
+            func = _extract_func_from_tool(obj)
+            if not callable(func):
+                continue
+            info = _get_function_info(func)
+            schema = _build_minimal_schema(info)
+            # Merge shared defs and apply timeframe ref
+            schema = _enrich_schema_with_shared_defs(schema, info)
+            try:
+                if "$defs" not in schema:
+                    schema["$defs"] = {}
+                # Bring in server shared enums and complex nested specs
+                schema["$defs"].update({k: v for k, v in shared_defs.items() if k not in schema["$defs"]})
+                schema["$defs"].update({k: v for k, v in _complex_defs().items() if k not in schema["$defs"]})
+            except Exception:
+                pass
+            # Map method-like params to specific shared enums by tool name
+            try:
+                params = schema.get("parameters", {}).get("properties", {})
+                if name == "forecast" and "method" in params:
+                    params["method"] = {"$ref": "#/$defs/ForecastMethod"}
+                    if "target" in params:
+                        params["target"] = {"$ref": "#/$defs/TargetSpec"}
+                    # Optional denoise in forecast
+                    if "denoise" in params:
+                        params["denoise"] = {"$ref": "#/$defs/DenoiseSpec"}
+                    if "params" in params:
+                        # Leave method-specific params open-ended
+                        params["params"] = {"type": "object", "additionalProperties": True}
+                if name == "forecast_volatility" and "method" in params:
+                    params["method"] = {"$ref": "#/$defs/VolatilityMethod"}
+                    if "params" in params:
+                        params["params"] = {"$ref": "#/$defs/VolatilityParams"}
+                if name == "compute_pivot_points" and "method" in params:
+                    params["method"] = {"$ref": "#/$defs/PivotMethod"}
+                if name == "list_indicators" and "category" in params and "IndicatorCategory" in schema.get("$defs", {}):
+                    params["category"] = {"$ref": "#/$defs/IndicatorCategory"}
+                if name == "describe_indicator" and "name" in params and "IndicatorName" in schema.get("$defs", {}):
+                    params["name"] = {"$ref": "#/$defs/IndicatorName"}
+                if name == "fetch_candles":
+                    if "indicators" in params:
+                        params["indicators"] = {"type": "array", "items": {"$ref": "#/$defs/IndicatorSpec"}}
+                    if "denoise" in params:
+                        params["denoise"] = {"$ref": "#/$defs/DenoiseSpec"}
+                    if "simplify" in params:
+                        params["simplify"] = {"$ref": "#/$defs/SimplifySpec"}
+                if name == "fetch_ticks":
+                    if "simplify" in params:
+                        params["simplify"] = {"$ref": "#/$defs/SimplifySpec"}
+            except Exception:
+                pass
+            # Attach to both tool object and underlying function for consumers
+            try:
+                setattr(obj, "schema", schema)
+            except Exception:
+                pass
+            try:
+                setattr(func, "schema", schema)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+# Attach schemas at import time so external clients can discover them
+_attach_schemas_to_tools()

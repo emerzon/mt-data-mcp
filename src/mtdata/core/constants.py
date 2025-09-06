@@ -20,6 +20,8 @@ PRECISION_MAX_DECIMALS = 10  # upper bound on decimal places
 DEFAULT_TIMEZONE = "auto"    # default timezone parameter
 DEFAULT_TIMEFRAME = "H1"     # default timeframe parameter  
 DEFAULT_FORMAT = "csv"       # default output format
+# Normalized datetime display format (UTC/local)
+TIME_DISPLAY_FORMAT = "%Y-%m-%d %H:%M:%S"
 # Simplification defaults
 SIMPLIFY_DEFAULT_METHOD = "lttb"  # default simplify method when not specified
 SIMPLIFY_DEFAULT_MODE = "approximate"  # default simplify mode when not specified

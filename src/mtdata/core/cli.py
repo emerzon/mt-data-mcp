@@ -5,6 +5,9 @@ Automatically discovers function parameters and creates CLI arguments
 """
 
 import argparse
+import io
+import csv
+from collections import OrderedDict
 import sys
 import json
 import inspect
@@ -23,6 +26,7 @@ except Exception:
     pass
 from . import server
 from .unified_params import add_global_args_to_parser
+from .schema import enrich_schema_with_shared_defs
 
 # Types for discovered metadata
 ToolInfo = Dict[str, Any]
@@ -361,7 +365,7 @@ def _parse_kv_string(s: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def create_command_function(func_info):
+def create_command_function(func_info, cmd_name: str = ""):
     """Create a command function that calls the MCP function dynamically"""
     def command_func(args):
         # Build kwargs from args
@@ -438,11 +442,62 @@ def create_command_function(func_info):
         except Exception:
             preferred = 'csv'
             
-        if preferred == 'csv' and print_csv_result(result):
-            return
+        if preferred == 'csv':
+            # Special CSV shaping for certain commands
+            if cmd_name == 'list_indicators':
+                try:
+                    structured = convert_csv_to_json(result)
+                    rows = structured.get('data') or []
+                    # We will output as category,name regardless of server header order
+                    header = 'category,name'
+                    # Preserve original order while grouping by category
+                    groups: OrderedDict = OrderedDict()
+                    for r in rows:
+                        if not isinstance(r, dict):
+                            continue
+                        cat = r.get('category') or 'Uncategorized'
+                        name = r.get('name')
+                        if not name:
+                            continue
+                        groups.setdefault(cat, []).append(name)
+                    # Build grouped CSV: show category once, then blank for subsequent entries
+                    buf = io.StringIO()
+                    writer = csv.writer(buf, lineterminator='\n')
+                    # Only write data rows; print header separately for consistency with other commands
+                    for cat, names in groups.items():
+                        for i, name in enumerate(names):
+                            writer.writerow([cat if i == 0 else '', name])
+                    print(header)
+                    print(buf.getvalue().rstrip('\n'))
+                    return
+                except Exception:
+                    # Fallback to default CSV printing
+                    pass
+            if print_csv_result(result):
+                return
         elif preferred == 'json':
             # Convert CSV data to proper structured JSON if present
             structured_result = convert_csv_to_json(result)
+            # Special JSON shaping for certain commands
+            try:
+                if cmd_name == 'list_indicators' and isinstance(structured_result, dict):
+                    rows = structured_result.get('data') or []
+                    groups = {}
+                    for r in rows:
+                        try:
+                            cat = (r.get('category') if isinstance(r, dict) else None) or 'Uncategorized'
+                            name = r.get('name') if isinstance(r, dict) else None
+                            if name:
+                                groups.setdefault(cat, []).append(name)
+                        except Exception:
+                            continue
+                    structured_result = {
+                        'success': bool(structured_result.get('success', True)),
+                        'categories': groups,
+                        'count': sum(len(v) for v in groups.values())
+                    }
+            except Exception:
+                pass
             try:
                 print(json.dumps(structured_result, indent=2, sort_keys=True, default=str, ensure_ascii=False))
             except Exception:
@@ -481,6 +536,10 @@ def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
         info = get_function_info(func)
         # Overlay from schema for defaults/required
         schema = meta.get('schema') or {}
+        # Enrich with shared $defs and timeframe refs; or build minimal if missing
+        schema = enrich_schema_with_shared_defs(schema, info)
+        # Persist enriched schema back into meta for downstream help building
+        tool['meta']['schema'] = schema
         params_obj = schema.get('parameters') if isinstance(schema.get('parameters'), dict) else schema
         schema_props = params_obj.get('properties') if isinstance(params_obj, dict) else {}
         schema_required = set(params_obj.get('required', [])) if isinstance(params_obj, dict) else set()
@@ -538,6 +597,7 @@ def main():
         func_info = get_function_info(func)
         # Overlay defaults and required flags from schema if available
         schema = meta.get('schema') or {}
+        schema = enrich_schema_with_shared_defs(schema, func_info)
         params_obj = schema.get('parameters') if isinstance(schema.get('parameters'), dict) else schema
         schema_props = params_obj.get('properties') if isinstance(params_obj, dict) else {}
         schema_required = set(params_obj.get('required', [])) if isinstance(params_obj, dict) else set()
@@ -562,7 +622,7 @@ def main():
         add_dynamic_arguments(cmd_parser, func_info, meta.get('param_docs'))
         
         # Set the command function
-        cmd_parser.set_defaults(func=create_command_function(func_info))
+        cmd_parser.set_defaults(func=create_command_function(func_info, cmd_name))
     
     # Parse arguments
     args = parser.parse_args()
