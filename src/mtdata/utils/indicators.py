@@ -46,8 +46,39 @@ def _list_ta_indicators() -> List[Dict[str, Any]]:
 
 
 def _parse_ti_specs(spec: str) -> List[Tuple[str, List[float], Dict[str, float]]]:
+    """Parse a compact indicator spec string into [(name, args, kwargs)].
+
+    Splits top-level by comma, respecting parentheses so nested commas in
+    argument lists don't split functions. Supports numeric args and k=v pairs.
+    """
+    text = str(spec).strip()
+    if not text:
+        return []
+
+    # Split by commas at top level only
+    parts: List[str] = []
+    buf: List[str] = []
+    depth = 0
+    for ch in text:
+        if ch == '(':
+            depth += 1
+            buf.append(ch)
+        elif ch == ')':
+            depth = max(0, depth - 1)
+            buf.append(ch)
+        elif ch == ',' and depth == 0:
+            token = ''.join(buf).strip()
+            if token:
+                parts.append(token)
+            buf = []
+        else:
+            buf.append(ch)
+    last = ''.join(buf).strip()
+    if last:
+        parts.append(last)
+
     specs: List[Tuple[str, List[float], Dict[str, float]]] = []
-    for part in str(spec).split(','):
+    for part in parts:
         part = part.strip()
         if not part:
             continue
@@ -57,22 +88,26 @@ def _parse_ti_specs(spec: str) -> List[Tuple[str, List[float], Dict[str, float]]
         if '(' in part and part.endswith(')'):
             name = part[: part.index('(')].strip()
             inside = part[part.index('(') + 1 : -1]
+            # Split inside by commas (no nested parens expected here)
             for tok in inside.split(','):
-                tok = tok.strip().strip('"\'')
+                tok = tok.strip().strip('\"\'')
                 if not tok:
                     continue
                 if '=' in tok:
                     k, v = tok.split('=', 1)
+                    k = k.strip()
+                    v = v.strip()
                     try:
-                        kwargs[k.strip()] = float(v)
+                        kwargs[k] = float(v)
                     except Exception:
+                        # Keep non-numeric as-is? For now ignore invalid
                         pass
                 else:
                     try:
                         args.append(float(tok))
                     except Exception:
                         pass
-        # Flex: detect trailing numeric length in the indicator name (e.g., RSI_48 or EMA21)
+        # Flex: detect trailing number in name (EMA21 -> length=21)
         import re
         m = re.search(r"(.*?)[_\-]?([0-9]{1,3})$", name)
         if m and not args and 'length' not in kwargs:
@@ -108,19 +143,64 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:
         if not callable(func):
             continue
         try:
-            # Provide common series arguments if present
+            sig = inspect.signature(func)
+            params = sig.parameters
+            # Prepare positional and keyword arguments safely
             call_kwargs = dict(kwargs)
-            if 'close' in inspect.signature(func).parameters and 'close' not in call_kwargs and 'close' in df.columns:
-                call_kwargs['close'] = df['close']
-            if 'open' in inspect.signature(func).parameters and 'open' not in call_kwargs and 'open' in df.columns:
+            call_args = []
+            # Provide price/series inputs
+            if 'close' in params and 'close' in df.columns:
+                # Use positional for 'close' to prevent numeric args binding to it
+                call_args.append(df['close'])
+                call_kwargs.pop('close', None)
+            # Additional series as keywords if accepted
+            if 'open' in params and 'open' not in call_kwargs and 'open' in df.columns:
                 call_kwargs['open'] = df['open']
-            if 'high' in inspect.signature(func).parameters and 'high' not in call_kwargs and 'high' in df.columns:
+            if 'high' in params and 'high' not in call_kwargs and 'high' in df.columns:
                 call_kwargs['high'] = df['high']
-            if 'low' in inspect.signature(func).parameters and 'low' not in call_kwargs and 'low' in df.columns:
+            if 'low' in params and 'low' not in call_kwargs and 'low' in df.columns:
                 call_kwargs['low'] = df['low']
-            if 'volume' in inspect.signature(func).parameters and 'volume' not in call_kwargs and 'volume' in df.columns:
+            if 'volume' in params and 'volume' not in call_kwargs and 'volume' in df.columns:
                 call_kwargs['volume'] = df['volume']
-            out = func(*args, **call_kwargs)
+
+            # Generic mapping: map provided numeric args to function parameters in declared order
+            # Skip series parameters and any already supplied in call_kwargs
+            series_names = {'open', 'high', 'low', 'close', 'volume'}
+            ordered_param_names = []
+            for pname, p in params.items():
+                if p.kind in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL):
+                    continue
+                if pname in series_names:
+                    continue
+                ordered_param_names.append(pname)
+            # Assign args to next available param name not already set
+            ai = 0
+            for pname in ordered_param_names:
+                if ai >= len(args):
+                    break
+                if pname in call_kwargs:
+                    continue
+                # Use provided arg in order
+                call_kwargs[pname] = args[ai]
+                ai += 1
+
+            # Call indicator function with constructed arguments, with fallbacks
+            out = None
+            try:
+                out = func(*call_args, **call_kwargs)
+            except Exception:
+                try:
+                    # Fallback: also pass numeric args positionally after series
+                    out = func(*([*call_args, *args]), **call_kwargs)
+                except Exception:
+                    try:
+                        # Fallback: keyword-only attempt including close
+                        kw_only = dict(call_kwargs)
+                        if 'close' in params and 'close' in df.columns:
+                            kw_only['close'] = df['close']
+                        out = func(**kw_only)
+                    except Exception:
+                        out = None
             if isinstance(out, pd.DataFrame):
                 for c in out.columns:
                     df[c] = out[c]
@@ -186,4 +266,3 @@ def _estimate_warmup_bars(ti_spec: Optional[str]) -> int:
             max_warmup = warm
     scaled = max(int(max_warmup * 3), 50) if max_warmup > 0 else 0
     return scaled
-

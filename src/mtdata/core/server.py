@@ -7,6 +7,7 @@ from datetime import timezone as dt_timezone
 from typing import Any, Dict, Optional, List, Tuple, Literal
 from typing_extensions import TypedDict
 import io
+import json
 import csv
 import time
 import re
@@ -190,10 +191,36 @@ def _maybe_strip_year_util_local(fmt: str, epochs: List[float]) -> str:
 
 # ---- Numeric formatting helpers ----
 
+def _coerce_scalar(val: str):
+    """Coerce a string scalar to int/float when possible; else return original.
 
-
-
-
+    Used to serialize indicator params from structured input into a compact spec string.
+    """
+    try:
+        s = str(val).strip()
+    except Exception:
+        return val
+    if not s:
+        return s
+    # Try integer
+    try:
+        # Detect pure integer tokens (including + / -)
+        if re.match(r"^[+-]?\d+$", s):
+            return int(s)
+    except Exception:
+        pass
+    # Try float
+    try:
+        return float(s)
+    except Exception:
+        pass
+    # Common boolean-like tokens to numeric flags
+    sl = s.lower()
+    if sl in ("true", "false"):
+        return 1 if sl == "true" else 0
+    if sl in ("none", "null"):
+        return 0
+    return s
 
 # ---- Timeseries simplification helpers ----
 def _lttb_select_indices(x: List[float], y: List[float], n_out: int) -> List[int]:
@@ -724,12 +751,14 @@ def _apca_autotune_max_error(y: List[float], target_points: int, max_iter: int =
 
 
 def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Optional[Dict[str, Any]]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
-    """Reduce rows using selection, approximation, or resampling across numeric columns.
+    """Reduce or transform rows across numeric columns.
 
     Modes (simplify['mode']):
     - 'select' (default): pick representative existing rows using the chosen method.
     - 'approximate': partition by selected breakpoints and aggregate numeric columns per segment.
     - 'resample': time-based bucketing by '__epoch' with 'bucket_seconds'; aggregates numeric columns.
+    - 'encode': transform per-row representation to a compact schema (e.g., envelope or delta) and
+                optionally pre-select rows before encoding.
 
     Aggregation: mean for numeric columns; first value for non-numeric columns like 'time'.
     """
@@ -741,6 +770,11 @@ def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Opt
             return df, None
         method = str(simplify.get("method", SIMPLIFY_DEFAULT_METHOD)).lower().strip()
         mode = str(simplify.get("mode", SIMPLIFY_DEFAULT_MODE)).lower().strip() or SIMPLIFY_DEFAULT_MODE
+        # If users passed a high-level mode via --simplify (CLI maps to 'method'), map it to mode
+        if method in ("encode", "symbolic", "segment"):
+            explicit_mode = str(simplify.get("mode", "")).lower().strip()
+            if explicit_mode in ("", SIMPLIFY_DEFAULT_MODE, "select"):
+                mode = method
 
         # Helper: numeric columns in requested headers order, then any others
         def _numeric_columns_from_headers() -> List[str]:
@@ -782,7 +816,7 @@ def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Opt
                         row[col] = seg.iloc[0][col]
             return row
 
-        # Determine target number of points early (used for select and to infer resample bucket)
+        # Determine target number of points early (used for select and to infer resample/encode)
         n_out = _choose_simplify_points(total, simplify)
         if mode == "resample" and "__epoch" in df.columns:
             bs = simplify.get("bucket_seconds")
@@ -816,6 +850,480 @@ def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Opt
                 "points": len(out_df),
             }
             return out_df.reset_index(drop=True), meta
+
+        # Encode mode: optionally select rows first, then encode candle columns
+        if mode == "encode":
+            # Determine encoding schema and parameters
+            schema = str(simplify.get("schema", "envelope")).lower().strip()
+
+            # Helper: choose selection indices using multi-column union (close prioritized if present)
+            def _preselect_indices() -> List[int]:
+                if n_out >= total:
+                    return list(range(total))
+                x = [float(v) for v in df['__epoch'].tolist()]
+                # Prefer main candle columns if present, else any numeric
+                preferred = [c for c in ["close", "open", "high", "low"] if c in df.columns and pd.api.types.is_numeric_dtype(df[c])]
+                cols = preferred or [c for c in df.columns if c not in ("time", "__epoch") and pd.api.types.is_numeric_dtype(df[c])]
+                if not cols:
+                    return list(range(total))
+                base_points = max(3, int(round(n_out / max(1, len(cols)))))
+                idx_set: set = set([0, total - 1])
+                for c in cols:
+                    y = [float(v) if v is not None and not pd.isna(v) else 0.0 for v in df[c].tolist()]
+                    sub_spec = dict(simplify)
+                    sub_spec['points'] = base_points
+                    idxs, _, _ = _select_indices_for_timeseries(x, y, sub_spec)
+                    for i in idxs:
+                        if 0 <= int(i) < total:
+                            idx_set.add(int(i))
+                idxs_union = sorted(idx_set)
+                if len(idxs_union) == n_out:
+                    return idxs_union
+                # Refine/top-up using composite
+                mins: Dict[str, float] = {}
+                ranges: Dict[str, float] = {}
+                for c in cols:
+                    arr = [float(v) if v is not None and not pd.isna(v) else 0.0 for v in df[c].tolist()]
+                    if arr:
+                        mn, mx = min(arr), max(arr)
+                        ranges[c] = max(1e-12, mx - mn)
+                        mins[c] = mn
+                    else:
+                        ranges[c] = 1.0
+                        mins[c] = 0.0
+                comp: List[float] = []
+                for i in range(total):
+                    s = 0.0
+                    for c in cols:
+                        try:
+                            vv = (float(df.iloc[i][c]) - mins[c]) / ranges[c]
+                        except Exception:
+                            vv = 0.0
+                        s += abs(vv)
+                    comp.append(s)
+                if len(idxs_union) > n_out:
+                    refined = _lttb_select_indices(x, comp, n_out)
+                    return sorted(set(refined))
+                elif len(idxs_union) < n_out:
+                    refined = _lttb_select_indices(x, comp, n_out)
+                    merged = sorted(set(idxs_union).union(refined))
+                    if len(merged) > n_out:
+                        keep = set([0, total - 1])
+                        cand = [(comp[i], i) for i in merged if i not in keep]
+                        cand.sort(reverse=True)
+                        for _, i in cand:
+                            keep.add(i)
+                            if len(keep) >= n_out:
+                                break
+                        return sorted(keep)
+                    return merged
+                return idxs_union
+
+            idxs_final = _preselect_indices()
+            out = df.iloc[idxs_final].copy() if len(idxs_final) < total else df.copy()
+
+            # Envelope schema: keep low/high, encode open/close as compact positions
+            if schema in ("envelope", "env"):
+                try:
+                    bits = int(simplify.get("bits", 8))
+                except Exception:
+                    bits = 8
+                # Optional character alphabet to minimize UTF-8 characters
+                alphabet = simplify.get("alphabet") or "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+                alphabet = str(alphabet)
+                levels_bits = max(2, int(2 ** bits))
+                levels_alpha = max(2, len(alphabet))
+                levels = min(levels_bits, levels_alpha)
+                as_chars = bool(simplify.get("as_chars") or simplify.get("chars"))
+                # Ensure required columns exist
+                needed = ["open", "high", "low", "close"]
+                if not all(col in out.columns for col in needed):
+                    return out, None
+                lo = out["low"].astype(float)
+                hi = out["high"].astype(float)
+                rng = (hi - lo).replace(0, np.nan)
+                o_pos = (((out["open"].astype(float) - lo) / rng).clip(0.0, 1.0).fillna(0.5) * (levels - 1)).round().astype(int)
+                c_pos = (((out["close"].astype(float) - lo) / rng).clip(0.0, 1.0).fillna(0.5) * (levels - 1)).round().astype(int)
+                # Build compact dataframe keeping all requested non-replaced columns
+                if as_chars:
+                    # Map positions to single characters from the alphabet (index modulo available)
+                    def _map_char(v: int) -> str:
+                        try:
+                            idx = int(v) % len(alphabet)
+                            return alphabet[idx]
+                        except Exception:
+                            return alphabet[0]
+                    o_ser = o_pos.apply(_map_char)
+                    c_ser = c_pos.apply(_map_char)
+                    o_name, c_name = "o", "c"
+                else:
+                    o_ser = o_pos
+                    c_ser = c_pos
+                    o_name, c_name = "o_pos", "c_pos"
+                base_cols = ["time", "low", "high", o_name, c_name]
+                replaced = {"open", "close"}  # replaced by positions
+                # Start with base
+                out_df = pd.DataFrame({
+                    "time": out["time"] if "time" in out.columns else out.index.astype(str),
+                    "low": lo,
+                    "high": hi,
+                    o_name: o_ser,
+                    c_name: c_ser,
+                })
+                # Append all other requested headers (TI, volumes, spread, etc.) in requested order
+                extra_cols: List[str] = []
+                for h in headers:
+                    if h in ("time", "low", "high"):
+                        continue  # already included
+                    if h in replaced:
+                        continue
+                    if h in out.columns and h not in extra_cols:
+                        extra_cols.append(h)
+                for c in extra_cols:
+                    out_df[c] = out[c]
+                meta = {
+                    "mode": "encode",
+                    "schema": "envelope",
+                    "bits": bits,
+                    "levels": levels,
+                    "as_chars": as_chars,
+                    "alphabet_len": len(alphabet) if as_chars else None,
+                    "original_rows": total,
+                    "returned_rows": len(out_df),
+                    "points": len(out_df),
+                    "headers": base_cols + extra_cols,
+                }
+                return out_df.reset_index(drop=True), meta
+
+            # Delta schema: emit integer deltas vs previous close with scaling
+            if schema in ("delta", "deltas"):
+                # Determine scale (tick size); default tries to infer from price magnitude
+                try:
+                    scale = float(simplify.get("scale", 1e-5))
+                except Exception:
+                    scale = 1e-5
+                if scale <= 0:
+                    scale = 1e-5
+                # Optional char mode for minimal UTF-8 characters
+                alphabet = simplify.get("alphabet") or "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+                alphabet = str(alphabet)
+                zero_char = str(simplify.get("zero_char", "."))
+                as_chars = bool(simplify.get("as_chars") or simplify.get("chars"))
+                needed = ["open", "high", "low", "close"]
+                if not all(col in out.columns for col in needed):
+                    return out, None
+                closes = out["close"].astype(float).tolist()
+                opens = out["open"].astype(float).tolist()
+                highs = out["high"].astype(float).tolist()
+                lows = out["low"].astype(float).tolist()
+                base_close = float(closes[0]) if closes else float('nan')
+                d_open: List[int] = []
+                d_high: List[int] = []
+                d_low: List[int] = []
+                d_close: List[int] = []
+                prev_close = base_close
+                for i in range(len(out)):
+                    d_open.append(int(round((float(opens[i]) - prev_close) / scale)))
+                    d_high.append(int(round((float(highs[i]) - prev_close) / scale)))
+                    d_low.append(int(round((float(lows[i]) - prev_close) / scale)))
+                    d_close.append(int(round((float(closes[i]) - prev_close) / scale)))
+                    prev_close = float(closes[i])
+                # Optionally map to compact base-N strings with sign, minimizing characters
+                def _to_base_str(v: int) -> str:
+                    try:
+                        if v == 0:
+                            return zero_char
+                        sign = '-' if v < 0 else '+'
+                        n = abs(int(v))
+                        digits = []
+                        base = max(2, len(alphabet))
+                        while n > 0:
+                            digits.append(alphabet[n % base])
+                            n //= base
+                        return sign + ''.join(reversed(digits))
+                    except Exception:
+                        return '0'
+
+                if as_chars:
+                    do_ser = [ _to_base_str(v) for v in d_open ]
+                    dh_ser = [ _to_base_str(v) for v in d_high ]
+                    dl_ser = [ _to_base_str(v) for v in d_low ]
+                    dc_ser = [ _to_base_str(v) for v in d_close ]
+                else:
+                    do_ser, dh_ser, dl_ser, dc_ser = d_open, d_high, d_low, d_close
+
+                base_cols = ["time", "d_open", "d_high", "d_low", "d_close"]
+                out_df = pd.DataFrame({
+                    "time": out["time"] if "time" in out.columns else out.index.astype(str),
+                    "d_open": do_ser,
+                    "d_high": dh_ser,
+                    "d_low": dl_ser,
+                    "d_close": dc_ser,
+                })
+                # Keep all other requested headers (TI, volume, spread) except original OHLC
+                replaced = {"open", "high", "low", "close"}
+                extra_cols: List[str] = []
+                for h in headers:
+                    if h == "time" or h in replaced:
+                        continue
+                    if h in out.columns and h not in extra_cols:
+                        extra_cols.append(h)
+                for c in extra_cols:
+                    out_df[c] = out[c]
+                meta = {
+                    "mode": "encode",
+                    "schema": "delta",
+                    "scale": scale,
+                    "base_close": base_close,
+                    "as_chars": as_chars,
+                    "alphabet_len": len(alphabet) if as_chars else None,
+                    "zero_char": zero_char if as_chars else None,
+                    "original_rows": total,
+                    "returned_rows": len(out_df),
+                    "points": len(out_df),
+                    "headers": base_cols + extra_cols,
+                }
+                return out_df.reset_index(drop=True), meta
+
+            # Unknown schema: no-op
+            return out, None
+
+        # Segment mode: ZigZag turning points
+        if mode == "segment":
+            algo = str(simplify.get("algo", "zigzag")).lower().strip()
+            if algo in ("zigzag", "zz"):
+                try:
+                    thr = simplify.get("threshold_pct", simplify.get("threshold", 0.5))
+                    try:
+                        threshold_pct = float(thr)
+                    except Exception:
+                        threshold_pct = 0.5
+                    # Choose value column
+                    val_col = simplify.get("value_col") or ("close" if "close" in df.columns and pd.api.types.is_numeric_dtype(df["close"]) else None)
+                    if not val_col:
+                        for c in df.columns:
+                            if c in ("time", "__epoch"):
+                                continue
+                            try:
+                                if pd.api.types.is_numeric_dtype(df[c]):
+                                    val_col = c
+                                    break
+                            except Exception:
+                                pass
+                    if not val_col:
+                        return df, None
+                    y = df[val_col].astype(float).tolist()
+                    times = df["time"].tolist() if "time" in df.columns else list(range(len(df)))
+                    n = len(y)
+                    if n < 2:
+                        return df, None
+                    piv_idx: List[int] = []
+                    piv_dir: List[str] = []
+                    # Initialize pivot and extremes
+                    pivot_i = 0
+                    pivot_price = float(y[0])
+                    trend = None  # 'up' or 'down'
+                    last_ext_i = 0
+                    last_ext_p = float(y[0])
+                    for i in range(1, n):
+                        p = float(y[i])
+                        if trend is None:
+                            change = (p - pivot_price) / pivot_price * 100.0 if pivot_price != 0 else 0.0
+                            if abs(change) >= threshold_pct:
+                                trend = 'up' if change > 0 else 'down'
+                                last_ext_i = i
+                                last_ext_p = p
+                                # first pivot at start
+                                piv_idx.append(pivot_i)
+                                piv_dir.append(trend)
+                            else:
+                                if p > last_ext_p:
+                                    last_ext_p = p
+                                    last_ext_i = i
+                                if p < last_ext_p and trend is None:
+                                    last_ext_p = p
+                                    last_ext_i = i
+                                continue
+                        if trend == 'up':
+                            if p > last_ext_p:
+                                last_ext_p = p
+                                last_ext_i = i
+                            retr = (last_ext_p - p) / last_ext_p * 100.0 if last_ext_p != 0 else 0.0
+                            if retr >= threshold_pct:
+                                piv_idx.append(last_ext_i)
+                                piv_dir.append('up')
+                                trend = 'down'
+                                pivot_i = i
+                                pivot_price = p
+                                last_ext_i = i
+                                last_ext_p = p
+                        else:  # down
+                            if p < last_ext_p:
+                                last_ext_p = p
+                                last_ext_i = i
+                            retr = (p - last_ext_p) / abs(last_ext_p) * 100.0 if last_ext_p != 0 else 0.0
+                            if retr >= threshold_pct:
+                                piv_idx.append(last_ext_i)
+                                piv_dir.append('down')
+                                trend = 'up'
+                                pivot_i = i
+                                pivot_price = p
+                                last_ext_i = i
+                                last_ext_p = p
+                    # Append final extreme
+                    if len(piv_idx) == 0 or piv_idx[-1] != last_ext_i:
+                        piv_idx.append(last_ext_i)
+                        piv_dir.append('up' if trend == 'up' else 'down' if trend == 'down' else 'flat')
+                    # Build output rows at pivot indices
+                    out_rows: List[Dict[str, Any]] = []
+                    prev_v = None
+                    for j, i in enumerate(piv_idx):
+                        row: Dict[str, Any] = {}
+                        row['time'] = times[i]
+                        v = float(y[i])
+                        row['value'] = v
+                        row['direction'] = piv_dir[j]
+                        row['change_pct'] = 0.0 if prev_v is None else ((v - prev_v) / prev_v * 100.0 if prev_v != 0 else 0.0)
+                        prev_v = v
+                        # Keep any requested headers where possible for this row
+                        for h in headers:
+                            if h in ('time',):
+                                continue
+                            if h in df.columns and h not in row:
+                                try:
+                                    row[h] = df.iloc[i][h]
+                                except Exception:
+                                    pass
+                        out_rows.append(row)
+                    out_df = pd.DataFrame(out_rows)
+                    hdrs = ['time', 'value', 'direction', 'change_pct'] + [h for h in headers if h not in ('time',)]
+                    meta = {
+                        'mode': 'segment',
+                        'algo': 'zigzag',
+                        'threshold_pct': threshold_pct,
+                        'value_col': val_col,
+                        'original_rows': total,
+                        'returned_rows': len(out_df),
+                        'points': len(out_df),
+                        'headers': hdrs,
+                    }
+                    return out_df.reset_index(drop=True), meta
+                except Exception:
+                    return df, None
+
+        # Symbolic mode: SAX string output per segment
+        if mode == "symbolic":
+            schema = str(simplify.get("schema", "sax")).lower().strip()
+            if schema == 'sax':
+                try:
+                    try:
+                        paa = int(simplify.get('paa', max(8, min(32, n_out))))
+                    except Exception:
+                        paa = max(8, min(32, n_out))
+                    if paa <= 0:
+                        paa = max(8, min(32, n_out))
+                    # Choose value column
+                    val_col = simplify.get("value_col") or ("close" if "close" in df.columns and pd.api.types.is_numeric_dtype(df["close"]) else None)
+                    if not val_col:
+                        for c in df.columns:
+                            if c in ("time", "__epoch"):
+                                continue
+                            if pd.api.types.is_numeric_dtype(df[c]):
+                                val_col = c
+                                break
+                    if not val_col:
+                        return df, None
+                    s = df[val_col].astype(float).to_numpy(copy=False)
+                    n = len(s)
+                    if n == 0:
+                        return df, None
+                    znorm = bool(simplify.get('znorm', True))
+                    x = s.copy()
+                    if znorm:
+                        mu = float(np.mean(x))
+                        sigma = float(np.std(x))
+                        if sigma > 0:
+                            x = (x - mu) / sigma
+                        else:
+                            x = x * 0.0
+                    # Build contiguous PAA segments
+                    seg_sizes = [n // paa] * paa
+                    for k in range(n % paa):
+                        seg_sizes[k] += 1
+                    idx = 0
+                    seg_means: List[float] = []
+                    seg_bounds: List[Tuple[int,int]] = []
+                    for sz in seg_sizes:
+                        if sz <= 0:
+                            continue
+                        j = min(n, idx + sz)
+                        if idx >= n:
+                            break
+                        seg_means.append(float(np.mean(x[idx:j])))
+                        seg_bounds.append((idx, j-1))
+                        idx = j
+                    alphabet = str(simplify.get('alphabet') or 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
+                    a = max(2, len(alphabet))
+                    # Breakpoints for standard normal quantiles (approximate inverse CDF)
+                    from math import sqrt
+                    def _norm_ppf(q: float) -> float:
+                        # Acklam rational approximation constants
+                        # For robustness and readability
+                        a1=-39.69683028665376; a2=220.9460984245205; a3=-275.9285104469687
+                        a4=138.3577518672690; a5=-30.66479806614716; a6=2.506628277459239
+                        b1=-54.47609879822406; b2=161.5858368580409; b3=-155.6989798598866
+                        b4=66.80131188771972; b5=-13.28068155288572
+                        c1=-0.007784894002430293; c2=-0.3223964580411365; c3=-2.400758277161838
+                        c4=-2.549732539343734; c5=4.374664141464968; c6=2.938163982698783
+                        d1=0.007784695709041462; d2=0.3224671290700398; d3=2.445134137142996; d4=3.754408661907416
+                        plow=0.02425; phigh=1-plow
+                        if q < plow:
+                            ql = math.sqrt(-2.0*math.log(q))
+                            return (((((c1*ql+c2)*ql+c3)*ql+c4)*ql+c5)*ql+c6)/((((d1*ql+d2)*ql+d3)*ql+d4)*ql+1)
+                        if q > phigh:
+                            ql = math.sqrt(-2.0*math.log(1.0-q))
+                            return -(((((c1*ql+c2)*ql+c3)*ql+c4)*ql+c5)*ql+c6)/((((d1*ql+d2)*ql+d3)*ql+d4)*ql+1)
+                        ql = q-0.5
+                        r = ql*ql
+                        return (((((a1*r+a2)*r+a3)*r+a4)*r+a5)*r+a6)*ql/(((((b1*r+b2)*r+b3)*r+b4)*r+b5)*r+1)
+                    bps = [ _norm_ppf((k+1)/a) for k in range(a-1) ]
+                    # Map means to symbols
+                    def _symbol_for(v: float) -> str:
+                        k = 0
+                        for bp in bps:
+                            if v > bp:
+                                k += 1
+                            else:
+                                break
+                        return alphabet[k]
+                    symbols = [ _symbol_for(m) for m in seg_means ]
+                    # Build output rows per segment
+                    times = df['time'].tolist() if 'time' in df.columns else [str(i) for i in range(n)]
+                    rows: List[Dict[str, Any]] = []
+                    for seg_idx, ((i0, i1), sym, mean_val) in enumerate(zip(seg_bounds, symbols, seg_means), start=1):
+                        rows.append({
+                            'segment': seg_idx,
+                            'start_time': times[i0],
+                            'end_time': times[i1],
+                            'symbol': sym,
+                            'paa_mean': mean_val,
+                        })
+                    out_df = pd.DataFrame(rows)
+                    meta = {
+                        'mode': 'symbolic',
+                        'schema': 'sax',
+                        'paa': len(seg_bounds),
+                        'alphabet_len': a,
+                        'znorm': znorm,
+                        'original_rows': total,
+                        'returned_rows': len(out_df),
+                        'points': len(out_df),
+                        'headers': ['segment','start_time','end_time','symbol','paa_mean'],
+                    }
+                    return out_df.reset_index(drop=True), meta
+                except Exception:
+                    return df, None
+
 
         # Default/select: multi-column selection with union + refinement
         x = [float(v) for v in df['__epoch'].tolist()]
@@ -1791,13 +2299,23 @@ def fetch_candles(
              compact 'cl' or letters 'OHLCV', or names 'open,high,low,close'.
          - indicators: Optional technical indicators to include (e.g., "rsi(20),macd(12,26,9),ema(26)")
          - denoise: Optional denoising spec to smooth selected columns either pre‑ or post‑TI
-         - simplify: Optional dict to reduce rows while preserving shape across all numeric columns.
+         - simplify: Optional dict to reduce or transform rows.
              keys:
-               - method: 'lttb' (default), 'rdp', 'pla', 'apca'
-               - For 'lttb': points/max_points/target_points or ratio (0..1)
-               - For 'rdp': epsilon (tolerance in y-units); if missing, auto-tunes when points/ratio provided, else falls back to LTTB
-               - For 'pla': max_error (in y-units), or points/segments for uniform segmentation
-               - For 'apca': max_error (in y-units), or points/segments for uniform segmentation
+               - mode: 'select' (default, select points), 'approximate' (aggregate segments),
+                       'encode' (transform data), 'segment' (detect turning points), 'symbolic' (SAX transform).
+               - method: (for 'select'/'approximate' modes) 'lttb' (default), 'rdp', 'pla', 'apca'.
+               - points: Target number of data points for LTTB, RDP, PLA, APCA, and encode modes.
+               - ratio: Alternative to points (0.0 to 1.0).
+               - For 'rdp': epsilon (tolerance in y-units).
+               - For 'pla'/'apca': max_error (in y-units) or 'segments'.
+               - For 'encode' mode:
+                 - schema: 'envelope' (OHLC -> high/low/o_pos/c_pos) or 'delta' (OHLC -> d_open/d_high/d_low/d_close).
+               - For 'segment' mode:
+                 - algo: 'zigzag'.
+                 - threshold_pct: Reversal threshold (e.g., 0.5 for 0.5%).
+               - For 'symbolic' mode:
+                 - schema: 'sax'.
+                 - paa: Number of PAA segments (defaults from 'points').
        The full list of supported technical indicators can be retrieved from `get_indicators`.
     """
     try:
@@ -1819,14 +2337,23 @@ def fetch_candles(
             return {"error": err}
         
         try:
-            # Normalize TI spec from structured list to string for internal processing
+            # Normalize TI spec from structured list, JSON string, or compact string for internal processing
             ti_spec = None
             if ti is not None:
-                if isinstance(ti, (list, tuple)):
+                source = ti
+                # Accept JSON string input for robustness
+                if isinstance(source, str):
+                    s = source.strip()
+                    if (s.startswith('[') and s.endswith(']')) or (s.startswith('{') and s.endswith('}')):
+                        try:
+                            source = json.loads(s)
+                        except Exception:
+                            source = ti  # leave as original string if parse fails
+                if isinstance(source, (list, tuple)):
                     parts = []
-                    for item in ti:
+                    for item in source:
                         if isinstance(item, dict) and 'name' in item:
-                            nm = str(item['name'])
+                            nm = str(item.get('name'))
                             params = item.get('params') or []
                             if isinstance(params, (list, tuple)) and len(params) > 0:
                                 args_str = ",".join(str(_coerce_scalar(str(p))) for p in params)
@@ -1837,7 +2364,8 @@ def fetch_candles(
                             parts.append(str(item))
                     ti_spec = ",".join(parts)
                 else:
-                    ti_spec = str(ti)
+                    # Already a compact indicator string like "rsi(14),ema(20)"
+                    ti_spec = str(source)
             # Determine warmup bars if technical indicators requested
             warmup_bars = _estimate_warmup_bars_util(ti_spec)
 
@@ -2152,6 +2680,9 @@ def fetch_candles(
                     default_pts = max(3, int(round(original_rows * SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT)))
                 simplify_eff['points'] = default_pts
         df, simplify_meta = _simplify_dataframe_rows(df, headers, simplify_eff if simplify_eff is not None else simplify)
+        # If simplify changed representation, respect returned headers
+        if simplify_meta is not None and 'headers' in simplify_meta and isinstance(simplify_meta['headers'], list):
+            headers = [h for h in simplify_meta['headers'] if isinstance(h, str)]
 
         # Assemble rows from (possibly reduced) DataFrame for selected headers
         rows = _format_numeric_rows_from_df_util(df, headers)
@@ -2179,12 +2710,13 @@ def fetch_candles(
 def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = None, simplify: Optional[Dict[str, Any]] = None, timezone: str = "auto") -> Dict[str, Any]:
     """Return latest ticks as CSV with columns: time,bid,ask and optional last,volume,flags.
     - `count` limits the number of rows; `start_datetime` starts from a flexible date/time.
-    - `simplify`: reduce rows while preserving shape across all numeric columns.
-        - method: 'lttb' (default), 'rdp', 'pla', 'apca'
-        - For 'lttb': points/max_points/target_points or ratio (0..1)
-        - For 'rdp': epsilon (y-units); if missing, auto-tunes when points/ratio given, else falls back to LTTB
-        - For 'pla': max_error (y-units), or points/segments
-        - For 'apca': max_error (y-units), or points/segments
+    - `simplify`: Optional dict to reduce or aggregate rows.
+        - mode: 'select' (default, select points) or 'approximate' (aggregate segments).
+        - method: 'lttb' (default), 'rdp', 'pla', 'apca'.
+        - points: Target number of data points.
+        - ratio: Alternative to points (0.0 to 1.0).
+        - For 'rdp': epsilon (y-units).
+        - For 'pla'/'apca': max_error (y-units) or 'segments'.
     """
     try:
         # Ensure symbol is ready; remember original visibility to restore later
