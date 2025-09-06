@@ -1174,29 +1174,25 @@ def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Opt
                     if len(piv_idx) == 0 or piv_idx[-1] != last_ext_i:
                         piv_idx.append(last_ext_i)
                         piv_dir.append('up' if trend == 'up' else 'down' if trend == 'down' else 'flat')
-                    # Build output rows at pivot indices
-                    out_rows: List[Dict[str, Any]] = []
+                    # Preserve all original columns by subsetting DF at pivot indices, then add ZigZag extras
+                    out_df = df.iloc[piv_idx].copy()
+                    # Add ZigZag metadata columns
+                    zz_values: List[float] = []
                     prev_v = None
+                    changes: List[float] = []
                     for j, i in enumerate(piv_idx):
-                        row: Dict[str, Any] = {}
-                        row['time'] = times[i]
                         v = float(y[i])
-                        row['value'] = v
-                        row['direction'] = piv_dir[j]
-                        row['change_pct'] = 0.0 if prev_v is None else ((v - prev_v) / prev_v * 100.0 if prev_v != 0 else 0.0)
+                        zz_values.append(v)
+                        changes.append(0.0 if prev_v is None else ((v - prev_v) / prev_v * 100.0 if prev_v != 0 else 0.0))
                         prev_v = v
-                        # Keep any requested headers where possible for this row
-                        for h in headers:
-                            if h in ('time',):
-                                continue
-                            if h in df.columns and h not in row:
-                                try:
-                                    row[h] = df.iloc[i][h]
-                                except Exception:
-                                    pass
-                        out_rows.append(row)
-                    out_df = pd.DataFrame(out_rows)
-                    hdrs = ['time', 'value', 'direction', 'change_pct'] + [h for h in headers if h not in ('time',)]
+                    out_df['value'] = zz_values
+                    out_df['direction'] = piv_dir
+                    out_df['change_pct'] = changes
+                    # Headers: keep all requested headers, plus ZigZag extras
+                    hdrs = list(headers)
+                    for extra in ('value','direction','change_pct'):
+                        if extra not in hdrs:
+                            hdrs.append(extra)
                     meta = {
                         'mode': 'segment',
                         'algo': 'zigzag',
@@ -1297,17 +1293,27 @@ def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Opt
                                 break
                         return alphabet[k]
                     symbols = [ _symbol_for(m) for m in seg_means ]
-                    # Build output rows per segment
+                    # Build output rows per segment, preserving all requested columns via aggregation
                     times = df['time'].tolist() if 'time' in df.columns else [str(i) for i in range(n)]
                     rows: List[Dict[str, Any]] = []
                     for seg_idx, ((i0, i1), sym, mean_val) in enumerate(zip(seg_bounds, symbols, seg_means), start=1):
-                        rows.append({
+                        row = {
                             'segment': seg_idx,
                             'start_time': times[i0],
                             'end_time': times[i1],
                             'symbol': sym,
                             'paa_mean': mean_val,
-                        })
+                        }
+                        # Aggregate all requested headers (except 'time') for this segment
+                        try:
+                            agg_row = _aggregate_segment(i0, i1 + 1)
+                            for k, v in agg_row.items():
+                                if k == 'time':
+                                    continue
+                                row[k] = v
+                        except Exception:
+                            pass
+                        rows.append(row)
                     out_df = pd.DataFrame(rows)
                     meta = {
                         'mode': 'symbolic',
@@ -1318,7 +1324,7 @@ def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Opt
                         'original_rows': total,
                         'returned_rows': len(out_df),
                         'points': len(out_df),
-                        'headers': ['segment','start_time','end_time','symbol','paa_mean'],
+                        'headers': ['segment','start_time','end_time','symbol','paa_mean'] + [h for h in headers if h != 'time'],
                     }
                     return out_df.reset_index(drop=True), meta
                 except Exception:
@@ -1717,6 +1723,73 @@ class DenoiseSpec(TypedDict, total=False):
     keep_original: bool
     suffix: str
 
+# ---- Simplify (schema for MCP) ----
+_SIMPLIFY_MODES = (
+    'select',        # pick representative existing rows
+    'approximate',   # aggregate between selected rows
+    'resample',      # time-bucket aggregation
+    'encode',        # compact encodings (envelope, delta)
+    'segment',       # swing points (e.g., ZigZag)
+    'symbolic',      # SAX symbolic representation
+)
+_SIMPLIFY_METHODS = (
+    'lttb', 'rdp', 'pla', 'apca'
+)
+try:
+    SimplifyModeLiteral = Literal[_SIMPLIFY_MODES]  # type: ignore
+except Exception:
+    SimplifyModeLiteral = str
+try:
+    SimplifyMethodLiteral = Literal[_SIMPLIFY_METHODS]  # type: ignore
+except Exception:
+    SimplifyMethodLiteral = str
+try:
+    EncodeSchemaLiteral = Literal['envelope','delta']  # type: ignore
+    SymbolicSchemaLiteral = Literal['sax']  # type: ignore
+except Exception:
+    EncodeSchemaLiteral = str
+    SymbolicSchemaLiteral = str
+
+class SimplifySpec(TypedDict, total=False):
+    # Common
+    mode: SimplifyModeLiteral  # type: ignore
+    method: SimplifyMethodLiteral  # type: ignore
+    points: int
+    ratio: float
+    # RDP/PLA/APCA specifics
+    epsilon: float
+    max_error: float
+    segments: int
+    # Resample
+    bucket_seconds: int
+    # Encode specifics
+    schema: EncodeSchemaLiteral  # 'envelope' | 'delta' (or 'sax' when mode='symbolic')
+    bits: int
+    as_chars: bool
+    alphabet: str
+    scale: float
+    zero_char: str
+    # Segment specifics
+    algo: Literal['zigzag','zz']  # type: ignore
+    threshold_pct: float
+    value_col: str
+    # Symbolic specifics
+    paa: int
+    znorm: bool
+
+# Volatility params (concise)
+class VolatilityParams(TypedDict, total=False):
+    # EWMA
+    halflife: Optional[float]
+    lambda_: Optional[float]  # use 'lambda_' to avoid reserved word in schema
+    lookback: int
+    # Parkinson/GK/RS
+    window: int
+    # GARCH
+    fit_bars: int
+    mean: Literal['Zero','Constant']  # type: ignore
+    dist: Literal['normal']  # type: ignore
+
 # ---- Simple parsers / normalizers ----
 def _normalize_ohlcv_arg(ohlcv: Optional[object]) -> Optional[set]:
     """Parse friendly OHLCV spec into a set of letters {O,H,L,C,V}.
@@ -2020,7 +2093,10 @@ def _apply_denoise(
 
 @mcp.tool()
 def list_denoise_methods() -> Dict[str, Any]:
-    """Return JSON with supported denoise methods, availability, and parameter docs."""
+    """Return JSON with supported denoise methods, availability, and parameter docs.
+
+    Parameters: none
+    """
     try:
         from denoise_utils import get_denoise_methods_data
         return get_denoise_methods_data()
@@ -2029,7 +2105,10 @@ def list_denoise_methods() -> Dict[str, Any]:
 
 @mcp.tool()
 def list_forecast_methods() -> Dict[str, Any]:
-    """Return JSON describing supported forecast methods, params, and defaults."""
+    """Return JSON describing supported forecast methods, params, and defaults.
+
+    Parameters: none
+    """
     try:
         from ..utils.forecast import get_forecast_methods_data
         return get_forecast_methods_data(_SM_ETS_AVAILABLE, _SM_SARIMAX_AVAILABLE)
@@ -2038,7 +2117,10 @@ def list_forecast_methods() -> Dict[str, Any]:
 
 @mcp.tool()
 def list_indicators(search_term: Optional[str] = None, category: Optional[CategoryLiteral] = None) -> Dict[str, Any]:  # type: ignore
-    """List indicators as CSV with columns: name,category. Optional filters: search_term, category."""
+    """List indicators as CSV with columns: name,category. Optional filters: search_term, category.
+
+    Parameters: search_term?, category?
+    """
     try:
         items = _list_ta_indicators()
         if search_term:
@@ -2065,7 +2147,10 @@ def list_indicators(search_term: Optional[str] = None, category: Optional[Catego
 
 @mcp.tool()
 def describe_indicator(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: ignore
-    """Return detailed indicator information (name, category, params, description)."""
+    """Return detailed indicator information (name, category, params, description).
+
+    Parameters: name
+    """
     try:
         items = _list_ta_indicators()
         target = next((it for it in items if it.get('name','').lower() == str(name).lower()), None)
@@ -2082,8 +2167,11 @@ def describe_indicator(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: i
 def list_symbols(
     search_term: Optional[str] = None,
     limit: Optional[int] = None
+
 ) -> Dict[str, Any]:
     """List symbols as CSV with columns: name,group,description.
+
+    Parameters: search_term?, limit?
 
     - If `search_term` is provided, matches group name, then symbol name, then description.
     - If omitted, returns only visible symbols. When searching, includes non‑visible matches.
@@ -2191,6 +2279,8 @@ def list_symbols(
 def list_symbol_groups(search_term: Optional[str] = None, limit: Optional[int] = None) -> Dict[str, Any]:
     """List group paths as CSV with a single column: group.
 
+    Parameters: search_term?, limit?
+
     - Filters by `search_term` (substring, case‑insensitive) when provided.
     - Sorted by group size (desc); `limit` caps the number of groups.
     """
@@ -2232,6 +2322,7 @@ def list_symbol_groups(search_term: Optional[str] = None, limit: Optional[int] =
 @_auto_connect_wrapper
 def describe_symbol(symbol: str) -> Dict[str, Any]:
     """Return symbol information as JSON for `symbol`.
+       Parameters: symbol
        Includes information such as Symbol Description, Swap Values, Tick Size/Value, etc.
     """
     try:
@@ -2282,10 +2373,11 @@ def fetch_candles(
     ohlcv: Optional[str] = None,
     indicators: Optional[List[IndicatorSpec]] = None,
     denoise: Optional[DenoiseSpec] = None,
-    simplify: Optional[Dict[str, Any]] = None,
+    simplify: Optional[SimplifySpec] = None,
     timezone: str = "auto",
 ) -> Dict[str, Any]:
     """Return historical candles as CSV.
+       Parameters: symbol, timeframe, limit, start?, end?, ohlcv?, indicators?, denoise?, simplify?, timezone
        Can include OHLCV data, optionally along with technical indicators.
        Returns the last candles by default, unless a date range is specified.
          Parameters:
@@ -2453,11 +2545,9 @@ def fetch_candles(
         
         # Check which optional columns have meaningful data (at least one non-zero/different value)
         tick_volumes = [int(rate["tick_volume"]) for rate in rates]
-        spreads = [int(rate["spread"]) for rate in rates]
         real_volumes = [int(rate["real_volume"]) for rate in rates]
         
         has_tick_volume = len(set(tick_volumes)) > 1 or any(v != 0 for v in tick_volumes)
-        has_spread = len(set(spreads)) > 1 or any(v != 0 for v in spreads)
         has_real_volume = len(set(real_volumes)) > 1 or any(v != 0 for v in real_volumes)
         
         # Determine requested columns (O,H,L,C,V) if provided
@@ -2482,8 +2572,6 @@ def fetch_candles(
             headers.extend(["open", "high", "low", "close"])
             if has_tick_volume:
                 headers.append("tick_volume")
-            if has_spread:
-                headers.append("spread")
             if has_real_volume:
                 headers.append("real_volume")
         
@@ -2509,9 +2597,23 @@ def fetch_candles(
                 warnings.simplefilter("ignore")
                 df['volume'] = df['tick_volume']
 
+        # Track denoise metadata if applied
+        denoise_apps: List[Dict[str, Any]] = []
         # Optional pre-TI denoising (in-place by default)
         if denoise and str(denoise.get('when', 'pre_ti')).lower() == 'pre_ti':
             _apply_denoise(df, denoise, default_when='pre_ti')
+            try:
+                dn = dict(denoise)
+                denoise_apps.append({
+                    'method': str(dn.get('method','none')).lower(),
+                    'when': str(dn.get('when','pre_ti')).lower(),
+                    'causality': str(dn.get('causality', 'causal')),
+                    'keep_original': bool(dn.get('keep_original', False)),
+                    'columns': dn.get('columns','close'),
+                    'params': dn.get('params') or {},
+                })
+            except Exception:
+                pass
 
         # Apply technical indicators if requested (dynamic)
         ti_cols: List[str] = []
@@ -2622,6 +2724,19 @@ def fetch_candles(
             for c in added_dn:
                 if c not in headers:
                     headers.append(c)
+            try:
+                dn = dict(denoise)
+                denoise_apps.append({
+                    'method': str(dn.get('method','none')).lower(),
+                    'when': 'post_ti',
+                    'causality': str(dn.get('causality', 'zero_phase')),
+                    'keep_original': bool(dn.get('keep_original', True)),
+                    'columns': dn.get('columns','close'),
+                    'params': dn.get('params') or {},
+                    'added_columns': added_dn,
+                })
+            except Exception:
+                pass
 
         # Ensure headers are unique and exist in df
         headers = [h for h in headers if h in df.columns or h == 'time']
@@ -2695,28 +2810,38 @@ def fetch_candles(
             "timeframe": timeframe,
             "candles": len(df),
         })
-        payload["display_timezone"] = "client" if _use_ctz else "UTC"
+        if not _use_ctz:
+            payload["timezone"] = "UTC"
         if simplify_meta is not None:
             payload["simplified"] = True
             payload["simplify"] = simplify_meta
             payload["simplify"]["timeframe"] = timeframe
             payload["simplify"]["original_candles"] = original_rows
+        # Attach denoise applications metadata if any
+        if denoise_apps:
+            payload['denoise'] = {
+                'applied': True,
+                'applications': denoise_apps,
+            }
         return payload
     except Exception as e:
         return {"error": f"Error getting rates: {str(e)}"}
 
 @mcp.tool()
 @_auto_connect_wrapper
-def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = None, simplify: Optional[Dict[str, Any]] = None, timezone: str = "auto") -> Dict[str, Any]:
+def fetch_ticks(
+    symbol: str,
+    limit: int = 100,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    simplify: Optional[SimplifySpec] = None,
+    timezone: str = "auto",
+) -> Dict[str, Any]:
     """Return latest ticks as CSV with columns: time,bid,ask and optional last,volume,flags.
-    - `count` limits the number of rows; `start_datetime` starts from a flexible date/time.
-    - `simplify`: Optional dict to reduce or aggregate rows.
-        - mode: 'select' (default, select points) or 'approximate' (aggregate segments).
-        - method: 'lttb' (default), 'rdp', 'pla', 'apca'.
-        - points: Target number of data points.
-        - ratio: Alternative to points (0.0 to 1.0).
-        - For 'rdp': epsilon (y-units).
-        - For 'pla'/'apca': max_error (y-units) or 'segments'.
+    Parameters: symbol, limit, start?, end?, simplify?, timezone
+    - `limit` limits the number of rows.
+    - `start` starts from a flexible date/time; optional `end` enables range.
+    - `simplify`: Optional dict to reduce or aggregate rows (select/approximate/resample).
     """
     try:
         # Ensure symbol is ready; remember original visibility to restore later
@@ -2727,16 +2852,31 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
             return {"error": err}
         
         try:
-            if start_datetime:
-                from_date = _parse_start_datetime_util(start_datetime)
+            # Normalized params only
+            effective_limit = int(limit)
+            if start:
+                from_date = _parse_start_datetime_util(start)
                 if not from_date:
                     return {"error": "Invalid date format. Try examples like '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00', '2 days ago'."}
-                ticks = None
-                for _ in range(FETCH_RETRY_ATTEMPTS):
-                    ticks = _mt5_copy_ticks_from(symbol, from_date, count, mt5.COPY_TICKS_ALL)
-                    if ticks is not None and len(ticks) > 0:
-                        break
-                    time.sleep(FETCH_RETRY_DELAY)
+                if end:
+                    to_date = _parse_start_datetime_util(end)
+                    if not to_date:
+                        return {"error": "Invalid 'end' date format. Try '2025-08-29 14:30' or 'yesterday 18:00'."}
+                    ticks = None
+                    for _ in range(FETCH_RETRY_ATTEMPTS):
+                        ticks = _mt5_copy_ticks_range(symbol, from_date, to_date, mt5.COPY_TICKS_ALL)
+                        if ticks is not None and len(ticks) > 0:
+                            break
+                        time.sleep(FETCH_RETRY_DELAY)
+                    if ticks is not None and effective_limit and len(ticks) > effective_limit:
+                        ticks = ticks[-effective_limit:]
+                else:
+                    ticks = None
+                    for _ in range(FETCH_RETRY_ATTEMPTS):
+                        ticks = _mt5_copy_ticks_from(symbol, from_date, effective_limit, mt5.COPY_TICKS_ALL)
+                        if ticks is not None and len(ticks) > 0:
+                            break
+                        time.sleep(FETCH_RETRY_DELAY)
             else:
                 # Get recent ticks from current time (now)
                 to_date = datetime.utcnow()
@@ -2747,8 +2887,8 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
                     if ticks is not None and len(ticks) > 0:
                         break
                     time.sleep(FETCH_RETRY_DELAY)
-                if ticks is not None and len(ticks) > count:
-                    ticks = ticks[-count:]  # Get the last 'count' ticks
+                if ticks is not None and effective_limit and len(ticks) > effective_limit:
+                    ticks = ticks[-effective_limit:]  # Get the last ticks
         finally:
             # Restore original visibility if we changed it
             if _was_visible is False:
@@ -2854,7 +2994,8 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
                 "symbol": symbol,
                 "count": len(rows),
             })
-            payload["display_timezone"] = "client" if _use_ctz else "UTC"
+            if not _use_ctz:
+                payload["timezone"] = "UTC"
             if simplify_meta is not None and original_count > len(rows):
                 payload["simplified"] = True
                 meta = dict(simplify_meta)
@@ -2974,7 +3115,8 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
             "symbol": symbol,
             "count": len(rows),
         })
-        payload["display_timezone"] = "client" if _use_ctz else "UTC"
+        if not _use_ctz:
+            payload["timezone"] = "UTC"
         if simplify_present and original_count > len(rows):
             payload["simplified"] = True
             meta = {
@@ -3006,15 +3148,16 @@ def fetch_ticks(symbol: str, count: int = 100, start_datetime: Optional[str] = N
 def detect_candlestick_patterns(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    candles: int = 10,
+    limit: int = 10,
     timezone: str = "auto",
 ) -> Dict[str, Any]:
     """Detect candlestick patterns and return CSV rows of detections.
+    Parameters: symbol, timeframe, limit, timezone
 
     Inputs:
     - `symbol`: Trading symbol (e.g., "EURUSD").
     - `timeframe`: One of the supported MT5 timeframes (e.g., "M15", "H1").
-    - `candles`: Number of most recent candles to analyze.
+    - `limit`: Number of most recent candles to analyze.
 
     Output CSV columns:
     - `time`: UTC timestamp of the bar (compact format)
@@ -3034,9 +3177,9 @@ def detect_candlestick_patterns(
             return {"error": err}
 
         try:
-            # Fetch last `candles` bars from now (UTC anchor)
+            # Fetch last `limit` bars from now (UTC anchor)
             utc_now = datetime.utcnow()
-            rates = _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, candles)
+            rates = _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, limit)
         finally:
             # Restore original visibility if we changed it
             if _was_visible is False:
@@ -3156,9 +3299,10 @@ def detect_candlestick_patterns(
             "success": True,
             "symbol": symbol,
             "timeframe": timeframe,
-            "candles": int(candles),
+            "candles": int(limit),
         })
-        payload["display_timezone"] = "client" if _use_ctz else "UTC"
+        if not _use_ctz:
+            payload["timezone"] = "UTC"
         return payload
     except Exception as e:
         return {"error": f"Error detecting candlestick patterns: {str(e)}"}
@@ -3172,6 +3316,7 @@ def compute_pivot_points(
     timezone: str = "auto",
 ) -> Dict[str, Any]:
     """Compute pivot point levels from the last completed bar on `timeframe`.
+    Parameters: symbol, timeframe, method, timezone
 
     - `timeframe`: Timeframe to source H/L/C from (e.g., D1, W1, MN1).
     - `method`: One of classic, fibonacci, camarilla, woodie, demark.
@@ -3369,7 +3514,8 @@ def compute_pivot_points(
             },
             "levels": levels,
         }
-        payload["display_timezone"] = "client" if _use_ctz else "UTC"
+        if not _use_ctz:
+            payload["timezone"] = "UTC"
         return payload
     except Exception as e:
         return {"error": f"Error computing pivot points: {str(e)}"}
@@ -3489,17 +3635,18 @@ def _next_times_from_last(last_epoch: float, tf_secs: int, horizon: int) -> List
 def forecast_volatility(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    horizon_bars: int = 1,
+    horizon: int = 1,
     method: Literal['ewma','parkinson','gk','rs','garch'] = 'ewma',  # type: ignore
-    params: Optional[Dict[str, Any]] = None,
+    params: Optional[VolatilityParams] = None,
 ) -> Dict[str, Any]:
-    """Forecast volatility over `horizon_bars` using EWMA/range methods/GARCH.
+    """Forecast volatility over `horizon` bars using EWMA/range methods/GARCH.
+    Parameters: symbol, timeframe, horizon, method, params?, timezone
 
     - `method`: 'ewma' (RiskMetrics), 'parkinson', 'gk' (Garman–Klass), 'rs' (Rogers–Satchell), 'garch' (1,1 if `arch` installed)
     - `params` (optional):
-        ewma: {"halflife": int|null, "lambda": float|null, "lookback": int}
-        parkinson/gk/rs: {"window": int}
-        garch: {"fit_bars": int, "mean": "Zero"|"Constant", "dist": "normal"}
+        ewma: {halflife?, lambda_?, lookback}
+        parkinson/gk/rs: {window}
+        garch: {fit_bars, mean: Zero|Constant, dist: normal|t}
     Returns JSON with current per-bar sigma, annualized sigma, and horizon forecast.
     """
     try:
@@ -3516,6 +3663,9 @@ def forecast_volatility(
             return {"error": "GARCH requires 'arch' package. Please install 'arch' to enable this method."}
 
         p = dict(params or {})
+        # Backward compatibility for 'lambda' -> 'lambda_'
+        if 'lambda' in p and 'lambda_' not in p:
+            p['lambda_'] = p['lambda']
 
         # Determine bars required
         if method_l == 'ewma':
@@ -3579,7 +3729,7 @@ def forecast_volatility(
             r = _log_returns_from_closes(closes)
             if r.size < 5:
                 return {"error": "Not enough return observations for EWMA"}
-            lam = p.get('lambda')
+            lam = p.get('lambda_')
             hl = p.get('halflife')
             if hl is not None:
                 try:
@@ -3606,7 +3756,7 @@ def forecast_volatility(
             v = float(var_series.iloc[-1])
             v = v if math.isfinite(v) and v >= 0 else float('nan')
             sigma_bar = math.sqrt(v) if math.isfinite(v) and v >= 0 else float('nan')
-            sigma_h_bar = math.sqrt(max(1, int(horizon_bars)) * v) if math.isfinite(v) and v >= 0 else float('nan')
+            sigma_h_bar = math.sqrt(max(1, int(horizon)) * v) if math.isfinite(v) and v >= 0 else float('nan')
         elif method_l in ('parkinson','gk','rs'):
             if highs is None or lows is None:
                 return {"error": "High/Low data required for range-based estimators"}
@@ -3626,7 +3776,7 @@ def forecast_volatility(
             v = float(s.tail(window).mean(skipna=True))
             v = v if math.isfinite(v) and v >= 0 else float('nan')
             sigma_bar = math.sqrt(v) if math.isfinite(v) and v >= 0 else float('nan')
-            sigma_h_bar = math.sqrt(max(1, int(horizon_bars)) * v) if math.isfinite(v) and v >= 0 else float('nan')
+            sigma_h_bar = math.sqrt(max(1, int(horizon)) * v) if math.isfinite(v) and v >= 0 else float('nan')
         else:  # garch
             r = _log_returns_from_closes(closes)
             if r.size < 100:
@@ -3643,7 +3793,7 @@ def forecast_volatility(
                 cond_vol = float(res.conditional_volatility.iloc[-1])  # percent
                 sigma_bar = cond_vol / 100.0
                 # k-step ahead variance forecasts (percent^2)
-                fc = res.forecast(horizon=max(1, int(horizon_bars)), reindex=False)
+                fc = res.forecast(horizon=max(1, int(horizon)), reindex=False)
                 var_path = np.array(fc.variance.iloc[-1].values, dtype=float)  # shape (horizon,)
                 var_sum = float(np.nansum(var_path))  # percent^2
                 sigma_h_bar = math.sqrt(var_sum) / 100.0
@@ -3660,7 +3810,7 @@ def forecast_volatility(
             "method": method_l,
             "params_used": params_used,
             "bars_used": int(len(df)),
-            "horizon_bars": int(horizon_bars),
+            "horizon": int(horizon),
             "last_close": last_close,
             "sigma_bar_return": sigma_bar,
             "sigma_annual_return": sigma_ann,
@@ -3685,7 +3835,8 @@ def forecast(
     denoise: Optional[DenoiseSpec] = None,
     timezone: str = "auto",
 ) -> Dict[str, Any]:
-    """Fast forecasts for the next `horizon_bars` using lightweight methods.
+    """Fast forecasts for the next `horizon` bars using lightweight methods.
+    Parameters: symbol, timeframe, method, horizon, lookback?, as_of?, params?, ci_alpha?, target, denoise?, timezone
 
     Methods: naive, seasonal_naive, drift, theta, fourier_ols, ses, holt, holt_winters_add, holt_winters_mul, arima, sarima.
     - `params`: method-specific settings; use `seasonality` inside params when needed (auto if omitted).
@@ -4166,7 +4317,8 @@ def forecast(
             "times": times_fmt,
             "forecast_price": [_round(v) for v in out_forecast_price.tolist()],
         }
-        payload["display_timezone"] = "client" if _use_ctz else "UTC"
+        if not _use_ctz:
+            payload["timezone"] = "UTC"
         payload["forecast_trend"] = forecast_trend
         if use_returns:
             payload["forecast_return"] = [float(v) for v in f_vals.tolist()]
@@ -4182,7 +4334,10 @@ def forecast(
 @mcp.tool()
 @_auto_connect_wrapper
 def fetch_market_depth(symbol: str, timezone: str = "auto") -> Dict[str, Any]:
-    """Return DOM if available; otherwise current bid/ask snapshot for `symbol`."""
+    """Return DOM if available; otherwise current bid/ask snapshot for `symbol`.
+
+    Parameters: symbol, timezone
+    """
     try:
         # Ensure symbol is selected
         if not mt5.symbol_select(symbol, True):
@@ -4238,7 +4393,7 @@ def fetch_market_depth(symbol: str, timezone: str = "auto") -> Dict[str, Any]:
                     "last": float(tick.last) if tick.last else None,
                     "volume": int(tick.volume) if tick.volume else None,
                     "time": int(_mt5_epoch_to_utc(float(tick.time))) if tick.time else None,
-                    "spread": symbol_info.spread,
+                    # spread removed from outputs by request
                     "note": "Full market depth not available, showing current bid/ask"
                 }
             }
@@ -4250,7 +4405,8 @@ def fetch_market_depth(symbol: str, timezone: str = "auto") -> Dict[str, Any]:
                     out["data"]["time_display"] = _format_time_minimal_util(_mt5_epoch_to_utc(float(tick.time)))
             except Exception:
                 pass
-            out["display_timezone"] = "client" if _use_ctz else "UTC"
+            if not _use_ctz:
+                out["timezone"] = "UTC"
             return out
     except Exception as e:
         return {"error": f"Error getting market depth: {str(e)}"}

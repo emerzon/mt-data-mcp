@@ -27,7 +27,8 @@ def _denoise_series(
         return s
     if method == 'none':
         return s
-    x = s.astype(float).fillna(method='ffill').fillna(method='bfill').values
+    # Forward/backward fill using modern accessors to avoid FutureWarning
+    x = s.astype(float).ffill().bfill().values
     if method == 'ema':
         alpha = params.get('alpha')
         span = params.get('span', 10)
