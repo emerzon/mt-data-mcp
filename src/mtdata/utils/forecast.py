@@ -64,5 +64,12 @@ def get_forecast_methods_data(_SM_ETS_AVAILABLE: bool, _SM_SARIMAX_AVAILABLE: bo
         {"name": "trend", "type": "str", "default": "c", "description": "Trend: 'c' constant, 'n' none."},
     ], common_defaults)
 
-    return {"success": True, "schema_version": 1, "methods": methods}
+    # Ensemble meta-method
+    add("ensemble", True, "Aggregate multiple base forecasts (mean/median/weighted).", [
+        {"name": "methods", "type": "list[str]", "default": "['theta','fourier_ols','holt'] (if available)", "description": "Base methods to combine; 'ensemble' is not allowed."},
+        {"name": "aggregator", "type": "str", "default": "mean", "description": "Aggregation: 'mean', 'median', or 'weighted'."},
+        {"name": "weights", "type": "list[float]", "default": None, "description": "Optional weights aligned with methods; auto-normalized."},
+        {"name": "expose_components", "type": "bool", "default": True, "description": "Include per-method forecasts and weights in output."},
+    ], common_defaults)
 
+    return {"success": True, "schema_version": 1, "methods": methods}

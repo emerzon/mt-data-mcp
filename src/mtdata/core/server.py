@@ -3547,6 +3547,7 @@ _FORECAST_METHODS = (
     "holt_winters_mul",
     "arima",
     "sarima",
+    "ensemble",
 )
 
 try:
@@ -3600,15 +3601,20 @@ def forecast_volatility(
     horizon: int = 1,
     method: Literal['ewma','parkinson','gk','rs','garch'] = 'ewma',  # type: ignore
     params: Optional[VolatilityParams] = None,
+    as_of: Optional[str] = None,
+    denoise: Optional[DenoiseSpec] = None,
 ) -> Dict[str, Any]:
     """Forecast volatility over `horizon` bars using EWMA/range methods/GARCH.
-    Parameters: symbol, timeframe, horizon, method, params?, timezone
+    Parameters: symbol, timeframe, horizon, method, params?, as_of?, denoise?
 
     - `method`: 'ewma' (RiskMetrics), 'parkinson', 'gk' (Garman–Klass), 'rs' (Rogers–Satchell), 'garch' (1,1 if `arch` installed)
     - `params` (optional):
         ewma: {halflife?, lambda_?, lookback}
         parkinson/gk/rs: {window}
         garch: {fit_bars, mean: Zero|Constant, dist: normal|t}
+    - `denoise` (optional): Apply denoising to input price columns before estimating volatility.
+      Defaults to 'close' for EWMA/GARCH, and 'ohlc' for range estimators when columns not specified.
+    - `as_of` (optional): Forecast using data available up to this time (e.g., "2025-08-29 14:30", "yesterday 14:00").
     Returns JSON with current per-bar sigma, annualized sigma, and horizon forecast.
     """
     try:
@@ -3625,6 +3631,193 @@ def forecast_volatility(
             return {"error": "GARCH requires 'arch' package. Please install 'arch' to enable this method."}
 
         p = dict(params or {})
+
+        # Ensemble meta-method: aggregate multiple base forecasts
+        if method_l == 'ensemble':
+            try:
+                # Determine default base methods based on availability
+                default_methods = ['theta', 'fourier_ols']
+                if _SM_ETS_AVAILABLE:
+                    default_methods.append('holt')
+                # ARIMA/SARIMA can be added by user explicitly to avoid latency by default
+
+                base_methods_in = p.get('methods')
+                if isinstance(base_methods_in, (list, tuple)) and base_methods_in:
+                    base_methods = [str(m).lower().strip() for m in base_methods_in]
+                else:
+                    base_methods = list(default_methods)
+                # Remove invalid or recursive entries
+                base_methods = [m for m in base_methods if m in _FORECAST_METHODS and m != 'ensemble']
+                # Deduplicate while preserving order
+                seen = set()
+                base_methods = [m for m in base_methods if not (m in seen or seen.add(m))]
+                if not base_methods:
+                    return {"error": "Ensemble requires at least one valid base method"}
+
+                aggregator = str(p.get('aggregator', 'mean')).lower()
+                weights = p.get('weights')
+                expose_components = bool(p.get('expose_components', True))
+
+                # Normalize weights if provided
+                w = None
+                if isinstance(weights, (list, tuple)) and len(weights) == len(base_methods):
+                    try:
+                        w_arr = np.array([float(x) for x in weights], dtype=float)
+                        if np.all(np.isfinite(w_arr)) and np.any(w_arr > 0):
+                            w = w_arr.clip(min=0)
+                            s = float(np.sum(w))
+                            if s > 0:
+                                w = w / s
+                            else:
+                                w = None
+                        else:
+                            w = None
+                    except Exception:
+                        w = None
+
+                comp_results = []
+                for bm in base_methods:
+                    try:
+                        # Pass through common args; avoid per-method params for MVP simplicity
+                        r = forecast(
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            method=bm,  # type: ignore
+                            horizon=horizon,
+                            lookback=lookback,
+                            as_of=as_of,
+                            params=None,
+                            ci_alpha=ci_alpha,
+                            target=target,  # type: ignore
+                            denoise=denoise,
+                            timezone=timezone,
+                        )
+                        if isinstance(r, dict) and r.get('success') and r.get('forecast_price'):
+                            comp_results.append((bm, r))
+                    except Exception:
+                        continue
+
+                if not comp_results:
+                    return {"error": "Ensemble failed: no successful base forecasts"}
+
+                # Establish reference horizon and timestamps from first successful component
+                first_method, first_res = comp_results[0]
+                ref_prices = np.array(first_res.get('forecast_price', []), dtype=float)
+                fh = int(len(ref_prices))
+                if fh <= 0:
+                    return {"error": "Ensemble failed: empty forecast from base methods"}
+
+                # Collect aligned component arrays; drop any mismatched lengths
+                comps_prices = []
+                comps_returns = []
+                lower_list = []
+                upper_list = []
+                used_methods = []
+                for bm, r in comp_results:
+                    fp = r.get('forecast_price')
+                    if not isinstance(fp, (list, tuple)) or len(fp) != fh:
+                        continue
+                    used_methods.append(bm)
+                    comps_prices.append(np.array(fp, dtype=float))
+                    fr = r.get('forecast_return')
+                    if isinstance(fr, (list, tuple)) and len(fr) == fh:
+                        comps_returns.append(np.array(fr, dtype=float))
+                    lp = r.get('lower_price'); up = r.get('upper_price')
+                    if isinstance(lp, (list, tuple)) and isinstance(up, (list, tuple)) and len(lp) == fh and len(up) == fh:
+                        lower_list.append(np.array(lp, dtype=float))
+                        upper_list.append(np.array(up, dtype=float))
+
+                if len(comps_prices) == 0:
+                    return {"error": "Ensemble failed: no aligned component forecasts"}
+
+                M = len(comps_prices)
+                # Choose weights
+                if aggregator == 'weighted' and w is not None and len(w) == M:
+                    w_use = np.array(w, dtype=float)
+                else:
+                    w_use = np.full(M, 1.0 / M, dtype=float)
+                    aggregator = 'mean' if aggregator == 'weighted' else aggregator
+
+                X = np.vstack(comps_prices)  # shape (M, fh)
+                if aggregator == 'median':
+                    agg_price = np.median(X, axis=0)
+                else:  # mean or default
+                    agg_price = np.average(X, axis=0, weights=w_use)
+
+                # Aggregate returns if all components provided them; otherwise skip
+                if len(comps_returns) == M:
+                    XR = np.vstack(comps_returns)
+                    if aggregator == 'median':
+                        agg_return = np.median(XR, axis=0)
+                    else:
+                        agg_return = np.average(XR, axis=0, weights=w_use)
+                else:
+                    agg_return = None
+
+                # Aggregate confidence intervals only if all components have them
+                if len(lower_list) == M and len(upper_list) == M:
+                    L = np.vstack(lower_list)
+                    U = np.vstack(upper_list)
+                    if aggregator == 'median':
+                        agg_lower = np.median(L, axis=0)
+                        agg_upper = np.median(U, axis=0)
+                    else:
+                        agg_lower = np.average(L, axis=0, weights=w_use)
+                        agg_upper = np.average(U, axis=0, weights=w_use)
+                else:
+                    agg_lower = None
+                    agg_upper = None
+
+                # Build payload using the first component as template for metadata/times
+                payload: Dict[str, Any] = {
+                    "success": True,
+                    "symbol": first_res.get('symbol', symbol),
+                    "timeframe": first_res.get('timeframe', timeframe),
+                    "method": "ensemble",
+                    "target": first_res.get('target', str(target)),
+                    "params_used": {
+                        "base_methods": used_methods,
+                        "aggregator": aggregator,
+                        "weights": [float(x) for x in (w_use.tolist() if isinstance(w_use, np.ndarray) else [])],
+                    },
+                    "lookback_used": int(first_res.get('lookback_used', 0)),
+                    "horizon": int(first_res.get('horizon', horizon)),
+                    "seasonality_period": int(first_res.get('seasonality_period', 0)),
+                    "as_of": first_res.get('as_of', as_of or None),
+                    "train_start": first_res.get('train_start'),
+                    "train_end": first_res.get('train_end'),
+                    "times": first_res.get('times'),
+                    "forecast_price": [float(v) for v in agg_price.tolist()],
+                }
+                # Timezone flag passthrough if present
+                if 'timezone' in first_res:
+                    payload['timezone'] = first_res.get('timezone')
+                # Trend: reuse first component's for simplicity
+                if 'forecast_trend' in first_res:
+                    payload['forecast_trend'] = first_res.get('forecast_trend')
+                if agg_return is not None:
+                    payload['forecast_return'] = [float(v) for v in agg_return.tolist()]
+                if agg_lower is not None and agg_upper is not None and ci_alpha is not None:
+                    payload['lower_price'] = [float(v) for v in agg_lower.tolist()]
+                    payload['upper_price'] = [float(v) for v in agg_upper.tolist()]
+                    payload['ci_alpha'] = float(ci_alpha)
+
+                if expose_components:
+                    comps_out = []
+                    for i, (bm, r) in enumerate(comp_results):
+                        try:
+                            comps_out.append({
+                                "method": bm,
+                                "weight": float(w_use[i]) if i < len(w_use) else float(1.0 / M),
+                                "forecast_price": r.get('forecast_price'),
+                            })
+                        except Exception:
+                            continue
+                    payload['components'] = comps_out
+
+                return payload
+            except Exception as ex:
+                return {"error": f"Error computing ensemble forecast: {ex}"}
         # Backward compatibility for 'lambda' -> 'lambda_'
         if 'lambda' in p and 'lambda_' not in p:
             p['lambda_'] = p['lambda']
@@ -3648,14 +3841,20 @@ def forecast_volatility(
             return {"error": err}
 
         try:
-            # Use server time for alignment
-            _tick = mt5.symbol_info_tick(symbol)
-            if _tick is not None and getattr(_tick, 'time', None):
-                t_utc = _mt5_epoch_to_utc(float(_tick.time))
-                server_now_dt = datetime.utcfromtimestamp(t_utc)
+            # Use explicit as-of time if provided, else server time for alignment
+            if as_of:
+                to_dt = _parse_start_datetime_util(as_of)
+                if not to_dt:
+                    return {"error": "Invalid as_of_datetime. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."}
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, need)
             else:
-                server_now_dt = datetime.utcnow()
-            rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
+                _tick = mt5.symbol_info_tick(symbol)
+                if _tick is not None and getattr(_tick, 'time', None):
+                    t_utc = _mt5_epoch_to_utc(float(_tick.time))
+                    server_now_dt = datetime.utcfromtimestamp(t_utc)
+                else:
+                    server_now_dt = datetime.utcnow()
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
         finally:
             if _was_visible is False:
                 try:
@@ -3667,16 +3866,36 @@ def forecast_volatility(
             return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
 
         df = pd.DataFrame(rates)
-        # Drop forming last bar; keep closed bars only
-        if len(df) >= 2:
+        # Drop forming last bar only when using current 'now' as anchor; keep all for historical as_of
+        if as_of is None and len(df) >= 2:
             df = df.iloc[:-1]
         if len(df) < 3:
             return {"error": "Not enough closed bars to compute volatility"}
 
-        closes = df['close'].to_numpy(dtype=float)
-        highs = df['high'].to_numpy(dtype=float) if 'high' in df.columns else None
-        lows = df['low'].to_numpy(dtype=float) if 'low' in df.columns else None
-        opens = df['open'].to_numpy(dtype=float) if 'open' in df.columns else None
+        # Optionally denoise relevant columns prior to volatility estimation
+        if denoise:
+            try:
+                # Default columns by method if user didn't provide
+                _spec = dict(denoise)
+                if 'columns' not in _spec or not _spec.get('columns'):
+                    if method_l in ('ewma', 'garch'):
+                        _spec['columns'] = ['close']
+                    else:  # range-based estimators rely on OHLC
+                        _spec['columns'] = ['open', 'high', 'low', 'close']
+                _apply_denoise(df, _spec, default_when='pre_ti')
+            except Exception:
+                # Fail-safe: ignore denoise errors and proceed with raw data
+                pass
+
+        # Prefer denoised columns if user asked to keep originals
+        def _col(name: str) -> str:
+            dn = f"{name}_dn"
+            return dn if dn in df.columns else name
+
+        closes = df[_col('close')].to_numpy(dtype=float)
+        highs = df[_col('high')].to_numpy(dtype=float) if 'high' in df.columns else None
+        lows = df[_col('low')].to_numpy(dtype=float) if 'low' in df.columns else None
+        opens = df[_col('open')].to_numpy(dtype=float) if 'open' in df.columns else None
         last_close = float(closes[-1])
 
         bars_per_year = _bars_per_year(timeframe)
@@ -3778,6 +3997,7 @@ def forecast_volatility(
             "sigma_annual_return": sigma_ann,
             "horizon_sigma_return": sigma_h_bar,
             "horizon_sigma_annual": sigma_h_ann,
+            "as_of": as_of or None,
         }
     except Exception as e:
         return {"error": f"Error computing volatility forecast: {str(e)}"}
@@ -4465,6 +4685,8 @@ def _attach_schemas_to_tools():
                     params["method"] = {"$ref": "#/$defs/VolatilityMethod"}
                     if "params" in params:
                         params["params"] = {"$ref": "#/$defs/VolatilityParams"}
+                    if "denoise" in params:
+                        params["denoise"] = {"$ref": "#/$defs/DenoiseSpec"}
                 if name == "compute_pivot_points" and "method" in params:
                     params["method"] = {"$ref": "#/$defs/PivotMethod"}
                 if name == "list_indicators" and "category" in params and "IndicatorCategory" in schema.get("$defs", {}):
