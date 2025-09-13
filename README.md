@@ -52,10 +52,10 @@ The server exposes tools that can be called programmatically or via the command-
 The following tools are available via `python cli.py <command>`:
 
 #### Market Data
-- `list_symbols [search_term] [--limit N]` - Smart search for trading symbols.
-- `list_symbol_groups [search_term] [--limit N]` - Get available symbol groups.
+- `list_symbols [--search-term TERM] [--limit N]` - Smart search for trading symbols.
+- `list_symbol_groups [--search-term TERM] [--limit N]` - Get available symbol groups.
 - `describe_symbol <symbol>` - Get detailed symbol information.
-- `fetch_candles <symbol> <timeframe> [--limit N]` - Get historical OHLCV data.
+- `fetch_candles <symbol> [--timeframe TF] [--limit N]` - Get historical OHLCV data.
 - `fetch_ticks <symbol> [--limit N]` - Get tick data.
 - `fetch_market_depth <symbol>` - Get market depth (DOM).
 - `list_indicators` - List available technical indicators.
@@ -67,8 +67,10 @@ The following tools are available via `python cli.py <command>`:
   - JSON: grouped by category `{ "categories": { "Momentum": ["RSI", ...], ... } }`
 - `describe_indicator <name>` - Get detailed information for a specific indicator.
 - `list_denoise_methods` - List available denoising methods and their parameters.
-- `detect_candlestick_patterns <symbol> <timeframe> [--limit N]` - Detect candlestick patterns.
-- `forecast <symbol> <timeframe> ...` - Generate price forecasts.
+- `detect_candlestick_patterns <symbol> [--timeframe TF] [--limit N]` - Detect candlestick patterns.
+- `compute_pivot_points <symbol> [--timeframe TF] [--method METHOD]` - Compute pivot point levels.
+- `forecast <symbol> [--timeframe TF] [--method METHOD] [--horizon N] ...` - Generate price forecasts.
+- `forecast_volatility <symbol> [--timeframe TF] [--horizon N] [--method METHOD]` - Forecast volatility using various methods.
 - `list_forecast_methods` - List available forecasting methods.
 
 *(Note: Programmatic access uses function names like `get_symbols`, `get_rates`, etc.)*
@@ -82,7 +84,7 @@ The following tools are available via `python cli.py <command>`:
 python cli.py list_symbols
 
 # Smart search for symbols containing "EUR"
-python cli.py list_symbols EUR --limit 20
+python cli.py list_symbols --search-term EUR --limit 20
 
 # Get EUR/USD hourly data
 python cli.py fetch_candles EURUSD --timeframe H1 --limit 100
@@ -185,7 +187,7 @@ python cli.py fetch_candles EURUSD --timeframe H1 --limit 500 --simplify segment
 
 Generate point forecasts for the next `horizon` bars.
 
-- **Methods:** `naive`, `drift`, `seasonal_naive`, `theta`, `fourier_ols`, `ses`, `holt`, `holt_winters_add`, `holt_winters_mul`, `arima`, `sarima`.
+- **Methods:** `naive`, `drift`, `seasonal_naive`, `theta`, `fourier_ols`, `ses`, `holt`, `holt_winters_add`, `holt_winters_mul`, `arima`, `sarima`, `ensemble`.
 - **Discover methods:** `python cli.py list_forecast_methods`
 
 ```bash
@@ -205,7 +207,7 @@ Apply smoothing algorithms to data columns.
 python cli.py fetch_candles EURUSD --timeframe H1 --denoise ema --simplify lttb --simplify-params points=50 --limit 1000 --format json
 
 # Denoise the close and an RSI indicator after they are calculated
-python cli.py fetch_candles EURUSD --timeframe H1 --indicators "rsi(14)" --denoise ema --denoise-params columns=close,RSI_14 --denoise-params when=post_ti --format json
+python cli.py fetch_candles EURUSD --timeframe H1 --indicators "rsi(14)" --denoise ema --denoise-params "columns=close,RSI_14,when=post_ti" --format json
 ```
 
 ## Intelligent Symbol Search
