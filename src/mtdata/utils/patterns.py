@@ -26,10 +26,8 @@ try:
 except Exception:
     _dd_dtw = None
 
-try:
-    from sklearn.decomposition import PCA as _SKPCA  # type: ignore
-except Exception:
-    _SKPCA = None
+# Dimensionality reduction abstraction
+from .dimred import create_reducer as _create_reducer, DimReducer as _DimReducer
 
 # Reuse existing MT5 helpers and denoise utilities
 from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
@@ -82,6 +80,9 @@ class PatternIndex:
         metric: str = "euclidean",
         pca_components: Optional[int] = None,
         pca_model: Optional[object] = None,
+        dimred_method: Optional[str] = None,
+        dimred_params: Optional[Dict[str, Any]] = None,
+        reducer: Optional[_DimReducer] = None,
         engine: str = "ckdtree",
         max_bars_per_symbol: int = 5000,
     ):
@@ -96,8 +97,12 @@ class PatternIndex:
         self._series = series               # list aligned with label indices
         self.scale = (scale or "minmax").lower()
         self.metric = (metric or "euclidean").lower()
+        # Back-compat: keep PCA fields, while new reducer API is used going forward
         self.pca_components = int(pca_components) if pca_components else None
         self._pca = pca_model
+        self.dimred_method = (dimred_method or ("pca" if self.pca_components else "none")).lower()
+        self.dimred_params = dict(dimred_params or ({} if not self.pca_components else {"n_components": int(self.pca_components)}))
+        self._reducer = reducer  # type: ignore
         self.engine = (engine or "ckdtree").lower()
         self.max_bars_per_symbol = int(max_bars_per_symbol)
 
@@ -109,8 +114,12 @@ class PatternIndex:
         q = v.astype(float)
         # Scale
         q = _apply_scale_vector(q, self.scale)
-        # PCA
-        if self._pca is not None:
+        # Dimensionality reduction (new API), falling back to PCA model if present
+        if self._reducer is not None:
+            if not self._reducer.supports_transform():
+                raise RuntimeError(f"Reducer '{self.dimred_method}' does not support transforming new samples")
+            q = np.asarray(self._reducer.transform(q.reshape(1, -1)), dtype=np.float32).ravel()
+        elif self._pca is not None:
             q = np.asarray(self._pca.transform(q.reshape(1, -1))[0], dtype=np.float32)
         # Metric post-process
         q = _apply_metric_vector(q, self.metric)
@@ -440,6 +449,9 @@ def build_index(
     scale: str = "minmax",
     metric: str = "euclidean",
     pca_components: Optional[int] = None,
+    # New flexible dimension reduction interface
+    dimred_method: Optional[str] = None,
+    dimred_params: Optional[Dict[str, Any]] = None,
     engine: str = "ckdtree",
 ) -> PatternIndex:
     """Build a PatternIndex from MT5 data for the provided symbols.
@@ -500,16 +512,30 @@ def build_index(
     if not X_list:
         raise RuntimeError("Failed to create any windows for the provided symbols")
     X = np.vstack(X_list)
-    # Optional PCA
+    # Optional dimensionality reduction
     pca_model = None
-    if pca_components and int(pca_components) > 0:
-        if _SKPCA is None:
-            raise RuntimeError("scikit-learn not available; cannot use pca_components")
-        n_comp = int(pca_components)
-        n_comp = max(1, min(n_comp, X.shape[1]))
-        pca_model = _SKPCA(n_components=n_comp, svd_solver='auto', whiten=False)
-        X = pca_model.fit_transform(X)
-        X = X.astype(np.float32)
+    reducer: Optional[_DimReducer] = None
+    # Back-compat: if pca_components provided, prefer PCA
+    effective_dimred_method = (dimred_method or ("pca" if (pca_components and int(pca_components) > 0) else "none"))
+    effective_dimred_params: Dict[str, Any] = dict(dimred_params or {})
+    if (pca_components and int(pca_components) > 0) and (not dimred_method or str(dimred_method).lower() in ("", "none", "pca")):
+        # Ensure components bound to window size
+        effective_dimred_params.setdefault("n_components", max(1, min(int(pca_components), int(X.shape[1]))))
+        effective_dimred_method = "pca"
+    if effective_dimred_method and str(effective_dimred_method).lower() not in ("none", "false"):
+        reducer, info = _create_reducer(effective_dimred_method, effective_dimred_params)
+        # If reducer requires n_components, ensure it does not exceed window length
+        try:
+            if hasattr(reducer, "n_components"):
+                nc = int(getattr(reducer, "n_components"))
+                if nc > int(X.shape[1]):
+                    # Recreate reducer with clipped components
+                    effective_dimred_params["n_components"] = int(X.shape[1])
+                    reducer, info = _create_reducer(effective_dimred_method, effective_dimred_params)
+        except Exception:
+            pass
+        X = reducer.fit_transform(X)
+        X = X.astype(np.float32, copy=False)
 
     # Metric transform (for cosine/correlation)
     met = (metric or "euclidean").lower()
@@ -556,6 +582,9 @@ def build_index(
         metric=(metric or "euclidean").lower(),
         pca_components=int(pca_components) if pca_components else None,
         pca_model=pca_model,
+        dimred_method=str(effective_dimred_method or 'none'),
+        dimred_params=effective_dimred_params,
+        reducer=reducer,
         engine=eng,
         max_bars_per_symbol=int(max_bars_per_symbol),
     )

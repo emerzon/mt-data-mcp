@@ -92,6 +92,7 @@ from ..utils.denoise import _apply_denoise as _apply_denoise_util
 from ..utils.patterns import PatternIndex as _PatternIndex, build_index as _build_pattern_index, _SeriesStore
 from scipy.spatial.ckdtree import cKDTree
 from ..patterns.classic import detect_classic_patterns as _detect_classic_patterns, ClassicDetectorConfig as _ClassicCfg
+from ..utils.dimred import list_dimred_methods as _list_dimred_methods_util, create_reducer as _create_dimred_reducer
 
 _TIMEFRAME_CHOICES = tuple(sorted(TIMEFRAME_MAP.keys()))
 TimeframeLiteral = Literal[_TIMEFRAME_CHOICES]  # type: ignore
@@ -151,6 +152,9 @@ def _save_pattern_index_to_disk(idx: _PatternIndex, cache_dir: Optional[str], ca
             'scale': idx.scale,
             'metric': idx.metric,
             'pca_components': idx.pca_components,
+            'dimred_method': getattr(idx, 'dimred_method', 'none'),
+            'dimred_params': getattr(idx, 'dimred_params', {}),
+            'dimred_reducer': getattr(idx, '_reducer', None),
             'engine': idx.engine,
             'max_bars_per_symbol': int(getattr(idx, 'max_bars_per_symbol', 0)),
         }
@@ -187,6 +191,9 @@ def _load_pattern_index_from_disk(cache_dir: Optional[str], cache_id: Optional[s
             metric=str(payload.get('metric','euclidean')),
             pca_components=payload.get('pca_components'),
             pca_model=None,
+            dimred_method=str(payload.get('dimred_method','none')),
+            dimred_params=dict(payload.get('dimred_params', {})),
+            reducer=payload.get('dimred_reducer'),
             engine='ckdtree',
             max_bars_per_symbol=int(payload.get('max_bars_per_symbol', 0)),
         )
@@ -2144,39 +2151,23 @@ def _apply_denoise(
     return added_cols
 
 
-@mcp.tool()
-def list_denoise_methods() -> Dict[str, Any]:
-    """Return JSON with supported denoise methods, availability, and parameter docs.
-
-    Parameters: none
-    """
+def _get_denoise_methods_data_safe() -> Dict[str, Any]:
     try:
-        # Use the shared utils module for denoise metadata
         from ..utils.denoise import get_denoise_methods_data
         return get_denoise_methods_data()
     except Exception as e:
         return {"error": f"Error listing denoise methods: {e}"}
 
-@mcp.tool()
-def list_forecast_methods() -> Dict[str, Any]:
-    """Return JSON describing supported forecast methods, params, and defaults.
-
-    Parameters: none
-    """
+def _get_forecast_methods_data_safe() -> Dict[str, Any]:
     try:
         from ..utils.forecast import get_forecast_methods_data
         return get_forecast_methods_data(_SM_ETS_AVAILABLE, _SM_SARIMAX_AVAILABLE, _NF_AVAILABLE, _SF_AVAILABLE, _MLF_AVAILABLE, _CHRONOS_AVAILABLE, _TIMESFM_AVAILABLE, _LAG_LLAMA_AVAILABLE, _ARCH_AVAILABLE)
     except Exception as e:
         return {"error": f"Error listing forecast methods: {e}"}
 
-@mcp.tool()
-def list_volatility_methods() -> Dict[str, Any]:
-    """List volatility forecasting methods and availability.
-
-    Returns JSON with two families: direct_models and proxy_models. Direct methods operate on OHLC/returns; proxy models require a proxy series (squared_return, abs_return, log_r2).
-    """
+def _get_volatility_methods_data() -> Dict[str, Any]:
     try:
-        direct = []
+        direct: List[Dict[str, Any]] = []
         def add_direct(name: str, available: bool, description: str, params: Dict[str, str]):
             direct.append({
                 'method': name,
@@ -2202,7 +2193,7 @@ def list_volatility_methods() -> Dict[str, Any]:
             'fit_bars': 'int (default 2000)', 'p': 'int (default 1)', 'o': 'int (default 1)', 'q': 'int (default 1)', 'mean': 'Zero|Constant', 'dist': 'normal|t'
         })
 
-        proxy_models = []
+        proxy_models: List[Dict[str, Any]] = []
         def add_proxy(name: str, available: bool, description: str, params: Dict[str, str]):
             proxy_models.append({
                 'method': name,
@@ -3832,6 +3823,7 @@ def forecast_backtest(
     - For each method, runs our `forecast` as-of that anchor and reports MAE/RMSE/directional accuracy.
     """
     try:
+        __stage = 'start'
         if timeframe not in TIMEFRAME_MAP:
             return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
         mt5_tf = TIMEFRAME_MAP[timeframe]
@@ -3902,7 +3894,7 @@ def forecast_backtest(
             if quantity == 'volatility':
                 methods = ['ewma', 'parkinson']
             else:
-                methods_info = list_forecast_methods()
+                methods_info = _get_forecast_methods_data_safe()
                 avail = [m['method'] for m in methods_info.get('methods', []) if m.get('available')]
                 preferred = ['naive', 'drift', 'seasonal_naive', 'theta', 'fourier_ols', 'sf_autoarima', 'sf_theta']
                 methods = [m for m in preferred if m in avail]
@@ -4079,7 +4071,51 @@ def forecast_volatility(
         if method_l in {'garch','egarch','gjr_garch'} and not _ARCH_AVAILABLE:
             return {"error": f"{method_l} requires 'arch' package."}
 
-        p = dict(params or {})
+        # Parse method params: accept dict, JSON string, or k=v pairs
+        __stage = 'parse_params'
+        if isinstance(params, dict):
+            p = dict(params)
+        elif isinstance(params, str):
+            s = params.strip()
+            if (s.startswith('{') and s.endswith('}')):
+                try:
+                    p = json.loads(s)
+                except Exception:
+                    # Fallback to colon or equals pairs within braces
+                    p = {}
+                    toks = [tok for tok in s.strip().strip('{}').split() if tok]
+                    i = 0
+                    while i < len(toks):
+                        tok = toks[i].strip().strip(',')
+                        if not tok:
+                            i += 1; continue
+                        if '=' in tok:
+                            k, v = tok.split('=', 1)
+                            p[k.strip()] = v.strip().strip(',')
+                            i += 1; continue
+                        if tok.endswith(':'):
+                            key = tok[:-1].strip()
+                            val = ''
+                            if i + 1 < len(toks):
+                                val = toks[i+1].strip().strip(',')
+                                i += 2
+                            else:
+                                i += 1
+                            p[key] = val
+                            continue
+                        i += 1
+            else:
+                # Parse simple k=v pairs separated by comma/space
+                p = {}
+                for tok in s.split():
+                    t = tok.strip().strip(',')
+                    if '=' in t:
+                        k, v = t.split('=', 1)
+                        p[k.strip()] = v.strip()
+                    elif t.endswith(':') and False:
+                        pass
+        else:
+            p = {}
 
         # If using general forecasters on proxy, compute proxy series and return using internal logic
         if method_l in valid_general:
@@ -4635,6 +4671,7 @@ def forecast_volatility(
             return {"error": "Not enough closed bars to compute volatility"}
 
         # Optionally denoise relevant columns prior to volatility estimation
+        __stage = 'denoise'
         if denoise:
             try:
                 # Default columns by method if user didn't provide
@@ -4778,6 +4815,13 @@ def forecast(
     quantity: Literal['price','return','volatility'] = 'price',  # type: ignore
     target: Literal['price','return'] = 'price',  # deprecated in favor of quantity for modeling scale
     denoise: Optional[DenoiseSpec] = None,
+    # Feature engineering for exogenous/multivariate models
+    features: Optional[Dict[str, Any]] = None,
+    # Optional dimensionality reduction across feature columns (overrides features.dimred_* if set)
+    dimred_method: Optional[str] = None,
+    dimred_params: Optional[Dict[str, Any]] = None,
+    # Custom target specification (base column/alias, transform, and horizon aggregation)
+    target_spec: Optional[Dict[str, Any]] = None,
     timezone: str = "auto",
 ) -> Dict[str, Any]:
     """Fast forecasts for the next `horizon` bars using lightweight methods.
@@ -4889,24 +4933,109 @@ def forecast(
             if len(added) > 0 and f"{base_col}_dn" in added:
                 base_col = f"{base_col}_dn"
 
-        y = df[base_col].astype(float).to_numpy()
-        t = np.arange(1, len(y) + 1, dtype=float)
+        # Build target series: support custom target_spec or legacy target/quantity
+        t = np.arange(1, len(df) + 1, dtype=float)
         last_time = float(df['time'].iloc[-1])
         future_times = _next_times_from_last(last_time, int(tf_secs), int(horizon))
 
-        # Decide modeling scale for price/return
-        use_returns = (quantity_l == 'return') or (str(target).lower() == 'return')
-        if use_returns:
-            with np.errstate(divide='ignore', invalid='ignore'):
-                x = np.diff(np.log(np.maximum(y, 1e-12)))
-            x = x[np.isfinite(x)]
-            if x.size < 5:
-                return {"error": "Not enough data to compute return-based forecast"}
-            series = x
-            origin_price = float(y[-1])
+        __stage = 'target_build'
+        custom_target_mode = False
+        target_info: Dict[str, Any] = {}
+        # Helper to resolve alias base columns
+        def _alias_base(arrs: Dict[str, np.ndarray], name: str) -> Optional[np.ndarray]:
+            nm = name.strip().lower()
+            if nm in ('typical','tp'):
+                if all(k in arrs for k in ('high','low','close')):
+                    return (arrs['high'] + arrs['low'] + arrs['close']) / 3.0
+                return None
+            if nm in ('hl2',):
+                if all(k in arrs for k in ('high','low')):
+                    return (arrs['high'] + arrs['low']) / 2.0
+                return None
+            if nm in ('ohlc4','ha_close','haclose'):
+                if all(k in arrs for k in ('open','high','low','close')):
+                    return (arrs['open'] + arrs['high'] + arrs['low'] + arrs['close']) / 4.0
+                return None
+            return None
+
+        # Resolve base and transform from target_spec when provided
+        if target_spec and isinstance(target_spec, dict):
+            custom_target_mode = True
+            ts = dict(target_spec)
+            # Compute indicators if requested so 'base' can reference them
+            ts_inds = ts.get('indicators')
+            if ts_inds:
+                try:
+                    specs = _parse_ti_specs_util(str(ts_inds)) if isinstance(ts_inds, str) else ts_inds
+                    _apply_ta_indicators_util(df, specs, default_when='pre_ti')
+                except Exception:
+                    pass
+            base_name = str(ts.get('base', base_col))
+            # Resolve base series
+            if base_name in df.columns:
+                y_base = df[base_name].astype(float).to_numpy()
+            else:
+                # Attempt alias
+                arrs = {c: df[c].astype(float).to_numpy() for c in df.columns if c in ('open','high','low','close','volume')}
+                y_alias = _alias_base(arrs, base_name)
+                if y_alias is None:
+                    # Fallback to default base_col
+                    y_base = df[base_col].astype(float).to_numpy()
+                else:
+                    y_base = np.asarray(y_alias, dtype=float)
+            target_info['base'] = base_name
+            # Transform
+            transform = str(ts.get('transform', 'none')).lower()
+            k_trans = int(ts.get('k', 1)) if ts.get('k') is not None else 1
+            if transform in ('return','log_return','diff','pct_change'):
+                # general k-step transform
+                if k_trans < 1:
+                    k_trans = 1
+                if transform == 'log_return':
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        y_shift = np.roll(np.log(np.maximum(y_base, 1e-12)), k_trans)
+                        series = np.log(np.maximum(y_base, 1e-12)) - y_shift
+                elif transform == 'return' or transform == 'pct_change':
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        y_shift = np.roll(y_base, k_trans)
+                        series = (y_base - y_shift) / np.where(np.abs(y_shift) > 1e-12, y_shift, 1.0)
+                    if transform == 'pct_change':
+                        series = 100.0 * series
+                else:  # diff
+                    y_shift = np.roll(y_base, k_trans)
+                    series = y_base - y_shift
+                # Drop first k rows for valid transform
+                series = np.asarray(series[k_trans:], dtype=float)
+                series = series[np.isfinite(series)]
+                if series.size < 5:
+                    return {"error": "Not enough data for transformed target"}
+                target_info['transform'] = transform
+                target_info['k'] = k_trans
+            else:
+                series = np.asarray(y_base, dtype=float)
+                series = series[np.isfinite(series)]
+                if series.size < 3:
+                    return {"error": "Not enough data for target"}
+                target_info['transform'] = 'none'
+            # Since custom target can be any series, skip legacy price/return mapping
+            use_returns = False
+            origin_price = float('nan')
         else:
-            series = y
-            origin_price = float(y[-1])
+            # Legacy target behavior: price vs return on close
+            y = df[base_col].astype(float).to_numpy()
+            # Decide modeling scale for price/return
+            use_returns = (quantity_l == 'return') or (str(target).lower() == 'return')
+            if use_returns:
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    x = np.diff(np.log(np.maximum(y, 1e-12)))
+                x = x[np.isfinite(x)]
+                if x.size < 5:
+                    return {"error": "Not enough data to compute return-based forecast"}
+                series = x
+                origin_price = float(y[-1])
+            else:
+                series = y
+                origin_price = float(y[-1])
 
         # Ensure finite numeric series for modeling
         series = np.asarray(series, dtype=float)
@@ -4915,13 +5044,265 @@ def forecast(
         if n < 3:
             return {"error": "Series too short for forecasting"}
 
+        # ---- Optional feature engineering for exogenous models ----
+        exog_used: Optional[np.ndarray] = None
+        exog_future: Optional[np.ndarray] = None
+        feat_info: Dict[str, Any] = {}
+        __stage = 'features_start'
+        if features:
+            try:
+                # Accept dict, JSON string, or key=value pairs
+                if isinstance(features, dict):
+                    fcfg = dict(features)
+                elif isinstance(features, str):
+                    s = features.strip()
+                    if (s.startswith('{') and s.endswith('}')):
+                        try:
+                            fcfg = json.loads(s)
+                        except Exception:
+                            # Fallback: parse colon/equals pairs inside braces
+                            fcfg = {}
+                            toks = [tok for tok in s.strip().strip('{}').split() if tok]
+                            i = 0
+                            while i < len(toks):
+                                tok = toks[i].strip().strip(',')
+                                if not tok:
+                                    i += 1; continue
+                                if '=' in tok:
+                                    k, v = tok.split('=', 1)
+                                    fcfg[k.strip()] = v.strip().strip(',')
+                                    i += 1; continue
+                                if tok.endswith(':'):
+                                    key = tok[:-1].strip()
+                                    val = ''
+                                    if i + 1 < len(toks):
+                                        val = toks[i+1].strip().strip(',')
+                                        i += 2
+                                    else:
+                                        i += 1
+                                    fcfg[key] = val
+                                    continue
+                                i += 1
+                    else:
+                        # Parse k=v or k: v pairs split on whitespace
+                        fcfg = {}
+                        toks = [tok for tok in s.split() if tok]
+                        i = 0
+                        while i < len(toks):
+                            tok = toks[i].strip().strip(',')
+                            if '=' in tok:
+                                k, v = tok.split('=', 1)
+                                fcfg[k.strip()] = v.strip()
+                                i += 1; continue
+                            if tok.endswith(':'):
+                                key = tok[:-1].strip()
+                                val = ''
+                                if i + 1 < len(toks):
+                                    val = toks[i+1].strip().strip(',')
+                                    i += 2
+                                else:
+                                    i += 1
+                                fcfg[key] = val
+                                continue
+                            i += 1
+                else:
+                    fcfg = {}
+                include = fcfg.get('include', 'ohlcv')
+                include_cols: list[str] = []
+                if isinstance(include, str):
+                    inc = include.strip().lower()
+                    if inc == 'ohlcv':
+                        for col in ('open','high','low','volume','tick_volume','real_volume'):
+                            if col in df.columns:
+                                include_cols.append(col)
+                    else:
+                        # comma/space separated list
+                        toks = [tok.strip() for tok in include.replace(',', ' ').split() if tok.strip()]
+                        for tok in toks:
+                            if tok in df.columns and tok not in ('time','close'):
+                                include_cols.append(tok)
+                elif isinstance(include, (list, tuple)):
+                    for tok in include:
+                        s = str(tok).strip()
+                        if s in df.columns and s not in ('time','close'):
+                            include_cols.append(s)
+                # Indicators (add columns)
+                __stage = 'features_indicators'
+                ind_specs = fcfg.get('indicators')
+                if ind_specs:
+                    try:
+                        specs = _parse_ti_specs_util(str(ind_specs)) if isinstance(ind_specs, str) else ind_specs
+                        _apply_ta_indicators_util(df, specs, default_when='pre_ti')
+                    except Exception:
+                        pass
+                # Add any newly created indicator columns (heuristic: non-time, non-OHLCV)
+                __stage = 'features_collect'
+                ti_cols = []
+                for c in df.columns:
+                    if c in ('time','open','high','low','close','volume','tick_volume','real_volume'):
+                        continue
+                    if df[c].dtype.kind in ('f','i'):
+                        ti_cols.append(c)
+                # Calendar/future-known covariates (hour, dow, fourier:P)
+                cal_cols: list[str] = []
+                cal_train: Optional[np.ndarray] = None
+                cal_future: Optional[np.ndarray] = None
+                fut_cov = fcfg.get('future_covariates')
+                if fut_cov:
+                    tokens: list[str] = []
+                    if isinstance(fut_cov, str):
+                        tokens = [tok.strip() for tok in fut_cov.replace(',', ' ').split() if tok.strip()]
+                    elif isinstance(fut_cov, (list, tuple)):
+                        tokens = [str(tok).strip() for tok in fut_cov]
+                    t_train = df['time'].astype(float).to_numpy()
+                    t_future = np.asarray(future_times, dtype=float)
+                    tr_list: list[np.ndarray] = []
+                    tf_list: list[np.ndarray] = []
+                    for tok in tokens:
+                        tl = tok.lower()
+                        if tl.startswith('fourier:'):
+                            try:
+                                per = int(tl.split(':',1)[1])
+                            except Exception:
+                                per = 24
+                            w = 2.0 * math.pi / float(max(1, per))
+                            idx_tr = np.arange(t_train.size, dtype=float)
+                            idx_tf = np.arange(t_future.size, dtype=float)
+                            tr_list.append(np.sin(w * idx_tr)); cal_cols.append(f'fx_sin_{per}')
+                            tr_list.append(np.cos(w * idx_tr)); cal_cols.append(f'fx_cos_{per}')
+                            tf_list.append(np.sin(w * idx_tf));
+                            tf_list.append(np.cos(w * idx_tf));
+                        elif tl in ('hour','hr'):
+                            try:
+                                hrs_tr = pd.to_datetime(t_train, unit='s', utc=True).hour.to_numpy()
+                            except Exception:
+                                hrs_tr = (np.arange(t_train.size) % 24)
+                            try:
+                                hrs_tf = pd.to_datetime(t_future, unit='s', utc=True).hour.to_numpy()
+                            except Exception:
+                                hrs_tf = (np.arange(t_future.size) % 24)
+                            w = 2.0 * math.pi / 24.0
+                            tr_list.append(np.sin(w * hrs_tr)); cal_cols.append('hr_sin')
+                            tr_list.append(np.cos(w * hrs_tr)); cal_cols.append('hr_cos')
+                            tf_list.append(np.sin(w * hrs_tf));
+                            tf_list.append(np.cos(w * hrs_tf));
+                        elif tl in ('dow','wday','weekday'):
+                            try:
+                                d_tr = pd.to_datetime(t_train, unit='s', utc=True).weekday.to_numpy()
+                            except Exception:
+                                d_tr = (np.arange(t_train.size) % 7)
+                            try:
+                                d_tf = pd.to_datetime(t_future, unit='s', utc=True).weekday.to_numpy()
+                            except Exception:
+                                d_tf = (np.arange(t_future.size) % 7)
+                            w = 2.0 * math.pi / 7.0
+                            tr_list.append(np.sin(w * d_tr)); cal_cols.append('dow_sin')
+                            tr_list.append(np.cos(w * d_tr)); cal_cols.append('dow_cos')
+                            tf_list.append(np.sin(w * d_tf));
+                            tf_list.append(np.cos(w * d_tf));
+                    if tr_list:
+                        cal_train = np.vstack(tr_list).T.astype(float)
+                        cal_future = np.vstack(tf_list).T.astype(float)
+                sel_cols = sorted(set(include_cols + ti_cols))
+                __stage = 'features_matrix'
+                if sel_cols:
+                    X = df[sel_cols].astype(float).copy()
+                    # Fill missing values conservatively (ffill then bfill)
+                    X = X.replace([np.inf, -np.inf], np.nan)
+                    X = X.ffill().bfill()
+                    X_arr = X.to_numpy(dtype=float)
+                    # Dimensionality reduction across feature columns
+                    dr_method = (fcfg.get('dimred_method') or dimred_method)
+                    dr_params = fcfg.get('dimred_params') or dimred_params
+                    if dr_method and str(dr_method).lower() not in ('', 'none'):
+                        try:
+                            reducer, _ = _create_dimred_reducer(dr_method, dr_params)
+                            X_red = reducer.fit_transform(X_arr)
+                            exog = np.asarray(X_red, dtype=float)
+                            feat_info['dimred_method'] = str(dr_method)
+                            if isinstance(dr_params, dict):
+                                feat_info['dimred_params'] = dr_params
+                            elif dr_params is None:
+                                feat_info['dimred_params'] = {}
+                            else:
+                                feat_info['dimred_params'] = {"raw": str(dr_params)}
+                            feat_info['dimred_n_features'] = int(exog.shape[1])
+                        except Exception as _ex:
+                            # Fallback to raw features on failure
+                            exog = X_arr
+                            feat_info['dimred_error'] = str(_ex)
+                    else:
+                        exog = X_arr
+                    # Append calendar features
+                    if cal_train is not None:
+                        exog = np.hstack([exog, cal_train]) if exog.size else cal_train
+                    # Align with return series if needed
+                    if (quantity_l == 'return') or (str(target).lower() == 'return'):
+                        exog = exog[1:]
+                    # Build future exog by holding the last observed row (default policy)
+                    if exog.shape[0] >= 1:
+                        last_row = exog[-1]
+                        exog_f = np.tile(last_row.reshape(1, -1), (int(horizon), 1))
+                    else:
+                        exog_f = None
+                    if exog_f is not None and cal_future is not None:
+                        exog_f = np.hstack([exog_f, cal_future])
+                    exog_used = exog
+                    exog_future = exog_f
+                    feat_info['selected_columns'] = sel_cols + cal_cols
+                    feat_info['n_features'] = int(exog_used.shape[1]) if exog_used is not None else 0
+                else:
+                    feat_info['selected_columns'] = []
+            except Exception as _ex:
+                feat_info['error'] = f"feature_build_error: {str(_ex)}"
+                __stage = 'features_error'
+
         # Volatility branch: compute and return volatility metrics
+        __stage = 'quantity_branch'
         if quantity_l == 'volatility':
             mt5_tf = TIMEFRAME_MAP[timeframe]
             tf_secs = TIMEFRAME_SECONDS.get(timeframe)
             if not tf_secs:
                 return {"error": f"Unsupported timeframe seconds for {timeframe}"}
-            p = dict(params or {})
+            if isinstance(params, dict):
+                p = dict(params)
+            elif isinstance(params, str):
+                s = params.strip()
+                if (s.startswith('{') and s.endswith('}')):
+                    try:
+                        p = json.loads(s)
+                    except Exception:
+                        p = {}
+                        toks = [tok for tok in s.strip().strip('{}').split() if tok]
+                        i = 0
+                        while i < len(toks):
+                            tok = toks[i].strip().strip(',')
+                            if not tok:
+                                i += 1; continue
+                            if '=' in tok:
+                                k, v = tok.split('=', 1)
+                                p[k.strip()] = v.strip().strip(',')
+                                i += 1; continue
+                            if tok.endswith(':'):
+                                key = tok[:-1].strip()
+                                val = ''
+                                if i + 1 < len(toks):
+                                    val = toks[i+1].strip().strip(',')
+                                    i += 2
+                                else:
+                                    i += 1
+                                p[key] = val
+                                continue
+                            i += 1
+                else:
+                    p = {}
+                    for tok in s.split():
+                        t = tok.strip().strip(',')
+                        if '=' in t:
+                            k, v = t.split('=', 1)
+                            p[k.strip()] = v.strip()
+            else:
+                p = {}
             if method_l == 'vol_ewma':
                 look = int(p.get('lookback', 1500))
                 halflife = p.get('halflife'); lam = p.get('lambda_', 0.94)
@@ -5029,6 +5410,7 @@ def forecast(
                 return {"error": f"Unknown volatility method: {method_l}"}
 
         # Fit/forecast by method (price/return)
+        __stage = f'method_{method_l}_fit'
         fh = int(horizon)
         f_vals = np.zeros(fh, dtype=float)
         pre_ci: Optional[Tuple[np.ndarray, np.ndarray]] = None
@@ -5214,9 +5596,13 @@ def forecast(
                         trend=trend,
                         enforce_stationarity=True,
                         enforce_invertibility=True,
+                        exog=exog_used if exog_used is not None else None,
                     )
                     res = model.fit(method='lbfgs', disp=False, maxiter=100)
-                    pred = res.get_forecast(steps=fh)
+                    if exog_future is not None:
+                        pred = res.get_forecast(steps=fh, exog=exog_future)
+                    else:
+                        pred = res.get_forecast(steps=fh)
                 f_vals = pred.predicted_mean.to_numpy()
                 ci = None
                 try:
@@ -5227,6 +5613,8 @@ def forecast(
                 except Exception:
                     ci = None
                 params_used = {"order": (p_ord, d_ord, q_ord), "seasonal_order": seas if method_l=='sarima' else (0,0,0,0), "trend": trend}
+                if exog_used is not None:
+                    params_used["exog_features"] = {"n_features": int(exog_used.shape[1]), **feat_info}
                 if ci is not None:
                     pre_ci = ci
             except Exception as ex:
@@ -5321,8 +5709,24 @@ def forecast(
                 nf = _NeuralForecast(models=[model], freq=_pd_freq_from_timeframe(timeframe))
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    nf.fit(df=Y_df, verbose=False)
-                Yf = nf.predict()
+                    if exog_used is not None and isinstance(exog_used, np.ndarray) and exog_used.size:
+                        # Build X_df and X_future for NF
+                        X_df = _pd.DataFrame({'unique_id': ['ts'] * int(len(Y_df)), 'ds': Y_df['ds'].values})
+                        cols = [f'x{i}' for i in range(exog_used.shape[1])]
+                        for j, cname in enumerate(cols):
+                            X_df[cname] = exog_used[:, j]
+                        nf.fit(df=Y_df, X_df=X_df, verbose=False)
+                        if exog_future is not None and isinstance(exog_future, np.ndarray) and exog_future.size:
+                            ds_f = _pd.to_datetime(_pd.Series(future_times), unit='s', utc=True)
+                            Xf_df = _pd.DataFrame({'unique_id': ['ts'] * int(len(ds_f)), 'ds': _pd.Index(ds_f).to_pydatetime()})
+                            for j, cname in enumerate(cols):
+                                Xf_df[cname] = exog_future[:, j]
+                            Yf = nf.predict(h=int(fh), X_df=Xf_df)
+                        else:
+                            Yf = nf.predict(h=int(fh))
+                    else:
+                        nf.fit(df=Y_df, verbose=False)
+                        Yf = nf.predict(h=int(fh))
                 try:
                     Yf = Yf[Yf['unique_id'] == 'ts']
                 except Exception:
@@ -5366,6 +5770,20 @@ def forecast(
                     'ds': _pd.Index(ts_train).to_pydatetime(),
                     'y': series.astype(float),
                 })
+                # Optional exogenous covariates
+                X_df = None
+                Xf_df = None
+                if exog_used is not None and isinstance(exog_used, np.ndarray) and exog_used.size:
+                    cols = [f'x{i}' for i in range(exog_used.shape[1])]
+                    X_df = _pd.DataFrame({'unique_id': ['ts'] * int(len(series)), 'ds': _pd.Index(ts_train).to_pydatetime()})
+                    for j, cname in enumerate(cols):
+                        X_df[cname] = exog_used[:, j]
+                    # Future exog
+                    if exog_future is not None and isinstance(exog_future, np.ndarray) and exog_future.size:
+                        ds_f = _pd.to_datetime(_pd.Series(future_times), unit='s', utc=True)
+                        Xf_df = _pd.DataFrame({'unique_id': ['ts'] * int(len(ds_f)), 'ds': _pd.Index(ds_f).to_pydatetime()})
+                        for j, cname in enumerate(cols):
+                            Xf_df[cname] = exog_future[:, j]
             except Exception as ex:
                 return {"error": f"Failed to build training frame for {method_l}: {ex}"}
             m_eff = int(p.get('seasonality', m) or m)
@@ -5387,8 +5805,14 @@ def forecast(
                 sf = _StatsForecast(models=[model], freq=_pd_freq_from_timeframe(timeframe))
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    sf.fit(Y_df)
-                Yf = sf.predict(h=int(fh))
+                    if X_df is not None:
+                        sf.fit(Y_df, X_df=X_df)
+                    else:
+                        sf.fit(Y_df)
+                if Xf_df is not None:
+                    Yf = sf.predict(h=int(fh), X_df=Xf_df)
+                else:
+                    Yf = sf.predict(h=int(fh))
                 try:
                     Yf = Yf[Yf['unique_id'] == 'ts']
                 except Exception:
@@ -5451,6 +5875,17 @@ def forecast(
 
             rf = _RF(n_estimators=n_estimators, max_depth=None if max_depth in (None, 'None') else int(max_depth), random_state=42)
             try:
+                # Attach exogenous columns if present
+                Xf_df = None
+                if exog_used is not None and isinstance(exog_used, np.ndarray) and exog_used.size:
+                    cols = [f'x{i}' for i in range(exog_used.shape[1])]
+                    for j, cname in enumerate(cols):
+                        Y_df[cname] = exog_used[:, j]
+                    if exog_future is not None and isinstance(exog_future, np.ndarray) and exog_future.size:
+                        ds_f = _pd.to_datetime(_pd.Series(future_times), unit='s', utc=True)
+                        Xf_df = _pd.DataFrame({'unique_id': ['ts'] * int(len(ds_f)), 'ds': _pd.Index(ds_f).to_pydatetime()})
+                        for j, cname in enumerate(cols):
+                            Xf_df[cname] = exog_future[:, j]
                 mlf = _MLForecast(models=[rf], freq=_pd_freq_from_timeframe(timeframe))
                 # Set lags and optional rolling aggregates
                 mlf = mlf.add_lags(lags)
@@ -5461,7 +5896,10 @@ def forecast(
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     mlf.fit(Y_df)
-                Yf = mlf.predict(h=int(fh))
+                if Xf_df is not None:
+                    Yf = mlf.predict(h=int(fh), X_df=Xf_df)
+                else:
+                    Yf = mlf.predict(h=int(fh))
                 try:
                     Yf = Yf[Yf['unique_id'] == 'ts']
                 except Exception:
@@ -5531,6 +5969,17 @@ def forecast(
 
             lgbm = _LGBM(n_estimators=n_estimators, learning_rate=lr, num_leaves=num_leaves, max_depth=max_depth, random_state=42)
             try:
+                # Attach exogenous columns if present
+                Xf_df = None
+                if exog_used is not None and isinstance(exog_used, np.ndarray) and exog_used.size:
+                    cols = [f'x{i}' for i in range(exog_used.shape[1])]
+                    for j, cname in enumerate(cols):
+                        Y_df[cname] = exog_used[:, j]
+                    if exog_future is not None and isinstance(exog_future, np.ndarray) and exog_future.size:
+                        ds_f = _pd.to_datetime(_pd.Series(future_times), unit='s', utc=True)
+                        Xf_df = _pd.DataFrame({'unique_id': ['ts'] * int(len(ds_f)), 'ds': _pd.Index(ds_f).to_pydatetime()})
+                        for j, cname in enumerate(cols):
+                            Xf_df[cname] = exog_future[:, j]
                 mlf = _MLForecast(models=[lgbm], freq=_pd_freq_from_timeframe(timeframe))
                 mlf = mlf.add_lags(lags)
                 if roll in {'mean', 'min', 'max', 'std'}:
@@ -5539,7 +5988,10 @@ def forecast(
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     mlf.fit(Y_df)
-                Yf = mlf.predict(h=int(fh))
+                if Xf_df is not None:
+                    Yf = mlf.predict(h=int(fh), X_df=Xf_df)
+                else:
+                    Yf = mlf.predict(h=int(fh))
                 try:
                     Yf = Yf[Yf['unique_id'] == 'ts']
                 except Exception:
@@ -5853,8 +6305,8 @@ def forecast(
             except Exception:
                 do_ci = False
 
-        # Map back to price if target was returns
-        if use_returns:
+        # Map back to price if legacy target was returns (custom targets skip mapping)
+        if (not custom_target_mode) and use_returns:
             # Compose price path multiplicatively from origin_price
             price_path = np.empty(fh, dtype=float)
             price_path[0] = origin_price * math.exp(float(f_vals[0]))
@@ -5957,18 +6409,72 @@ def forecast(
             "train_start": train_first_time,
             "train_end": train_last_time,
             "times": times_fmt,
-            "forecast_price": [_round(v) for v in out_forecast_price.tolist()],
+            "target_spec_used": target_info if custom_target_mode else None,
         }
+        # Attach forecast outputs depending on target mode
+        if custom_target_mode:
+            payload["forecast_series"] = [float(v) for v in f_vals.tolist()]
+            # Optional horizon aggregation
+            try:
+                ts = dict(target_spec or {})
+                agg = str(ts.get('horizon_agg', 'last')).lower()
+                norm = str(ts.get('normalize', 'none')).lower()
+                val = None
+                arr = np.asarray(f_vals, dtype=float)
+                if agg == 'last':
+                    val = float(arr[-1]) if arr.size else float('nan')
+                elif agg == 'mean':
+                    val = float(np.nanmean(arr))
+                elif agg == 'sum':
+                    val = float(np.nansum(arr))
+                elif agg == 'slope':
+                    h = arr.size
+                    tt = np.arange(1, h + 1, dtype=float)
+                    A = np.vstack([np.ones(h), tt]).T
+                    coef, _, _, _ = np.linalg.lstsq(A, arr, rcond=None)
+                    val = float(coef[1])
+                elif agg == 'max':
+                    val = float(np.nanmax(arr))
+                elif agg == 'min':
+                    val = float(np.nanmin(arr))
+                elif agg == 'range':
+                    val = float(np.nanmax(arr) - np.nanmin(arr))
+                elif agg == 'vol':
+                    # If transformed as returns/log_returns/diff, arr is already increments; else approximate via diff
+                    inc = arr if target_info.get('transform','none') in ('return','log_return','diff','pct_change') else np.diff(arr)
+                    val = float(math.sqrt(np.nansum(np.square(inc))))
+                # normalization
+                if val is not None and math.isfinite(val):
+                    if norm == 'per_bar' and arr.size > 0:
+                        val = float(val) / float(arr.size)
+                    elif norm == 'pct':
+                        val = float(val) * 100.0
+                payload["forecast_agg"] = {"agg": agg, "normalize": norm, "value": float(val) if val is not None else None}
+                # Optional classification
+                cls = ts.get('classification')
+                if cls:
+                    cls_s = str(cls).lower()
+                    thresh = float(ts.get('threshold', 0.0))
+                    label = None
+                    if cls_s == 'sign':
+                        label = 1 if (val is not None and float(val) > 0.0) else (-1 if (val is not None and float(val) < 0.0) else 0)
+                    elif cls_s == 'threshold':
+                        label = int(1 if (val is not None and abs(float(val)) >= float(thresh)) else 0)
+                    payload["forecast_label"] = label
+            except Exception:
+                pass
+        else:
+            payload["forecast_price"] = [_round(v) for v in out_forecast_price.tolist()]
         if not _use_ctz:
             payload["timezone"] = "UTC"
         payload["forecast_trend"] = forecast_trend
-        if use_returns:
+        if (not custom_target_mode) and use_returns:
             payload["forecast_return"] = [float(v) for v in f_vals.tolist()]
-        if do_ci and lower_price is not None and upper_price is not None:
+        if (not custom_target_mode) and do_ci and lower_price is not None and upper_price is not None:
             payload["lower_price"] = [_round(v) for v in lower_price.tolist()]
             payload["upper_price"] = [_round(v) for v in upper_price.tolist()]
             payload["ci_alpha"] = float(_alpha)
-        if forecast_quantiles_price:
+        if (not custom_target_mode) and forecast_quantiles_price:
             # Attach quantiles (rounded)
             qout: Dict[str, List[float]] = {}
             for k, arr in forecast_quantiles_price.items():
@@ -5977,7 +6483,20 @@ def forecast(
 
         return payload
     except Exception as e:
-        return {"error": f"Error computing forecast: {str(e)}"}
+        dbg = {}
+        try:
+            dbg = {
+                "stage": __stage,
+                "features_type": type(features).__name__,
+                "params_type": type(params).__name__,
+                "target_spec_type": type(target_spec).__name__,
+                "features_preview": (str(features)[:200] if features is not None else None),
+                "params_preview": (str(params)[:200] if params is not None else None),
+                "target_spec_preview": (str(target_spec)[:200] if target_spec is not None else None),
+            }
+        except Exception:
+            pass
+        return {"error": f"Error computing forecast: {str(e)}", "debug": dbg}
 
 
 # pattern_prepare_index has been removed; pattern_search builds/loads indexes on demand.
@@ -5990,8 +6509,13 @@ def forecast(
         # Ensure cached index
         dn_key = _denoise_cache_key(denoise)
         eff_lb = int(lookback) if lookback is not None else None
+        # Include dimension reduction in key when provided
+        if dimred_method and str(dimred_method).lower() not in ("", "none"):
+            dr_desc = f"dr={str(dimred_method).lower()}"
+        else:
+            dr_desc = f"pca={int(pca_components) if pca_components else 0}"
         cache_key = (str(timeframe), int(window_size), int(future_size),
-                     f"dn={dn_key}|sc={str(scale).lower()}|mt={str(metric).lower()}|pca={int(pca_components) if pca_components else 0}|eng={(engine or 'ckdtree').lower()}|lb={eff_lb if eff_lb is not None else 'auto'}")
+                     f"dn={dn_key}|sc={str(scale).lower()}|mt={str(metric).lower()}|{dr_desc}|eng={(engine or 'ckdtree').lower()}|lb={eff_lb if eff_lb is not None else 'auto'}")
         idx = _PATTERN_INDEX_CACHE.get(cache_key)
         if idx is None or (symbol not in idx.symbols):
             # Try disk cache if requested
@@ -6016,6 +6540,8 @@ def forecast(
                 scale=str(scale),
                 metric=str(metric),
                 pca_components=int(pca_components) if pca_components else None,
+                dimred_method=dimred_method,
+                dimred_params=dimred_params,
                 engine=str(engine),
             )
                 _PATTERN_INDEX_CACHE[cache_key] = idx
@@ -6118,8 +6644,12 @@ def forecast(
             ws2 = int(round(float(window_size) * float(sc)))
             if ws2 < 5: continue
             # Acquire index for ws2
+            if dimred_method and str(dimred_method).lower() not in ("", "none"):
+                dr_desc2 = f"dr={str(dimred_method).lower()}"
+            else:
+                dr_desc2 = f"pca={int(pca_components) if pca_components else 0}"
             cache_key2 = (str(timeframe), int(ws2), int(future_size),
-                          f"dn={dn_key}|sc={str(scale).lower()}|mt={str(metric).lower()}|pca={int(pca_components) if pca_components else 0}|eng={(engine or 'ckdtree').lower()}|lb={eff_lb if eff_lb is not None else 'auto'}")
+                          f"dn={dn_key}|sc={str(scale).lower()}|mt={str(metric).lower()}|{dr_desc2}|eng={(engine or 'ckdtree').lower()}|lb={eff_lb if eff_lb is not None else 'auto'}")
             idx2 = _PATTERN_INDEX_CACHE.get(cache_key2)
             if idx2 is None:
                 try:
@@ -6133,6 +6663,8 @@ def forecast(
                         scale=str(scale),
                         metric=str(metric),
                         pca_components=int(pca_components) if pca_components else None,
+                        dimred_method=dimred_method,
+                        dimred_params=dimred_params,
                         engine=str(engine),
                     )
                     _PATTERN_INDEX_CACHE[cache_key2] = idx2
@@ -6390,6 +6922,8 @@ def forecast(
                 "scale": idx.scale,
                 "metric": idx.metric,
                 "pca_components": idx.pca_components or 0,
+                "dimred_method": getattr(idx, 'dimred_method', 'none'),
+                "dimred_params": getattr(idx, 'dimred_params', {}),
                 "engine": getattr(idx, 'engine', 'ckdtree'),
                 "max_bars_per_symbol": int(getattr(idx, 'max_bars_per_symbol', 0)),
                 "bars_per_symbol": getattr(idx, 'bars_per_symbol', lambda: {})(),
@@ -6401,6 +6935,116 @@ def forecast(
         return payload
     except Exception as e:
         return {"error": f"Error in pattern search: {str(e)}"}
+
+
+@mcp.tool()
+def _get_dimred_methods_data() -> Dict[str, Any]:
+    try:
+        methods = _list_dimred_methods_util()
+        return {"success": True, "methods": methods}
+    except Exception as e:
+        return {"error": f"Error listing dimred methods: {str(e)}"}
+
+
+@mcp.tool()
+def list_capabilities(
+    sections: Optional[List[str]] = None,
+    include_details: bool = False,
+) -> Dict[str, Any]:
+    """Consolidated capabilities and feature info across forecasting, volatility, denoise, indicators, and dimred.
+
+    Parameters: sections? (subset of: forecast, volatility, denoise, indicators, dimred, frameworks, pattern_search), include_details?
+    """
+    try:
+        wanted = None
+        if sections and isinstance(sections, (list, tuple)):
+            wanted = {str(s).lower() for s in sections}
+        out: Dict[str, Any] = {"success": True}
+
+        def want(key: str) -> bool:
+            return (wanted is None) or (str(key).lower() in wanted)
+
+        if want("frameworks"):
+            # Availability flags for optional frameworks
+            frameworks = {
+                "neuralforecast": bool(_NF_AVAILABLE),
+                "statsforecast": bool(_SF_AVAILABLE),
+                "mlforecast": bool(_MLF_AVAILABLE),
+                "arch": bool(_ARCH_AVAILABLE),
+                "chronos_foundation": bool(_CHRONOS_AVAILABLE),
+                "timesfm_foundation": bool(_TIMESFM_AVAILABLE),
+                "lag_llama_foundation": bool(_LAG_LLAMA_AVAILABLE),
+            }
+            # Torch/cuda hints
+            try:
+                import torch  # type: ignore
+                frameworks["torch"] = True
+                frameworks["cuda_available"] = bool(torch.cuda.is_available())
+            except Exception:
+                frameworks["torch"] = False
+                frameworks["cuda_available"] = False
+            out["frameworks"] = frameworks
+
+        if want("forecast"):
+            out["forecast_methods"] = _get_forecast_methods_data_safe()
+
+        if want("volatility"):
+            out["volatility_methods"] = _get_volatility_methods_data()
+
+        if want("denoise"):
+            out["denoise_methods"] = _get_denoise_methods_data_safe()
+
+        if want("indicators"):
+            try:
+                items = _list_ta_indicators_util()
+                if include_details:
+                    out["indicators"] = items
+                else:
+                    cats = {}
+                    for it in items:
+                        c = it.get('category') or 'Other'
+                        cats[c] = cats.get(c, 0) + 1
+                    out["indicators_summary"] = {
+                        "count": int(len(items)),
+                        "categories": cats,
+                    }
+            except Exception as e:
+                out["indicators_error"] = str(e)
+
+        if want("dimred"):
+            out["dimred_methods"] = _get_dimred_methods_data()
+
+        if want("pattern_search"):
+            # Summarize engines/backends availability
+            ps = {
+                "engines": {
+                    "ckdtree": True,
+                },
+                "shape_metrics": ["ncc", "affine", "dtw", "softdtw"],
+                "dtw_backends": {},
+            }
+            # ANN engine
+            try:
+                import hnswlib  # type: ignore
+                ps["engines"]["hnsw"] = True
+            except Exception:
+                ps["engines"]["hnsw"] = False
+            # DTW backends
+            try:
+                import tslearn.metrics as _tsm  # type: ignore
+                ps["dtw_backends"]["tslearn"] = True
+            except Exception:
+                ps["dtw_backends"]["tslearn"] = False
+            try:
+                import dtaidistance.dtw as _dd  # type: ignore
+                ps["dtw_backends"]["dtaidistance"] = True
+            except Exception:
+                ps["dtw_backends"]["dtaidistance"] = False
+            out["pattern_search"] = ps
+
+        return out
+    except Exception as e:
+        return {"error": f"Error building capabilities: {str(e)}"}
 
 
 @mcp.tool()
@@ -6542,6 +7186,8 @@ def pattern_search(
     scale: str = "minmax",
     metric: str = "euclidean",
     pca_components: Optional[int] = None,
+    dimred_method: Optional[str] = None,
+    dimred_params: Optional[Dict[str, Any]] = None,
     engine: str = "ckdtree",
     include_values: bool = False,
     min_symbol_correlation: Optional[float] = None,
@@ -6558,7 +7204,7 @@ def pattern_search(
 ) -> Dict[str, Any]:
     """Unified pattern search: builds an index if needed, then searches.
 
-    Parameters: symbol, timeframe, window_size, top_k, future_size, symbols?, max_symbols?, max_bars_per_symbol?, denoise?, scale?, metric?, pca_components?
+    Parameters: symbol, timeframe, window_size, top_k, future_size, symbols?, max_symbols?, max_bars_per_symbol?, denoise?, scale?, metric?, pca_components? or dimred_method?/dimred_params?
     - If a compatible index is cached and includes the symbol, reuses it.
     - Else builds an index using `symbols` (or visible symbols capped by `max_symbols`),
       falling back to a minimal single-symbol index if none provided.
@@ -6572,8 +7218,13 @@ def pattern_search(
         # Cache key for settings
         dn_key = _denoise_cache_key(denoise)
         eff_lookback = int(lookback) if lookback is not None else int(max_bars_per_symbol)
+        # Compose cache key including dimension reduction method when provided
+        if dimred_method and str(dimred_method).lower() not in ("", "none"):
+            dr_desc = f"dr={str(dimred_method).lower()}"
+        else:
+            dr_desc = f"pca={int(pca_components) if pca_components else 0}"
         cache_key = (str(timeframe), int(window_size), int(future_size),
-                     f"dn={dn_key}|sc={str(scale).lower()}|mt={str(metric).lower()}|pca={int(pca_components) if pca_components else 0}|eng={(engine or 'ckdtree').lower()}|lb={eff_lookback}")
+                     f"dn={dn_key}|sc={str(scale).lower()}|mt={str(metric).lower()}|{dr_desc}|eng={(engine or 'ckdtree').lower()}|lb={eff_lookback}")
         idx = _PATTERN_INDEX_CACHE.get(cache_key)
 
         need_build = (idx is None) or (symbol not in idx.symbols)
@@ -6616,6 +7267,8 @@ def pattern_search(
                     scale=str(scale),
                     metric=str(metric),
                     pca_components=int(pca_components) if pca_components else None,
+                    dimred_method=dimred_method,
+                    dimred_params=dimred_params,
                     engine=str(engine),
                 )
                 _PATTERN_INDEX_CACHE[cache_key] = idx
@@ -6791,6 +7444,8 @@ def pattern_search(
                 "scale": idx.scale,
                 "metric": idx.metric,
                 "pca_components": idx.pca_components or 0,
+                "dimred_method": getattr(idx, 'dimred_method', 'none'),
+                "dimred_params": getattr(idx, 'dimred_params', {}),
                 "built_symbols": used_symbols if need_build else None,
                 "engine": getattr(idx, 'engine', 'ckdtree'),
                 "max_bars_per_symbol": int(getattr(idx, 'max_bars_per_symbol', eff_lookback)),

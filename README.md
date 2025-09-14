@@ -58,7 +58,7 @@ The following tools are available via `python cli.py <command>`:
 - `fetch_candles <symbol> [--timeframe TF] [--limit N]` - Get historical OHLCV data.
 - `fetch_ticks <symbol> [--limit N]` - Get tick data.
 - `fetch_market_depth <symbol>` - Get market depth (DOM).
-- `list_indicators` - List available technical indicators.
+- `list_indicators` - List available technical indicators. (Use `list_capabilities --sections indicators --include-details true` for JSON details.)
   - CSV: grouped rows (category shown once per group):
     category,name
     Momentum,RSI
@@ -66,13 +66,13 @@ The following tools are available via `python cli.py <command>`:
     ,Stoch
   - JSON: grouped by category `{ "categories": { "Momentum": ["RSI", ...], ... } }`
 - `describe_indicator <name>` - Get detailed information for a specific indicator.
-- `list_denoise_methods` - List available denoising methods and their parameters.
+- `list_capabilities --sections denoise` - List available denoising methods and their parameters.
 - `detect_candlestick_patterns <symbol> [--timeframe TF] [--limit N]` - Detect candlestick patterns.
 - `compute_pivot_points <symbol> [--timeframe TF] [--method METHOD]` - Compute pivot point levels.
 - `forecast <symbol> [--timeframe TF] [--method METHOD] [--horizon N] ...` - Generate price forecasts.
 - `forecast_volatility <symbol> [--timeframe TF] [--horizon N] [--method METHOD] [--proxy PROXY]` - Forecast volatility using direct estimators, GARCH, or general forecasters on a proxy.
   
-- `list_forecast_methods` - List available forecasting methods.
+- `list_capabilities [--sections ...] [--include-details true|false]` - Consolidated features: frameworks, forecast/volatility methods, denoise, indicators, dimred, and pattern_search backends.
 
 *(Note: Programmatic access uses function names like `get_symbols`, `get_rates`, etc.)*
 
@@ -188,7 +188,7 @@ python cli.py fetch_candles EURUSD --timeframe H1 --limit 500 --simplify segment
 
 Generate point forecasts for the next `horizon` bars. The server supports lightweight classical models out of the box and optional integrations with modern forecasting frameworks.
 
-- Discover methods: `python cli.py list_forecast_methods`
+- Discover methods: `python cli.py list_capabilities --sections forecast`
 - Run forecast: `python cli.py forecast <symbol> --timeframe <TF> --method <name> --horizon <N> [--params JSON]`
 - Rolling backtest: `python cli.py forecast_backtest <symbol> --timeframe <TF> --horizon <N> [--steps S --spacing K --methods ...]`
 - Volatility forecasts: use `forecast_volatility` with methods like `ewma`, `parkinson`, `garch`, or general `arima`/`ets` with a `--proxy` (e.g., `log_r2`).
@@ -200,9 +200,19 @@ python cli.py forecast EURUSD --timeframe H1 --method theta --horizon 12 --forma
 
 For advanced usage, pattern-based signals, parameters, and tuning guidance, see `docs/FORECAST.md`.
 
+#### Dimensionality Reduction (Pattern Search)
+
+- Discover reducers: `python cli.py list_capabilities --sections dimred`
+- Use PCA quickly: `--pca-components 8`
+- Flexible: `--dimred-method pca|kpca|umap|isomap|diffusion|dreams_cne|dreams_cne_fast --dimred-params "key=value,..."`
+- Notes:
+  - Prefer reducers with transform support for online queries (e.g., PCA, KPCA, UMAP, parametric DREAMS‑CNE).
+  - t‑SNE/Laplacian embeddings cannot transform new queries; avoid for pattern_search.
+  - DREAMS‑CNE requires installation from source; `dreams_cne_fast` uses lighter defaults for speed.
+
 #### Optional Framework Integrations
 
-You can extend forecasting with additional frameworks. Install as needed; methods will appear in `list_forecast_methods` once available.
+You can extend forecasting with additional frameworks. Install as needed; methods will appear under `forecast_methods` in `list_capabilities` once available.
 
 - StatsForecast (classical, fast): `pip install statsforecast`
   - Methods: `sf_autoarima`, `sf_theta`, `sf_autoets`, `sf_seasonalnaive`
@@ -221,7 +231,7 @@ See detailed examples and parameters in `docs/FORECAST.md` under Framework Integ
 Apply smoothing algorithms to data columns.
 
 - **Methods:** `ema`, `sma`, `median`, `lowpass_fft`, `wavelet`, `emd`, `eemd`, `ceemdan`.
-- **Discover methods:** `python cli.py list_denoise_methods`
+- **Discover methods:** `python cli.py list_capabilities --sections denoise`
 
 ```bash
 # Denoise OHLCV with an EMA before simplifying
@@ -250,6 +260,12 @@ The `start` and `end` parameters for `fetch_candles` use `dateparser` for flexib
 - MetaTrader5 terminal installed and running
 - Python 3.8+
 - Active internet connection
+
+Optional dependencies (uncomment in `requirements.txt`):
+- Forecast frameworks: `statsforecast`, `mlforecast`, `lightgbm`, `neuralforecast`
+- Foundation models: `transformers`, `accelerate`, `torch`, `chronos-forecasting`, `timesfm`
+- Pattern search backends: `hnswlib`, `tslearn`, `dtaidistance`
+- Dimensionality reduction: `scikit-learn`, `umap-learn`, `pydiffmap`, `pykeops`, and DREAMS‑CNE from source
 
 ## Error Handling
 

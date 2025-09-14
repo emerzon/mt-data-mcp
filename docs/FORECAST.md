@@ -23,6 +23,17 @@ Key parameters
 - `indicators`: optional technical indicators to include before forecasting.
 - `denoise`: optional denoising applied pre/post indicators.
 - `target`: `price` or `return` (if supported).
+ - `target_spec` (optional): define a custom target series and aggregation.
+   - `base`: a column name present in the data (e.g., `close`, `RSI_14`, `EMA_50`) or alias `typical|hl2|ohlc4|ha_close`.
+   - `indicators`: compute indicators first if `base` references them (e.g., `"rsi(14),ema(50)"`).
+   - `transform`: `none|return|log_return|diff|pct_change` (optional `k` for step size; default 1).
+   - `horizon_agg`: `last|mean|sum|slope|max|min|range|vol` with optional `normalize`: `none|per_bar|pct`.
+   - `classification`: `sign|threshold` (with `threshold`), to label the aggregated target.
+ - `features`: optional block to include multivariate/exogenous inputs and DR:
+   - `include`: `ohlcv` (default) or list of column names; `close` is excluded to avoid leakage.
+   - `indicators`: e.g., `"rsi(14),ema(50),macd(12,26,9)"` to add TI columns before selection.
+   - `dimred_method` / `dimred_params`: apply DR across feature columns (e.g., PCA/KPCA/UMAP) before passing as exog.
+   - Note: In this release, exogenous features are consumed by SARIMAX (`arima`/`sarima`). Other adapters continue to run univariate.
 
 CLI examples
 - `python cli.py forecast EURUSD --timeframe H1 --method theta --horizon 12 --format json`
@@ -40,7 +51,7 @@ Tips
 
 ### Framework Integrations
 
-The server can integrate with several forecasting frameworks. These are optional; install the packages you need. Methods become available automatically and are listed by `list_forecast_methods`.
+The server can integrate with several forecasting frameworks. These are optional; install the packages you need. Methods become available automatically and are listed under `forecast_methods` in `list_capabilities`.
 
 #### StatsForecast (classical, fast)
 
@@ -52,10 +63,11 @@ Methods:
 - `sf_autoets` — Automatic ETS (exponential smoothing)
 - `sf_seasonalnaive` — Seasonal Naive baseline
 
-Examples:
+Examples (with optional exogenous):
 ```bash
 python cli.py forecast EURUSD --timeframe H1 --method sf_autoarima --horizon 12 --params "{\"seasonality\":24,\"stepwise\":true}"
 python cli.py forecast EURUSD --timeframe H1 --method sf_autoets   --horizon 12 --params "{\"seasonality\":24}"
+# with exogenous features (if provided via --features), the adapter uses X_df and X_future internally
 ```
 
 Notes:
@@ -71,10 +83,11 @@ Methods:
 - `mlf_rf` — sklearn RandomForestRegressor on lag + rolling features
 - `mlf_lightgbm` — LightGBM regressor on lag + rolling features
 
-Examples:
+Examples (exogenous supported when provided via --features):
 ```bash
 python cli.py forecast EURUSD --timeframe H1 --method mlf_rf         --horizon 12 --params "{\"lags\":[1,2,3,24],\"rolling_agg\":\"mean\",\"n_estimators\":300}"
 python cli.py forecast EURUSD --timeframe H1 --method mlf_lightgbm  --horizon 12 --params "{\"lags\":[1,2,3,24],\"n_estimators\":400,\"learning_rate\":0.05,\"num_leaves\":63}"
+# features provided via --features are merged into training and future frames
 ```
 
 Notes:
@@ -87,15 +100,42 @@ Install: `pip install neuralforecast[torch]`
 Methods:
 - `nhits`, `nbeatsx`, `tft`, `patchtst`
 
-Examples:
+Examples (past/future covariates supported when provided via --features):
 ```bash
 python cli.py forecast EURUSD --timeframe H1 --method nhits   --horizon 12 --params "{\"max_epochs\":30,\"input_size\":256}"
 python cli.py forecast EURUSD --timeframe H1 --method nbeatsx --horizon 12 --params "{\"max_epochs\":20,\"model_params\":{\"stack_types\":[\"trend\",\"seasonality\"]}}"
+# --features future_covariates=... (e.g., fourier:24,hour,dow) are passed to model predict horizon
 ```
 
 Notes:
 - Defaults are conservative to keep training time reasonable. Increase `max_epochs` and tune `input_size` for better accuracy.
 - Panel (multi‑symbol) training can be added; current adapter uses single‑series.
+
+#### Custom Target Examples
+
+- Predict RSI(14) path and return its mean over the horizon:
+```bash
+python cli.py forecast EURUSD --timeframe H1 --method sarima --horizon 24 \
+  --target-spec "{base:'RSI_14',indicators:'rsi(14)',transform:'none',horizon_agg:'mean'}" --format json
+```
+
+- Predict EMA(50) changes with slope aggregation (normalized per bar):
+```bash
+python cli.py forecast EURUSD --timeframe H1 --method theta --horizon 24 \
+  --target-spec "{base:'EMA_50',indicators:'ema(50)',transform:'diff',horizon_agg:'slope',normalize:'per_bar'}" \
+  --format json
+```
+
+#### Multivariate / Exogenous example (SARIMAX)
+
+Pass OHLCV+TIs as exogenous regressors with PCA(8) across feature columns:
+
+```bash
+python cli.py forecast EURUSD --timeframe H1 --method sarima --horizon 24 \
+  --params "{\"p\":1,\"d\":0,\"q\":1,\"seasonality\":24,\"P\":1,\"D\":0,\"Q\":0}" \
+  --features "include=ohlcv,indicators=rsi(14),macd(12,26,9),dimred_method=pca,dimred_params={n_components:8}" \
+  --format json
+```
 
 #### Foundation Models (one‑shot inference)
 
@@ -164,7 +204,7 @@ Builds an index of sliding windows across one or more instruments and searches f
 Tools
 <!-- pattern_prepare_index removed: pattern_search now builds/loads indexes on demand -->
 <!-- pattern_search_recent removed; use pattern_search (builds/loads index automatically). -->
-- `pattern_search(...)`: unified search; reuses cached index or builds using selected or visible symbols. Also supports shape re‑ranking.
+- `pattern_search(...)`: unified search; reuses cached index or builds using selected or visible symbols. Also supports shape re‑ranking and flexible dimensionality reduction.
 
 Key parameters (shared)
 - `timeframe`: e.g., `H1`.
@@ -173,7 +213,26 @@ Key parameters (shared)
 - `denoise`: optional; applied to `close` before windowing.
 - `scale`: `minmax` (default), `zscore`, or `none` per-window scaling.
 - `metric`: `euclidean` (default), `cosine`, or `correlation` (implemented via vector normalization).
-- `pca_components`: optional dimensionality reduction; requires scikit-learn.
+- Dimensionality reduction:
+  - `pca_components`: backward‑compatible shortcut for PCA dimensionality reduction (requires scikit‑learn).
+  - `dimred_method`: choose among `none` (default), `pca`, `svd`, `spca`, `kpca`, `umap`, `isomap`, `laplacian`, `diffusion`, `tsne`, `dreams_cne`, `dreams_cne_fast` (and `lda` for supervised use only). Advanced placeholders: `deep_diffusion_maps`, `dreams`, `pcc` (require plugins).
+  - `dimred_params`: dict of method‑specific params. Examples:
+    - PCA: `{n_components: 8}`
+    - SparsePCA: `{n_components: 8, alpha: 1.0}`
+    - KernelPCA: `{n_components: 8, kernel: 'rbf', gamma: 0.1}`
+    - SVD: `{n_components: 16}`
+    - UMAP: `{n_components: 8, n_neighbors: 15, min_dist: 0.1}`
+    - Isomap: `{n_components: 8, n_neighbors: 10}`
+    - Laplacian: `{n_components: 8, n_neighbors: 10}`
+    - Diffusion: `{n_components: 8, alpha: 0.5, epsilon: auto, k: auto}`
+    - t‑SNE: `{n_components: 2, perplexity: 30, learning_rate: 200, n_iter: 1000}`
+    - DREAMS‑CNE: `{n_components: 2, k: 15, negative_samples: 500, n_epochs: 250, batch_size: 4096, learning_rate: 0.001, parametric: true, regularizer: true, reg_lambda: 0.0005, reg_scaling: 'norm'}`
+    - DREAMS‑CNE‑FAST: `{n_components: 2, k: 10, negative_samples: 200, n_epochs: 60, batch_size: 1024, learning_rate: 0.005, parametric: true}`
+  - Notes:
+    - sklearn t‑SNE and Spectral Embedding (laplacian) do not support transforming new samples; they can embed the index at build time, but cannot embed the query. Use `pca`, `kpca`, or `umap` for seamless querying.
+    - LDA is supervised and requires class labels. It is not applicable to unsupervised pattern search.
+    - Diffusion Maps require `pydiffmap` and support out‑of‑sample transform via Nyström in most implementations.
+    - DREAMS‑CNE requires installation from source (`berenslab/DREAMS-CNE`); enable `parametric: true` to support transforming new queries. Training can be slow on large indices; use `dreams_cne_fast` for quicker runs.
 - `engine`: `ckdtree` (default exact) or `hnsw` (optional ANN via `hnswlib`).
 - `lookback`: limit of bars per instrument used to build the index (caps history scanned). When omitted, defaults to the existing `max_bars_per_symbol` behavior.
 - `refine_k`: retrieve this many nearest candidates initially (e.g., 100–300) and then re‑rank down to `top_k` using a shape metric.
@@ -201,7 +260,7 @@ Outputs (key fields)
 - `distance_weighted_avg_change`, `distance_weighted_avg_pct_change`: weighted by 1/distance for stronger influence of closer matches.
 - `matches`: top matches with summary fields per match: `symbol`, `distance`, `start_date`, `end_date`, `todays_value`, `future_value`, `change`, `pct_change` (+ `values` if requested).
 - `n_matches`, `n_candidates`: how many matches remained after correlation filtering vs initially retrieved.
-- `engine`, `scale`, `metric`, `pca_components` and history diagnostics: `max_bars_per_symbol`, `bars_per_symbol`, `windows_per_symbol`.
+- `engine`, `scale`, `metric`, `pca_components`/`dimred_method`+`dimred_params` and history diagnostics: `max_bars_per_symbol`, `bars_per_symbol`, `windows_per_symbol`.
 - `anchor_end_epoch`, `anchor_end_time`: time of the last closed bar in the anchor window (useful for aligning forecast timestamps).
  - `refine_k`, `shape_metric`, `allow_lag`: effective settings used for the retrieval + refinement process.
 

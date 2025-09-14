@@ -18,3 +18,34 @@ scipy>=1.10.0
 statsmodels>=0.14.0
 fastapi>=0.110.0
 uvicorn[standard]>=0.23.0
+
+# Optional: classical/ML/DL forecasting frameworks
+# statsforecast (classical, numba-accelerated)
+# statsforecast>=1.7.3
+# mlforecast (tree/GBM over lags); LightGBM optional
+# mlforecast>=0.10.4
+# lightgbm>=4.3.0
+# neuralforecast (deep learning; install with [torch])
+# neuralforecast>=1.7.5
+
+# Optional: foundation models (Transformers)
+# transformers>=4.41.0
+# accelerate>=0.33.0
+# torch>=2.3.0
+# torchvision>=0.18.0
+# chronos-forecasting>=1.7.0  # for Chronos-Bolt
+# timesfm>=0.2.2               # for TimesFM
+
+# Optional: pattern search ANN and DTW backends
+# hnswlib>=0.8.0
+# tslearn>=0.6.3
+# dtaidistance>=2.3.10
+
+# Optional: dimensionality reduction methods
+# scikit-learn>=1.2.0
+# umap-learn>=0.5.5
+# pydiffmap>=0.2.0
+# pykeops>=2.2.3   # optional acceleration for CNE graph (GPU)
+
+# Optional: DREAMS-CNE (install from source)
+# git+https://github.com/berenslab/DREAMS-CNE@tp
