@@ -7,6 +7,7 @@ from datetime import timezone as dt_timezone
 from typing import Any, Dict, Optional, List, Tuple, Literal
 from typing_extensions import TypedDict
 import io
+import os
 import json
 import csv
 import time
@@ -88,6 +89,9 @@ from ..utils.indicators import (
     _estimate_warmup_bars as _estimate_warmup_bars_util,
 )
 from ..utils.denoise import _apply_denoise as _apply_denoise_util
+from ..utils.patterns import PatternIndex as _PatternIndex, build_index as _build_pattern_index, _SeriesStore
+from scipy.spatial.ckdtree import cKDTree
+from ..patterns.classic import detect_classic_patterns as _detect_classic_patterns, ClassicDetectorConfig as _ClassicCfg
 
 _TIMEFRAME_CHOICES = tuple(sorted(TIMEFRAME_MAP.keys()))
 TimeframeLiteral = Literal[_TIMEFRAME_CHOICES]  # type: ignore
@@ -109,6 +113,94 @@ from ..utils.mt5 import (
 )
 
 atexit.register(mt5_connection.disconnect)
+
+# In-memory cache for pattern indices keyed by (timeframe, window_size, future_size, denoise_key)
+_PATTERN_INDEX_CACHE: Dict[Tuple[str, int, int, Optional[str]], _PatternIndex] = {}
+
+def _index_cache_path(cache_dir: Optional[str], cache_id: Optional[str]) -> Optional[str]:
+    if not cache_id:
+        return None
+    base = cache_dir or ".mtdata_cache"
+    try:
+        os.makedirs(os.path.join(base, "pattern_index"), exist_ok=True)
+    except Exception:
+        pass
+    return os.path.join(base, "pattern_index", f"{cache_id}.pkl")
+
+def _save_pattern_index_to_disk(idx: _PatternIndex, cache_dir: Optional[str], cache_id: Optional[str]) -> None:
+    path = _index_cache_path(cache_dir, cache_id)
+    if not path:
+        return
+    try:
+        import pickle
+        payload = {
+            'timeframe': idx.timeframe,
+            'window_size': int(idx.window_size),
+            'future_size': int(idx.future_size),
+            'symbols': list(idx.symbols),
+            'X': idx.X.astype(np.float32, copy=False),
+            'start_end_idx': np.asarray(idx.start_end_idx, dtype=np.int32),
+            'labels': np.asarray(idx.labels, dtype=np.int32),
+            'series': [
+                {
+                    'symbol': s.symbol,
+                    'time_epoch': np.asarray(s.time_epoch, dtype=np.float64),
+                    'close': np.asarray(s.close, dtype=np.float64),
+                } for s in getattr(idx, '_series', [])
+            ],
+            'scale': idx.scale,
+            'metric': idx.metric,
+            'pca_components': idx.pca_components,
+            'engine': idx.engine,
+            'max_bars_per_symbol': int(getattr(idx, 'max_bars_per_symbol', 0)),
+        }
+        with open(path, 'wb') as f:
+            pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
+    except Exception:
+        pass
+
+def _load_pattern_index_from_disk(cache_dir: Optional[str], cache_id: Optional[str]) -> Optional[_PatternIndex]:
+    path = _index_cache_path(cache_dir, cache_id)
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        import pickle
+        with open(path, 'rb') as f:
+            payload = pickle.load(f)
+        # Rebuild tree (use cKDTree)
+        X = np.asarray(payload['X'], dtype=np.float32)
+        tree = cKDTree(X)
+        series = []
+        for sd in payload.get('series', []):
+            series.append(_SeriesStore(symbol=sd['symbol'], time_epoch=np.asarray(sd['time_epoch'], dtype=np.float64), close=np.asarray(sd['close'], dtype=np.float64)))
+        idx = _PatternIndex(
+            timeframe=str(payload['timeframe']),
+            window_size=int(payload['window_size']),
+            future_size=int(payload['future_size']),
+            symbols=list(payload['symbols']),
+            tree=tree,
+            X=X,
+            start_end_idx=np.asarray(payload['start_end_idx'], dtype=np.int32),
+            labels=np.asarray(payload['labels'], dtype=np.int32),
+            series=series,
+            scale=str(payload.get('scale','minmax')),
+            metric=str(payload.get('metric','euclidean')),
+            pca_components=payload.get('pca_components'),
+            pca_model=None,
+            engine='ckdtree',
+            max_bars_per_symbol=int(payload.get('max_bars_per_symbol', 0)),
+        )
+        return idx
+    except Exception:
+        return None
+
+def _denoise_cache_key(obj: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not obj or not isinstance(obj, dict):
+        return None
+    try:
+        return json.dumps(obj, sort_keys=True, separators=(",", ":"))
+    except Exception:
+        return str(obj)
 
 
 # Flexible datetime parsing helper using dateparser
@@ -2073,9 +2165,68 @@ def list_forecast_methods() -> Dict[str, Any]:
     """
     try:
         from ..utils.forecast import get_forecast_methods_data
-        return get_forecast_methods_data(_SM_ETS_AVAILABLE, _SM_SARIMAX_AVAILABLE)
+        return get_forecast_methods_data(_SM_ETS_AVAILABLE, _SM_SARIMAX_AVAILABLE, _NF_AVAILABLE, _SF_AVAILABLE, _MLF_AVAILABLE, _CHRONOS_AVAILABLE, _TIMESFM_AVAILABLE, _LAG_LLAMA_AVAILABLE, _ARCH_AVAILABLE)
     except Exception as e:
         return {"error": f"Error listing forecast methods: {e}"}
+
+@mcp.tool()
+def list_volatility_methods() -> Dict[str, Any]:
+    """List volatility forecasting methods and availability.
+
+    Returns JSON with two families: direct_models and proxy_models. Direct methods operate on OHLC/returns; proxy models require a proxy series (squared_return, abs_return, log_r2).
+    """
+    try:
+        direct = []
+        def add_direct(name: str, available: bool, description: str, params: Dict[str, str]):
+            direct.append({
+                'method': name,
+                'available': bool(available),
+                'description': description,
+                'params': params,
+            })
+        add_direct('ewma', True, 'RiskMetrics EWMA on close-to-close returns.', {
+            'lookback': 'int (default 1500)', 'halflife': 'float?', 'lambda_': 'float (default 0.94)'
+        })
+        add_direct('parkinson', True, 'Range-based variance (H/L).', {'window': 'int (default 20)'})
+        add_direct('gk', True, 'Garman–Klass variance (O/H/L/C).', {'window': 'int (default 20)'})
+        add_direct('rs', True, 'Rogers–Satchell variance (O/H/L/C).', {'window': 'int (default 20)'})
+        add_direct('yang_zhang', True, 'Yang–Zhang daily variance (O/H/L/C).', {'window': 'int (default 20)'})
+        add_direct('rolling_std', True, 'Rolling variance of returns.', {'window': 'int (default 20)'})
+        add_direct('garch', _ARCH_AVAILABLE, 'GARCH(1,1) via arch on percent returns.', {
+            'fit_bars': 'int (default 2000)', 'mean': 'Zero|Constant', 'dist': 'normal|t'
+        })
+        add_direct('egarch', _ARCH_AVAILABLE, 'EGARCH(p,q) via arch.', {
+            'fit_bars': 'int (default 2000)', 'p': 'int (default 1)', 'q': 'int (default 1)', 'mean': 'Zero|Constant', 'dist': 'normal|t'
+        })
+        add_direct('gjr_garch', _ARCH_AVAILABLE, 'GJR-GARCH(p,o,q) via arch.', {
+            'fit_bars': 'int (default 2000)', 'p': 'int (default 1)', 'o': 'int (default 1)', 'q': 'int (default 1)', 'mean': 'Zero|Constant', 'dist': 'normal|t'
+        })
+
+        proxy_models = []
+        def add_proxy(name: str, available: bool, description: str, params: Dict[str, str]):
+            proxy_models.append({
+                'method': name,
+                'available': bool(available),
+                'description': description,
+                'requires_proxy': True,
+                'supported_proxies': ['squared_return','abs_return','log_r2'],
+                'params': params,
+            })
+        add_proxy('arima', _SM_SARIMAX_AVAILABLE, 'ARIMA on volatility proxy (SARIMAX).', {'p':'int','d':'int','q':'int'})
+        add_proxy('sarima', _SM_SARIMAX_AVAILABLE, 'Seasonal ARIMA on volatility proxy.', {'p':'int','d':'int','q':'int','P':'int','D':'int','Q':'int'})
+        add_proxy('ets', _SM_ETS_AVAILABLE, 'ETS on volatility proxy.', {})
+        add_proxy('theta', True, 'Theta-style smoother on volatility proxy.', {'alpha':'float (default 0.2)'})
+        add_proxy('mlf_rf', _MLF_AVAILABLE, 'MLForecast RandomForest on volatility proxy.', {'lags':'list[int]','n_estimators':'int'})
+        add_proxy('nhits', _NF_AVAILABLE, 'NeuralForecast NHITS on volatility proxy.', {'max_epochs':'int','input_size':'int','batch_size':'int'})
+
+        return {
+            'success': True,
+            'schema_version': 1,
+            'direct_models': direct,
+            'proxy_models': proxy_models,
+        }
+    except Exception as e:
+        return {'error': f'Error listing volatility methods: {e}'}
 
 @mcp.tool()
 def list_indicators(search_term: Optional[str] = None, category: Optional[CategoryLiteral] = None) -> Dict[str, Any]:  # type: ignore
@@ -2317,6 +2468,7 @@ def describe_symbol(symbol: str) -> Dict[str, Any]:
                 continue
             symbol_data[attr] = value
         
+        from ..utils.utils import to_float_np as __to_float_np
         return {
             "success": True,
             "symbol": symbol_data
@@ -3547,6 +3699,24 @@ _FORECAST_METHODS = (
     "holt_winters_mul",
     "arima",
     "sarima",
+    "nhits",
+    "nbeatsx",
+    "tft",
+    "patchtst",
+    "sf_autoarima",
+    "sf_theta",
+    "sf_autoets",
+    "sf_seasonalnaive",
+    "mlf_rf",
+    "mlf_lightgbm",
+    "chronos_bolt",
+    "timesfm",
+    "lag_llama",
+    "vol_ewma",
+    "vol_parkinson",
+    "vol_gk",
+    "vol_rs",
+    "vol_garch",
     "ensemble",
 )
 
@@ -3566,6 +3736,43 @@ try:
     _SM_SARIMAX_AVAILABLE = True
 except Exception:
     _SM_SARIMAX_AVAILABLE = False
+
+# Optional Nixtla NeuralForecast availability for listings (lazy import used in execution)
+try:
+    import importlib.util as _importlib_util  # type: ignore
+    _NF_AVAILABLE = _importlib_util.find_spec("neuralforecast") is not None
+except Exception:
+    _NF_AVAILABLE = False
+try:
+    import importlib.util as _importlib_util2  # type: ignore
+    _SF_AVAILABLE = _importlib_util2.find_spec("statsforecast") is not None
+except Exception:
+    _SF_AVAILABLE = False
+try:
+    import importlib.util as _importlib_util3  # type: ignore
+    _MLF_AVAILABLE = _importlib_util3.find_spec("mlforecast") is not None
+except Exception:
+    _MLF_AVAILABLE = False
+try:
+    import importlib.util as _importlib_util4  # type: ignore
+    _LGB_AVAILABLE = _importlib_util4.find_spec("lightgbm") is not None
+except Exception:
+    _LGB_AVAILABLE = False
+try:
+    import importlib.util as _importlib_util5  # type: ignore
+    _CHRONOS_AVAILABLE = (_importlib_util5.find_spec("chronos") is not None) or (_importlib_util5.find_spec("transformers") is not None)
+except Exception:
+    _CHRONOS_AVAILABLE = False
+try:
+    import importlib.util as _importlib_util6  # type: ignore
+    _TIMESFM_AVAILABLE = (_importlib_util6.find_spec("timesfm") is not None) or (_importlib_util6.find_spec("transformers") is not None)
+except Exception:
+    _TIMESFM_AVAILABLE = False
+try:
+    import importlib.util as _importlib_util7  # type: ignore
+    _LAG_LLAMA_AVAILABLE = (_importlib_util7.find_spec("lag_llama") is not None) or (_importlib_util7.find_spec("transformers") is not None)
+except Exception:
+    _LAG_LLAMA_AVAILABLE = False
 
 def _default_seasonality_period(timeframe: str) -> int:
     try:
@@ -3593,29 +3800,269 @@ def _next_times_from_last(last_epoch: float, tf_secs: int, horizon: int) -> List
     step = float(tf_secs)
     return [base + step * (i + 1) for i in range(int(horizon))]
 
+def _pd_freq_from_timeframe(tf: str) -> str:
+    t = str(tf).upper()
+    mapping = {
+        'M1': '1min', 'M2': '2min', 'M3': '3min', 'M4': '4min', 'M5': '5min',
+        'M10': '10min', 'M12': '12min', 'M15': '15min', 'M20': '20min', 'M30': '30min',
+        'H1': 'H', 'H2': '2H', 'H3': '3H', 'H4': '4H', 'H6': '6H', 'H8': '8H', 'H12': '12H',
+        'D1': 'D', 'W1': 'W', 'MN1': 'MS'
+    }
+    return mapping.get(t, 'D')
+
+
+@mcp.tool()
+@_auto_connect_wrapper
+def forecast_backtest(
+    symbol: str,
+    timeframe: TimeframeLiteral = "H1",
+    horizon: int = 12,
+    steps: int = 5,
+    spacing: int = 20,
+    methods: Optional[List[str]] = None,
+    params_per_method: Optional[Dict[str, Any]] = None,
+    quantity: Literal['price','return','volatility'] = 'price',  # type: ignore
+    target: Literal['price','return'] = 'price',  # type: ignore
+    denoise: Optional[DenoiseSpec] = None,
+) -> Dict[str, Any]:
+    """Rolling-origin backtest over historical anchors using the forecast tool.
+
+    Parameters: symbol, timeframe, horizon, steps, spacing, methods?, params_per_method?, target, denoise?
+    - Picks `steps` anchor points spaced `spacing` bars apart, each with `horizon` future bars for validation.
+    - For each method, runs our `forecast` as-of that anchor and reports MAE/RMSE/directional accuracy.
+    """
+    try:
+        if timeframe not in TIMEFRAME_MAP:
+            return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+        mt5_tf = TIMEFRAME_MAP[timeframe]
+
+        # Ensure symbol visibility
+        _info_before = mt5.symbol_info(symbol)
+        _was_visible = bool(_info_before.visible) if _info_before is not None else None
+        err = _ensure_symbol_ready(symbol)
+        if err:
+            return {"error": err}
+
+        try:
+            # Fetch sufficient history: pad with 400 bars to be safe for modeling
+            need = int(steps) * int(spacing) + int(horizon) + 400
+            from datetime import datetime as _dt
+            _tick = mt5.symbol_info_tick(symbol)
+            if _tick is not None and getattr(_tick, 'time', None):
+                t_utc = _mt5_epoch_to_utc(float(_tick.time))
+                server_now_dt = _dt.utcfromtimestamp(t_utc)
+            else:
+                server_now_dt = _dt.utcnow()
+            rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, int(need))
+        finally:
+            if _was_visible is False:
+                try:
+                    mt5.symbol_select(symbol, False)
+                except Exception:
+                    pass
+
+        if rates is None or len(rates) < (int(horizon) + 50):
+            return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
+
+        df = pd.DataFrame(rates)
+        try:
+            if 'time' in df.columns:
+                df['time'] = df['time'].astype(float).apply(_mt5_epoch_to_utc)
+        except Exception:
+            pass
+        # Drop forming last bar
+        if len(df) >= 2:
+            df = df.iloc[:-1]
+        if len(df) < (int(horizon) + 50):
+            return {"error": "Not enough closed bars for backtest"}
+
+        # Determine anchor indices from the end
+        total = len(df)
+        anchors: List[int] = []
+        pos = total - int(horizon) - 1
+        for _ in range(int(steps)):
+            if pos <= 1:
+                break
+            anchors.append(int(pos))
+            pos -= int(spacing)
+        anchors = list(reversed(anchors))
+        if not anchors:
+            return {"error": "Failed to determine backtest anchors"}
+
+        # Normalize methods input (allow comma or whitespace separated string)
+        if isinstance(methods, str):
+            txt = methods.strip()
+            if "," in txt:
+                methods = [s.strip() for s in txt.split(",") if s.strip()]
+            else:
+                methods = [s for s in txt.split() if s]
+
+        # Default methods based on quantity
+        if not methods:
+            if quantity == 'volatility':
+                methods = ['ewma', 'parkinson']
+            else:
+                methods_info = list_forecast_methods()
+                avail = [m['method'] for m in methods_info.get('methods', []) if m.get('available')]
+                preferred = ['naive', 'drift', 'seasonal_naive', 'theta', 'fourier_ols', 'sf_autoarima', 'sf_theta']
+                methods = [m for m in preferred if m in avail]
+                if not methods:
+                    methods = [m for m in ('naive', 'drift', 'theta') if m in avail]
+        params_map = dict(params_per_method or {})
+
+        # Build ground-truth windows for each anchor
+        closes = df['close'].astype(float).to_numpy()
+        times = df['time'].astype(float).to_numpy()
+        actual_windows: Dict[int, Tuple[List[float], List[float]]] = {}
+        for idx in anchors:
+            if idx + int(horizon) >= len(closes):
+                continue
+            actual = closes[idx + 1: idx + 1 + int(horizon)].tolist()
+            ts = times[idx + 1: idx + 1 + int(horizon)].tolist()
+            actual_windows[idx] = (actual, ts)
+        if not actual_windows:
+            return {"error": "No valid validation windows found"}
+
+        # Run forecasts per method and compute metrics
+        results: Dict[str, Any] = {}
+        for method in methods:
+            per_anchor = []
+            for idx in anchors:
+                if idx not in actual_windows:
+                    continue
+                anchor_time = _format_time_minimal_util(times[idx])
+                truth, ts = actual_windows[idx]
+                try:
+                    if quantity == 'volatility':
+                        # Volatility forecast: allow proxy in params map (params_map[method].get('proxy'))
+                        pm = params_map.get(method) or {}
+                        proxy = pm.pop('proxy', None) if isinstance(pm, dict) else None
+                        r = forecast_volatility(  # type: ignore
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            method=method,  # type: ignore
+                            horizon=int(horizon),
+                            as_of=anchor_time,
+                            params=pm if isinstance(pm, dict) else None,
+                            proxy=proxy,  # type: ignore
+                            denoise=denoise,
+                        )
+                    else:
+                        r = forecast(
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            method=method,  # type: ignore[arg-type]
+                            horizon=int(horizon),
+                            as_of=anchor_time,
+                            params=params_map.get(method),
+                            target=target,
+                            denoise=denoise,
+                        )
+                except Exception as ex:
+                    per_anchor.append({"anchor": anchor_time, "success": False, "error": str(ex)})
+                    continue
+                if 'error' in r:
+                    per_anchor.append({"anchor": anchor_time, "success": False, "error": r['error']})
+                    continue
+                if quantity == 'volatility':
+                    # Compute realized horizon sigma from ground truth prices
+                    act = np.array(truth, dtype=float)
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        r_act = np.diff(np.log(np.maximum(np.concatenate(([times[idx]], act)) if False else act, 1e-12)))
+                    # r_act derived from act only: compute using act series directly
+                    r_act = np.diff(np.log(np.maximum(act, 1e-12))) if act.size >= 2 else np.array([], dtype=float)
+                    realized_sigma = float(np.sqrt(np.sum(np.clip(r_act, -1e6, 1e6)**2))) if r_act.size > 0 else float('nan')
+                    pred_sigma = float(r.get('horizon_sigma_return', float('nan')))
+                    mae = float(abs(pred_sigma - realized_sigma)) if np.isfinite(pred_sigma) and np.isfinite(realized_sigma) else float('nan')
+                    rmse = mae
+                    per_anchor.append({
+                        "anchor": anchor_time,
+                        "success": np.isfinite(pred_sigma) and np.isfinite(realized_sigma),
+                        "mae": mae,
+                        "rmse": rmse,
+                        "forecast_sigma": pred_sigma,
+                        "realized_sigma": realized_sigma,
+                    })
+                else:
+                    fc = r.get('forecast_price') if target == 'price' else r.get('forecast_return')
+                    if not fc:
+                        per_anchor.append({"anchor": anchor_time, "success": False, "error": "Empty forecast"})
+                        continue
+                    fcv = np.array(fc, dtype=float)
+                    act = np.array(truth, dtype=float)
+                    m = min(len(fcv), len(act))
+                    if m <= 0:
+                        per_anchor.append({"anchor": anchor_time, "success": False, "error": "No overlap"})
+                        continue
+                    mae = float(np.mean(np.abs(fcv[:m] - act[:m])))
+                    rmse = float(np.sqrt(np.mean((fcv[:m] - act[:m])**2)))
+                    if m > 1:
+                        da = float(np.mean(np.sign(np.diff(fcv[:m])) == np.sign(np.diff(act[:m]))))
+                    else:
+                        da = float('nan')
+                    per_anchor.append({
+                        "anchor": anchor_time,
+                        "success": True,
+                        "mae": mae,
+                        "rmse": rmse,
+                        "directional_accuracy": da,
+                        "forecast": [float(v) for v in fcv[:m].tolist()],
+                        "actual": [float(v) for v in act[:m].tolist()],
+                    })
+            # Aggregate
+            ok = [x for x in per_anchor if x.get('success')]
+            if ok:
+                agg = {
+                    "success": True,
+                    "avg_mae": float(np.mean([x['mae'] for x in ok])),
+                    "avg_rmse": float(np.mean([x['rmse'] for x in ok])),
+                    "successful_tests": len(ok),
+                    "num_tests": len(per_anchor),
+                    "details": per_anchor,
+                }
+                if quantity != 'volatility':
+                    da_vals = [x.get('directional_accuracy') for x in ok]
+                    da_vals = [v for v in da_vals if v is not None and np.isfinite(v)]
+                    if da_vals:
+                        agg["avg_directional_accuracy"] = float(np.mean(da_vals))
+                results[method] = agg
+            else:
+                results[method] = {
+                    "success": False,
+                    "successful_tests": 0,
+                    "num_tests": len(per_anchor),
+                    "details": per_anchor,
+                }
+
+        return {
+            "success": True,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "horizon": int(horizon),
+            "steps": int(steps),
+            "spacing": int(spacing),
+            "methods": methods,
+            "results": results,
+        }
+    except Exception as e:
+        return {"error": f"Error in forecast_backtest: {str(e)}"}
+
 @mcp.tool()
 @_auto_connect_wrapper
 def forecast_volatility(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 1,
-    method: Literal['ewma','parkinson','gk','rs','garch'] = 'ewma',  # type: ignore
-    params: Optional[VolatilityParams] = None,
+    method: Literal['ewma','parkinson','gk','rs','yang_zhang','rolling_std','garch','egarch','gjr_garch','arima','sarima','ets','theta'] = 'ewma',  # type: ignore
+    proxy: Optional[Literal['squared_return','abs_return','log_r2']] = None,  # type: ignore
+    params: Optional[Dict[str, Any]] = None,
     as_of: Optional[str] = None,
     denoise: Optional[DenoiseSpec] = None,
 ) -> Dict[str, Any]:
-    """Forecast volatility over `horizon` bars using EWMA/range methods/GARCH.
-    Parameters: symbol, timeframe, horizon, method, params?, as_of?, denoise?
+    """Forecast volatility over `horizon` bars with direct estimators/GARCH or general forecasters on a proxy.
 
-    - `method`: 'ewma' (RiskMetrics), 'parkinson', 'gk' (Garman–Klass), 'rs' (Rogers–Satchell), 'garch' (1,1 if `arch` installed)
-    - `params` (optional):
-        ewma: {halflife?, lambda_?, lookback}
-        parkinson/gk/rs: {window}
-        garch: {fit_bars, mean: Zero|Constant, dist: normal|t}
-    - `denoise` (optional): Apply denoising to input price columns before estimating volatility.
-      Defaults to 'close' for EWMA/GARCH, and 'ohlc' for range estimators when columns not specified.
-    - `as_of` (optional): Forecast using data available up to this time (e.g., "2025-08-29 14:30", "yesterday 14:00").
-    Returns JSON with current per-bar sigma, annualized sigma, and horizon forecast.
+    Direct: ewma, parkinson, gk, rs, yang_zhang, rolling_std, garch, egarch, gjr_garch.
+    General: arima, sarima, ets, theta (require `proxy`: squared_return|abs_return|log_r2).
     """
     try:
         if timeframe not in TIMEFRAME_MAP:
@@ -3625,12 +4072,327 @@ def forecast_volatility(
         if not tf_secs:
             return {"error": f"Unsupported timeframe seconds for {timeframe}"}
         method_l = str(method).lower().strip()
-        if method_l not in {'ewma','parkinson','gk','rs','garch'}:
+        valid_direct = {'ewma','parkinson','gk','rs','yang_zhang','rolling_std','garch','egarch','gjr_garch'}
+        valid_general = {'arima','sarima','ets','theta'}
+        if method_l not in valid_direct.union(valid_general):
             return {"error": f"Invalid method: {method}"}
-        if method_l == 'garch' and not _ARCH_AVAILABLE:
-            return {"error": "GARCH requires 'arch' package. Please install 'arch' to enable this method."}
+        if method_l in {'garch','egarch','gjr_garch'} and not _ARCH_AVAILABLE:
+            return {"error": f"{method_l} requires 'arch' package."}
 
         p = dict(params or {})
+
+        # If using general forecasters on proxy, compute proxy series and return using internal logic
+        if method_l in valid_general:
+            # Fetch recent closes and build returns
+            # Reuse unified forecast branch for fetching by delegating to fetch_candles/forecast where possible is heavy; implement lightweight here
+            # Determine lookback bars
+            need = max(300, int(horizon) + 50)
+            _info_before = mt5.symbol_info(symbol)
+            _was_visible = bool(_info_before.visible) if _info_before is not None else None
+            err = _ensure_symbol_ready(symbol)
+            if err:
+                return {"error": err}
+            try:
+                if as_of:
+                    to_dt = _parse_start_datetime_util(as_of)
+                    if not to_dt:
+                        return {"error": "Invalid as_of time."}
+                    rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, need)
+                else:
+                    _tick = mt5.symbol_info_tick(symbol)
+                    if _tick is not None and getattr(_tick, 'time', None):
+                        t_utc = _mt5_epoch_to_utc(float(_tick.time))
+                        server_now_dt = datetime.utcfromtimestamp(t_utc)
+                    else:
+                        server_now_dt = datetime.utcnow()
+                    rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
+            finally:
+                if _was_visible is False:
+                    try:
+                        mt5.symbol_select(symbol, False)
+                    except Exception:
+                        pass
+            if rates is None or len(rates) < 5:
+                return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
+            df = pd.DataFrame(rates)
+            if as_of is None and len(df) >= 2:
+                df = df.iloc[:-1]
+            if len(df) < 5:
+                return {"error": "Not enough closed bars"}
+            if denoise:
+                _apply_denoise(df, denoise, default_when='pre_ti')
+            with np.errstate(divide='ignore', invalid='ignore'):
+                r = np.diff(np.log(np.maximum(df['close'].astype(float).to_numpy(), 1e-12)))
+            r = r[np.isfinite(r)]
+            if r.size < 10:
+                return {"error": "Insufficient returns to estimate volatility proxy"}
+            # Build proxy
+            if not proxy:
+                return {"error": "General methods require 'proxy' (squared_return|abs_return|log_r2)"}
+            proxy_l = str(proxy).lower().strip()
+            eps = 1e-12
+            if proxy_l == 'squared_return':
+                y = r * r; back = 'sqrt'
+            elif proxy_l == 'abs_return':
+                y = np.abs(r); back = 'abs'
+            elif proxy_l == 'log_r2':
+                y = np.log(r * r + eps); back = 'exp_sqrt'
+            else:
+                return {"error": f"Unsupported proxy: {proxy}"}
+            y = y[np.isfinite(y)]
+            fh = int(horizon)
+            # Fit general model
+            if method_l in {'arima','sarima'}:
+                if not _SM_SARIMAX_AVAILABLE:
+                    return {"error": "ARIMA/SARIMA require statsmodels"}
+                ord_p = int(p.get('p',1)); ord_d = int(p.get('d',0)); ord_q = int(p.get('q',1))
+                if method_l == 'sarima':
+                    m = _default_seasonality_period(timeframe)
+                    seas = (int(p.get('P',0)), int(p.get('D',0)), int(p.get('Q',0)), int(m) if m>=2 else 0)
+                else:
+                    seas = (0,0,0,0)
+                try:
+                    endog = pd.Series(y.astype(float))
+                    model = _SARIMAX(endog, order=(ord_p,ord_d,ord_q), seasonal_order=seas, enforce_stationarity=True, enforce_invertibility=True)
+                    res = model.fit(method='lbfgs', disp=False, maxiter=100)
+                    yhat = res.get_forecast(steps=fh).predicted_mean.to_numpy()
+                except Exception as ex:
+                    return {"error": f"SARIMAX error: {ex}"}
+            elif method_l == 'ets':
+                if not _SM_ETS_AVAILABLE:
+                    return {"error": "ETS requires statsmodels"}
+                try:
+                    res = _ETS(y.astype(float), trend=None, seasonal=None, initialization_method='heuristic').fit(optimized=True)
+                    yhat = np.asarray(res.forecast(fh), dtype=float)
+                except Exception as ex:
+                    return {"error": f"ETS error: {ex}"}
+            elif method_l == 'theta':  # theta on proxy
+                yy = y.astype(float); n=yy.size; tt=np.arange(1,n+1,dtype=float)
+                A=np.vstack([np.ones(n),tt]).T; coef,_a,_b,_c = np.linalg.lstsq(A, yy, rcond=None); a=float(coef[0]); b=float(coef[1])
+                trend_future = a + b * (tt[-1] + np.arange(1, fh+1, dtype=float))
+                alpha = float(p.get('alpha', 0.2)); level=float(yy[0])
+                for v in yy[1:]: level = alpha*float(v) + (1.0-alpha)*level
+                yhat = 0.5*(trend_future + np.full(fh, level, dtype=float))
+            elif method_l == 'mlf_rf':
+                if not _MLF_AVAILABLE:
+                    return {"error": "mlf_rf requires 'mlforecast' and 'scikit-learn'"}
+                try:
+                    from mlforecast import MLForecast as _MLForecast  # type: ignore
+                    from sklearn.ensemble import RandomForestRegressor as _RF  # type: ignore
+                    import pandas as _pd
+                except Exception as ex:
+                    return {"error": f"Failed to import mlforecast/sklearn: {ex}"}
+                try:
+                    ts = _pd.to_datetime(df['time'].iloc[1:].astype(float), unit='s', utc=True) if r.size == (len(df)-1) else _pd.date_range(periods=len(y), freq=_pd_freq_from_timeframe(timeframe))
+                except Exception:
+                    import pandas as _pd
+                    ts = _pd.date_range(periods=len(y), freq=_pd_freq_from_timeframe(timeframe))
+                Y_df = _pd.DataFrame({'unique_id': ['ts']*int(len(y)), 'ds': _pd.Index(ts).to_pydatetime(), 'y': y.astype(float)})
+                lags = p.get('lags') or [1,2,3,4,5]
+                try:
+                    lags = [int(v) for v in lags]
+                except Exception:
+                    lags = [1,2,3,4,5]
+                rf = _RF(n_estimators=int(p.get('n_estimators', 200)), random_state=42)
+                try:
+                    mlf = _MLForecast(models=[rf], freq=_pd_freq_from_timeframe(timeframe)).add_lags(lags)
+                    mlf.fit(Y_df)
+                    Yf = mlf.predict(h=int(fh))
+                    try:
+                        Yf = Yf[Yf['unique_id']=='ts']
+                    except Exception:
+                        pass
+                    yhat = np.asarray((Yf['y'] if 'y' in Yf.columns else Yf.iloc[:, -1]).to_numpy(), dtype=float)
+                except Exception as ex:
+                    return {"error": f"mlf_rf error: {ex}"}
+            elif method_l == 'nhits':
+                if not _NF_AVAILABLE:
+                    return {"error": "nhits requires 'neuralforecast[torch]'"}
+                try:
+                    from neuralforecast import NeuralForecast as _NeuralForecast  # type: ignore
+                    from neuralforecast.models import NHITS as _NF_NHITS  # type: ignore
+                    import pandas as _pd
+                except Exception as ex:
+                    return {"error": f"Failed to import neuralforecast: {ex}"}
+                max_epochs = int(p.get('max_epochs', 30))
+                batch_size = int(p.get('batch_size', 32))
+                if p.get('input_size') is not None:
+                    input_size = int(p['input_size'])
+                else:
+                    base = max(64, 96)
+                    input_size = int(min(len(y), base))
+                try:
+                    ts = _pd.to_datetime(df['time'].iloc[1:].astype(float), unit='s', utc=True) if r.size == (len(df)-1) else _pd.date_range(periods=len(y), freq=_pd_freq_from_timeframe(timeframe))
+                except Exception:
+                    import pandas as _pd
+                    ts = _pd.date_range(periods=len(y), freq=_pd_freq_from_timeframe(timeframe))
+                Y_df = _pd.DataFrame({'unique_id': ['ts']*int(len(y)), 'ds': _pd.Index(ts).to_pydatetime(), 'y': y.astype(float)})
+                model = _NF_NHITS(h=int(fh), input_size=int(input_size), max_epochs=int(max_epochs), batch_size=int(batch_size))
+                try:
+                    nf = _NeuralForecast(models=[model], freq=_pd_freq_from_timeframe(timeframe))
+                    nf.fit(df=Y_df, verbose=False)
+                    Yf = nf.predict()
+                    try:
+                        Yf = Yf[Yf['unique_id']=='ts']
+                    except Exception:
+                        pass
+                    pred_col = None
+                    for c in list(Yf.columns):
+                        if c not in ('unique_id','ds','y'):
+                            pred_col = c
+                            if c == 'y_hat':
+                                break
+                    if pred_col is None:
+                        return {"error": "nhits prediction columns not found"}
+                    yhat = np.asarray(Yf[pred_col].to_numpy(), dtype=float)
+                except Exception as ex:
+                    return {"error": f"nhits error: {ex}"}
+            else:
+                return {"error": f"Unsupported general method for volatility proxy: {method_l}"}
+            # Back-transform to per-step sigma and aggregate horizon
+            if back == 'sqrt':
+                sig = np.sqrt(np.clip(yhat, 0.0, None))
+            elif back == 'abs':
+                sig = np.maximum(0.0, yhat) * math.sqrt(math.pi/2.0)
+            else:
+                sig = np.sqrt(np.exp(yhat))
+            hsig = float(math.sqrt(np.sum(sig[:fh]**2)))
+            # Current sigma (baseline)
+            sbar = float(np.std(r[-100:], ddof=0) if r.size>=5 else np.std(r, ddof=0))
+            bpy = float(365.0*24.0*3600.0/float(tf_secs))
+            return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "proxy": proxy_l,
+                    "horizon": int(horizon), "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
+                    "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
+                    "params_used": p}
+
+        # Direct volatility methods
+        # Fetch history sized by method
+        def _need_bars_direct() -> int:
+            if method_l == 'ewma':
+                lb = int(p.get('lookback', 1500)); return max(lb + 5, int(horizon) + 5)
+            if method_l in {'parkinson','gk','rs','yang_zhang','rolling_std'}:
+                w = int(p.get('window', 20)); return max(w + int(horizon) + 10, 60)
+            if method_l in {'garch','egarch','gjr_garch'}:
+                fb = int(p.get('fit_bars', 2000)); return max(fb + 10, int(horizon) + 10)
+            return max(300, int(horizon) + 50)
+
+        need = _need_bars_direct()
+        _info_before = mt5.symbol_info(symbol)
+        _was_visible = bool(_info_before.visible) if _info_before is not None else None
+        err = _ensure_symbol_ready(symbol)
+        if err:
+            return {"error": err}
+        try:
+            if as_of:
+                to_dt = _parse_start_datetime_util(as_of)
+                if not to_dt:
+                    return {"error": "Invalid as_of time."}
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, need)
+            else:
+                _tick = mt5.symbol_info_tick(symbol)
+                if _tick is not None and getattr(_tick, 'time', None):
+                    t_utc = _mt5_epoch_to_utc(float(_tick.time))
+                    server_now_dt = datetime.utcfromtimestamp(t_utc)
+                else:
+                    server_now_dt = datetime.utcnow()
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
+        finally:
+            if _was_visible is False:
+                try:
+                    mt5.symbol_select(symbol, False)
+                except Exception:
+                    pass
+        if rates is None or len(rates) < 3:
+            return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
+
+        df = pd.DataFrame(rates)
+        if as_of is None and len(df) >= 2:
+            df = df.iloc[:-1]
+        if len(df) < 3:
+            return {"error": "Not enough closed bars"}
+        # Denoise defaults for range methods
+        if denoise and isinstance(denoise, dict) and method_l in {'parkinson','gk','rs','yang_zhang'}:
+            dn2 = dict(denoise); dn2.setdefault('columns', ['open','high','low','close'])
+            _apply_denoise(df, dn2, default_when='pre_ti')
+        elif denoise:
+            _apply_denoise(df, denoise, default_when='pre_ti')
+
+        # Compute returns and helpers
+        with np.errstate(divide='ignore', invalid='ignore'):
+            r = np.diff(np.log(np.maximum(df['close'].astype(float).to_numpy(), 1e-12)))
+        r = r[np.isfinite(r)]
+        if r.size < 5:
+            return {"error": "Insufficient returns to estimate volatility"}
+        bpy = float(365.0*24.0*3600.0/float(tf_secs))
+
+        if method_l == 'ewma':
+            lb = int(p.get('lookback', 1500)); halflife = p.get('halflife'); lam = p.get('lambda_', 0.94)
+            tail = r[-lb:] if r.size >= lb else r
+            if halflife is not None:
+                try: lam = 1.0 - math.log(2.0) / float(halflife)
+                except Exception: lam = 0.94
+            lam = float(lam)
+            w = np.power(lam, np.arange(len(tail)-1, -1, -1, dtype=float)); w /= float(np.sum(w))
+            sigma2 = float(np.sum(w * (tail * tail)))
+            sbar = math.sqrt(max(0.0, sigma2))
+            hsig = float(sbar * math.sqrt(max(1, int(horizon))))
+            return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
+                    "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
+                    "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
+                    "params_used": {"lookback": lb, "lambda_": lam}}
+
+        if method_l in {'parkinson','gk','rs','yang_zhang','rolling_std'}:
+            window = int(p.get('window', 20))
+            o = df['open'].astype(float).to_numpy(); h = df['high'].astype(float).to_numpy(); l = df['low'].astype(float).to_numpy(); c = df['close'].astype(float).to_numpy()
+            if method_l == 'parkinson':
+                v = _parkinson_sigma_sq(h, l)
+            elif method_l == 'gk':
+                v = _garman_klass_sigma_sq(o, h, l, c)
+            elif method_l == 'rs':
+                v = _rogers_satchell_sigma_sq(o, h, l, c)
+            elif method_l == 'yang_zhang':
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    oc = np.log(np.maximum(o[1:],1e-12)) - np.log(np.maximum(c[:-1],1e-12))
+                    co = np.log(np.maximum(c,1e-12)) - np.log(np.maximum(o,1e-12))
+                    rs = (np.log(np.maximum(h,1e-12)) - np.log(np.maximum(c,1e-12))) * (np.log(np.maximum(h,1e-12)) - np.log(np.maximum(o,1e-12))) + \
+                         (np.log(np.maximum(l,1e-12)) - np.log(np.maximum(c,1e-12))) * (np.log(np.maximum(l,1e-12)) - np.log(np.maximum(o,1e-12)))
+                k = 0.34/(1.34 + (window+1)/(window-1)) if window>1 else 0.34
+                co_var = pd.Series(co[1:]).rolling(window=window, min_periods=window).var(ddof=0).to_numpy()
+                oc_var = pd.Series(oc).rolling(window=window, min_periods=window).var(ddof=0).to_numpy()
+                rs_mean = pd.Series(rs).rolling(window=window, min_periods=window).mean().to_numpy()
+                v = (co_var + k*oc_var + (1-k)*rs_mean)
+            else:
+                v = pd.Series(r*r).rolling(window=window, min_periods=window).mean().to_numpy()
+            sigma2 = float(v[-1]) if np.isfinite(v[-1]) else float(np.nanmean(v[-window:]))
+            sbar = math.sqrt(max(0.0, sigma2))
+            hsig = float(sbar * math.sqrt(max(1, int(horizon))))
+            return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
+                    "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
+                    "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
+                    "params_used": {"window": int(window)}}
+
+        if method_l in {'garch','egarch','gjr_garch'}:
+            fit_bars = int(p.get('fit_bars', 2000)); mean_model = str(p.get('mean','Zero')).lower(); dist = str(p.get('dist','normal'))
+            r_pct = 100.0 * r
+            r_fit = r_pct[-fit_bars:] if r_pct.size > fit_bars else r_pct
+            try:
+                if method_l == 'egarch':
+                    am = _arch_model(r_fit, mean=mean_model if mean_model in ('zero','constant') else 'zero', vol='EGARCH', p=int(p.get('p',1)), q=int(p.get('q',1)), dist=dist)
+                elif method_l == 'gjr_garch':
+                    am = _arch_model(r_fit, mean=mean_model if mean_model in ('zero','constant') else 'zero', vol='GARCH', p=int(p.get('p',1)), o=int(p.get('o',1)), q=int(p.get('q',1)), dist=dist)
+                else:
+                    am = _arch_model(r_fit, mean=mean_model if mean_model in ('zero','constant') else 'zero', vol='GARCH', p=1, q=1, dist=dist)
+                res = am.fit(disp='off')
+                fc = res.forecast(horizon=max(1, int(horizon)), reindex=False)
+                variances = fc.variance.values[-1]
+                sbar = float(math.sqrt(max(0.0, float(variances[0])))) / 100.0
+                hsig = float(math.sqrt(max(0.0, float(np.sum(variances))))) / 100.0
+                return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
+                        "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
+                        "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
+                        "params_used": {k: p[k] for k in p}}
+            except Exception as ex:
+                return {"error": f"{method_l} error: {ex}"}
 
         # Ensemble meta-method: aggregate multiple base forecasts
         if method_l == 'ensemble':
@@ -4013,7 +4775,8 @@ def forecast(
     as_of: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     ci_alpha: Optional[float] = 0.05,
-    target: Literal['price','return'] = 'price',  # type: ignore
+    quantity: Literal['price','return','volatility'] = 'price',  # type: ignore
+    target: Literal['price','return'] = 'price',  # deprecated in favor of quantity for modeling scale
     denoise: Optional[DenoiseSpec] = None,
     timezone: str = "auto",
 ) -> Dict[str, Any]:
@@ -4034,6 +4797,7 @@ def forecast(
             return {"error": f"Unsupported timeframe seconds for {timeframe}"}
 
         method_l = str(method).lower().strip()
+        quantity_l = str(quantity).lower().strip()
         if method_l not in _FORECAST_METHODS:
             return {"error": f"Invalid method: {method}. Valid options: {list(_FORECAST_METHODS)}"}
 
@@ -4043,16 +4807,29 @@ def forecast(
         if method_l == 'seasonal_naive' and (not m or m <= 0):
             return {"error": "seasonal_naive requires a positive 'seasonality' in params or auto period"}
 
-        # Determine lookback
+        # Determine lookback bars to fetch
         if lookback and lookback > 0:
             need = int(lookback) + 2
         else:
-            if method_l == 'seasonal_naive':
-                need = max(3 * m, int(horizon) + m + 2)
-            elif method_l in ('theta', 'fourier_ols'):
-                need = max(300, int(horizon) + (2 * m if m else 50))
-            else:  # naive, drift
-                need = max(100, int(horizon) + 10)
+            if quantity_l == 'volatility':
+                if method_l == 'vol_ewma':
+                    lb = int((params or {}).get('lookback', 1500))
+                    need = max(lb + 5, int(horizon) + 5)
+                elif method_l in ('vol_parkinson', 'vol_gk', 'vol_rs'):
+                    w = int((params or {}).get('window', 20))
+                    need = max(w + int(horizon) + 10, 60)
+                elif method_l == 'vol_garch':
+                    fb = int((params or {}).get('fit_bars', 2000))
+                    need = max(fb + 10, int(horizon) + 10)
+                else:
+                    need = max(300, int(horizon) + 10)
+            else:
+                if method_l == 'seasonal_naive':
+                    need = max(3 * m, int(horizon) + m + 2)
+                elif method_l in ('theta', 'fourier_ols'):
+                    need = max(300, int(horizon) + (2 * m if m else 50))
+                else:  # naive, drift and others
+                    need = max(100, int(horizon) + 10)
 
         # Ensure symbol is ready; remember original visibility to restore later
         _info_before = mt5.symbol_info(symbol)
@@ -4099,10 +4876,16 @@ def forecast(
         if len(df) < 3:
             return {"error": "Not enough closed bars to compute forecast"}
 
-        # Optionally denoise close
+        # Optionally denoise
         base_col = 'close'
         if denoise:
-            added = _apply_denoise(df, denoise, default_when='pre_ti')
+            # For volatility range estimators, default to OHLC if columns not specified
+            if quantity_l == 'volatility' and isinstance(denoise, dict) and not denoise.get('columns'):
+                dn2 = dict(denoise)
+                dn2['columns'] = ['open','high','low','close']
+                added = _apply_denoise(df, dn2, default_when='pre_ti')
+            else:
+                added = _apply_denoise(df, denoise, default_when='pre_ti')
             if len(added) > 0 and f"{base_col}_dn" in added:
                 base_col = f"{base_col}_dn"
 
@@ -4111,8 +4894,8 @@ def forecast(
         last_time = float(df['time'].iloc[-1])
         future_times = _next_times_from_last(last_time, int(tf_secs), int(horizon))
 
-        # Transform for return modeling if requested
-        use_returns = (str(target).lower() == 'return')
+        # Decide modeling scale for price/return
+        use_returns = (quantity_l == 'return') or (str(target).lower() == 'return')
         if use_returns:
             with np.errstate(divide='ignore', invalid='ignore'):
                 x = np.diff(np.log(np.maximum(y, 1e-12)))
@@ -4132,7 +4915,120 @@ def forecast(
         if n < 3:
             return {"error": "Series too short for forecasting"}
 
-        # Fit/forecast by method
+        # Volatility branch: compute and return volatility metrics
+        if quantity_l == 'volatility':
+            mt5_tf = TIMEFRAME_MAP[timeframe]
+            tf_secs = TIMEFRAME_SECONDS.get(timeframe)
+            if not tf_secs:
+                return {"error": f"Unsupported timeframe seconds for {timeframe}"}
+            p = dict(params or {})
+            if method_l == 'vol_ewma':
+                look = int(p.get('lookback', 1500))
+                halflife = p.get('halflife'); lam = p.get('lambda_', 0.94)
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    r = np.diff(np.log(np.maximum(df[base_col].astype(float).to_numpy(), 1e-12)))
+                r = r[np.isfinite(r)]
+                if r.size < max(look, 10):
+                    return {"error": "Not enough data for EWMA volatility"}
+                if halflife is not None:
+                    try:
+                        lam = 1.0 - math.log(2.0) / float(halflife)
+                    except Exception:
+                        lam = 0.94
+                lam = float(lam)
+                w = np.power(lam, np.arange(look-1, -1, -1, dtype=float))
+                w = w / float(np.sum(w))
+                tail = r[-look:]
+                sigma2 = float(np.sum(w * (tail * tail)))
+                sigma_bar = math.sqrt(max(0.0, sigma2))
+                horizon_sigma = float(sigma_bar * math.sqrt(max(1, int(horizon))))
+                # Annualization: bars per year based on timeframe seconds
+                bpy = float(365.0*24.0*3600.0/float(tf_secs))
+                sigma_annual = float(sigma_bar * math.sqrt(bpy))
+                horizon_sigma_annual = float(horizon_sigma * math.sqrt(bpy / max(1, int(horizon))))
+                return {
+                    "success": True,
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "quantity": "volatility",
+                    "method": method_l,
+                    "horizon": int(horizon),
+                    "sigma_bar_return": sigma_bar,
+                    "sigma_annual_return": sigma_annual,
+                    "horizon_sigma_return": horizon_sigma,
+                    "horizon_sigma_annual": horizon_sigma_annual,
+                    "params_used": {"lookback": look, "lambda_": lam},
+                }
+            elif method_l in ('vol_parkinson','vol_gk','vol_rs'):
+                window = int(p.get('window', 20))
+                o = df['open'].astype(float).to_numpy(); h = df['high'].astype(float).to_numpy(); l = df['low'].astype(float).to_numpy(); c = df[base_col].astype(float).to_numpy()
+                if o.size < window + 2:
+                    return {"error": "Not enough OHLC bars for range volatility"}
+                if method_l == 'vol_parkinson':
+                    v = _parkinson_sigma_sq(h, l)
+                elif method_l == 'vol_gk':
+                    v = _garman_klass_sigma_sq(o, h, l, c)
+                else:
+                    v = _rogers_satchell_sigma_sq(o, h, l, c)
+                # rolling mean of variance
+                vv = pd.Series(v).rolling(window=window, min_periods=window).mean().to_numpy()
+                sigma2 = float(vv[-1]) if np.isfinite(vv[-1]) else float(np.nanmean(vv[-window:]))
+                sigma_bar = math.sqrt(max(0.0, sigma2))
+                horizon_sigma = float(sigma_bar * math.sqrt(max(1, int(horizon))))
+                bpy = float(365.0*24.0*3600.0/float(tf_secs))
+                sigma_annual = float(sigma_bar * math.sqrt(bpy))
+                horizon_sigma_annual = float(horizon_sigma * math.sqrt(bpy / max(1, int(horizon))))
+                return {
+                    "success": True,
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "quantity": "volatility",
+                    "method": method_l,
+                    "horizon": int(horizon),
+                    "sigma_bar_return": sigma_bar,
+                    "sigma_annual_return": sigma_annual,
+                    "horizon_sigma_return": horizon_sigma,
+                    "horizon_sigma_annual": horizon_sigma_annual,
+                    "params_used": {"window": int(window)},
+                }
+            elif method_l == 'vol_garch':
+                if not _ARCH_AVAILABLE:
+                    return {"error": "vol_garch requires 'arch' package."}
+                fit_bars = int(p.get('fit_bars', 2000)); mean_model = str(p.get('mean', 'Zero')).lower(); dist = str(p.get('dist', 'normal'))
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    r = 100.0 * np.diff(np.log(np.maximum(df[base_col].astype(float).to_numpy(), 1e-12)))
+                r = r[np.isfinite(r)]
+                if r.size < max(100, fit_bars):
+                    return {"error": "Not enough data to fit GARCH"}
+                try:
+                    am = _arch_model(r[-fit_bars:], mean=mean_model if mean_model in ('zero','constant') else 'zero', vol='GARCH', p=1, q=1, dist=dist)
+                    res = am.fit(disp='off')
+                    fc = res.forecast(horizon=max(1, int(horizon)), reindex=False)
+                    variances = fc.variance.values[-1]
+                    sigma_bar = float(math.sqrt(max(0.0, float(variances[0])))) / 100.0
+                    horizon_sigma = float(math.sqrt(max(0.0, float(np.sum(variances))))) / 100.0
+                    bpy = float(365.0*24.0*3600.0/float(tf_secs))
+                    sigma_annual = float(sigma_bar * math.sqrt(bpy))
+                    horizon_sigma_annual = float(horizon_sigma * math.sqrt(bpy / max(1, int(horizon))))
+                    return {
+                        "success": True,
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "quantity": "volatility",
+                        "method": method_l,
+                        "horizon": int(horizon),
+                        "sigma_bar_return": sigma_bar,
+                        "sigma_annual_return": sigma_annual,
+                        "horizon_sigma_return": horizon_sigma,
+                        "horizon_sigma_annual": horizon_sigma_annual,
+                        "params_used": {"fit_bars": int(fit_bars), "mean": mean_model, "dist": dist},
+                    }
+                except Exception as ex:
+                    return {"error": f"GARCH error: {ex}"}
+            else:
+                return {"error": f"Unknown volatility method: {method_l}"}
+
+        # Fit/forecast by method (price/return)
         fh = int(horizon)
         f_vals = np.zeros(fh, dtype=float)
         pre_ci: Optional[Tuple[np.ndarray, np.ndarray]] = None
@@ -4336,6 +5232,550 @@ def forecast(
             except Exception as ex:
                 return {"error": f"SARIMAX fitting error: {ex}"}
 
+        elif method_l in ('nhits', 'nbeatsx', 'tft', 'patchtst'):
+            # Deep learning via Nixtla NeuralForecast (optional dependency)
+            if not _NF_AVAILABLE:
+                return {"error": f"{method_l.upper()} requires 'neuralforecast' (and PyTorch). Install: pip install neuralforecast[torch]"}
+            try:
+                from neuralforecast import NeuralForecast as _NeuralForecast  # type: ignore
+                # Try to import model classes individually; some may be missing depending on version
+                try:
+                    from neuralforecast.models import NHITS as _NF_NHITS  # type: ignore
+                except Exception:
+                    _NF_NHITS = None  # type: ignore
+                try:
+                    from neuralforecast.models import NBEATSx as _NF_NBEATSX  # type: ignore
+                except Exception:
+                    _NF_NBEATSX = None  # type: ignore
+                try:
+                    from neuralforecast.models import TFT as _NF_TFT  # type: ignore
+                except Exception:
+                    _NF_TFT = None  # type: ignore
+                try:
+                    from neuralforecast.models import PatchTST as _NF_PATCHTST  # type: ignore
+                except Exception:
+                    _NF_PATCHTST = None  # type: ignore
+                import pandas as _pd
+            except Exception as ex:
+                return {"error": f"Failed to import neuralforecast: {ex}"}
+
+            # Resolve model class based on method
+            model_class = None
+            if method_l == 'nhits':
+                model_class = _NF_NHITS
+            elif method_l == 'nbeatsx':
+                model_class = _NF_NBEATSX
+            elif method_l == 'tft':
+                model_class = _NF_TFT
+            elif method_l == 'patchtst':
+                model_class = _NF_PATCHTST
+            if model_class is None:
+                return {"error": f"Model '{method_l}' not available in installed neuralforecast version"}
+
+            # Training setup
+            max_epochs = int(p.get('max_epochs', 50))
+            batch_size = int(p.get('batch_size', 32))
+            lr = p.get('learning_rate', None)
+            # Choose input_size: prefer user param; else modest window leveraging seasonality if known
+            if p.get('input_size') is not None:
+                input_size = int(p['input_size'])
+            else:
+                base = max(64, (m * 3) if m and m > 0 else 96)
+                input_size = int(min(n, base))
+            # Build single-series training dataframe
+            try:
+                # Align timestamps to target series length (returns drop first bar)
+                if use_returns:
+                    ts_train = _pd.to_datetime(df['time'].iloc[1:].astype(float), unit='s', utc=True)
+                else:
+                    ts_train = _pd.to_datetime(df['time'].astype(float), unit='s', utc=True)
+                Y_df = _pd.DataFrame({
+                    'unique_id': ['ts'] * int(len(series)),
+                    'ds': _pd.Index(ts_train).to_pydatetime(),
+                    'y': series.astype(float),
+                })
+            except Exception as ex:
+                return {"error": f"Failed to build training frame for {method_l.upper()}: {ex}"}
+
+            model_kwargs: Dict[str, Any] = {
+                'h': int(fh),
+                'input_size': int(input_size),
+                'max_epochs': int(max_epochs),
+                'batch_size': int(batch_size),
+            }
+            if lr is not None:
+                try:
+                    model_kwargs['learning_rate'] = float(lr)
+                except Exception:
+                    pass
+            # Merge advanced model constructor kwargs if provided
+            adv = p.get('model_params') or {}
+            if isinstance(adv, dict):
+                for k, v in adv.items():
+                    if k in {'h', 'input_size', 'max_epochs', 'batch_size'}:
+                        continue
+                    model_kwargs[k] = v
+
+            try:
+                model = model_class(**model_kwargs)  # type: ignore[operator]
+                nf = _NeuralForecast(models=[model], freq=_pd_freq_from_timeframe(timeframe))
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    nf.fit(df=Y_df, verbose=False)
+                Yf = nf.predict()
+                try:
+                    Yf = Yf[Yf['unique_id'] == 'ts']
+                except Exception:
+                    pass
+                # Prefer standard 'y_hat' if present; else first non-meta column
+                pred_col = None
+                for c in list(Yf.columns):
+                    if c not in ('unique_id', 'ds', 'y'):
+                        pred_col = c
+                        if c == 'y_hat':
+                            break
+                if pred_col is None:
+                    return {"error": f"{method_l.upper()} prediction columns not found"}
+                vals = np.asarray(Yf[pred_col].to_numpy(), dtype=float)
+                f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
+                params_used = {
+                    'max_epochs': int(max_epochs),
+                    'input_size': int(input_size),
+                    'batch_size': int(batch_size),
+                }
+            except Exception as ex:
+                return {"error": f"{method_l.upper()} fitting/prediction error: {ex}"}
+
+        elif method_l in ('sf_autoarima', 'sf_theta', 'sf_autoets', 'sf_seasonalnaive'):
+            if not _SF_AVAILABLE:
+                return {"error": f"{method_l} requires 'statsforecast'. Install: pip install statsforecast"}
+            try:
+                from statsforecast import StatsForecast as _StatsForecast  # type: ignore
+                from statsforecast.models import AutoARIMA as _SF_AutoARIMA, Theta as _SF_Theta, AutoETS as _SF_AutoETS, SeasonalNaive as _SF_SeasonalNaive  # type: ignore
+                import pandas as _pd
+            except Exception as ex:
+                return {"error": f"Failed to import statsforecast: {ex}"}
+            # Build training frame
+            try:
+                if use_returns:
+                    ts_train = _pd.to_datetime(df['time'].iloc[1:].astype(float), unit='s', utc=True)
+                else:
+                    ts_train = _pd.to_datetime(df['time'].astype(float), unit='s', utc=True)
+                Y_df = _pd.DataFrame({
+                    'unique_id': ['ts'] * int(len(series)),
+                    'ds': _pd.Index(ts_train).to_pydatetime(),
+                    'y': series.astype(float),
+                })
+            except Exception as ex:
+                return {"error": f"Failed to build training frame for {method_l}: {ex}"}
+            m_eff = int(p.get('seasonality', m) or m)
+            if method_l == 'sf_autoarima':
+                stepwise = bool(p.get('stepwise', True))
+                d_ord = p.get('d'); D_ord = p.get('D')
+                model = _SF_AutoARIMA(season_length=max(1, m_eff or 1), stepwise=stepwise, d=d_ord, D=D_ord)
+                params_used = {"seasonality": m_eff, "stepwise": stepwise, "d": d_ord, "D": D_ord}
+            elif method_l == 'sf_theta':
+                model = _SF_Theta(season_length=max(1, m_eff or 1))
+                params_used = {"seasonality": m_eff}
+            elif method_l == 'sf_autoets':
+                model = _SF_AutoETS(season_length=max(1, m_eff or 1))
+                params_used = {"seasonality": m_eff}
+            else:  # sf_seasonalnaive
+                model = _SF_SeasonalNaive(season_length=max(1, m_eff or 1))
+                params_used = {"seasonality": m_eff}
+            try:
+                sf = _StatsForecast(models=[model], freq=_pd_freq_from_timeframe(timeframe))
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    sf.fit(Y_df)
+                Yf = sf.predict(h=int(fh))
+                try:
+                    Yf = Yf[Yf['unique_id'] == 'ts']
+                except Exception:
+                    pass
+                pred_col = None
+                for c in list(Yf.columns):
+                    if c not in ('unique_id', 'ds', 'y'):
+                        pred_col = c
+                        if c == 'y':  # some versions may return 'y'
+                            break
+                if pred_col is None:
+                    # Fallback: try 'y' directly
+                    pred_col = 'y' if 'y' in Yf.columns else None
+                if pred_col is None:
+                    return {"error": f"StatsForecast prediction columns not found"}
+                vals = np.asarray(Yf[pred_col].to_numpy(), dtype=float)
+                f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
+            except Exception as ex:
+                return {"error": f"StatsForecast {method_l} error: {ex}"}
+
+        elif method_l == 'mlf_rf':
+            if not _MLF_AVAILABLE:
+                return {"error": "mlf_rf requires 'mlforecast'. Install: pip install mlforecast scikit-learn"}
+            try:
+                from mlforecast import MLForecast as _MLForecast  # type: ignore
+                from sklearn.ensemble import RandomForestRegressor as _RF  # type: ignore
+                from utilsforecast.features import time_features as _time_features  # type: ignore
+                import pandas as _pd
+            except Exception as ex:
+                return {"error": f"Failed to import mlforecast/sklearn: {ex}"}
+            # Prepare features config
+            lags_in = p.get('lags', 'auto')
+            if lags_in == 'auto' or lags_in is None:
+                # Use short and seasonal lags when available
+                base_lags = [1, 2, 3, 4, 5]
+                if m and m > 0:
+                    base_lags += [m]
+                lags = sorted(set([int(abs(x)) for x in base_lags if int(abs(x)) > 0]))
+            else:
+                try:
+                    lags = [int(v) for v in lags_in]
+                except Exception:
+                    lags = [1, 2, 3, 4, 5]
+            roll = str(p.get('rolling_agg', 'mean')).lower() if p.get('rolling_agg', None) is not None else None
+            n_estimators = int(p.get('n_estimators', 200))
+            max_depth = p.get('max_depth', None)
+
+            try:
+                if use_returns:
+                    ts_train = _pd.to_datetime(df['time'].iloc[1:].astype(float), unit='s', utc=True)
+                else:
+                    ts_train = _pd.to_datetime(df['time'].astype(float), unit='s', utc=True)
+                Y_df = _pd.DataFrame({
+                    'unique_id': ['ts'] * int(len(series)),
+                    'ds': _pd.Index(ts_train).to_pydatetime(),
+                    'y': series.astype(float),
+                })
+            except Exception as ex:
+                return {"error": f"Failed to build training frame for mlf_rf: {ex}"}
+
+            rf = _RF(n_estimators=n_estimators, max_depth=None if max_depth in (None, 'None') else int(max_depth), random_state=42)
+            try:
+                mlf = _MLForecast(models=[rf], freq=_pd_freq_from_timeframe(timeframe))
+                # Set lags and optional rolling aggregates
+                mlf = mlf.add_lags(lags)
+                if roll in {'mean', 'min', 'max', 'std'}:
+                    # Add simple rolling window features for each lag window
+                    for w in sorted(set([x for x in lags if x > 1])):
+                        mlf = mlf.add_rolling_windows(rolling_features={roll: [w]})
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    mlf.fit(Y_df)
+                Yf = mlf.predict(h=int(fh))
+                try:
+                    Yf = Yf[Yf['unique_id'] == 'ts']
+                except Exception:
+                    pass
+                # mlforecast usually returns column named after target 'y'
+                pred_col = 'y' if 'y' in Yf.columns else None
+                if pred_col is None:
+                    # fallback to first non-meta
+                    for c in list(Yf.columns):
+                        if c not in ('unique_id', 'ds'):
+                            pred_col = c
+                            break
+                if pred_col is None:
+                    return {"error": "mlf_rf prediction columns not found"}
+                vals = np.asarray(Yf[pred_col].to_numpy(), dtype=float)
+                f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
+                params_used = {
+                    'lags': lags,
+                    'rolling_agg': roll,
+                    'n_estimators': n_estimators,
+                    'max_depth': None if max_depth in (None, 'None') else int(max_depth),
+                }
+            except Exception as ex:
+                return {"error": f"mlf_rf error: {ex}"}
+
+        elif method_l == 'mlf_lightgbm':
+            if not _MLF_AVAILABLE:
+                return {"error": "mlf_lightgbm requires 'mlforecast'. Install: pip install mlforecast"}
+            if not _LGB_AVAILABLE:
+                return {"error": "mlf_lightgbm requires 'lightgbm'. Install: pip install lightgbm"}
+            try:
+                from mlforecast import MLForecast as _MLForecast  # type: ignore
+                from lightgbm import LGBMRegressor as _LGBM  # type: ignore
+                import pandas as _pd
+            except Exception as ex:
+                return {"error": f"Failed to import mlforecast/lightgbm: {ex}"}
+            # Prepare features config
+            lags_in = p.get('lags', 'auto')
+            if lags_in == 'auto' or lags_in is None:
+                base_lags = [1, 2, 3, 4, 5]
+                if m and m > 0:
+                    base_lags += [m]
+                lags = sorted(set([int(abs(x)) for x in base_lags if int(abs(x)) > 0]))
+            else:
+                try:
+                    lags = [int(v) for v in lags_in]
+                except Exception:
+                    lags = [1, 2, 3, 4, 5]
+            roll = str(p.get('rolling_agg', 'mean')).lower() if p.get('rolling_agg', None) is not None else None
+            n_estimators = int(p.get('n_estimators', 200))
+            lr = float(p.get('learning_rate', 0.05))
+            num_leaves = int(p.get('num_leaves', 31))
+            max_depth = int(p.get('max_depth', -1))
+
+            try:
+                if use_returns:
+                    ts_train = _pd.to_datetime(df['time'].iloc[1:].astype(float), unit='s', utc=True)
+                else:
+                    ts_train = _pd.to_datetime(df['time'].astype(float), unit='s', utc=True)
+                Y_df = _pd.DataFrame({
+                    'unique_id': ['ts'] * int(len(series)),
+                    'ds': _pd.Index(ts_train).to_pydatetime(),
+                    'y': series.astype(float),
+                })
+            except Exception as ex:
+                return {"error": f"Failed to build training frame for mlf_lightgbm: {ex}"}
+
+            lgbm = _LGBM(n_estimators=n_estimators, learning_rate=lr, num_leaves=num_leaves, max_depth=max_depth, random_state=42)
+            try:
+                mlf = _MLForecast(models=[lgbm], freq=_pd_freq_from_timeframe(timeframe))
+                mlf = mlf.add_lags(lags)
+                if roll in {'mean', 'min', 'max', 'std'}:
+                    for w in sorted(set([x for x in lags if x > 1])):
+                        mlf = mlf.add_rolling_windows(rolling_features={roll: [w]})
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    mlf.fit(Y_df)
+                Yf = mlf.predict(h=int(fh))
+                try:
+                    Yf = Yf[Yf['unique_id'] == 'ts']
+                except Exception:
+                    pass
+                pred_col = 'y' if 'y' in Yf.columns else None
+                if pred_col is None:
+                    for c in list(Yf.columns):
+                        if c not in ('unique_id', 'ds'):
+                            pred_col = c
+                            break
+                if pred_col is None:
+                    return {"error": "mlf_lightgbm prediction columns not found"}
+                vals = np.asarray(Yf[pred_col].to_numpy(), dtype=float)
+                f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
+                params_used = {
+                    'lags': lags,
+                    'rolling_agg': roll,
+                    'n_estimators': n_estimators,
+                    'learning_rate': lr,
+                    'num_leaves': num_leaves,
+                    'max_depth': max_depth,
+                }
+            except Exception as ex:
+                return {"error": f"mlf_lightgbm error: {ex}"}
+
+        elif method_l == 'chronos_bolt':
+            if not _CHRONOS_AVAILABLE:
+                return {"error": "chronos_bolt requires 'chronos' or 'transformers' with a supported model. Try: pip install chronos-forecasting or pip install transformers torch accelerate"}
+            model_name = str(p.get('model_name', 'amazon/chronos-bolt-base'))
+            ctx_len = int(p.get('context_length', 0) or 0)
+            device = p.get('device')
+            device_map = p.get('device_map', 'auto')
+            quantization = str(p.get('quantization')) if p.get('quantization') is not None else None
+            quantiles = p.get('quantiles') if isinstance(p.get('quantiles'), (list, tuple)) else None
+            revision = p.get('revision')
+            trust_remote_code = bool(p.get('trust_remote_code', False))
+            # Select context window
+            if ctx_len and ctx_len > 0:
+                context = series[-int(min(n, ctx_len)) :]
+            else:
+                context = series
+            f_vals = None
+            last_err = None
+            fq: Dict[str, List[float]] = {}
+            # Try native ChronosPipeline first
+            try:
+                from chronos import ChronosPipeline  # type: ignore
+                _kwargs: Dict[str, Any] = {}
+                if quantization:
+                    if quantization.lower() in ('int8', '8bit', 'bnb.int8'):
+                        _kwargs['load_in_8bit'] = True
+                    elif quantization.lower() in ('int4', '4bit', 'bnb.int4'):
+                        _kwargs['load_in_4bit'] = True
+                if revision:
+                    _kwargs['revision'] = revision
+                pipe = ChronosPipeline.from_pretrained(model_name, device_map=device_map, **_kwargs)  # type: ignore[arg-type]
+                if quantiles:
+                    yhat = pipe.predict(context=context, prediction_length=int(fh), quantiles=list(quantiles))  # type: ignore[call-arg]
+                    # yhat could be dict quantile->list
+                    if isinstance(yhat, dict):
+                        for q, arr in yhat.items():
+                            try:
+                                qf = float(q)
+                            except Exception:
+                                continue
+                            fq[str(qf)] = [float(v) for v in np.asarray(arr, dtype=float)[:fh].tolist()]
+                        # choose median or first quantile as point
+                        if '0.5' in fq:
+                            f_vals = np.asarray(fq['0.5'], dtype=float)
+                    else:
+                        vals = np.asarray(yhat, dtype=float)
+                        f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
+                else:
+                    yhat = pipe.predict(context=context, prediction_length=int(fh))  # type: ignore[call-arg]
+                    vals = np.asarray(yhat, dtype=float)
+                    f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
+            except Exception as ex1:
+                last_err = ex1
+                try:
+                    # Fallback via Transformers pipeline API
+                    from transformers import pipeline as _hf_pipeline  # type: ignore
+                    _pipe_kwargs: Dict[str, Any] = {'model': model_name}
+                    if device and str(device).lower() != 'auto':
+                        _pipe_kwargs['device'] = device
+                    else:
+                        _pipe_kwargs['device_map'] = device_map
+                    if revision:
+                        _pipe_kwargs['revision'] = revision
+                    _model_kwargs: Dict[str, Any] = {}
+                    if quantization:
+                        if quantization.lower() in ('int8', '8bit', 'bnb.int8'):
+                            _model_kwargs['load_in_8bit'] = True
+                        elif quantization.lower() in ('int4', '4bit', 'bnb.int4'):
+                            _model_kwargs['load_in_4bit'] = True
+                    if trust_remote_code:
+                        _model_kwargs['trust_remote_code'] = True
+                    if _model_kwargs:
+                        _pipe_kwargs['model_kwargs'] = _model_kwargs
+                    hf = _hf_pipeline("time-series-forecasting", **_pipe_kwargs)  # type: ignore[call-arg]
+                    call_kwargs: Dict[str, Any] = {'prediction_length': int(fh)}
+                    if quantiles:
+                        call_kwargs['quantiles'] = list(quantiles)
+                    yhat = hf(context, **call_kwargs)  # type: ignore[call-arg]
+                    # yhat may be list or dict depending on version
+                    if isinstance(yhat, dict):
+                        # Expect possible 'forecast' for point and 'quantiles' mapping
+                        qmap = yhat.get('quantiles')
+                        if isinstance(qmap, dict):
+                            for q, arrq in qmap.items():
+                                try:
+                                    qf = float(q)
+                                except Exception:
+                                    continue
+                                fq[str(qf)] = [float(v) for v in np.asarray(arrq, dtype=float)[:fh].tolist()]
+                        arr = yhat.get('forecast') or yhat.get('yhat') or yhat.get('y_hat') or yhat.get('y')
+                    else:
+                        arr = yhat
+                    vals = np.asarray(arr, dtype=float)
+                    f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
+                except Exception as ex2:
+                    return {"error": f"Chronos-Bolt inference error: {ex2 if ex2 else last_err}"}
+            params_used = {
+                'model_name': model_name,
+                'context_length': int(ctx_len) if ctx_len else int(n),
+                'device': device,
+                'device_map': device_map,
+                'quantization': quantization,
+                'revision': revision,
+                'trust_remote_code': trust_remote_code,
+            }
+            if fq:
+                # attach quantiles for downstream consumers
+                params_used['quantiles'] = sorted(list(fq.keys()), key=lambda x: float(x))
+                # Stash on locals to use when mapping to prices below
+                forecast_quantiles = fq  # type: ignore[name-defined]
+
+        elif method_l in ('timesfm', 'lag_llama'):
+            # Generic HF pipeline adapter; try native libs if present
+            model_name = p.get('model_name') or ("google/timesfm-1.0-200m" if method_l == 'timesfm' else None)
+            if not model_name:
+                return {"error": f"{method_l} requires params.model_name with a valid HF repo id"}
+            ctx_len = int(p.get('context_length', 0) or 0)
+            device = p.get('device')
+            device_map = p.get('device_map', 'auto')
+            quantization = str(p.get('quantization')) if p.get('quantization') is not None else None
+            quantiles = p.get('quantiles') if isinstance(p.get('quantiles'), (list, tuple)) else None
+            revision = p.get('revision')
+            trust_remote_code = bool(p.get('trust_remote_code', False))
+            if ctx_len and ctx_len > 0:
+                context = series[-int(min(n, ctx_len)) :]
+            else:
+                context = series
+            f_vals = None
+            last_err = None
+            fq: Dict[str, List[float]] = {}
+            # Try native packages if available
+            if method_l == 'timesfm':
+                try:
+                    import timesfm as _timesfm  # type: ignore
+                    # Heuristic: try a from_pretrained + predict API similar to Chronos
+                    try:
+                        kw = {}
+                        if revision:
+                            kw['revision'] = revision
+                        mdl = getattr(_timesfm, 'TimesFm').from_pretrained(model_name, **kw)  # type: ignore[attr-defined]
+                        if quantiles:
+                            yhat = mdl.predict(context=context, prediction_length=int(fh), quantiles=list(quantiles))  # type: ignore[call-arg]
+                            if isinstance(yhat, dict):
+                                for q, arr in yhat.items():
+                                    try:
+                                        qf = float(q)
+                                    except Exception:
+                                        continue
+                                    fq[str(qf)] = [float(v) for v in np.asarray(arr, dtype=float)[:fh].tolist()]
+                                if '0.5' in fq:
+                                    f_vals = np.asarray(fq['0.5'], dtype=float)
+                        else:
+                            yhat = mdl.predict(context=context, prediction_length=int(fh))  # type: ignore[call-arg]
+                            vals = np.asarray(yhat, dtype=float)
+                            f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
+                    except Exception as _:
+                        pass
+                except Exception as ex:
+                    last_err = ex
+            # Fallback to Transformers pipeline
+            if f_vals is None:
+                try:
+                    from transformers import pipeline as _hf_pipeline  # type: ignore
+                    _pipe_kwargs: Dict[str, Any] = {'model': model_name}
+                    if device and str(device).lower() != 'auto':
+                        _pipe_kwargs['device'] = device
+                    else:
+                        _pipe_kwargs['device_map'] = device_map
+                    if revision:
+                        _pipe_kwargs['revision'] = revision
+                    _model_kwargs: Dict[str, Any] = {}
+                    if quantization:
+                        if quantization.lower() in ('int8', '8bit', 'bnb.int8'):
+                            _model_kwargs['load_in_8bit'] = True
+                        elif quantization.lower() in ('int4', '4bit', 'bnb.int4'):
+                            _model_kwargs['load_in_4bit'] = True
+                    if trust_remote_code:
+                        _model_kwargs['trust_remote_code'] = True
+                    if _model_kwargs:
+                        _pipe_kwargs['model_kwargs'] = _model_kwargs
+                    hf = _hf_pipeline("time-series-forecasting", **_pipe_kwargs)  # type: ignore[call-arg]
+                    call_kwargs: Dict[str, Any] = {'prediction_length': int(fh)}
+                    if quantiles:
+                        call_kwargs['quantiles'] = list(quantiles)
+                    yhat = hf(context, **call_kwargs)  # type: ignore[call-arg]
+                    arr = yhat.get('forecast') if isinstance(yhat, dict) else yhat
+                    qmap = yhat.get('quantiles') if isinstance(yhat, dict) else None
+                    if isinstance(qmap, dict):
+                        for q, arrq in qmap.items():
+                            try:
+                                qf = float(q)
+                            except Exception:
+                                continue
+                            fq[str(qf)] = [float(v) for v in np.asarray(arrq, dtype=float)[:fh].tolist()]
+                    vals = np.asarray(arr, dtype=float)
+                    f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
+                except Exception as ex2:
+                    return {"error": f"{method_l} inference error: {ex2 if ex2 else last_err}"}
+            params_used = {
+                'model_name': str(model_name),
+                'context_length': int(ctx_len) if ctx_len else int(n),
+                'device': device,
+                'device_map': device_map,
+                'quantization': quantization,
+                'revision': revision,
+                'trust_remote_code': trust_remote_code,
+            }
+            if fq:
+                params_used['quantiles'] = sorted(list(fq.keys()), key=lambda x: float(x))
+                forecast_quantiles = fq  # type: ignore[name-defined]
+
         # Compute residual scale for intervals (on modeling scale)
         lower = upper = None
         do_ci = (ci_alpha is not None)
@@ -4437,6 +5877,25 @@ def forecast(
             lower_price = lower
             upper_price = upper
 
+        # If model produced quantile forecasts, map them to price space if needed and attach
+        forecast_quantiles_price: Optional[Dict[str, List[float]]] = None
+        try:
+            if 'forecast_quantiles' in locals() and isinstance(forecast_quantiles, dict):
+                forecast_quantiles_price = {}
+                for qk, qarr in forecast_quantiles.items():
+                    qa = np.asarray(qarr, dtype=float)
+                    if use_returns:
+                        qp = np.zeros_like(qa)
+                        if qa.size > 0:
+                            qp[0] = origin_price * math.exp(float(qa[0]))
+                            for i in range(1, qa.size):
+                                qp[i] = qp[i-1] * math.exp(float(qa[i]))
+                        forecast_quantiles_price[str(qk)] = [float(v) for v in qp.tolist()]
+                    else:
+                        forecast_quantiles_price[str(qk)] = [float(v) for v in qa.tolist()]
+        except Exception:
+            forecast_quantiles_price = None
+
         # Rounding based on symbol digits
         digits = int(getattr(_info_before, "digits", 0) or 0)
         def _round(v: float) -> float:
@@ -4488,6 +5947,7 @@ def forecast(
             "symbol": symbol,
             "timeframe": timeframe,
             "method": method_l,
+            "quantity": quantity_l,
             "target": str(target),
             "params_used": params_used,
             "lookback_used": int(len(df)),
@@ -4508,10 +5968,841 @@ def forecast(
             payload["lower_price"] = [_round(v) for v in lower_price.tolist()]
             payload["upper_price"] = [_round(v) for v in upper_price.tolist()]
             payload["ci_alpha"] = float(_alpha)
+        if forecast_quantiles_price:
+            # Attach quantiles (rounded)
+            qout: Dict[str, List[float]] = {}
+            for k, arr in forecast_quantiles_price.items():
+                qout[str(k)] = [_round(v) for v in arr]
+            payload["forecast_quantiles"] = qout
 
         return payload
     except Exception as e:
         return {"error": f"Error computing forecast: {str(e)}"}
+
+
+# pattern_prepare_index has been removed; pattern_search builds/loads indexes on demand.
+
+
+# pattern_search_recent removed; use pattern_search.
+    try:
+        if timeframe not in TIMEFRAME_MAP:
+            return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+        # Ensure cached index
+        dn_key = _denoise_cache_key(denoise)
+        eff_lb = int(lookback) if lookback is not None else None
+        cache_key = (str(timeframe), int(window_size), int(future_size),
+                     f"dn={dn_key}|sc={str(scale).lower()}|mt={str(metric).lower()}|pca={int(pca_components) if pca_components else 0}|eng={(engine or 'ckdtree').lower()}|lb={eff_lb if eff_lb is not None else 'auto'}")
+        idx = _PATTERN_INDEX_CACHE.get(cache_key)
+        if idx is None or (symbol not in idx.symbols):
+            # Try disk cache if requested
+            if cache_id:
+                try:
+                    disk_idx = _load_pattern_index_from_disk(cache_dir, cache_id)
+                except Exception:
+                    disk_idx = None
+                if disk_idx is not None and disk_idx.timeframe == timeframe and disk_idx.window_size == int(window_size) and disk_idx.future_size == int(future_size):
+                    idx = disk_idx
+                    _PATTERN_INDEX_CACHE[cache_key] = idx
+            if idx is None:
+                # Build minimal index for this symbol only
+                eff_max = int(eff_lb) if eff_lb is not None else max(2000, window_size + future_size + 100)
+                idx = _build_pattern_index(
+                    symbols=[symbol],
+                    timeframe=str(timeframe),
+                window_size=int(window_size),
+                future_size=int(future_size),
+                max_bars_per_symbol=int(eff_max),
+                denoise=denoise,
+                scale=str(scale),
+                metric=str(metric),
+                pca_components=int(pca_components) if pca_components else None,
+                engine=str(engine),
+            )
+                _PATTERN_INDEX_CACHE[cache_key] = idx
+                _save_pattern_index_to_disk(idx, cache_dir, cache_id)
+
+        # Fetch anchor last `window_size` closes for the queried symbol
+        def _fetch_anchor(symbol: str, timeframe: str, window_size: int) -> Tuple[np.ndarray, float]:
+            utc_now = datetime.utcnow()
+            rates = _mt5_copy_rates_from(symbol, TIMEFRAME_MAP[timeframe], utc_now, int(window_size) + 2)
+            if rates is None or len(rates) == 0:
+                raise RuntimeError(f"Failed to fetch anchor bars for {symbol}")
+            df = pd.DataFrame(rates)
+            try:
+                df['time'] = df['time'].astype(float).apply(_mt5_epoch_to_utc)
+            except Exception:
+                pass
+            if 'volume' not in df.columns and 'tick_volume' in df.columns:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    df['volume'] = df['tick_volume']
+            if denoise and isinstance(denoise, dict):
+                try:
+                    dn = dict(denoise)
+                    dn.setdefault('when', 'pre_ti')
+                    dn.setdefault('columns', ['close'])
+                    dn.setdefault('keep_original', False)
+                    _apply_denoise_util(df, dn, default_when='pre_ti')
+                except Exception:
+                    pass
+            if len(df) < window_size:
+                raise RuntimeError("Not enough bars for anchor window")
+            from ..utils.utils import to_float_np
+            closes = to_float_np(df['close'])
+            try:
+                end_epoch = float(df['time'].iloc[-1])
+            except Exception:
+                # Fallback: use server 'now'
+                end_epoch = float(datetime.utcnow().timestamp())
+            return closes[-int(window_size):], end_epoch
+
+        anchor_vals, anchor_end_epoch = _fetch_anchor(symbol, str(timeframe), int(window_size))
+        # Helper scalers and NCC for multi-scale refinement
+        def _scale_vec(x: np.ndarray, how: str) -> np.ndarray:
+            s = (how or 'minmax').lower()
+            x = np.asarray(x, dtype=float)
+            if s == 'zscore':
+                mu = float(np.nanmean(x)); sd = float(np.nanstd(x))
+                if not np.isfinite(sd) or sd <= 1e-12:
+                    return np.zeros_like(x, dtype=float)
+                return (x - mu) / sd
+            if s == 'none':
+                return x
+            mn = float(np.nanmin(x)); mx = float(np.nanmax(x)); rng = mx - mn
+            if not np.isfinite(rng) or rng <= 1e-12:
+                return np.zeros_like(x, dtype=float)
+            return (x - mn) / rng
+
+        def _ncc_max(a: np.ndarray, b: np.ndarray, max_lag: int) -> float:
+            a = np.asarray(a, dtype=float).ravel(); b = np.asarray(b, dtype=float).ravel()
+            n = int(min(a.size, b.size))
+            if n <= 2:
+                return 0.0
+            def zn(x):
+                xm = float(np.nanmean(x)); xs = float(np.nanstd(x))
+                if not np.isfinite(xs) or xs <= 1e-12: return np.zeros_like(x, dtype=float)
+                return (x - xm) / xs
+            a = zn(a); b = zn(b)
+            L = int(max(0, allow_lag)); best = -1.0
+            for lag in range(-L, L+1):
+                if lag == 0:
+                    aa, bb = a, b
+                elif lag > 0:
+                    aa = a[lag:]; bb = b[: n - lag]
+                else:
+                    aa = a[: n + lag]; bb = b[-lag:]
+                m = int(min(aa.size, bb.size))
+                if m <= 2: continue
+                num = float(np.dot(aa, bb)); den = float(np.linalg.norm(aa) * np.linalg.norm(bb))
+                corr = (num / den) if (np.isfinite(den) and den > 1e-12) else 0.0
+                if corr > best: best = corr
+            return float(max(min(best, 1.0), -1.0))
+
+        # Multi-scale list from a single span value: span=0.1 -> [0.9, 1.0, 1.1]
+        use_scales: List[float] = []
+        try:
+            span = float(time_scale_span) if (time_scale_span is not None) else 0.0
+        except Exception:
+            span = 0.0
+        if span and span > 0:
+            lo = max(0.05, 1.0 - span)
+            hi = 1.0 + span
+            use_scales = [lo, 1.0, hi]
+        else:
+            use_scales = [1.0]
+
+        # Build candidate pool across scales or default index
+        initial_k = int(refine_k) if refine_k and int(refine_k) > int(top_k) else int(top_k)
+        candidate_pool: List[Tuple[_PatternIndex, int, float]] = []
+        for sc in use_scales:
+            ws2 = int(round(float(window_size) * float(sc)))
+            if ws2 < 5: continue
+            # Acquire index for ws2
+            cache_key2 = (str(timeframe), int(ws2), int(future_size),
+                          f"dn={dn_key}|sc={str(scale).lower()}|mt={str(metric).lower()}|pca={int(pca_components) if pca_components else 0}|eng={(engine or 'ckdtree').lower()}|lb={eff_lb if eff_lb is not None else 'auto'}")
+            idx2 = _PATTERN_INDEX_CACHE.get(cache_key2)
+            if idx2 is None:
+                try:
+                    idx2 = _build_pattern_index(
+                        symbols=idx.symbols if idx is not None else [symbol],
+                        timeframe=str(timeframe),
+                        window_size=int(ws2),
+                        future_size=int(future_size),
+                        max_bars_per_symbol=int(getattr(idx, 'max_bars_per_symbol', eff_lb if eff_lb is not None else max(2000, ws2 + future_size + 100))),
+                        denoise=denoise,
+                        scale=str(scale),
+                        metric=str(metric),
+                        pca_components=int(pca_components) if pca_components else None,
+                        engine=str(engine),
+                    )
+                    _PATTERN_INDEX_CACHE[cache_key2] = idx2
+                except Exception:
+                    continue
+            # Anchor for ws2
+            try:
+                a2, _ = _fetch_anchor(symbol, str(timeframe), int(ws2))
+            except Exception:
+                continue
+            ii, dd = idx2.search(a2, top_k=int(initial_k))
+            for j, dj in zip(ii.tolist(), dd.tolist()):
+                # Store (index_obj, local_index, distance, time_scale) so later scoring can see scale
+                candidate_pool.append((idx2, int(j), float(dj), float(sc)))
+
+        # If only single scale and no shape metric, fallback to original flow
+        if len(use_scales) == 1 and (not shape_metric or str(shape_metric).lower().strip() in ('', 'none')):
+            # Convert candidate_pool to idxs,dists for legacy loop
+            idxs = np.array([j for _, j, _ in candidate_pool], dtype=int)
+            dists = np.array([d for _, _, d in candidate_pool], dtype=float)
+        else:
+            # Re-rank on resampled windows to main length (NCC/DTW/Soft-DTW/Affine)
+            a_main = _scale_vec(np.asarray(anchor_vals, dtype=float), str(scale))
+            scored: List[Tuple[float, _PatternIndex, int, float, Optional[float]]] = []
+            for idx_obj, loc_idx, _orig_d, sc in candidate_pool:
+                try:
+                    w = idx_obj.get_match_values(int(loc_idx), include_future=False)
+                    if w.size != int(window_size):
+                        x = np.linspace(0.0, 1.0, num=w.size, dtype=float)
+                        xi = np.linspace(0.0, 1.0, num=int(window_size), dtype=float)
+                        w = np.interp(xi, x, w.astype(float))
+                    w_scaled = _scale_vec(w, str(scale))
+                    sm = str(shape_metric).lower().strip() if shape_metric else 'ncc'
+                    if sm == 'ncc' or sm == '' or sm == 'none':
+                        corr = _ncc_max(a_main, w_scaled, int(allow_lag) if allow_lag else 0)
+                        score = 1.0 - float(corr)
+                    elif sm == 'affine':
+                        # Fit alpha, beta to align candidate amplitude/offset to anchor
+                        aw = float(np.dot(a_main - np.mean(a_main), w_scaled - np.mean(w_scaled)))
+                        ww = float(np.dot(w_scaled - np.mean(w_scaled), w_scaled - np.mean(w_scaled)))
+                        alpha = (aw / ww) if (np.isfinite(ww) and ww > 1e-12) else 0.0
+                        alpha = max(0.5, min(2.0, float(alpha)))
+                        beta = float(np.mean(a_main) - alpha * np.mean(w_scaled))
+                        resid = a_main - (alpha * w_scaled + beta)
+                        score = float(np.sqrt(np.mean(resid * resid)))
+                    else:
+                        # DTW / Soft-DTW
+                        n = a_main.size
+                        band = None
+                        if False:  # placeholder for future dtw_band param
+                            pass
+                        if sm == 'dtw':
+                            # Simple DP fallback DTW
+                            ca = np.full((n + 1, n + 1), np.inf, dtype=float)
+                            ca[0, 0] = 0.0
+                            for ii in range(1, n + 1):
+                                for jj in range(1, n + 1):
+                                    cost = abs(a_main[ii - 1] - w_scaled[jj - 1])
+                                    ca[ii, jj] = cost + min(ca[ii - 1, jj], ca[ii, jj - 1], ca[ii - 1, jj - 1])
+                            score = float(ca[n, n])
+                        elif sm == 'softdtw':
+                            # Fallback to DTW if no soft-dtw lib; using DP above
+                            ca = np.full((n + 1, n + 1), np.inf, dtype=float)
+                            ca[0, 0] = 0.0
+                            for ii in range(1, n + 1):
+                                for jj in range(1, n + 1):
+                                    cost = abs(a_main[ii - 1] - w_scaled[jj - 1])
+                                    ca[ii, jj] = cost + min(ca[ii - 1, jj], ca[ii, jj - 1], ca[ii - 1, jj - 1])
+                            score = float(ca[n, n])
+                        else:
+                            # Default to euclidean
+                            diff = a_main - w_scaled
+                            score = float(np.sqrt(np.dot(diff, diff)))
+                    # Record score with time scale and (if affine) amplitude alpha
+                    try:
+                        amp_alpha  # type: ignore[name-defined]
+                    except Exception:
+                        amp_alpha = None  # type: ignore[assignment]
+                    scored.append((score, idx_obj, int(loc_idx), float(sc), amp_alpha))
+                except Exception:
+                    continue
+            if not scored:
+                return {"error": "No candidates found at any scale"}
+            scored.sort(key=lambda t: t[0])
+            # Replace idxs/dists with top_k selection proxy (scores used as distance analog)
+            selected = scored[: int(top_k)]
+            idxs = np.array([i for _, _, i, _, _ in selected], dtype=int)
+            dists = np.array([s for s, _, _, _, _ in selected], dtype=float)
+            # Also keep parallel lists for multi-scale metadata
+            selected_idx_objs: List[_PatternIndex] = [obj for _, obj, _, _, _ in selected]
+            selected_scales: List[float] = [ts for _, _, _, ts, _ in selected]
+            selected_alphas: List[Optional[float]] = [al for _, _, _, _, al in selected]
+
+        total_candidates = int(len(candidate_pool))
+        matches = []
+        changes: List[float] = []
+        pct_changes: List[float] = []
+        kept_dist: List[float] = []
+        kept = 0
+        # Compute overlap thresholds
+        tf_secs = int(TIMEFRAME_SECONDS.get(str(timeframe), 0) or 0)
+        anchor_start_epoch = float(anchor_end_epoch) - float(max(0, int(window_size) - 1) * tf_secs)
+        # Track kept intervals per symbol to avoid any overlaps (not just with last kept)
+        kept_intervals_by_sym: Dict[str, List[Tuple[float, float]]] = {}
+
+        for idx_pos, (i, d) in enumerate(zip(idxs.tolist(), dists.tolist())):
+            # When multi-scale used and shape re-rank applied, resolve per-candidate index
+            idx_current: _PatternIndex = idx
+            if not (len(use_scales) == 1 and (not shape_metric or str(shape_metric).lower().strip() in ('', 'none'))):
+                try:
+                    idx_current = selected_idx_objs[idx_pos]
+                except Exception:
+                    idx_current = idx
+            tscale = 1.0
+            amp_alpha = None
+            if not (len(use_scales) == 1 and (not shape_metric or str(shape_metric).lower().strip() in ('', 'none'))):
+                try:
+                    tscale = float(selected_scales[idx_pos])
+                    amp_alpha = selected_alphas[idx_pos]
+                except Exception:
+                    pass
+            m_sym = idx_current.get_match_symbol(i)
+            # Optional correlation filter for cross-instrument matches
+            if min_symbol_correlation is not None and m_sym != symbol:
+                try:
+                    r_a = idx.get_symbol_returns(symbol, lookback=int(corr_lookback))
+                    r_b = idx.get_symbol_returns(m_sym, lookback=int(corr_lookback))
+                    if r_a is not None and r_b is not None:
+                        n = min(r_a.size, r_b.size)
+                        if n > 10:
+                            c = float(np.corrcoef(r_a[-n:], r_b[-n:])[0, 1])
+                            if not np.isfinite(c) or c < float(min_symbol_correlation):
+                                continue
+                except Exception:
+                    pass
+            vals = idx_current.get_match_values(i, include_future=True)
+            times = idx_current.get_match_times(i, include_future=True)
+            # Today's value is last of window; future is last of (window+future)
+            if vals.size < (idx_current.window_size + max(0, idx_current.future_size)):
+                # Skip malformed window
+                continue
+            today_v = float(vals[idx_current.window_size - 1])
+            future_v = float(vals[min(vals.size - 1, idx_current.window_size + idx_current.future_size - 1)])
+            change = float(future_v - today_v)
+            pct = float((future_v - today_v) / today_v) if today_v != 0 else 0.0
+            changes.append(change)
+            pct_changes.append(pct)
+            kept_dist.append(float(d))
+            kept += 1
+            start_epoch = float(times[0])
+            end_epoch = float(times[idx_current.window_size - 1])
+            # Skip overlapping with anchor window for same symbol
+            if m_sym == symbol and end_epoch >= anchor_start_epoch - 1e-6:
+                continue
+            # Skip overlap with any previously kept intervals for this symbol
+            kept_list = kept_intervals_by_sym.get(m_sym, [])
+            cand_start, cand_end = float(start_epoch), float(end_epoch)
+            overlap = False
+            for ks, ke in kept_list:
+                # Overlap if ranges intersect or touch within epsilon
+                if not (cand_end <= ks - 1e-6 or cand_start >= ke + 1e-6):
+                    overlap = True
+                    break
+            if overlap:
+                continue
+            start_time = _format_time_minimal_util(start_epoch)
+            end_time = _format_time_minimal_util(end_epoch)
+            _m = {
+                "symbol": m_sym,
+                "distance": float(d),
+                "start_date": start_time,
+                "end_date": end_time,
+                "todays_value": today_v,
+                "future_value": future_v,
+                "change": change,
+                "pct_change": pct,
+                "time_scale": float(tscale),
+            }
+            if amp_alpha is not None:
+                _m["amplitude_scale"] = float(amp_alpha)
+            if bool(include_values):
+                # Resample series to anchor window+future length for consistent plotting across scales
+                try:
+                    target_len = int(window_size) + int(future_size)
+                    if target_len > 0 and vals.size != target_len:
+                        x = np.linspace(0.0, 1.0, num=vals.size, dtype=float)
+                        xi = np.linspace(0.0, 1.0, num=target_len, dtype=float)
+                        vals_rs = np.interp(xi, x, vals.astype(float))
+                        _m["values"] = [float(v) for v in vals_rs.tolist()]
+                    else:
+                        _m["values"] = [float(v) for v in vals.tolist()]
+                except Exception:
+                    _m["values"] = [float(v) for v in vals.tolist()]
+            matches.append(_m)
+            # Record interval as kept to prevent future overlaps
+            kept_intervals_by_sym.setdefault(m_sym, []).append((cand_start, cand_end))
+
+        if not matches:
+            return {"error": "No matches found"}
+        arr = np.array(changes, dtype=float)
+        parr = np.array(pct_changes, dtype=float)
+        d_arr = np.array(kept_dist, dtype=float)
+        pos_ratio = float(np.mean(parr > 0.0)) if parr.size > 0 else 0.0
+        mean_change = float(np.mean(arr)) if arr.size else 0.0
+        median_change = float(np.median(arr)) if arr.size else 0.0
+        std_change = float(np.std(arr, ddof=0)) if arr.size else 0.0
+        mean_pct = float(np.mean(parr)) if parr.size else 0.0
+        median_pct = float(np.median(parr)) if parr.size else 0.0
+        std_pct = float(np.std(parr, ddof=0)) if parr.size else 0.0
+        per_bar_mean_change = float(mean_change / max(1, int(future_size)))
+        per_bar_mean_pct = float(mean_pct / max(1, int(future_size)))
+        eps = 1e-9
+        if d_arr.size:
+            w = 1.0 / (d_arr + eps)
+            w /= np.sum(w)
+            w_mean_change = float(np.sum(w * arr))
+            w_mean_pct = float(np.sum(w * parr))
+        else:
+            w_mean_change = mean_change
+            w_mean_pct = mean_pct
+        forecast_type = "gain" if pos_ratio > 0.5 else "loss"
+        forecast_confidence = pos_ratio if pos_ratio > 0.5 else (1.0 - pos_ratio)
+
+        payload: Dict[str, Any] = {
+            "success": True,
+            "anchor_symbol": symbol,
+            "timeframe": timeframe,
+            "window_size": int(window_size),
+            "future_size": int(future_size),
+            "top_k": int(top_k),
+            "matches": matches,
+            "forecast_type": forecast_type,
+            "forecast_confidence": float(forecast_confidence),
+            "n_matches": int(kept),
+            "n_candidates": int(total_candidates),
+            "prob_gain": float(pos_ratio),
+            "avg_change": mean_change,
+            "avg_pct_change": mean_pct,
+            "per_bar_avg_change": per_bar_mean_change,
+            "per_bar_avg_pct_change": per_bar_mean_pct,
+            "anchor_end_epoch": float(anchor_end_epoch),
+            "anchor_end_time": _format_time_minimal_util(float(anchor_end_epoch)),
+            "refine_k": int(initial_k),
+            "shape_metric": str(shape_metric) if shape_metric else "none",
+            "allow_lag": int(allow_lag) if allow_lag else 0,
+        }
+        if not compact:
+            payload.update({
+                "median_change": median_change,
+                "std_change": std_change,
+                "median_pct_change": median_pct,
+                "std_pct_change": std_pct,
+                "distance_weighted_avg_change": w_mean_change,
+                "distance_weighted_avg_pct_change": w_mean_pct,
+                "scale": idx.scale,
+                "metric": idx.metric,
+                "pca_components": idx.pca_components or 0,
+                "engine": getattr(idx, 'engine', 'ckdtree'),
+                "max_bars_per_symbol": int(getattr(idx, 'max_bars_per_symbol', 0)),
+                "bars_per_symbol": getattr(idx, 'bars_per_symbol', lambda: {})(),
+                "windows_per_symbol": getattr(idx, 'windows_per_symbol', lambda: {})(),
+                "lookback": int(getattr(idx, 'max_bars_per_symbol', eff_max if (lookback is not None) else 0)),
+            })
+        if include_anchor_values:
+            payload["anchor_values"] = [float(v) for v in anchor_vals.tolist()]
+        return payload
+    except Exception as e:
+        return {"error": f"Error in pattern search: {str(e)}"}
+
+
+@mcp.tool()
+@_auto_connect_wrapper
+def pattern_detect_classic(
+    symbol: str,
+    timeframe: TimeframeLiteral = "H1",
+    lookback: int = 1500,
+    denoise: Optional[Dict[str, Any]] = None,
+    config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Detect classic chart patterns (triangles, flags, wedges, H&S, channels, rectangles, etc.).
+
+    - Pulls last `lookback` bars for `symbol`/`timeframe`.
+    - Applies optional denoise.
+    - Returns a list of patterns with status (completed|forming), confidence, time bounds, and pattern-specific levels.
+    """
+    try:
+        if timeframe not in TIMEFRAME_MAP:
+            return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+        mt5_tf = TIMEFRAME_MAP[timeframe]
+        # Ensure symbol is visible
+        _info = mt5.symbol_info(symbol)
+        _was_visible = bool(_info.visible) if _info is not None else None
+        try:
+            if _was_visible is False:
+                mt5.symbol_select(symbol, True)
+        except Exception:
+            pass
+        # Fetch bars
+        utc_now = datetime.utcnow()
+        count = max(400, int(lookback) + 2)
+        rates = _mt5_copy_rates_from(symbol, mt5_tf, utc_now, count)
+        if rates is None or len(rates) < 100:
+            return {"error": f"Failed to fetch sufficient bars for {symbol}"}
+        df = pd.DataFrame(rates)
+        if 'volume' not in df.columns and 'tick_volume' in df.columns:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                df['volume'] = df['tick_volume']
+        # Drop forming last bar for stability
+        if len(df) >= 2:
+            df = df.iloc[:-1]
+        if denoise and isinstance(denoise, dict):
+            try:
+                dn = dict(denoise)
+                dn.setdefault('when', 'pre_ti')
+                dn.setdefault('columns', ['close'])
+                dn.setdefault('keep_original', False)
+                _apply_denoise_util(df, dn, default_when='pre_ti')
+            except Exception:
+                pass
+        # Clip to lookback
+        if len(df) > int(lookback):
+            df = df.iloc[-int(lookback):].copy()
+
+        # Build config
+        cfg = _ClassicCfg()
+        if isinstance(config, dict):
+            for k, v in config.items():
+                if hasattr(cfg, k):
+                    try:
+                        setattr(cfg, k, type(getattr(cfg, k))(v))
+                    except Exception:
+                        try:
+                            setattr(cfg, k, v)
+                        except Exception:
+                            pass
+
+        # Detect
+        pats = _detect_classic_patterns(df, cfg)
+
+        # Serialize
+        def _round(x):
+            try:
+                return float(np.round(float(x), 8))
+            except Exception:
+                return x
+        out_list = []
+        for p in pats:
+            try:
+                # Format times per global time format
+                st_epoch = float(p.start_time) if p.start_time is not None else None
+                et_epoch = float(p.end_time) if p.end_time is not None else None
+                try:
+                    start_date = _format_time_minimal_util(st_epoch) if st_epoch is not None else None
+                except Exception:
+                    start_date = None
+                try:
+                    end_date = _format_time_minimal_util(et_epoch) if et_epoch is not None else None
+                except Exception:
+                    end_date = None
+                d = {
+                    "name": p.name,
+                    "status": p.status,
+                    "confidence": float(max(0.0, min(1.0, p.confidence))),
+                    "start_index": int(p.start_index),
+                    "end_index": int(p.end_index),
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "start_epoch": st_epoch,
+                    "end_epoch": et_epoch,
+                    "details": {k: _round(v) for k, v in (p.details or {}).items()},
+                }
+                out_list.append(d)
+            except Exception:
+                continue
+
+        return {
+            "success": True,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "lookback": int(lookback),
+            "patterns": out_list,
+            # include series for plotting
+            "series_close": [float(v) for v in __to_float_np(df.get('close')).tolist()],
+            "series_epoch": [float(v) for v in __to_float_np(df.get('time')).tolist()] if 'time' in df.columns else None,
+            "series_time": [
+                _format_time_minimal_util(float(v)) for v in __to_float_np(df.get('time')).tolist()
+            ] if 'time' in df.columns else None,
+            "n_patterns": int(len(out_list)),
+        }
+    except Exception as e:
+        return {"error": f"Error detecting classic patterns: {str(e)}"}
+
+
+@mcp.tool()
+@_auto_connect_wrapper
+def pattern_search(
+    symbol: str,
+    timeframe: TimeframeLiteral = "H1",
+    window_size: int = 30,
+    top_k: int = 50,
+    future_size: int = 8,
+    symbols: Optional[List[str]] = None,
+    max_symbols: Optional[int] = None,
+    max_bars_per_symbol: int = 8000,
+    denoise: Optional[Dict[str, Any]] = None,
+    scale: str = "minmax",
+    metric: str = "euclidean",
+    pca_components: Optional[int] = None,
+    engine: str = "ckdtree",
+    include_values: bool = False,
+    min_symbol_correlation: Optional[float] = None,
+    corr_lookback: int = 1000,
+    compact: bool = True,
+    include_anchor_values: bool = False,
+    lookback: Optional[int] = None,
+    refine_k: Optional[int] = 200,
+    shape_metric: Optional[str] = 'ncc',
+    allow_lag: int = 5,
+    time_scale_span: Optional[float] = 0.1,
+    cache_id: Optional[str] = None,
+    cache_dir: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Unified pattern search: builds an index if needed, then searches.
+
+    Parameters: symbol, timeframe, window_size, top_k, future_size, symbols?, max_symbols?, max_bars_per_symbol?, denoise?, scale?, metric?, pca_components?
+    - If a compatible index is cached and includes the symbol, reuses it.
+    - Else builds an index using `symbols` (or visible symbols capped by `max_symbols`),
+      falling back to a minimal single-symbol index if none provided.
+    - Provides signal statistics and suppresses raw series unless `include_values=True`.
+    - Optional `min_symbol_correlation` filters cross-instrument matches by return correlation over `corr_lookback` bars.
+    - Historical depth is controlled by `max_bars_per_symbol`; response includes `bars_per_symbol` and `windows_per_symbol`.
+    """
+    try:
+        if timeframe not in TIMEFRAME_MAP:
+            return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+        # Cache key for settings
+        dn_key = _denoise_cache_key(denoise)
+        eff_lookback = int(lookback) if lookback is not None else int(max_bars_per_symbol)
+        cache_key = (str(timeframe), int(window_size), int(future_size),
+                     f"dn={dn_key}|sc={str(scale).lower()}|mt={str(metric).lower()}|pca={int(pca_components) if pca_components else 0}|eng={(engine or 'ckdtree').lower()}|lb={eff_lookback}")
+        idx = _PATTERN_INDEX_CACHE.get(cache_key)
+
+        need_build = (idx is None) or (symbol not in idx.symbols)
+        used_symbols: List[str] = []
+        if need_build:
+            # Optional disk cache load
+            if cache_id:
+                try:
+                    disk_idx = _load_pattern_index_from_disk(cache_dir, cache_id)
+                except Exception:
+                    disk_idx = None
+                if disk_idx is not None and disk_idx.timeframe == timeframe and disk_idx.window_size == int(window_size) and disk_idx.future_size == int(future_size):
+                    idx = disk_idx
+                    _PATTERN_INDEX_CACHE[cache_key] = idx
+                    need_build = False
+            if symbols and isinstance(symbols, (list, tuple)) and len(symbols) > 0:
+                used_symbols = [str(s) for s in symbols if str(s)]
+            else:
+                # Use visible symbols when not specified; fallback to single-symbol index
+                all_syms = mt5.symbols_get()
+                if all_syms is not None:
+                    for s in all_syms:
+                        try:
+                            if bool(getattr(s, 'visible', False)):
+                                used_symbols.append(str(getattr(s, 'name')))
+                        except Exception:
+                            continue
+                    if max_symbols and max_symbols > 0:
+                        used_symbols = used_symbols[: int(max_symbols)]
+            if not used_symbols:
+                used_symbols = [symbol]
+            if idx is None:
+                idx = _build_pattern_index(
+                    symbols=used_symbols,
+                    timeframe=str(timeframe),
+                    window_size=int(window_size),
+                    future_size=int(future_size),
+                    max_bars_per_symbol=int(eff_lookback),
+                    denoise=denoise,
+                    scale=str(scale),
+                    metric=str(metric),
+                    pca_components=int(pca_components) if pca_components else None,
+                    engine=str(engine),
+                )
+                _PATTERN_INDEX_CACHE[cache_key] = idx
+                _save_pattern_index_to_disk(idx, cache_dir, cache_id)
+
+        # Build anchor
+        def _fetch_anchor(symbol: str, timeframe: str, window_size: int) -> Tuple[np.ndarray, float]:
+            utc_now = datetime.utcnow()
+            rates = _mt5_copy_rates_from(symbol, TIMEFRAME_MAP[timeframe], utc_now, int(window_size) + 2)
+            if rates is None or len(rates) == 0:
+                raise RuntimeError(f"Failed to fetch anchor bars for {symbol}")
+            df = pd.DataFrame(rates)
+            try:
+                df['time'] = df['time'].astype(float).apply(_mt5_epoch_to_utc)
+            except Exception:
+                pass
+            if 'volume' not in df.columns and 'tick_volume' in df.columns:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    df['volume'] = df['tick_volume']
+            if denoise and isinstance(denoise, dict):
+                try:
+                    dn = dict(denoise)
+                    dn.setdefault('when', 'pre_ti')
+                    dn.setdefault('columns', ['close'])
+                    dn.setdefault('keep_original', False)
+                    _apply_denoise_util(df, dn, default_when='pre_ti')
+                except Exception:
+                    pass
+            if len(df) < window_size:
+                raise RuntimeError("Not enough bars for anchor window")
+            from ..utils.utils import to_float_np
+            closes = to_float_np(df['close'])
+            try:
+                end_epoch = float(df['time'].iloc[-1])
+            except Exception:
+                end_epoch = float(datetime.utcnow().timestamp())
+            return closes[-int(window_size):], end_epoch
+
+        anchor_vals, anchor_end_epoch = _fetch_anchor(symbol, str(timeframe), int(window_size))
+        idxs, dists = idx.search(anchor_vals, top_k=int(top_k))
+
+        total_candidates = int(len(idxs))
+        matches = []
+        changes: List[float] = []
+        pct_changes: List[float] = []
+        kept_dist: List[float] = []
+        kept = 0
+        tf_secs = int(TIMEFRAME_SECONDS.get(str(timeframe), 0) or 0)
+        anchor_start_epoch = float(anchor_end_epoch) - float(max(0, int(window_size) - 1) * tf_secs)
+        kept_intervals_by_sym: Dict[str, List[Tuple[float, float]]] = {}
+
+        for i, d in zip(idxs.tolist(), dists.tolist()):
+            m_sym = idx.get_match_symbol(i)
+            if min_symbol_correlation is not None and m_sym != symbol:
+                try:
+                    r_a = idx.get_symbol_returns(symbol, lookback=int(corr_lookback))
+                    r_b = idx.get_symbol_returns(m_sym, lookback=int(corr_lookback))
+                    if r_a is not None and r_b is not None:
+                        n = min(r_a.size, r_b.size)
+                        if n > 10:
+                            c = float(np.corrcoef(r_a[-n:], r_b[-n:])[0, 1])
+                            if not np.isfinite(c) or c < float(min_symbol_correlation):
+                                continue
+                except Exception:
+                    pass
+            vals = idx.get_match_values(i, include_future=True)
+            times = idx.get_match_times(i, include_future=True)
+            if vals.size < (idx.window_size + max(0, idx.future_size)):
+                continue
+            today_v = float(vals[idx.window_size - 1])
+            future_v = float(vals[min(vals.size - 1, idx.window_size + idx.future_size - 1)])
+            change = float(future_v - today_v)
+            pct = float((future_v - today_v) / today_v) if today_v != 0 else 0.0
+            changes.append(change)
+            pct_changes.append(pct)
+            kept_dist.append(float(d))
+            kept += 1
+            start_epoch = float(times[0])
+            end_epoch = float(times[idx.window_size - 1])
+            if m_sym == symbol and end_epoch >= anchor_start_epoch - 1e-6:
+                continue
+            kept_list = kept_intervals_by_sym.get(m_sym, [])
+            cand_start, cand_end = float(start_epoch), float(end_epoch)
+            overlap = False
+            for ks, ke in kept_list:
+                if not (cand_end <= ks - 1e-6 or cand_start >= ke + 1e-6):
+                    overlap = True
+                    break
+            if overlap:
+                continue
+            start_time = _format_time_minimal_util(start_epoch)
+            end_time = _format_time_minimal_util(end_epoch)
+            _m = {
+                "symbol": m_sym,
+                "distance": float(d),
+                "start_date": start_time,
+                "end_date": end_time,
+                "todays_value": today_v,
+                "future_value": future_v,
+                "change": change,
+                "pct_change": pct,
+                "time_scale": 1.0,
+            }
+            if bool(include_values):
+                # Resample to current anchor window+future length if needed
+                try:
+                    target_len = int(window_size) + int(future_size)
+                    if target_len > 0 and vals.size != target_len:
+                        x = np.linspace(0.0, 1.0, num=vals.size, dtype=float)
+                        xi = np.linspace(0.0, 1.0, num=target_len, dtype=float)
+                        vals_rs = np.interp(xi, x, vals.astype(float))
+                        _m["values"] = [float(v) for v in vals_rs.tolist()]
+                    else:
+                        _m["values"] = [float(v) for v in vals.tolist()]
+                except Exception:
+                    _m["values"] = [float(v) for v in vals.tolist()]
+            matches.append(_m)
+            kept_intervals_by_sym.setdefault(m_sym, []).append((cand_start, cand_end))
+
+        if not matches:
+            return {"error": "No matches found"}
+        arr = np.array(changes, dtype=float)
+        parr = np.array(pct_changes, dtype=float)
+        d_arr = np.array(kept_dist, dtype=float)
+        pos_ratio = float(np.mean(parr > 0.0)) if parr.size > 0 else 0.0
+        mean_change = float(np.mean(arr)) if arr.size else 0.0
+        median_change = float(np.median(arr)) if arr.size else 0.0
+        std_change = float(np.std(arr, ddof=0)) if arr.size else 0.0
+        mean_pct = float(np.mean(parr)) if parr.size else 0.0
+        median_pct = float(np.median(parr)) if parr.size else 0.0
+        std_pct = float(np.std(parr, ddof=0)) if parr.size else 0.0
+        per_bar_mean_change = float(mean_change / max(1, int(future_size)))
+        per_bar_mean_pct = float(mean_pct / max(1, int(future_size)))
+        eps = 1e-9
+        if d_arr.size:
+            w = 1.0 / (d_arr + eps)
+            w /= np.sum(w)
+            w_mean_change = float(np.sum(w * arr))
+            w_mean_pct = float(np.sum(w * parr))
+        else:
+            w_mean_change = mean_change
+            w_mean_pct = mean_pct
+        forecast_type = "gain" if pos_ratio > 0.5 else "loss"
+        forecast_confidence = pos_ratio if pos_ratio > 0.5 else (1.0 - pos_ratio)
+
+        payload: Dict[str, Any] = {
+            "success": True,
+            "anchor_symbol": symbol,
+            "timeframe": timeframe,
+            "window_size": int(window_size),
+            "future_size": int(future_size),
+            "top_k": int(top_k),
+            "matches": matches,
+            "forecast_type": forecast_type,
+            "forecast_confidence": float(forecast_confidence),
+            "n_matches": int(kept),
+            "n_candidates": int(total_candidates),
+            "prob_gain": float(pos_ratio),
+            "avg_change": mean_change,
+            "avg_pct_change": mean_pct,
+            "per_bar_avg_change": per_bar_mean_change,
+            "per_bar_avg_pct_change": per_bar_mean_pct,
+        }
+        if not compact:
+            payload.update({
+                "median_change": median_change,
+                "std_change": std_change,
+                "median_pct_change": median_pct,
+                "std_pct_change": std_pct,
+                "distance_weighted_avg_change": w_mean_change,
+                "distance_weighted_avg_pct_change": w_mean_pct,
+                "scale": idx.scale,
+                "metric": idx.metric,
+                "pca_components": idx.pca_components or 0,
+                "built_symbols": used_symbols if need_build else None,
+                "engine": getattr(idx, 'engine', 'ckdtree'),
+                "max_bars_per_symbol": int(getattr(idx, 'max_bars_per_symbol', eff_lookback)),
+                "bars_per_symbol": getattr(idx, 'bars_per_symbol', lambda: {})(),
+                "windows_per_symbol": getattr(idx, 'windows_per_symbol', lambda: {})(),
+                "lookback": int(eff_lookback),
+            })
+        if include_anchor_values:
+            payload["anchor_values"] = [float(v) for v in anchor_vals.tolist()]
+        return payload
+    except Exception as e:
+        return {"error": f"Error in pattern search: {str(e)}"}
 
 @mcp.tool()
 @_auto_connect_wrapper
@@ -4618,7 +6909,12 @@ def _server_shared_defs() -> Dict[str, Any]:
             "SymbolicSchema": {"type": "string", "enum": ["sax"]},
             "PivotMethod": {"type": "string", "enum": list(_PIVOT_METHODS)},
             "ForecastMethod": {"type": "string", "enum": list(_FORECAST_METHODS)},
-            "VolatilityMethod": {"type": "string", "enum": ["ewma","parkinson","gk","rs","garch"]},
+            "QuantitySpec": {"type": "string", "enum": ["price","return","volatility"]},
+            "VolatilityMethod": {"type": "string", "enum": [
+                "ewma","parkinson","gk","rs","yang_zhang","rolling_std",
+                "garch","egarch","gjr_garch",
+                "arima","sarima","ets","theta"
+            ]},
             "WhenSpec": {"type": "string", "enum": ["pre_ti","post_ti"]},
             "CausalitySpec": {"type": "string", "enum": ["causal","zero_phase"]},
             "TargetSpec": {"type": "string", "enum": ["price","return"]},
@@ -4675,18 +6971,14 @@ def _attach_schemas_to_tools():
                     params["method"] = {"$ref": "#/$defs/ForecastMethod"}
                     if "target" in params:
                         params["target"] = {"$ref": "#/$defs/TargetSpec"}
+                    if "quantity" in params:
+                        params["quantity"] = {"$ref": "#/$defs/QuantitySpec"}
                     # Optional denoise in forecast
                     if "denoise" in params:
                         params["denoise"] = {"$ref": "#/$defs/DenoiseSpec"}
                     if "params" in params:
                         # Leave method-specific params open-ended
                         params["params"] = {"type": "object", "additionalProperties": True}
-                if name == "forecast_volatility" and "method" in params:
-                    params["method"] = {"$ref": "#/$defs/VolatilityMethod"}
-                    if "params" in params:
-                        params["params"] = {"$ref": "#/$defs/VolatilityParams"}
-                    if "denoise" in params:
-                        params["denoise"] = {"$ref": "#/$defs/DenoiseSpec"}
                 if name == "compute_pivot_points" and "method" in params:
                     params["method"] = {"$ref": "#/$defs/PivotMethod"}
                 if name == "list_indicators" and "category" in params and "IndicatorCategory" in schema.get("$defs", {}):

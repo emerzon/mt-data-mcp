@@ -1,7 +1,7 @@
 import io
 import csv
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 import dateparser
@@ -174,6 +174,84 @@ def _format_numeric_rows_from_df(df: pd.DataFrame, headers: List[str]) -> List[L
                 out_row.append(str(val))
         out_rows.append(out_row)
     return out_rows
+
+
+def to_float_np(
+    values: Any,
+    *,
+    coerce: bool = True,
+    drop_na: bool = False,
+    finite_only: bool = False,
+    return_mask: bool = False,
+) -> "np.ndarray | Tuple[np.ndarray, 'np.ndarray']":
+    """Convert a pandas Series/array-like to a float NumPy array.
+
+    - coerce=True uses `pd.to_numeric(errors='coerce')` to convert invalids to NaN.
+    - drop_na=True removes NaN entries from the returned array (mask applied).
+    - finite_only=True removes non-finite entries (NaN, inf, -inf).
+    - return_mask=True returns (array, mask) where mask marks kept elements.
+
+    Notes: When both drop_na and finite_only are False, the original length is preserved.
+    """
+    import numpy as np  # local import
+
+    try:
+        # Normalize to pandas Series for robust conversion
+        if hasattr(values, "to_numpy") and hasattr(values, "dtype"):
+            ser = pd.Series(values)
+        else:
+            ser = pd.Series(values)
+
+        arr = (
+            pd.to_numeric(ser, errors="coerce").astype(float).to_numpy()
+            if coerce
+            else ser.astype(float).to_numpy()
+        )
+
+        mask = None
+        if drop_na or finite_only:
+            if finite_only:
+                mask = np.isfinite(arr)
+            else:
+                mask = ~pd.isna(arr)
+            arr = arr[mask]
+        if return_mask:
+            if mask is None:
+                mask = np.ones(arr.shape, dtype=bool)
+            return arr, mask
+        return arr
+    except Exception:
+        # Fallbacks
+        try:
+            arr = np.asarray(values, dtype=float)
+            if drop_na or finite_only:
+                m = np.isfinite(arr) if finite_only else ~pd.isna(arr)
+                arr = arr[m]
+                if return_mask:
+                    return arr, m
+            elif return_mask:
+                return arr, np.ones(arr.shape, dtype=bool)
+            return arr
+        except Exception:
+            empty = np.asarray([], dtype=float)
+            if return_mask:
+                return empty, np.asarray([], dtype=bool)
+            return empty
+
+
+def align_finite(*arrays: Any) -> Tuple["np.ndarray", ...]:
+    """Convert arrays to float and align them by keeping only rows where all are finite.
+
+    Returns a tuple of filtered arrays, all of equal length.
+    """
+    import numpy as np
+    conv = [to_float_np(a) for a in arrays]
+    if not conv:
+        return tuple()
+    mask = np.ones_like(conv[0], dtype=bool)
+    for a in conv:
+        mask &= np.isfinite(a)
+    return tuple(a[mask] for a in conv)
 
 
 def _parse_start_datetime(value: str) -> Optional[datetime]:

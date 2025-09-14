@@ -16,3 +16,5 @@ python-dateutil>=2.9.0.post0
 pytz>=2022.1
 scipy>=1.10.0
 statsmodels>=0.14.0
+fastapi>=0.110.0
+uvicorn[standard]>=0.23.0

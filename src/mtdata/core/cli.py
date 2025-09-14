@@ -11,7 +11,25 @@ from collections import OrderedDict
 import sys
 import json
 import inspect
+import os
 from typing import get_type_hints, get_origin, get_args, Optional, Dict, Any
+
+# Simple debug logging controlled by env var MTDATA_CLI_DEBUG
+def _debug_enabled() -> bool:
+    try:
+        v = os.environ.get("MTDATA_CLI_DEBUG", "").strip().lower()
+        return v not in ("", "0", "false", "no")
+    except Exception:
+        return False
+
+
+def _debug(msg: str) -> None:
+    if _debug_enabled():
+        try:
+            print(f"[cli-debug] {msg}", file=sys.stderr)
+        except Exception:
+            pass
+
 
 # Import server module and attempt to discover tools dynamically
 try:
@@ -22,11 +40,11 @@ try:
         load_dotenv(_env_path)
     else:
         load_dotenv()
-except Exception:
-    pass
+except Exception as e:
+    _debug(f"dotenv load failed: {e}")
 from . import server
 from .unified_params import add_global_args_to_parser
-from .schema import enrich_schema_with_shared_defs
+from .schema import enrich_schema_with_shared_defs, get_function_info as _schema_get_function_info
 
 # Types for discovered metadata
 ToolInfo = Dict[str, Any]
@@ -85,56 +103,24 @@ def convert_csv_to_json(result):
     return structured_result
 
 def get_function_info(func):
-    """Extract parameter information from a function"""
-    # Introspect the original function if wrapped by decorators
-    try:
-        target = inspect.unwrap(func)
-    except Exception:
-        target = func
-    sig = inspect.signature(target)
-    try:
-        type_hints = get_type_hints(target)
-    except Exception:
-        type_hints = {}
-    
-    params = []
-    for param_name, param in sig.parameters.items():
-        # Skip 'self' and other internal parameters
-        if param_name in ['self', 'cls']:
-            continue
-            
-        param_info = {
-            'name': param_name,
-            'required': param.default == inspect.Parameter.empty,
-            'default': param.default if param.default != inspect.Parameter.empty else None,
-            'type': None,
-            'optional': False
-        }
-        
-        # Get type information
-        if param_name in type_hints:
-            param_type = type_hints[param_name]
-            
-            # Handle Optional types
-            if get_origin(param_type) is Optional or (hasattr(param_type, '__args__') and type(None) in param_type.__args__):
-                param_info['optional'] = True
-                # Extract the non-None type
-                args = get_args(param_type)
-                if args:
-                    param_info['type'] = args[0] if args[0] != type(None) else args[1] if len(args) > 1 else str
-            else:
-                param_info['type'] = param_type
-        else:
-            param_info['type'] = str  # Default to string
-            
-        params.append(param_info)
-    
-    return {
-        'name': func.__name__,
-        'doc': func.__doc__ or f"Execute {func.__name__}",
-        'params': params,
-        'func': func
-    }
+    """Thin wrapper around schema.get_function_info that attaches the callable.
+
+    This avoids duplicating introspection logic while preserving the CLI's
+    expectation that the returned dict contains a 'func' key for invocation.
+    """
+    info = _schema_get_function_info(func)
+    info['func'] = func
+    # Ensure a minimal doc for CLI help if missing
+    if not info.get('doc'):
+        info['doc'] = f"Execute {info.get('name') or getattr(func, '__name__', 'function')}"
+    # Backfill type defaults to str for any missing types to keep CLI robust
+    for p in info.get('params', []):
+        if p.get('type') is None:
+            p['type'] = str
+        if 'required' not in p:
+            # Default required based on availability of a default value
+            p['required'] = p.get('default') is None
+    return info
 
 def _extract_function_from_tool_obj(tool_obj):
     """Best-effort extraction of the underlying function from an MCP tool object."""
@@ -280,7 +266,8 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
                     kwargs['type'] = str
                 else:
                     kwargs['type'] = str
-            except Exception:
+            except Exception as e:
+                _debug(f"Type resolution failed for param '{param['name']}': {e}")
                 kwargs['type'] = str
             
         # Handle defaults (do not force a default for tri-state bools)
@@ -297,7 +284,8 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
                 origin = get_origin(ptype)
                 is_typed_dict = hasattr(ptype, '__annotations__') and isinstance(getattr(ptype, '__annotations__', {}), dict)
                 is_mapping_type = (ptype in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
-            except Exception:
+            except Exception as e:
+                _debug(f"Mapping type check failed for param '{param['name']}': {e}")
                 is_mapping_type = False
             if is_mapping_type:
                 local_kwargs = dict(kwargs)
@@ -313,7 +301,8 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
             origin = get_origin(ptype)
             is_typed_dict = hasattr(ptype, '__annotations__') and isinstance(getattr(ptype, '__annotations__', {}), dict)
             is_mapping = (ptype in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
-        except Exception:
+        except Exception as e:
+            _debug(f"Mapping type check failed for companion params of '{param['name']}': {e}")
             is_mapping = False
         if is_mapping:
             parser.add_argument(
@@ -361,7 +350,8 @@ def _parse_kv_string(s: str) -> Optional[Dict[str, Any]]:
                 v = v[1:-1]
             out[k] = v
         return out if out else None
-    except Exception:
+    except Exception as e:
+        _debug(f"Failed to parse kv string '{s}': {e}")
         return None
 
 
@@ -398,8 +388,8 @@ def create_command_function(func_info, cmd_name: str = ""):
                 if (s.startswith('{') and s.endswith('}')) or (s.startswith('[') and s.endswith(']')):
                     try:
                         arg_value = json.loads(s)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        _debug(f"JSON decode failed for param '{param_name}': {e}")
 
             # For mapping-like params, support shorthand and companion '<name>_params'
             if is_mapping:
@@ -414,7 +404,8 @@ def create_command_function(func_info, cmd_name: str = ""):
                     if extra is None:
                         try:
                             extra = json.loads(extra_val)
-                        except Exception:
+                        except Exception as e:
+                            _debug(f"JSON decode failed for extra params '{extra_param_name}': {e}")
                             extra = None
                     if extra:
                         if arg_value is None or arg_value == {}:
@@ -470,11 +461,18 @@ def create_command_function(func_info, cmd_name: str = ""):
                     print(header)
                     print(buf.getvalue().rstrip('\n'))
                     return
-                except Exception:
+                except Exception as e:
                     # Fallback to default CSV printing
-                    pass
+                    _debug(f"CSV shaping failed for list_indicators: {e}")
             if print_csv_result(result):
                 return
+            # No CSV payload available; fall back to JSON pretty print
+            try:
+                print(json.dumps(result, indent=2, sort_keys=True, default=str, ensure_ascii=False))
+            except Exception as e:
+                _debug(f"Failed to pretty-print JSON; falling back to str: {e}")
+                print(str(result))
+            return
         elif preferred == 'json':
             # Convert CSV data to proper structured JSON if present
             structured_result = convert_csv_to_json(result)
@@ -489,25 +487,28 @@ def create_command_function(func_info, cmd_name: str = ""):
                             name = r.get('name') if isinstance(r, dict) else None
                             if name:
                                 groups.setdefault(cat, []).append(name)
-                        except Exception:
+                        except Exception as e:
+                            _debug(f"Grouping indicator row failed: {e}")
                             continue
-                    structured_result = {
+                structured_result = {
                         'success': bool(structured_result.get('success', True)),
                         'categories': groups,
                         'count': sum(len(v) for v in groups.values())
                     }
-            except Exception:
-                pass
+            except Exception as e:
+                _debug(f"Special JSON shaping failed: {e}")
             try:
                 print(json.dumps(structured_result, indent=2, sort_keys=True, default=str, ensure_ascii=False))
-            except Exception:
+            except Exception as e:
                 # Fallback in unlikely case of serialization issue
+                _debug(f"JSON serialization failed; falling back to str: {e}")
                 print(str(structured_result))
         else:
             # Fallback: print as JSON
             try:
                 print(json.dumps(result, indent=2, sort_keys=True, default=str, ensure_ascii=False))
-            except Exception:
+            except Exception as e:
+                _debug(f"JSON serialization failed (fallback json branch); falling back to str: {e}")
                 print(str(result))
     
     return command_func
@@ -638,6 +639,9 @@ def main():
         print("\nAborted by user", file=sys.stderr)
         return 1
     except Exception as e:
+        if _debug_enabled():
+            import traceback
+            traceback.print_exc()
         print(f"Error: {e}", file=sys.stderr)
         return 1
 

@@ -20,6 +20,8 @@ dependencies = [
     "dateparser>=1.2.0",
     "pandas>=2.0.0",
     "pandas_ta>=0.3.14b0",
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.23.0",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",

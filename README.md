@@ -1,4 +1,4 @@
-# MetaTrader5 MCP Server
+﻿# MetaTrader5 MCP Server
 
 A Model Context Protocol (MCP) server that provides access to MetaTrader5 market data and trading functionality.
 
@@ -70,7 +70,8 @@ The following tools are available via `python cli.py <command>`:
 - `detect_candlestick_patterns <symbol> [--timeframe TF] [--limit N]` - Detect candlestick patterns.
 - `compute_pivot_points <symbol> [--timeframe TF] [--method METHOD]` - Compute pivot point levels.
 - `forecast <symbol> [--timeframe TF] [--method METHOD] [--horizon N] ...` - Generate price forecasts.
-- `forecast_volatility <symbol> [--timeframe TF] [--horizon N] [--method METHOD]` - Forecast volatility using various methods.
+- `forecast_volatility <symbol> [--timeframe TF] [--horizon N] [--method METHOD] [--proxy PROXY]` - Forecast volatility using direct estimators, GARCH, or general forecasters on a proxy.
+  
 - `list_forecast_methods` - List available forecasting methods.
 
 *(Note: Programmatic access uses function names like `get_symbols`, `get_rates`, etc.)*
@@ -185,15 +186,35 @@ python cli.py fetch_candles EURUSD --timeframe H1 --limit 500 --simplify segment
 
 ### Forecasting
 
-Generate point forecasts for the next `horizon` bars.
+Generate point forecasts for the next `horizon` bars. The server supports lightweight classical models out of the box and optional integrations with modern forecasting frameworks.
 
-- **Methods:** `naive`, `drift`, `seasonal_naive`, `theta`, `fourier_ols`, `ses`, `holt`, `holt_winters_add`, `holt_winters_mul`, `arima`, `sarima`, `ensemble`.
-- **Discover methods:** `python cli.py list_forecast_methods`
+- Discover methods: `python cli.py list_forecast_methods`
+- Run forecast: `python cli.py forecast <symbol> --timeframe <TF> --method <name> --horizon <N> [--params JSON]`
+- Rolling backtest: `python cli.py forecast_backtest <symbol> --timeframe <TF> --horizon <N> [--steps S --spacing K --methods ...]`
+- Volatility forecasts: use `forecast_volatility` with methods like `ewma`, `parkinson`, `garch`, or general `arima`/`ets` with a `--proxy` (e.g., `log_r2`).
 
 ```bash
 # Forecast the next 12 hours of EURUSD using the theta model
 python cli.py forecast EURUSD --timeframe H1 --method theta --horizon 12 --format json
 ```
+
+For advanced usage, pattern-based signals, parameters, and tuning guidance, see `docs/FORECAST.md`.
+
+#### Optional Framework Integrations
+
+You can extend forecasting with additional frameworks. Install as needed; methods will appear in `list_forecast_methods` once available.
+
+- StatsForecast (classical, fast): `pip install statsforecast`
+  - Methods: `sf_autoarima`, `sf_theta`, `sf_autoets`, `sf_seasonalnaive`
+- MLForecast (tree/GBMs over lags): `pip install mlforecast scikit-learn` (and `lightgbm` for LGBM)
+  - Methods: `mlf_rf`, `mlf_lightgbm`
+- NeuralForecast (deep learning): `pip install neuralforecast[torch]`
+  - Methods: `nhits`, `nbeatsx`, `tft`, `patchtst`
+- Foundation models (Transformers/Chronos/TimesFM): `pip install transformers torch accelerate` (plus `chronos-forecasting` or `timesfm` if desired)
+  - Methods: `chronos_bolt`, `timesfm`, `lag_llama`
+
+See detailed examples and parameters in `docs/FORECAST.md` under Framework Integrations.
+
 
 ### Denoising
 
@@ -214,7 +235,7 @@ python cli.py fetch_candles EURUSD --timeframe H1 --indicators "rsi(14)" --denoi
 
 The `list_symbols` command uses a smart 3-tier search strategy:
 1.  **Group name match** (e.g., `Majors`, `Forex`)
-2.  **Symbol name match** (e.g., `EUR` → EURUSD, JPYEUR, ...)
+2.  **Symbol name match** (e.g., `EUR` â†’ EURUSD, JPYEUR, ...)
 3.  **Description match** (symbol or group path)
 
 ## Date Inputs
@@ -243,3 +264,4 @@ All functions return a JSON object with a `success` flag. If `success` is `false
 ## License
 
 MIT License
+
