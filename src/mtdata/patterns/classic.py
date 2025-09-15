@@ -31,6 +31,14 @@ class ClassicDetectorConfig:
     touch_weight: float = 0.35
     r2_weight: float = 0.35
     geometry_weight: float = 0.30
+    # Robust fitting and shape checks
+    use_robust_fit: bool = False     # use RANSAC for line fits when available
+    ransac_residual_pct: float = 0.15  # residual threshold as fraction of median price
+    ransac_min_samples: int = 2
+    ransac_max_trials: int = 50
+    use_dtw_check: bool = False      # optional DTW shape confirmation for select patterns
+    dtw_paa_len: int = 80            # PAA downsampling length for DTW
+    dtw_max_dist: float = 0.6        # acceptance threshold after z-norm
 
 
 @dataclass
@@ -63,6 +71,103 @@ def _fit_line(x: np.ndarray, y: np.ndarray) -> Tuple[float, float, float]:
     ss_tot = float(np.sum((y - y.mean()) ** 2)) if y.size else 0.0
     r2 = 0.0 if ss_tot == 0 else max(0.0, 1.0 - ss_res / ss_tot)
     return float(p[0]), float(p[1]), float(r2)
+
+
+def _fit_line_robust(x: np.ndarray, y: np.ndarray, cfg: ClassicDetectorConfig) -> Tuple[float, float, float]:
+    """Optionally fit a robust line via RANSAC; fallback to ordinary fit.
+
+    Returns (slope, intercept, r2_like). r2_like is computed vs. fitted values.
+    """
+    try:
+        if not cfg.use_robust_fit:
+            return _fit_line(x, y)
+        from sklearn.linear_model import RANSACRegressor  # type: ignore
+        X = x.reshape(-1, 1).astype(float)
+        yv = y.astype(float)
+        if X.shape[0] < max(2, int(cfg.ransac_min_samples)):
+            return _fit_line(x, y)
+        med = float(np.median(np.abs(yv))) if yv.size else 1.0
+        resid = max(1e-9, float(cfg.ransac_residual_pct) * max(1.0, med))
+        model = RANSACRegressor(min_samples=max(2, int(cfg.ransac_min_samples)),
+                                max_trials=max(10, int(cfg.ransac_max_trials)),
+                                residual_threshold=resid,
+                                random_state=0)
+        model.fit(X, yv)
+        # Extract slope/intercept from linear estimator
+        est = model.estimator_
+        slope = float(getattr(est, 'coef_', [0.0])[0])
+        intercept = float(getattr(est, 'intercept_', 0.0))
+        y_hat = slope * x + intercept
+        ss_res = float(np.sum((yv - y_hat) ** 2))
+        ss_tot = float(np.sum((yv - yv.mean()) ** 2)) if yv.size else 0.0
+        r2 = 0.0 if ss_tot == 0 else max(0.0, 1.0 - ss_res / ss_tot)
+        return slope, intercept, r2
+    except Exception:
+        return _fit_line(x, y)
+
+
+def _znorm(a: np.ndarray) -> np.ndarray:
+    a = np.asarray(a, dtype=float)
+    if a.size == 0:
+        return a
+    mu = float(np.mean(a))
+    sd = float(np.std(a))
+    if not np.isfinite(sd) or sd <= 1e-12:
+        return np.zeros_like(a, dtype=float)
+    return (a - mu) / sd
+
+
+def _paa(a: np.ndarray, m: int) -> np.ndarray:
+    a = np.asarray(a, dtype=float)
+    n = a.size
+    if n == 0 or m <= 0:
+        return np.asarray([], dtype=float)
+    if n == m:
+        return a.copy()
+    idx = np.linspace(0, n, num=m + 1, dtype=float)
+    out = []
+    for i in range(m):
+        s = int(idx[i]); e = int(idx[i + 1])
+        if e <= s:
+            e = min(n, s + 1)
+        out.append(float(np.mean(a[s:e])))
+    return np.asarray(out, dtype=float)
+
+
+def _dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
+    try:
+        from tslearn.metrics import dtw as _ts_dtw  # type: ignore
+        return float(_ts_dtw(a.astype(float), b.astype(float)))
+    except Exception:
+        try:
+            from dtaidistance import dtw as _dd_dtw  # type: ignore
+            return float(_dd_dtw.distance_fast(a.astype(float), b.astype(float)))
+        except Exception:
+            # Simple DP fallback
+            n, m = len(a), len(b)
+            if n == 0 or m == 0:
+                return float('inf')
+            dp = np.full((n + 1, m + 1), np.inf, dtype=float)
+            dp[0, 0] = 0.0
+            for i in range(1, n + 1):
+                for j in range(1, m + 1):
+                    cost = abs(a[i - 1] - b[j - 1])
+                    dp[i, j] = cost + min(dp[i - 1, j], dp[i, j - 1], dp[i - 1, j - 1])
+            return float(dp[n, m])
+
+
+def _template_hs(L: int, inverse: bool = False) -> np.ndarray:
+    """Simple H&S template over L points (z-norm target)."""
+    L = max(20, int(L))
+    x = np.linspace(0, 1, L)
+    # Shoulders around 0.7, head at 1.0 (or inverted)
+    y = 0.0 * x
+    y += 0.7 * np.exp(-((x - 0.25) ** 2) / 0.01)
+    y += 1.0 * np.exp(-((x - 0.5) ** 2) / 0.008)
+    y += 0.7 * np.exp(-((x - 0.75) ** 2) / 0.01)
+    if inverse:
+        y = -y
+    return _znorm(y)
 
 
 def _detect_pivots_close(close: np.ndarray, cfg: ClassicDetectorConfig) -> Tuple[np.ndarray, np.ndarray]:
@@ -139,8 +244,15 @@ def _alias(base: ClassicPatternResult, name: str, conf_scale: float = 0.95) -> C
 
 
 def _fit_lines_and_arrays(ih: np.ndarray, il: np.ndarray, c: np.ndarray, n: int):
-    sh, bh, r2h = _fit_line(ih.astype(float), c[ih])
-    sl, bl, r2l = _fit_line(il.astype(float), c[il])
+    # Capture cfg via closure in detect_classic_patterns
+    try:
+        sh, bh, r2h = _fit_line_robust(ih.astype(float), c[ih], cfg)
+    except Exception:
+        sh, bh, r2h = _fit_line(ih.astype(float), c[ih])
+    try:
+        sl, bl, r2l = _fit_line_robust(il.astype(float), c[il], cfg)
+    except Exception:
+        sl, bl, r2l = _fit_line(il.astype(float), c[il])
     x = np.arange(n, dtype=float)
     upper = sh * x + bh
     lower = sl * x + bl
@@ -201,7 +313,7 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
             idxs = piv[-k:]
             xs = idxs.astype(float)
             ys = c[idxs]
-            slope, intercept, r2 = _fit_line(xs, ys)
+            slope, intercept, r2 = _fit_line_robust(xs, ys, cfg) if cfg.use_robust_fit else _fit_line(xs, ys)
             # Assess touches: distance to line relative to price
             line_vals = slope * np.arange(n, dtype=float) + intercept
             tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
@@ -417,67 +529,85 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
 
     results.extend(_tops_bottoms())
 
-    # Head and Shoulders / Inverse
+    # Head and Shoulders / Inverse (flexible)
     def _head_shoulders():
         out: List[ClassicPatternResult] = []
-        # We need sequence of five pivots: LSH, NL1, HEAD, NL2, RSH
-        piv = np.sort(np.concatenate([peaks, troughs]))
-        if piv.size < 5:
+        if peaks.size < 3 or troughs.size < 2:
             return out
-        window = 18
-        for s in range(max(0, piv.size - window), piv.size - 4):
-            seq = piv[s:s+5]
-            # vals kept for potential future heuristics
-            vals = c[seq]
-            types = [(i in peaks) for i in seq]  # True if peak, False if trough
-            # Regular H&S: peak, trough, higher peak, trough, lower peak
-            if types[0] and not types[1] and types[2] and not types[3] and types[4]:
-                lsh, nl1, head, nl2, rsh = seq
-                if c[head] > c[lsh] * (1.0 + cfg.same_level_tol_pct/100.0) and \
-                   c[rsh] < c[head] and _level_close(c[lsh], c[rsh], cfg.same_level_tol_pct):
-                    neckline = float((c[nl1] + c[nl2]) / 2.0)
-                    status = "forming"
-                    details = {
-                        "left_shoulder": float(c[lsh]),
-                        "right_shoulder": float(c[rsh]),
-                        "head": float(c[head]),
-                        "neckline": neckline,
-                    }
-                    conf = 0.7
-                    out.append(ClassicPatternResult(
-                        name="Head and Shoulders",
-                        status=status,
-                        confidence=conf,
-                        start_index=int(lsh),
-                        end_index=int(rsh),
-                        start_time=float(t[int(lsh)]) if t.size else None,
-                        end_time=float(t[int(rsh)]) if t.size else None,
-                        details=details,
-                    ))
-            # Inverse H&S: trough, peak, lower trough, peak, higher trough
-            if (not types[0]) and types[1] and (not types[2]) and types[3] and (not types[4]):
-                lsh, nl1, head, nl2, rsh = seq
-                if c[head] < c[lsh] * (1.0 - cfg.same_level_tol_pct/100.0) and \
-                   c[rsh] > c[head] and _level_close(c[lsh], c[rsh], cfg.same_level_tol_pct):
-                    neckline = float((c[nl1] + c[nl2]) / 2.0)
-                    status = "forming"
-                    details = {
-                        "left_shoulder": float(c[lsh]),
-                        "right_shoulder": float(c[rsh]),
-                        "head": float(c[head]),
-                        "neckline": neckline,
-                    }
-                    conf = 0.7
-                    out.append(ClassicPatternResult(
-                        name="Inverse Head and Shoulders",
-                        status=status,
-                        confidence=conf,
-                        start_index=int(lsh),
-                        end_index=int(rsh),
-                        start_time=float(t[int(lsh)]) if t.size else None,
-                        end_time=float(t[int(rsh)]) if t.size else None,
-                        details=details,
-                    ))
+        tol_pct = float(cfg.same_level_tol_pct)
+        for head_idx in peaks.tolist():
+            try:
+                head_price = float(c[head_idx])
+                ls_candidates = [pi for pi in peaks.tolist() if pi < head_idx]
+                rs_candidates = [pi for pi in peaks.tolist() if pi > head_idx]
+                if not ls_candidates or not rs_candidates:
+                    continue
+                lsh = int(ls_candidates[-1]); rsh = int(rs_candidates[0])
+                ls_p = float(c[lsh]); rs_p = float(c[rsh])
+                regular = (ls_p < head_price) and (rs_p < head_price)
+                inverse = (ls_p > head_price) and (rs_p > head_price)
+                if not (regular or inverse):
+                    continue
+                if not _level_close(ls_p, rs_p, tol_pct * 1.5):
+                    continue
+                nl1_candidates = [ti for ti in troughs.tolist() if lsh < ti < head_idx]
+                nl2_candidates = [ti for ti in troughs.tolist() if head_idx < ti < rsh]
+                if not nl1_candidates or not nl2_candidates:
+                    continue
+                nl1 = int(nl1_candidates[-1]); nl2 = int(nl2_candidates[0])
+                slope, intercept, r2 = _fit_line(np.array([nl1, nl2], dtype=float), np.array([c[nl1], c[nl2]], dtype=float))
+                left_span = head_idx - lsh; right_span = rsh - head_idx
+                span_ratio = left_span / float(max(1, right_span))
+                if not (0.5 <= span_ratio <= 2.0):
+                    continue
+                sh_avg = (ls_p + rs_p) / 2.0
+                head_prom = (head_price - sh_avg) / abs(sh_avg) * 100.0 if sh_avg != 0 else 0.0
+                if regular and head_prom < max(1.0, tol_pct):
+                    continue
+                if inverse and head_prom > -max(1.0, tol_pct):
+                    continue
+                look = int(max(1, int(getattr(cfg, 'breakout_lookahead', 8))))
+                status = 'forming'
+                name = 'Head and Shoulders' if regular else 'Inverse Head and Shoulders'
+                broke = False
+                end_i = int(rsh)
+                for k in range(1, look + 1):
+                    i = rsh + k
+                    if i >= n:
+                        break
+                    neck_i = slope * i + intercept
+                    px = float(c[i])
+                    if regular and px < neck_i:
+                        status = 'completed'; broke = True; end_i = int(i); break
+                    if inverse and px > neck_i:
+                        status = 'completed'; broke = True; end_i = int(i); break
+                sym_conf = max(0.0, 1.0 - abs(span_ratio - 1.0))
+                sh_sim_conf = max(0.0, 1.0 - (abs(ls_p - rs_p) / max(1e-9, abs(sh_avg))))
+                neck_penalty = max(0.0, 1.0 - min(1.0, abs(slope) / max(1e-6, cfg.max_flat_slope * 5.0)))
+                prom_conf = min(1.0, abs(head_prom) / (tol_pct * 2.0))
+                base_conf = 0.25 * sym_conf + 0.35 * sh_sim_conf + 0.2 * neck_penalty + 0.2 * prom_conf
+                if broke:
+                    base_conf = min(1.0, base_conf + 0.1)
+                details = {
+                    'left_shoulder': float(ls_p),
+                    'right_shoulder': float(rs_p),
+                    'head': float(head_price),
+                    'neck_slope': float(slope),
+                    'neck_intercept': float(intercept),
+                    'neck_r2': float(r2),
+                }
+                out.append(ClassicPatternResult(
+                    name=name,
+                    status=status,
+                    confidence=float(base_conf),
+                    start_index=int(lsh),
+                    end_index=end_i,
+                    start_time=float(t[int(lsh)]) if t.size else None,
+                    end_time=float(t[int(end_i)]) if t.size else None,
+                    details=details,
+                ))
+            except Exception:
+                continue
         return out
 
     results.extend(_head_shoulders())
