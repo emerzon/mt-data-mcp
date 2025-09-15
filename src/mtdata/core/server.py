@@ -63,6 +63,12 @@ from .schema import (
 )
 mcp = FastMCP(SERVICE_NAME)
 
+# Extracted indicator doc helpers
+from .indicators_docs import list_ta_indicators as _list_ta_indicators_docs
+from .indicators_docs import clean_help_text as _clean_help_text_docs
+from .indicators_docs import infer_defaults_from_doc as _infer_defaults_from_doc_docs
+ 
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -93,6 +99,26 @@ from ..utils.patterns import PatternIndex as _PatternIndex, build_index as _buil
 from scipy.spatial.ckdtree import cKDTree
 from ..patterns.classic import detect_classic_patterns as _detect_classic_patterns, ClassicDetectorConfig as _ClassicCfg
 from ..utils.dimred import list_dimred_methods as _list_dimred_methods_util, create_reducer as _create_dimred_reducer
+from ..utils.simplify import (
+    _choose_simplify_points as _choose_simplify_points_util,
+    _lttb_select_indices as _lttb_select_indices_util,
+    _rdp_select_indices as _rdp_select_indices_util,
+    _pla_select_indices as _pla_select_indices_util,
+    _apca_select_indices as _apca_select_indices_util,
+    _rdp_autotune_epsilon as _rdp_autotune_epsilon_util,
+    _pla_autotune_max_error as _pla_autotune_max_error_util,
+    _apca_autotune_max_error as _apca_autotune_max_error_util,
+    _select_indices_for_timeseries as _select_indices_for_timeseries_util,
+)
+
+def _simplify_dataframe_rows_ext(df: pd.DataFrame, headers: List[str], simplify: Optional[Dict[str, Any]]):
+    """Wrapper delegating row simplification to utils.simplify to reduce server size."""
+    try:
+        from ..utils.simplify import _simplify_dataframe_rows as _impl  # type: ignore
+        return _impl(df, headers, simplify)
+    except Exception:
+        # Fallback to local implementation if util import fails
+        return _simplify_dataframe_rows(df, headers, simplify)  # type: ignore
 
 _TIMEFRAME_CHOICES = tuple(sorted(TIMEFRAME_MAP.keys()))
 TimeframeLiteral = Literal[_TIMEFRAME_CHOICES]  # type: ignore
@@ -284,72 +310,7 @@ def _coerce_scalar(val: str):
 
 # ---- Timeseries simplification helpers ----
 def _lttb_select_indices(x: List[float], y: List[float], n_out: int) -> List[int]:
-    """Largest-Triangle-Three-Buckets (LTTB) downsampling.
-
-    Returns the indices of selected points (monotonic, includes first/last).
-    """
-    try:
-        m = len(x)
-        if n_out >= m:
-            return list(range(m))
-        if n_out <= 2 or m <= 2:
-            return [0, max(0, m - 1)]
-        # Ensure monotonic x
-        # Assumes x are sorted; if not, sort and map back
-        # For our usage, x is time so already sorted
-        idxs: List[int] = [0]
-        bucket_size = (m - 2) / float(n_out - 2)
-        a = 0  # previously selected index
-        for i in range(0, n_out - 2):
-            # Current bucket range
-            start = int(math.floor(1 + i * bucket_size))
-            end = int(math.floor(1 + (i + 1) * bucket_size))
-            end = min(end, m - 1)
-            if start >= end:
-                start = max(min(start, m - 2), 1)
-                end = start + 1
-
-            # Next bucket average (for triangle base point)
-            next_start = int(math.floor(1 + (i + 1) * bucket_size))
-            next_end = int(math.floor(1 + (i + 2) * bucket_size))
-            next_end = min(next_end, m - 1)
-            if next_start >= next_end:
-                next_start = max(min(next_start, m - 1), 1)
-                next_end = next_start
-            avg_x = 0.0
-            avg_y = 0.0
-            cnt = max(1, next_end - next_start)
-            for j in range(next_start, next_end):
-                avg_x += x[j]
-                avg_y += y[j]
-            avg_x /= float(cnt)
-            avg_y /= float(cnt)
-
-            ax = x[a]
-            ay = y[a]
-            # Pick point in [start, end) maximizing triangle area with A and avg
-            max_area = -1.0
-            max_idx = start
-            for j in range(start, end):
-                area = abs((ax - avg_x) * (y[j] - ay) - (ax - x[j]) * (avg_y - ay))
-                if area > max_area:
-                    max_area = area
-                    max_idx = j
-            idxs.append(max_idx)
-            a = max_idx
-
-        idxs.append(m - 1)
-        # Ensure strictly increasing and unique
-        out = []
-        last = -1
-        for ix in sorted(set(idxs)):
-            if ix > last:
-                out.append(ix)
-                last = ix
-        return out
-    except Exception:
-        # Fallback: no simplification
-        return list(range(len(x)))
+    return _lttb_select_indices_util(x, y, n_out)
 
 
 def _default_target_points(total: int) -> int:
@@ -401,413 +362,41 @@ def _choose_simplify_points(total: int, spec: Dict[str, Any]) -> int:
 
 
 def _point_line_distance(px: float, py: float, x1: float, y1: float, x2: float, y2: float) -> float:
-    """Vertical distance from P to line y(x) through (x1,y1)-(x2,y2).
-
-    For time series, x is monotonic (time), so using vertical deviation is sensible
-    and keeps epsilon/max_error in the same units as y.
-    """
-    try:
-        dx = x2 - x1
-        if dx == 0.0:
-            # Degenerate in time; fallback to distance from y to midpoint
-            return abs(py - (y1 + y2) / 2.0)
-        m = (y2 - y1) / dx
-        y_on_line = y1 + m * (px - x1)
-        return abs(py - y_on_line)
-    except Exception:
-        return 0.0
+    from ..utils.simplify import _point_line_distance as _impl
+    return _impl(px, py, x1, y1, x2, y2)
 
 
 def _rdp_select_indices(x: List[float], y: List[float], epsilon: float) -> List[int]:
-    """Douglas–Peucker simplification returning kept indices (always includes first/last)."""
-    try:
-        n = len(x)
-        if n <= 2 or epsilon <= 0:
-            return list(range(n))
-        stack: List[Tuple[int, int]] = [(0, n - 1)]
-        keep = [False] * n
-        keep[0] = True
-        keep[n - 1] = True
-        while stack:
-            i0, i1 = stack.pop()
-            x0, y0 = x[i0], y[i0]
-            x1, y1 = x[i1], y[i1]
-            idx = -1
-            dmax = 0.0
-            for i in range(i0 + 1, i1):
-                d = _point_line_distance(x[i], y[i], x0, y0, x1, y1)
-                if d > dmax:
-                    idx = i
-                    dmax = d
-            if idx != -1 and dmax > epsilon:
-                keep[idx] = True
-                stack.append((i0, idx))
-                stack.append((idx, i1))
-        return [i for i, k in enumerate(keep) if k]
-    except Exception:
-        return list(range(len(x)))
+    return _rdp_select_indices_util(x, y, epsilon)
 
 
 def _max_line_error(x: List[float], y: List[float], i0: int, i1: int) -> float:
-    """Maximum perpendicular distance of points i0..i1 to the line i0-i1."""
-    if i1 <= i0 + 1:
-        return 0.0
-    x0, y0 = x[i0], y[i0]
-    x1, y1 = x[i1], y[i1]
-    m = 0.0
-    for i in range(i0 + 1, i1):
-        d = _point_line_distance(x[i], y[i], x0, y0, x1, y1)
-        if d > m:
-            m = d
-    return m
+    from ..utils.simplify import _max_line_error as _impl
+    return _impl(x, y, i0, i1)
 
 
 def _pla_select_indices(x: List[float], y: List[float], max_error: Optional[float] = None, segments: Optional[int] = None, points: Optional[int] = None) -> List[int]:
-    """Piecewise Linear Approximation; greedy by max perpendicular error or uniform segments.
-
-    Returns indices of breakpoints (includes first/last).
-    """
-    n = len(x)
-    if n <= 2:
-        return list(range(n))
-    # Uniform segmentation if requested and no error bound
-    if (max_error is None or max_error <= 0) and (segments or points):
-        if points and (segments is None):
-            segments = max(1, int(points) - 1)
-        segments = max(1, min(int(segments or 1), n - 1))
-        idxs = [0]
-        for k in range(1, segments):
-            idxs.append(int(round(k * (n - 1) / segments)))
-        idxs.append(n - 1)
-        return sorted(set(idxs))
-    # Greedy by error
-    if max_error is None or max_error <= 0:
-        # Fallback to keep all
-        return list(range(n))
-    idxs = [0]
-    start = 0
-    while start < n - 1:
-        end = start + 1
-        last_good = end
-        while end < n:
-            err = _max_line_error(x, y, start, end)
-            if err <= max_error:
-                last_good = end
-                end += 1
-            else:
-                break
-        if last_good == start:
-            last_good = start + 1
-        idxs.append(last_good)
-        start = last_good
-    if idxs[-1] != n - 1:
-        idxs.append(n - 1)
-    # Deduplicate increasing
-    out = []
-    for i in idxs:
-        if not out or i > out[-1]:
-            out.append(i)
-    return out
+    return _pla_select_indices_util(x, y, max_error, segments, points)
 
 
 def _apca_select_indices(y: List[float], max_error: Optional[float] = None, segments: Optional[int] = None, points: Optional[int] = None) -> List[int]:
-    """Adaptive Piecewise Constant Approximation; greedy by max absolute deviation or uniform.
-
-    Returns indices of breakpoints (includes first/last).
-    """
-    n = len(y)
-    if n <= 2:
-        return list(range(n))
-    if (max_error is None or max_error <= 0) and (segments or points):
-        if points and (segments is None):
-            segments = max(1, int(points) - 1)
-        segments = max(1, min(int(segments or 1), n - 1))
-        idxs = [0]
-        for k in range(1, segments):
-            idxs.append(int(round(k * (n - 1) / segments)))
-        idxs.append(n - 1)
-        return sorted(set(idxs))
-    if max_error is None or max_error <= 0:
-        return list(range(n))
-    idxs = [0]
-    start = 0
-    while start < n - 1:
-        end = start + 1
-        last_good = end
-        while end < n:
-            seg = y[start:end + 1]
-            mean = sum(seg) / float(len(seg))
-            err = max(abs(v - mean) for v in seg)
-            if err <= max_error:
-                last_good = end
-                end += 1
-            else:
-                break
-        if last_good == start:
-            last_good = start + 1
-        idxs.append(last_good)
-        start = last_good
-    if idxs[-1] != n - 1:
-        idxs.append(n - 1)
-    out = []
-    for i in idxs:
-        if not out or i > out[-1]:
-            out.append(i)
-    return out
+    return _apca_select_indices_util(y, max_error, segments, points)
 
 
 def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optional[Dict[str, Any]]) -> Tuple[List[int], str, Dict[str, Any]]:
-    """Select representative indices according to simplify spec.
-
-    Returns (indices, method_used, params_meta).
-    """
-    meta: Dict[str, Any] = {}
-    if not spec:
-        return list(range(len(x))), "none", meta
-    method = str(spec.get("method", SIMPLIFY_DEFAULT_METHOD)).lower().strip()
-    if method in ("lttb", "default"):
-        n_out = _choose_simplify_points(len(x), spec)
-        idxs = _lttb_select_indices(x, y, n_out)
-        meta.update({"points": n_out})
-        return idxs, SIMPLIFY_DEFAULT_METHOD, meta
-    if method == "rdp":
-        eps = spec.get("epsilon", None)
-        if eps is None:
-            eps = spec.get("tolerance", None)
-        if eps is None:
-            eps = spec.get("eps", None)
-        try:
-            eps_val = float(eps) if eps is not None else None
-        except Exception:
-            eps_val = None
-        # If epsilon provided, use it directly
-        if eps_val is not None and eps_val > 0:
-            idxs = _rdp_select_indices(x, y, eps_val)
-            meta.update({"epsilon": eps_val})
-            return idxs, "rdp", meta
-        # Else, auto-tune epsilon to hit target points
-        target = spec.get("points") or spec.get("target_points") or spec.get("max_points") or None
-        if target is None and spec.get("ratio") is not None:
-            try:
-                r = float(spec.get("ratio"))
-                if r > 0 and r < 1:
-                    target = max(3, int(round(len(x) * r)))
-            except Exception:
-                pass
-        # Provide default target when none supplied
-        if target is None:
-            target = _default_target_points(len(x))
-        try:
-            target_n = int(target) if target is not None else None
-        except Exception:
-            target_n = None
-        if target_n is not None and target_n < len(x):
-            idxs, eps_used = _rdp_autotune_epsilon(x, y, target_n)
-            meta.update({"epsilon": eps_used, "points": len(idxs), "auto_tuned": True})
-            return idxs, "rdp", meta
-        # Fallback to LTTB if neither epsilon nor target provided
-        n_out = _choose_simplify_points(len(x), spec)
-        idxs = _lttb_select_indices(x, y, n_out)
-        meta.update({"points": n_out, "fallback": f"rdp->{SIMPLIFY_DEFAULT_METHOD}"})
-        return idxs, SIMPLIFY_DEFAULT_METHOD, meta
-    if method == "pla":
-        # Prefer error bound; else segments/points uniform
-        max_error = spec.get("max_error", None)
-        try:
-            me = float(max_error) if max_error is not None else None
-        except Exception:
-            me = None
-        segments = spec.get("segments", None)
-        points = spec.get("points", None) or spec.get("target_points", None) or spec.get("max_points", None)
-        # If max_error provided, use it
-        if me is not None and me > 0:
-            idxs = _pla_select_indices(x, y, me, None, None)
-            meta.update({"max_error": me})
-            return idxs, "pla", meta
-        # If segments specified, do uniform segmentation
-        if segments is not None:
-            idxs = _pla_select_indices(x, y, None, segments, None)
-            meta.update({"segments": segments})
-            return idxs, "pla", meta
-        # If points specified, auto-tune max_error to hit points
-        try:
-            p = int(points) if points is not None else None
-        except Exception:
-            p = None
-        if p is None:
-            p = _default_target_points(len(x))
-        if p is not None and p < len(x):
-            idxs, me_used = _pla_autotune_max_error(x, y, p)
-            meta.update({"max_error": me_used, "points": len(idxs), "auto_tuned": True})
-            return idxs, "pla", meta
-        # Fallback to LTTB
-        n_out = _choose_simplify_points(len(x), spec)
-        idxs = _lttb_select_indices(x, y, n_out)
-        meta.update({"points": n_out, "fallback": f"pla->{SIMPLIFY_DEFAULT_METHOD}"})
-        return idxs, SIMPLIFY_DEFAULT_METHOD, meta
-    if method == "apca":
-        max_error = spec.get("max_error", None)
-        try:
-            me = float(max_error) if max_error is not None else None
-        except Exception:
-            me = None
-        segments = spec.get("segments", None)
-        points = spec.get("points", None) or spec.get("target_points", None) or spec.get("max_points", None)
-        if me is not None and me > 0:
-            idxs = _apca_select_indices(y, me, None, None)
-            meta.update({"max_error": me})
-            return idxs, "apca", meta
-        if segments is not None:
-            idxs = _apca_select_indices(y, None, segments, None)
-            meta.update({"segments": segments})
-            return idxs, "apca", meta
-        try:
-            p = int(points) if points is not None else None
-        except Exception:
-            p = None
-        if p is None:
-            p = _default_target_points(len(x))
-        if p is not None and p < len(x):
-            idxs, me_used = _apca_autotune_max_error(y, p)
-            meta.update({"max_error": me_used, "points": len(idxs), "auto_tuned": True})
-            return idxs, "apca", meta
-        # Fallback to LTTB
-        n_out = _choose_simplify_points(len(x), spec)
-        idxs = _lttb_select_indices(x, y, n_out)
-        meta.update({"points": n_out, "fallback": f"apca->{SIMPLIFY_DEFAULT_METHOD}"})
-        return idxs, SIMPLIFY_DEFAULT_METHOD, meta
-    # Unknown method -> default LTTB
-    n_out = _choose_simplify_points(len(x), spec)
-    idxs = _lttb_select_indices(x, y, n_out)
-    meta.update({"points": n_out, "fallback": f"{method}->{SIMPLIFY_DEFAULT_METHOD}"})
-    return idxs, SIMPLIFY_DEFAULT_METHOD, meta
+    return _select_indices_for_timeseries_util(x, y, spec)
 
 
 def _rdp_autotune_epsilon(x: List[float], y: List[float], target_points: int, max_iter: int = 24) -> Tuple[List[int], float]:
-    """Binary search epsilon so RDP keeps ~target_points. Returns (indices, epsilon)."""
-    n = len(x)
-    target = max(3, min(int(target_points), n))
-    if target >= n:
-        return list(range(n)), 0.0
-    # Upper bound: max vertical residual to line between endpoints
-    x0, y0 = x[0], y[0]
-    x1, y1 = x[-1], y[-1]
-    dx = x1 - x0
-    if dx == 0:
-        base = sum(y) / float(n)
-        hi = max(abs(v - base) for v in y) if n > 0 else 1.0
-    else:
-        m = (y1 - y0) / dx
-        hi = 0.0
-        for i in range(n):
-            yline = y0 + m * (x[i] - x0)
-            hi = max(hi, abs(y[i] - yline))
-    if hi <= 0:
-        rng = (max(y) - min(y)) if n > 1 else 1.0
-        hi = max(1e-12, rng)
-    lo = 0.0
-    best_idxs = list(range(n))
-    best_eps = lo
-    best_diff = abs(len(best_idxs) - target)
-    for _ in range(max_iter):
-        mid = (lo + hi) / 2.0
-        idxs = _rdp_select_indices(x, y, mid)
-        cnt = len(idxs)
-        diff = abs(cnt - target)
-        if diff < best_diff or (diff == best_diff and mid < best_eps):
-            best_idxs = idxs
-            best_eps = mid
-            best_diff = diff
-        if cnt > target:
-            lo = mid if mid > lo else lo + (hi - lo) * 0.5
-        elif cnt < target:
-            hi = mid
-        else:
-            break
-        if hi - lo <= 1e-12:
-            break
-    return best_idxs, float(best_eps)
+    return _rdp_autotune_epsilon_util(x, y, target_points, max_iter)
 
 
 def _pla_autotune_max_error(x: List[float], y: List[float], target_points: int, max_iter: int = 24) -> Tuple[List[int], float]:
-    """Binary search max_error so PLA keeps ~target_points. Returns (indices, max_error)."""
-    n = len(x)
-    target = max(3, min(int(target_points), n))
-    if target >= n:
-        return list(range(n)), 0.0
-    # Upper bound: max vertical residual to endpoints line (single segment acceptance)
-    x0, y0 = x[0], y[0]
-    x1, y1 = x[-1], y[-1]
-    dx = x1 - x0
-    if dx == 0:
-        base = sum(y) / float(n)
-        hi = max(abs(v - base) for v in y) if n > 0 else 1.0
-    else:
-        m = (y1 - y0) / dx
-        hi = 0.0
-        for i in range(n):
-            yline = y0 + m * (x[i] - x0)
-            hi = max(hi, abs(y[i] - yline))
-    if hi <= 0:
-        rng = (max(y) - min(y)) if n > 1 else 1.0
-        hi = max(1e-12, rng)
-    lo = 0.0
-    best_idxs = list(range(n))
-    best_me = lo
-    best_diff = abs(len(best_idxs) - target)
-    for _ in range(max_iter):
-        mid = (lo + hi) / 2.0
-        idxs = _pla_select_indices(x, y, mid, None, None)
-        cnt = len(idxs)
-        diff = abs(cnt - target)
-        if diff < best_diff or (diff == best_diff and mid < best_me):
-            best_idxs = idxs
-            best_me = mid
-            best_diff = diff
-        if cnt > target:
-            lo = mid if mid > lo else lo + (hi - lo) * 0.5
-        elif cnt < target:
-            hi = mid
-        else:
-            break
-        if hi - lo <= 1e-12:
-            break
-    return best_idxs, float(best_me)
+    return _pla_autotune_max_error_util(x, y, target_points, max_iter)
 
 
 def _apca_autotune_max_error(y: List[float], target_points: int, max_iter: int = 24) -> Tuple[List[int], float]:
-    """Binary search max_error so APCA keeps ~target_points. Returns (indices, max_error)."""
-    n = len(y)
-    target = max(3, min(int(target_points), n))
-    if target >= n:
-        return list(range(n)), 0.0
-    base = sum(y) / float(n)
-    hi = max(abs(v - base) for v in y) if n > 0 else 1.0
-    if hi <= 0:
-        rng = (max(y) - min(y)) if n > 1 else 1.0
-        hi = max(1e-12, rng)
-    lo = 0.0
-    best_idxs = list(range(n))
-    best_me = lo
-    best_diff = abs(len(best_idxs) - target)
-    for _ in range(max_iter):
-        mid = (lo + hi) / 2.0
-        idxs = _apca_select_indices(y, mid, None, None)
-        cnt = len(idxs)
-        diff = abs(cnt - target)
-        if diff < best_diff or (diff == best_diff and mid < best_me):
-            best_idxs = idxs
-            best_me = mid
-            best_diff = diff
-        if cnt > target:
-            lo = mid if mid > lo else lo + (hi - lo) * 0.5
-        elif cnt < target:
-            hi = mid
-        else:
-            break
-        if hi - lo <= 1e-12:
-            break
-    return best_idxs, float(best_me)
+    return _apca_autotune_max_error_util(y, target_points, max_iter)
 
 
 def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Optional[Dict[str, Any]]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
@@ -1564,159 +1153,21 @@ def _to_float_or_nan(x: Any) -> float:
 
 # ---- Technical Indicators (dynamic discovery and application) ----
 def _list_ta_indicators() -> List[Dict[str, Any]]:
-    """List TA indicators available via pandas_ta by inspecting the library directly.
-
-    Returns a list of dicts with: name, params (name,type,default), description.
-    """
-    ind_list: List[Dict[str, Any]] = []
-    seen = set()
-    
-    # Use pandas_ta's own indicator categories to find real indicators
-    categories = ['candles', 'momentum', 'overlap', 'performance', 'statistics', 'trend', 'volatility', 'volume', 'cycles']
-    
-    for category in categories:
-        try:
-            # Get the category module
-            cat_module = getattr(pta, category, None)
-            if not cat_module or not hasattr(cat_module, '__file__'):  # Check it's actually a module
-                continue
-                
-            # Look for indicator functions in this category
-            for func_name in dir(cat_module):
-                if func_name.startswith('_'):
-                    continue
-                    
-                func = getattr(cat_module, func_name, None)
-                if not callable(func):
-                    continue
-                    
-                name = func_name.lower()
-                if name in seen:
-                    continue
-                seen.add(name)
-                
-                try:
-                    sig = inspect.signature(func)
-                except (TypeError, ValueError):
-                    continue
-                    
-                # Collect parameters excluding implicit OHLCV columns
-                params = []
-                for p in sig.parameters.values():
-                    if p.name in {"open", "high", "low", "close", "volume"}:
-                        continue
-                    if p.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
-                        continue
-                    entry = {"name": p.name}
-                    if p.default is not inspect._empty and p.default is not None:
-                        entry["default"] = p.default
-                    params.append(entry)
-                    
-                # Get description
-                try:
-                    raw = pydoc.render_doc(func)
-                    desc = _clean_help_text(raw, func_name=name, func=func)
-                except Exception:
-                    desc = inspect.getdoc(func) or ''
-
-                # Try to infer missing defaults from the doc text
-                try:
-                    doc_text = inspect.getdoc(func) or raw if 'raw' in locals() else ''
-                    _infer_defaults_from_doc(name, doc_text, params)
-                except Exception:
-                    pass
-
-                ind_list.append({
-                    "name": name,
-                    "params": params,
-                    "description": desc,
-                    "category": category,
-                })
-        except Exception:
-            continue
-    
-    # Sort by name
-    ind_list.sort(key=lambda x: x["name"])
-    return ind_list
+    """Delegate to indicators_docs.list_ta_indicators() for discovery."""
+    return _list_ta_indicators_docs()
 
 
 def _infer_defaults_from_doc(func_name: str, doc_text: str, params: List[Dict[str, Any]]):
-    """Infer parameter defaults from doc_text when signature uses None but docs specify defaults.
-
-    Attempts two strategies:
-    1) Parse a signature-like line: func_name(param=123, other=4.5)
-    2) Parse prose patterns: 'param ... Default: 20' or 'param=20' in descriptions
-    """
-    if not doc_text:
-        return
-    text = doc_text
-    # Remove overstrikes just in case
-    text = re.sub(r'.\x08', '', text)
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    # Strategy 1: look for a signature line containing func_name(
-    sig_line = None
-    for ln in lines:
-        if ln.startswith(func_name + '(') or re.match(rf"^\s*{re.escape(func_name)}\s*\(.*\)", ln):
-            sig_line = ln
-            break
-    if sig_line:
-        inside = sig_line[sig_line.find('(') + 1 : sig_line.rfind(')')] if '(' in sig_line and ')' in sig_line else ''
-        for part in re.split(r'[\s,]+', inside):
-            if '=' in part:
-                k, v = part.split('=', 1)
-                k = k.strip()
-                v = v.strip().strip(',)')
-                num = _try_number(v)
-                if num is not None:
-                    for p in params:
-                        if p.get('name') == k and 'default' not in p:
-                            p['default'] = num
-    # Strategy 2: prose patterns like 'length ... Default: 20'
-    for p in params:
-        if 'default' in p:
-            continue
-        k = p.get('name')
-        if not k:
-            continue
-        m = re.search(rf"{re.escape(k)}[^\n]*?(?:Default|default)\s*:?[\s]*([0-9]+(?:\.[0-9]+)?)", text)
-        if m:
-            p['default'] = _try_number(m.group(1))
+    return _infer_defaults_from_doc_docs(func_name, doc_text, params)
 
 
 def _try_number(s: str):
-    try:
-        if '.' in s:
-            return float(s)
-        return int(s)
-    except Exception:
-        return None
+    from .indicators_docs import _try_number as _tn
+    return _tn(s)
 
 
 def _clean_help_text(text: str, func_name: Optional[str] = None, func: Optional[Any] = None) -> str:
-    """Return full pydoc help text (cleaned), starting at the function signature.
-
-    - Always uses the rendered pydoc text provided as `text`
-    - Removes overstrike sequences
-    - Drops everything before the first signature line
-    - Cleans trailing "method of ... instance" blurb on the signature line and direct next line
-    """
-    if not isinstance(text, str):
-        return ''
-    cleaned = re.sub(r'.\x08', '', text)
-    lines = [ln.rstrip() for ln in cleaned.splitlines()]
-    # Find signature line
-    sig_re = re.compile(rf"^\s*{re.escape(func_name)}\s*\(.*\)") if func_name else re.compile(r"^\s*\w+\s*\(.*\)")
-    start = 0
-    for i, ln in enumerate(lines):
-        if sig_re.match(ln):
-            start = i
-            break
-    kept = lines[start:]
-    if kept:
-        kept[0] = re.sub(r"\s+method of.*", "", kept[0], flags=re.IGNORECASE)
-        if len(kept) > 1 and re.search(r"method of", kept[1], re.IGNORECASE):
-            kept.pop(1)
-    return "\n".join(kept).strip()
+    return _clean_help_text_docs(text, func_name=func_name)
 
 
 
@@ -2899,7 +2350,7 @@ def fetch_candles(
                 except Exception:
                     default_pts = max(3, int(round(original_rows * SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT)))
                 simplify_eff['points'] = default_pts
-        df, simplify_meta = _simplify_dataframe_rows(df, headers, simplify_eff if simplify_eff is not None else simplify)
+        df, simplify_meta = _simplify_dataframe_rows_ext(df, headers, simplify_eff if simplify_eff is not None else simplify)
         # If simplify changed representation, respect returned headers
         if simplify_meta is not None and 'headers' in simplify_meta and isinstance(simplify_meta['headers'], list):
             headers = [h for h in simplify_meta['headers'] if isinstance(h, str)]
@@ -3091,7 +2542,7 @@ def fetch_ticks(
         simplify_used = simplify_eff if simplify_eff is not None else simplify
         _mode = str((simplify_used or {}).get('mode', SIMPLIFY_DEFAULT_MODE)).lower().strip() if simplify_present else SIMPLIFY_DEFAULT_MODE
         if simplify_present and _mode in ('approximate', 'resample'):
-            df_out, simplify_meta = _simplify_dataframe_rows(df_ticks, headers, simplify_used)
+            df_out, simplify_meta = _simplify_dataframe_rows_ext(df_ticks, headers, simplify_used)
             rows = _format_numeric_rows_from_df_util(df_out, headers)
             payload = _csv_from_rows_util(headers, rows)
             payload.update({
@@ -3120,7 +2571,7 @@ def fetch_ticks(
                     cols.append('last')
                 if has_volume:
                     cols.append('volume')
-                n_out = _choose_simplify_points(original_count, simplify_used)
+                n_out = _choose_simplify_points_util(original_count, simplify_used)
                 per = max(3, int(round(n_out / max(1, len(cols)))))
                 idx_set: set = set([0, original_count - 1])
                 params_accum: Dict[str, Any] = {}
@@ -4525,118 +3976,18 @@ _list_ta_indicators = _list_ta_indicators_util
 _parse_ti_specs = _parse_ti_specs_util
 _apply_denoise = _apply_denoise_util
 
-# --- Attach shared schemas to MCP tools for discoverability ---
-def _server_shared_defs() -> Dict[str, Any]:
-    defs: Dict[str, Any] = {}
-    try:
-        defs.update({
-            "OhlcvChar": {"type": "string", "enum": ["O","H","L","C","V"], "description": "OHLCV column code"},
-            "DenoiseMethod": {"type": "string", "enum": list(_DENOISE_METHODS)},
-            "SimplifyMode": {"type": "string", "enum": list(_SIMPLIFY_MODES)},
-            "SimplifyMethod": {"type": "string", "enum": list(_SIMPLIFY_METHODS)},
-            "EncodeSchema": {"type": "string", "enum": ["envelope","delta"]},
-            "SymbolicSchema": {"type": "string", "enum": ["sax"]},
-            "PivotMethod": {"type": "string", "enum": list(_PIVOT_METHODS)},
-            "ForecastMethod": {"type": "string", "enum": list(_FORECAST_METHODS)},
-            "QuantitySpec": {"type": "string", "enum": ["price","return","volatility"]},
-            "VolatilityMethod": {"type": "string", "enum": [
-                "ewma","parkinson","gk","rs","yang_zhang","rolling_std",
-                "garch","egarch","gjr_garch",
-                "arima","sarima","ets","theta"
-            ]},
-            "WhenSpec": {"type": "string", "enum": ["pre_ti","post_ti"]},
-            "CausalitySpec": {"type": "string", "enum": ["causal","zero_phase"]},
-            "TargetSpec": {"type": "string", "enum": ["price","return"]},
-        })
-        if _CATEGORY_CHOICES:
-            defs["IndicatorCategory"] = {"type": "string", "enum": list(_CATEGORY_CHOICES)}
-        if _INDICATOR_NAME_CHOICES:
-            defs["IndicatorName"] = {"type": "string", "enum": list(_INDICATOR_NAME_CHOICES)}
-    except Exception:
-        pass
-    return defs
-
-def _extract_func_from_tool(tool_obj: Any):
-    for attr in ("func", "function", "callable", "handler", "wrapped", "_func"):
-        try:
-            val = getattr(tool_obj, attr)
-            if callable(val):
-                return val
-        except Exception:
-            continue
-    return tool_obj if callable(tool_obj) else None
-
-def _attach_schemas_to_tools():
-    try:
-        registry = None
-        for attr in ("tools", "_tools", "registry", "tool_registry", "_tool_registry"):
-            reg = getattr(mcp, attr, None)
-            if reg and hasattr(reg, 'items'):
-                registry = reg
-                break
-        if not registry:
-            return
-        shared_defs = _server_shared_defs()
-        for name, obj in list(registry.items()):
-            func = _extract_func_from_tool(obj)
-            if not callable(func):
-                continue
-            info = _get_function_info(func)
-            schema = _build_minimal_schema(info)
-            # Merge shared defs and apply timeframe ref
-            schema = _enrich_schema_with_shared_defs(schema, info)
-            try:
-                if "$defs" not in schema:
-                    schema["$defs"] = {}
-                # Bring in server shared enums and complex nested specs
-                schema["$defs"].update({k: v for k, v in shared_defs.items() if k not in schema["$defs"]})
-                schema["$defs"].update({k: v for k, v in _complex_defs().items() if k not in schema["$defs"]})
-            except Exception:
-                pass
-            # Map method-like params to specific shared enums by tool name
-            try:
-                params = schema.get("parameters", {}).get("properties", {})
-                if name == "forecast" and "method" in params:
-                    params["method"] = {"$ref": "#/$defs/ForecastMethod"}
-                    if "target" in params:
-                        params["target"] = {"$ref": "#/$defs/TargetSpec"}
-                    if "quantity" in params:
-                        params["quantity"] = {"$ref": "#/$defs/QuantitySpec"}
-                    # Optional denoise in forecast
-                    if "denoise" in params:
-                        params["denoise"] = {"$ref": "#/$defs/DenoiseSpec"}
-                    if "params" in params:
-                        # Leave method-specific params open-ended
-                        params["params"] = {"type": "object", "additionalProperties": True}
-                if name == "compute_pivot_points" and "method" in params:
-                    params["method"] = {"$ref": "#/$defs/PivotMethod"}
-                if name == "list_indicators" and "category" in params and "IndicatorCategory" in schema.get("$defs", {}):
-                    params["category"] = {"$ref": "#/$defs/IndicatorCategory"}
-                if name == "describe_indicator" and "name" in params and "IndicatorName" in schema.get("$defs", {}):
-                    params["name"] = {"$ref": "#/$defs/IndicatorName"}
-                if name == "fetch_candles":
-                    if "indicators" in params:
-                        params["indicators"] = {"type": "array", "items": {"$ref": "#/$defs/IndicatorSpec"}}
-                    if "denoise" in params:
-                        params["denoise"] = {"$ref": "#/$defs/DenoiseSpec"}
-                    if "simplify" in params:
-                        params["simplify"] = {"$ref": "#/$defs/SimplifySpec"}
-                if name == "fetch_ticks":
-                    if "simplify" in params:
-                        params["simplify"] = {"$ref": "#/$defs/SimplifySpec"}
-            except Exception:
-                pass
-            # Attach to both tool object and underlying function for consumers
-            try:
-                setattr(obj, "schema", schema)
-            except Exception:
-                pass
-            try:
-                setattr(func, "schema", schema)
-            except Exception:
-                pass
-    except Exception:
-        pass
+from .schema_attach import attach_schemas_to_tools as _attach_schemas_to_tools_ext
 
 # Attach schemas at import time so external clients can discover them
-_attach_schemas_to_tools()
+try:
+    _attach_schemas_to_tools_ext(mcp, {
+        "DENOISE_METHODS": _DENOISE_METHODS,
+        "SIMPLIFY_MODES": _SIMPLIFY_MODES,
+        "SIMPLIFY_METHODS": _SIMPLIFY_METHODS,
+        "PIVOT_METHODS": _PIVOT_METHODS,
+        "FORECAST_METHODS": _FORECAST_METHODS,
+        "CATEGORY_CHOICES": _CATEGORY_CHOICES if '_CATEGORY_CHOICES' in globals() else [],
+        "INDICATOR_NAME_CHOICES": _INDICATOR_NAME_CHOICES if '_INDICATOR_NAME_CHOICES' in globals() else [],
+    })
+except Exception:
+    pass
