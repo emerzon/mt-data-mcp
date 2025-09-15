@@ -10,6 +10,7 @@ from .constants import TIMEFRAME_MAP
 from ..utils.mt5 import _mt5_copy_rates_from, _mt5_epoch_to_utc
 from ..utils.utils import _csv_from_rows_util, _format_time_minimal_util, _format_time_minimal_local_util, _use_client_tz_util, _time_format_from_epochs_util, _maybe_strip_year_util, _style_time_format_util, to_float_np as __to_float_np
 from ..patterns.classic import detect_classic_patterns as _detect_classic_patterns, ClassicDetectorConfig as _ClassicCfg
+from ..patterns.eliott import detect_elliott_waves as _detect_elliott_waves, ElliottWaveConfig as _ElliottCfg
 from .server import mcp, _auto_connect_wrapper, _ensure_symbol_ready
 from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
 import MetaTrader5 as mt5
@@ -347,3 +348,128 @@ def pattern_detect_classic(
         return resp
     except Exception as e:
         return {"error": f"Error detecting classic patterns: {str(e)}"}
+
+
+@mcp.tool()
+@_auto_connect_wrapper
+def pattern_detect_elliott_wave(
+    symbol: str,
+    timeframe: TimeframeLiteral = "H1",
+    lookback: int = 1500,
+    denoise: Optional[Dict[str, Any]] = None,
+    config: Optional[Dict[str, Any]] = None,
+    include_series: bool = False,
+    series_time: str = "string",  # 'string' or 'epoch'
+) -> Dict[str, Any]:
+    """Detect Elliott Wave patterns.
+
+    - Pulls last `lookback` bars for `symbol`/`timeframe`.
+    - Applies optional denoise.
+    - Returns a list of detected Elliott Wave patterns with confidence scores.
+    """
+    try:
+        if timeframe not in TIMEFRAME_MAP:
+            return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+        mt5_tf = TIMEFRAME_MAP[timeframe]
+        # Ensure symbol is visible
+        _info = mt5.symbol_info(symbol)
+        _was_visible = bool(_info.visible) if _info is not None else None
+        try:
+            if _was_visible is False:
+                mt5.symbol_select(symbol, True)
+        except Exception:
+            pass
+        # Fetch bars
+        utc_now = datetime.utcnow()
+        count = max(400, int(lookback) + 2)
+        rates = _mt5_copy_rates_from(symbol, mt5_tf, utc_now, count)
+        if rates is None or len(rates) < 100:
+            return {"error": f"Failed to fetch sufficient bars for {symbol}"}
+        df = pd.DataFrame(rates)
+        if 'volume' not in df.columns and 'tick_volume' in df.columns:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                df['volume'] = df['tick_volume']
+        # Drop forming last bar for stability
+        if len(df) >= 2:
+            df = df.iloc[:-1]
+        if denoise:
+            try:
+                dn = _normalize_denoise_spec(denoise, default_when='pre_ti')
+                if dn:
+                    _apply_denoise_util(df, dn, default_when='pre_ti')
+            except Exception:
+                pass
+        # Clip to lookback
+        if len(df) > int(lookback):
+            df = df.iloc[-int(lookback):].copy()
+
+        # Build config
+        cfg = _ElliottCfg()
+        if isinstance(config, dict):
+            for k, v in config.items():
+                if hasattr(cfg, k):
+                    try:
+                        setattr(cfg, k, type(getattr(cfg, k))(v))
+                    except Exception:
+                        try:
+                            setattr(cfg, k, v)
+                        except Exception:
+                            pass
+
+        # Detect
+        pats = _detect_elliott_waves(df, cfg)
+
+        # Serialize
+        def _round(x):
+            try:
+                return float(np.round(float(x), 8))
+            except Exception:
+                return x
+        out_list = []
+        for p in pats:
+            try:
+                # Format times per global time format
+                st_epoch = float(p.start_time) if p.start_time is not None else None
+                et_epoch = float(p.end_time) if p.end_time is not None else None
+                try:
+                    start_date = _format_time_minimal_util(st_epoch) if st_epoch is not None else None
+                except Exception:
+                    start_date = None
+                try:
+                    end_date = _format_time_minimal_util(et_epoch) if et_epoch is not None else None
+                except Exception:
+                    end_date = None
+                d = {
+                    "wave_type": p.wave_type,
+                    "confidence": float(max(0.0, min(1.0, p.confidence))),
+                    "start_index": int(p.start_index),
+                    "end_index": int(p.end_index),
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "details": {k: _round(v) for k, v in (p.details or {}).items()},
+                }
+                out_list.append(d)
+            except Exception:
+                continue
+        
+        resp: Dict[str, Any] = {
+            "success": True,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "lookback": int(lookback),
+            "patterns": out_list,
+            "n_patterns": int(len(out_list)),
+        }
+        if include_series:
+            resp["series_close"] = [float(v) for v in __to_float_np(df.get('close')).tolist()]
+            if 'time' in df.columns:
+                if str(series_time).lower() == 'epoch':
+                    resp["series_epoch"] = [float(v) for v in __to_float_np(df.get('time')).tolist()]
+                else:
+                    resp["series_time"] = [
+                        _format_time_minimal_util(float(v)) for v in __to_float_np(df.get('time')).tolist()
+                    ]
+        return resp
+    except Exception as e:
+        return {"error": f"Error detecting Elliott Wave patterns: {str(e)}"}

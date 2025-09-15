@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 import dateparser
 
-from ..core.config import mt5_config
 from ..core.constants import PRECISION_ABS_TOL, PRECISION_MAX_DECIMALS, PRECISION_REL_TOL, TIME_DISPLAY_FORMAT
 
 
@@ -52,6 +51,7 @@ def _format_time_minimal_local(epoch_seconds: float) -> str:
     Normalized format everywhere: YYYY-MM-DD HH:MM:SS (local/client tz)
     Falls back to UTC if tz resolution fails.
     """
+    from ..core.config import mt5_config
     try:
         tz = mt5_config.get_client_tz()
         if tz is not None:
@@ -84,6 +84,38 @@ _use_client_tz_util = _use_client_tz
 
 
 def _resolve_client_tz(client_tz_param: object):
+    from ..core.config import mt5_config
+    try:
+        if isinstance(client_tz_param, str):
+            v = client_tz_param.strip()
+            vlow = v.lower()
+            if vlow == 'utc':
+                return None
+            if vlow in ('auto', 'client', ''):
+                tz = None
+                try:
+                    tz = mt5_config.get_client_tz()
+                except Exception:
+                    tz = None
+                return tz
+            try:
+                import pytz  # type: ignore
+                return pytz.timezone(v)
+            except Exception:
+                try:
+                    return mt5_config.get_client_tz()
+                except Exception:
+                    return None
+        if isinstance(client_tz_param, bool):
+            if client_tz_param:
+                try:
+                    return mt5_config.get_client_tz()
+                except Exception:
+                    return None
+            return None
+    except Exception:
+        pass
+    return None
     try:
         if isinstance(client_tz_param, str):
             v = client_tz_param.strip()
