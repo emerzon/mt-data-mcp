@@ -32,11 +32,11 @@ class ClassicDetectorConfig:
     r2_weight: float = 0.35
     geometry_weight: float = 0.30
     # Robust fitting and shape checks
-    use_robust_fit: bool = False     # use RANSAC for line fits when available
+    use_robust_fit: bool = True     # use RANSAC for line fits when available
     ransac_residual_pct: float = 0.15  # residual threshold as fraction of median price
     ransac_min_samples: int = 2
     ransac_max_trials: int = 50
-    use_dtw_check: bool = False      # optional DTW shape confirmation for select patterns
+    use_dtw_check: bool = True      # optional DTW shape confirmation for select patterns
     dtw_paa_len: int = 80            # PAA downsampling length for DTW
     dtw_max_dist: float = 0.6        # acceptance threshold after z-norm
 
