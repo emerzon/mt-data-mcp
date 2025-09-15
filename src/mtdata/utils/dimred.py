@@ -294,8 +294,7 @@ class TSNEReducer(DimReducer):
         return False
 
     def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "TSNEReducer":
-        # Fit does nothing beyond storing that fit was called
-        self._fitted_ = True
+        # Fit returns self; TSNE computes embedding in fit_transform
         return self
 
     def transform(self, X: np.ndarray) -> np.ndarray:

@@ -45,10 +45,6 @@ class ClassicPatternResult:
     details: Dict[str, Any]
 
 
-def _pct(v: float) -> float:
-    return float(v) * 100.0
-
-
 def _level_close(a: float, b: float, tol_pct: float) -> bool:
     if a == 0 or b == 0:
         return abs(a - b) <= 1e-12
@@ -85,8 +81,7 @@ def _detect_pivots_close(close: np.ndarray, cfg: ClassicDetectorConfig) -> Tuple
     return peaks.astype(int), troughs.astype(int)
 
 
-def _line_value_at(slope: float, intercept: float, x: float) -> float:
-    return float(slope) * float(x) + float(intercept)
+    
 
 
 def _last_touch_indexes(bound_y: np.ndarray, idxs: np.ndarray, y: np.ndarray, tol: float) -> List[int]:
@@ -608,7 +603,6 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         half = W // 2
         left = seg[:half]; right = seg[half:]
         # Measure width via rolling (max-min)
-        k = max(5, W // 10)
         def width(a: np.ndarray) -> float:
             return float(np.max(a) - np.min(a))
         expanding = width(left[:half//2]) < width(left[half//2:])
