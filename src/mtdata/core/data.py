@@ -228,9 +228,6 @@ def fetch_candles(
             if has_real_volume:
                 headers.append("real_volume")
         
-        csv_header = ",".join(headers)
-        csv_rows = []
-        
         # Construct DataFrame to support indicators and consistent CSV building
         df = pd.DataFrame(rates)
         # Normalize MT5 epochs to UTC if configured

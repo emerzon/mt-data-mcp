@@ -9,7 +9,6 @@ DATA_POLL_INTERVAL = 0.2     # seconds between readiness polls
 FETCH_RETRY_ATTEMPTS = 3     # attempts to fetch data if none returned
 FETCH_RETRY_DELAY = 0.3      # delay between fetch retries
 SANITY_BARS_TOLERANCE = 3    # acceptable lag in bars when checking freshness
-TI_NAN_RETRY_ATTEMPTS = 1    # extra attempts if TI columns contain NaNs
 TI_NAN_WARMUP_FACTOR = 2     # multiply warmup by this on retry
 TI_NAN_WARMUP_MIN_ADD = 50   # at least add this many bars on retry
 PRECISION_REL_TOL = 1e-6     # relative tolerance for rounding optimization

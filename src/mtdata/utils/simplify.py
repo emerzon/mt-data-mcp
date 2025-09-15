@@ -261,6 +261,43 @@ def _max_line_error(x: List[float], y: List[float], i0: int, i1: int) -> float:
     return m
 
 
+def _finalize_indices(n: int, idxs: List[int]) -> List[int]:
+    """Ensure last index included and indices are strictly increasing unique."""
+    if not idxs:
+        return list(range(n))
+    if idxs[-1] != n - 1:
+        idxs.append(n - 1)
+    out: List[int] = []
+    for i in idxs:
+        ii = int(i)
+        if not out or ii > out[-1]:
+            out.append(ii)
+    return out
+
+
+def _greedy_segment_indices(n: int, check_ok: Callable[[int, int], bool]) -> List[int]:
+    """Generic greedy grow-and-split segment index selector using a monotone check.
+
+    Expands [start:end] while check_ok(start,end) holds, then commits the last good end.
+    """
+    idxs: List[int] = [0]
+    start = 0
+    while start < n - 1:
+        end = start + 1
+        last_good = end
+        while end < n:
+            if check_ok(start, end):
+                last_good = end
+                end += 1
+            else:
+                break
+        if last_good == start:
+            last_good = start + 1
+        idxs.append(last_good)
+        start = last_good
+    return idxs
+
+
 def _pla_select_indices(
     x: List[float],
     y: List[float],
@@ -278,29 +315,8 @@ def _pla_select_indices(
         return _uniform_segment_indices(n, int(segments or 1))
     if max_error is None or max_error <= 0:
         return list(range(n))
-    idxs = [0]
-    start = 0
-    while start < n - 1:
-        end = start + 1
-        last_good = end
-        while end < n:
-            err = _max_line_error(x, y, start, end)
-            if err <= max_error:
-                last_good = end
-                end += 1
-            else:
-                break
-        if last_good == start:
-            last_good = start + 1
-        idxs.append(last_good)
-        start = last_good
-    if idxs[-1] != n - 1:
-        idxs.append(n - 1)
-    out = []
-    for i in idxs:
-        if not out or i > out[-1]:
-            out.append(i)
-    return out
+    idxs = _greedy_segment_indices(n, lambda s, e: _max_line_error(x, y, s, e) <= float(max_error))
+    return _finalize_indices(n, idxs)
 
 
 def _apca_select_indices(
@@ -319,31 +335,13 @@ def _apca_select_indices(
         return _uniform_segment_indices(n, int(segments or 1))
     if max_error is None or max_error <= 0:
         return list(range(n))
-    idxs = [0]
-    start = 0
-    while start < n - 1:
-        end = start + 1
-        last_good = end
-        while end < n:
-            seg = y[start:end + 1]
-            mean = sum(seg) / float(len(seg))
-            err = max(abs(v - mean) for v in seg)
-            if err <= max_error:
-                last_good = end
-                end += 1
-            else:
-                break
-        if last_good == start:
-            last_good = start + 1
-        idxs.append(last_good)
-        start = last_good
-    if idxs[-1] != n - 1:
-        idxs.append(n - 1)
-    out = []
-    for i in idxs:
-        if not out or i > out[-1]:
-            out.append(i)
-    return out
+    def _ok(s: int, e: int) -> bool:
+        seg = y[s:e + 1]
+        mean = sum(seg) / float(len(seg))
+        err = max(abs(v - mean) for v in seg)
+        return err <= float(max_error)
+    idxs = _greedy_segment_indices(n, _ok)
+    return _finalize_indices(n, idxs)
 
 
 def _rdp_autotune_epsilon(x: List[float], y: List[float], target_points: int, max_iter: int = 24) -> Tuple[List[int], float]:

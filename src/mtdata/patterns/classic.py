@@ -161,6 +161,17 @@ def _count_touches(upper: np.ndarray, lower: np.ndarray,
     return touches
 
 
+def _is_converging(upper: np.ndarray, lower: np.ndarray, k: int, n: int) -> bool:
+    """Heuristic to detect converging lines over recent window vs past window."""
+    span = upper - lower
+    last = max(5, int(k))
+    recent = float(np.mean(span[-last:])) if span.size >= last else float(np.mean(span))
+    past_win = max(20, 2 * int(k))
+    prev_win = span[-past_win:-last] if n > past_win else span[:max(1, span.size // 2)]
+    past = float(np.mean(prev_win)) if prev_win.size > 0 else recent * 1.2
+    return bool(recent < past)
+
+
 def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfig] = None) -> List[ClassicPatternResult]:
     """Detect classic chart patterns on OHLCV DataFrame with 'time' and 'close' columns.
 
@@ -315,17 +326,9 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         if k < 4:
             return out
         ih = peaks[-k:]; il = troughs[-k:]
-        sh, bh, r2h = _fit_line(ih.astype(float), c[ih])
-        sl, bl, r2l = _fit_line(il.astype(float), c[il])
+        sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(ih, il, c, n)
         # Lines must converge: distance decreasing toward recent bars
-        x = np.arange(n, dtype=float)
-        top = sh * x + bh
-        bot = sl * x + bl
-        # ensure a sensible region where top>bot (no-op: retained for future use)
-        _ = (top - bot) > 0
-        dist_recent = float(np.mean((top - bot)[-max(5, k):]))
-        dist_past = float(np.mean((top - bot)[-max(20, 2*k):-max(5, k)])) if n > max(20, 2*k) else dist_recent * 1.2
-        converging = dist_recent < dist_past
+        converging = _is_converging(top, bot, k, n)
         tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
         touches = _count_touches(top, bot, ih, il, c, tol_abs)
         if converging and touches >= cfg.min_channel_touches - 1:
@@ -362,44 +365,18 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         if k < 4:
             return out
         ih = peaks[-k:]; il = troughs[-k:]
-        sh, bh, r2h = _fit_line(ih.astype(float), c[ih])
-        sl, bl, r2l = _fit_line(il.astype(float), c[il])
-        x = np.arange(n, dtype=float)
-        top = sh * x + bh
-        bot = sl * x + bl
-        dist_recent = float(np.mean((top - bot)[-max(5, k):]))
-        dist_past = float(np.mean((top - bot)[-max(20, 2*k):-max(5, k)])) if n > max(20, 2*k) else dist_recent * 1.2
-        converging = dist_recent < dist_past
+        sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(ih, il, c, n)
+        converging = _is_converging(top, bot, k, n)
         same_sign = (sh > 0 and sl > 0) or (sh < 0 and sl < 0)
-        touches = len(_last_touch_indexes(top, ih, c, abs(np.median(c))*(cfg.same_level_tol_pct/100.0))) + \
-                  len(_last_touch_indexes(bot, il, c, abs(np.median(c))*(cfg.same_level_tol_pct/100.0)))
+        tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
+        touches = _count_touches(top, bot, ih, il, c, tol_abs)
         if converging and same_sign and touches >= cfg.min_channel_touches - 1:
             name = "Rising Wedge" if sh > 0 and sl > 0 else "Falling Wedge"
             conf = _conf(touches, min(r2h, r2l), 1.0)
-            base = ClassicPatternResult(
-                name=name,
-                status="forming",
-                confidence=conf,
-                start_index=int(min(ih[0], il[0])),
-                end_index=int(max(ih[-1], il[-1])),
-                start_time=float(t[int(min(ih[0], il[0]))]) if t.size else None,
-                end_time=float(t[int(max(ih[-1], il[-1]))]) if t.size else None,
-                details={
-                    "top_slope": float(sh),
-                    "bottom_slope": float(sl),
-                },
-            )
+            base = _result(name, "forming", conf, int(min(ih[0], il[0])), int(max(ih[-1], il[-1])), t,
+                           {"top_slope": float(sh), "bottom_slope": float(sl)})
             out.append(base)
-            out.append(ClassicPatternResult(
-                name="Wedge",
-                status=base.status,
-                confidence=base.confidence * 0.95,
-                start_index=base.start_index,
-                end_index=base.end_index,
-                start_time=base.start_time,
-                end_time=base.end_time,
-                details=base.details,
-            ))
+            out.append(_alias(base, "Wedge", 0.95))
         return out
 
     results.extend(_try_wedges())
