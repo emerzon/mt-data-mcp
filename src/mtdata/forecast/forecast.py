@@ -1100,7 +1100,6 @@ def forecast(
             try:
                 from mlforecast import MLForecast as _MLForecast  # type: ignore
                 from sklearn.ensemble import RandomForestRegressor as _RF  # type: ignore
-                from utilsforecast.features import time_features as _time_features  # type: ignore
                 import pandas as _pd
             except Exception as ex:
                 return {"error": f"Failed to import mlforecast/sklearn: {ex}"}
@@ -1759,16 +1758,8 @@ def forecast(
             pass
         return {"error": f"Error computing forecast: {str(e)}", "debug": dbg}
 
-
-# pattern_prepare_index has been removed; pattern_search builds/loads indexes on demand.
-
-
-# pattern_search_recent removed; use pattern_search.
-    try:
-        if timeframe not in TIMEFRAME_MAP:
-            return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
-        # Ensure cached index
-        dn_key = _denoise_cache_key(denoise)
+# pattern_prepare_index has been removed; pattern search moved to dedicated module.
+"""
         eff_lb = int(lookback) if lookback is not None else None
         # Include dimension reduction in key when provided
         if dimred_method and str(dimred_method).lower() not in ("", "none"):
@@ -2197,3 +2188,4 @@ def forecast(
     except Exception as e:
         return {"error": f"Error in pattern search: {str(e)}"}
 
+"""

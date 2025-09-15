@@ -3,7 +3,7 @@ Simplification helpers extracted for reuse across server tools.
 
 Contains target-point selection utilities and core selection algorithms.
 """
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Callable
 import math
 
 # Local defaults to avoid circular import with core package during initialization.
@@ -136,6 +136,88 @@ def _point_line_distance(px: float, py: float, x1: float, y1: float, x2: float, 
         return 0.0
 
 
+def _uniform_segment_indices(n: int, segments: int) -> List[int]:
+    """Return indices that split a sequence of length n into `segments` segments."""
+    if n <= 2 or segments <= 1:
+        return list(range(n))
+    segments = max(1, min(int(segments), n - 1))
+    idxs = [0]
+    for k in range(1, segments):
+        idxs.append(int(round(k * (n - 1) / segments)))
+    idxs.append(n - 1)
+    return sorted(set(idxs))
+
+
+def _line_deviation_hi(x: List[float], y: List[float]) -> float:
+    """Compute a robust upper bound for line-based deviation in [x,y]."""
+    n = len(x)
+    if n == 0:
+        return 1.0
+    x0, y0 = x[0], y[0]
+    x1, y1 = x[-1], y[-1]
+    dx = x1 - x0
+    if dx == 0:
+        base = sum(y) / float(n)
+        return max(abs(v - base) for v in y) if n > 0 else 1.0
+    m = (y1 - y0) / dx
+    hi = 0.0
+    for i in range(n):
+        yline = y0 + m * (x[i] - x0)
+        hi = max(hi, abs(y[i] - yline))
+    if hi <= 0:
+        rng = (max(y) - min(y)) if n > 1 else 1.0
+        hi = max(1e-12, rng)
+    return float(hi)
+
+
+def _abs_deviation_hi(y: List[float]) -> float:
+    """Upper bound for absolute deviation from the mean for APCA."""
+    n = len(y)
+    if n == 0:
+        return 1.0
+    base = sum(y) / float(n)
+    hi = max(abs(v - base) for v in y) if n > 0 else 1.0
+    if hi <= 0:
+        rng = (max(y) - min(y)) if n > 1 else 1.0
+        hi = max(1e-12, rng)
+    return float(hi)
+
+
+def _binary_search_param(
+    target_points: int,
+    lo: float,
+    hi: float,
+    iter_limit: int,
+    compute_indices: Callable[[float], List[int]],
+) -> Tuple[List[int], float]:
+    """Generic binary search to find a parameter so that indices length ~ target_points.
+
+    Returns (best_indices, best_param). On ties, prefers smaller parameter value.
+    """
+    target = max(3, int(target_points))
+    best_idxs = compute_indices(lo)
+    best_p = lo
+    best_diff = abs(len(best_idxs) - target)
+    for _ in range(max(1, int(iter_limit))):
+        mid = (lo + hi) / 2.0
+        idxs = compute_indices(mid)
+        cnt = len(idxs)
+        diff = abs(cnt - target)
+        if diff < best_diff or (diff == best_diff and mid < best_p):
+            best_idxs = idxs
+            best_p = mid
+            best_diff = diff
+        if cnt > target:
+            lo = mid if mid > lo else lo + (hi - lo) * 0.5
+        elif cnt < target:
+            hi = mid
+        else:
+            break
+        if hi - lo <= 1e-12:
+            break
+    return best_idxs, float(best_p)
+
+
 def _rdp_select_indices(x: List[float], y: List[float], epsilon: float) -> List[int]:
     """Douglas–Peucker simplification returning kept indices."""
     try:
@@ -193,12 +275,7 @@ def _pla_select_indices(
     if (max_error is None or max_error <= 0) and (segments or points):
         if points and (segments is None):
             segments = max(1, int(points) - 1)
-        segments = max(1, min(int(segments or 1), n - 1))
-        idxs = [0]
-        for k in range(1, segments):
-            idxs.append(int(round(k * (n - 1) / segments)))
-        idxs.append(n - 1)
-        return sorted(set(idxs))
+        return _uniform_segment_indices(n, int(segments or 1))
     if max_error is None or max_error <= 0:
         return list(range(n))
     idxs = [0]
@@ -239,12 +316,7 @@ def _apca_select_indices(
     if (max_error is None or max_error <= 0) and (segments or points):
         if points and (segments is None):
             segments = max(1, int(points) - 1)
-        segments = max(1, min(int(segments or 1), n - 1))
-        idxs = [0]
-        for k in range(1, segments):
-            idxs.append(int(round(k * (n - 1) / segments)))
-        idxs.append(n - 1)
-        return sorted(set(idxs))
+        return _uniform_segment_indices(n, int(segments or 1))
     if max_error is None or max_error <= 0:
         return list(range(n))
     idxs = [0]
@@ -280,43 +352,9 @@ def _rdp_autotune_epsilon(x: List[float], y: List[float], target_points: int, ma
     target = max(3, min(int(target_points), n))
     if target >= n:
         return list(range(n)), 0.0
-    x0, y0 = x[0], y[0]
-    x1, y1 = x[-1], y[-1]
-    dx = x1 - x0
-    if dx == 0:
-        base = sum(y) / float(n)
-        hi = max(abs(v - base) for v in y) if n > 0 else 1.0
-    else:
-        m = (y1 - y0) / dx
-        hi = 0.0
-        for i in range(n):
-            yline = y0 + m * (x[i] - x0)
-            hi = max(hi, abs(y[i] - yline))
-    if hi <= 0:
-        rng = (max(y) - min(y)) if n > 1 else 1.0
-        hi = max(1e-12, rng)
     lo = 0.0
-    best_idxs = list(range(n))
-    best_eps = lo
-    best_diff = abs(len(best_idxs) - target)
-    for _ in range(max_iter):
-        mid = (lo + hi) / 2.0
-        idxs = _rdp_select_indices(x, y, mid)
-        cnt = len(idxs)
-        diff = abs(cnt - target)
-        if diff < best_diff or (diff == best_diff and mid < best_eps):
-            best_idxs = idxs
-            best_eps = mid
-            best_diff = diff
-        if cnt > target:
-            lo = mid if mid > lo else lo + (hi - lo) * 0.5
-        elif cnt < target:
-            hi = mid
-        else:
-            break
-        if hi - lo <= 1e-12:
-            break
-    return best_idxs, float(best_eps)
+    hi = _line_deviation_hi(x, y)
+    return _binary_search_param(target, lo, hi, max_iter, lambda mid: _rdp_select_indices(x, y, mid))
 
 
 def _pla_autotune_max_error(x: List[float], y: List[float], target_points: int, max_iter: int = 24) -> Tuple[List[int], float]:
@@ -325,43 +363,9 @@ def _pla_autotune_max_error(x: List[float], y: List[float], target_points: int, 
     target = max(3, min(int(target_points), n))
     if target >= n:
         return list(range(n)), 0.0
-    x0, y0 = x[0], y[0]
-    x1, y1 = x[-1], y[-1]
-    dx = x1 - x0
-    if dx == 0:
-        base = sum(y) / float(n)
-        hi = max(abs(v - base) for v in y) if n > 0 else 1.0
-    else:
-        m = (y1 - y0) / dx
-        hi = 0.0
-        for i in range(n):
-            yline = y0 + m * (x[i] - x0)
-            hi = max(hi, abs(y[i] - yline))
-    if hi <= 0:
-        rng = (max(y) - min(y)) if n > 1 else 1.0
-        hi = max(1e-12, rng)
     lo = 0.0
-    best_idxs = list(range(n))
-    best_me = lo
-    best_diff = abs(len(best_idxs) - target)
-    for _ in range(max_iter):
-        mid = (lo + hi) / 2.0
-        idxs = _pla_select_indices(x, y, mid, None, None)
-        cnt = len(idxs)
-        diff = abs(cnt - target)
-        if diff < best_diff or (diff == best_diff and mid < best_me):
-            best_idxs = idxs
-            best_me = mid
-            best_diff = diff
-        if cnt > target:
-            lo = mid if mid > lo else lo + (hi - lo) * 0.5
-        elif cnt < target:
-            hi = mid
-        else:
-            break
-        if hi - lo <= 1e-12:
-            break
-    return best_idxs, float(best_me)
+    hi = _line_deviation_hi(x, y)
+    return _binary_search_param(target, lo, hi, max_iter, lambda mid: _pla_select_indices(x, y, mid, None, None))
 
 
 def _apca_autotune_max_error(y: List[float], target_points: int, max_iter: int = 24) -> Tuple[List[int], float]:
@@ -370,33 +374,9 @@ def _apca_autotune_max_error(y: List[float], target_points: int, max_iter: int =
     target = max(3, min(int(target_points), n))
     if target >= n:
         return list(range(n)), 0.0
-    base = sum(y) / float(n)
-    hi = max(abs(v - base) for v in y) if n > 0 else 1.0
-    if hi <= 0:
-        rng = (max(y) - min(y)) if n > 1 else 1.0
-        hi = max(1e-12, rng)
     lo = 0.0
-    best_idxs = list(range(n))
-    best_me = lo
-    best_diff = abs(len(best_idxs) - target)
-    for _ in range(max_iter):
-        mid = (lo + hi) / 2.0
-        idxs = _apca_select_indices(y, mid, None, None)
-        cnt = len(idxs)
-        diff = abs(cnt - target)
-        if diff < best_diff or (diff == best_diff and mid < best_me):
-            best_idxs = idxs
-            best_me = mid
-            best_diff = diff
-        if cnt > target:
-            lo = mid if mid > lo else lo + (hi - lo) * 0.5
-        elif cnt < target:
-            hi = mid
-        else:
-            break
-        if hi - lo <= 1e-12:
-            break
-    return best_idxs, float(best_me)
+    hi = _abs_deviation_hi(y)
+    return _binary_search_param(target, lo, hi, max_iter, lambda mid: _apca_select_indices(y, mid, None, None))
 
 
 def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optional[Dict[str, Any]]) -> Tuple[List[int], str, Dict[str, Any]]:

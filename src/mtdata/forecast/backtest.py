@@ -168,9 +168,6 @@ def forecast_backtest(
                 if quantity == 'volatility':
                     # Compute realized horizon sigma from ground truth prices
                     act = np.array(truth, dtype=float)
-                    with np.errstate(divide='ignore', invalid='ignore'):
-                        r_act = np.diff(np.log(np.maximum(np.concatenate(([times[idx]], act)) if False else act, 1e-12)))
-                    # r_act derived from act only: compute using act series directly
                     r_act = np.diff(np.log(np.maximum(act, 1e-12))) if act.size >= 2 else np.array([], dtype=float)
                     realized_sigma = float(np.sqrt(np.sum(np.clip(r_act, -1e6, 1e6)**2))) if r_act.size > 0 else float('nan')
                     pred_sigma = float(r.get('horizon_sigma_return', float('nan')))

@@ -111,8 +111,7 @@ def forecast_volatility(
                     if '=' in t:
                         k, v = t.split('=', 1)
                         p[k.strip()] = v.strip()
-                    elif t.endswith(':') and False:
-                        pass
+                    # ignore stray tokens without '='
         else:
             p = {}
 

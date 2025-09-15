@@ -401,7 +401,7 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
     # Double/Triple Tops & Bottoms
     def _tops_bottoms():
         out: List[ClassicPatternResult] = []
-        def group_levels(idxs: np.ndarray, name_top: str, name_triple: str, is_top: bool):
+        def group_levels(idxs: np.ndarray, name_top: str, name_triple: str):
             if idxs.size < 2:
                 return
             vals = c[idxs]
@@ -433,8 +433,8 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
                         end_time=float(t[end_i]) if t.size else None,
                         details={"level": float(np.median(vals[cluster])), "touches": int(len(cluster))},
                     ))
-        group_levels(peaks[-10:], "Double Top", "Triple Top", True)
-        group_levels(troughs[-10:], "Double Bottom", "Triple Bottom", False)
+        group_levels(peaks[-10:], "Double Top", "Triple Top")
+        group_levels(troughs[-10:], "Double Bottom", "Triple Bottom")
         return out
 
     results.extend(_tops_bottoms())
