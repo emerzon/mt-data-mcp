@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from .schema import TimeframeLiteral, PivotMethodLiteral
+from .schema import TimeframeLiteral, PivotMethodLiteral, _PIVOT_METHODS
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..utils.mt5 import _mt5_copy_rates_from, _mt5_epoch_to_utc
 from ..utils.utils import _format_time_minimal_util, _format_time_minimal_local_util, _use_client_tz_util
