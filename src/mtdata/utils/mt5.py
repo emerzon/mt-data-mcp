@@ -6,6 +6,7 @@ from typing import Any, Optional
 import MetaTrader5 as mt5
 
 from ..core.config import mt5_config
+from ..core.constants import DATA_READY_TIMEOUT, DATA_POLL_INTERVAL
 
 logger = logging.getLogger(__name__)
 
@@ -146,3 +147,29 @@ def _auto_connect_wrapper(func):
         return func(*args, **kwargs)
     return wrapper
 
+
+def _ensure_symbol_ready(symbol: str) -> Optional[str]:
+    """Ensure a symbol is selected and its tick data is initialized.
+
+    Returns an error string if selection or data readiness fails, else None.
+    """
+    try:
+        info_before = mt5.symbol_info(symbol)
+        was_visible = bool(info_before.visible) if info_before is not None else None
+        if not mt5.symbol_select(symbol, True):
+            return f"Failed to select symbol {symbol}: {mt5.last_error()}"
+        # If we just made it visible, wait briefly for fresh tick data
+        if was_visible is False:
+            deadline = time.time() + DATA_READY_TIMEOUT
+            while time.time() < deadline:
+                tick = mt5.symbol_info_tick(symbol)
+                if tick and (getattr(tick, 'time', 0) or getattr(tick, 'bid', 0) or getattr(tick, 'ask', 0)):
+                    break
+                time.sleep(DATA_POLL_INTERVAL)
+        # Final check
+        tick = mt5.symbol_info_tick(symbol)
+        if tick is None:
+            return f"Failed to refresh {symbol} data: {mt5.last_error()}"
+        return None
+    except Exception as e:
+        return f"Error ensuring symbol readiness: {e}"
