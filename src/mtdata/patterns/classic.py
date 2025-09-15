@@ -633,6 +633,27 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
     # Head and Shoulders, Rectangle, Double/Triple Tops/Bottoms, Cup and Handle, Broadening, Diamond.
     # Continuation Diamond/Continuation Pattern are subsumed by Diamond/Flags/Pennants contexts.
 
+    # Normalize statuses: mark older patterns as 'completed' unless very recent
+    try:
+        recent_bars = 3
+        for i, r in enumerate(results):
+            try:
+                if r.status == 'forming' and r.end_index < (n - recent_bars):
+                    results[i] = ClassicPatternResult(
+                        name=r.name,
+                        status='completed',
+                        confidence=r.confidence,
+                        start_index=r.start_index,
+                        end_index=r.end_index,
+                        start_time=r.start_time,
+                        end_time=r.end_time,
+                        details=r.details,
+                    )
+            except Exception:
+                continue
+    except Exception:
+        pass
+
     # Sort results by end_index (recency) then confidence
     results.sort(key=lambda r: (r.end_index, r.confidence), reverse=True)
     return results

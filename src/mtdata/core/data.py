@@ -10,7 +10,7 @@ from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS, FETCH_RETRY_ATTEMPTS, F
 from ..utils.mt5 import _mt5_copy_rates_from, _mt5_copy_rates_range, _mt5_copy_ticks_from, _mt5_copy_ticks_range, _mt5_epoch_to_utc
 from ..utils.utils import _csv_from_rows_util, _format_time_minimal_util, _format_time_minimal_local_util, _use_client_tz_util, _resolve_client_tz_util, _time_format_from_epochs_util, _maybe_strip_year_util, _style_time_format_util, _format_numeric_rows_from_df_util, _parse_start_datetime_util
 from ..utils.indicators import _estimate_warmup_bars_util, _apply_ta_indicators_util
-from ..utils.denoise import _apply_denoise as _apply_denoise_util
+from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
 from .simplify import _simplify_dataframe_rows_ext, _choose_simplify_points as _choose_simplify_points_util, _select_indices_for_timeseries as _select_indices_for_timeseries_util, _lttb_select_indices as _lttb_select_indices_util
 from .server import mcp, _auto_connect_wrapper, _ensure_symbol_ready, _normalize_ohlcv_arg, _coerce_scalar
 import MetaTrader5 as mt5
@@ -250,8 +250,10 @@ def fetch_candles(
         # Track denoise metadata if applied
         denoise_apps: List[Dict[str, Any]] = []
         # Optional pre-TI denoising (in-place by default)
-        if denoise and str(denoise.get('when', 'pre_ti')).lower() == 'pre_ti':
-            _apply_denoise_util(df, denoise, default_when='pre_ti')
+        if denoise:
+            _dn_pre = _normalize_denoise_spec(denoise, default_when='pre_ti')
+            if _dn_pre and str(_dn_pre.get('when', 'pre_ti')).lower() == 'pre_ti':
+                _apply_denoise_util(df, _dn_pre, default_when='pre_ti')
             try:
                 dn = dict(denoise)
                 denoise_apps.append({
@@ -271,12 +273,14 @@ def fetch_candles(
             ti_cols = _apply_ta_indicators_util(df, ti_spec)
             headers.extend([c for c in ti_cols if c not in headers])
             # Optional: denoise TI columns as well when requested
-            if denoise and bool(denoise.get('apply_to_ti') or denoise.get('ti')) and ti_cols:
-                dn_ti = dict(denoise)
-                dn_ti['columns'] = list(ti_cols)
-                dn_ti.setdefault('when', 'post_ti')
-                dn_ti.setdefault('keep_original', False)
-                _apply_denoise_util(df, dn_ti, default_when='post_ti')
+            if denoise and ti_cols:
+                dn_base = _normalize_denoise_spec(denoise, default_when='post_ti')
+                if dn_base and bool(dn_base.get('apply_to_ti') or dn_base.get('ti')):
+                    dn_ti = dict(dn_base)
+                    dn_ti['columns'] = list(ti_cols)
+                    dn_ti.setdefault('when', 'post_ti')
+                    dn_ti.setdefault('keep_original', False)
+                    _apply_denoise_util(df, dn_ti, default_when='post_ti')
 
         # Build final header list when not using OHLCV subset
         if requested is None:
@@ -337,18 +341,22 @@ def fetch_candles(
                                 warnings.simplefilter("ignore")
                                 df['volume'] = df['tick_volume']
                         # Optional pre-TI denoising on retried window
-                        if denoise and str(denoise.get('when', 'pre_ti')).lower() == 'pre_ti':
-                            _apply_denoise_util(df, denoise, default_when='pre_ti')
+                        if denoise:
+                            _dn_pre2 = _normalize_denoise_spec(denoise, default_when='pre_ti')
+                            if _dn_pre2 and str(_dn_pre2.get('when', 'pre_ti')).lower() == 'pre_ti':
+                                _apply_denoise_util(df, _dn_pre2, default_when='pre_ti')
                         # Re-apply indicators and re-extend headers
                         ti_cols = _apply_ta_indicators_util(df, ti_spec)
                         headers.extend([c for c in ti_cols if c not in headers])
                         # Optional: denoise TI columns on retried window
-                        if denoise and bool(denoise.get('apply_to_ti') or denoise.get('ti')) and ti_cols:
-                            dn_ti = dict(denoise)
-                            dn_ti['columns'] = list(ti_cols)
-                            dn_ti.setdefault('when', 'post_ti')
-                            dn_ti.setdefault('keep_original', False)
-                            _apply_denoise_util(df, dn_ti, default_when='post_ti')
+                        if denoise and ti_cols:
+                            dn_base2 = _normalize_denoise_spec(denoise, default_when='post_ti')
+                            if dn_base2 and bool(dn_base2.get('apply_to_ti') or dn_base2.get('ti')):
+                                dn_ti2 = dict(dn_base2)
+                                dn_ti2['columns'] = list(ti_cols)
+                                dn_ti2.setdefault('when', 'post_ti')
+                                dn_ti2.setdefault('keep_original', False)
+                                _apply_denoise_util(df, dn_ti2, default_when='post_ti')
                         # Re-trim to target window
                         if start_datetime and end_datetime:
                             target_from = _parse_start_datetime_util(start_datetime).timestamp()
@@ -369,13 +377,16 @@ def fetch_candles(
                 pass
 
         # Optional post-TI denoising (adds new columns by default)
-        if denoise and str(denoise.get('when', 'pre_ti')).lower() == 'post_ti':
-            added_dn = _apply_denoise_util(df, denoise, default_when='post_ti')
+        if denoise:
+            _dn_post = _normalize_denoise_spec(denoise, default_when='post_ti')
+            added_dn = []
+            if _dn_post and str(_dn_post.get('when', 'post_ti')).lower() == 'post_ti':
+                added_dn = _apply_denoise_util(df, _dn_post, default_when='post_ti')
             for c in added_dn:
                 if c not in headers:
                     headers.append(c)
             try:
-                dn = dict(denoise)
+                dn = _dn_post or {}
                 denoise_apps.append({
                     'method': str(dn.get('method','none')).lower(),
                     'when': 'post_ti',

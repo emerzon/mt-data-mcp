@@ -11,7 +11,7 @@ from ..utils.mt5 import _mt5_copy_rates_from, _mt5_epoch_to_utc
 from ..utils.utils import _csv_from_rows_util, _format_time_minimal_util, _format_time_minimal_local_util, _use_client_tz_util, _time_format_from_epochs_util, _maybe_strip_year_util, _style_time_format_util, to_float_np as __to_float_np
 from ..patterns.classic import detect_classic_patterns as _detect_classic_patterns, ClassicDetectorConfig as _ClassicCfg
 from .server import mcp, _auto_connect_wrapper, _ensure_symbol_ready
-from ..utils.denoise import _apply_denoise as _apply_denoise_util
+from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
 import MetaTrader5 as mt5
 
 @mcp.tool()
@@ -186,6 +186,9 @@ def pattern_detect_classic(
     lookback: int = 1500,
     denoise: Optional[Dict[str, Any]] = None,
     config: Optional[Dict[str, Any]] = None,
+    include_series: bool = False,
+    series_time: str = "string",  # 'string' or 'epoch'
+    include_completed: bool = False,
 ) -> Dict[str, Any]:
     """Detect classic chart patterns (triangles, flags, wedges, H&S, channels, rectangles, etc.).
 
@@ -219,13 +222,11 @@ def pattern_detect_classic(
         # Drop forming last bar for stability
         if len(df) >= 2:
             df = df.iloc[:-1]
-        if denoise and isinstance(denoise, dict):
+        if denoise:
             try:
-                dn = dict(denoise)
-                dn.setdefault('when', 'pre_ti')
-                dn.setdefault('columns', ['close'])
-                dn.setdefault('keep_original', False)
-                _apply_denoise_util(df, dn, default_when='pre_ti')
+                dn = _normalize_denoise_spec(denoise, default_when='pre_ti')
+                if dn:
+                    _apply_denoise_util(df, dn, default_when='pre_ti')
             except Exception:
                 pass
         # Clip to lookback
@@ -255,6 +256,43 @@ def pattern_detect_classic(
             except Exception:
                 return x
         out_list = []
+        n_bars = len(df)
+
+        def _estimate_bars_to_completion(name: str, details: Dict[str, Any], start_idx: int, end_idx: int) -> Optional[int]:
+            try:
+                length = max(1, int(end_idx) - int(start_idx) + 1)
+                nm = str(name).lower()
+                # Triangles/Wedges with explicit line params
+                if all(k in details for k in ("top_slope", "top_intercept", "bottom_slope", "bottom_intercept")):
+                    s_top = float(details.get("top_slope"))
+                    b_top = float(details.get("top_intercept"))
+                    s_bot = float(details.get("bottom_slope"))
+                    b_bot = float(details.get("bottom_intercept"))
+                    denom = (s_top - s_bot)
+                    if abs(denom) <= 1e-12:
+                        return None
+                    t_star = (b_bot - b_top) / denom
+                    bars = int(max(0, int(round(t_star - (n_bars - 1)))))
+                    # Clamp to a reasonable window
+                    return int(min(max(0, bars), 3 * length))
+                # Channels with explicit line params (rarely converging)
+                if all(k in details for k in ("upper_slope", "upper_intercept", "lower_slope", "lower_intercept")):
+                    s_top = float(details.get("upper_slope"))
+                    b_top = float(details.get("upper_intercept"))
+                    s_bot = float(details.get("lower_slope"))
+                    b_bot = float(details.get("lower_intercept"))
+                    denom = (s_top - s_bot)
+                    if abs(denom) <= 1e-12:
+                        return None
+                    t_star = (b_bot - b_top) / denom
+                    bars = int(max(0, int(round(t_star - (n_bars - 1)))))
+                    return int(min(max(0, bars), 3 * length))
+                # Flags/Pennants: heuristic fraction of current consolidation length
+                if nm in ("pennants", "flag", "bull pennants", "bear pennants", "bull flag", "bear flag") or ("pennant" in nm or "flag" in nm):
+                    return int(max(1, min(2 * length, int(round(0.3 * length)))))
+            except Exception:
+                return None
+            return None
         for p in pats:
             try:
                 # Format times per global time format
@@ -276,27 +314,36 @@ def pattern_detect_classic(
                     "end_index": int(p.end_index),
                     "start_date": start_date,
                     "end_date": end_date,
-                    "start_epoch": st_epoch,
-                    "end_epoch": et_epoch,
                     "details": {k: _round(v) for k, v in (p.details or {}).items()},
                 }
+                if p.status == 'forming':
+                    est = _estimate_bars_to_completion(p.name, d["details"], d["start_index"], d["end_index"])
+                    if est is not None:
+                        d["bars_to_completion"] = int(est)
                 out_list.append(d)
             except Exception:
                 continue
 
-        return {
+        # Optionally filter out completed patterns by default
+        filtered = out_list if include_completed else [d for d in out_list if str(d.get('status','')).lower() == 'forming']
+
+        resp: Dict[str, Any] = {
             "success": True,
             "symbol": symbol,
             "timeframe": timeframe,
             "lookback": int(lookback),
-            "patterns": out_list,
-            # include series for plotting
-            "series_close": [float(v) for v in __to_float_np(df.get('close')).tolist()],
-            "series_epoch": [float(v) for v in __to_float_np(df.get('time')).tolist()] if 'time' in df.columns else None,
-            "series_time": [
-                _format_time_minimal_util(float(v)) for v in __to_float_np(df.get('time')).tolist()
-            ] if 'time' in df.columns else None,
-            "n_patterns": int(len(out_list)),
+            "patterns": filtered,
+            "n_patterns": int(len(filtered)),
         }
+        if include_series:
+            resp["series_close"] = [float(v) for v in __to_float_np(df.get('close')).tolist()]
+            if 'time' in df.columns:
+                if str(series_time).lower() == 'epoch':
+                    resp["series_epoch"] = [float(v) for v in __to_float_np(df.get('time')).tolist()]
+                else:
+                    resp["series_time"] = [
+                        _format_time_minimal_util(float(v)) for v in __to_float_np(df.get('time')).tolist()
+                    ]
+        return resp
     except Exception as e:
         return {"error": f"Error detecting classic patterns: {str(e)}"}

@@ -249,3 +249,55 @@ def get_denoise_methods_data() -> Dict[str, Any]:
     ], {"causal": False, "zero_phase": True})
 
     return {"success": True, "schema_version": 1, "methods": methods}
+
+
+def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[Dict[str, Any]]:
+    """Normalize a denoise spec. Accepts dict-like or a method name string.
+
+    Returns a dict with keys: method, params, columns, when, causality, keep_original, suffix.
+    """
+    base = {"when": default_when, "columns": ["close"], "keep_original": False, "suffix": "_dn"}
+    if not spec:
+        return None
+    if isinstance(spec, dict):
+        out = dict(base)
+        out.update({k: v for k, v in spec.items() if v is not None})
+        # Normalize columns field to list
+        cols = out.get('columns')
+        if isinstance(cols, str):
+            parts = [p.strip() for p in cols.replace(',', ' ').split() if p.strip()]
+            out['columns'] = parts if parts else ['close']
+        if 'params' not in out or out['params'] is None:
+            out['params'] = {}
+        return out
+    # String method name
+    try:
+        method = str(spec).strip().lower()
+    except Exception:
+        return None
+    if method == '' or method == 'none':
+        return None
+    # Method-specific default params
+    params: Dict[str, Any] = {}
+    if method == 'ema':
+        params = {"span": 10}
+    elif method == 'sma':
+        params = {"window": 10}
+    elif method == 'median':
+        params = {"window": 7}
+    elif method == 'lowpass_fft':
+        params = {"cutoff_ratio": 0.1}
+    elif method == 'wavelet':
+        params = {"wavelet": "db4", "level": None, "threshold": "auto", "mode": "soft"}
+    elif method == 'emd':
+        params = {"drop_imfs": [0], "keep_imfs": None, "max_imfs": "auto"}
+    elif method == 'eemd':
+        params = {"drop_imfs": [0], "keep_imfs": None, "max_imfs": "auto", "noise_strength": 0.2, "trials": 100}
+    elif method == 'ceemdan':
+        params = {"drop_imfs": [0], "keep_imfs": None, "max_imfs": "auto", "noise_strength": 0.2, "trials": 100}
+    else:
+        # Unknown method; ignore
+        return None
+    out = dict(base)
+    out.update({"method": method, "params": params})
+    return out
