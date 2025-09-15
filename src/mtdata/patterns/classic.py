@@ -555,7 +555,14 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
                 if not nl1_candidates or not nl2_candidates:
                     continue
                 nl1 = int(nl1_candidates[-1]); nl2 = int(nl2_candidates[0])
-                slope, intercept, r2 = _fit_line(np.array([nl1, nl2], dtype=float), np.array([c[nl1], c[nl2]], dtype=float))
+                if getattr(cfg, 'use_robust_fit', False):
+                    slope, intercept, r2 = _fit_line_robust(
+                        np.array([nl1, nl2], dtype=float), np.array([c[nl1], c[nl2]], dtype=float), cfg
+                    )
+                else:
+                    slope, intercept, r2 = _fit_line(
+                        np.array([nl1, nl2], dtype=float), np.array([c[nl1], c[nl2]], dtype=float)
+                    )
                 left_span = head_idx - lsh; right_span = rsh - head_idx
                 span_ratio = left_span / float(max(1, right_span))
                 if not (0.5 <= span_ratio <= 2.0):
@@ -588,6 +595,24 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
                 base_conf = 0.25 * sym_conf + 0.35 * sh_sim_conf + 0.2 * neck_penalty + 0.2 * prom_conf
                 if broke:
                     base_conf = min(1.0, base_conf + 0.1)
+                # Optional DTW shape confirmation
+                if getattr(cfg, 'use_dtw_check', False):
+                    seg_start = max(0, int(lsh))
+                    seg_end = int(end_i if broke else rsh)
+                    seg = c[seg_start: seg_end + 1].astype(float)
+                    seg_n = _znorm(_paa(seg, int(getattr(cfg, 'dtw_paa_len', 80))))
+                    tpl = _template_hs(len(seg_n), inverse=bool(inverse))
+                    dist = _dtw_distance(seg_n, tpl)
+                    maxd = float(getattr(cfg, 'dtw_max_dist', 0.6))
+                    if not np.isfinite(dist):
+                        dist = maxd * 10.0
+                    if dist > (2.0 * maxd):
+                        # too dissimilar; skip candidate
+                        continue
+                    elif dist > maxd:
+                        base_conf *= 0.7
+                    else:
+                        base_conf = min(1.0, base_conf + 0.1)
                 details = {
                     'left_shoulder': float(ls_p),
                     'right_shoulder': float(rs_p),
