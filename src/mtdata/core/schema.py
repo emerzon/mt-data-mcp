@@ -4,11 +4,192 @@ Shared JSON schema helpers for CLI/server tool inputs.
 Provides reusable $defs such as TimeframeSpec and helpers to apply them
 to per-tool parameter schemas.
 """
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple, Literal
+from typing_extensions import TypedDict
 import inspect
 from typing import get_type_hints
 
 from .constants import TIMEFRAME_MAP
+
+
+_TIMEFRAME_CHOICES = tuple(sorted(TIMEFRAME_MAP.keys()))
+TimeframeLiteral = Literal[_TIMEFRAME_CHOICES]  # type: ignore
+
+# Build a Literal for single OHLCV letters; the parameter will be a list of these
+OhlcvCharLiteral = Literal['O', 'H', 'L', 'C', 'V']  # type: ignore
+
+# ---- Technical Indicators (dynamic discovery and application) ----
+try:
+    from .indicators_docs import list_ta_indicators as _list_ta_indicators_docs
+    _CATEGORY_CHOICES = sorted({it.get('category') for it in _list_ta_indicators_docs() if it.get('category')})
+except Exception:
+    _CATEGORY_CHOICES = []
+
+if _CATEGORY_CHOICES:
+    # Create a Literal type alias dynamically
+    CategoryLiteral = Literal[tuple(_CATEGORY_CHOICES)]  # type: ignore
+else:
+    CategoryLiteral = str  # fallback
+
+# Build indicator name Literal so details endpoint has enum name choices
+try:
+    from .indicators_docs import list_ta_indicators as _list_ta_indicators_docs
+    _INDICATOR_NAME_CHOICES = sorted({it.get('name') for it in _list_ta_indicators_docs() if it.get('name')})
+except Exception:
+    _INDICATOR_NAME_CHOICES = []
+
+if _INDICATOR_NAME_CHOICES:
+    IndicatorNameLiteral = Literal[tuple(_INDICATOR_NAME_CHOICES)]  # type: ignore
+else:
+    IndicatorNameLiteral = str  # fallback
+
+class IndicatorSpec(TypedDict, total=False):
+    """Structured TI spec: name with optional numeric params."""
+    name: IndicatorNameLiteral  # type: ignore
+    params: List[float]
+
+# ---- Denoising (spec + application) ----
+# Allowed denoising methods for first phase (no extra dependencies)
+_DENOISE_METHODS = (
+    "none",        # no-op
+    "ema",         # exponential moving average
+    "sma",         # simple moving average
+    "median",      # rolling median
+    "lowpass_fft", # zero-phase FFT low-pass
+    "wavelet",     # wavelet shrinkage (PyWavelets optional)
+    "emd",         # empirical mode decomposition (PyEMD optional)
+    "eemd",        # ensemble EMD (PyEMD optional)
+    "ceemdan",     # complementary EEMD with adaptive noise (PyEMD optional)
+)
+
+try:
+    DenoiseMethodLiteral = Literal[_DENOISE_METHODS]  # type: ignore
+except Exception:
+    DenoiseMethodLiteral = str  # fallback for typing
+
+class DenoiseSpec(TypedDict, total=False):
+    method: DenoiseMethodLiteral  # type: ignore
+    params: Dict[str, Any]
+    columns: List[str]
+    when: Literal['pre_ti', 'post_ti']  # type: ignore
+    causality: Literal['causal', 'zero_phase']  # type: ignore
+    keep_original: bool
+    suffix: str
+
+# ---- Simplify (schema for MCP) ----
+_SIMPLIFY_MODES = (
+    'select',        # pick representative existing rows
+    'approximate',   # aggregate between selected rows
+    'resample',      # time-bucket aggregation
+    'encode',        # compact encodings (envelope, delta)
+    'segment',       # swing points (e.g., ZigZag)
+    'symbolic',      # SAX symbolic representation
+)
+_SIMPLIFY_METHODS = (
+    'lttb', 'rdp', 'pla', 'apca'
+)
+try:
+    SimplifyModeLiteral = Literal[_SIMPLIFY_MODES]  # type: ignore
+except Exception:
+    SimplifyModeLiteral = str
+try:
+    SimplifyMethodLiteral = Literal[_SIMPLIFY_METHODS]  # type: ignore
+except Exception:
+    SimplifyMethodLiteral = str
+try:
+    EncodeSchemaLiteral = Literal['envelope','delta']  # type: ignore
+    SymbolicSchemaLiteral = Literal['sax']  # type: ignore
+except Exception:
+    EncodeSchemaLiteral = str
+    SymbolicSchemaLiteral = str
+
+class SimplifySpec(TypedDict, total=False):
+    # Common
+    mode: SimplifyModeLiteral  # type: ignore
+    method: SimplifyMethodLiteral  # type: ignore
+    points: int
+    ratio: float
+    # RDP/PLA/APCA specifics
+    epsilon: float
+    max_error: float
+    segments: int
+    # Resample
+    bucket_seconds: int
+    # Encode specifics
+    schema: EncodeSchemaLiteral  # 'envelope' | 'delta' (or 'sax' when mode='symbolic')
+    bits: int
+    as_chars: bool
+    alphabet: str
+    scale: float
+    zero_char: str
+    # Segment specifics
+    algo: Literal['zigzag','zz']  # type: ignore
+    threshold_pct: float
+    value_col: str
+    # Symbolic specifics
+    paa: int
+    znorm: bool
+
+# Volatility params (concise)
+class VolatilityParams(TypedDict, total=False):
+    # EWMA
+    halflife: Optional[float]
+    lambda_: Optional[float]  # use 'lambda_' to avoid reserved word in schema
+    lookback: int
+    # Parkinson/GK/RS
+    window: int
+    # GARCH
+    fit_bars: int
+    mean: Literal['Zero','Constant']  # type: ignore
+    dist: Literal['normal']  # type: ignore
+
+# ---- Pivot Point methods (enums) ----
+_PIVOT_METHODS = (
+    "classic",
+    "fibonacci",
+    "camarilla",
+    "woodie",
+    "demark",
+)
+
+try:
+    PivotMethodLiteral = Literal[_PIVOT_METHODS]  # type: ignore
+except Exception:
+    PivotMethodLiteral = str  # fallback for typing
+
+# ---- Fast Forecast methods (enums) ----
+_FORECAST_METHODS = (
+    "naive",
+    "seasonal_naive",
+    "drift",
+    "theta",
+    "fourier_ols",
+    "ses",
+    "holt",
+    "holt_winters_add",
+    "holt_winters_mul",
+    "arima",
+    "sarima",
+    "nhits",
+    "nbeatsx",
+    "tft",
+    "patchtst",
+    "sf_autoarima",
+    "sf_theta",
+    "sf_autoets",
+    "sf_seasonalnaive",
+    "mlf_rf",
+    "mlf_lightgbm",
+    "chronos_bolt",
+    "timesfm",
+    "lag_llama",
+    "ensemble",
+)
+
+try:
+    ForecastMethodLiteral = Literal[_FORECAST_METHODS]  # type: ignore
+except Exception:
+    ForecastMethodLiteral = str  # fallback for typing
 
 
 def shared_defs() -> Dict[str, Any]:

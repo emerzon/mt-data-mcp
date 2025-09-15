@@ -46,3 +46,4 @@ mtdata_mcp_server.egg-info/
 
 .mtdata_cache/*
 lightning_logs/*
+jscpd_report.xml/*

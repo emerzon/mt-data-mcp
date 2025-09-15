@@ -7,6 +7,7 @@ import json
 import math
 
 from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..core.schema import TimeframeLiteral, DenoiseSpec
 from ..utils.mt5 import _mt5_epoch_to_utc, _mt5_copy_rates_from, _ensure_symbol_ready
 from ..utils.utils import _parse_start_datetime as _parse_start_datetime_util
 from .common import default_seasonality as _default_seasonality_period, pd_freq_from_timeframe as _pd_freq_from_timeframe

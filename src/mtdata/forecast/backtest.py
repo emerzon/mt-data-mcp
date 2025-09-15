@@ -7,6 +7,7 @@ import math
 import MetaTrader5 as mt5
 
 from ..core.constants import TIMEFRAME_MAP
+from ..core.schema import TimeframeLiteral, DenoiseSpec
 from ..utils.mt5 import _mt5_epoch_to_utc, _mt5_copy_rates_from, _ensure_symbol_ready
 from ..utils.utils import _format_time_minimal as _format_time_minimal_util
 from .volatility import forecast_volatility
@@ -14,24 +15,7 @@ from .forecast import forecast
 from .common import fetch_history as _fetch_history
 
 
-def _get_forecast_methods_data_safe() -> Dict[str, Any]:
-    """Local safe wrapper to list forecast methods without importing core.server (avoid cycles)."""
-    try:
-        # Detect availability similar to core.server for accurate listing
-        import importlib.util as _util
-        _SM_ETS_AVAILABLE = _util.find_spec("statsmodels.tsa.holtwinters") is not None
-        _SM_SARIMAX_AVAILABLE = _util.find_spec("statsmodels.tsa.statespace.sarimax") is not None
-        _NF_AVAILABLE = _util.find_spec("neuralforecast") is not None
-        _SF_AVAILABLE = _util.find_spec("statsforecast") is not None
-        _MLF_AVAILABLE = _util.find_spec("mlforecast") is not None
-        _CHRONOS_AVAILABLE = (_util.find_spec("chronos") is not None) or (_util.find_spec("transformers") is not None)
-        _TIMESFM_AVAILABLE = (_util.find_spec("timesfm") is not None) or (_util.find_spec("transformers") is not None)
-        _LAG_LLAMA_AVAILABLE = (_util.find_spec("lag_llama") is not None) or (_util.find_spec("transformers") is not None)
-        _ARCH_AVAILABLE = _util.find_spec("arch") is not None
-        from ..utils.forecast import get_forecast_methods_data
-        return get_forecast_methods_data(_SM_ETS_AVAILABLE, _SM_SARIMAX_AVAILABLE, _NF_AVAILABLE, _SF_AVAILABLE, _MLF_AVAILABLE, _CHRONOS_AVAILABLE, _TIMESFM_AVAILABLE, _LAG_LLAMA_AVAILABLE, _ARCH_AVAILABLE)
-    except Exception as e:
-        return {"error": f"Error listing forecast methods: {e}"}
+
 
 
 def forecast_backtest(

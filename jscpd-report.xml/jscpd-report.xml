@@ -1,0 +1,3721 @@
+<?xml version="1.0" encoding="UTF-8" ?><pmd-cpd>
+      <duplication lines="20">
+            <file path="src\mtdata\utils\simplify.py" line="236">
+              <codefragment><![CDATA[)
+    if n <= 2:
+        return list(range(n))
+    if (max_error is None or max_error <= 0) and (segments or points):
+        if points and (segments is None):
+            segments = max(1, int(points) - 1)
+        segments = max(1, min(int(segments or 1), n - 1))
+        idxs = [0]
+        for k in range(1, segments):
+            idxs.append(int(round(k * (n - 1) / segments)))
+        idxs.append(n - 1)
+        return sorted(set(idxs))
+    if max_error is None or max_error <= 0:
+        return list(range(n))
+    idxs = [0]
+    start = 0
+    while start < n - 1:
+        end = start + 1
+        last_good = end
+        while end < n:
+            seg]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\simplify.py" line="190">
+              <codefragment><![CDATA[)
+    if n <= 2:
+        return list(range(n))
+    if (max_error is None or max_error <= 0) and (segments or points):
+        if points and (segments is None):
+            segments = max(1, int(points) - 1)
+        segments = max(1, min(int(segments or 1), n - 1))
+        idxs = [0]
+        for k in range(1, segments):
+            idxs.append(int(round(k * (n - 1) / segments)))
+        idxs.append(n - 1)
+        return sorted(set(idxs))
+    if max_error is None or max_error <= 0:
+        return list(range(n))
+    idxs = [0]
+    start = 0
+    while start < n - 1:
+        end = start + 1
+        last_good = end
+        while end < n:
+            err]]></codefragment>
+            </file>
+            <codefragment><![CDATA[)
+    if n <= 2:
+        return list(range(n))
+    if (max_error is None or max_error <= 0) and (segments or points):
+        if points and (segments is None):
+            segments = max(1, int(points) - 1)
+        segments = max(1, min(int(segments or 1), n - 1))
+        idxs = [0]
+        for k in range(1, segments):
+            idxs.append(int(round(k * (n - 1) / segments)))
+        idxs.append(n - 1)
+        return sorted(set(idxs))
+    if max_error is None or max_error <= 0:
+        return list(range(n))
+    idxs = [0]
+    start = 0
+    while start < n - 1:
+        end = start + 1
+        last_good = end
+        while end < n:
+            seg]]></codefragment>
+        </duplication>
+      
+      <duplication lines="19">
+            <file path="src\mtdata\utils\simplify.py" line="258">
+              <codefragment><![CDATA[)
+            if err <= max_error:
+                last_good = end
+                end += 1
+            else:
+                break
+        if last_good == start:
+            last_good = start + 1
+        idxs.append(last_good)
+        start = last_good
+    if idxs[-1] != n - 1:
+        idxs.append(n - 1)
+    out = []
+    for i in idxs:
+        if not out or i > out[-1]:
+            out.append(i)
+    return out
+
+
+def _rdp_autotune_epsilon]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\simplify.py" line="210">
+              <codefragment><![CDATA[)
+            if err <= max_error:
+                last_good = end
+                end += 1
+            else:
+                break
+        if last_good == start:
+            last_good = start + 1
+        idxs.append(last_good)
+        start = last_good
+    if idxs[-1] != n - 1:
+        idxs.append(n - 1)
+    out = []
+    for i in idxs:
+        if not out or i > out[-1]:
+            out.append(i)
+    return out
+
+
+def _apca_select_indices]]></codefragment>
+            </file>
+            <codefragment><![CDATA[)
+            if err <= max_error:
+                last_good = end
+                end += 1
+            else:
+                break
+        if last_good == start:
+            last_good = start + 1
+        idxs.append(last_good)
+        start = last_good
+    if idxs[-1] != n - 1:
+        idxs.append(n - 1)
+    out = []
+    for i in idxs:
+        if not out or i > out[-1]:
+            out.append(i)
+    return out
+
+
+def _rdp_autotune_epsilon]]></codefragment>
+        </duplication>
+      
+      <duplication lines="21">
+            <file path="src\mtdata\utils\simplify.py" line="324">
+              <codefragment><![CDATA[n = len(x)
+    target = max(3, min(int(target_points), n))
+    if target >= n:
+        return list(range(n)), 0.0
+    x0, y0 = x[0], y[0]
+    x1, y1 = x[-1], y[-1]
+    dx = x1 - x0
+    if dx == 0:
+        base = sum(y) / float(n)
+        hi = max(abs(v - base) for v in y) if n > 0 else 1.0
+    else:
+        m = (y1 - y0) / dx
+        hi = 0.0
+        for i in range(n):
+            yline = y0 + m * (x[i] - x0)
+            hi = max(hi, abs(y[i] - yline))
+    if hi <= 0:
+        rng = (max(y) - min(y)) if n > 1 else 1.0
+        hi = max(1e-12, rng)
+    lo = 0.0
+    best_idxs = list(range(n))
+    best_me]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\simplify.py" line="279">
+              <codefragment><![CDATA[n = len(x)
+    target = max(3, min(int(target_points), n))
+    if target >= n:
+        return list(range(n)), 0.0
+    x0, y0 = x[0], y[0]
+    x1, y1 = x[-1], y[-1]
+    dx = x1 - x0
+    if dx == 0:
+        base = sum(y) / float(n)
+        hi = max(abs(v - base) for v in y) if n > 0 else 1.0
+    else:
+        m = (y1 - y0) / dx
+        hi = 0.0
+        for i in range(n):
+            yline = y0 + m * (x[i] - x0)
+            hi = max(hi, abs(y[i] - yline))
+    if hi <= 0:
+        rng = (max(y) - min(y)) if n > 1 else 1.0
+        hi = max(1e-12, rng)
+    lo = 0.0
+    best_idxs = list(range(n))
+    best_eps]]></codefragment>
+            </file>
+            <codefragment><![CDATA[n = len(x)
+    target = max(3, min(int(target_points), n))
+    if target >= n:
+        return list(range(n)), 0.0
+    x0, y0 = x[0], y[0]
+    x1, y1 = x[-1], y[-1]
+    dx = x1 - x0
+    if dx == 0:
+        base = sum(y) / float(n)
+        hi = max(abs(v - base) for v in y) if n > 0 else 1.0
+    else:
+        m = (y1 - y0) / dx
+        hi = 0.0
+        for i in range(n):
+            yline = y0 + m * (x[i] - x0)
+            hi = max(hi, abs(y[i] - yline))
+    if hi <= 0:
+        rng = (max(y) - min(y)) if n > 1 else 1.0
+        hi = max(1e-12, rng)
+    lo = 0.0
+    best_idxs = list(range(n))
+    best_me]]></codefragment>
+        </duplication>
+      
+      <duplication lines="10">
+            <file path="src\mtdata\utils\simplify.py" line="354">
+              <codefragment><![CDATA[= mid
+            best_diff = diff
+        if cnt > target:
+            lo = mid if mid > lo else lo + (hi - lo) * 0.5
+        elif cnt < target:
+            hi = mid
+        else:
+            break
+        if hi - lo <= 1e-12:
+            break
+    return best_idxs, float(best_me]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\simplify.py" line="309">
+              <codefragment><![CDATA[= mid
+            best_diff = diff
+        if cnt > target:
+            lo = mid if mid > lo else lo + (hi - lo) * 0.5
+        elif cnt < target:
+            hi = mid
+        else:
+            break
+        if hi - lo <= 1e-12:
+            break
+    return best_idxs, float(best_eps]]></codefragment>
+            </file>
+            <codefragment><![CDATA[= mid
+            best_diff = diff
+        if cnt > target:
+            lo = mid if mid > lo else lo + (hi - lo) * 0.5
+        elif cnt < target:
+            hi = mid
+        else:
+            break
+        if hi - lo <= 1e-12:
+            break
+    return best_idxs, float(best_me]]></codefragment>
+        </duplication>
+      
+      <duplication lines="9">
+            <file path="src\mtdata\utils\simplify.py" line="375">
+              <codefragment><![CDATA[if hi <= 0:
+        rng = (max(y) - min(y)) if n > 1 else 1.0
+        hi = max(1e-12, rng)
+    lo = 0.0
+    best_idxs = list(range(n))
+    best_me = lo
+    best_diff = abs(len(best_idxs) - target)
+    for _ in range(max_iter):
+        mid = (lo + hi) / 2.0
+        idxs = _apca_select_indices]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\simplify.py" line="340">
+              <codefragment><![CDATA[if hi <= 0:
+        rng = (max(y) - min(y)) if n > 1 else 1.0
+        hi = max(1e-12, rng)
+    lo = 0.0
+    best_idxs = list(range(n))
+    best_me = lo
+    best_diff = abs(len(best_idxs) - target)
+    for _ in range(max_iter):
+        mid = (lo + hi) / 2.0
+        idxs = _pla_select_indices]]></codefragment>
+            </file>
+            <codefragment><![CDATA[if hi <= 0:
+        rng = (max(y) - min(y)) if n > 1 else 1.0
+        hi = max(1e-12, rng)
+    lo = 0.0
+    best_idxs = list(range(n))
+    best_me = lo
+    best_diff = abs(len(best_idxs) - target)
+    for _ in range(max_iter):
+        mid = (lo + hi) / 2.0
+        idxs = _apca_select_indices]]></codefragment>
+        </duplication>
+      
+      <duplication lines="18">
+            <file path="src\mtdata\utils\simplify.py" line="384">
+              <codefragment><![CDATA[y, mid, None, None)
+        cnt = len(idxs)
+        diff = abs(cnt - target)
+        if diff < best_diff or (diff == best_diff and mid < best_me):
+            best_idxs = idxs
+            best_me = mid
+            best_diff = diff
+        if cnt > target:
+            lo = mid if mid > lo else lo + (hi - lo) * 0.5
+        elif cnt < target:
+            hi = mid
+        else:
+            break
+        if hi - lo <= 1e-12:
+            break
+    return best_idxs, float(best_me)
+
+
+def _select_indices_for_timeseries]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\simplify.py" line="349">
+              <codefragment><![CDATA[y, mid, None, None)
+        cnt = len(idxs)
+        diff = abs(cnt - target)
+        if diff < best_diff or (diff == best_diff and mid < best_me):
+            best_idxs = idxs
+            best_me = mid
+            best_diff = diff
+        if cnt > target:
+            lo = mid if mid > lo else lo + (hi - lo) * 0.5
+        elif cnt < target:
+            hi = mid
+        else:
+            break
+        if hi - lo <= 1e-12:
+            break
+    return best_idxs, float(best_me)
+
+
+def _apca_autotune_max_error]]></codefragment>
+            </file>
+            <codefragment><![CDATA[y, mid, None, None)
+        cnt = len(idxs)
+        diff = abs(cnt - target)
+        if diff < best_diff or (diff == best_diff and mid < best_me):
+            best_idxs = idxs
+            best_me = mid
+            best_diff = diff
+        if cnt > target:
+            lo = mid if mid > lo else lo + (hi - lo) * 0.5
+        elif cnt < target:
+            hi = mid
+        else:
+            break
+        if hi - lo <= 1e-12:
+            break
+    return best_idxs, float(best_me)
+
+
+def _select_indices_for_timeseries]]></codefragment>
+        </duplication>
+      
+      <duplication lines="9">
+            <file path="src\mtdata\utils\simplify.py" line="478">
+              <codefragment><![CDATA[:
+        max_error = spec.get("max_error", None)
+        try:
+            me = float(max_error) if max_error is not None else None
+        except Exception:
+            me = None
+        segments = spec.get("segments", None)
+        points = spec.get("points", None) or spec.get("target_points", None) or spec.get("max_points", None)
+        if me is not None and me > 0:
+            idxs = _apca_select_indices]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\simplify.py" line="448">
+              <codefragment><![CDATA[:
+        max_error = spec.get("max_error", None)
+        try:
+            me = float(max_error) if max_error is not None else None
+        except Exception:
+            me = None
+        segments = spec.get("segments", None)
+        points = spec.get("points", None) or spec.get("target_points", None) or spec.get("max_points", None)
+        if me is not None and me > 0:
+            idxs = _pla_select_indices]]></codefragment>
+            </file>
+            <codefragment><![CDATA[:
+        max_error = spec.get("max_error", None)
+        try:
+            me = float(max_error) if max_error is not None else None
+        except Exception:
+            me = None
+        segments = spec.get("segments", None)
+        points = spec.get("points", None) or spec.get("target_points", None) or spec.get("max_points", None)
+        if me is not None and me > 0:
+            idxs = _apca_select_indices]]></codefragment>
+        </duplication>
+      
+      <duplication lines="8">
+            <file path="src\mtdata\utils\simplify.py" line="493">
+              <codefragment><![CDATA[, meta
+        try:
+            p = int(points) if points is not None else None
+        except Exception:
+            p = None
+        if p is None:
+            p = _default_target_points(len(x))
+        if p is not None and p < len(x):
+            idxs, me_used = _apca_autotune_max_error]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\simplify.py" line="463">
+              <codefragment><![CDATA[, meta
+        try:
+            p = int(points) if points is not None else None
+        except Exception:
+            p = None
+        if p is None:
+            p = _default_target_points(len(x))
+        if p is not None and p < len(x):
+            idxs, me_used = _pla_autotune_max_error]]></codefragment>
+            </file>
+            <codefragment><![CDATA[, meta
+        try:
+            p = int(points) if points is not None else None
+        except Exception:
+            p = None
+        if p is None:
+            p = _default_target_points(len(x))
+        if p is not None and p < len(x):
+            idxs, me_used = _apca_autotune_max_error]]></codefragment>
+        </duplication>
+      
+      <duplication lines="17">
+            <file path="src\mtdata\utils\patterns.py" line="309">
+              <codefragment><![CDATA[if _ts_dtw is not None:
+                            try:
+                                if band:
+                                    dist = float(_ts_dtw(a, w, global_constraint="sakoe_chiba", sakoe_chiba_radius=int(band)))
+                                else:
+                                    dist = float(_ts_dtw(a, w))
+                            except Exception:
+                                dist = None
+                        if dist is None and _dd_dtw is not None:
+                            try:
+                                if band:
+                                    dist = float(_dd_dtw.distance_fast(a, w, window=band))
+                                else:
+                                    dist = float(_dd_dtw.distance_fast(a, w))
+                            except Exception:
+                                dist = None
+                        if dist is None:
+                            # Final fallback to simple DTW]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\patterns.py" line="273">
+              <codefragment><![CDATA[if _ts_dtw is not None:
+                        try:
+                            if band:
+                                dist = float(_ts_dtw(a, w, global_constraint="sakoe_chiba", sakoe_chiba_radius=int(band)))
+                            else:
+                                dist = float(_ts_dtw(a, w))
+                        except Exception:
+                            dist = None
+                    if dist is None and _dd_dtw is not None:
+                        try:
+                            if band:
+                                dist = float(_dd_dtw.distance_fast(a, w, window=band))
+                            else:
+                                dist = float(_dd_dtw.distance_fast(a, w))
+                        except Exception:
+                            dist = None
+                    if dist is None:
+                        # Simple O(n^2) DTW DP fallback (no band)]]></codefragment>
+            </file>
+            <codefragment><![CDATA[if _ts_dtw is not None:
+                            try:
+                                if band:
+                                    dist = float(_ts_dtw(a, w, global_constraint="sakoe_chiba", sakoe_chiba_radius=int(band)))
+                                else:
+                                    dist = float(_ts_dtw(a, w))
+                            except Exception:
+                                dist = None
+                        if dist is None and _dd_dtw is not None:
+                            try:
+                                if band:
+                                    dist = float(_dd_dtw.distance_fast(a, w, window=band))
+                                else:
+                                    dist = float(_dd_dtw.distance_fast(a, w))
+                            except Exception:
+                                dist = None
+                        if dist is None:
+                            # Final fallback to simple DTW]]></codefragment>
+        </duplication>
+      
+      <duplication lines="9">
+            <file path="src\mtdata\utils\patterns.py" line="327">
+              <codefragment><![CDATA[ca = np.full((n + 1, n + 1), np.inf, dtype=float)
+                            ca[0, 0] = 0.0
+                            for i in range(1, n + 1):
+                                for j in range(1, n + 1):
+                                    cost = abs(a[i - 1] - w[j - 1])
+                                    ca[i, j] = cost + min(ca[i - 1, j], ca[i, j - 1], ca[i - 1, j - 1])
+                            dist = float(ca[n, n])
+                    score = dist
+            else:
+                # Fallback to euclidean on scaled windows]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\patterns.py" line="291">
+              <codefragment><![CDATA[ca = np.full((n + 1, n + 1), np.inf, dtype=float)
+                        ca[0, 0] = 0.0
+                        for i in range(1, n + 1):
+                            for j in range(1, n + 1):
+                                cost = abs(a[i - 1] - w[j - 1])
+                                ca[i, j] = cost + min(ca[i - 1, j], ca[i, j - 1], ca[i - 1, j - 1])
+                        dist = float(ca[n, n])
+                    score = dist
+                else:  # softdtw]]></codefragment>
+            </file>
+            <codefragment><![CDATA[ca = np.full((n + 1, n + 1), np.inf, dtype=float)
+                            ca[0, 0] = 0.0
+                            for i in range(1, n + 1):
+                                for j in range(1, n + 1):
+                                    cost = abs(a[i - 1] - w[j - 1])
+                                    ca[i, j] = cost + min(ca[i - 1, j], ca[i, j - 1], ca[i - 1, j - 1])
+                            dist = float(ca[n, n])
+                    score = dist
+            else:
+                # Fallback to euclidean on scaled windows]]></codefragment>
+        </duplication>
+      
+      <duplication lines="9">
+            <file path="src\mtdata\utils\forecast.py" line="102">
+              <codefragment><![CDATA[, "description": "HF model repo id."},
+        {"name": "context_length", "type": "int", "default": None, "description": "Number of tail points to feed (auto if None)."},
+        {"name": "device", "type": "str", "default": None, "description": "Device index or name (e.g., 'cpu', 'cuda:0'). Overrides device_map if set."},
+        {"name": "device_map", "type": "str", "default": "auto", "description": "Accelerate device map (e.g., 'auto')."},
+        {"name": "quantization", "type": "str", "default": None, "description": "Quantization preset if supported: 'int8'|'int4'."},
+        {"name": "quantiles", "type": "list[float]", "default": None, "description": "Optional quantiles to predict (e.g., [0.05,0.5,0.95])."},
+        {"name": "revision", "type": "str", "default": None, "description": "HF repo revision (branch/tag/commit)."},
+        {"name": "trust_remote_code", "type": "bool", "default": False, "description": "Allow custom code from repo (HF trust_remote_code)."},
+    ], {**common_defaults, "quantity": "price"})
+    add("lag_llama"]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\forecast.py" line="92">
+              <codefragment><![CDATA[, "description": "HF model repo id."},
+        {"name": "context_length", "type": "int", "default": None, "description": "Number of tail points to feed (auto if None)."},
+        {"name": "device", "type": "str", "default": None, "description": "Device index or name (e.g., 'cpu', 'cuda:0'). Overrides device_map if set."},
+        {"name": "device_map", "type": "str", "default": "auto", "description": "Accelerate device map (e.g., 'auto')."},
+        {"name": "quantization", "type": "str", "default": None, "description": "Quantization preset if supported: 'int8'|'int4'."},
+        {"name": "quantiles", "type": "list[float]", "default": None, "description": "Optional quantiles to predict (e.g., [0.05,0.5,0.95])."},
+        {"name": "revision", "type": "str", "default": None, "description": "HF repo revision (branch/tag/commit)."},
+        {"name": "trust_remote_code", "type": "bool", "default": False, "description": "Allow custom code from repo (HF trust_remote_code)."},
+    ], {**common_defaults, "quantity": "price"})
+    add("timesfm"]]></codefragment>
+            </file>
+            <codefragment><![CDATA[, "description": "HF model repo id."},
+        {"name": "context_length", "type": "int", "default": None, "description": "Number of tail points to feed (auto if None)."},
+        {"name": "device", "type": "str", "default": None, "description": "Device index or name (e.g., 'cpu', 'cuda:0'). Overrides device_map if set."},
+        {"name": "device_map", "type": "str", "default": "auto", "description": "Accelerate device map (e.g., 'auto')."},
+        {"name": "quantization", "type": "str", "default": None, "description": "Quantization preset if supported: 'int8'|'int4'."},
+        {"name": "quantiles", "type": "list[float]", "default": None, "description": "Optional quantiles to predict (e.g., [0.05,0.5,0.95])."},
+        {"name": "revision", "type": "str", "default": None, "description": "HF repo revision (branch/tag/commit)."},
+        {"name": "trust_remote_code", "type": "bool", "default": False, "description": "Allow custom code from repo (HF trust_remote_code)."},
+    ], {**common_defaults, "quantity": "price"})
+    add("lag_llama"]]></codefragment>
+        </duplication>
+      
+      <duplication lines="8">
+            <file path="src\mtdata\utils\forecast.py" line="112">
+              <codefragment><![CDATA[},
+        {"name": "context_length", "type": "int", "default": None, "description": "Number of tail points to feed (auto if None)."},
+        {"name": "device", "type": "str", "default": None, "description": "Device index or name (e.g., 'cpu', 'cuda:0'). Overrides device_map if set."},
+        {"name": "device_map", "type": "str", "default": "auto", "description": "Accelerate device map (e.g., 'auto')."},
+        {"name": "quantization", "type": "str", "default": None, "description": "Quantization preset if supported: 'int8'|'int4'."},
+        {"name": "quantiles", "type": "list[float]", "default": None, "description": "Optional quantiles to predict (e.g., [0.05,0.5,0.95])."},
+        {"name": "revision", "type": "str", "default": None, "description": "HF repo revision (branch/tag/commit)."},
+        {"name": "trust_remote_code", "type": "bool", "default": False, "description": "Allow custom code from repo (HF trust_remote_code)."},
+    ], common_defaults]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\forecast.py" line="92">
+              <codefragment><![CDATA[},
+        {"name": "context_length", "type": "int", "default": None, "description": "Number of tail points to feed (auto if None)."},
+        {"name": "device", "type": "str", "default": None, "description": "Device index or name (e.g., 'cpu', 'cuda:0'). Overrides device_map if set."},
+        {"name": "device_map", "type": "str", "default": "auto", "description": "Accelerate device map (e.g., 'auto')."},
+        {"name": "quantization", "type": "str", "default": None, "description": "Quantization preset if supported: 'int8'|'int4'."},
+        {"name": "quantiles", "type": "list[float]", "default": None, "description": "Optional quantiles to predict (e.g., [0.05,0.5,0.95])."},
+        {"name": "revision", "type": "str", "default": None, "description": "HF repo revision (branch/tag/commit)."},
+        {"name": "trust_remote_code", "type": "bool", "default": False, "description": "Allow custom code from repo (HF trust_remote_code)."},
+    ], {]]></codefragment>
+            </file>
+            <codefragment><![CDATA[},
+        {"name": "context_length", "type": "int", "default": None, "description": "Number of tail points to feed (auto if None)."},
+        {"name": "device", "type": "str", "default": None, "description": "Device index or name (e.g., 'cpu', 'cuda:0'). Overrides device_map if set."},
+        {"name": "device_map", "type": "str", "default": "auto", "description": "Accelerate device map (e.g., 'auto')."},
+        {"name": "quantization", "type": "str", "default": None, "description": "Quantization preset if supported: 'int8'|'int4'."},
+        {"name": "quantiles", "type": "list[float]", "default": None, "description": "Optional quantiles to predict (e.g., [0.05,0.5,0.95])."},
+        {"name": "revision", "type": "str", "default": None, "description": "HF repo revision (branch/tag/commit)."},
+        {"name": "trust_remote_code", "type": "bool", "default": False, "description": "Allow custom code from repo (HF trust_remote_code)."},
+    ], common_defaults]]></codefragment>
+        </duplication>
+      
+      <duplication lines="14">
+            <file path="src\mtdata\utils\dimred.py" line="124">
+              <codefragment><![CDATA[:
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components)}
+
+
+class SparsePCAReducer]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\dimred.py" line="101">
+              <codefragment><![CDATA[:
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components)}
+
+
+class SVDReducer]]></codefragment>
+            </file>
+            <codefragment><![CDATA[:
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components)}
+
+
+class SparsePCAReducer]]></codefragment>
+        </duplication>
+      
+      <duplication lines="11">
+            <file path="src\mtdata\utils\dimred.py" line="148">
+              <codefragment><![CDATA[:
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components),]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\dimred.py" line="101">
+              <codefragment><![CDATA[:
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components)}]]></codefragment>
+            </file>
+            <codefragment><![CDATA[:
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components),]]></codefragment>
+        </duplication>
+      
+      <duplication lines="14">
+            <file path="src\mtdata\utils\dimred.py" line="175">
+              <codefragment><![CDATA[:
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {
+            "method": self.name,
+            "n_components": int(self.n_components),
+            "kernel"]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\dimred.py" line="101">
+              <codefragment><![CDATA[:
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components)}
+
+
+class SVDReducer(DimReducer):
+    name = "svd"
+
+    def __init__(self, n_components: int) -> None:
+        if _SKSVD is None:
+            raise RuntimeError("scikit-learn not available; cannot use TruncatedSVD")
+        self.n_components = int(max(1, n_components))
+        self._model = _SKSVD(n_components=self.n_components)
+
+    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "SVDReducer":
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components)}
+
+
+class SparsePCAReducer(DimReducer):
+    name = "spca"
+
+    def __init__(self, n_components: int = 2, alpha: float = 1.0) -> None:
+        if _SKSparsePCA is None:
+            raise RuntimeError("scikit-learn not available; cannot use SparsePCA")
+        self.n_components = int(max(1, n_components))
+        self.alpha = float(alpha)
+        self._model = _SKSparsePCA(n_components=self.n_components, alpha=self.alpha)
+
+    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "SparsePCAReducer":
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components), "alpha"]]></codefragment>
+            </file>
+            <codefragment><![CDATA[:
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {
+            "method": self.name,
+            "n_components": int(self.n_components),
+            "kernel"]]></codefragment>
+        </duplication>
+      
+      <duplication lines="6">
+            <file path="src\mtdata\utils\dimred.py" line="214">
+              <codefragment><![CDATA[)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components), "n_neighbors"]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\dimred.py" line="106">
+              <codefragment><![CDATA[)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components)}
+
+
+class SVDReducer(DimReducer):
+    name = "svd"
+
+    def __init__(self, n_components: int) -> None:
+        if _SKSVD is None:
+            raise RuntimeError("scikit-learn not available; cannot use TruncatedSVD")
+        self.n_components = int(max(1, n_components))
+        self._model = _SKSVD(n_components=self.n_components)
+
+    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "SVDReducer":
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components)}
+
+
+class SparsePCAReducer(DimReducer):
+    name = "spca"
+
+    def __init__(self, n_components: int = 2, alpha: float = 1.0) -> None:
+        if _SKSparsePCA is None:
+            raise RuntimeError("scikit-learn not available; cannot use SparsePCA")
+        self.n_components = int(max(1, n_components))
+        self.alpha = float(alpha)
+        self._model = _SKSparsePCA(n_components=self.n_components, alpha=self.alpha)
+
+    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "SparsePCAReducer":
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components), "alpha"]]></codefragment>
+            </file>
+            <codefragment><![CDATA[)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components), "n_neighbors"]]></codefragment>
+        </duplication>
+      
+      <duplication lines="11">
+            <file path="src\mtdata\utils\dimred.py" line="283">
+              <codefragment><![CDATA[:
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components), "n_neighbors": int(self.n_neighbors)}]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\dimred.py" line="101">
+              <codefragment><![CDATA[:
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components)}
+
+
+class SVDReducer(DimReducer):
+    name = "svd"
+
+    def __init__(self, n_components: int) -> None:
+        if _SKSVD is None:
+            raise RuntimeError("scikit-learn not available; cannot use TruncatedSVD")
+        self.n_components = int(max(1, n_components))
+        self._model = _SKSVD(n_components=self.n_components)
+
+    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "SVDReducer":
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components)}
+
+
+class SparsePCAReducer(DimReducer):
+    name = "spca"
+
+    def __init__(self, n_components: int = 2, alpha: float = 1.0) -> None:
+        if _SKSparsePCA is None:
+            raise RuntimeError("scikit-learn not available; cannot use SparsePCA")
+        self.n_components = int(max(1, n_components))
+        self.alpha = float(alpha)
+        self._model = _SKSparsePCA(n_components=self.n_components, alpha=self.alpha)
+
+    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "SparsePCAReducer":
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components), "alpha": float(self.alpha)}
+
+
+class KPCAReducer(DimReducer):
+    name = "kpca"
+
+    def __init__(self, n_components: int = 2, kernel: str = "rbf", gamma: Optional[float] = None, degree: int = 3, coef0: float = 1.0) -> None:
+        if _SKKPCA is None:
+            raise RuntimeError("scikit-learn not available; cannot use KernelPCA")
+        self.n_components = int(max(1, n_components))
+        self.kernel = str(kernel)
+        self.gamma = None if gamma is None else float(gamma)
+        self.degree = int(degree)
+        self.coef0 = float(coef0)
+        self._model = _SKKPCA(n_components=self.n_components, kernel=self.kernel, gamma=self.gamma, degree=self.degree, coef0=self.coef0, fit_inverse_transform=False)
+
+    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "KPCAReducer":
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {
+            "method": self.name,
+            "n_components": int(self.n_components),
+            "kernel": str(self.kernel),
+            "gamma": None if self.gamma is None else float(self.gamma),
+            "degree": int(self.degree),
+            "coef0": float(self.coef0),
+        }
+
+
+class LaplacianReducer(DimReducer):
+    name = "laplacian"
+
+    def __init__(self, n_components: int = 2, n_neighbors: int = 10) -> None:
+        if _SKSpectral is None:
+            raise RuntimeError("scikit-learn not available; cannot use SpectralEmbedding")
+        self.n_components = int(max(1, n_components))
+        self.n_neighbors = int(max(1, n_neighbors))
+        self._model = _SKSpectral(n_components=self.n_components, n_neighbors=self.n_neighbors)
+
+    def supports_transform(self) -> bool:
+        return False
+
+    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "LaplacianReducer":
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        raise RuntimeError("SpectralEmbedding does not support transforming new samples; use 'pca' or 'umap'")
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components), "n_neighbors": int(self.n_neighbors),]]></codefragment>
+            </file>
+            <codefragment><![CDATA[:
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components), "n_neighbors": int(self.n_neighbors)}]]></codefragment>
+        </duplication>
+      
+      <duplication lines="11">
+            <file path="src\mtdata\utils\dimred.py" line="308">
+              <codefragment><![CDATA[:
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components), "n_neighbors": int(self.n_neighbors), "min_dist"]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\dimred.py" line="101">
+              <codefragment><![CDATA[:
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components)}
+
+
+class SVDReducer(DimReducer):
+    name = "svd"
+
+    def __init__(self, n_components: int) -> None:
+        if _SKSVD is None:
+            raise RuntimeError("scikit-learn not available; cannot use TruncatedSVD")
+        self.n_components = int(max(1, n_components))
+        self._model = _SKSVD(n_components=self.n_components)
+
+    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "SVDReducer":
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components)}
+
+
+class SparsePCAReducer(DimReducer):
+    name = "spca"
+
+    def __init__(self, n_components: int = 2, alpha: float = 1.0) -> None:
+        if _SKSparsePCA is None:
+            raise RuntimeError("scikit-learn not available; cannot use SparsePCA")
+        self.n_components = int(max(1, n_components))
+        self.alpha = float(alpha)
+        self._model = _SKSparsePCA(n_components=self.n_components, alpha=self.alpha)
+
+    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "SparsePCAReducer":
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components), "alpha": float(self.alpha)}
+
+
+class KPCAReducer(DimReducer):
+    name = "kpca"
+
+    def __init__(self, n_components: int = 2, kernel: str = "rbf", gamma: Optional[float] = None, degree: int = 3, coef0: float = 1.0) -> None:
+        if _SKKPCA is None:
+            raise RuntimeError("scikit-learn not available; cannot use KernelPCA")
+        self.n_components = int(max(1, n_components))
+        self.kernel = str(kernel)
+        self.gamma = None if gamma is None else float(gamma)
+        self.degree = int(degree)
+        self.coef0 = float(coef0)
+        self._model = _SKKPCA(n_components=self.n_components, kernel=self.kernel, gamma=self.gamma, degree=self.degree, coef0=self.coef0, fit_inverse_transform=False)
+
+    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "KPCAReducer":
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {
+            "method": self.name,
+            "n_components": int(self.n_components),
+            "kernel": str(self.kernel),
+            "gamma": None if self.gamma is None else float(self.gamma),
+            "degree": int(self.degree),
+            "coef0": float(self.coef0),
+        }
+
+
+class LaplacianReducer(DimReducer):
+    name = "laplacian"
+
+    def __init__(self, n_components: int = 2, n_neighbors: int = 10) -> None:
+        if _SKSpectral is None:
+            raise RuntimeError("scikit-learn not available; cannot use SpectralEmbedding")
+        self.n_components = int(max(1, n_components))
+        self.n_neighbors = int(max(1, n_neighbors))
+        self._model = _SKSpectral(n_components=self.n_components, n_neighbors=self.n_neighbors)
+
+    def supports_transform(self) -> bool:
+        return False
+
+    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "LaplacianReducer":
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        raise RuntimeError("SpectralEmbedding does not support transforming new samples; use 'pca' or 'umap'")
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components), "n_neighbors": int(self.n_neighbors), "supports_transform"]]></codefragment>
+            </file>
+            <codefragment><![CDATA[:
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components), "n_neighbors": int(self.n_neighbors), "min_dist"]]></codefragment>
+        </duplication>
+      
+      <duplication lines="9">
+            <file path="src\mtdata\utils\dimred.py" line="344">
+              <codefragment><![CDATA[)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {
+            "method": self.name,
+            "n_components": int(self.n_components),
+            "perplexity"]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\dimred.py" line="106">
+              <codefragment><![CDATA[)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components)}
+
+
+class SVDReducer(DimReducer):
+    name = "svd"
+
+    def __init__(self, n_components: int) -> None:
+        if _SKSVD is None:
+            raise RuntimeError("scikit-learn not available; cannot use TruncatedSVD")
+        self.n_components = int(max(1, n_components))
+        self._model = _SKSVD(n_components=self.n_components)
+
+    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "SVDReducer":
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components)}
+
+
+class SparsePCAReducer(DimReducer):
+    name = "spca"
+
+    def __init__(self, n_components: int = 2, alpha: float = 1.0) -> None:
+        if _SKSparsePCA is None:
+            raise RuntimeError("scikit-learn not available; cannot use SparsePCA")
+        self.n_components = int(max(1, n_components))
+        self.alpha = float(alpha)
+        self._model = _SKSparsePCA(n_components=self.n_components, alpha=self.alpha)
+
+    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "SparsePCAReducer":
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {"method": self.name, "n_components": int(self.n_components), "alpha"]]></codefragment>
+            </file>
+            <codefragment><![CDATA[)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
+    def info(self) -> Dict[str, Any]:
+        return {
+            "method": self.name,
+            "n_components": int(self.n_components),
+            "perplexity"]]></codefragment>
+        </duplication>
+      
+      <duplication lines="6">
+            <file path="src\mtdata\utils\dimred.py" line="453">
+              <codefragment><![CDATA[, dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        self.fit(X, y)
+        return self.transform(X)
+
+    def info]]></codefragment>
+            </file>
+            <file path="src\mtdata\utils\dimred.py" line="72">
+              <codefragment><![CDATA[, dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        self.fit(X, y)
+        return self.transform(X)
+
+    def supports_transform]]></codefragment>
+            </file>
+            <codefragment><![CDATA[, dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
+        self.fit(X, y)
+        return self.transform(X)
+
+    def info]]></codefragment>
+        </duplication>
+      
+      <duplication lines="8">
+            <file path="src\mtdata\patterns\classic.py" line="333">
+              <codefragment><![CDATA[ClassicPatternResult(
+                name=name,
+                status=status,
+                confidence=conf,
+                start_index=int(min(ih[0], il[0])),
+                end_index=int(max(ih[-1], il[-1])),
+                start_time=float(t[int(min(ih[0], il[0]))]) if t.size else None,
+                end_time=float(t[int(max(ih[-1], il[-1]))]) if t.size else None,
+                details={]]></codefragment>
+            </file>
+            <file path="src\mtdata\patterns\classic.py" line="238">
+              <codefragment><![CDATA[ClassicPatternResult(
+                name=name,
+                status=status,
+                confidence=conf,
+                start_index=int(min(ih[0], il[0])),
+                end_index=int(max(ih[-1], il[-1])),
+                start_time=float(t[int(min(ih[0], il[0]))]) if t.size else None,
+                end_time=float(t[int(max(ih[-1], il[-1]))]) if t.size else None,
+                details=details]]></codefragment>
+            </file>
+            <codefragment><![CDATA[ClassicPatternResult(
+                name=name,
+                status=status,
+                confidence=conf,
+                start_index=int(min(ih[0], il[0])),
+                end_index=int(max(ih[-1], il[-1])),
+                start_time=float(t[int(min(ih[0], il[0]))]) if t.size else None,
+                end_time=float(t[int(max(ih[-1], il[-1]))]) if t.size else None,
+                details={]]></codefragment>
+        </duplication>
+      
+      <duplication lines="8">
+            <file path="src\mtdata\patterns\classic.py" line="353">
+              <codefragment><![CDATA[():
+        out: List[ClassicPatternResult] = []
+        k = min(8, peaks.size, troughs.size)
+        if k < 4:
+            return out
+        ih = peaks[-k:]; il = troughs[-k:]
+        sh, bh, r2h = _fit_line(ih.astype(float), c[ih])
+        sl, bl, r2l = _fit_line(il.astype(float), c[il])
+        x]]></codefragment>
+            </file>
+            <file path="src\mtdata\patterns\classic.py" line="300">
+              <codefragment><![CDATA[
+        slope_diff = abs(sh - sl)
+        approx_parallel = slope_diff <= max(1e-4, 0.15 * max(abs(sh), abs(sl), cfg.max_flat_slope))
+        upper = sh * np.arange(n, dtype=float) + bh
+        lower = sl * np.arange(n, dtype=float) + bl
+        width = upper - lower
+        width_ok = float(np.std(width[-k:]) / (np.mean(width[-k:]) + 1e-9))
+        geom_ok = 1.0 - min(1.0, max(0.0, width_ok))
+        touches = 0
+        tol_abs = abs(np.median(c)) * (cfg.same_level_tol_pct / 100.0)
+        touches += len(_last_touch_indexes(upper, peaks[-k:], c, tol_abs))
+        touches += len(_last_touch_indexes(lower, troughs[-k:], c, tol_abs))
+        name = "Trend Channel"
+        if sh > cfg.max_flat_slope and sl > cfg.max_flat_slope:
+            name = "Ascending Channel"
+        elif sh < -cfg.max_flat_slope and sl < -cfg.max_flat_slope:
+            name = "Descending Channel"
+        elif abs(sh) <= cfg.max_flat_slope and abs(sl) <= cfg.max_flat_slope:
+            name = "Horizontal Channel"
+        if approx_parallel and touches >= cfg.min_channel_touches:
+            conf = _conf(touches, min(r2h, r2l), geom_ok)
+            status = "forming"
+            recent_i = n - 1
+            hit_upper = abs(upper[recent_i] - c[recent_i]) <= tol_abs
+            hit_lower = abs(lower[recent_i] - c[recent_i]) <= tol_abs
+            if hit_upper or hit_lower:
+                status = "completed"
+            details = {
+                "upper_slope": float(sh),
+                "upper_intercept": float(bh),
+                "lower_slope": float(sl),
+                "lower_intercept": float(bl),
+                "r2_upper": float(r2h),
+                "r2_lower": float(r2l),
+                "channel_width_recent": float(width[recent_i]),
+            }
+            base = ClassicPatternResult(
+                name=name,
+                status=status,
+                confidence=conf,
+                start_index=int(min(ih[0], il[0])),
+                end_index=int(max(ih[-1], il[-1])),
+                start_time=float(t[int(min(ih[0], il[0]))]) if t.size else None,
+                end_time=float(t[int(max(ih[-1], il[-1]))]) if t.size else None,
+                details=details,
+            )
+            ch_results.append(base)
+            # Generic channel alias
+            ch_results.append(ClassicPatternResult(
+                name="Trend Channel",
+                status=base.status,
+                confidence=base.confidence * 0.95,
+                start_index=base.start_index,
+                end_index=base.end_index,
+                start_time=base.start_time,
+                end_time=base.end_time,
+                details=base.details,
+            ))
+        return ch_results
+
+    results.extend(_try_channel())
+
+    # Rectangles (Range/Rectangle)
+    def _try_rectangle():
+        out: List[ClassicPatternResult] = []
+        k = min(8, peaks.size, troughs.size)
+        if k < 3:
+            return out
+        ph = c[peaks[-k:]]; pl = c[troughs[-k:]]
+        top = float(np.median(ph))
+        bot = float(np.median(pl))
+        if top <= bot:
+            return out
+        equal_highs = np.mean([_level_close(v, top, cfg.same_level_tol_pct) for v in ph])
+        equal_lows = np.mean([_level_close(v, bot, cfg.same_level_tol_pct) for v in pl])
+        touches = int(np.round(equal_highs * ph.size + equal_lows * pl.size))
+        if equal_highs > 0.6 and equal_lows > 0.6 and touches >= cfg.min_channel_touches - 1:
+            geom_ok = 1.0
+            conf = _conf(touches, 1.0, geom_ok)
+            status = "forming"
+            recent_i = n - 1
+            if _level_close(c[recent_i], top, cfg.same_level_tol_pct) or _level_close(c[recent_i], bot, cfg.same_level_tol_pct):
+                status = "completed"
+            out.append(ClassicPatternResult(
+                name="Rectangle",
+                status=status,
+                confidence=conf,
+                start_index=int(min(peaks[-k], troughs[-k])),
+                end_index=int(max(peaks[-1], troughs[-1])),
+                start_time=float(t[int(min(peaks[-k], troughs[-k]))]) if t.size else None,
+                end_time=float(t[int(max(peaks[-1], troughs[-1]))]) if t.size else None,
+                details={"resistance": top, "support": bot, "touches": touches},
+            ))
+        return out
+
+    results.extend(_try_rectangle())
+
+    # Triangles (Ascending, Descending, Symmetrical)
+    def _try_triangles]]></codefragment>
+            </file>
+            <codefragment><![CDATA[():
+        out: List[ClassicPatternResult] = []
+        k = min(8, peaks.size, troughs.size)
+        if k < 4:
+            return out
+        ih = peaks[-k:]; il = troughs[-k:]
+        sh, bh, r2h = _fit_line(ih.astype(float), c[ih])
+        sl, bl, r2l = _fit_line(il.astype(float), c[il])
+        x]]></codefragment>
+        </duplication>
+      
+      <duplication lines="8">
+            <file path="src\mtdata\patterns\classic.py" line="375">
+              <codefragment><![CDATA[,
+                confidence=conf,
+                start_index=int(min(ih[0], il[0])),
+                end_index=int(max(ih[-1], il[-1])),
+                start_time=float(t[int(min(ih[0], il[0]))]) if t.size else None,
+                end_time=float(t[int(max(ih[-1], il[-1]))]) if t.size else None,
+                details={
+                    "top_slope": float(sh),
+                    "bottom_slope"]]></codefragment>
+            </file>
+            <file path="src\mtdata\patterns\classic.py" line="240">
+              <codefragment><![CDATA[,
+                confidence=conf,
+                start_index=int(min(ih[0], il[0])),
+                end_index=int(max(ih[-1], il[-1])),
+                start_time=float(t[int(min(ih[0], il[0]))]) if t.size else None,
+                end_time=float(t[int(max(ih[-1], il[-1]))]) if t.size else None,
+                details=details,
+            )
+            ch_results.append(base)
+            # Generic channel alias
+            ch_results.append(ClassicPatternResult(
+                name="Trend Channel",
+                status=base.status,
+                confidence=base.confidence * 0.95,
+                start_index=base.start_index,
+                end_index=base.end_index,
+                start_time=base.start_time,
+                end_time=base.end_time,
+                details=base.details,
+            ))
+        return ch_results
+
+    results.extend(_try_channel())
+
+    # Rectangles (Range/Rectangle)
+    def _try_rectangle():
+        out: List[ClassicPatternResult] = []
+        k = min(8, peaks.size, troughs.size)
+        if k < 3:
+            return out
+        ph = c[peaks[-k:]]; pl = c[troughs[-k:]]
+        top = float(np.median(ph))
+        bot = float(np.median(pl))
+        if top <= bot:
+            return out
+        equal_highs = np.mean([_level_close(v, top, cfg.same_level_tol_pct) for v in ph])
+        equal_lows = np.mean([_level_close(v, bot, cfg.same_level_tol_pct) for v in pl])
+        touches = int(np.round(equal_highs * ph.size + equal_lows * pl.size))
+        if equal_highs > 0.6 and equal_lows > 0.6 and touches >= cfg.min_channel_touches - 1:
+            geom_ok = 1.0
+            conf = _conf(touches, 1.0, geom_ok)
+            status = "forming"
+            recent_i = n - 1
+            if _level_close(c[recent_i], top, cfg.same_level_tol_pct) or _level_close(c[recent_i], bot, cfg.same_level_tol_pct):
+                status = "completed"
+            out.append(ClassicPatternResult(
+                name="Rectangle",
+                status=status,
+                confidence=conf,
+                start_index=int(min(peaks[-k], troughs[-k])),
+                end_index=int(max(peaks[-1], troughs[-1])),
+                start_time=float(t[int(min(peaks[-k], troughs[-k]))]) if t.size else None,
+                end_time=float(t[int(max(peaks[-1], troughs[-1]))]) if t.size else None,
+                details={"resistance": top, "support": bot, "touches": touches},
+            ))
+        return out
+
+    results.extend(_try_rectangle())
+
+    # Triangles (Ascending, Descending, Symmetrical)
+    def _try_triangles():
+        out: List[ClassicPatternResult] = []
+        k = min(8, peaks.size, troughs.size)
+        if k < 4:
+            return out
+        ih = peaks[-k:]; il = troughs[-k:]
+        sh, bh, r2h = _fit_line(ih.astype(float), c[ih])
+        sl, bl, r2l = _fit_line(il.astype(float), c[il])
+        # Lines must converge: distance decreasing toward recent bars
+        x = np.arange(n, dtype=float)
+        top = sh * x + bh
+        bot = sl * x + bl
+        if np.any(top - bot <= 0):
+            # ensure a sensible region where top>bot
+            mask = (top - bot) > 0
+        else:
+            mask = slice(-k, None)
+        dist_recent = float(np.mean((top - bot)[-max(5, k):]))
+        dist_past = float(np.mean((top - bot)[-max(20, 2*k):-max(5, k)])) if n > max(20, 2*k) else dist_recent * 1.2
+        converging = dist_recent < dist_past
+        tol_abs = abs(np.median(c)) * (cfg.same_level_tol_pct / 100.0)
+        touches = 0
+        touches += len(_last_touch_indexes(top, ih, c, tol_abs))
+        touches += len(_last_touch_indexes(bot, il, c, tol_abs))
+        if converging and touches >= cfg.min_channel_touches - 1:
+            if abs(sh) <= cfg.max_flat_slope and sl > cfg.max_flat_slope:
+                name = "Ascending Triangle"
+            elif abs(sl) <= cfg.max_flat_slope and sh < -cfg.max_flat_slope:
+                name = "Descending Triangle"
+            else:
+                name = "Symmetrical Triangle"
+            conf = _conf(touches, min(r2h, r2l), 1.0)
+            status = "forming"
+            out.append(ClassicPatternResult(
+                name=name,
+                status=status,
+                confidence=conf,
+                start_index=int(min(ih[0], il[0])),
+                end_index=int(max(ih[-1], il[-1])),
+                start_time=float(t[int(min(ih[0], il[0]))]) if t.size else None,
+                end_time=float(t[int(max(ih[-1], il[-1]))]) if t.size else None,
+                details={
+                    "top_slope": float(sh),
+                    "top_intercept"]]></codefragment>
+            </file>
+            <codefragment><![CDATA[,
+                confidence=conf,
+                start_index=int(min(ih[0], il[0])),
+                end_index=int(max(ih[-1], il[-1])),
+                start_time=float(t[int(min(ih[0], il[0]))]) if t.size else None,
+                end_time=float(t[int(max(ih[-1], il[-1]))]) if t.size else None,
+                details={
+                    "top_slope": float(sh),
+                    "bottom_slope"]]></codefragment>
+        </duplication>
+      
+      <duplication lines="11">
+            <file path="src\mtdata\patterns\classic.py" line="482">
+              <codefragment><![CDATA[c[head] and _level_close(c[lsh], c[rsh], cfg.same_level_tol_pct):
+                    neckline = float((c[nl1] + c[nl2]) / 2.0)
+                    status = "forming"
+                    details = {
+                        "left_shoulder": float(c[lsh]),
+                        "right_shoulder": float(c[rsh]),
+                        "head": float(c[head]),
+                        "neckline": neckline,
+                    }
+                    conf = 0.7
+                    out.append(ClassicPatternResult(
+                        name="Inverse Head and Shoulders"]]></codefragment>
+            </file>
+            <file path="src\mtdata\patterns\classic.py" line="458">
+              <codefragment><![CDATA[c[head] and _level_close(c[lsh], c[rsh], cfg.same_level_tol_pct):
+                    neckline = float((c[nl1] + c[nl2]) / 2.0)
+                    status = "forming"
+                    details = {
+                        "left_shoulder": float(c[lsh]),
+                        "right_shoulder": float(c[rsh]),
+                        "head": float(c[head]),
+                        "neckline": neckline,
+                    }
+                    conf = 0.7
+                    out.append(ClassicPatternResult(
+                        name="Head and Shoulders"]]></codefragment>
+            </file>
+            <codefragment><![CDATA[c[head] and _level_close(c[lsh], c[rsh], cfg.same_level_tol_pct):
+                    neckline = float((c[nl1] + c[nl2]) / 2.0)
+                    status = "forming"
+                    details = {
+                        "left_shoulder": float(c[lsh]),
+                        "right_shoulder": float(c[rsh]),
+                        "head": float(c[head]),
+                        "neckline": neckline,
+                    }
+                    conf = 0.7
+                    out.append(ClassicPatternResult(
+                        name="Inverse Head and Shoulders"]]></codefragment>
+        </duplication>
+      
+      <duplication lines="9">
+            <file path="src\mtdata\patterns\classic.py" line="493">
+              <codefragment><![CDATA[,
+                        status=status,
+                        confidence=conf,
+                        start_index=int(lsh),
+                        end_index=int(rsh),
+                        start_time=float(t[int(lsh)]) if t.size else None,
+                        end_time=float(t[int(rsh)]) if t.size else None,
+                        details=details,
+                    ))
+        return]]></codefragment>
+            </file>
+            <file path="src\mtdata\patterns\classic.py" line="469">
+              <codefragment><![CDATA[,
+                        status=status,
+                        confidence=conf,
+                        start_index=int(lsh),
+                        end_index=int(rsh),
+                        start_time=float(t[int(lsh)]) if t.size else None,
+                        end_time=float(t[int(rsh)]) if t.size else None,
+                        details=details,
+                    ))
+            # Inverse H&S: trough, peak, lower trough, peak, higher trough]]></codefragment>
+            </file>
+            <codefragment><![CDATA[,
+                        status=status,
+                        confidence=conf,
+                        start_index=int(lsh),
+                        end_index=int(rsh),
+                        start_time=float(t[int(lsh)]) if t.size else None,
+                        end_time=float(t[int(rsh)]) if t.size else None,
+                        details=details,
+                    ))
+        return]]></codefragment>
+        </duplication>
+      
+      <duplication lines="6">
+            <file path="src\mtdata\patterns\classic.py" line="622">
+              <codefragment><![CDATA[, peaks.size, troughs.size)
+        if k < 4:
+            return out
+        ih = peaks[-k:]; il = troughs[-k:]
+        sh, bh, r2h = _fit_line(ih.astype(float), c[ih])
+        sl, bl, r2l = _fit_line(il.astype(float), c[il])
+        diverging]]></codefragment>
+            </file>
+            <file path="src\mtdata\patterns\classic.py" line="302">
+              <codefragment><![CDATA[
+        slope_diff = abs(sh - sl)
+        approx_parallel = slope_diff <= max(1e-4, 0.15 * max(abs(sh), abs(sl), cfg.max_flat_slope))
+        upper = sh * np.arange(n, dtype=float) + bh
+        lower = sl * np.arange(n, dtype=float) + bl
+        width = upper - lower
+        width_ok = float(np.std(width[-k:]) / (np.mean(width[-k:]) + 1e-9))
+        geom_ok = 1.0 - min(1.0, max(0.0, width_ok))
+        touches = 0
+        tol_abs = abs(np.median(c)) * (cfg.same_level_tol_pct / 100.0)
+        touches += len(_last_touch_indexes(upper, peaks[-k:], c, tol_abs))
+        touches += len(_last_touch_indexes(lower, troughs[-k:], c, tol_abs))
+        name = "Trend Channel"
+        if sh > cfg.max_flat_slope and sl > cfg.max_flat_slope:
+            name = "Ascending Channel"
+        elif sh < -cfg.max_flat_slope and sl < -cfg.max_flat_slope:
+            name = "Descending Channel"
+        elif abs(sh) <= cfg.max_flat_slope and abs(sl) <= cfg.max_flat_slope:
+            name = "Horizontal Channel"
+        if approx_parallel and touches >= cfg.min_channel_touches:
+            conf = _conf(touches, min(r2h, r2l), geom_ok)
+            status = "forming"
+            recent_i = n - 1
+            hit_upper = abs(upper[recent_i] - c[recent_i]) <= tol_abs
+            hit_lower = abs(lower[recent_i] - c[recent_i]) <= tol_abs
+            if hit_upper or hit_lower:
+                status = "completed"
+            details = {
+                "upper_slope": float(sh),
+                "upper_intercept": float(bh),
+                "lower_slope": float(sl),
+                "lower_intercept": float(bl),
+                "r2_upper": float(r2h),
+                "r2_lower": float(r2l),
+                "channel_width_recent": float(width[recent_i]),
+            }
+            base = ClassicPatternResult(
+                name=name,
+                status=status,
+                confidence=conf,
+                start_index=int(min(ih[0], il[0])),
+                end_index=int(max(ih[-1], il[-1])),
+                start_time=float(t[int(min(ih[0], il[0]))]) if t.size else None,
+                end_time=float(t[int(max(ih[-1], il[-1]))]) if t.size else None,
+                details=details,
+            )
+            ch_results.append(base)
+            # Generic channel alias
+            ch_results.append(ClassicPatternResult(
+                name="Trend Channel",
+                status=base.status,
+                confidence=base.confidence * 0.95,
+                start_index=base.start_index,
+                end_index=base.end_index,
+                start_time=base.start_time,
+                end_time=base.end_time,
+                details=base.details,
+            ))
+        return ch_results
+
+    results.extend(_try_channel())
+
+    # Rectangles (Range/Rectangle)
+    def _try_rectangle():
+        out: List[ClassicPatternResult] = []
+        k = min(8, peaks.size, troughs.size)
+        if k < 3:
+            return out
+        ph = c[peaks[-k:]]; pl = c[troughs[-k:]]
+        top = float(np.median(ph))
+        bot = float(np.median(pl))
+        if top <= bot:
+            return out
+        equal_highs = np.mean([_level_close(v, top, cfg.same_level_tol_pct) for v in ph])
+        equal_lows = np.mean([_level_close(v, bot, cfg.same_level_tol_pct) for v in pl])
+        touches = int(np.round(equal_highs * ph.size + equal_lows * pl.size))
+        if equal_highs > 0.6 and equal_lows > 0.6 and touches >= cfg.min_channel_touches - 1:
+            geom_ok = 1.0
+            conf = _conf(touches, 1.0, geom_ok)
+            status = "forming"
+            recent_i = n - 1
+            if _level_close(c[recent_i], top, cfg.same_level_tol_pct) or _level_close(c[recent_i], bot, cfg.same_level_tol_pct):
+                status = "completed"
+            out.append(ClassicPatternResult(
+                name="Rectangle",
+                status=status,
+                confidence=conf,
+                start_index=int(min(peaks[-k], troughs[-k])),
+                end_index=int(max(peaks[-1], troughs[-1])),
+                start_time=float(t[int(min(peaks[-k], troughs[-k]))]) if t.size else None,
+                end_time=float(t[int(max(peaks[-1], troughs[-1]))]) if t.size else None,
+                details={"resistance": top, "support": bot, "touches": touches},
+            ))
+        return out
+
+    results.extend(_try_rectangle())
+
+    # Triangles (Ascending, Descending, Symmetrical)
+    def _try_triangles():
+        out: List[ClassicPatternResult] = []
+        k = min(8]]></codefragment>
+            </file>
+            <codefragment><![CDATA[, peaks.size, troughs.size)
+        if k < 4:
+            return out
+        ih = peaks[-k:]; il = troughs[-k:]
+        sh, bh, r2h = _fit_line(ih.astype(float), c[ih])
+        sl, bl, r2l = _fit_line(il.astype(float), c[il])
+        diverging]]></codefragment>
+        </duplication>
+      
+      <duplication lines="11">
+            <file path="src\mtdata\patterns\classic.py" line="632">
+              <codefragment><![CDATA[,
+                status="forming",
+                confidence=conf,
+                start_index=int(min(ih[0], il[0])),
+                end_index=int(max(ih[-1], il[-1])),
+                start_time=float(t[int(min(ih[0], il[0]))]) if t.size else None,
+                end_time=float(t[int(max(ih[-1], il[-1]))]) if t.size else None,
+                details={
+                    "top_slope": float(sh),
+                    "bottom_slope": float(sl),
+                },
+            ))]]></codefragment>
+            </file>
+            <file path="src\mtdata\patterns\classic.py" line="374">
+              <codefragment><![CDATA[,
+                status="forming",
+                confidence=conf,
+                start_index=int(min(ih[0], il[0])),
+                end_index=int(max(ih[-1], il[-1])),
+                start_time=float(t[int(min(ih[0], il[0]))]) if t.size else None,
+                end_time=float(t[int(max(ih[-1], il[-1]))]) if t.size else None,
+                details={
+                    "top_slope": float(sh),
+                    "bottom_slope": float(sl),
+                },
+            )
+            out]]></codefragment>
+            </file>
+            <codefragment><![CDATA[,
+                status="forming",
+                confidence=conf,
+                start_index=int(min(ih[0], il[0])),
+                end_index=int(max(ih[-1], il[-1])),
+                start_time=float(t[int(min(ih[0], il[0]))]) if t.size else None,
+                end_time=float(t[int(max(ih[-1], il[-1]))]) if t.size else None,
+                details={
+                    "top_slope": float(sh),
+                    "bottom_slope": float(sl),
+                },
+            ))]]></codefragment>
+        </duplication>
+      
+      <duplication lines="6">
+            <file path="src\mtdata\forecast\volatility.py" line="258">
+              <codefragment><![CDATA[try:
+                    ts = _pd.to_datetime(df['time'].iloc[1:].astype(float), unit='s', utc=True) if r.size == (len(df)-1) else _pd.date_range(periods=len(y), freq=_pd_freq_from_timeframe(timeframe))
+                except Exception:
+                    import pandas as _pd
+                    ts = _pd.date_range(periods=len(y), freq=_pd_freq_from_timeframe(timeframe))
+                Y_df = _pd.DataFrame({'unique_id': ['ts']*int(len(y)), 'ds': _pd.Index(ts).to_pydatetime(), 'y': y.astype(float)})
+                model]]></codefragment>
+            </file>
+            <file path="src\mtdata\forecast\volatility.py" line="219">
+              <codefragment><![CDATA[try:
+                    ts = _pd.to_datetime(df['time'].iloc[1:].astype(float), unit='s', utc=True) if r.size == (len(df)-1) else _pd.date_range(periods=len(y), freq=_pd_freq_from_timeframe(timeframe))
+                except Exception:
+                    import pandas as _pd
+                    ts = _pd.date_range(periods=len(y), freq=_pd_freq_from_timeframe(timeframe))
+                Y_df = _pd.DataFrame({'unique_id': ['ts']*int(len(y)), 'ds': _pd.Index(ts).to_pydatetime(), 'y': y.astype(float)})
+                lags]]></codefragment>
+            </file>
+            <codefragment><![CDATA[try:
+                    ts = _pd.to_datetime(df['time'].iloc[1:].astype(float), unit='s', utc=True) if r.size == (len(df)-1) else _pd.date_range(periods=len(y), freq=_pd_freq_from_timeframe(timeframe))
+                except Exception:
+                    import pandas as _pd
+                    ts = _pd.date_range(periods=len(y), freq=_pd_freq_from_timeframe(timeframe))
+                Y_df = _pd.DataFrame({'unique_id': ['ts']*int(len(y)), 'ds': _pd.Index(ts).to_pydatetime(), 'y': y.astype(float)})
+                model]]></codefragment>
+        </duplication>
+      
+      <duplication lines="26">
+            <file path="src\mtdata\forecast\volatility.py" line="313">
+              <codefragment><![CDATA[)
+        _info_before = mt5.symbol_info(symbol)
+        _was_visible = bool(_info_before.visible) if _info_before is not None else None
+        err = _ensure_symbol_ready(symbol)
+        if err:
+            return {"error": err}
+        try:
+            if as_of:
+                to_dt = _parse_start_datetime_util(as_of)
+                if not to_dt:
+                    return {"error": "Invalid as_of time."}
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, need)
+            else:
+                _tick = mt5.symbol_info_tick(symbol)
+                if _tick is not None and getattr(_tick, 'time', None):
+                    t_utc = _mt5_epoch_to_utc(float(_tick.time))
+                    server_now_dt = datetime.utcfromtimestamp(t_utc)
+                else:
+                    server_now_dt = datetime.utcnow()
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
+        finally:
+            if _was_visible is False:
+                try:
+                    mt5.symbol_select(symbol, False)
+                except Exception:
+                    pass
+        if rates is None or len(rates) < 3]]></codefragment>
+            </file>
+            <file path="src\mtdata\forecast\volatility.py" line="123">
+              <codefragment><![CDATA[)
+            _info_before = mt5.symbol_info(symbol)
+            _was_visible = bool(_info_before.visible) if _info_before is not None else None
+            err = _ensure_symbol_ready(symbol)
+            if err:
+                return {"error": err}
+            try:
+                if as_of:
+                    to_dt = _parse_start_datetime_util(as_of)
+                    if not to_dt:
+                        return {"error": "Invalid as_of time."}
+                    rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, need)
+                else:
+                    _tick = mt5.symbol_info_tick(symbol)
+                    if _tick is not None and getattr(_tick, 'time', None):
+                        t_utc = _mt5_epoch_to_utc(float(_tick.time))
+                        server_now_dt = datetime.utcfromtimestamp(t_utc)
+                    else:
+                        server_now_dt = datetime.utcnow()
+                    rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
+            finally:
+                if _was_visible is False:
+                    try:
+                        mt5.symbol_select(symbol, False)
+                    except Exception:
+                        pass
+            if rates is None or len(rates) < 5]]></codefragment>
+            </file>
+            <codefragment><![CDATA[)
+        _info_before = mt5.symbol_info(symbol)
+        _was_visible = bool(_info_before.visible) if _info_before is not None else None
+        err = _ensure_symbol_ready(symbol)
+        if err:
+            return {"error": err}
+        try:
+            if as_of:
+                to_dt = _parse_start_datetime_util(as_of)
+                if not to_dt:
+                    return {"error": "Invalid as_of time."}
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, need)
+            else:
+                _tick = mt5.symbol_info_tick(symbol)
+                if _tick is not None and getattr(_tick, 'time', None):
+                    t_utc = _mt5_epoch_to_utc(float(_tick.time))
+                    server_now_dt = datetime.utcfromtimestamp(t_utc)
+                else:
+                    server_now_dt = datetime.utcnow()
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
+        finally:
+            if _was_visible is False:
+                try:
+                    mt5.symbol_select(symbol, False)
+                except Exception:
+                    pass
+        if rates is None or len(rates) < 3]]></codefragment>
+        </duplication>
+      
+      <duplication lines="6">
+            <file path="src\mtdata\forecast\volatility.py" line="400">
+              <codefragment><![CDATA[))
+            sbar = math.sqrt(max(0.0, sigma2))
+            hsig = float(sbar * math.sqrt(max(1, int(horizon))))
+            return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
+                    "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
+                    "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
+                    "params_used": {"window"]]></codefragment>
+            </file>
+            <file path="src\mtdata\forecast\volatility.py" line="370">
+              <codefragment><![CDATA[))
+            sbar = math.sqrt(max(0.0, sigma2))
+            hsig = float(sbar * math.sqrt(max(1, int(horizon))))
+            return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
+                    "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
+                    "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
+                    "params_used": {"lookback"]]></codefragment>
+            </file>
+            <codefragment><![CDATA[))
+            sbar = math.sqrt(max(0.0, sigma2))
+            hsig = float(sbar * math.sqrt(max(1, int(horizon))))
+            return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
+                    "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
+                    "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
+                    "params_used": {"window"]]></codefragment>
+        </duplication>
+      
+      <duplication lines="21">
+            <file path="src\mtdata\forecast\volatility.py" line="644">
+              <codefragment><![CDATA[}
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, need)
+            else:
+                _tick = mt5.symbol_info_tick(symbol)
+                if _tick is not None and getattr(_tick, 'time', None):
+                    t_utc = _mt5_epoch_to_utc(float(_tick.time))
+                    server_now_dt = datetime.utcfromtimestamp(t_utc)
+                else:
+                    server_now_dt = datetime.utcnow()
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
+        finally:
+            if _was_visible is False:
+                try:
+                    mt5.symbol_select(symbol, False)
+                except Exception:
+                    pass
+
+        if rates is None or len(rates) < 3:
+            return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
+
+        df = pd.DataFrame(rates)
+        # Drop forming last bar only when using current 'now' as anchor; keep all for historical as_of]]></codefragment>
+            </file>
+            <file path="src\mtdata\forecast\volatility.py" line="133">
+              <codefragment><![CDATA[}
+                    rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, need)
+                else:
+                    _tick = mt5.symbol_info_tick(symbol)
+                    if _tick is not None and getattr(_tick, 'time', None):
+                        t_utc = _mt5_epoch_to_utc(float(_tick.time))
+                        server_now_dt = datetime.utcfromtimestamp(t_utc)
+                    else:
+                        server_now_dt = datetime.utcnow()
+                    rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
+            finally:
+                if _was_visible is False:
+                    try:
+                        mt5.symbol_select(symbol, False)
+                    except Exception:
+                        pass
+            if rates is None or len(rates) < 5:
+                return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
+            df = pd.DataFrame(rates)
+            if as_of is None and len(df) >= 2:
+                df = df.iloc[:-1]
+            if len(df) < 5:
+                return {"error": "Not enough closed bars"}
+            if denoise:
+                _apply_denoise(df, denoise, default_when='pre_ti')
+            with np.errstate(divide='ignore', invalid='ignore'):
+                r = np.diff(np.log(np.maximum(df['close'].astype(float).to_numpy(), 1e-12)))
+            r = r[np.isfinite(r)]
+            if r.size < 10:
+                return {"error": "Insufficient returns to estimate volatility proxy"}
+            # Build proxy
+            if not proxy:
+                return {"error": "General methods require 'proxy' (squared_return|abs_return|log_r2)"}
+            proxy_l = str(proxy).lower().strip()
+            eps = 1e-12
+            if proxy_l == 'squared_return':
+                y = r * r; back = 'sqrt'
+            elif proxy_l == 'abs_return':
+                y = np.abs(r); back = 'abs'
+            elif proxy_l == 'log_r2':
+                y = np.log(r * r + eps); back = 'exp_sqrt'
+            else:
+                return {"error": f"Unsupported proxy: {proxy}"}
+            y = y[np.isfinite(y)]
+            fh = int(horizon)
+            # Fit general model
+            if method_l in {'arima','sarima'}:
+                if not _SM_SARIMAX_AVAILABLE:
+                    return {"error": "ARIMA/SARIMA require statsmodels"}
+                ord_p = int(p.get('p',1)); ord_d = int(p.get('d',0)); ord_q = int(p.get('q',1))
+                if method_l == 'sarima':
+                    m = _default_seasonality_period(timeframe)
+                    seas = (int(p.get('P',0)), int(p.get('D',0)), int(p.get('Q',0)), int(m) if m>=2 else 0)
+                else:
+                    seas = (0,0,0,0)
+                try:
+                    endog = pd.Series(y.astype(float))
+                    model = _SARIMAX(endog, order=(ord_p,ord_d,ord_q), seasonal_order=seas, enforce_stationarity=True, enforce_invertibility=True)
+                    res = model.fit(method='lbfgs', disp=False, maxiter=100)
+                    yhat = res.get_forecast(steps=fh).predicted_mean.to_numpy()
+                except Exception as ex:
+                    return {"error": f"SARIMAX error: {ex}"}
+            elif method_l == 'ets':
+                if not _SM_ETS_AVAILABLE:
+                    return {"error": "ETS requires statsmodels"}
+                try:
+                    res = _ETS(y.astype(float), trend=None, seasonal=None, initialization_method='heuristic').fit(optimized=True)
+                    yhat = np.asarray(res.forecast(fh), dtype=float)
+                except Exception as ex:
+                    return {"error": f"ETS error: {ex}"}
+            elif method_l == 'theta':  # theta on proxy
+                yy = y.astype(float); n=yy.size; tt=np.arange(1,n+1,dtype=float)
+                A=np.vstack([np.ones(n),tt]).T; coef,_a,_b,_c = np.linalg.lstsq(A, yy, rcond=None); a=float(coef[0]); b=float(coef[1])
+                trend_future = a + b * (tt[-1] + np.arange(1, fh+1, dtype=float))
+                alpha = float(p.get('alpha', 0.2)); level=float(yy[0])
+                for v in yy[1:]: level = alpha*float(v) + (1.0-alpha)*level
+                yhat = 0.5*(trend_future + np.full(fh, level, dtype=float))
+            elif method_l == 'mlf_rf':
+                if not _MLF_AVAILABLE:
+                    return {"error": "mlf_rf requires 'mlforecast' and 'scikit-learn'"}
+                try:
+                    from mlforecast import MLForecast as _MLForecast  # type: ignore
+                    from sklearn.ensemble import RandomForestRegressor as _RF  # type: ignore
+                    import pandas as _pd
+                except Exception as ex:
+                    return {"error": f"Failed to import mlforecast/sklearn: {ex}"}
+                try:
+                    ts = _pd.to_datetime(df['time'].iloc[1:].astype(float), unit='s', utc=True) if r.size == (len(df)-1) else _pd.date_range(periods=len(y), freq=_pd_freq_from_timeframe(timeframe))
+                except Exception:
+                    import pandas as _pd
+                    ts = _pd.date_range(periods=len(y), freq=_pd_freq_from_timeframe(timeframe))
+                Y_df = _pd.DataFrame({'unique_id': ['ts']*int(len(y)), 'ds': _pd.Index(ts).to_pydatetime(), 'y': y.astype(float)})
+                lags = p.get('lags') or [1,2,3,4,5]
+                try:
+                    lags = [int(v) for v in lags]
+                except Exception:
+                    lags = [1,2,3,4,5]
+                rf = _RF(n_estimators=int(p.get('n_estimators', 200)), random_state=42)
+                try:
+                    mlf = _MLForecast(models=[rf], freq=_pd_freq_from_timeframe(timeframe)).add_lags(lags)
+                    mlf.fit(Y_df)
+                    Yf = mlf.predict(h=int(fh))
+                    try:
+                        Yf = Yf[Yf['unique_id']=='ts']
+                    except Exception:
+                        pass
+                    yhat = np.asarray((Yf['y'] if 'y' in Yf.columns else Yf.iloc[:, -1]).to_numpy(), dtype=float)
+                except Exception as ex:
+                    return {"error": f"mlf_rf error: {ex}"}
+            elif method_l == 'nhits':
+                if not _NF_AVAILABLE:
+                    return {"error": "nhits requires 'neuralforecast[torch]'"}
+                try:
+                    from neuralforecast import NeuralForecast as _NeuralForecast  # type: ignore
+                    from neuralforecast.models import NHITS as _NF_NHITS  # type: ignore
+                    import pandas as _pd
+                except Exception as ex:
+                    return {"error": f"Failed to import neuralforecast: {ex}"}
+                max_epochs = int(p.get('max_epochs', 30))
+                batch_size = int(p.get('batch_size', 32))
+                if p.get('input_size') is not None:
+                    input_size = int(p['input_size'])
+                else:
+                    base = max(64, 96)
+                    input_size = int(min(len(y), base))
+                try:
+                    ts = _pd.to_datetime(df['time'].iloc[1:].astype(float), unit='s', utc=True) if r.size == (len(df)-1) else _pd.date_range(periods=len(y), freq=_pd_freq_from_timeframe(timeframe))
+                except Exception:
+                    import pandas as _pd
+                    ts = _pd.date_range(periods=len(y), freq=_pd_freq_from_timeframe(timeframe))
+                Y_df = _pd.DataFrame({'unique_id': ['ts']*int(len(y)), 'ds': _pd.Index(ts).to_pydatetime(), 'y': y.astype(float)})
+                model = _NF_NHITS(h=int(fh), input_size=int(input_size), max_epochs=int(max_epochs), batch_size=int(batch_size))
+                try:
+                    nf = _NeuralForecast(models=[model], freq=_pd_freq_from_timeframe(timeframe))
+                    nf.fit(df=Y_df, verbose=False)
+                    Yf = nf.predict()
+                    try:
+                        Yf = Yf[Yf['unique_id']=='ts']
+                    except Exception:
+                        pass
+                    pred_col = None
+                    for c in list(Yf.columns):
+                        if c not in ('unique_id','ds','y'):
+                            pred_col = c
+                            if c == 'y_hat':
+                                break
+                    if pred_col is None:
+                        return {"error": "nhits prediction columns not found"}
+                    yhat = np.asarray(Yf[pred_col].to_numpy(), dtype=float)
+                except Exception as ex:
+                    return {"error": f"nhits error: {ex}"}
+            else:
+                return {"error": f"Unsupported general method for volatility proxy: {method_l}"}
+            # Back-transform to per-step sigma and aggregate horizon
+            if back == 'sqrt':
+                sig = np.sqrt(np.clip(yhat, 0.0, None))
+            elif back == 'abs':
+                sig = np.maximum(0.0, yhat) * math.sqrt(math.pi/2.0)
+            else:
+                sig = np.sqrt(np.exp(yhat))
+            hsig = float(math.sqrt(np.sum(sig[:fh]**2)))
+            # Current sigma (baseline)
+            sbar = float(np.std(r[-100:], ddof=0) if r.size>=5 else np.std(r, ddof=0))
+            bpy = float(365.0*24.0*3600.0/float(tf_secs))
+            return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "proxy": proxy_l,
+                    "horizon": int(horizon), "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
+                    "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
+                    "params_used": p}
+
+        # Direct volatility methods
+        # Fetch history sized by method
+        def _need_bars_direct() -> int:
+            if method_l == 'ewma':
+                lb = int(p.get('lookback', 1500)); return max(lb + 5, int(horizon) + 5)
+            if method_l in {'parkinson','gk','rs','yang_zhang','rolling_std'}:
+                w = int(p.get('window', 20)); return max(w + int(horizon) + 10, 60)
+            if method_l in {'garch','egarch','gjr_garch'}:
+                fb = int(p.get('fit_bars', 2000)); return max(fb + 10, int(horizon) + 10)
+            return max(300, int(horizon) + 50)
+
+        need = _need_bars_direct()
+        _info_before = mt5.symbol_info(symbol)
+        _was_visible = bool(_info_before.visible) if _info_before is not None else None
+        err = _ensure_symbol_ready(symbol)
+        if err:
+            return {"error": err}
+        try:
+            if as_of:
+                to_dt = _parse_start_datetime_util(as_of)
+                if not to_dt:
+                    return {"error": "Invalid as_of time."}
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, need)
+            else:
+                _tick = mt5.symbol_info_tick(symbol)
+                if _tick is not None and getattr(_tick, 'time', None):
+                    t_utc = _mt5_epoch_to_utc(float(_tick.time))
+                    server_now_dt = datetime.utcfromtimestamp(t_utc)
+                else:
+                    server_now_dt = datetime.utcnow()
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
+        finally:
+            if _was_visible is False:
+                try:
+                    mt5.symbol_select(symbol, False)
+                except Exception:
+                    pass
+        if rates is None or len(rates) < 3:
+            return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
+
+        df = pd.DataFrame(rates)
+        if]]></codefragment>
+            </file>
+            <codefragment><![CDATA[}
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, need)
+            else:
+                _tick = mt5.symbol_info_tick(symbol)
+                if _tick is not None and getattr(_tick, 'time', None):
+                    t_utc = _mt5_epoch_to_utc(float(_tick.time))
+                    server_now_dt = datetime.utcfromtimestamp(t_utc)
+                else:
+                    server_now_dt = datetime.utcnow()
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
+        finally:
+            if _was_visible is False:
+                try:
+                    mt5.symbol_select(symbol, False)
+                except Exception:
+                    pass
+
+        if rates is None or len(rates) < 3:
+            return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
+
+        df = pd.DataFrame(rates)
+        # Drop forming last bar only when using current 'now' as anchor; keep all for historical as_of]]></codefragment>
+        </duplication>
+      
+      <duplication lines="9">
+            <file path="src\mtdata\forecast\common.py" line="52">
+              <codefragment><![CDATA[continue
+            if tok.endswith(':'):
+                key = tok[:-1].strip()
+                val = ''
+                if i + 1 < len(toks):
+                    val = toks[i + 1].strip().strip(',')
+                    i += 2
+                else:
+                    i += 1
+                out]]></codefragment>
+            </file>
+            <file path="src\mtdata\forecast\volatility.py" line="93">
+              <codefragment><![CDATA[continue
+                        if tok.endswith(':'):
+                            key = tok[:-1].strip()
+                            val = ''
+                            if i + 1 < len(toks):
+                                val = toks[i+1].strip().strip(',')
+                                i += 2
+                            else:
+                                i += 1
+                            p]]></codefragment>
+            </file>
+            <codefragment><![CDATA[continue
+            if tok.endswith(':'):
+                key = tok[:-1].strip()
+                val = ''
+                if i + 1 < len(toks):
+                    val = toks[i + 1].strip().strip(',')
+                    i += 2
+                else:
+                    i += 1
+                out]]></codefragment>
+        </duplication>
+      
+      <duplication lines="5">
+            <file path="src\mtdata\core\cli.py" line="374">
+              <codefragment><![CDATA[try:
+                ptype = param.get('type')
+                origin = get_origin(ptype)
+                is_typed_dict = hasattr(ptype, '__annotations__') and isinstance(getattr(ptype, '__annotations__', {}), dict)
+                is_mapping = (ptype in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
+                is_sequence]]></codefragment>
+            </file>
+            <file path="src\mtdata\core\cli.py" line="299">
+              <codefragment><![CDATA[try:
+            ptype = param.get('type')
+            origin = get_origin(ptype)
+            is_typed_dict = hasattr(ptype, '__annotations__') and isinstance(getattr(ptype, '__annotations__', {}), dict)
+            is_mapping = (ptype in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
+        except]]></codefragment>
+            </file>
+            <codefragment><![CDATA[try:
+                ptype = param.get('type')
+                origin = get_origin(ptype)
+                is_typed_dict = hasattr(ptype, '__annotations__') and isinstance(getattr(ptype, '__annotations__', {}), dict)
+                is_mapping = (ptype in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
+                is_sequence]]></codefragment>
+        </duplication>
+      
+      <duplication lines="7">
+            <file path="src\mtdata\core\cli.py" line="605">
+              <codefragment><![CDATA[['params']:
+            prop = schema_props.get(p['name']) if isinstance(schema_props, dict) else None
+            if isinstance(prop, dict) and 'default' in prop and p['default'] is None:
+                p['default'] = prop['default']
+            if p['name'] in schema_required:
+                p['required'] = True
+        
+        # Create subparser]]></codefragment>
+            </file>
+            <file path="src\mtdata\core\cli.py" line="547">
+              <codefragment><![CDATA[['params']:
+            prop = schema_props.get(p['name']) if isinstance(schema_props, dict) else None
+            if isinstance(prop, dict) and 'default' in prop and p['default'] is None:
+                p['default'] = prop['default']
+            if p['name'] in schema_required:
+                p['required'] = True
+        arg_strs]]></codefragment>
+            </file>
+            <codefragment><![CDATA[['params']:
+            prop = schema_props.get(p['name']) if isinstance(schema_props, dict) else None
+            if isinstance(prop, dict) and 'default' in prop and p['default'] is None:
+                p['default'] = prop['default']
+            if p['name'] in schema_required:
+                p['required'] = True
+        
+        # Create subparser]]></codefragment>
+        </duplication>
+      
+      <duplication lines="91">
+            <file path="lightning_logs\version_4\hparams.yaml" line="1">
+              <codefragment><![CDATA[activation: ReLU
+alias: null
+batch_size: 32
+dataloader_kwargs: null
+drop_last_loader: false
+dropout_prob_theta: 0.0
+early_stop_patience_steps: -1
+exclude_insample_y: false
+futr_exog_list: null
+h: 24
+h_train: 1
+hist_exog_list: null
+inference_input_size: 75
+inference_windows_batch_size: -1
+input_size: 75
+interpolation_mode: linear
+learning_rate: 0.001
+loss: !!python/object:neuralforecast.losses.pytorch.MAE
+  _backward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _backward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _buffers: {}
+  _forward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_always_called: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _is_full_backward_hook: null
+  _load_state_dict_post_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _load_state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _modules: {}
+  _non_persistent_buffers_set: !!set {}
+  _parameters: {}
+  _state_dict_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  horizon_weight: null
+  is_distribution_output: false
+  output_names:
+  - ''
+  outputsize_multiplier: 1
+  training: true
+lr_scheduler: null
+lr_scheduler_kwargs: null
+max_steps: 2000
+mlp_units:
+- - 512
+  - 512
+- - 512
+  - 512
+- - 512
+  - 512
+n_blocks:
+- 1
+- 1
+- 1
+n_freq_downsample:
+- 4
+- 2
+- 1
+n_pool_kernel_size:
+- 2
+- 2
+- 1
+n_samples: 100
+n_series: 1
+num_lr_decays: 3
+optimizer: null
+optimizer_kwargs: null
+pooling_mode: MaxPool1d
+random_seed: 1
+scaler_type: identity
+stack_types:
+- identity
+- identity
+- identity
+start_padding_enabled: true
+stat_exog_list: null
+step_size: 1
+val_check_steps: 100
+valid_batch_size: null
+valid_loss: null
+windows_batch_size: 1024]]></codefragment>
+            </file>
+            <file path="lightning_logs\version_5\hparams.yaml" line="1">
+              <codefragment><![CDATA[activation: ReLU
+alias: null
+batch_size: 32
+dataloader_kwargs: null
+drop_last_loader: false
+dropout_prob_theta: 0.0
+early_stop_patience_steps: -1
+exclude_insample_y: false
+futr_exog_list: null
+h: 24
+h_train: 1
+hist_exog_list: null
+inference_input_size: 75
+inference_windows_batch_size: -1
+input_size: 75
+interpolation_mode: linear
+learning_rate: 0.001
+loss: !!python/object:neuralforecast.losses.pytorch.MAE
+  _backward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _backward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _buffers: {}
+  _forward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_always_called: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _is_full_backward_hook: null
+  _load_state_dict_post_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _load_state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _modules: {}
+  _non_persistent_buffers_set: !!set {}
+  _parameters: {}
+  _state_dict_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  horizon_weight: null
+  is_distribution_output: false
+  output_names:
+  - ''
+  outputsize_multiplier: 1
+  training: true
+lr_scheduler: null
+lr_scheduler_kwargs: null
+max_steps: 2000
+mlp_units:
+- - 512
+  - 512
+- - 512
+  - 512
+- - 512
+  - 512
+n_blocks:
+- 1
+- 1
+- 1
+n_freq_downsample:
+- 4
+- 2
+- 1
+n_pool_kernel_size:
+- 2
+- 2
+- 1
+n_samples: 100
+n_series: 1
+num_lr_decays: 3
+optimizer: null
+optimizer_kwargs: null
+pooling_mode: MaxPool1d
+random_seed: 1
+scaler_type: identity
+stack_types:
+- identity
+- identity
+- identity
+start_padding_enabled: true
+stat_exog_list: null
+step_size: 1
+val_check_steps: 100
+valid_batch_size: null
+valid_loss: null
+windows_batch_size: 1024]]></codefragment>
+            </file>
+            <codefragment><![CDATA[activation: ReLU
+alias: null
+batch_size: 32
+dataloader_kwargs: null
+drop_last_loader: false
+dropout_prob_theta: 0.0
+early_stop_patience_steps: -1
+exclude_insample_y: false
+futr_exog_list: null
+h: 24
+h_train: 1
+hist_exog_list: null
+inference_input_size: 75
+inference_windows_batch_size: -1
+input_size: 75
+interpolation_mode: linear
+learning_rate: 0.001
+loss: !!python/object:neuralforecast.losses.pytorch.MAE
+  _backward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _backward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _buffers: {}
+  _forward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_always_called: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _is_full_backward_hook: null
+  _load_state_dict_post_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _load_state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _modules: {}
+  _non_persistent_buffers_set: !!set {}
+  _parameters: {}
+  _state_dict_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  horizon_weight: null
+  is_distribution_output: false
+  output_names:
+  - ''
+  outputsize_multiplier: 1
+  training: true
+lr_scheduler: null
+lr_scheduler_kwargs: null
+max_steps: 2000
+mlp_units:
+- - 512
+  - 512
+- - 512
+  - 512
+- - 512
+  - 512
+n_blocks:
+- 1
+- 1
+- 1
+n_freq_downsample:
+- 4
+- 2
+- 1
+n_pool_kernel_size:
+- 2
+- 2
+- 1
+n_samples: 100
+n_series: 1
+num_lr_decays: 3
+optimizer: null
+optimizer_kwargs: null
+pooling_mode: MaxPool1d
+random_seed: 1
+scaler_type: identity
+stack_types:
+- identity
+- identity
+- identity
+start_padding_enabled: true
+stat_exog_list: null
+step_size: 1
+val_check_steps: 100
+valid_batch_size: null
+valid_loss: null
+windows_batch_size: 1024]]></codefragment>
+        </duplication>
+      
+      <duplication lines="53">
+            <file path="lightning_logs\version_3\hparams.yaml" line="1">
+              <codefragment><![CDATA[activation: ReLU
+alias: null
+batch_size: 32
+dataloader_kwargs: null
+drop_last_loader: false
+dropout_prob_theta: 0.0
+early_stop_patience_steps: -1
+exclude_insample_y: false
+futr_exog_list: null
+h: 24
+h_train: 1
+hist_exog_list: null
+inference_input_size: 75
+inference_windows_batch_size: -1
+input_size: 75
+interpolation_mode: linear
+learning_rate: 0.001
+loss: !!python/object:neuralforecast.losses.pytorch.MAE
+  _backward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _backward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _buffers: {}
+  _forward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_always_called: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _is_full_backward_hook: null
+  _load_state_dict_post_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _load_state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _modules: {}
+  _non_persistent_buffers_set: !!set {}
+  _parameters: {}
+  _state_dict_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  horizon_weight: null
+  is_distribution_output: false
+  output_names:
+  - ''
+  outputsize_multiplier: 1
+  training: true
+lr_scheduler: null
+lr_scheduler_kwargs: null
+max_steps: 20]]></codefragment>
+            </file>
+            <file path="lightning_logs\version_5\hparams.yaml" line="1">
+              <codefragment><![CDATA[activation: ReLU
+alias: null
+batch_size: 32
+dataloader_kwargs: null
+drop_last_loader: false
+dropout_prob_theta: 0.0
+early_stop_patience_steps: -1
+exclude_insample_y: false
+futr_exog_list: null
+h: 24
+h_train: 1
+hist_exog_list: null
+inference_input_size: 75
+inference_windows_batch_size: -1
+input_size: 75
+interpolation_mode: linear
+learning_rate: 0.001
+loss: !!python/object:neuralforecast.losses.pytorch.MAE
+  _backward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _backward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _buffers: {}
+  _forward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_always_called: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _is_full_backward_hook: null
+  _load_state_dict_post_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _load_state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _modules: {}
+  _non_persistent_buffers_set: !!set {}
+  _parameters: {}
+  _state_dict_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  horizon_weight: null
+  is_distribution_output: false
+  output_names:
+  - ''
+  outputsize_multiplier: 1
+  training: true
+lr_scheduler: null
+lr_scheduler_kwargs: null
+max_steps: 2000]]></codefragment>
+            </file>
+            <codefragment><![CDATA[activation: ReLU
+alias: null
+batch_size: 32
+dataloader_kwargs: null
+drop_last_loader: false
+dropout_prob_theta: 0.0
+early_stop_patience_steps: -1
+exclude_insample_y: false
+futr_exog_list: null
+h: 24
+h_train: 1
+hist_exog_list: null
+inference_input_size: 75
+inference_windows_batch_size: -1
+input_size: 75
+interpolation_mode: linear
+learning_rate: 0.001
+loss: !!python/object:neuralforecast.losses.pytorch.MAE
+  _backward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _backward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _buffers: {}
+  _forward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_always_called: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _is_full_backward_hook: null
+  _load_state_dict_post_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _load_state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _modules: {}
+  _non_persistent_buffers_set: !!set {}
+  _parameters: {}
+  _state_dict_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  horizon_weight: null
+  is_distribution_output: false
+  output_names:
+  - ''
+  outputsize_multiplier: 1
+  training: true
+lr_scheduler: null
+lr_scheduler_kwargs: null
+max_steps: 20]]></codefragment>
+        </duplication>
+      
+      <duplication lines="37">
+            <file path="lightning_logs\version_3\hparams.yaml" line="55">
+              <codefragment><![CDATA[mlp_units:
+- - 512
+  - 512
+- - 512
+  - 512
+- - 512
+  - 512
+n_blocks:
+- 1
+- 1
+- 1
+n_freq_downsample:
+- 4
+- 2
+- 1
+n_pool_kernel_size:
+- 2
+- 2
+- 1
+n_samples: 100
+n_series: 1
+num_lr_decays: 3
+optimizer: null
+optimizer_kwargs: null
+pooling_mode: MaxPool1d
+random_seed: 1
+scaler_type: identity
+stack_types:
+- identity
+- identity
+- identity
+start_padding_enabled: true
+stat_exog_list: null
+step_size: 1
+val_check_steps: 100
+valid_batch_size: null
+valid_loss: null
+windows_batch_size: 1024]]></codefragment>
+            </file>
+            <file path="lightning_logs\version_5\hparams.yaml" line="55">
+              <codefragment><![CDATA[mlp_units:
+- - 512
+  - 512
+- - 512
+  - 512
+- - 512
+  - 512
+n_blocks:
+- 1
+- 1
+- 1
+n_freq_downsample:
+- 4
+- 2
+- 1
+n_pool_kernel_size:
+- 2
+- 2
+- 1
+n_samples: 100
+n_series: 1
+num_lr_decays: 3
+optimizer: null
+optimizer_kwargs: null
+pooling_mode: MaxPool1d
+random_seed: 1
+scaler_type: identity
+stack_types:
+- identity
+- identity
+- identity
+start_padding_enabled: true
+stat_exog_list: null
+step_size: 1
+val_check_steps: 100
+valid_batch_size: null
+valid_loss: null
+windows_batch_size: 1024]]></codefragment>
+            </file>
+            <codefragment><![CDATA[mlp_units:
+- - 512
+  - 512
+- - 512
+  - 512
+- - 512
+  - 512
+n_blocks:
+- 1
+- 1
+- 1
+n_freq_downsample:
+- 4
+- 2
+- 1
+n_pool_kernel_size:
+- 2
+- 2
+- 1
+n_samples: 100
+n_series: 1
+num_lr_decays: 3
+optimizer: null
+optimizer_kwargs: null
+pooling_mode: MaxPool1d
+random_seed: 1
+scaler_type: identity
+stack_types:
+- identity
+- identity
+- identity
+start_padding_enabled: true
+stat_exog_list: null
+step_size: 1
+val_check_steps: 100
+valid_batch_size: null
+valid_loss: null
+windows_batch_size: 1024]]></codefragment>
+        </duplication>
+      
+      <duplication lines="91">
+            <file path="lightning_logs\version_2\hparams.yaml" line="1">
+              <codefragment><![CDATA[activation: ReLU
+alias: null
+batch_size: 32
+dataloader_kwargs: null
+drop_last_loader: false
+dropout_prob_theta: 0.0
+early_stop_patience_steps: -1
+exclude_insample_y: false
+futr_exog_list: null
+h: 24
+h_train: 1
+hist_exog_list: null
+inference_input_size: 75
+inference_windows_batch_size: -1
+input_size: 75
+interpolation_mode: linear
+learning_rate: 0.001
+loss: !!python/object:neuralforecast.losses.pytorch.MAE
+  _backward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _backward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _buffers: {}
+  _forward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_always_called: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _is_full_backward_hook: null
+  _load_state_dict_post_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _load_state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _modules: {}
+  _non_persistent_buffers_set: !!set {}
+  _parameters: {}
+  _state_dict_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  horizon_weight: null
+  is_distribution_output: false
+  output_names:
+  - ''
+  outputsize_multiplier: 1
+  training: true
+lr_scheduler: null
+lr_scheduler_kwargs: null
+max_steps: 20
+mlp_units:
+- - 512
+  - 512
+- - 512
+  - 512
+- - 512
+  - 512
+n_blocks:
+- 1
+- 1
+- 1
+n_freq_downsample:
+- 4
+- 2
+- 1
+n_pool_kernel_size:
+- 2
+- 2
+- 1
+n_samples: 100
+n_series: 1
+num_lr_decays: 3
+optimizer: null
+optimizer_kwargs: null
+pooling_mode: MaxPool1d
+random_seed: 1
+scaler_type: identity
+stack_types:
+- identity
+- identity
+- identity
+start_padding_enabled: true
+stat_exog_list: null
+step_size: 1
+val_check_steps: 100
+valid_batch_size: null
+valid_loss: null
+windows_batch_size: 1024]]></codefragment>
+            </file>
+            <file path="lightning_logs\version_5\hparams.yaml" line="1">
+              <codefragment><![CDATA[activation: ReLU
+alias: null
+batch_size: 32
+dataloader_kwargs: null
+drop_last_loader: false
+dropout_prob_theta: 0.0
+early_stop_patience_steps: -1
+exclude_insample_y: false
+futr_exog_list: null
+h: 24
+h_train: 1
+hist_exog_list: null
+inference_input_size: 75
+inference_windows_batch_size: -1
+input_size: 75
+interpolation_mode: linear
+learning_rate: 0.001
+loss: !!python/object:neuralforecast.losses.pytorch.MAE
+  _backward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _backward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _buffers: {}
+  _forward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_always_called: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _is_full_backward_hook: null
+  _load_state_dict_post_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _load_state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _modules: {}
+  _non_persistent_buffers_set: !!set {}
+  _parameters: {}
+  _state_dict_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  horizon_weight: null
+  is_distribution_output: false
+  output_names:
+  - ''
+  outputsize_multiplier: 1
+  training: true
+lr_scheduler: null
+lr_scheduler_kwargs: null
+max_steps: 2000
+mlp_units:
+- - 512
+  - 512
+- - 512
+  - 512
+- - 512
+  - 512
+n_blocks:
+- 1
+- 1
+- 1
+n_freq_downsample:
+- 4
+- 2
+- 1
+n_pool_kernel_size:
+- 2
+- 2
+- 1
+n_samples: 100
+n_series: 1
+num_lr_decays: 3
+optimizer: null
+optimizer_kwargs: null
+pooling_mode: MaxPool1d
+random_seed: 1
+scaler_type: identity
+stack_types:
+- identity
+- identity
+- identity
+start_padding_enabled: true
+stat_exog_list: null
+step_size: 1
+val_check_steps: 100
+valid_batch_size: null
+valid_loss: null
+windows_batch_size: 1024]]></codefragment>
+            </file>
+            <codefragment><![CDATA[activation: ReLU
+alias: null
+batch_size: 32
+dataloader_kwargs: null
+drop_last_loader: false
+dropout_prob_theta: 0.0
+early_stop_patience_steps: -1
+exclude_insample_y: false
+futr_exog_list: null
+h: 24
+h_train: 1
+hist_exog_list: null
+inference_input_size: 75
+inference_windows_batch_size: -1
+input_size: 75
+interpolation_mode: linear
+learning_rate: 0.001
+loss: !!python/object:neuralforecast.losses.pytorch.MAE
+  _backward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _backward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _buffers: {}
+  _forward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_always_called: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _is_full_backward_hook: null
+  _load_state_dict_post_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _load_state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _modules: {}
+  _non_persistent_buffers_set: !!set {}
+  _parameters: {}
+  _state_dict_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  horizon_weight: null
+  is_distribution_output: false
+  output_names:
+  - ''
+  outputsize_multiplier: 1
+  training: true
+lr_scheduler: null
+lr_scheduler_kwargs: null
+max_steps: 20
+mlp_units:
+- - 512
+  - 512
+- - 512
+  - 512
+- - 512
+  - 512
+n_blocks:
+- 1
+- 1
+- 1
+n_freq_downsample:
+- 4
+- 2
+- 1
+n_pool_kernel_size:
+- 2
+- 2
+- 1
+n_samples: 100
+n_series: 1
+num_lr_decays: 3
+optimizer: null
+optimizer_kwargs: null
+pooling_mode: MaxPool1d
+random_seed: 1
+scaler_type: identity
+stack_types:
+- identity
+- identity
+- identity
+start_padding_enabled: true
+stat_exog_list: null
+step_size: 1
+val_check_steps: 100
+valid_batch_size: null
+valid_loss: null
+windows_batch_size: 1024]]></codefragment>
+        </duplication>
+      
+      <duplication lines="91">
+            <file path="lightning_logs\version_1\hparams.yaml" line="1">
+              <codefragment><![CDATA[activation: ReLU
+alias: null
+batch_size: 32
+dataloader_kwargs: null
+drop_last_loader: false
+dropout_prob_theta: 0.0
+early_stop_patience_steps: -1
+exclude_insample_y: false
+futr_exog_list: null
+h: 24
+h_train: 1
+hist_exog_list: null
+inference_input_size: 75
+inference_windows_batch_size: -1
+input_size: 75
+interpolation_mode: linear
+learning_rate: 0.001
+loss: !!python/object:neuralforecast.losses.pytorch.MAE
+  _backward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _backward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _buffers: {}
+  _forward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_always_called: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _is_full_backward_hook: null
+  _load_state_dict_post_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _load_state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _modules: {}
+  _non_persistent_buffers_set: !!set {}
+  _parameters: {}
+  _state_dict_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  horizon_weight: null
+  is_distribution_output: false
+  output_names:
+  - ''
+  outputsize_multiplier: 1
+  training: true
+lr_scheduler: null
+lr_scheduler_kwargs: null
+max_steps: 20
+mlp_units:
+- - 512
+  - 512
+- - 512
+  - 512
+- - 512
+  - 512
+n_blocks:
+- 1
+- 1
+- 1
+n_freq_downsample:
+- 4
+- 2
+- 1
+n_pool_kernel_size:
+- 2
+- 2
+- 1
+n_samples: 100
+n_series: 1
+num_lr_decays: 3
+optimizer: null
+optimizer_kwargs: null
+pooling_mode: MaxPool1d
+random_seed: 1
+scaler_type: identity
+stack_types:
+- identity
+- identity
+- identity
+start_padding_enabled: true
+stat_exog_list: null
+step_size: 1
+val_check_steps: 100
+valid_batch_size: null
+valid_loss: null
+windows_batch_size: 1024]]></codefragment>
+            </file>
+            <file path="lightning_logs\version_5\hparams.yaml" line="1">
+              <codefragment><![CDATA[activation: ReLU
+alias: null
+batch_size: 32
+dataloader_kwargs: null
+drop_last_loader: false
+dropout_prob_theta: 0.0
+early_stop_patience_steps: -1
+exclude_insample_y: false
+futr_exog_list: null
+h: 24
+h_train: 1
+hist_exog_list: null
+inference_input_size: 75
+inference_windows_batch_size: -1
+input_size: 75
+interpolation_mode: linear
+learning_rate: 0.001
+loss: !!python/object:neuralforecast.losses.pytorch.MAE
+  _backward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _backward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _buffers: {}
+  _forward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_always_called: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _is_full_backward_hook: null
+  _load_state_dict_post_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _load_state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _modules: {}
+  _non_persistent_buffers_set: !!set {}
+  _parameters: {}
+  _state_dict_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  horizon_weight: null
+  is_distribution_output: false
+  output_names:
+  - ''
+  outputsize_multiplier: 1
+  training: true
+lr_scheduler: null
+lr_scheduler_kwargs: null
+max_steps: 2000
+mlp_units:
+- - 512
+  - 512
+- - 512
+  - 512
+- - 512
+  - 512
+n_blocks:
+- 1
+- 1
+- 1
+n_freq_downsample:
+- 4
+- 2
+- 1
+n_pool_kernel_size:
+- 2
+- 2
+- 1
+n_samples: 100
+n_series: 1
+num_lr_decays: 3
+optimizer: null
+optimizer_kwargs: null
+pooling_mode: MaxPool1d
+random_seed: 1
+scaler_type: identity
+stack_types:
+- identity
+- identity
+- identity
+start_padding_enabled: true
+stat_exog_list: null
+step_size: 1
+val_check_steps: 100
+valid_batch_size: null
+valid_loss: null
+windows_batch_size: 1024]]></codefragment>
+            </file>
+            <codefragment><![CDATA[activation: ReLU
+alias: null
+batch_size: 32
+dataloader_kwargs: null
+drop_last_loader: false
+dropout_prob_theta: 0.0
+early_stop_patience_steps: -1
+exclude_insample_y: false
+futr_exog_list: null
+h: 24
+h_train: 1
+hist_exog_list: null
+inference_input_size: 75
+inference_windows_batch_size: -1
+input_size: 75
+interpolation_mode: linear
+learning_rate: 0.001
+loss: !!python/object:neuralforecast.losses.pytorch.MAE
+  _backward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _backward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _buffers: {}
+  _forward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_always_called: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _is_full_backward_hook: null
+  _load_state_dict_post_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _load_state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _modules: {}
+  _non_persistent_buffers_set: !!set {}
+  _parameters: {}
+  _state_dict_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  horizon_weight: null
+  is_distribution_output: false
+  output_names:
+  - ''
+  outputsize_multiplier: 1
+  training: true
+lr_scheduler: null
+lr_scheduler_kwargs: null
+max_steps: 20
+mlp_units:
+- - 512
+  - 512
+- - 512
+  - 512
+- - 512
+  - 512
+n_blocks:
+- 1
+- 1
+- 1
+n_freq_downsample:
+- 4
+- 2
+- 1
+n_pool_kernel_size:
+- 2
+- 2
+- 1
+n_samples: 100
+n_series: 1
+num_lr_decays: 3
+optimizer: null
+optimizer_kwargs: null
+pooling_mode: MaxPool1d
+random_seed: 1
+scaler_type: identity
+stack_types:
+- identity
+- identity
+- identity
+start_padding_enabled: true
+stat_exog_list: null
+step_size: 1
+val_check_steps: 100
+valid_batch_size: null
+valid_loss: null
+windows_batch_size: 1024]]></codefragment>
+        </duplication>
+      
+      <duplication lines="91">
+            <file path="lightning_logs\version_0\hparams.yaml" line="1">
+              <codefragment><![CDATA[activation: ReLU
+alias: null
+batch_size: 32
+dataloader_kwargs: null
+drop_last_loader: false
+dropout_prob_theta: 0.0
+early_stop_patience_steps: -1
+exclude_insample_y: false
+futr_exog_list: null
+h: 24
+h_train: 1
+hist_exog_list: null
+inference_input_size: 75
+inference_windows_batch_size: -1
+input_size: 75
+interpolation_mode: linear
+learning_rate: 0.001
+loss: !!python/object:neuralforecast.losses.pytorch.MAE
+  _backward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _backward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _buffers: {}
+  _forward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_always_called: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _is_full_backward_hook: null
+  _load_state_dict_post_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _load_state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _modules: {}
+  _non_persistent_buffers_set: !!set {}
+  _parameters: {}
+  _state_dict_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  horizon_weight: null
+  is_distribution_output: false
+  output_names:
+  - ''
+  outputsize_multiplier: 1
+  training: true
+lr_scheduler: null
+lr_scheduler_kwargs: null
+max_steps: 20
+mlp_units:
+- - 512
+  - 512
+- - 512
+  - 512
+- - 512
+  - 512
+n_blocks:
+- 1
+- 1
+- 1
+n_freq_downsample:
+- 4
+- 2
+- 1
+n_pool_kernel_size:
+- 2
+- 2
+- 1
+n_samples: 100
+n_series: 1
+num_lr_decays: 3
+optimizer: null
+optimizer_kwargs: null
+pooling_mode: MaxPool1d
+random_seed: 1
+scaler_type: identity
+stack_types:
+- identity
+- identity
+- identity
+start_padding_enabled: true
+stat_exog_list: null
+step_size: 1
+val_check_steps: 100
+valid_batch_size: null
+valid_loss: null
+windows_batch_size: 1024]]></codefragment>
+            </file>
+            <file path="lightning_logs\version_5\hparams.yaml" line="1">
+              <codefragment><![CDATA[activation: ReLU
+alias: null
+batch_size: 32
+dataloader_kwargs: null
+drop_last_loader: false
+dropout_prob_theta: 0.0
+early_stop_patience_steps: -1
+exclude_insample_y: false
+futr_exog_list: null
+h: 24
+h_train: 1
+hist_exog_list: null
+inference_input_size: 75
+inference_windows_batch_size: -1
+input_size: 75
+interpolation_mode: linear
+learning_rate: 0.001
+loss: !!python/object:neuralforecast.losses.pytorch.MAE
+  _backward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _backward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _buffers: {}
+  _forward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_always_called: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _is_full_backward_hook: null
+  _load_state_dict_post_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _load_state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _modules: {}
+  _non_persistent_buffers_set: !!set {}
+  _parameters: {}
+  _state_dict_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  horizon_weight: null
+  is_distribution_output: false
+  output_names:
+  - ''
+  outputsize_multiplier: 1
+  training: true
+lr_scheduler: null
+lr_scheduler_kwargs: null
+max_steps: 2000
+mlp_units:
+- - 512
+  - 512
+- - 512
+  - 512
+- - 512
+  - 512
+n_blocks:
+- 1
+- 1
+- 1
+n_freq_downsample:
+- 4
+- 2
+- 1
+n_pool_kernel_size:
+- 2
+- 2
+- 1
+n_samples: 100
+n_series: 1
+num_lr_decays: 3
+optimizer: null
+optimizer_kwargs: null
+pooling_mode: MaxPool1d
+random_seed: 1
+scaler_type: identity
+stack_types:
+- identity
+- identity
+- identity
+start_padding_enabled: true
+stat_exog_list: null
+step_size: 1
+val_check_steps: 100
+valid_batch_size: null
+valid_loss: null
+windows_batch_size: 1024]]></codefragment>
+            </file>
+            <codefragment><![CDATA[activation: ReLU
+alias: null
+batch_size: 32
+dataloader_kwargs: null
+drop_last_loader: false
+dropout_prob_theta: 0.0
+early_stop_patience_steps: -1
+exclude_insample_y: false
+futr_exog_list: null
+h: 24
+h_train: 1
+hist_exog_list: null
+inference_input_size: 75
+inference_windows_batch_size: -1
+input_size: 75
+interpolation_mode: linear
+learning_rate: 0.001
+loss: !!python/object:neuralforecast.losses.pytorch.MAE
+  _backward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _backward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _buffers: {}
+  _forward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_always_called: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _is_full_backward_hook: null
+  _load_state_dict_post_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _load_state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _modules: {}
+  _non_persistent_buffers_set: !!set {}
+  _parameters: {}
+  _state_dict_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  horizon_weight: null
+  is_distribution_output: false
+  output_names:
+  - ''
+  outputsize_multiplier: 1
+  training: true
+lr_scheduler: null
+lr_scheduler_kwargs: null
+max_steps: 20
+mlp_units:
+- - 512
+  - 512
+- - 512
+  - 512
+- - 512
+  - 512
+n_blocks:
+- 1
+- 1
+- 1
+n_freq_downsample:
+- 4
+- 2
+- 1
+n_pool_kernel_size:
+- 2
+- 2
+- 1
+n_samples: 100
+n_series: 1
+num_lr_decays: 3
+optimizer: null
+optimizer_kwargs: null
+pooling_mode: MaxPool1d
+random_seed: 1
+scaler_type: identity
+stack_types:
+- identity
+- identity
+- identity
+start_padding_enabled: true
+stat_exog_list: null
+step_size: 1
+val_check_steps: 100
+valid_batch_size: null
+valid_loss: null
+windows_batch_size: 1024]]></codefragment>
+        </duplication>
+      </pmd-cpd>

@@ -216,6 +216,9 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:
         df.index = original_index
     return added_cols
 
+# Backwards-compat alias
+_apply_ta_indicators_util = _apply_ta_indicators
+
 
 def _estimate_warmup_bars(ti_spec: Optional[str]) -> int:
     if not ti_spec:
@@ -266,3 +269,6 @@ def _estimate_warmup_bars(ti_spec: Optional[str]) -> int:
             max_warmup = warm
     scaled = max(int(max_warmup * 3), 50) if max_warmup > 0 else 0
     return scaled
+
+# Backwards-compat alias
+_estimate_warmup_bars_util = _estimate_warmup_bars

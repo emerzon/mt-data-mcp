@@ -193,9 +193,11 @@ def discover_tools():
                 break
 
     if registry:
+        pkg_prefix = server.__name__.rsplit('.', 1)[0] + '.'
         for name, obj in registry.items():
             func = _extract_function_from_tool_obj(obj)
-            if func and getattr(func, '__module__', None) == server.__name__:
+            mod = getattr(func, '__module__', None) if func else None
+            if func and isinstance(mod, str) and (mod == server.__name__ or mod.startswith(pkg_prefix)):
                 meta = _extract_metadata_from_tool_obj(obj)
                 tools[name] = {"func": func, "meta": meta}
 

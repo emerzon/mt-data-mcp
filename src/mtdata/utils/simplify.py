@@ -6,11 +6,11 @@ Contains target-point selection utilities and core selection algorithms.
 from typing import Any, Dict, List, Optional, Tuple
 import math
 
-from mtdata.core.constants import (
-    SIMPLIFY_DEFAULT_RATIO,
-    SIMPLIFY_DEFAULT_MIN_POINTS,
-    SIMPLIFY_DEFAULT_MAX_POINTS,
-)
+# Local defaults to avoid circular import with core package during initialization.
+# Keep in sync with src/mtdata/core/constants.py
+SIMPLIFY_DEFAULT_RATIO = 0.25
+SIMPLIFY_DEFAULT_MIN_POINTS = 100
+SIMPLIFY_DEFAULT_MAX_POINTS = 500
 
 
 def _default_target_points(total: int) -> int:
