@@ -4,6 +4,24 @@ from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
+
+class _SkModelMixin:
+    """Mixin providing fit/transform helpers for sklearn-like models on self._model.
+
+    Expects subclasses to set `self._model` in __init__ and may override
+    supports_transform() when the underlying model cannot transform new samples.
+    """
+
+    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None):  # type: ignore[override]
+        self._model.fit(X)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:  # type: ignore[override]
+        return np.asarray(self._model.transform(X), dtype=np.float32)
+
+    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:  # type: ignore[override]
+        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
+
 # Optional imports guarded for lightweight base install
 try:  # scikit-learn PCA
     from sklearn.decomposition import PCA as _SKPCA  # type: ignore
@@ -89,7 +107,7 @@ class NoneReducer(DimReducer):
         return np.asarray(X, dtype=np.float32)
 
 
-class PCAReducer(DimReducer):
+class PCAReducer(_SkModelMixin, DimReducer):
     name = "pca"
 
     def __init__(self, n_components: int) -> None:
@@ -98,21 +116,11 @@ class PCAReducer(DimReducer):
         self.n_components = int(max(1, n_components))
         self._model = _SKPCA(n_components=self.n_components, svd_solver="auto", whiten=False)
 
-    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "PCAReducer":
-        self._model.fit(X)
-        return self
-
-    def transform(self, X: np.ndarray) -> np.ndarray:
-        return np.asarray(self._model.transform(X), dtype=np.float32)
-
-    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
-        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
-
     def info(self) -> Dict[str, Any]:
         return {"method": self.name, "n_components": int(self.n_components)}
 
 
-class SVDReducer(DimReducer):
+class SVDReducer(_SkModelMixin, DimReducer):
     name = "svd"
 
     def __init__(self, n_components: int) -> None:
@@ -121,21 +129,11 @@ class SVDReducer(DimReducer):
         self.n_components = int(max(1, n_components))
         self._model = _SKSVD(n_components=self.n_components)
 
-    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "SVDReducer":
-        self._model.fit(X)
-        return self
-
-    def transform(self, X: np.ndarray) -> np.ndarray:
-        return np.asarray(self._model.transform(X), dtype=np.float32)
-
-    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
-        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
-
     def info(self) -> Dict[str, Any]:
         return {"method": self.name, "n_components": int(self.n_components)}
 
 
-class SparsePCAReducer(DimReducer):
+class SparsePCAReducer(_SkModelMixin, DimReducer):
     name = "spca"
 
     def __init__(self, n_components: int = 2, alpha: float = 1.0) -> None:
@@ -145,21 +143,11 @@ class SparsePCAReducer(DimReducer):
         self.alpha = float(alpha)
         self._model = _SKSparsePCA(n_components=self.n_components, alpha=self.alpha)
 
-    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "SparsePCAReducer":
-        self._model.fit(X)
-        return self
-
-    def transform(self, X: np.ndarray) -> np.ndarray:
-        return np.asarray(self._model.transform(X), dtype=np.float32)
-
-    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
-        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
-
     def info(self) -> Dict[str, Any]:
         return {"method": self.name, "n_components": int(self.n_components), "alpha": float(self.alpha)}
 
 
-class KPCAReducer(DimReducer):
+class KPCAReducer(_SkModelMixin, DimReducer):
     name = "kpca"
 
     def __init__(self, n_components: int = 2, kernel: str = "rbf", gamma: Optional[float] = None, degree: int = 3, coef0: float = 1.0) -> None:
@@ -171,16 +159,6 @@ class KPCAReducer(DimReducer):
         self.degree = int(degree)
         self.coef0 = float(coef0)
         self._model = _SKKPCA(n_components=self.n_components, kernel=self.kernel, gamma=self.gamma, degree=self.degree, coef0=self.coef0, fit_inverse_transform=False)
-
-    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "KPCAReducer":
-        self._model.fit(X)
-        return self
-
-    def transform(self, X: np.ndarray) -> np.ndarray:
-        return np.asarray(self._model.transform(X), dtype=np.float32)
-
-    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
-        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
 
     def info(self) -> Dict[str, Any]:
         return {
@@ -270,7 +248,7 @@ class DiffusionMapsReducer(DimReducer):
             "k": None if self.k is None else int(self.k),
         }
 
-class IsomapReducer(DimReducer):
+class IsomapReducer(_SkModelMixin, DimReducer):
     name = "isomap"
 
     def __init__(self, n_components: int = 2, n_neighbors: int = 5) -> None:
@@ -280,21 +258,11 @@ class IsomapReducer(DimReducer):
         self.n_neighbors = int(max(1, n_neighbors))
         self._model = _SKIsomap(n_neighbors=self.n_neighbors, n_components=self.n_components)
 
-    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "IsomapReducer":
-        self._model.fit(X)
-        return self
-
-    def transform(self, X: np.ndarray) -> np.ndarray:
-        return np.asarray(self._model.transform(X), dtype=np.float32)
-
-    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
-        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
-
     def info(self) -> Dict[str, Any]:
         return {"method": self.name, "n_components": int(self.n_components), "n_neighbors": int(self.n_neighbors)}
 
 
-class UMAPReducer(DimReducer):
+class UMAPReducer(_SkModelMixin, DimReducer):
     name = "umap"
 
     def __init__(self, n_components: int = 2, n_neighbors: int = 15, min_dist: float = 0.1) -> None:
@@ -304,16 +272,6 @@ class UMAPReducer(DimReducer):
         self.n_neighbors = int(max(1, n_neighbors))
         self.min_dist = float(min_dist)
         self._model = _UMAP(n_components=self.n_components, n_neighbors=self.n_neighbors, min_dist=self.min_dist)
-
-    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "UMAPReducer":
-        self._model.fit(X)
-        return self
-
-    def transform(self, X: np.ndarray) -> np.ndarray:
-        return np.asarray(self._model.transform(X), dtype=np.float32)
-
-    def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
-        return np.asarray(self._model.fit_transform(X), dtype=np.float32)
 
     def info(self) -> Dict[str, Any]:
         return {"method": self.name, "n_components": int(self.n_components), "n_neighbors": int(self.n_neighbors), "min_dist": float(self.min_dist)}
