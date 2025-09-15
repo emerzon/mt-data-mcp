@@ -109,6 +109,58 @@ def _build_time_array(df: pd.DataFrame) -> np.ndarray:
         return np.arange(len(df), dtype=float)
 
 
+def _tol_abs_from_close(close: np.ndarray, tol_pct: float) -> float:
+    """Absolute tolerance based on median close and percent threshold."""
+    med = float(np.median(close)) if close.size else 0.0
+    return abs(med) * (float(tol_pct) / 100.0)
+
+
+def _result(name: str, status: str, confidence: float,
+            start_index: int, end_index: int,
+            t: np.ndarray, details: Dict[str, Any]) -> ClassicPatternResult:
+    return ClassicPatternResult(
+        name=name,
+        status=status,
+        confidence=float(confidence),
+        start_index=int(start_index),
+        end_index=int(end_index),
+        start_time=float(t[int(start_index)]) if t.size else None,
+        end_time=float(t[int(end_index)]) if t.size else None,
+        details=details,
+    )
+
+
+def _alias(base: ClassicPatternResult, name: str, conf_scale: float = 0.95) -> ClassicPatternResult:
+    return ClassicPatternResult(
+        name=name,
+        status=base.status,
+        confidence=min(1.0, float(base.confidence) * float(conf_scale)),
+        start_index=base.start_index,
+        end_index=base.end_index,
+        start_time=base.start_time,
+        end_time=base.end_time,
+        details=base.details,
+    )
+
+
+def _fit_lines_and_arrays(ih: np.ndarray, il: np.ndarray, c: np.ndarray, n: int):
+    sh, bh, r2h = _fit_line(ih.astype(float), c[ih])
+    sl, bl, r2l = _fit_line(il.astype(float), c[il])
+    x = np.arange(n, dtype=float)
+    upper = sh * x + bh
+    lower = sl * x + bl
+    return sh, bh, r2h, sl, bl, r2l, upper, lower
+
+
+def _count_touches(upper: np.ndarray, lower: np.ndarray,
+                   peak_idxs: np.ndarray, trough_idxs: np.ndarray,
+                   c: np.ndarray, tol_abs: float) -> int:
+    touches = 0
+    touches += len(_last_touch_indexes(upper, peak_idxs, c, tol_abs))
+    touches += len(_last_touch_indexes(lower, trough_idxs, c, tol_abs))
+    return touches
+
+
 def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfig] = None) -> List[ClassicPatternResult]:
     """Detect classic chart patterns on OHLCV DataFrame with 'time' and 'close' columns.
 
@@ -146,7 +198,7 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
             slope, intercept, r2 = _fit_line(xs, ys)
             # Assess touches: distance to line relative to price
             line_vals = slope * np.arange(n, dtype=float) + intercept
-            tol_abs = abs(np.median(c)) * (cfg.same_level_tol_pct / 100.0)
+            tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
             touches = len(_last_touch_indexes(line_vals, idxs, c, tol_abs))
             geom_ok = 1.0
             conf = _conf(touches, r2, geom_ok)
@@ -165,29 +217,11 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
                 "touches": int(touches),
                 "line_level_recent": float(line_vals[recent_i]),
             }
-            base_item = ClassicPatternResult(
-                name=name,
-                status=status,
-                confidence=conf,
-                start_index=int(idxs[0]),
-                end_index=int(idxs[-1]),
-                start_time=float(t[int(idxs[0])]) if t.size else None,
-                end_time=float(t[int(idxs[-1])]) if t.size else None,
-                details=details,
-            )
+            base_item = _result(name, status, conf, int(idxs[0]), int(idxs[-1]), t, details)
             results.append(base_item)
             # Also add a generic Trend Line alias (except perfectly horizontal)
             if tl_dir != 'Horizontal':
-                results.append(ClassicPatternResult(
-                    name="Trend Line",
-                    status=base_item.status,
-                    confidence=base_item.confidence * 0.95,
-                    start_index=base_item.start_index,
-                    end_index=base_item.end_index,
-                    start_time=base_item.start_time,
-                    end_time=base_item.end_time,
-                    details=base_item.details,
-                ))
+                results.append(_alias(base_item, "Trend Line", 0.95))
 
     # Channels: parallel lines from highs and lows
     def _try_channel():
@@ -197,20 +231,16 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         # Fit lines on last K highs and lows
         k = min(8, peaks.size, troughs.size)
         ih = peaks[-k:]; il = troughs[-k:]
-        sh, bh, r2h = _fit_line(ih.astype(float), c[ih])
-        sl, bl, r2l = _fit_line(il.astype(float), c[il])
+        sh, bh, r2h, sl, bl, r2l, upper, lower = _fit_lines_and_arrays(ih, il, c, n)
         # Slopes near equal for channels; width relatively stable
         slope_diff = abs(sh - sl)
         approx_parallel = slope_diff <= max(1e-4, 0.15 * max(abs(sh), abs(sl), cfg.max_flat_slope))
-        upper = sh * np.arange(n, dtype=float) + bh
-        lower = sl * np.arange(n, dtype=float) + bl
         width = upper - lower
         width_ok = float(np.std(width[-k:]) / (np.mean(width[-k:]) + 1e-9))
         geom_ok = 1.0 - min(1.0, max(0.0, width_ok))
         touches = 0
-        tol_abs = abs(np.median(c)) * (cfg.same_level_tol_pct / 100.0)
-        touches += len(_last_touch_indexes(upper, peaks[-k:], c, tol_abs))
-        touches += len(_last_touch_indexes(lower, troughs[-k:], c, tol_abs))
+        tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
+        touches += _count_touches(upper, lower, peaks[-k:], troughs[-k:], c, tol_abs)
         name = "Trend Channel"
         if sh > cfg.max_flat_slope and sl > cfg.max_flat_slope:
             name = "Ascending Channel"
@@ -235,28 +265,10 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
                 "r2_lower": float(r2l),
                 "channel_width_recent": float(width[recent_i]),
             }
-            base = ClassicPatternResult(
-                name=name,
-                status=status,
-                confidence=conf,
-                start_index=int(min(ih[0], il[0])),
-                end_index=int(max(ih[-1], il[-1])),
-                start_time=float(t[int(min(ih[0], il[0]))]) if t.size else None,
-                end_time=float(t[int(max(ih[-1], il[-1]))]) if t.size else None,
-                details=details,
-            )
+            base = _result(name, status, conf, int(min(ih[0], il[0])), int(max(ih[-1], il[-1])), t, details)
             ch_results.append(base)
             # Generic channel alias
-            ch_results.append(ClassicPatternResult(
-                name="Trend Channel",
-                status=base.status,
-                confidence=base.confidence * 0.95,
-                start_index=base.start_index,
-                end_index=base.end_index,
-                start_time=base.start_time,
-                end_time=base.end_time,
-                details=base.details,
-            ))
+            ch_results.append(_alias(base, "Trend Channel", 0.95))
         return ch_results
 
     results.extend(_try_channel())
@@ -309,18 +321,13 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         x = np.arange(n, dtype=float)
         top = sh * x + bh
         bot = sl * x + bl
-        if np.any(top - bot <= 0):
-            # ensure a sensible region where top>bot
-            mask = (top - bot) > 0
-        else:
-            mask = slice(-k, None)
+        # ensure a sensible region where top>bot (no-op: retained for future use)
+        _ = (top - bot) > 0
         dist_recent = float(np.mean((top - bot)[-max(5, k):]))
         dist_past = float(np.mean((top - bot)[-max(20, 2*k):-max(5, k)])) if n > max(20, 2*k) else dist_recent * 1.2
         converging = dist_recent < dist_past
-        tol_abs = abs(np.median(c)) * (cfg.same_level_tol_pct / 100.0)
-        touches = 0
-        touches += len(_last_touch_indexes(top, ih, c, tol_abs))
-        touches += len(_last_touch_indexes(bot, il, c, tol_abs))
+        tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
+        touches = _count_touches(top, bot, ih, il, c, tol_abs)
         if converging and touches >= cfg.min_channel_touches - 1:
             if abs(sh) <= cfg.max_flat_slope and sl > cfg.max_flat_slope:
                 name = "Ascending Triangle"
@@ -330,15 +337,14 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
                 name = "Symmetrical Triangle"
             conf = _conf(touches, min(r2h, r2l), 1.0)
             status = "forming"
-            out.append(ClassicPatternResult(
-                name=name,
-                status=status,
-                confidence=conf,
-                start_index=int(min(ih[0], il[0])),
-                end_index=int(max(ih[-1], il[-1])),
-                start_time=float(t[int(min(ih[0], il[0]))]) if t.size else None,
-                end_time=float(t[int(max(ih[-1], il[-1]))]) if t.size else None,
-                details={
+            out.append(_result(
+                name,
+                status,
+                conf,
+                int(min(ih[0], il[0])),
+                int(max(ih[-1], il[-1])),
+                t,
+                {
                     "top_slope": float(sh),
                     "top_intercept": float(bh),
                     "bottom_slope": float(sl),
@@ -449,6 +455,7 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         window = 18
         for s in range(max(0, piv.size - window), piv.size - 4):
             seq = piv[s:s+5]
+            # vals kept for potential future heuristics
             vals = c[seq]
             types = [(i in peaks) for i in seq]  # True if peak, False if trough
             # Regular H&S: peak, trough, higher peak, trough, lower peak
@@ -520,11 +527,8 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         peaks2, troughs2 = _detect_pivots_close(seg, cfg)
         if peaks2.size < 2 or troughs2.size < 2:
             return out
-        x = np.arange(seg.size, dtype=float)
-        sh, bh, r2h = _fit_line(peaks2.astype(float), seg[peaks2])
-        sl, bl, r2l = _fit_line(troughs2.astype(float), seg[troughs2])
-        top = sh * x + bh
-        bot = sl * x + bl
+        # build local arrays for consolidation region
+        sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(peaks2, troughs2, seg, seg.size)
         dist_recent = float(np.mean((top - bot)[-max(5, seg.size//4):]))
         dist_past = float(np.mean((top - bot)[:max(5, seg.size//4)]))
         converging = dist_recent < dist_past
@@ -537,42 +541,19 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         if name:
             conf = _conf(4, min(r2h, r2l), 1.0)
             titled = ("Bull " + name) if ret > 0 else ("Bear " + name)
-            base = ClassicPatternResult(
-                name=titled,
-                status="forming",
-                confidence=conf,
-                start_index=int(idx0 + (peaks2[0] if peaks2.size else 0)),
-                end_index=n - 1,
-                start_time=float(t[int(idx0 + (peaks2[0] if peaks2.size else 0))]) if t.size else None,
-                end_time=float(t[-1]) if t.size else None,
-                details={
-                    "pole_return_pct": float(ret),
-                    "top_slope": float(sh),
-                    "bottom_slope": float(sl),
-                },
+            base = _result(
+                titled,
+                "forming",
+                conf,
+                int(idx0 + (peaks2[0] if peaks2.size else 0)),
+                n - 1,
+                t,
+                {"pole_return_pct": float(ret), "top_slope": float(sh), "bottom_slope": float(sl)},
             )
             out.append(base)
             # Generic names for matching
-            out.append(ClassicPatternResult(
-                name=name,
-                status=base.status,
-                confidence=base.confidence * 0.95,
-                start_index=base.start_index,
-                end_index=base.end_index,
-                start_time=base.start_time,
-                end_time=base.end_time,
-                details=base.details,
-            ))
-            out.append(ClassicPatternResult(
-                name="Continuation Pattern",
-                status=base.status,
-                confidence=min(1.0, base.confidence * 0.9),
-                start_index=base.start_index,
-                end_index=base.end_index,
-                start_time=base.start_time,
-                end_time=base.end_time,
-                details=base.details,
-            ))
+            out.append(_alias(base, name, 0.95))
+            out.append(_alias(base, "Continuation Pattern", 0.9))
         return out
 
     results.extend(_flags_pennants())
@@ -597,15 +578,14 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         handle_pullback = float(np.max(tail) - tail[-1]) / max(1e-9, np.max(tail)) * 100.0 if tail.size > 2 else 0.0
         if near_equal_rim and depth_pct > 2.0:
             conf = min(1.0, 0.6 + 0.4 * (depth_pct / 20.0))
-            out.append(ClassicPatternResult(
-                name="Cup and Handle",
-                status="forming",
-                confidence=conf,
-                start_index=int(n - W + i_max_left),
-                end_index=int(n - W + i_max_right),
-                start_time=float(t[int(n - W + i_max_left)]) if t.size else None,
-                end_time=float(t[int(n - W + i_max_right)]) if t.size else None,
-                details={
+            out.append(_result(
+                "Cup and Handle",
+                "forming",
+                conf,
+                int(n - W + i_max_left),
+                int(n - W + i_max_right),
+                t,
+                {
                     "left_rim": float(left),
                     "bottom": float(bottom),
                     "right_rim": float(right),
@@ -628,18 +608,14 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         diverging = (sh > cfg.max_flat_slope and sl < -cfg.max_flat_slope)
         if diverging:
             conf = _conf(4, min(r2h, r2l), 1.0)
-            out.append(ClassicPatternResult(
-                name="Broadening Formation",
-                status="forming",
-                confidence=conf,
-                start_index=int(min(ih[0], il[0])),
-                end_index=int(max(ih[-1], il[-1])),
-                start_time=float(t[int(min(ih[0], il[0]))]) if t.size else None,
-                end_time=float(t[int(max(ih[-1], il[-1]))]) if t.size else None,
-                details={
-                    "top_slope": float(sh),
-                    "bottom_slope": float(sl),
-                },
+            out.append(_result(
+                "Broadening Formation",
+                "forming",
+                conf,
+                int(min(ih[0], il[0])),
+                int(max(ih[-1], il[-1])),
+                t,
+                {"top_slope": float(sh), "bottom_slope": float(sl)},
             ))
         return out
 
@@ -668,15 +644,14 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
             else:
                 ret = 0.0
             name = "Continuation Diamond" if abs(ret) >= 2.0 else "Diamond"
-            out.append(ClassicPatternResult(
-                name=name,
-                status="forming",
-                confidence=0.6,
-                start_index=int(n - W),
-                end_index=int(n - 1),
-                start_time=float(t[int(n - W)]) if t.size else None,
-                end_time=float(t[-1]) if t.size else None,
-                details={"prior_pole_return_pct": float(ret)},
+            out.append(_result(
+                name,
+                "forming",
+                0.6,
+                int(n - W),
+                int(n - 1),
+                t,
+                {"prior_pole_return_pct": float(ret)},
             ))
         return out
 
