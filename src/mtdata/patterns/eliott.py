@@ -271,6 +271,21 @@ def detect_elliott_waves(df: pd.DataFrame, config: Optional[ElliottWaveConfig] =
             confidence = float(min(1.0, max(0.0, 0.6 * fib_score + 0.4 * cls_score)))
             start_index = int(piv_seq[0])
             end_index = int(piv_seq[-1])
+            # Build labeled wave point metadata
+            labels = [f"W{j}" for j in range(len(piv_seq))]
+            wave_points_labeled = []
+            for j, idx in enumerate(piv_seq):
+                try:
+                    ti = float(t[idx]) if t.size > int(idx) else None
+                except Exception:
+                    ti = None
+                wave_points_labeled.append({
+                    "label": labels[j],
+                    "index": int(idx),
+                    "time": ti,
+                    "price": float(c[int(idx)])
+                })
+
             out.append(ElliottWaveResult(
                 wave_type="Impulse",
                 wave_sequence=[int(x) for x in piv_seq],
@@ -281,6 +296,7 @@ def detect_elliott_waves(df: pd.DataFrame, config: Optional[ElliottWaveConfig] =
                 end_time=float(t[end_index]) if t.size > end_index else None,
                 details={
                     "wave_points": [float(c[i]) for i in piv_seq],
+                    "wave_points_labeled": wave_points_labeled,
                     "bullish": bool(bullish),
                     "trend": ("bull" if bullish else "bear"),
                     "fib_metrics": metrics,
@@ -323,6 +339,76 @@ def detect_elliott_waves(df: pd.DataFrame, config: Optional[ElliottWaveConfig] =
     else:
         thr = float(config.swing_threshold_pct if config.swing_threshold_pct is not None else config.min_prominence_pct)
         results = _run_once(thr, int(max(1, config.min_distance)))
+
+    # Ensure we have a recent forming candidate: if no result ends near the latest bars,
+    # produce a low-confidence fallback candidate from recent pivots.
+    try:
+        recent_bars = 3
+        has_recent = any((int(getattr(r, 'end_index', -10)) >= int(n - recent_bars)) for r in results)
+        if not has_recent:
+            # Use a more permissive threshold for fallback to ensure pivots exist
+            thr_base = float(config.swing_threshold_pct if config.swing_threshold_pct is not None else config.min_prominence_pct)
+            thr_cand = float(min(0.2, max(0.01, thr_base)))
+            piv_idx, _ = _zigzag_pivots_indices(c, thr_cand)
+            if isinstance(piv_idx, list) and len(piv_idx) >= 1:
+                # Ensure candidate extends to the most recent bar to mark it as forming
+                if int(piv_idx[-1]) != int(n - 1):
+                    piv_idx = list(piv_idx) + [int(n - 1)]
+                if len(piv_idx) >= 2:
+                    seq_len = min(6, len(piv_idx))
+                    piv_seq = [int(i) for i in piv_idx[-seq_len:]]
+                    start_index = int(piv_seq[0])
+                    end_index = int(piv_seq[-1])
+                    bullish = bool(float(c[end_index]) > float(c[start_index]))
+                    # Try a lightweight fib-based confidence when we have 6 pivots; else use a small constant
+                    fib_score = 0.0
+                    fib_metrics: Dict[str, float] = {}
+                    if len(piv_seq) == 6:
+                        valid, fib_score, fib_metrics = _impulse_rules_and_score(c, piv_seq, bullish=bullish)
+                        if not valid:
+                            # still treat as candidate, but keep low confidence
+                            fib_score = max(0.0, float(fib_score))
+                    # Confidence: keep low; softly reflect fib_score if available
+                    conf = float(min(0.5, max(0.1, 0.3 * float(fib_score) if len(piv_seq) == 6 else 0.2)))
+                    # Labeled points for fallback candidate
+                    labels = [f"W{j}" for j in range(len(piv_seq))]
+                    wave_points_labeled = []
+                    for j, idx in enumerate(piv_seq):
+                        try:
+                            ti = float(t[idx]) if t.size > int(idx) else None
+                        except Exception:
+                            ti = None
+                        wave_points_labeled.append({
+                            "label": labels[j],
+                            "index": int(idx),
+                            "time": ti,
+                            "price": float(c[int(idx)])
+                        })
+
+                    details: Dict[str, Any] = {
+                        "wave_points": [float(c[i]) for i in piv_seq],
+                        "wave_points_labeled": wave_points_labeled,
+                        "bullish": bool(bullish),
+                        "trend": ("bull" if bullish else "bear"),
+                        "fallback_candidate": True,
+                        "pivot_count": int(len(piv_seq)),
+                        "tuned_threshold_pct": float(thr_cand),
+                    }
+                    if fib_metrics:
+                        details["fib_metrics"] = fib_metrics
+                    results.append(ElliottWaveResult(
+                        wave_type="Impulse",
+                        wave_sequence=[int(x) for x in piv_seq],
+                        confidence=conf,
+                        start_index=start_index,
+                        end_index=end_index,
+                        start_time=float(t[start_index]) if t.size > start_index else None,
+                        end_time=float(t[end_index]) if t.size > end_index else None,
+                        details=details,
+                    ))
+    except Exception:
+        # best-effort candidate; ignore any issues here
+        pass
 
     results.sort(key=lambda r: (r.confidence, r.end_index), reverse=True)
     return results

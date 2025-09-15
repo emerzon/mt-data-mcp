@@ -1,9 +1,10 @@
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 from typing import Any, Dict, Optional, List
 import pandas as pd
 import warnings
 import json
+import time
 
 from .schema import TimeframeLiteral, IndicatorSpec, DenoiseSpec, SimplifySpec
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS, FETCH_RETRY_ATTEMPTS, FETCH_RETRY_DELAY, SANITY_BARS_TOLERANCE, TI_NAN_WARMUP_FACTOR, TI_NAN_WARMUP_MIN_ADD, SIMPLIFY_DEFAULT_MODE, SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT, TICKS_LOOKBACK_DAYS
@@ -406,8 +407,8 @@ def fetch_candles(
         if 'time' in headers and len(df) > 0:
             epochs_list = df['__epoch'].tolist()
             if _use_ctz:
-                fmt = _time_format_from_epochs_util_local(epochs_list)
-                fmt = _maybe_strip_year_util_local(fmt, epochs_list)
+                fmt = _time_format_from_epochs_util(epochs_list)
+                fmt = _maybe_strip_year_util(fmt, epochs_list)
                 fmt = _style_time_format_util(fmt)
                 tz = _resolve_client_tz_util(timezone)
                 # Track used tz name and invalid explicit values

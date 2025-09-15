@@ -360,6 +360,7 @@ def pattern_detect_elliott_wave(
     config: Optional[Dict[str, Any]] = None,
     include_series: bool = False,
     series_time: str = "string",  # 'string' or 'epoch'
+    include_completed: bool = False,
 ) -> Dict[str, Any]:
     """Detect Elliott Wave patterns.
 
@@ -427,6 +428,7 @@ def pattern_detect_elliott_wave(
             except Exception:
                 return x
         out_list = []
+        n_bars = len(df)
         for p in pats:
             try:
                 # Format times per global time format
@@ -440,8 +442,16 @@ def pattern_detect_elliott_wave(
                     end_date = _format_time_minimal_util(et_epoch) if et_epoch is not None else None
                 except Exception:
                     end_date = None
+                # Status heuristic: treat recent structures as 'forming', older as 'completed'
+                try:
+                    recent_bars = 3
+                except Exception:
+                    recent_bars = 3
+                status = 'forming' if int(p.end_index) >= int(n_bars - recent_bars) else 'completed'
+
                 d = {
                     "wave_type": p.wave_type,
+                    "status": status,
                     "confidence": float(max(0.0, min(1.0, p.confidence))),
                     "start_index": int(p.start_index),
                     "end_index": int(p.end_index),
@@ -452,14 +462,16 @@ def pattern_detect_elliott_wave(
                 out_list.append(d)
             except Exception:
                 continue
-        
+        # Filter out completed patterns by default, similar to classic detector
+        filtered = out_list if include_completed else [d for d in out_list if str(d.get('status','')).lower() == 'forming']
+
         resp: Dict[str, Any] = {
             "success": True,
             "symbol": symbol,
             "timeframe": timeframe,
             "lookback": int(lookback),
-            "patterns": out_list,
-            "n_patterns": int(len(out_list)),
+            "patterns": filtered,
+            "n_patterns": int(len(filtered)),
         }
         if include_series:
             resp["series_close"] = [float(v) for v in __to_float_np(df.get('close')).tolist()]
