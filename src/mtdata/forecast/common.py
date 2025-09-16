@@ -94,8 +94,8 @@ def pd_freq_from_timeframe(tf: str) -> str:
     mapping = {
         'M1': '1min', 'M2': '2min', 'M3': '3min', 'M4': '4min', 'M5': '5min',
         'M10': '10min', 'M12': '12min', 'M15': '15min', 'M20': '20min', 'M30': '30min',
-        'H1': 'H', 'H2': '2H', 'H3': '3H', 'H4': '4H', 'H6': '6H', 'H8': '8H', 'H12': '12H',
-        'D1': 'D', 'W1': 'W', 'MN1': 'MS'
+        'H1': '1h', 'H2': '2h', 'H3': '3h', 'H4': '4h', 'H6': '6h', 'H8': '8h', 'H12': '12h',
+        'D1': '1d', 'W1': '1w', 'MN1': 'MS'
     }
     return mapping.get(t, 'D')
 

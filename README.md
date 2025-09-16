@@ -71,12 +71,39 @@ The following tools are available via `python cli.py <command>`:
 - `compute_pivot_points <symbol> [--timeframe TF] [--method METHOD]` - Compute pivot point levels.
 - `forecast <symbol> [--timeframe TF] [--method METHOD] [--horizon N] ...` - Generate price forecasts.
 - `forecast_volatility <symbol> [--timeframe TF] [--horizon N] [--method METHOD] [--proxy PROXY]` - Forecast volatility using direct estimators, GARCH, or general forecasters on a proxy.
+- `generate_report <symbol> [--horizon N] [--template basic|advanced|scalping|intraday|swing|position]` - One‑stop consolidated report rendered as Markdown (context, pivots, vol, backtest→best forecast, MC barriers; advanced adds regimes, HAR‑RV, conformal). Templates infer timeframes.
+  - Default horizons per template: scalping=8 bars, intraday=12, swing=24, position=30, basic/advanced=12. Override with `--horizon` or `--params "horizon=..."` if needed.
   
 - `list_capabilities [--sections ...] [--include-details true|false]` - Consolidated features: frameworks, forecast/volatility methods, denoise, indicators, dimred, and pattern_search backends.
 
 *(Note: Programmatic access uses function names like `get_symbols`, `get_rates`, etc.)*
 
 ### Example Usage
+
+#### Sample Trade Guides
+
+- Beginner flow: docs/SAMPLE-TRADE.md
+- Advanced flow (regimes, HAR‑RV, conformal, MC barriers, risk controls): docs/SAMPLE-TRADE-ADVANCED.md
+
+#### One‑Stop Consolidated Report
+
+```bash
+# Basic report (context, pivots, EWMA vol, backtest→best forecast, MC barrier grid)
+python cli.py generate_report EURUSD --template basic
+
+# Advanced report (adds regime summaries, HAR‑RV vol, conformal intervals)
+python cli.py generate_report EURUSD --template advanced
+
+# Style‑specific templates
+python cli.py generate_report EURUSD --template scalping
+python cli.py generate_report EURUSD --template intraday
+python cli.py generate_report EURUSD --template swing
+python cli.py generate_report EURUSD --template position
+
+# Optional fine‑tuning via params (grid and backtest sizing)
+python cli.py generate_report EURUSD --horizon 12 --template basic \
+  --params "backtest_steps=25 backtest_spacing=10 tp_min=0.2 tp_max=1.0 tp_steps=5 sl_min=0.2 sl_max=1.0 sl_steps=5 top_k=5"
+```
 
 #### Fetching Data
 
@@ -186,19 +213,92 @@ python cli.py fetch_candles EURUSD --timeframe H1 --limit 500 --simplify segment
 
 ### Forecasting
 
-Generate point forecasts for the next `horizon` bars. The server supports lightweight classical models out of the box and optional integrations with modern forecasting frameworks.
+Generate point forecasts for the next `horizon` bars. The server supports lightweight classical models, Monte Carlo/HMM simulation, and optional integrations with modern forecasting frameworks.
 
 - Discover methods: `python cli.py list_capabilities --sections forecast`
 - Run forecast: `python cli.py forecast <symbol> --timeframe <TF> --method <name> --horizon <N> [--params JSON]`
 - Rolling backtest: `python cli.py forecast_backtest <symbol> --timeframe <TF> --horizon <N> [--steps S --spacing K --methods ...]`
-- Volatility forecasts: use `forecast_volatility` with methods like `ewma`, `parkinson`, `garch`, or general `arima`/`ets` with a `--proxy` (e.g., `log_r2`).
+- Volatility forecasts: use `forecast_volatility` with methods like `ewma`, `parkinson`, `har_rv`, `garch`, or general `arima`/`ets` with a `--proxy` (e.g., `log_r2`).
 
+Classical example
 ```bash
-# Forecast the next 12 hours of EURUSD using the theta model
 python cli.py forecast EURUSD --timeframe H1 --method theta --horizon 12 --format json
 ```
 
-For advanced usage, pattern-based signals, parameters, and tuning guidance, see `docs/FORECAST.md`.
+HAR‑RV volatility (daily RV from M5 returns)
+```bash
+python cli.py forecast_volatility EURUSD --timeframe H1 --horizon 12 \
+  --method har_rv --params "rv_timeframe=M5,days=150,window_w=5,window_m=22" --format json
+```
+
+Monte Carlo forecasts (distribution + bands)
+```bash
+# GBM Monte Carlo
+python cli.py forecast EURUSD --timeframe H1 --method mc_gbm --horizon 12 --params "n_sims=2000 seed=7" --format json
+# Regime-aware HMM Monte Carlo
+python cli.py forecast EURUSD --timeframe H1 --method hmm_mc --horizon 12 --params "n_states=3 n_sims=3000 seed=7" --format json
+```
+
+Barrier analytics (TP/SL odds from MC paths)
+```bash
+# Probability of hitting TP before SL within 12 bars (percent barriers)
+python cli.py barrier_hit_probabilities --symbol EURUSD --timeframe H1 --horizon 12 \
+  --method hmm_mc --tp_pct 0.5 --sl_pct 0.3 --params "n_sims=5000 seed=7" --format json
+
+# Optimize TP/SL grid to maximize edge/Kelly/EV (percent mode)
+python cli.py barrier_optimize --symbol EURUSD --timeframe H1 --horizon 12 \
+  --method hmm_mc --mode pct --tp_min 0.2 --tp_max 1.0 --tp_steps 5 --sl_min 0.2 --sl_max 1.0 --sl_steps 5 \
+  --params "n_sims=5000 seed=7" --format json
+```
+
+For advanced usage, pattern-based signals, Monte Carlo/HMM details, and barrier analytics, see `docs/FORECAST.md`.
+
+### Regime & Change-Points
+
+Detect significant structural changes and market regimes to adapt strategies:
+
+```bash
+# Bayesian Online Change-Point Detection (BOCPD) on log-returns
+python cli.py detect_regimes EURUSD --timeframe H1 --limit 1000 --method bocpd --threshold 0.6 --format json
+
+# HMM-lite regime labeling (Gaussian mixture over returns)
+python cli.py detect_regimes EURUSD --timeframe H1 --limit 1000 --method hmm --params "n_states=3" --format json
+
+# Markov-Switching AR (statsmodels, if available)
+python cli.py detect_regimes EURUSD --timeframe H1 --limit 1200 --method ms_ar --params "k_regimes=2 order=1" --format json
+```
+
+Use `cp_prob` and `change_points` from BOCPD to reset models/sizes after structural breaks; use `state`/`state_probabilities` from HMM/MS-AR to switch playbooks (trend vs. range) and adjust risk.
+
+### Conformal Prediction (Valid Intervals)
+
+Build statistically valid prediction intervals around any base method:
+
+```bash
+python cli.py forecast_conformal EURUSD --timeframe H1 --method theta --horizon 12 \
+  --steps 25 --spacing 10 --alpha 0.1 --format json
+```
+
+This runs a rolling backtest to calibrate per-step residual quantiles and then returns point forecast + conformal bands.
+
+### Triple-Barrier Labeling
+
+Create labels (+1 TP first, −1 SL first, 0 neither) for supervised learning and signal analysis:
+
+```bash
+python cli.py triple_barrier_label EURUSD --timeframe H1 --limit 1500 --horizon 12 \
+  --tp_pct 0.5 --sl_pct 0.3 --label-on high_low --format json
+```
+
+Use these labels to train meta-models or to evaluate rule performance across regimes.
+
+### Closed-Form Barrier (GBM)
+
+Compute single-barrier hit probability using GBM formulas (fast sanity check vs. MC):
+
+```bash
+python cli.py barrier_closed_form EURUSD --timeframe H1 --horizon 12 --direction up --barrier 1.1000 --format json
+```
 
 #### Dimensionality Reduction (Pattern Search)
 

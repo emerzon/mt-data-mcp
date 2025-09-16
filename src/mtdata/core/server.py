@@ -7,7 +7,7 @@ from typing import Optional, Set
 from mcp.server.fastmcp import FastMCP
 
 from .config import mt5_config
-from .constants import SERVICE_NAME
+from .constants import SERVICE_NAME, TIMEFRAME_MAP, TIMEFRAME_SECONDS  # re-export for CLI/tests
 from ..utils.mt5 import mt5_connection, _auto_connect_wrapper, _ensure_symbol_ready
 
 # Create MCP instance early to avoid circular imports when tools import `mcp`.
@@ -114,6 +114,9 @@ from .patterns import *
 from .pivot import *
 from .simplify import *
 from .symbols import *
+from .regime import *
+from .labels import *
+from .report import *
 
 
 @atexit.register

@@ -251,3 +251,9 @@ def _get_denoise_methods_data_safe() -> Dict[str, Any]:
         return get_denoise_methods_data()
     except Exception as e:
         return {"error": f"Error listing denoise methods: {e}"}
+
+
+@mcp.tool()
+def list_denoise_methods() -> Dict[str, Any]:
+    """List available denoise methods and their parameters."""
+    return _get_denoise_methods_data_safe()

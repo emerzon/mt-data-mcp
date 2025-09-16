@@ -8,6 +8,9 @@ import pandas as pd
 import MetaTrader5 as mt5
 import warnings
 
+# Adopt upcoming StatsForecast DataFrame format to avoid repeated warnings
+os.environ.setdefault("NIXTLA_ID_AS_COL", "1")
+
 from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..utils.mt5 import _mt5_epoch_to_utc, _mt5_copy_rates_from, _ensure_symbol_ready
 from ..utils.utils import (
@@ -81,6 +84,112 @@ except Exception:
     _LAG_LLAMA_AVAILABLE = False
 
 
+def get_forecast_methods_data() -> Dict[str, Any]:
+    """Return metadata about available forecast methods and their requirements."""
+    methods: List[Dict[str, Any]] = []
+
+    def add(method: str, description: str, params: List[Dict[str, Any]], requires: List[str], supports: Dict[str, bool]) -> None:
+        available = True
+        reqs = list(requires)
+        if method in ("ses", "holt", "holt_winters_add", "holt_winters_mul") and not _SM_ETS_AVAILABLE:
+            available = False; reqs.append("statsmodels")
+        if method in ("arima", "sarima") and not _SM_SARIMAX_AVAILABLE:
+            available = False; reqs.append("statsmodels")
+        if method in ("nhits", "nbeatsx", "tft", "patchtst") and not _NF_AVAILABLE:
+            available = False; reqs.append("neuralforecast[torch]")
+        if method.startswith("sf_") and not _SF_AVAILABLE:
+            available = False; reqs.append("statsforecast")
+        if method == "mlf_rf" and not _MLF_AVAILABLE:
+            available = False; reqs.append("mlforecast, scikit-learn")
+        if method == "mlf_lightgbm" and (not _MLF_AVAILABLE or not _LGB_AVAILABLE):
+            available = False; reqs.append("mlforecast, lightgbm")
+        if method == "chronos_bolt" and not _CHRONOS_AVAILABLE:
+            available = False; reqs.append("chronos or transformers")
+        if method == "timesfm" and not _TIMESFM_AVAILABLE:
+            available = False; reqs.append("timesfm or transformers")
+        if method == "lag_llama" and not _LAG_LLAMA_AVAILABLE:
+            available = False; reqs.append("lag_llama or transformers")
+        # ensemble is not wired yet in this repo
+        if method == "ensemble":
+            available = False; reqs.append("not implemented")
+        methods.append({
+            "method": method,
+            "available": bool(available),
+            "requires": sorted(set(reqs)),
+            "description": description,
+            "params": params,
+            "supports": supports,
+        })
+
+    # Baselines
+    add("naive", "Repeat last value forward.", [], [], {"price": True, "return": True, "ci": True})
+    add("seasonal_naive", "Repeat last seasonal value (period m).", [
+        {"name": "seasonality", "type": "int", "default": None, "description": "Seasonal period. Auto by timeframe if omitted."},
+    ], [], {"price": True, "return": True, "ci": True})
+    add("drift", "Line from first to last with constant slope.", [], [], {"price": True, "return": True, "ci": True})
+    add("theta", "Theta method (SES + trend).", [
+        {"name": "alpha", "type": "float", "default": 0.2, "description": "SES smoothing factor for theta blend."},
+    ], [], {"price": True, "return": True, "ci": True})
+    add("fourier_ols", "Fourier series regression with optional trend.", [
+        {"name": "seasonality", "type": "int", "default": None, "description": "Seasonal period m."},
+        {"name": "K", "type": "int", "default": 3, "description": "Number of Fourier harmonics."},
+        {"name": "trend", "type": "bool", "default": True, "description": "Include linear trend."},
+    ], [], {"price": True, "return": True, "ci": True})
+
+    # ETS / Holt-Winters / ARIMA family
+    add("ses", "Simple Exponential Smoothing (statsmodels).", [
+        {"name": "alpha", "type": "float|null", "default": None, "description": "If None, estimated by MLE."},
+    ], [], {"price": True, "return": True, "ci": True})
+    add("holt", "Holt’s linear trend (statsmodels).", [
+        {"name": "damped", "type": "bool", "default": True, "description": "Use damped trend variant."},
+    ], [], {"price": True, "return": True, "ci": True})
+    add("holt_winters_add", "Additive Holt-Winters (statsmodels).", [
+        {"name": "seasonality", "type": "int", "default": None, "description": "Seasonal period m."},
+    ], [], {"price": True, "return": True, "ci": True})
+    add("holt_winters_mul", "Multiplicative Holt-Winters (statsmodels).", [
+        {"name": "seasonality", "type": "int", "default": None, "description": "Seasonal period m."},
+    ], [], {"price": True, "return": True, "ci": True})
+    add("arima", "Non-seasonal ARIMA via SARIMAX.", [
+        {"name": "p", "type": "int", "default": 1}, {"name": "d", "type": "int", "default": 0}, {"name": "q", "type": "int", "default": 1},
+        {"name": "trend", "type": "str", "default": "c"},
+    ], [], {"price": True, "return": True, "ci": True})
+    add("sarima", "Seasonal ARIMA via SARIMAX.", [
+        {"name": "p", "type": "int", "default": 1}, {"name": "d", "type": "int", "default": 0}, {"name": "q", "type": "int", "default": 1},
+        {"name": "P", "type": "int", "default": 0}, {"name": "D", "type": "int", "default": 1}, {"name": "Q", "type": "int", "default": 0},
+        {"name": "seasonality", "type": "int", "default": None},
+        {"name": "trend", "type": "str", "default": "c"},
+    ], [], {"price": True, "return": True, "ci": True})
+
+    # Monte Carlo
+    add("mc_gbm", "Monte Carlo with GBM calibrated from log-returns.", [
+        {"name": "n_sims", "type": "int", "default": 500},
+        {"name": "seed", "type": "int", "default": 42},
+    ], [], {"price": True, "return": True, "ci": True})
+    add("hmm_mc", "Monte Carlo with Gaussian HMM regimes over returns.", [
+        {"name": "n_states", "type": "int", "default": 2},
+        {"name": "n_sims", "type": "int", "default": 500},
+        {"name": "seed", "type": "int", "default": 42},
+    ], [], {"price": True, "return": True, "ci": True})
+
+    # Optional ecosystems
+    add("nhits", "NeuralForecast NHITS (PyTorch).", [], ["neuralforecast[torch]"], {"price": True, "return": True, "ci": False})
+    add("nbeatsx", "NeuralForecast NBEATSx (PyTorch).", [], ["neuralforecast[torch]"], {"price": True, "return": True, "ci": False})
+    add("tft", "NeuralForecast TFT (PyTorch).", [], ["neuralforecast[torch]"], {"price": True, "return": True, "ci": False})
+    add("patchtst", "NeuralForecast PatchTST (PyTorch).", [], ["neuralforecast[torch]"], {"price": True, "return": True, "ci": False})
+    add("sf_autoarima", "StatsForecast AutoARIMA.", [], ["statsforecast"], {"price": True, "return": True, "ci": False})
+    add("sf_theta", "StatsForecast Theta.", [], ["statsforecast"], {"price": True, "return": True, "ci": False})
+    add("sf_autoets", "StatsForecast AutoETS.", [], ["statsforecast"], {"price": True, "return": True, "ci": False})
+    add("sf_seasonalnaive", "StatsForecast SeasonalNaive.", [], ["statsforecast"], {"price": True, "return": True, "ci": False})
+    add("mlf_rf", "MLForecast RandomForest.", [], ["mlforecast", "scikit-learn"], {"price": True, "return": True, "ci": False})
+    add("mlf_lightgbm", "MLForecast LightGBM.", [], ["mlforecast", "lightgbm"], {"price": True, "return": True, "ci": False})
+    add("chronos_bolt", "Amazon Chronos-Bolt via Transformers.", [], ["chronos", "transformers"], {"price": True, "return": True, "ci": False})
+    add("timesfm", "Google TimesFM via Transformers.", [], ["timesfm", "transformers"], {"price": True, "return": True, "ci": False})
+    add("lag_llama", "Lag-Llama via Transformers.", [], ["lag_llama", "transformers"], {"price": True, "return": True, "ci": False})
+    add("ensemble", "Hybrid ensemble (not implemented).", [], ["not implemented"], {"price": True, "return": True, "ci": False})
+
+    return {"success": True, "schema_version": 1, "methods": methods}
+
+
 def _default_seasonality_period(timeframe: str) -> int:
     from .common import default_seasonality
     return int(default_seasonality(timeframe))
@@ -108,6 +217,8 @@ _FORECAST_METHODS = (
     "holt_winters_mul",
     "arima",
     "sarima",
+    "mc_gbm",
+    "hmm_mc",
     "nhits",
     "nbeatsx",
     "tft",
@@ -898,6 +1009,75 @@ def forecast(
                     pre_ci = ci
             except Exception as ex:
                 return {"error": f"SARIMAX fitting error: {ex}"}
+
+        elif method_l == 'mc_gbm':
+            try:
+                from .monte_carlo import simulate_gbm_mc, summarize_paths
+            except Exception as ex:
+                return {"error": f"Monte Carlo GBM import error: {ex}"}
+            # Coerce integer-like params that may arrive as strings
+            _seed_raw = p.get('seed', 42)
+            try:
+                seed = int(str(_seed_raw))
+            except Exception:
+                seed = 42
+            _sims_raw = p.get('n_sims', p.get('sims', 500))
+            try:
+                sims = int(str(_sims_raw))
+            except Exception:
+                sims = 500
+            try:
+                prices_in = df[base_col].astype(float).to_numpy()
+                sim = simulate_gbm_mc(prices_in, horizon=int(fh), n_sims=int(sims), seed=int(seed))
+                summ = summarize_paths(sim['price_paths'], sim.get('return_paths'), alpha=float(ci_alpha) if ci_alpha is not None else 0.05)
+                if use_returns:
+                    f_vals = np.asarray(summ.get('return_mean'), dtype=float)
+                    pre_ci = (np.asarray(summ.get('return_lower'), dtype=float), np.asarray(summ.get('return_upper'), dtype=float)) if ci_alpha is not None else None
+                else:
+                    f_vals = np.asarray(summ.get('price_mean'), dtype=float)
+                    pre_ci = (np.asarray(summ.get('price_lower'), dtype=float), np.asarray(summ.get('price_upper'), dtype=float)) if ci_alpha is not None else None
+                params_used = {"n_sims": int(sims), "seed": int(seed)}
+            except Exception as ex:
+                return {"error": f"GBM Monte Carlo error: {ex}"}
+
+        elif method_l == 'hmm_mc':
+            try:
+                from .monte_carlo import simulate_hmm_mc, summarize_paths
+            except Exception as ex:
+                return {"error": f"Monte Carlo HMM import error: {ex}"}
+            # Coerce integer-like params that may arrive as strings
+            _seed_raw = p.get('seed', 42)
+            try:
+                seed = int(str(_seed_raw))
+            except Exception:
+                seed = 42
+            _sims_raw = p.get('n_sims', p.get('sims', 500))
+            try:
+                sims = int(str(_sims_raw))
+            except Exception:
+                sims = 500
+            _nst_raw = p.get('n_states', 2)
+            try:
+                n_states = int(str(_nst_raw))
+            except Exception:
+                n_states = 2
+            try:
+                prices_in = df[base_col].astype(float).to_numpy()
+                sim = simulate_hmm_mc(prices_in, horizon=int(fh), n_states=int(n_states), n_sims=int(sims), seed=int(seed))
+                summ = summarize_paths(sim['price_paths'], sim.get('return_paths'), alpha=float(ci_alpha) if ci_alpha is not None else 0.05)
+                if use_returns:
+                    f_vals = np.asarray(summ.get('return_mean'), dtype=float)
+                    pre_ci = (np.asarray(summ.get('return_lower'), dtype=float), np.asarray(summ.get('return_upper'), dtype=float)) if ci_alpha is not None else None
+                else:
+                    f_vals = np.asarray(summ.get('price_mean'), dtype=float)
+                    pre_ci = (np.asarray(summ.get('price_lower'), dtype=float), np.asarray(summ.get('price_upper'), dtype=float)) if ci_alpha is not None else None
+                params_used = {
+                    "n_sims": int(sims),
+                    "seed": int(seed),
+                    "n_states": int(n_states),
+                }
+            except Exception as ex:
+                return {"error": f"HMM Monte Carlo error: {ex}"}
 
         elif method_l in ('nhits', 'nbeatsx', 'tft', 'patchtst'):
             # Deep learning via Nixtla NeuralForecast (optional dependency)

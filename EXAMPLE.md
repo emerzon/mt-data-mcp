@@ -1,5 +1,9 @@
 # End-to-End Trading Workflow Example
 
+See also:
+- Basic guide: docs/SAMPLE-TRADE.md
+- Advanced playbook (regimes, HAR‑RV, conformal, MC barriers, risk/execution): docs/SAMPLE-TRADE-ADVANCED.md
+
 This example walks through discovering capabilities, preparing data, generating price and volatility forecasts, running a quick backtest, performing advanced pattern search with dimensionality reduction, and combining signals into a trading decision. Every step includes a runnable CLI command and highlights advanced parameters.
 
 Assumptions
@@ -146,7 +150,65 @@ Use volatility to set position size e.g., target risk per trade by scaling lot s
 
 ---
 
-## 6) Quick Backtest (Sanity Check)
+## 6) Monte Carlo Forecasts and Barrier Analytics
+
+Monte Carlo distributional forecasts for sizing and TP/SL planning:
+
+```bash
+# GBM Monte Carlo, 12 bars
+python cli.py forecast EURUSD --timeframe H1 --method mc_gbm --horizon 12 --params "n_sims=3000 seed=7" --format json
+
+# Regime-aware HMM (2–3 states), 12 bars
+python cli.py forecast EURUSD --timeframe H1 --method hmm_mc --horizon 12 --params "n_states=3 n_sims=3000 seed=7" --format json
+```
+
+Barrier probabilities (percent or pips):
+
+```bash
+# TP/SL odds (percent)
+python cli.py barrier_hit_probabilities --symbol EURUSD --timeframe H1 --horizon 12 \
+  --method hmm_mc --tp_pct 0.5 --sl_pct 0.3 --params "n_sims=5000 seed=7" --format json
+
+# TP/SL odds (pips)
+python cli.py barrier_hit_probabilities --symbol USDJPY --timeframe M30 --horizon 16 \
+  --method mc_gbm --tp_pips 20 --sl_pips 15 --params "n_sims=10000 seed=1" --format json
+```
+
+Barrier optimization over a grid (maximize edge/Kelly/EV):
+
+```bash
+python cli.py barrier_optimize --symbol EURUSD --timeframe H1 --horizon 12 \
+  --method hmm_mc --mode pct --tp_min 0.2 --tp_max 1.0 --tp_steps 5 \
+  --sl_min 0.2 --sl_max 1.0 --sl_steps 5 --params "n_sims=5000 seed=7" --format json
+```
+
+Interpretation tips:
+- edge = P(TP first) − P(SL first)
+- Kelly ≈ p − (1−p)/b with p = P(TP first | hit), b = TP/SL payoff ratio
+- EV ≈ p·b − (1−p)
+
+---
+
+## 7) Regime Detection (Adapt to Market Structure)
+
+Detect change-points and label regimes to switch strategies or reset risk:
+
+```bash
+# BOCPD change-points (log-returns) with higher threshold
+python cli.py detect_regimes EURUSD --timeframe H1 --limit 1500 --method bocpd --threshold 0.6 --format json
+
+# HMM-lite regimes with 3 states (e.g., low-vol, mid, high-vol)
+python cli.py detect_regimes EURUSD --timeframe H1 --limit 1500 --method hmm --params "n_states=3" --format json
+
+# Markov-Switching AR(1) with 2 regimes (requires statsmodels)
+python cli.py detect_regimes EURUSD --timeframe H1 --limit 1500 --method ms_ar --params "k_regimes=2 order=1" --format json
+```
+
+Use BOCPD `cp_prob` spikes to avoid trading through breaks and to retrain models; use regime labels to widen/narrow stops, switch momentum vs. mean-reversion logic, and adjust leverage.
+
+---
+
+## 8) Quick Backtest (Sanity Check)
 
 Run a rolling backtest to compare a few methods quickly:
 
@@ -161,7 +223,7 @@ Notes
 
 ---
 
-## 7) Advanced Pattern Search (Similarity + Dimensionality Reduction)
+## 9) Advanced Pattern Search (Similarity + Dimensionality Reduction)
 
 Run a similarity search using many instruments, correlation filtering, ANN engine, DTW refinement, and UMAP dim‑red:
 
@@ -194,7 +256,7 @@ Notes
 
 ---
 
-## 8) Combine Signals into a Decision
+## 10) Combine Signals into a Decision
 
 A simple decision recipe:
 - Go long if all three align:
@@ -215,7 +277,7 @@ Example: Fetch all inputs programmatically or via sequential CLI + scripting. Fo
 
 ---
 
-## 9) Execute and Monitor
+## 11) Execute and Monitor
 
 Check market depth to validate liquidity and current spread:
 
@@ -227,7 +289,7 @@ Monitor outcome after entering a trade (not covered by tools; depends on your ex
 
 ---
 
-## 10) Reproducibility and Caching
+## 12) Reproducibility and Caching
 
 - Use `cache_id` and optionally `cache_dir` in `pattern_search` to persist/load indexes.
 - Pin framework versions in your environment; record params in a run log (see CLI stdout and JSON fields).
@@ -246,4 +308,3 @@ Monitor outcome after entering a trade (not covered by tools; depends on your ex
 ---
 
 Happy trading! Tune thresholds and horizons to your instrument’s regime and always validate with backtests.
-

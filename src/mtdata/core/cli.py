@@ -227,19 +227,25 @@ def discover_tools():
     return tools
 
 def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str]] = None):
-    """Add arguments to parser based on parameter info"""
+    """Add arguments to parser based on parameter info.
+
+    Adds both hyphen and underscore long-option aliases and sets dest to the
+    original param name (snake_case) so downstream mapping works.
+    Also casts Optional[int|float|bool] to their base types for argparse.
+    """
     for param in param_info['params']:
-        arg_name = f"--{param['name'].replace('_', '-')}"
+        hyph = f"--{param['name'].replace('_', '-')}"
+        uscr = f"--{param['name']}"
         desc = None
         if param_docs and param['name'] in param_docs:
             desc = param_docs[param['name']]
-        kwargs = {
-            'help': desc or f"{param['name']} parameter"
-        }
+        kwargs = {'help': desc or f"{param['name']} parameter", 'dest': param['name']}
         
         # Handle different types
         if param['type'] == int:
             kwargs['type'] = int
+        elif param['type'] == float:
+            kwargs['type'] = float
         elif param['type'] == bool:
             # Support tri-state booleans via explicit true/false value
             kwargs['type'] = str
@@ -250,6 +256,18 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
             try:
                 ptype = param.get('type')
                 origin = get_origin(ptype)
+                # Optional[T] -> T for argparse casting
+                if origin is not None and str(origin).endswith('Union'):
+                    args = [a for a in get_args(ptype) if a is not type(None)]  # noqa: E721
+                    if len(args) == 1:
+                        base = args[0]
+                        if base in (int, float, str):
+                            kwargs['type'] = base
+                        elif base is bool:
+                            kwargs['type'] = str
+                            kwargs['choices'] = ['true', 'false']
+                            kwargs['metavar'] = 'bool'
+                        origin = None
                 if origin in (list, tuple):
                     inner = get_args(ptype)[0] if get_args(ptype) else None
                     inner_origin = get_origin(inner)
@@ -293,9 +311,9 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
                 local_kwargs = dict(kwargs)
                 local_kwargs['nargs'] = '?'
                 local_kwargs['const'] = '__PRESENT__'
-                parser.add_argument(arg_name, **local_kwargs)
+                parser.add_argument(hyph, uscr, **local_kwargs)
             else:
-                parser.add_argument(arg_name, **kwargs)
+                parser.add_argument(hyph, uscr, **kwargs)
 
         # If this parameter is mapping-like, add a companion --<name>-params to pass extra kwargs
         try:
@@ -309,6 +327,8 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
         if is_mapping:
             parser.add_argument(
                 f"--{param['name'].replace('_','-')}-params",
+                f"--{param['name']}_params",
+                dest=f"{param['name']}_params",
                 type=str,
                 default=None,
                 help=f"Extra params for {param['name']} (JSON or key=value[,key=value])"
@@ -427,7 +447,17 @@ def create_command_function(func_info, cmd_name: str = ""):
         
         # Call the function
         result = func_info['func'](**kwargs)
-        
+
+        # Prefer markdown output when provided
+        if isinstance(result, dict) and 'markdown' in result:
+            try:
+                output = result.get('markdown')
+                if output is not None:
+                    print(str(output))
+                    return
+            except Exception:
+                pass
+
         # Handle output
         # Respect global format preference
         try:
@@ -619,7 +649,11 @@ def main():
         
         # Add global parameters to each subparser, excluding any that conflict with function params
         existing_param_names = [p['name'] for p in func_info['params']]
-        add_global_args_to_parser(cmd_parser, exclude_params=existing_param_names)
+        exclude_globals = list(existing_param_names)
+        if cmd_name == 'generate_report':
+            exclude_globals.append('format')
+            exclude_globals.append('timeframe')
+        add_global_args_to_parser(cmd_parser, exclude_params=exclude_globals)
         
         # Add dynamic arguments
         add_dynamic_arguments(cmd_parser, func_info, meta.get('param_docs'))

@@ -5,6 +5,7 @@ This document covers the forecasting features and pattern-based similarity searc
 ## Approaches
 
 - Statistical forecasting (`forecast` tool): classical models (naive, theta, Holt-Winters, ARIMA, etc.) that project the next `horizon` bars from a single series.
+- Monte Carlo simulation (`forecast` with mc_gbm/hmm_mc): distributional forecasts with confidence bands, suitable for risk sizing and TP/SL planning.
 - Pattern-based similarity (`pattern_*` tools): finds historical windows similar to the most recent window and aggregates their subsequent moves into a signal.
 
 Both approaches can be combined: use pattern-based signals as features or validation for forecasts, or vice versa.
@@ -18,7 +19,7 @@ Generates point forecasts for the next `horizon` bars. Optionally returns confid
 Key parameters
 - `symbol`: instrument, e.g. `EURUSD`.
 - `timeframe`: bar timeframe, e.g. `H1`.
-- `method`: one of `naive`, `drift`, `seasonal_naive`, `theta`, `fourier_ols`, `ses`, `holt`, `holt_winters_add`, `holt_winters_mul`, `arima`, `sarima`, `ensemble`.
+- `method`: one of `naive`, `drift`, `seasonal_naive`, `theta`, `fourier_ols`, `ses`, `holt`, `holt_winters_add`, `holt_winters_mul`, `arima`, `sarima`, `mc_gbm`, `hmm_mc`.
 - `horizon`: how many future bars to predict.
 - `indicators`: optional technical indicators to include before forecasting.
 - `denoise`: optional denoising applied pre/post indicators.
@@ -39,15 +40,132 @@ CLI examples
 - `python cli.py forecast EURUSD --timeframe H1 --method theta --horizon 12 --format json`
 - `python cli.py forecast EURUSD --timeframe H4 --method holt_winters_add --horizon 8`
 
+Monte Carlo / HMM examples
+
+```bash
+# GBM Monte Carlo with 2000 simulations
+python cli.py forecast EURUSD --timeframe H1 --method mc_gbm --horizon 12 --params "n_sims=2000 seed=7" --format json
+
+# Regime-aware HMM Monte Carlo (3 states)
+python cli.py forecast EURUSD --timeframe H1 --method hmm_mc --horizon 12 --params "n_states=3 n_sims=3000 seed=7" --format json
+```
+
 Outputs
 - `forecast_price` and/or `forecast_return` arrays where applicable.
 - Optional `lower_price`, `upper_price` with `ci_alpha` for confidence intervals.
+- For `mc_gbm` and `hmm_mc`, bands come from simulation quantiles.
 - Metadata echoing parameters and any denoise/options used.
 
 Tips
 - Use `seasonal_naive`/`holt_winters_*` on clearly seasonal intraday datasets.
 - `theta` and `fourier_ols` are strong general-purpose baselines.
 - For ARIMA/SARIMA, ensure enough history; consider denoising to stabilize.
+- `mc_gbm` is fast and stable; `hmm_mc` adapts to regimes (e.g., trend vs. range) and often provides better sizing signals.
+
+---
+
+## Barrier Analytics (Monte Carlo)
+
+Two tools turn MC/HMM paths into actionable risk metrics for TP/SL planning.
+
+### barrier_hit_probabilities
+
+Estimate probability of hitting TP before SL within a horizon, plus time-to-hit stats.
+
+Inputs:
+- `tp_abs`/`sl_abs` (absolute prices) OR `tp_pct`/`sl_pct` (percent points, 0.5 => 0.5%) OR `tp_pips`/`sl_pips` (approx pip = 10×point for 5/3-digit FX)
+- `method`: `mc_gbm` or `hmm_mc`, plus `params` (e.g., `n_sims`, `seed`, `n_states`)
+
+Example:
+```bash
+python cli.py barrier_hit_probabilities --symbol EURUSD --timeframe H1 --horizon 12 \
+  --method hmm_mc --tp_pct 0.5 --sl_pct 0.3 --params "n_sims=5000 seed=7" --format json
+```
+
+Outputs:
+- `prob_tp_first`, `prob_sl_first`, `prob_no_hit`, `edge` (difference)
+- `tp_hit_prob_by_t`, `sl_hit_prob_by_t` (cumulative hit curves)
+- `time_to_tp_bars/seconds`, `time_to_sl_bars/seconds` (mean/median)
+
+### barrier_optimize
+
+Search a TP/SL grid (percent or pips) to maximize an objective.
+
+Inputs:
+- `mode`: `pct` or `pips`
+- `tp_min/max/steps`, `sl_min/max/steps`
+- `objective`: `edge` (default), `prob_tp_first`, `kelly`, or `ev`
+
+Example:
+```bash
+python cli.py barrier_optimize --symbol EURUSD --timeframe H1 --horizon 12 \
+  --method hmm_mc --mode pct --tp_min 0.2 --tp_max 1.0 --tp_steps 5 \
+  --sl_min 0.2 --sl_max 1.0 --sl_steps 5 --params "n_sims=5000 seed=7" --format json
+```
+
+Output highlights:
+- `best`: grid point with metrics (edge, kelly, EV, hit probabilities, median times)
+- `grid`: all grid evaluations
+
+Usage notes:
+- Use `edge` to bias toward consistent advantage; `kelly` when you also care about payoff ratio.
+- Recalibrate per symbol/timeframe and monitor stability via rolling backtests.
+
+---
+
+## Regime & Change‑Point Detection
+
+Adapt strategies to market structure by detecting breaks and labeling regimes.
+
+### BOCPD (Bayesian Online Change‑Point Detection)
+
+Probabilistic, online change‑point detection for Gaussian data. We apply it to log‑returns by default.
+
+CLI:
+```bash
+python cli.py detect_regimes EURUSD --timeframe H1 --limit 1000 --method bocpd --threshold 0.6 --format json
+```
+
+Outputs:
+- `cp_prob`: change‑point probability per step (P(run_length=0 | data))
+- `change_points`: list with time and probability where `cp_prob >= threshold`
+
+Use cases:
+- Pause trading near high `cp_prob` spikes; retrain/resample models after breaks
+- Reset risk and widen bands following a structural change
+
+Params:
+- `hazard_lambda` (default 250): average run length between changes (higher → fewer breaks)
+- `max_run_length`: cap to control runtime/memory (defaults to min(1000, N))
+
+### HMM‑Lite Regimes (Gaussian Mixture)
+
+Fast soft labeling of regimes via a Gaussian mixture over returns (no transition fit); returns per‑step state probabilities and a hard assignment.
+
+CLI:
+```bash
+python cli.py detect_regimes EURUSD --timeframe H1 --limit 1000 --method hmm --params "n_states=3" --format json
+```
+
+Outputs:
+- `state`: most likely regime index per step
+- `state_probabilities`: per‑state probabilities per step
+
+### Markov‑Switching AR (statsmodels)
+
+Regime‑switching AR via `statsmodels` when available; provides smoothed regime probabilities with AR dynamics.
+
+CLI:
+```bash
+python cli.py detect_regimes EURUSD --timeframe H1 --limit 1200 --method ms_ar --params "k_regimes=2 order=1" --format json
+```
+
+Outputs:
+- `state`: most probable regime per step
+- `state_probabilities`: smoothed marginal probabilities per state
+
+Notes:
+- Prefer BOCPD for change detection; HMM/MS‑AR for ongoing regime labeling to switch playbooks (trend/range, low/high vol).
 
 ### Framework Integrations
 
@@ -197,6 +315,61 @@ Outputs include per‑method averages (MAE, RMSE, directional accuracy) and per�
 
 ---
 
+## Conformal Prediction (Valid Intervals)
+
+Wrap any base method with valid finite‑sample prediction intervals via split‑conformal calibration.
+
+CLI:
+```bash
+python cli.py forecast_conformal EURUSD --timeframe H1 --method fourier_ols --horizon 12 --steps 25 --spacing 10 --alpha 0.1 --format json
+```
+
+How it works:
+- Runs a rolling backtest to collect per‑step residuals |ŷ_t+i − y_t+i| over `steps` anchors.
+- Uses the (1−α) quantile of residuals per horizon step to build bands around the point forecast.
+- Coverage holds under exchangeability; intervals adapt to difficulty (wider when residuals larger).
+
+Notes:
+- You can denoise during calibration and prediction for consistency.
+- For multi‑step coverage guarantees, per‑step quantiles are reported (`conformal.per_step_q`).
+
+---
+
+## Triple‑Barrier Labeling
+
+Produce +1/−1/0 labels by simulating TP/SL barrier hits on historical paths up to a fixed horizon.
+
+CLI:
+```bash
+python cli.py triple_barrier_label EURUSD --timeframe H1 --limit 1500 --horizon 12 --tp_pct 0.5 --sl_pct 0.3 --label-on high_low --format json
+```
+
+Outputs:
+- `entries`: entry times
+- `labels`: +1 (TP first), −1 (SL first), 0 (no hit by horizon)
+- `holding_bars`: bars until label is decided
+
+Use cases:
+- Train classifiers/regressors on features (including regimes) to predict label or holding time.
+- Evaluate signal quality and data leakage by shifting features appropriately.
+
+---
+
+## Closed‑Form Barrier Probability (GBM)
+
+Fast approximation for single‑barrier hit probability within a horizon under GBM.
+
+CLI:
+```bash
+python cli.py barrier_closed_form EURUSD --timeframe H1 --horizon 12 --direction up --barrier 1.1000 --format json
+```
+
+Notes:
+- Estimates μ and σ from recent log‑returns if not provided.
+- Use as a sanity check against Monte Carlo outputs or as a speedup in optimizers.
+
+---
+
 ## Pattern-Based Similarity Search
 
 Builds an index of sliding windows across one or more instruments and searches for the nearest historical patterns to the most recent window. Aggregates their forward moves to produce a signal.
@@ -304,7 +477,7 @@ Estimate volatility over the next `horizon` bars using direct estimators (EWMA, 
 
 Key parameters
 - `symbol`, `timeframe`, `horizon`.
-- `method` (direct): `ewma`, `parkinson`, `gk` (Garman–Klass), `rs` (Rogers–Satchell), `yang_zhang`, `rolling_std`, `garch`, `egarch`, `gjr_garch`.
+- `method` (direct): `ewma`, `parkinson`, `gk` (Garman–Klass), `rs` (Rogers–Satchell), `yang_zhang`, `rolling_std`, `har_rv`, `garch`, `egarch`, `gjr_garch`.
 - `method` (general, require proxy): `arima`, `sarima`, `ets`, `theta`.
 - `proxy` (required for general): `squared_return` | `abs_return` | `log_r2`.
 - `params` (by method):
@@ -330,8 +503,11 @@ CLI examples
   - `python cli.py forecast_volatility EURUSD --timeframe H1 --horizon 12 --method garch --params "fit_bars=2000,mean=Zero,dist=t"`
 - ARIMA on log-variance proxy:
   - `python cli.py forecast_volatility EURUSD --timeframe H1 --horizon 12 --method arima --proxy log_r2 --params "p=1,d=0,q=1"`
+- HAR‑RV from M5 realized variance:
+  - `python cli.py forecast_volatility EURUSD --timeframe H1 --horizon 12 --method har_rv --params "rv_timeframe=M5,days=150,window_w=5,window_m=22"`
 
 Notes
 - Range estimators need `open/high/low/close`; EWMA/GARCH require only `close`.
+- HAR‑RV computes daily realized variance from intraday returns and uses a daily HAR model; it maps RV to the requested timeframe via sqrt‑of‑time.
 - Annualization uses timeframe‑based bars per year. For intraday, this approximates 365*24 hours.
 - For robust returns, the server uses log differences; GARCH operates on percent returns.

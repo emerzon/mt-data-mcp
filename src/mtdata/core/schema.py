@@ -170,6 +170,8 @@ _FORECAST_METHODS = (
     "holt_winters_mul",
     "arima",
     "sarima",
+    "mc_gbm",
+    "hmm_mc",
     "nhits",
     "nbeatsx",
     "tft",

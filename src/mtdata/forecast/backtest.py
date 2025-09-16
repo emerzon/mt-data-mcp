@@ -17,6 +17,29 @@ from .common import fetch_history as _fetch_history
 
 
 
+def _get_forecast_methods_data_safe() -> Dict[str, Any]:
+    """Safely fetch forecast methods metadata.
+
+    Falls back to a minimal set of classical methods if discovery fails.
+    Only 'method' and 'available' keys are required by this module.
+    """
+    try:
+        from .forecast import get_forecast_methods_data as _get
+        data = _get()
+        if isinstance(data, dict) and 'methods' in data:
+            return data
+    except Exception:
+        pass
+    return {
+        'methods': [
+            {'method': 'naive', 'available': True},
+            {'method': 'drift', 'available': True},
+            {'method': 'seasonal_naive', 'available': True},
+            {'method': 'theta', 'available': True},
+            {'method': 'fourier_ols', 'available': True},
+        ]
+    }
+
 
 def forecast_backtest(
     symbol: str,
