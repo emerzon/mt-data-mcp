@@ -117,6 +117,7 @@ from .symbols import *
 from .regime import *
 from .labels import *
 from .report import *
+from .trading import *
 
 
 @atexit.register
