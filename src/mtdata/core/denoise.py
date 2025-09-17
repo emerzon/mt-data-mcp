@@ -254,6 +254,6 @@ def _get_denoise_methods_data_safe() -> Dict[str, Any]:
 
 
 @mcp.tool()
-def list_denoise_methods() -> Dict[str, Any]:
+def denoise_list_methods() -> Dict[str, Any]:
     """List available denoise methods and their parameters."""
     return _get_denoise_methods_data_safe()

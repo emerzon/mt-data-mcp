@@ -6,7 +6,7 @@ from ..utils.mt5 import _auto_connect_wrapper
 
 
 @mcp.tool()
-def get_account_info() -> dict:
+def trading_account_info() -> dict:
     """Get account information (balance, equity, profit, margin level, free margin, account type, leverage, currency)."""
     import MetaTrader5 as mt5
 
@@ -33,7 +33,7 @@ def get_account_info() -> dict:
 
 
 @mcp.tool()
-def get_deals(from_date: Optional[str] = None, to_date: Optional[str] = None, symbol: Optional[str] = None) -> str:
+def trading_deals_history(from_date: Optional[str] = None, to_date: Optional[str] = None, symbol: Optional[str] = None) -> str:
     """Get historical deals as CSV. Date input in format: 'YYYY-MM-DD'."""
     import MetaTrader5 as mt5
     import pandas as pd
@@ -71,7 +71,7 @@ def get_deals(from_date: Optional[str] = None, to_date: Optional[str] = None, sy
 
 
 @mcp.tool()
-def get_orders(from_date: Optional[str] = None, to_date: Optional[str] = None, symbol: Optional[str] = None) -> str:
+def trading_orders_active(from_date: Optional[str] = None, to_date: Optional[str] = None, symbol: Optional[str] = None) -> str:
     """Get historical orders as CSV. Date input in format: 'YYYY-MM-DD'"""
     import MetaTrader5 as mt5
     import pandas as pd
@@ -111,7 +111,7 @@ def get_orders(from_date: Optional[str] = None, to_date: Optional[str] = None, s
 
 
 @mcp.tool()
-def get_all_positions() -> str:
+def trading_positions_list() -> str:
     """Get all open positions."""
     import MetaTrader5 as mt5
     import pandas as pd
@@ -134,7 +134,7 @@ def get_all_positions() -> str:
 
 
 @mcp.tool()
-def get_positions_by_symbol(symbol: str) -> str:
+def trading_positions_by_symbol(symbol: str) -> str:
     """Get open positions for a specific symbol."""
     import MetaTrader5 as mt5
     import pandas as pd
@@ -157,7 +157,7 @@ def get_positions_by_symbol(symbol: str) -> str:
 
 
 @mcp.tool()
-def get_positions_by_id(id: Union[int, str]) -> str:
+def trading_positions_by_id(id: Union[int, str]) -> str:
     """Get open positions by ID."""
     import MetaTrader5 as mt5
     import pandas as pd
@@ -181,7 +181,7 @@ def get_positions_by_id(id: Union[int, str]) -> str:
 
 
 @mcp.tool()
-def get_all_pending_orders() -> str:
+def trading_pending_list() -> str:
     """Get all pending orders."""
     import MetaTrader5 as mt5
     import pandas as pd
@@ -204,7 +204,7 @@ def get_all_pending_orders() -> str:
 
 
 @mcp.tool()
-def get_pending_orders_by_symbol(symbol: str) -> str:
+def trading_pending_by_symbol(symbol: str) -> str:
     """Get pending orders for a specific symbol."""
     import MetaTrader5 as mt5
     import pandas as pd
@@ -227,7 +227,7 @@ def get_pending_orders_by_symbol(symbol: str) -> str:
 
 
 @mcp.tool()
-def get_pending_orders_by_id(id: Union[int, str]) -> str:
+def trading_pending_by_id(id: Union[int, str]) -> str:
     """Get pending orders by id."""
     import MetaTrader5 as mt5
     import pandas as pd
@@ -251,7 +251,7 @@ def get_pending_orders_by_id(id: Union[int, str]) -> str:
 
 
 @mcp.tool()
-def place_market_order(symbol: str, volume: float, type: str) -> dict:
+def trading_orders_place_market(symbol: str, volume: float, type: str) -> dict:
     """
     Place a market order. Parameters:
         symbol: Symbol name (e.g., 'EURUSD')
@@ -309,7 +309,7 @@ def place_market_order(symbol: str, volume: float, type: str) -> dict:
 
 
 @mcp.tool()
-def place_pending_order(symbol: str, volume: float, type: str, price: float, stop_loss: Optional[Union[int, float]] = 0, take_profit: Optional[Union[int, float]] = 0) -> dict:
+def trading_pending_place(symbol: str, volume: float, type: str, price: float, stop_loss: Optional[Union[int, float]] = 0, take_profit: Optional[Union[int, float]] = 0) -> dict:
     """
     Place a pending order. Parameters:
         symbol: Symbol name (e.g., 'EURUSD')
@@ -380,7 +380,7 @@ def place_pending_order(symbol: str, volume: float, type: str, price: float, sto
 
 
 @mcp.tool()
-def modify_position(id: Union[int, str], stop_loss: Optional[Union[int, float]] = None, take_profit: Optional[Union[int, float]] = None) -> dict:
+def trading_positions_modify(id: Union[int, str], stop_loss: Optional[Union[int, float]] = None, take_profit: Optional[Union[int, float]] = None) -> dict:
     """Modify an open position by ID."""
     import MetaTrader5 as mt5
 
@@ -422,7 +422,7 @@ def modify_position(id: Union[int, str], stop_loss: Optional[Union[int, float]] 
 
 
 @mcp.tool()
-def modify_pending_order(id: Union[int, str], price: Optional[Union[int, float]] = None, stop_loss: Optional[Union[int, float]] = None, take_profit: Optional[Union[int, float]] = None) -> dict:
+def trading_pending_modify(id: Union[int, str], price: Optional[Union[int, float]] = None, stop_loss: Optional[Union[int, float]] = None, take_profit: Optional[Union[int, float]] = None) -> dict:
     """Modify a pending order by ID."""
     import MetaTrader5 as mt5
 
@@ -465,7 +465,7 @@ def modify_pending_order(id: Union[int, str], price: Optional[Union[int, float]]
 
 
 @mcp.tool()
-def close_position(id: Union[int, str]) -> dict:
+def trading_positions_close(id: Union[int, str]) -> dict:
     """Close an open position by ID."""
     import MetaTrader5 as mt5
 
@@ -522,7 +522,7 @@ def close_position(id: Union[int, str]) -> dict:
 
 
 @mcp.tool()
-def cancel_pending_order(id: Union[int, str]) -> dict:
+def trading_pending_cancel(id: Union[int, str]) -> dict:
     """Cancel a pending order by ID."""
     import MetaTrader5 as mt5
 
@@ -560,7 +560,7 @@ def cancel_pending_order(id: Union[int, str]) -> dict:
 
 
 @mcp.tool()
-def close_all_positions() -> dict:
+def trading_positions_close_all() -> dict:
     """Close all open positions."""
     import MetaTrader5 as mt5
 
@@ -615,7 +615,7 @@ def close_all_positions() -> dict:
 
 
 @mcp.tool()
-def close_all_positions_by_symbol(symbol: str) -> dict:
+def trading_positions_close_symbol(symbol: str) -> dict:
     """Close all open positions for a specific symbol."""
     import MetaTrader5 as mt5
 
@@ -670,7 +670,7 @@ def close_all_positions_by_symbol(symbol: str) -> dict:
 
 
 @mcp.tool()
-def close_all_profitable_positions() -> dict:
+def trading_positions_close_profitable() -> dict:
     """Close all profitable positions."""
     import MetaTrader5 as mt5
 
@@ -730,7 +730,7 @@ def close_all_profitable_positions() -> dict:
 
 
 @mcp.tool()
-def close_all_losing_positions() -> dict:
+def trading_positions_close_losing() -> dict:
     """Close all losing positions."""
     import MetaTrader5 as mt5
 
@@ -790,7 +790,7 @@ def close_all_losing_positions() -> dict:
 
 
 @mcp.tool()
-def cancel_all_pending_orders() -> dict:
+def trading_pending_cancel_all() -> dict:
     """Cancel all pending orders."""
     import MetaTrader5 as mt5
 
@@ -829,7 +829,7 @@ def cancel_all_pending_orders() -> dict:
 
 
 @mcp.tool()
-def cancel_pending_orders_by_symbol(symbol: str) -> dict:
+def trading_pending_cancel_symbol(symbol: str) -> dict:
     """Cancel all pending orders for a specific symbol."""
     import MetaTrader5 as mt5
 

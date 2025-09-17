@@ -16,7 +16,7 @@ def template_advanced(
     base = template_basic(symbol, horizon, denoise, p)
 
     # Regime summaries
-    from ..regime import detect_regimes as _detect_regimes
+    from ..regime import regime_detect as _detect_regimes
     p = dict(params or {})
     bocpd = _detect_regimes(
         symbol=symbol,
@@ -36,7 +36,7 @@ def template_advanced(
     }
 
     # HAR-RV volatility summary
-    from ..forecast import forecast_volatility as _forecast_volatility
+    from ..forecast import forecast_volatility_estimate as _forecast_volatility
     har = _forecast_volatility(symbol=symbol, timeframe=tf, horizon=int(horizon), method='har_rv', params={'rv_timeframe': 'M5', 'days': 150, 'window_w': 5, 'window_m': 22})
     if 'error' in har:
         base['sections']['volatility_har_rv'] = {'error': har['error']}
@@ -52,7 +52,7 @@ def template_advanced(
     except Exception:
         best_method = None
     if best_method:
-        from ..forecast import forecast_conformal as _forecast_conformal
+        from ..forecast import forecast_conformal_intervals as _forecast_conformal
         conf = _forecast_conformal(
             symbol=symbol,
             timeframe=tf,

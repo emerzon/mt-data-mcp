@@ -10,7 +10,7 @@ from .indicators_docs import list_ta_indicators as _list_ta_indicators_docs, inf
 _list_ta_indicators = _list_ta_indicators_docs
 
 @mcp.tool()
-def list_indicators(search_term: Optional[str] = None, category: Optional[CategoryLiteral] = None) -> Dict[str, Any]:  # type: ignore
+def indicators_list(search_term: Optional[str] = None, category: Optional[CategoryLiteral] = None) -> Dict[str, Any]:  # type: ignore
     """List indicators as CSV with columns: name,category. Optional filters: search_term, category.
 
     Parameters: search_term?, category?
@@ -40,7 +40,7 @@ def list_indicators(search_term: Optional[str] = None, category: Optional[Catego
 # Note: category annotation is set at definition time above to be captured in the MCP schema
 
 @mcp.tool()
-def describe_indicator(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: ignore
+def indicators_describe(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: ignore
     """Return detailed indicator information (name, category, params, description).
 
     Parameters: name

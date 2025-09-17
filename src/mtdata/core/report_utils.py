@@ -136,7 +136,7 @@ def merge_params(base: Optional[Dict[str, Any]], extra: Dict[str, Any], override
 
 def market_snapshot(symbol: str, timezone: str = 'UTC') -> Dict[str, Any]:
     try:
-        from .market_depth import fetch_market_depth as _fetch_market_depth
+        from .market_depth import market_depth_fetch as _fetch_market_depth
         import MetaTrader5 as _mt5
         dom = _fetch_market_depth(symbol=symbol, timezone=timezone)
         bid = None; ask = None; spread = None
@@ -218,7 +218,7 @@ def apply_market_gates(section: Dict[str, Any], params: Dict[str, Any]) -> Dict[
 
 def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]], limit: int = 200, tail: int = 30) -> Optional[Dict[str, Any]]:
     try:
-        from .data import fetch_candles as _fetch_candles
+        from .data import data_fetch_candles as _fetch_candles
         indicators = "ema(20),ema(50),rsi(14),macd(12,26,9)"
         res = _fetch_candles(symbol=symbol, timeframe=timeframe, limit=int(limit), indicators=indicators, denoise=denoise, timezone='UTC')
         if 'error' in res:
@@ -250,7 +250,7 @@ def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Option
     if pivot_timeframes:
         pivs: Dict[str, Any] = {}
         try:
-            from .pivot import compute_pivot_points as _compute_pivot_points
+            from .pivot import pivot_compute_points as _compute_pivot_points
             for tfp in pivot_timeframes:
                 res = _compute_pivot_points(symbol=symbol, timeframe=tfp)
                 if isinstance(res, dict) and not res.get('error'):
@@ -505,4 +505,3 @@ def render_markdown(report: Dict[str, Any]) -> str:
         lines.append("")
 
     return "\n".join(lines).strip() + "\n"
-

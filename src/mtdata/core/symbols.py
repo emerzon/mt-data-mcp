@@ -9,7 +9,7 @@ import MetaTrader5 as mt5
 
 @mcp.tool()
 @_auto_connect_wrapper
-def list_symbols(
+def symbols_list(
     search_term: Optional[str] = None,
     limit: Optional[int] = None
 
@@ -121,7 +121,7 @@ def list_symbols(
 
 @mcp.tool()
 @_auto_connect_wrapper
-def list_symbol_groups(search_term: Optional[str] = None, limit: Optional[int] = None) -> Dict[str, Any]:
+def symbols_list_groups(search_term: Optional[str] = None, limit: Optional[int] = None) -> Dict[str, Any]:
     """List group paths as CSV with a single column: group.
 
     Parameters: search_term?, limit?
@@ -165,7 +165,7 @@ def list_symbol_groups(search_term: Optional[str] = None, limit: Optional[int] =
 
 @mcp.tool()
 @_auto_connect_wrapper
-def describe_symbol(symbol: str) -> Dict[str, Any]:
+def symbols_describe(symbol: str) -> Dict[str, Any]:
     """Return symbol information as JSON for `symbol`.
        Parameters: symbol
        Includes information such as Symbol Description, Swap Values, Tick Size/Value, etc.

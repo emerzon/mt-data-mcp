@@ -37,20 +37,20 @@ Notes
 List visible symbols and describe one:
 
 ```bash
-python cli.py list_symbols --limit 20
-python cli.py describe_symbol EURUSD --format json
+python cli.py symbols_list --limit 20
+python cli.py symbols_describe EURUSD --format json
 ```
 
 Fetch recent candles for sanity checks:
 
 ```bash
-python cli.py fetch_candles EURUSD --timeframe H1 --limit 300 --format json
+python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 300 --format json
 ```
 
 Optional: Market depth (liquidity snapshot):
 
 ```bash
-python cli.py fetch_market_depth EURUSD --format json
+python cli.py market_depth_fetch EURUSD --format json
 ```
 
 ---
@@ -60,14 +60,14 @@ python cli.py fetch_market_depth EURUSD --format json
 Denoise the close series before feature engineering or forecasting (EMA example):
 
 ```bash
-python cli.py fetch_candles EURUSD --timeframe H1 --limit 1500 \
+python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 1500 \
   --denoise ema --denoise-params "columns=close,when=pre_ti,alpha=0.2,keep_original=false" --format json
 ```
 
 Compute indicators with denoise (post-indicator smoothing):
 
 ```bash
-python cli.py fetch_candles EURUSD --timeframe H1 --limit 1500 \
+python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 1500 \
   --indicators "rsi(14),ema(50)" \
   --denoise ema --denoise-params "columns=RSI_14,when=post_ti,alpha=0.3,keep_original=true" \
   --format json
@@ -84,20 +84,20 @@ Notes
 Quick baseline (Theta):
 
 ```bash
-python cli.py forecast EURUSD --timeframe H1 --method theta --horizon 12 --format json
+python cli.py forecast_generate EURUSD --timeframe H1 --method theta --horizon 12 --format json
 ```
 
 StatsForecast AutoARIMA (if installed):
 
 ```bash
-python cli.py forecast EURUSD --timeframe H1 --method sf_autoarima --horizon 24 \
+python cli.py forecast_generate EURUSD --timeframe H1 --method sf_autoarima --horizon 24 \
   --params "{\"seasonality\":24,\"stepwise\":true}" --format json
 ```
 
 MLForecast + LightGBM (if installed):
 
 ```bash
-python cli.py forecast EURUSD --timeframe H1 --method mlf_lightgbm --horizon 12 \
+python cli.py forecast_generate EURUSD --timeframe H1 --method mlf_lightgbm --horizon 12 \
   --params "{\"lags\":[1,2,3,24],\"rolling_agg\":\"mean\",\"n_estimators\":400,\"learning_rate\":0.05}" \
   --format json
 ```
@@ -105,20 +105,20 @@ python cli.py forecast EURUSD --timeframe H1 --method mlf_lightgbm --horizon 12 
 NeuralForecast NHITS (if installed):
 
 ```bash
-python cli.py forecast EURUSD --timeframe H1 --method nhits --horizon 24 \
+python cli.py forecast_generate EURUSD --timeframe H1 --method nhits --horizon 24 \
   --params "{\"max_epochs\":30,\"input_size\":256,\"batch_size\":64}" --format json
 ```
 
 Foundation model (Chronos‑Bolt) with quantiles and device mapping:
 
 ```bash
-python cli.py forecast EURUSD --timeframe H1 --method chronos_bolt --horizon 24 \
+python cli.py forecast_generate EURUSD --timeframe H1 --method chronos_bolt --horizon 24 \
   --params "{\"model_name\":\"amazon/chronos-bolt-base\",\"context_length\":512,\"quantiles\":[0.1,0.5,0.9],\"device_map\":\"auto\",\"trust_remote_code\":true}" \
   --format json
 ```
 
 Notes
-- Many methods accept `denoise` and `indicators` too (see fetch_candles step), but keep it simple unless you need exogenous features.
+- Many methods accept `denoise` and `indicators` too (see data_fetch_candles step), but keep it simple unless you need exogenous features.
 - Foundation models can accept `quantization` (e.g., `int8`, `int4`) when supported by the backend.
 
 ---
@@ -128,21 +128,21 @@ Notes
 Direct estimators:
 
 ```bash
-python cli.py forecast_volatility EURUSD --timeframe H1 --horizon 12 \
+python cli.py forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
   --method ewma --params "halflife=60,lookback=1500" --format json
 ```
 
 GARCH via `arch` (if installed):
 
 ```bash
-python cli.py forecast_volatility EURUSD --timeframe H1 --horizon 12 \
+python cli.py forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
   --method garch --params "fit_bars=2000,mean=Zero,dist=t" --format json
 ```
 
 Proxy modeling (ARIMA over `log_r2`):
 
 ```bash
-python cli.py forecast_volatility EURUSD --timeframe H1 --horizon 12 \
+python cli.py forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
   --method arima --proxy log_r2 --params "p=1,d=0,q=1" --format json
 ```
 
@@ -156,28 +156,28 @@ Monte Carlo distributional forecasts for sizing and TP/SL planning:
 
 ```bash
 # GBM Monte Carlo, 12 bars
-python cli.py forecast EURUSD --timeframe H1 --method mc_gbm --horizon 12 --params "n_sims=3000 seed=7" --format json
+python cli.py forecast_generate EURUSD --timeframe H1 --method mc_gbm --horizon 12 --params "n_sims=3000 seed=7" --format json
 
 # Regime-aware HMM (2–3 states), 12 bars
-python cli.py forecast EURUSD --timeframe H1 --method hmm_mc --horizon 12 --params "n_states=3 n_sims=3000 seed=7" --format json
+python cli.py forecast_generate EURUSD --timeframe H1 --method hmm_mc --horizon 12 --params "n_states=3 n_sims=3000 seed=7" --format json
 ```
 
 Barrier probabilities (percent or pips):
 
 ```bash
 # TP/SL odds (percent)
-python cli.py barrier_hit_probabilities --symbol EURUSD --timeframe H1 --horizon 12 \
+python cli.py forecast_barrier_hit_probabilities --symbol EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --tp_pct 0.5 --sl_pct 0.3 --params "n_sims=5000 seed=7" --format json
 
 # TP/SL odds (pips)
-python cli.py barrier_hit_probabilities --symbol USDJPY --timeframe M30 --horizon 16 \
+python cli.py forecast_barrier_hit_probabilities --symbol USDJPY --timeframe M30 --horizon 16 \
   --method mc_gbm --tp_pips 20 --sl_pips 15 --params "n_sims=10000 seed=1" --format json
 ```
 
 Barrier optimization over a grid (maximize edge/Kelly/EV):
 
 ```bash
-python cli.py barrier_optimize --symbol EURUSD --timeframe H1 --horizon 12 \
+python cli.py forecast_barrier_optimize --symbol EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --tp_min 0.2 --tp_max 1.0 --tp_steps 5 \
   --sl_min 0.2 --sl_max 1.0 --sl_steps 5 --params "n_sims=5000 seed=7" --format json
 ```
@@ -195,13 +195,13 @@ Detect change-points and label regimes to switch strategies or reset risk:
 
 ```bash
 # BOCPD change-points (log-returns) with higher threshold
-python cli.py detect_regimes EURUSD --timeframe H1 --limit 1500 --method bocpd --threshold 0.6 --format json
+python cli.py regime_detect EURUSD --timeframe H1 --limit 1500 --method bocpd --threshold 0.6 --format json
 
 # HMM-lite regimes with 3 states (e.g., low-vol, mid, high-vol)
-python cli.py detect_regimes EURUSD --timeframe H1 --limit 1500 --method hmm --params "n_states=3" --format json
+python cli.py regime_detect EURUSD --timeframe H1 --limit 1500 --method hmm --params "n_states=3" --format json
 
 # Markov-Switching AR(1) with 2 regimes (requires statsmodels)
-python cli.py detect_regimes EURUSD --timeframe H1 --limit 1500 --method ms_ar --params "k_regimes=2 order=1" --format json
+python cli.py regime_detect EURUSD --timeframe H1 --limit 1500 --method ms_ar --params "k_regimes=2 order=1" --format json
 ```
 
 Use BOCPD `cp_prob` spikes to avoid trading through breaks and to retrain models; use regime labels to widen/narrow stops, switch momentum vs. mean-reversion logic, and adjust leverage.
@@ -213,7 +213,7 @@ Use BOCPD `cp_prob` spikes to avoid trading through breaks and to retrain models
 Run a rolling backtest to compare a few methods quickly:
 
 ```bash
-python cli.py forecast_backtest EURUSD --timeframe H1 --horizon 12 \
+python cli.py forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
   --steps 50 --spacing 5 \
   --methods "theta sf_autoarima nhits" --format json
 ```
@@ -270,9 +270,9 @@ Example: Fetch all inputs programmatically or via sequential CLI + scripting. Fo
 
 - From `pattern_search` (with `--format json --compact false` recommended):
   - `prob_gain`, `distance_weighted_avg_pct_change`, `avg_pct_change`, `forecast_confidence`.
-- From `forecast`:
+- From `forecast_generate`:
   - `forecast_price` or `forecast_return`, optional `forecast_quantiles`.
-- From `forecast_volatility`:
+- From `forecast_volatility_estimate`:
   - `forecast_sigma` (per‑bar sigma), or horizon sigma if modeled that way.
 
 ---
@@ -282,7 +282,7 @@ Example: Fetch all inputs programmatically or via sequential CLI + scripting. Fo
 Check market depth to validate liquidity and current spread:
 
 ```bash
-python cli.py fetch_market_depth EURUSD --format json
+python cli.py market_depth_fetch EURUSD --format json
 ```
 
 Monitor outcome after entering a trade (not covered by tools; depends on your execution stack). Consider scheduling periodic refresh of forecasts and similarity signals.
@@ -308,3 +308,5 @@ Monitor outcome after entering a trade (not covered by tools; depends on your ex
 ---
 
 Happy trading! Tune thresholds and horizons to your instrument’s regime and always validate with backtests.
+
+

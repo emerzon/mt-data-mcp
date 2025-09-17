@@ -11,7 +11,7 @@ import MetaTrader5 as mt5
 
 @mcp.tool()
 @_auto_connect_wrapper
-def compute_pivot_points(
+def pivot_compute_points(
     symbol: str,
     timeframe: TimeframeLiteral = "D1",
     method: PivotMethodLiteral = "classic",

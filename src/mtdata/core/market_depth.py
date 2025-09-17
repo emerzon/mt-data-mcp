@@ -8,7 +8,7 @@ import MetaTrader5 as mt5
 
 @mcp.tool()
 @_auto_connect_wrapper
-def fetch_market_depth(symbol: str, timezone: str = "auto") -> Dict[str, Any]:
+def market_depth_fetch(symbol: str, timezone: str = "auto") -> Dict[str, Any]:
     """Return DOM if available; otherwise current bid/ask snapshot for `symbol`.
 
     Parameters: symbol, timezone

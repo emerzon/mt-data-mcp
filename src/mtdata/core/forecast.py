@@ -17,7 +17,7 @@ from typing import Any, Optional, Dict, List, Literal
 
 @mcp.tool()
 @_auto_connect_wrapper
-def forecast(
+def forecast_generate(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     method: ForecastMethodLiteral = "theta",
@@ -61,7 +61,7 @@ def forecast(
 
 @mcp.tool()
 @_auto_connect_wrapper
-def forecast_backtest(
+def forecast_backtest_run(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
@@ -98,7 +98,7 @@ def forecast_backtest(
 
 @mcp.tool()
 @_auto_connect_wrapper
-def forecast_volatility(
+def forecast_volatility_estimate(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 1,
@@ -123,7 +123,7 @@ def forecast_volatility(
 
 @mcp.tool()
 @_auto_connect_wrapper
-def list_forecast_methods() -> Dict[str, Any]:
+def forecast_list_methods() -> Dict[str, Any]:
     """List forecast methods, availability, and parameter docs."""
     try:
         return _get_forecast_methods_data()
@@ -133,7 +133,7 @@ def list_forecast_methods() -> Dict[str, Any]:
 
 @mcp.tool()
 @_auto_connect_wrapper
-def forecast_conformal(
+def forecast_conformal_intervals(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     method: ForecastMethodLiteral = "theta",
@@ -222,7 +222,7 @@ def forecast_conformal(
 
 @mcp.tool()
 @_auto_connect_wrapper
-def barrier_hit_probabilities(
+def forecast_barrier_hit_probabilities(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
@@ -412,7 +412,7 @@ def barrier_hit_probabilities(
 
 @mcp.tool()
 @_auto_connect_wrapper
-def barrier_closed_form(
+def forecast_barrier_closed_form(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
@@ -494,7 +494,7 @@ def barrier_closed_form(
 
 @mcp.tool()
 @_auto_connect_wrapper
-def barrier_optimize(
+def forecast_barrier_optimize(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,

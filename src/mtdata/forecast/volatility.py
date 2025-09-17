@@ -131,7 +131,7 @@ def forecast_volatility(
         # If using general forecasters on proxy, compute proxy series and return using internal logic
         if method_l in valid_general:
             # Fetch recent closes and build returns
-            # Reuse unified forecast branch for fetching by delegating to fetch_candles/forecast where possible is heavy; implement lightweight here
+            # Reuse unified forecast branch for fetching by delegating to data_fetch_candles/forecast_generate where possible is heavy; implement lightweight here
             # Determine lookback bars
             need = max(300, int(horizon) + 50)
             _info_before = mt5.symbol_info(symbol)
@@ -908,3 +908,4 @@ def forecast_volatility(
         }
     except Exception as e:
         return {"error": f"Error computing volatility forecast: {str(e)}"}
+

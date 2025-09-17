@@ -11,7 +11,7 @@ from ..utils.denoise import _apply_denoise as _apply_denoise_util
 
 @mcp.tool()
 @_auto_connect_wrapper
-def detect_regimes(
+def regime_detect(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     limit: int = 800,

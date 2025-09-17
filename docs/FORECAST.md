@@ -4,15 +4,15 @@ This document covers the forecasting features and pattern-based similarity searc
 
 ## Approaches
 
-- Statistical forecasting (`forecast` tool): classical models (naive, theta, Holt-Winters, ARIMA, etc.) that project the next `horizon` bars from a single series.
-- Monte Carlo simulation (`forecast` with mc_gbm/hmm_mc): distributional forecasts with confidence bands, suitable for risk sizing and TP/SL planning.
+- Statistical forecasting (`forecast_generate` tool): classical models (naive, theta, Holt-Winters, ARIMA, etc.) that project the next `horizon` bars from a single series.
+- Monte Carlo simulation (`forecast_generate` with mc_gbm/hmm_mc): distributional forecasts with confidence bands, suitable for risk sizing and TP/SL planning.
 - Pattern-based similarity (`pattern_*` tools): finds historical windows similar to the most recent window and aggregates their subsequent moves into a signal.
 
 Both approaches can be combined: use pattern-based signals as features or validation for forecasts, or vice versa.
 
 ---
 
-## Statistical Forecasts (`forecast`)
+## Statistical Forecasts (`forecast_generate`)
 
 Generates point forecasts for the next `horizon` bars. Optionally returns confidence bounds for supported methods.
 
@@ -37,17 +37,17 @@ Key parameters
    - Note: In this release, exogenous features are consumed by SARIMAX (`arima`/`sarima`). Other adapters continue to run univariate.
 
 CLI examples
-- `python cli.py forecast EURUSD --timeframe H1 --method theta --horizon 12 --format json`
-- `python cli.py forecast EURUSD --timeframe H4 --method holt_winters_add --horizon 8`
+- `python cli.py forecast_generate EURUSD --timeframe H1 --method theta --horizon 12 --format json`
+- `python cli.py forecast_generate EURUSD --timeframe H4 --method holt_winters_add --horizon 8`
 
 Monte Carlo / HMM examples
 
 ```bash
 # GBM Monte Carlo with 2000 simulations
-python cli.py forecast EURUSD --timeframe H1 --method mc_gbm --horizon 12 --params "n_sims=2000 seed=7" --format json
+python cli.py forecast_generate EURUSD --timeframe H1 --method mc_gbm --horizon 12 --params "n_sims=2000 seed=7" --format json
 
 # Regime-aware HMM Monte Carlo (3 states)
-python cli.py forecast EURUSD --timeframe H1 --method hmm_mc --horizon 12 --params "n_states=3 n_sims=3000 seed=7" --format json
+python cli.py forecast_generate EURUSD --timeframe H1 --method hmm_mc --horizon 12 --params "n_states=3 n_sims=3000 seed=7" --format json
 ```
 
 Outputs
@@ -78,7 +78,7 @@ Inputs:
 
 Example:
 ```bash
-python cli.py barrier_hit_probabilities --symbol EURUSD --timeframe H1 --horizon 12 \
+python cli.py forecast_barrier_hit_probabilities --symbol EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --tp_pct 0.5 --sl_pct 0.3 --params "n_sims=5000 seed=7" --format json
 ```
 
@@ -98,7 +98,7 @@ Inputs:
 
 Example:
 ```bash
-python cli.py barrier_optimize --symbol EURUSD --timeframe H1 --horizon 12 \
+python cli.py forecast_barrier_optimize --symbol EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --tp_min 0.2 --tp_max 1.0 --tp_steps 5 \
   --sl_min 0.2 --sl_max 1.0 --sl_steps 5 --params "n_sims=5000 seed=7" --format json
 ```
@@ -123,7 +123,7 @@ Probabilistic, online change‑point detection for Gaussian data. We apply it to
 
 CLI:
 ```bash
-python cli.py detect_regimes EURUSD --timeframe H1 --limit 1000 --method bocpd --threshold 0.6 --format json
+python cli.py regime_detect EURUSD --timeframe H1 --limit 1000 --method bocpd --threshold 0.6 --format json
 ```
 
 Outputs:
@@ -144,7 +144,7 @@ Fast soft labeling of regimes via a Gaussian mixture over returns (no transition
 
 CLI:
 ```bash
-python cli.py detect_regimes EURUSD --timeframe H1 --limit 1000 --method hmm --params "n_states=3" --format json
+python cli.py regime_detect EURUSD --timeframe H1 --limit 1000 --method hmm --params "n_states=3" --format json
 ```
 
 Outputs:
@@ -157,7 +157,7 @@ Regime‑switching AR via `statsmodels` when available; provides smoothed regime
 
 CLI:
 ```bash
-python cli.py detect_regimes EURUSD --timeframe H1 --limit 1200 --method ms_ar --params "k_regimes=2 order=1" --format json
+python cli.py regime_detect EURUSD --timeframe H1 --limit 1200 --method ms_ar --params "k_regimes=2 order=1" --format json
 ```
 
 Outputs:
@@ -183,8 +183,8 @@ Methods:
 
 Examples (with optional exogenous):
 ```bash
-python cli.py forecast EURUSD --timeframe H1 --method sf_autoarima --horizon 12 --params "{\"seasonality\":24,\"stepwise\":true}"
-python cli.py forecast EURUSD --timeframe H1 --method sf_autoets   --horizon 12 --params "{\"seasonality\":24}"
+python cli.py forecast_generate EURUSD --timeframe H1 --method sf_autoarima --horizon 12 --params "{\"seasonality\":24,\"stepwise\":true}"
+python cli.py forecast_generate EURUSD --timeframe H1 --method sf_autoets   --horizon 12 --params "{\"seasonality\":24}"
 # with exogenous features (if provided via --features), the adapter uses X_df and X_future internally
 ```
 
@@ -203,13 +203,13 @@ Methods:
 
 Examples (exogenous supported when provided via --features):
 ```bash
-python cli.py forecast EURUSD --timeframe H1 --method mlf_rf         --horizon 12 --params "{\"lags\":[1,2,3,24],\"rolling_agg\":\"mean\",\"n_estimators\":300}"
-python cli.py forecast EURUSD --timeframe H1 --method mlf_lightgbm  --horizon 12 --params "{\"lags\":[1,2,3,24],\"n_estimators\":400,\"learning_rate\":0.05,\"num_leaves\":63}"
+python cli.py forecast_generate EURUSD --timeframe H1 --method mlf_rf         --horizon 12 --params "{\"lags\":[1,2,3,24],\"rolling_agg\":\"mean\",\"n_estimators\":300}"
+python cli.py forecast_generate EURUSD --timeframe H1 --method mlf_lightgbm  --horizon 12 --params "{\"lags\":[1,2,3,24],\"n_estimators\":400,\"learning_rate\":0.05,\"num_leaves\":63}"
 # features provided via --features are merged into training and future frames
 ```
 
 Notes:
-- Add exogenous features by computing indicators via `fetch_candles --indicators ...` and wiring them into a custom training flow if needed.
+- Add exogenous features by computing indicators via `data_fetch_candles --indicators ...` and wiring them into a custom training flow if needed.
 
 #### NeuralForecast (deep learning)
 
@@ -220,8 +220,8 @@ Methods:
 
 Examples (past/future covariates supported when provided via --features):
 ```bash
-python cli.py forecast EURUSD --timeframe H1 --method nhits   --horizon 12 --params "{\"max_epochs\":30,\"input_size\":256}"
-python cli.py forecast EURUSD --timeframe H1 --method nbeatsx --horizon 12 --params "{\"max_epochs\":20,\"model_params\":{\"stack_types\":[\"trend\",\"seasonality\"]}}"
+python cli.py forecast_generate EURUSD --timeframe H1 --method nhits   --horizon 12 --params "{\"max_epochs\":30,\"input_size\":256}"
+python cli.py forecast_generate EURUSD --timeframe H1 --method nbeatsx --horizon 12 --params "{\"max_epochs\":20,\"model_params\":{\"stack_types\":[\"trend\",\"seasonality\"]}}"
 # --features future_covariates=... (e.g., fourier:24,hour,dow) are passed to model predict horizon
 ```
 
@@ -233,13 +233,13 @@ Notes:
 
 - Predict RSI(14) path and return its mean over the horizon:
 ```bash
-python cli.py forecast EURUSD --timeframe H1 --method sarima --horizon 24 \
+python cli.py forecast_generate EURUSD --timeframe H1 --method sarima --horizon 24 \
   --target-spec "{base:'RSI_14',indicators:'rsi(14)',transform:'none',horizon_agg:'mean'}" --format json
 ```
 
 - Predict EMA(50) changes with slope aggregation (normalized per bar):
 ```bash
-python cli.py forecast EURUSD --timeframe H1 --method theta --horizon 24 \
+python cli.py forecast_generate EURUSD --timeframe H1 --method theta --horizon 24 \
   --target-spec "{base:'EMA_50',indicators:'ema(50)',transform:'diff',horizon_agg:'slope',normalize:'per_bar'}" \
   --format json
 ```
@@ -249,7 +249,7 @@ python cli.py forecast EURUSD --timeframe H1 --method theta --horizon 24 \
 Pass OHLCV+TIs as exogenous regressors with PCA(8) across feature columns:
 
 ```bash
-python cli.py forecast EURUSD --timeframe H1 --method sarima --horizon 24 \
+python cli.py forecast_generate EURUSD --timeframe H1 --method sarima --horizon 24 \
   --params "{\"p\":1,\"d\":0,\"q\":1,\"seasonality\":24,\"P\":1,\"D\":0,\"Q\":0}" \
   --features "include=ohlcv,indicators=rsi(14),macd(12,26,9),dimred_method=pca,dimred_params={n_components:8}" \
   --format json
@@ -277,15 +277,15 @@ Shared params:
 Examples:
 ```bash
 # Chronos‑Bolt with quantiles
-python cli.py forecast EURUSD --timeframe H1 --method chronos_bolt --horizon 12 \
+python cli.py forecast_generate EURUSD --timeframe H1 --method chronos_bolt --horizon 12 \
   --params "{\"model_name\":\"amazon/chronos-bolt-base\",\"context_length\":512,\"quantiles\":[0.05,0.5,0.95]}"
 
 # TimesFM default model, 8‑bit load
-python cli.py forecast EURUSD --timeframe H1 --method timesfm --horizon 12 \
+python cli.py forecast_generate EURUSD --timeframe H1 --method timesfm --horizon 12 \
   --params "{\"context_length\":512,\"quantization\":\"int8\"}"
 
 # Lag‑Llama via Transformers
-python cli.py forecast EURUSD --timeframe H1 --method lag_llama --horizon 12 \
+python cli.py forecast_generate EURUSD --timeframe H1 --method lag_llama --horizon 12 \
   --params "{\"model_name\":\"time-series-foundation-models/Lag-Llama\",\"context_length\":512,\"device\":\"cuda:0\"}"
 ```
 
@@ -298,7 +298,7 @@ Notes:
 
 ### Rolling Backtests
 
-Run rolling‑origin evaluations with the integrated `forecast_backtest` tool.
+Run rolling‑origin evaluations with the integrated `forecast_backtest_run` tool.
 
 Parameters:
 - `steps`: number of historical anchors
@@ -307,7 +307,7 @@ Parameters:
 
 Example:
 ```bash
-python cli.py forecast_backtest EURUSD --timeframe H1 --horizon 12 --steps 5 --spacing 24 \
+python cli.py forecast_backtest_run EURUSD --timeframe H1 --horizon 12 --steps 5 --spacing 24 \
   --methods theta sf_autoarima mlf_rf
 ```
 
@@ -321,7 +321,7 @@ Wrap any base method with valid finite‑sample prediction intervals via split�
 
 CLI:
 ```bash
-python cli.py forecast_conformal EURUSD --timeframe H1 --method fourier_ols --horizon 12 --steps 25 --spacing 10 --alpha 0.1 --format json
+python cli.py forecast_conformal_intervals EURUSD --timeframe H1 --method fourier_ols --horizon 12 --steps 25 --spacing 10 --alpha 0.1 --format json
 ```
 
 How it works:
@@ -341,7 +341,7 @@ Produce +1/−1/0 labels by simulating TP/SL barrier hits on historical paths up
 
 CLI:
 ```bash
-python cli.py triple_barrier_label EURUSD --timeframe H1 --limit 1500 --horizon 12 --tp_pct 0.5 --sl_pct 0.3 --label-on high_low --format json
+python cli.py labels_triple_barrier EURUSD --timeframe H1 --limit 1500 --horizon 12 --tp_pct 0.5 --sl_pct 0.3 --label-on high_low --format json
 ```
 
 Outputs:
@@ -361,7 +361,7 @@ Fast approximation for single‑barrier hit probability within a horizon under G
 
 CLI:
 ```bash
-python cli.py barrier_closed_form EURUSD --timeframe H1 --horizon 12 --direction up --barrier 1.1000 --format json
+python cli.py forecast_barrier_closed_form EURUSD --timeframe H1 --horizon 12 --direction up --barrier 1.1000 --format json
 ```
 
 Notes:
@@ -471,9 +471,9 @@ Limitations
 
 ---
 
-## Volatility Forecasts (`forecast_volatility`)
+## Volatility Forecasts (`forecast_volatility_estimate`)
 
-Estimate volatility over the next `horizon` bars using direct estimators (EWMA, range-based), GARCH-family models, or general forecasters on a volatility proxy. Use the dedicated `forecast_volatility` tool.
+Estimate volatility over the next `horizon` bars using direct estimators (EWMA, range-based), GARCH-family models, or general forecasters on a volatility proxy. Use the dedicated `forecast_volatility_estimate` tool.
 
 Key parameters
 - `symbol`, `timeframe`, `horizon`.
@@ -496,18 +496,19 @@ Outputs
 
 CLI examples
 - EWMA with halflife:
-  - `python cli.py forecast_volatility EURUSD --timeframe H1 --horizon 12 --method ewma --params "halflife=60,lookback=1500"`
+  - `python cli.py forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 --method ewma --params "halflife=60,lookback=1500"`
 - Parkinson range estimator:
-  - `python cli.py forecast_volatility EURUSD --timeframe H1 --horizon 12 --method parkinson --params "window=20"`
+  - `python cli.py forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 --method parkinson --params "window=20"`
 - GARCH(1,1) with t‑dist:
-  - `python cli.py forecast_volatility EURUSD --timeframe H1 --horizon 12 --method garch --params "fit_bars=2000,mean=Zero,dist=t"`
+  - `python cli.py forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 --method garch --params "fit_bars=2000,mean=Zero,dist=t"`
 - ARIMA on log-variance proxy:
-  - `python cli.py forecast_volatility EURUSD --timeframe H1 --horizon 12 --method arima --proxy log_r2 --params "p=1,d=0,q=1"`
+  - `python cli.py forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 --method arima --proxy log_r2 --params "p=1,d=0,q=1"`
 - HAR‑RV from M5 realized variance:
-  - `python cli.py forecast_volatility EURUSD --timeframe H1 --horizon 12 --method har_rv --params "rv_timeframe=M5,days=150,window_w=5,window_m=22"`
+  - `python cli.py forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 --method har_rv --params "rv_timeframe=M5,days=150,window_w=5,window_m=22"`
 
 Notes
 - Range estimators need `open/high/low/close`; EWMA/GARCH require only `close`.
 - HAR‑RV computes daily realized variance from intraday returns and uses a daily HAR model; it maps RV to the requested timeframe via sqrt‑of‑time.
 - Annualization uses timeframe‑based bars per year. For intraday, this approximates 365*24 hours.
 - For robust returns, the server uses log differences; GARCH operates on percent returns.
+

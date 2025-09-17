@@ -12,7 +12,7 @@ from ..utils.denoise import _apply_denoise as _apply_denoise_util
 
 @mcp.tool()
 @_auto_connect_wrapper
-def triple_barrier_label(
+def labels_triple_barrier(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     limit: int = 1200,

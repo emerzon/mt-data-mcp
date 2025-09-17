@@ -82,7 +82,7 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
                 pass
             try:
                 params = schema.get("parameters", {}).get("properties", {})
-                if name == "forecast" and "method" in params:
+                if name == "forecast_generate" and "method" in params:
                     params["method"] = {"$ref": "#/$defs/ForecastMethod"}
                     if "target" in params:
                         params["target"] = {"$ref": "#/$defs/TargetSpec"}
@@ -92,20 +92,20 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
                         params["denoise"] = {"$ref": "#/$defs/DenoiseSpec"}
                     if "params" in params:
                         params["params"] = {"type": "object", "additionalProperties": True}
-                if name == "compute_pivot_points" and "method" in params:
+                if name == "pivot_compute_points" and "method" in params:
                     params["method"] = {"$ref": "#/$defs/PivotMethod"}
-                if name == "list_indicators" and "category" in params and "IndicatorCategory" in schema.get("$defs", {}):
+                if name == "indicators_list" and "category" in params and "IndicatorCategory" in schema.get("$defs", {}):
                     params["category"] = {"$ref": "#/$defs/IndicatorCategory"}
-                if name == "describe_indicator" and "name" in params and "IndicatorName" in schema.get("$defs", {}):
+                if name == "indicators_describe" and "name" in params and "IndicatorName" in schema.get("$defs", {}):
                     params["name"] = {"$ref": "#/$defs/IndicatorName"}
-                if name == "fetch_candles":
+                if name == "data_fetch_candles":
                     if "indicators" in params:
                         params["indicators"] = {"type": "array", "items": {"$ref": "#/$defs/IndicatorSpec"}}
                     if "denoise" in params:
                         params["denoise"] = {"$ref": "#/$defs/DenoiseSpec"}
                     if "simplify" in params:
                         params["simplify"] = {"$ref": "#/$defs/SimplifySpec"}
-                if name == "fetch_ticks":
+                if name == "data_fetch_ticks":
                     if "simplify" in params:
                         params["simplify"] = {"$ref": "#/$defs/SimplifySpec"}
             except Exception:
@@ -120,4 +120,3 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
                 pass
     except Exception:
         pass
-

@@ -17,7 +17,7 @@ import MetaTrader5 as mt5
 
 @mcp.tool()
 @_auto_connect_wrapper
-def detect_candlestick_patterns(
+def patterns_detect_candlesticks(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     limit: int = 10,
@@ -181,7 +181,7 @@ def detect_candlestick_patterns(
 
 @mcp.tool()
 @_auto_connect_wrapper
-def pattern_detect_classic(
+def patterns_detect_classic(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     lookback: int = 1500,
@@ -352,7 +352,7 @@ def pattern_detect_classic(
 
 @mcp.tool()
 @_auto_connect_wrapper
-def pattern_detect_elliott_wave(
+def patterns_detect_elliott_wave(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     lookback: int = 1500,

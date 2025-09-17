@@ -467,7 +467,7 @@ def create_command_function(func_info, cmd_name: str = ""):
             
         if preferred == 'csv':
             # Special CSV shaping for certain commands
-            if cmd_name == 'list_indicators':
+            if cmd_name == 'indicators_list':
                 try:
                     structured = convert_csv_to_json(result)
                     rows = structured.get('data') or []
@@ -495,7 +495,7 @@ def create_command_function(func_info, cmd_name: str = ""):
                     return
                 except Exception as e:
                     # Fallback to default CSV printing
-                    _debug(f"CSV shaping failed for list_indicators: {e}")
+                    _debug(f"CSV shaping failed for indicators_list: {e}")
             if print_csv_result(result):
                 return
             # No CSV payload available; fall back to JSON pretty print
@@ -510,7 +510,7 @@ def create_command_function(func_info, cmd_name: str = ""):
             structured_result = convert_csv_to_json(result)
             # Special JSON shaping for certain commands
             try:
-                if cmd_name == 'list_indicators' and isinstance(structured_result, dict):
+                if cmd_name == 'indicators_list' and isinstance(structured_result, dict):
                     rows = structured_result.get('data') or []
                     groups = {}
                     for r in rows:
@@ -650,7 +650,7 @@ def main():
         # Add global parameters to each subparser, excluding any that conflict with function params
         existing_param_names = [p['name'] for p in func_info['params']]
         exclude_globals = list(existing_param_names)
-        if cmd_name == 'generate_report':
+        if cmd_name == 'report_generate':
             exclude_globals.append('format')
             exclude_globals.append('timeframe')
         add_global_args_to_parser(cmd_parser, exclude_params=exclude_globals)
@@ -683,3 +683,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+

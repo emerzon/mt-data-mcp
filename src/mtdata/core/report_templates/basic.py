@@ -24,7 +24,7 @@ def template_basic(
 
     # Context
     indicators = "ema(20),ema(50),rsi(14),macd(12,26,9)"
-    from ..data import fetch_candles as _fetch_candles
+    from ..data import data_fetch_candles as _fetch_candles
     ctx = _fetch_candles(
         symbol=symbol,
         timeframe=tf,
@@ -53,12 +53,12 @@ def template_basic(
         }
 
     # Pivots (D1)
-    from ..pivot import compute_pivot_points as _compute_pivot_points
+    from ..pivot import pivot_compute_points as _compute_pivot_points
     piv = _compute_pivot_points(symbol=symbol, timeframe='D1')
     report['sections']['pivot'] = piv if 'error' in piv else {'levels': piv.get('levels'), 'source': piv.get('source'), 'period': piv.get('period')}
 
     # Volatility (EWMA)
-    from ..forecast import forecast_volatility as _forecast_volatility
+    from ..forecast import forecast_volatility_estimate as _forecast_volatility
     vol = _forecast_volatility(symbol=symbol, timeframe=tf, horizon=int(horizon), method='ewma', params={'lambda_': 0.94})
     if 'error' in vol:
         report['sections']['volatility'] = {'error': vol['error']}
@@ -78,7 +78,7 @@ def template_basic(
         rmse_tol = float(p.get('backtest_rmse_tolerance', 0.05))
     except Exception:
         rmse_tol = 0.05
-    from ..forecast import forecast_backtest as _forecast_backtest
+    from ..forecast import forecast_backtest_run as _forecast_backtest
     methods = p.get('methods')
     bt = _forecast_backtest(symbol=symbol, timeframe=tf, horizon=int(horizon), steps=steps, spacing=spacing, methods=methods)
     sec_bt: Dict[str, Any]
@@ -109,7 +109,7 @@ def template_basic(
 
     if best is not None:
         best_name, best_stats = best
-        from ..forecast import forecast as _forecast
+        from ..forecast import forecast_generate as _forecast
         fc = _forecast(symbol=symbol, timeframe=tf, method=best_name, horizon=int(horizon))
         if 'error' in fc:
             report['sections']['forecast'] = {'error': fc['error'], 'method': best_name}
@@ -130,7 +130,7 @@ def template_basic(
         }}
 
     # Barriers (grid)
-    from ..forecast import barrier_optimize as _barrier_optimize
+    from ..forecast import forecast_barrier_optimize as _barrier_optimize
     mode_val = str(p.get('mode', 'pct'))
     grid = _barrier_optimize(
         symbol=symbol,
@@ -154,7 +154,7 @@ def template_basic(
         report['sections']['barriers'] = summarize_barrier_grid(grid, top_k=int(p.get('top_k', 5)))
 
     # Patterns
-    from ..patterns import detect_candlestick_patterns as _detect_candles_patterns
+    from ..patterns import patterns_detect_candlesticks as _detect_candles_patterns
     pats = _detect_candles_patterns(symbol=symbol, timeframe=tf, limit=int(p.get('patterns_limit', 120)))
     if 'error' in pats:
         report['sections']['patterns'] = {'error': pats['error']}

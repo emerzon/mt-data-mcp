@@ -18,7 +18,7 @@ import MetaTrader5 as mt5
 
 @mcp.tool()
 @_auto_connect_wrapper
-def fetch_candles(
+def data_fetch_candles(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     limit: int = 10,
@@ -491,7 +491,7 @@ def fetch_candles(
 
 @mcp.tool()
 @_auto_connect_wrapper
-def fetch_ticks(
+def data_fetch_ticks(
     symbol: str,
     limit: int = 100,
     start: Optional[str] = None,
