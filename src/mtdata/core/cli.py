@@ -7,12 +7,10 @@ Automatically discovers function parameters and creates CLI arguments
 import argparse
 import io
 import csv
-from collections import OrderedDict
 import sys
-import json
 import inspect
 import os
-from typing import get_type_hints, get_origin, get_args, Optional, Dict, Any
+from typing import get_type_hints, get_origin, get_args, Optional, Dict, Any, List
 
 # Simple debug logging controlled by env var MTDATA_CLI_DEBUG
 def _debug_enabled() -> bool:
@@ -44,63 +42,185 @@ except Exception as e:
     _debug(f"dotenv load failed: {e}")
 from . import server
 from .unified_params import add_global_args_to_parser
-from .schema import enrich_schema_with_shared_defs, get_function_info as _schema_get_function_info
+from .schema import enrich_schema_with_shared_defs, get_function_info as _schema_get_function_info, PARAM_HINTS as _PARAM_HINTS
 
 # Types for discovered metadata
 ToolInfo = Dict[str, Any]
 
-def print_csv_result(result):
-    """Print CSV result if available"""
-    if 'csv_data' in result:
-        if 'csv_header' in result:
-            print(result['csv_header'])
-        if result['csv_data']:
-            print(result['csv_data'])
+
+
+
+
+def _is_scalar_value(value: Any) -> bool:
+    return isinstance(value, (str, int, float, bool)) or value is None
+
+
+def _is_empty_value(value: Any) -> bool:
+    if value is None:
         return True
+    if isinstance(value, str):
+        return value.strip() == ""
+    if isinstance(value, (list, tuple, set)):
+        return all(_is_empty_value(v) for v in value)
+    if isinstance(value, dict):
+        return all(_is_empty_value(v) for v in value.values())
     return False
 
-def convert_csv_to_json(result):
-    """Convert CSV data in result to proper structured JSON"""
-    if 'csv_data' not in result or 'csv_header' not in result:
-        return result
-    
-    # Parse CSV header and data
-    header = result['csv_header']
-    data = result['csv_data']
-    
-    if not header or not data:
-        return result
-    
-    # Split header into columns
-    columns = [col.strip() for col in header.split(',')]
-    
-    # Split data into rows
-    rows = []
-    for line in data.split('\n'):
-        if line.strip():
-            values = [val.strip() for val in line.split(',')]
-            # Create a dictionary for each row
-            row_dict = {}
-            for i, col in enumerate(columns):
-                value = values[i] if i < len(values) else ''
-                # Try to convert numeric values
-                try:
-                    if '.' in value:
-                        row_dict[col] = float(value)
-                    elif value.isdigit():
-                        row_dict[col] = int(value)
-                    else:
-                        row_dict[col] = value
-                except (ValueError, TypeError):
-                    row_dict[col] = value
-            rows.append(row_dict)
-    
-    # Create new result with structured data
-    structured_result = {k: v for k, v in result.items() if k not in ['csv_data', 'csv_header']}
-    structured_result['data'] = rows
-    structured_result['count'] = len(rows)
-    
-    return structured_result
+
+def _stringify_scalar(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _stringify_cell(value: Any) -> str:
+    if _is_scalar_value(value):
+        return _stringify_scalar(value)
+    if isinstance(value, list):
+        values = [v for v in value if not _is_empty_value(v)]
+        if not values:
+            return ""
+        if all(_is_scalar_value(v) for v in values):
+            return "|".join(_stringify_scalar(v) for v in values)
+        return "; ".join(_stringify_cell(v) for v in values if not _is_empty_value(v))
+    if isinstance(value, dict):
+        parts = []
+        for key, subval in value.items():
+            if _is_empty_value(subval):
+                continue
+            parts.append(f"{key}={_stringify_cell(subval)}")
+        return "; ".join(parts)
+    return str(value)
+
+
+def _indent_text(text: str, indent: str = "  ") -> str:
+    return "\n".join(f"{indent}{line}" if line else indent.rstrip() for line in text.splitlines())
+
+
+def _list_of_dicts_to_csv(items: List[Dict[str, Any]]) -> str:
+    if not items:
+        return ""
+    headers: List[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        for key in item.keys():
+            if key not in headers:
+                headers.append(key)
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(headers)
+    for item in items:
+        row = [_stringify_cell(item.get(header)) for header in headers]
+        writer.writerow(row)
+    return buffer.getvalue().rstrip("\n")
+
+
+def _format_complex_value(value: Any) -> str:
+    if _is_scalar_value(value):
+        return _stringify_scalar(value)
+    if isinstance(value, list):
+        values = [v for v in value if not _is_empty_value(v)]
+        if not values:
+            return ""
+        if all(isinstance(v, dict) for v in values):
+            return _list_of_dicts_to_csv(values)
+        if all(_is_scalar_value(v) for v in values):
+            return ", ".join(_stringify_scalar(v) for v in values)
+        parts = []
+        for entry in values:
+            formatted = _format_complex_value(entry)
+            if formatted:
+                parts.append(formatted)
+        return "\n".join(parts)
+    if isinstance(value, dict):
+        lines = []
+        for key, subvalue in value.items():
+            if _is_empty_value(subvalue):
+                continue
+            formatted = _format_complex_value(subvalue)
+            if not formatted:
+                continue
+            if "\n" in formatted:
+                lines.append(f"{key}:\n{_indent_text(formatted)}")
+            else:
+                lines.append(f"{key}: {formatted}")
+        return "\n".join(lines)
+    return _stringify_scalar(value)
+
+
+def _format_meta_block(meta: Dict[str, Any]) -> str:
+    lines = []
+    for key, value in meta.items():
+        if _is_empty_value(value):
+            continue
+        formatted = _format_complex_value(value)
+        if not formatted:
+            continue
+        if "\n" in formatted:
+            lines.append(f"{key}:\n{_indent_text(formatted)}")
+        else:
+            lines.append(f"{key}: {formatted}")
+    return "\n".join(lines)
+
+
+def _format_result_minimal(result: Any) -> str:
+    if result is None:
+        return ""
+    if isinstance(result, str):
+        return result.strip()
+    if isinstance(result, bool):
+        return "true" if result else "false"
+    if isinstance(result, (int, float)):
+        return str(result)
+    if isinstance(result, list):
+        if not result:
+            return ""
+        if all(isinstance(item, dict) for item in result):
+            return _list_of_dicts_to_csv(result)  # type: ignore[arg-type]
+        parts: List[str] = []
+        for item in result:
+            if _is_empty_value(item):
+                continue
+            if _is_scalar_value(item):
+                parts.append(_stringify_scalar(item))
+            else:
+                formatted = _format_complex_value(item)
+                if formatted:
+                    parts.append(formatted)
+        return "\n".join(parts)
+    if isinstance(result, dict):
+        if 'error' in result and _is_scalar_value(result['error']):
+            return f"error: {_stringify_scalar(result['error'])}"
+        if 'markdown' in result and isinstance(result['markdown'], str):
+            md = result['markdown'].strip()
+            extras = {k: v for k, v in result.items() if k not in {'markdown'} and not _is_empty_value(v)}
+            if extras:
+                meta_block = _format_meta_block(extras)
+                if meta_block:
+                    return f"{md}\n\n{meta_block}" if md else meta_block
+            return md
+        header = result.get('csv_header')
+        data = result.get('csv_data')
+        sections: List[str] = []
+        if header or data:
+            csv_lines: List[str] = []
+            if header and str(header).strip():
+                csv_lines.append(str(header).strip())
+            if data and str(data).strip():
+                csv_lines.append(str(data).strip())
+            if csv_lines:
+                sections.append("\n".join(csv_lines))
+        ignore_keys = {'csv_header', 'csv_data', 'markdown', 'success', 'count'}
+        extras = {k: v for k, v in result.items() if k not in ignore_keys and not _is_empty_value(v)}
+        if extras:
+            meta_block = _format_meta_block(extras)
+            if meta_block:
+                sections.append(meta_block)
+        return "\n\n".join(sections).strip()
+    return _format_complex_value(result)
 
 def get_function_info(func):
     """Thin wrapper around schema.get_function_info that attaches the callable.
@@ -239,7 +359,8 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
         desc = None
         if param_docs and param['name'] in param_docs:
             desc = param_docs[param['name']]
-        kwargs = {'help': desc or f"{param['name']} parameter", 'dest': param['name']}
+        hint = desc or _PARAM_HINTS.get(param['name'])
+        kwargs = {'help': hint or f"{param['name']} parameter", 'dest': param['name']}
         
         # Handle different types
         if param['type'] == int:
@@ -331,18 +452,17 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
                 dest=f"{param['name']}_params",
                 type=str,
                 default=None,
-                help=f"Extra params for {param['name']} (JSON or key=value[,key=value])"
+                help=f"Extra params for {param['name']} (key=value[,key=value])"
             )
 
 def _parse_kv_string(s: str) -> Optional[Dict[str, Any]]:
-    """Parse 'k=v,k2=v2' (commas or spaces) into a dict. Returns None if not parseable."""
+    """Parse 'k=v,k2=v2' (commas or spaces) into a dict. Returns None if not parseable.
+
+    Note: JSON strings are no longer parsed by the CLI.
+    """
     try:
         if not s:
             return None
-        # Try JSON first
-        s_strip = s.strip()
-        if (s_strip.startswith('{') and s_strip.endswith('}')):
-            return json.loads(s_strip)
         parts = []
         # Allow comma and whitespace as separators
         for token in s.replace(',', ' ').split():
@@ -392,43 +512,27 @@ def create_command_function(func_info, cmd_name: str = ""):
                     arg_value = True
                 elif arg_value.lower() == 'false':
                     arg_value = False
-            # Decode JSON for mapping/sequence typed params when passed as strings
+            # Handle mapping-like params for CLI convenience
             try:
                 ptype = param.get('type')
                 origin = get_origin(ptype)
                 is_typed_dict = hasattr(ptype, '__annotations__') and isinstance(getattr(ptype, '__annotations__', {}), dict)
                 is_mapping = (ptype in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
-                is_sequence = (ptype in (list, tuple)) or (origin in (list, tuple))
             except Exception:
                 is_mapping = False
-                is_sequence = False
             # Bare flag sentinel: treat as empty mapping to trigger defaults
             if is_mapping and arg_value == '__PRESENT__':
                 arg_value = {}
-            if isinstance(arg_value, str) and (is_mapping or is_sequence):
-                s = arg_value.strip()
-                if (s.startswith('{') and s.endswith('}')) or (s.startswith('[') and s.endswith(']')):
-                    try:
-                        arg_value = json.loads(s)
-                    except Exception as e:
-                        _debug(f"JSON decode failed for param '{param_name}': {e}")
-
             # For mapping-like params, support shorthand and companion '<name>_params'
             if is_mapping:
                 # Shorthand: --simplify lttb  -> {"method":"lttb"}
-                if isinstance(arg_value, str) and arg_value.strip() and not (arg_value.strip().startswith('{')):
+                if isinstance(arg_value, str) and arg_value.strip() and not arg_value.strip().startswith('{'):
                     arg_value = {"method": arg_value.strip()}
                 # Companion params: --simplify-params 'points=100,ratio=0.5'
                 extra_param_name = f"{param_name}_params"
                 extra_val = getattr(args, extra_param_name, None)
                 if isinstance(extra_val, str) and extra_val.strip():
                     extra = _parse_kv_string(extra_val)
-                    if extra is None:
-                        try:
-                            extra = json.loads(extra_val)
-                        except Exception as e:
-                            _debug(f"JSON decode failed for extra params '{extra_param_name}': {e}")
-                            extra = None
                     if extra:
                         if arg_value is None or arg_value == {}:
                             arg_value = extra
@@ -448,101 +552,11 @@ def create_command_function(func_info, cmd_name: str = ""):
         # Call the function
         result = func_info['func'](**kwargs)
 
-        # Prefer markdown output when provided
-        if isinstance(result, dict) and 'markdown' in result:
-            try:
-                output = result.get('markdown')
-                if output is not None:
-                    print(str(output))
-                    return
-            except Exception:
-                pass
+        minimal_output = _format_result_minimal(result)
+        if minimal_output:
+            print(minimal_output)
+        return
 
-        # Handle output
-        # Respect global format preference
-        try:
-            preferred = getattr(args, 'format', 'csv')
-        except Exception:
-            preferred = 'csv'
-            
-        if preferred == 'csv':
-            # Special CSV shaping for certain commands
-            if cmd_name == 'indicators_list':
-                try:
-                    structured = convert_csv_to_json(result)
-                    rows = structured.get('data') or []
-                    # We will output as category,name regardless of server header order
-                    header = 'category,name'
-                    # Preserve original order while grouping by category
-                    groups: OrderedDict = OrderedDict()
-                    for r in rows:
-                        if not isinstance(r, dict):
-                            continue
-                        cat = r.get('category') or 'Uncategorized'
-                        name = r.get('name')
-                        if not name:
-                            continue
-                        groups.setdefault(cat, []).append(name)
-                    # Build grouped CSV: show category once, then blank for subsequent entries
-                    buf = io.StringIO()
-                    writer = csv.writer(buf, lineterminator='\n')
-                    # Only write data rows; print header separately for consistency with other commands
-                    for cat, names in groups.items():
-                        for i, name in enumerate(names):
-                            writer.writerow([cat if i == 0 else '', name])
-                    print(header)
-                    print(buf.getvalue().rstrip('\n'))
-                    return
-                except Exception as e:
-                    # Fallback to default CSV printing
-                    _debug(f"CSV shaping failed for indicators_list: {e}")
-            if print_csv_result(result):
-                return
-            # No CSV payload available; fall back to JSON pretty print
-            try:
-                print(json.dumps(result, indent=2, sort_keys=True, default=str, ensure_ascii=False))
-            except Exception as e:
-                _debug(f"Failed to pretty-print JSON; falling back to str: {e}")
-                print(str(result))
-            return
-        elif preferred == 'json':
-            # Convert CSV data to proper structured JSON if present
-            structured_result = convert_csv_to_json(result)
-            # Special JSON shaping for certain commands
-            try:
-                if cmd_name == 'indicators_list' and isinstance(structured_result, dict):
-                    rows = structured_result.get('data') or []
-                    groups = {}
-                    for r in rows:
-                        try:
-                            cat = (r.get('category') if isinstance(r, dict) else None) or 'Uncategorized'
-                            name = r.get('name') if isinstance(r, dict) else None
-                            if name:
-                                groups.setdefault(cat, []).append(name)
-                        except Exception as e:
-                            _debug(f"Grouping indicator row failed: {e}")
-                            continue
-                structured_result = {
-                        'success': bool(structured_result.get('success', True)),
-                        'categories': groups,
-                        'count': sum(len(v) for v in groups.values())
-                    }
-            except Exception as e:
-                _debug(f"Special JSON shaping failed: {e}")
-            try:
-                print(json.dumps(structured_result, indent=2, sort_keys=True, default=str, ensure_ascii=False))
-            except Exception as e:
-                # Fallback in unlikely case of serialization issue
-                _debug(f"JSON serialization failed; falling back to str: {e}")
-                print(str(structured_result))
-        else:
-            # Fallback: print as JSON
-            try:
-                print(json.dumps(result, indent=2, sort_keys=True, default=str, ensure_ascii=False))
-            except Exception as e:
-                _debug(f"JSON serialization failed (fallback json branch); falling back to str: {e}")
-                print(str(result))
-    
     return command_func
 
 def _type_name(t):
@@ -651,7 +665,6 @@ def main():
         existing_param_names = [p['name'] for p in func_info['params']]
         exclude_globals = list(existing_param_names)
         if cmd_name == 'report_generate':
-            exclude_globals.append('format')
             exclude_globals.append('timeframe')
         add_global_args_to_parser(cmd_parser, exclude_params=exclude_globals)
         

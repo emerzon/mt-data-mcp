@@ -18,7 +18,6 @@ PRECISION_MAX_DECIMALS = 10  # upper bound on decimal places
 # Global parameter defaults
 DEFAULT_TIMEZONE = "auto"    # default timezone parameter
 DEFAULT_TIMEFRAME = "H1"     # default timeframe parameter  
-DEFAULT_FORMAT = "csv"       # default output format
 # Normalized datetime display format (UTC/local)
 TIME_DISPLAY_FORMAT = "%Y-%m-%d %H:%M:%S"
 # Simplification defaults

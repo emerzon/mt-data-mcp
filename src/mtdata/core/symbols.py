@@ -7,6 +7,21 @@ from .server import mcp, _auto_connect_wrapper
 from .constants import GROUP_SEARCH_THRESHOLD
 import MetaTrader5 as mt5
 
+
+def _normalize_limit(limit: Optional[Any]) -> Optional[int]:
+    try:
+        if limit is None:
+            return None
+        if isinstance(limit, str):
+            limit = limit.strip()
+            if not limit:
+                return None
+        value = int(float(limit))
+        return value if value > 0 else None
+    except Exception:
+        return None
+
+
 @mcp.tool()
 @_auto_connect_wrapper
 def symbols_list(
@@ -111,8 +126,9 @@ def symbols_list(
             })
         
         # Apply limit
-        if limit and limit > 0:
-            symbol_list = symbol_list[:limit]
+        limit_value = _normalize_limit(limit)
+        if limit_value:
+            symbol_list = symbol_list[:limit_value]
         # Convert to CSV format using proper escaping
         rows = [[s["name"], s["group"], s["description"]] for s in symbol_list]
         return _csv_from_rows_util(["name", "group", "description"], rows)
@@ -153,8 +169,9 @@ def symbols_list_groups(search_term: Optional[str] = None, limit: Optional[int] 
         filtered_items.sort(key=lambda x: x[1]["count"], reverse=True)
 
         # Apply limit
-        if limit and limit > 0:
-            filtered_items = filtered_items[:limit]
+        limit_value = _normalize_limit(limit)
+        if limit_value:
+            filtered_items = filtered_items[:limit_value]
 
         # Build CSV with only group names
         group_names = [name for name, _ in filtered_items]

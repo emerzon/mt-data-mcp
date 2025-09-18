@@ -12,6 +12,54 @@ from typing import get_type_hints
 from .constants import TIMEFRAME_MAP
 
 
+PARAM_HINTS = {
+    "symbol": "Trading symbol (e.g. EURUSD)",
+    "timeframe": "MT5 timeframe (e.g. H1/M30/D1)",
+    "limit": "Max rows/bars to return",
+    "start": "Start time (YYYY-MM-DD or natural language)",
+    "end": "End time (exclusive)",
+    "ohlcv": "OHLCV column selector",
+    "indicators": "Indicator specs list",
+    "denoise": "Denoise spec JSON or preset",
+    "simplify": "Simplify spec for downsampling",
+    "timezone": "Timezone: auto/UTC or name",
+    "method": "Method/algorithm name",
+    "horizon": "Forecast horizon (bars)",
+    "steps": "Backtest anchors or steps",
+    "spacing": "Spacing between anchors",
+    "alpha": "Confidence complement (e.g. 0.1)",
+    "params": "Extra method parameters",
+    "as_of": "Override reference time",
+    "ci_alpha": "CI alpha (e.g. 0.1)",
+    "features": "Feature set spec",
+    "dimred_method": "Dimensionality reduction method",
+    "dimred_params": "Dimensionality reduction params",
+    "target_spec": "Target field spec",
+    "quantity": "Quantity to analyze",
+    "target": "Target series (price/return)",
+    "points": "Target point count",
+    "ratio": "Target ratio",
+    "epsilon": "Tolerance value",
+    "max_error": "Max approximation error",
+    "segments": "Segment count",
+    "bucket_seconds": "Bucket size (seconds)",
+    "schema": "Encoding schema",
+    "bits": "Bits per symbol",
+    "paa": "PAA segments",
+    "znorm": "Apply z-normalization",
+    "threshold_pct": "Percent threshold",
+    "value_col": "Column name",
+    "lookback": "Lookback bars",
+    "spacing_pct": "Spacing as percent",
+    "volume": "Order volume (lots)",
+    "type": "Order type",
+    "price": "Price level",
+    "stop_loss": "Stop-loss level",
+    "take_profit": "Take-profit level",
+    "id": "Entity identifier",
+}
+
+
 _TIMEFRAME_CHOICES = tuple(sorted(TIMEFRAME_MAP.keys()))
 TimeframeLiteral = Literal[_TIMEFRAME_CHOICES]  # type: ignore
 
@@ -203,7 +251,7 @@ def shared_defs() -> Dict[str, Any]:
         "TimeframeSpec": {
             "type": "string",
             "enum": sorted(TIMEFRAME_MAP.keys()),
-            "description": "MetaTrader timeframe code (e.g., H1, M30, D1)",
+            "description": "MT5 timeframe code (e.g. H1/M30/D1)",
         }
     }
 
@@ -222,13 +270,13 @@ def complex_defs() -> Dict[str, Any]:
             },
             "required": ["name"],
             "additionalProperties": False,
-            "description": "Indicator name with optional numeric parameters.",
+            "description": "Indicator name plus optional numeric params.",
         },
         "DenoiseSpec": {
             "type": "object",
             "properties": {
                 "method": {"$ref": "#/$defs/DenoiseMethod"},
-                "params": {"type": "object", "description": "Method-specific parameters", "additionalProperties": True},
+                "params": {"type": "object", "description": "Method-specific overrides", "additionalProperties": True},
                 "columns": {"type": "array", "items": {"type": "string"}},
                 "when": {"$ref": "#/$defs/WhenSpec"},
                 "causality": {"$ref": "#/$defs/CausalitySpec"},
@@ -237,7 +285,7 @@ def complex_defs() -> Dict[str, Any]:
             },
             "required": ["method"],
             "additionalProperties": False,
-            "description": "Denoise configuration for selected columns.",
+            "description": "Denoise spec: method plus optional columns/params.",
         },
         "SimplifySpec": {
             "type": "object",
@@ -266,13 +314,13 @@ def complex_defs() -> Dict[str, Any]:
                 "znorm": {"type": "boolean"},
             },
             "additionalProperties": False,
-            "description": "Simplification/segmentation/encoding parameters.",
+            "description": "Simplify/segment/encode spec for outputs.",
         },
         "VolatilityParams": {
             "type": "object",
             "properties": {
                 "halflife": {"type": ["number", "null"]},
-                "lambda_": {"type": ["number", "null"], "description": "EWMA smoothing factor"},
+                "lambda_": {"type": ["number", "null"], "description": "EWMA smoothing weight"},
                 "lookback": {"type": "integer"},
                 "window": {"type": "integer"},
                 "fit_bars": {"type": "integer"},
@@ -280,7 +328,7 @@ def complex_defs() -> Dict[str, Any]:
                 "dist": {"type": "string", "enum": ["normal"]},
             },
             "additionalProperties": False,
-            "description": "Volatility method parameters.",
+            "description": "Volatility estimator parameters.",
         },
     }
 
@@ -294,6 +342,20 @@ def _ensure_defs(schema: Dict[str, Any]) -> Dict[str, Any]:
         defs.setdefault(k, v)
     return schema
 
+
+
+
+
+def apply_param_hints(schema: Dict[str, Any]) -> Dict[str, Any]:
+    params_obj = _parameters_obj(schema)
+    props = params_obj.get("properties", {}) if isinstance(params_obj, dict) else {}
+    for name, prop in list(props.items()):
+        if not isinstance(prop, dict):
+            continue
+        hint = PARAM_HINTS.get(name)
+        if hint and not prop.get("description"):
+            prop["description"] = hint
+    return schema
 
 def _parameters_obj(schema: Dict[str, Any]) -> Dict[str, Any]:
     """Get or create the OpenAI/MCP-style parameters object inside a schema."""
@@ -338,6 +400,7 @@ def build_minimal_schema(func_info: Dict[str, Any]) -> Dict[str, Any]:
             req.append(name)
     _ensure_defs(schema)
     apply_timeframe_ref(schema)
+    apply_param_hints(schema)
     return schema
 
 
@@ -348,6 +411,7 @@ def enrich_schema_with_shared_defs(schema: Dict[str, Any], func_info: Dict[str, 
         return schema
     _ensure_defs(schema)
     apply_timeframe_ref(schema)
+    apply_param_hints(schema)
     return schema
 
 

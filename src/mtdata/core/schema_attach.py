@@ -9,6 +9,7 @@ from .schema import (
     build_minimal_schema as _build_minimal_schema,
     get_function_info as _get_function_info,
     complex_defs as _complex_defs,
+    apply_param_hints as _apply_param_hints,
 )
 
 
@@ -110,6 +111,7 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
                         params["simplify"] = {"$ref": "#/$defs/SimplifySpec"}
             except Exception:
                 pass
+            _apply_param_hints(schema)
             try:
                 setattr(obj, "schema", schema)
             except Exception:
