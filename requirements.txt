@@ -1,48 +1,75 @@
 # Core MetaTrader5 and MCP dependencies
-MetaTrader5>=5.0.5200
-mcp>=1.13.1
-fastmcp>=2.11.3
+# Use environment markers to keep compatibility across Python versions
+MetaTrader5>=5.0.5260
+mcp>=1.14.1            # requires Python >=3.10
+fastmcp>=2.12.3        # requires Python >=3.10
 
 # Python standard library backports
 typing-extensions>=4.15.0
 
 # Additional useful packages for development
 python-dotenv>=1.1.1
-dateparser>=1.2.0
-pandas>=2.0.0
-pandas_ta>=0.3.14b0
-arch>=6.3
+dateparser>=1.2.2
+
+# pandas
+pandas>=2.3.2; python_version >= "3.10"
+pandas>=2.0.3; python_version < "3.10"
+
+# pandas-ta (install classic fork from GitHub). Requires Git available on PATH.
+# Use distribution name to match package metadata (pandas-ta-classic)
+pandas-ta-classic @ git+https://github.com/xgboosted/pandas-ta-classic@main
+
+# ARCH (heteroskedasticity models)
+arch>=7.2.0; python_version >= "3.9"
+arch>=6.3.0; python_version < "3.9"
+
 python-dateutil>=2.9.0.post0
-pytz>=2022.1
-scipy>=1.10.0
-statsmodels>=0.14.0
-fastapi>=0.110.0
-uvicorn[standard]>=0.23.0
+pytz>=2025.2
 
-# Optional: classical/ML/DL forecasting frameworks
+# SciPy (bounded to <1.16.0 to satisfy statsforecast<->scipy compatibility)
+scipy>=1.15.3,<1.16.0; python_version >= "3.10"
+scipy>=1.10.1,<1.16.0; python_version < "3.10"
+
+# statsmodels
+statsmodels>=0.14.5; python_version >= "3.9"
+statsmodels>=0.14.0; python_version < "3.9"
+
+# API server
+fastapi>=0.117.1
+uvicorn[standard]>=0.36.0; python_version >= "3.9"
+uvicorn[standard]>=0.23.2; python_version < "3.9"
+
+# Optional: classical/ML/DL forecasting frameworks (enabled to support all methods)
 # statsforecast (classical, numba-accelerated)
-# statsforecast>=1.7.3
+statsforecast>=2.0.2
 # mlforecast (tree/GBM over lags); LightGBM optional
-# mlforecast>=0.10.4
-# lightgbm>=4.3.0
-# neuralforecast (deep learning; install with [torch])
-# neuralforecast>=1.7.5
+mlforecast>=1.0.2
+lightgbm>=4.6.0
+# neuralforecast (deep learning; include torch extras). Not available on Python 3.12 due to ray wheels.
+neuralforecast[torch]>=3.0.2; python_version < "3.12"
+# Ensure torch/torchvision available (CPU wheels by default)
+# For Python <3.12: constrained to satisfy neuralforecast (<=2.6.0)
+torch>=2.0,<2.7; python_version < "3.12"
+torchvision>=0.21.0,<0.22; python_version < "3.12"
+# For Python >=3.12: neuralforecast is skipped; keep torch for Chronos/Accelerate
+torch>=2.3.0; python_version >= "3.12"
+torchvision>=0.17.0; python_version >= "3.12"
 
-# Optional: foundation models (Transformers)
-# transformers>=4.41.0
-# accelerate>=0.33.0
-# torch>=2.3.0
-# torchvision>=0.18.0
-# chronos-forecasting>=1.7.0  # for Chronos-Bolt
-# timesfm>=0.2.2               # for TimesFM
+# Optional: foundation models (Transformers) — enabled for Chronos/TimesFM
+transformers>=4.56.2
+accelerate>=1.10.1
+chronos-forecasting==1.5.3   # for Chronos-Bolt
+timesfm>=2.0.0
 
 # Optional: pattern search ANN and DTW backends
 # hnswlib>=0.8.0
 # tslearn>=0.6.3
 # dtaidistance>=2.3.10
 
-# Optional: dimensionality reduction methods
-# scikit-learn>=1.2.0
+# Optional: dimensionality reduction methods / ML utilities
+scikit-learn>=1.7.2; python_version >= "3.10"
+scikit-learn>=1.4.2; python_version >= "3.9" and python_version < "3.10"
+scikit-learn>=1.3.2; python_version < "3.9"
 # umap-learn>=0.5.5
 # pydiffmap>=0.2.0
 # pykeops>=2.2.3   # optional acceleration for CNE graph (GPU)

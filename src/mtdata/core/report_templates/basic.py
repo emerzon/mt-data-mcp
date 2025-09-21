@@ -32,7 +32,6 @@ def template_basic(
         indicators=indicators,  # type: ignore[arg-type]
         denoise=denoise,
         simplify={'mode': 'select', 'method': 'lttb', 'ratio': 0.2},  # type: ignore[arg-type]
-        timezone='UTC',
     )
     if 'error' in ctx:
         report['sections']['context'] = {'error': ctx['error']}
@@ -55,7 +54,15 @@ def template_basic(
     # Pivots (D1)
     from ..pivot import pivot_compute_points as _compute_pivot_points
     piv = _compute_pivot_points(symbol=symbol, timeframe='D1')
-    report['sections']['pivot'] = piv if 'error' in piv else {'levels': piv.get('levels'), 'source': piv.get('source'), 'period': piv.get('period')}
+    if 'error' in piv:
+        report['sections']['pivot'] = {'error': piv['error']}
+    else:
+        report['sections']['pivot'] = {
+            'levels': piv.get('levels'),
+            'methods': piv.get('methods'),
+            'source': piv.get('source'),
+            'period': piv.get('period'),
+        }
 
     # Volatility (EWMA)
     from ..forecast import forecast_volatility_estimate as _forecast_volatility

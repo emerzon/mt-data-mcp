@@ -2,7 +2,15 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import inspect
 import pandas as pd
-import pandas_ta as pta
+try:
+    import pandas_ta as pta  # preferred module name
+except ModuleNotFoundError:  # fallback for alternate distribution import
+    try:
+        import pandas_ta_classic as pta
+    except ModuleNotFoundError as e:
+        raise ModuleNotFoundError(
+            "pandas_ta not found. Install 'pandas-ta-classic' (or 'pandas-ta')."
+        ) from e
 
 
 def _list_ta_indicators() -> List[Dict[str, Any]]:

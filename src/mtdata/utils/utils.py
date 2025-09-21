@@ -66,87 +66,25 @@ def _format_time_minimal_local(epoch_seconds: float) -> str:
 _format_time_minimal_local_util = _format_time_minimal_local
 
 
-def _use_client_tz(client_tz_param: object) -> bool:
+def _use_client_tz(_: object = None) -> bool:
+    """Return True when a client timezone is configured."""
+    from ..core.config import mt5_config
     try:
-        if isinstance(client_tz_param, str):
-            v = client_tz_param.strip().lower()
-            if v == 'utc':
-                return False
-            return True
-        if isinstance(client_tz_param, bool):
-            return bool(client_tz_param)
+        return mt5_config.get_client_tz() is not None
     except Exception:
-        pass
-    return False
+        return False
 
 # Backwards-compat alias
 _use_client_tz_util = _use_client_tz
 
 
-def _resolve_client_tz(client_tz_param: object):
+def _resolve_client_tz(_: object = None):
+    """Return the configured client timezone, if any."""
     from ..core.config import mt5_config
     try:
-        if isinstance(client_tz_param, str):
-            v = client_tz_param.strip()
-            vlow = v.lower()
-            if vlow == 'utc':
-                return None
-            if vlow in ('auto', 'client', ''):
-                tz = None
-                try:
-                    tz = mt5_config.get_client_tz()
-                except Exception:
-                    tz = None
-                return tz
-            try:
-                import pytz  # type: ignore
-                return pytz.timezone(v)
-            except Exception:
-                try:
-                    return mt5_config.get_client_tz()
-                except Exception:
-                    return None
-        if isinstance(client_tz_param, bool):
-            if client_tz_param:
-                try:
-                    return mt5_config.get_client_tz()
-                except Exception:
-                    return None
-            return None
+        return mt5_config.get_client_tz()
     except Exception:
-        pass
-    return None
-    try:
-        if isinstance(client_tz_param, str):
-            v = client_tz_param.strip()
-            vlow = v.lower()
-            if vlow == 'utc':
-                return None
-            if vlow in ('auto', 'client', ''):
-                tz = None
-                try:
-                    tz = mt5_config.get_client_tz()
-                except Exception:
-                    tz = None
-                return tz
-            try:
-                import pytz  # type: ignore
-                return pytz.timezone(v)
-            except Exception:
-                try:
-                    return mt5_config.get_client_tz()
-                except Exception:
-                    return None
-        if isinstance(client_tz_param, bool):
-            if client_tz_param:
-                try:
-                    return mt5_config.get_client_tz()
-                except Exception:
-                    return None
-            return None
-    except Exception:
-        pass
-    return None
+        return None
 
 # Backwards-compat alias
 _resolve_client_tz_util = _resolve_client_tz

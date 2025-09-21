@@ -68,7 +68,7 @@ The following tools are available via `python cli.py <command>`:
 - `indicators_describe <name>` - Get detailed information for a specific indicator.
 - `denoise_list_methods` - List available denoising methods and their parameters.
 - `patterns_detect_candlesticks <symbol> [--timeframe TF] [--limit N]` - Detect candlestick patterns.
-- `pivot_compute_points <symbol> [--timeframe TF] [--method METHOD]` - Compute pivot point levels.
+- `pivot_compute_points <symbol> [--timeframe TF]` - Compute pivot point levels across all supported methods.
 - `forecast_generate <symbol> [--timeframe TF] [--method METHOD] [--horizon N] ...` - Generate price forecasts.
 - `forecast_volatility_estimate <symbol> [--timeframe TF] [--horizon N] [--method METHOD] [--proxy PROXY]` - Forecast volatility using direct estimators, GARCH, or general forecasters on a proxy.
 - `report_generate <symbol> [--horizon N] [--template basic|advanced|scalping|intraday|swing|position]` - One-stop consolidated report rendered as Markdown (context, pivots, vol, backtest->best forecast, MC barriers; advanced adds regimes, HAR-RV, conformal). Templates infer timeframes.

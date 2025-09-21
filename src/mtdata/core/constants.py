@@ -16,10 +16,9 @@ PRECISION_ABS_TOL = 1e-12    # absolute tolerance for rounding optimization
 PRECISION_MAX_DECIMALS = 10  # upper bound on decimal places
 
 # Global parameter defaults
-DEFAULT_TIMEZONE = "auto"    # default timezone parameter
 DEFAULT_TIMEFRAME = "H1"     # default timeframe parameter  
 # Normalized datetime display format (UTC/local)
-TIME_DISPLAY_FORMAT = "%Y-%m-%d %H:%M:%S"
+TIME_DISPLAY_FORMAT = "%Y-%m-%d %H:%M"
 # Simplification defaults
 SIMPLIFY_DEFAULT_METHOD = "lttb"  # default simplify method when not specified
 SIMPLIFY_DEFAULT_MODE = "approximate"  # default simplify mode when not specified

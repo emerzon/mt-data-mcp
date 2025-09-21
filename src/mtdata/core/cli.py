@@ -11,6 +11,9 @@ import sys
 import inspect
 import os
 from typing import get_type_hints, get_origin, get_args, Optional, Dict, Any, List
+import json
+import math
+from ..utils.minimal_output import format_result_minimal as _shared_minimal
 
 # Simple debug logging controlled by env var MTDATA_CLI_DEBUG
 def _debug_enabled() -> bool:
@@ -67,11 +70,26 @@ def _is_empty_value(value: Any) -> bool:
     return False
 
 
+def _minify_number(num: float) -> str:
+    try:
+        f = float(num)
+    except Exception:
+        return str(num)
+    if not math.isfinite(f):
+        return str(num)
+    text = f"{f:.8f}".rstrip('0').rstrip('.')
+    return text if text else '0'
+
+
 def _stringify_scalar(value: Any) -> str:
     if value is None:
         return ""
     if isinstance(value, bool):
         return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return _minify_number(value)
     return str(value)
 
 
@@ -167,60 +185,11 @@ def _format_meta_block(meta: Dict[str, Any]) -> str:
 
 
 def _format_result_minimal(result: Any) -> str:
-    if result is None:
-        return ""
-    if isinstance(result, str):
-        return result.strip()
-    if isinstance(result, bool):
-        return "true" if result else "false"
-    if isinstance(result, (int, float)):
-        return str(result)
-    if isinstance(result, list):
-        if not result:
-            return ""
-        if all(isinstance(item, dict) for item in result):
-            return _list_of_dicts_to_csv(result)  # type: ignore[arg-type]
-        parts: List[str] = []
-        for item in result:
-            if _is_empty_value(item):
-                continue
-            if _is_scalar_value(item):
-                parts.append(_stringify_scalar(item))
-            else:
-                formatted = _format_complex_value(item)
-                if formatted:
-                    parts.append(formatted)
-        return "\n".join(parts)
-    if isinstance(result, dict):
-        if 'error' in result and _is_scalar_value(result['error']):
-            return f"error: {_stringify_scalar(result['error'])}"
-        if 'markdown' in result and isinstance(result['markdown'], str):
-            md = result['markdown'].strip()
-            extras = {k: v for k, v in result.items() if k not in {'markdown'} and not _is_empty_value(v)}
-            if extras:
-                meta_block = _format_meta_block(extras)
-                if meta_block:
-                    return f"{md}\n\n{meta_block}" if md else meta_block
-            return md
-        header = result.get('csv_header')
-        data = result.get('csv_data')
-        sections: List[str] = []
-        if header or data:
-            csv_lines: List[str] = []
-            if header and str(header).strip():
-                csv_lines.append(str(header).strip())
-            if data and str(data).strip():
-                csv_lines.append(str(data).strip())
-            if csv_lines:
-                sections.append("\n".join(csv_lines))
-        ignore_keys = {'csv_header', 'csv_data', 'markdown', 'success', 'count'}
-        extras = {k: v for k, v in result.items() if k not in ignore_keys and not _is_empty_value(v)}
-        if extras:
-            meta_block = _format_meta_block(extras)
-            if meta_block:
-                sections.append(meta_block)
-        return "\n\n".join(sections).strip()
-    return _format_complex_value(result)
+    # Delegate to shared formatter used by the server so CLI output matches API output exactly
+    try:
+        return _shared_minimal(result)
+    except Exception:
+        return str(result) if result is not None else ""
 
 def get_function_info(func):
     """Thin wrapper around schema.get_function_info that attaches the callable.
@@ -549,9 +518,15 @@ def create_command_function(func_info, cmd_name: str = ""):
             if arg_value is not None:
                 kwargs[param_name] = arg_value
         
-        # Call the function
+        # Call the function (tools now return minimal plain text for API and CLI)
         result = func_info['func'](**kwargs)
 
+        # If the tool already returned text, print it exactly (no stripping)
+        if isinstance(result, str):
+            print(result)
+            return
+
+        # Otherwise, use the same shared minimal formatter as the server
         minimal_output = _format_result_minimal(result)
         if minimal_output:
             print(minimal_output)
@@ -620,7 +595,6 @@ def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
 
 def main():
     """Main CLI entry point with dynamic parameter discovery"""
-    
     # Discover functions to expose dynamically
     functions = discover_tools()
     if not functions:

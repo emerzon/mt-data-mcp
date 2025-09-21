@@ -2,16 +2,16 @@ from typing import Any, Dict, Optional, List, Literal
 
 from .server import mcp, _auto_connect_wrapper
 from .schema import DenoiseSpec
-from .report_utils import render_markdown
+from .report_utils import render_compact_report, format_number
 
 TemplateName = Literal['basic','simple','advanced','scalping','intraday','swing','position']
 
 
-def _report_error_markdown(message: Any) -> str:
+def _report_error_text(message: Any) -> str:
     text = str(message).strip()
     if not text:
         text = 'Unknown error.'
-    return f"# Report Error\n\n{text}\n"
+    return f"error: {text}\n"
 
 
 @mcp.tool()
@@ -23,7 +23,7 @@ def report_generate(
     denoise: Optional[DenoiseSpec] = None,
     params: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Generate a consolidated, information-dense analysis report in Markdown.
+    """Generate a consolidated, information-dense analysis report with compact multi-format output.
 
     - template: 'basic'/'simple' (context, pivot, EWMA vol, backtest->best forecast, MC barrier grid, patterns)
                 'advanced' (adds regimes, HAR-RV, conformal),
@@ -45,7 +45,7 @@ def report_generate(
                 template_position as _t_position,
             )
         except Exception as ex:
-            return _report_error_markdown(f"Failed to import report templates: {ex}")
+            return _report_error_text(f"Failed to import report templates: {ex}")
 
         default_horizon = {
             'basic': 12,
@@ -76,14 +76,14 @@ def report_generate(
         elif name == 'position':
             rep = _t_position(symbol, eff_horizon, denoise, p)
         else:
-            return _report_error_markdown(
+            return _report_error_text(
                 f"Unknown template: {template}. Use one of basic, advanced, scalping, intraday, swing, position."
             )
 
         if not isinstance(rep, dict):
-            return _report_error_markdown('Report template returned an unexpected payload.')
+            return _report_error_text('Report template returned an unexpected payload.')
         if rep.get('error'):
-            return _report_error_markdown(rep.get('error'))
+            return _report_error_text(rep.get('error'))
 
         summ: List[str] = []
         try:
@@ -94,7 +94,7 @@ def report_generate(
             ema50 = last.get('EMA_50') if 'EMA_50' in last else last.get('ema_50')
             rsi = last.get('RSI_14') if 'RSI_14' in last else last.get('rsi_14')
             if price is not None:
-                summ.append(f"close={price}")
+                summ.append(f"close={format_number(price)}")
             if ema20 is not None and ema50 is not None:
                 trend_note = (
                     'trend: above EMAs'
@@ -103,18 +103,55 @@ def report_generate(
                 )
                 summ.append(trend_note)
             if rsi is not None:
-                summ.append(f"RSI={rsi}")
+                summ.append(f"RSI={format_number(rsi)}")
         except Exception:
             pass
         try:
             piv = rep.get('sections', {}).get('pivot', {})
-            lev = piv.get('levels') or {}
-            if lev:
-                pp = lev.get('PP')
-                r1 = lev.get('R1')
-                s1 = lev.get('S1')
-                if pp is not None and r1 is not None and s1 is not None:
-                    summ.append(f"pivot PP={pp} (R1={r1}, S1={s1})")
+            lev_rows = piv.get('levels')
+            methods_meta = piv.get('methods')
+            chosen_method = None
+            if isinstance(methods_meta, list):
+                for meta in methods_meta:
+                    if not isinstance(meta, dict):
+                        continue
+                    name = str(meta.get('method') or '').strip()
+                    if name:
+                        chosen_method = name
+                        break
+            chosen_method = chosen_method or 'classic'
+            available_methods: List[str] = []
+            if isinstance(lev_rows, list):
+                for row in lev_rows:
+                    if not isinstance(row, dict):
+                        continue
+                    for key in row.keys():
+                        if key == 'level':
+                            continue
+                        key_str = str(key)
+                        if key_str not in available_methods:
+                            available_methods.append(key_str)
+            if available_methods and chosen_method not in available_methods:
+                chosen_method = available_methods[0]
+
+            def _pivot_lookup(level_key: str):
+                target = level_key.lower()
+                alt = 'pivot' if target == 'pp' else None
+                if not isinstance(lev_rows, list):
+                    return None
+                for row in lev_rows:
+                    if not isinstance(row, dict):
+                        continue
+                    lvl_name = str(row.get('level') or '').strip().lower()
+                    if lvl_name == target or (alt and lvl_name == alt):
+                        return row.get(chosen_method)
+                return None
+
+            pp = _pivot_lookup('PP')
+            r1 = _pivot_lookup('R1')
+            s1 = _pivot_lookup('S1')
+            if pp is not None and r1 is not None and s1 is not None:
+                summ.append(f"pivot {chosen_method} PP={format_number(pp)} (R1={format_number(r1)}, S1={format_number(s1)})")
         except Exception:
             pass
         try:
@@ -122,7 +159,7 @@ def report_generate(
             if isinstance(vol, dict):
                 hs = vol.get('horizon_sigma_price') or vol.get('horizon_sigma_return')
                 if hs is not None:
-                    summ.append(f"h{eff_horizon} sigma={hs}")
+                    summ.append(f"h{eff_horizon} sigma={format_number(hs)}")
         except Exception:
             pass
         try:
@@ -135,13 +172,22 @@ def report_generate(
             bar = rep.get('sections', {}).get('barriers', {})
             best = bar.get('best') if isinstance(bar, dict) else None
             if best:
-                summ.append(
-                    f"barrier best tp={best.get('tp')}% sl={best.get('sl')}% edge={best.get('edge')}"
-                )
+                tp = best.get('tp')
+                sl = best.get('sl')
+                edge = best.get('edge')
+                details: List[str] = []
+                if tp is not None:
+                    details.append(f"tp={format_number(tp)}%")
+                if sl is not None:
+                    details.append(f"sl={format_number(sl)}%")
+                if edge is not None:
+                    details.append(f"edge={format_number(edge)}")
+                if details:
+                    summ.append("barrier best " + ' '.join(details))
         except Exception:
             pass
         rep['summary'] = summ
 
-        return render_markdown(rep)
+        return render_compact_report(rep)
     except Exception as exc:
-        return _report_error_markdown(f"Error generating report: {exc}")
+        return _report_error_text(f"Error generating report: {exc}")

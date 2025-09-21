@@ -25,7 +25,7 @@ def template_intraday(
     if 'timeframe' not in p:
         p['timeframe'] = 'H1'
     base = template_basic(symbol, horizon, denoise, p)
-    snap = market_snapshot(symbol, timezone='UTC')
+    snap = market_snapshot(symbol)
     base.setdefault('sections', {})['market'] = snap
     gates = apply_market_gates(snap if isinstance(snap, dict) else {}, p)
     if gates:

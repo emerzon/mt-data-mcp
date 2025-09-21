@@ -20,7 +20,7 @@ from ..utils.utils import (
     _use_client_tz as _use_client_tz_util,
 )
 from ..utils.indicators import _parse_ti_specs as _parse_ti_specs_util, _apply_ta_indicators as _apply_ta_indicators_util
-from ..utils.denoise import _apply_denoise
+from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
 from .common import (
     parse_kv_or_json as _parse_kv_or_json,
     fetch_history as _fetch_history,
@@ -74,7 +74,8 @@ except Exception:
     _CHRONOS_AVAILABLE = False
 try:
     import importlib.util as _importlib_util6  # type: ignore
-    _TIMESFM_AVAILABLE = (_importlib_util6.find_spec("timesfm") is not None) or (_importlib_util6.find_spec("transformers") is not None)
+    # Consider TimesFM available only when the native package is installed
+    _TIMESFM_AVAILABLE = (_importlib_util6.find_spec("timesfm") is not None)
 except Exception:
     _TIMESFM_AVAILABLE = False
 try:
@@ -183,7 +184,7 @@ def get_forecast_methods_data() -> Dict[str, Any]:
     add("mlf_rf", "MLForecast RandomForest.", [], ["mlforecast", "scikit-learn"], {"price": True, "return": True, "ci": False})
     add("mlf_lightgbm", "MLForecast LightGBM.", [], ["mlforecast", "lightgbm"], {"price": True, "return": True, "ci": False})
     add("chronos_bolt", "Amazon Chronos-Bolt via Transformers.", [], ["chronos", "transformers"], {"price": True, "return": True, "ci": False})
-    add("timesfm", "Google TimesFM via Transformers.", [], ["timesfm", "transformers"], {"price": True, "return": True, "ci": False})
+    add("timesfm", "Google TimesFM (install from source).", [], ["timesfm"], {"price": True, "return": True, "ci": False})
     add("lag_llama", "Lag-Llama via Transformers.", [], ["lag_llama", "transformers"], {"price": True, "return": True, "ci": False})
     add("ensemble", "Hybrid ensemble (not implemented).", [], ["not implemented"], {"price": True, "return": True, "ci": False})
 
@@ -255,10 +256,9 @@ def forecast(
     dimred_params: Optional[Dict[str, Any]] = None,
     # Custom target specification (base column/alias, transform, and horizon aggregation)
     target_spec: Optional[Dict[str, Any]] = None,
-    timezone: str = "auto",
 ) -> Dict[str, Any]:
     """Fast forecasts for the next `horizon` bars using lightweight methods.
-    Parameters: symbol, timeframe, method, horizon, lookback?, as_of?, params?, ci_alpha?, target, denoise?, timezone
+    Parameters: symbol, timeframe, method, horizon, lookback?, as_of?, params?, ci_alpha?, target, denoise?
 
     Methods: naive, seasonal_naive, drift, theta, fourier_ols, ses, holt, holt_winters_add, holt_winters_mul, arima, sarima.
     - `params`: method-specific settings; use `seasonality` inside params when needed (auto if omitted).
@@ -318,8 +318,14 @@ def forecast(
 
         # Optionally denoise
         base_col = 'close'
+        dn_spec_used = None
         if denoise:
-            added = _apply_denoise(df, denoise, default_when='pre_ti')
+            try:
+                _dn = _normalize_denoise_spec(denoise, default_when='pre_ti')
+            except Exception:
+                _dn = None
+            added = _apply_denoise(df, _dn, default_when='pre_ti') if _dn else []
+            dn_spec_used = _dn
             if len(added) > 0 and f"{base_col}_dn" in added:
                 base_col = f"{base_col}_dn"
 
@@ -1476,43 +1482,65 @@ def forecast(
             f_vals = None
             last_err = None
             fq: Dict[str, List[float]] = {}
-            # Try native ChronosPipeline first
+            # Try native Chronos pipeline (prefer BaseChronosPipeline)
             try:
-                from chronos import ChronosPipeline  # type: ignore
+                from chronos import BaseChronosPipeline as _BaseChronosPipeline  # type: ignore
+                import torch as _torch  # type: ignore
                 _kwargs: Dict[str, Any] = {}
                 if quantization:
-                    if quantization.lower() in ('int8', '8bit', 'bnb.int8'):
+                    if str(quantization).lower() in ('int8', '8bit', 'bnb.int8'):
                         _kwargs['load_in_8bit'] = True
-                    elif quantization.lower() in ('int4', '4bit', 'bnb.int4'):
+                    elif str(quantization).lower() in ('int4', '4bit', 'bnb.int4'):
                         _kwargs['load_in_4bit'] = True
                 if revision:
                     _kwargs['revision'] = revision
-                pipe = ChronosPipeline.from_pretrained(model_name, device_map=device_map, **_kwargs)  # type: ignore[arg-type]
-                if quantiles:
-                    yhat = pipe.predict(context=context, prediction_length=int(fh), quantiles=list(quantiles))  # type: ignore[call-arg]
-                    # yhat could be dict quantile->list
-                    if isinstance(yhat, dict):
-                        for q, arr in yhat.items():
-                            try:
-                                qf = float(q)
-                            except Exception:
-                                continue
-                            fq[str(qf)] = [float(v) for v in np.asarray(arr, dtype=float)[:fh].tolist()]
-                        # choose median or first quantile as point
-                        if '0.5' in fq:
-                            f_vals = np.asarray(fq['0.5'], dtype=float)
-                    else:
-                        vals = np.asarray(yhat, dtype=float)
-                        f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
+                # Optional: dtype override
+                _torch_dtype = p.get('torch_dtype')
+                if isinstance(_torch_dtype, str):
+                    _td = _torch_dtype.strip().lower()
+                    if _td in ('bf16', 'bfloat16'):
+                        _kwargs['torch_dtype'] = _torch.bfloat16
+                    elif _td in ('fp16', 'float16', 'half'):
+                        _kwargs['torch_dtype'] = _torch.float16
+                    elif _td in ('fp32', 'float32'):
+                        _kwargs['torch_dtype'] = _torch.float32
+                pipe = _BaseChronosPipeline.from_pretrained(model_name, device_map=device_map, **_kwargs)  # type: ignore[arg-type]
+                # Always use predict_quantiles to obtain mean as well
+                q_levels = list(quantiles) if quantiles else [0.5]
+                q_levels = [float(q) for q in q_levels]
+                _context_tensor = _torch.tensor(context, dtype=_torch.float32)
+                q_tensor, mean_tensor = pipe.predict_quantiles(
+                    context=_context_tensor,
+                    prediction_length=int(fh),
+                    quantile_levels=q_levels,
+                )
+                # Convert outputs to numpy lists
+                # Shapes: q_tensor [B, H, Q], mean_tensor [B, H]
+                arr_mean = mean_tensor.detach().cpu().numpy()[0]
+                # Build quantile map
+                for i, ql in enumerate(q_levels):
+                    q_arr = q_tensor[:, :, i].detach().cpu().numpy()[0]
+                    fq[str(float(ql))] = [float(v) for v in np.asarray(q_arr, dtype=float)[:fh].tolist()]
+                if quantiles and '0.5' in fq:
+                    f_vals = np.asarray(fq['0.5'], dtype=float)
                 else:
-                    yhat = pipe.predict(context=context, prediction_length=int(fh))  # type: ignore[call-arg]
-                    vals = np.asarray(yhat, dtype=float)
+                    vals = np.asarray(arr_mean, dtype=float)
                     f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
             except Exception as ex1:
                 last_err = ex1
                 try:
-                    # Fallback via Transformers pipeline API
+                    # Fallback via Transformers pipeline API (only if supported)
                     from transformers import pipeline as _hf_pipeline  # type: ignore
+                    try:
+                        from transformers.pipelines import SUPPORTED_TASKS as _HF_SUPPORTED_TASKS  # type: ignore
+                        if "time-series-forecasting" not in _HF_SUPPORTED_TASKS:
+                            raise RuntimeError(
+                                "Transformers does not support 'time-series-forecasting' pipeline in this environment. "
+                                "Install 'chronos-forecasting' or upgrade 'transformers' to a version that includes the time-series pipeline."
+                            )
+                    except Exception:
+                        # If SUPPORTED_TASKS is unavailable, continue and let pipeline raise a clear error
+                        pass
                     _pipe_kwargs: Dict[str, Any] = {'model': model_name}
                     if device and str(device).lower() != 'auto':
                         _pipe_kwargs['device'] = device
@@ -1591,35 +1619,109 @@ def forecast(
             if method_l == 'timesfm':
                 try:
                     import timesfm as _timesfm  # type: ignore
-                    # Heuristic: try a from_pretrained + predict API similar to Chronos
-                    try:
-                        kw = {}
-                        if revision:
-                            kw['revision'] = revision
-                        mdl = getattr(_timesfm, 'TimesFm').from_pretrained(model_name, **kw)  # type: ignore[attr-defined]
-                        if quantiles:
-                            yhat = mdl.predict(context=context, prediction_length=int(fh), quantiles=list(quantiles))  # type: ignore[call-arg]
-                            if isinstance(yhat, dict):
-                                for q, arr in yhat.items():
+                    # Detect namespace shadowing (local folder named 'timesfm' with no attributes)
+                    if not (hasattr(_timesfm, 'TimesFM_2p5_200M_torch') or hasattr(_timesfm, 'ForecastConfig')):
+                        try:
+                            # Try submodule import pattern
+                            from timesfm import torch as _timesfm  # type: ignore
+                        except Exception:
+                            _p = getattr(_timesfm, '__path__', None)
+                            _p_str = str(list(_p)) if _p is not None else 'unknown'
+                            return {"error": f"timesfm import resolved to a namespace at {_p_str}, likely a local folder named 'timesfm' shadowing the package. Rename/remove the folder or 'pip install -e' the official repo."}
+                    # Prefer TimesFM 2.5 torch API if available
+                    _cls_name = 'TimesFM_2p5_200M_torch'
+                    _has_new = hasattr(_timesfm, _cls_name) and hasattr(_timesfm, 'ForecastConfig')
+                    if _has_new:
+                        _Cls = getattr(_timesfm, _cls_name)
+                        _mdl = _Cls()
+                        # Configure model with requested context and horizon
+                        _max_ctx = int(ctx_len) if ctx_len and int(ctx_len) > 0 else None
+                        _cfg_kwargs: Dict[str, Any] = {
+                            'max_context': _max_ctx or min(int(n), 1024),
+                            'max_horizon': int(fh),
+                            'normalize_inputs': True,
+                            'use_continuous_quantile_head': bool(quantiles) is True,
+                            'force_flip_invariance': True,
+                            'infer_is_positive': False,
+                            'fix_quantile_crossing': True,
+                        }
+                        _cfg = getattr(_timesfm, 'ForecastConfig')(**_cfg_kwargs)
+                        # Load weights and compile
+                        try:
+                            _mdl.load_checkpoint()
+                        except Exception:
+                            pass
+                        _mdl.compile(_cfg)
+                        _inp = [np.asarray(context, dtype=float)]
+                        pf, qf = _mdl.forecast(horizon=int(fh), inputs=_inp)
+                        # point forecast
+                        if pf is not None:
+                            arr = np.asarray(pf, dtype=float)
+                            arr = arr[0] if arr.ndim == 2 else arr
+                            vals = np.asarray(arr, dtype=float)
+                            f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
+                        # quantiles (assume deciles 0.1..0.9 in fixed order after mean)
+                        if quantiles and qf is not None:
+                            qarr = np.asarray(qf, dtype=float)
+                            if qarr.ndim == 3 and qarr.shape[0] >= 1:
+                                # qarr: [B, H, Q] where Q includes mean then deciles
+                                Q = qarr.shape[-1]
+                                # Build mapping for requested levels among {0.1,...,0.9}
+                                level_map = {str(l/10.0): (l if Q >= 10 else None) for l in range(1, 10)}
+                                for q in list(quantiles):
                                     try:
-                                        qf = float(q)
+                                        key = f"{float(q):.1f}"
                                     except Exception:
                                         continue
-                                    fq[str(qf)] = [float(v) for v in np.asarray(arr, dtype=float)[:fh].tolist()]
-                                if '0.5' in fq:
-                                    f_vals = np.asarray(fq['0.5'], dtype=float)
-                        else:
-                            yhat = mdl.predict(context=context, prediction_length=int(fh))  # type: ignore[call-arg]
-                            vals = np.asarray(yhat, dtype=float)
-                            f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
-                    except Exception as _:
-                        pass
+                                    idx = level_map.get(key)
+                                    if idx is None:
+                                        continue
+                                    col = qarr[0, :fh, idx] if idx < qarr.shape[-1] else None
+                                    if col is not None:
+                                        fq[key] = [float(v) for v in np.asarray(col, dtype=float).tolist()]
+                        params_used = {
+                            'timesfm_model': _cls_name,
+                            'context_length': int(_max_ctx or n),
+                            'quantiles': sorted(list(fq.keys()), key=lambda x: float(x)) if fq else None,
+                        }
+                    else:
+                        # Fallback heuristic for older experimental API
+                        try:
+                            kw = {}; mdl = getattr(_timesfm, 'TimesFm').from_pretrained(model_name, **kw)  # type: ignore[attr-defined]
+                            if quantiles:
+                                yhat = mdl.predict(context=context, prediction_length=int(fh), quantiles=list(quantiles))  # type: ignore[call-arg]
+                                if isinstance(yhat, dict):
+                                    for q, arr in yhat.items():
+                                        try:
+                                            qf = float(q)
+                                        except Exception:
+                                            continue
+                                        fq[str(qf)] = [float(v) for v in np.asarray(arr, dtype=float)[:fh].tolist()]
+                                    if '0.5' in fq:
+                                        f_vals = np.asarray(fq['0.5'], dtype=float)
+                            else:
+                                yhat = mdl.predict(context=context, prediction_length=int(fh))  # type: ignore[call-arg]
+                                vals = np.asarray(yhat, dtype=float)
+                                f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
+                        except Exception:
+                            pass
                 except Exception as ex:
                     last_err = ex
-            # Fallback to Transformers pipeline
+            # Fallback to Transformers pipeline (skip for timesfm to give clear guidance)
             if f_vals is None:
+                if method_l == 'timesfm':
+                    return {"error": "timesfm not installed. Install from source: git clone https://github.com/google-research/timesfm && pip install -e ."}
                 try:
                     from transformers import pipeline as _hf_pipeline  # type: ignore
+                    try:
+                        from transformers.pipelines import SUPPORTED_TASKS as _HF_SUPPORTED_TASKS  # type: ignore
+                        if "time-series-forecasting" not in _HF_SUPPORTED_TASKS:
+                            raise RuntimeError(
+                                "Transformers does not support 'time-series-forecasting' pipeline in this environment. "
+                                "Install 'chronos-forecasting' or upgrade 'transformers' to a version that includes the time-series pipeline."
+                            )
+                    except Exception:
+                        pass
                     _pipe_kwargs: Dict[str, Any] = {'model': model_name}
                     if device and str(device).lower() != 'auto':
                         _pipe_kwargs['device'] = device
@@ -1796,7 +1898,7 @@ def forecast(
             except Exception:
                 return float(v)
 
-        _use_ctz = _use_client_tz_util(timezone)
+        _use_ctz = _use_client_tz_util()
         if _use_ctz:
             times_fmt = [_format_time_minimal_local_util(ts) for ts in future_times]
         else:
@@ -1851,6 +1953,8 @@ def forecast(
             "times": times_fmt,
             "target_spec_used": target_info if custom_target_mode else None,
         }
+        if dn_spec_used:
+            payload["denoise_used"] = dn_spec_used
         # Attach forecast outputs depending on target mode
         if custom_target_mode:
             payload["forecast_series"] = [float(v) for v in f_vals.tolist()]

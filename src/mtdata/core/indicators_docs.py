@@ -9,7 +9,15 @@ import inspect
 import pydoc
 import re
 
-import pandas_ta as pta
+try:
+    import pandas_ta as pta
+except ModuleNotFoundError:
+    try:
+        import pandas_ta_classic as pta
+    except ModuleNotFoundError as e:
+        raise ModuleNotFoundError(
+            "pandas_ta not found. Install 'pandas-ta-classic' (or 'pandas-ta')."
+        ) from e
 
 
 def clean_help_text(text: str, func_name: Optional[str] = None) -> str:
@@ -127,4 +135,3 @@ def list_ta_indicators() -> List[Dict[str, Any]]:
             continue
     ind_list.sort(key=lambda x: x["name"])
     return ind_list
-

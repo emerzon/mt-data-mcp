@@ -30,7 +30,7 @@ The language is kept simple so anyone with a basic interest in trading can follo
 
 | Tool | Call | Why we used it |
 |------|------|----------------|
-| **`pivot_compute_points`** | `symbol=EURUSD`, `timeframe=D1`, `method=classic` | <ul><li>Classic pivot points are the most widely used (simple average of high, low, close). </li><li>They give us **support (S1, S2, …)** and **resistance (R1, R2, …)** levels that many traders watch.</li></ul> |
+| **`pivot_compute_points`** | `symbol=EURUSD`, `timeframe=D1` | <ul><li>Each run returns classic, Fibonacci, Camarilla, Woodie, and DeMark tables so you can compare support/resistance ladders.</li><li>Every method lists **support (S1, S2, …)** and **resistance (R1, R2, …)** tiers that traders monitor.</li></ul> |
 | **Result** | JSON with: <br>‑ Pivot (PP) = 1.17505 <br>‑ R1 = 1.17848 <br>‑ S1 = 1.17264 <br>‑ R2, S2, R3, S3 also provided. | **Interpretation** <br>‑ Current price (≈ 1.1776) sits **just below R1** and **above the pivot** – a classic “test‑and‑break” situation. <br>‑ If price falls, S1 (1.17264) is the first support; if it breaks above R1, the next target is R2 (≈ 1.1809). |
 
 ---

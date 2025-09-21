@@ -5,6 +5,7 @@ import atexit
 from typing import Optional, Set
 
 from mcp.server.fastmcp import FastMCP
+from functools import wraps as _wraps
 
 from .config import mt5_config
 from .constants import SERVICE_NAME, TIMEFRAME_MAP, TIMEFRAME_SECONDS  # re-export for CLI/tests
@@ -85,13 +86,48 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
             _TOOL_REGISTRY[getattr(func, '__name__', 'tool')] = func
             return func
         return _noop
-    dec = _ORIG_TOOL_DECORATOR(*dargs, **dkwargs)
+    kwargs = dict(dkwargs)
+    # Default to unstructured output so tools emit raw text content unless overridden
+    structured_in_args = len(dargs) >= 5
+    if not structured_in_args and 'structured_output' not in kwargs:
+        kwargs['structured_output'] = False
+    dec = _ORIG_TOOL_DECORATOR(*dargs, **kwargs)
     def _wrap(func):
-        res = dec(func)
+        # Wrap the callable to ensure plain-text, minimal output for API calls
+        try:
+            from ..utils.minimal_output import format_result_minimal as _fmt_min, to_methods_availability_csv as _fmt_methods
+        except Exception:
+            _fmt_min = lambda x: str(x) if x is not None else ""  # fallback
+            _fmt_methods = None  # type: ignore
+
+        @_wraps(func)
+        def _wrapped(*a, **kw):
+            # Uniform input normalization for common structured args
+            try:
+                if 'denoise' in kw:
+                    from ..utils.denoise import normalize_denoise_spec as _norm_dn  # type: ignore
+                    kw['denoise'] = _norm_dn(kw.get('denoise'))
+            except Exception:
+                pass
+            out = func(*a, **kw)
+            try:
+                # Special-case: compact method availability where applicable
+                fname = getattr(func, '__name__', '')
+                if fname in ('forecast_list_methods', 'denoise_list_methods') and isinstance(out, dict):
+                    methods = out.get('methods') or []
+                    if _fmt_methods:
+                        s = _fmt_methods(methods)
+                        if s:
+                            return s
+                return _fmt_min(out)
+            except Exception:
+                return str(out) if out is not None else ""
+
+        res = dec(_wrapped)
         name = getattr(func, '__name__', None)
         if name:
             # Store the original callable for CLI discovery
-            _TOOL_REGISTRY[str(name)] = func
+            _TOOL_REGISTRY[str(name)] = _wrapped
         return res
     return _wrap
 
@@ -108,6 +144,7 @@ except Exception:
 from .data import *
 from .denoise import *
 from .forecast import *
+from .causal import *
 from .indicators import *
 from .market_depth import *
 from .patterns import *

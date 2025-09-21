@@ -9,7 +9,7 @@ import time
 from .schema import TimeframeLiteral, IndicatorSpec, DenoiseSpec, SimplifySpec
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS, FETCH_RETRY_ATTEMPTS, FETCH_RETRY_DELAY, SANITY_BARS_TOLERANCE, TI_NAN_WARMUP_FACTOR, TI_NAN_WARMUP_MIN_ADD, SIMPLIFY_DEFAULT_MODE, SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT, TICKS_LOOKBACK_DAYS
 from ..utils.mt5 import _mt5_copy_rates_from, _mt5_copy_rates_range, _mt5_copy_ticks_from, _mt5_copy_ticks_range, _mt5_epoch_to_utc
-from ..utils.utils import _csv_from_rows_util, _format_time_minimal_util, _format_time_minimal_local_util, _use_client_tz_util, _resolve_client_tz_util, _time_format_from_epochs_util, _maybe_strip_year_util, _style_time_format_util, _format_numeric_rows_from_df_util, _parse_start_datetime_util
+from ..utils.utils import _csv_from_rows_util, _format_time_minimal_util, _format_time_minimal_local_util, _resolve_client_tz_util, _time_format_from_epochs_util, _maybe_strip_year_util, _style_time_format_util, _format_numeric_rows_from_df_util, _parse_start_datetime_util
 from ..utils.indicators import _estimate_warmup_bars_util, _apply_ta_indicators_util
 from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
 from .simplify import _simplify_dataframe_rows_ext, _choose_simplify_points as _choose_simplify_points_util, _select_indices_for_timeseries as _select_indices_for_timeseries_util, _lttb_select_indices as _lttb_select_indices_util
@@ -28,10 +28,9 @@ def data_fetch_candles(
     indicators: Optional[List[IndicatorSpec]] = None,
     denoise: Optional[DenoiseSpec] = None,
     simplify: Optional[SimplifySpec] = None,
-    timezone: str = "auto",
 ) -> Dict[str, Any]:
     """Return historical candles as CSV.
-       Parameters: symbol, timeframe, limit, start?, end?, ohlcv?, indicators?, denoise?, simplify?, timezone
+       Parameters: symbol, timeframe, limit, start?, end?, ohlcv?, indicators?, denoise?, simplify?
        Can include OHLCV data, optionally along with technical indicators.
        Returns the last candles by default, unless a date range is specified.
          Parameters:
@@ -239,7 +238,8 @@ def data_fetch_candles(
             pass
         # Keep epoch for filtering and convert readable time; ensure 'volume' exists for TA
         df['__epoch'] = df['time']
-        _use_ctz = _use_client_tz_util(timezone)
+        client_tz = _resolve_client_tz_util()
+        _use_ctz = client_tz is not None
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             df["time"] = df["time"].apply(_format_time_minimal_local_util if _use_ctz else _format_time_minimal_util)
@@ -406,40 +406,24 @@ def data_fetch_candles(
         # Reformat time consistently across rows for display
         if 'time' in headers and len(df) > 0:
             epochs_list = df['__epoch'].tolist()
-            if _use_ctz:
-                fmt = _time_format_from_epochs_util(epochs_list)
-                fmt = _maybe_strip_year_util(fmt, epochs_list)
-                fmt = _style_time_format_util(fmt)
-                tz = _resolve_client_tz_util(timezone)
-                # Track used tz name and invalid explicit values
-                tz_used_name = None
-                tz_warning = None
-                if isinstance(timezone, str):
-                    vlow = timezone.strip().lower()
-                    if vlow not in ('auto','client','utc',''):
-                        try:
-                            import pytz  # type: ignore
-                            tz_explicit = pytz.timezone(timezone.strip())
-                            tz = tz_explicit
-                        except Exception:
-                            tz_warning = f"Unknown timezone '{timezone}', falling back to CLIENT_TZ or system"
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    if tz is not None:
-                        tz_used_name = getattr(tz, 'zone', None) or str(tz)
-                        df['time'] = df['__epoch'].apply(lambda t: datetime.fromtimestamp(t, tz=dt_timezone.utc).astimezone(tz).strftime(fmt))
-                    else:
-                        tz_used_name = 'system'
-                        df['time'] = df['__epoch'].apply(lambda t: datetime.fromtimestamp(t, tz=dt_timezone.utc).astimezone().strftime(fmt))
-                df.__dict__['_tz_used_name'] = tz_used_name
-                df.__dict__['_tz_warning'] = tz_warning
-            else:
-                fmt = _time_format_from_epochs_util(epochs_list)
-                fmt = _maybe_strip_year_util(fmt, epochs_list)
-                fmt = _style_time_format_util(fmt)
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    df['time'] = df['__epoch'].apply(lambda t: datetime.utcfromtimestamp(t).strftime(fmt))
+            fmt = _time_format_from_epochs_util(epochs_list)
+            fmt = _maybe_strip_year_util(fmt, epochs_list)
+            fmt = _style_time_format_util(fmt)
+            tz_used_name = 'UTC'
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                if _use_ctz:
+                    tz_used_name = getattr(client_tz, 'zone', None) or str(client_tz)
+                    df['time'] = [
+                        datetime.fromtimestamp(t, tz=dt_timezone.utc).astimezone(client_tz).strftime(fmt)
+                        for t in epochs_list
+                    ]
+                else:
+                    df['time'] = [
+                        datetime.utcfromtimestamp(t).strftime(fmt)
+                        for t in epochs_list
+                    ]
+            df.__dict__['_tz_used_name'] = tz_used_name
 
         # Optionally reduce number of rows for readability/output size
         original_rows = len(df)
@@ -497,10 +481,9 @@ def data_fetch_ticks(
     start: Optional[str] = None,
     end: Optional[str] = None,
     simplify: Optional[SimplifySpec] = None,
-    timezone: str = "auto",
 ) -> Dict[str, Any]:
     """Return latest ticks as CSV with columns: time,bid,ask and optional last,volume,flags.
-    Parameters: symbol, limit, start?, end?, simplify?, timezone
+    Parameters: symbol, limit, start?, end?, simplify?
     - `limit` limits the number of rows.
     - `start` starts from a flexible date/time; optional `end` enables range.
     - `simplify`: Optional dict to reduce or aggregate rows (select/approximate/resample).
@@ -588,7 +571,8 @@ def data_fetch_ticks(
         # Choose a consistent time format for all rows (strip year if constant)
         # Normalize tick times to UTC
         _epochs = [_mt5_epoch_to_utc(float(t["time"])) for t in ticks]
-        _use_ctz = _use_client_tz_util(timezone)
+        client_tz = _resolve_client_tz_util()
+        _use_ctz = client_tz is not None
         if not _use_ctz:
             fmt = _time_format_from_epochs_util(_epochs)
             fmt = _maybe_strip_year_util(fmt, _epochs)

@@ -10,6 +10,7 @@ from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..core.schema import TimeframeLiteral, DenoiseSpec
 from ..utils.mt5 import _mt5_epoch_to_utc, _mt5_copy_rates_from, _ensure_symbol_ready
 from ..utils.utils import _parse_start_datetime as _parse_start_datetime_util
+from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
 from .common import default_seasonality as _default_seasonality_period, pd_freq_from_timeframe as _pd_freq_from_timeframe
 
 # Optional availability flags (match server discovery)
@@ -357,12 +358,17 @@ def forecast_volatility(
             df = df.iloc[:-1]
         if len(df) < 3:
             return {"error": "Not enough closed bars"}
-        # Denoise defaults for range methods
-        if denoise and isinstance(denoise, dict) and method_l in {'parkinson','gk','rs','yang_zhang'}:
-            dn2 = dict(denoise); dn2.setdefault('columns', ['open','high','low','close'])
-            _apply_denoise(df, dn2, default_when='pre_ti')
-        elif denoise:
-            _apply_denoise(df, denoise, default_when='pre_ti')
+        # Normalize and apply denoise spec (uniform behavior)
+        dn_spec_used = None
+        if denoise is not None:
+            try:
+                dn_spec_used = _normalize_denoise_spec(denoise, default_when='pre_ti')
+            except Exception:
+                dn_spec_used = None
+            if dn_spec_used:
+                if method_l in {'parkinson','gk','rs','yang_zhang'} and not dn_spec_used.get('columns'):
+                    dn_spec_used['columns'] = ['open','high','low','close']
+                _apply_denoise(df, dn_spec_used, default_when='pre_ti')
 
         # Compute returns and helpers
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -386,7 +392,8 @@ def forecast_volatility(
             return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
                     "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
                     "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
-                    "params_used": {"lookback": lb, "lambda_": lam}}
+                    "params_used": {"lookback": lb, "lambda_": lam},
+                    "denoise_used": dn_spec_used}
 
         if method_l in {'parkinson','gk','rs','yang_zhang','rolling_std'}:
             window = int(p.get('window', 20))
@@ -416,7 +423,8 @@ def forecast_volatility(
             return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
                     "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
                     "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
-                    "params_used": {"window": int(window)}}
+                    "params_used": {"window": int(window)},
+                    "denoise_used": dn_spec_used}
 
         if method_l in {'garch','egarch','gjr_garch'}:
             fit_bars = int(p.get('fit_bars', 2000)); mean_model = str(p.get('mean','Zero')).lower(); dist = str(p.get('dist','normal'))
@@ -437,7 +445,8 @@ def forecast_volatility(
                 return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
                         "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
                         "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
-                        "params_used": {k: p[k] for k in p}}
+                        "params_used": {k: p[k] for k in p},
+                        "denoise_used": dn_spec_used}
             except Exception as ex:
                 return {"error": f"{method_l} error: {ex}"}
 
@@ -499,7 +508,6 @@ def forecast_volatility(
                             ci_alpha=ci_alpha,
                             target=target,  # type: ignore
                             denoise=denoise,
-                            timezone=timezone,
                         )
                         if isinstance(r, dict) and r.get('success') and r.get('forecast_price'):
                             comp_results.append((bm, r))
@@ -862,7 +870,8 @@ def forecast_volatility(
                         "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
                         "params_used": {"rv_timeframe": rv_tf, "window_w": w, "window_m": m,
                                          "beta": [float(b) for b in beta.tolist()],
-                                         "days": days}}
+                                         "days": days},
+                        "denoise_used": dn_spec_used}
             except Exception as ex:
                 return {"error": f"HAR-RV error: {ex}"}
         else:  # garch
@@ -905,6 +914,7 @@ def forecast_volatility(
             "horizon_sigma_return": sigma_h_bar,
             "horizon_sigma_annual": sigma_h_ann,
             "as_of": as_of or None,
+            "denoise_used": dn_spec_used,
         }
     except Exception as e:
         return {"error": f"Error computing volatility forecast: {str(e)}"}

@@ -1,8 +1,126 @@
 """Trading functions for MetaTrader integration."""
 
-from typing import Optional, Union
+
+import math
+from datetime import datetime, timezone, timedelta
+from typing import Optional, Tuple, Union
+
 from .server import mcp
 from ..utils.mt5 import _auto_connect_wrapper
+from .config import mt5_config
+
+
+ExpirationValue = Union[int, float, str, datetime]
+_GTC_EXPIRATION_TOKENS = {"GTC", "GOOD_TILL_CANCEL", "GOOD_TILL_CANCELLED", "NONE", "NO_EXPIRATION"}
+
+
+def _to_server_time_naive(dt: datetime) -> datetime:
+    """Convert a datetime (naive or aware) to broker/server local time and drop tzinfo.
+
+    - If client/server tzs are configured (pytz), assume naive input is client tz,
+      convert to server tz, and return naive server time.
+    - Else, use MT5_TIME_OFFSET_MINUTES relative to UTC as a fallback.
+    - If no hints, assume input is UTC.
+    """
+    try:
+        server_tz = mt5_config.get_server_tz()
+        client_tz = mt5_config.get_client_tz()
+    except Exception:
+        server_tz = None
+        client_tz = None
+
+    aware = dt
+    try:
+        if dt.tzinfo is None:
+            # Assume client-local when configured; otherwise assume UTC
+            if client_tz is not None:
+                aware = client_tz.localize(dt) if hasattr(client_tz, 'localize') else dt.replace(tzinfo=client_tz)
+            else:
+                aware = dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        aware = dt.replace(tzinfo=timezone.utc)
+
+    if server_tz is not None:
+        try:
+            server_aware = aware.astimezone(server_tz)
+            return server_aware.replace(tzinfo=None)
+        except Exception:
+            pass
+
+    # Fallback: offset seconds from UTC
+    try:
+        offset_sec = int(mt5_config.get_time_offset_seconds())
+    except Exception:
+        offset_sec = 0
+    try:
+        utc_dt = aware.astimezone(timezone.utc)
+    except Exception:
+        utc_dt = aware if aware.tzinfo is not None else aware.replace(tzinfo=timezone.utc)
+    server_dt = utc_dt + timedelta(seconds=offset_sec)
+    return server_dt.replace(tzinfo=None)
+
+
+def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tuple[Optional[datetime], bool]:
+    """Convert user-supplied expiration data into MetaTrader-friendly datetime objects.
+
+    Returns a tuple ``(normalized_expiration, was_explicitly_provided)``. When
+    ``was_explicitly_provided`` is False, callers should preserve the broker's existing
+    order setting. When it is True and the normalized expiration is None, callers
+    should submit a Good-Till-Cancelled order to clear any previous expiration.
+    """
+    if expiration is None:
+        return None, False
+
+    if isinstance(expiration, datetime):
+        return _to_server_time_naive(expiration), True
+
+    if isinstance(expiration, (int, float)):
+        if not math.isfinite(expiration) or expiration <= 0:
+            return None, True
+        try:
+            # Treat numeric as epoch seconds in UTC, then convert to server time
+            return _to_server_time_naive(datetime.fromtimestamp(expiration, tz=timezone.utc)), True
+        except (OverflowError, OSError) as exc:
+            raise ValueError(f"Expiration timestamp out of range: {expiration}") from exc
+
+    if isinstance(expiration, str):
+        cleaned = expiration.strip()
+        if cleaned == "":
+            return None, False
+
+        upper_cleaned = cleaned.upper()
+        if upper_cleaned in _GTC_EXPIRATION_TOKENS:
+            return None, True
+
+        # Try flexible date parsing first (e.g., 'tomorrow 14:00', 'in 2 hours')
+        try:
+            import dateparser  # type: ignore
+            dt = dateparser.parse(cleaned, settings={
+                'RETURN_AS_TIMEZONE_AWARE': False,
+                'PREFER_DATES_FROM': 'future',
+                'RELATIVE_BASE': None,
+            })
+            if dt is not None:
+                return _to_server_time_naive(dt), True
+        except Exception:
+            pass
+
+        # Fallbacks: numeric epoch or ISO8601
+        try:
+            numeric = float(cleaned)
+            if not math.isfinite(numeric) or numeric <= 0:
+                return None, True
+            try:
+                return _to_server_time_naive(datetime.fromtimestamp(numeric, tz=timezone.utc)), True
+            except (OverflowError, OSError) as exc:
+                raise ValueError(f"Expiration timestamp out of range: {expiration}") from exc
+        except ValueError:
+            try:
+                return _to_server_time_naive(datetime.fromisoformat(cleaned)), True
+            except ValueError as exc:
+                raise ValueError(f"Unsupported expiration format: {expiration}") from exc
+
+    raise TypeError(f"Unsupported expiration type: {type(expiration).__name__}")
 
 
 @mcp.tool()
@@ -308,8 +426,17 @@ def trading_orders_place_market(symbol: str, volume: float, type: str) -> dict:
     return _place_market_order()
 
 
+
 @mcp.tool()
-def trading_pending_place(symbol: str, volume: float, type: str, price: float, stop_loss: Optional[Union[int, float]] = 0, take_profit: Optional[Union[int, float]] = 0) -> dict:
+def trading_pending_place(
+    symbol: str,
+    volume: float,
+    type: str,
+    price: float,
+    stop_loss: Optional[Union[int, float]] = 0,
+    take_profit: Optional[Union[int, float]] = 0,
+    expiration: Optional[ExpirationValue] = None,
+) -> dict:
     """
     Place a pending order. Parameters:
         symbol: Symbol name (e.g., 'EURUSD')
@@ -318,6 +445,9 @@ def trading_pending_place(symbol: str, volume: float, type: str, price: float, s
         price: Pending order price.
         stop_loss (optional): Stop loss price.
         take_profit (optional): Take profit price.
+        expiration (optional): Accepts GTC tokens (GTC/GOOD_TILL_CANCEL/...), ISO datetime,
+            numeric epoch seconds, or natural language via dateparser (e.g., 'tomorrow 14:00', 'in 2 hours').
+            Use 0 or 'GTC' to submit GTC orders.
     """
     import MetaTrader5 as mt5
 
@@ -342,6 +472,8 @@ def trading_pending_place(symbol: str, volume: float, type: str, price: float, s
             else:
                 order_type = mt5.ORDER_TYPE_SELL_LIMIT if price > current_price.bid else mt5.ORDER_TYPE_SELL_STOP
 
+            normalized_expiration, expiration_specified = _normalize_pending_expiration(expiration)
+
             request = {
                 "action": mt5.TRADE_ACTION_PENDING,
                 "symbol": symbol,
@@ -356,6 +488,13 @@ def trading_pending_place(symbol: str, volume: float, type: str, price: float, s
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": mt5.ORDER_FILLING_IOC,
             }
+
+            if expiration_specified:
+                if normalized_expiration is None:
+                    request["type_time"] = mt5.ORDER_TIME_GTC
+                else:
+                    request["type_time"] = mt5.ORDER_TIME_SPECIFIED
+                    request["expiration"] = normalized_expiration
 
             result = mt5.order_send(request)
             if result is None:
@@ -377,6 +516,7 @@ def trading_pending_place(symbol: str, volume: float, type: str, price: float, s
             return {"error": str(e)}
 
     return _place_pending_order()
+
 
 
 @mcp.tool()
@@ -421,8 +561,15 @@ def trading_positions_modify(id: Union[int, str], stop_loss: Optional[Union[int,
     return _modify_position()
 
 
+
 @mcp.tool()
-def trading_pending_modify(id: Union[int, str], price: Optional[Union[int, float]] = None, stop_loss: Optional[Union[int, float]] = None, take_profit: Optional[Union[int, float]] = None) -> dict:
+def trading_pending_modify(
+    id: Union[int, str],
+    price: Optional[Union[int, float]] = None,
+    stop_loss: Optional[Union[int, float]] = None,
+    take_profit: Optional[Union[int, float]] = None,
+    expiration: Optional[ExpirationValue] = None,
+) -> dict:
     """Modify a pending order by ID."""
     import MetaTrader5 as mt5
 
@@ -435,6 +582,7 @@ def trading_pending_modify(id: Union[int, str], price: Optional[Union[int, float
                 return {"error": f"Pending order {id} not found"}
 
             order = orders[0]
+            normalized_expiration, expiration_specified = _normalize_pending_expiration(expiration)
 
             request = {
                 "action": mt5.TRADE_ACTION_MODIFY,
@@ -445,6 +593,20 @@ def trading_pending_modify(id: Union[int, str], price: Optional[Union[int, float
                 "magic": 234000,
                 "comment": "MCP modify pending order",
             }
+
+            if expiration_specified:
+                if normalized_expiration is None:
+                    request["type_time"] = mt5.ORDER_TIME_GTC
+                else:
+                    request["type_time"] = mt5.ORDER_TIME_SPECIFIED
+                    request["expiration"] = normalized_expiration
+            else:
+                current_type_time = getattr(order, "type_time", None)
+                current_expiration = getattr(order, "time_expiration", None)
+                if current_type_time is not None:
+                    request["type_time"] = current_type_time
+                    if current_type_time == mt5.ORDER_TIME_SPECIFIED and current_expiration:
+                        request["expiration"] = current_expiration
 
             result = mt5.order_send(request)
             if result is None:
@@ -462,6 +624,7 @@ def trading_pending_modify(id: Union[int, str], price: Optional[Union[int, float
             return {"error": str(e)}
 
     return _modify_pending_order()
+
 
 
 @mcp.tool()

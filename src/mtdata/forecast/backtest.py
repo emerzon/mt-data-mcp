@@ -12,6 +12,7 @@ from ..utils.mt5 import _mt5_epoch_to_utc, _mt5_copy_rates_from, _ensure_symbol_
 from ..utils.utils import _format_time_minimal as _format_time_minimal_util
 from .volatility import forecast_volatility
 from .forecast import forecast
+from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from .common import fetch_history as _fetch_history
 
 
@@ -140,6 +141,12 @@ def forecast_backtest(
         if not actual_windows:
             return {"error": "No valid validation windows found"}
 
+        # Normalize denoise spec once for the whole run (uniform across methods)
+        try:
+            _dn_used = _normalize_denoise_spec(denoise, default_when='pre_ti') if denoise is not None else None
+        except Exception:
+            _dn_used = None
+
         # Run forecasts per method and compute metrics
         results: Dict[str, Any] = {}
         for method in methods:
@@ -162,7 +169,7 @@ def forecast_backtest(
                             as_of=anchor_time,
                             params=pm if isinstance(pm, dict) else None,
                             proxy=proxy,  # type: ignore
-                            denoise=denoise,
+                            denoise=_dn_used,
                         )
                     else:
                         # Choose per-method params falling back to global params
@@ -177,7 +184,7 @@ def forecast_backtest(
                             as_of=anchor_time,
                             params=pm,
                             target=target,
-                            denoise=denoise,
+                            denoise=_dn_used,
                             features=features,
                             dimred_method=dimred_method,
                             dimred_params=dimred_params,
@@ -246,6 +253,8 @@ def forecast_backtest(
                     da_vals = [v for v in da_vals if v is not None and np.isfinite(v)]
                     if da_vals:
                         agg["avg_directional_accuracy"] = float(np.mean(da_vals))
+                if _dn_used:
+                    agg["denoise_used"] = _dn_used
                 results[method] = agg
             else:
                 results[method] = {
@@ -263,6 +272,7 @@ def forecast_backtest(
             "steps": int(steps),
             "spacing": int(spacing),
             "methods": methods,
+            "denoise_used": _dn_used,
             "results": results,
         }
     except Exception as e:

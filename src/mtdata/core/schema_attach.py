@@ -93,8 +93,6 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
                         params["denoise"] = {"$ref": "#/$defs/DenoiseSpec"}
                     if "params" in params:
                         params["params"] = {"type": "object", "additionalProperties": True}
-                if name == "pivot_compute_points" and "method" in params:
-                    params["method"] = {"$ref": "#/$defs/PivotMethod"}
                 if name == "indicators_list" and "category" in params and "IndicatorCategory" in schema.get("$defs", {}):
                     params["category"] = {"$ref": "#/$defs/IndicatorCategory"}
                 if name == "indicators_describe" and "name" in params and "IndicatorName" in schema.get("$defs", {}):

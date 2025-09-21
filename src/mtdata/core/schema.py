@@ -22,7 +22,6 @@ PARAM_HINTS = {
     "indicators": "Indicator specs list",
     "denoise": "Denoise spec JSON or preset",
     "simplify": "Simplify spec for downsampling",
-    "timezone": "Timezone: auto/UTC or name",
     "method": "Method/algorithm name",
     "horizon": "Forecast horizon (bars)",
     "steps": "Backtest anchors or steps",
@@ -92,8 +91,11 @@ else:
     IndicatorNameLiteral = str  # fallback
 
 class IndicatorSpec(TypedDict, total=False):
-    """Structured TI spec: name with optional numeric params."""
-    name: IndicatorNameLiteral  # type: ignore
+    """Structured TI spec: name with optional numeric params.
+
+    Note: 'name' accepts any string to allow compact forms like "rsi(20)".
+    """
+    name: str
     params: List[float]
 
 # ---- Denoising (spec + application) ----

@@ -8,10 +8,10 @@ import MetaTrader5 as mt5
 
 @mcp.tool()
 @_auto_connect_wrapper
-def market_depth_fetch(symbol: str, timezone: str = "auto") -> Dict[str, Any]:
+def market_depth_fetch(symbol: str) -> Dict[str, Any]:
     """Return DOM if available; otherwise current bid/ask snapshot for `symbol`.
 
-    Parameters: symbol, timezone
+    Parameters: symbol
     """
     try:
         # Ensure symbol is selected
@@ -72,14 +72,11 @@ def market_depth_fetch(symbol: str, timezone: str = "auto") -> Dict[str, Any]:
                     "note": "Full market depth not available, showing current bid/ask"
                 }
             }
-            try:
-                _use_ctz = _use_client_tz_util(timezone)
-                if tick.time and _use_ctz:
-                    out["data"]["time_display"] = _format_time_minimal_local_util(_mt5_epoch_to_utc(float(tick.time)))
-                elif tick.time:
-                    out["data"]["time_display"] = _format_time_minimal_util(_mt5_epoch_to_utc(float(tick.time)))
-            except Exception:
-                pass
+            _use_ctz = _use_client_tz_util()
+            if tick.time and _use_ctz:
+                out["data"]["time_display"] = _format_time_minimal_local_util(_mt5_epoch_to_utc(float(tick.time)))
+            elif tick.time:
+                out["data"]["time_display"] = _format_time_minimal_util(_mt5_epoch_to_utc(float(tick.time)))
             if not _use_ctz:
                 out["timezone"] = "UTC"
             return out

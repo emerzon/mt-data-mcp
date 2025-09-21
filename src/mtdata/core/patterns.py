@@ -1,6 +1,6 @@
 
 from datetime import datetime
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Tuple, Set
 import pandas as pd
 import warnings
 import numpy as np
@@ -21,10 +21,14 @@ def patterns_detect_candlesticks(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     limit: int = 10,
-    timezone: str = "auto",
+    min_strength: float = 0.95,
+    min_gap: int = 3,
+    robust_only: bool = True,
+    whitelist: Optional[str] = None,  # comma-separated names, e.g. "engulfing,harami"
+    top_k: int = 1,
 ) -> Dict[str, Any]:
     """Detect candlestick patterns and return CSV rows of detections.
-    Parameters: symbol, timeframe, limit, timezone
+    Parameters: symbol, timeframe, limit
 
     Inputs:
     - `symbol`: Trading symbol (e.g., "EURUSD").
@@ -74,13 +78,13 @@ def patterns_detect_candlesticks(
         except Exception:
             pass
         epochs = [float(t) for t in df['time'].tolist()] if 'time' in df.columns else []
-        _use_ctz = _use_client_tz_util(timezone)
+        _use_ctz = _use_client_tz_util()
         if _use_ctz:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 df['time'] = df['time'].apply(_format_time_minimal_local_util)
         else:
-            time_fmt = _time_format_from_epochs_util(epochs) if epochs else "%Y-%m-%d %H:%M:%S"
+            time_fmt = _time_format_from_epochs_util(epochs) if epochs else "%Y-%m-%d %H:%M"
             time_fmt = _maybe_strip_year_util(time_fmt, epochs)
             time_fmt = _style_time_format_util(time_fmt)
             with warnings.catch_warnings():
@@ -130,40 +134,82 @@ def patterns_detect_candlesticks(
         if not pattern_cols:
             return {"error": "No candle patterns produced any outputs."}
 
-        # Compile detection rows
+        # Compile detection rows per candle (choose at most one pattern per bar)
         rows: List[List[Any]] = []
-        for i in range(len(temp)):
-            t = df.iloc[i]['time']
+        # Threshold (accept 0..1 or 0..100 scales)
+        try:
+            thr = float(min_strength)
+        except Exception:
+            thr = 0.95
+        if thr > 1.0:
+            thr = thr / 100.0
+        thr = max(0.0, min(1.0, thr))
+        # Robust multi-candle patterns (default whitelist)
+        _robust_whitelist = {
+            'engulfing','harami','3inside','3outside','eveningstar','morningstar',
+            'darkcloudcover','piercing','inside','outside','hikkake'
+        }
+        if whitelist and isinstance(whitelist, str):
+            try:
+                parts = [p.strip() for p in whitelist.split(',') if p.strip()]
+                if parts:
+                    _robust_whitelist = {p.replace('_','').replace(' ','').lower() for p in parts}
+            except Exception:
+                pass
+        def _norm_name(n: str) -> str:
+            return str(n).replace('_','').replace(' ','').lower()
+        # Enforce minimal spacing between consecutive signal bars
+        try:
+            gap = max(0, int(min_gap))
+        except Exception:
+            gap = 3
+        last_pick_idx = -10**9
+        # Patterns to deprioritize when more specific ones co-occur
+        _deprioritize = {
+            'shortline', 'longline', 'spinningtop', 'highwave',
+            'marubozu', 'closingmarubozu', 'doji', 'gravestonedoji', 'longleggeddoji', 'rickshawman'
+        }
+        # Work on the last `limit` bars
+        try:
+            tail_n = max(1, int(limit))
+        except Exception:
+            tail_n = int(limit) if isinstance(limit, int) else 10
+        df_tail = df.iloc[-tail_n:]
+        temp_tail = temp.iloc[-tail_n:]
+        for i in range(len(temp_tail)):
+            # Gather all hits at this bar
+            hits: List[Tuple[str, float]] = []
             for col in pattern_cols:
                 try:
-                    val = temp.iloc[i][col]
+                    val = float(temp_tail.iloc[i][col])
                 except Exception:
                     continue
-                try:
-                    v = float(val)
-                except Exception:
-                    continue
-                if pd.isna(v) or v == 0:
-                    continue
-                direction = 'bullish' if v > 0 else 'bearish'
-                # Remove leading 'CDL_' or 'cdl_' prefix from pattern name
-                pat = col
-                if pat.lower().startswith('cdl_'):
-                    pat = pat[len('cdl_'):]
-                # Human-friendly label: "Bearish ENGULFING BEAR"
-                # Replace underscores with spaces and uppercase the pattern words
-                pat_human = pat.replace('_', ' ').strip()
-                if pat_human:
-                    pat_human = pat_human.upper()
-                dir_title = 'Bullish' if v > 0 else 'Bearish'
-                pattern_label = f"{dir_title} {pat_human}" if pat_human else dir_title
-                rows.append([t, pattern_label])
-
-        # Sort for stable output
-        try:
-            rows.sort(key=lambda r: (r[0], r[1]))
-        except Exception:
-            pass
+                if abs(val) >= (thr * 100.0):
+                    name = col
+                    if name.lower().startswith('cdl_'):
+                        name = name[len('cdl_'):]
+                    if (not robust_only) or (_norm_name(name) in _robust_whitelist):
+                        hits.append((name, val))
+            if not hits:
+                continue
+            # Respect minimal spacing across candles
+            if i - last_pick_idx < gap:
+                continue
+            # Prefer non-deprioritized patterns by absolute strength
+            non_dep = [(n, v) for (n, v) in hits if n.split('_')[0].lower() not in _deprioritize]
+            pool = non_dep if non_dep else hits
+            # Select up to top_k by absolute strength
+            try:
+                k = max(1, int(top_k))
+            except Exception:
+                k = 1
+            picks = sorted(pool, key=lambda x: abs(x[1]), reverse=True)[:k]
+            t_val = str(df_tail.iloc[i].get('time')) if 'time' in df_tail.columns else ''
+            for name, value in picks:
+                label_core = name.replace('_', ' ').strip().upper()
+                dir_title = 'Bullish' if value > 0 else 'Bearish'
+                rows.append([t_val, f"{dir_title} {label_core}" if label_core else dir_title])
+            last_pick_idx = i
 
         headers = ["time", "pattern"]
         payload = _csv_from_rows_util(headers, rows)

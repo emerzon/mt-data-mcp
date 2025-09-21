@@ -7,6 +7,7 @@ from ..forecast.forecast import forecast as _forecast_impl
 from ..forecast.backtest import forecast_backtest as _forecast_backtest_impl
 from ..forecast.volatility import forecast_volatility as _forecast_volatility_impl
 from ..forecast.forecast import get_forecast_methods_data as _get_forecast_methods_data
+from ..forecast.tune import genetic_search_forecast_params as _genetic_search_impl
 from ..forecast.common import fetch_history as _fetch_history, parse_kv_or_json as _parse_kv_or_json
 from ..forecast.monte_carlo import simulate_gbm_mc as _simulate_gbm_mc, simulate_hmm_mc as _simulate_hmm_mc, summarize_paths as _summarize_paths
 from ..forecast.monte_carlo import gbm_single_barrier_upcross_prob as _gbm_upcross_prob
@@ -33,7 +34,6 @@ def forecast_generate(
     dimred_method: Optional[str] = None,
     dimred_params: Optional[Dict[str, Any]] = None,
     target_spec: Optional[Dict[str, Any]] = None,
-    timezone: str = "auto",
 ) -> Dict[str, Any]:
     """Fast forecasts for the next `horizon` bars using lightweight methods.
 
@@ -55,7 +55,6 @@ def forecast_generate(
         dimred_method=dimred_method,
         dimred_params=dimred_params,
         target_spec=target_spec,
-        timezone=timezone,
     )
 
 
@@ -218,6 +217,66 @@ def forecast_conformal_intervals(
         return out
     except Exception as e:
         return {"error": f"Error computing conformal forecast: {str(e)}"}
+
+
+@mcp.tool()
+@_auto_connect_wrapper
+def forecast_tune_genetic(
+    symbol: str,
+    timeframe: TimeframeLiteral = "H1",
+    method: Optional[str] = "theta",
+    methods: Optional[List[str]] = None,
+    horizon: int = 12,
+    steps: int = 5,
+    spacing: int = 20,
+    search_space: Optional[Dict[str, Any]] = None,
+    metric: str = "avg_rmse",
+    mode: str = "min",
+    population: int = 12,
+    generations: int = 10,
+    crossover_rate: float = 0.6,
+    mutation_rate: float = 0.3,
+    seed: int = 42,
+    denoise: Optional[DenoiseSpec] = None,
+    features: Optional[Dict[str, Any]] = None,
+    dimred_method: Optional[str] = None,
+    dimred_params: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Genetic search over method params to optimize a backtest metric.
+
+    - search_space: dict or JSON like {param: {type, min, max, choices?, log?}}
+    - metric: e.g., 'avg_rmse', 'avg_mae', 'avg_directional_accuracy'
+    - mode: 'min' or 'max'
+    """
+    try:
+        ss = _parse_kv_or_json(search_space)
+        if not isinstance(ss, dict) or not ss:
+            # Build sensible defaults based on provided method(s)
+            from ..forecast.tune import default_search_space as _default_ss
+            ss = _default_ss(method=method, methods=methods)
+        return _genetic_search_impl(
+            symbol=symbol,
+            timeframe=timeframe,  # type: ignore[arg-type]
+            method=str(method) if method is not None else None,
+            methods=methods,
+            horizon=int(horizon),
+            steps=int(steps),
+            spacing=int(spacing),
+            search_space=ss,
+            metric=str(metric),
+            mode=str(mode),
+            population=int(population),
+            generations=int(generations),
+            crossover_rate=float(crossover_rate),
+            mutation_rate=float(mutation_rate),
+            seed=int(seed),
+            denoise=denoise,
+            features=features,
+            dimred_method=dimred_method,
+            dimred_params=dimred_params,
+        )
+    except Exception as e:
+        return {"error": f"Error in genetic tuning: {e}"}
 
 
 @mcp.tool()

@@ -1,13 +1,14 @@
 from typing import Any, Dict, Optional, List, Tuple
 from datetime import datetime
 import math
+import copy
 
 
 def now_utc_iso() -> str:
     try:
-        return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+        return datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     except Exception:
-        return str(datetime.utcnow())
+        return datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
 
 def parse_csv_tail(csv_header: Optional[str], csv_data: Optional[str], tail: int = 1) -> List[Dict[str, Any]]:
@@ -254,7 +255,7 @@ def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Option
             for tfp in pivot_timeframes:
                 res = _compute_pivot_points(symbol=symbol, timeframe=tfp)
                 if isinstance(res, dict) and not res.get('error'):
-                    pivs[str(tfp)] = {'levels': res.get('levels'), 'period': res.get('period')}
+                    pivs[str(tfp)] = {'levels': res.get('levels'), 'methods': res.get('methods'), 'period': res.get('period')}
         except Exception:
             pivs = {}
         if pivs:
@@ -262,246 +263,158 @@ def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Option
 
 
 def format_number(value: Any) -> str:
+    if value is None:
+        return 'null'
+    if isinstance(value, bool):
+        return '1' if value else '0'
     try:
         num = float(value)
     except (TypeError, ValueError):
         return str(value)
     if not math.isfinite(num):
         return str(value)
-    abs_num = abs(num)
-    if abs_num >= 1000:
-        return f"{num:,.2f}"
-    if abs_num >= 100:
-        return f"{num:,.2f}"
-    if abs_num >= 1:
-        return f"{num:.4f}"
-    return f"{num:.6f}"
+    precision = 6 if abs(num) >= 1 else 8
+    text = f"{num:.{precision}f}".rstrip('0').rstrip('.')
+    if text in ('', '-0'):
+        text = '0'
+    return text
 
-def render_markdown(report: Dict[str, Any]) -> str:
-    meta = report.get('meta', {}) if isinstance(report, dict) else {}
-    symbol = meta.get('symbol', '')
-    timeframe = meta.get('timeframe', '')
-    horizon = meta.get('horizon', '')
-    generated = meta.get('generated_at', '')
-    title = f"# Trade Report: {symbol} ({timeframe}) – horizon {horizon}"
-    lines: List[str] = [title.strip()]
-    if generated:
-        lines.append(f"_Generated at: {generated}_")
-    lines.append("")
 
-    summary = report.get('summary') if isinstance(report, dict) else None
-    if isinstance(summary, list) and summary:
-        lines.append("## Snapshot")
-        for item in summary:
-            lines.append(f"- {item}")
-        lines.append("")
+def _needs_yaml_quotes(text: str) -> bool:
+    if text == '':
+        return True
+    if text != text.strip():
+        return True
+    if text[0] in {'-', '?', ':', '#', '!', '*', '&', '%', '@', '`', '{', '}', '[', ']', ',', '|', '>'}:
+        return True
+    for ch in (':', ',', '#'):
+        if ch in text:
+            return True
+    return any(c in text for c in ('\n', '\r', '\t'))
 
-    sections = report.get('sections', {}) if isinstance(report, dict) else {}
 
-    # Context
-    ctx = sections.get('context') if isinstance(sections, dict) else None
-    if isinstance(ctx, dict):
-        last = ctx.get('last_snapshot') if isinstance(ctx.get('last_snapshot'), dict) else {}
-        notes = ctx.get('notes')
-        lines.append("## Market Context")
-        if last:
-            close = last.get('close')
-            ema20 = last.get('EMA_20') or last.get('ema_20')
-            ema50 = last.get('EMA_50') or last.get('ema_50')
-            rsi = last.get('RSI_14') or last.get('rsi_14')
-            macd = last.get('MACD') or last.get('macd')
-            if close is not None:
-                lines.append(f"- Close: `{format_number(close)}`")
-            if ema20 is not None or ema50 is not None:
-                lines.append(f"- EMAs: 20=`{format_number(ema20)}`  |  50=`{format_number(ema50)}`")
-            if rsi is not None:
-                lines.append(f"- RSI(14): `{format_number(rsi)}`")
-            if macd is not None:
-                lines.append(f"- MACD: `{format_number(macd)}`")
-        if notes:
-            lines.append(f"- {notes}")
-        lines.append("")
+def _escape_yaml_string(text: str) -> str:
+    escaped = text.replace('\\', '\\\\').replace('"', '\\"').replace('\r', ' ').replace('\n', ' ')
+    return escaped
 
-    # Pivot
-    pivot = sections.get('pivot') if isinstance(sections, dict) else None
-    if isinstance(pivot, dict) and not pivot.get('error'):
-        levels = pivot.get('levels', {})
-        lines.append("## Pivot Levels")
-        if isinstance(levels, dict) and levels:
-            for name, value in levels.items():
-                lines.append(f"- {name}: `{format_number(value)}`")
-        lines.append("")
 
-    # Higher‑TF pivots
-    piv_multi = sections.get('pivot_multi') if isinstance(sections, dict) else None
-    if isinstance(piv_multi, dict) and piv_multi:
-        lines.append("## Higher‑TF Pivots")
-        for tf, obj in piv_multi.items():
-            if not isinstance(obj, dict):
-                continue
-            lev = obj.get('levels') or {}
-            if isinstance(lev, dict) and lev:
-                lines.append(f"- {tf}:")
-                for name, value in lev.items():
-                    lines.append(f"  - {name}: `{format_number(value)}`")
-        lines.append("")
+def _compact_scalar(value: Any) -> str:
+    if value is None:
+        return 'null'
+    if isinstance(value, bool):
+        return 'true' if value else 'false'
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return format_number(value)
+    text = str(value)
+    if _needs_yaml_quotes(text):
+        return f'"{_escape_yaml_string(text)}"'
+    return text
 
-    # Volatility
-    vol = sections.get('volatility') if isinstance(sections, dict) else None
-    if isinstance(vol, dict) and not vol.get('error'):
-        lines.append("## Volatility (EWMA)")
-        sigma_price = vol.get('horizon_sigma_price')
-        sigma_ret = vol.get('horizon_sigma_return')
-        if sigma_price is not None:
-            lines.append(f"- Horizon σ (price): `{format_number(sigma_price)}`")
-        if sigma_ret is not None:
-            lines.append(f"- Horizon σ (return): `{format_number(sigma_ret)}`")
-        lines.append("")
 
-    # Advanced volatility
-    vol_har = sections.get('volatility_har_rv') if isinstance(sections, dict) else None
-    if isinstance(vol_har, dict) and not vol_har.get('error'):
-        lines.append("## Volatility (HAR-RV)")
-        sigma_ret = vol_har.get('horizon_sigma_return')
-        if sigma_ret is not None:
-            lines.append(f"- Horizon σ (return): `{format_number(sigma_ret)}`")
-        lines.append("")
-
-    # Backtest summary
-    backtest = sections.get('backtest') if isinstance(sections, dict) else None
-    if isinstance(backtest, dict):
-        lines.append("## Backtest Overview")
-        if backtest.get('error'):
-            lines.append(f"- Error: {backtest.get('error')}")
-        else:
-            best = backtest.get('best_method', {})
-            if isinstance(best, dict) and best:
-                stats = best.get('stats', {}) if isinstance(best.get('stats'), dict) else {}
-                da = stats.get('avg_directional_accuracy')
-                lines.append(f"- Best method: **{best.get('method')}**")
-                if stats:
-                    lines.append(f"  - RMSE: `{format_number(stats.get('avg_rmse'))}`; MAE: `{format_number(stats.get('avg_mae'))}`; DirAcc: `{format_number(da)}`")
-            ranking = backtest.get('ranking') if isinstance(backtest.get('ranking'), list) else []
-            if ranking:
-                lines.append("- Top methods:")
-                for entry in ranking:
-                    if not isinstance(entry, dict):
-                        continue
-                    lines.append(
-                        f"  - {entry.get('method')}: RMSE=`{format_number(entry.get('avg_rmse'))}` | DirAcc=`{format_number(entry.get('avg_directional_accuracy'))}`"
-                    )
-        lines.append("")
-
-    # Forecast
-    forecast = sections.get('forecast') if isinstance(sections, dict) else None
-    if isinstance(forecast, dict):
-        lines.append("## Forecast")
-        if forecast.get('error'):
-            lines.append(f"- Error: {forecast.get('error')}")
-        else:
-            lines.append(f"- Method: **{forecast.get('method')}**")
-            fp = forecast.get('forecast_price') or []
-            if isinstance(fp, list) and fp:
-                lines.append(f"- First horizon value: `{format_number(fp[0])}`")
-                lines.append(f"- Last horizon value: `{format_number(fp[-1])}`")
-            lower = forecast.get('lower_price')
-            upper = forecast.get('upper_price')
-            if isinstance(lower, list) and isinstance(upper, list) and lower and upper:
-                lines.append(f"- Confidence band (t0): `{format_number(lower[0])}` – `{format_number(upper[0])}`")
-        lines.append("")
-
-    # Conformal (advanced)
-    conf = sections.get('forecast_conformal') if isinstance(sections, dict) else None
-    if isinstance(conf, dict) and not conf.get('error'):
-        lines.append("## Conformal Intervals")
-        lines.append(f"- Method: **{conf.get('method')}** (α={conf.get('alpha')})")
-        low = conf.get('lower_price')
-        up = conf.get('upper_price')
-        if isinstance(low, list) and isinstance(up, list) and low and up:
-            lines.append(f"- Band (t0): `{format_number(low[0])}` – `{format_number(up[0])}`")
-        lines.append("")
-
-    # Barrier optimization
-    barriers = sections.get('barriers') if isinstance(sections, dict) else None
-    if isinstance(barriers, dict) and not barriers.get('error'):
-        lines.append("## Barrier Optimization")
-        best = barriers.get('best') if isinstance(barriers.get('best'), dict) else None
-        if best:
-            lines.append(
-                f"- Best edge: TP={format_number(best.get('tp'))}% | SL={format_number(best.get('sl'))}% | Edge=`{format_number(best.get('edge'))}` | Kelly=`{format_number(best.get('kelly'))}`"
-            )
-        top = barriers.get('top') if isinstance(barriers.get('top'), list) else []
-        if top:
-            lines.append("- Top combos:")
-            for entry in top:
-                if not isinstance(entry, dict):
-                    continue
-                lines.append(
-                    f"  - TP={format_number(entry.get('tp'))}% | SL={format_number(entry.get('sl'))}% | Edge=`{format_number(entry.get('edge'))}`"
-                )
-        lines.append("")
-
-    # Patterns
-    patterns = sections.get('patterns') if isinstance(sections, dict) else None
-    if isinstance(patterns, dict) and not patterns.get('error'):
-        recent = patterns.get('recent') if isinstance(patterns.get('recent'), list) else []
-        if recent:
-            lines.append("## Recent Candlestick Patterns")
-            for row in recent:
-                if not isinstance(row, dict):
-                    continue
-                lines.append(f"- {row.get('time', 'time')} → {row.get('pattern', 'pattern')}")
-            lines.append("")
-
-    # Execution & Market
-    market = sections.get('market') if isinstance(sections, dict) else None
-    gates = sections.get('execution_gates') if isinstance(sections, dict) else None
-    if isinstance(market, dict) or isinstance(gates, dict):
-        lines.append("## Execution & Market")
-        if isinstance(market, dict):
-            bid = market.get('bid'); ask = market.get('ask')
-            sp = market.get('spread'); spp = market.get('spread_pips')
-            if bid is not None and ask is not None:
-                lines.append(f"- Bid/Ask: `{format_number(bid)}` / `{format_number(ask)}`")
-            if sp is not None:
-                lines.append(f"- Spread: `{format_number(sp)}` ({format_number(spp)} pips)")
-            tb = market.get('dom_top_buy_vol'); ts = market.get('dom_top_sell_vol')
-            if tb is not None or ts is not None:
-                lines.append(f"- DOM top vol: buy=`{format_number(tb)}` | sell=`{format_number(ts)}`")
-        if isinstance(gates, dict) and gates:
-            ok = gates.get('spread_ok')
-            if ok is not None:
-                status = "OK" if ok else "BLOCKED"
-                lines.append(f"- Spread gate: {status} (spread={format_number(gates.get('spread_pips'))} pips; max={format_number(gates.get('spread_max_pips'))} pips)")
-        lines.append("")
-
-    # Regime (advanced)
-    regime = sections.get('regime') if isinstance(sections, dict) else None
-    if isinstance(regime, dict):
-        lines.append("## Regime Signals")
-        for key, block in regime.items():
-            if not isinstance(block, dict):
-                continue
-            if block.get('error'):
-                lines.append(f"- {key}: {block.get('error')}")
+def _compact_yaml(value: Any, indent: int = 0) -> str:
+    prefix = '  ' * indent
+    if isinstance(value, dict):
+        if not value:
+            return f"{prefix}{{}}"
+        lines: List[str] = []
+        for key, val in value.items():
+            key_str = str(key)
+            if isinstance(val, (dict, list)):
+                lines.append(f"{prefix}{key_str}:")
+                lines.append(_compact_yaml(val, indent + 1))
             else:
-                summary = block.get('summary')
-                if isinstance(summary, dict):
-                    for sk, sv in summary.items():
-                        lines.append(f"- {key} {sk}: {sv}")
-        lines.append("")
+                lines.append(f"{prefix}{key_str}: {_compact_scalar(val)}")
+        return "\n".join(lines)
+    if isinstance(value, list):
+        if not value:
+            return f"{prefix}[]"
+        lines: List[str] = []
+        for item in value:
+            if isinstance(item, (dict, list)):
+                lines.append(f"{prefix}-")
+                lines.append(_compact_yaml(item, indent + 1))
+            else:
+                lines.append(f"{prefix}- {_compact_scalar(item)}")
+        return "\n".join(lines)
+    return f"{prefix}{_compact_scalar(value)}"
 
-    # Multi‑TF Context
-    ctx_multi = sections.get('contexts_multi') if isinstance(sections, dict) else None
-    if isinstance(ctx_multi, dict) and ctx_multi:
-        lines.append("## Multi‑Timeframe Context")
-        for tf, snap in ctx_multi.items():
-            if not isinstance(snap, dict):
-                continue
-            close = snap.get('close'); e20 = snap.get('EMA_20'); e50 = snap.get('EMA_50'); rsi = snap.get('RSI_14')
-            lines.append(
-                f"- {tf}: Close=`{format_number(close)}` | EMA20=`{format_number(e20)}` | EMA50=`{format_number(e50)}` | RSI=`{format_number(rsi)}`"
-            )
-        lines.append("")
 
-    return "\n".join(lines).strip() + "\n"
+def _compact_csv_value(value: Any) -> str:
+    if value is None:
+        return ''
+    if isinstance(value, bool):
+        text = 'true' if value else 'false'
+    elif isinstance(value, (int, float)) and not isinstance(value, bool):
+        text = format_number(value)
+    else:
+        text = str(value)
+    text = text.replace('\r', ' ').replace('\n', ' ')
+    if any(ch in text for ch in (',', '"')):
+        text = '"' + text.replace('"', '""') + '"'
+    return text
+
+
+def _register_table(rows: List[Dict[str, Any]], path: str, tables: Dict[str, str], counters: Dict[str, int]) -> str:
+    keys: List[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for key in row.keys():
+            if key not in keys:
+                keys.append(str(key))
+    if not keys:
+        return ''
+    csv_lines = [','.join(keys)]
+    for row in rows:
+        csv_lines.append(','.join(_compact_csv_value(row.get(k)) for k in keys))
+    base = path.lower().replace('.', '_').replace('[', '_').replace(']', '')
+    base = ''.join(ch for ch in base if ch.isalnum() or ch == '_') or 'table'
+    idx = counters.get(base, 0)
+    counters[base] = idx + 1
+    name = base if idx == 0 else f"{base}_{idx}"
+    tables[name] = '\n'.join(csv_lines)
+    return f"{name}_csv"
+
+
+def _extract_tables(value: Any, path: str, tables: Dict[str, str], counters: Dict[str, int]):
+    if isinstance(value, dict):
+        return {k: _extract_tables(v, f"{path}.{k}", tables, counters) for k, v in value.items()}
+    if isinstance(value, list):
+        if value and all(isinstance(item, dict) for item in value):
+            marker = _register_table(value, path, tables, counters)
+            return marker or []
+        return [_extract_tables(item, f"{path}[{idx}]", tables, counters) for idx, item in enumerate(value)]
+    return value
+
+
+def render_compact_report(report: Dict[str, Any]) -> str:
+    if not isinstance(report, dict):
+        return 'error: invalid report payload\n'
+    tables: Dict[str, str] = {}
+    counters: Dict[str, int] = {}
+    sanitized = copy.deepcopy(report)
+    summary_raw = sanitized.get('summary') if isinstance(sanitized.get('summary'), list) else []
+    summary_lines = [str(item).strip() for item in summary_raw if str(item).strip()]
+    sanitized['summary'] = summary_lines
+    transformed = _extract_tables(sanitized, 'report', tables, counters)
+    yaml_body = _compact_yaml(transformed)
+    output_lines: List[str] = []
+    if summary_lines:
+        output_lines.append('summary')
+        output_lines.extend(summary_lines)
+    if tables:
+        if output_lines:
+            output_lines.append('')
+        output_lines.append('tables')
+        for name, csv_text in tables.items():
+            output_lines.append(name)
+            output_lines.extend(csv_text.splitlines())
+    if yaml_body:
+        if output_lines:
+            output_lines.append('')
+        output_lines.append('yaml')
+        output_lines.extend(yaml_body.splitlines())
+    if not output_lines:
+        return 'yaml\n' + (yaml_body or '') + ('\n' if yaml_body and not yaml_body.endswith('\n') else '')
+    text = '\n'.join(output_lines).rstrip()
+    return text + '\n'
