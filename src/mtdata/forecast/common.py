@@ -163,14 +163,39 @@ def nf_setup_and_predict(
     accel = 'cpu'
     try:
         import torch as _torch  # type: ignore
-        accel = 'gpu' if hasattr(_torch, 'cuda') and _torch.cuda.is_available() else 'cpu'
+        # Prefer GPU if available unless explicitly disabled or on Windows without override
+        accel_env = os.environ.get('MTDATA_NF_ACCEL')
+        import platform as _platform
+        is_windows = (_platform.system().lower().startswith('win'))
+        if isinstance(accel_env, str):
+            accel = 'gpu' if accel_env.strip().lower() == 'gpu' else 'cpu'
+        else:
+            accel = 'gpu' if hasattr(_torch, 'cuda') and _torch.cuda.is_available() and (not is_windows) else 'cpu'
+        # Hint to PyTorch for Tensor Cores if using GPU
         try:
             if accel == 'gpu' and hasattr(_torch, 'set_float32_matmul_precision'):
-                _torch.set_float32_matmul_precision('medium')  # type: ignore[attr-defined]
+                _torch.set_float32_matmul_precision('high')  # type: ignore[attr-defined]
         except Exception:
             pass
     except Exception:
         accel = 'cpu'
+    # Sanitize cluster/distributed env before Lightning inspects it
+    for _var in (
+        'KUBERNETES_SERVICE_HOST', 'KUBERNETES_SERVICE_PORT',
+        'GROUP_RANK', 'NODE_RANK', 'LOCAL_RANK', 'RANK', 'WORLD_SIZE',
+        'GLOBAL_RANK', 'MASTER_ADDR', 'MASTER_PORT',
+        'LT_CLOUD_PROVIDER', 'LT_CLUSTER', 'TORCHELASTIC_RUN_ID',
+        'ETCD_HOST', 'ETCD_PORT'
+    ):
+        if _var in os.environ:
+            os.environ.pop(_var, None)
+    # Force single-process Torch Distributed defaults
+    os.environ['PL_TORCH_DISTRIBUTED_BACKEND'] = 'gloo'
+    os.environ['WORLD_SIZE'] = '1'
+    os.environ['RANK'] = '0'
+    os.environ['LOCAL_RANK'] = '0'
+    os.environ.setdefault('MASTER_ADDR', '127.0.0.1')
+    os.environ.setdefault('MASTER_PORT', '29501')
     if 'trainer_kwargs' in _nf_init_params:
         base_trainer: Dict[str, Any] = {'accelerator': accel, 'devices': 1, 'strategy': 'single_device'}
         cand_opts = {
@@ -190,6 +215,12 @@ def nf_setup_and_predict(
             for k, v in list(cand_opts.items()):
                 if k in _tparams:
                     base_trainer[k] = v
+            # Additionally pass a concrete Trainer to force single-process behavior
+            try:
+                trainer_obj = _Trainer(**base_trainer)  # type: ignore[call-arg]
+                nf_kwargs['trainer'] = trainer_obj
+            except Exception:
+                pass
         except Exception:
             base_trainer.update(cand_opts)
         trainer_kwargs = base_trainer
@@ -209,6 +240,7 @@ def nf_setup_and_predict(
         pass
     if 'num_workers_loader' in _nf_init_params:
         nf_kwargs['num_workers_loader'] = 0
+
 
     nf = _NeuralForecast(**nf_kwargs)
     with warnings.catch_warnings():
@@ -251,6 +283,20 @@ def nf_setup_and_predict(
                 Yf = nf.predict(h=int(fh))  # type: ignore
             else:
                 Yf = nf.predict()  # type: ignore
+    # Ensure cleanup of any distributed process groups and GPU memory
+    try:
+        import torch.distributed as _dist  # type: ignore
+        if _dist.is_available() and _dist.is_initialized():
+            _dist.destroy_process_group()
+    except Exception:
+        pass
+    try:
+        import torch as _torch  # type: ignore
+        if hasattr(_torch, 'cuda') and _torch.cuda.is_available():
+            _torch.cuda.synchronize()
+            _torch.cuda.empty_cache()
+    except Exception:
+        pass
     return Yf
 
 
@@ -311,3 +357,6 @@ def fetch_history(
     if as_of is None and drop_last_live and len(df) >= 2:
         df = df.iloc[:-1]
     return df.reset_index(drop=True)
+
+
+

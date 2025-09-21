@@ -25,6 +25,24 @@ from .common import (
     parse_kv_or_json as _parse_kv_or_json,
     fetch_history as _fetch_history,
 )
+from .methods.transformers import (
+    forecast_chronos_bolt as _chronos_bolt_impl,
+    forecast_timesfm as _timesfm_impl,
+)
+from .methods.classical import (
+    forecast_naive as _naive_impl,
+    forecast_drift as _drift_impl,
+    forecast_seasonal_naive as _snaive_impl,
+    forecast_theta as _theta_impl,
+    forecast_fourier_ols as _fourier_impl,
+)
+from .methods.ets_arima import (
+    forecast_ses as _ses_impl,
+    forecast_holt as _holt_impl,
+    forecast_holt_winters as _hw_impl,
+    forecast_sarimax as _sarimax_impl,
+)
+from .methods.neural import forecast_neural as _neural_impl
 
 # Local fallbacks for typing aliases used in signatures (avoid import cycle)
 try:
@@ -69,7 +87,8 @@ except Exception:
     _LGB_AVAILABLE = False
 try:
     import importlib.util as _importlib_util5  # type: ignore
-    _CHRONOS_AVAILABLE = (_importlib_util5.find_spec("chronos") is not None) or (_importlib_util5.find_spec("transformers") is not None)
+    # Chronos available only when native package is installed
+    _CHRONOS_AVAILABLE = (_importlib_util5.find_spec("chronos") is not None)
 except Exception:
     _CHRONOS_AVAILABLE = False
 try:
@@ -183,7 +202,7 @@ def get_forecast_methods_data() -> Dict[str, Any]:
     add("sf_seasonalnaive", "StatsForecast SeasonalNaive.", [], ["statsforecast"], {"price": True, "return": True, "ci": False})
     add("mlf_rf", "MLForecast RandomForest.", [], ["mlforecast", "scikit-learn"], {"price": True, "return": True, "ci": False})
     add("mlf_lightgbm", "MLForecast LightGBM.", [], ["mlforecast", "lightgbm"], {"price": True, "return": True, "ci": False})
-    add("chronos_bolt", "Amazon Chronos-Bolt via Transformers.", [], ["chronos", "transformers"], {"price": True, "return": True, "ci": False})
+    add("chronos_bolt", "Amazon Chronos-Bolt (Chronos package).", [], ["chronos"], {"price": True, "return": True, "ci": False})
     add("timesfm", "Google TimesFM (install from source).", [], ["timesfm"], {"price": True, "return": True, "ci": False})
     add("lag_llama", "Lag-Llama via Transformers.", [], ["lag_llama", "transformers"], {"price": True, "return": True, "ci": False})
     add("ensemble", "Hybrid ensemble (not implemented).", [], ["not implemented"], {"price": True, "return": True, "ci": False})
@@ -814,201 +833,66 @@ def forecast(
         params_used: Dict[str, Any] = {}
 
         if method_l == 'naive':
-            last_val = float(series[-1])
-            f_vals[:] = last_val
-            params_used = {}
+            f_vals, params_used = _naive_impl(series, fh)
 
         elif method_l == 'drift':
-            # Classic drift: y_{T+h} = y_T + h*(y_T - y_1)/(T-1)
-            slope = (float(series[-1]) - float(series[0])) / float(max(1, n - 1))
-            f_vals = float(series[-1]) + slope * np.arange(1, fh + 1, dtype=float)
-            params_used = {"slope": slope}
+            f_vals, params_used = _drift_impl(series, fh, n)
 
         elif method_l == 'seasonal_naive':
             m_eff = int(p.get('seasonality', m) or m)
-            if m_eff <= 0 or n < m_eff:
+            try:
+                f_vals, params_used = _snaive_impl(series, fh, m_eff)
+            except Exception:
                 return {"error": f"Insufficient data for seasonal_naive (m={m_eff})"}
-            last_season = series[-m_eff:]
-            reps = int(np.ceil(fh / float(m_eff)))
-            f_vals = np.tile(last_season, reps)[:fh]
-            params_used = {"m": m_eff}
 
         elif method_l == 'theta':
-            # Combine linear trend extrapolation with simple exponential smoothing (fast, fixed alpha)
             alpha = float(p.get('alpha', 0.2))
-            # Linear trend via least squares on original series index
-            tt = np.arange(1, n + 1, dtype=float)
-            A = np.vstack([np.ones(n), tt]).T
-            coef, _, _, _ = np.linalg.lstsq(A, series, rcond=None)
-            a, b = float(coef[0]), float(coef[1])
-            trend_future = a + b * (tt[-1] + np.arange(1, fh + 1, dtype=float))
-            # SES on series
-            level = float(series[0])
-            for v in series[1:]:
-                level = alpha * float(v) + (1.0 - alpha) * level
-            ses_future = np.full(fh, level, dtype=float)
-            f_vals = 0.5 * (trend_future + ses_future)
-            params_used = {"alpha": alpha, "trend_slope": b}
+            f_vals, params_used = _theta_impl(series, fh, alpha)
 
         elif method_l == 'fourier_ols':
             m_eff = int(p.get('seasonality', m) or m)
-            K = int(p.get('K', min(3, max(1, (m_eff // 2) if m_eff else 2))))
+            K = p.get('K', None)
             use_trend = bool(p.get('trend', True))
-            tt = np.arange(1, n + 1, dtype=float)
-            X_list = [np.ones(n)]
-            if use_trend:
-                X_list.append(tt)
-            for k in range(1, K + 1):
-                w = 2.0 * math.pi * k / float(m_eff if m_eff else max(2, n))
-                X_list.append(np.sin(w * tt))
-                X_list.append(np.cos(w * tt))
-            X = np.vstack(X_list).T
-            coef, _, _, _ = np.linalg.lstsq(X, series, rcond=None)
-            # Future design
-            tt_f = tt[-1] + np.arange(1, fh + 1, dtype=float)
-            Xf_list = [np.ones(fh)]
-            if use_trend:
-                Xf_list.append(tt_f)
-            for k in range(1, K + 1):
-                w = 2.0 * math.pi * k / float(m_eff if m_eff else max(2, n))
-                Xf_list.append(np.sin(w * tt_f))
-                Xf_list.append(np.cos(w * tt_f))
-            Xf = np.vstack(Xf_list).T
-            f_vals = Xf @ coef
-            params_used = {"m": m_eff, "K": K, "trend": use_trend}
+            f_vals, params_used = _fourier_impl(series, fh, m_eff, None if K is None else int(K), use_trend)
 
         elif method_l == 'ses':
-            if not _SM_ETS_AVAILABLE:
-                return {"error": "SES requires statsmodels. Please install 'statsmodels'."}
-            alpha = p.get('alpha')
             try:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    if alpha is None:
-                        res = _SES(series, initialization_method='heuristic').fit(optimized=True)
-                    else:
-                        res = _SES(series, initialization_method='heuristic').fit(smoothing_level=float(alpha), optimized=False)
-                f_vals = res.forecast(fh)
-                f_vals = np.asarray(f_vals, dtype=float)
-                try:
-                    model_fitted = np.asarray(res.fittedvalues, dtype=float)
-                except Exception:
-                    model_fitted = None
-                alpha_used = None
-                try:
-                    par = getattr(res, 'params', None)
-                    if par is not None:
-                        # pandas Series or dict-like
-                        if hasattr(par, 'get'):
-                            val = par.get('smoothing_level', None)
-                            if val is None:
-                                # fall back to first element if available
-                                try:
-                                    val = float(par.iloc[0]) if hasattr(par, 'iloc') else float(par[0])
-                                except Exception:
-                                    val = None
-                            alpha_used = val
-                        else:
-                            # array-like
-                            try:
-                                alpha_used = float(par[0]) if len(par) > 0 else None
-                            except Exception:
-                                alpha_used = None
-                    if alpha_used is None:
-                        mv = getattr(res.model, 'smoothing_level', None)
-                        alpha_used = mv if mv is not None else alpha
-                except Exception:
-                    alpha_used = alpha
-                params_used = {"alpha": _to_float_or_nan(alpha_used)}
+                alpha = p.get('alpha')
+                f_vals, params_used, model_fitted = _ses_impl(series, fh, alpha)
             except Exception as ex:
                 return {"error": f"SES fitting error: {ex}"}
 
         elif method_l == 'holt':
-            if not _SM_ETS_AVAILABLE:
-                return {"error": "Holt requires statsmodels. Please install 'statsmodels'."}
-            damped = bool(p.get('damped', True))
             try:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    model = _ETS(series, trend='add', damped_trend=damped, initialization_method='heuristic')
-                    res = model.fit(optimized=True)
-                f_vals = res.forecast(fh)
-                f_vals = np.asarray(f_vals, dtype=float)
-                try:
-                    model_fitted = np.asarray(res.fittedvalues, dtype=float)
-                except Exception:
-                    model_fitted = None
-                params_used = {"damped": damped}
+                damped = bool(p.get('damped', True))
+                f_vals, params_used, model_fitted = _holt_impl(series, fh, damped)
             except Exception as ex:
                 return {"error": f"Holt fitting error: {ex}"}
 
         elif method_l in ('holt_winters_add', 'holt_winters_mul'):
-            if not _SM_ETS_AVAILABLE:
-                return {"error": "Holt-Winters requires statsmodels. Please install 'statsmodels'."}
-            m_eff = int(p.get('seasonality', m) or m)
-            if m_eff <= 0:
-                return {"error": "Holt-Winters requires a positive seasonality_period"}
-            seasonal = 'add' if method_l == 'holt_winters_add' else 'mul'
             try:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    model = _ETS(series, trend='add', seasonal=seasonal, seasonal_periods=m_eff, initialization_method='heuristic')
-                    res = model.fit(optimized=True)
-                f_vals = res.forecast(fh)
-                f_vals = np.asarray(f_vals, dtype=float)
-                try:
-                    model_fitted = np.asarray(res.fittedvalues, dtype=float)
-                except Exception:
-                    model_fitted = None
-                params_used = {"seasonal": seasonal, "m": m_eff}
+                m_eff = int(p.get('seasonality', m) or m)
+                seasonal = 'add' if method_l == 'holt_winters_add' else 'mul'
+                f_vals, params_used, model_fitted = _hw_impl(series, fh, m_eff, seasonal)
             except Exception as ex:
                 return {"error": f"Holt-Winters fitting error: {ex}"}
 
         elif method_l in ('arima', 'sarima'):
-            if not _SM_SARIMAX_AVAILABLE:
-                return {"error": "ARIMA/SARIMA require statsmodels. Please install 'statsmodels'."}
-            # Defaults: price: d=1, returns: d=0
-            d_default = 0 if use_returns else 1
-            p_ord = int(p.get('p', 1)); d_ord = int(p.get('d', d_default)); q_ord = int(p.get('q', 1))
-            if method_l == 'sarima':
-                m_eff = int(p.get('seasonality', m) or m)
-                P = int(p.get('P', 0)); D = int(p.get('D', 1 if not use_returns else 0)); Q = int(p.get('Q', 0))
-                # SARIMAX requires seasonal period >= 2; fall back to non-seasonal if < 2
-                if m_eff is None or m_eff < 2:
-                    seas = (0, 0, 0, 0)
-                else:
-                    seas = (P, D, Q, int(m_eff))
-            else:
-                seas = (0, 0, 0, 0)
-            trend = str(p.get('trend', 'c'))  # 'n' or 'c'
             try:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    endog = pd.Series(series.astype(float))
-                    model = _SARIMAX(
-                        endog,
-                        order=(p_ord, d_ord, q_ord),
-                        seasonal_order=seas,
-                        trend=trend,
-                        enforce_stationarity=True,
-                        enforce_invertibility=True,
-                        exog=exog_used if exog_used is not None else None,
-                    )
-                    res = model.fit(method='lbfgs', disp=False, maxiter=100)
-                    if exog_future is not None:
-                        pred = res.get_forecast(steps=fh, exog=exog_future)
-                    else:
-                        pred = res.get_forecast(steps=fh)
-                f_vals = pred.predicted_mean.to_numpy()
-                ci = None
-                try:
-                    # Use configured CI alpha if provided; default to 0.05
-                    _alpha = float(ci_alpha) if ci_alpha is not None else 0.05
-                    ci_df = pred.conf_int(alpha=_alpha)
-                    ci = (ci_df.iloc[:, 0].to_numpy(), ci_df.iloc[:, 1].to_numpy())
-                except Exception:
-                    ci = None
-                params_used = {"order": (p_ord, d_ord, q_ord), "seasonal_order": seas if method_l=='sarima' else (0,0,0,0), "trend": trend}
+                d_default = 0 if use_returns else 1
+                p_ord = int(p.get('p', 1)); d_ord = int(p.get('d', d_default)); q_ord = int(p.get('q', 1))
+                if method_l == 'sarima':
+                    m_eff = int(p.get('seasonality', m) or m)
+                    P = int(p.get('P', 0)); D = int(p.get('D', 1 if not use_returns else 0)); Q = int(p.get('Q', 0))
+                    seas = (P, D, Q, int(m_eff)) if (m_eff and m_eff >= 2) else (0, 0, 0, 0)
+                else:
+                    seas = (0, 0, 0, 0)
+                trend = str(p.get('trend', 'c'))
+                f_vals, params_used, ci = _sarimax_impl(
+                    series, fh, (p_ord, d_ord, q_ord), seas, trend,
+                    exog_used=exog_used, exog_future=exog_future, ci_alpha=ci_alpha
+                )
+                # carry exog info in params_used
                 if exog_used is not None:
                     params_used["exog_features"] = {"n_features": int(exog_used.shape[1]), **feat_info}
                 if ci is not None:
@@ -1086,114 +970,28 @@ def forecast(
                 return {"error": f"HMM Monte Carlo error: {ex}"}
 
         elif method_l in ('nhits', 'nbeatsx', 'tft', 'patchtst'):
-            # Deep learning via Nixtla NeuralForecast (optional dependency)
             if not _NF_AVAILABLE:
                 return {"error": f"{method_l.upper()} requires 'neuralforecast' (and PyTorch). Install: pip install neuralforecast[torch]"}
             try:
-                from neuralforecast import NeuralForecast as _NeuralForecast  # type: ignore
-                # Try to import model classes individually; some may be missing depending on version
-                try:
-                    from neuralforecast.models import NHITS as _NF_NHITS  # type: ignore
-                except Exception:
-                    _NF_NHITS = None  # type: ignore
-                try:
-                    from neuralforecast.models import NBEATSx as _NF_NBEATSX  # type: ignore
-                except Exception:
-                    _NF_NBEATSX = None  # type: ignore
-                try:
-                    from neuralforecast.models import TFT as _NF_TFT  # type: ignore
-                except Exception:
-                    _NF_TFT = None  # type: ignore
-                try:
-                    from neuralforecast.models import PatchTST as _NF_PATCHTST  # type: ignore
-                except Exception:
-                    _NF_PATCHTST = None  # type: ignore
                 import pandas as _pd
-            except Exception as ex:
-                return {"error": f"Failed to import neuralforecast: {ex}"}
-
-            # Resolve model class based on method
-            model_class = None
-            if method_l == 'nhits':
-                model_class = _NF_NHITS
-            elif method_l == 'nbeatsx':
-                model_class = _NF_NBEATSX
-            elif method_l == 'tft':
-                model_class = _NF_TFT
-            elif method_l == 'patchtst':
-                model_class = _NF_PATCHTST
-            if model_class is None:
-                return {"error": f"Model '{method_l}' not available in installed neuralforecast version"}
-
-            # Training setup
-            max_epochs = int(p.get('max_epochs', 50))
-            batch_size = int(p.get('batch_size', 32))
-            lr = p.get('learning_rate', None)
-            # Choose input_size: prefer user param; else modest window leveraging seasonality if known
-            h = int(fh)
-            if p.get('input_size') is not None:
-                requested = int(p['input_size'])
-                # Cap input to available length so we have at least some windows; prefer n - h when possible
-                if n > h:
-                    max_input = max(8, n - h)
-                    input_size = int(min(requested, max_input))
-                else:
-                    input_size = int(max(2, min(requested, n)))
-            else:
-                base = max(64, (m * 3) if m and m > 0 else 96)
-                input_size = int(min(n, base))
-            # Build single-series training dataframe
-            try:
-                # Align timestamps to target series length (returns drop first bar)
                 if use_returns:
                     ts_train = _pd.to_datetime(df['time'].iloc[1:].astype(float), unit='s', utc=True)
                 else:
                     ts_train = _pd.to_datetime(df['time'].astype(float), unit='s', utc=True)
-                Y_df = _pd.DataFrame({
-                    'unique_id': ['ts'] * int(len(series)),
-                    'ds': _pd.Index(ts_train).to_pydatetime(),
-                    'y': series.astype(float),
-                })
-            except Exception as ex:
-                return {"error": f"Failed to build training frame for {method_l.upper()}: {ex}"}
-
-            # Build model kwargs with compatibility across NF versions (max_steps vs max_epochs)
-            steps = int(p.get('max_steps', p.get('max_epochs', 50)))
-            try:
-                from .common import nf_setup_and_predict as _nf_setup_and_predict
-                Yf = _nf_setup_and_predict(
-                    model_class=model_class,
+                Y_df = _pd.DataFrame({'unique_id': ['ts'] * int(len(series)), 'ds': _pd.Index(ts_train).to_pydatetime(), 'y': series.astype(float)})
+                f_vals, params_used = _neural_impl(
+                    method=method_l,
+                    series=series,
                     fh=int(fh),
                     timeframe=timeframe,
+                    n=int(n),
+                    m=int(m or 0),
+                    params=p,
                     Y_df=Y_df,
-                    input_size=int(input_size),
-                    batch_size=int(batch_size),
-                    steps=int(steps),
-                    learning_rate=float(lr) if lr is not None else None,
                     exog_used=exog_used,
                     exog_future=exog_future,
                     future_times=future_times,
                 )
-                try:
-                    Yf = Yf[Yf['unique_id'] == 'ts']
-                except Exception:
-                    pass
-                # Prefer standard 'y_hat' if present; else first non-meta column
-                pred_col = None
-                for c in list(Yf.columns):
-                    if c not in ('unique_id', 'ds', 'y'):
-                        pred_col = c
-                        if c == 'y_hat':
-                            break
-                if pred_col is None:
-                    return {"error": f"{method_l.upper()} prediction columns not found"}
-                vals = np.asarray(Yf[pred_col].to_numpy(), dtype=float)
-                f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
-                params_used = {
-                    'max_epochs': int(max_epochs),
-                    'input_size': int(input_size),
-                    'batch_size': int(batch_size),
-                }
             except Exception as ex:
                 return {"error": f"{method_l.upper()} fitting/prediction error: {ex}"}
 
@@ -1201,95 +999,22 @@ def forecast(
             if not _SF_AVAILABLE:
                 return {"error": f"{method_l} requires 'statsforecast'. Install: pip install statsforecast"}
             try:
-                from statsforecast import StatsForecast as _StatsForecast  # type: ignore
-                from statsforecast.models import AutoARIMA as _SF_AutoARIMA, Theta as _SF_Theta, AutoETS as _SF_AutoETS, SeasonalNaive as _SF_SeasonalNaive  # type: ignore
-                import pandas as _pd
+                f_vals, params_used = _sf_impl(
+                    method=method_l,
+                    series=series,
+                    fh=int(fh),
+                    timeframe=timeframe,
+                    m_eff=int(p.get('seasonality', m) or m),
+                    exog_used=exog_used,
+                    exog_future=exog_future,
+                    future_times=future_times,
+                )
             except Exception as ex:
-                return {"error": f"Failed to import statsforecast: {ex}"}
-            # Build training frame
-            try:
-                if use_returns:
-                    ts_train = _pd.to_datetime(df['time'].iloc[1:].astype(float), unit='s', utc=True)
-                else:
-                    ts_train = _pd.to_datetime(df['time'].astype(float), unit='s', utc=True)
-                Y_df = _pd.DataFrame({
-                    'unique_id': ['ts'] * int(len(series)),
-                    'ds': _pd.Index(ts_train).to_pydatetime(),
-                    'y': series.astype(float),
-                })
-                # Optional exogenous covariates
-                X_df = None
-                Xf_df = None
-                if exog_used is not None and isinstance(exog_used, np.ndarray) and exog_used.size:
-                    cols = [f'x{i}' for i in range(exog_used.shape[1])]
-                    X_df = _pd.DataFrame({'unique_id': ['ts'] * int(len(series)), 'ds': _pd.Index(ts_train).to_pydatetime()})
-                    for j, cname in enumerate(cols):
-                        X_df[cname] = exog_used[:, j]
-                    # Future exog
-                    if exog_future is not None and isinstance(exog_future, np.ndarray) and exog_future.size:
-                        ds_f = _pd.to_datetime(_pd.Series(future_times), unit='s', utc=True)
-                        Xf_df = _pd.DataFrame({'unique_id': ['ts'] * int(len(ds_f)), 'ds': _pd.Index(ds_f).to_pydatetime()})
-                        for j, cname in enumerate(cols):
-                            Xf_df[cname] = exog_future[:, j]
-            except Exception as ex:
-                return {"error": f"Failed to build training frame for {method_l}: {ex}"}
-            m_eff = int(p.get('seasonality', m) or m)
-            if method_l == 'sf_autoarima':
-                stepwise = bool(p.get('stepwise', True))
-                d_ord = p.get('d'); D_ord = p.get('D')
-                model = _SF_AutoARIMA(season_length=max(1, m_eff or 1), stepwise=stepwise, d=d_ord, D=D_ord)
-                params_used = {"seasonality": m_eff, "stepwise": stepwise, "d": d_ord, "D": D_ord}
-            elif method_l == 'sf_theta':
-                model = _SF_Theta(season_length=max(1, m_eff or 1))
-                params_used = {"seasonality": m_eff}
-            elif method_l == 'sf_autoets':
-                model = _SF_AutoETS(season_length=max(1, m_eff or 1))
-                params_used = {"seasonality": m_eff}
-            else:  # sf_seasonalnaive
-                model = _SF_SeasonalNaive(season_length=max(1, m_eff or 1))
-                params_used = {"seasonality": m_eff}
-            try:
-                sf = _StatsForecast(models=[model], freq=_pd_freq_from_timeframe(timeframe))
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    if X_df is not None:
-                        sf.fit(Y_df, X_df=X_df)
-                    else:
-                        sf.fit(Y_df)
-                if Xf_df is not None:
-                    Yf = sf.predict(h=int(fh), X_df=Xf_df)
-                else:
-                    Yf = sf.predict(h=int(fh))
-                try:
-                    Yf = Yf[Yf['unique_id'] == 'ts']
-                except Exception:
-                    pass
-                pred_col = None
-                for c in list(Yf.columns):
-                    if c not in ('unique_id', 'ds', 'y'):
-                        pred_col = c
-                        if c == 'y':  # some versions may return 'y'
-                            break
-                if pred_col is None:
-                    # Fallback: try 'y' directly
-                    pred_col = 'y' if 'y' in Yf.columns else None
-                if pred_col is None:
-                    return {"error": f"StatsForecast prediction columns not found"}
-                vals = np.asarray(Yf[pred_col].to_numpy(), dtype=float)
-                f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
-            except Exception as ex:
-                return {"error": f"StatsForecast {method_l} error: {ex}"}
+                return {"error": str(ex)}
 
         elif method_l == 'mlf_rf':
             if not _MLF_AVAILABLE:
                 return {"error": "mlf_rf requires 'mlforecast'. Install: pip install mlforecast scikit-learn"}
-            try:
-                from mlforecast import MLForecast as _MLForecast  # type: ignore
-                from sklearn.ensemble import RandomForestRegressor as _RF  # type: ignore
-                import pandas as _pd
-            except Exception as ex:
-                return {"error": f"Failed to import mlforecast/sklearn: {ex}"}
-            # Prepare features config
             lags_in = p.get('lags', 'auto')
             if lags_in == 'auto' or lags_in is None:
                 # Use short and seasonal lags when available
@@ -1307,81 +1032,19 @@ def forecast(
             max_depth = p.get('max_depth', None)
 
             try:
-                if use_returns:
-                    ts_train = _pd.to_datetime(df['time'].iloc[1:].astype(float), unit='s', utc=True)
-                else:
-                    ts_train = _pd.to_datetime(df['time'].astype(float), unit='s', utc=True)
-                Y_df = _pd.DataFrame({
-                    'unique_id': ['ts'] * int(len(series)),
-                    'ds': _pd.Index(ts_train).to_pydatetime(),
-                    'y': series.astype(float),
-                })
+                f_vals, params_used = _mlf_rf_impl(
+                    series=series, fh=int(fh), timeframe=timeframe,
+                    lags=lags, rolling_agg=roll,
+                    exog_used=exog_used, exog_future=exog_future, future_times=future_times,
+                )
             except Exception as ex:
-                return {"error": f"Failed to build training frame for mlf_rf: {ex}"}
-
-            rf = _RF(n_estimators=n_estimators, max_depth=None if max_depth in (None, 'None') else int(max_depth), random_state=42)
-            try:
-                # Attach exogenous columns if present
-                Xf_df = None
-                if exog_used is not None and isinstance(exog_used, np.ndarray) and exog_used.size:
-                    cols = [f'x{i}' for i in range(exog_used.shape[1])]
-                    for j, cname in enumerate(cols):
-                        Y_df[cname] = exog_used[:, j]
-                    if exog_future is not None and isinstance(exog_future, np.ndarray) and exog_future.size:
-                        ds_f = _pd.to_datetime(_pd.Series(future_times), unit='s', utc=True)
-                        Xf_df = _pd.DataFrame({'unique_id': ['ts'] * int(len(ds_f)), 'ds': _pd.Index(ds_f).to_pydatetime()})
-                        for j, cname in enumerate(cols):
-                            Xf_df[cname] = exog_future[:, j]
-                mlf = _MLForecast(models=[rf], freq=_pd_freq_from_timeframe(timeframe))
-                # Set lags and optional rolling aggregates
-                mlf = mlf.add_lags(lags)
-                if roll in {'mean', 'min', 'max', 'std'}:
-                    # Add simple rolling window features for each lag window
-                    for w in sorted(set([x for x in lags if x > 1])):
-                        mlf = mlf.add_rolling_windows(rolling_features={roll: [w]})
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    mlf.fit(Y_df)
-                if Xf_df is not None:
-                    Yf = mlf.predict(h=int(fh), X_df=Xf_df)
-                else:
-                    Yf = mlf.predict(h=int(fh))
-                try:
-                    Yf = Yf[Yf['unique_id'] == 'ts']
-                except Exception:
-                    pass
-                # mlforecast usually returns column named after target 'y'
-                pred_col = 'y' if 'y' in Yf.columns else None
-                if pred_col is None:
-                    # fallback to first non-meta
-                    for c in list(Yf.columns):
-                        if c not in ('unique_id', 'ds'):
-                            pred_col = c
-                            break
-                if pred_col is None:
-                    return {"error": "mlf_rf prediction columns not found"}
-                vals = np.asarray(Yf[pred_col].to_numpy(), dtype=float)
-                f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
-                params_used = {
-                    'lags': lags,
-                    'rolling_agg': roll,
-                    'n_estimators': n_estimators,
-                    'max_depth': None if max_depth in (None, 'None') else int(max_depth),
-                }
-            except Exception as ex:
-                return {"error": f"mlf_rf error: {ex}"}
+                return {"error": str(ex)}
 
         elif method_l == 'mlf_lightgbm':
             if not _MLF_AVAILABLE:
                 return {"error": "mlf_lightgbm requires 'mlforecast'. Install: pip install mlforecast"}
             if not _LGB_AVAILABLE:
                 return {"error": "mlf_lightgbm requires 'lightgbm'. Install: pip install lightgbm"}
-            try:
-                from mlforecast import MLForecast as _MLForecast  # type: ignore
-                from lightgbm import LGBMRegressor as _LGBM  # type: ignore
-                import pandas as _pd
-            except Exception as ex:
-                return {"error": f"Failed to import mlforecast/lightgbm: {ex}"}
             # Prepare features config
             lags_in = p.get('lags', 'auto')
             if lags_in == 'auto' or lags_in is None:
@@ -1401,200 +1064,25 @@ def forecast(
             max_depth = int(p.get('max_depth', -1))
 
             try:
-                if use_returns:
-                    ts_train = _pd.to_datetime(df['time'].iloc[1:].astype(float), unit='s', utc=True)
-                else:
-                    ts_train = _pd.to_datetime(df['time'].astype(float), unit='s', utc=True)
-                Y_df = _pd.DataFrame({
-                    'unique_id': ['ts'] * int(len(series)),
-                    'ds': _pd.Index(ts_train).to_pydatetime(),
-                    'y': series.astype(float),
-                })
+                f_vals, params_used = _mlf_lgb_impl(
+                    series=series, fh=int(fh), timeframe=timeframe,
+                    lags=lags, rolling_agg=roll,
+                    n_estimators=n_estimators, learning_rate=lr,
+                    num_leaves=num_leaves, max_depth=max_depth,
+                    exog_used=exog_used, exog_future=exog_future, future_times=future_times,
+                )
             except Exception as ex:
-                return {"error": f"Failed to build training frame for mlf_lightgbm: {ex}"}
-
-            lgbm = _LGBM(n_estimators=n_estimators, learning_rate=lr, num_leaves=num_leaves, max_depth=max_depth, random_state=42)
-            try:
-                # Attach exogenous columns if present
-                Xf_df = None
-                if exog_used is not None and isinstance(exog_used, np.ndarray) and exog_used.size:
-                    cols = [f'x{i}' for i in range(exog_used.shape[1])]
-                    for j, cname in enumerate(cols):
-                        Y_df[cname] = exog_used[:, j]
-                    if exog_future is not None and isinstance(exog_future, np.ndarray) and exog_future.size:
-                        ds_f = _pd.to_datetime(_pd.Series(future_times), unit='s', utc=True)
-                        Xf_df = _pd.DataFrame({'unique_id': ['ts'] * int(len(ds_f)), 'ds': _pd.Index(ds_f).to_pydatetime()})
-                        for j, cname in enumerate(cols):
-                            Xf_df[cname] = exog_future[:, j]
-                mlf = _MLForecast(models=[lgbm], freq=_pd_freq_from_timeframe(timeframe))
-                mlf = mlf.add_lags(lags)
-                if roll in {'mean', 'min', 'max', 'std'}:
-                    for w in sorted(set([x for x in lags if x > 1])):
-                        mlf = mlf.add_rolling_windows(rolling_features={roll: [w]})
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    mlf.fit(Y_df)
-                if Xf_df is not None:
-                    Yf = mlf.predict(h=int(fh), X_df=Xf_df)
-                else:
-                    Yf = mlf.predict(h=int(fh))
-                try:
-                    Yf = Yf[Yf['unique_id'] == 'ts']
-                except Exception:
-                    pass
-                pred_col = 'y' if 'y' in Yf.columns else None
-                if pred_col is None:
-                    for c in list(Yf.columns):
-                        if c not in ('unique_id', 'ds'):
-                            pred_col = c
-                            break
-                if pred_col is None:
-                    return {"error": "mlf_lightgbm prediction columns not found"}
-                vals = np.asarray(Yf[pred_col].to_numpy(), dtype=float)
-                f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
-                params_used = {
-                    'lags': lags,
-                    'rolling_agg': roll,
-                    'n_estimators': n_estimators,
-                    'learning_rate': lr,
-                    'num_leaves': num_leaves,
-                    'max_depth': max_depth,
-                }
-            except Exception as ex:
-                return {"error": f"mlf_lightgbm error: {ex}"}
+                return {"error": str(ex)}
 
         elif method_l == 'chronos_bolt':
             if not _CHRONOS_AVAILABLE:
-                return {"error": "chronos_bolt requires 'chronos' or 'transformers' with a supported model. Try: pip install chronos-forecasting or pip install transformers torch accelerate"}
-            model_name = str(p.get('model_name', 'amazon/chronos-bolt-base'))
-            ctx_len = int(p.get('context_length', 0) or 0)
-            device = p.get('device')
-            device_map = p.get('device_map', 'auto')
-            quantization = str(p.get('quantization')) if p.get('quantization') is not None else None
-            quantiles = p.get('quantiles') if isinstance(p.get('quantiles'), (list, tuple)) else None
-            revision = p.get('revision')
-            trust_remote_code = bool(p.get('trust_remote_code', False))
-            # Select context window
-            if ctx_len and ctx_len > 0:
-                context = series[-int(min(n, ctx_len)) :]
-            else:
-                context = series
-            f_vals = None
-            last_err = None
-            fq: Dict[str, List[float]] = {}
-            # Try native Chronos pipeline (prefer BaseChronosPipeline)
-            try:
-                from chronos import BaseChronosPipeline as _BaseChronosPipeline  # type: ignore
-                import torch as _torch  # type: ignore
-                _kwargs: Dict[str, Any] = {}
-                if quantization:
-                    if str(quantization).lower() in ('int8', '8bit', 'bnb.int8'):
-                        _kwargs['load_in_8bit'] = True
-                    elif str(quantization).lower() in ('int4', '4bit', 'bnb.int4'):
-                        _kwargs['load_in_4bit'] = True
-                if revision:
-                    _kwargs['revision'] = revision
-                # Optional: dtype override
-                _torch_dtype = p.get('torch_dtype')
-                if isinstance(_torch_dtype, str):
-                    _td = _torch_dtype.strip().lower()
-                    if _td in ('bf16', 'bfloat16'):
-                        _kwargs['torch_dtype'] = _torch.bfloat16
-                    elif _td in ('fp16', 'float16', 'half'):
-                        _kwargs['torch_dtype'] = _torch.float16
-                    elif _td in ('fp32', 'float32'):
-                        _kwargs['torch_dtype'] = _torch.float32
-                pipe = _BaseChronosPipeline.from_pretrained(model_name, device_map=device_map, **_kwargs)  # type: ignore[arg-type]
-                # Always use predict_quantiles to obtain mean as well
-                q_levels = list(quantiles) if quantiles else [0.5]
-                q_levels = [float(q) for q in q_levels]
-                _context_tensor = _torch.tensor(context, dtype=_torch.float32)
-                q_tensor, mean_tensor = pipe.predict_quantiles(
-                    context=_context_tensor,
-                    prediction_length=int(fh),
-                    quantile_levels=q_levels,
-                )
-                # Convert outputs to numpy lists
-                # Shapes: q_tensor [B, H, Q], mean_tensor [B, H]
-                arr_mean = mean_tensor.detach().cpu().numpy()[0]
-                # Build quantile map
-                for i, ql in enumerate(q_levels):
-                    q_arr = q_tensor[:, :, i].detach().cpu().numpy()[0]
-                    fq[str(float(ql))] = [float(v) for v in np.asarray(q_arr, dtype=float)[:fh].tolist()]
-                if quantiles and '0.5' in fq:
-                    f_vals = np.asarray(fq['0.5'], dtype=float)
-                else:
-                    vals = np.asarray(arr_mean, dtype=float)
-                    f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
-            except Exception as ex1:
-                last_err = ex1
-                try:
-                    # Fallback via Transformers pipeline API (only if supported)
-                    from transformers import pipeline as _hf_pipeline  # type: ignore
-                    try:
-                        from transformers.pipelines import SUPPORTED_TASKS as _HF_SUPPORTED_TASKS  # type: ignore
-                        if "time-series-forecasting" not in _HF_SUPPORTED_TASKS:
-                            raise RuntimeError(
-                                "Transformers does not support 'time-series-forecasting' pipeline in this environment. "
-                                "Install 'chronos-forecasting' or upgrade 'transformers' to a version that includes the time-series pipeline."
-                            )
-                    except Exception:
-                        # If SUPPORTED_TASKS is unavailable, continue and let pipeline raise a clear error
-                        pass
-                    _pipe_kwargs: Dict[str, Any] = {'model': model_name}
-                    if device and str(device).lower() != 'auto':
-                        _pipe_kwargs['device'] = device
-                    else:
-                        _pipe_kwargs['device_map'] = device_map
-                    if revision:
-                        _pipe_kwargs['revision'] = revision
-                    _model_kwargs: Dict[str, Any] = {}
-                    if quantization:
-                        if quantization.lower() in ('int8', '8bit', 'bnb.int8'):
-                            _model_kwargs['load_in_8bit'] = True
-                        elif quantization.lower() in ('int4', '4bit', 'bnb.int4'):
-                            _model_kwargs['load_in_4bit'] = True
-                    if trust_remote_code:
-                        _model_kwargs['trust_remote_code'] = True
-                    if _model_kwargs:
-                        _pipe_kwargs['model_kwargs'] = _model_kwargs
-                    hf = _hf_pipeline("time-series-forecasting", **_pipe_kwargs)  # type: ignore[call-arg]
-                    call_kwargs: Dict[str, Any] = {'prediction_length': int(fh)}
-                    if quantiles:
-                        call_kwargs['quantiles'] = list(quantiles)
-                    yhat = hf(context, **call_kwargs)  # type: ignore[call-arg]
-                    # yhat may be list or dict depending on version
-                    if isinstance(yhat, dict):
-                        # Expect possible 'forecast' for point and 'quantiles' mapping
-                        qmap = yhat.get('quantiles')
-                        if isinstance(qmap, dict):
-                            for q, arrq in qmap.items():
-                                try:
-                                    qf = float(q)
-                                except Exception:
-                                    continue
-                                fq[str(qf)] = [float(v) for v in np.asarray(arrq, dtype=float)[:fh].tolist()]
-                        arr = yhat.get('forecast') or yhat.get('yhat') or yhat.get('y_hat') or yhat.get('y')
-                    else:
-                        arr = yhat
-                    vals = np.asarray(arr, dtype=float)
-                    f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
-                except Exception as ex2:
-                    return {"error": f"Chronos-Bolt inference error: {ex2 if ex2 else last_err}"}
-            params_used = {
-                'model_name': model_name,
-                'context_length': int(ctx_len) if ctx_len else int(n),
-                'device': device,
-                'device_map': device_map,
-                'quantization': quantization,
-                'revision': revision,
-                'trust_remote_code': trust_remote_code,
-            }
-            if fq:
-                # attach quantiles for downstream consumers
-                params_used['quantiles'] = sorted(list(fq.keys()), key=lambda x: float(x))
-                # Stash on locals to use when mapping to prices below
-                forecast_quantiles = fq  # type: ignore[name-defined]
+                return {"error": "chronos_bolt requires 'chronos' or 'transformers'. Try: pip install chronos-forecasting or pip install transformers torch accelerate"}
+            _f, _fq, params_used, _err = _chronos_bolt_impl(series=series, fh=int(fh), params=p, n=int(n))
+            if _err:
+                return {"error": _err}
+            f_vals = _f
+            if _fq:
+                forecast_quantiles = _fq  # type: ignore[name-defined]
 
         elif method_l in ('timesfm', 'lag_llama'):
             # Generic HF pipeline adapter; try native libs if present
@@ -1617,96 +1105,12 @@ def forecast(
             fq: Dict[str, List[float]] = {}
             # Try native packages if available
             if method_l == 'timesfm':
-                try:
-                    import timesfm as _timesfm  # type: ignore
-                    # Detect namespace shadowing (local folder named 'timesfm' with no attributes)
-                    if not (hasattr(_timesfm, 'TimesFM_2p5_200M_torch') or hasattr(_timesfm, 'ForecastConfig')):
-                        try:
-                            # Try submodule import pattern
-                            from timesfm import torch as _timesfm  # type: ignore
-                        except Exception:
-                            _p = getattr(_timesfm, '__path__', None)
-                            _p_str = str(list(_p)) if _p is not None else 'unknown'
-                            return {"error": f"timesfm import resolved to a namespace at {_p_str}, likely a local folder named 'timesfm' shadowing the package. Rename/remove the folder or 'pip install -e' the official repo."}
-                    # Prefer TimesFM 2.5 torch API if available
-                    _cls_name = 'TimesFM_2p5_200M_torch'
-                    _has_new = hasattr(_timesfm, _cls_name) and hasattr(_timesfm, 'ForecastConfig')
-                    if _has_new:
-                        _Cls = getattr(_timesfm, _cls_name)
-                        _mdl = _Cls()
-                        # Configure model with requested context and horizon
-                        _max_ctx = int(ctx_len) if ctx_len and int(ctx_len) > 0 else None
-                        _cfg_kwargs: Dict[str, Any] = {
-                            'max_context': _max_ctx or min(int(n), 1024),
-                            'max_horizon': int(fh),
-                            'normalize_inputs': True,
-                            'use_continuous_quantile_head': bool(quantiles) is True,
-                            'force_flip_invariance': True,
-                            'infer_is_positive': False,
-                            'fix_quantile_crossing': True,
-                        }
-                        _cfg = getattr(_timesfm, 'ForecastConfig')(**_cfg_kwargs)
-                        # Load weights and compile
-                        try:
-                            _mdl.load_checkpoint()
-                        except Exception:
-                            pass
-                        _mdl.compile(_cfg)
-                        _inp = [np.asarray(context, dtype=float)]
-                        pf, qf = _mdl.forecast(horizon=int(fh), inputs=_inp)
-                        # point forecast
-                        if pf is not None:
-                            arr = np.asarray(pf, dtype=float)
-                            arr = arr[0] if arr.ndim == 2 else arr
-                            vals = np.asarray(arr, dtype=float)
-                            f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
-                        # quantiles (assume deciles 0.1..0.9 in fixed order after mean)
-                        if quantiles and qf is not None:
-                            qarr = np.asarray(qf, dtype=float)
-                            if qarr.ndim == 3 and qarr.shape[0] >= 1:
-                                # qarr: [B, H, Q] where Q includes mean then deciles
-                                Q = qarr.shape[-1]
-                                # Build mapping for requested levels among {0.1,...,0.9}
-                                level_map = {str(l/10.0): (l if Q >= 10 else None) for l in range(1, 10)}
-                                for q in list(quantiles):
-                                    try:
-                                        key = f"{float(q):.1f}"
-                                    except Exception:
-                                        continue
-                                    idx = level_map.get(key)
-                                    if idx is None:
-                                        continue
-                                    col = qarr[0, :fh, idx] if idx < qarr.shape[-1] else None
-                                    if col is not None:
-                                        fq[key] = [float(v) for v in np.asarray(col, dtype=float).tolist()]
-                        params_used = {
-                            'timesfm_model': _cls_name,
-                            'context_length': int(_max_ctx or n),
-                            'quantiles': sorted(list(fq.keys()), key=lambda x: float(x)) if fq else None,
-                        }
-                    else:
-                        # Fallback heuristic for older experimental API
-                        try:
-                            kw = {}; mdl = getattr(_timesfm, 'TimesFm').from_pretrained(model_name, **kw)  # type: ignore[attr-defined]
-                            if quantiles:
-                                yhat = mdl.predict(context=context, prediction_length=int(fh), quantiles=list(quantiles))  # type: ignore[call-arg]
-                                if isinstance(yhat, dict):
-                                    for q, arr in yhat.items():
-                                        try:
-                                            qf = float(q)
-                                        except Exception:
-                                            continue
-                                        fq[str(qf)] = [float(v) for v in np.asarray(arr, dtype=float)[:fh].tolist()]
-                                    if '0.5' in fq:
-                                        f_vals = np.asarray(fq['0.5'], dtype=float)
-                            else:
-                                yhat = mdl.predict(context=context, prediction_length=int(fh))  # type: ignore[call-arg]
-                                vals = np.asarray(yhat, dtype=float)
-                                f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
-                        except Exception:
-                            pass
-                except Exception as ex:
-                    last_err = ex
+                _f, _fq, params_used, _err = _timesfm_impl(series=series, fh=int(fh), params=p, n=int(n))
+                if _err:
+                    return {"error": _err}
+                f_vals = _f
+                if _fq:
+                    forecast_quantiles = _fq  # type: ignore[name-defined]
             # Fallback to Transformers pipeline (skip for timesfm to give clear guidance)
             if f_vals is None:
                 if method_l == 'timesfm':
@@ -2473,3 +1877,8 @@ def forecast(
         return {"error": f"Error in pattern search: {str(e)}"}
 
 """
+from .methods.statsforecast import forecast_statsforecast as _sf_impl
+from .methods.mlforecast import (
+    forecast_mlf_rf as _mlf_rf_impl,
+    forecast_mlf_lightgbm as _mlf_lgb_impl,
+)
