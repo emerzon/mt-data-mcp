@@ -103,12 +103,21 @@ def forecast_sarimax(
             pred = res.get_forecast(steps=int(fh), exog=exog_future)
         else:
             pred = res.get_forecast(steps=int(fh))
-    f_vals = pred.predicted_mean.to_numpy()
+    pm = pred.predicted_mean
+    if hasattr(pm, 'to_numpy'):
+        f_vals = pm.to_numpy()
+    else:
+        f_vals = np.asarray(pm, dtype=float)
     ci = None
     try:
         _alpha = float(ci_alpha) if ci_alpha is not None else 0.05
         ci_df = pred.conf_int(alpha=_alpha)
-        ci = (ci_df.iloc[:, 0].to_numpy(), ci_df.iloc[:, 1].to_numpy())
+        if hasattr(ci_df, 'iloc') and hasattr(ci_df.iloc[:, 0], 'to_numpy'):
+            ci = (ci_df.iloc[:, 0].to_numpy(), ci_df.iloc[:, 1].to_numpy())
+        else:
+            ci_arr = np.asarray(ci_df)
+            if ci_arr.ndim == 2 and ci_arr.shape[1] >= 2:
+                ci = (ci_arr[:, 0], ci_arr[:, 1])
     except Exception:
         ci = None
     params_used: Dict[str, Any] = {"order": tuple(order), "seasonal_order": tuple(seasonal_order), "trend": str(trend)}

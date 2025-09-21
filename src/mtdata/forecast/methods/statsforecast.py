@@ -67,7 +67,8 @@ def forecast_statsforecast(
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            sf = _StatsForecast(models=[model], freq='D')  # freq unused for single series index
+            # RangeIndex timeline -> use integer frequency to satisfy StatsForecast
+            sf = _StatsForecast(models=[model], freq=1)
             if X_df is not None:
                 sf.fit(Y_df, X_df=X_df)
             else:

@@ -10,7 +10,7 @@ import csv
 import sys
 import inspect
 import os
-from typing import get_type_hints, get_origin, get_args, Optional, Dict, Any, List
+from typing import get_type_hints, get_origin, get_args, Optional, Dict, Any, List, Tuple
 import json
 import math
 from ..utils.minimal_output import format_result_minimal as _shared_minimal
@@ -210,6 +210,24 @@ def get_function_info(func):
             # Default required based on availability of a default value
             p['required'] = p.get('default') is None
     return info
+
+def _apply_schema_overrides(tool: ToolInfo, func_info: Dict[str, Any]) -> Dict[str, Any]:
+    """Apply schema metadata to the introspected CLI param info."""
+    meta = tool.setdefault('meta', {})
+    schema = meta.get('schema') or {}
+    schema = enrich_schema_with_shared_defs(schema, func_info)
+    meta['schema'] = schema
+    params_obj = schema.get('parameters') if isinstance(schema.get('parameters'), dict) else schema
+    schema_props = params_obj.get('properties') if isinstance(params_obj, dict) else {}
+    schema_required = set(params_obj.get('required', [])) if isinstance(params_obj, dict) else set()
+    for param in func_info.get('params', []):
+        prop = schema_props.get(param['name']) if isinstance(schema_props, dict) else None
+        if isinstance(prop, dict) and 'default' in prop and param.get('default') is None:
+            param['default'] = prop['default']
+        if param['name'] in schema_required:
+            param['required'] = True
+    return schema
+
 
 def _extract_function_from_tool_obj(tool_obj):
     """Best-effort extraction of the underlying function from an MCP tool object."""
@@ -554,45 +572,197 @@ def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
     lines.append("Commands and Arguments:")
     for cmd_name, tool in sorted(functions.items()):
         func = tool['func']
-        meta = tool.get('meta') or {}
-        info = get_function_info(func)
-        # Overlay from schema for defaults/required
-        schema = meta.get('schema') or {}
-        # Enrich with shared $defs and timeframe refs; or build minimal if missing
-        schema = enrich_schema_with_shared_defs(schema, info)
-        # Persist enriched schema back into meta for downstream help building
-        tool['meta']['schema'] = schema
-        params_obj = schema.get('parameters') if isinstance(schema.get('parameters'), dict) else schema
-        schema_props = params_obj.get('properties') if isinstance(params_obj, dict) else {}
-        schema_required = set(params_obj.get('required', [])) if isinstance(params_obj, dict) else set()
-        for p in info['params']:
-            prop = schema_props.get(p['name']) if isinstance(schema_props, dict) else None
-            if isinstance(prop, dict) and 'default' in prop and p['default'] is None:
-                p['default'] = prop['default']
-            if p['name'] in schema_required:
-                p['required'] = True
+        func_info = tool.setdefault('_cli_func_info', get_function_info(func))
+        _apply_schema_overrides(tool, func_info)
         arg_strs = []
-        for p in info['params']:
-            tname = _type_name(p['type']) if p['type'] else 'str'
-            if p['required']:
-                arg_strs.append(f"{p['name']}<{tname}>")
+        for param in func_info['params']:
+            tname = _type_name(param['type']) if param['type'] else 'str'
+            if param['required']:
+                arg_strs.append(f"{param['name']}<{tname}>")
             else:
-                default = p['default']
-                # Always display default, even when None (unset)
+                default = param.get('default')
                 arg_strs.append(
-                    f"--{p['name'].replace('_','-')}<{tname}>=[{default}]"
+                    f"--{param['name'].replace('_','-')}<{tname}>=[{default}]"
                 )
-        desc = meta.get('description') or _first_line(info['doc'])
+        meta = tool.get('meta') or {}
+        desc = meta.get('description') or _first_line(func_info.get('doc'))
         lines.append(f"  {cmd_name}: {' '.join(arg_strs) if arg_strs else '(no args)'}")
         if desc:
             lines.append(f"    - {desc}")
     lines.append("")
+    lines.append("Tip: Use `--help <keyword>` to search commands and examples.")
     lines.append("Type Conventions:")
     lines.append("  - int: integer")
     lines.append("  - str: string")
     lines.append("  - bool: pass true|false (e.g., --flag true)")
     return "\n".join(lines)
 
+
+
+_EXTENDED_HELP_EXAMPLE_HINTS: Dict[str, Any] = {
+    'symbol': 'EURUSD',
+    'timeframe': 'H1',
+    'method': 'nhits',
+    'methods': 'theta nhits',
+    'horizon': '8',
+    'lookback': '200',
+    'steps': '5',
+    'spacing': '20',
+    'quantity': 'return',
+    'target': 'price',
+    'ci_alpha': '0.1',
+    'params': '"max_epochs=20"',
+    'features': '"include=open,high future_covariates=hour,dow"',
+    'as_of': '2025-09-01T12:00:00Z',
+    'population': '16',
+    'generations': '5',
+    'seed': '42',
+}
+
+
+def _format_cli_literal(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return 'true' if value else 'false'
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value)
+    except Exception:
+        return str(value)
+
+
+def _quote_cli_value(text: str) -> str:
+    if text == "":
+        return '""'
+    if any(ch.isspace() for ch in text):
+        if text.startswith('"') and text.endswith('"'):
+            return text
+        return f'"{text}"'
+    return text
+
+
+def _example_value(param: Dict[str, Any], *, prefer_default: bool) -> str:
+    name = param['name']
+    default_text = _format_cli_literal(param.get('default'))
+    if not prefer_default:
+        hint = _EXTENDED_HELP_EXAMPLE_HINTS.get(name)
+        if callable(hint):
+            try:
+                return str(hint(param))
+            except Exception:
+                pass
+        if isinstance(hint, str):
+            return hint
+    if prefer_default and default_text is not None:
+        return default_text
+    if not prefer_default and default_text is not None:
+        return default_text
+    ptype = param.get('type')
+    if ptype == int:
+        return '10'
+    if ptype == float:
+        return '0.1'
+    if ptype == bool:
+        return 'true'
+    if ptype in (list, tuple):
+        return 'a,b'
+    return f'<{name}>'
+
+
+def _build_usage_examples(cmd_name: str, func_info: Dict[str, Any]) -> Tuple[str, Optional[str]]:
+    required_tokens: List[str] = []
+    optional_tokens: List[str] = []
+    for index, param in enumerate(func_info['params']):
+        if param['required']:
+            value = _quote_cli_value(_example_value(param, prefer_default=True))
+            if index == 0:
+                required_tokens.append(value)
+            else:
+                required_tokens.append(f"--{param['name'].replace('_','-')} {value}")
+        else:
+            value = _example_value(param, prefer_default=False)
+            default_text = _format_cli_literal(param.get('default'))
+            if value is None:
+                continue
+            if default_text is not None and value == default_text:
+                continue
+            optional_tokens.append(f"--{param['name'].replace('_','-')} {_quote_cli_value(value)}")
+    base_parts = [cmd_name]
+    base_parts.extend(required_tokens)
+    base = "python cli.py " + " ".join(base_parts)
+    advanced = None
+    if optional_tokens:
+        adv_parts = base_parts + optional_tokens[:2]
+        advanced = "python cli.py " + " ".join(adv_parts)
+    return base, advanced
+
+
+def _match_commands(functions: Dict[str, ToolInfo], query: str) -> List[Tuple[str, ToolInfo, Dict[str, Any]]]:
+    tokens = [tok for tok in query.lower().split() if tok]
+    if not tokens:
+        return []
+    matches: List[Tuple[str, ToolInfo, Dict[str, Any]]] = []
+    for name, tool in sorted(functions.items()):
+        func = tool['func']
+        func_info = tool.setdefault('_cli_func_info', get_function_info(func))
+        _apply_schema_overrides(tool, func_info)
+        meta = tool.get('meta') or {}
+        haystack = ' '.join([
+            name.lower(),
+            str(meta.get('description') or func_info.get('doc') or '').lower(),
+        ])
+        if all(tok in haystack for tok in tokens):
+            matches.append((name, tool, func_info))
+    return matches
+
+
+def _extract_help_query(argv: List[str]) -> Optional[str]:
+    for flag in ('--help', '-h'):
+        if flag in argv:
+            idx = argv.index(flag)
+            query_tokens: List[str] = []
+            for token in argv[idx + 1:]:
+                if token.startswith('-'):
+                    break
+                query_tokens.append(token)
+            if query_tokens:
+                return ' '.join(query_tokens)
+    return None
+
+
+def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
+    matches = _match_commands(functions, query)
+    if not matches:
+        print(f"No commands match '{query}'.")
+        print("Available commands:")
+        for name in sorted(functions.keys()):
+            print(f"  {name}")
+        print("\nTip: run `python cli.py --help` to view the full list.")
+        return
+    print(f"Extended help for query: {query}")
+    print("")
+    for name, tool, func_info in matches:
+        meta = tool.get('meta') or {}
+        summary = meta.get('description') or _first_line(func_info.get('doc'))
+        required = [p['name'] for p in func_info['params'] if p['required']]
+        optional = [p['name'] for p in func_info['params'] if not p['required']]
+        base_example, advanced_example = _build_usage_examples(name, func_info)
+        print(name)
+        if summary:
+            print(f"  Summary: {summary}")
+        if required:
+            print(f"  Required: {', '.join(required)}")
+        if optional:
+            print(f"  Optional: {', '.join(optional[:6])}")
+        print(f"  Example: {base_example}")
+        if advanced_example and advanced_example != base_example:
+            print(f"  Example+: {advanced_example}")
+        print(f"  More: python cli.py {name} --help")
+        print("")
 def main():
     """Main CLI entry point with dynamic parameter discovery"""
     # Discover functions to expose dynamically
@@ -600,6 +770,11 @@ def main():
     if not functions:
         print("No tools discovered from server module.", file=sys.stderr)
         return 1
+    help_query = _extract_help_query(sys.argv[1:])
+    if help_query:
+        _print_extended_help(functions, help_query)
+        return 0
+
     
     parser = argparse.ArgumentParser(
         description="Dynamic CLI for MetaTrader5 MCP tools (CSV-first output)",
@@ -614,21 +789,10 @@ def main():
     # Dynamically create subparsers for each function
     for cmd_name, tool in sorted(functions.items()):
         func = tool['func']
+        func_info = tool.setdefault('_cli_func_info', get_function_info(func))
+        _apply_schema_overrides(tool, func_info)
         meta = tool.get('meta') or {}
-        func_info = get_function_info(func)
-        # Overlay defaults and required flags from schema if available
-        schema = meta.get('schema') or {}
-        schema = enrich_schema_with_shared_defs(schema, func_info)
-        params_obj = schema.get('parameters') if isinstance(schema.get('parameters'), dict) else schema
-        schema_props = params_obj.get('properties') if isinstance(params_obj, dict) else {}
-        schema_required = set(params_obj.get('required', [])) if isinstance(params_obj, dict) else set()
-        for p in func_info['params']:
-            prop = schema_props.get(p['name']) if isinstance(schema_props, dict) else None
-            if isinstance(prop, dict) and 'default' in prop and p['default'] is None:
-                p['default'] = prop['default']
-            if p['name'] in schema_required:
-                p['required'] = True
-        
+
         # Create subparser
         cmd_parser = subparsers.add_parser(
             cmd_name, 
