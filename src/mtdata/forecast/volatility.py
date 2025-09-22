@@ -54,11 +54,55 @@ def _bars_per_year(timeframe: str) -> int:
         return 0
 
 
+def _kernel_weight(kind: str, h: int, bandwidth: int) -> float:
+    if bandwidth <= 0:
+        return 0.0
+    x = float(h) / float(bandwidth + 1)
+    x = max(0.0, min(1.0, x))
+    k = kind.lower()
+    if k in {"bartlett", "triangular"}:
+        return float(1.0 - x)
+    if k in {"parzen", "parzen_bartlett"}:
+        if x <= 0.5:
+            return float(1.0 - 6.0 * x * x + 6.0 * x * x * x)
+        if x <= 1.0:
+            return float(2.0 * (1.0 - x) ** 3)
+        return 0.0
+    # Tukey-Hanning (default)
+    return float(0.5 * (1.0 + math.cos(math.pi * x))) if x <= 1.0 else 0.0
+
+
+def _realized_kernel_variance(
+    returns: np.ndarray,
+    bandwidth: Optional[int] = None,
+    kernel: str = "tukey_hanning",
+) -> float:
+    """Compute realized kernel variance estimate for a return series."""
+
+    r = np.asarray(returns, dtype=float)
+    r = r[np.isfinite(r)]
+    n = int(r.size)
+    if n < 3:
+        return float('nan')
+    if bandwidth is None:
+        bandwidth = max(1, int(np.floor(np.sqrt(n))))
+    bandwidth = int(max(1, min(bandwidth, n - 1)))
+    r_centered = r - float(np.mean(r))
+    gamma0 = float(np.dot(r_centered, r_centered))
+    rk = gamma0
+    for h in range(1, bandwidth + 1):
+        cov = float(np.dot(r_centered[h:], r_centered[:-h]))
+        weight = _kernel_weight(kernel, h, bandwidth)
+        rk += 2.0 * weight * cov
+    rk = max(rk, 0.0)
+    return float(rk / max(1, n))
+
+
 def forecast_volatility(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 1,
-    method: Literal['ewma','parkinson','gk','rs','yang_zhang','rolling_std','har_rv','garch','egarch','gjr_garch','arima','sarima','ets','theta'] = 'ewma',  # type: ignore
+    method: Literal['ewma','parkinson','gk','rs','yang_zhang','rolling_std','realized_kernel','har_rv','garch','egarch','gjr_garch','garch_t','egarch_t','gjr_garch_t','figarch','arima','sarima','ets','theta'] = 'ewma',  # type: ignore
     proxy: Optional[Literal['squared_return','abs_return','log_r2']] = None,  # type: ignore
     params: Optional[Dict[str, Any]] = None,
     as_of: Optional[str] = None,
@@ -66,7 +110,7 @@ def forecast_volatility(
 ) -> Dict[str, Any]:
     """Forecast volatility over `horizon` bars with direct estimators/GARCH or general forecasters on a proxy.
 
-    Direct: ewma, parkinson, gk, rs, yang_zhang, rolling_std, garch, egarch, gjr_garch.
+    Direct: ewma, parkinson, gk, rs, yang_zhang, rolling_std, realized_kernel, har_rv, garch(+variants).
     General: arima, sarima, ets, theta (require `proxy`: squared_return|abs_return|log_r2).
     """
     try:
@@ -77,11 +121,12 @@ def forecast_volatility(
         if not tf_secs:
             return {"error": f"Unsupported timeframe seconds for {timeframe}"}
         method_l = str(method).lower().strip()
-        valid_direct = {'ewma','parkinson','gk','rs','yang_zhang','rolling_std','har_rv','garch','egarch','gjr_garch'}
+        garch_family = {'garch','egarch','gjr_garch','garch_t','egarch_t','gjr_garch_t','figarch'}
+        valid_direct = {'ewma','parkinson','gk','rs','yang_zhang','rolling_std','realized_kernel','har_rv'} | garch_family
         valid_general = {'arima','sarima','ets','theta'}
         if method_l not in valid_direct.union(valid_general):
             return {"error": f"Invalid method: {method}"}
-        if method_l in {'garch','egarch','gjr_garch'} and not _ARCH_AVAILABLE:
+        if method_l in garch_family and not _ARCH_AVAILABLE:
             return {"error": f"{method_l} requires 'arch' package."}
 
         # Parse method params: accept dict, JSON string, or k=v pairs
@@ -318,9 +363,9 @@ def forecast_volatility(
         def _need_bars_direct() -> int:
             if method_l == 'ewma':
                 lb = int(p.get('lookback', 1500)); return max(lb + 5, int(horizon) + 5)
-            if method_l in {'parkinson','gk','rs','yang_zhang','rolling_std'}:
+            if method_l in {'parkinson','gk','rs','yang_zhang','rolling_std','realized_kernel'}:
                 w = int(p.get('window', 20)); return max(w + int(horizon) + 10, 60)
-            if method_l in {'garch','egarch','gjr_garch'}:
+            if method_l in garch_family:
                 fb = int(p.get('fit_bars', 2000)); return max(fb + 10, int(horizon) + 10)
             return max(300, int(horizon) + 50)
 
@@ -426,26 +471,71 @@ def forecast_volatility(
                     "params_used": {"window": int(window)},
                     "denoise_used": dn_spec_used}
 
-        if method_l in {'garch','egarch','gjr_garch'}:
+        if method_l == 'realized_kernel':
+            window = int(p.get('window', 50))
+            kernel = str(p.get('kernel', 'tukey_hanning') or 'tukey_hanning')
+            bandwidth = p.get('bandwidth')
+            try:
+                bandwidth_val = int(bandwidth) if bandwidth is not None else None
+            except Exception:
+                bandwidth_val = None
+            tail = r[-window:] if r.size >= window else r
+            rk_var = _realized_kernel_variance(tail, bandwidth=bandwidth_val, kernel=kernel)
+            if not math.isfinite(rk_var) or rk_var < 0:
+                return {"error": "Failed to compute realized kernel variance"}
+            sigma_bar = math.sqrt(rk_var)
+            sigma_h = math.sqrt(max(1, int(horizon)) * rk_var)
+            return {
+                "success": True,
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "method": method_l,
+                "horizon": int(horizon),
+                "sigma_bar_return": float(sigma_bar),
+                "sigma_annual_return": float(sigma_bar * math.sqrt(bpy)),
+                "horizon_sigma_return": float(sigma_h),
+                "horizon_sigma_annual": float(sigma_h * math.sqrt(bpy / max(1, int(horizon)))),
+                "params_used": {"window": int(window), "kernel": kernel, "bandwidth": bandwidth_val},
+                "denoise_used": dn_spec_used,
+            }
+
+        if method_l in garch_family:
             fit_bars = int(p.get('fit_bars', 2000)); mean_model = str(p.get('mean','Zero')).lower(); dist = str(p.get('dist','normal'))
             r_pct = 100.0 * r
             r_fit = r_pct[-fit_bars:] if r_pct.size > fit_bars else r_pct
             try:
-                if method_l == 'egarch':
-                    am = _arch_model(r_fit, mean=mean_model if mean_model in ('zero','constant') else 'zero', vol='EGARCH', p=int(p.get('p',1)), q=int(p.get('q',1)), dist=dist)
-                elif method_l == 'gjr_garch':
-                    am = _arch_model(r_fit, mean=mean_model if mean_model in ('zero','constant') else 'zero', vol='GARCH', p=int(p.get('p',1)), o=int(p.get('o',1)), q=int(p.get('q',1)), dist=dist)
+                base_method = method_l.replace('_t', '')
+                if method_l.endswith('_t'):
+                    dist = 'studentst'
+                p_order = int(p.get('p', 1))
+                q_order = int(p.get('q', 1))
+                if base_method == 'egarch':
+                    am = _arch_model(r_fit, mean=mean_model if mean_model in ('zero','constant') else 'zero', vol='EGARCH', p=p_order, q=q_order, dist=dist)
+                elif base_method == 'gjr_garch':
+                    o_order = int(p.get('o', 1))
+                    am = _arch_model(r_fit, mean=mean_model if mean_model in ('zero','constant') else 'zero', vol='GARCH', p=p_order, o=o_order, q=q_order, dist=dist)
+                elif base_method == 'figarch':
+                    am = _arch_model(r_fit, mean=mean_model if mean_model in ('zero','constant') else 'zero', vol='FIGARCH', p=p_order, q=q_order, dist=dist)
                 else:
-                    am = _arch_model(r_fit, mean=mean_model if mean_model in ('zero','constant') else 'zero', vol='GARCH', p=1, q=1, dist=dist)
+                    am = _arch_model(r_fit, mean=mean_model if mean_model in ('zero','constant') else 'zero', vol='GARCH', p=p_order, q=q_order, dist=dist)
                 res = am.fit(disp='off')
                 fc = res.forecast(horizon=max(1, int(horizon)), reindex=False)
                 variances = fc.variance.values[-1]
                 sbar = float(math.sqrt(max(0.0, float(variances[0])))) / 100.0
                 hsig = float(math.sqrt(max(0.0, float(np.sum(variances))))) / 100.0
+                params_used = {k: p[k] for k in p}
+                params_used.update({
+                    "dist": dist,
+                    "mean": mean_model,
+                    "p": p_order,
+                    "q": q_order,
+                })
+                if base_method == 'gjr_garch':
+                    params_used['o'] = int(p.get('o', 1))
                 return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
                         "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
                         "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
-                        "params_used": {k: p[k] for k in p},
+                        "params_used": params_used,
                         "denoise_used": dn_spec_used}
             except Exception as ex:
                 return {"error": f"{method_l} error: {ex}"}

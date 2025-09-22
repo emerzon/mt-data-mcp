@@ -205,7 +205,15 @@ def get_forecast_methods_data() -> Dict[str, Any]:
     add("chronos_bolt", "Amazon Chronos-Bolt (Chronos package).", [], ["chronos"], {"price": True, "return": True, "ci": False})
     add("timesfm", "Google TimesFM (install from source).", [], ["timesfm"], {"price": True, "return": True, "ci": False})
     add("lag_llama", "Lag-Llama via Transformers.", [], ["lag_llama", "transformers"], {"price": True, "return": True, "ci": False})
-    add("ensemble", "Hybrid ensemble (not implemented).", [], ["not implemented"], {"price": True, "return": True, "ci": False})
+    add("ensemble", "Adaptive ensemble (average, Bayesian model averaging, stacking).",
+        [{"name": "methods", "type": "list", "description": "Component methods (default: naive,theta,fourier_ols)"},
+         {"name": "mode", "type": "str", "description": "average|bma|stacking (default: average)"},
+         {"name": "weights", "type": "list", "description": "Manual weights for average mode"},
+         {"name": "cv_points", "type": "int", "description": "Walk-forward anchors for weighting"},
+         {"name": "min_train_size", "type": "int", "description": "Minimum observations per anchor"},
+         {"name": "method_params", "type": "dict", "description": "Per-method parameter overrides"},
+         {"name": "expose_components", "type": "bool", "description": "Include component forecasts (default: True)"}],
+        [], {"price": True, "return": True, "ci": False})
 
     return {"success": True, "schema_version": 1, "methods": methods}
 

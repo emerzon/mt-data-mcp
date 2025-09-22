@@ -6,7 +6,7 @@ import json
 import math
 import MetaTrader5 as mt5
 
-from ..core.constants import TIMEFRAME_MAP
+from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..core.schema import TimeframeLiteral, DenoiseSpec
 from ..utils.mt5 import _mt5_epoch_to_utc, _mt5_copy_rates_from, _ensure_symbol_ready
 from ..utils.utils import _format_time_minimal as _format_time_minimal_util
@@ -42,6 +42,76 @@ def _get_forecast_methods_data_safe() -> Dict[str, Any]:
     }
 
 
+def _bars_per_year(timeframe: str) -> float:
+    """Approximate number of bars per year for a timeframe."""
+    try:
+        secs = TIMEFRAME_SECONDS.get(str(timeframe))
+        if not secs or secs <= 0:
+            return float('nan')
+        return float((365.0 * 24.0 * 3600.0) / float(secs))
+    except Exception:
+        return float('nan')
+
+
+def _compute_performance_metrics(
+    returns: List[float],
+    timeframe: str,
+    horizon: int,
+    slippage_bps: float,
+) -> Dict[str, float]:
+    """Compute portfolio-level performance statistics from per-trade returns."""
+
+    metrics: Dict[str, float] = {}
+    if not returns:
+        return metrics
+
+    arr = np.asarray([float(r) for r in returns if r is not None], dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return metrics
+
+    bars_per_year = _bars_per_year(timeframe)
+    trades_per_year = float(bars_per_year / max(1, int(horizon))) if math.isfinite(bars_per_year) else float('nan')
+
+    avg_return = float(np.mean(arr))
+    win_rate = float(np.mean(arr > 0.0)) if arr.size > 0 else float('nan')
+    std_ret = float(np.std(arr, ddof=1)) if arr.size > 1 else 0.0
+    sharpe = float('nan')
+    if std_ret > 1e-12 and math.isfinite(trades_per_year) and trades_per_year > 0:
+        sharpe = float((avg_return / std_ret) * math.sqrt(trades_per_year))
+
+    equity = np.cumprod(1.0 + arr)
+    peak = np.maximum.accumulate(equity)
+    drawdowns = equity / np.where(peak == 0.0, 1.0, peak) - 1.0
+    max_drawdown = float(abs(np.min(drawdowns))) if drawdowns.size > 0 else float('nan')
+
+    cumulative_return = float(equity[-1] - 1.0) if equity.size > 0 else float('nan')
+    years = float(arr.size / trades_per_year) if math.isfinite(trades_per_year) and trades_per_year > 0 else float('nan')
+    annual_return = float('nan')
+    if math.isfinite(years) and years > 0 and equity.size > 0 and equity[-1] > 0:
+        try:
+            annual_return = float(equity[-1] ** (1.0 / years) - 1.0)
+        except Exception:
+            annual_return = float('nan')
+    calmar = float('nan')
+    if max_drawdown > 0 and math.isfinite(max_drawdown) and math.isfinite(annual_return):
+        calmar = float(annual_return / max_drawdown)
+
+    metrics.update({
+        "avg_return_per_trade": avg_return,
+        "win_rate": win_rate,
+        "sharpe_ratio": sharpe,
+        "max_drawdown": max_drawdown,
+        "calmar_ratio": calmar,
+        "cumulative_return": cumulative_return,
+        "annual_return": annual_return,
+        "num_trades": float(arr.size),
+        "trades_per_year": trades_per_year,
+        "slippage_bps": float(slippage_bps),
+    })
+    return metrics
+
+
 def forecast_backtest(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
@@ -60,6 +130,8 @@ def forecast_backtest(
     features: Optional[Dict[str, Any]] = None,
     dimred_method: Optional[str] = None,
     dimred_params: Optional[Dict[str, Any]] = None,
+    slippage_bps: float = 0.0,
+    trade_threshold: float = 0.0,
 ) -> Dict[str, Any]:
     """Rolling-origin backtest over historical anchors using the forecast tool.
 
@@ -228,6 +300,40 @@ def forecast_backtest(
                         da = float(np.mean(np.sign(np.diff(fcv[:m])) == np.sign(np.diff(act[:m]))))
                     else:
                         da = float('nan')
+                    entry_price = float(closes[idx]) if idx < len(closes) else float('nan')
+                    exit_price = float(act[m-1]) if m > 0 else float('nan')
+                    if target == 'return':
+                        expected_move = float(np.nansum(fcv[:m]))
+                    else:
+                        expected_move = float((float(fcv[m-1]) - entry_price)) if math.isfinite(entry_price) else float('nan')
+                    expected_return = float('nan')
+                    if target == 'return':
+                        expected_return = expected_move
+                    elif math.isfinite(entry_price) and entry_price != 0.0:
+                        expected_return = expected_move / entry_price
+                    direction = 0
+                    threshold = float(trade_threshold or 0.0)
+                    if math.isfinite(expected_return):
+                        if expected_return > threshold:
+                            direction = 1
+                        elif expected_return < -threshold:
+                            direction = -1
+                    position = 'flat'
+                    if direction > 0:
+                        position = 'long'
+                    elif direction < 0:
+                        position = 'short'
+                    gross_return = float('nan')
+                    net_return = float('nan')
+                    if direction != 0 and math.isfinite(entry_price) and entry_price != 0.0 and math.isfinite(exit_price):
+                        gross_return = direction * ((exit_price - entry_price) / entry_price)
+                        slip = float(abs(slippage_bps) or 0.0) / 10000.0
+                        net_return = gross_return - float(direction != 0) * 2.0 * slip
+                        if net_return <= -0.999:
+                            net_return = -0.999
+                    elif direction == 0:
+                        gross_return = 0.0
+                        net_return = 0.0
                     per_anchor.append({
                         "anchor": anchor_time,
                         "success": True,
@@ -236,6 +342,12 @@ def forecast_backtest(
                         "directional_accuracy": da,
                         "forecast": [float(v) for v in fcv[:m].tolist()],
                         "actual": [float(v) for v in act[:m].tolist()],
+                        "entry_price": entry_price,
+                        "exit_price": exit_price,
+                        "expected_return": expected_return,
+                        "position": position,
+                        "trade_return_gross": gross_return,
+                        "trade_return": net_return,
                     })
             # Aggregate
             ok = [x for x in per_anchor if x.get('success')]
@@ -253,6 +365,15 @@ def forecast_backtest(
                     da_vals = [v for v in da_vals if v is not None and np.isfinite(v)]
                     if da_vals:
                         agg["avg_directional_accuracy"] = float(np.mean(da_vals))
+                    trade_returns = [x.get('trade_return') for x in ok if x.get('trade_return') is not None]
+                    trade_returns = [float(v) for v in trade_returns if v is not None and np.isfinite(v)]
+                    metrics = _compute_performance_metrics(trade_returns, timeframe, int(horizon), float(slippage_bps)) if trade_returns else {}
+                    if metrics:
+                        agg["avg_trade_return"] = float(metrics.get("avg_return_per_trade", float('nan')))
+                        agg["win_rate"] = float(metrics.get("win_rate", float('nan')))
+                        agg["consistency"] = float(metrics.get("win_rate", float('nan')))
+                        agg["metrics"] = metrics
+                        agg["slippage_bps"] = float(slippage_bps)
                 if _dn_used:
                     agg["denoise_used"] = _dn_used
                 results[method] = agg
@@ -262,6 +383,7 @@ def forecast_backtest(
                     "successful_tests": 0,
                     "num_tests": len(per_anchor),
                     "details": per_anchor,
+                    "slippage_bps": float(slippage_bps),
                 }
 
         return {
@@ -273,6 +395,8 @@ def forecast_backtest(
             "spacing": int(spacing),
             "methods": methods,
             "denoise_used": _dn_used,
+            "slippage_bps": float(slippage_bps),
+            "trade_threshold": float(trade_threshold or 0.0),
             "results": results,
         }
     except Exception as e:

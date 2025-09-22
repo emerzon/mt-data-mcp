@@ -75,6 +75,8 @@ def forecast_backtest_run(
     features: Optional[Dict[str, Any]] = None,
     dimred_method: Optional[str] = None,
     dimred_params: Optional[Dict[str, Any]] = None,
+    slippage_bps: float = 0.0,
+    trade_threshold: float = 0.0,
 ) -> Dict[str, Any]:
     """Rolling-origin backtest over historical anchors using the forecast tool."""
     return _forecast_backtest_impl(
@@ -92,6 +94,8 @@ def forecast_backtest_run(
         features=features,
         dimred_method=dimred_method,
         dimred_params=dimred_params,
+        slippage_bps=slippage_bps,
+        trade_threshold=trade_threshold,
     )
 
 
@@ -101,7 +105,7 @@ def forecast_volatility_estimate(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 1,
-    method: Literal['ewma','parkinson','gk','rs','yang_zhang','rolling_std','har_rv','garch','egarch','gjr_garch','arima','sarima','ets','theta'] = 'ewma',  # type: ignore
+    method: Literal['ewma','parkinson','gk','rs','yang_zhang','rolling_std','realized_kernel','har_rv','garch','egarch','gjr_garch','garch_t','egarch_t','gjr_garch_t','figarch','arima','sarima','ets','theta'] = 'ewma',  # type: ignore
     proxy: Optional[Literal['squared_return','abs_return','log_r2']] = None,  # type: ignore
     params: Optional[Dict[str, Any]] = None,
     as_of: Optional[str] = None,
