@@ -104,7 +104,9 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
                 'objective': best.get('objective') or grid.get('objective'),
                 'edge': best.get('edge'),
                 'kelly': best.get('kelly'),
+                'kelly_uncond': best.get('kelly_uncond'),
                 'ev': best.get('ev'),
+                'ev_uncond': best.get('ev_uncond'),
                 'prob_tp_first': best.get('prob_tp_first'),
                 'prob_sl_first': best.get('prob_sl_first'),
                 'prob_no_hit': best.get('prob_no_hit'),
@@ -117,7 +119,7 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
                     continue
                 trimmed.append({
                     'tp': it.get('tp'), 'sl': it.get('sl'),
-                    'edge': it.get('edge'), 'kelly': it.get('kelly'), 'ev': it.get('ev'),
+                    'edge': it.get('edge'), 'kelly': it.get('kelly'), 'kelly_uncond': it.get('kelly_uncond'), 'ev': it.get('ev'), 'ev_uncond': it.get('ev_uncond'),
                     'prob_tp_first': it.get('prob_tp_first'), 'prob_sl_first': it.get('prob_sl_first'), 'prob_no_hit': it.get('prob_no_hit'),
                 })
             if trimmed:
@@ -387,34 +389,255 @@ def _extract_tables(value: Any, path: str, tables: Dict[str, str], counters: Dic
     return value
 
 
-def render_compact_report(report: Dict[str, Any]) -> str:
+def render_enhanced_report(report: Dict[str, Any]) -> str:
+    """Render a more concise and readable report format."""
     if not isinstance(report, dict):
         return 'error: invalid report payload\n'
-    tables: Dict[str, str] = {}
-    counters: Dict[str, int] = {}
-    sanitized = copy.deepcopy(report)
-    summary_raw = sanitized.get('summary') if isinstance(sanitized.get('summary'), list) else []
-    summary_lines = [str(item).strip() for item in summary_raw if str(item).strip()]
-    sanitized['summary'] = summary_lines
-    transformed = _extract_tables(sanitized, 'report', tables, counters)
-    yaml_body = _compact_yaml(transformed)
+    
     output_lines: List[str] = []
-    if summary_lines:
-        output_lines.append('summary')
-        output_lines.extend(summary_lines)
-    if tables:
-        if output_lines:
+    
+    # Summary section (always first, most important)
+    summary_raw = report.get('summary', [])
+    if isinstance(summary_raw, list) and summary_raw:
+        summary_lines = [str(item).strip() for item in summary_raw if str(item).strip()]
+        if summary_lines:
+            output_lines.append('## Summary')
+            for line in summary_lines:
+                output_lines.append(f'• {line}')
             output_lines.append('')
-        output_lines.append('tables')
-        for name, csv_text in tables.items():
-            output_lines.append(name)
-            output_lines.extend(csv_text.splitlines())
-    if yaml_body:
-        if output_lines:
-            output_lines.append('')
-        output_lines.append('yaml')
-        output_lines.extend(yaml_body.splitlines())
-    if not output_lines:
-        return 'yaml\n' + (yaml_body or '') + ('\n' if yaml_body and not yaml_body.endswith('\n') else '')
-    text = '\n'.join(output_lines).rstrip()
-    return text + '\n'
+    
+    # Process sections
+    sections = report.get('sections', {})
+    if isinstance(sections, dict):
+        
+        # Key sections to show prominently  
+        priority_sections = ['context', 'pivot', 'volatility', 'forecast', 'barriers', 'market']
+        secondary_sections = ['backtest', 'patterns', 'regime', 'execution_gates', 'contexts_multi', 'pivot_multi', 'volatility_har_rv', 'forecast_conformal']
+        
+        for section_name in priority_sections:
+            section_data = sections.get(section_name)
+            if section_data:
+                formatted = _format_section_enhanced(section_name, section_data)
+                if formatted:
+                    output_lines.extend(formatted)
+                    output_lines.append('')
+        
+        # Secondary sections (more compact)
+        for section_name in secondary_sections:
+            section_data = sections.get(section_name)
+            if section_data:
+                formatted = _format_section_compact(section_name, section_data)
+                if formatted:
+                    output_lines.extend(formatted)
+                    output_lines.append('')
+    
+    return '\n'.join(output_lines).rstrip() + '\n'
+
+
+def _format_section_enhanced(name: str, data: Dict[str, Any]) -> List[str]:
+    """Format key sections with detailed, readable output."""
+    lines = []
+    
+    if data.get('error'):
+        return [f"## {name.title()}", f"⚠️  {data['error']}"]
+    
+    if name == 'context':
+        lines.append('## Market Context')
+        snap = data.get('last_snapshot', {})
+        if snap:
+            close = snap.get('close')
+            ema20 = snap.get('EMA_20') or snap.get('ema_20')
+            ema50 = snap.get('EMA_50') or snap.get('ema_50')
+            rsi = snap.get('RSI_14') or snap.get('rsi_14')
+            
+            if close is not None:
+                lines.append(f'• Price: {format_number(close)}')
+            if ema20 is not None and ema50 is not None:
+                trend = "📈 Above EMAs" if (close is not None and float(close) > float(ema20) > float(ema50)) else "📊 Mixed signals"
+                lines.append(f'• Trend: {trend} (EMA20: {format_number(ema20)}, EMA50: {format_number(ema50)})')
+            if rsi is not None:
+                try:
+                    rsi_val = float(rsi)
+                except Exception:
+                    rsi_val = None
+                if rsi_val is not None:
+                    rsi_signal = "🔴 Oversold" if rsi_val < 30 else "🟢 Overbought" if rsi_val > 70 else "🟡 Neutral"
+                    lines.append(f'• RSI(14): {format_number(rsi)} - {rsi_signal}')
+        
+        # If no snapshot data, show error or note
+        if len(lines) == 1:  # Only header was added
+            lines.append('• No market data available')
+    
+    elif name == 'pivot':
+        lines.append('## Pivot Levels')
+        levels = data.get('levels', [])
+        period = data.get('period', {})
+        
+        if period:
+            lines.append(f"📅 Period: {period.get('start', '')} to {period.get('end', '')}")
+        
+        if isinstance(levels, list) and levels:
+            # Show key levels only
+            key_levels = ['R2', 'R1', 'PP', 'S1', 'S2']
+            for level_row in levels:
+                if isinstance(level_row, dict):
+                    level_name = level_row.get('level')
+                    if level_name in key_levels:
+                        classic = level_row.get('classic')
+                        if classic is not None:
+                            symbol = '🔴' if level_name.startswith('R') else '🟢' if level_name.startswith('S') else '⚪'
+                            lines.append(f'• {symbol} {level_name}: {format_number(classic)}')
+    
+    elif name == 'forecast':
+        lines.append('## Forecast')
+        method = data.get('method', 'unknown')
+        forecast_prices = data.get('forecast_price', [])
+        
+        lines.append(f'• Method: {method}')
+        if isinstance(forecast_prices, list) and len(forecast_prices) >= 2:
+            # Show first, middle (if enough), and last forecast prices
+            lines.append(f'• H+1: {format_number(forecast_prices[0])}')
+            if len(forecast_prices) >= 3:
+                mid_idx = len(forecast_prices) // 2
+                lines.append(f'• H+{mid_idx+1}: {format_number(forecast_prices[mid_idx])}')
+            lines.append(f'• H+{len(forecast_prices)}: {format_number(forecast_prices[-1])}')
+            
+            # Show trend
+            try:
+                start_price = float(forecast_prices[0])
+                end_price = float(forecast_prices[-1])
+                if end_price > start_price:
+                    trend = "📈 Upward"
+                elif end_price < start_price:
+                    trend = "📉 Downward" 
+                else:
+                    trend = "➡️ Sideways"
+                change_pct = ((end_price - start_price) / start_price) * 100 if start_price != 0 else 0
+                lines.append(f'• Trend: {trend} ({format_number(change_pct)}%)')
+            except Exception:
+                pass
+        else:
+            lines.append('• No forecast data available')
+    
+    elif name == 'volatility':
+        lines.append('## Volatility')
+        method = data.get('method', 'unknown')
+        sigma_horizon = data.get('horizon_sigma_return') or data.get('horizon_sigma_price')
+        sigma_bar = data.get('sigma_bar_return') or data.get('sigma_bar_price')
+        
+        lines.append(f'• Method: {method}')
+        try:
+            if sigma_horizon is not None:
+                lines.append(f'• Horizon σ: {format_number(float(sigma_horizon)*100)}%')
+            if sigma_bar is not None:
+                lines.append(f'• Bar σ: {format_number(float(sigma_bar)*100)}%')
+        except Exception:
+            pass
+    
+    elif name == 'barriers':
+        best = data.get('best', {})
+        content: List[str] = []
+        if isinstance(best, dict):
+            tp = best.get('tp')
+            sl = best.get('sl')
+            edge = best.get('edge')
+            prob_tp = best.get('prob_tp_first')
+            ev_u = best.get('ev_uncond')
+            kelly_u = best.get('kelly_uncond')
+            if tp is not None and sl is not None:
+                content.append(f'• Best Setup: TP {format_number(tp)}% / SL {format_number(sl)}%')
+            if edge is not None:
+                try:
+                    content.append(f'• Expected Edge: {format_number(float(edge)*100)}%')
+                except Exception:
+                    pass
+            if ev_u is not None:
+                content.append(f'• EV (uncond, per risk): {format_number(ev_u)}')
+            if kelly_u is not None:
+                content.append(f'• Kelly (uncond): {format_number(kelly_u)}')
+            if prob_tp is not None:
+                try:
+                    content.append(f'• Win Probability (TP first): {format_number(float(prob_tp)*100)}%')
+                except Exception:
+                    pass
+        if content:
+            lines.append('## Optimal Barriers')
+            lines.extend(content)
+    elif name == 'market':
+        lines.append('## Market Snapshot')
+        bid = data.get('bid'); ask = data.get('ask')
+        spread_pips = data.get('spread_pips')
+        if bid is not None and ask is not None:
+            lines.append(f"• Bid/Ask: {format_number(bid)} / {format_number(ask)}")
+        if spread_pips is not None:
+            lines.append(f"• Spread: {format_number(spread_pips)} pips")
+
+            prob_tp = best.get('prob_tp_first')
+            
+            if tp and sl:
+                lines.append(f'• Best Setup: TP {format_number(tp)}% / SL {format_number(sl)}%')
+            if edge:
+                lines.append(f'• Expected Edge: {format_number(float(edge)*100)}%')
+            if prob_tp:
+                lines.append(f'• Win Probability: {format_number(float(prob_tp)*100)}%')
+    
+    return lines
+
+
+def _format_section_compact(name: str, data: Dict[str, Any]) -> List[str]:
+    """Format secondary sections in compact form."""
+    lines = []
+    
+    if data.get('error'):
+        return [f"## {name.title()}: ⚠️ {data['error']}"]
+    
+    if name == 'backtest':
+        best_method = data.get('best_method', {})
+        if isinstance(best_method, dict) and best_method.get('method'):
+            method = best_method.get('method', 'unknown')
+            stats = best_method.get('stats', {})
+            rmse = stats.get('avg_rmse')
+            accuracy = stats.get('avg_directional_accuracy')
+            
+            line = f"## Backtest: {method}"
+            if rmse is not None:
+                line += f" (RMSE: {format_number(rmse)})"
+            if accuracy is not None:
+                try:
+                    line += f" (Accuracy: {format_number(float(accuracy)*100)}%)"
+                except Exception:
+                    pass
+            lines.append(line)
+        # If no best method, suppress the backtest section entirely
+    
+    elif name == 'patterns':
+        if 'error' not in data:
+            recent = data.get('recent', [])
+            if recent and isinstance(recent, list):
+                patterns = [str(p.get('pattern', '')) for p in recent if isinstance(p, dict)]
+                if patterns:
+                    lines.append(f"## Patterns: {', '.join(patterns[:3])}")
+            else:
+                lines.append("## Patterns: None detected")
+    
+    elif name == 'regime':
+        bocpd = data.get('bocpd', {})
+        hmm = data.get('hmm', {})
+        
+        line_parts = []
+        if isinstance(bocpd, dict):
+            summary = bocpd.get('summary', {})
+            if isinstance(summary, dict):
+                cp_count = summary.get('change_points_count', 0)
+                line_parts.append(f"BOCPD: {cp_count} changepoints")
+        
+        if isinstance(hmm, dict):
+            summary = hmm.get('summary', {})
+            if isinstance(summary, dict):
+                last_state = summary.get('last_state', 'unknown')
+                line_parts.append(f"HMM: state {last_state}")
+        
+        if line_parts:
+            lines.append(f"## Regime: {' | '.join(line_parts)}")
+    
+    return lines

@@ -3,6 +3,174 @@ from ..schema import DenoiseSpec
 from ..report_utils import now_utc_iso, parse_csv_tail, pick_best_forecast_method, summarize_barrier_grid
 
 
+def _get_raw_result(func, *args, **kwargs):
+    """Call function and return raw dict, handling both wrapped and unwrapped cases."""
+    try:
+        # First try calling the function normally
+        result = func(*args, **kwargs)
+        
+        # If it returns a dict, use it directly
+        if isinstance(result, dict):
+            return result
+            
+        # If it returns a formatted string, parse what we can
+        if isinstance(result, str):
+            # Try to parse key-value format or structured output
+            return _parse_formatted_output(result)
+        
+        return {'error': f'Unexpected result type: {type(result)}'}
+        
+    except Exception as e:
+        return {'error': f'Function call failed: {str(e)}'}
+
+
+def _parse_formatted_output(output: str) -> Dict[str, Any]:
+    """Parse formatted string output back into structured data."""
+    try:
+        lines = [line.rstrip() for line in output.split('\n')]  # Keep leading spaces
+        result = {}
+        current_section = None
+        csv_data = []
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            
+            if not line.strip():
+                i += 1
+                continue
+                
+            # Key-value pairs like "symbol: BTCUSD"
+            if ':' in line and not line.startswith(' ') and ',' not in line:
+                key, val = line.split(':', 1)
+                key = key.strip()
+                val = val.strip()
+                
+                # Handle sections that have subsections
+                if key in ['period', 'best', 'summary', 'levels'] and not val:
+                    current_section = key
+                    result[key] = {}
+                    # Look ahead for CSV data or nested structure
+                    i += 1
+                    
+                    if key == 'levels':
+                        # Special handling for levels - expect CSV data
+                        csv_data = []
+                        while i < len(lines):
+                            next_line = lines[i]
+                            stripped_line = next_line.strip()
+                            if not stripped_line:
+                                i += 1
+                                continue
+                            # Look for CSV data (may be indented)
+                            if ',' in stripped_line and (stripped_line.startswith('level,') or 
+                                all(c.isdigit() or c in '.,- ' or c.isalpha() for c in stripped_line[:20])):
+                                csv_data.append(stripped_line)
+                                i += 1
+                            elif stripped_line and not next_line.startswith(' ') and ':' in stripped_line and ',' not in stripped_line:
+                                # New section starting
+                                break
+                            else:
+                                i += 1
+                        
+                        if csv_data:
+                            result[key] = _parse_csv_data(csv_data)
+                        i -= 1  # Back up one since we'll increment at end of loop
+                    else:
+                        # Handle other nested sections
+                        while i < len(lines) and (lines[i].startswith(' ') or not lines[i].strip()):
+                            next_line = lines[i]
+                            if next_line.startswith(' ') and ':' in next_line:
+                                sub_key, sub_val = next_line.strip().split(':', 1)
+                                result[current_section][sub_key.strip()] = _parse_value(sub_val.strip())
+                            i += 1
+                        i -= 1  # Back up one
+                        
+                elif current_section:
+                    # Add to current section
+                    result[current_section][key] = _parse_value(val)
+                else:
+                    result[key] = _parse_value(val)
+                    
+            # Standalone CSV data
+            elif ',' in line and not line.startswith(' '):
+                csv_data = [line]
+                i += 1
+                # Collect following CSV rows
+                while i < len(lines) and ',' in lines[i] and not (lines[i].count(':') > lines[i].count(',')):
+                    csv_data.append(lines[i])
+                    i += 1
+                
+                if csv_data:
+                    parsed_csv = _parse_csv_data(csv_data)
+                    if current_section:
+                        result[current_section] = parsed_csv
+                    else:
+                        result['data'] = parsed_csv
+                i -= 1  # Back up one
+                        
+            i += 1
+        
+        # If we couldn't parse anything meaningful, return error
+        if not result:
+            result = {'error': 'Could not parse formatted output', 'raw_output': output[:200]}
+            
+        return result
+    except Exception as e:
+        return {'error': f'Failed to parse output: {str(e)}', 'raw_output': output[:200]}
+
+
+def _parse_value(val: str) -> Any:
+    """Parse a string value into appropriate type."""
+    val = val.strip()
+    if not val or val.lower() in ['null', 'none', '']:
+        return None
+    if val.lower() in ['true', 'yes']:
+        return True
+    if val.lower() in ['false', 'no']:
+        return False
+    try:
+        if '.' in val or 'e' in val.lower():
+            return float(val)
+        return int(val)
+    except ValueError:
+        return val
+
+
+def _parse_csv_data(csv_lines: List[str]) -> Any:
+    """Parse CSV lines into structured data."""
+    if not csv_lines:
+        return None
+        
+    try:
+        # First line should be headers
+        headers = [h.strip() for h in csv_lines[0].split(',')]
+        
+        if len(csv_lines) == 1:
+            return {'headers': headers}
+            
+        # Parse data rows
+        rows = []
+        for line in csv_lines[1:]:
+            if not line.strip():
+                continue
+            values = [v.strip() for v in line.split(',')]
+            row = {}
+            for i, header in enumerate(headers):
+                val = values[i] if i < len(values) else ''
+                row[header] = _parse_value(val) if val else None
+            rows.append(row)
+            
+        return rows if rows else {'headers': headers}
+    except Exception:
+        return csv_lines
+
+
+def _unwrap_mcp_function(func):
+    """Legacy function - now just returns the original function."""
+    return func
+
+
 def template_basic(
     symbol: str,
     horizon: int,
@@ -11,6 +179,7 @@ def template_basic(
 ) -> Dict[str, Any]:
     p = dict(params or {})
     tf = str(p.get('timeframe', 'H1'))
+    
     report: Dict[str, Any] = {
         'meta': {
             'symbol': symbol,
@@ -24,8 +193,9 @@ def template_basic(
 
     # Context
     indicators = "ema(20),ema(50),rsi(14),macd(12,26,9)"
-    from ..data import data_fetch_candles as _fetch_candles
-    ctx = _fetch_candles(
+    from ..data import data_fetch_candles
+    
+    ctx = _get_raw_result(data_fetch_candles,
         symbol=symbol,
         timeframe=tf,
         limit=int(p.get('context_limit', 300)),
@@ -33,13 +203,27 @@ def template_basic(
         denoise=denoise,
         simplify={'mode': 'select', 'method': 'lttb', 'ratio': 0.2},  # type: ignore[arg-type]
     )
+    
     if 'error' in ctx:
         report['sections']['context'] = {'error': ctx['error']}
     else:
-        tail_rows = parse_csv_tail(ctx.get('csv_header'), ctx.get('csv_data'), tail=int(p.get('context_tail', 40)))
+        # Try to parse the CSV data if available
+        csv_header = ctx.get('csv_header') if isinstance(ctx, dict) else None
+        csv_data = ctx.get('csv_data') if isinstance(ctx, dict) else None
+        if csv_header and csv_data:
+            tail_rows = parse_csv_tail(csv_header, csv_data, tail=int(p.get('context_tail', 40)))
+        else:
+            # Fallbacks when calling through minimal formatter
+            if isinstance(ctx, dict) and isinstance(ctx.get('data'), list):
+                tail_rows = ctx.get('data')[-int(p.get('context_tail', 40)):]  # type: ignore[index]
+            elif isinstance(ctx, list):
+                tail_rows = ctx
+            else:
+                tail_rows = []
+        
         last = tail_rows[-1] if tail_rows else {}
         clos: List[float] = []
-        for r in tail_rows[-30:]:
+        for r in (tail_rows[-30:] if tail_rows else []):
             v = r.get('close')
             try:
                 clos.append(float(v))
@@ -52,8 +236,10 @@ def template_basic(
         }
 
     # Pivots (D1)
-    from ..pivot import pivot_compute_points as _compute_pivot_points
-    piv = _compute_pivot_points(symbol=symbol, timeframe='D1')
+    from ..pivot import pivot_compute_points
+
+    piv = _get_raw_result(pivot_compute_points, symbol=symbol, timeframe='D1')
+
     if 'error' in piv:
         report['sections']['pivot'] = {'error': piv['error']}
     else:
@@ -65,8 +251,8 @@ def template_basic(
         }
 
     # Volatility (EWMA)
-    from ..forecast import forecast_volatility_estimate as _forecast_volatility
-    vol = _forecast_volatility(symbol=symbol, timeframe=tf, horizon=int(horizon), method='ewma', params={'lambda_': 0.94})
+    from ..forecast import forecast_volatility_estimate
+    vol = _get_raw_result(forecast_volatility_estimate, symbol=symbol, timeframe=tf, horizon=int(horizon), method='ewma', params={'lambda_': 0.94})
     if 'error' in vol:
         report['sections']['volatility'] = {'error': vol['error']}
     else:
@@ -85,9 +271,9 @@ def template_basic(
         rmse_tol = float(p.get('backtest_rmse_tolerance', 0.05))
     except Exception:
         rmse_tol = 0.05
-    from ..forecast import forecast_backtest_run as _forecast_backtest
+    from ..forecast import forecast_backtest_run
     methods = p.get('methods')
-    bt = _forecast_backtest(symbol=symbol, timeframe=tf, horizon=int(horizon), steps=steps, spacing=spacing, methods=methods)
+    bt = _get_raw_result(forecast_backtest_run, symbol=symbol, timeframe=tf, horizon=int(horizon), steps=steps, spacing=spacing, methods=methods)
     sec_bt: Dict[str, Any]
     if 'error' in bt:
         sec_bt = {'error': bt['error']}
@@ -116,8 +302,8 @@ def template_basic(
 
     if best is not None:
         best_name, best_stats = best
-        from ..forecast import forecast_generate as _forecast
-        fc = _forecast(symbol=symbol, timeframe=tf, method=best_name, horizon=int(horizon))
+        from ..forecast import forecast_generate
+        fc = _get_raw_result(forecast_generate, symbol=symbol, timeframe=tf, method=best_name, horizon=int(horizon))
         if 'error' in fc:
             report['sections']['forecast'] = {'error': fc['error'], 'method': best_name}
         else:
@@ -137,9 +323,9 @@ def template_basic(
         }}
 
     # Barriers (grid)
-    from ..forecast import forecast_barrier_optimize as _barrier_optimize
+    from ..forecast import forecast_barrier_optimize
     mode_val = str(p.get('mode', 'pct'))
-    grid = _barrier_optimize(
+    grid = _get_raw_result(forecast_barrier_optimize,
         symbol=symbol,
         timeframe=tf,
         horizon=int(horizon),
@@ -151,6 +337,8 @@ def template_basic(
         sl_min=float(p.get('sl_min', 0.2)),
         sl_max=float(p.get('sl_max', 1.0)),
         sl_steps=int(p.get('sl_steps', 5)),
+        params=p.get('params'),
+        objective=str(p.get('objective','ev_uncond')),
         return_grid=False,
         top_k=int(p.get('top_k', 5)),
         output='summary',
@@ -161,8 +349,8 @@ def template_basic(
         report['sections']['barriers'] = summarize_barrier_grid(grid, top_k=int(p.get('top_k', 5)))
 
     # Patterns
-    from ..patterns import patterns_detect_candlesticks as _detect_candles_patterns
-    pats = _detect_candles_patterns(symbol=symbol, timeframe=tf, limit=int(p.get('patterns_limit', 120)))
+    from ..patterns import patterns_detect_candlesticks
+    pats = _get_raw_result(patterns_detect_candlesticks, symbol=symbol, timeframe=tf, limit=int(p.get('patterns_limit', 120)))
     if 'error' in pats:
         report['sections']['patterns'] = {'error': pats['error']}
     else:

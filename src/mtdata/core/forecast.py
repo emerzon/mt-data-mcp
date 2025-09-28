@@ -571,7 +571,7 @@ def forecast_barrier_optimize(
     sl_steps: int = 5,
     params: Optional[Dict[str, Any]] = None,
     denoise: Optional[DenoiseSpec] = None,
-    objective: Literal['edge','prob_tp_first','kelly','ev'] = 'edge',  # type: ignore
+    objective: Literal['edge','prob_tp_first','kelly','ev','ev_uncond','kelly_uncond'] = 'edge',  # type: ignore
     return_grid: bool = True,
     top_k: Optional[int] = None,
     output: Literal['full','summary'] = 'full',  # type: ignore
@@ -624,16 +624,23 @@ def forecast_barrier_optimize(
         # Simulate one set of paths for grid evaluation
         sims = int(p.get('n_sims', p.get('sims', 4000)) or 4000)
         seed = int(p.get('seed', 42) or 42)
+        n_seeds = int(p.get('n_seeds', 1) or 1)
+        paths_list = []
         if str(method).lower() == 'mc_gbm':
-            sim = _simulate_gbm_mc(prices, horizon=int(horizon), n_sims=int(sims), seed=int(seed))
+            for i in range(max(1, n_seeds)):
+                sim = _simulate_gbm_mc(prices, horizon=int(horizon), n_sims=int(sims), seed=int(seed + i))
+                paths_list.append(_np.asarray(sim['price_paths'], dtype=float))
         elif str(method).lower() == 'hmm_mc':
             n_states = int(p.get('n_states', 2) or 2)
-            sim = _simulate_hmm_mc(prices, horizon=int(horizon), n_states=int(n_states), n_sims=int(sims), seed=int(seed))
+            for i in range(max(1, n_seeds)):
+                sim = _simulate_hmm_mc(prices, horizon=int(horizon), n_states=int(n_states), n_sims=int(sims), seed=int(seed + i))
+                paths_list.append(_np.asarray(sim['price_paths'], dtype=float))
         else:
             return {"error": f"Unsupported method: {method}. Use 'mc_gbm' or 'hmm_mc'"}
 
-        paths = _np.asarray(sim['price_paths'], dtype=float)
+        paths = _np.vstack(paths_list) if len(paths_list) > 1 else paths_list[0]
         S, H = paths.shape
+        last_idx = H - 1
 
         # Build grids
         def _linspace(a: float, b: float, n: int) -> _np.ndarray:
@@ -667,23 +674,41 @@ def forecast_barrier_optimize(
                 no_hit = 0
                 t_hit_tp: List[int] = []
                 t_hit_sl: List[int] = []
+                # Per-path realized PnL (unconditional), in same units as distances
+                pnl = _np.zeros(S, dtype=float)
                 for sidx in range(S):
                     path = paths[sidx]
                     idx_tp = _np.argmax(path >= tp_price) if _np.any(path >= tp_price) else -1
                     idx_sl = _np.argmax(path <= sl_price) if _np.any(path <= sl_price) else -1
                     if idx_tp < 0 and idx_sl < 0:
                         no_hit += 1
+                        # Close at horizon: PnL is end - start
+                        pnl[sidx] = float(path[last_idx] - last_price)
                         continue
                     if idx_tp >= 0 and (idx_sl < 0 or idx_tp < idx_sl):
                         tp_first += 1
                         t_hit_tp.append(idx_tp + 1)
+                        pnl[sidx] = float(tp_dist)
                     elif idx_sl >= 0 and (idx_tp < 0 or idx_sl < idx_tp):
                         sl_first += 1
                         t_hit_sl.append(idx_sl + 1)
+                        pnl[sidx] = float(-sl_dist)
                     else:
                         both_tie += 1
                         t_hit_tp.append(idx_tp + 1)
                         t_hit_sl.append(idx_sl + 1)
+                        # Split tie as average of TP/SL outcomes
+                        pnl[sidx] = float(0.5 * (tp_dist - sl_dist))
+
+                # Apply simple cost model if provided: entry+exit costs in price units
+                spread_bps = float(p.get('spread_bps', 0.0) or 0.0)
+                fee_bps = float(p.get('fee_bps', 0.0) or 0.0)
+                slippage_bps = float(p.get('slippage_bps', 0.0) or 0.0)
+                total_bps = (spread_bps + fee_bps + slippage_bps)
+                if total_bps != 0.0:
+                    # Convert bps to price units relative to last_price, cost paid on both entry and exit
+                    per_trade_cost = float(total_bps) * 1e-4 * float(last_price) * 2.0
+                    pnl -= per_trade_cost
 
                 S_f = float(S)
                 p_tp_first = (tp_first + 0.5 * both_tie) / S_f
@@ -694,16 +719,33 @@ def forecast_barrier_optimize(
                 kelly = float(p_win - (1.0 - p_win) / b) if b > 0 else float('-inf')
                 ev = float(p_win * b - (1.0 - p_win)) if b > 0 else float('-inf')
                 edge = float(p_tp_first - p_sl_first)
+                # Unconditional metrics including no-hit and costs
+                ev_uncond_raw = float(_np.mean(pnl))
+                # Normalize to "per unit risk" similar to ev if desired
+                ev_uncond = float(ev_uncond_raw / sl_dist) if sl_dist > 0 else float('nan')
+                p_win_uncond = float(_np.mean(pnl > 0.0))
+                kelly_uncond = float(p_win_uncond - (1.0 - p_win_uncond) / b) if b > 0 else float('-inf')
+
                 tp_med = float(_np.median(_np.asarray(t_hit_tp))) if t_hit_tp else float('nan')
                 sl_med = float(_np.median(_np.asarray(t_hit_sl))) if t_hit_sl else float('nan')
+                # Uncertainty estimates (SE) for probabilities and EV
+                se_tp = float(_np.sqrt(max(p_tp_first * (1.0 - p_tp_first), 0.0) / S_f))
+                se_sl = float(_np.sqrt(max(p_sl_first * (1.0 - p_sl_first), 0.0) / S_f))
+                se_no = float(_np.sqrt(max((no_hit / S_f) * (1.0 - (no_hit / S_f)), 0.0) / S_f))
+                # For EV_uncond, use sample std/sqrt(S)
+                ev_std = float(_np.std(pnl / sl_dist if sl_dist > 0 else pnl, ddof=1)) if S > 1 else 0.0
+                se_ev_uncond = float(ev_std / _np.sqrt(S_f)) if S > 1 else 0.0
+
                 results.append({
                     'tp': float(tp), 'sl': float(sl),
-                    'prob_tp_first': float(p_tp_first),
-                    'prob_sl_first': float(p_sl_first),
-                    'prob_no_hit': float(no_hit / S_f),
+                    'prob_tp_first': float(p_tp_first), 'prob_tp_first_se': se_tp,
+                    'prob_sl_first': float(p_sl_first), 'prob_sl_first_se': se_sl,
+                    'prob_no_hit': float(no_hit / S_f), 'prob_no_hit_se': se_no,
                     'edge': float(edge),
                     'kelly': float(kelly),
                     'ev': float(ev),
+                    'kelly_uncond': float(kelly_uncond),
+                    'ev_uncond': float(ev_uncond), 'ev_uncond_se': se_ev_uncond,
                     'tp_median_bars': tp_med,
                     'sl_median_bars': sl_med,
                 })
@@ -718,6 +760,10 @@ def forecast_barrier_optimize(
             best = max(results, key=lambda r: r['kelly'])
         elif objective == 'ev':
             best = max(results, key=lambda r: r['ev'])
+        elif objective == 'kelly_uncond':
+            best = max(results, key=lambda r: r['kelly_uncond'])
+        elif objective == 'ev_uncond':
+            best = max(results, key=lambda r: r['ev_uncond'])
         else:
             best = max(results, key=lambda r: r['edge'])
 
@@ -729,7 +775,7 @@ def forecast_barrier_optimize(
             'horizon': int(horizon),
             'mode': mode,
             'last_price': last_price,
-            'objective': objective,
+            'objective': objective if objective in {'edge','prob_tp_first','kelly','ev','kelly_uncond','ev_uncond'} else 'edge',
             'grid_points': len(results),
             'best': best,
             'params_used': {k: p[k] for k in p if k in {"n_sims", "seed", "n_states"}},

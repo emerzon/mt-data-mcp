@@ -21,6 +21,9 @@ def template_swing(
         'tp_min': 0.5, 'tp_max': 3.0, 'tp_steps': 6,
         'sl_min': 0.5, 'sl_max': 3.0, 'sl_steps': 6,
         'top_k': 5,
+        # Barrier optimization defaults
+        'objective': 'ev_uncond',
+        'params': {'spread_bps': 0.5, 'slippage_bps': 0.2},
     })
     if 'timeframe' not in p:
         p['timeframe'] = 'H4'

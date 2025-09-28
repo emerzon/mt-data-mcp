@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional
 from ..schema import DenoiseSpec
-from .basic import template_basic
+from .basic import template_basic, _get_raw_result
 
 
 def template_advanced(
@@ -13,18 +13,27 @@ def template_advanced(
     p = dict(params or {})
     tf = str(p.get('timeframe', 'H1'))
     p['timeframe'] = tf
+    
     base = template_basic(symbol, horizon, denoise, p)
+    
+    if isinstance(base, str):
+        # If base is a string (error), return it
+        return {'error': f'template_basic returned string: {base}'}
+    elif not isinstance(base, dict):
+        return {'error': f'template_basic returned unexpected type: {type(base)}'}
+
+    # Rest of the function continues as before...
 
     # Regime summaries
-    from ..regime import regime_detect as _detect_regimes
+    from ..regime import regime_detect
     p = dict(params or {})
-    bocpd = _detect_regimes(
+    bocpd = _get_raw_result(regime_detect,
         symbol=symbol,
         timeframe=tf,
         limit=int(p.get('regime_limit', 1500)),
         method='bocpd', threshold=float(p.get('cp_threshold', 0.6)), output='summary', lookback=int(p.get('regime_lookback', 300))
     )
-    hmm = _detect_regimes(
+    hmm = _get_raw_result(regime_detect,
         symbol=symbol,
         timeframe=tf,
         limit=int(p.get('regime_limit', 1500)),
@@ -36,8 +45,8 @@ def template_advanced(
     }
 
     # HAR-RV volatility summary
-    from ..forecast import forecast_volatility_estimate as _forecast_volatility
-    har = _forecast_volatility(symbol=symbol, timeframe=tf, horizon=int(horizon), method='har_rv', params={'rv_timeframe': 'M5', 'days': 150, 'window_w': 5, 'window_m': 22})
+    from ..forecast import forecast_volatility_estimate
+    har = _get_raw_result(forecast_volatility_estimate, symbol=symbol, timeframe=tf, horizon=int(horizon), method='har_rv', params={'rv_timeframe': 'M5', 'days': 150, 'window_w': 5, 'window_m': 22})
     if 'error' in har:
         base['sections']['volatility_har_rv'] = {'error': har['error']}
     else:
@@ -52,8 +61,8 @@ def template_advanced(
     except Exception:
         best_method = None
     if best_method:
-        from ..forecast import forecast_conformal_intervals as _forecast_conformal
-        conf = _forecast_conformal(
+        from ..forecast import forecast_conformal_intervals
+        conf = _get_raw_result(forecast_conformal_intervals,
             symbol=symbol,
             timeframe=tf,
             method=best_method,

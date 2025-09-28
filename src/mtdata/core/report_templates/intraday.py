@@ -21,6 +21,9 @@ def template_intraday(
         'tp_min': 0.2, 'tp_max': 1.0, 'tp_steps': 5,
         'sl_min': 0.2, 'sl_max': 1.0, 'sl_steps': 5,
         'top_k': 5,
+        # Barrier optimization defaults
+        'objective': 'ev_uncond',
+        'params': {'spread_bps': 1.0, 'slippage_bps': 0.5},
     })
     if 'timeframe' not in p:
         p['timeframe'] = 'H1'

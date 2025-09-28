@@ -2,7 +2,7 @@ from typing import Any, Dict, Optional, List, Literal
 
 from .server import mcp, _auto_connect_wrapper
 from .schema import DenoiseSpec
-from .report_utils import render_compact_report, format_number
+from .report_utils import render_enhanced_report, format_number
 
 TemplateName = Literal['basic','simple','advanced','scalping','intraday','swing','position']
 
@@ -188,6 +188,6 @@ def report_generate(
             pass
         rep['summary'] = summ
 
-        return render_compact_report(rep)
+        return render_enhanced_report(rep)
     except Exception as exc:
         return _report_error_text(f"Error generating report: {exc}")
