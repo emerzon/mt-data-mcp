@@ -1,7 +1,9 @@
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Dict, Optional, List, Tuple, Callable
 from datetime import datetime
 import math
 import copy
+
+
 
 
 def now_utc_iso() -> str:
@@ -222,11 +224,33 @@ def apply_market_gates(section: Dict[str, Any], params: Dict[str, Any]) -> Dict[
 def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]], limit: int = 200, tail: int = 30) -> Optional[Dict[str, Any]]:
     try:
         from .data import data_fetch_candles as _fetch_candles
-        indicators = "ema(20),ema(50),rsi(14),macd(12,26,9)"
-        res = _fetch_candles(symbol=symbol, timeframe=timeframe, limit=int(limit), indicators=indicators, denoise=denoise, timezone='UTC')
-        if 'error' in res:
+        indicators = "ema(20),ema(50),ema(200),rsi(14),macd(12,26,9)"
+        res = _fetch_candles(symbol=symbol, timeframe=timeframe, limit=int(limit), indicators=indicators, denoise=denoise)
+
+        # Handle both dictionary and string response formats
+        if isinstance(res, dict):
+            if 'error' in res:
+                return None
+            rows = parse_csv_tail(res.get('csv_header'), res.get('csv_data'), tail=int(tail))
+        elif isinstance(res, str):
+            # Parse CSV string directly
+            lines = res.strip().split('\n')
+            if len(lines) < 2:
+                return None
+            csv_header = lines[0]
+            # Filter out metadata lines and empty lines
+            data_lines = []
+            for line in lines[1:]:
+                line = line.strip()
+                if line and not line.startswith(('symbol:', 'timeframe:', 'candles:')):
+                    data_lines.append(line)
+            if not data_lines:
+                return None
+            csv_data = '\n'.join(data_lines)
+            rows = parse_csv_tail(csv_header, csv_data, tail=int(tail))
+        else:
             return None
-        rows = parse_csv_tail(res.get('csv_header'), res.get('csv_data'), tail=int(tail))
+
         if not rows:
             return None
         last = rows[-1]
@@ -235,8 +259,30 @@ def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]
             'EMA_20': last.get('EMA_20') or last.get('ema_20'),
             'EMA_50': last.get('EMA_50') or last.get('ema_50'),
             'RSI_14': last.get('RSI_14') or last.get('rsi_14'),
-            'MACD': last.get('MACD') or last.get('macd'),
+            'MACD': last.get('MACD_12_26_9') or last.get('macd_12_26_9'),
         }
+
+        # Compute trend compact data for MTF matrix
+        try:
+            from .report_templates.basic import _compute_compact_trend
+            compact = _compute_compact_trend(rows)
+            if compact:
+                out['trend_compact'] = compact
+        except Exception:
+            # If trend compact calculation fails, continue without it
+            pass
+
+        # Add individual indicator values for MTF matrix
+        if rows:
+            last_row = rows[-1]
+            out['rsi'] = last_row.get('RSI_14') or last_row.get('rsi_14')
+            out['macd'] = last_row.get('MACD_12_26_9') or last_row.get('macd_12_26_9')
+            out['macd_signal'] = last_row.get('MACDs_12_26_9') or last_row.get('macds_12_26_9')
+            out['ema20'] = last_row.get('EMA_20') or last_row.get('ema_20')
+            out['ema50'] = last_row.get('EMA_50') or last_row.get('ema_50')
+            out['ema200'] = last_row.get('EMA_200') or last_row.get('ema_200')
+            out['price'] = last_row.get('close')
+
         return out
     except Exception:
         return None
@@ -244,23 +290,74 @@ def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]
 
 def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Optional[Dict[str, Any]], extra_timeframes: List[str], pivot_timeframes: Optional[List[str]] = None) -> None:
     contexts: Dict[str, Any] = {}
+    trend_mtf: Dict[str, Any] = {}
+
     for tf in extra_timeframes or []:
         snap = context_for_tf(symbol, tf, denoise, limit=200, tail=30)
         if snap:
             contexts[str(tf)] = snap
+
+            # Extract trend compact data for MTF matrix
+            if isinstance(snap, dict):
+                trend_compact = snap.get('trend_compact')
+                if isinstance(trend_compact, dict):
+                    # Add individual indicator values to trend_mtf structure
+                    trend_mtf_data = trend_compact.copy()
+                    trend_mtf_data.update({
+                        'rsi': snap.get('rsi'),
+                        'macd': snap.get('macd'),
+                        'macd_signal': snap.get('macd_signal'),
+                        'ema20': snap.get('ema20'),
+                        'ema50': snap.get('ema50'),
+                        'ema200': snap.get('ema200'),
+                        'price': snap.get('price')
+                    })
+                    trend_mtf[str(tf)] = trend_mtf_data
+
     if contexts:
         report.setdefault('sections', {})['contexts_multi'] = contexts
+
+    # Attach compact trend info for the main context section
+    if trend_mtf or contexts:
+        sections = report.setdefault('sections', {})
+        if 'context' in sections and isinstance(sections['context'], dict):
+            sections['context']['trend_mtf'] = trend_mtf
+        else:
+            sections['context'] = {'trend_mtf': trend_mtf}
+
+    base_pivot_tf = None
+    try:
+        base_pivot = report.setdefault('sections', {}).get('pivot')
+        if isinstance(base_pivot, dict) and base_pivot.get('timeframe'):
+            base_pivot_tf = str(base_pivot.get('timeframe')).upper()
+    except Exception:
+        base_pivot_tf = None
+
     if pivot_timeframes:
+        filtered_tfs: List[str] = []
+        for tfp in pivot_timeframes:
+            tfp_str = str(tfp).upper()
+            if base_pivot_tf and tfp_str == base_pivot_tf:
+                continue
+            filtered_tfs.append(str(tfp))
         pivs: Dict[str, Any] = {}
-        try:
-            from .pivot import pivot_compute_points as _compute_pivot_points
-            for tfp in pivot_timeframes:
-                res = _compute_pivot_points(symbol=symbol, timeframe=tfp)
-                if isinstance(res, dict) and not res.get('error'):
-                    pivs[str(tfp)] = {'levels': res.get('levels'), 'methods': res.get('methods'), 'period': res.get('period')}
-        except Exception:
-            pivs = {}
+        if filtered_tfs:
+            try:
+                from .pivot import pivot_compute_points as _compute_pivot_points
+                for tfp in filtered_tfs:
+                    res = _compute_pivot_points(symbol=symbol, timeframe=tfp)
+                    if isinstance(res, dict) and not res.get('error'):
+                        pivs[str(tfp)] = {
+                            'levels': res.get('levels'),
+                            'methods': res.get('methods'),
+                            'period': res.get('period'),
+                            'timeframe': tfp,
+                        }
+            except Exception:
+                pivs = {}
         if pivs:
+            if base_pivot_tf:
+                pivs['__base_timeframe__'] = base_pivot_tf
             report.setdefault('sections', {})['pivot_multi'] = pivs
 
 
@@ -390,254 +487,595 @@ def _extract_tables(value: Any, path: str, tables: Dict[str, str], counters: Dic
 
 
 def render_enhanced_report(report: Dict[str, Any]) -> str:
-    """Render a more concise and readable report format."""
+    """Render a markdown report with a consistent basic-style layout."""
     if not isinstance(report, dict):
         return 'error: invalid report payload\n'
-    
+
     output_lines: List[str] = []
-    
-    # Summary section (always first, most important)
-    summary_raw = report.get('summary', [])
-    if isinstance(summary_raw, list) and summary_raw:
-        summary_lines = [str(item).strip() for item in summary_raw if str(item).strip()]
-        if summary_lines:
-            output_lines.append('## Summary')
-            for line in summary_lines:
-                output_lines.append(f'• {line}')
-            output_lines.append('')
-    
-    # Process sections
+
     sections = report.get('sections', {})
-    if isinstance(sections, dict):
-        
-        # Key sections to show prominently  
-        priority_sections = ['context', 'pivot', 'volatility', 'forecast', 'barriers', 'market']
-        secondary_sections = ['backtest', 'patterns', 'regime', 'execution_gates', 'contexts_multi', 'pivot_multi', 'volatility_har_rv', 'forecast_conformal']
-        
-        for section_name in priority_sections:
-            section_data = sections.get(section_name)
-            if section_data:
-                formatted = _format_section_enhanced(section_name, section_data)
-                if formatted:
-                    output_lines.extend(formatted)
-                    output_lines.append('')
-        
-        # Secondary sections (more compact)
-        for section_name in secondary_sections:
-            section_data = sections.get(section_name)
-            if section_data:
-                formatted = _format_section_compact(section_name, section_data)
-                if formatted:
-                    output_lines.extend(formatted)
-                    output_lines.append('')
-    
-    return '\n'.join(output_lines).rstrip() + '\n'
+    if not isinstance(sections, dict):
+        sections = {}
+
+    rendered_keys: List[str] = []
+    for key, formatter in _SECTION_RENDERERS:
+        payload = sections.get(key)
+        if payload is None:
+            continue
+        block = formatter(payload) if payload else []
+        rendered_keys.append(key)
+        if block:
+            output_lines.extend(block)
+            output_lines.append('')
+
+    for key in sorted(sections.keys()):
+        if key in rendered_keys:
+            continue
+        payload = sections[key]
+        if isinstance(payload, dict) and set(payload.keys()) <= {'error'}:
+            continue
+        block = _render_generic_section(key, payload)
+        if block:
+            output_lines.extend(block)
+            output_lines.append('')
+
+    rendered = '\n'.join(line.rstrip() for line in output_lines).rstrip()
+    return rendered + '\n' if rendered else ''
 
 
-def _format_section_enhanced(name: str, data: Dict[str, Any]) -> List[str]:
-    """Format key sections with detailed, readable output."""
-    lines = []
-    
-    if data.get('error'):
-        return [f"## {name.title()}", f"⚠️  {data['error']}"]
-    
-    if name == 'context':
-        lines.append('## Market Context')
-        snap = data.get('last_snapshot', {})
-        if snap:
-            close = snap.get('close')
-            ema20 = snap.get('EMA_20') or snap.get('ema_20')
-            ema50 = snap.get('EMA_50') or snap.get('ema_50')
-            rsi = snap.get('RSI_14') or snap.get('rsi_14')
-            
-            if close is not None:
-                lines.append(f'• Price: {format_number(close)}')
-            if ema20 is not None and ema50 is not None:
-                trend = "📈 Above EMAs" if (close is not None and float(close) > float(ema20) > float(ema50)) else "📊 Mixed signals"
-                lines.append(f'• Trend: {trend} (EMA20: {format_number(ema20)}, EMA50: {format_number(ema50)})')
-            if rsi is not None:
-                try:
-                    rsi_val = float(rsi)
-                except Exception:
-                    rsi_val = None
-                if rsi_val is not None:
-                    rsi_signal = "🔴 Oversold" if rsi_val < 30 else "🟢 Overbought" if rsi_val > 70 else "🟡 Neutral"
-                    lines.append(f'• RSI(14): {format_number(rsi)} - {rsi_signal}')
-        
-        # If no snapshot data, show error or note
-        if len(lines) == 1:  # Only header was added
-            lines.append('• No market data available')
-    
-    elif name == 'pivot':
-        lines.append('## Pivot Levels')
-        levels = data.get('levels', [])
-        period = data.get('period', {})
-        
-        if period:
-            lines.append(f"📅 Period: {period.get('start', '')} to {period.get('end', '')}")
-        
-        if isinstance(levels, list) and levels:
-            # Show key levels only
-            key_levels = ['R2', 'R1', 'PP', 'S1', 'S2']
-            for level_row in levels:
-                if isinstance(level_row, dict):
-                    level_name = level_row.get('level')
-                    if level_name in key_levels:
-                        classic = level_row.get('classic')
-                        if classic is not None:
-                            symbol = '🔴' if level_name.startswith('R') else '🟢' if level_name.startswith('S') else '⚪'
-                            lines.append(f'• {symbol} {level_name}: {format_number(classic)}')
-    
-    elif name == 'forecast':
-        lines.append('## Forecast')
-        method = data.get('method', 'unknown')
-        forecast_prices = data.get('forecast_price', [])
-        
-        lines.append(f'• Method: {method}')
-        if isinstance(forecast_prices, list) and len(forecast_prices) >= 2:
-            # Show first, middle (if enough), and last forecast prices
-            lines.append(f'• H+1: {format_number(forecast_prices[0])}')
-            if len(forecast_prices) >= 3:
-                mid_idx = len(forecast_prices) // 2
-                lines.append(f'• H+{mid_idx+1}: {format_number(forecast_prices[mid_idx])}')
-            lines.append(f'• H+{len(forecast_prices)}: {format_number(forecast_prices[-1])}')
-            
-            # Show trend
-            try:
-                start_price = float(forecast_prices[0])
-                end_price = float(forecast_prices[-1])
-                if end_price > start_price:
-                    trend = "📈 Upward"
-                elif end_price < start_price:
-                    trend = "📉 Downward" 
-                else:
-                    trend = "➡️ Sideways"
-                change_pct = ((end_price - start_price) / start_price) * 100 if start_price != 0 else 0
-                lines.append(f'• Trend: {trend} ({format_number(change_pct)}%)')
-            except Exception:
-                pass
-        else:
-            lines.append('• No forecast data available')
-    
-    elif name == 'volatility':
-        lines.append('## Volatility')
-        method = data.get('method', 'unknown')
-        sigma_horizon = data.get('horizon_sigma_return') or data.get('horizon_sigma_price')
-        sigma_bar = data.get('sigma_bar_return') or data.get('sigma_bar_price')
-        
-        lines.append(f'• Method: {method}')
-        try:
-            if sigma_horizon is not None:
-                lines.append(f'• Horizon σ: {format_number(float(sigma_horizon)*100)}%')
-            if sigma_bar is not None:
-                lines.append(f'• Bar σ: {format_number(float(sigma_bar)*100)}%')
-        except Exception:
-            pass
-    
-    elif name == 'barriers':
-        best = data.get('best', {})
-        content: List[str] = []
-        if isinstance(best, dict):
-            tp = best.get('tp')
-            sl = best.get('sl')
-            edge = best.get('edge')
-            prob_tp = best.get('prob_tp_first')
-            ev_u = best.get('ev_uncond')
-            kelly_u = best.get('kelly_uncond')
-            if tp is not None and sl is not None:
-                content.append(f'• Best Setup: TP {format_number(tp)}% / SL {format_number(sl)}%')
-            if edge is not None:
-                try:
-                    content.append(f'• Expected Edge: {format_number(float(edge)*100)}%')
-                except Exception:
-                    pass
-            if ev_u is not None:
-                content.append(f'• EV (uncond, per risk): {format_number(ev_u)}')
-            if kelly_u is not None:
-                content.append(f'• Kelly (uncond): {format_number(kelly_u)}')
-            if prob_tp is not None:
-                try:
-                    content.append(f'• Win Probability (TP first): {format_number(float(prob_tp)*100)}%')
-                except Exception:
-                    pass
-        if content:
-            lines.append('## Optimal Barriers')
-            lines.extend(content)
-    elif name == 'market':
-        lines.append('## Market Snapshot')
-        bid = data.get('bid'); ask = data.get('ask')
-        spread_pips = data.get('spread_pips')
-        if bid is not None and ask is not None:
-            lines.append(f"• Bid/Ask: {format_number(bid)} / {format_number(ask)}")
-        if spread_pips is not None:
-            lines.append(f"• Spread: {format_number(spread_pips)} pips")
+def _render_context_section(data: Any) -> List[str]:
+    if not isinstance(data, dict):
+        return []
+    lines: List[str] = ['## Market Context']
 
-            prob_tp = best.get('prob_tp_first')
-            
-            if tp and sl:
-                lines.append(f'• Best Setup: TP {format_number(tp)}% / SL {format_number(sl)}%')
-            if edge:
-                lines.append(f'• Expected Edge: {format_number(float(edge)*100)}%')
-            if prob_tp:
-                lines.append(f'• Win Probability: {format_number(float(prob_tp)*100)}%')
-    
-    return lines
-
-
-def _format_section_compact(name: str, data: Dict[str, Any]) -> List[str]:
-    """Format secondary sections in compact form."""
-    lines = []
-    
-    if data.get('error'):
-        return [f"## {name.title()}: ⚠️ {data['error']}"]
-    
-    if name == 'backtest':
-        best_method = data.get('best_method', {})
-        if isinstance(best_method, dict) and best_method.get('method'):
-            method = best_method.get('method', 'unknown')
-            stats = best_method.get('stats', {})
-            rmse = stats.get('avg_rmse')
-            accuracy = stats.get('avg_directional_accuracy')
-            
-            line = f"## Backtest: {method}"
-            if rmse is not None:
-                line += f" (RMSE: {format_number(rmse)})"
-            if accuracy is not None:
-                try:
-                    line += f" (Accuracy: {format_number(float(accuracy)*100)}%)"
-                except Exception:
-                    pass
-            lines.append(line)
-        # If no best method, suppress the backtest section entirely
-    
-    elif name == 'patterns':
-        if 'error' not in data:
-            recent = data.get('recent', [])
-            if recent and isinstance(recent, list):
-                patterns = [str(p.get('pattern', '')) for p in recent if isinstance(p, dict)]
-                if patterns:
-                    lines.append(f"## Patterns: {', '.join(patterns[:3])}")
+    metrics: List[List[Optional[str]]] = []
+    tf_ref = data.get('timeframe')
+    if tf_ref:
+        metrics.append(['Timeframe', str(tf_ref)])
+    snap = data.get('last_snapshot') if isinstance(data.get('last_snapshot'), dict) else {}
+    price = snap.get('close')
+    if price is not None:
+        metrics.append(['Close', _format_decimal(price, 5)])
+    ema20 = snap.get('EMA_20') or snap.get('ema_20')
+    ema50 = snap.get('EMA_50') or snap.get('ema_50')
+    if ema20 is not None and ema50 is not None:
+        trend_state = 'Above EMAs'
+        p_val = _as_float(price)
+        e20 = _as_float(ema20)
+        e50 = _as_float(ema50)
+        if not (p_val is not None and e20 is not None and e50 is not None and p_val > e20 > e50):
+            trend_state = 'Mixed slope'
+        metrics.append([
+            'EMA trend',
+            f"{trend_state} (EMA20 {_format_decimal(ema20, 5)}, EMA50 {_format_decimal(ema50, 5)})",
+        ])
+    rsi = snap.get('RSI_14') or snap.get('rsi_14')
+    if rsi is not None:
+        rsi_val = _as_float(rsi)
+        if rsi_val is not None:
+            if rsi_val >= 70:
+                tag = 'overbought'
+            elif rsi_val <= 30:
+                tag = 'oversold'
             else:
-                lines.append("## Patterns: None detected")
-    
-    elif name == 'regime':
-        bocpd = data.get('bocpd', {})
-        hmm = data.get('hmm', {})
-        
-        line_parts = []
-        if isinstance(bocpd, dict):
-            summary = bocpd.get('summary', {})
-            if isinstance(summary, dict):
-                cp_count = summary.get('change_points_count', 0)
-                line_parts.append(f"BOCPD: {cp_count} changepoints")
-        
-        if isinstance(hmm, dict):
-            summary = hmm.get('summary', {})
-            if isinstance(summary, dict):
-                last_state = summary.get('last_state', 'unknown')
-                line_parts.append(f"HMM: state {last_state}")
-        
-        if line_parts:
-            lines.append(f"## Regime: {' | '.join(line_parts)}")
-    
+                tag = 'neutral'
+            metrics.append(['RSI(14)', f"{_format_decimal(rsi, 2)} ({tag})"])
+        else:
+            metrics.append(['RSI(14)', _format_decimal(rsi, 2)])
+    trend = data.get('trend_compact') if isinstance(data.get('trend_compact'), dict) else None
+    if trend:
+        slopes = trend.get('s') or []
+        if slopes:
+            slope_vals = ', '.join(_format_signed(s / 100.0) for s in slopes[:3])
+            metrics.append(['Slope (ATR adj 5/20/60)', slope_vals])
+        r2_vals = trend.get('r') or []
+        if r2_vals:
+            r2_fmt = ', '.join(f"{max(0, min(100, int(r)))}%" for r in r2_vals[:3])
+            metrics.append(['Fit quality (R^2 5/20/60)', r2_fmt])
+        atr_bps = trend.get('v')
+        if atr_bps is not None:
+            metrics.append(['ATR as bps', str(int(atr_bps))])
+        squeeze = trend.get('q')
+        if squeeze is not None:
+            metrics.append(['Squeeze percentile', f"{int(squeeze)}%"])
+        regime_map = {0: 'neutral', 1: 'uptrend', 2: 'downtrend', 3: 'breakout up', 4: 'breakout down'}
+        regime = trend.get('g')
+        if regime in regime_map:
+            metrics.append(['Regime signal', regime_map[int(regime)]])
+        bars_high = trend.get('h')
+        bars_low = trend.get('l')
+        if bars_high is not None or bars_low is not None:
+            metrics.append([
+                'Bars since swing high/low',
+                f"{bars_high if bars_high is not None else 'n/a'} / {bars_low if bars_low is not None else 'n/a'}",
+            ])
+    if metrics:
+        lines.extend(_format_table(['Metric', 'Value'], metrics))
+    note = str(data.get('notes', '')).strip()
+    if note:
+        lines.append(f'- Note: {note}')
     return lines
+
+
+def _render_contexts_multi_section(data: Any) -> List[str]:
+    if not isinstance(data, dict):
+        return []
+    rows: List[List[Optional[str]]] = []
+    for tf in sorted(data.keys()):
+        snap = data[tf]
+        if not isinstance(snap, dict):
+            continue
+        trend = snap.get('trend_compact') if isinstance(snap.get('trend_compact'), dict) else None
+        slope_val = None
+        atr_bps = None
+        if trend:
+            slopes = trend.get('s') or []
+            if slopes:
+                slope_val = slopes[0] / 100.0 if slopes[0] is not None else None
+            atr_bps = trend.get('v')
+        close_val = snap.get('close')
+        ema20_val = snap.get('EMA_20') or snap.get('ema20')
+        ema50_val = snap.get('EMA_50') or snap.get('ema50')
+        ema200_val = snap.get('EMA_200') or snap.get('ema200')
+        rsi_val = snap.get('RSI_14') or snap.get('rsi')
+        rows.append([
+            str(tf),
+            _format_decimal(close_val, 5),
+            _format_decimal(ema20_val, 5),
+            _format_decimal(ema50_val, 5),
+            _format_decimal(ema200_val, 5),
+            _format_decimal(rsi_val, 2),
+            _format_signed(slope_val),
+            str(int(atr_bps)) if atr_bps is not None else None,
+        ])
+    if not rows:
+        return []
+    lines = ['## Multi-Timeframe Context']
+    lines.extend(_format_table(['TF', 'Close', 'EMA20', 'EMA50', 'EMA200', 'RSI', 'Slope(5)', 'ATR bps'], rows))
+    return lines
+
+
+def _render_pivot_section(data: Any) -> List[str]:
+    if not isinstance(data, dict):
+        return []
+    levels = data.get('levels')
+    if not isinstance(levels, list) or not levels:
+        return []
+    timeframe = str(data.get('timeframe') or '').upper()
+    period = data.get('period')
+    title_parts: List[str] = []
+    if timeframe:
+        title_parts.append(timeframe)
+    if isinstance(period, dict):
+        start = period.get('start')
+        end = period.get('end')
+        if start and end:
+            title_parts.append(f"{start}->{end}")
+    elif period:
+        title_parts.append(str(period))
+    title = '## Pivot Levels'
+    if title_parts:
+        title += ' (' + ', '.join(title_parts) + ')'
+    lines = [title]
+    methods = []
+    method_meta = data.get('methods')
+    if isinstance(method_meta, list):
+        for item in method_meta:
+            if isinstance(item, dict):
+                name = item.get('method')
+                if name and name not in methods:
+                    methods.append(str(name))
+    if not methods:
+        for row in levels:
+            if isinstance(row, dict):
+                for key in row.keys():
+                    if key != 'level' and key not in methods:
+                        methods.append(key)
+    headers = ['Level'] + [m.title() for m in methods]
+    table_rows: List[List[str]] = []
+    for row in levels:
+        if not isinstance(row, dict):
+            continue
+        level_name = str(row.get('level') or '').upper()
+        row_vals = [level_name or 'n/a']
+        for method in methods:
+            value = row.get(method)
+            row_vals.append(format_number(value) if value is not None else None)
+        table_rows.append(row_vals)
+    lines.extend(_format_table(headers, table_rows))
+    return lines
+
+
+def _render_pivot_multi_section(data: Any) -> List[str]:
+    if not isinstance(data, dict):
+        return []
+    base_tf = str(data.get('__base_timeframe__') or '').upper()
+    lines = ['## Multi-Timeframe Pivots']
+    for tf in sorted(data.keys()):
+        if str(tf).startswith('__'):
+            continue
+        if base_tf and str(tf).upper() == base_tf:
+            continue
+        piv = data[tf]
+        if not isinstance(piv, dict):
+            continue
+        levels = piv.get('levels')
+        if not isinstance(levels, list) or not levels:
+            continue
+        rows: List[List[str]] = []
+        for row in levels:
+            if not isinstance(row, dict):
+                continue
+            level = str(row.get('level') or '').upper()
+            piv_val = row.get('classic') or row.get('Classic') or None
+            rows.append([level or 'n/a', format_number(piv_val) if piv_val is not None else None])
+        filtered_rows = [r for r in rows if not all((c is None or str(c).lower() == 'n/a') for c in r[1:])]
+        if filtered_rows:
+            lines.append(f"### {tf}")
+            lines.extend(_format_table(['Level', 'Classic'], filtered_rows))
+            lines.append('')
+    result = [line for line in lines if line != '']
+    return result if len(result) > 1 else []
+def _render_pivot_multi_section(data: Any) -> List[str]:
+    if not isinstance(data, dict):
+        return []
+    base_tf = str(data.get('__base_timeframe__', '')).upper() if '__base_timeframe__' in data else ''
+    lines = ['## Multi-Timeframe Pivots']
+    for tf in sorted(data.keys()):
+        if str(tf).startswith('__'):
+            continue
+        if base_tf and str(tf).upper() == base_tf:
+            continue
+        piv = data[tf]
+        if not isinstance(piv, dict):
+            continue
+        levels = piv.get('levels')
+        if not isinstance(levels, list) or not levels:
+            continue
+        rows: List[List[str]] = []
+        for row in levels:
+            if not isinstance(row, dict):
+                continue
+            level = str(row.get('level') or '').upper()
+            piv_val = row.get('classic') or row.get('Classic') or None
+            rows.append([level, format_number(piv_val)])
+        if rows:
+            lines.append(f"### {tf}")
+            lines.extend(_format_table(['Level', 'Classic'], rows))
+            lines.append('')
+    return [line for line in lines if line != '']
+
+
+def _render_volatility_section(data: Any) -> List[str]:
+    if not isinstance(data, dict):
+        return []
+    matrix = data.get('matrix')
+    methods = data.get('methods')
+    if not isinstance(matrix, list) or not matrix:
+        return []
+    if not isinstance(methods, list) or not methods:
+        methods = [key for key in matrix[0].keys() if key not in {'horizon', 'avg'} and not str(key).endswith('_note') and not str(key).endswith('_bar') and not str(key).endswith('_err')]
+    headers = ['Horizon'] + [m.upper() for m in methods]
+    if any('avg' in row for row in matrix):
+        headers.append('AVG')
+    rows: List[List[str]] = []
+    for row in matrix:
+        if not isinstance(row, dict):
+            continue
+        horizon = row.get('horizon')
+        line = [str(int(horizon)) if horizon is not None else 'n/a']
+        for method in methods:
+            val = row.get(method)
+            line.append(format_number(val) if val is not None else 'n/a')
+        if 'avg' in row:
+            line.append(format_number(row.get('avg')) if row.get('avg') is not None else 'n/a')
+        rows.append(line)
+    if not rows:
+        return []
+    lines = ['## Volatility Snapshot', '*values are horizon sigma (returns)*']
+    lines.extend(_format_table(headers, rows))
+    return lines
+
+
+def _render_forecast_section(data: Any) -> List[str]:
+    if not isinstance(data, dict):
+        return []
+    lines = ['## Forecast']
+    method = data.get('method')
+    if method:
+        lines.append(f"- Method: {method}")
+    if data.get('forecast_price') is not None:
+        lines.append(f"- Forecast price: {format_number(data['forecast_price'])}")
+    lower = data.get('lower_price')
+    upper = data.get('upper_price')
+    if lower is not None or upper is not None:
+        lines.append(f"- Interval: {format_number(lower)} to {format_number(upper)}")
+    if data.get('trend'):
+        lines.append(f"- Trend: {data['trend']}")
+    if data.get('ci_alpha') is not None:
+        lines.append(f"- CI alpha: {format_number(data['ci_alpha'])}")
+    return lines
+
+
+def _render_barriers_section(data: Any) -> List[str]:
+    if not isinstance(data, dict):
+        return []
+    lines = ['## Barrier Analytics']
+    best = data.get('best') if isinstance(data.get('best'), dict) else None
+    if best:
+        headers = ['TP %', 'SL %', 'Edge', 'Kelly', 'EV', 'TP hit %', 'SL hit %', 'No-hit %']
+        row = [
+            _format_decimal(best.get('tp'), 3),
+            _format_decimal(best.get('sl'), 3),
+            _format_decimal(best.get('edge'), 3),
+            _format_decimal(best.get('kelly'), 3),
+            _format_decimal(best.get('ev'), 3),
+            _format_probability(best.get('prob_tp_first')),
+            _format_probability(best.get('prob_sl_first')),
+            _format_probability(best.get('prob_no_hit')),
+        ]
+        lines.extend(_format_table(headers, [row]))
+    top = data.get('top')
+    if isinstance(top, list) and top:
+        headers = ['Rank', 'TP %', 'SL %', 'Edge', 'Kelly', 'EV']
+        rows: List[List[str]] = []
+        for idx, row_data in enumerate(top, start=1):
+            if not isinstance(row_data, dict):
+                continue
+            rows.append([
+                str(idx),
+                _format_decimal(row_data.get('tp'), 3),
+                _format_decimal(row_data.get('sl'), 3),
+                _format_decimal(row_data.get('edge'), 3),
+                _format_decimal(row_data.get('kelly'), 3),
+                _format_decimal(row_data.get('ev'), 3),
+            ])
+        if rows:
+            lines.append('')
+            lines.extend(_format_table(headers, rows))
+    return lines if len(lines) > 1 else []
+
+
+def _render_market_section(data: Any) -> List[str]:
+    if not isinstance(data, dict):
+        return []
+    lines = ['## Market Snapshot']
+    entries = []
+    for label, key in [('Bid', 'bid'), ('Ask', 'ask'), ('Spread', 'spread'), ('Spread (pips)', 'spread_pips')]:
+        val = data.get(key)
+        if val is not None:
+            entries.append(f"- {label}: {format_number(val)}")
+    depth = data.get('depth')
+    if isinstance(depth, dict):
+        buy = depth.get('total_buy')
+        sell = depth.get('total_sell')
+        if buy is not None or sell is not None:
+            entries.append(f"- DOM volume (buy/sell): {format_number(buy)} / {format_number(sell)}")
+    if not entries:
+        return []
+    lines.extend(entries)
+    return lines
+
+
+def _render_backtest_section(data: Any) -> List[str]:
+    if not isinstance(data, dict):
+        return []
+    ranking = data.get('ranking')
+    if not isinstance(ranking, list) or not ranking:
+        return []
+    rows: List[List[str]] = []
+    for row in ranking:
+        if not isinstance(row, dict):
+            continue
+        rows.append([
+            str(row.get('method') or ''),
+            format_number(row.get('avg_rmse')),
+            format_number(row.get('avg_mae')),
+            format_number(row.get('avg_directional_accuracy')),
+            str(row.get('successful_tests') or '0'),
+        ])
+    lines = ['## Backtest Ranking']
+    lines.extend(_format_table(['Method', 'RMSE', 'MAE', 'DirAcc', 'Wins'], rows))
+    return lines
+
+
+def _render_patterns_section(data: Any) -> List[str]:
+    if not isinstance(data, dict):
+        return []
+    recent = data.get('recent')
+    if not isinstance(recent, list) or not recent:
+        return []
+    lines = ['## Recent Patterns']
+    for row in recent:
+        if not isinstance(row, dict):
+            continue
+        pattern = row.get('pattern') or row.get('Pattern') or row.get('name')
+        time_val = row.get('time') or row.get('Time')
+        direction = row.get('direction') or row.get('Direction')
+        desc_parts: List[str] = []
+        if pattern:
+            desc_parts.append(str(pattern))
+        if direction:
+            desc_parts.append(str(direction))
+        if time_val:
+            desc_parts.append(str(time_val))
+        if desc_parts:
+            lines.append('- ' + ' | '.join(desc_parts))
+    return lines if len(lines) > 1 else []
+
+
+def _render_regime_section(data: Any) -> List[str]:
+    if not isinstance(data, dict):
+        return []
+    lines = ['## Regime Signals']
+    bocpd = data.get('bocpd')
+    if isinstance(bocpd, dict):
+        summary = bocpd.get('summary')
+        if summary:
+            lines.append(f"- BOCPD: {summary}")
+        elif bocpd.get('error'):
+            lines.append(f"- BOCPD error: {bocpd['error']}")
+    hmm = data.get('hmm')
+    if isinstance(hmm, dict):
+        summary = hmm.get('summary')
+        if summary:
+            lines.append(f"- HMM: {summary}")
+        elif hmm.get('error'):
+            lines.append(f"- HMM error: {hmm['error']}")
+    return lines if len(lines) > 1 else []
+
+
+def _render_execution_gates_section(data: Any) -> List[str]:
+    if not isinstance(data, dict) or not data:
+        return []
+    lines = ['## Execution Gates']
+    for key, value in data.items():
+        label = key.replace('_', ' ').title()
+        if isinstance(value, bool):
+            lines.append(f"- {label}: {'yes' if value else 'no'}")
+        else:
+            lines.append(f"- {label}: {format_number(value)}")
+    return lines
+
+
+def _render_volatility_har_section(data: Any) -> List[str]:
+    if not isinstance(data, dict):
+        return []
+    lines = ['## HAR-RV Volatility']
+    if data.get('sigma_bar_return') is not None:
+        lines.append(f"- Bar sigma: {format_number(data['sigma_bar_return'])}")
+    if data.get('horizon_sigma_return') is not None:
+        lines.append(f"- Horizon sigma: {format_number(data['horizon_sigma_return'])}")
+    return lines
+
+
+def _render_forecast_conformal_section(data: Any) -> List[str]:
+    if not isinstance(data, dict):
+        return []
+    lines = ['## Conformal Intervals']
+    if data.get('method'):
+        lines.append(f"- Method: {data['method']}")
+    if data.get('lower_price') is not None or data.get('upper_price') is not None:
+        lines.append(
+            f"- Interval: {format_number(data.get('lower_price'))} to {format_number(data.get('upper_price'))}"
+        )
+    per_step = data.get('per_step_q')
+    if isinstance(per_step, list) and per_step:
+        sliced = per_step[:min(5, len(per_step))]
+        lines.append(f"- First step quantiles: {', '.join(format_number(x) for x in sliced)}")
+    if data.get('alpha') is not None:
+        lines.append(f"- Alpha: {format_number(data['alpha'])}")
+    return lines
+
+
+def _render_generic_section(name: str, payload: Any) -> List[str]:
+    if not payload:
+        return []
+    title = name.replace('_', ' ').title()
+    lines = [f"## {title}"]
+    if isinstance(payload, dict):
+        for key in sorted(payload.keys()):
+            val = payload[key]
+            if isinstance(val, (list, tuple)):
+                preview = ', '.join(str(item) for item in list(val)[:5])
+                lines.append(f"- {key}: {preview}{'...' if len(val) > 5 else ''}")
+            elif isinstance(val, dict):
+                nested = ', '.join(f"{k}={v}" for k, v in list(val.items())[:5])
+                lines.append(f"- {key}: {nested}{'...' if len(val) > 5 else ''}")
+            else:
+                lines.append(f"- {key}: {format_number(val)}")
+    elif isinstance(payload, (list, tuple)):
+        for item in payload[:20]:
+            lines.append(f"- {item}")
+        if len(payload) > 20:
+            lines.append('- ...')
+    else:
+        lines.append(str(payload))
+    return lines
+
+
+def _format_table(headers: List[str], rows: List[List[Optional[Any]]]) -> List[str]:
+    if not headers or not rows:
+        return []
+    header_line = ' | '.join(headers)
+    divider = ' | '.join(['-' * max(3, len(h)) for h in headers])
+    table = [header_line, divider]
+    for row in rows:
+        formatted_row: List[str] = []
+        for idx in range(len(headers)):
+            val = row[idx] if idx < len(row) else None
+            if val is None or val == '' or str(val).lower() == 'null':
+                formatted_row.append('n/a')
+            else:
+                formatted_row.append(str(val))
+        table.append(' | '.join(formatted_row))
+    return table
+
+
+def _format_signed(value: Optional[float]) -> str:
+    if value is None:
+        return 'n/a'
+    try:
+        return f"{value:+.1f}"
+    except Exception:
+        return str(value)
+
+
+def _format_decimal(value: Any, decimals: int = 4) -> Optional[str]:
+    val = _as_float(value)
+    if val is None:
+        return None
+    text = f"{val:.{decimals}f}".rstrip('0').rstrip('.')
+    return text or '0'
+
+
+def _format_probability(value: Optional[Any]) -> str:
+    prob = _as_float(value)
+    if prob is None:
+        return 'n/a'
+    return f"{prob * 100:.1f}%"
+
+
+def _as_float(value: Any) -> Optional[float]:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(result):
+        return None
+    return result
+
+_SECTION_RENDERERS: List[Tuple[str, Callable[[Any], List[str]]]] = [
+    ('context', _render_context_section),
+    ('contexts_multi', _render_contexts_multi_section),
+    ('pivot', _render_pivot_section),
+    ('pivot_multi', _render_pivot_multi_section),
+    ('volatility', _render_volatility_section),
+    ('forecast', _render_forecast_section),
+    ('barriers', _render_barriers_section),
+    ('market', _render_market_section),
+    ('backtest', _render_backtest_section),
+    ('patterns', _render_patterns_section),
+    ('regime', _render_regime_section),
+    ('execution_gates', _render_execution_gates_section),
+    ('volatility_har_rv', _render_volatility_har_section),
+    ('forecast_conformal', _render_forecast_conformal_section),
+]
+
+_SECTION_RENDERERS: List[Tuple[str, Callable[[Any], List[str]]]] = [
+    ('context', _render_context_section),
+    ('contexts_multi', _render_contexts_multi_section),
+    ('pivot', _render_pivot_section),
+    ('pivot_multi', _render_pivot_multi_section),
+    ('volatility', _render_volatility_section),
+    ('forecast', _render_forecast_section),
+    ('barriers', _render_barriers_section),
+    ('market', _render_market_section),
+    ('backtest', _render_backtest_section),
+    ('patterns', _render_patterns_section),
+    ('regime', _render_regime_section),
+    ('execution_gates', _render_execution_gates_section),
+    ('volatility_har_rv', _render_volatility_har_section),
+    ('forecast_conformal', _render_forecast_conformal_section),
+]
+

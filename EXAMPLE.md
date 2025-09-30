@@ -178,8 +178,8 @@ Barrier optimization over a grid (maximize edge/Kelly/EV):
 
 ```bash
 python cli.py forecast_barrier_optimize --symbol EURUSD --timeframe H1 --horizon 12 \
-  --method hmm_mc --mode pct --tp_min 0.2 --tp_max 1.0 --tp_steps 5 \
-  --sl_min 0.2 --sl_max 1.0 --sl_steps 5 --params "n_sims=5000 seed=7" --format json
+  --method hmm_mc --mode pct --grid-style volatility --refine true --refine-radius 0.35 \
+  --tp_min 0.25 --tp_max 1.5 --tp_steps 7 --sl_min 0.25 --sl_max 2.5 --sl_steps 9 --params "n_sims=5000 seed=7" --format json
 ```
 
 Interpretation tips:

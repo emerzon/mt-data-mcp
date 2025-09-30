@@ -54,6 +54,48 @@ def _bars_per_year(timeframe: str) -> int:
         return 0
 
 
+
+# --- Range-based variance helpers -------------------------------------------------
+
+def _parkinson_sigma_sq(high: np.ndarray, low: np.ndarray) -> np.ndarray:
+    eps = 1e-12
+    h = np.asarray(high, dtype=float)
+    l = np.asarray(low, dtype=float)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        x = np.log(np.maximum(h, eps)) - np.log(np.maximum(l, eps))
+    const = 1.0 / (4.0 * math.log(2.0))
+    v = const * (x * x)
+    v[~np.isfinite(v)] = np.nan
+    return np.maximum(v, 0.0)
+
+
+def _garman_klass_sigma_sq(open_: np.ndarray, high: np.ndarray, low: np.ndarray, close: np.ndarray) -> np.ndarray:
+    eps = 1e-12
+    o = np.asarray(open_, dtype=float)
+    h = np.asarray(high, dtype=float)
+    l = np.asarray(low, dtype=float)
+    c = np.asarray(close, dtype=float)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        hl = np.log(np.maximum(h, eps)) - np.log(np.maximum(l, eps))
+        co = np.log(np.maximum(c, eps)) - np.log(np.maximum(o, eps))
+    v = 0.5 * (hl * hl) - (2.0 * math.log(2.0) - 1.0) * (co * co)
+    v[~np.isfinite(v)] = np.nan
+    return np.maximum(v, 0.0)
+
+
+def _rogers_satchell_sigma_sq(open_: np.ndarray, high: np.ndarray, low: np.ndarray, close: np.ndarray) -> np.ndarray:
+    eps = 1e-12
+    o = np.asarray(open_, dtype=float)
+    h = np.asarray(high, dtype=float)
+    l = np.asarray(low, dtype=float)
+    c = np.asarray(close, dtype=float)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        term1 = (np.log(np.maximum(h, eps)) - np.log(np.maximum(c, eps))) * (np.log(np.maximum(h, eps)) - np.log(np.maximum(o, eps)))
+        term2 = (np.log(np.maximum(l, eps)) - np.log(np.maximum(c, eps))) * (np.log(np.maximum(l, eps)) - np.log(np.maximum(o, eps)))
+    rs = term1 + term2
+    rs[~np.isfinite(rs)] = np.nan
+    return np.maximum(rs, 0.0)
+
 def _kernel_weight(kind: str, h: int, bandwidth: int) -> float:
     if bandwidth <= 0:
         return 0.0

@@ -99,8 +99,22 @@ Inputs:
 Example:
 ```bash
 python cli.py forecast_barrier_optimize --symbol EURUSD --timeframe H1 --horizon 12 \
-  --method hmm_mc --mode pct --tp_min 0.2 --tp_max 1.0 --tp_steps 5 \
-  --sl_min 0.2 --sl_max 1.0 --sl_steps 5 --params "n_sims=5000 seed=7" --format json
+  --method hmm_mc --mode pct --tp_min 0.25 --tp_max 1.5 --tp_steps 7 \
+  --sl_min 0.25 --sl_max 2.5 --sl_steps 9 --params "n_sims=5000 seed=7" --format json
+```
+
+Optional flags worth knowing:
+- `--grid-style {fixed,volatility,ratio,preset}` switches between the classic fixed grid and the adaptive modes.
+- `--preset` activates one of the built-in percent presets (`scalp`, `intraday`, `swing`, `position`).
+- `--vol-window`, `--vol-min-mult`, `--vol-max-mult` control the volatility-driven grid span; `--vol-sl-extra` widens stops relative to targets.
+- `--ratio-min`, `--ratio-max`, `--ratio-steps` generate TP/SL pairs by reward/risk ratios.
+- `--refine` with `--refine-radius` and `--refine-steps` adds a focused zoom around the best coarse result.
+
+Example with volatility scaling and refinement:
+```bash
+python cli.py forecast_barrier_optimize --symbol EURUSD --timeframe H1 --horizon 12 \
+  --method hmm_mc --mode pct --grid-style volatility --refine true --refine-radius 0.35 \
+  --params "n_sims=5000 seed=7 vol_window=360 vol_min_mult=0.5 vol_max_mult=4.0" --format json
 ```
 
 Output highlights:
@@ -366,7 +380,9 @@ python cli.py forecast_barrier_closed_form EURUSD --timeframe H1 --horizon 12 --
 
 Notes:
 - Estimates μ and σ from recent log‑returns if not provided.
-- Use as a sanity check against Monte Carlo outputs or as a speedup in optimizers.
+- Use as a sanity check against Monte Carlo outputs or as a speed
+- Returns both `mu_annual` (GBM drift used in the formula) and `log_drift_annual` (raw log-return drift before the 0.5·sigma² adjustment).
+up in optimizers.
 
 ---
 

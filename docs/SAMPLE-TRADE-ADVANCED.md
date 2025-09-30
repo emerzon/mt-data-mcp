@@ -97,9 +97,9 @@ python cli.py forecast_conformal_intervals EURUSD --timeframe H1 --method fourie
 
 ```bash
 python cli.py forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
-  --method hmm_mc --mode pct --tp_min 0.2 --tp_max 1.0 --tp_steps 5 \
-  --sl_min 0.2 --sl_max 1.0 --sl_steps 5 --params "n_sims=5000 seed=7" \
-  --top-k 5 --return-grid false --output summary --format json
+  --method hmm_mc --mode pct --grid-style volatility --refine true --refine-radius 0.35 \
+  --tp_min 0.25 --tp_max 1.5 --tp_steps 7 --sl_min 0.25 --sl_max 2.5 --sl_steps 9 \
+  --params "n_sims=5000 seed=7" --top-k 5 --return-grid false --output summary --format json
 ```
 
 - Choose a combo by objective (edge/Kelly/EV) subject to constraints:
