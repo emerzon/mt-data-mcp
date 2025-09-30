@@ -13,6 +13,7 @@ from .constants import TIMEFRAME_MAP
 
 
 PARAM_HINTS = {
+    "direction": "Trade direction context (long/short). Determines which side is TP vs SL.",
     "symbol": "Trading symbol (e.g. EURUSD)",
     "timeframe": "MT5 timeframe (e.g. H1/M30/D1)",
     "limit": "Max rows/bars to return",

@@ -659,8 +659,31 @@ def template_basic(
 
     # Barriers (grid)
     from ..forecast import forecast_barrier_optimize
+    # Dynamic defaults to keep levels realistic and adaptive
+    p.setdefault('grid_style', 'volatility')
+    p.setdefault('vol_window', 250)
+    p.setdefault('vol_min_mult', 0.6)
+    p.setdefault('vol_max_mult', 2.2)
+    p.setdefault('vol_sl_multiplier', 1.7)
+    p.setdefault('vol_sl_steps', 9)
+    # Set floors to avoid too-tight levels depending on mode
+    if str(p.get('mode', 'pct')) == 'pct':
+        p.setdefault('vol_floor_pct', 0.2)
+    else:
+        p.setdefault('vol_floor_pips', 8.0)
+    # Include trading costs to discourage too-tight levels in EV
+    base_params = dict(p.get('params') or {})
+    base_params.setdefault('spread_bps', 1.0)
+    base_params.setdefault('slippage_bps', 0.5)
+    # Reasonable risk/reward filter defaults per template
+    rr_min_default = p.get('rr_min', 0.8)
+    rr_max_default = p.get('rr_max', 2.0)
+    base_params.setdefault('rr_min', rr_min_default)
+    base_params.setdefault('rr_max', rr_max_default)
+    p['params'] = base_params
+
     mode_val = str(p.get('mode', 'pct'))
-    grid = _get_raw_result(forecast_barrier_optimize,
+    grid_long = _get_raw_result(forecast_barrier_optimize,
         symbol=symbol,
         timeframe=tf,
         horizon=int(horizon),
@@ -682,11 +705,45 @@ def template_basic(
         refine=bool(p.get('refine', False)),
         refine_radius=float(p.get('refine_radius', 0.3)),
         refine_steps=int(p.get('refine_steps', 5)),
+        direction='long',
     )
-    if 'error' in grid:
-        report['sections']['barriers'] = {'error': grid['error']}
+    grid_short = _get_raw_result(forecast_barrier_optimize,
+        symbol=symbol,
+        timeframe=tf,
+        horizon=int(horizon),
+        method='hmm_mc',
+        mode=mode_val,
+        tp_min=float(p.get('tp_min', 0.25)),
+        tp_max=float(p.get('tp_max', 1.5)),
+        tp_steps=int(p.get('tp_steps', 7)),
+        sl_min=float(p.get('sl_min', 0.25)),
+        sl_max=float(p.get('sl_max', 2.5)),
+        sl_steps=int(p.get('sl_steps', 9)),
+        params=p.get('params'),
+        objective=str(p.get('objective','ev_uncond')),
+        return_grid=False,
+        top_k=int(p.get('top_k', 5)),
+        output='summary',
+        grid_style=str(p.get('grid_style', 'fixed')),
+        preset=p.get('grid_preset', p.get('preset')),
+        refine=bool(p.get('refine', False)),
+        refine_radius=float(p.get('refine_radius', 0.3)),
+        refine_steps=int(p.get('refine_steps', 5)),
+        direction='short',
+    )
+    sec_bar: Dict[str, Any] = {}
+    if 'error' in grid_long and 'error' in grid_short:
+        sec_bar = {'error': grid_long.get('error') or grid_short.get('error') or 'Barrier optimization failed'}
     else:
-        report['sections']['barriers'] = summarize_barrier_grid(grid, top_k=int(p.get('top_k', 5)))
+        if not 'error' in grid_long:
+            sec_bar['long'] = summarize_barrier_grid(grid_long, top_k=int(p.get('top_k', 5)))
+        else:
+            sec_bar['long'] = {'error': grid_long.get('error')}
+        if not 'error' in grid_short:
+            sec_bar['short'] = summarize_barrier_grid(grid_short, top_k=int(p.get('top_k', 5)))
+        else:
+            sec_bar['short'] = {'error': grid_short.get('error')}
+    report['sections']['barriers'] = sec_bar
 
     # Patterns
     from ..patterns import patterns_detect_candlesticks

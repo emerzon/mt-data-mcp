@@ -1,5 +1,8 @@
 import MetaTrader5 as mt5
 
+# Import shared constants to avoid duplication
+from ..utils.constants import PRECISION_REL_TOL, PRECISION_ABS_TOL, PRECISION_MAX_DECIMALS, TIME_DISPLAY_FORMAT
+
 # Constants (centralize defaults instead of hardcoding inline)
 SERVICE_NAME = "MetaTrader5 Market Data Server"
 GROUP_SEARCH_THRESHOLD = 5   # threshold for treating a search as group vs symbol search
@@ -11,14 +14,9 @@ FETCH_RETRY_DELAY = 0.3      # delay between fetch retries
 SANITY_BARS_TOLERANCE = 3    # acceptable lag in bars when checking freshness
 TI_NAN_WARMUP_FACTOR = 2     # multiply warmup by this on retry
 TI_NAN_WARMUP_MIN_ADD = 50   # at least add this many bars on retry
-PRECISION_REL_TOL = 1e-6     # relative tolerance for rounding optimization
-PRECISION_ABS_TOL = 1e-12    # absolute tolerance for rounding optimization
-PRECISION_MAX_DECIMALS = 10  # upper bound on decimal places
 
 # Global parameter defaults
 DEFAULT_TIMEFRAME = "H1"     # default timeframe parameter  
-# Normalized datetime display format (UTC/local)
-TIME_DISPLAY_FORMAT = "%Y-%m-%d %H:%M"
 # Simplification defaults
 SIMPLIFY_DEFAULT_METHOD = "lttb"  # default simplify method when not specified
 SIMPLIFY_DEFAULT_MODE = "approximate"  # default simplify mode when not specified

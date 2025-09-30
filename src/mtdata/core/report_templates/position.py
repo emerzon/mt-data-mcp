@@ -23,7 +23,7 @@ def template_position(
         'top_k': 5,
         # Barrier optimization defaults
         'objective': 'ev_uncond',
-        'params': {'spread_bps': 0.3, 'slippage_bps': 0.1},
+        'params': {'spread_bps': 0.3, 'slippage_bps': 0.1, 'rr_min': 1.2, 'rr_max': 3.0},
     })
     if 'timeframe' not in p:
         p['timeframe'] = 'D1'

@@ -21,54 +21,18 @@ def _lttb_select_indices(x: List[float], y: List[float], n_out: int) -> List[int
 
 
 def _default_target_points(total: int) -> int:
-    """Default target points when simplify requested without explicit points/ratio.
-
-    Uses SIMPLIFY_DEFAULT_RATIO bounded by [SIMPLIFY_DEFAULT_MIN_POINTS, SIMPLIFY_DEFAULT_MAX_POINTS].
-    """
-    try:
-        t = int(round(total * SIMPLIFY_DEFAULT_RATIO))
-        t = max(SIMPLIFY_DEFAULT_MIN_POINTS, min(SIMPLIFY_DEFAULT_MAX_POINTS, t))
-        return max(3, min(t, total))
-    except Exception:
-        return max(3, min(SIMPLIFY_DEFAULT_MIN_POINTS, total))
+    """Default target points when simplify requested without explicit points/ratio."""
+    from ..utils.simplify import _default_target_points as _impl
+    return _impl(total)
 
 
 def _choose_simplify_points(total: int, spec: Dict[str, Any]) -> int:
-    """Determine target number of points from a simplify spec.
-
-    Supports keys: 'points', 'max_points', 'target_points', or 'ratio' (0..1).
-    Enforces bounds [3, total]. Returns total if no effective reduction requested.
-    """
-    try:
-        if not spec:
-            return total
-        n = None
-        for k in ("points", "max_points", "target_points"):
-            if k in spec and spec[k] is not None:
-                try:
-                    n = int(spec[k])
-                    break
-                except Exception:
-                    pass
-        if n is None and "ratio" in spec and spec["ratio"] is not None:
-            try:
-                r = float(spec["ratio"])
-                if r > 0 and r < 1:
-                    n = int(max(3, round(total * r)))
-            except Exception:
-                pass
-        if n is None:
-            # If method specified or spec present, use default target
-            if spec and ("method" in spec or len(spec) > 0):
-                return _default_target_points(total)
-            return total
-        n = max(3, min(int(n), total))
-        return n
-    except Exception:
-        return total
+    """Determine target number of points from a simplify spec."""
+    return _choose_simplify_points_util(total, spec)
 
 
 def _point_line_distance(px: float, py: float, x1: float, y1: float, x2: float, y2: float) -> float:
+    """Delegate to utils implementation."""
     from ..utils.simplify import _point_line_distance as _impl
     return _impl(px, py, x1, y1, x2, y2)
 
@@ -78,6 +42,7 @@ def _rdp_select_indices(x: List[float], y: List[float], epsilon: float) -> List[
 
 
 def _max_line_error(x: List[float], y: List[float], i0: int, i1: int) -> float:
+    """Delegate to utils implementation.""" 
     from ..utils.simplify import _max_line_error as _impl
     return _impl(x, y, i0, i1)
 

@@ -1,12 +1,68 @@
 import io
 import csv
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Set
 
 import pandas as pd
 import dateparser
 
-from ..core.constants import PRECISION_ABS_TOL, PRECISION_MAX_DECIMALS, PRECISION_REL_TOL, TIME_DISPLAY_FORMAT
+from .constants import PRECISION_ABS_TOL, PRECISION_MAX_DECIMALS, PRECISION_REL_TOL, TIME_DISPLAY_FORMAT
+
+
+def _coerce_scalar(s: str):
+    """Try to coerce a scalar string to int or float; otherwise return original string."""
+    try:
+        if s is None:
+            return s
+        st = str(s).strip()
+        if st == "":
+            return st
+        if st.isdigit() or (st.startswith('-') and st[1:].isdigit()):
+            return int(st)
+        v = float(st)
+        return v
+    except Exception:
+        return s
+
+
+def _normalize_ohlcv_arg(ohlcv: Optional[str]) -> Optional[Set[str]]:
+    """Normalize user-provided OHLCV selection into a set of letters.
+
+    Accepts forms like: 'close', 'price', 'ohlc', 'ohlcv', 'all', 'cl', 'OHLCV',
+    or names 'open,high,low,close,volume'. Returns None when not specified.
+    """
+    if ohlcv is None:
+        return None
+    text = str(ohlcv).strip()
+    if text == "":
+        return None
+    t = text.lower()
+    if t in ("all", "ohlcv"):
+        return {"O", "H", "L", "C", "V"}
+    if t in ("ohlc",):
+        return {"O", "H", "L", "C"}
+    if t in ("price", "close"):
+        return {"C"}
+    # Compact letters like 'cl', 'oh', etc.
+    if all(ch in "ohlcv" for ch in t):
+        return {ch.upper() for ch in t}
+    # Comma separated names
+    parts = [p.strip().lower() for p in t.replace(";", ",").split(",") if p.strip() != ""]
+    if not parts:
+        return None
+    mapping = {
+        "o": "O", "open": "O",
+        "h": "H", "high": "H",
+        "l": "L", "low": "L",
+        "c": "C", "close": "C", "price": "C",
+        "v": "V", "vol": "V", "volume": "V", "tick_volume": "V",
+    }
+    out: Set[str] = set()
+    for p in parts:
+        key = mapping.get(p)
+        if key:
+            out.add(key)
+    return out or None
 
 
 def _csv_from_rows(headers: List[str], rows: List[List[Any]]) -> Dict[str, Any]:
@@ -139,6 +195,58 @@ def _optimal_decimals(values: List[float], rel_tol: float = PRECISION_REL_TOL, a
         if ok:
             return d
     return max_decimals
+
+
+def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
+    """Parse params/features provided as dict, JSON string, or k=v pairs into a dict.
+
+    - Dict: shallow-copied and returned
+    - JSON-like string: parsed via json.loads (with simple fallback for colon/equals pairs)
+    - Plain string: split on whitespace/commas into k=v assignments
+    """
+    import json
+
+    if obj is None:
+        return {}
+    if isinstance(obj, dict):
+        return dict(obj)
+    if isinstance(obj, str):
+        s = obj.strip()
+        if not s:
+            return {}
+        if (s.startswith('{') and s.endswith('}')):
+            try:
+                return json.loads(s)
+            except Exception:
+                # Fallback to simple token parser inside braces
+                s = s.strip().strip('{}').strip()
+        # Parse simple k=v tokens separated by whitespace/commas
+        out: Dict[str, Any] = {}
+        toks = [tok for tok in s.replace(',', ' ').split() if tok]
+        i = 0
+        while i < len(toks):
+            tok = toks[i].strip().strip(',')
+            if not tok:
+                i += 1
+                continue
+            if '=' in tok:
+                k, v = tok.split('=', 1)
+                out[k.strip()] = v.strip().strip(',')
+                i += 1
+                continue
+            if tok.endswith(':'):
+                key = tok[:-1].strip()
+                val = ''
+                if i + 1 < len(toks):
+                    val = toks[i + 1].strip().strip(',')
+                    i += 2
+                else:
+                    i += 1
+                out[key] = val
+                continue
+            i += 1
+        return out
+    return {}
 
 
 def _format_float(v: float, d: int) -> str:

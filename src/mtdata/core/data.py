@@ -16,6 +16,9 @@ from .simplify import _simplify_dataframe_rows_ext, _choose_simplify_points as _
 from .server import mcp, _auto_connect_wrapper, _ensure_symbol_ready, _normalize_ohlcv_arg, _coerce_scalar
 import MetaTrader5 as mt5
 
+# Explicitly define what should be exported for '*' imports
+__all__ = ['data_fetch_candles', 'data_fetch_ticks', 'dt_timezone']
+
 @mcp.tool()
 @_auto_connect_wrapper
 def data_fetch_candles(

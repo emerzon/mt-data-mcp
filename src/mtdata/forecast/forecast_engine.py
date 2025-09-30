@@ -2,7 +2,7 @@
 Forecast engine core logic and orchestration.
 """
 
-from typing import Any, Dict, Optional, List, Literal
+from typing import Any, Dict, Optional, List, Literal, Tuple
 from datetime import datetime
 import numpy as np
 import pandas as pd

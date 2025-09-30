@@ -99,6 +99,7 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
                 pass
             top = items[:top_k]
         out: Dict[str, Any] = {}
+        direction = grid.get('direction') if isinstance(grid, dict) else None
         if isinstance(best, dict):
             out['best'] = {
                 'tp': best.get('tp'),
@@ -113,7 +114,11 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
                 'prob_sl_first': best.get('prob_sl_first'),
                 'prob_no_hit': best.get('prob_no_hit'),
                 'median_time_to_tp': best.get('median_time_to_tp'),
+                'tp_price': best.get('tp_price'),
+                'sl_price': best.get('sl_price'),
             }
+            if direction:
+                out['direction'] = direction
         if isinstance(top, list):
             trimmed = []
             for it in top[:top_k]:
@@ -121,6 +126,7 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
                     continue
                 trimmed.append({
                     'tp': it.get('tp'), 'sl': it.get('sl'),
+                    'tp_price': it.get('tp_price'), 'sl_price': it.get('sl_price'),
                     'edge': it.get('edge'), 'kelly': it.get('kelly'), 'kelly_uncond': it.get('kelly_uncond'), 'ev': it.get('ev'), 'ev_uncond': it.get('ev_uncond'),
                     'prob_tp_first': it.get('prob_tp_first'), 'prob_sl_first': it.get('prob_sl_first'), 'prob_no_hit': it.get('prob_no_hit'),
                 })
@@ -800,13 +806,48 @@ def _render_forecast_section(data: Any) -> List[str]:
 def _render_barriers_section(data: Any) -> List[str]:
     if not isinstance(data, dict):
         return []
+    # If nested long/short payloads present, render a single matrix
+    if any(k in data for k in ('long','short')):
+        lines: List[str] = ['## Barrier Analytics']
+        headers = ['Direction', 'TP %', 'SL %', 'TP lvl', 'SL lvl', 'Edge', 'Kelly', 'EV', 'TP hit %', 'SL hit %', 'No-hit %']
+        rows: List[List[str]] = []
+        for dir_name in ('long','short'):
+            sub = data.get(dir_name)
+            if not isinstance(sub, dict):
+                continue
+            best = sub.get('best') if isinstance(sub.get('best'), dict) else None
+            if not best:
+                continue
+            rows.append([
+                dir_name,
+                _format_decimal(best.get('tp'), 3),
+                _format_decimal(best.get('sl'), 3),
+                _format_decimal(best.get('tp_price'), 5),
+                _format_decimal(best.get('sl_price'), 5),
+                _format_decimal(best.get('edge'), 3),
+                _format_decimal(best.get('kelly'), 3),
+                _format_decimal(best.get('ev'), 3),
+                _format_probability(best.get('prob_tp_first')),
+                _format_probability(best.get('prob_sl_first')),
+                _format_probability(best.get('prob_no_hit')),
+            ])
+        if rows:
+            lines.extend(_format_table(headers, rows))
+            return lines
+        return []
+    # Fallback: single-direction shape
     lines = ['## Barrier Analytics']
+    # Direction context line
+    if isinstance(data.get('direction'), str):
+        lines.append(f"- Direction: {data.get('direction')}")
     best = data.get('best') if isinstance(data.get('best'), dict) else None
     if best:
-        headers = ['TP %', 'SL %', 'Edge', 'Kelly', 'EV', 'TP hit %', 'SL hit %', 'No-hit %']
+        headers = ['TP %', 'SL %', 'TP lvl', 'SL lvl', 'Edge', 'Kelly', 'EV', 'TP hit %', 'SL hit %', 'No-hit %']
         row = [
             _format_decimal(best.get('tp'), 3),
             _format_decimal(best.get('sl'), 3),
+            _format_decimal(best.get('tp_price'), 5),
+            _format_decimal(best.get('sl_price'), 5),
             _format_decimal(best.get('edge'), 3),
             _format_decimal(best.get('kelly'), 3),
             _format_decimal(best.get('ev'), 3),
@@ -1022,11 +1063,12 @@ def _format_signed(value: Optional[float]) -> str:
 
 
 def _format_decimal(value: Any, decimals: int = 4) -> Optional[str]:
+    """Delegate to utils._format_float to avoid duplication."""
+    from ..utils.utils import _format_float
     val = _as_float(value)
     if val is None:
         return None
-    text = f"{val:.{decimals}f}".rstrip('0').rstrip('.')
-    return text or '0'
+    return _format_float(val, decimals)
 
 
 def _format_probability(value: Optional[Any]) -> str:

@@ -28,24 +28,9 @@ def forecast_statsforecast(
     except Exception as ex:
         raise RuntimeError(f"Failed to import statsforecast: {ex}")
 
-    # Build single-series training dataframe
-    # We do not have timestamps here; require caller to align if needed. Accept plain index.
-    Y_df = _pd.DataFrame({
-        'unique_id': ['ts'] * int(len(series)),
-        'ds': _pd.RangeIndex(start=0, stop=int(len(series))),
-        'y': series.astype(float),
-    })
-    X_df = None
-    Xf_df = None
-    if exog_used is not None and isinstance(exog_used, np.ndarray) and exog_used.size:
-        cols = [f'x{i}' for i in range(exog_used.shape[1])]
-        X_df = _pd.DataFrame({'unique_id': ['ts'] * int(len(series)), 'ds': _pd.RangeIndex(start=0, stop=int(len(series)))})
-        for j, cname in enumerate(cols):
-            X_df[cname] = exog_used[:, j]
-        if exog_future is not None and isinstance(exog_future, np.ndarray) and exog_future.size:
-            Xf_df = _pd.DataFrame({'unique_id': ['ts'] * int(fh), 'ds': _pd.RangeIndex(start=int(len(series)), stop=int(len(series))+int(fh))})
-            for j, cname in enumerate(cols):
-                Xf_df[cname] = exog_future[:, j]
+    # Build single-series training dataframe using common helper
+    from ..common import _create_training_dataframes
+    Y_df, X_df, Xf_df = _create_training_dataframes(series, fh, exog_used, exog_future)
 
     # Choose model
     method_l = str(method).lower().strip()
@@ -81,19 +66,12 @@ def forecast_statsforecast(
             Yf = Yf[Yf['unique_id'] == 'ts']
         except Exception:
             pass
-        pred_col = None
-        for c in list(Yf.columns):
-            if c not in ('unique_id', 'ds', 'y'):
-                pred_col = c
-                if c == 'y':
-                    break
-        if pred_col is None:
-            pred_col = 'y' if 'y' in Yf.columns else None
-        if pred_col is None:
-            raise RuntimeError("StatsForecast prediction columns not found")
-        vals = np.asarray(Yf[pred_col].to_numpy(), dtype=float)
-        f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
-        return f_vals.astype(float, copy=False), params_used
+        
+        # Use common forecast value extraction
+        from ..common import _extract_forecast_values
+        f_vals = _extract_forecast_values(Yf, fh, f"StatsForecast {method_l}")
+        
+        return f_vals, params_used
     except Exception as ex:
         raise RuntimeError(f"StatsForecast {method_l} error: {ex}")
 

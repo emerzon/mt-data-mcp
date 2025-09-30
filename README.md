@@ -242,10 +242,14 @@ python cli.py forecast_generate EURUSD --timeframe H1 --method hmm_mc --horizon 
 Barrier analytics (TP/SL odds from MC paths)
 ```bash
 # Probability of hitting TP before SL within 12 bars (percent barriers)
+# Specify trade direction explicitly:
+# - long: TP above, SL below; prob_tp_first = P(TP before SL) for the long context
+# - short: TP below, SL above; prob_tp_first = P(TP before SL) for the short context
 python cli.py forecast_barrier_hit_probabilities --symbol EURUSD --timeframe H1 --horizon 12 \
-  --method hmm_mc --tp_pct 0.5 --sl_pct 0.3 --params "n_sims=5000 seed=7" --format json
+  --method hmm_mc --direction long --tp_pct 0.5 --sl_pct 0.3 --params "n_sims=5000 seed=7" --format json
 
 # Optimize TP/SL grid to maximize edge/Kelly/EV (percent mode)
+# Add --direction long|short to evaluate from the chosen trade perspective
 python cli.py forecast_barrier_optimize --symbol EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --tp_min 0.25 --tp_max 1.5 --tp_steps 7 --sl_min 0.25 --sl_max 2.5 --sl_steps 9 \
   --params "n_sims=5000 seed=7" --format json

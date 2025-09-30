@@ -15,54 +15,73 @@ from ..utils.utils import _parse_start_datetime as _parse_start_datetime_util
 
 def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
     """Parse params/features provided as dict, JSON string, or k=v pairs into a dict.
-
-    - Dict: shallow-copied and returned
-    - JSON-like string: parsed via json.loads (with simple fallback for colon/equals pairs)
-    - Plain string: split on whitespace/commas into k=v assignments
+    
+    This is the main implementation - CLI and other modules should use this.
     """
-    import json
+    from ..utils.utils import parse_kv_or_json as _impl
+    return _impl(obj)
 
-    if obj is None:
-        return {}
-    if isinstance(obj, dict):
-        return dict(obj)
-    if isinstance(obj, str):
-        s = obj.strip()
-        if not s:
-            return {}
-        if (s.startswith('{') and s.endswith('}')):
-            try:
-                return json.loads(s)
-            except Exception:
-                # Fallback to simple token parser inside braces
-                s = s.strip().strip('{}').strip()
-        # Parse simple k=v tokens separated by whitespace/commas
-        out: Dict[str, Any] = {}
-        toks = [tok for tok in s.replace(',', ' ').split() if tok]
-        i = 0
-        while i < len(toks):
-            tok = toks[i].strip().strip(',')
-            if not tok:
-                i += 1
-                continue
-            if '=' in tok:
-                k, v = tok.split('=', 1)
-                out[k.strip()] = v.strip().strip(',')
-                i += 1
-                continue
-            if tok.endswith(':'):
-                key = tok[:-1].strip()
-                val = ''
-                if i + 1 < len(toks):
-                    val = toks[i + 1].strip().strip(',')
-                    i += 2
-                else:
-                    i += 1
-                out[key] = val
-                continue
-            i += 1
-        return out
-    return {}
+
+def _extract_forecast_values(Yf: Any, fh: int, method_name: str = "forecast") -> "np.ndarray":
+    """Extract forecast values from prediction DataFrame.
+    
+    Common logic for finding prediction columns and extracting values.
+    """
+    import numpy as np
+    
+    # Find the prediction column
+    pred_col = None
+    try:
+        # First try standard prediction column
+        if 'y' in Yf.columns:
+            pred_col = 'y'
+        else:
+            # Look for other prediction columns
+            for c in list(Yf.columns):
+                if c not in ('unique_id', 'ds', 'y'):
+                    pred_col = c
+                    break
+    except Exception:
+        pass
+    
+    if pred_col is None:
+        raise RuntimeError(f"{method_name} prediction columns not found")
+    
+    vals = np.asarray(Yf[pred_col].to_numpy(), dtype=float)
+    f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
+    return f_vals.astype(float, copy=False)
+
+
+def _create_training_dataframes(series: np.ndarray, fh: int, exog_used: Optional[np.ndarray] = None, exog_future: Optional[np.ndarray] = None) -> Tuple[Any, Optional[Any], Optional[Any]]:
+    """Create standardized training DataFrames for forecast methods.
+    
+    Returns (Y_df, X_df, Xf_df) where:
+    - Y_df: training series DataFrame
+    - X_df: training exogenous features DataFrame (if provided)
+    - Xf_df: future exogenous features DataFrame (if provided)
+    """
+    import pandas as _pd
+    
+    # Build single-series training dataframe
+    Y_df = _pd.DataFrame({
+        'unique_id': ['ts'] * int(len(series)),
+        'ds': _pd.RangeIndex(start=0, stop=int(len(series))),
+        'y': series.astype(float),
+    })
+    
+    X_df = None
+    Xf_df = None
+    if exog_used is not None and isinstance(exog_used, np.ndarray) and exog_used.size:
+        cols = [f'x{i}' for i in range(exog_used.shape[1])]
+        X_df = _pd.DataFrame({'unique_id': ['ts'] * int(len(series)), 'ds': _pd.RangeIndex(start=0, stop=int(len(series)))})
+        for j, cname in enumerate(cols):
+            X_df[cname] = exog_used[:, j]
+        if exog_future is not None and isinstance(exog_future, np.ndarray) and exog_future.size:
+            Xf_df = _pd.DataFrame({'unique_id': ['ts'] * int(fh), 'ds': _pd.RangeIndex(start=int(len(series)), stop=int(len(series))+int(fh))})
+            for j, cname in enumerate(cols):
+                Xf_df[cname] = exog_future[:, j]
+    
+    return Y_df, X_df, Xf_df
 
 
 def default_seasonality(timeframe: str) -> int:

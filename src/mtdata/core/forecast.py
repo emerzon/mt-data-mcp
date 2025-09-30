@@ -308,6 +308,7 @@ def forecast_barrier_hit_probabilities(
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
     method: Literal['mc_gbm','hmm_mc'] = 'hmm_mc',  # type: ignore
+    direction: Literal['long','short'] = 'long',  # trade direction context for TP/SL
     # Barrier specification (choose one style per side)
     tp_abs: Optional[float] = None,
     sl_abs: Optional[float] = None,
@@ -320,6 +321,7 @@ def forecast_barrier_hit_probabilities(
 ) -> Dict[str, Any]:
     """Monte Carlo barrier analysis: probability of reaching TP/SL within horizon.
 
+    - direction: 'long' means TP above and SL below last_price; 'short' means TP below and SL above.
     - method: 'mc_gbm' (GBM) or 'hmm_mc' (Gaussian HMM regimes)
     - Barriers can be absolute prices (tp_abs/sl_abs), percentage offsets (tp_pct/sl_pct),
       or pips (tp_pips/sl_pips). Percentage values are in percent points (0.5 => 0.5%).
@@ -356,7 +358,8 @@ def forecast_barrier_hit_probabilities(
             except Exception:
                 return None
 
-        # Compute absolute TP/SL prices
+        # Compute absolute TP/SL prices with explicit trade direction
+        dir_long = str(direction).lower() == 'long'
         tp_price = _coerce_float(tp_abs)
         sl_price = _coerce_float(sl_abs)
         r_tp = _coerce_float(tp_pct)
@@ -364,25 +367,45 @@ def forecast_barrier_hit_probabilities(
         pp_tp = _coerce_float(tp_pips)
         pp_sl = _coerce_float(sl_pips)
 
-        if tp_price is None:
-            if r_tp is not None:
-                tp_price = last_price * (1.0 + (r_tp / 100.0))
-            elif pp_tp is not None and pip_size is not None:
-                tp_price = last_price + pp_tp * pip_size
-        if sl_price is None:
-            if r_sl is not None:
-                sl_price = last_price * (1.0 - (r_sl / 100.0))
-            elif pp_sl is not None and pip_size is not None:
-                sl_price = last_price - pp_sl * pip_size
+        if tp_price is None or sl_price is None:
+            # Derive from pct/pips if absolutes not provided
+            if dir_long:
+                if tp_price is None:
+                    if r_tp is not None:
+                        tp_price = last_price * (1.0 + (r_tp / 100.0))
+                    elif pp_tp is not None and pip_size is not None:
+                        tp_price = last_price + pp_tp * pip_size
+                if sl_price is None:
+                    if r_sl is not None:
+                        sl_price = last_price * (1.0 - (r_sl / 100.0))
+                    elif pp_sl is not None and pip_size is not None:
+                        sl_price = last_price - pp_sl * pip_size
+            else:  # short
+                if tp_price is None:
+                    if r_tp is not None:
+                        tp_price = last_price * (1.0 - (r_tp / 100.0))
+                    elif pp_tp is not None and pip_size is not None:
+                        tp_price = last_price - pp_tp * pip_size
+                if sl_price is None:
+                    if r_sl is not None:
+                        sl_price = last_price * (1.0 + (r_sl / 100.0))
+                    elif pp_sl is not None and pip_size is not None:
+                        sl_price = last_price + pp_sl * pip_size
 
         if tp_price is None or sl_price is None:
             return {"error": "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or tp_pips/sl_pips"}
-        if not (tp_price > last_price and sl_price < last_price):
-            # Tolerate inverted sides but warn
+
+        # Ensure correct side relative to direction (adjust minimally if inverted)
+        if dir_long:
             if tp_price <= last_price:
                 tp_price = last_price * 1.000001
             if sl_price >= last_price:
                 sl_price = last_price * 0.999999
+        else:
+            if tp_price >= last_price:
+                tp_price = last_price * 0.999999
+            if sl_price <= last_price:
+                sl_price = last_price * 1.000001
 
         # Build input series (denoise optional)
         base_col = 'close'
@@ -464,6 +487,9 @@ def forecast_barrier_hit_probabilities(
                 return float(x) if _np.isfinite(x) else None
             except Exception:
                 return None
+        # Directional interpretation:
+        # - For long: TP is above last_price, SL is below; prob_tp_first is long win probability.
+        # - For short: TP is below last_price, SL is above; prob_tp_first is short win probability.
         edge = float(prob_tp_first - prob_sl_first)
         out = {
             "success": True,
@@ -471,6 +497,7 @@ def forecast_barrier_hit_probabilities(
             "timeframe": timeframe,
             "method": method,
             "horizon": int(horizon),
+            "direction": direction,
             "last_price": last_price,
             "tp_price": float(tp_price),
             "sl_price": float(sl_price),
@@ -579,6 +606,7 @@ def forecast_barrier_optimize(
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
     method: Literal['mc_gbm','hmm_mc'] = 'hmm_mc',  # type: ignore
+    direction: Literal['long','short'] = 'long',  # trade direction context for TP/SL
     mode: Literal['pct','pips'] = 'pct',  # type: ignore
     tp_min: float = 0.25,
     tp_max: float = 1.5,
@@ -647,6 +675,22 @@ def forecast_barrier_optimize(
         vol_sl_steps_val = max(vol_steps_val, int(params_dict.get('vol_sl_steps', vol_steps_val + 2)))
         vol_floor_pct_val = float(params_dict.get('vol_floor_pct', vol_floor_pct))
         vol_floor_pips_val = float(params_dict.get('vol_floor_pips', vol_floor_pips))
+
+        # Optional risk/reward filter applied across all grid styles
+        rr_min_val = params_dict.get('rr_min')
+        rr_max_val = params_dict.get('rr_max')
+        try:
+            rr_min_val = float(rr_min_val) if rr_min_val is not None else None
+        except Exception:
+            rr_min_val = None
+        try:
+            rr_max_val = float(rr_max_val) if rr_max_val is not None else None
+        except Exception:
+            rr_max_val = None
+        if rr_min_val is not None and rr_min_val <= 0:
+            rr_min_val = None
+        if rr_max_val is not None and rr_max_val <= 0:
+            rr_max_val = None
 
         tp_min_val = float(params_dict.get('tp_min', tp_min))
         tp_max_val = float(params_dict.get('tp_max', tp_max))
@@ -797,16 +841,29 @@ def forecast_barrier_optimize(
         results: List[Dict[str, Any]] = []
 
         def _evaluate(tp_unit: float, sl_unit: float, source: str) -> Optional[Dict[str, Any]]:
+            long_dir = str(direction).lower() == 'long'
             if mode_val == 'pct':
-                tp_price = float(last_price * (1.0 + tp_unit / 100.0))
-                sl_price = float(last_price * (1.0 - sl_unit / 100.0))
-                tp_dist = tp_price - float(last_price)
-                sl_dist = float(last_price) - sl_price
+                if long_dir:
+                    tp_price = float(last_price * (1.0 + tp_unit / 100.0))
+                    sl_price = float(last_price * (1.0 - sl_unit / 100.0))
+                    tp_dist = tp_price - float(last_price)
+                    sl_dist = float(last_price) - sl_price
+                else:
+                    tp_price = float(last_price * (1.0 - tp_unit / 100.0))
+                    sl_price = float(last_price * (1.0 + sl_unit / 100.0))
+                    tp_dist = float(last_price) - tp_price
+                    sl_dist = sl_price - float(last_price)
             else:
-                tp_price = float(last_price + tp_unit * float(pip_size))
-                sl_price = float(last_price - sl_unit * float(pip_size))
-                tp_dist = float(tp_unit * float(pip_size))
-                sl_dist = float(sl_unit * float(pip_size))
+                if long_dir:
+                    tp_price = float(last_price + tp_unit * float(pip_size))
+                    sl_price = float(last_price - sl_unit * float(pip_size))
+                    tp_dist = float(tp_unit * float(pip_size))
+                    sl_dist = float(sl_unit * float(pip_size))
+                else:
+                    tp_price = float(last_price - tp_unit * float(pip_size))
+                    sl_price = float(last_price + sl_unit * float(pip_size))
+                    tp_dist = float(tp_unit * float(pip_size))
+                    sl_dist = float(sl_unit * float(pip_size))
             if tp_dist <= 0 or sl_dist <= 0:
                 return None
 
@@ -848,6 +905,9 @@ def forecast_barrier_optimize(
             prob_hit_any = 1.0 - prob_no_hit
             p_win_hit = (p_tp_first / prob_hit_total) if prob_hit_total > 0 else _np.nan
             reward_risk = float(tp_dist / sl_dist)
+            # Enforce optional RR filter
+            if (rr_min_val is not None and reward_risk < rr_min_val) or (rr_max_val is not None and reward_risk > rr_max_val):
+                return None
             kelly = float(p_win_hit - (1.0 - p_win_hit) / reward_risk) if prob_hit_total > 0 and reward_risk > 0 and _np.isfinite(p_win_hit) else float('-inf')
             ev = float(p_win_hit * reward_risk - (1.0 - p_win_hit)) if prob_hit_total > 0 and reward_risk > 0 and _np.isfinite(p_win_hit) else float('-inf')
             edge = float(p_tp_first - p_sl_first)
@@ -954,6 +1014,7 @@ def forecast_barrier_optimize(
             'timeframe': timeframe,
             'method': method,
             'horizon': int(horizon),
+            'direction': direction,
             'mode': mode_val,
             'last_price': last_price,
             'objective': objective_val,

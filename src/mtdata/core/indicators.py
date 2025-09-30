@@ -4,10 +4,23 @@ from typing import Any, Dict, Optional, List
 from .schema import CategoryLiteral, IndicatorNameLiteral
 from ..utils.utils import _csv_from_rows_util
 from .server import mcp
-from .indicators_docs import list_ta_indicators as _list_ta_indicators_docs, infer_defaults_from_doc as _infer_defaults_from_doc_docs, _try_number as _tn, clean_help_text as _clean_help_text_docs
+# Import the actual implementation from utils
+from ..utils.indicators import _list_ta_indicators
 
+def _infer_defaults_from_doc(func_name: str, doc_text: str, params: List[Dict[str, Any]]):
+    """Delegate to utils implementation."""
+    from ..core.indicators_docs import infer_defaults_from_doc as _impl
+    return _impl(func_name, doc_text, params)
 
-_list_ta_indicators = _list_ta_indicators_docs
+def _try_number(s: str):
+    """Delegate to utils implementation.""" 
+    from ..core.indicators_docs import _try_number as _impl
+    return _impl(s)
+
+def _clean_help_text(text: str, func_name: Optional[str] = None, func: Optional[Any] = None) -> str:
+    """Delegate to utils implementation."""
+    from ..core.indicators_docs import clean_help_text as _impl
+    return _impl(text, func_name=func_name)
 
 @mcp.tool()
 def indicators_list(search_term: Optional[str] = None, category: Optional[CategoryLiteral] = None) -> Dict[str, Any]:  # type: ignore
@@ -54,11 +67,4 @@ def indicators_describe(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: 
     except Exception as e:
         return {"error": f"Error getting indicator details: {e}"}
 
-def _infer_defaults_from_doc(func_name: str, doc_text: str, params: List[Dict[str, Any]]):
-    return _infer_defaults_from_doc_docs(func_name, doc_text, params)
 
-def _try_number(s: str):
-    return _tn(s)
-
-def _clean_help_text(text: str, func_name: Optional[str] = None, func: Optional[Any] = None) -> str:
-    return _clean_help_text_docs(text, func_name=func_name)

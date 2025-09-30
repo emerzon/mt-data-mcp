@@ -54,134 +54,16 @@ ToolInfo = Dict[str, Any]
 
 
 
-def _is_scalar_value(value: Any) -> bool:
-    return isinstance(value, (str, int, float, bool)) or value is None
-
-
-def _is_empty_value(value: Any) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, str):
-        return value.strip() == ""
-    if isinstance(value, (list, tuple, set)):
-        return all(_is_empty_value(v) for v in value)
-    if isinstance(value, dict):
-        return all(_is_empty_value(v) for v in value.values())
-    return False
-
-
-def _minify_number(num: float) -> str:
-    try:
-        f = float(num)
-    except Exception:
-        return str(num)
-    if not math.isfinite(f):
-        return str(num)
-    text = f"{f:.8f}".rstrip('0').rstrip('.')
-    return text if text else '0'
-
-
-def _stringify_scalar(value: Any) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, float):
-        return _minify_number(value)
-    return str(value)
-
-
-def _stringify_cell(value: Any) -> str:
-    if _is_scalar_value(value):
-        return _stringify_scalar(value)
-    if isinstance(value, list):
-        values = [v for v in value if not _is_empty_value(v)]
-        if not values:
-            return ""
-        if all(_is_scalar_value(v) for v in values):
-            return "|".join(_stringify_scalar(v) for v in values)
-        return "; ".join(_stringify_cell(v) for v in values if not _is_empty_value(v))
-    if isinstance(value, dict):
-        parts = []
-        for key, subval in value.items():
-            if _is_empty_value(subval):
-                continue
-            parts.append(f"{key}={_stringify_cell(subval)}")
-        return "; ".join(parts)
-    return str(value)
-
-
-def _indent_text(text: str, indent: str = "  ") -> str:
-    return "\n".join(f"{indent}{line}" if line else indent.rstrip() for line in text.splitlines())
-
-
-def _list_of_dicts_to_csv(items: List[Dict[str, Any]]) -> str:
-    if not items:
-        return ""
-    headers: List[str] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        for key in item.keys():
-            if key not in headers:
-                headers.append(key)
-    buffer = io.StringIO()
-    writer = csv.writer(buffer, lineterminator="\n")
-    writer.writerow(headers)
-    for item in items:
-        row = [_stringify_cell(item.get(header)) for header in headers]
-        writer.writerow(row)
-    return buffer.getvalue().rstrip("\n")
-
-
-def _format_complex_value(value: Any) -> str:
-    if _is_scalar_value(value):
-        return _stringify_scalar(value)
-    if isinstance(value, list):
-        values = [v for v in value if not _is_empty_value(v)]
-        if not values:
-            return ""
-        if all(isinstance(v, dict) for v in values):
-            return _list_of_dicts_to_csv(values)
-        if all(_is_scalar_value(v) for v in values):
-            return ", ".join(_stringify_scalar(v) for v in values)
-        parts = []
-        for entry in values:
-            formatted = _format_complex_value(entry)
-            if formatted:
-                parts.append(formatted)
-        return "\n".join(parts)
-    if isinstance(value, dict):
-        lines = []
-        for key, subvalue in value.items():
-            if _is_empty_value(subvalue):
-                continue
-            formatted = _format_complex_value(subvalue)
-            if not formatted:
-                continue
-            if "\n" in formatted:
-                lines.append(f"{key}:\n{_indent_text(formatted)}")
-            else:
-                lines.append(f"{key}: {formatted}")
-        return "\n".join(lines)
-    return _stringify_scalar(value)
+# Import string formatting utilities from utils to avoid duplication
+from ..utils.minimal_output import (
+    _is_scalar_value, _is_empty_value, _minify_number, _stringify_scalar,
+    _stringify_cell, _indent_text, _list_of_dicts_to_csv, _format_complex_value
+)
 
 
 def _format_meta_block(meta: Dict[str, Any]) -> str:
-    lines = []
-    for key, value in meta.items():
-        if _is_empty_value(value):
-            continue
-        formatted = _format_complex_value(value)
-        if not formatted:
-            continue
-        if "\n" in formatted:
-            lines.append(f"{key}:\n{_indent_text(formatted)}")
-        else:
-            lines.append(f"{key}: {formatted}")
-    return "\n".join(lines)
+    """Delegate to shared format_complex_value for consistency."""
+    return _format_complex_value(meta)
 
 
 def _format_result_minimal(result: Any) -> str:
@@ -443,42 +325,11 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
             )
 
 def _parse_kv_string(s: str) -> Optional[Dict[str, Any]]:
-    """Parse 'k=v,k2=v2' (commas or spaces) into a dict. Returns None if not parseable.
-
-    Note: JSON strings are no longer parsed by the CLI.
-    """
+    """Parse 'k=v,k2=v2' (commas or spaces) into a dict. Delegates to utils implementation."""
     try:
-        if not s:
-            return None
-        parts = []
-        # Allow comma and whitespace as separators
-        for token in s.replace(',', ' ').split():
-            parts.append(token)
-        out: Dict[str, Any] = {}
-        for part in parts:
-            if '=' not in part:
-                continue
-            k, v = part.split('=', 1)
-            k = k.strip()
-            v = v.strip()
-            # Try to parse JSON scalars
-            if v.lower() in ('true','false'):
-                out[k] = (v.lower() == 'true')
-                continue
-            try:
-                if v.isdigit():
-                    out[k] = int(v)
-                    continue
-                fv = float(v)
-                out[k] = fv
-                continue
-            except Exception:
-                pass
-            # Strip surrounding quotes
-            if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
-                v = v[1:-1]
-            out[k] = v
-        return out if out else None
+        from ..utils.utils import parse_kv_or_json
+        result = parse_kv_or_json(s)
+        return result if result else None
     except Exception as e:
         _debug(f"Failed to parse kv string '{s}': {e}")
         return None

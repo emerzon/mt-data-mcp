@@ -18,8 +18,17 @@ def template_intraday(
         'backtest_rmse_tolerance': 0.05,
         'patterns_limit': 150,
         'mode': 'pct',
+        # Dynamic defaults for volatility grid
         'grid_style': 'volatility',
-        'grid_preset': 'intraday',
+        'vol_window': 250,
+        'vol_min_mult': 0.6,
+        'vol_max_mult': 2.2,
+        'vol_sl_multiplier': 1.7,
+        'vol_sl_steps': 9,
+        'vol_floor_pct': 0.2,
+        # Risk/reward filter defaults
+        'rr_min': 0.8,
+        'rr_max': 2.0,
         'refine': True,
         'refine_radius': 0.35,
         'refine_steps': 5,
@@ -28,7 +37,7 @@ def template_intraday(
         'top_k': 5,
         # Barrier optimization defaults
         'objective': 'ev_uncond',
-        'params': {'spread_bps': 1.0, 'slippage_bps': 0.5},
+        'params': {'spread_bps': 1.0, 'slippage_bps': 0.5, 'rr_min': 0.8, 'rr_max': 2.0},
     })
     if 'timeframe' not in p:
         p['timeframe'] = 'H1'

@@ -170,20 +170,43 @@ def report_generate(
             pass
         try:
             bar = rep.get('sections', {}).get('barriers', {})
-            best = bar.get('best') if isinstance(bar, dict) else None
-            if best:
-                tp = best.get('tp')
-                sl = best.get('sl')
-                edge = best.get('edge')
-                details: List[str] = []
-                if tp is not None:
-                    details.append(f"tp={format_number(tp)}%")
-                if sl is not None:
-                    details.append(f"sl={format_number(sl)}%")
-                if edge is not None:
-                    details.append(f"edge={format_number(edge)}")
-                if details:
-                    summ.append("barrier best " + ' '.join(details))
+            if isinstance(bar, dict) and any(k in bar for k in ('long','short')):
+                for dname in ('long','short'):
+                    sub = bar.get(dname)
+                    if not isinstance(sub, dict):
+                        continue
+                    best = sub.get('best') if isinstance(sub, dict) else None
+                    if not best:
+                        continue
+                    tp = best.get('tp'); sl = best.get('sl'); edge = best.get('edge')
+                    details: List[str] = []
+                    details.append(f"dir={dname}")
+                    if tp is not None:
+                        details.append(f"tp={format_number(tp)}%")
+                    if sl is not None:
+                        details.append(f"sl={format_number(sl)}%")
+                    if edge is not None:
+                        details.append(f"edge={format_number(edge)}")
+                    if details:
+                        summ.append("barrier best " + ' '.join(details))
+            else:
+                best = bar.get('best') if isinstance(bar, dict) else None
+                direction = bar.get('direction') if isinstance(bar, dict) else None
+                if best:
+                    tp = best.get('tp')
+                    sl = best.get('sl')
+                    edge = best.get('edge')
+                    details: List[str] = []
+                    if direction:
+                        details.append(f"dir={str(direction)}")
+                    if tp is not None:
+                        details.append(f"tp={format_number(tp)}%")
+                    if sl is not None:
+                        details.append(f"sl={format_number(sl)}%")
+                    if edge is not None:
+                        details.append(f"edge={format_number(edge)}")
+                    if details:
+                        summ.append("barrier best " + ' '.join(details))
         except Exception:
             pass
         rep['summary'] = summ
