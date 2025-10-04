@@ -404,7 +404,10 @@ def data_fetch_candles(
                 pass
 
         # Ensure headers are unique and exist in df
-        headers = [h for h in headers if h in df.columns or h == 'time']
+        # Always include indicator columns regardless of OHLCV filtering
+        base_headers = {"time", "open", "high", "low", "close", "tick_volume", "real_volume"}
+        # Keep all columns that exist: base headers (as filtered) + all indicators
+        headers = [h for h in headers if h in df.columns and (h in base_headers or h in ti_cols)]
 
         # Reformat time consistently across rows for display
         if 'time' in headers and len(df) > 0:

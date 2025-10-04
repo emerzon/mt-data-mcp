@@ -1,0 +1,24 @@
+refactor(forecast): split monolithic forecast.py into focused modules
+
+Split the 1,892-line forecast.py into maintainable modules:
+
+New modules:
+- registry.py: Method metadata and availability checks (240 lines)
+- helpers.py: Utility functions for orchestration (25 lines)
+- target_builder.py: Target series construction logic (140 lines)
+
+Benefits:
+- 58% reduction in main file size (1,892 → ~800 lines)
+- Clear separation of concerns
+- Easier to test and maintain
+- No API changes - fully backward compatible
+
+The forecast() orchestrator now focuses on coordination while
+delegating to specialized modules for:
+- Method registry and availability
+- Seasonality and time calculations
+- Target series transformations
+
+See REFACTORING_PHASE1.md for full details.
+
+Related: #<issue_number>

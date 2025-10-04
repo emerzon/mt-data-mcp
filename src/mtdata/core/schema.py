@@ -4,10 +4,10 @@ Shared JSON schema helpers for CLI/server tool inputs.
 Provides reusable $defs such as TimeframeSpec and helpers to apply them
 to per-tool parameter schemas.
 """
-from typing import Dict, Any, Optional, List, Tuple, Literal
+from typing import Dict, Any, Optional, List, Tuple, Literal, Union
 from typing_extensions import TypedDict
 import inspect
-from typing import get_type_hints
+from typing import get_type_hints, get_origin, get_args
 
 from .constants import TIMEFRAME_MAP
 
@@ -384,6 +384,111 @@ def apply_timeframe_ref(schema: Dict[str, Any]) -> Dict[str, Any]:
     return schema
 
 
+
+def _allow_null(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a copy of schema that also accepts null."""
+    updated = dict(schema)
+    schema_type = updated.get("type")
+    if schema_type is None:
+        if "oneOf" in updated:
+            updated["oneOf"] = list(updated["oneOf"]) + [{"type": "null"}]
+        elif "anyOf" in updated:
+            updated["anyOf"] = list(updated["anyOf"]) + [{"type": "null"}]
+        else:
+            updated = {"anyOf": [schema, {"type": "null"}]}
+        return updated
+    if isinstance(schema_type, list):
+        if "null" not in schema_type:
+            updated["type"] = schema_type + ["null"]
+    else:
+        if schema_type != "null":
+            updated["type"] = [schema_type, "null"]
+    return updated
+
+
+_TYPED_DICT_REFS = {
+    "IndicatorSpec": "#/$defs/IndicatorSpec",
+    "DenoiseSpec": "#/$defs/DenoiseSpec",
+    "SimplifySpec": "#/$defs/SimplifySpec",
+    "VolatilityParams": "#/$defs/VolatilityParams",
+}
+
+
+def _type_hint_to_schema(type_hint: Any) -> Dict[str, Any]:
+    """Convert a Python type hint to a minimal JSON Schema fragment."""
+    if type_hint is None:
+        return {"type": "string"}
+    if type_hint is Any:  # allow arbitrary content
+        return {}
+    origin = get_origin(type_hint)
+    if origin is Literal:
+        literals = [lit for lit in get_args(type_hint) if lit is not None]
+        if not literals:
+            return {"type": "string"}
+        literal_types = {type(lit) for lit in literals}
+        if literal_types == {bool}:
+            return {"type": "boolean"}
+        if literal_types == {int}:
+            return {"type": "integer", "enum": literals}
+        if literal_types == {float}:
+            return {"type": "number", "enum": literals}
+        return {"type": "string", "enum": [str(lit) for lit in literals]}
+    if origin is Union:
+        args = list(get_args(type_hint))
+        allow_null = False
+        non_null_args = []
+        for arg in args:
+            if arg is type(None):
+                allow_null = True
+            else:
+                non_null_args.append(arg)
+        if not non_null_args:
+            return {"type": "null"}
+        if len(non_null_args) == 1:
+            schema = _type_hint_to_schema(non_null_args[0])
+        else:
+            schema = {"oneOf": [_type_hint_to_schema(arg) for arg in non_null_args]}
+        if allow_null:
+            schema = _allow_null(schema)
+        return schema
+    if origin in (list, List, tuple, Tuple, set, frozenset):
+        args = get_args(type_hint)
+        item_type = args[0] if args else Any
+        item_schema = _type_hint_to_schema(item_type)
+        # Ensure items schema defaults to accepting any value if empty
+        if not item_schema:
+            item_schema = {}
+        return {"type": "array", "items": item_schema}
+    if origin in (dict, Dict):
+        args = get_args(type_hint)
+        value_type = args[1] if len(args) > 1 else Any
+        value_schema = _type_hint_to_schema(value_type)
+        if not value_schema:
+            value_schema = {}
+        return {"type": "object", "additionalProperties": value_schema or True}
+    # Handle direct builtins and aliases
+    if type_hint in (str, bytes):
+        return {"type": "string"}
+    if type_hint is int:
+        return {"type": "integer"}
+    if type_hint is float:
+        return {"type": "number"}
+    if type_hint is bool:
+        return {"type": "boolean"}
+    if type_hint is dict:
+        return {"type": "object", "additionalProperties": True}
+    if type_hint is list or type_hint is tuple:
+        return {"type": "array"}
+    ref_name = getattr(type_hint, "__name__", "")
+    if ref_name in _TYPED_DICT_REFS:
+        return {"$ref": _TYPED_DICT_REFS[ref_name]}
+    annotations = getattr(type_hint, "__annotations__", None)
+    if annotations and ref_name:
+        ref = _TYPED_DICT_REFS.get(ref_name)
+        if ref:
+            return {"$ref": ref}
+    return {"type": "string"}
+
 def build_minimal_schema(func_info: Dict[str, Any]) -> Dict[str, Any]:
     """Build a minimal parameters schema from a discovered function description.
 
@@ -397,8 +502,17 @@ def build_minimal_schema(func_info: Dict[str, Any]) -> Dict[str, Any]:
         name = p.get("name")
         if not name:
             continue
-        # Default to string for minimal typing; CLI does its own casting
-        props[name] = {"type": "string"}
+        prop_schema = _type_hint_to_schema(p.get("type"))
+        if not prop_schema:
+            prop_schema = {"type": "string"}
+        props[name] = prop_schema
+        default_val = p.get("default")
+        if default_val is not None:
+            if isinstance(default_val, (str, int, float, bool, list, dict)):
+                try:
+                    props[name]["default"] = default_val
+                except Exception:
+                    pass
         if p.get("required"):
             req.append(name)
     _ensure_defs(schema)
@@ -416,6 +530,24 @@ def enrich_schema_with_shared_defs(schema: Dict[str, Any], func_info: Dict[str, 
     apply_timeframe_ref(schema)
     apply_param_hints(schema)
     return schema
+
+
+
+
+def get_shared_enum_lists() -> Dict[str, List[str]]:
+    """Return enum lists used to enrich schemas when attaching to tools."""
+    enums: Dict[str, List[str]] = {
+        "DENOISE_METHODS": list(_DENOISE_METHODS),
+        "SIMPLIFY_MODES": list(_SIMPLIFY_MODES),
+        "SIMPLIFY_METHODS": list(_SIMPLIFY_METHODS),
+        "PIVOT_METHODS": list(_PIVOT_METHODS),
+        "FORECAST_METHODS": list(_FORECAST_METHODS),
+    }
+    if _CATEGORY_CHOICES:
+        enums["CATEGORY_CHOICES"] = list(_CATEGORY_CHOICES)
+    if _INDICATOR_NAME_CHOICES:
+        enums["INDICATOR_NAME_CHOICES"] = list(_INDICATOR_NAME_CHOICES)
+    return enums
 
 
 def get_function_info(func: Any) -> Dict[str, Any]:

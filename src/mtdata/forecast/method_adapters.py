@@ -27,6 +27,7 @@ from .methods.mlforecast import forecast_mlf_rf as _mlf_rf_impl, forecast_mlf_li
 from .methods.transformers import (
     forecast_chronos_bolt as _chronos_bolt_impl,
     forecast_timesfm as _timesfm_impl,
+    forecast_lag_llama as _lag_llama_impl,
 )
 from .monte_carlo import simulate_gbm_mc as _simulate_gbm_mc, simulate_hmm_mc as _simulate_hmm_mc
 
@@ -301,14 +302,21 @@ class PretrainedMethodAdapter(ForecastMethodAdapter):
                 raise RuntimeError(error)
             return f_vals, params_used
             
-        elif self.method in ('timesfm', 'lag_llama'):
-            model_name = params.get('model_name') or (
-                "google/timesfm-1.0-200m" if self.method == 'timesfm' else None
-            )
+        elif self.method == 'timesfm':
+            model_name = params.get('model_name') or "google/timesfm-1.0-200m"
             if not model_name:
                 raise ValueError(f"{self.method} requires params.model_name with a valid HF repo id")
-            
+
             return _timesfm_impl(
+                series=series, fh=fh, params=params, n=fh
+            )
+
+        elif self.method == 'lag_llama':
+            model_name = params.get('model_name') or "time-series-foundation-models/Lag-Llama"
+            if not model_name:
+                raise ValueError(f"{self.method} requires params.model_name with a valid HF repo id")
+
+            return _lag_llama_impl(
                 series=series, fh=fh, params=params, n=fh
             )
             

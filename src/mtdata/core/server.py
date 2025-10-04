@@ -9,6 +9,8 @@ from functools import wraps as _wraps
 
 from .config import mt5_config
 from .constants import SERVICE_NAME, TIMEFRAME_MAP, TIMEFRAME_SECONDS  # re-export for CLI/tests
+from .schema_attach import attach_schemas_to_tools
+from .schema import get_shared_enum_lists
 from ..utils.mt5 import mt5_connection, _auto_connect_wrapper, _ensure_symbol_ready
 
 # Create MCP instance early to avoid circular imports when tools import `mcp`.
@@ -102,6 +104,12 @@ from .regime import *
 from .labels import *
 from .report import *
 from .trading import *
+
+try:
+    attach_schemas_to_tools(mcp, get_shared_enum_lists())
+except Exception:
+    pass
+
 
 
 @atexit.register

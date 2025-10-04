@@ -83,30 +83,34 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
                 pass
             try:
                 params = schema.get("parameters", {}).get("properties", {})
-                if name == "forecast_generate" and "method" in params:
-                    params["method"] = {"$ref": "#/$defs/ForecastMethod"}
-                    if "target" in params:
-                        params["target"] = {"$ref": "#/$defs/TargetSpec"}
-                    if "quantity" in params:
-                        params["quantity"] = {"$ref": "#/$defs/QuantitySpec"}
-                    if "denoise" in params:
-                        params["denoise"] = {"$ref": "#/$defs/DenoiseSpec"}
+                required_params = set(schema.get("parameters", {}).get("required", []))
+
+                def _set_ref(param_name: str, ref: str, allow_null: bool = False) -> None:
+                    if param_name not in params:
+                        return
+                    if allow_null and param_name not in required_params:
+                        params[param_name] = {"anyOf": [{"$ref": ref}, {"type": "null"}]}
+                    else:
+                        params[param_name] = {"$ref": ref}
+
+                if name == "forecast_generate":
+                    _set_ref("method", "#/$defs/ForecastMethod")
+                    _set_ref("target", "#/$defs/TargetSpec")
+                    _set_ref("quantity", "#/$defs/QuantitySpec")
+                    _set_ref("denoise", "#/$defs/DenoiseSpec", allow_null=True)
                     if "params" in params:
                         params["params"] = {"type": "object", "additionalProperties": True}
                 if name == "indicators_list" and "category" in params and "IndicatorCategory" in schema.get("$defs", {}):
-                    params["category"] = {"$ref": "#/$defs/IndicatorCategory"}
+                    _set_ref("category", "#/$defs/IndicatorCategory")
                 if name == "indicators_describe" and "name" in params and "IndicatorName" in schema.get("$defs", {}):
-                    params["name"] = {"$ref": "#/$defs/IndicatorName"}
+                    _set_ref("name", "#/$defs/IndicatorName")
                 if name == "data_fetch_candles":
                     if "indicators" in params:
                         params["indicators"] = {"type": "array", "items": {"$ref": "#/$defs/IndicatorSpec"}}
-                    if "denoise" in params:
-                        params["denoise"] = {"$ref": "#/$defs/DenoiseSpec"}
-                    if "simplify" in params:
-                        params["simplify"] = {"$ref": "#/$defs/SimplifySpec"}
+                    _set_ref("denoise", "#/$defs/DenoiseSpec", allow_null=True)
+                    _set_ref("simplify", "#/$defs/SimplifySpec", allow_null=True)
                 if name == "data_fetch_ticks":
-                    if "simplify" in params:
-                        params["simplify"] = {"$ref": "#/$defs/SimplifySpec"}
+                    _set_ref("simplify", "#/$defs/SimplifySpec", allow_null=True)
             except Exception:
                 pass
             _apply_param_hints(schema)

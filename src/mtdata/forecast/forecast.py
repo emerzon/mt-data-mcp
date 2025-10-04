@@ -25,9 +25,17 @@ from .common import (
     parse_kv_or_json as _parse_kv_or_json,
     fetch_history as _fetch_history,
 )
+from .registry import get_forecast_methods_data
+from .helpers import (
+    default_seasonality_period as _default_seasonality_period,
+    next_times_from_last as _next_times_from_last,
+    pd_freq_from_timeframe as _pd_freq_from_timeframe,
+)
+from .target_builder import build_target_series, aggregate_horizon_target
 from .methods.transformers import (
     forecast_chronos_bolt as _chronos_bolt_impl,
     forecast_timesfm as _timesfm_impl,
+    forecast_lag_llama as _lag_llama_impl,
 )
 from .methods.classical import (
     forecast_naive as _naive_impl,
@@ -1094,7 +1102,7 @@ def forecast(
 
         elif method_l in ('timesfm', 'lag_llama'):
             # Generic HF pipeline adapter; try native libs if present
-            model_name = p.get('model_name') or ("google/timesfm-1.0-200m" if method_l == 'timesfm' else None)
+            model_name = p.get('model_name') or ("google/timesfm-1.0-200m" if method_l == 'timesfm' else "time-series-foundation-models/Lag-Llama")
             if not model_name:
                 return {"error": f"{method_l} requires params.model_name with a valid HF repo id"}
             ctx_len = int(p.get('context_length', 0) or 0)
