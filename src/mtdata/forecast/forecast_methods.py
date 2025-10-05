@@ -46,6 +46,7 @@ FORECAST_METHODS = (
     "gt_wavenet",
     "gt_deepnpts",
     "gt_mqf2",
+    "gt_npts",
     "ensemble",
 )
 
@@ -305,6 +306,14 @@ def get_forecast_methods_data() -> Dict[str, Any]:
          {"name": "freq", "type": "str", "description": "Pandas frequency (auto from timeframe)"},
          {"name": "quantiles", "type": "list", "description": "Quantiles to return (e.g., [0.05,0.5,0.95])"}],
         ["gluonts", "torch"],
+        {"price": True, "return": True, "volatility": True, "ci": True})
+
+    add("gt_npts", "GluonTS NPTS (non-parametric, fast)",
+        [{"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
+         {"name": "season_length", "type": "int", "description": "Season length (default: 1)"},
+         {"name": "kernel", "type": "str", "description": "Kernel: parzen|mean|median (default: parzen)"},
+         {"name": "window_size", "type": "int", "description": "Window size (default: min(256,n))"}],
+        ["gluonts"],
         {"price": True, "return": True, "volatility": True, "ci": True})
 
     # Ensemble methods

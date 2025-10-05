@@ -187,6 +187,7 @@ def _eval_candidate(
     features: Optional[Dict[str, Any]] = None,
     dimred_method: Optional[str] = None,
     dimred_params: Optional[Dict[str, Any]] = None,
+    trade_threshold: float = 0.0,
 ) -> Tuple[float, Dict[str, Any]]:
     """Run a backtest for a single candidate and return (score, result_dict).
 
@@ -209,6 +210,7 @@ def _eval_candidate(
         features=features,
         dimred_method=dimred_method,
         dimred_params=dimred_params,
+        trade_threshold=float(trade_threshold),
     )
     # Pull method aggregate
     r = res.get('results', {}).get(sel_method) if isinstance(res, dict) else None
@@ -233,12 +235,32 @@ def _sample_param(space: Dict[str, Any], rng: random.Random) -> Any:
         choices = space.get('choices') or []
         return rng.choice(list(choices)) if choices else None
     if t == 'int':
-        lo = int(space.get('min', 0)); hi = int(space.get('max', lo))
+        lo_raw = space.get('min', 0)
+        hi_raw = space.get('max', lo_raw)
+        try:
+            lo = int(lo_raw)
+        except Exception:
+            lo = 0
+        try:
+            hi = int(hi_raw)
+        except Exception:
+            hi = lo
         if lo > hi:
             lo, hi = hi, lo
         return rng.randint(lo, hi)
     # float (optionally log)
-    lo = float(space.get('min', 0.0)); hi = float(space.get('max', max(lo, 1.0)))
+    lo_raw = space.get('min', 0.0)
+    hi_raw = space.get('max', None)
+    try:
+        lo = float(lo_raw)
+    except Exception:
+        lo = 0.0
+    if hi_raw is None:
+        hi_raw = max(lo, 1.0)
+    try:
+        hi = float(hi_raw)
+    except Exception:
+        hi = max(lo, 1.0)
     if lo > hi:
         lo, hi = hi, lo
     if bool(space.get('log', False)) and lo > 0 and hi > 0:
@@ -261,11 +283,36 @@ def _mutate_value(value: Any, space: Dict[str, Any], rng: random.Random, strengt
         cand = [c for c in choices if c != value]
         return rng.choice(cand) if cand else value
     if t == 'int':
-        lo = int(space.get('min', value)); hi = int(space.get('max', value))
+        lo_raw = space.get('min', value)
+        hi_raw = space.get('max', value)
+        try:
+            lo = int(lo_raw if lo_raw is not None else (value if value is not None else 0))
+        except Exception:
+            lo = 0
+        try:
+            hi = int(hi_raw if hi_raw is not None else lo)
+        except Exception:
+            hi = lo
+        if value is None:
+            value = int((lo + hi) // 2)
         span = max(1, int(round((hi - lo) * strength)))
         return max(lo, min(hi, int(value) + rng.randint(-span, span)))
     # float
-    lo = float(space.get('min', value)); hi = float(space.get('max', value))
+    lo_raw = space.get('min', value)
+    hi_raw = space.get('max', value)
+    try:
+        lo = float(lo_raw if lo_raw is not None else (value if value is not None else 0.0))
+    except Exception:
+        lo = 0.0
+    try:
+        hi = float(hi_raw if hi_raw is not None else (lo + 1.0))
+    except Exception:
+        hi = max(lo, 1.0)
+    if value is None:
+        try:
+            value = float((lo + hi) * 0.5)
+        except Exception:
+            value = lo
     span = (hi - lo) * max(0.01, strength)
     return max(lo, min(hi, float(value) + (rng.random() * 2.0 - 1.0) * span))
 
@@ -278,16 +325,21 @@ def _crossover_for_method(
 ) -> Dict[str, Any]:
     child: Dict[str, Any] = {}
     for k, spec in param_spaces.items():
-        if rng.random() < 0.5:
-            child[k] = a.get(k)
-        else:
-            child[k] = b.get(k)
+        av = a.get(k)
+        bv = b.get(k)
+        child[k] = av if (rng.random() < 0.5) else bv
+        if child[k] is None and av is None and bv is None:
+            try:
+                child[k] = _sample_param(spec or {}, rng)
+            except Exception:
+                child[k] = None
         # small blend for floats
         t = str(spec.get('type', 'float')).lower()
         if t not in ('categorical', 'int'):
-            av = a.get(k); bv = b.get(k)
             try:
-                child[k] = float(av) * 0.5 + float(bv) * 0.5
+                fa = float(av if av is not None else _sample_param(spec or {}, rng))
+                fb = float(bv if bv is not None else _sample_param(spec or {}, rng))
+                child[k] = fa * 0.5 + fb * 0.5
             except Exception:
                 pass
     return child
@@ -314,6 +366,7 @@ def genetic_search_forecast_params(
     features: Optional[Dict[str, Any]] = None,
     dimred_method: Optional[str] = None,
     dimred_params: Optional[Dict[str, Any]] = None,
+    trade_threshold: float = 0.0,
 ) -> Dict[str, Any]:
     """Genetic search for best params for a forecast method under backtest.
 
@@ -405,6 +458,7 @@ def genetic_search_forecast_params(
                 features=features,
                 dimred_method=dimred_method,
                 dimred_params=dimred_params,
+                trade_threshold=float(trade_threshold),
             )
             scored.append((score, cand))
             hist_entry = {"generation": gen, "score": float(score), "params": dict(cand)}

@@ -475,3 +475,62 @@ def forecast_gt_mqf2(
     if fq:
         params_used['quantiles'] = sorted(fq.keys(), key=lambda x: float(x))
     return (f_vals, fq, params_used, None)
+
+
+def forecast_gt_npts(
+    *,
+    series: np.ndarray,
+    fh: int,
+    params: Dict[str, Any],
+    n: int,
+) -> Tuple[Optional[np.ndarray], Optional[Dict[str, List[float]]], Dict[str, Any], Optional[str]]:
+    """Forecast using GluonTS NPTS (non-parametric time series).
+
+    This is a non-neural nearest-neighbors method; fast and dependency-light.
+    """
+    p = params or {}
+    freq = str(p.get('freq', 'H'))
+    # Map generic 'kernel' to GluonTS kernel_type choices
+    kernel_in = str(p.get('kernel', 'exponential')).lower()
+    kernel_type = 'uniform' if kernel_in in ('uniform', 'climatological') else 'exponential'
+    use_seasonal_model = bool(p.get('use_seasonal_model', True))
+    num_default_time_features = int(p.get('num_default_time_features', 1))
+    context_length = p.get('context_length')
+    ctx_len = int(context_length) if context_length is not None else None
+    quantiles = p.get('quantiles') if isinstance(p.get('quantiles'), (list, tuple)) else None
+
+    try:
+        from gluonts.model.npts import NPTSPredictor  # type: ignore
+    except Exception as ex:
+        return (None, None, {}, f"npts requires gluonts. Install/upgrade: pip install gluonts ({ex})")
+
+    ds = _build_list_dataset(series, freq=freq)
+
+    try:
+        predictor = NPTSPredictor(
+            prediction_length=int(fh),
+            context_length=ctx_len,
+            kernel_type=kernel_type,
+            use_seasonal_model=use_seasonal_model,
+            use_default_time_features=True,
+            num_default_time_features=int(num_default_time_features),
+        )
+        forecasts = list(predictor.predict(ds))
+        if not forecasts:
+            return (None, None, {}, "npts produced no forecasts")
+        f_vals, fq = _extract_forecast_arrays(forecasts[0], int(fh), quantiles)
+        if f_vals is None:
+            return (None, None, {}, "npts could not extract forecast values")
+    except Exception as ex:
+        return (None, None, {}, f"npts error: {ex}")
+
+    params_used: Dict[str, Any] = {
+        'freq': freq,
+        'context_length': int(ctx_len) if ctx_len is not None else None,
+        'kernel_type': kernel_type,
+        'use_seasonal_model': bool(use_seasonal_model),
+        'num_default_time_features': int(num_default_time_features),
+    }
+    if fq:
+        params_used['quantiles'] = sorted(fq.keys(), key=lambda x: float(x))
+    return (f_vals, fq, params_used, None)

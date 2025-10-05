@@ -243,6 +243,7 @@ _FORECAST_METHODS = (
     "gt_wavenet",
     "gt_deepnpts",
     "gt_mqf2",
+    "gt_npts",
     "ensemble",
 )
 

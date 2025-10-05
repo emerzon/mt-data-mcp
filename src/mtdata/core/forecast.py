@@ -259,6 +259,7 @@ def forecast_tune_genetic(
     crossover_rate: float = 0.6,
     mutation_rate: float = 0.3,
     seed: int = 42,
+    trade_threshold: float = 0.0,
     denoise: Optional[DenoiseSpec] = None,
     features: Optional[Dict[str, Any]] = None,
     dimred_method: Optional[str] = None,
@@ -272,14 +273,20 @@ def forecast_tune_genetic(
     """
     try:
         ss = _parse_kv_or_json(search_space)
+        # Prefer multi-method search unless user pins a single method AND provides a flat space
+        method_for_search: Optional[str] = method
+        from ..forecast.tune import default_search_space as _default_ss
         if not isinstance(ss, dict) or not ss:
-            # Build sensible defaults based on provided method(s)
-            from ..forecast.tune import default_search_space as _default_ss
-            ss = _default_ss(method=method, methods=methods)
+            # No space provided: default to a small multi-method space
+            ss = _default_ss(method=None, methods=methods)
+            method_for_search = None
+        elif isinstance(methods, (list, tuple)) and len(methods) > 0:
+            # Explicit methods list present: treat as multi-method search
+            method_for_search = None
         return _genetic_search_impl(
             symbol=symbol,
             timeframe=timeframe,  # type: ignore[arg-type]
-            method=str(method) if method is not None else None,
+            method=str(method_for_search) if method_for_search is not None else None,
             methods=methods,
             horizon=int(horizon),
             steps=int(steps),
@@ -292,6 +299,7 @@ def forecast_tune_genetic(
             crossover_rate=float(crossover_rate),
             mutation_rate=float(mutation_rate),
             seed=int(seed),
+            trade_threshold=float(trade_threshold),
             denoise=denoise,
             features=features,
             dimred_method=dimred_method,

@@ -287,6 +287,7 @@ Methods:
 - `gt_wavenet` — GluonTS WaveNet (quick train, torch)
 - `gt_deepnpts` — GluonTS DeepNPTS (quick train, torch)
 - `gt_mqf2` — GluonTS MQF2 (quick train, torch; quantiles)
+- `gt_npts` — GluonTS NPTS (non-parametric)
 
 Shared params:
 - `context_length`: tail window size to feed
@@ -333,6 +334,10 @@ python cli.py forecast_generate EURUSD --timeframe H1 --method gt_deepnpts --hor
 # GluonTS MQF2 (PyTorch, quantiles)
 python cli.py forecast_generate EURUSD --timeframe H1 --method gt_mqf2 --horizon 12 \
   --params "{\"context_length\":128,\"train_epochs\":5,\"quantiles\":[0.05,0.5,0.95]}"
+
+# GluonTS NPTS (non-parametric)
+python cli.py forecast_generate EURUSD --timeframe H1 --method gt_npts --horizon 12 \
+  --params "{\"season_length\":1,\"kernel\":\"parzen\",\"window_size\":128}"
 ```
 
 Notes:

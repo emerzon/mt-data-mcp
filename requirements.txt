@@ -80,5 +80,8 @@ scikit-learn>=1.3.2; python_version < "3.9"
 # pydiffmap>=0.2.0
 # pykeops>=2.2.3   # optional acceleration for CNE graph (GPU)
 
+# Plotting for helper scripts
+matplotlib>=3.8.0
+
 # Optional: DREAMS-CNE (install from source)
 # git+https://github.com/berenslab/DREAMS-CNE@tp

@@ -59,6 +59,7 @@ from .methods.gluonts_extra import (
     forecast_gt_wavenet as _gt_wavenet_impl,
     forecast_gt_deepnpts as _gt_deepnpts_impl,
     forecast_gt_mqf2 as _gt_mqf2_impl,
+    forecast_gt_npts as _gt_npts_impl,
 )
 
 # Local fallbacks for typing aliases used in signatures (avoid import cycle)
@@ -222,6 +223,65 @@ def get_forecast_methods_data() -> Dict[str, Any]:
     add("chronos_bolt", "Amazon Chronos-Bolt (native Chronos).", [], ["chronos-forecasting"], {"price": True, "return": True, "ci": False})
     add("timesfm", "Google TimesFM (native package).", [], ["timesfm"], {"price": True, "return": True, "ci": False})
     add("lag_llama", "Lag-Llama (native estimator).", [], ["lag-llama", "gluonts", "torch"], {"price": True, "return": True, "ci": False})
+
+    # GluonTS Torch quick-train models
+    add("gt_deepar", "GluonTS DeepAR (quick train)", [
+        {"name": "context_length", "type": "int", "description": "Input window length (default: min(64,n))"},
+        {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
+        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
+        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
+        {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
+    ], ["gluonts", "torch"], {"price": True, "return": True, "ci": True})
+
+    add("gt_sfeedforward", "GluonTS SimpleFeedForward (quick train)", [
+        {"name": "context_length", "type": "int", "description": "Input window length (default: min(64,n))"},
+        {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
+        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
+        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
+        {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
+    ], ["gluonts", "torch"], {"price": True, "return": True, "ci": True})
+
+    add("gt_prophet", "GluonTS Prophet wrapper", [
+        {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
+        {"name": "prophet_params", "type": "dict", "description": "Passed to ProphetPredictor (growth, seasonality_mode, ...)"},
+    ], ["gluonts", "prophet"], {"price": True, "return": True, "ci": True})
+
+    add("gt_tft", "GluonTS Temporal Fusion Transformer (quick train)", [
+        {"name": "context_length", "type": "int", "description": "Input window length (default: min(128,n))"},
+        {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
+        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
+        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
+        {"name": "hidden_size", "type": "int", "description": "Model width (default: 64)"},
+        {"name": "dropout", "type": "float", "description": "Dropout (default: 0.1)"},
+        {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
+    ], ["gluonts", "torch"], {"price": True, "return": True, "ci": True})
+
+    add("gt_wavenet", "GluonTS WaveNet (quick train)", [
+        {"name": "context_length", "type": "int", "description": "Input window length (default: min(128,n))"},
+        {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
+        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
+        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
+        {"name": "dilation_depth", "type": "int", "description": "Dilation depth (default: 5)"},
+        {"name": "num_stacks", "type": "int", "description": "WaveNet stacks (default: 1)"},
+        {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
+    ], ["gluonts", "torch"], {"price": True, "return": True, "ci": True})
+
+    add("gt_deepnpts", "GluonTS DeepNPTS (quick train)", [
+        {"name": "context_length", "type": "int", "description": "Input window length (default: min(128,n))"},
+        {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
+        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
+        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
+        {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
+    ], ["gluonts", "torch"], {"price": True, "return": True, "ci": True})
+
+    add("gt_mqf2", "GluonTS MQF2 (quick train, quantiles)", [
+        {"name": "context_length", "type": "int", "description": "Input window length (default: min(128,n))"},
+        {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
+        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
+        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
+        {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
+        {"name": "quantiles", "type": "list", "description": "Quantiles to return (e.g., [0.05,0.5,0.95])"},
+    ], ["gluonts", "torch", "cpflows"], {"price": True, "return": True, "ci": True})
     add("ensemble", "Adaptive ensemble (average, Bayesian model averaging, stacking).",
         [{"name": "methods", "type": "list", "description": "Component methods (default: naive,theta,fourier_ols)"},
          {"name": "mode", "type": "str", "description": "average|bma|stacking (default: average)"},
@@ -284,6 +344,7 @@ _FORECAST_METHODS = (
     "gt_wavenet",
     "gt_deepnpts",
     "gt_mqf2",
+    "gt_npts",
     "ensemble",
 )
 
@@ -1119,7 +1180,7 @@ def forecast(
         elif method_l in (
             'timesfm', 'lag_llama',
             'gt_deepar', 'gt_sfeedforward', 'gt_prophet',
-            'gt_tft', 'gt_wavenet', 'gt_deepnpts', 'gt_mqf2'
+            'gt_tft', 'gt_wavenet', 'gt_deepnpts', 'gt_mqf2', 'gt_npts'
         ):
             # Native adapters for foundation models
             ctx_len = int(p.get('context_length', 0) or 0)
@@ -1200,15 +1261,22 @@ def forecast(
                 f_vals = _f
                 if _fq:
                     forecast_quantiles = _fq  # type: ignore[name-defined]
-            else:  # gt_prophet
+            elif method_l == 'gt_npts':
+                if 'freq' not in p:
+                    p['freq'] = _pd_freq_from_timeframe(timeframe)
+                _f, _fq, params_used, _err = _gt_npts_impl(series=series, fh=int(fh), params=p, n=int(n))
+                if _err:
+                    return {"error": _err}
+                f_vals = _f
+                if _fq:
+                    forecast_quantiles = _fq  # type: ignore[name-defined]
+            elif method_l == 'gt_prophet':
                 if 'freq' not in p:
                     p['freq'] = _pd_freq_from_timeframe(timeframe)
                 _f, _fq, params_used, _err = _gt_prophet_impl(series=series, fh=int(fh), params=p, n=int(n))
                 if _err:
                     return {"error": _err}
                 f_vals = _f
-                if _fq:
-                    forecast_quantiles = _fq  # type: ignore[name-defined]
                 if _fq:
                     forecast_quantiles = _fq  # type: ignore[name-defined]
 

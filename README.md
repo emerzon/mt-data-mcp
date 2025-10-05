@@ -328,7 +328,7 @@ You can extend forecasting with additional frameworks. Install as needed; method
 - NeuralForecast (deep learning): `pip install neuralforecast[torch]`
   - Methods: `nhits`, `nbeatsx`, `tft`, `patchtst`
 - GluonTS (PyTorch): `pip install gluonts torch`
-  - Methods: `gt_deepar`, `gt_sfeedforward`
+  - Methods: `gt_deepar`, `gt_sfeedforward`, `gt_npts`, `gt_prophet` (wrapper)
   - Optional: Prophet via GluonTS wrapper: `pip install prophet` (use method `gt_prophet`)
 - Foundation models (native libs): install per model — Chronos: `pip install chronos-forecasting torch`; TimesFM: `pip install timesfm torch`; Lag‑Llama: `pip install lag-llama gluonts torch`
   - Methods: `chronos_bolt`, `timesfm`, `lag_llama`
