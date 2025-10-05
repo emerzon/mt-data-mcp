@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+.panel {
+  @apply bg-slate-900/60 border border-slate-800 rounded-lg;
+}
+
+.btn {
+  @apply inline-flex items-center gap-2 rounded-md bg-sky-600 hover:bg-sky-500 text-white px-3 py-1.5 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.input, .select {
+  @apply bg-slate-900 border border-slate-700 rounded-md px-2 py-1 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-600;
+}
+
+.label {
+  @apply text-xs text-slate-400;
+}
+

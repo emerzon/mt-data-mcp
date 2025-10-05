@@ -38,6 +38,174 @@ except Exception:
     _ARCH_AVAILABLE = False
 
 
+# Use shared helpers
+
+
+def get_volatility_methods_data() -> Dict[str, Any]:
+    """Return metadata about available volatility forecasting methods and their parameters."""
+    methods: List[Dict[str, Any]] = []
+
+    methods.append({
+        "method": "ewma",
+        "available": True,
+        "requires": [],
+        "description": "Exponentially weighted moving variance (RiskMetrics-style).",
+        "params": [
+            {"name": "lookback", "type": "int", "default": 1500, "description": "Number of past returns used in the EWMA."},
+            {"name": "lambda_", "type": "float", "default": 0.94, "description": "Decay factor for the EWMA weights."},
+            {"name": "halflife", "type": "int", "default": None, "description": "Optional half-life (in bars) used to derive lambda; overrides lambda_ when provided."},
+        ],
+    })
+
+    for name, desc in (
+        ("parkinson", "Parkinson high-low range estimator."),
+        ("gk", "Garman-Klass OHLC estimator."),
+        ("rs", "Rogers-Satchell OHLC estimator."),
+        ("yang_zhang", "Yang-Zhang estimator combining overnight jumps and ranges."),
+        ("rolling_std", "Rolling standard deviation of simple returns."),
+    ):
+        methods.append({
+            "method": name,
+            "available": True,
+            "requires": [],
+            "description": desc,
+            "params": [
+                {"name": "window", "type": "int", "default": 20, "description": "Number of bars in the rolling window."},
+            ],
+        })
+
+    methods.append({
+        "method": "realized_kernel",
+        "available": True,
+        "requires": [],
+        "description": "Realized kernel variance with configurable kernel and bandwidth.",
+        "params": [
+            {"name": "window", "type": "int", "default": 50, "description": "Number of bars of returns fed to the kernel."},
+            {"name": "kernel", "type": "str", "default": "tukey_hanning", "description": "Kernel name (tukey_hanning, bartlett, parzen, triangular)."},
+            {"name": "bandwidth", "type": "int", "default": None, "description": "Optional kernel bandwidth; auto-selected when omitted."},
+        ],
+    })
+
+    methods.append({
+        "method": "har_rv",
+        "available": True,
+        "requires": [],
+        "description": "HAR-RV model on realized variance aggregated from intraday bars.",
+        "params": [
+            {"name": "rv_timeframe", "type": "str", "default": "M5", "description": "Timeframe used to build intraday realized variance."},
+            {"name": "days", "type": "int", "default": 120, "description": "Number of calendar days fetched for the HAR fit."},
+            {"name": "window_w", "type": "int", "default": 5, "description": "Weekly window size for HAR lags."},
+            {"name": "window_m", "type": "int", "default": 22, "description": "Monthly window size for HAR lags."},
+        ],
+    })
+
+    def _garch_entry(name: str, base_desc: str, dist_default: str = "normal") -> Dict[str, Any]:
+        params = [
+            {"name": "fit_bars", "type": "int", "default": 2000, "description": "Number of recent returns used to fit the ARCH model."},
+            {"name": "p", "type": "int", "default": 1, "description": "ARCH order (p)."},
+            {"name": "q", "type": "int", "default": 1, "description": "GARCH order (q)."},
+            {"name": "mean", "type": "str", "default": "Zero", "description": "Mean model ('Zero' or 'Constant')."},
+            {"name": "dist", "type": "str", "default": dist_default, "description": "Innovation distribution (normal, studentst, skewt, etc.)."},
+        ]
+        if "gjr" in name:
+            params.append({"name": "o", "type": "int", "default": 1, "description": "Asymmetry (leverage) order for GJR-GARCH."})
+        return {
+            "method": name,
+            "available": _ARCH_AVAILABLE,
+            "requires": [] if _ARCH_AVAILABLE else ["arch"],
+            "description": base_desc,
+            "params": params,
+        }
+
+    methods.extend([
+        _garch_entry("garch", "GARCH volatility model (ARCH package)."),
+        _garch_entry("egarch", "Exponential GARCH volatility model."),
+        _garch_entry("gjr_garch", "GJR-GARCH with leverage effects."),
+        _garch_entry("garch_t", "GARCH with Student-t innovations.", dist_default="studentst"),
+        _garch_entry("egarch_t", "EGARCH with Student-t innovations.", dist_default="studentst"),
+        _garch_entry("gjr_garch_t", "GJR-GARCH with Student-t innovations.", dist_default="studentst"),
+        _garch_entry("figarch", "Fractionally integrated FIGARCH volatility model."),
+    ])
+
+    methods.append({
+        "method": "arima",
+        "available": _SM_SARIMAX_AVAILABLE,
+        "requires": [] if _SM_SARIMAX_AVAILABLE else ["statsmodels"],
+        "description": "ARIMA model fitted to the volatility proxy series.",
+        "params": [
+            {"name": "p", "type": "int", "default": 1, "description": "Non-seasonal AR order."},
+            {"name": "d", "type": "int", "default": 0, "description": "Non-seasonal differencing order."},
+            {"name": "q", "type": "int", "default": 1, "description": "Non-seasonal MA order."},
+        ],
+    })
+    methods.append({
+        "method": "sarima",
+        "available": _SM_SARIMAX_AVAILABLE,
+        "requires": [] if _SM_SARIMAX_AVAILABLE else ["statsmodels"],
+        "description": "Seasonal ARIMA on the volatility proxy with automatic seasonal period by timeframe.",
+        "params": [
+            {"name": "p", "type": "int", "default": 1, "description": "AR order."},
+            {"name": "d", "type": "int", "default": 0, "description": "Differencing order."},
+            {"name": "q", "type": "int", "default": 1, "description": "MA order."},
+            {"name": "P", "type": "int", "default": 0, "description": "Seasonal AR order."},
+            {"name": "D", "type": "int", "default": 0, "description": "Seasonal differencing order."},
+            {"name": "Q", "type": "int", "default": 0, "description": "Seasonal MA order."},
+        ],
+    })
+    methods.append({
+        "method": "ets",
+        "available": _SM_ETS_AVAILABLE,
+        "requires": [] if _SM_ETS_AVAILABLE else ["statsmodels"],
+        "description": "Exponential smoothing (ETS) on the volatility proxy.",
+        "params": [],
+    })
+    methods.append({
+        "method": "theta",
+        "available": True,
+        "requires": [],
+        "description": "Theta method applied to the volatility proxy.",
+        "params": [
+            {"name": "alpha", "type": "float", "default": 0.2, "description": "Level smoothing coefficient."},
+        ],
+    })
+
+    methods.append({
+        "method": "mlf_rf",
+        "available": _MLF_AVAILABLE,
+        "requires": [] if _MLF_AVAILABLE else ["mlforecast", "scikit-learn"],
+        "description": "Random forest regression on lagged volatility proxy features (mlforecast).",
+        "params": [
+            {"name": "lags", "type": "list[int]", "default": [1, 2, 3, 4, 5], "description": "Autoregressive lags supplied to the regressor."},
+            {"name": "n_estimators", "type": "int", "default": 200, "description": "Number of trees in the random forest."},
+        ],
+    })
+
+    methods.append({
+        "method": "nhits",
+        "available": _NF_AVAILABLE,
+        "requires": [] if _NF_AVAILABLE else ["neuralforecast[torch]"],
+        "description": "NeuralForecast NHITS model on the volatility proxy.",
+        "params": [
+            {"name": "max_epochs", "type": "int", "default": 30, "description": "Training epochs for NHITS."},
+            {"name": "batch_size", "type": "int", "default": 32, "description": "Mini-batch size."},
+            {"name": "input_size", "type": "int", "default": None, "description": "Lookback window (auto when omitted)."},
+        ],
+    })
+
+    methods.append({
+        "method": "ensemble",
+        "available": True,
+        "requires": [],
+        "description": "Blend of multiple price/return forecast methods applied to the volatility proxy.",
+        "params": [
+            {"name": "methods", "type": "list[str]", "default": [], "description": "Base forecast methods to blend (leave blank for defaults)."},
+            {"name": "aggregator", "type": "str", "default": "mean", "description": "Aggregation strategy: mean, median, weighted."},
+            {"name": "weights", "type": "list[float]", "default": [], "description": "Optional weights for the weighted aggregator."},
+            {"name": "expose_components", "type": "bool", "default": True, "description": "Expose individual component forecasts in the response."},
+        ],
+    })
+
+    return {"methods": methods}
 # Use shared helpers from common.py for seasonality and pandas freq mapping
 
 def _bars_per_year(timeframe: str) -> int:

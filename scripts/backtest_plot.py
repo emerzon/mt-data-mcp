@@ -1,34 +1,56 @@
+#!/usr/bin/env python3
 """
-Backtest plotting helper.
+External helper script to run rolling backtests and generate plots.
 
-Generates summary charts from forecast_backtest results:
-- Bar chart of Avg RMSE per method (plus Directional Accuracy / Win Rate labels when available)
-- Cumulative equity curve for the best method (by avg_rmse)
-- Small multiples of per-anchor Actual vs Forecast for the best method
+Outputs:
+  - <base>_summary.png: RMSE ranking by method with DA/WinRate labels
+  - <base>_equity_<best>.png: equity curve for best method
+  - <base>_anchors_<best>.png: small multiples of Actual vs Forecast
+  - <base>_download.png (or explicit filename): combined sheet similar to example
 
-Run as a module:
-  python -m src.mtdata.utils.backtest_plot --symbol EURUSD --timeframe H1 \
-      --horizon 12 --steps 5 --spacing 20 --out-dir backtests
+Usage examples:
+  python scripts/backtest_plot.py --symbol EURUSD --timeframe H1 --horizon 24 --steps 6 --spacing 30 \
+    --methods "theta holt holt_winters_add holt_winters_mul fourier_ols sf_autoarima" \
+    --denoise ema --denoise-span 10 --plot-delta --out-dir tests/test_results --filename-base download.png
 
-Or via CLI tool once wired (see core/plots.py):
-  python cli.py backtest_plot_generate EURUSD --timeframe H1 --horizon 12 --steps 5 --spacing 20
+Notes:
+  - The script works from repo root without installation. It augments sys.path to import src/mtdata/.
+  - Requires matplotlib; install via: pip install matplotlib
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import sys
 from typing import Dict, Any, List, Optional, Tuple
 from pathlib import Path
 import os
+
+
+def _ensure_repo_paths():
+    root = Path(__file__).resolve().parents[1]  # repo root
+    src = root / "src"
+    for p in (root, src):
+        sp = str(p)
+        if sp not in sys.path:
+            sys.path.insert(0, sp)
+
+
+_ensure_repo_paths()
 
 import numpy as np
 
 
 def _import_matplotlib():
-    import importlib
-    mpl = importlib.import_module("matplotlib")
-    import matplotlib.pyplot as plt
-    return mpl, plt
+    try:
+        import importlib
+        mpl = importlib.import_module("matplotlib")
+        import matplotlib.pyplot as plt
+        return mpl, plt
+    except Exception as ex:
+        raise SystemExit(
+            "matplotlib is required. Install with `pip install matplotlib` (inside your venv).\n"
+            f"Import error: {ex}"
+        )
 
 
 def _best_method_from_backtest(bt: Dict[str, Any]) -> Optional[str]:
@@ -77,10 +99,7 @@ def generate_backtest_plots(
     target: str = "price",
     plot_delta: bool = False,
 ) -> Dict[str, Any]:
-    """Run a rolling backtest and emit summary PNGs.
-
-    Returns a dict with file paths.
-    """
+    """Run a rolling backtest and emit summary PNGs."""
     # Defer heavy imports
     _, plt = _import_matplotlib()
     try:
@@ -88,12 +107,12 @@ def generate_backtest_plots(
     except Exception:
         pass
 
-    # Ensure MT5 session and call the raw implementation to avoid MCP text-minifying
-    from ..utils.mt5 import mt5_connection
+    # Ensure MT5 session and call the raw implementation
+    from src.mtdata.utils.mt5 import mt5_connection
     if not mt5_connection._ensure_connection():
         return {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
 
-    from ..forecast.backtest import forecast_backtest as _forecast_backtest_impl
+    from src.mtdata.forecast.backtest import forecast_backtest as _forecast_backtest_impl
 
     bt = _forecast_backtest_impl(
         symbol=symbol,
@@ -121,7 +140,7 @@ def generate_backtest_plots(
     if isinstance(filename_base, str) and filename_base.lower().endswith('.png'):
         explicit_png_name = filename_base
 
-    # 1) Summary bar chart (avg_rmse + labels for DA/win rate)
+    # 1) Summary bar chart
     methods_sorted = []
     for m, r in results.items():
         if not isinstance(r, dict) or not r.get("success"):
@@ -140,7 +159,6 @@ def generate_backtest_plots(
     ax1.set_xlabel("Method")
     ax1.grid(axis="y", alpha=0.3)
     ax1.set_axisbelow(True)
-    # Annotate DA and Win Rate
     for bar, (_, _, res) in zip(bars, methods_sorted):
         da = res.get("avg_directional_accuracy")
         wr = (res.get("metrics") or {}).get("win_rate")
@@ -157,18 +175,11 @@ def generate_backtest_plots(
     fig1.savefig(file_summary)
     plt.close(fig1)
 
-    # 2) Equity curve for best method
-    best_method = _best_method_from_backtest(bt)
-    if best_method is None:
-        best_method = labels[0]
+    # 2) Equity for best method
+    best_method = _best_method_from_backtest(bt) or labels[0]
     best = results.get(best_method) or {}
     details = best.get("details") or []
-    rets = []
-    anchors = []
-    for d in details:
-        anchors.append(d.get("anchor"))
-        r = d.get("trade_return")
-        rets.append(float(r) if r is not None else 0.0)
+    rets = [float(d.get("trade_return") or 0.0) for d in details]
     equity = np.cumprod(1.0 + np.asarray(rets, dtype=float)) if rets else np.array([1.0])
 
     fig2, ax2 = plt.subplots(figsize=(8, 4), dpi=144)
@@ -177,7 +188,6 @@ def generate_backtest_plots(
     ax2.set_ylabel("Equity (1=flat)")
     ax2.set_xlabel("Backtest step")
     ax2.grid(True, alpha=0.3)
-    # Annotate end stats
     if rets:
         total = equity[-1] - 1.0
         wr = float(np.mean(np.array(rets) > 0.0)) if rets else 0.0
@@ -189,8 +199,7 @@ def generate_backtest_plots(
     fig2.savefig(file_equity)
     plt.close(fig2)
 
-    # 3) Small multiples: Actual vs Forecast for best method
-    # Build pairs for each anchor
+    # 3) Small multiples for best method
     pairs: List[Tuple[str, List[float], List[float]]] = []
     for d in details:
         fc = d.get("forecast") or []
@@ -207,6 +216,8 @@ def generate_backtest_plots(
                 except Exception:
                     pass
             pairs.append((str(d.get("anchor")), fcs, acts))
+
+    file_pairs = None
     if pairs:
         cols = min(3, max(1, int(np.ceil(np.sqrt(len(pairs))))))
         rows = int(np.ceil(len(pairs) / cols))
@@ -222,11 +233,9 @@ def generate_backtest_plots(
                 ax.set_xlabel("Step")
             if c == 0:
                 ax.set_ylabel("ΔPrice" if (plot_delta and target == 'price') else ("Return" if target == 'return' else "Price"))
-        # Hide empty axes
         for j in range(len(pairs), rows*cols):
             r = j // cols; c = j % cols
             axes[r][c].axis('off')
-        # Shared legend
         handles, labels_ = axes[0][0].get_legend_handles_labels()
         fig3.legend(handles, labels_, loc='upper center', ncol=2)
         fig3.suptitle(f"Best Method {best_method}: Forecast vs Actual — {symbol} {timeframe}", y=0.995)
@@ -234,17 +243,13 @@ def generate_backtest_plots(
         file_pairs = out_path / f"{base}_anchors_{best_method}.png"
         fig3.savefig(file_pairs)
         plt.close(fig3)
-    else:
-        file_pairs = None
 
-    # 4) Combined sheet similar to example 'download.png'
+    # 4) Combined sheet
     try:
-        import matplotlib.pyplot as plt2  # reuse state safely
-        from matplotlib.gridspec import GridSpec
-        # Rebuild core elements to draw into a single canvas
+        import matplotlib.pyplot as plt2
+        from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
         fig = plt2.figure(figsize=(14, 8), dpi=140)
         gs = fig.add_gridspec(2, 2, width_ratios=(1.0, 1.4), height_ratios=(1.0, 1.0), wspace=0.25, hspace=0.25)
-        # TL: RMSE bars
         ax_tl = fig.add_subplot(gs[0, 0])
         ax_tl.bar(labels, values, color="#4C78A8")
         ax_tl.set_title("Avg RMSE by Method")
@@ -260,7 +265,6 @@ def generate_backtest_plots(
                 txt.append(f"WR {_fmt_pct(wr)}")
             if txt:
                 ax_tl.text(x, values[x], "\n".join(txt), ha='center', va='bottom', fontsize=8)
-        # BL: Equity
         ax_bl = fig.add_subplot(gs[1, 0])
         ax_bl.plot(range(len(equity)), equity, marker='o', color="#F58518")
         ax_bl.set_title(f"Equity — {best_method}")
@@ -273,19 +277,13 @@ def generate_backtest_plots(
             ax_bl.text(0.02, 0.95, f"Total {_fmt_pct(total)}\nWin {_fmt_pct(wr)}", transform=ax_bl.transAxes,
                        ha='left', va='top', fontsize=9,
                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.6, lw=0.0))
-        # Right: small multiples
         ax_right = fig.add_subplot(gs[:, 1])
-        # Create a nested grid inside the right panel
-        from matplotlib.gridspec import GridSpecFromSubplotSpec
         pairs_to_plot = pairs[:9] if pairs else []
         if pairs_to_plot:
             ncols = min(3, max(1, int(np.ceil(np.sqrt(len(pairs_to_plot))))))
             nrows = int(np.ceil(len(pairs_to_plot) / ncols))
             sub_gs = GridSpecFromSubplotSpec(nrows, ncols, subplot_spec=gs[:, 1], wspace=0.25, hspace=0.35)
-            sub_axes = []
-            for i in range(nrows * ncols):
-                r = i // ncols; c = i % ncols
-                sub_axes.append(fig.add_subplot(sub_gs[r, c]))
+            sub_axes = [fig.add_subplot(sub_gs[i // ncols, i % ncols]) for i in range(nrows * ncols)]
             for i, (anchor, fc, act) in enumerate(pairs_to_plot):
                 ax = sub_axes[i]
                 ax.plot(act, label='Actual', color='#4C78A8', lw=1.3)
@@ -305,10 +303,7 @@ def generate_backtest_plots(
             ax_right.axis('off')
         fig.suptitle(f"Backtest Summary — {symbol} {timeframe} (h={horizon}, steps={steps}, spacing={spacing}, target={target}{', delta' if (plot_delta and target=='price') else ''})", y=0.995)
         fig.tight_layout(rect=(0, 0, 1, 0.97))
-        if explicit_png_name:
-            file_combined = out_path / explicit_png_name
-        else:
-            file_combined = out_path / f"{base}_download.png"
+        file_combined = out_path / (explicit_png_name or f"{base}_download.png")
         fig.savefig(file_combined)
         plt2.close(fig)
     except Exception:
@@ -363,7 +358,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             methods = [s.strip() for s in txt.split(",") if s.strip()]
         else:
             methods = [s for s in txt.split() if s]
-    # Build denoise spec if provided
+
     denoise_spec = None
     if args.denoise_method:
         denoise_spec = {"method": str(args.denoise_method), "params": {}}
@@ -389,7 +384,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"Error: {res['error']}")
         return 1
     print("Generated:")
-    for k in ("summary_image", "equity_image", "anchors_image"):
+    for k in ("summary_image", "equity_image", "anchors_image", "combined_image"):
         v = res.get(k)
         if v:
             print(f"  {k}: {v}")
@@ -398,3 +393,4 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
