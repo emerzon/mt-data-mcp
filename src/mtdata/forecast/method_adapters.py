@@ -312,10 +312,6 @@ class PretrainedMethodAdapter(ForecastMethodAdapter):
             )
 
         elif self.method == 'lag_llama':
-            model_name = params.get('model_name') or "time-series-foundation-models/Lag-Llama"
-            if not model_name:
-                raise ValueError(f"{self.method} requires params.model_name with a valid HF repo id")
-
             return _lag_llama_impl(
                 series=series, fh=fh, params=params, n=fh
             )

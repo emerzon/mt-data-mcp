@@ -246,8 +246,7 @@ def forecast_lag_llama(
                 model_kwargs['load_in_4bit'] = True
         if device_map:
             model_kwargs['device_map'] = device_map
-        if trust_remote_code:
-            model_kwargs['trust_remote_code'] = True
+        # trust_remote_code only at pipeline level to avoid duplicate kwarg in from_pretrained
         if model_kwargs:
             pipe_kwargs['model_kwargs'] = model_kwargs
 
@@ -303,5 +302,173 @@ def forecast_lag_llama(
     }
     if fq:
         params_used['quantiles'] = sorted(fq.keys(), key=lambda x: float(x))
+
+    return (f_vals, fq or None, params_used, None)
+
+
+def forecast_lag_llama(
+    *,
+    series: np.ndarray,
+    fh: int,
+    params: Dict[str, Any],
+    n: int,
+) -> Tuple[Optional[np.ndarray], Optional[Dict[str, List[float]]], Dict[str, Any], Optional[str]]:
+    """Lag-Llama forecasting via native LagLlamaEstimator (no Transformers).
+
+    Expected params:
+    - ckpt_path: path to a Lag-Llama .ckpt checkpoint (required)
+    - device: e.g., 'cuda:0' or 'cpu' (optional; auto if omitted)
+    - context_length: input context length (default: 32)
+    - num_samples: number of sample paths for quantile estimation (default: 100)
+    - use_rope_scaling: bool to enable rope scaling when context_length+fh exceeds training context
+    - freq: pandas frequency string for synthetic timestamps (default: 'H')
+    - quantiles: list of quantiles to return (optional)
+    """
+    p = params or {}
+    ckpt_path = p.get('ckpt_path') or p.get('checkpoint') or p.get('model_path')
+    if not ckpt_path:
+        # Try to fetch a default checkpoint from Hugging Face Hub
+        try:
+            from huggingface_hub import hf_hub_download  # type: ignore
+            repo_id = str(p.get('hf_repo', 'time-series-foundation-models/Lag-Llama'))
+            filename = str(p.get('hf_filename', 'lag-llama.ckpt'))
+            revision = p.get('revision')
+            token = p.get('hf_token')
+            ckpt_path = hf_hub_download(repo_id=repo_id, filename=filename, revision=revision, token=token)
+            # Stash back into params for traceability
+            p['ckpt_path'] = ckpt_path
+            p['hf_repo'] = repo_id
+            p['hf_filename'] = filename
+        except Exception as ex:
+            return (None, None, {}, "lag_llama requires params.ckpt_path or the ability to auto-download via huggingface_hub. "
+                                     f"Tried default repo but failed: {ex}. Provide params: ckpt_path or hf_repo+hf_filename, and install huggingface_hub.")
+
+    ctx_len = int(p.get('context_length', 32) or 32)
+    num_samples = int(p.get('num_samples', 100) or 100)
+    use_rope = bool(p.get('use_rope_scaling', False))
+    freq = str(p.get('freq', 'H'))
+    quantiles = p.get('quantiles') if isinstance(p.get('quantiles'), (list, tuple)) else None
+
+    # Select context window
+    if ctx_len and ctx_len > 0:
+        k = int(min(len(series), ctx_len))
+        context = np.asarray(series[-k:], dtype=float)
+    else:
+        context = np.asarray(series, dtype=float)
+
+    try:
+        import torch  # type: ignore
+        from lag_llama.gluon.estimator import LagLlamaEstimator  # type: ignore
+        from gluonts.evaluation import make_evaluation_predictions  # type: ignore
+        from gluonts.dataset.pandas import PandasDataset  # type: ignore
+        import pandas as pd  # type: ignore
+        try:
+            import huggingface_hub  # type: ignore
+        except Exception:
+            huggingface_hub = None  # optional, only needed when auto-downloading
+    except Exception as ex:
+        return (None, None, {}, f"lag_llama dependencies missing: {ex}. Install: pip install lag-llama gluonts torch (optional: huggingface_hub)")
+
+    # Resolve device
+    device_str = str(p.get('device')) if p.get('device') is not None else None
+    if device_str:
+        device = torch.device(device_str)
+    else:
+        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+    # Load checkpoint to get model hyperparameters
+    try:
+        ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+        est_args = ckpt.get('hyper_parameters', {}).get('model_kwargs', {})
+    except Exception as ex:
+        return (None, None, {}, f"failed to load Lag-Llama checkpoint: {ex}")
+
+    # Optional rope scaling when context exceeds training
+    rope_scaling = None
+    try:
+        base_ctx = int(est_args.get('context_length', 32))
+        if use_rope:
+            factor = max(1.0, float((ctx_len + int(fh)) / max(1, base_ctx)))
+            rope_scaling = {"type": "linear", "factor": float(factor)}
+    except Exception:
+        rope_scaling = None
+
+    try:
+        estimator = LagLlamaEstimator(
+            ckpt_path=str(ckpt_path),
+            prediction_length=int(fh),
+            context_length=int(ctx_len),
+            input_size=est_args.get('input_size', 1),
+            n_layer=est_args.get('n_layer', 8),
+            n_embd_per_head=est_args.get('n_embd_per_head', 64),
+            n_head=est_args.get('n_head', 8),
+            scaling=est_args.get('scaling', 'none'),
+            time_feat=est_args.get('time_feat', 'none'),
+            rope_scaling=rope_scaling,
+            batch_size=1,
+            num_parallel_samples=max(1, int(num_samples)),
+            device=device,
+        )
+
+        lightning_module = estimator.create_lightning_module()
+        transformation = estimator.create_transformation()
+        predictor = estimator.create_predictor(transformation, lightning_module)
+
+        # Build single-series PandasDataset with synthetic timestamps
+        idx = pd.date_range(start=pd.Timestamp('2000-01-01'), periods=len(context), freq=freq)
+        ds = PandasDataset(dict(target=pd.Series(context, index=idx), start=idx[0]))
+
+        forecast_it, ts_it = make_evaluation_predictions(dataset=ds, predictor=predictor, num_samples=max(1, int(num_samples)))
+        forecasts = list(forecast_it)
+        if not forecasts:
+            return (None, None, {}, "lag_llama produced no forecasts")
+        f = forecasts[0]
+
+        # Point forecast: use mean if available, else median quantile, else samples average
+        vals = None
+        try:
+            vals = np.asarray(f.mean, dtype=float)
+        except Exception:
+            pass
+        if vals is None or vals.size == 0:
+            try:
+                vals = np.asarray(f.quantile(0.5), dtype=float)
+            except Exception:
+                pass
+        if (vals is None or vals.size == 0) and hasattr(f, 'samples'):
+            try:
+                vals = np.asarray(np.mean(f.samples, axis=0), dtype=float)
+            except Exception:
+                pass
+        if vals is None:
+            return (None, None, {}, "lag_llama could not extract forecast values")
+        f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
+
+        fq: Dict[str, List[float]] = {}
+        if quantiles:
+            for q in quantiles:
+                try:
+                    qf = float(q)
+                except Exception:
+                    continue
+                try:
+                    q_arr = np.asarray(f.quantile(qf), dtype=float)
+                except Exception:
+                    continue
+                fq[str(qf)] = [float(v) for v in q_arr[:fh].tolist()]
+
+    except Exception as ex:
+        return (None, None, {}, f"lag_llama inference error: {ex}")
+
+    params_used = {
+        'ckpt_path': str(ckpt_path),
+        'context_length': int(ctx_len),
+        'device': str(device),
+        'num_samples': int(num_samples),
+        'use_rope_scaling': bool(use_rope),
+        'freq': freq,
+    }
+    if quantiles:
+        params_used['quantiles'] = sorted({str(float(q)) for q in quantiles}, key=lambda x: float(x))
 
     return (f_vals, fq or None, params_used, None)

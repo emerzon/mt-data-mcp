@@ -27,7 +27,7 @@ try:
     _LGB_AVAILABLE = _importlib_util.find_spec("lightgbm") is not None
     _CHRONOS_AVAILABLE = _importlib_util.find_spec("chronos") is not None or _importlib_util.find_spec("transformers") is not None
     _TIMESFM_AVAILABLE = _importlib_util.find_spec("timesfm") is not None or _importlib_util.find_spec("transformers") is not None
-    _LAG_LLAMA_AVAILABLE = _importlib_util.find_spec("lag_llama") is not None or _importlib_util.find_spec("transformers") is not None
+    _LAG_LLAMA_AVAILABLE = _importlib_util.find_spec("lag_llama") is not None
 except Exception:
     _NF_AVAILABLE = False
     _MLF_AVAILABLE = False

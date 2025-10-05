@@ -107,7 +107,7 @@ except Exception:
     _TIMESFM_AVAILABLE = False
 try:
     import importlib.util as _importlib_util7  # type: ignore
-    _LAG_LLAMA_AVAILABLE = (_importlib_util7.find_spec("lag_llama") is not None) or (_importlib_util7.find_spec("transformers") is not None)
+    _LAG_LLAMA_AVAILABLE = (_importlib_util7.find_spec("lag_llama") is not None)
 except Exception:
     _LAG_LLAMA_AVAILABLE = False
 
@@ -1101,25 +1101,16 @@ def forecast(
                 forecast_quantiles = _fq  # type: ignore[name-defined]
 
         elif method_l in ('timesfm', 'lag_llama'):
-            # Generic HF pipeline adapter; try native libs if present
-            model_name = p.get('model_name') or ("google/timesfm-1.0-200m" if method_l == 'timesfm' else "time-series-foundation-models/Lag-Llama")
-            if not model_name:
-                return {"error": f"{method_l} requires params.model_name with a valid HF repo id"}
+            # Native adapters for foundation models
             ctx_len = int(p.get('context_length', 0) or 0)
-            device = p.get('device')
-            device_map = p.get('device_map', 'auto')
-            quantization = str(p.get('quantization')) if p.get('quantization') is not None else None
-            quantiles = p.get('quantiles') if isinstance(p.get('quantiles'), (list, tuple)) else None
-            revision = p.get('revision')
-            trust_remote_code = bool(p.get('trust_remote_code', False))
             if ctx_len and ctx_len > 0:
                 context = series[-int(min(n, ctx_len)) :]
             else:
                 context = series
             f_vals = None
-            last_err = None
             fq: Dict[str, List[float]] = {}
-            # Try native packages if available
+            params_used = {}
+
             if method_l == 'timesfm':
                 _f, _fq, params_used, _err = _timesfm_impl(series=series, fh=int(fh), params=p, n=int(n))
                 if _err:
@@ -1127,68 +1118,20 @@ def forecast(
                 f_vals = _f
                 if _fq:
                     forecast_quantiles = _fq  # type: ignore[name-defined]
-            # Fallback to Transformers pipeline (skip for timesfm to give clear guidance)
+            else:  # lag_llama
+                _f, _fq, params_used, _err = _lag_llama_impl(series=series, fh=int(fh), params=p, n=int(n))
+                if _err:
+                    return {"error": _err}
+                f_vals = _f
+                if _fq:
+                    forecast_quantiles = _fq  # type: ignore[name-defined]
+
             if f_vals is None:
-                if method_l == 'timesfm':
-                    return {"error": "timesfm not installed. Install from source: git clone https://github.com/google-research/timesfm && pip install -e ."}
-                try:
-                    from transformers import pipeline as _hf_pipeline  # type: ignore
-                    try:
-                        from transformers.pipelines import SUPPORTED_TASKS as _HF_SUPPORTED_TASKS  # type: ignore
-                        if "time-series-forecasting" not in _HF_SUPPORTED_TASKS:
-                            raise RuntimeError(
-                                "Transformers does not support 'time-series-forecasting' pipeline in this environment. "
-                                "Install 'chronos-forecasting' or upgrade 'transformers' to a version that includes the time-series pipeline."
-                            )
-                    except Exception:
-                        pass
-                    _pipe_kwargs: Dict[str, Any] = {'model': model_name}
-                    if device and str(device).lower() != 'auto':
-                        _pipe_kwargs['device'] = device
-                    else:
-                        _pipe_kwargs['device_map'] = device_map
-                    if revision:
-                        _pipe_kwargs['revision'] = revision
-                    _model_kwargs: Dict[str, Any] = {}
-                    if quantization:
-                        if quantization.lower() in ('int8', '8bit', 'bnb.int8'):
-                            _model_kwargs['load_in_8bit'] = True
-                        elif quantization.lower() in ('int4', '4bit', 'bnb.int4'):
-                            _model_kwargs['load_in_4bit'] = True
-                    if trust_remote_code:
-                        _model_kwargs['trust_remote_code'] = True
-                    if _model_kwargs:
-                        _pipe_kwargs['model_kwargs'] = _model_kwargs
-                    hf = _hf_pipeline("time-series-forecasting", **_pipe_kwargs)  # type: ignore[call-arg]
-                    call_kwargs: Dict[str, Any] = {'prediction_length': int(fh)}
-                    if quantiles:
-                        call_kwargs['quantiles'] = list(quantiles)
-                    yhat = hf(context, **call_kwargs)  # type: ignore[call-arg]
-                    arr = yhat.get('forecast') if isinstance(yhat, dict) else yhat
-                    qmap = yhat.get('quantiles') if isinstance(yhat, dict) else None
-                    if isinstance(qmap, dict):
-                        for q, arrq in qmap.items():
-                            try:
-                                qf = float(q)
-                            except Exception:
-                                continue
-                            fq[str(qf)] = [float(v) for v in np.asarray(arrq, dtype=float)[:fh].tolist()]
-                    vals = np.asarray(arr, dtype=float)
-                    f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
-                except Exception as ex2:
-                    return {"error": f"{method_l} inference error: {ex2 if ex2 else last_err}"}
-            params_used = {
-                'model_name': str(model_name),
-                'context_length': int(ctx_len) if ctx_len else int(n),
-                'device': device,
-                'device_map': device_map,
-                'quantization': quantization,
-                'revision': revision,
-                'trust_remote_code': trust_remote_code,
-            }
-            if fq:
-                params_used['quantiles'] = sorted(list(fq.keys()), key=lambda x: float(x))
-                forecast_quantiles = fq  # type: ignore[name-defined]
+                return {"error": f"{method_l} inference failed"}
+
+            # Carry over basic params for response consistency when available
+            if isinstance(params_used, dict):
+                pass  # already set by native helper
 
         # Compute residual scale for intervals (on modeling scale)
         lower = upper = None
