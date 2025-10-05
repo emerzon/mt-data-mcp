@@ -236,6 +236,13 @@ _FORECAST_METHODS = (
     "chronos_bolt",
     "timesfm",
     "lag_llama",
+    "gt_deepar",
+    "gt_sfeedforward",
+    "gt_prophet",
+    "gt_tft",
+    "gt_wavenet",
+    "gt_deepnpts",
+    "gt_mqf2",
     "ensemble",
 )
 

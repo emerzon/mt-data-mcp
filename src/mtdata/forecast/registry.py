@@ -21,8 +21,7 @@ _MLF_AVAILABLE = _importlib_util.find_spec("mlforecast") is not None
 _LGB_AVAILABLE = _importlib_util.find_spec("lightgbm") is not None
 _CHRONOS_AVAILABLE = _importlib_util.find_spec("chronos") is not None
 _TIMESFM_AVAILABLE = _importlib_util.find_spec("timesfm") is not None
-_LAG_LLAMA_AVAILABLE = (_importlib_util.find_spec("lag_llama") is not None or 
-                        _importlib_util.find_spec("transformers") is not None)
+_LAG_LLAMA_AVAILABLE = (_importlib_util.find_spec("lag_llama") is not None)
 
 
 def get_forecast_methods_data() -> Dict[str, Any]:
@@ -54,13 +53,13 @@ def get_forecast_methods_data() -> Dict[str, Any]:
             reqs.append("mlforecast, lightgbm")
         if method == "chronos_bolt" and not _CHRONOS_AVAILABLE:
             available = False
-            reqs.append("chronos or transformers")
+            reqs.append("chronos-forecasting")
         if method == "timesfm" and not _TIMESFM_AVAILABLE:
             available = False
-            reqs.append("timesfm or transformers")
+            reqs.append("timesfm")
         if method == "lag_llama" and not _LAG_LLAMA_AVAILABLE:
             available = False
-            reqs.append("lag_llama or transformers")
+            reqs.append("lag-llama, gluonts, torch")
         if method == "ensemble":
             available = False
             reqs.append("not implemented")
@@ -183,12 +182,12 @@ def get_forecast_methods_data() -> Dict[str, Any]:
     add("chronos_bolt", "Chronos-Bolt foundation model.", [
         {"name": "model_name", "type": "str", "default": "amazon/chronos-bolt-base"},
         {"name": "context_length", "type": "int", "default": 512},
-    ], ["chronos or transformers"], {"price": True, "return": True, "ci": True})
+    ], ["chronos-forecasting"], {"price": True, "return": True, "ci": True})
     add("timesfm", "Google TimesFM foundation model.", [
         {"name": "context_length", "type": "int", "default": 512},
-    ], ["timesfm or transformers"], {"price": True, "return": True, "ci": True})
+    ], ["timesfm"], {"price": True, "return": True, "ci": True})
     add("lag_llama", "Lag-Llama foundation model.", [
         {"name": "context_length", "type": "int", "default": 512},
-    ], ["lag_llama or transformers"], {"price": True, "return": True, "ci": True})
+    ], ["lag-llama", "gluonts", "torch"], {"price": True, "return": True, "ci": True})
     
     return {"methods": methods}

@@ -271,42 +271,79 @@ python cli.py forecast_generate EURUSD --timeframe H1 --method sarima --horizon 
 
 #### Foundation Models (one‑shot inference)
 
-Install: `pip install transformers torch accelerate`.
-Optional native libs: `pip install chronos-forecasting` (Chronos), `pip install timesfm` (TimesFM, if available).
+Install per model:
+- Chronos‑Bolt: `pip install chronos-forecasting torch`
+- TimesFM: `pip install timesfm torch`
+- Lag‑Llama: `pip install lag-llama gluonts torch` (optionally `huggingface_hub` for auto ckpt download)
 
 Methods:
-- `chronos_bolt` — Amazon Chronos‑Bolt (native or via Transformers)
-- `timesfm` — Google TimesFM (native or via Transformers)
-- `lag_llama` — Lag‑Llama (via Transformers)
+- `chronos_bolt` — Amazon Chronos‑Bolt (native Chronos)
+- `timesfm` — Google TimesFM (native)
+- `lag_llama` — Lag‑Llama (native estimator)
+- `gt_deepar` — GluonTS DeepAR (quick train)
+- `gt_sfeedforward` — GluonTS SimpleFeedForward (quick train)
+- `gt_prophet` — GluonTS Prophet wrapper (install `prophet`)
+- `gt_tft` — GluonTS Temporal Fusion Transformer (quick train, torch)
+- `gt_wavenet` — GluonTS WaveNet (quick train, torch)
+- `gt_deepnpts` — GluonTS DeepNPTS (quick train, torch)
+- `gt_mqf2` — GluonTS MQF2 (quick train, torch; quantiles)
 
 Shared params:
-- `model_name`: HF repo id (e.g., `amazon/chronos-bolt-base`, `google/timesfm-1.0-200m`)
 - `context_length`: tail window size to feed
-- `device` or `device_map`: compute placement
-- `quantization`: `int8` or `int4` (best‑effort, requires compatible backend)
-- `quantiles`: e.g., `[0.05, 0.5, 0.95]` to request prediction quantiles
-- `revision`: HF branch/tag/commit
-- `trust_remote_code`: allow custom code from the repo
+- `quantiles`: e.g., `[0.05, 0.5, 0.95]` to request prediction quantiles (if supported)
 
 Examples:
 ```bash
 # Chronos‑Bolt with quantiles
 python cli.py forecast_generate EURUSD --timeframe H1 --method chronos_bolt --horizon 12 \
-  --params "{\"model_name\":\"amazon/chronos-bolt-base\",\"context_length\":512,\"quantiles\":[0.05,0.5,0.95]}"
+  --params "{\"context_length\":512,\"quantiles\":[0.05,0.5,0.95]}"
 
-# TimesFM default model, 8‑bit load
+# TimesFM default model
 python cli.py forecast_generate EURUSD --timeframe H1 --method timesfm --horizon 12 \
-  --params "{\"context_length\":512,\"quantization\":\"int8\"}"
+  --params "{\"context_length\":512}"
 
-# Lag‑Llama via Transformers
+# Lag‑Llama native estimator (auto‑download default ckpt)
 python cli.py forecast_generate EURUSD --timeframe H1 --method lag_llama --horizon 12 \
-  --params "{\"model_name\":\"time-series-foundation-models/Lag-Llama\",\"context_length\":512,\"device\":\"cuda:0\"}"
+  --params "{\"context_length\":512}"
+
+# GluonTS DeepAR with 5 epochs on series
+python cli.py forecast_generate EURUSD --timeframe H1 --method gt_deepar --horizon 12 \
+  --params "{\"context_length\":64,\"train_epochs\":5}"
+
+# GluonTS SimpleFeedForward
+python cli.py forecast_generate EURUSD --timeframe H1 --method gt_sfeedforward --horizon 12 \
+  --params "{\"context_length\":64,\"train_epochs\":5}"
+
+# GluonTS Prophet wrapper
+python cli.py forecast_generate EURUSD --timeframe H1 --method gt_prophet --horizon 12 \
+  --params "{\"prophet_params\":{\"seasonality_mode\":\"additive\"}}"
+
+# GluonTS Temporal Fusion Transformer (PyTorch)
+python cli.py forecast_generate EURUSD --timeframe H1 --method gt_tft --horizon 12 \
+  --params "{\"context_length\":128,\"train_epochs\":5}"
+
+# GluonTS WaveNet (PyTorch)
+python cli.py forecast_generate EURUSD --timeframe H1 --method gt_wavenet --horizon 12 \
+  --params "{\"context_length\":128,\"train_epochs\":5}"
+
+# GluonTS DeepNPTS (PyTorch)
+python cli.py forecast_generate EURUSD --timeframe H1 --method gt_deepnpts --horizon 12 \
+  --params "{\"context_length\":128,\"train_epochs\":5}"
+
+# GluonTS MQF2 (PyTorch, quantiles)
+python cli.py forecast_generate EURUSD --timeframe H1 --method gt_mqf2 --horizon 12 \
+  --params "{\"context_length\":128,\"train_epochs\":5,\"quantiles\":[0.05,0.5,0.95]}"
 ```
 
 Notes:
-- Transformers auto‑downloads models and caches them. For private/gated repos, login or set `HUGGINGFACE_HUB_TOKEN`.
+- Lag‑Llama loads a pre‑trained `.ckpt` (specify via `ckpt_path` or allow auto‑download with `huggingface_hub`).
 - Quantile outputs are returned under `forecast_quantiles` and are transformed to price space for `target=price`.
-- Some repos may require `trust_remote_code: true`.
+
+GluonTS installation notes:
+- Install Torch-enabled GluonTS: `pip install "gluonts[torch]" torch`
+- MQF2 requires cpflows: `pip install cpflows`
+- Prophet wrapper requires prophet: `pip install prophet`
+- If you see `No module named 'gluonts.torch.trainer'`, upgrade GluonTS: `pip install --upgrade "gluonts[torch]"`.
 
 ---
 

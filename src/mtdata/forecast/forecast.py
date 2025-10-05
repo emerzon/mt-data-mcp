@@ -32,7 +32,7 @@ from .helpers import (
     pd_freq_from_timeframe as _pd_freq_from_timeframe,
 )
 from .target_builder import build_target_series, aggregate_horizon_target
-from .methods.transformers import (
+from .methods.pretrained import (
     forecast_chronos_bolt as _chronos_bolt_impl,
     forecast_timesfm as _timesfm_impl,
     forecast_lag_llama as _lag_llama_impl,
@@ -51,6 +51,15 @@ from .methods.ets_arima import (
     forecast_sarimax as _sarimax_impl,
 )
 from .methods.neural import forecast_neural as _neural_impl
+from .methods.gluonts_extra import (
+    forecast_gt_deepar as _gt_deepar_impl,
+    forecast_gt_sfeedforward as _gt_sff_impl,
+    forecast_gt_prophet as _gt_prophet_impl,
+    forecast_gt_tft as _gt_tft_impl,
+    forecast_gt_wavenet as _gt_wavenet_impl,
+    forecast_gt_deepnpts as _gt_deepnpts_impl,
+    forecast_gt_mqf2 as _gt_mqf2_impl,
+)
 
 # Local fallbacks for typing aliases used in signatures (avoid import cycle)
 try:
@@ -132,11 +141,11 @@ def get_forecast_methods_data() -> Dict[str, Any]:
         if method == "mlf_lightgbm" and (not _MLF_AVAILABLE or not _LGB_AVAILABLE):
             available = False; reqs.append("mlforecast, lightgbm")
         if method == "chronos_bolt" and not _CHRONOS_AVAILABLE:
-            available = False; reqs.append("chronos or transformers")
+            available = False; reqs.append("chronos-forecasting")
         if method == "timesfm" and not _TIMESFM_AVAILABLE:
-            available = False; reqs.append("timesfm or transformers")
+            available = False; reqs.append("timesfm")
         if method == "lag_llama" and not _LAG_LLAMA_AVAILABLE:
-            available = False; reqs.append("lag_llama or transformers")
+            available = False; reqs.append("lag-llama, gluonts, torch")
         # ensemble is not wired yet in this repo
         if method == "ensemble":
             available = False; reqs.append("not implemented")
@@ -210,9 +219,9 @@ def get_forecast_methods_data() -> Dict[str, Any]:
     add("sf_seasonalnaive", "StatsForecast SeasonalNaive.", [], ["statsforecast"], {"price": True, "return": True, "ci": False})
     add("mlf_rf", "MLForecast RandomForest.", [], ["mlforecast", "scikit-learn"], {"price": True, "return": True, "ci": False})
     add("mlf_lightgbm", "MLForecast LightGBM.", [], ["mlforecast", "lightgbm"], {"price": True, "return": True, "ci": False})
-    add("chronos_bolt", "Amazon Chronos-Bolt (Chronos package).", [], ["chronos"], {"price": True, "return": True, "ci": False})
-    add("timesfm", "Google TimesFM (install from source).", [], ["timesfm"], {"price": True, "return": True, "ci": False})
-    add("lag_llama", "Lag-Llama via Transformers.", [], ["lag_llama", "transformers"], {"price": True, "return": True, "ci": False})
+    add("chronos_bolt", "Amazon Chronos-Bolt (native Chronos).", [], ["chronos-forecasting"], {"price": True, "return": True, "ci": False})
+    add("timesfm", "Google TimesFM (native package).", [], ["timesfm"], {"price": True, "return": True, "ci": False})
+    add("lag_llama", "Lag-Llama (native estimator).", [], ["lag-llama", "gluonts", "torch"], {"price": True, "return": True, "ci": False})
     add("ensemble", "Adaptive ensemble (average, Bayesian model averaging, stacking).",
         [{"name": "methods", "type": "list", "description": "Component methods (default: naive,theta,fourier_ols)"},
          {"name": "mode", "type": "str", "description": "average|bma|stacking (default: average)"},
@@ -268,6 +277,13 @@ _FORECAST_METHODS = (
     "chronos_bolt",
     "timesfm",
     "lag_llama",
+    "gt_deepar",
+    "gt_sfeedforward",
+    "gt_prophet",
+    "gt_tft",
+    "gt_wavenet",
+    "gt_deepnpts",
+    "gt_mqf2",
     "ensemble",
 )
 
@@ -1092,7 +1108,7 @@ def forecast(
 
         elif method_l == 'chronos_bolt':
             if not _CHRONOS_AVAILABLE:
-                return {"error": "chronos_bolt requires 'chronos' or 'transformers'. Try: pip install chronos-forecasting or pip install transformers torch accelerate"}
+                return {"error": "chronos_bolt requires 'chronos-forecasting'. Install: pip install chronos-forecasting"}
             _f, _fq, params_used, _err = _chronos_bolt_impl(series=series, fh=int(fh), params=p, n=int(n))
             if _err:
                 return {"error": _err}
@@ -1100,7 +1116,11 @@ def forecast(
             if _fq:
                 forecast_quantiles = _fq  # type: ignore[name-defined]
 
-        elif method_l in ('timesfm', 'lag_llama'):
+        elif method_l in (
+            'timesfm', 'lag_llama',
+            'gt_deepar', 'gt_sfeedforward', 'gt_prophet',
+            'gt_tft', 'gt_wavenet', 'gt_deepnpts', 'gt_mqf2'
+        ):
             # Native adapters for foundation models
             ctx_len = int(p.get('context_length', 0) or 0)
             if ctx_len and ctx_len > 0:
@@ -1118,11 +1138,77 @@ def forecast(
                 f_vals = _f
                 if _fq:
                     forecast_quantiles = _fq  # type: ignore[name-defined]
-            else:  # lag_llama
+            elif method_l == 'lag_llama':
                 _f, _fq, params_used, _err = _lag_llama_impl(series=series, fh=int(fh), params=p, n=int(n))
                 if _err:
                     return {"error": _err}
                 f_vals = _f
+                if _fq:
+                    forecast_quantiles = _fq  # type: ignore[name-defined]
+            elif method_l == 'gt_deepar':
+                # Ensure pandas freq inferred from timeframe when not provided
+                if 'freq' not in p:
+                    p['freq'] = _pd_freq_from_timeframe(timeframe)
+                _f, _fq, params_used, _err = _gt_deepar_impl(series=series, fh=int(fh), params=p, n=int(n))
+                if _err:
+                    return {"error": _err}
+                f_vals = _f
+                if _fq:
+                    forecast_quantiles = _fq  # type: ignore[name-defined]
+            elif method_l == 'gt_sfeedforward':
+                if 'freq' not in p:
+                    p['freq'] = _pd_freq_from_timeframe(timeframe)
+                _f, _fq, params_used, _err = _gt_sff_impl(series=series, fh=int(fh), params=p, n=int(n))
+                if _err:
+                    return {"error": _err}
+                f_vals = _f
+                if _fq:
+                    forecast_quantiles = _fq  # type: ignore[name-defined]
+            elif method_l == 'gt_tft':
+                if 'freq' not in p:
+                    p['freq'] = _pd_freq_from_timeframe(timeframe)
+                _f, _fq, params_used, _err = _gt_tft_impl(series=series, fh=int(fh), params=p, n=int(n))
+                if _err:
+                    return {"error": _err}
+                f_vals = _f
+                if _fq:
+                    forecast_quantiles = _fq  # type: ignore[name-defined]
+            elif method_l == 'gt_wavenet':
+                if 'freq' not in p:
+                    p['freq'] = _pd_freq_from_timeframe(timeframe)
+                _f, _fq, params_used, _err = _gt_wavenet_impl(series=series, fh=int(fh), params=p, n=int(n))
+                if _err:
+                    return {"error": _err}
+                f_vals = _f
+                if _fq:
+                    forecast_quantiles = _fq  # type: ignore[name-defined]
+            elif method_l == 'gt_deepnpts':
+                if 'freq' not in p:
+                    p['freq'] = _pd_freq_from_timeframe(timeframe)
+                _f, _fq, params_used, _err = _gt_deepnpts_impl(series=series, fh=int(fh), params=p, n=int(n))
+                if _err:
+                    return {"error": _err}
+                f_vals = _f
+                if _fq:
+                    forecast_quantiles = _fq  # type: ignore[name-defined]
+            elif method_l == 'gt_mqf2':
+                if 'freq' not in p:
+                    p['freq'] = _pd_freq_from_timeframe(timeframe)
+                _f, _fq, params_used, _err = _gt_mqf2_impl(series=series, fh=int(fh), params=p, n=int(n))
+                if _err:
+                    return {"error": _err}
+                f_vals = _f
+                if _fq:
+                    forecast_quantiles = _fq  # type: ignore[name-defined]
+            else:  # gt_prophet
+                if 'freq' not in p:
+                    p['freq'] = _pd_freq_from_timeframe(timeframe)
+                _f, _fq, params_used, _err = _gt_prophet_impl(series=series, fh=int(fh), params=p, n=int(n))
+                if _err:
+                    return {"error": _err}
+                f_vals = _f
+                if _fq:
+                    forecast_quantiles = _fq  # type: ignore[name-defined]
                 if _fq:
                     forecast_quantiles = _fq  # type: ignore[name-defined]
 

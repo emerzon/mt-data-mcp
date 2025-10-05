@@ -30,7 +30,7 @@ from mtdata.forecast.common import (
 )
 
 # Import individual forecast methods
-from mtdata.forecast.methods.transformers import (
+from mtdata.forecast.methods.pretrained import (
     forecast_chronos_bolt as _chronos_bolt_impl,
     forecast_timesfm as _timesfm_impl,
 )

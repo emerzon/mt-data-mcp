@@ -19,7 +19,7 @@ src/mtdata/forecast/
 │   ├── mlforecast.py
 │   ├── neural.py
 │   ├── statsforecast.py
-│   └── transformers.py
+│   └── pretrained.py
 ├── common.py                # EXISTING: Shared utilities
 ├── backtest.py              # EXISTING: Backtesting logic
 ├── monte_carlo.py           # EXISTING: MC simulations

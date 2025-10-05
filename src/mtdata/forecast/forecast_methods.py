@@ -39,6 +39,13 @@ FORECAST_METHODS = (
     "chronos_bolt",
     "timesfm",
     "lag_llama",
+    "gt_deepar",
+    "gt_sfeedforward",
+    "gt_prophet",
+    "gt_tft",
+    "gt_wavenet",
+    "gt_deepnpts",
+    "gt_mqf2",
     "ensemble",
 )
 
@@ -219,19 +226,85 @@ def get_forecast_methods_data() -> Dict[str, Any]:
     add("chronos_bolt", "Amazon Chronos-BOLT pre-trained time series model",
         [{"name": "device", "type": "str", "description": "Compute device (cpu/cuda, default: auto)"},
          {"name": "limit_prediction_length", "type": "bool", "description": "Limit to horizon (default: True)"}],
-        ["torch", "transformers"],
+        ["chronos-forecasting", "torch"],
         {"price": True, "return": True, "volatility": True, "ci": True})
 
     add("timesfm", "Google TimesFM pre-trained time series foundation model",
         [{"name": "device", "type": "str", "description": "Compute device (cpu/cuda, default: auto)"},
          {"name": "batch_size", "type": "int", "description": "Batch size (default: 16)"}],
-        ["torch", "transformers"],
+        ["timesfm", "torch"],
         {"price": True, "return": True, "volatility": True, "ci": True})
 
     add("lag_llama", "Lag-Llama pre-trained time series model",
         [{"name": "device", "type": "str", "description": "Compute device (cpu/cuda, default: auto)"},
          {"name": "batch_size", "type": "int", "description": "Batch size (default: 1)"}],
-        ["torch", "transformers"],
+        ["lag-llama", "gluonts", "torch"],
+        {"price": True, "return": True, "volatility": True, "ci": True})
+
+    # GluonTS Torch quick-train models
+    add("gt_deepar", "GluonTS DeepAR (quick train on series)",
+        [{"name": "context_length", "type": "int", "description": "Input window length (default: min(64,n))"},
+         {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
+         {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
+         {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
+         {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"}],
+        ["gluonts", "torch"],
+        {"price": True, "return": True, "volatility": True, "ci": True})
+
+    add("gt_sfeedforward", "GluonTS SimpleFeedForward (quick train)",
+        [{"name": "context_length", "type": "int", "description": "Input window length (default: min(64,n))"},
+         {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
+         {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
+         {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
+         {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"}],
+        ["gluonts", "torch"],
+        {"price": True, "return": True, "volatility": True, "ci": True})
+
+    add("gt_prophet", "GluonTS Prophet wrapper",
+        [{"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
+         {"name": "prophet_params", "type": "dict", "description": "Passed to ProphetPredictor (growth, seasonality_mode, ... )"}],
+        ["gluonts", "prophet"],
+        {"price": True, "return": True, "volatility": True, "ci": True})
+
+    add("gt_tft", "GluonTS Temporal Fusion Transformer (quick train)",
+        [{"name": "context_length", "type": "int", "description": "Input window length (default: min(128,n))"},
+         {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
+         {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
+         {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
+         {"name": "hidden_size", "type": "int", "description": "Model width (default: 64)"},
+         {"name": "dropout", "type": "float", "description": "Dropout (default: 0.1)"},
+         {"name": "freq", "type": "str", "description": "Pandas frequency (auto from timeframe)"}],
+        ["gluonts", "torch"],
+        {"price": True, "return": True, "volatility": True, "ci": True})
+
+    add("gt_wavenet", "GluonTS WaveNet (quick train)",
+        [{"name": "context_length", "type": "int", "description": "Input window length (default: min(128,n))"},
+         {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
+         {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
+         {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
+         {"name": "dilation_depth", "type": "int", "description": "Dilation depth (default: 5)"},
+         {"name": "num_blocks", "type": "int", "description": "WaveNet blocks (default: 1)"},
+         {"name": "freq", "type": "str", "description": "Pandas frequency (auto from timeframe)"}],
+        ["gluonts", "torch"],
+        {"price": True, "return": True, "volatility": True, "ci": True})
+
+    add("gt_deepnpts", "GluonTS DeepNPTS (quick train)",
+        [{"name": "context_length", "type": "int", "description": "Input window length (default: min(128,n))"},
+         {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
+         {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
+         {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
+         {"name": "freq", "type": "str", "description": "Pandas frequency (auto from timeframe)"}],
+        ["gluonts", "torch"],
+        {"price": True, "return": True, "volatility": True, "ci": True})
+
+    add("gt_mqf2", "GluonTS MQF2 (quick train, quantile-focused)",
+        [{"name": "context_length", "type": "int", "description": "Input window length (default: min(128,n))"},
+         {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
+         {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
+         {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
+         {"name": "freq", "type": "str", "description": "Pandas frequency (auto from timeframe)"},
+         {"name": "quantiles", "type": "list", "description": "Quantiles to return (e.g., [0.05,0.5,0.95])"}],
+        ["gluonts", "torch"],
         {"price": True, "return": True, "volatility": True, "ci": True})
 
     # Ensemble methods

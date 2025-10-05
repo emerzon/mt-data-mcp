@@ -327,7 +327,10 @@ You can extend forecasting with additional frameworks. Install as needed; method
   - Methods: `mlf_rf`, `mlf_lightgbm`
 - NeuralForecast (deep learning): `pip install neuralforecast[torch]`
   - Methods: `nhits`, `nbeatsx`, `tft`, `patchtst`
-- Foundation models (Transformers/Chronos/TimesFM): `pip install transformers torch accelerate` (plus `chronos-forecasting` or `timesfm` if desired)
+- GluonTS (PyTorch): `pip install gluonts torch`
+  - Methods: `gt_deepar`, `gt_sfeedforward`
+  - Optional: Prophet via GluonTS wrapper: `pip install prophet` (use method `gt_prophet`)
+- Foundation models (native libs): install per model — Chronos: `pip install chronos-forecasting torch`; TimesFM: `pip install timesfm torch`; Lag‑Llama: `pip install lag-llama gluonts torch`
   - Methods: `chronos_bolt`, `timesfm`, `lag_llama`
 
 See detailed examples and parameters in `docs/FORECAST.md` under Framework Integrations.
@@ -370,7 +373,7 @@ The `start` and `end` parameters for `data_fetch_candles` use `dateparser` for f
 
 Optional dependencies (uncomment in `requirements.txt`):
 - Forecast frameworks: `statsforecast`, `mlforecast`, `lightgbm`, `neuralforecast`
-- Foundation models: `transformers`, `accelerate`, `torch`, `chronos-forecasting`, `timesfm`
+- Foundation models: `torch`, `chronos-forecasting`, `timesfm`, `lag-llama`, `gluonts`
 - Pattern search backends: `hnswlib`, `tslearn`, `dtaidistance`
 - Dimensionality reduction: `scikit-learn`, `umap-learn`, `pydiffmap`, `pykeops`, and DREAMS-CNE from source
 

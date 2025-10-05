@@ -24,7 +24,7 @@ from .methods.ets_arima import (
 from .methods.neural import forecast_neural as _neural_impl
 from .methods.statsforecast import forecast_statsforecast as _sf_impl
 from .methods.mlforecast import forecast_mlf_rf as _mlf_rf_impl, forecast_mlf_lightgbm as _mlf_lgb_impl
-from .methods.transformers import (
+from .methods.pretrained import (
     forecast_chronos_bolt as _chronos_bolt_impl,
     forecast_timesfm as _timesfm_impl,
     forecast_lag_llama as _lag_llama_impl,

@@ -12,7 +12,7 @@ def forecast_chronos_bolt(
     params: Dict[str, Any],
     n: int,
 ) -> Tuple[Optional[np.ndarray], Optional[Dict[str, List[float]]], Dict[str, Any], Optional[str]]:
-    """Chronos-Bolt forecasting via native Chronos or Transformers pipeline.
+    """Chronos-Bolt forecasting via native Chronos pipeline.
 
     Returns (f_vals, forecast_quantiles, params_used, error)
     """
@@ -182,128 +182,6 @@ def forecast_timesfm(
         return (None, None, {}, f"timesfm error: {ex}")
 
 
-def forecast_lag_llama(
-    *,
-    series: np.ndarray,
-    fh: int,
-    params: Dict[str, Any],
-    n: int,
-) -> Tuple[Optional[np.ndarray], Optional[Dict[str, List[float]]], Dict[str, Any], Optional[str]]:
-    """Lag-Llama forecasting via the Hugging Face time-series pipeline.
-
-    The helper mirrors the Chronos/TimesFM helpers: feed the last ``context_length``
-    points (or the full series) into the HF ``time-series-forecasting`` pipeline and
-    return the mean forecast plus any requested quantiles.
-    """
-    p = params or {}
-    model_name = str(p.get('model_name', 'time-series-foundation-models/Lag-Llama'))
-    ctx_len = int(p.get('context_length', 0) or 0)
-    device = p.get('device')
-    device_map = p.get('device_map', 'auto')
-    quantization = str(p.get('quantization')) if p.get('quantization') is not None else None
-    quantiles = p.get('quantiles') if isinstance(p.get('quantiles'), (list, tuple)) else None
-    revision = p.get('revision')
-    trust_remote_code = bool(p.get('trust_remote_code', True))  # Lag-Llama repo requires this
-
-    # Select context window
-    if ctx_len and ctx_len > 0:
-        k = int(min(len(series), ctx_len))
-        context = np.asarray(series[-k:], dtype=float)
-    else:
-        context = np.asarray(series, dtype=float)
-
-    f_vals: Optional[np.ndarray] = None
-    fq: Dict[str, List[float]] = {}
-    last_err: Optional[Exception] = None
-
-    try:
-        from transformers import pipeline as _hf_pipeline  # type: ignore
-        try:
-            from transformers.pipelines import SUPPORTED_TASKS as _HF_SUPPORTED_TASKS  # type: ignore
-            if 'time-series-forecasting' not in _HF_SUPPORTED_TASKS:
-                raise RuntimeError(
-                    "Transformers does not expose the 'time-series-forecasting' pipeline. "
-                    "Upgrade transformers or install chronos-forecasting."
-                )
-        except Exception:
-            # Older Transformers versions lazily register tasks; proceed optimistically.
-            pass
-
-        pipe_kwargs: Dict[str, Any] = {'model': model_name}
-        if revision:
-            pipe_kwargs['revision'] = revision
-        if trust_remote_code:
-            pipe_kwargs['trust_remote_code'] = True
-        if device and str(device).lower() != 'auto':
-            pipe_kwargs['device'] = device
-
-        model_kwargs: Dict[str, Any] = {}
-        if quantization:
-            q = quantization.lower()
-            if q in ('int8', '8bit', 'bnb.int8'):
-                model_kwargs['load_in_8bit'] = True
-            elif q in ('int4', '4bit', 'bnb.int4'):
-                model_kwargs['load_in_4bit'] = True
-        if device_map:
-            model_kwargs['device_map'] = device_map
-        # trust_remote_code only at pipeline level to avoid duplicate kwarg in from_pretrained
-        if model_kwargs:
-            pipe_kwargs['model_kwargs'] = model_kwargs
-
-        hf = _hf_pipeline('time-series-forecasting', **pipe_kwargs)  # type: ignore[call-arg]
-        call_kwargs: Dict[str, Any] = {'prediction_length': int(fh)}
-        if quantiles:
-            call_kwargs['quantiles'] = list(quantiles)
-
-        yhat = hf(context, **call_kwargs)  # type: ignore[call-arg]
-        # Normalize output schema across Transformers versions
-        arr = None
-        qmap = None
-        if isinstance(yhat, dict):
-            arr = yhat.get('forecast')
-            if arr is None:
-                arr = yhat.get('mean') or yhat.get('point') or yhat.get('predictions')
-            qmap = yhat.get('quantiles') or yhat.get('prediction_interval') or yhat.get('quantile_forecasts')
-        elif isinstance(yhat, (list, tuple)) and len(yhat) > 0 and isinstance(yhat[0], (dict, list, tuple, np.ndarray)):
-            first = yhat[0]
-            if isinstance(first, dict):
-                arr = first.get('forecast') or first.get('mean') or first.get('point') or first.get('predictions')
-                qmap = first.get('quantiles') or first.get('prediction_interval') or first.get('quantile_forecasts')
-            else:
-                arr = first
-        else:
-            arr = yhat
-
-        vals = np.asarray(arr, dtype=float)
-        f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
-
-        if isinstance(qmap, dict):
-            for q, arr_q in qmap.items():
-                try:
-                    key = str(float(q))
-                except Exception:
-                    continue
-                fq[key] = [float(v) for v in np.asarray(arr_q, dtype=float)[:fh].tolist()]
-    except Exception as ex:
-        last_err = ex
-
-    if f_vals is None:
-        err_text = str(last_err) if last_err else 'Lag-Llama pipeline returned no output'
-        return (None, None, {}, f"lag_llama inference error: {err_text}")
-
-    params_used = {
-        'model_name': model_name,
-        'context_length': int(ctx_len) if ctx_len else int(n),
-        'device': device,
-        'device_map': device_map,
-        'quantization': quantization,
-        'revision': revision,
-        'trust_remote_code': trust_remote_code,
-    }
-    if fq:
-        params_used['quantiles'] = sorted(fq.keys(), key=lambda x: float(x))
-
-    return (f_vals, fq or None, params_used, None)
 
 
 def forecast_lag_llama(
@@ -360,7 +238,7 @@ def forecast_lag_llama(
         import torch  # type: ignore
         from lag_llama.gluon.estimator import LagLlamaEstimator  # type: ignore
         from gluonts.evaluation import make_evaluation_predictions  # type: ignore
-        from gluonts.dataset.pandas import PandasDataset  # type: ignore
+        from gluonts.dataset.common import ListDataset  # type: ignore
         import pandas as pd  # type: ignore
         try:
             import huggingface_hub  # type: ignore
@@ -368,6 +246,38 @@ def forecast_lag_llama(
             huggingface_hub = None  # optional, only needed when auto-downloading
     except Exception as ex:
         return (None, None, {}, f"lag_llama dependencies missing: {ex}. Install: pip install lag-llama gluonts torch (optional: huggingface_hub)")
+
+    # PyTorch 2.6+ defaults torch.load(..., weights_only=True) which blocks unpickling
+    # of custom classes used by GluonTS (e.g., StudentTOutput). When downstream code
+    # inside GluonTS/Lag-Llama calls torch.load with the default, register the class
+    # as a safe global so weights-only loading can succeed without disabling safety.
+    try:
+        _add_safe = getattr(torch.serialization, "add_safe_globals", None)
+        if callable(_add_safe):
+            _to_allow = []
+            # Distributions commonly referenced by GluonTS Torch models
+            for mod, name in (
+                ("gluonts.torch.distributions.studentT", "StudentTOutput"),
+                ("gluonts.torch.distributions.student_t", "StudentTOutput"),
+                ("gluonts.torch.distributions.normal", "NormalOutput"),
+                ("gluonts.torch.distributions.laplace", "LaplaceOutput"),
+                ("gluonts.torch.modules.loss", "NegativeLogLikelihood"),
+            ):
+                try:
+                    _m = __import__(mod, fromlist=[name])  # type: ignore
+                    _cls = getattr(_m, name, None)
+                    if _cls is not None:
+                        _to_allow.append(_cls)
+                except Exception:
+                    continue
+            if _to_allow:
+                try:
+                    _add_safe(_to_allow)
+                except Exception:
+                    pass
+    except Exception:
+        # Best-effort: proceed even if safe globals cannot be registered
+        pass
 
     # Resolve device
     device_str = str(p.get('device')) if p.get('device') is not None else None
@@ -414,9 +324,14 @@ def forecast_lag_llama(
         transformation = estimator.create_transformation()
         predictor = estimator.create_predictor(transformation, lightning_module)
 
-        # Build single-series PandasDataset with synthetic timestamps
+        # Build single-series GluonTS ListDataset with synthetic timestamps
         idx = pd.date_range(start=pd.Timestamp('2000-01-01'), periods=len(context), freq=freq)
-        ds = PandasDataset(dict(target=pd.Series(context, index=idx), start=idx[0]))
+        ds = ListDataset([
+            {
+                'target': np.asarray(context, dtype=np.float32),
+                'start': idx[0],
+            }
+        ], freq=freq)
 
         forecast_it, ts_it = make_evaluation_predictions(dataset=ds, predictor=predictor, num_samples=max(1, int(num_samples)))
         forecasts = list(forecast_it)

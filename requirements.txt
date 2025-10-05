@@ -19,6 +19,9 @@ pandas>=2.0.3; python_version < "3.10"
 # Use distribution name to match package metadata (pandas-ta-classic)
 pandas-ta-classic @ git+https://github.com/xgboosted/pandas-ta-classic@main
 
+# lag-llama (install from GitHub). Requires Git available on PATH.
+lag-llama @ git+https://github.com/time-series-foundation-models/lag-llama.git
+
 # ARCH (heteroskedasticity models)
 arch>=7.2.0; python_version >= "3.9"
 arch>=6.3.0; python_version < "3.9"
@@ -55,11 +58,14 @@ torchvision>=0.21.0,<0.22; python_version < "3.12"
 torch>=2.3.0; python_version >= "3.12"
 torchvision>=0.17.0; python_version >= "3.12"
 
-# Optional: foundation models (Transformers) — enabled for Chronos/TimesFM
-transformers>=4.56.2
-accelerate>=1.10.1
-chronos-forecasting==1.5.3   # for Chronos-Bolt
-timesfm>=2.0.0
+# Optional: GluonTS + Prophet (enable gt_* methods)
+gluonts[torch]>=0.14.3    # required for gluonts.torch.* estimators
+cpflows>=0.2.0           # required by MQF2
+prophet>=1.1             # required by gt_prophet
+
+# Optional: foundation models (native packages)
+chronos-forecasting==1.5.3   # Chronos-Bolt
+timesfm>=2.0.0               # TimesFM (if available)
 
 # Optional: pattern search ANN and DTW backends
 # hnswlib>=0.8.0

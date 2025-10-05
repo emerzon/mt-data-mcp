@@ -25,8 +25,8 @@ try:
     _MLF_AVAILABLE = _importlib_util.find_spec("mlforecast") is not None
     _SF_AVAILABLE = _importlib_util.find_spec("statsforecast") is not None
     _LGB_AVAILABLE = _importlib_util.find_spec("lightgbm") is not None
-    _CHRONOS_AVAILABLE = _importlib_util.find_spec("chronos") is not None or _importlib_util.find_spec("transformers") is not None
-    _TIMESFM_AVAILABLE = _importlib_util.find_spec("timesfm") is not None or _importlib_util.find_spec("transformers") is not None
+    _CHRONOS_AVAILABLE = _importlib_util.find_spec("chronos") is not None
+    _TIMESFM_AVAILABLE = _importlib_util.find_spec("timesfm") is not None
     _LAG_LLAMA_AVAILABLE = _importlib_util.find_spec("lag_llama") is not None
 except Exception:
     _NF_AVAILABLE = False
@@ -60,11 +60,11 @@ def get_forecast_methods_data() -> Dict[str, Any]:
         if method == "mlf_lightgbm" and (not _MLF_AVAILABLE or not _LGB_AVAILABLE):
             available = False; reqs.append("mlforecast, lightgbm")
         if method == "chronos_bolt" and not _CHRONOS_AVAILABLE:
-            available = False; reqs.append("chronos or transformers")
+            available = False; reqs.append("chronos-forecasting")
         if method == "timesfm" and not _TIMESFM_AVAILABLE:
-            available = False; reqs.append("timesfm or transformers")
+            available = False; reqs.append("timesfm")
         if method == "lag_llama" and not _LAG_LLAMA_AVAILABLE:
-            available = False; reqs.append("lag_llama or transformers")
+            available = False; reqs.append("lag-llama, gluonts, torch")
         
         methods.append({
             "method": method,
@@ -83,6 +83,7 @@ def get_forecast_methods_data() -> Dict[str, Any]:
     _register_statistical_methods(add)
     _register_ml_methods(add)
     _register_pretrained_methods(add)
+    _register_gluonts_methods(add)
 
     return {
         "methods": methods,
@@ -96,9 +97,71 @@ def get_forecast_methods_data() -> Dict[str, Any]:
             "statsforecast": ["sf_autoarima", "sf_theta", "sf_autoets", "sf_seasonalnaive"],
             "machine_learning": ["mlf_rf", "mlf_lightgbm"],
             "pretrained": ["chronos_bolt", "timesfm", "lag_llama"],
+            "gluonts": ["gt_deepar", "gt_sfeedforward", "gt_prophet", "gt_tft", "gt_wavenet", "gt_deepnpts", "gt_mqf2"],
             "ensemble": ["ensemble"]
         }
     }
+
+
+def _register_gluonts_methods(add_func):
+    """Register GluonTS torch quick-train methods."""
+    add_func("gt_deepar", "GluonTS DeepAR (quick train)", [
+        {"name": "context_length", "type": "int", "description": "Input window length (default: min(64,n))"},
+        {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
+        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
+        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
+        {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
+    ], ["gluonts", "torch"], {"price": True, "return": True, "volatility": True, "ci": True})
+
+    add_func("gt_sfeedforward", "GluonTS SimpleFeedForward (quick train)", [
+        {"name": "context_length", "type": "int", "description": "Input window length (default: min(64,n))"},
+        {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
+        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
+        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
+        {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
+    ], ["gluonts", "torch"], {"price": True, "return": True, "volatility": True, "ci": True})
+
+    add_func("gt_prophet", "GluonTS Prophet wrapper", [
+        {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
+        {"name": "prophet_params", "type": "dict", "description": "Passed to ProphetPredictor (growth, seasonality_mode, ... )"},
+    ], ["gluonts", "prophet"], {"price": True, "return": True, "volatility": True, "ci": True})
+
+    add_func("gt_tft", "GluonTS Temporal Fusion Transformer (quick train)", [
+        {"name": "context_length", "type": "int", "description": "Input window length (default: min(128,n))"},
+        {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
+        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
+        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
+        {"name": "hidden_size", "type": "int", "description": "Model width (default: 64)"},
+        {"name": "dropout", "type": "float", "description": "Dropout (default: 0.1)"},
+        {"name": "freq", "type": "str", "description": "Pandas frequency (auto from timeframe)"},
+    ], ["gluonts", "torch"], {"price": True, "return": True, "volatility": True, "ci": True})
+
+    add_func("gt_wavenet", "GluonTS WaveNet (quick train)", [
+        {"name": "context_length", "type": "int", "description": "Input window length (default: min(128,n))"},
+        {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
+        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
+        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
+        {"name": "dilation_depth", "type": "int", "description": "Dilation depth (default: 5)"},
+        {"name": "num_blocks", "type": "int", "description": "WaveNet blocks (default: 1)"},
+        {"name": "freq", "type": "str", "description": "Pandas frequency (auto from timeframe)"},
+    ], ["gluonts", "torch"], {"price": True, "return": True, "volatility": True, "ci": True})
+
+    add_func("gt_deepnpts", "GluonTS DeepNPTS (quick train)", [
+        {"name": "context_length", "type": "int", "description": "Input window length (default: min(128,n))"},
+        {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
+        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
+        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
+        {"name": "freq", "type": "str", "description": "Pandas frequency (auto from timeframe)"},
+    ], ["gluonts", "torch"], {"price": True, "return": True, "volatility": True, "ci": True})
+
+    add_func("gt_mqf2", "GluonTS MQF2 (quick train, quantile-focused)", [
+        {"name": "context_length", "type": "int", "description": "Input window length (default: min(128,n))"},
+        {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
+        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
+        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
+        {"name": "freq", "type": "str", "description": "Pandas frequency (auto from timeframe)"},
+        {"name": "quantiles", "type": "list", "description": "Quantiles to return (e.g., [0.05,0.5,0.95])"},
+    ], ["gluonts", "torch"], {"price": True, "return": True, "volatility": True, "ci": True})
 
 
 def _register_classical_methods(add_func):
@@ -193,17 +256,17 @@ def _register_pretrained_methods(add_func):
     add_func("chronos_bolt", "Amazon Chronos-BOLT pre-trained time series model", [
         {"name": "device", "type": "str", "description": "Compute device (cpu/cuda, default: auto)"},
         {"name": "limit_prediction_length", "type": "bool", "description": "Limit to horizon (default: True)"}
-    ], ["torch", "transformers"], {"price": True, "return": True, "volatility": True, "ci": True})
+    ], ["chronos-forecasting", "torch"], {"price": True, "return": True, "volatility": True, "ci": True})
     
     add_func("timesfm", "Google TimesFM pre-trained time series foundation model", [
         {"name": "device", "type": "str", "description": "Compute device (cpu/cuda, default: auto)"},
         {"name": "batch_size", "type": "int", "description": "Batch size (default: 16)"}
-    ], ["torch", "transformers"], {"price": True, "return": True, "volatility": True, "ci": True})
+    ], ["timesfm", "torch"], {"price": True, "return": True, "volatility": True, "ci": True})
     
     add_func("lag_llama", "Lag-Llama pre-trained time series model", [
         {"name": "device", "type": "str", "description": "Compute device (cpu/cuda, default: auto)"},
         {"name": "batch_size", "type": "int", "description": "Batch size (default: 1)"}
-    ], ["torch", "transformers"], {"price": True, "return": True, "volatility": True, "ci": True})
+    ], ["lag-llama", "gluonts", "torch"], {"price": True, "return": True, "volatility": True, "ci": True})
 
 
 # Availability flags that can be imported by other modules
