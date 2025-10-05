@@ -280,6 +280,7 @@ Methods:
 - `chronos_bolt` — Amazon Chronos‑Bolt (native Chronos)
 - `timesfm` — Google TimesFM (native)
 - `lag_llama` — Lag‑Llama (native estimator)
+- `moirai` — Salesforce Moirai via uni2ts (one‑shot)
 - `gt_deepar` — GluonTS DeepAR (quick train)
 - `gt_sfeedforward` — GluonTS SimpleFeedForward (quick train)
 - `gt_prophet` — GluonTS Prophet wrapper (install `prophet`)
@@ -338,6 +339,21 @@ python cli.py forecast_generate EURUSD --timeframe H1 --method gt_mqf2 --horizon
 # GluonTS NPTS (non-parametric)
 python cli.py forecast_generate EURUSD --timeframe H1 --method gt_npts --horizon 12 \
   --params "{\"season_length\":1,\"kernel\":\"parzen\",\"window_size\":128}"
+
+# Moirai via uni2ts
+
+Install: `pip install uni2ts torch`
+
+Example:
+```bash
+python cli.py forecast_generate EURUSD --timeframe H1 --method moirai --horizon 12 \
+  --params "{\"context_length\":512,\"variant\":\"1.0-R-small\"}"
+```
+
+Notes:
+- The adapter uses uni2ts.get_timeseries_model(variant) for one‑shot inference.
+- Set params.quantiles to request quantile outputs when supported by the variant.
+
 ```
 
 Notes:

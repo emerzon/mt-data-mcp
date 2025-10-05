@@ -22,6 +22,7 @@ _LGB_AVAILABLE = _importlib_util.find_spec("lightgbm") is not None
 _CHRONOS_AVAILABLE = _importlib_util.find_spec("chronos") is not None
 _TIMESFM_AVAILABLE = _importlib_util.find_spec("timesfm") is not None
 _LAG_LLAMA_AVAILABLE = (_importlib_util.find_spec("lag_llama") is not None)
+_MOIRAI_AVAILABLE = (_importlib_util.find_spec("uni2ts") is not None)
 
 
 def get_forecast_methods_data() -> Dict[str, Any]:
@@ -60,6 +61,9 @@ def get_forecast_methods_data() -> Dict[str, Any]:
         if method == "lag_llama" and not _LAG_LLAMA_AVAILABLE:
             available = False
             reqs.append("lag-llama, gluonts, torch")
+        if method == "moirai" and not _MOIRAI_AVAILABLE:
+            available = False
+            reqs.append("uni2ts[moirai], torch")
         if method == "ensemble":
             available = False
             reqs.append("not implemented")
@@ -189,5 +193,9 @@ def get_forecast_methods_data() -> Dict[str, Any]:
     add("lag_llama", "Lag-Llama foundation model.", [
         {"name": "context_length", "type": "int", "default": 512},
     ], ["lag-llama", "gluonts", "torch"], {"price": True, "return": True, "ci": True})
+    add("moirai", "Salesforce Moirai (uni2ts) foundation model.", [
+        {"name": "context_length", "type": "int", "default": 512},
+        {"name": "variant", "type": "str", "default": "1.0-R-small"}
+    ], ["uni2ts"], {"price": True, "return": True, "ci": True})
     
     return {"methods": methods}

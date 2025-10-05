@@ -36,6 +36,7 @@ from .methods.pretrained import (
     forecast_chronos_bolt as _chronos_bolt_impl,
     forecast_timesfm as _timesfm_impl,
     forecast_lag_llama as _lag_llama_impl,
+    forecast_moirai as _moirai_impl,
 )
 from .methods.classical import (
     forecast_naive as _naive_impl,
@@ -120,6 +121,11 @@ try:
     _LAG_LLAMA_AVAILABLE = (_importlib_util7.find_spec("lag_llama") is not None)
 except Exception:
     _LAG_LLAMA_AVAILABLE = False
+try:
+    import importlib.util as _importlib_util8  # type: ignore
+    _MOIRAI_AVAILABLE = (_importlib_util8.find_spec("uni2ts") is not None)
+except Exception:
+    _MOIRAI_AVAILABLE = False
 
 
 def get_forecast_methods_data() -> Dict[str, Any]:
@@ -147,6 +153,8 @@ def get_forecast_methods_data() -> Dict[str, Any]:
             available = False; reqs.append("timesfm")
         if method == "lag_llama" and not _LAG_LLAMA_AVAILABLE:
             available = False; reqs.append("lag-llama, gluonts, torch")
+        if method == "moirai" and not _MOIRAI_AVAILABLE:
+            available = False; reqs.append("uni2ts, torch")
         # ensemble is not wired yet in this repo
         if method == "ensemble":
             available = False; reqs.append("not implemented")
@@ -223,6 +231,7 @@ def get_forecast_methods_data() -> Dict[str, Any]:
     add("chronos_bolt", "Amazon Chronos-Bolt (native Chronos).", [], ["chronos-forecasting"], {"price": True, "return": True, "ci": False})
     add("timesfm", "Google TimesFM (native package).", [], ["timesfm"], {"price": True, "return": True, "ci": False})
     add("lag_llama", "Lag-Llama (native estimator).", [], ["lag-llama", "gluonts", "torch"], {"price": True, "return": True, "ci": False})
+    add("moirai", "Salesforce Moirai (uni2ts).", [], ["uni2ts", "torch"], {"price": True, "return": True, "ci": False})
 
     # GluonTS Torch quick-train models
     add("gt_deepar", "GluonTS DeepAR (quick train)", [
@@ -337,6 +346,7 @@ _FORECAST_METHODS = (
     "chronos_bolt",
     "timesfm",
     "lag_llama",
+    "moirai",
     "gt_deepar",
     "gt_sfeedforward",
     "gt_prophet",
@@ -1178,7 +1188,7 @@ def forecast(
                 forecast_quantiles = _fq  # type: ignore[name-defined]
 
         elif method_l in (
-            'timesfm', 'lag_llama',
+            'timesfm', 'lag_llama', 'moirai',
             'gt_deepar', 'gt_sfeedforward', 'gt_prophet',
             'gt_tft', 'gt_wavenet', 'gt_deepnpts', 'gt_mqf2', 'gt_npts'
         ):
@@ -1201,6 +1211,13 @@ def forecast(
                     forecast_quantiles = _fq  # type: ignore[name-defined]
             elif method_l == 'lag_llama':
                 _f, _fq, params_used, _err = _lag_llama_impl(series=series, fh=int(fh), params=p, n=int(n))
+                if _err:
+                    return {"error": _err}
+                f_vals = _f
+                if _fq:
+                    forecast_quantiles = _fq  # type: ignore[name-defined]
+            elif method_l == 'moirai':
+                _f, _fq, params_used, _err = _moirai_impl(series=series, fh=int(fh), params=p, n=int(n))
                 if _err:
                     return {"error": _err}
                 f_vals = _f

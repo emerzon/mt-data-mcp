@@ -67,6 +67,8 @@ prophet>=1.1             # required by gt_prophet
 chronos-forecasting==1.5.3   # Chronos-Bolt
 timesfm>=2.0.0               # TimesFM (if available)
 
+uni2ts>=1.0.1            # Moirai via uni2ts
+
 # Optional: pattern search ANN and DTW backends
 # hnswlib>=0.8.0
 # tslearn>=0.6.3

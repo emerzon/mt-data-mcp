@@ -236,6 +236,7 @@ _FORECAST_METHODS = (
     "chronos_bolt",
     "timesfm",
     "lag_llama",
+    "moirai",
     "gt_deepar",
     "gt_sfeedforward",
     "gt_prophet",

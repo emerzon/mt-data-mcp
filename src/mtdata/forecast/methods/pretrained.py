@@ -118,6 +118,126 @@ def forecast_timesfm(
     try:
         import timesfm as _timesfm  # type: ignore
         # Try to detect namespace shadowing
+
+
+def forecast_moirai(
+    *,
+    series: np.ndarray,
+    fh: int,
+    params: Dict[str, Any],
+    n: int,
+) -> Tuple[Optional[np.ndarray], Optional[Dict[str, List[float]]], Dict[str, Any], Optional[str]]:
+    """Moirai one-shot forecasting via uni2ts.
+
+    Params:
+    - variant: model variant string (e.g., '1.0-R-small', '1.0-L-small')
+    - context_length: int, context window to feed (<= len(series))
+    - device: optional torch device string
+    - quantiles: optional list of quantile levels to return
+    - do_mean: bool, return mean estimate if available (default True)
+    - do_median: bool, fallback to median if mean unavailable (default True)
+
+    Returns (f_vals, forecast_quantiles, params_used, error)
+    """
+    p = params or {}
+    variant = str(p.get('variant', '1.0-R-small'))
+    ctx_len = int(p.get('context_length', 0) or 0)
+    device = p.get('device')
+    quantiles = p.get('quantiles') if isinstance(p.get('quantiles'), (list, tuple)) else None
+    do_mean = True if p.get('do_mean', None) is None else bool(p.get('do_mean'))
+    do_median = True if p.get('do_median', None) is None else bool(p.get('do_median'))
+
+    # Select context window
+    if ctx_len and ctx_len > 0:
+        context = np.asarray(series[-int(min(n, ctx_len)) :], dtype=float)
+    else:
+        context = np.asarray(series, dtype=float)
+
+    try:
+        import numpy as _np
+        import torch  # type: ignore
+        from uni2ts import get_timeseries_model  # type: ignore
+    except Exception as ex:
+        return (None, None, {}, f"moirai requires uni2ts and torch: {ex}")
+
+    try:
+        # Load model by variant; get_timeseries_model returns a callable forward/infer object
+        model = get_timeseries_model(model=variant)
+        # Ensure model to device if specified
+        if device:
+            try:
+                model.to(device)
+            except Exception:
+                pass
+        # Build input expected by uni2ts one-shot forecast: (batch, length)
+        x = context.astype(float)
+        x = _np.nan_to_num(x, nan=float(_np.nanmean(x) if _np.isfinite(_np.nanmean(x)) else 0.0))
+        x = x.reshape(1, -1).astype(_np.float32)
+
+        # Run forecast; most uni2ts models expose forecast(horizon, ...)
+        # Fallback to __call__ returning dict with 'pred'
+        f_vals: Optional[np.ndarray] = None
+        fq: Dict[str, List[float]] = {}
+        try:
+            out = model.forecast(horizon=int(fh), context=x)
+        except Exception:
+            out = model(x, horizon=int(fh))
+
+        # Parse outputs
+        # Expected keys may be: 'mean', 'median', 'quantiles' or 'samples'/'pred'
+        arr = None
+        if isinstance(out, dict):
+            if do_mean and 'mean' in out:
+                arr = _np.asarray(out['mean'], dtype=float)
+            elif do_median and ('median' in out or 'p50' in out):
+                key = 'median' if 'median' in out else 'p50'
+                arr = _np.asarray(out[key], dtype=float)
+            elif 'pred' in out:
+                arr = _np.asarray(out['pred'], dtype=float)
+            elif 'samples' in out:
+                try:
+                    arr = _np.asarray(out['samples'], dtype=float)
+                    if arr.ndim >= 2:
+                        arr = _np.mean(arr, axis=0)
+                except Exception:
+                    arr = None
+            # Quantiles
+            if quantiles and 'quantiles' in out and isinstance(out['quantiles'], dict):
+                for q in quantiles:
+                    try:
+                        qf = float(q)
+                    except Exception:
+                        continue
+                    k = str(qf)
+                    if k in out['quantiles']:
+                        qarr = _np.asarray(out['quantiles'][k], dtype=float).ravel()
+                        fq[k] = [float(v) for v in qarr[:fh].tolist()]
+        else:
+            # Tensor or ndarray
+            try:
+                arr = _np.asarray(out, dtype=float)
+                if arr.ndim == 2 and arr.shape[0] == 1:
+                    arr = arr[0]
+            except Exception:
+                arr = None
+
+        if arr is None:
+            return (None, None, {}, "moirai output format not recognized")
+        arr = arr.ravel()
+        vals = arr[:fh] if arr.size >= fh else _np.pad(arr, (0, fh - arr.size), mode='edge')
+        f_vals = vals
+
+        params_used = {
+            'variant': variant,
+            'context_length': int(ctx_len) if ctx_len else int(n),
+            'device': device,
+        }
+        if quantiles and fq:
+            params_used['quantiles'] = sorted(list(fq.keys()), key=lambda x: float(x))
+        return (f_vals, fq or None, params_used, None)
+    except Exception as ex:
+        return (None, None, {}, f"moirai error: {ex}")
+
         if not (hasattr(_timesfm, 'TimesFM_2p5_200M_torch') or hasattr(_timesfm, 'ForecastConfig')):
             try:
                 from timesfm import torch as _timesfm  # type: ignore
