@@ -46,3 +46,4 @@ Thumbs.db
 .mtdata_cache/*
 lightning_logs/*
 jscpd_report.xml/*
+backtests/*
