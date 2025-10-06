@@ -118,6 +118,68 @@ def forecast_timesfm(
     try:
         import timesfm as _timesfm  # type: ignore
         # Try to detect namespace shadowing
+        if not (hasattr(_timesfm, 'TimesFM_2p5_200M_torch') or hasattr(_timesfm, 'ForecastConfig')):
+            try:
+                from timesfm import torch as _timesfm  # type: ignore
+            except Exception:
+                _p = getattr(_timesfm, '__path__', None)
+                _p_str = str(list(_p)) if _p is not None else 'unknown'
+                return (None, None, {}, f"timesfm import resolved to namespace at {_p_str}. Rename/remove local 'timesfm' folder or pip install -e the official repo.")
+        # Prefer new API
+        _cls_name = 'TimesFM_2p5_200M_torch'
+        _has_new = hasattr(_timesfm, _cls_name) and hasattr(_timesfm, 'ForecastConfig')
+        if _has_new:
+            _Cls = getattr(_timesfm, _cls_name)
+            _mdl = _Cls()
+            _max_ctx = int(ctx_len) if ctx_len and int(ctx_len) > 0 else None
+            _cfg_kwargs: Dict[str, Any] = {
+                'max_context': _max_ctx or min(int(n), 1024),
+                'max_horizon': int(fh),
+                'normalize_inputs': True,
+                'use_continuous_quantile_head': bool(quantiles) is True,
+                'force_flip_invariance': True,
+                'infer_is_positive': False,
+                'fix_quantile_crossing': True,
+            }
+            _cfg = getattr(_timesfm, 'ForecastConfig')(**_cfg_kwargs)
+            try:
+                _mdl.load_checkpoint()
+            except Exception:
+                pass
+            _mdl.compile(_cfg)
+            _inp = [np.asarray(context, dtype=float)]
+            pf, qf = _mdl.forecast(horizon=int(fh), inputs=_inp)
+            if pf is not None:
+                arr = np.asarray(pf, dtype=float)
+                arr = arr[0] if arr.ndim == 2 else arr
+                vals = np.asarray(arr, dtype=float)
+                f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
+            if quantiles and qf is not None:
+                qarr = np.asarray(qf, dtype=float)
+                if qarr.ndim == 3 and qarr.shape[0] >= 1:
+                    Q = qarr.shape[-1]
+                    level_map = {str(l/10.0): (l if Q >= 10 else None) for l in range(1, 10)}
+                    for q in list(quantiles):
+                        try:
+                            key = f"{float(q):.1f}"
+                        except Exception:
+                            continue
+                        idx = level_map.get(key)
+                        if idx is None:
+                            continue
+                        col = qarr[0, :fh, idx] if idx < qarr.shape[-1] else None
+                        if col is not None:
+                            fq[key] = [float(v) for v in np.asarray(col, dtype=float).tolist()]
+            params_used = {
+                'timesfm_model': _cls_name,
+                'context_length': int(_max_ctx or n),
+                'quantiles': sorted(list(fq.keys()), key=lambda x: float(x)) if fq else None,
+            }
+            return (f_vals, fq or None, params_used, None)
+        else:
+            return (None, None, {}, "timesfm installed but API not recognized (missing TimesFM_2p5_200M_torch/ForecastConfig). Update the package.")
+    except Exception as ex:
+        return (None, None, {}, f"timesfm error: {ex}")
 
 
 def forecast_moirai(
@@ -237,71 +299,6 @@ def forecast_moirai(
         return (f_vals, fq or None, params_used, None)
     except Exception as ex:
         return (None, None, {}, f"moirai error: {ex}")
-
-        if not (hasattr(_timesfm, 'TimesFM_2p5_200M_torch') or hasattr(_timesfm, 'ForecastConfig')):
-            try:
-                from timesfm import torch as _timesfm  # type: ignore
-            except Exception:
-                _p = getattr(_timesfm, '__path__', None)
-                _p_str = str(list(_p)) if _p is not None else 'unknown'
-                return (None, None, {}, f"timesfm import resolved to namespace at {_p_str}. Rename/remove local 'timesfm' folder or pip install -e the official repo.")
-        # Prefer new API
-        _cls_name = 'TimesFM_2p5_200M_torch'
-        _has_new = hasattr(_timesfm, _cls_name) and hasattr(_timesfm, 'ForecastConfig')
-        if _has_new:
-            _Cls = getattr(_timesfm, _cls_name)
-            _mdl = _Cls()
-            _max_ctx = int(ctx_len) if ctx_len and int(ctx_len) > 0 else None
-            _cfg_kwargs: Dict[str, Any] = {
-                'max_context': _max_ctx or min(int(n), 1024),
-                'max_horizon': int(fh),
-                'normalize_inputs': True,
-                'use_continuous_quantile_head': bool(quantiles) is True,
-                'force_flip_invariance': True,
-                'infer_is_positive': False,
-                'fix_quantile_crossing': True,
-            }
-            _cfg = getattr(_timesfm, 'ForecastConfig')(**_cfg_kwargs)
-            try:
-                _mdl.load_checkpoint()
-            except Exception:
-                pass
-            _mdl.compile(_cfg)
-            _inp = [np.asarray(context, dtype=float)]
-            pf, qf = _mdl.forecast(horizon=int(fh), inputs=_inp)
-            if pf is not None:
-                arr = np.asarray(pf, dtype=float)
-                arr = arr[0] if arr.ndim == 2 else arr
-                vals = np.asarray(arr, dtype=float)
-                f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
-            if quantiles and qf is not None:
-                qarr = np.asarray(qf, dtype=float)
-                if qarr.ndim == 3 and qarr.shape[0] >= 1:
-                    Q = qarr.shape[-1]
-                    level_map = {str(l/10.0): (l if Q >= 10 else None) for l in range(1, 10)}
-                    for q in list(quantiles):
-                        try:
-                            key = f"{float(q):.1f}"
-                        except Exception:
-                            continue
-                        idx = level_map.get(key)
-                        if idx is None:
-                            continue
-                        col = qarr[0, :fh, idx] if idx < qarr.shape[-1] else None
-                        if col is not None:
-                            fq[key] = [float(v) for v in np.asarray(col, dtype=float).tolist()]
-            params_used = {
-                'timesfm_model': _cls_name,
-                'context_length': int(_max_ctx or n),
-                'quantiles': sorted(list(fq.keys()), key=lambda x: float(x)) if fq else None,
-            }
-            return (f_vals, fq or None, params_used, None)
-        else:
-            return (None, None, {}, "timesfm installed but API not recognized (missing TimesFM_2p5_200M_torch/ForecastConfig). Update the package.")
-    except Exception as ex:
-        return (None, None, {}, f"timesfm error: {ex}")
-
-
 
 
 def forecast_lag_llama(
