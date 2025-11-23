@@ -21,3 +21,11 @@ def add_global_args_to_parser(parser: argparse.ArgumentParser, exclude_params: O
             default=DEFAULT_TIMEFRAME,
             help='Timeframe for market data (H1, M30, D1, etc.)'
         )
+    
+    # Verbose flag
+    if 'verbose' not in exclude_params:
+        parser.add_argument(
+            '--verbose',
+            action='store_true',
+            help='Show detailed metadata in output'
+        )

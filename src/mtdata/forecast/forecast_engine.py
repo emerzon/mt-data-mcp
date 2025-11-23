@@ -28,26 +28,17 @@ from mtdata.forecast.common import (
     parse_kv_or_json as _parse_kv_or_json,
     fetch_history as _fetch_history,
 )
+from mtdata.forecast.registry import ForecastRegistry
+# Import all method modules to ensure registration
+import mtdata.forecast.methods.classical
+import mtdata.forecast.methods.ets_arima
+import mtdata.forecast.methods.statsforecast
+import mtdata.forecast.methods.mlforecast
+import mtdata.forecast.methods.pretrained
+import mtdata.forecast.methods.neural
+import mtdata.forecast.methods.sktime
 
-# Import individual forecast methods
-from mtdata.forecast.methods.pretrained import (
-    forecast_chronos_bolt as _chronos_bolt_impl,
-    forecast_timesfm as _timesfm_impl,
-)
-from mtdata.forecast.methods.classical import (
-    forecast_naive as _naive_impl,
-    forecast_drift as _drift_impl,
-    forecast_seasonal_naive as _snaive_impl,
-    forecast_theta as _theta_impl,
-    forecast_fourier_ols as _fourier_impl,
-)
-from mtdata.forecast.methods.ets_arima import (
-    forecast_ses as _ses_impl,
-    forecast_holt as _holt_impl,
-    forecast_holt_winters as _hw_impl,
-    forecast_sarimax as _sarimax_impl,
-)
-from mtdata.forecast.methods.neural import forecast_neural as _neural_impl
+import MetaTrader5 as mt5
 
 _ENSEMBLE_BASE_METHODS = (
     'naive',
@@ -97,36 +88,14 @@ def _ensemble_dispatch_method(
     """Run a supported ensemble base method with safe fallbacks."""
 
     m = str(method_name).lower().strip()
-    if m not in _ENSEMBLE_BASE_METHODS:
-        return None
+    # Allow any registered method in ensemble if it supports what we need
+    # But for safety/speed, we might restrict to fast methods or check registry
+    
     kwargs = dict(params or {})
     try:
-        if m == 'naive':
-            out = _naive_impl(series, horizon=horizon, **kwargs)
-        elif m == 'drift':
-            out = _drift_impl(series, horizon=horizon, **kwargs)
-        elif m == 'seasonal_naive':
-            out = _snaive_impl(series, horizon=horizon, seasonality=seasonality, **kwargs)
-        elif m == 'theta':
-            out, _ = _theta_impl(series, horizon=horizon, seasonality=seasonality, ci_alpha=None, **kwargs)
-        elif m == 'fourier_ols':
-            out = _fourier_impl(series, horizon=horizon, seasonality=seasonality, **kwargs)
-        elif m == 'ses':
-            out = _ses_impl(series, horizon=horizon, **kwargs)
-        elif m == 'holt':
-            out = _holt_impl(series, horizon=horizon, **kwargs)
-        elif m in ('holt_winters_add', 'holt_winters_mul'):
-            seasonal = 'add' if m.endswith('add') else 'mul'
-            out = _hw_impl(series, horizon=horizon, seasonal=seasonal, seasonality=seasonality, **kwargs)
-        elif m == 'arima':
-            out, _ = _sarimax_impl(series, horizon=horizon, seasonal=False, ci_alpha=None, **kwargs)
-        elif m == 'sarima':
-            out, _ = _sarimax_impl(series, horizon=horizon, seasonal=True, seasonality=seasonality, ci_alpha=None, **kwargs)
-        else:
-            return None
-        if out is None:
-            return None
-        return np.asarray(out, dtype=float)
+        forecaster = ForecastRegistry.get(m)
+        res = forecaster.forecast(series, horizon, seasonality or 1, kwargs)
+        return res.forecast
     except Exception:
         return None
 
@@ -186,37 +155,13 @@ except Exception:  # runtime fallback
     TimeframeLiteral = str
     DenoiseSpec = Dict[str, Any]
 
-# Supported forecast methods
-_FORECAST_METHODS = (
-    "naive",
-    "seasonal_naive",
-    "drift",
-    "theta",
-    "fourier_ols",
-    "ses",
-    "holt",
-    "holt_winters_add",
-    "holt_winters_mul",
-    "arima",
-    "sarima",
-    "mc_gbm",
-    "hmm_mc",
-    "nhits",
-    "nbeatsx",
-    "tft",
-    "patchtst",
-    "sf_autoarima",
-    "sf_theta",
-    "sf_autoets",
-    "sf_seasonalnaive",
-    "mlf_rf",
-    "mlf_lightgbm",
-    "chronos_bolt",
-    "chronos2",
-    "timesfm",
-    "lag_llama",
-    "ensemble",
-)
+# Supported forecast methods - dynamically fetch from registry
+def _get_available_methods():
+    base = list(ForecastRegistry.list_available())
+    base.append('ensemble')
+    return tuple(base)
+
+_FORECAST_METHODS = _get_available_methods()
 
 
 def _default_seasonality_period(timeframe: str) -> int:
@@ -263,11 +208,11 @@ def _prepare_base_data(df: pd.DataFrame, quantity: str, target: str) -> str:
     """Prepare base data column for forecasting."""
     base_col = 'close'
 
-    if quantity_l == 'return':
+    if quantity == 'return':
         df['__log_return'] = np.log(df['close'] / df['close'].shift(1))
         base_col = '__log_return'
-    elif quantity_l == 'volatility':
-        if target_l == 'price':
+    elif quantity == 'volatility':
+        if target == 'price':
             df['__log_return'] = np.log(df['close'] / df['close'].shift(1))
             df['__squared_return'] = df['__log_return'] ** 2
             base_col = '__squared_return'
@@ -353,7 +298,9 @@ def _apply_dimensionality_reduction(X: pd.DataFrame, dimred_method: Optional[str
 def _format_forecast_output(forecast_values: np.ndarray, last_epoch: float, tf_secs: int,
                             horizon: int, base_col: str, df: pd.DataFrame,
                             ci_alpha: Optional[float], ci_values: Optional[np.ndarray],
-                            method: str, quantity: str, denoise_used: bool) -> Dict[str, Any]:
+                            method: str, quantity: str, denoise_used: bool,
+                            metadata: Optional[Dict[str, Any]] = None,
+                            digits: Optional[int] = None) -> Dict[str, Any]:
     """Format forecast output with proper structure."""
     # Generate future time indices
     future_epochs = _next_times_from_last(last_epoch, tf_secs, horizon)
@@ -375,6 +322,9 @@ def _format_forecast_output(forecast_values: np.ndarray, last_epoch: float, tf_s
         "forecast_time": future_times,
         "forecast_epoch": future_epochs,
     }
+    
+    if digits is not None:
+        result["digits"] = int(digits)
 
     # Add confidence intervals if available
     if ci_alpha is not None and ci_values is not None:
@@ -389,6 +339,9 @@ def _format_forecast_output(forecast_values: np.ndarray, last_epoch: float, tf_s
         "quantity": quantity,
         "denoise_applied": denoise_used,
     })
+    
+    if metadata:
+        result.update(metadata)
 
     return result
 
@@ -415,6 +368,17 @@ def forecast_engine(
     This is the main orchestration function that coordinates all forecasting operations.
     """
     try:
+        # Coerce CLI string inputs to proper types
+        try:
+            horizon = int(horizon) if horizon is not None else 12
+        except (ValueError, TypeError):
+            horizon = 12
+            
+        try:
+            lookback = int(lookback) if lookback is not None else None
+        except (ValueError, TypeError):
+            lookback = None
+        
         # Validation
         if timeframe not in TIMEFRAME_MAP:
             return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
@@ -425,8 +389,11 @@ def forecast_engine(
 
         method_l = str(method).lower().strip()
         quantity_l = str(quantity).lower().strip()
-        if method_l not in _FORECAST_METHODS:
-            return {"error": f"Invalid method: {method}. Valid options: {list(_FORECAST_METHODS)}"}
+        
+        # Refresh available methods
+        available_methods = _get_available_methods()
+        if method_l not in available_methods:
+            return {"error": f"Invalid method: {method}. Valid options: {list(available_methods)}"}
 
         # Volatility models have a dedicated endpoint
         if quantity_l == 'volatility' or method_l.startswith('vol_'):
@@ -464,7 +431,7 @@ def forecast_engine(
                 base_col = f"{base_col}_dn"
 
         # Prepare base data
-        base_col = _prepare_base_data(df, quantity, target)
+        base_col = _prepare_base_data(df, quantity_l, target)
 
         # Apply features and target specification
         base_col = _apply_features_and_target_spec(df, features, target_spec, base_col)
@@ -489,42 +456,26 @@ def forecast_engine(
                 X = _apply_dimensionality_reduction(X, dimred_method, dimred_params)
 
         # Get last timestamp and values
-        last_epoch = float(df['__epoch'].iloc[-1])
+        last_epoch = float(df['time'].iloc[-1])
         last_value = float(target_series.iloc[-1])
+        
+        # Get symbol info for digits
+        digits = None
+        try:
+            s_info = mt5.symbol_info(symbol)
+            if s_info:
+                digits = s_info.digits
+        except Exception:
+            pass
 
         # Dispatch to appropriate forecast method
         forecast_values = None
         ci_values = None
         ensemble_meta: Optional[Dict[str, Any]] = None
+        metadata: Dict[str, Any] = {}
 
         try:
-            if method_l == 'naive':
-                forecast_values = _naive_impl(target_series, horizon=horizon, **p)
-            elif method_l == 'drift':
-                forecast_values = _drift_impl(target_series, horizon=horizon, **p)
-            elif method_l == 'seasonal_naive':
-                forecast_values = _snaive_impl(target_series, horizon=horizon, seasonality=seasonality, **p)
-            elif method_l == 'theta':
-                forecast_values, ci_values = _theta_impl(target_series, horizon=horizon, seasonality=seasonality, ci_alpha=ci_alpha, **p)
-            elif method_l == 'fourier_ols':
-                forecast_values = _fourier_impl(target_series, horizon=horizon, seasonality=seasonality, **p)
-            elif method_l == 'ses':
-                forecast_values = _ses_impl(target_series, horizon=horizon, **p)
-            elif method_l == 'holt':
-                forecast_values = _holt_impl(target_series, horizon=horizon, **p)
-            elif method_l == 'holt_winters_add' or method_l == 'holt_winters_mul':
-                method = method_l.split('_')[-1]  # 'add' or 'mul'
-                forecast_values = _hw_impl(target_series, horizon=horizon, seasonal=method, seasonality=seasonality, **p)
-            elif method_l == 'arima':
-                forecast_values, ci_values = _sarimax_impl(target_series, horizon=horizon, seasonal=False, ci_alpha=ci_alpha, **p)
-            elif method_l == 'sarima':
-                forecast_values, ci_values = _sarimax_impl(target_series, horizon=horizon, seasonal=True, seasonality=seasonality, ci_alpha=ci_alpha, **p)
-            elif method_l in ('chronos_bolt', 'chronos2', 'timesfm'):
-                if method_l in ('chronos_bolt', 'chronos2'):
-                    forecast_values = _chronos_bolt_impl(target_series, horizon=horizon, **p)
-                elif method_l == 'timesfm':
-                    forecast_values = _timesfm_impl(target_series, horizon=horizon, **p)
-            elif method_l == 'ensemble':
+            if method_l == 'ensemble':
                 ensemble_meta = {}
                 base_methods_in = p.get('methods')
                 if isinstance(base_methods_in, str):
@@ -533,11 +484,16 @@ def forecast_engine(
                     base_methods = [str(m).lower().strip() for m in base_methods_in if str(m).strip()]
                 else:
                     base_methods = ['naive', 'theta', 'fourier_ols']
-                base_methods = [m for m in base_methods if m in _ENSEMBLE_BASE_METHODS]
+                
+                # Filter to available methods
+                avail = _get_available_methods()
+                base_methods = [m for m in base_methods if m in avail and m != 'ensemble']
+                
                 seen: set[str] = set()
                 base_methods = [m for m in base_methods if not (m in seen or seen.add(m))]
                 if not base_methods:
                     base_methods = ['naive', 'theta']
+                
                 params_in = p.get('method_params') if isinstance(p.get('method_params'), dict) else {}
                 params_map = {str(k).lower(): (v if isinstance(v, dict) else {}) for k, v in params_in.items()}
                 mode = str(p.get('mode', 'average')).lower()
@@ -630,6 +586,33 @@ def forecast_engine(
                     ensemble_meta['intercept'] = float(ensemble_intercept)
                 if expose_components:
                     ensemble_meta['components'] = {m: [float(v) for v in fc.tolist()] for m, fc in zip(base_methods, component_forecasts)}
+            
+            else:
+                # Use Registry for all other methods
+                forecaster = ForecastRegistry.get(method_l)
+                
+                # Prepare exog variables if supported and available
+                exog_future = None
+                # Note: X is the feature matrix for the training period. 
+                # For future exog, we would need to generate/fetch it. 
+                # Currently the engine doesn't support generating future exog automatically 
+                # unless provided in params or features.
+                # But some methods (like ML) might use X (training exog) during training.
+                
+                # Pass X as exog_used if available
+                kwargs = dict(p)
+                kwargs['ci_alpha'] = ci_alpha
+                if X is not None:
+                    kwargs['exog_used'] = X.values
+                    
+                # Call forecast
+                res = forecaster.forecast(target_series, horizon, seasonality, kwargs)
+                forecast_values = res.forecast
+                ci_values = res.ci_values
+                metadata = res.metadata or {}
+                
+                # Add params used to metadata
+                metadata['params_used'] = res.params_used
 
         except Exception as e:
             return {"error": f"Forecast method '{method}' failed: {str(e)}"}
@@ -641,7 +624,8 @@ def forecast_engine(
         denoise_used = dn_spec_used is not None
         result = _format_forecast_output(
             forecast_values, last_epoch, tf_secs, horizon, base_col, df,
-            ci_alpha, ci_values, method, quantity, denoise_used
+            ci_alpha, ci_values, method, quantity_l, denoise_used, metadata,
+            digits=digits
         )
         if method_l == 'ensemble' and ensemble_meta:
             result['ensemble'] = ensemble_meta

@@ -66,10 +66,10 @@ def _format_meta_block(meta: Dict[str, Any]) -> str:
     return _format_complex_value(meta)
 
 
-def _format_result_minimal(result: Any) -> str:
+def _format_result_minimal(result: Any, verbose: bool = True) -> str:
     # Delegate to shared formatter used by the server so CLI output matches API output exactly
     try:
-        return _shared_minimal(result)
+        return _shared_minimal(result, verbose=verbose)
     except Exception:
         return str(result) if result is not None else ""
 
@@ -388,6 +388,8 @@ def create_command_function(func_info, cmd_name: str = ""):
                 kwargs[param_name] = arg_value
         
         # Call the function (tools now return minimal plain text for API and CLI)
+        # Request raw output so we can control formatting in CLI (e.g. verbose flag)
+        kwargs['__cli_raw'] = True
         result = func_info['func'](**kwargs)
 
         # If the tool already returned text, print it exactly (no stripping)
@@ -396,7 +398,9 @@ def create_command_function(func_info, cmd_name: str = ""):
             return
 
         # Otherwise, use the same shared minimal formatter as the server
-        minimal_output = _format_result_minimal(result)
+        # Pass verbose flag if available (default to False for cleaner output)
+        verbose = getattr(args, 'verbose', False)
+        minimal_output = _format_result_minimal(result, verbose=verbose)
         if minimal_output:
             print(minimal_output)
         return

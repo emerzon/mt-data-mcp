@@ -51,6 +51,9 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
 
         @_wraps(func)
         def _wrapped(*a, **kw):
+            # Check for raw output flag (used by CLI to bypass formatting)
+            raw_output = kw.pop('__cli_raw', False)
+            
             # Uniform input normalization for common structured args
             try:
                 if 'denoise' in kw:
@@ -59,6 +62,10 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
             except Exception:
                 pass
             out = func(*a, **kw)
+            
+            if raw_output:
+                return out
+                
             try:
                 # Special-case: compact method availability where applicable
                 fname = getattr(func, '__name__', '')

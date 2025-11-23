@@ -217,25 +217,46 @@ def _encode_expanded_array(key: str, items: List[Any], indent: int = 0,
     return "\n".join(lines)
 
 
-def _normalize_forecast_payload(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _normalize_forecast_payload(payload: Dict[str, Any], verbose: bool = True) -> Optional[Dict[str, Any]]:
     """Convert forecast payload into meta + tabular rows when possible."""
     try:
-        if not isinstance(payload.get('times'), list):
+        # Detect time column
+        times = None
+        if isinstance(payload.get('times'), list):
+            times = list(payload.get('times') or [])
+        elif isinstance(payload.get('forecast_time'), list):
+            times = list(payload.get('forecast_time') or [])
+        elif isinstance(payload.get('forecast_epoch'), list):
+            # Fallback to epochs if string times missing
+            times = list(payload.get('forecast_epoch') or [])
+        
+        if not times:
             return None
-        times = list(payload.get('times') or [])
+
         main_key = None
-        for k in ('forecast_price', 'forecast_return', 'forecast_series'):
+        for k in ('forecast_price', 'forecast_return', 'forecast_series', 'forecast'):
             if isinstance(payload.get(k), list):
                 main_key = k
                 break
-        if not main_key or not times:
+        if not main_key:
             return None
+            
         fvals = list(payload.get(main_key) or [])
         n = min(len(times), len(fvals))
-        lower_key = 'lower_price' if main_key == 'forecast_price' else None
-        upper_key = 'upper_price' if main_key == 'forecast_price' else None
-        lower = list(payload.get(lower_key) or []) if lower_key and isinstance(payload.get(lower_key), list) else []
-        upper = list(payload.get(upper_key) or []) if upper_key and isinstance(payload.get(upper_key), list) else []
+        
+        # Check for digits precision
+        digits = payload.get('digits')
+        if digits is not None:
+            try:
+                digits = int(digits)
+            except Exception:
+                digits = None
+        
+        lower_key = 'lower_price' if 'price' in main_key else 'lower'
+        upper_key = 'upper_price' if 'price' in main_key else 'upper'
+        lower = list(payload.get(lower_key) or []) if isinstance(payload.get(lower_key), list) else []
+        upper = list(payload.get(upper_key) or []) if isinstance(payload.get(upper_key), list) else []
+        
         qmap = payload.get('forecast_quantiles') if isinstance(payload.get('forecast_quantiles'), dict) else None
         qcols: List[str] = []
         if isinstance(qmap, dict):
@@ -270,34 +291,64 @@ def _normalize_forecast_payload(payload: Dict[str, Any]) -> Optional[Dict[str, A
             headers.append(f"q{q}")
         rows: List[Dict[str, Any]] = []
         for i in range(n):
+            val = fvals[i]
+            if digits is not None and isinstance(val, (int, float)):
+                try:
+                    val = f"{float(val):.{digits}f}"
+                except Exception:
+                    pass
+                    
             row: Dict[str, Any] = {
                 'time': times[i],
-                'forecast': fvals[i],
+                'forecast': val,
             }
             if lower and upper and i < len(lower) and i < len(upper):
-                row['lower'] = lower[i]
-                row['upper'] = upper[i]
+                low_val = lower[i]
+                up_val = upper[i]
+                if digits is not None:
+                    try:
+                        if isinstance(low_val, (int, float)): low_val = f"{float(low_val):.{digits}f}"
+                        if isinstance(up_val, (int, float)): up_val = f"{float(up_val):.{digits}f}"
+                    except Exception:
+                        pass
+                row['lower'] = low_val
+                row['upper'] = up_val
             for q in qcols:
                 qarr = qmap.get(q) if isinstance(qmap, dict) else None  # type: ignore[assignment]
                 if isinstance(qarr, list) and i < len(qarr):
-                    row[f"q{q}"] = qarr[i]
+                    q_val = qarr[i]
+                    if digits is not None and isinstance(q_val, (int, float)):
+                        try:
+                            q_val = f"{float(q_val):.{digits}f}"
+                        except Exception:
+                            pass
+                    row[f"q{q}"] = q_val
             rows.append(row)
 
-        meta_keys = ('symbol', 'timeframe', 'method', 'horizon', 'lookback_used', 'forecast_trend')
-        meta: Dict[str, Any] = {}
-        for mk in meta_keys:
-            if not _is_empty_value(payload.get(mk)):
-                meta[mk] = payload.get(mk)
-        dn = payload.get('denoise_used')
-        if isinstance(dn, dict) and dn.get('method'):
-            meta['denoise'] = dn.get('method')
-        tz = payload.get('timezone')
-        if isinstance(tz, str) and tz.strip():
-            meta['timezone'] = tz.strip()
-
         out: Dict[str, Any] = {}
-        if meta:
-            out['meta'] = meta
+        if verbose:
+            meta_keys = ('symbol', 'timeframe', 'method', 'horizon', 'lookback_used', 'forecast_trend')
+            meta: Dict[str, Any] = {}
+            for mk in meta_keys:
+                if not _is_empty_value(payload.get(mk)):
+                    meta[mk] = payload.get(mk)
+            dn = payload.get('denoise_used')
+            if isinstance(dn, dict) and dn.get('method'):
+                meta['denoise'] = dn.get('method')
+            elif payload.get('denoise_applied'):
+                meta['denoise'] = 'applied'
+                
+            tz = payload.get('timezone')
+            if isinstance(tz, str) and tz.strip():
+                meta['timezone'] = tz.strip()
+            
+            # Include params_used if verbose
+            if payload.get('params_used'):
+                meta['params'] = payload.get('params_used')
+
+            if meta:
+                out['meta'] = meta
+                
         out['forecast'] = rows
         return out
     except Exception:
@@ -361,14 +412,14 @@ def _format_to_toon(value: Any, key: Optional[str] = None, indent: int = 0,
     return f"{ind}{_stringify_for_toon(value, delimiter)}".rstrip()
 
 
-def format_result_minimal(result: Any) -> str:
+def format_result_minimal(result: Any, verbose: bool = True) -> str:
     """Render tool outputs as TOON text (drop CSV/sparse JSON)."""
     if result is None:
         return ""
     try:
         normalized = result
         if isinstance(result, dict):
-            forecast_norm = _normalize_forecast_payload(result)
+            forecast_norm = _normalize_forecast_payload(result, verbose=verbose)
             if forecast_norm is not None:
                 normalized = forecast_norm
             else:
@@ -380,7 +431,7 @@ def format_result_minimal(result: Any) -> str:
                         if k not in {'csv_header', 'csv_data', 'success', 'count'} and not _is_empty_value(v)
                     }
                     merged: Dict[str, Any] = {}
-                    if extras:
+                    if extras and verbose:
                         merged['meta'] = extras
                     merged['data'] = rows
                     normalized = merged
