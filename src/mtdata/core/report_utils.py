@@ -534,6 +534,10 @@ def _render_context_section(data: Any) -> List[str]:
         return []
     lines: List[str] = ['## Market Context']
 
+    if data.get('error'):
+        lines.append(f"error: {data.get('error')}")
+        return lines
+
     metrics: List[List[Optional[str]]] = []
     tf_ref = data.get('timeframe')
     if tf_ref:
@@ -634,6 +638,8 @@ def _render_contexts_multi_section(data: Any) -> List[str]:
             _format_signed(slope_val),
             str(int(atr_bps)) if atr_bps is not None else None,
         ])
+    # Drop rows that are entirely empty/None
+    rows = [r for r in rows if any(cell not in (None, 'n/a') for cell in r[1:])]
     if not rows:
         return []
     lines = ['## Multi-Timeframe Context']

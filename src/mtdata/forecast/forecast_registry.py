@@ -28,6 +28,7 @@ try:
     _CHRONOS_AVAILABLE = _importlib_util.find_spec("chronos") is not None
     _TIMESFM_AVAILABLE = _importlib_util.find_spec("timesfm") is not None
     _LAG_LLAMA_AVAILABLE = _importlib_util.find_spec("lag_llama") is not None
+    _SKTIME_AVAILABLE = _importlib_util.find_spec("sktime") is not None
 except Exception:
     _NF_AVAILABLE = False
     _MLF_AVAILABLE = False
@@ -36,6 +37,7 @@ except Exception:
     _CHRONOS_AVAILABLE = False
     _TIMESFM_AVAILABLE = False
     _LAG_LLAMA_AVAILABLE = False
+    _SKTIME_AVAILABLE = False
 
 
 def get_forecast_methods_data() -> Dict[str, Any]:
@@ -65,6 +67,8 @@ def get_forecast_methods_data() -> Dict[str, Any]:
             available = False; reqs.append("timesfm")
         if method == "lag_llama" and not _LAG_LLAMA_AVAILABLE:
             available = False; reqs.append("lag-llama, gluonts, torch")
+        if method == "sktime" and not _SKTIME_AVAILABLE:
+            available = False; reqs.append("sktime")
         
         methods.append({
             "method": method,
@@ -83,6 +87,8 @@ def get_forecast_methods_data() -> Dict[str, Any]:
     _register_statistical_methods(add)
     _register_ml_methods(add)
     _register_pretrained_methods(add)
+    _register_sktime_methods(add)
+    _register_sktime_aliases(add)
     _register_gluonts_methods(add)
 
     return {
@@ -98,7 +104,8 @@ def get_forecast_methods_data() -> Dict[str, Any]:
             "machine_learning": ["mlf_rf", "mlf_lightgbm"],
             "pretrained": ["chronos_bolt", "timesfm", "lag_llama"],
             "gluonts": ["gt_deepar", "gt_sfeedforward", "gt_prophet", "gt_tft", "gt_wavenet", "gt_deepnpts", "gt_mqf2", "gt_npts"],
-            "ensemble": ["ensemble"]
+            "ensemble": ["ensemble"],
+            "sktime": ["sktime", "skt_naive", "skt_snaive", "skt_theta", "skt_autoets", "skt_arima", "skt_autoarima"]
         }
     }
 
@@ -260,10 +267,19 @@ def _register_ml_methods(add_func):
 
 def _register_pretrained_methods(add_func):
     """Register pre-trained model methods."""
-    add_func("chronos_bolt", "Amazon Chronos-BOLT pre-trained time series model", [
-        {"name": "device", "type": "str", "description": "Compute device (cpu/cuda, default: auto)"},
-        {"name": "limit_prediction_length", "type": "bool", "description": "Limit to horizon (default: True)"}
-    ], ["chronos-forecasting", "torch"], {"price": True, "return": True, "volatility": True, "ci": True})
+    add_func("chronos_bolt", "Chronos-2 foundation model (alias). Upstream supports cross-learning, multivariate, and covariates — adapter currently uses univariate target only.", [
+        {"name": "model_name", "type": "str", "description": "Hugging Face model id (default: amazon/chronos-2)"},
+        {"name": "context_length", "type": "int", "description": "Context window length (default: auto)"},
+        {"name": "device_map", "type": "str", "description": "Device placement (default: auto)"},
+        {"name": "quantiles", "type": "list", "description": "Quantile levels to return (default: [0.5])"},
+    ], ["chronos-forecasting>=2.0.0", "torch"], {"price": True, "return": True, "volatility": True, "ci": True})
+
+    add_func("chronos2", "Chronos-2 foundation model (preferred name). Upstream supports cross-learning, multivariate, and covariates — adapter currently uses univariate target only.", [
+        {"name": "model_name", "type": "str", "description": "Hugging Face model id (default: amazon/chronos-2)"},
+        {"name": "context_length", "type": "int", "description": "Context window length (default: auto)"},
+        {"name": "device_map", "type": "str", "description": "Device placement (default: auto)"},
+        {"name": "quantiles", "type": "list", "description": "Quantile levels to return (default: [0.5])"},
+    ], ["chronos-forecasting>=2.0.0", "torch"], {"price": True, "return": True, "volatility": True, "ci": True})
     
     add_func("timesfm", "Google TimesFM pre-trained time series foundation model", [
         {"name": "device", "type": "str", "description": "Compute device (cpu/cuda, default: auto)"},
@@ -274,6 +290,39 @@ def _register_pretrained_methods(add_func):
         {"name": "device", "type": "str", "description": "Compute device (cpu/cuda, default: auto)"},
         {"name": "batch_size", "type": "int", "description": "Batch size (default: 1)"}
     ], ["lag-llama", "gluonts", "torch"], {"price": True, "return": True, "volatility": True, "ci": True})
+
+
+def _register_sktime_methods(add_func):
+    """Register generic sktime adapter method."""
+    requires = ["sktime"]
+    # Mark unavailable if sktime missing
+    add_func(
+        "sktime",
+        "Generic sktime adapter: pass any BaseForecaster via params.estimator",
+        [
+            {"name": "estimator", "type": "str", "description": "Fully qualified class path"},
+            {"name": "estimator_params", "type": "dict", "description": "Constructor kwargs for estimator"},
+            {"name": "seasonality", "type": "int|null", "default": None, "description": "Inject as sp if supported"},
+        ],
+        requires,
+        {"price": True, "return": True, "ci": True},
+    )
+
+def _register_sktime_aliases(add_func):
+    """Register convenience aliases that pre-configure common sktime estimators."""
+    requires = ["sktime"]
+    add_func("skt_naive", "sktime NaiveForecaster(strategy=last)", [], requires, {"price": True, "return": True, "ci": True})
+    add_func("skt_snaive", "sktime Seasonal Naive (NaiveForecaster + sp)", [
+        {"name": "seasonality", "type": "int", "default": None, "description": "Seasonal period (sp)"},
+    ], requires, {"price": True, "return": True, "ci": True})
+    add_func("skt_theta", "sktime ThetaForecaster", [], requires, {"price": True, "return": True, "ci": True})
+    add_func("skt_autoets", "sktime AutoETS", [], requires, {"price": True, "return": True, "ci": True})
+    add_func("skt_arima", "sktime ARIMA (statsmodels)", [
+        {"name": "p", "type": "int", "default": 1},
+        {"name": "d", "type": "int", "default": 0},
+        {"name": "q", "type": "int", "default": 1},
+    ], requires, {"price": True, "return": True, "ci": True})
+    add_func("skt_autoarima", "sktime AutoARIMA", [], requires, {"price": True, "return": True, "ci": True})
 
 
 # Availability flags that can be imported by other modules

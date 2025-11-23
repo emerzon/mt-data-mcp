@@ -3,7 +3,7 @@
 
 import math
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, List, Dict, Any
 
 from .server import mcp
 from ..utils.mt5 import _auto_connect_wrapper
@@ -151,8 +151,8 @@ def trading_account_info() -> dict:
 
 
 @mcp.tool()
-def trading_deals_history(from_date: Optional[str] = None, to_date: Optional[str] = None, symbol: Optional[str] = None) -> str:
-    """Get historical deals as CSV. Date input in format: 'YYYY-MM-DD'."""
+def trading_deals_history(from_date: Optional[str] = None, to_date: Optional[str] = None, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Get historical deals as tabular data. Date input in format: 'YYYY-MM-DD'."""
     import MetaTrader5 as mt5
     import pandas as pd
     from datetime import datetime
@@ -176,21 +176,21 @@ def trading_deals_history(from_date: Optional[str] = None, to_date: Optional[str
                 deals = mt5.history_deals_get(from_dt, to_dt)
 
             if deals is None or len(deals) == 0:
-                return "No deals found"
+                return {"message": "No deals found"}
 
             df = pd.DataFrame(list(deals), columns=deals[0]._asdict().keys())
             df['time'] = pd.to_datetime(df['time'], unit='s')
-            return df.to_csv(index=False)
+            return df.to_dict(orient='records')
 
         except Exception as e:
-            return f"Error: {str(e)}"
+            return {"error": str(e)}
 
     return _get_deals()
 
 
 @mcp.tool()
-def trading_orders_active(from_date: Optional[str] = None, to_date: Optional[str] = None, symbol: Optional[str] = None) -> str:
-    """Get historical orders as CSV. Date input in format: 'YYYY-MM-DD'"""
+def trading_orders_active(from_date: Optional[str] = None, to_date: Optional[str] = None, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Get historical orders as tabular data. Date input in format: 'YYYY-MM-DD'"""
     import MetaTrader5 as mt5
     import pandas as pd
     from datetime import datetime
@@ -214,22 +214,22 @@ def trading_orders_active(from_date: Optional[str] = None, to_date: Optional[str
                 orders = mt5.history_orders_get(from_dt, to_dt)
 
             if orders is None or len(orders) == 0:
-                return "No orders found"
+                return {"message": "No orders found"}
 
             df = pd.DataFrame(list(orders), columns=orders[0]._asdict().keys())
             df['time_setup'] = pd.to_datetime(df['time_setup'], unit='s')
             if 'time_done' in df.columns:
                 df['time_done'] = pd.to_datetime(df['time_done'], unit='s')
-            return df.to_csv(index=False)
+            return df.to_dict(orient='records')
 
         except Exception as e:
-            return f"Error: {str(e)}"
+            return {"error": str(e)}
 
     return _get_orders()
 
 
 @mcp.tool()
-def trading_positions_list() -> str:
+def trading_positions_list() -> List[Dict[str, Any]]:
     """Get all open positions."""
     import MetaTrader5 as mt5
     import pandas as pd
@@ -239,20 +239,20 @@ def trading_positions_list() -> str:
         try:
             positions = mt5.positions_get()
             if positions is None or len(positions) == 0:
-                return "No open positions"
+                return {"message": "No open positions"}
 
             df = pd.DataFrame(list(positions), columns=positions[0]._asdict().keys())
             df['time'] = pd.to_datetime(df['time'], unit='s')
-            return df.to_csv(index=False)
+            return df.to_dict(orient='records')
 
         except Exception as e:
-            return f"Error: {str(e)}"
+            return {"error": str(e)}
 
     return _get_all_positions()
 
 
 @mcp.tool()
-def trading_positions_by_symbol(symbol: str) -> str:
+def trading_positions_by_symbol(symbol: str) -> List[Dict[str, Any]]:
     """Get open positions for a specific symbol."""
     import MetaTrader5 as mt5
     import pandas as pd
@@ -262,20 +262,20 @@ def trading_positions_by_symbol(symbol: str) -> str:
         try:
             positions = mt5.positions_get(symbol=symbol)
             if positions is None or len(positions) == 0:
-                return f"No open positions for {symbol}"
+                return {"message": f"No open positions for {symbol}"}
 
             df = pd.DataFrame(list(positions), columns=positions[0]._asdict().keys())
             df['time'] = pd.to_datetime(df['time'], unit='s')
-            return df.to_csv(index=False)
+            return df.to_dict(orient='records')
 
         except Exception as e:
-            return f"Error: {str(e)}"
+            return {"error": str(e)}
 
     return _get_positions_by_symbol()
 
 
 @mcp.tool()
-def trading_positions_by_id(id: Union[int, str]) -> str:
+def trading_positions_by_id(id: Union[int, str]) -> List[Dict[str, Any]]:
     """Get open positions by ID."""
     import MetaTrader5 as mt5
     import pandas as pd
@@ -286,20 +286,20 @@ def trading_positions_by_id(id: Union[int, str]) -> str:
             ticket = int(id)
             positions = mt5.positions_get(ticket=ticket)
             if positions is None or len(positions) == 0:
-                return f"No position found with ID {id}"
+                return {"message": f"No position found with ID {id}"}
 
             df = pd.DataFrame(list(positions), columns=positions[0]._asdict().keys())
             df['time'] = pd.to_datetime(df['time'], unit='s')
-            return df.to_csv(index=False)
+            return df.to_dict(orient='records')
 
         except Exception as e:
-            return f"Error: {str(e)}"
+            return {"error": str(e)}
 
     return _get_positions_by_id()
 
 
 @mcp.tool()
-def trading_pending_list() -> str:
+def trading_pending_list() -> List[Dict[str, Any]]:
     """Get all pending orders."""
     import MetaTrader5 as mt5
     import pandas as pd
@@ -309,20 +309,20 @@ def trading_pending_list() -> str:
         try:
             orders = mt5.orders_get()
             if orders is None or len(orders) == 0:
-                return "No pending orders"
+                return {"message": "No pending orders"}
 
             df = pd.DataFrame(list(orders), columns=orders[0]._asdict().keys())
             df['time_setup'] = pd.to_datetime(df['time_setup'], unit='s')
-            return df.to_csv(index=False)
+            return df.to_dict(orient='records')
 
         except Exception as e:
-            return f"Error: {str(e)}"
+            return {"error": str(e)}
 
     return _get_all_pending_orders()
 
 
 @mcp.tool()
-def trading_pending_by_symbol(symbol: str) -> str:
+def trading_pending_by_symbol(symbol: str) -> List[Dict[str, Any]]:
     """Get pending orders for a specific symbol."""
     import MetaTrader5 as mt5
     import pandas as pd
@@ -332,20 +332,20 @@ def trading_pending_by_symbol(symbol: str) -> str:
         try:
             orders = mt5.orders_get(symbol=symbol)
             if orders is None or len(orders) == 0:
-                return f"No pending orders for {symbol}"
+                return {"message": f"No pending orders for {symbol}"}
 
             df = pd.DataFrame(list(orders), columns=orders[0]._asdict().keys())
             df['time_setup'] = pd.to_datetime(df['time_setup'], unit='s')
-            return df.to_csv(index=False)
+            return df.to_dict(orient='records')
 
         except Exception as e:
-            return f"Error: {str(e)}"
+            return {"error": str(e)}
 
     return _get_pending_orders_by_symbol()
 
 
 @mcp.tool()
-def trading_pending_by_id(id: Union[int, str]) -> str:
+def trading_pending_by_id(id: Union[int, str]) -> List[Dict[str, Any]]:
     """Get pending orders by id."""
     import MetaTrader5 as mt5
     import pandas as pd
@@ -356,14 +356,14 @@ def trading_pending_by_id(id: Union[int, str]) -> str:
             ticket = int(id)
             orders = mt5.orders_get(ticket=ticket)
             if orders is None or len(orders) == 0:
-                return f"No pending order found with ID {id}"
+                return {"message": f"No pending order found with ID {id}"}
 
             df = pd.DataFrame(list(orders), columns=orders[0]._asdict().keys())
             df['time_setup'] = pd.to_datetime(df['time_setup'], unit='s')
-            return df.to_csv(index=False)
+            return df.to_dict(orient='records')
 
         except Exception as e:
-            return f"Error: {str(e)}"
+            return {"error": str(e)}
 
     return _get_pending_orders_by_id()
 
@@ -466,22 +466,86 @@ def trading_pending_place(
             if current_price is None:
                 return {"error": f"Failed to get current price for {symbol}"}
 
-            # Determine order type based on current price and desired direction
-            if type.upper() == "BUY":
+            # Normalize and validate requested order type
+            t = (type or "").strip().upper()
+            explicit_map = {
+                "BUYLIMIT": mt5.ORDER_TYPE_BUY_LIMIT,
+                "BUY_LIMIT": mt5.ORDER_TYPE_BUY_LIMIT,
+                "BUYSTOP": mt5.ORDER_TYPE_BUY_STOP,
+                "BUY_STOP": mt5.ORDER_TYPE_BUY_STOP,
+                "SELLLIMIT": mt5.ORDER_TYPE_SELL_LIMIT,
+                "SELL_LIMIT": mt5.ORDER_TYPE_SELL_LIMIT,
+                "SELLSTOP": mt5.ORDER_TYPE_SELL_STOP,
+                "SELL_STOP": mt5.ORDER_TYPE_SELL_STOP,
+            }
+
+            order_type = None
+            if t in explicit_map:
+                order_type = explicit_map[t]
+            elif t in ("BUY", "LONG"):
                 order_type = mt5.ORDER_TYPE_BUY_LIMIT if price < current_price.ask else mt5.ORDER_TYPE_BUY_STOP
-            else:
+            elif t in ("SELL", "SHORT"):
                 order_type = mt5.ORDER_TYPE_SELL_LIMIT if price > current_price.bid else mt5.ORDER_TYPE_SELL_STOP
+            else:
+                return {"error": f"Unsupported type '{type}'. Use one of: BUY, SELL, BUYLIMIT, BUYSTOP, SELLLIMIT, SELLSTOP."}
+
+            # Basic side/price sanity checks for explicit pending types
+            bid = float(getattr(current_price, "bid", 0.0) or 0.0)
+            ask = float(getattr(current_price, "ask", 0.0) or 0.0)
+            point = float(symbol_info.point or 0.0) if hasattr(symbol_info, "point") else 0.0
+            digits = int(symbol_info.digits) if hasattr(symbol_info, "digits") else 5
+
+            def _normalize_price(val: Optional[Union[int, float]]) -> Optional[float]:
+                try:
+                    if val is None:
+                        return None
+                    v = float(val)
+                    if not math.isfinite(v):
+                        return None
+                    if point and point > 0:
+                        # Align to symbol precision
+                        v = round(v / point) * point
+                    else:
+                        v = round(v, digits)
+                    return v
+                except Exception:
+                    return None
+
+            norm_price = _normalize_price(price)
+            norm_sl = _normalize_price(stop_loss) if stop_loss not in (None, 0) else None
+            norm_tp = _normalize_price(take_profit) if take_profit not in (None, 0) else None
+
+            if order_type == mt5.ORDER_TYPE_BUY_LIMIT and not (price < ask):
+                return {"error": f"Price must be below ask for BUYLIMIT. price={price}, ask={ask}"}
+            if order_type == mt5.ORDER_TYPE_BUY_STOP and not (price > ask):
+                return {"error": f"Price must be above ask for BUYSTOP. price={price}, ask={ask}"}
+            if order_type == mt5.ORDER_TYPE_SELL_LIMIT and not (price > bid):
+                return {"error": f"Price must be above bid for SELLLIMIT. price={price}, bid={bid}"}
+            if order_type == mt5.ORDER_TYPE_SELL_STOP and not (price < bid):
+                return {"error": f"Price must be below bid for SELLSTOP. price={price}, bid={bid}"}
 
             normalized_expiration, expiration_specified = _normalize_pending_expiration(expiration)
+
+            # SL/TP sanity relative to entry
+            if norm_sl is not None:
+                if order_type in (mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP) and norm_sl >= norm_price:
+                    return {"error": f"stop_loss must be below entry for BUY orders. sl={norm_sl}, price={norm_price}"}
+                if order_type in (mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP) and norm_sl <= norm_price:
+                    return {"error": f"stop_loss must be above entry for SELL orders. sl={norm_sl}, price={norm_price}"}
+            if norm_tp is not None:
+                if order_type in (mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP) and norm_tp <= norm_price:
+                    return {"error": f"take_profit must be above entry for BUY orders. tp={norm_tp}, price={norm_price}"}
+                if order_type in (mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP) and norm_tp >= norm_price:
+                    return {"error": f"take_profit must be below entry for SELL orders. tp={norm_tp}, price={norm_price}"}
 
             request = {
                 "action": mt5.TRADE_ACTION_PENDING,
                 "symbol": symbol,
                 "volume": volume,
                 "type": order_type,
-                "price": price,
-                "sl": stop_loss if stop_loss and stop_loss > 0 else 0.0,
-                "tp": take_profit if take_profit and take_profit > 0 else 0.0,
+                "price": norm_price,
+                "sl": norm_sl or 0.0,
+                "tp": norm_tp or 0.0,
                 "deviation": 20,
                 "magic": 234000,
                 "comment": "MCP pending order",
@@ -498,9 +562,25 @@ def trading_pending_place(
 
             result = mt5.order_send(request)
             if result is None:
-                return {"error": "Failed to send pending order"}
+                # Surface MetaTrader last_error when available for easier debugging
+                try:
+                    err = mt5.last_error()
+                except Exception:
+                    err = None
+                return {"error": "Failed to send pending order", "last_error": err, "request": request}
+
+            if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
+                return {
+                    "error": "Failed to send pending order",
+                    "retcode": result.retcode,
+                    "comment": result.comment,
+                    "request_id": result.request_id,
+                    "request": request,
+                    "last_error": mt5.last_error() if hasattr(mt5, "last_error") else None,
+                }
 
             return {
+                "success": True,
                 "retcode": result.retcode,
                 "deal": result.deal,
                 "order": result.order,
@@ -534,20 +614,71 @@ def trading_positions_modify(id: Union[int, str], stop_loss: Optional[Union[int,
 
             position = positions[0]
 
+            # Get symbol info for price normalization
+            symbol_info = mt5.symbol_info(position.symbol)
+            if symbol_info is None:
+                return {"error": f"Failed to get symbol info for {position.symbol}"}
+
+            point = float(symbol_info.point or 0.0) if hasattr(symbol_info, "point") else 0.0
+            digits = int(symbol_info.digits) if hasattr(symbol_info, "digits") else 5
+
+            def _normalize_price(val: Optional[Union[int, float]]) -> Optional[float]:
+                """Normalize price to symbol precision."""
+                try:
+                    if val is None or val == 0:
+                        return None
+                    v = float(val)
+                    if not math.isfinite(v):
+                        return None
+                    if point and point > 0:
+                        # Align to symbol precision
+                        v = round(v / point) * point
+                    else:
+                        v = round(v, digits)
+                    return v
+                except Exception:
+                    return None
+
+            # Normalize SL/TP values
+            norm_sl = _normalize_price(stop_loss) if stop_loss is not None else (position.sl or 0.0)
+            norm_tp = _normalize_price(take_profit) if take_profit is not None else (position.tp or 0.0)
+
+            # Ensure SL/TP values are 0.0 if they should be removed
+            if norm_sl is None:
+                norm_sl = 0.0
+            if norm_tp is None:
+                norm_tp = 0.0
+
             request = {
                 "action": mt5.TRADE_ACTION_SLTP,
                 "position": ticket,
-                "sl": stop_loss if stop_loss is not None else position.sl,
-                "tp": take_profit if take_profit is not None else position.tp,
+                "sl": norm_sl,
+                "tp": norm_tp,
                 "magic": 234000,
                 "comment": "MCP modify position",
             }
 
             result = mt5.order_send(request)
             if result is None:
-                return {"error": "Failed to modify position"}
+                # surface the MT5 terminal error for debugging
+                try:
+                    last_err = mt5.last_error()
+                except Exception:
+                    last_err = None
+                return {"error": "Failed to modify position", "request": request, "last_error": last_err}
+
+            if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
+                return {
+                    "error": "Failed to modify position",
+                    "retcode": result.retcode,
+                    "comment": result.comment,
+                    "request_id": result.request_id,
+                    "request": request,
+                    "last_error": mt5.last_error() if hasattr(mt5, "last_error") else None,
+                }
 
             return {
+                "success": True,
                 "retcode": result.retcode,
                 "deal": result.deal,
                 "order": result.order,

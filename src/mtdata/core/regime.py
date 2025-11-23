@@ -9,6 +9,43 @@ from ..utils.utils import _format_time_minimal as _format_time_minimal_util
 from ..utils.denoise import _apply_denoise as _apply_denoise_util
 
 
+def _attach_toon_rows(payload: Dict[str, Any], method: str) -> Dict[str, Any]:
+    """Attach tabular rows so TOON output keeps columns aligned."""
+    try:
+        times = payload.get("times")
+        if not isinstance(times, list) or not times:
+            return _attach_toon_rows(payload, method)
+        rows: List[Dict[str, Any]] = []
+        if method == "bocpd":
+            probs = payload.get("cp_prob")
+            if isinstance(probs, list):
+                cp_times = set()
+                cps = payload.get("change_points") if isinstance(payload.get("change_points"), list) else []
+                for cp in cps or []:
+                    t = cp.get("time") if isinstance(cp, dict) else None
+                    if isinstance(t, str):
+                        cp_times.add(t)
+                for t, p in zip(times, probs):
+                    rows.append({"time": t, "cp_prob": p, "change_point": t in cp_times})
+        elif method in ("ms_ar", "hmm"):
+            state = payload.get("state")
+            probs = payload.get("state_probabilities")
+            if isinstance(state, list) and isinstance(probs, list) and probs and isinstance(probs[0], list):
+                n_states = len(probs[0])
+                for t, s, prow in zip(times, state, probs):
+                    row: Dict[str, Any] = {"time": t, "state": s}
+                    for j in range(n_states):
+                        row[f"p{j}"] = prow[j] if j < len(prow) else None
+                    rows.append(row)
+            elif isinstance(state, list):
+                rows = [{"time": t, "state": s} for t, s in zip(times, state)]
+        if rows:
+            payload["rows"] = rows
+        return payload
+    except Exception:
+        return payload
+
+
 @mcp.tool()
 @_auto_connect_wrapper
 def regime_detect(
@@ -98,7 +135,7 @@ def regime_detect(
                         payload["cp_prob"] = [float(v) for v in tail.tolist()]
                         payload["times"] = t_fmt[-n:]
                         payload["change_points"] = recent_cps
-            return payload
+            return _attach_toon_rows(payload, method)
 
         elif method == 'ms_ar':
             try:
@@ -143,7 +180,7 @@ def regime_detect(
                         payload["state"] = [int(s) for s in st_tail.tolist()]
                         payload["times"] = t_fmt[-n:]
                         payload["state_probabilities"] = [[float(v) for v in row] for row in probs.tolist()][-n:]
-            return payload
+            return _attach_toon_rows(payload, method)
 
         else:  # 'hmm' (mixture/HMM-lite)
             try:

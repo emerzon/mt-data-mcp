@@ -294,9 +294,9 @@ class PretrainedMethodAdapter(ForecastMethodAdapter):
         **kwargs
     ) -> Tuple[np.ndarray, Dict[str, Any]]:
         
-        if self.method == 'chronos_bolt':
+        if self.method in ('chronos_bolt', 'chronos2'):
             f_vals, f_quantiles, params_used, error = _chronos_bolt_impl(
-                series=series, fh=fh, params=params, n=fh
+                series=series, fh=fh, params=params, n=len(series)
             )
             if error:
                 raise RuntimeError(error)
@@ -318,6 +318,100 @@ class PretrainedMethodAdapter(ForecastMethodAdapter):
             
         else:
             raise ValueError(f"Unknown pretrained method: {self.method}")
+
+
+class SktimeMethodAdapter(ForecastMethodAdapter):
+    """Adapter for sktime BaseForecaster models via dynamic import.
+
+    Usage (params):
+      - estimator: fully qualified class path, e.g.,
+          'sktime.forecasting.naive.NaiveForecaster'
+          'sktime.forecasting.theta.ThetaForecaster'
+          'sktime.forecasting.arima.ARIMA'
+          'sktime.forecasting.ets.AutoETS'
+      - estimator_params: dict passed to estimator constructor
+      - seasonality (optional): if provided and estimator supports 'sp', inject sp
+    """
+
+    def execute(
+        self,
+        series: np.ndarray,
+        fh: int,
+        params: Dict[str, Any],
+        **kwargs
+    ) -> Tuple[np.ndarray, Dict[str, Any]]:
+        try:
+            import importlib
+            import importlib.util as _importlib_util  # noqa: F401
+            import pandas as pd
+        except Exception as e:
+            raise RuntimeError(f"Required dependencies missing for sktime adapter: {e}")
+
+        # Resolve estimator (support convenience aliases)
+        est_path = str(params.get('estimator') or '').strip()
+        if not est_path:
+            alias_map = {
+                'sktime': ('sktime.forecasting.naive.NaiveForecaster', {'strategy': 'last'}),
+                'skt_naive': ('sktime.forecasting.naive.NaiveForecaster', {'strategy': 'last'}),
+                'skt_snaive': ('sktime.forecasting.naive.NaiveForecaster', {'strategy': 'last'}),  # sp injected below
+                'skt_theta': ('sktime.forecasting.theta.ThetaForecaster', {}),
+                'skt_autoets': ('sktime.forecasting.ets.AutoETS', {}),
+                'skt_arima': ('sktime.forecasting.arima.ARIMA', {}),
+                'skt_autoarima': ('sktime.forecasting.arima.AutoARIMA', {}),
+            }
+            cls, defaults = alias_map.get(self.method, alias_map['sktime'])
+            est_path = cls
+            # Merge defaults unless user provided overrides
+            ep = params.get('estimator_params')
+            if not ep:
+                params['estimator_params'] = defaults
+        try:
+            module_name, class_name = est_path.rsplit('.', 1)
+            mod = importlib.import_module(module_name)
+            Estimator = getattr(mod, class_name)
+        except Exception as e:
+            raise RuntimeError(f"Failed to import sktime estimator '{est_path}': {e}")
+
+        est_kwargs_in = params.get('estimator_params')
+        if isinstance(est_kwargs_in, dict):
+            est_kwargs = dict(est_kwargs_in)
+        else:
+            # Allow JSON string from UI
+            try:
+                import json as _json
+                est_kwargs = dict(_json.loads(str(est_kwargs_in))) if est_kwargs_in else {}
+            except Exception:
+                est_kwargs = {}
+
+        # Inject seasonal period if available and not explicitly set
+        m = params.get('seasonality') or kwargs.get('m')
+        if m and 'sp' not in est_kwargs:
+            est_kwargs['sp'] = int(m)
+
+        # Build sktime forecaster
+        try:
+            forecaster = Estimator(**est_kwargs)
+        except Exception as e:
+            raise RuntimeError(f"Failed to construct {Estimator.__name__} with params {est_kwargs}: {e}")
+
+        # Prepare y and fh
+        y = pd.Series(np.asarray(series, dtype=float))
+        fh_idx = list(range(1, int(fh) + 1))
+
+        # Optional exogenous variables
+        X = kwargs.get('exog_used')
+        X_future = kwargs.get('exog_future')
+        try:
+            forecaster.fit(y, X=X)
+            y_pred = forecaster.predict(fh_idx, X=X_future)
+        except Exception as e:
+            raise RuntimeError(f"sktime forecasting failed: {e}")
+
+        f_vals = np.asarray(y_pred, dtype=float)
+        return f_vals, {
+            'estimator': est_path,
+            'estimator_params': est_kwargs,
+        }
 
 
 def get_method_adapter(method: str) -> ForecastMethodAdapter:
@@ -349,8 +443,12 @@ def get_method_adapter(method: str) -> ForecastMethodAdapter:
         return MLMethodAdapter(method_l)
     
     # Pretrained methods
-    elif method_l in ('chronos_bolt', 'timesfm', 'lag_llama'):
+    elif method_l in ('chronos_bolt', 'chronos2', 'timesfm', 'lag_llama'):
         return PretrainedMethodAdapter(method_l)
+    
+    # sktime generic adapter
+    elif method_l in ('sktime',):
+        return SktimeMethodAdapter(method_l)
     
     else:
         raise ValueError(f"Unknown forecast method: {method}")
@@ -365,5 +463,6 @@ __all__ = [
     'StatisticalMethodAdapter',
     'MLMethodAdapter',
     'PretrainedMethodAdapter',
+    'SktimeMethodAdapter',
     'get_method_adapter'
 ]

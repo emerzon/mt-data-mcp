@@ -58,6 +58,11 @@ export async function getWavelets() {
   return data as { available: boolean; families: string[]; wavelets: string[]; by_family: Record<string, string[]> }
 }
 
+export async function getSktimeEstimators() {
+  const { data } = await api.get('/api/sktime/estimators')
+  return data as { available: boolean; estimators: { name: string; class_path: string }[]; error?: string }
+}
+
 export async function forecastPrice(body: any) {
   const { data } = await api.post('/api/forecast/price', body)
   return data as import('../types').ForecastPayload

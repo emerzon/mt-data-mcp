@@ -234,6 +234,7 @@ _FORECAST_METHODS = (
     "mlf_rf",
     "mlf_lightgbm",
     "chronos_bolt",
+    "chronos2",
     "timesfm",
     "lag_llama",
     "moirai",
@@ -246,6 +247,13 @@ _FORECAST_METHODS = (
     "gt_mqf2",
     "gt_npts",
     "ensemble",
+    "sktime",
+    "skt_naive",
+    "skt_snaive",
+    "skt_theta",
+    "skt_autoets",
+    "skt_arima",
+    "skt_autoarima",
 )
 
 try:

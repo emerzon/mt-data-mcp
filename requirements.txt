@@ -11,9 +11,12 @@ typing-extensions>=4.15.0
 python-dotenv>=1.1.1
 dateparser>=1.2.2
 
-# pandas
-pandas>=2.3.2; python_version >= "3.10"
-pandas>=2.0.3; python_version < "3.10"
+# Pin NumPy below 2.0 to keep binary wheels compatible with SciPy/statsmodels
+numpy>=1.26.4,<2.0.0
+
+# pandas (cap to <2.2 to satisfy gluonts[prophet] constraints)
+pandas>=2.1.4,<2.2; python_version >= "3.10"
+pandas>=2.0.3,<2.2; python_version < "3.10"
 
 # pandas-ta (install classic fork from GitHub). Requires Git available on PATH.
 # Use distribution name to match package metadata (pandas-ta-classic)
@@ -45,6 +48,8 @@ uvicorn[standard]>=0.23.2; python_version < "3.9"
 # Optional: classical/ML/DL forecasting frameworks (enabled to support all methods)
 # statsforecast (classical, numba-accelerated)
 statsforecast>=2.0.2
+# sktime unified forecasting API
+sktime>=0.28.0
 # mlforecast (tree/GBM over lags); LightGBM optional
 mlforecast>=1.0.2
 lightgbm>=4.6.0
@@ -58,13 +63,16 @@ torchvision>=0.21.0,<0.22; python_version < "3.12"
 torch>=2.3.0; python_version >= "3.12"
 torchvision>=0.17.0; python_version >= "3.12"
 
+# Pillow (torchvision dependency; 10.3.0 avoids DLL issues on Win)
+pillow>=10.3.0,<11.1
+
 # Optional: GluonTS + Prophet (enable gt_* methods)
 gluonts[torch]>=0.14.3    # required for gluonts.torch.* estimators
 cpflows>=0.2.0           # required by MQF2
 prophet>=1.1             # required by gt_prophet
 
 # Optional: foundation models (native packages)
-chronos-forecasting==1.5.3   # Chronos-Bolt
+chronos-forecasting>=2.0.0   # Chronos-2 foundation model
 timesfm>=2.0.0               # TimesFM (if available)
 
 uni2ts>=1.0.1            # Moirai via uni2ts

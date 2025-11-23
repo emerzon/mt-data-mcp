@@ -52,7 +52,7 @@ def get_forecast_methods_data() -> Dict[str, Any]:
         if method == "mlf_lightgbm" and (not _MLF_AVAILABLE or not _LGB_AVAILABLE):
             available = False
             reqs.append("mlforecast, lightgbm")
-        if method == "chronos_bolt" and not _CHRONOS_AVAILABLE:
+        if method in ("chronos_bolt", "chronos2") and not _CHRONOS_AVAILABLE:
             available = False
             reqs.append("chronos-forecasting")
         if method == "timesfm" and not _TIMESFM_AVAILABLE:
@@ -183,10 +183,18 @@ def get_forecast_methods_data() -> Dict[str, Any]:
     ], ["neuralforecast[torch]"], {"price": True, "return": True, "ci": True})
     
     # Foundation models
-    add("chronos_bolt", "Chronos-Bolt foundation model.", [
-        {"name": "model_name", "type": "str", "default": "amazon/chronos-bolt-base"},
+    add("chronos_bolt", "Chronos-2 foundation model (Chronos-Bolt successor; upstream model supports cross-learning, multivariate targets, and covariates—current adapter is univariate).", [
+        {"name": "model_name", "type": "str", "default": "amazon/chronos-2"},
         {"name": "context_length", "type": "int", "default": 512},
-    ], ["chronos-forecasting"], {"price": True, "return": True, "ci": True})
+        {"name": "quantiles", "type": "list", "default": [0.5]},
+        {"name": "device_map", "type": "str", "default": "auto"},
+    ], ["chronos-forecasting>=2.0.0"], {"price": True, "return": True, "ci": True})
+    add("chronos2", "Chronos-2 foundation model (preferred name; same as chronos_bolt). Upstream supports cross-learning, multivariate targets, and covariates—current adapter is univariate.", [
+        {"name": "model_name", "type": "str", "default": "amazon/chronos-2"},
+        {"name": "context_length", "type": "int", "default": 512},
+        {"name": "quantiles", "type": "list", "default": [0.5]},
+        {"name": "device_map", "type": "str", "default": "auto"},
+    ], ["chronos-forecasting>=2.0.0"], {"price": True, "return": True, "ci": True})
     add("timesfm", "Google TimesFM foundation model.", [
         {"name": "context_length", "type": "int", "default": 512},
     ], ["timesfm"], {"price": True, "return": True, "ci": True})

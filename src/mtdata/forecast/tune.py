@@ -125,6 +125,12 @@ _DEFAULT_SPACES_METHOD_SCOPED: Dict[str, Dict[str, Any]] = {
     "chronos_bolt": {
         "context_length": {"type": "int", "min": 64, "max": 320},
     },
+    "chronos2": {
+        "context_length": {"type": "int", "min": 64, "max": 320},
+    },
+    "chronos2": {
+        "context_length": {"type": "int", "min": 64, "max": 320},
+    },
     "timesfm": {
         "context_length": {"type": "int", "min": 64, "max": 320},
     },

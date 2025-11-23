@@ -37,6 +37,7 @@ FORECAST_METHODS = (
     "mlf_rf",
     "mlf_lightgbm",
     "chronos_bolt",
+    "chronos2",
     "timesfm",
     "lag_llama",
     "gt_deepar",
@@ -224,10 +225,20 @@ def get_forecast_methods_data() -> Dict[str, Any]:
         {"price": True, "return": True, "volatility": True, "ci": True})
 
     # Pre-trained models
-    add("chronos_bolt", "Amazon Chronos-BOLT pre-trained time series model",
-        [{"name": "device", "type": "str", "description": "Compute device (cpu/cuda, default: auto)"},
-         {"name": "limit_prediction_length", "type": "bool", "description": "Limit to horizon (default: True)"}],
-        ["chronos-forecasting", "torch"],
+    add("chronos_bolt", "Chronos-2 foundation model (alias: chronos2). Successor to Chronos-Bolt; upstream supports cross-learning, multivariate, and covariates—current adapter uses univariate target only.",
+        [{"name": "model_name", "type": "str", "description": "Hugging Face model id (default: amazon/chronos-2)"},
+         {"name": "context_length", "type": "int", "description": "Context window length (auto if omitted)"},
+         {"name": "quantiles", "type": "list", "description": "Quantile levels to return (default: [0.5])"},
+         {"name": "device_map", "type": "str", "description": "Device map for loading (default: auto)"}],
+        ["chronos-forecasting>=2.0.0", "torch"],
+        {"price": True, "return": True, "volatility": True, "ci": True})
+
+    add("chronos2", "Chronos-2 foundation model (preferred name; same implementation as chronos_bolt). Upstream supports cross-learning, multivariate, and covariates—current adapter uses univariate target only.",
+        [{"name": "model_name", "type": "str", "description": "Hugging Face model id (default: amazon/chronos-2)"},
+         {"name": "context_length", "type": "int", "description": "Context window length (auto if omitted)"},
+         {"name": "quantiles", "type": "list", "description": "Quantile levels to return (default: [0.5])"},
+         {"name": "device_map", "type": "str", "description": "Device map for loading (default: auto)"}],
+        ["chronos-forecasting>=2.0.0", "torch"],
         {"price": True, "return": True, "volatility": True, "ci": True})
 
     add("timesfm", "Google TimesFM pre-trained time series foundation model",
@@ -339,7 +350,7 @@ def get_forecast_methods_data() -> Dict[str, Any]:
             "neural": ["nhits", "nbeatsx", "tft", "patchtst"],
             "statsforecast": ["sf_autoarima", "sf_theta", "sf_autoets", "sf_seasonalnaive"],
             "machine_learning": ["mlf_rf", "mlf_lightgbm"],
-            "pretrained": ["chronos_bolt", "timesfm", "lag_llama"],
+            "pretrained": ["chronos_bolt", "chronos2", "timesfm", "lag_llama"],
             "ensemble": ["ensemble"]
         }
     }
@@ -357,7 +368,7 @@ def get_method_category(method: str) -> str:
         "sf_autoarima": "statsforecast", "sf_theta": "statsforecast",
         "sf_autoets": "statsforecast", "sf_seasonalnaive": "statsforecast",
         "mlf_rf": "machine_learning", "mlf_lightgbm": "machine_learning",
-        "chronos_bolt": "pretrained", "timesfm": "pretrained", "lag_llama": "pretrained",
+        "chronos_bolt": "pretrained", "chronos2": "pretrained", "timesfm": "pretrained", "lag_llama": "pretrained",
         "ensemble": "ensemble"
     }
     return categories.get(method, "unknown")

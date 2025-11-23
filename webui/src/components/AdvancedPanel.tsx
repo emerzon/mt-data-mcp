@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { MethodsMeta } from '../types'
 import { useQuery } from '@tanstack/react-query'
-import { getDimredMethods } from '../api/client'
+import { getDimredMethods, getSktimeEstimators } from '../api/client'
 import { DenoiseModal, DenoiseSpecUI } from './DenoiseModal'
 
 type ParamDef = { name: string; type: string; default?: any; description?: string }
@@ -25,6 +25,8 @@ export function AdvancedPanel({ methods, method, methodParams, onMethodParams, d
   const { data: dr } = useQuery({ queryKey: ['dr_methods'], queryFn: getDimredMethods })
   const drMethods = (dr?.methods ?? []).filter((m: any) => m.available)
   const drParams: ParamDef[] = (drMethods.find((m: any) => m.method === (dimredMethod || ''))?.params) || []
+  const isSktime = method === 'sktime'
+  const { data: skt } = useQuery({ queryKey: ['sktime_estimators'], queryFn: getSktimeEstimators, enabled: isSktime })
 
   const denoiseSummary = denoise?.method
     ? `${denoise.method}${denoise.params ? ' • params' : ''}`
@@ -34,6 +36,53 @@ export function AdvancedPanel({ methods, method, methodParams, onMethodParams, d
     <div className="space-y-4">
       <div>
         <div className="text-xs text-slate-400 mb-2">Method Parameters</div>
+        {isSktime && (
+          <div className="mb-2 flex items-center gap-2">
+            <span className="text-xs text-slate-400">Preset:</span>
+            <select
+              className="select"
+              onChange={(e) => {
+                const v = e.target.value
+                if (!v) return
+                const presets: Record<string, any> = {
+                  naive: { estimator: 'sktime.forecasting.naive.NaiveForecaster', estimator_params: { strategy: 'last' } },
+                  snaive: { estimator: 'sktime.forecasting.naive.NaiveForecaster', estimator_params: { strategy: 'last' } },
+                  theta: { estimator: 'sktime.forecasting.theta.ThetaForecaster' },
+                  autoets: { estimator: 'sktime.forecasting.ets.AutoETS' },
+                  arima: { estimator: 'sktime.forecasting.arima.ARIMA' },
+                  autoarima: { estimator: 'sktime.forecasting.arima.AutoARIMA' },
+                }
+                onMethodParams({ ...methodParams, ...(presets[v] || {}) })
+              }}
+              defaultValue=""
+            >
+              <option value="">select…</option>
+              <option value="naive">Naive (last)</option>
+              <option value="snaive">Seasonal Naive</option>
+              <option value="theta">Theta</option>
+              <option value="autoets">AutoETS</option>
+              <option value="arima">ARIMA</option>
+              <option value="autoarima">AutoARIMA</option>
+            </select>
+            <span className="text-xs text-slate-500">Fills estimator fields below</span>
+          </div>
+        )}
+        {isSktime && (
+          <div className="mb-2 flex items-center gap-2">
+            <span className="text-xs text-slate-400">Estimator:</span>
+            <select
+              className="select w-96"
+              value={methodParams?.estimator || ''}
+              onChange={(e) => onMethodParams({ ...methodParams, estimator: e.target.value })}
+            >
+              <option value="">select class…</option>
+              {(skt?.estimators || []).map((it: any) => (
+                <option key={it.class_path} value={it.class_path}>{it.class_path}</option>
+              ))}
+            </select>
+            {!skt?.available && <span className="text-xs text-amber-500">sktime not installed{skt?.error ? ` (${skt.error})` : ''}</span>}
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-2">
           {meta?.params?.map(p => (
             <label key={p.name} className="flex flex-col gap-1" title={p.description || ''}>

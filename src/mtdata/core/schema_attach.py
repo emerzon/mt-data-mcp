@@ -111,6 +111,29 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
                     _set_ref("simplify", "#/$defs/SimplifySpec", allow_null=True)
                 if name == "data_fetch_ticks":
                     _set_ref("simplify", "#/$defs/SimplifySpec", allow_null=True)
+                # Trading schemas: add enums and param docs where helpful
+                if name == "trading_pending_place":
+                    # Clarify acceptable order type values for pending orders
+                    if "type" in params:
+                        params["type"] = {
+                            "type": "string",
+                            "enum": [
+                                "BUY", "SELL",
+                                "BUYLIMIT", "BUYSTOP",
+                                "SELLLIMIT", "SELLSTOP"
+                            ],
+                            "description": "Direction or explicit pending type. BUY/SELL will auto-select LIMIT/STOP based on price relative to Bid/Ask."
+                        }
+                    # Document expiration flexibility
+                    if "expiration" in params:
+                        params["expiration"] = {
+                            "anyOf": [
+                                {"type": "string"},
+                                {"type": "number"},
+                                {"type": "null"}
+                            ],
+                            "description": "GTC tokens (e.g., 'GTC'), ISO datetime, epoch seconds, or natural language (e.g., 'tomorrow 14:00')."
+                        }
             except Exception:
                 pass
             _apply_param_hints(schema)

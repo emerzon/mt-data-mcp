@@ -5,20 +5,31 @@ import numpy as np
 
 from .schema import SimplifySpec
 from .constants import SIMPLIFY_DEFAULT_METHOD, SIMPLIFY_DEFAULT_MODE, SIMPLIFY_DEFAULT_MIN_POINTS, SIMPLIFY_DEFAULT_MAX_POINTS, SIMPLIFY_DEFAULT_RATIO
-from ..utils.simplify import (_choose_simplify_points as _choose_simplify_points_util, _lttb_select_indices as _lttb_select_indices_util, _rdp_select_indices as _rdp_select_indices_util, _pla_select_indices as _pla_select_indices_util, _apca_select_indices as _apca_select_indices_util, _select_indices_for_timeseries as _select_indices_for_timeseries_util, _rdp_autotune_epsilon as _rdp_autotune_epsilon_util, _pla_autotune_max_error as _pla_autotune_max_error_util, _apca_autotune_max_error as _apca_autotune_max_error_util)
+from typing import Any, Dict, List, Optional, Tuple
+import pandas as pd
+from .schema import SimplifySpec
+from ..services.simplification import _simplify_dataframe_rows_ext as _simplify_impl
+from ..utils.simplify import (
+    _choose_simplify_points, _select_indices_for_timeseries, _lttb_select_indices,
+    _rdp_select_indices, _pla_select_indices, _apca_select_indices
+)
 
-def _simplify_dataframe_rows_ext(df: pd.DataFrame, headers: List[str], simplify: Optional[Dict[str, Any]]):
-    """Wrapper delegating row simplification to utils.simplify to reduce server size."""
-    try:
-        from ..utils.simplify import _simplify_dataframe_rows as _impl  # type: ignore
-        return _impl(df, headers, simplify)
-    except Exception:
-        # Fallback to local implementation if util import fails
-        return _simplify_dataframe_rows(df, headers, simplify)  # type: ignore
+# Export helper functions that were previously available here
+__all__ = [
+    '_simplify_dataframe_rows_ext',
+    '_choose_simplify_points',
+    '_select_indices_for_timeseries',
+    '_lttb_select_indices',
+    '_rdp_select_indices',
+    '_pla_select_indices',
+    '_apca_select_indices'
+]
 
-def _lttb_select_indices(x: List[float], y: List[float], n_out: int) -> List[int]:
-    return _lttb_select_indices_util(x, y, n_out)
-
+def _simplify_dataframe_rows_ext(df: pd.DataFrame, headers: List[str], simplify: SimplifySpec) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+    """
+    Delegate to services.simplification._simplify_dataframe_rows_ext
+    """
+    return _simplify_impl(df, headers, simplify)
 
 def _default_target_points(total: int) -> int:
     """Default target points when simplify requested without explicit points/ratio."""

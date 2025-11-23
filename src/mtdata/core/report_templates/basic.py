@@ -432,26 +432,29 @@ def template_basic(
                 tail_rows = ctx
             else:
                 tail_rows = []
-        
-        last = tail_rows[-1] if tail_rows else {}
-        clos: List[float] = []
-        for r in (tail_rows[-30:] if tail_rows else []):
-            v = r.get('close')
-            try:
-                clos.append(float(v))
-            except Exception:
-                continue
-        compact = _compute_compact_trend(tail_rows)
-        ctx_obj: Dict[str, Any] = {
-            'symbol': symbol,
-            'timeframe': tf,
-            'last_snapshot': last,
-            'sparkline_close': clos,
-            'notes': 'Indicators included: EMA(20), EMA(50), RSI(14), MACD(12,26,9).',
-        }
-        if compact:
-            ctx_obj['trend_compact'] = compact
-        report['sections']['context'] = ctx_obj
+
+        if not tail_rows:
+            report['sections']['context'] = {'error': 'No candle data available for context section.'}
+        else:
+            last = tail_rows[-1] if tail_rows else {}
+            clos: List[float] = []
+            for r in (tail_rows[-30:] if tail_rows else []):
+                v = r.get('close')
+                try:
+                    clos.append(float(v))
+                except Exception:
+                    continue
+            compact = _compute_compact_trend(tail_rows)
+            ctx_obj: Dict[str, Any] = {
+                'symbol': symbol,
+                'timeframe': tf,
+                'last_snapshot': last,
+                'sparkline_close': clos,
+                'notes': 'Indicators included: EMA(20), EMA(50), RSI(14), MACD(12,26,9).',
+            }
+            if compact:
+                ctx_obj['trend_compact'] = compact
+            report['sections']['context'] = ctx_obj
 
     # Pivots (D1)
     from ..pivot import pivot_compute_points
@@ -484,7 +487,7 @@ def template_basic(
             ctxs: Dict[str, Any] = {}
             for tf_i in tf_list:
                 snap = context_for_tf(symbol, tf_i, denoise, limit=200, tail=30)
-                if snap:
+                if snap and any(v is not None for v in snap.values()):
                     ctxs[tf_i] = snap
             if ctxs:
                 secs['contexts_multi'] = ctxs

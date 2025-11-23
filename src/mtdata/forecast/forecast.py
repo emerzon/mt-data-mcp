@@ -228,10 +228,28 @@ def get_forecast_methods_data() -> Dict[str, Any]:
     add("sf_seasonalnaive", "StatsForecast SeasonalNaive.", [], ["statsforecast"], {"price": True, "return": True, "ci": False})
     add("mlf_rf", "MLForecast RandomForest.", [], ["mlforecast", "scikit-learn"], {"price": True, "return": True, "ci": False})
     add("mlf_lightgbm", "MLForecast LightGBM.", [], ["mlforecast", "lightgbm"], {"price": True, "return": True, "ci": False})
-    add("chronos_bolt", "Amazon Chronos-Bolt (native Chronos).", [], ["chronos-forecasting"], {"price": True, "return": True, "ci": False})
+    add("chronos_bolt", "Chronos-2 foundation model (alias: chronos2). Upstream model supports cross-learning, multivariate, and covariates — adapter currently uses univariate target only.", [
+        {"name": "model_name", "type": "str", "description": "Hugging Face model id (default: amazon/chronos-2)"},
+        {"name": "context_length", "type": "int", "description": "Context window length (auto if omitted)"},
+        {"name": "quantiles", "type": "list", "description": "Quantile levels to return (default: [0.5])"},
+        {"name": "device_map", "type": "str", "description": "Device placement (default: auto)"},
+    ], ["chronos-forecasting>=2.0.0"], {"price": True, "return": True, "ci": False})
+    add("chronos2", "Chronos-2 foundation model (preferred name; same as chronos_bolt). Upstream model supports cross-learning, multivariate, and covariates — adapter currently uses univariate target only.", [
+        {"name": "model_name", "type": "str", "description": "Hugging Face model id (default: amazon/chronos-2)"},
+        {"name": "context_length", "type": "int", "description": "Context window length (auto if omitted)"},
+        {"name": "quantiles", "type": "list", "description": "Quantile levels to return (default: [0.5])"},
+        {"name": "device_map", "type": "str", "description": "Device placement (default: auto)"},
+    ], ["chronos-forecasting>=2.0.0"], {"price": True, "return": True, "ci": False})
     add("timesfm", "Google TimesFM (native package).", [], ["timesfm"], {"price": True, "return": True, "ci": False})
     add("lag_llama", "Lag-Llama (native estimator).", [], ["lag-llama", "gluonts", "torch"], {"price": True, "return": True, "ci": False})
-    add("moirai", "Salesforce Moirai (uni2ts).", [], ["uni2ts", "torch"], {"price": True, "return": True, "ci": False})
+    add("moirai", "Salesforce Moirai (uni2ts).", [
+        {"name": "variant", "type": "str", "description": "Model variant (default: moirai-1.1-R-large, other options: moirai-1.1-R-small, moirai-1.1-R-base, 1.0-R-small, 1.0-R-base, 1.0-R-large)"},
+        {"name": "context_length", "type": "int", "description": "Context window length (auto if omitted)"},
+        {"name": "device", "type": "str", "description": "Torch device string (e.g., 'cpu', 'cuda:0')"},
+        {"name": "quantiles", "type": "list", "description": "Quantile levels to return (default: [0.5])"},
+        {"name": "do_mean", "type": "bool", "description": "Return mean estimate if available (default: True)"},
+        {"name": "do_median", "type": "bool", "description": "Fallback to median if mean unavailable (default: True)"},
+    ], ["uni2ts", "torch"], {"price": True, "return": True, "ci": False})
 
     # GluonTS Torch quick-train models
     add("gt_deepar", "GluonTS DeepAR (quick train)", [
@@ -344,6 +362,7 @@ _FORECAST_METHODS = (
     "mlf_rf",
     "mlf_lightgbm",
     "chronos_bolt",
+    "chronos2",
     "timesfm",
     "lag_llama",
     "moirai",

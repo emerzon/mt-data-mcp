@@ -1,32 +1,10 @@
 
+
 from typing import Any, Dict, Optional, List
 import pandas as pd
-import numpy as np
 
 from .schema import DenoiseSpec
 from .server import mcp
-
-try:
-    import pywt as _pywt  # type: ignore
-except Exception:
-    _pywt = None  # optional
-try:
-    from PyEMD import EMD as _EMD, EEMD as _EEMD, CEEMDAN as _CEEMDAN  # type: ignore
-except Exception:
-    _EMD = _EEMD = _CEEMDAN = None  # optional
-
-
-_DENOISE_METHODS = (
-    "none",        # no-op
-    "ema",         # exponential moving average
-    "sma",         # simple moving average
-    "median",      # rolling median
-    "lowpass_fft", # zero-phase FFT low-pass
-    "wavelet",     # wavelet shrinkage (PyWavelets optional)
-    "emd",         # empirical mode decomposition (PyEMD optional)
-    "eemd",        # ensemble EMD (PyEMD optional)
-    "ceemdan",     # complementary EEMD with adaptive noise (PyEMD optional)
-)
 
 def _denoise_series(
     s: pd.Series,

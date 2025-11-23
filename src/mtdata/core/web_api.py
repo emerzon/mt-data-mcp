@@ -39,6 +39,30 @@ from ..forecast.backtest import forecast_backtest as _backtest_impl
 from ..forecast.common import fetch_history as _fetch_history_impl
 from .data import data_fetch_candles as _data_fetch_candles
 from .pivot import pivot_compute_points
+from importlib.util import find_spec as _find_spec
+
+def _list_sktime_forecasters() -> Dict[str, Any]:
+    if _find_spec('sktime') is None:
+        return {"available": False, "error": "sktime not installed", "estimators": []}
+    try:
+        from sktime.registry import all_estimators  # type: ignore
+        ests = all_estimators(estimator_types="forecaster", as_dataframe=True)
+        items = []
+        for _, row in ests.iterrows():
+            cls = row.get('object') or row.get('class')
+            name = row.get('name') or getattr(cls, '__name__', None)
+            module = row.get('module') or getattr(cls, '__module__', None)
+            if not cls or not name or not module:
+                continue
+            class_path = f"{module}.{name}"
+            items.append({
+                "name": str(name),
+                "class_path": class_path,
+            })
+        items.sort(key=lambda x: x['name'].lower())
+        return {"available": True, "estimators": items}
+    except Exception as e:
+        return {"available": False, "error": str(e), "estimators": []}
 
 def _call_tool_raw(func):
     raw = getattr(func, '__wrapped__', None)
@@ -207,7 +231,7 @@ def get_methods() -> Dict[str, Any]:
                 m["available"] = bool(ok)
                 if ok:
                     m["requires"] = []
-            elif name == "chronos_bolt":
+            elif name in ("chronos_bolt", "chronos2"):
                 ok = _has("chronos")
                 m["available"] = bool(ok)
                 if ok:
@@ -227,6 +251,11 @@ def get_vol_methods() -> Dict[str, Any]:
     if not isinstance(data, dict):
         return {"methods": []}
     return data
+
+
+@app.get("/api/sktime/estimators")
+def get_sktime_estimators() -> Dict[str, Any]:
+    return _list_sktime_forecasters()
 
 
 @app.get("/api/denoise/methods")

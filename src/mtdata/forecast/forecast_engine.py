@@ -212,6 +212,7 @@ _FORECAST_METHODS = (
     "mlf_rf",
     "mlf_lightgbm",
     "chronos_bolt",
+    "chronos2",
     "timesfm",
     "lag_llama",
     "ensemble",
@@ -518,8 +519,8 @@ def forecast_engine(
                 forecast_values, ci_values = _sarimax_impl(target_series, horizon=horizon, seasonal=False, ci_alpha=ci_alpha, **p)
             elif method_l == 'sarima':
                 forecast_values, ci_values = _sarimax_impl(target_series, horizon=horizon, seasonal=True, seasonality=seasonality, ci_alpha=ci_alpha, **p)
-            elif method_l in ('chronos_bolt', 'timesfm'):
-                if method_l == 'chronos_bolt':
+            elif method_l in ('chronos_bolt', 'chronos2', 'timesfm'):
+                if method_l in ('chronos_bolt', 'chronos2'):
                     forecast_values = _chronos_bolt_impl(target_series, horizon=horizon, **p)
                 elif method_l == 'timesfm':
                     forecast_values = _timesfm_impl(target_series, horizon=horizon, **p)

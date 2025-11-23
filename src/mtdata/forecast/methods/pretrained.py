@@ -12,85 +12,77 @@ def forecast_chronos_bolt(
     params: Dict[str, Any],
     n: int,
 ) -> Tuple[Optional[np.ndarray], Optional[Dict[str, List[float]]], Dict[str, Any], Optional[str]]:
-    """Chronos-Bolt forecasting via native Chronos pipeline.
-
-    Returns (f_vals, forecast_quantiles, params_used, error)
-    """
+    """Chronos-2 forecasting via Chronos2Pipeline."""
     p = params or {}
-    model_name = str(p.get('model_name', 'amazon/chronos-bolt-base'))
+    model_name = str(p.get('model_name', 'amazon/chronos-2'))
     ctx_len = int(p.get('context_length', 0) or 0)
-    device = p.get('device')
     device_map = p.get('device_map', 'auto')
-    quantization = str(p.get('quantization')) if p.get('quantization') is not None else None
+    series_id = str(p.get('series_id', 'series'))
     quantiles = p.get('quantiles') if isinstance(p.get('quantiles'), (list, tuple)) else None
-    revision = p.get('revision')
-    trust_remote_code = bool(p.get('trust_remote_code', False))
+
     # Select context window
     if ctx_len and ctx_len > 0:
         context = series[-int(min(n, ctx_len)) :]
     else:
         context = series
 
-    f_vals: Optional[np.ndarray] = None
-    fq: Dict[str, List[float]] = {}
-    last_err: Optional[Exception] = None
-
-    # Try native Chronos first
+    # Build minimal context dataframe expected by Chronos2Pipeline
     try:
-        from chronos import BaseChronosPipeline as _BaseChronosPipeline  # type: ignore
-        import torch as _torch  # type: ignore
-        _kwargs: Dict[str, Any] = {}
-        if quantization:
-            if str(quantization).lower() in ('int8', '8bit', 'bnb.int8'):
-                _kwargs['load_in_8bit'] = True
-            elif str(quantization).lower() in ('int4', '4bit', 'bnb.int4'):
-                _kwargs['load_in_4bit'] = True
-        if revision:
-            _kwargs['revision'] = revision
-        # Optional dtype
-        _torch_dtype = p.get('torch_dtype')
-        if isinstance(_torch_dtype, str):
-            _td = _torch_dtype.strip().lower()
-            if _td in ('bf16', 'bfloat16'):
-                _kwargs['torch_dtype'] = _torch.bfloat16
-            elif _td in ('fp16', 'float16', 'half'):
-                _kwargs['torch_dtype'] = _torch.float16
-            elif _td in ('fp32', 'float32'):
-                _kwargs['torch_dtype'] = _torch.float32
-        pipe = _BaseChronosPipeline.from_pretrained(model_name, device_map=device_map, **_kwargs)  # type: ignore[arg-type]
-        q_levels = list(quantiles) if quantiles else [0.5]
-        q_levels = [float(q) for q in q_levels]
-        _context_tensor = _torch.tensor(context, dtype=_torch.float32)
-        q_tensor, mean_tensor = pipe.predict_quantiles(
-            context=_context_tensor,
+        import pandas as _pd  # type: ignore
+        from chronos import Chronos2Pipeline as _Chronos2Pipeline  # type: ignore
+    except Exception as ex:
+        return (None, None, {}, f"chronos2 import error: {ex}")
+
+    try:
+        q_levels = [float(q) for q in (quantiles or [0.5])]
+        context_df = _pd.DataFrame({
+            "id": series_id,
+            "timestamp": _pd.RangeIndex(len(context)),
+            "target": _pd.Series(context, dtype=float),
+        })
+
+        pipe = _Chronos2Pipeline.from_pretrained(model_name, device_map=device_map)
+        pred_df = pipe.predict_df(
+            context_df,
             prediction_length=int(fh),
             quantile_levels=q_levels,
+            id_column="id",
+            timestamp_column="timestamp",
+            target="target",
         )
-        arr_mean = mean_tensor.detach().cpu().numpy()[0]
-        for i, ql in enumerate(q_levels):
-            q_arr = q_tensor[:, :, i].detach().cpu().numpy()[0]
-            fq[str(float(ql))] = [float(v) for v in np.asarray(q_arr, dtype=float)[:fh].tolist()]
-        if quantiles and '0.5' in fq:
-            f_vals = np.asarray(fq['0.5'], dtype=float)
-        else:
-            vals = np.asarray(arr_mean, dtype=float)
-            f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
-    except Exception as ex1:
-        last_err = ex1
-        return (None, None, {}, f"chronos error: {last_err}")
+        pred_df = pred_df[pred_df["id"] == series_id]
+        if pred_df.empty:
+            return (None, None, {}, "chronos2 error: empty prediction frame")
 
-    params_used = {
-        'model_name': model_name,
-        'context_length': int(ctx_len) if ctx_len else int(n),
-        'device': device,
-        'device_map': device_map,
-        'quantization': quantization,
-        'revision': revision,
-        'trust_remote_code': trust_remote_code,
-    }
-    if fq:
-        params_used['quantiles'] = sorted(list(fq.keys()), key=lambda x: float(x))
-    return (f_vals, fq or None, params_used, None)
+        fq: Dict[str, List[float]] = {}
+        for q in q_levels:
+            col_name = f"{float(q):g}"
+            if col_name in pred_df.columns:
+                fq[col_name] = [float(v) for v in pred_df[col_name].tolist()[:fh]]
+
+        # Choose point forecast: prefer median quantile then mean/predictions column
+        f_vals: Optional[np.ndarray] = None
+        if "0.5" in pred_df.columns:
+            f_vals = np.asarray(pred_df["0.5"].tolist(), dtype=float)[:fh]
+        elif "predictions" in pred_df.columns:
+            f_vals = np.asarray(pred_df["predictions"].tolist(), dtype=float)[:fh]
+        elif fq:
+            first_q = next(iter(fq.values()))
+            f_vals = np.asarray(first_q, dtype=float)[:fh]
+
+        params_used = {
+            'model_name': model_name,
+            'context_length': int(ctx_len) if ctx_len else int(n),
+            'device_map': device_map,
+        }
+        if fq:
+            params_used['quantiles'] = sorted(list(fq.keys()), key=lambda x: float(x))
+
+        if f_vals is None:
+            return (None, fq or None, params_used, "chronos2 error: no point forecast produced")
+        return (f_vals, fq or None, params_used, None)
+    except Exception as ex:
+        return (None, None, {}, f"chronos2 error: {ex}")
 
 
 def forecast_timesfm(
@@ -192,7 +184,7 @@ def forecast_moirai(
     """Moirai one-shot forecasting via uni2ts.
 
     Params:
-    - variant: model variant string (e.g., '1.0-R-small', '1.0-L-small')
+    - variant: model variant string (e.g., 'moirai-1.1-R-large', '1.0-R-small', '1.0-L-small')
     - context_length: int, context window to feed (<= len(series))
     - device: optional torch device string
     - quantiles: optional list of quantile levels to return
@@ -202,7 +194,7 @@ def forecast_moirai(
     Returns (f_vals, forecast_quantiles, params_used, error)
     """
     p = params or {}
-    variant = str(p.get('variant', '1.0-R-small'))
+    variant = str(p.get('variant', 'moirai-1.1-R-large'))
     ctx_len = int(p.get('context_length', 0) or 0)
     device = p.get('device')
     quantiles = p.get('quantiles') if isinstance(p.get('quantiles'), (list, tuple)) else None
@@ -218,84 +210,197 @@ def forecast_moirai(
     try:
         import numpy as _np
         import torch  # type: ignore
-        from uni2ts import get_timeseries_model  # type: ignore
+        from uni2ts.model.moirai import MoiraiForecast, MoiraiModule  # type: ignore
+        from gluonts.dataset.pandas import PandasDataset  # type: ignore
+        from gluonts.dataset.split import split  # type: ignore
     except Exception as ex:
-        return (None, None, {}, f"moirai requires uni2ts and torch: {ex}")
+        return (None, None, {}, f"moirai requires uni2ts, gluonts and torch: {ex}")
 
     try:
-        # Load model by variant; get_timeseries_model returns a callable forward/infer object
-        model = get_timeseries_model(model=variant)
-        # Ensure model to device if specified
+        # Parse variant to determine model size
+        # Expected formats: "moirai-1.1-R-large", "1.0-R-small", "1.0-L-base", etc.
+        variant_parts = variant.split('-')
+        if len(variant_parts) >= 3:
+            # Handle both new format (moirai-1.1-R-large) and old format (1.0-R-small)
+            if variant_parts[0] == 'moirai':
+                # New format: moirai-1.1-R-large -> model_size = "large"
+                model_size = variant_parts[-1]
+            else:
+                # Old format: 1.0-R-small -> model_size = "small"
+                model_size = variant_parts[-1]
+        else:
+            model_size = "large"  # default fallback for new default variant
+        
+        # Debug information
+        print(f"[DEBUG] Moirai variant: {variant}, model_size: {model_size}")
+        print(f"[DEBUG] Original context length: {len(context)}, forecast horizon: {fh}")
+        
+        # Load pre-trained model module
+        model_name = f"Salesforce/moirai-1.1-R-{model_size}"
+        module = MoiraiModule.from_pretrained(model_name)
+        
+        # Create Moirai forecast model
+        model = MoiraiForecast(
+            module=module,
+            prediction_length=int(fh),
+            context_length=len(context),
+            patch_size="auto",
+            num_samples=100,
+            target_dim=1,
+            feat_dynamic_real_dim=0,
+            past_feat_dynamic_real_dim=0,
+        )
+        
+        # Move model to device if specified
         if device:
             try:
                 model.to(device)
             except Exception:
                 pass
-        # Build input expected by uni2ts one-shot forecast: (batch, length)
-        x = context.astype(float)
-        x = _np.nan_to_num(x, nan=float(_np.nanmean(x) if _np.isfinite(_np.nanmean(x)) else 0.0))
-        x = x.reshape(1, -1).astype(_np.float32)
-
-        # Run forecast; most uni2ts models expose forecast(horizon, ...)
-        # Fallback to __call__ returning dict with 'pred'
+        
+        # Create predictor
+        predictor = model.create_predictor(batch_size=32)
+        
+        # Prepare data in GluonTS format
+        # Create a simple pandas DataFrame and convert to GluonTS dataset
+        import pandas as pd
+        from gluonts.dataset.pandas import PandasDataset
+        from gluonts.dataset.common import ListDataset
+        
+        # Validate and clean the context data
+        if len(context) == 0:
+            return (None, None, {}, "moirai error: empty context data")
+            
+        # Check for all NaN values
+        if not _np.any(_np.isfinite(context)):
+            return (None, None, {}, "moirai error: context contains no finite values")
+        
+        # Clean the context data - replace NaN with mean of finite values
+        finite_mean = _np.nanmean(context[_np.isfinite(context)])
+        context_clean = _np.nan_to_num(context, nan=float(finite_mean if _np.isfinite(finite_mean) else 0.0))
+        
+        # Ensure we have valid data
+        if not _np.any(_np.isfinite(context_clean)):
+            return (None, None, {}, "moirai error: cleaned context contains no finite values")
+            
+        # Debug information after cleaning
+        print(f"[DEBUG] Cleaned context length: {len(context_clean)}, valid finite values: {_np.sum(_np.isfinite(context_clean))}")
+        
+        # Create a simple dataset with one time series using proper GluonTS format
+        # Method 1: Direct PandasDataset creation (preferred)
+        try:
+            # Create a proper time series with pandas DatetimeIndex
+            timestamps = pd.date_range(start=pd.Timestamp('2000-01-01'), periods=len(context_clean), freq='H')
+            df = pd.DataFrame({
+                'timestamp': timestamps,
+                'value': context_clean
+            })
+            
+            # Create dataset using the direct constructor
+            dataset = PandasDataset(
+                df,
+                target='value',
+                timestamp='timestamp',
+                freq='H'
+            )
+        except Exception:
+            # Method 2: Fallback to ListDataset if PandasDataset fails
+            try:
+                from gluonts.dataset.common import ListDataset
+                timestamps = pd.date_range(start=pd.Timestamp('2000-01-01'), periods=len(context_clean), freq='H')
+                dataset = ListDataset([
+                    {
+                        'start': timestamps[0],
+                        'target': context_clean.tolist()
+                    }
+                ], freq='H')
+            except Exception as inner_ex:
+                return (None, None, {}, f"moirai data preparation error: {inner_ex}")
+        
+        # Generate forecast with better error handling
+        try:
+            forecasts = list(predictor.predict(dataset))
+        except Exception as pred_ex:
+            return (None, None, {}, f"moirai prediction error: {pred_ex}")
+        
+        if not forecasts:
+            return (None, None, {}, "moirai error: no forecasts generated")
+        
+        # Ensure we have at least one forecast
+        if len(forecasts) == 0:
+            return (None, None, {}, "moirai error: empty forecasts list")
+        
+        try:
+            forecast = forecasts[0]
+        except (IndexError, AttributeError) as ex:
+            return (None, None, {}, f"moirai error: failed to extract forecast: {ex}")
+        
+        # Extract point forecast (mean or median)
         f_vals: Optional[np.ndarray] = None
         fq: Dict[str, List[float]] = {}
+        
+        # Get point forecast with better error handling
         try:
-            out = model.forecast(horizon=int(fh), context=x)
-        except Exception:
-            out = model(x, horizon=int(fh))
-
-        # Parse outputs
-        # Expected keys may be: 'mean', 'median', 'quantiles' or 'samples'/'pred'
-        arr = None
-        if isinstance(out, dict):
-            if do_mean and 'mean' in out:
-                arr = _np.asarray(out['mean'], dtype=float)
-            elif do_median and ('median' in out or 'p50' in out):
-                key = 'median' if 'median' in out else 'p50'
-                arr = _np.asarray(out[key], dtype=float)
-            elif 'pred' in out:
-                arr = _np.asarray(out['pred'], dtype=float)
-            elif 'samples' in out:
+            if do_mean and hasattr(forecast, 'mean') and forecast.mean is not None:
+                f_vals = _np.asarray(forecast.mean, dtype=float)
+            elif do_median and hasattr(forecast, 'median') and forecast.median is not None:
+                f_vals = _np.asarray(forecast.median, dtype=float)
+            elif hasattr(forecast, 'samples') and forecast.samples is not None:
+                # Use mean of samples if no direct mean/median available
+                samples = _np.asarray(forecast.samples, dtype=float)
+                if samples.ndim >= 2:
+                    f_vals = _np.mean(samples, axis=0)
+                else:
+                    f_vals = samples
+            else:
+                return (None, None, {}, "moirai error: no forecast values available (no mean, median, or samples)")
+        except Exception as extract_ex:
+            return (None, None, {}, f"moirai error: failed to extract forecast values: {extract_ex}")
+        
+        # Validate extracted forecast
+        if f_vals is None or len(f_vals) == 0:
+            return (None, None, {}, "moirai error: extracted forecast is empty or invalid")
+        
+        # Extract quantiles if requested
+        if quantiles and hasattr(forecast, 'quantile'):
+            for q in quantiles:
                 try:
-                    arr = _np.asarray(out['samples'], dtype=float)
-                    if arr.ndim >= 2:
-                        arr = _np.mean(arr, axis=0)
+                    qf = float(q)
+                    q_value = forecast.quantile(qf)
+                    if q_value is not None:
+                        fq[str(qf)] = [float(v) for v in _np.asarray(q_value, dtype=float).tolist()]
                 except Exception:
-                    arr = None
-            # Quantiles
-            if quantiles and 'quantiles' in out and isinstance(out['quantiles'], dict):
-                for q in quantiles:
-                    try:
-                        qf = float(q)
-                    except Exception:
-                        continue
-                    k = str(qf)
-                    if k in out['quantiles']:
-                        qarr = _np.asarray(out['quantiles'][k], dtype=float).ravel()
-                        fq[k] = [float(v) for v in qarr[:fh].tolist()]
-        else:
-            # Tensor or ndarray
-            try:
-                arr = _np.asarray(out, dtype=float)
-                if arr.ndim == 2 and arr.shape[0] == 1:
-                    arr = arr[0]
-            except Exception:
-                arr = None
-
-        if arr is None:
-            return (None, None, {}, "moirai output format not recognized")
-        arr = arr.ravel()
-        vals = arr[:fh] if arr.size >= fh else _np.pad(arr, (0, fh - arr.size), mode='edge')
-        f_vals = vals
+                    continue
+        
+        # Ensure forecast length matches requested horizon
+        if f_vals is not None:
+            f_vals = f_vals.ravel()
+            if len(f_vals) < fh:
+                # Pad with last value if forecast is shorter than requested
+                f_vals = _np.pad(f_vals, (0, fh - len(f_vals)), mode='edge')
+            elif len(f_vals) > fh:
+                # Truncate if forecast is longer than requested
+                f_vals = f_vals[:fh]
+        
+        # Process quantiles to match forecast horizon
+        if fq:
+            for q_key in fq:
+                q_vals = _np.asarray(fq[q_key], dtype=float)
+                if len(q_vals) < fh:
+                    q_vals = _np.pad(q_vals, (0, fh - len(q_vals)), mode='edge')
+                elif len(q_vals) > fh:
+                    q_vals = q_vals[:fh]
+                fq[q_key] = q_vals.tolist()
 
         params_used = {
             'variant': variant,
             'context_length': int(ctx_len) if ctx_len else int(n),
             'device': device,
+            'model_name': model_name,
         }
         if quantiles and fq:
             params_used['quantiles'] = sorted(list(fq.keys()), key=lambda x: float(x))
+            
         return (f_vals, fq or None, params_used, None)
     except Exception as ex:
         return (None, None, {}, f"moirai error: {ex}")

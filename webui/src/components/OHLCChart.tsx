@@ -24,7 +24,8 @@ export function OHLCChart({ data, onAnchor, onNeedMoreLeft, overlays, anchorTime
       grid: { vertLines: { color: '#1f2937' }, horzLines: { color: '#1f2937' } },
       crosshair: { mode: 1 },
       rightPriceScale: { borderColor: '#1f2937' },
-      timeScale: { borderColor: '#1f2937' },
+      // Show time of day on the axis; toggle seconds later based on data granularity
+      timeScale: { borderColor: '#1f2937', timeVisible: true, secondsVisible: true },
     })
     const series = chart.addCandlestickSeries({ upColor: '#22c55e', downColor: '#ef4444', borderVisible: false, wickUpColor: '#22c55e', wickDownColor: '#ef4444' })
     apiRef.current = chart
@@ -61,6 +62,13 @@ export function OHLCChart({ data, onAnchor, onNeedMoreLeft, overlays, anchorTime
     const series = candleRef.current
     const points = data.map((b) => ({ time: b.time as Time, open: b.open, high: b.high, low: b.low, close: b.close }))
     series.setData(points)
+
+    // Adjust seconds visibility based on detected bar spacing
+    if (apiRef.current && data.length >= 2) {
+      const dt = Math.abs(Math.floor(data[1].time) - Math.floor(data[0].time))
+      const secondsVisible = dt < 60 // e.g., tick/second data
+      apiRef.current.applyOptions({ timeScale: { timeVisible: true, secondsVisible } })
+    }
   }, [data])
 
   useEffect(() => {
