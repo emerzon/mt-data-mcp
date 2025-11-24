@@ -27,6 +27,9 @@ from mtdata.utils.denoise import _apply_denoise, normalize_denoise_spec as _norm
 from mtdata.forecast.common import (
     parse_kv_or_json as _parse_kv_or_json,
     fetch_history as _fetch_history,
+    default_seasonality as _default_seasonality_period,
+    next_times_from_last as _next_times_from_last,
+    pd_freq_from_timeframe as _pd_freq_from_timeframe,
 )
 from mtdata.forecast.registry import ForecastRegistry
 # Import all method modules to ensure registration
@@ -157,37 +160,10 @@ except Exception:  # runtime fallback
 
 # Supported forecast methods - dynamically fetch from registry
 def _get_available_methods():
-    base = list(ForecastRegistry.list_available())
-    base.append('ensemble')
-    return tuple(base)
+    return tuple(ForecastRegistry.get_all_method_names())
 
 _FORECAST_METHODS = _get_available_methods()
 
-
-def _default_seasonality_period(timeframe: str) -> int:
-    """Return default seasonality period based on timeframe."""
-    tf_map = {
-        'M1': 1440, 'M5': 288, 'M15': 96, 'M30': 48,
-        'H1': 24, 'H4': 6, 'H12': 2,
-        'D1': 30, 'W1': 52, 'MN1': 12
-    }
-    return tf_map.get(timeframe, 12)
-
-
-def _next_times_from_last(last_epoch: float, tf_secs: int, horizon: int) -> List[float]:
-    """Generate future time epochs from last timestamp."""
-    return [last_epoch + tf_secs * (i + 1) for i in range(horizon)]
-
-
-def _pd_freq_from_timeframe(tf: str) -> str:
-    """Convert timeframe to pandas frequency string."""
-    mapping = {
-        'M1': '1min', 'M5': '5min', 'M15': '15min', 'M30': '30min',
-        'H1': '1H', 'H2': '2H', 'H3': '3H', 'H4': '4H',
-        'H6': '6H', 'H8': '8H', 'H12': '12H',
-        'D1': '1D', 'W1': '1W', 'MN1': '1M'
-    }
-    return mapping.get(tf, '1H')
 
 
 def _calculate_lookback_bars(method_l: str, horizon: int, lookback: Optional[int],

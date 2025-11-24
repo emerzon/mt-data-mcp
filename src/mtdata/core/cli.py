@@ -215,6 +215,86 @@ def discover_tools():
 
     return tools
 
+def _resolve_param_kwargs(param: Dict[str, Any], param_docs: Optional[Dict[str, str]]) -> Tuple[Dict[str, Any], bool]:
+    """Resolve CLI argument kwargs and determine if parameter is a mapping type."""
+    desc = None
+    if param_docs and param['name'] in param_docs:
+        desc = param_docs[param['name']]
+    hint = desc or _PARAM_HINTS.get(param['name'])
+    kwargs = {'help': hint or f"{param['name']} parameter", 'dest': param['name']}
+    is_mapping_type = False
+
+    # Dynamically populate choices for 'method' parameter
+    if param['name'] == 'method':
+        try:
+            from mtdata.forecast.registry import ForecastRegistry
+            import mtdata.forecast.methods.classical
+            import mtdata.forecast.methods.ets_arima
+            import mtdata.forecast.methods.statsforecast
+            import mtdata.forecast.methods.mlforecast
+            import mtdata.forecast.methods.pretrained
+            import mtdata.forecast.methods.neural
+            import mtdata.forecast.methods.sktime
+            
+            kwargs['choices'] = ForecastRegistry.get_all_method_names()
+        except Exception as e:
+            _debug(f"Failed to dynamically load forecast methods for CLI: {e}")
+            # Fallback to static type choices if dynamic loading fails
+            ptype = param.get('type')
+            origin = get_origin(ptype)
+            if origin is Literal:
+                kwargs['choices'] = [str(v) for v in get_args(ptype) if v is not None]
+    else:
+        # Handle other types
+        try:
+            ptype = param.get('type')
+            origin = get_origin(ptype)
+            
+            # Check for mapping type
+            is_typed_dict = hasattr(ptype, '__annotations__') and isinstance(getattr(ptype, '__annotations__', {}), dict)
+            is_mapping_type = (ptype in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
+
+            # Optional[T] -> T for argparse casting
+            if origin is not None and str(origin).endswith('Union'):
+                args = [a for a in get_args(ptype) if a is not type(None)]  # noqa: E721
+                if len(args) == 1:
+                    base = args[0]
+                    if base in (int, float, str):
+                        kwargs['type'] = base
+                    elif base is bool:
+                        kwargs['type'] = str
+                        kwargs['choices'] = ['true', 'false']
+                        kwargs['metavar'] = 'bool'
+                    origin = None
+            
+            if origin in (list, tuple):
+                inner = get_args(ptype)[0] if get_args(ptype) else None
+                inner_origin = get_origin(inner)
+                if inner_origin and str(inner_origin).endswith('Literal'):
+                    choices = [str(v) for v in get_args(inner)]
+                    if choices:
+                        kwargs['choices'] = choices
+                    kwargs['type'] = str
+                    kwargs['nargs'] = '+'
+                else:
+                    kwargs['type'] = str
+            elif origin and str(origin).endswith('Literal'):
+                choices = [str(v) for v in get_args(ptype)]
+                if choices:
+                    kwargs['choices'] = choices
+                kwargs['type'] = str
+            else:
+                kwargs['type'] = str
+        except Exception as e:
+            _debug(f"Type resolution failed for param '{param['name']}': {e}")
+            kwargs['type'] = str
+        
+    # Handle defaults (do not force a default for tri-state bools)
+    if not param['required'] and not (param['type'] == bool and param['default'] is None):
+        kwargs['default'] = param['default']
+
+    return kwargs, is_mapping_type
+
 def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str]] = None):
     """Add arguments to parser based on parameter info.
 
@@ -225,90 +305,14 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
     for param in param_info['params']:
         hyph = f"--{param['name'].replace('_', '-')}"
         uscr = f"--{param['name']}"
-        desc = None
-        if param_docs and param['name'] in param_docs:
-            desc = param_docs[param['name']]
-        hint = desc or _PARAM_HINTS.get(param['name'])
-        kwargs = {'help': hint or f"{param['name']} parameter", 'dest': param['name']}
         
-        # Dynamically populate choices for 'method' parameter
-        if param['name'] == 'method':
-            try:
-                from mtdata.forecast.registry import ForecastRegistry
-                import mtdata.forecast.methods.classical
-                import mtdata.forecast.methods.ets_arima
-                import mtdata.forecast.methods.statsforecast
-                import mtdata.forecast.methods.mlforecast
-                import mtdata.forecast.methods.pretrained
-                import mtdata.forecast.methods.neural
-                import mtdata.forecast.methods.sktime
-                
-                dynamic_methods = set(ForecastRegistry.list_available())
-                dynamic_methods.add('ensemble') # ensemble is managed separately in forecast_engine
-                kwargs['choices'] = sorted(list(dynamic_methods))
-            except Exception as e:
-                _debug(f"Failed to dynamically load forecast methods for CLI: {e}")
-                # Fallback to static type choices if dynamic loading fails
-                ptype = param.get('type')
-                origin = get_origin(ptype)
-                if origin is Literal:
-                    kwargs['choices'] = [str(v) for v in get_args(ptype) if v is not None]
-        else:
-            # Handle other types as before
-            try:
-                ptype = param.get('type')
-                origin = get_origin(ptype)
-                # Optional[T] -> T for argparse casting
-                if origin is not None and str(origin).endswith('Union'):
-                    args = [a for a in get_args(ptype) if a is not type(None)]  # noqa: E721
-                    if len(args) == 1:
-                        base = args[0]
-                        if base in (int, float, str):
-                            kwargs['type'] = base
-                        elif base is bool:
-                            kwargs['type'] = str
-                            kwargs['choices'] = ['true', 'false']
-                            kwargs['metavar'] = 'bool'
-                        origin = None
-                if origin in (list, tuple):
-                    inner = get_args(ptype)[0] if get_args(ptype) else None
-                    inner_origin = get_origin(inner)
-                    if inner_origin and str(inner_origin).endswith('Literal'):
-                        choices = [str(v) for v in get_args(inner)]
-                        if choices:
-                            kwargs['choices'] = choices
-                        kwargs['type'] = str
-                        kwargs['nargs'] = '+'
-                    else:
-                        kwargs['type'] = str
-                elif origin and str(origin).endswith('Literal'):
-                    choices = [str(v) for v in get_args(ptype)]
-                    if choices:
-                        kwargs['choices'] = choices
-                    kwargs['type'] = str
-                else:
-                    kwargs['type'] = str
-            except Exception as e:
-                _debug(f"Type resolution failed for param '{param['name']}': {e}")
-                kwargs['type'] = str
-            
-        # Handle defaults (do not force a default for tri-state bools)
-        if not param['required'] and not (param['type'] == bool and param['default'] is None):
-            kwargs['default'] = param['default']
+        kwargs, is_mapping_type = _resolve_param_kwargs(param, param_docs)
         
         # Add positional argument for first required parameter
         if param['required'] and param == param_info['params'][0]:
             parser.add_argument(param['name'], help=f"{param['name']} (required)")
         else:
             # For mapping-like params (e.g., --simplify), allow bare flag: '--simplify' triggers defaults
-            try:
-                ptype = param.get('type')
-                origin = get_origin(ptype)
-                is_typed_dict = hasattr(ptype, '__annotations__') and isinstance(getattr(ptype, '__annotations__', {}), dict)
-                is_mapping_type = (ptype in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
-            except Exception as e:
-                _debug(f"Mapping type check failed for param '{param['name']}': {e}")
-                is_mapping_type = False
             if is_mapping_type:
                 local_kwargs = dict(kwargs)
                 local_kwargs['nargs'] = '?'
@@ -318,15 +322,7 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
                 parser.add_argument(hyph, uscr, **kwargs)
 
         # If this parameter is mapping-like, add a companion --<name>-params to pass extra kwargs
-        try:
-            ptype = param.get('type')
-            origin = get_origin(ptype)
-            is_typed_dict = hasattr(ptype, '__annotations__') and isinstance(getattr(ptype, '__annotations__', {}), dict)
-            is_mapping = (ptype in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
-        except Exception as e:
-            _debug(f"Mapping type check failed for companion params of '{param['name']}': {e}")
-            is_mapping = False
-        if is_mapping:
+        if is_mapping_type:
             parser.add_argument(
                 f"--{param['name'].replace('_','-')}-params",
                 f"--{param['name']}_params",

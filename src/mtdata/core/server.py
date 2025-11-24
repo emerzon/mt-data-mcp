@@ -98,14 +98,13 @@ except Exception:
     pass
 
 from .data import *
-from .denoise import *
+from ..utils.denoise import denoise_list_methods
 from .forecast import *
 from .causal import *
 from .indicators import *
 from .market_depth import *
 from .patterns import *
 from .pivot import *
-from .simplify import *
 from .symbols import *
 from .regime import *
 from .labels import *

@@ -6,6 +6,9 @@ Contains target-point selection utilities and core selection algorithms.
 from typing import Any, Dict, List, Optional, Tuple, Callable
 import math
 
+import pandas as pd
+import numpy as np
+
 # Local defaults to avoid circular import with core package during initialization.
 # Keep in sync with src/mtdata/core/constants.py
 SIMPLIFY_DEFAULT_RATIO = 0.25
@@ -487,3 +490,119 @@ def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optiona
     idxs = _lttb_select_indices(x, y, n_out)
     meta.update({"points": n_out, "fallback": f"{method}->lttb"})
     return idxs, "lttb", meta
+
+
+def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Optional[Dict[str, Any]]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+    """Reduce or transform rows across numeric columns.
+
+    Modes (simplify['mode']):
+    - 'select' (default): pick representative existing rows using the chosen method.
+    - 'approximate': partition by selected breakpoints and aggregate numeric columns per segment.
+    - 'resample': time-based bucketing by '__epoch' with 'bucket_seconds'; aggregates numeric columns.
+    - 'encode': transform per-row representation to a compact schema (e.g., envelope or delta) and
+                optionally pre-select rows before encoding.
+
+    Aggregation: mean for numeric columns; first value for non-numeric columns like 'time'.
+    """
+    if not simplify:
+        return df, None
+    try:
+        total = len(df)
+        if total <= 3:
+            return df, None
+        
+        # Import constants to avoid circular imports
+        from ..core.constants import SIMPLIFY_DEFAULT_METHOD, SIMPLIFY_DEFAULT_MODE
+        
+        method = str(simplify.get("method", SIMPLIFY_DEFAULT_METHOD)).lower().strip()
+        mode = str(simplify.get("mode", SIMPLIFY_DEFAULT_MODE)).lower().strip() or SIMPLIFY_DEFAULT_MODE
+        
+        # If users passed a high-level mode via --simplify (CLI maps to 'method'), map it to mode
+        if method in ("encode", "symbolic", "segment"):
+            explicit_mode = str(simplify.get("mode", "")).lower().strip()
+            if explicit_mode in ("", SIMPLIFY_DEFAULT_MODE, "select"):
+                mode = method
+
+        # Helper: numeric columns in requested headers order, then any others
+        def _numeric_columns_from_headers() -> List[str]:
+            cols: List[str] = []
+            for h in headers:
+                if h in ('time',) or str(h).startswith('_'):
+                    continue
+                try:
+                    if h in df.columns and pd.api.types.is_numeric_dtype(df[h]):
+                        cols.append(h)
+                except Exception:
+                    continue
+            if not cols:
+                for c in df.columns:
+                    if c in ('time',) or str(c).startswith('_'):
+                        continue
+                    try:
+                        if pd.api.types.is_numeric_dtype(df[c]):
+                            cols.append(c)
+                    except Exception:
+                        continue
+            return cols
+
+        # Aggregation helper for approximate/resample modes
+        def _aggregate_segment(i0: int, i1: int) -> Dict[str, Any]:
+            seg = df.iloc[i0:i1]
+            row: Dict[str, Any] = {}
+            if "time" in df.columns and "time" in headers:
+                row["time"] = seg.iloc[0]["time"]
+            for col in headers:
+                if col == "time":
+                    continue
+                if col in seg.columns and pd.api.types.is_numeric_dtype(seg[col]):
+                    row[col] = float(seg[col].mean())
+                elif col in seg.columns:
+                    try:
+                        row[col] = next((v for v in seg[col].tolist() if pd.notna(v)), seg.iloc[0][col])
+                    except Exception:
+                        row[col] = seg.iloc[0][col]
+            return row
+
+        # Determine target number of points early (used for select and to infer resample/encode)
+        n_out = _choose_simplify_points(total, simplify)
+        
+        if mode == "resample" and "__epoch" in df.columns:
+            bs = simplify.get("bucket_seconds")
+            if bs is None or (isinstance(bs, (int, float)) and bs <= 0):
+                try:
+                    # Infer bucket by total time span / target buckets
+                    t0 = float(df["__epoch"].iloc[0])
+                    t1 = float(df["__epoch"].iloc[-1])
+                    span = max(1.0, t1 - t0)
+                    bs = max(1, int(round(span / max(1, n_out))))
+                except Exception:
+                    # Fallback to rough bucket from count
+                    bs = max(1, int(round(total / float(max(1, n_out)))))
+            try:
+                bs = max(1, int(bs))
+            except Exception:
+                bs = max(1, int(round(total / float(max(1, n_out)))))
+            grp = ((df["__epoch"].astype(float) - float(df["__epoch"].iloc[0])) // bs).astype(int)
+            out_rows: List[Dict[str, Any]] = []
+            for _, seg in df.groupby(grp):
+                i0 = seg.index[0]
+                i1 = seg.index[-1] + 1
+                out_rows.append(_aggregate_segment(i0, i1))
+            out_df = pd.DataFrame(out_rows)
+            meta = {
+                "mode": "resample",
+                "method": method or SIMPLIFY_DEFAULT_METHOD,
+                "bucket_seconds": int(bs),
+                "original_rows": total,
+                "returned_rows": len(out_df),
+                "points": len(out_df),
+            }
+            return out_df.reset_index(drop=True), meta
+
+        # For other modes, delegate to services/simplification for now
+        # This maintains compatibility while allowing future consolidation
+        from ..services.simplification import _simplify_dataframe_rows_ext as _simplify_ext
+        return _simplify_ext(df, headers, simplify)
+        
+    except Exception:
+        return df, None

@@ -238,9 +238,7 @@ try:
         import mtdata.forecast.methods.neural
         import mtdata.forecast.methods.sktime
 
-        dynamic_methods = set(ForecastRegistry.list_available())
-        dynamic_methods.add('ensemble') # ensemble is managed separately in forecast_engine
-        _FORECAST_METHODS = tuple(sorted(list(dynamic_methods)))
+        _FORECAST_METHODS = tuple(ForecastRegistry.get_all_method_names())
     else:
         # Fallback to hardcoded list if registry import failed (e.g. env issues)
         _FORECAST_METHODS = (

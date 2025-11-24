@@ -94,19 +94,28 @@ def _handle_resample(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any])
         return df, {'error': f'Resample failed: {e}'}
 
 def _handle_encode(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
-    # Implementation of encoding (envelope, delta)
-    # ... (Placeholder for full implementation)
-    return df, {'mode': 'encode', 'note': 'Not fully implemented in refactor yet'}
+    """Delegate to utils.simplify implementation for encoding modes."""
+    from ..utils.simplify import _simplify_dataframe_rows as _impl
+    # Set mode to encode for delegation
+    encode_spec = dict(spec)
+    encode_spec['mode'] = 'encode'
+    return _impl(df, headers, encode_spec)
 
 def _handle_segment(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
-    # Implementation of segmentation (zigzag)
-    # ... (Placeholder)
-    return df, {'mode': 'segment', 'note': 'Not fully implemented in refactor yet'}
+    """Delegate to utils.simplify implementation for segmentation modes."""
+    from ..utils.simplify import _simplify_dataframe_rows as _impl
+    # Set mode to segment for delegation
+    segment_spec = dict(spec)
+    segment_spec['mode'] = 'segment'
+    return _impl(df, headers, segment_spec)
 
 def _handle_symbolic(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
-    # Implementation of SAX
-    # ... (Placeholder)
-    return df, {'mode': 'symbolic', 'note': 'Not fully implemented in refactor yet'}
+    """Delegate to utils.simplify implementation for symbolic modes."""
+    from ..utils.simplify import _simplify_dataframe_rows as _impl
+    # Set mode to symbolic for delegation
+    symbolic_spec = dict(spec)
+    symbolic_spec['mode'] = 'symbolic'
+    return _impl(df, headers, symbolic_spec)
 
 def _handle_select(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
     # Implementation of point selection (LTTB, etc.)

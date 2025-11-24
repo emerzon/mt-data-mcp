@@ -251,6 +251,14 @@ def get_denoise_methods_data() -> Dict[str, Any]:
     return {"success": True, "schema_version": 1, "methods": methods}
 
 
+def denoise_list_methods() -> Dict[str, Any]:
+    """List available denoise methods and their parameters."""
+    try:
+        return get_denoise_methods_data()
+    except Exception as e:
+        return {"error": f"Error listing denoise methods: {e}"}
+
+
 def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[Dict[str, Any]]:
     """Normalize a denoise spec. Accepts dict-like or a method name string.
 
