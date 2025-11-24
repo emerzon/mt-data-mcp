@@ -31,6 +31,7 @@ arch>=6.3.0; python_version < "3.9"
 
 python-dateutil>=2.9.0.post0
 pytz>=2025.2
+holidays>=0.40
 
 # SciPy (bounded to <1.16.0 to satisfy statsforecast<->scipy compatibility)
 scipy>=1.15.3,<1.16.0; python_version >= "3.10"

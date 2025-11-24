@@ -10,53 +10,59 @@ import inspect
 from typing import get_type_hints, get_origin, get_args
 
 from .constants import TIMEFRAME_MAP
+try:
+    from ..forecast.registry import ForecastRegistry
+except Exception:
+    ForecastRegistry = None
 
 
 PARAM_HINTS = {
     "direction": "Trade direction context (long/short). Determines which side is TP vs SL.",
-    "symbol": "Trading symbol (e.g. EURUSD)",
-    "timeframe": "MT5 timeframe (e.g. H1/M30/D1)",
-    "limit": "Max rows/bars to return",
-    "start": "Start time (YYYY-MM-DD or natural language)",
-    "end": "End time (exclusive)",
-    "ohlcv": "OHLCV column selector",
-    "indicators": "Indicator specs list",
-    "denoise": "Denoise spec JSON or preset",
-    "simplify": "Simplify spec for downsampling",
-    "method": "Method/algorithm name",
-    "horizon": "Forecast horizon (bars)",
-    "steps": "Backtest anchors or steps",
-    "spacing": "Spacing between anchors",
-    "alpha": "Confidence complement (e.g. 0.1)",
-    "params": "Extra method parameters",
-    "as_of": "Override reference time",
-    "ci_alpha": "CI alpha (e.g. 0.1)",
-    "features": "Feature set spec",
-    "dimred_method": "Dimensionality reduction method",
-    "dimred_params": "Dimensionality reduction params",
-    "target_spec": "Target field spec",
-    "quantity": "Quantity to analyze",
-    "target": "Target series (price/return)",
-    "points": "Target point count",
-    "ratio": "Target ratio",
-    "epsilon": "Tolerance value",
-    "max_error": "Max approximation error",
-    "segments": "Segment count",
-    "bucket_seconds": "Bucket size (seconds)",
-    "schema": "Encoding schema",
-    "bits": "Bits per symbol",
-    "paa": "PAA segments",
-    "znorm": "Apply z-normalization",
-    "threshold_pct": "Percent threshold",
-    "value_col": "Column name",
-    "lookback": "Lookback bars",
-    "spacing_pct": "Spacing as percent",
-    "volume": "Order volume (lots)",
-    "type": "Order type",
-    "price": "Price level",
-    "stop_loss": "Stop-loss level",
-    "take_profit": "Take-profit level",
-    "id": "Entity identifier",
+    "symbol": "Trading symbol (e.g. EURUSD). Must be available in MT5.",
+    "timeframe": "MT5 timeframe (e.g. H1/M30/D1). Determines bar duration.",
+    "limit": "Max rows/bars to return in the result set.",
+    "start": "Start time (YYYY-MM-DD or natural language like '2 days ago').",
+    "end": "End time (exclusive). Defaults to current time if omitted.",
+    "ohlcv": "OHLCV column selector (e.g. 'close', 'high,low').",
+    "indicators": "List of technical indicators to apply (e.g. 'rsi(14), sma(20)').",
+    "denoise": "Denoise spec JSON or preset (e.g. 'wavelet', 'ema'). Pre-processes data.",
+    "simplify": "Simplify spec for downsampling (e.g. 'lttb', 'rdp'). Reduces point count.",
+    "method": "Forecast algorithm/method name (e.g. 'theta', 'chronos2', 'nhits').",
+    "horizon": "Forecast horizon in bars (how many steps into the future).",
+    "steps": "Number of backtest anchors or steps to run.",
+    "spacing": "Spacing between backtest anchors (in bars).",
+    "alpha": "Significance level for confidence intervals (e.g. 0.1 for 90% CI).",
+    "params": "Extra method-specific parameters as JSON or k=v string (e.g. 'model_name=...').",
+    "as_of": "Override reference time for 'now' (for testing historical points).",
+    "ci_alpha": "Confidence Interval alpha (e.g. 0.05 for 95% CI).",
+    "features": "Feature engineering spec. Can include 'include=...', 'future_covariates=...'.",
+    "dimred_method": "Dimensionality reduction method for features (e.g. 'pca', 'tsne').",
+    "dimred_params": "Parameters for dimensionality reduction (e.g. 'n_components=3').",
+    "target_spec": "Target column specification (e.g. 'transform=log_return').",
+    "quantity": "Quantity to model: 'price', 'return', or 'volatility'.",
+    "target": "Target series type (price/return). Deprecated in favor of 'quantity'.",
+    "points": "Target point count for simplification algorithms.",
+    "ratio": "Target compression ratio for simplification.",
+    "epsilon": "Tolerance value for simplification algorithms (e.g. RDP).",
+    "max_error": "Max approximation error for simplification.",
+    "segments": "Segment count for segmentation algorithms.",
+    "bucket_seconds": "Bucket size in seconds for resampling.",
+    "schema": "Encoding schema for compression (e.g. 'delta').",
+    "bits": "Bits per symbol for encoding schemas.",
+    "paa": "PAA segments for symbolic representation.",
+    "znorm": "Apply z-normalization before processing.",
+    "threshold_pct": "Percent threshold for segmentation change detection.",
+    "value_col": "Column name to use for value-based operations.",
+    "lookback": "Number of historical bars to use for training/context.",
+    "spacing_pct": "Spacing as percent of total duration.",
+    "volume": "Order volume (lots) for trading commands.",
+    "type": "Order type (e.g. 'buy', 'sell_limit').",
+    "price": "Price level for pending orders or checks.",
+    "stop_loss": "Stop-loss level price.",
+    "take_profit": "Take-profit level price.",
+    "id": "Entity identifier (e.g. order ticket, deal ticket).",
+    "future_covariates": "List of date features for future horizon (e.g. 'hour', 'dow', 'is_holiday').",
+    "country": "Country code for holiday calendar (e.g. 'US', 'UK'). Used with is_holiday.",
 }
 
 
@@ -209,57 +215,68 @@ except Exception:
     PivotMethodLiteral = str  # fallback for typing
 
 # ---- Fast Forecast methods (enums) ----
-_FORECAST_METHODS = (
-    "naive",
-    "seasonal_naive",
-    "drift",
-    "theta",
-    "fourier_ols",
-    "ses",
-    "holt",
-    "holt_winters_add",
-    "holt_winters_mul",
-    "arima",
-    "sarima",
-    "mc_gbm",
-    "hmm_mc",
-    "nhits",
-    "nbeatsx",
-    "tft",
-    "patchtst",
-    "sf_autoarima",
-    "sf_theta",
-    "sf_autoets",
-    "sf_seasonalnaive",
-    "mlf_rf",
-    "mlf_lightgbm",
-    "chronos_bolt",
-    "chronos2",
-    "timesfm",
-    "lag_llama",
-    "moirai",
-    "gt_deepar",
-    "gt_sfeedforward",
-    "gt_prophet",
-    "gt_tft",
-    "gt_wavenet",
-    "gt_deepnpts",
-    "gt_mqf2",
-    "gt_npts",
-    "ensemble",
-    "sktime",
-    "skt_naive",
-    "skt_snaive",
-    "skt_theta",
-    "skt_autoets",
-    "skt_arima",
-    "skt_autoarima",
-)
+# Dynamically fetch available methods + ensemble
+# We need to ensure methods are registered, but avoiding heavy imports if possible.
+# However, to get the full list, we essentially need to import the method modules.
+# For schema purposes, we might want a superset or a hardcoded list if imports are too heavy.
+# Given this is a CLI tool, maybe hardcoding is safer for startup time, but it drifts.
+# Let's stick to the hardcoded list for now but ensure it's up to date with our knowledge.
+
+# ---- Fast Forecast methods (enums) ----
+
+_FORECAST_METHODS: Tuple[str, ...] = ()
+try:
+    # To get a fully dynamic list, we need to ensure all method modules are imported
+    # so they can register themselves with the ForecastRegistry.
+    # This might make schema.py import slower, but it reflects available methods.
+    if ForecastRegistry: # Check if ForecastRegistry was successfully imported
+        import mtdata.forecast.methods.classical
+        import mtdata.forecast.methods.ets_arima
+        import mtdata.forecast.methods.statsforecast
+        import mtdata.forecast.methods.mlforecast
+        import mtdata.forecast.methods.pretrained
+        import mtdata.forecast.methods.neural
+        import mtdata.forecast.methods.sktime
+
+        dynamic_methods = set(ForecastRegistry.list_available())
+        dynamic_methods.add('ensemble') # ensemble is managed separately in forecast_engine
+        _FORECAST_METHODS = tuple(sorted(list(dynamic_methods)))
+    else:
+        # Fallback to hardcoded list if registry import failed (e.g. env issues)
+        _FORECAST_METHODS = (
+            "arima", "chronos2", "chronos_bolt", "drift", "ensemble",
+            "fourier_ols", "gt_deepar", "gt_deepnpts", "gt_mqf2", "gt_npts",
+            "gt_prophet", "gt_sfeedforward", "gt_tft", "gt_wavenet",
+            "hmm_mc", "holt", "holt_winters_add", "holt_winters_mul",
+            "lag_llama", "mc_gbm", "mlf_lightgbm", "mlf_rf", "mlforecast",
+            "moirai", "naive", "nbeatsx", "nhits", "patchtst", "sarima",
+            "seasonal_naive", "ses", "sf_adida", "sf_autoets", "sf_autoarima",
+            "sf_croston", "sf_imapa", "sf_seasonalnaive", "sf_theta", "sf_tsb",
+            "skt_arima", "skt_autoets", "skt_autoarima", "skt_naive", "skt_snaive",
+            "skt_theta", "sktime", "statsforecast", "tft", "theta", "timesfm",
+        )
+except Exception as e:
+    # Log the error and fall back to hardcoded list
+    import sys
+    print(f"Warning: Failed to dynamically load forecast methods in schema.py: {e}", file=sys.stderr)
+    _FORECAST_METHODS = ( # Hardcoded fallback
+        "arima", "chronos2", "chronos_bolt", "drift", "ensemble",
+        "fourier_ols", "gt_deepar", "gt_deepnpts", "gt_mqf2", "gt_npts",
+        "gt_prophet", "gt_sfeedforward", "gt_tft", "gt_wavenet",
+        "hmm_mc", "holt", "holt_winters_add", "holt_winters_mul",
+        "lag_llama", "mc_gbm", "mlf_lightgbm", "mlf_rf", "mlforecast",
+        "moirai", "naive", "nbeatsx", "nhits", "patchtst", "sarima",
+        "seasonal_naive", "ses", "sf_adida", "sf_autoets", "sf_autoarima",
+        "sf_croston", "sf_imapa", "sf_seasonalnaive", "sf_theta", "sf_tsb",
+        "skt_arima", "skt_autoets", "skt_autoarima", "skt_naive", "skt_snaive",
+        "skt_theta", "sktime", "statsforecast", "tft", "theta", "timesfm",
+    )
 
 try:
     ForecastMethodLiteral = Literal[_FORECAST_METHODS]  # type: ignore
 except Exception:
     ForecastMethodLiteral = str  # fallback for typing
+
 
 
 def shared_defs() -> Dict[str, Any]:

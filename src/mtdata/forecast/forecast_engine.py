@@ -227,7 +227,7 @@ def _apply_features_and_target_spec(df: pd.DataFrame, features: Optional[Dict[st
                                    target_spec: Optional[Dict[str, Any]], base_col: str) -> str:
     """Apply features and target specification to the dataframe."""
     # Apply technical indicators if specified in features
-    if features:
+    if features and isinstance(features, dict):
         ti_spec = features.get('ti')
         if ti_spec:
             ti_list = _parse_ti_specs_util(ti_spec)
@@ -362,6 +362,8 @@ def forecast_engine(
     dimred_method: Optional[str] = None,
     dimred_params: Optional[Dict[str, Any]] = None,
     target_spec: Optional[Dict[str, Any]] = None,
+    exog_used: Optional[np.ndarray] = None,
+    exog_future: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """Core forecast engine implementation.
 
@@ -441,9 +443,9 @@ def forecast_engine(
         if len(target_series) < 3:
             return {"error": f"Not enough valid data points in column '{base_col}'"}
 
-        # Prepare feature matrix if applicable
-        X = None
-        if features and features.get('exog'):
+        # Prepare feature matrix if applicable (only if exog_used not provided)
+        X = exog_used
+        if X is None and isinstance(features, dict) and features.get('exog'):
             exog_cols = features['exog']
             if isinstance(exog_cols, str):
                 exog_cols = [c.strip() for c in exog_cols.split(',')]
@@ -451,9 +453,10 @@ def forecast_engine(
             # Filter to available columns
             available_exog = [col for col in exog_cols if col in df.columns and col != base_col]
             if available_exog:
-                X = df[available_exog].loc[target_series.index]
+                X_df = df[available_exog].loc[target_series.index]
                 # Apply dimensionality reduction if specified
-                X = _apply_dimensionality_reduction(X, dimred_method, dimred_params)
+                X_df = _apply_dimensionality_reduction(X_df, dimred_method, dimred_params)
+                X = X_df.values
 
         # Get last timestamp and values
         last_epoch = float(df['time'].iloc[-1])
@@ -468,12 +471,7 @@ def forecast_engine(
         except Exception:
             pass
 
-        # Dispatch to appropriate forecast method
-        forecast_values = None
-        ci_values = None
-        ensemble_meta: Optional[Dict[str, Any]] = None
-        metadata: Dict[str, Any] = {}
-
+        # Call engine
         try:
             if method_l == 'ensemble':
                 ensemble_meta = {}
@@ -592,7 +590,6 @@ def forecast_engine(
                 forecaster = ForecastRegistry.get(method_l)
                 
                 # Prepare exog variables if supported and available
-                exog_future = None
                 # Note: X is the feature matrix for the training period. 
                 # For future exog, we would need to generate/fetch it. 
                 # Currently the engine doesn't support generating future exog automatically 
@@ -603,7 +600,9 @@ def forecast_engine(
                 kwargs = dict(p)
                 kwargs['ci_alpha'] = ci_alpha
                 if X is not None:
-                    kwargs['exog_used'] = X.values
+                    kwargs['exog_used'] = X
+                if exog_future is not None:
+                    kwargs['exog_future'] = exog_future
                     
                 # Call forecast
                 res = forecaster.forecast(target_series, horizon, seasonality, kwargs)

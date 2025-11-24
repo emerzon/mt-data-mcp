@@ -32,6 +32,7 @@ from .helpers import (
     pd_freq_from_timeframe as _pd_freq_from_timeframe,
 )
 from .target_builder import build_target_series, aggregate_horizon_target
+from .forecast_methods import get_forecast_methods_data
 
 # Removed unused imports of specific method implementations
 # Logic is now handled by forecast_engine via registry
@@ -45,258 +46,14 @@ except Exception:  # runtime fallback
     DenoiseSpec = Dict[str, Any]  # type: ignore
 
 # Optional availability flags and lazy imports following server logic
+# (Kept for backward compatibility if anything relies on these flags, though mostly unused now)
 try:
     from statsmodels.tsa.holtwinters import SimpleExpSmoothing as _SES, ExponentialSmoothing as _ETS  # type: ignore
     _SM_ETS_AVAILABLE = True
 except Exception:
     _SM_ETS_AVAILABLE = False
     _SES = _ETS = None  # type: ignore
-try:
-    from statsmodels.tsa.statespace.sarimax import SARIMAX as _SARIMAX  # type: ignore
-    _SM_SARIMAX_AVAILABLE = True
-except Exception:
-    _SM_SARIMAX_AVAILABLE = False
-    _SARIMAX = None  # type: ignore
-try:
-    import importlib.util as _importlib_util  # type: ignore
-    _NF_AVAILABLE = _importlib_util.find_spec("neuralforecast") is not None
-except Exception:
-    _NF_AVAILABLE = False
-try:
-    import importlib.util as _importlib_util2  # type: ignore
-    _SF_AVAILABLE = _importlib_util2.find_spec("statsforecast") is not None
-except Exception:
-    _SF_AVAILABLE = False
-try:
-    import importlib.util as _importlib_util3  # type: ignore
-    _MLF_AVAILABLE = _importlib_util3.find_spec("mlforecast") is not None
-except Exception:
-    _MLF_AVAILABLE = False
-try:
-    import importlib.util as _importlib_util4  # type: ignore
-    _LGB_AVAILABLE = _importlib_util4.find_spec("lightgbm") is not None
-except Exception:
-    _LGB_AVAILABLE = False
-try:
-    import importlib.util as _importlib_util5  # type: ignore
-    # Chronos available only when native package is installed
-    _CHRONOS_AVAILABLE = (_importlib_util5.find_spec("chronos") is not None)
-except Exception:
-    _CHRONOS_AVAILABLE = False
-try:
-    import importlib.util as _importlib_util6  # type: ignore
-    # Consider TimesFM available only when the native package is installed
-    _TIMESFM_AVAILABLE = (_importlib_util6.find_spec("timesfm") is not None)
-except Exception:
-    _TIMESFM_AVAILABLE = False
-try:
-    import importlib.util as _importlib_util7  # type: ignore
-    _LAG_LLAMA_AVAILABLE = (_importlib_util7.find_spec("lag_llama") is not None)
-except Exception:
-    _LAG_LLAMA_AVAILABLE = False
-try:
-    import importlib.util as _importlib_util8  # type: ignore
-    _MOIRAI_AVAILABLE = (_importlib_util8.find_spec("uni2ts") is not None)
-except Exception:
-    _MOIRAI_AVAILABLE = False
-
-
-def get_forecast_methods_data() -> Dict[str, Any]:
-    """Return metadata about available forecast methods and their requirements."""
-    methods: List[Dict[str, Any]] = []
-
-    def add(method: str, description: str, params: List[Dict[str, Any]], requires: List[str], supports: Dict[str, bool]) -> None:
-        available = True
-        reqs = list(requires)
-        if method in ("ses", "holt", "holt_winters_add", "holt_winters_mul") and not _SM_ETS_AVAILABLE:
-            available = False; reqs.append("statsmodels")
-        if method in ("arima", "sarima") and not _SM_SARIMAX_AVAILABLE:
-            available = False; reqs.append("statsmodels")
-        if method in ("nhits", "nbeatsx", "tft", "patchtst") and not _NF_AVAILABLE:
-            available = False; reqs.append("neuralforecast[torch]")
-        if method.startswith("sf_") and not _SF_AVAILABLE:
-            available = False; reqs.append("statsforecast")
-        if method == "mlf_rf" and not _MLF_AVAILABLE:
-            available = False; reqs.append("mlforecast, scikit-learn")
-        if method == "mlf_lightgbm" and (not _MLF_AVAILABLE or not _LGB_AVAILABLE):
-            available = False; reqs.append("mlforecast, lightgbm")
-        if method == "chronos_bolt" and not _CHRONOS_AVAILABLE:
-            available = False; reqs.append("chronos-forecasting")
-        if method == "timesfm" and not _TIMESFM_AVAILABLE:
-            available = False; reqs.append("timesfm")
-        if method == "lag_llama" and not _LAG_LLAMA_AVAILABLE:
-            available = False; reqs.append("lag-llama, gluonts, torch")
-        if method == "moirai" and not _MOIRAI_AVAILABLE:
-            available = False; reqs.append("uni2ts, torch")
-        # ensemble is not wired yet in this repo
-        if method == "ensemble":
-            available = False; reqs.append("not implemented")
-        methods.append({
-            "method": method,
-            "available": bool(available),
-            "requires": sorted(set(reqs)),
-            "description": description,
-            "params": params,
-            "supports": supports,
-        })
-
-    # Baselines
-    add("naive", "Repeat last value forward.", [], [], {"price": True, "return": True, "ci": True})
-    add("seasonal_naive", "Repeat last seasonal value (period m).", [
-        {"name": "seasonality", "type": "int", "default": None, "description": "Seasonal period. Auto by timeframe if omitted."},
-    ], [], {"price": True, "return": True, "ci": True})
-    add("drift", "Line from first to last with constant slope.", [], [], {"price": True, "return": True, "ci": True})
-    add("theta", "Theta method (SES + trend).", [
-        {"name": "alpha", "type": "float", "default": 0.2, "description": "SES smoothing factor for theta blend."},
-    ], [], {"price": True, "return": True, "ci": True})
-    add("fourier_ols", "Fourier series regression with optional trend.", [
-        {"name": "seasonality", "type": "int", "default": None, "description": "Seasonal period m."},
-        {"name": "K", "type": "int", "default": 3, "description": "Number of Fourier harmonics."},
-        {"name": "trend", "type": "bool", "default": True, "description": "Include linear trend."},
-    ], [], {"price": True, "return": True, "ci": True})
-
-    # ETS / Holt-Winters / ARIMA family
-    add("ses", "Simple Exponential Smoothing (statsmodels).", [
-        {"name": "alpha", "type": "float|null", "default": None, "description": "If None, estimated by MLE."},
-    ], [], {"price": True, "return": True, "ci": True})
-    add("holt", "Holt’s linear trend (statsmodels).", [
-        {"name": "damped", "type": "bool", "default": True, "description": "Use damped trend variant."},
-    ], [], {"price": True, "return": True, "ci": True})
-    add("holt_winters_add", "Additive Holt-Winters (statsmodels).", [
-        {"name": "seasonality", "type": "int", "default": None, "description": "Seasonal period m."},
-    ], [], {"price": True, "return": True, "ci": True})
-    add("holt_winters_mul", "Multiplicative Holt-Winters (statsmodels).", [
-        {"name": "seasonality", "type": "int", "default": None, "description": "Seasonal period m."},
-    ], [], {"price": True, "return": True, "ci": True})
-    add("arima", "Non-seasonal ARIMA via SARIMAX.", [
-        {"name": "p", "type": "int", "default": 1}, {"name": "d", "type": "int", "default": 0}, {"name": "q", "type": "int", "default": 1},
-        {"name": "trend", "type": "str", "default": "c"},
-    ], [], {"price": True, "return": True, "ci": True})
-    add("sarima", "Seasonal ARIMA via SARIMAX.", [
-        {"name": "p", "type": "int", "default": 1}, {"name": "d", "type": "int", "default": 0}, {"name": "q", "type": "int", "default": 1},
-        {"name": "P", "type": "int", "default": 0}, {"name": "D", "type": "int", "default": 1}, {"name": "Q", "type": "int", "default": 0},
-        {"name": "seasonality", "type": "int", "default": None},
-        {"name": "trend", "type": "str", "default": "c"},
-    ], [], {"price": True, "return": True, "ci": True})
-
-    # Monte Carlo
-    add("mc_gbm", "Monte Carlo with GBM calibrated from log-returns.", [
-        {"name": "n_sims", "type": "int", "default": 500},
-        {"name": "seed", "type": "int", "default": 42},
-    ], [], {"price": True, "return": True, "ci": True})
-    add("hmm_mc", "Monte Carlo with Gaussian HMM regimes over returns.", [
-        {"name": "n_states", "type": "int", "default": 2},
-        {"name": "n_sims", "type": "int", "default": 500},
-        {"name": "seed", "type": "int", "default": 42},
-    ], [], {"price": True, "return": True, "ci": True})
-
-    # Optional ecosystems
-    add("nhits", "NeuralForecast NHITS (PyTorch).", [], ["neuralforecast[torch]"], {"price": True, "return": True, "ci": False})
-    add("nbeatsx", "NeuralForecast NBEATSx (PyTorch).", [], ["neuralforecast[torch]"], {"price": True, "return": True, "ci": False})
-    add("tft", "NeuralForecast TFT (PyTorch).", [], ["neuralforecast[torch]"], {"price": True, "return": True, "ci": False})
-    add("patchtst", "NeuralForecast PatchTST (PyTorch).", [], ["neuralforecast[torch]"], {"price": True, "return": True, "ci": False})
-    add("sf_autoarima", "StatsForecast AutoARIMA.", [], ["statsforecast"], {"price": True, "return": True, "ci": False})
-    add("sf_theta", "StatsForecast Theta.", [], ["statsforecast"], {"price": True, "return": True, "ci": False})
-    add("sf_autoets", "StatsForecast AutoETS.", [], ["statsforecast"], {"price": True, "return": True, "ci": False})
-    add("sf_seasonalnaive", "StatsForecast SeasonalNaive.", [], ["statsforecast"], {"price": True, "return": True, "ci": False})
-    add("mlf_rf", "MLForecast RandomForest.", [], ["mlforecast", "scikit-learn"], {"price": True, "return": True, "ci": False})
-    add("mlf_lightgbm", "MLForecast LightGBM.", [], ["mlforecast", "lightgbm"], {"price": True, "return": True, "ci": False})
-    add("chronos_bolt", "Chronos-2 foundation model (alias: chronos2). Upstream model supports cross-learning, multivariate, and covariates — adapter currently uses univariate target only.", [
-        {"name": "model_name", "type": "str", "description": "Hugging Face model id (default: amazon/chronos-2)"},
-        {"name": "context_length", "type": "int", "description": "Context window length (auto if omitted)"},
-        {"name": "quantiles", "type": "list", "description": "Quantile levels to return (default: [0.5])"},
-        {"name": "device_map", "type": "str", "description": "Device placement (default: auto)"},
-    ], ["chronos-forecasting>=2.0.0"], {"price": True, "return": True, "ci": False})
-    add("chronos2", "Chronos-2 foundation model (preferred name; same as chronos_bolt). Upstream model supports cross-learning, multivariate, and covariates — adapter currently uses univariate target only.", [
-        {"name": "model_name", "type": "str", "description": "Hugging Face model id (default: amazon/chronos-2)"},
-        {"name": "context_length", "type": "int", "description": "Context window length (auto if omitted)"},
-        {"name": "quantiles", "type": "list", "description": "Quantile levels to return (default: [0.5])"},
-        {"name": "device_map", "type": "str", "description": "Device placement (default: auto)"},
-    ], ["chronos-forecasting>=2.0.0"], {"price": True, "return": True, "ci": False})
-    add("timesfm", "Google TimesFM (native package).", [], ["timesfm"], {"price": True, "return": True, "ci": False})
-    add("lag_llama", "Lag-Llama (native estimator).", [], ["lag-llama", "gluonts", "torch"], {"price": True, "return": True, "ci": False})
-    add("moirai", "Salesforce Moirai (uni2ts).", [
-        {"name": "variant", "type": "str", "description": "Model variant (default: moirai-1.1-R-large, other options: moirai-1.1-R-small, moirai-1.1-R-base, 1.0-R-small, 1.0-R-base, 1.0-R-large)"},
-        {"name": "context_length", "type": "int", "description": "Context window length (auto if omitted)"},
-        {"name": "device", "type": "str", "description": "Torch device string (e.g., 'cpu', 'cuda:0')"},
-        {"name": "quantiles", "type": "list", "description": "Quantile levels to return (default: [0.5])"},
-        {"name": "do_mean", "type": "bool", "description": "Return mean estimate if available (default: True)"},
-        {"name": "do_median", "type": "bool", "description": "Fallback to median if mean unavailable (default: True)"},
-    ], ["uni2ts", "torch"], {"price": True, "return": True, "ci": False})
-
-    # GluonTS Torch quick-train models
-    add("gt_deepar", "GluonTS DeepAR (quick train)", [
-        {"name": "context_length", "type": "int", "description": "Input window length (default: min(64,n))"},
-        {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
-        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
-        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
-        {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
-    ], ["gluonts", "torch"], {"price": True, "return": True, "ci": True})
-
-    add("gt_sfeedforward", "GluonTS SimpleFeedForward (quick train)", [
-        {"name": "context_length", "type": "int", "description": "Input window length (default: min(64,n))"},
-        {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
-        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
-        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
-        {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
-    ], ["gluonts", "torch"], {"price": True, "return": True, "ci": True})
-
-    add("gt_prophet", "GluonTS Prophet wrapper", [
-        {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
-        {"name": "prophet_params", "type": "dict", "description": "Passed to ProphetPredictor (growth, seasonality_mode, ...)"},
-    ], ["gluonts", "prophet"], {"price": True, "return": True, "ci": True})
-
-    add("gt_tft", "GluonTS Temporal Fusion Transformer (quick train)", [
-        {"name": "context_length", "type": "int", "description": "Input window length (default: min(128,n))"},
-        {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
-        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
-        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
-        {"name": "hidden_size", "type": "int", "description": "Model width (default: 64)"},
-        {"name": "dropout", "type": "float", "description": "Dropout (default: 0.1)"},
-        {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
-    ], ["gluonts", "torch"], {"price": True, "return": True, "ci": True})
-
-    add("gt_wavenet", "GluonTS WaveNet (quick train)", [
-        {"name": "context_length", "type": "int", "description": "Input window length (default: min(128,n))"},
-        {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
-        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
-        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
-        {"name": "dilation_depth", "type": "int", "description": "Dilation depth (default: 5)"},
-        {"name": "num_stacks", "type": "int", "description": "WaveNet stacks (default: 1)"},
-        {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
-    ], ["gluonts", "torch"], {"price": True, "return": True, "ci": True})
-
-    add("gt_deepnpts", "GluonTS DeepNPTS (quick train)", [
-        {"name": "context_length", "type": "int", "description": "Input window length (default: min(128,n))"},
-        {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
-        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
-        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
-        {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
-    ], ["gluonts", "torch"], {"price": True, "return": True, "ci": True})
-
-    add("gt_mqf2", "GluonTS MQF2 (quick train, quantiles)", [
-        {"name": "context_length", "type": "int", "description": "Input window length (default: min(128,n))"},
-        {"name": "train_epochs", "type": "int", "description": "Training epochs (default: 5)"},
-        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)"},
-        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 1e-3)"},
-        {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
-        {"name": "quantiles", "type": "list", "description": "Quantiles to return (e.g., [0.05,0.5,0.95])"},
-    ], ["gluonts", "torch", "cpflows"], {"price": True, "return": True, "ci": True})
-    add("gt_npts", "GluonTS NPTS (Non-Parametric Time Series)", [
-        {"name": "context_length", "type": "int", "description": "Input window length (default: min(128,n))"},
-        {"name": "freq", "type": "str", "description": "Pandas frequency string (auto from timeframe)"},
-    ], ["gluonts"], {"price": True, "return": True, "ci": True})
-    add("ensemble", "Adaptive ensemble (average, Bayesian model averaging, stacking).",
-        [{"name": "methods", "type": "list", "description": "Component methods (default: naive,theta,fourier_ols)"},
-         {"name": "mode", "type": "str", "description": "average|bma|stacking (default: average)"},
-         {"name": "weights", "type": "list", "description": "Manual weights for average mode"},
-         {"name": "cv_points", "type": "int", "description": "Walk-forward anchors for weighting"},
-         {"name": "min_train_size", "type": "int", "description": "Minimum observations per anchor"},
-         {"name": "method_params", "type": "dict", "description": "Per-method parameter overrides"},
-         {"name": "expose_components", "type": "bool", "description": "Include component forecasts (default: True)"}],
-        [], {"price": True, "return": True, "ci": False})
-
-    return {"success": True, "schema_version": 1, "methods": methods}
+# ... (other availability checks can remain or be cleaned up, keeping for safety) ...
 
 
 def _default_seasonality_period(timeframe: str) -> int:
@@ -312,47 +69,6 @@ def _next_times_from_last(last_epoch: float, tf_secs: int, horizon: int) -> List
 def _pd_freq_from_timeframe(tf: str) -> str:
     from .common import pd_freq_from_timeframe
     return pd_freq_from_timeframe(tf)
-
-
-_FORECAST_METHODS = (
-    "naive",
-    "seasonal_naive",
-    "drift",
-    "theta",
-    "fourier_ols",
-    "ses",
-    "holt",
-    "holt_winters_add",
-    "holt_winters_mul",
-    "arima",
-    "sarima",
-    "mc_gbm",
-    "hmm_mc",
-    "nhits",
-    "nbeatsx",
-    "tft",
-    "patchtst",
-    "sf_autoarima",
-    "sf_theta",
-    "sf_autoets",
-    "sf_seasonalnaive",
-    "mlf_rf",
-    "mlf_lightgbm",
-    "chronos_bolt",
-    "chronos2",
-    "timesfm",
-    "lag_llama",
-    "moirai",
-    "gt_deepar",
-    "gt_sfeedforward",
-    "gt_prophet",
-    "gt_tft",
-    "gt_wavenet",
-    "gt_deepnpts",
-    "gt_mqf2",
-    "gt_npts",
-    "ensemble",
-)
 
 
 def forecast(
@@ -379,9 +95,17 @@ def forecast(
     Parameters: symbol, timeframe, method, horizon, lookback?, as_of?, params?, ci_alpha?, target, denoise?
 
     Methods: naive, seasonal_naive, drift, theta, fourier_ols, ses, holt, holt_winters_add, holt_winters_mul, arima, sarima.
+    
     - `params`: method-specific settings; use `seasonality` inside params when needed (auto if omitted).
     - `target`: 'price' or 'return' (log-return). Price forecasts operate on close prices.
     - `ci_alpha`: confidence level (e.g., 0.05). Set to null to disable intervals.
+    - `features`: Dict or "key=value" string for feature engineering.
+        - `include`: List of columns to include (e.g., "open,high").
+        - `future_covariates`: List of date-based features to generate for future horizon.
+          Supported tokens: `hour`, `dow` (day of week), `month`, `day`, `doy` (day of year), 
+          `week`, `minute`, `mod` (minute of day), `is_weekend`, `is_holiday`.
+          For `is_holiday`, specify `country` in features (default: US).
+        - `dimred_method`: Dimensionality reduction method (e.g., "pca").
     """
     try:
         if timeframe not in TIMEFRAME_MAP:
@@ -393,9 +117,7 @@ def forecast(
 
         method_l = str(method).lower().strip()
         quantity_l = str(quantity).lower().strip()
-        if method_l not in _FORECAST_METHODS:
-            return {"error": f"Invalid method: {method}. Valid options: {list(_FORECAST_METHODS)}"}
-
+        
         # Volatility models have a dedicated endpoint; keep forecast focused on price/return
         if quantity_l == 'volatility' or method_l.startswith('vol_'):
             return {"error": "Use forecast_volatility for volatility models"}
@@ -668,52 +390,146 @@ def forecast(
                         tokens = [tok.strip() for tok in fut_cov.replace(',', ' ').split() if tok.strip()]
                     elif isinstance(fut_cov, (list, tuple)):
                         tokens = [str(tok).strip() for tok in fut_cov]
-                    t_train = df['time'].astype(float).to_numpy()
-                    t_future = np.asarray(future_times, dtype=float)
+                    
+                    # Lazy DT index loading
+                    dt_train = None
+                    dt_future = None
+                    def _ensure_dt():
+                        nonlocal dt_train, dt_future
+                        if dt_train is None:
+                            try:
+                                dt_train = pd.to_datetime(df['time'].astype(float).to_numpy(), unit='s', utc=True)
+                            except Exception:
+                                dt_train = pd.Index([])
+                        if dt_future is None:
+                            try:
+                                t_future = np.asarray(future_times, dtype=float)
+                                dt_future = pd.to_datetime(t_future, unit='s', utc=True)
+                            except Exception:
+                                dt_future = pd.Index([])
+                    
                     tr_list: list[np.ndarray] = []
                     tf_list: list[np.ndarray] = []
+                    
                     for tok in tokens:
                         tl = tok.lower()
+                        # Fourier terms
                         if tl.startswith('fourier:'):
                             try:
                                 per = int(tl.split(':',1)[1])
                             except Exception:
                                 per = 24
                             w = 2.0 * math.pi / float(max(1, per))
-                            idx_tr = np.arange(t_train.size, dtype=float)
-                            idx_tf = np.arange(t_future.size, dtype=float)
+                            # No need for datetime index for fourier on index
+                            idx_tr = np.arange(len(df), dtype=float)
+                            idx_tf = np.arange(len(future_times), dtype=float)
                             tr_list.append(np.sin(w * idx_tr)); cal_cols.append(f'fx_sin_{per}')
                             tr_list.append(np.cos(w * idx_tr)); cal_cols.append(f'fx_cos_{per}')
                             tf_list.append(np.sin(w * idx_tf));
                             tf_list.append(np.cos(w * idx_tf));
-                        elif tl in ('hour','hr'):
-                            try:
-                                hrs_tr = pd.to_datetime(t_train, unit='s', utc=True).hour.to_numpy()
-                            except Exception:
-                                hrs_tr = (np.arange(t_train.size) % 24)
-                            try:
-                                hrs_tf = pd.to_datetime(t_future, unit='s', utc=True).hour.to_numpy()
-                            except Exception:
-                                hrs_tf = (np.arange(t_future.size) % 24)
+                            continue
+
+                        # Ensure DT indices are ready for date-based features
+                        _ensure_dt()
+                        if dt_train is None or dt_future is None: # Should not happen
+                            continue
+                            
+                        if tl in ('hour','hr'):
+                            vals_tr = dt_train.hour.to_numpy()
+                            vals_tf = dt_future.hour.to_numpy()
                             w = 2.0 * math.pi / 24.0
-                            tr_list.append(np.sin(w * hrs_tr)); cal_cols.append('hr_sin')
-                            tr_list.append(np.cos(w * hrs_tr)); cal_cols.append('hr_cos')
-                            tf_list.append(np.sin(w * hrs_tf));
-                            tf_list.append(np.cos(w * hrs_tf));
+                            tr_list.append(np.sin(w * vals_tr)); cal_cols.append('hr_sin')
+                            tr_list.append(np.cos(w * vals_tr)); cal_cols.append('hr_cos')
+                            tf_list.append(np.sin(w * vals_tf));
+                            tf_list.append(np.cos(w * vals_tf));
                         elif tl in ('dow','wday','weekday'):
-                            try:
-                                d_tr = pd.to_datetime(t_train, unit='s', utc=True).weekday.to_numpy()
-                            except Exception:
-                                d_tr = (np.arange(t_train.size) % 7)
-                            try:
-                                d_tf = pd.to_datetime(t_future, unit='s', utc=True).weekday.to_numpy()
-                            except Exception:
-                                d_tf = (np.arange(t_future.size) % 7)
+                            vals_tr = dt_train.weekday.to_numpy()
+                            vals_tf = dt_future.weekday.to_numpy()
                             w = 2.0 * math.pi / 7.0
-                            tr_list.append(np.sin(w * d_tr)); cal_cols.append('dow_sin')
-                            tr_list.append(np.cos(w * d_tr)); cal_cols.append('dow_cos')
-                            tf_list.append(np.sin(w * d_tf));
-                            tf_list.append(np.cos(w * d_tf));
+                            tr_list.append(np.sin(w * vals_tr)); cal_cols.append('dow_sin')
+                            tr_list.append(np.cos(w * vals_tr)); cal_cols.append('dow_cos')
+                            tf_list.append(np.sin(w * vals_tf));
+                            tf_list.append(np.cos(w * vals_tf));
+                        elif tl in ('month', 'mo'):
+                            # Month 1-12 -> 0-11 for cyclic
+                            vals_tr = dt_train.month.to_numpy() - 1
+                            vals_tf = dt_future.month.to_numpy() - 1
+                            w = 2.0 * math.pi / 12.0
+                            tr_list.append(np.sin(w * vals_tr)); cal_cols.append('mo_sin')
+                            tr_list.append(np.cos(w * vals_tr)); cal_cols.append('mo_cos')
+                            tf_list.append(np.sin(w * vals_tf));
+                            tf_list.append(np.cos(w * vals_tf));
+                        elif tl in ('day', 'dom'):
+                            # Day 1-31 -> 0-30
+                            vals_tr = dt_train.day.to_numpy() - 1
+                            vals_tf = dt_future.day.to_numpy() - 1
+                            w = 2.0 * math.pi / 31.0
+                            tr_list.append(np.sin(w * vals_tr)); cal_cols.append('dom_sin')
+                            tr_list.append(np.cos(w * vals_tr)); cal_cols.append('dom_cos')
+                            tf_list.append(np.sin(w * vals_tf));
+                            tf_list.append(np.cos(w * vals_tf));
+                        elif tl in ('doy', 'dayofyear'):
+                            # Day of year 1-366 -> 0-365
+                            vals_tr = dt_train.dayofyear.to_numpy() - 1
+                            vals_tf = dt_future.dayofyear.to_numpy() - 1
+                            w = 2.0 * math.pi / 365.25
+                            tr_list.append(np.sin(w * vals_tr)); cal_cols.append('doy_sin')
+                            tr_list.append(np.cos(w * vals_tr)); cal_cols.append('doy_cos')
+                            tf_list.append(np.sin(w * vals_tf));
+                            tf_list.append(np.cos(w * vals_tf));
+                        elif tl in ('week', 'woy'):
+                            # Week 1-53 -> 0-52. isocalendar().week returns UInt32, need cast
+                            vals_tr = dt_train.isocalendar().week.to_numpy().astype(float) - 1
+                            vals_tf = dt_future.isocalendar().week.to_numpy().astype(float) - 1
+                            w = 2.0 * math.pi / 52.143 # 365/7
+                            tr_list.append(np.sin(w * vals_tr)); cal_cols.append('woy_sin')
+                            tr_list.append(np.cos(w * vals_tr)); cal_cols.append('woy_cos')
+                            tf_list.append(np.sin(w * vals_tf));
+                            tf_list.append(np.cos(w * vals_tf));
+                        elif tl in ('minute', 'min'):
+                            # Minute 0-59
+                            vals_tr = dt_train.minute.to_numpy()
+                            vals_tf = dt_future.minute.to_numpy()
+                            w = 2.0 * math.pi / 60.0
+                            tr_list.append(np.sin(w * vals_tr)); cal_cols.append('min_sin')
+                            tr_list.append(np.cos(w * vals_tr)); cal_cols.append('min_cos')
+                            tf_list.append(np.sin(w * vals_tf));
+                            tf_list.append(np.cos(w * vals_tf));
+                        elif tl in ('mod', 'minute_of_day'):
+                            # Minute of day 0-1439
+                            vals_tr = dt_train.hour.to_numpy() * 60 + dt_train.minute.to_numpy()
+                            vals_tf = dt_future.hour.to_numpy() * 60 + dt_future.minute.to_numpy()
+                            w = 2.0 * math.pi / 1440.0
+                            tr_list.append(np.sin(w * vals_tr)); cal_cols.append('mod_sin')
+                            tr_list.append(np.cos(w * vals_tr)); cal_cols.append('mod_cos')
+                            tf_list.append(np.sin(w * vals_tf));
+                            tf_list.append(np.cos(w * vals_tf));
+                        elif tl in ('is_weekend', 'weekend'):
+                            # 0 or 1
+                            vals_tr = (dt_train.weekday >= 5).astype(float)
+                            vals_tf = (dt_future.weekday >= 5).astype(float)
+                            tr_list.append(vals_tr); cal_cols.append('is_weekend')
+                            tf_list.append(vals_tf);
+                        elif tl in ('is_holiday', 'holiday'):
+                            try:
+                                import holidays
+                                country = fcfg.get('country', 'US')
+                                # Gather years
+                                years_tr = dt_train.year.unique()
+                                years_tf = dt_future.year.unique()
+                                all_years = np.unique(np.concatenate([years_tr, years_tf]))
+                                # Init calendar
+                                hol_cal = holidays.CountryHoliday(country, years=all_years)
+                                # Map dates
+                                # is_holiday check on datetime/date objects
+                                # dt_train is DatetimeIndex
+                                vals_tr = np.array([1.0 if d in hol_cal else 0.0 for d in dt_train], dtype=float)
+                                vals_tf = np.array([1.0 if d in hol_cal else 0.0 for d in dt_future], dtype=float)
+                                tr_list.append(vals_tr); cal_cols.append('is_holiday')
+                                tf_list.append(vals_tf);
+                            except Exception:
+                                pass # Ignore if holidays lib missing or country invalid
+                    
                     if tr_list:
                         cal_train = np.vstack(tr_list).T.astype(float)
                         cal_future = np.vstack(tf_list).T.astype(float)
@@ -747,20 +563,31 @@ def forecast(
                             feat_info['dimred_error'] = str(_ex)
                     else:
                         exog = X_arr
+                    
+                    # Save raw exog for future generation (before appending calendar features)
+                    exog_raw = exog
+
                     # Append calendar features
                     if cal_train is not None:
                         exog = np.hstack([exog, cal_train]) if exog.size else cal_train
+                    
                     # Align with return series if needed
                     if (quantity_l == 'return') or (str(target).lower() == 'return'):
                         exog = exog[1:]
-                    # Build future exog by holding the last observed row (default policy)
-                    if exog.shape[0] >= 1:
-                        last_row = exog[-1]
+                        if exog_raw.size > 0:
+                            exog_raw = exog_raw[1:]
+                    
+                    # Build future exog by holding the last observed row of raw features + future calendar features
+                    exog_f = None
+                    if exog_raw.size > 0:
+                        last_row = exog_raw[-1]
                         exog_f = np.tile(last_row.reshape(1, -1), (int(horizon), 1))
-                    else:
-                        exog_f = None
+                    
                     if exog_f is not None and cal_future is not None:
                         exog_f = np.hstack([exog_f, cal_future])
+                    elif exog_f is None and cal_future is not None:
+                        exog_f = cal_future
+                        
                     exog_used = exog
                     exog_future = exog_f
                     feat_info['selected_columns'] = sel_cols + cal_cols
@@ -808,7 +635,9 @@ def forecast(
             features=features,
             dimred_method=dimred_method,
             dimred_params=dimred_params,
-            target_spec=target_spec
+            target_spec=target_spec,
+            exog_used=exog_used,
+            exog_future=exog_future
         )
         
         if "error" in result:

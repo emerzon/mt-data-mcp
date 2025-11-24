@@ -34,11 +34,24 @@ def forecast_generate(
     dimred_method: Optional[str] = None,
     dimred_params: Optional[Dict[str, Any]] = None,
     target_spec: Optional[Dict[str, Any]] = None,
+    future_covariates: Optional[List[str]] = None,
+    country: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Fast forecasts for the next `horizon` bars using lightweight methods.
 
     Delegates to the implementation under `mtdata.forecast.forecast`.
+    
+    Features can include `future_covariates` like 'hour', 'dow', 'month', 'is_holiday' (requires holidays lib).
     """
+    features = features or {}
+    if future_covariates:
+        # If passed as list, join them for the features dict string/list support
+        if isinstance(features, dict):
+            features['future_covariates'] = future_covariates
+    if country:
+        if isinstance(features, dict):
+            features['country'] = country
+
     return _forecast_impl(
         symbol=symbol,
         timeframe=timeframe,  # type: ignore[arg-type]

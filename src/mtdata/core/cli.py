@@ -231,18 +231,30 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
         hint = desc or _PARAM_HINTS.get(param['name'])
         kwargs = {'help': hint or f"{param['name']} parameter", 'dest': param['name']}
         
-        # Handle different types
-        if param['type'] == int:
-            kwargs['type'] = int
-        elif param['type'] == float:
-            kwargs['type'] = float
-        elif param['type'] == bool:
-            # Support tri-state booleans via explicit true/false value
-            kwargs['type'] = str
-            kwargs['choices'] = ['true', 'false']
-            kwargs['metavar'] = 'bool'
+        # Dynamically populate choices for 'method' parameter
+        if param['name'] == 'method':
+            try:
+                from mtdata.forecast.registry import ForecastRegistry
+                import mtdata.forecast.methods.classical
+                import mtdata.forecast.methods.ets_arima
+                import mtdata.forecast.methods.statsforecast
+                import mtdata.forecast.methods.mlforecast
+                import mtdata.forecast.methods.pretrained
+                import mtdata.forecast.methods.neural
+                import mtdata.forecast.methods.sktime
+                
+                dynamic_methods = set(ForecastRegistry.list_available())
+                dynamic_methods.add('ensemble') # ensemble is managed separately in forecast_engine
+                kwargs['choices'] = sorted(list(dynamic_methods))
+            except Exception as e:
+                _debug(f"Failed to dynamically load forecast methods for CLI: {e}")
+                # Fallback to static type choices if dynamic loading fails
+                ptype = param.get('type')
+                origin = get_origin(ptype)
+                if origin is Literal:
+                    kwargs['choices'] = [str(v) for v in get_args(ptype) if v is not None]
         else:
-            # Detect Literal and List[Literal] choices
+            # Handle other types as before
             try:
                 ptype = param.get('type')
                 origin = get_origin(ptype)
@@ -450,6 +462,19 @@ def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
     lines.append("  - int: integer")
     lines.append("  - str: string")
     lines.append("  - bool: pass true|false (e.g., --flag true)")
+    lines.append("")
+    lines.append("General Examples:")
+    lines.append("  # Basic forecast with Theta method (fast, univariate)")
+    lines.append("  python cli.py forecast_generate EURUSD --timeframe H1 --method theta --horizon 24")
+    lines.append("")
+    lines.append("  # Foundation model (Chronos-2) with covariates and quantiles")
+    lines.append("  python cli.py forecast_generate BTCUSD --timeframe H1 --method chronos2 --horizon 12 \\")
+    lines.append("    --features \"include=open,high future_covariates=hour,dow,is_holiday\" \\")
+    lines.append("    --country US --verbose")
+    lines.append("")
+    lines.append("  # Rolling backtest for accuracy check")
+    lines.append("  python cli.py forecast_backtest_run EURUSD --timeframe H1 --methods theta,seasonal_naive \\")
+    lines.append("    --steps 5 --horizon 12")
     return "\n".join(lines)
 
 
@@ -651,7 +676,8 @@ def main():
         # Create subparser
         cmd_parser = subparsers.add_parser(
             cmd_name, 
-            help=(meta.get('description') or func_info['doc'].split('\n')[0] if func_info['doc'] else f"Execute {cmd_name}")
+            help=(meta.get('description') or func_info['doc'].split('\n')[0] if func_info['doc'] else f"Execute {cmd_name}"),
+            formatter_class=argparse.RawDescriptionHelpFormatter
         )
         
         # Add global parameters to each subparser, excluding any that conflict with function params

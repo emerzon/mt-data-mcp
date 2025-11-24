@@ -63,11 +63,12 @@ class ChronosBoltMethod(PretrainedMethod):
         context = extract_context_window(vals, ctx_len, n, dtype=float)
         
         # Import required modules using DRY helper
-        modules, import_error = safe_import_modules(['pandas', 'chronos'], 'chronos2')
+        modules, import_error = safe_import_modules(['pandas', 'chronos', 'torch'], 'chronos2')
         if import_error:
             raise RuntimeError(import_error)
         
         _pd = modules['pandas']
+        _torch = modules['torch']
         _Chronos2Pipeline = modules['chronos'].Chronos2Pipeline
         
         try:
@@ -78,40 +79,123 @@ class ChronosBoltMethod(PretrainedMethod):
                 "target": _pd.Series(context, dtype=float),
             })
 
-            pipe = _Chronos2Pipeline.from_pretrained(model_name, device_map=device_map)
-            pred_df = pipe.predict_df(
-                context_df,
-                prediction_length=int(horizon),
-                quantile_levels=q_levels,
-                id_column="id",
-                timestamp_column="timestamp",
-                target="target",
-            )
-            pred_df = pred_df[pred_df["id"] == series_id]
-            if pred_df.empty:
-                raise RuntimeError("chronos2 error: empty prediction frame")
+            # Prepare covariates if available
+            # Check params first as forecast_engine passes them there
+            exog_hist = kwargs.get('exog_used') or p.get('exog_used')
+            exog_fut = kwargs.get('exog_future') or exog_future or p.get('exog_future')
+            
+            known_covariates = None
+            
+            if exog_hist is not None and exog_fut is not None:
+                try:
+                    # Ensure arrays
+                    hist_arr = np.asarray(exog_hist, dtype=float)
+                    fut_arr = np.asarray(exog_fut, dtype=float)
+                    
+                    # Match context length (take last len(context) rows of history)
+                    if len(hist_arr) >= len(context):
+                        hist_slice = hist_arr[-len(context):]
+                        
+                        # Concatenate history + future
+                        if hist_slice.shape[1] == fut_arr.shape[1]:
+                            full_exog = np.vstack([hist_slice, fut_arr])
+                            
+                            # Convert to tensor (1, time, n_feat)
+                            known_covariates = _torch.tensor(full_exog, dtype=_torch.float32).unsqueeze(0)
+                            
+                            # Handle device placement if explicit
+                            if device_map and device_map not in ('auto', 'cpu'):
+                                try:
+                                    known_covariates = known_covariates.to(device_map)
+                                except Exception:
+                                    pass
+                except Exception:
+                    # Fallback: ignore covariates on error
+                    pass
 
+            pipe = _Chronos2Pipeline.from_pretrained(model_name, device_map=device_map)
+            
+            # Use predict() instead of predict_df to support known_covariates
+            # Convert context to tensor
+            # Chronos expects (batch, n_variates, time) -> (1, 1, L)
+            ctx_tensor = _torch.tensor(context, dtype=_torch.float32).unsqueeze(0).unsqueeze(1)
+            if device_map and device_map not in ('auto', 'cpu'):
+                try:
+                    ctx_tensor = ctx_tensor.to(device_map)
+                except Exception:
+                    pass
+
+            # Attempt prediction with fallback for varying signatures
+            # Strategy: 
+            # 1. Try with known_covariates + num_samples (Bolt/Chronos-2-Bolt style)
+            # 2. Try without known_covariates (T5 style or if covariates not supported)
+            # 3. Try minimal args
+            
+            forecast_samples = None
+            
+            # Case 1: Full args
+            if known_covariates is not None:
+                try:
+                    predict_kwargs = {
+                        "prediction_length": int(horizon),
+                        "num_samples": int(p.get('num_samples', 20)),
+                        "known_covariates": known_covariates
+                    }
+                    forecast_samples = pipe.predict(ctx_tensor, **predict_kwargs)
+                except (TypeError, ValueError) as e:
+                    # "Unexpected keyword argument" or similar
+                    pass
+            
+            # Case 2: No covariates (if Case 1 failed or no covariates)
+            if forecast_samples is None:
+                try:
+                    predict_kwargs = {
+                        "prediction_length": int(horizon),
+                        "num_samples": int(p.get('num_samples', 20)),
+                    }
+                    forecast_samples = pipe.predict(ctx_tensor, **predict_kwargs)
+                except (TypeError, ValueError):
+                    pass
+            
+            # Case 3: Minimal (if num_samples also rejected)
+            if forecast_samples is None:
+                try:
+                    forecast_samples = pipe.predict(ctx_tensor, prediction_length=int(horizon))
+                except Exception as e:
+                    raise RuntimeError(f"Chronos predict failed even with minimal args: {e}")
+
+            # Extract samples for first batch
+            if isinstance(forecast_samples, list):
+                f_tensor = forecast_samples[0]
+            else:
+                f_tensor = forecast_samples[0]
+                
+            samples = f_tensor.detach().cpu().numpy() # (S, H) or (1, S, H)
+            
+            # Handle variate dimension if present (1, S, H) -> (S, H)
+            if samples.ndim == 3 and samples.shape[0] == 1:
+                samples = samples[0]
+            
             fq: Dict[str, List[float]] = {}
             for q in q_levels:
-                col_name = f"{float(q):g}"
-                if col_name in pred_df.columns:
-                    fq[col_name] = [float(v) for v in pred_df[col_name].tolist()[:horizon]]
+                try:
+                    q_val = np.quantile(samples, float(q), axis=0)
+                    fq[f"{float(q):g}"] = [float(v) for v in q_val.tolist()]
+                except Exception:
+                    pass
 
-            # Choose point forecast: prefer median quantile then mean/predictions column
-            f_vals: Optional[np.ndarray] = None
-            if "0.5" in pred_df.columns:
-                f_vals = np.asarray(pred_df["0.5"].tolist(), dtype=float)[:horizon]
-            elif "predictions" in pred_df.columns:
-                f_vals = np.asarray(pred_df["predictions"].tolist(), dtype=float)[:horizon]
-            elif fq:
-                first_q = next(iter(fq.values()))
-                f_vals = np.asarray(first_q, dtype=float)[:horizon]
+            # Point forecast: median
+            f_vals = np.quantile(samples, 0.5, axis=0)
 
             params_used = build_params_used(
                 {'model_name': model_name, 'device_map': device_map},
                 quantiles_dict=fq,
                 context_length=ctx_len if ctx_len else n
             )
+            
+            if known_covariates is not None:
+                params_used['covariates_used'] = True
+                params_used['n_covariates'] = int(known_covariates.shape[-1])
 
             if f_vals is None:
                 raise RuntimeError("chronos2 error: no point forecast produced")
