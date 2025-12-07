@@ -6,14 +6,17 @@ This module provides two primary helpers:
 - simulate_gbm_mc: Calibrate GBM from recent log-returns and simulate paths
 - simulate_hmm_mc: Fit a light-weight Gaussian HMM (2–3 states) to log-returns
   using an EM-like procedure and simulate regime-switching returns forward.
+- simulate_garch_mc: Fit a GARCH(1,1) model (requires 'arch' package) and simulate.
+- simulate_bootstrap_mc: Circular block bootstrap from historical returns.
 
-No external dependencies beyond numpy/pandas are required. The HMM fitting is a
+No external dependencies beyond numpy/pandas are required (except for GARCH). The HMM fitting is a
 minimal, robust EM tailored for 1D Gaussian emissions and a small number of
 states, with sensible initialization and numerical stability.
 """
 
 from typing import Dict, Tuple, Optional
 import numpy as np
+import warnings
 
 
 def _safe_log(x: np.ndarray, eps: float = 1e-12) -> np.ndarray:
@@ -238,6 +241,130 @@ def simulate_gbm_mc(
         cur = cur * np.exp(ret_paths[:, t])
         price_paths[:, t] = cur
     return {'price_paths': price_paths, 'return_paths': ret_paths}
+
+
+def simulate_garch_mc(
+    prices: np.ndarray,
+    horizon: int,
+    n_sims: int = 500,
+    seed: Optional[int] = 42,
+    p_order: int = 1,
+    q_order: int = 1,
+) -> Dict[str, np.ndarray]:
+    """Fit GARCH(p,q) model and simulate forward paths.
+    
+    Requires 'arch' package.
+    """
+    try:
+        from arch import arch_model
+    except ImportError:
+        raise ImportError("The 'arch' library is required for GARCH simulations.")
+
+    rng = np.random.RandomState(seed)
+    prices = np.asarray(prices, dtype=float)
+    prices = prices[np.isfinite(prices)]
+    if prices.size < 50:  # GARCH needs decent history
+        raise ValueError("Not enough prices for GARCH calibration (need > 50)")
+    
+    rets = np.diff(_safe_log(prices))
+    rets = rets[np.isfinite(rets)]
+    
+    # Scale returns for numerical stability (common practice with GARCH)
+    scale = 100.0
+    rets_scaled = rets * scale
+    
+    # Fit GARCH(p,q)
+    # Use Mean='Zero' assuming daily drift is negligible compared to vol for short horizons,
+    # or 'Constant' to capture drift. Let's use Constant.
+    am = arch_model(rets_scaled, vol='Garch', p=p_order, q=q_order, dist='Normal', mean='Constant')
+    
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        # disp='off' prevents printing convergence info
+        res = am.fit(disp='off', show_warning=False)
+    
+    # Forecast via simulation
+    # 'simulations' arg is number of paths
+    forecasts = res.forecast(horizon=horizon, method='simulation', simulations=n_sims, reindex=False)
+    
+    # Get simulated paths (1, n_sims, horizon) -> (n_sims, horizon)
+    # forecasts.simulations.values contains the simulated returns
+    sim_rets_scaled = forecasts.simulations.values[-1]
+    
+    # Unscale
+    sim_rets = sim_rets_scaled / scale
+    
+    # Reconstruct prices
+    last_price = float(prices[-1])
+    # cumsum of log returns
+    cum_rets = np.cumsum(sim_rets, axis=1)
+    price_paths = last_price * np.exp(cum_rets)
+    
+    return {
+        'price_paths': price_paths,
+        'return_paths': sim_rets,
+        'model_summary': str(res.summary()),
+    }
+
+
+def simulate_bootstrap_mc(
+    prices: np.ndarray,
+    horizon: int,
+    n_sims: int = 500,
+    seed: Optional[int] = 42,
+    block_size: Optional[int] = None
+) -> Dict[str, np.ndarray]:
+    """Circular Block Bootstrap simulation."""
+    rng = np.random.RandomState(seed)
+    prices = np.asarray(prices, dtype=float)
+    prices = prices[np.isfinite(prices)]
+    rets = np.diff(_safe_log(prices))
+    rets = rets[np.isfinite(rets)]
+    n = len(rets)
+    
+    if n < 10:
+        raise ValueError("Not enough returns for bootstrapping")
+    
+    if block_size is None:
+        # Politis & White rule of thumb approx n^(1/3)
+        block_size = int(max(1, n ** (1.0/3.0)))
+    
+    block_size = max(1, int(block_size))
+    
+    # Number of blocks needed to cover horizon
+    n_blocks = int(np.ceil(horizon / block_size))
+    
+    # Random starting indices for blocks (n_sims, n_blocks)
+    start_indices = rng.randint(0, n, size=(n_sims, n_blocks))
+    
+    # Create full index grid
+    # Offsets: (1, 1, block_size)
+    offsets = np.arange(block_size)[None, None, :]
+    # Bases: (n_sims, n_blocks, 1)
+    bases = start_indices[..., None]
+    
+    # Full indices: (n_sims, n_blocks, block_size)
+    indices = (bases + offsets) % n
+    
+    # Flatten to (n_sims, total_len)
+    indices_flat = indices.reshape(n_sims, -1)
+    
+    # Trim to horizon
+    indices_final = indices_flat[:, :horizon]
+    
+    # Gather returns
+    sim_rets = rets[indices_final]
+    
+    # Reconstruct prices
+    last_price = float(prices[-1])
+    cum_rets = np.cumsum(sim_rets, axis=1)
+    price_paths = last_price * np.exp(cum_rets)
+    
+    return {
+        'price_paths': price_paths,
+        'return_paths': sim_rets,
+        'block_size': np.array(block_size) # store as array for consistency
+    }
 
 
 def summarize_paths(

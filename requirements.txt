@@ -82,6 +82,7 @@ uni2ts>=1.0.1            # Moirai via uni2ts
 # hnswlib>=0.8.0
 # tslearn>=0.6.3
 # dtaidistance>=2.3.10
+# stumpy>=1.12.0            # matrix_profile search engine for analog
 
 # Optional: dimensionality reduction methods / ML utilities
 scikit-learn>=1.7.2; python_version >= "3.10"

@@ -235,6 +235,7 @@ def _resolve_param_kwargs(param: Dict[str, Any], param_docs: Optional[Dict[str, 
             import mtdata.forecast.methods.pretrained
             import mtdata.forecast.methods.neural
             import mtdata.forecast.methods.sktime
+            import mtdata.forecast.methods.analog
             
             kwargs['choices'] = ForecastRegistry.get_all_method_names()
         except Exception as e:
@@ -250,22 +251,25 @@ def _resolve_param_kwargs(param: Dict[str, Any], param_docs: Optional[Dict[str, 
             ptype = param.get('type')
             origin = get_origin(ptype)
             
-            # Check for mapping type
-            is_typed_dict = hasattr(ptype, '__annotations__') and isinstance(getattr(ptype, '__annotations__', {}), dict)
-            is_mapping_type = (ptype in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
-
-            # Optional[T] -> T for argparse casting
+            # Optional[T] -> T Unwrap first
+            base_type = ptype
             if origin is not None and str(origin).endswith('Union'):
-                args = [a for a in get_args(ptype) if a is not type(None)]  # noqa: E721
+                args = [a for a in get_args(ptype) if a is not type(None)]
                 if len(args) == 1:
-                    base = args[0]
-                    if base in (int, float, str):
-                        kwargs['type'] = base
-                    elif base is bool:
-                        kwargs['type'] = str
-                        kwargs['choices'] = ['true', 'false']
-                        kwargs['metavar'] = 'bool'
-                    origin = None
+                    base_type = args[0]
+                    origin = get_origin(base_type)
+
+            # Check for mapping type on the unwrapped base type
+            is_typed_dict = hasattr(base_type, '__annotations__') and isinstance(getattr(base_type, '__annotations__', {}), dict)
+            is_mapping_type = (base_type in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
+
+            if base_type in (int, float, str):
+                kwargs['type'] = base_type
+            elif base_type is bool:
+                kwargs['type'] = str
+                kwargs['choices'] = ['true', 'false']
+                kwargs['metavar'] = 'bool'
+
             
             if origin in (list, tuple):
                 inner = get_args(ptype)[0] if get_args(ptype) else None
@@ -362,8 +366,17 @@ def create_command_function(func_info, cmd_name: str = ""):
             try:
                 ptype = param.get('type')
                 origin = get_origin(ptype)
-                is_typed_dict = hasattr(ptype, '__annotations__') and isinstance(getattr(ptype, '__annotations__', {}), dict)
-                is_mapping = (ptype in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
+                
+                # Unwrap Optional
+                base_type = ptype
+                if origin is not None and str(origin).endswith('Union'):
+                    args_t = [a for a in get_args(ptype) if a is not type(None)]
+                    if len(args_t) == 1:
+                        base_type = args_t[0]
+                        origin = get_origin(base_type)
+
+                is_typed_dict = hasattr(base_type, '__annotations__') and isinstance(getattr(base_type, '__annotations__', {}), dict)
+                is_mapping = (base_type in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
             except Exception:
                 is_mapping = False
             # Bare flag sentinel: treat as empty mapping to trigger defaults
@@ -371,9 +384,15 @@ def create_command_function(func_info, cmd_name: str = ""):
                 arg_value = {}
             # For mapping-like params, support shorthand and companion '<name>_params'
             if is_mapping:
-                # Shorthand: --simplify lttb  -> {"method":"lttb"}
-                if isinstance(arg_value, str) and arg_value.strip() and not arg_value.strip().startswith('{'):
-                    arg_value = {"method": arg_value.strip()}
+                # Try to parse JSON/KV string if it looks like one
+                if isinstance(arg_value, str) and arg_value.strip():
+                    if arg_value.strip().startswith('{'):
+                         parsed = _parse_kv_string(arg_value)
+                         if parsed is not None:
+                             arg_value = parsed
+                    # Shorthand: --simplify lttb  -> {"method":"lttb"}
+                    elif not arg_value.strip().startswith('{'):
+                        arg_value = {"method": arg_value.strip()}
                 # Companion params: --simplify-params 'points=100,ratio=0.5'
                 extra_param_name = f"{param_name}_params"
                 extra_val = getattr(args, extra_param_name, None)

@@ -749,8 +749,8 @@ def template_basic(
     report['sections']['barriers'] = sec_bar
 
     # Patterns
-    from ..patterns import patterns_detect_candlesticks
-    pats = _get_raw_result(patterns_detect_candlesticks, symbol=symbol, timeframe=tf, limit=int(p.get('patterns_limit', 120)))
+    from ..patterns import patterns_detect
+    pats = _get_raw_result(patterns_detect, symbol=symbol, timeframe=tf, mode='candlestick', limit=int(p.get('patterns_limit', 120)))
     if 'error' in pats:
         report['sections']['patterns'] = {'error': pats['error']}
     else:

@@ -1,8 +1,9 @@
 """Main entry point for the MCP server."""
 
 import logging
+import os
 import atexit
-from typing import Optional, Set
+from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 from functools import wraps as _wraps
@@ -13,7 +14,24 @@ from .schema_attach import attach_schemas_to_tools
 from .schema import get_shared_enum_lists
 from ..utils.mt5 import mt5_connection, _auto_connect_wrapper, _ensure_symbol_ready
 
+
+def _apply_fastmcp_env_overrides() -> None:
+    """Bridge legacy MCP_* env vars to FastMCP's FASTMCP_* settings."""
+    mapping = {
+        "MCP_HOST": "FASTMCP_HOST",
+        "MCP_PORT": "FASTMCP_PORT",
+        "MCP_LOG_LEVEL": "FASTMCP_LOG_LEVEL",
+        "MCP_MOUNT_PATH": "FASTMCP_MOUNT_PATH",
+        "MCP_SSE_PATH": "FASTMCP_SSE_PATH",
+        "MCP_MESSAGE_PATH": "FASTMCP_MESSAGE_PATH",
+    }
+    for legacy, target in mapping.items():
+        val = os.getenv(legacy)
+        if val and not os.getenv(target):
+            os.environ[target] = val
+
 # Create MCP instance early to avoid circular imports when tools import `mcp`.
+_apply_fastmcp_env_overrides()
 mcp = FastMCP(SERVICE_NAME)
 
 # Lightweight helpers used by tool modules
@@ -41,6 +59,20 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
     if not structured_in_args and 'structured_output' not in kwargs:
         kwargs['structured_output'] = False
     dec = _ORIG_TOOL_DECORATOR(*dargs, **kwargs)
+
+    def _sanitize_annotations(func):
+        """Ensure annotations are classes to satisfy FastMCP's issubclass checks."""
+        import inspect
+
+        cleaned = {}
+        ann = getattr(func, "__annotations__", {}) or {}
+        for name, param in inspect.signature(func).parameters.items():
+            value = ann.get(name, param.annotation)
+            cleaned[name] = value if isinstance(value, type) else object
+        if "return" in ann:
+            cleaned["return"] = ann["return"] if isinstance(ann["return"], type) else object
+        return cleaned
+
     def _wrap(func):
         # Wrap the callable to ensure plain-text, minimal output for API calls
         try:
@@ -78,6 +110,22 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
                 return _fmt_min(out)
             except Exception:
                 return str(out) if out is not None else ""
+
+        try:
+            import inspect
+
+            cleaned = _sanitize_annotations(func)
+            _wrapped.__annotations__ = cleaned
+            # Override __signature__ so FastMCP sees sanitized annotations
+            params = []
+            for name, param in inspect.signature(func).parameters.items():
+                params.append(
+                    param.replace(annotation=cleaned.get(name))
+                )
+            return_ann = cleaned.get("return", inspect._empty)
+            _wrapped.__signature__ = inspect.Signature(parameters=params, return_annotation=return_ann)
+        except Exception:
+            pass
 
         res = dec(_wrapped)
         name = getattr(func, '__name__', None)
@@ -123,12 +171,35 @@ def _disconnect_mt5():
     mt5_connection.disconnect()
 
 
+def _resolve_transport(default: str = "sse") -> tuple[str, Optional[str]]:
+    """Return the transport to use and optional mount path for SSE."""
+    transport = (os.getenv("MCP_TRANSPORT") or default).strip().lower()
+    if transport not in ("stdio", "sse", "streamable-http"):
+        transport = default
+    mount_path = os.getenv("MCP_MOUNT_PATH")
+    return transport, mount_path
+
+
 def main():
     """Main entry point for the MCP server"""
-    logging.basicConfig(level=logging.INFO)
+    log_level = getattr(logging, str(mcp.settings.log_level).upper(), logging.INFO)
+    logging.basicConfig(level=log_level)
     logger = logging.getLogger(__name__)
-    logger.info(f"Starting {SERVICE_NAME} server...")
-    mcp.run()
+    transport, mount_path = _resolve_transport()
+    logger.info(f"Starting {SERVICE_NAME} server... transport={transport}")
+
+    if transport == "sse":
+        base_path = mcp.settings.mount_path.rstrip("/") or "/"
+        logger.info(
+            "SSE listening at http://%s:%s%s (event path %s, message path %s)",
+            mcp.settings.host,
+            mcp.settings.port,
+            base_path,
+            mcp.settings.sse_path,
+            mcp.settings.message_path,
+        )
+
+    mcp.run(transport=transport, mount_path=mount_path if transport == "sse" else None)
 
 
 if __name__ == "__main__":

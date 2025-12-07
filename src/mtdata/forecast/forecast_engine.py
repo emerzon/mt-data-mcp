@@ -40,6 +40,7 @@ import mtdata.forecast.methods.mlforecast
 import mtdata.forecast.methods.pretrained
 import mtdata.forecast.methods.neural
 import mtdata.forecast.methods.sktime
+import mtdata.forecast.methods.analog
 
 import MetaTrader5 as mt5
 
@@ -171,6 +172,17 @@ def _calculate_lookback_bars(method_l: str, horizon: int, lookback: Optional[int
     """Calculate the number of bars needed for forecasting."""
     if lookback is not None and lookback > 0:
         return int(lookback) + 2
+
+    if method_l == 'analog':
+        # Default search_depth=5000, window=64.
+        # But we don't have params here. Assume reasonable default.
+        # If the user provides params['search_depth'], we can't see it here easily without changing signature.
+        # So we return a large enough default for fetch. 
+        # Actually AnalogMethod re-fetches, so this 'need' is just for the 'target_series' passed to it,
+        # which it ignores (via Option A).
+        # EXCEPT: the engine checks len(df) < 3. 
+        # So we just need something small like 100 to pass checks.
+        return max(100, int(horizon) + 10)
 
     if method_l == 'seasonal_naive':
         return max(3 * seasonality, int(horizon) + seasonality + 2)
@@ -575,6 +587,7 @@ def forecast_engine(
                 # Pass X as exog_used if available
                 kwargs = dict(p)
                 kwargs['ci_alpha'] = ci_alpha
+                kwargs['as_of'] = as_of
                 if X is not None:
                     kwargs['exog_used'] = X
                 if exog_future is not None:

@@ -441,11 +441,24 @@ def fetch_candles(
 
         # Build CSV via writer for escaping
         payload = _csv_from_rows_util(headers, rows)
+        
+        # Determine if the last candle is open or closed
+        last_candle_open = False
+        if len(df) > 0 and '__epoch' in df.columns:
+            last_epoch = float(df['__epoch'].iloc[-1])
+            seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 3600)
+            current_time = datetime.utcnow().timestamp()
+            
+            # A candle is "open" if current time is within its timeframe window
+            time_since_candle_start = current_time - last_epoch
+            last_candle_open = 0 <= time_since_candle_start < seconds_per_bar
+        
         payload.update({
             "success": True,
             "symbol": symbol,
             "timeframe": timeframe,
             "candles": len(df),
+            "last_candle_open": last_candle_open,
         })
         if not _use_ctz:
             payload["timezone"] = "UTC"

@@ -1,4 +1,3 @@
-
 from typing import Any, Dict, Optional, List, Literal, Tuple, Set
 
 from .schema import TimeframeLiteral, DenoiseSpec, ForecastMethodLiteral
@@ -306,73 +305,171 @@ def forecast_tune_genetic(
 
 @mcp.tool()
 @_auto_connect_wrapper
-def forecast_barrier_hit_probabilities(
+def forecast_barrier_prob(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
-    method: Literal['mc_gbm','hmm_mc'] = 'hmm_mc',  # type: ignore
-    direction: Literal['long','short'] = 'long',  # trade direction context for TP/SL
-    # Barrier specification (choose one style per side)
+    method: Literal['mc', 'closed_form'] = 'mc',
+    # MC params
+    mc_method: Literal['mc_gbm','hmm_mc','garch','bootstrap'] = 'hmm_mc',  # type: ignore
+    direction: Literal['long','short', 'up', 'down'] = 'long',  # type: ignore
     tp_abs: Optional[float] = None,
     sl_abs: Optional[float] = None,
-    tp_pct: Optional[float] = None,   # percent, e.g. 0.5 => +0.5%
-    sl_pct: Optional[float] = None,   # percent, e.g. 0.5 => -0.5%
-    tp_pips: Optional[float] = None,  # approximate pip mapping (10*point for FX with 5/3 digits)
+    tp_pct: Optional[float] = None,
+    sl_pct: Optional[float] = None,
+    tp_pips: Optional[float] = None,
     sl_pips: Optional[float] = None,
     params: Optional[Dict[str, Any]] = None,
     denoise: Optional[DenoiseSpec] = None,
-) -> Dict[str, Any]:
-    """Monte Carlo barrier analysis: probability of reaching TP/SL within horizon.
-
-    - direction: 'long' means TP above and SL below last_price; 'short' means TP below and SL above.
-    - method: 'mc_gbm' (GBM) or 'hmm_mc' (Gaussian HMM regimes)
-    - Barriers can be absolute prices (tp_abs/sl_abs), percentage offsets (tp_pct/sl_pct),
-      or pips (tp_pips/sl_pips). Percentage values are in percent points (0.5 => 0.5%).
-    - Returns probabilities of hitting TP before SL, SL before TP, neither hit, and
-      time-to-hit stats; also per-step cumulative hit curves.
-    """
-    from ..forecast.barriers import forecast_barrier_hit_probabilities as _impl
-    return _impl(
-        symbol=symbol,
-        timeframe=timeframe,
-        horizon=horizon,
-        method=method,
-        direction=direction,
-        tp_abs=tp_abs,
-        sl_abs=sl_abs,
-        tp_pct=tp_pct,
-        sl_pct=sl_pct,
-        tp_pips=tp_pips,
-        sl_pips=sl_pips,
-        params=params,
-        denoise=denoise,
-    )
-
-
-@mcp.tool()
-@_auto_connect_wrapper
-def forecast_barrier_closed_form(
-    symbol: str,
-    timeframe: TimeframeLiteral = "H1",
-    horizon: int = 12,
-    direction: Literal['up','down'] = 'up',  # type: ignore
+    # Closed form params
     barrier: float = 0.0,
     mu: Optional[float] = None,
     sigma: Optional[float] = None,
-    denoise: Optional[DenoiseSpec] = None,
 ) -> Dict[str, Any]:
-    """Closed-form single-barrier hit probability for GBM within horizon."""
-    from ..forecast.barriers import forecast_barrier_closed_form as _impl
-    return _impl(
-        symbol=symbol,
-        timeframe=timeframe,
-        horizon=horizon,
-        direction=direction,
-        barrier=barrier,
-        mu=mu,
-        sigma=sigma,
-        denoise=denoise,
+    """Calculate probability of price hitting TP/SL barriers using Monte Carlo or Closed Form methods.
+    
+    **REQUIRED**: symbol parameter must be provided
+    
+    Use Cases:
+    ----------
+    - Validate TP/SL levels before entering a trade
+    - Assess probability of hitting profit target vs stop loss
+    - Optimize barrier levels based on probability analysis
+    
+    Parameters:
+    -----------
+    symbol : str (REQUIRED)
+        Trading symbol to analyze (e.g., "EURUSD", "BTCUSD")
+    
+    timeframe : str, optional (default="H1")
+        Analysis timeframe: "M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"
+    
+    horizon : int, optional (default=12)
+        Number of bars to forecast ahead
+    
+    method : str, optional (default="mc")
+        Calculation method:
+        - "mc": Monte Carlo simulation (more flexible, handles complex scenarios)
+        - "closed_form": Analytical solution (faster, simpler assumptions)
+    
+    Monte Carlo Parameters (method="mc"):
+    -------------------------------------
+    mc_method : str, optional (default="hmm_mc")
+        - "hmm_mc": Hidden Markov Model-based MC
+        - "mc_gbm": Geometric Brownian Motion MC
+        - "garch": GARCH(1,1) volatility model (requires 'arch' package)
+        - "bootstrap": Circular block bootstrap (historical simulation)
+    
+    direction : str, optional (default="long")
+        Trade direction: "long" / "short" (or "up" / "down" for closed_form)
+    
+    tp_abs : float, optional
+        Absolute take profit price level
+    
+    sl_abs : float, optional
+        Absolute stop loss price level
+    
+    tp_pct : float, optional
+        Take profit as percentage (e.g., 2.0 for 2%)
+    
+    sl_pct : float, optional
+        Stop loss as percentage
+    
+    tp_pips : float, optional
+        Take profit in pips
+    
+    sl_pips : float, optional
+        Stop loss in pips
+    
+    Closed Form Parameters (method="closed_form"):
+    ----------------------------------------------
+    barrier : float, optional (default=0.0)
+        Target barrier level
+    
+    mu : float, optional
+        Drift parameter (calculated if not provided)
+    
+    sigma : float, optional
+        Volatility parameter (calculated if not provided)
+    
+    Returns:
+    --------
+    dict
+        Probability analysis including:
+        - success: bool
+        - symbol: str
+        - probabilities: dict with TP/SL hit probabilities
+        - method_used: str
+    
+    Examples:
+    ---------
+    # Check probability of hitting TP vs SL (Monte Carlo)
+    forecast_barrier_prob(
+        symbol="EURUSD",
+        method="mc",
+        direction="long",
+        tp_abs=1.1100,
+        sl_abs=1.0950
     )
+    
+    # Use percentage-based barriers
+    forecast_barrier_prob(
+        symbol="EURUSD",
+        direction="long",
+        tp_pct=2.0,
+        sl_pct=1.0
+    )
+    
+    # Closed form calculation (faster)
+    forecast_barrier_prob(
+        symbol="GBPUSD",
+        method="closed_form",
+        direction="up",
+        barrier=1.2700
+    )
+    """
+    if method == 'mc':
+        from ..forecast.barriers import forecast_barrier_hit_probabilities as _impl
+        # Ensure direction is valid for MC
+        d = str(direction).lower()
+        if d not in ('long', 'short'):
+             # fallback mapping
+             d = 'long' if d == 'up' else 'short'
+
+        return _impl(
+            symbol=symbol,
+            timeframe=timeframe,
+            horizon=horizon,
+            method=mc_method,
+            direction=d, # type: ignore
+            tp_abs=tp_abs,
+            sl_abs=sl_abs,
+            tp_pct=tp_pct,
+            sl_pct=sl_pct,
+            tp_pips=tp_pips,
+            sl_pips=sl_pips,
+            params=params,
+            denoise=denoise,
+        )
+    elif method == 'closed_form':
+        from ..forecast.barriers import forecast_barrier_closed_form as _impl
+        # Map direction: long->up, short->down if user passed long/short
+        d = str(direction).lower()
+        if d == 'long': d = 'up'
+        elif d == 'short': d = 'down'
+        
+        return _impl(
+            symbol=symbol,
+            timeframe=timeframe,
+            horizon=horizon,
+            direction=d, # type: ignore
+            barrier=barrier,
+            mu=mu,
+            sigma=sigma,
+            denoise=denoise,
+        )
+    else:
+        return {"error": f"Unknown method: {method}"}
 
 
 @mcp.tool()
@@ -381,7 +478,7 @@ def forecast_barrier_optimize(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
-    method: Literal['mc_gbm','hmm_mc'] = 'hmm_mc',  # type: ignore
+    method: Literal['mc_gbm','hmm_mc','garch','bootstrap'] = 'hmm_mc',  # type: ignore
     direction: Literal['long','short'] = 'long',  # trade direction context for TP/SL
     mode: Literal['pct','pips'] = 'pct',  # type: ignore
     tp_min: float = 0.25,

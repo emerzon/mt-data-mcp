@@ -49,6 +49,7 @@ FORECAST_METHODS = (
     "gt_mqf2",
     "gt_npts",
     "ensemble",
+    "analog",
 )
 
 
@@ -339,6 +340,19 @@ def get_forecast_methods_data() -> Dict[str, Any]:
         [],
         {"price": True, "return": True, "volatility": True, "ci": False})
 
+    # Analog / Nearest Neighbor
+    add("analog", "Nearest-neighbor search based on historical patterns",
+        [{"name": "window_size", "type": "int", "description": "Length of pattern to match (default: 64)"},
+         {"name": "search_depth", "type": "int", "description": "Bars back to search (default: 5000)"},
+         {"name": "top_k", "type": "int", "description": "Number of analogs (default: 20)"},
+         {"name": "metric", "type": "str", "description": "Similarity metric: euclidean|cosine|correlation (default: euclidean)"},
+         {"name": "scale", "type": "str", "description": "zscore|minmax|none (default: zscore)"},
+         {"name": "refine_metric", "type": "str", "description": "dtw|softdtw|affine|ncc|none (default: dtw)"},
+         {"name": "search_engine", "type": "str", "description": "ckdtree|hnsw|matrix_profile|mass (default: ckdtree)"},
+         {"name": "secondary_timeframes", "type": "str|list", "description": "List of timeframes to ensemble (e.g. 'D1,H4')"}],
+        ["scipy", "numpy"],
+        {"price": True, "return": False, "volatility": False, "ci": True})
+
     return {
         "methods": methods,
         "total": len(methods),
@@ -369,7 +383,8 @@ def get_method_category(method: str) -> str:
         "sf_autoets": "statsforecast", "sf_seasonalnaive": "statsforecast",
         "mlf_rf": "machine_learning", "mlf_lightgbm": "machine_learning",
         "chronos_bolt": "pretrained", "chronos2": "pretrained", "timesfm": "pretrained", "lag_llama": "pretrained",
-        "ensemble": "ensemble"
+        "ensemble": "ensemble",
+        "analog": "analog"
     }
     return categories.get(method, "unknown")
 

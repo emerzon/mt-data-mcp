@@ -11,6 +11,11 @@ try:
     import hnswlib as _HNSW  # type: ignore
 except Exception:
     _HNSW = None  # optional ANN backend
+# Optional matrix profile backend
+try:
+    import stumpy as _stumpy  # type: ignore
+except Exception:
+    _stumpy = None
 
 # Optional DTW/Soft-DTW backends
 try:
@@ -47,6 +52,50 @@ def _minmax_scale_row(x: np.ndarray) -> np.ndarray:
         return np.zeros_like(x, dtype=np.float32)
     y = (x - mn) / rng
     return y.astype(np.float32, copy=False)
+
+
+def _mass_distance_profile(query: np.ndarray, series: np.ndarray, *, eps: float = 1e-12) -> np.ndarray:
+    """Compute z-normalized sliding distances between query and all subsequences in series using FFT.
+
+    Returns an array of length len(series) - len(query) + 1. Non-finite windows are mapped to inf.
+    """
+    q = np.asarray(query, dtype=float).ravel()
+    s = np.asarray(series, dtype=float).ravel()
+    m = q.size
+    n = s.size
+    if m == 0 or n < m:
+        return np.array([], dtype=float)
+
+    q_std = float(np.nanstd(q))
+    if not np.isfinite(q_std) or q_std <= eps:
+        return np.full(max(n - m + 1, 0), np.inf, dtype=float)
+    q_norm = (q - float(np.nanmean(q))) / q_std
+
+    # Fast convolution via FFT to get dot products
+    k = int(1 << (n + m - 1).bit_length())  # next power of two for speed
+    q_rev = np.flip(q_norm)
+    q_rev = np.pad(q_rev, (0, k - m))
+    s_pad = np.pad(s, (0, k - n))
+    fft_q = np.fft.fft(q_rev)
+    fft_s = np.fft.fft(s_pad)
+    conv = np.fft.ifft(fft_q * fft_s).real
+    cross = conv[m - 1 : m - 1 + (n - m + 1)]
+
+    # Rolling mean/std for series windows
+    cumsum = np.cumsum(s, dtype=float)
+    cumsum2 = np.cumsum(s * s, dtype=float)
+    window_sum = cumsum[m - 1 :] - np.concatenate(([0.0], cumsum[:-m]))
+    window_sum2 = cumsum2[m - 1 :] - np.concatenate(([0.0], cumsum2[:-m]))
+    means = window_sum / m
+    stds = np.sqrt(np.maximum(window_sum2 / m - means * means, 0.0))
+    stds[stds <= eps] = np.nan
+
+    denom = m * stds
+    with np.errstate(invalid="ignore", divide="ignore"):
+        dist2 = 2.0 * m * (1.0 - (cross / denom))
+    dist2[~np.isfinite(dist2)] = np.inf
+    dist2 = np.maximum(dist2, 0.0)
+    return np.sqrt(dist2)
 
 
 @dataclass
@@ -111,6 +160,8 @@ class PatternIndex:
         v = np.asarray(anchor_values, dtype=float).ravel()
         if v.size != self.window_size:
             raise ValueError(f"anchor_values must be length {self.window_size}")
+        if self.engine in ("matrix_profile", "mass"):
+            return self._profile_search(v, top_k=top_k)
         q = v.astype(float)
         # Scale
         q = _apply_scale_vector(q, self.scale)
@@ -137,6 +188,46 @@ class PatternIndex:
                 idxs = np.asarray([int(idxs)])
                 dists = np.asarray([float(dists)])
             return idxs.astype(int), dists.astype(float)
+
+    def _profile_search(self, anchor_values: np.ndarray, top_k: int) -> Tuple[np.ndarray, np.ndarray]:
+        """Sliding search using matrix profile / MASS style distances."""
+        q = np.asarray(anchor_values, dtype=float).ravel()
+        m = q.size
+        idxs_all: List[int] = []
+        dists_all: List[float] = []
+        offset = 0
+
+        for ser in self._series:
+            n = ser.close.size
+            limit = n - (self.window_size + self.future_size) + 1
+            if limit <= 0:
+                continue
+            series_slice = ser.close[: limit + self.window_size + max(self.future_size - 1, 0)]
+            if series_slice.size < m:
+                offset += max(limit, 0)
+                continue
+
+            if self.engine == "matrix_profile":
+                if _stumpy is None:
+                    raise RuntimeError("matrix_profile engine requested but 'stumpy' is not installed")
+                profile = _stumpy.mass(q, series_slice)
+            else:
+                profile = _mass_distance_profile(q, series_slice)
+
+            if profile.size > limit:
+                profile = profile[:limit]
+            for i, d in enumerate(profile.tolist()):
+                idxs_all.append(offset + i)
+                dists_all.append(float(d))
+            offset += max(limit, 0)
+
+        if not idxs_all:
+            return np.array([], dtype=int), np.array([], dtype=float)
+
+        order = np.argsort(np.asarray(dists_all, dtype=float))
+        k = min(int(top_k), order.size)
+        sel = order[:k]
+        return np.asarray([idxs_all[i] for i in sel], dtype=int), np.asarray([dists_all[i] for i in sel], dtype=float)
 
     def get_match_symbol(self, index: int) -> str:
         lbl = int(self.labels[int(index)])
@@ -379,16 +470,33 @@ class PatternIndex:
         return ret.astype(np.float32, copy=False)
 
 
-def _fetch_symbol_df(symbol: str, timeframe: str, bars: int) -> pd.DataFrame:
-    """Fetch last `bars` candles for symbol/timeframe. Returns DataFrame with columns
-    at least ['time','open','high','low','close','tick_volume','real_volume'] where available.
-    'time' is UTC epoch seconds as float.
+def _fetch_symbol_df(
+    symbol: str,
+    timeframe: str,
+    bars: int,
+    *,
+    as_of: Optional[Any] = None,
+    drop_last_live: bool = True,
+) -> pd.DataFrame:
+    """Fetch last `bars` candles for symbol/timeframe.
+
+    Returns DataFrame with columns at least ['time','open','high','low','close','tick_volume','real_volume']
+    where available. 'time' is UTC epoch seconds as float.
     """
     tf = TIMEFRAME_MAP.get(timeframe)
     if tf is None:
         raise ValueError(f"Unknown timeframe: {timeframe}")
     # Use a small guard for extra bars; server fetch typically asks +2
-    to_dt = pd.Timestamp.utcnow().to_pydatetime()
+    if as_of is not None:
+        try:
+            to_dt = pd.to_datetime(as_of)
+            if to_dt.tzinfo is None:
+                to_dt = to_dt.tz_localize("UTC")
+            to_dt = to_dt.to_pydatetime()
+        except Exception:
+            to_dt = pd.Timestamp.utcnow().to_pydatetime()
+    else:
+        to_dt = pd.Timestamp.utcnow().to_pydatetime()
     rates = _mt5_copy_rates_from(symbol, tf, to_dt, int(bars) + 2)
     if rates is None or len(rates) == 0:
         raise RuntimeError(f"Failed to fetch rates for {symbol}")
@@ -399,6 +507,8 @@ def _fetch_symbol_df(symbol: str, timeframe: str, bars: int) -> pd.DataFrame:
             df['time'] = df['time'].astype(float).apply(_mt5_epoch_to_utc)
     except Exception:
         pass
+    if drop_last_live and as_of is None and len(df) >= 2:
+        df = df.iloc[:-1]
     # Keep last `bars` rows
     if len(df) > bars:
         df = df.iloc[-bars:].copy()
@@ -410,9 +520,12 @@ def _prepare_series(
     timeframe: str,
     max_bars: int,
     denoise: Optional[Dict[str, Any]] = None,
+    *,
+    as_of: Optional[Any] = None,
+    drop_last_live: bool = True,
 ) -> Optional[_SeriesStore]:
     """Fetch and optionally denoise a symbol series; return _SeriesStore with ascending times."""
-    df = _fetch_symbol_df(symbol, timeframe, max_bars)
+    df = _fetch_symbol_df(symbol, timeframe, max_bars, as_of=as_of, drop_last_live=drop_last_live)
     # Ensure 'volume' exists for denoise convenience
     if 'volume' not in df.columns and 'tick_volume' in df.columns:
         df['volume'] = df['tick_volume']
@@ -453,6 +566,9 @@ def build_index(
     dimred_method: Optional[str] = None,
     dimred_params: Optional[Dict[str, Any]] = None,
     engine: str = "ckdtree",
+    *,
+    as_of: Optional[Any] = None,
+    drop_last_live: bool = True,
 ) -> PatternIndex:
     """Build a PatternIndex from MT5 data for the provided symbols.
 
@@ -465,7 +581,14 @@ def build_index(
     symbols_ok: List[str] = []
     series: List[_SeriesStore] = []
     for sym in symbols:
-        ser = _prepare_series(sym, timeframe, max_bars=max_bars_per_symbol, denoise=denoise)
+        ser = _prepare_series(
+            sym,
+            timeframe,
+            max_bars=max_bars_per_symbol,
+            denoise=denoise,
+            as_of=as_of,
+            drop_last_live=drop_last_live,
+        )
         if ser is None:
             continue
         # Require enough bars for at least one window
@@ -555,7 +678,9 @@ def build_index(
     labels_arr = np.asarray(labels, dtype=int)
 
     eng = (engine or "ckdtree").lower()
-    if eng == "hnsw":
+    if eng in ("matrix_profile", "mass"):
+        tree_obj = None  # search will bypass tree
+    elif eng == "hnsw":
         if _HNSW is None:
             raise RuntimeError("hnswlib not available; install hnswlib or use engine='ckdtree'")
         dim = int(X.shape[1])
@@ -565,8 +690,10 @@ def build_index(
         index.add_items(X.astype(np.float32), np.arange(X.shape[0], dtype=np.int32))
         index.set_ef(64)  # ef_search
         tree_obj = index
-    else:
+    elif eng == "ckdtree":
         tree_obj = cKDTree(X)
+    else:
+        raise ValueError(f"Unknown engine '{eng}'")
 
     return PatternIndex(
         timeframe=timeframe,

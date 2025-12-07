@@ -1,11 +1,16 @@
-
 from typing import Any, Dict, Optional, List, Literal, Tuple, Set, Union
 import numpy as np
 import MetaTrader5 as mt5
 from ..core.schema import TimeframeLiteral, DenoiseSpec
 from ..core.constants import TIMEFRAME_SECONDS
 from .common import fetch_history as _fetch_history, parse_kv_or_json as _parse_kv_or_json
-from .monte_carlo import simulate_gbm_mc as _simulate_gbm_mc, simulate_hmm_mc as _simulate_hmm_mc, gbm_single_barrier_upcross_prob as _gbm_upcross_prob
+from .monte_carlo import (
+    simulate_gbm_mc as _simulate_gbm_mc, 
+    simulate_hmm_mc as _simulate_hmm_mc, 
+    simulate_garch_mc as _simulate_garch_mc,
+    simulate_bootstrap_mc as _simulate_bootstrap_mc,
+    gbm_single_barrier_upcross_prob as _gbm_upcross_prob
+)
 
 BARRIER_GRID_PRESETS = {
     'scalp': {
@@ -30,7 +35,7 @@ def forecast_barrier_hit_probabilities(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
-    method: Literal['mc_gbm','hmm_mc'] = 'hmm_mc',
+    method: Literal['mc_gbm','hmm_mc','garch','bootstrap'] = 'hmm_mc',
     direction: Literal['long','short'] = 'long',
     tp_abs: Optional[float] = None,
     sl_abs: Optional[float] = None,
@@ -136,49 +141,80 @@ def forecast_barrier_hit_probabilities(
         # Simulate paths
         sims = int(p.get('n_sims', p.get('sims', 2000)) or 2000)
         seed = int(p.get('seed', 42) or 42)
-        if str(method).lower() == 'mc_gbm':
+        method_key = str(method).lower()
+        
+        if method_key == 'mc_gbm':
             sim = _simulate_gbm_mc(prices, horizon=int(horizon), n_sims=int(sims), seed=int(seed))
-        elif str(method).lower() == 'hmm_mc':
+        elif method_key == 'hmm_mc':
             n_states = int(p.get('n_states', 2) or 2)
             sim = _simulate_hmm_mc(prices, horizon=int(horizon), n_states=int(n_states), n_sims=int(sims), seed=int(seed))
+        elif method_key == 'garch':
+            p_order = int(p.get('p', 1))
+            q_order = int(p.get('q', 1))
+            sim = _simulate_garch_mc(prices, horizon=int(horizon), n_sims=int(sims), seed=int(seed), p_order=p_order, q_order=q_order)
+        elif method_key == 'bootstrap':
+            bs = p.get('block_size')
+            if bs: bs = int(bs)
+            sim = _simulate_bootstrap_mc(prices, horizon=int(horizon), n_sims=int(sims), seed=int(seed), block_size=bs)
         else:
-            return {"error": f"Unsupported method: {method}. Use 'mc_gbm' or 'hmm_mc'"}
+            return {"error": f"Unsupported method: {method}. Use 'mc_gbm', 'hmm_mc', 'garch', or 'bootstrap'"}
 
         price_paths = np.asarray(sim['price_paths'], dtype=float)
         S, H = price_paths.shape
-        # First-hit computations
-        tp_first = 0
-        sl_first = 0
-        both_tie = 0
-        no_hit = 0
-        t_hit_tp = []
-        t_hit_sl = []
-        # Per-step cumulative hit curves
-        tp_any_by_t = np.zeros(H, dtype=float)
-        sl_any_by_t = np.zeros(H, dtype=float)
-        for s in range(S):
-            path = price_paths[s]
-            idx_tp = np.argmax(path >= tp_price) if np.any(path >= tp_price) else -1
-            idx_sl = np.argmax(path <= sl_price) if np.any(path <= sl_price) else -1
-            # Update cumulative
-            if idx_tp >= 0:
-                tp_any_by_t[idx_tp:] += 1.0
-            if idx_sl >= 0:
-                sl_any_by_t[idx_sl:] += 1.0
-            # First hit logic
-            if idx_tp < 0 and idx_sl < 0:
-                no_hit += 1
-                continue
-            if idx_tp >= 0 and (idx_sl < 0 or idx_tp < idx_sl):
-                tp_first += 1
-                t_hit_tp.append(idx_tp + 1)  # 1-based bars-to-hit
-            elif idx_sl >= 0 and (idx_tp < 0 or idx_sl < idx_tp):
-                sl_first += 1
-                t_hit_sl.append(idx_sl + 1)
-            else:  # tie
-                both_tie += 1
-                t_hit_tp.append(idx_tp + 1)
-                t_hit_sl.append(idx_sl + 1)
+        
+        # Vectorized hit detection
+        # hits_tp/sl: boolean (S, H)
+        if dir_long:
+            hits_tp = (price_paths >= tp_price)
+            hits_sl = (price_paths <= sl_price)
+        else:
+            hits_tp = (price_paths <= tp_price)
+            hits_sl = (price_paths >= sl_price)
+
+        # Find first hit index (argmax returns 0 if none found, check any)
+        idx_tp = np.argmax(hits_tp, axis=1)
+        idx_sl = np.argmax(hits_sl, axis=1)
+        
+        any_tp = np.any(hits_tp, axis=1)
+        any_sl = np.any(hits_sl, axis=1)
+        
+        # Set index to H (beyond horizon) if no hit
+        idx_tp_val = np.where(any_tp, idx_tp, H)
+        idx_sl_val = np.where(any_sl, idx_sl, H)
+        
+        # Determine outcomes
+        # TP Win: TP hit detected AND (SL not hit OR TP hit before SL)
+        tp_wins = (idx_tp_val < idx_sl_val)
+        # SL Win: SL hit detected AND (TP not hit OR SL hit before TP)
+        sl_wins = (idx_sl_val < idx_tp_val)
+        # Tie: Both hit at same index (rare but possible in discrete time)
+        ties = (idx_tp_val == idx_sl_val) & (idx_tp_val < H)
+        # No hit: Both H
+        no_hits = (idx_tp_val == H) & (idx_sl_val == H)
+
+        tp_first = np.sum(tp_wins)
+        sl_first = np.sum(sl_wins)
+        both_tie = np.sum(ties)
+        no_hit = np.sum(no_hits)
+
+        # Collect hit times (1-based) for stats
+        # TP stats include strict wins and ties
+        t_hit_tp = (idx_tp_val[tp_wins | ties] + 1).tolist()
+        t_hit_sl = (idx_sl_val[sl_wins | ties] + 1).tolist()
+
+        # Cumulative hit curves (hit at or before t)
+        def _compute_cum_curve(indices, valid_mask, length):
+            valid_indices = indices[valid_mask]
+            if valid_indices.size == 0:
+                return np.zeros(length, dtype=float)
+            # bincount counts occurrences of each index
+            counts = np.bincount(valid_indices, minlength=length)
+            if counts.size > length:
+                counts = counts[:length]
+            return np.cumsum(counts).astype(float)
+
+        tp_any_by_t = _compute_cum_curve(idx_tp, any_tp, H)
+        sl_any_by_t = _compute_cum_curve(idx_sl, any_sl, H)
 
         S_f = float(S)
         prob_tp_first = (tp_first + 0.5 * both_tie) / S_f
@@ -225,8 +261,11 @@ def forecast_barrier_hit_probabilities(
             "time_to_sl_bars": sl_stats,
             "time_to_tp_seconds": {k: _finite_or_none(v * tf_secs) for k, v in tp_stats.items()},
             "time_to_sl_seconds": {k: _finite_or_none(v * tf_secs) for k, v in sl_stats.items()},
-            "params_used": {k: p[k] for k in p if k in {"n_sims", "seed", "n_states"}},
+            "params_used": {k: p[k] for k in p if k in {"n_sims", "seed", "n_states", "p", "q", "block_size"}},
         }
+        if 'model_summary' in sim:
+            out['model_summary'] = str(sim['model_summary'])
+            
         return out
     except Exception as e:
         return {"error": f"Error computing barrier probabilities: {str(e)}"}
@@ -313,7 +352,7 @@ def forecast_barrier_optimize(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
-    method: Literal['mc_gbm','hmm_mc'] = 'hmm_mc',
+    method: Literal['mc_gbm','hmm_mc','garch','bootstrap'] = 'hmm_mc',
     direction: Literal['long','short'] = 'long',
     mode: Literal['pct','pips'] = 'pct',
     tp_min: float = 0.25,
@@ -442,6 +481,7 @@ def forecast_barrier_optimize(
         n_seeds = int(params_dict.get('n_seeds', 1) or 1)
         paths_list: List[np.ndarray] = []
         method_name = str(method).lower()
+        
         if method_name == 'mc_gbm':
             for offset in range(max(1, n_seeds)):
                 sim = _simulate_gbm_mc(prices, horizon=int(horizon), n_sims=int(sims), seed=int(seed + offset))
@@ -451,8 +491,20 @@ def forecast_barrier_optimize(
             for offset in range(max(1, n_seeds)):
                 sim = _simulate_hmm_mc(prices, horizon=int(horizon), n_states=int(n_states), n_sims=int(sims), seed=int(seed + offset))
                 paths_list.append(np.asarray(sim['price_paths'], dtype=float))
+        elif method_name == 'garch':
+            p_order = int(params_dict.get('p', 1))
+            q_order = int(params_dict.get('q', 1))
+            for offset in range(max(1, n_seeds)):
+                sim = _simulate_garch_mc(prices, horizon=int(horizon), n_sims=int(sims), seed=int(seed + offset), p_order=p_order, q_order=q_order)
+                paths_list.append(np.asarray(sim['price_paths'], dtype=float))
+        elif method_name == 'bootstrap':
+            bs = params_dict.get('block_size')
+            if bs: bs = int(bs)
+            for offset in range(max(1, n_seeds)):
+                sim = _simulate_bootstrap_mc(prices, horizon=int(horizon), n_sims=int(sims), seed=int(seed + offset), block_size=bs)
+                paths_list.append(np.asarray(sim['price_paths'], dtype=float))
         else:
-            return {"error": f"Unsupported method: {method}. Use 'mc_gbm' or 'hmm_mc'"}
+            return {"error": f"Unsupported method: {method}. Use 'mc_gbm', 'hmm_mc', 'garch', or 'bootstrap'"}
 
         paths = np.vstack(paths_list) if len(paths_list) > 1 else paths_list[0]
         S, H = paths.shape
@@ -499,34 +551,29 @@ def forecast_barrier_optimize(
                 scale = (float(last_price) / float(pip_size)) / 100.0
                 _add_fixed(base_candidates, cfg['tp_min'] * scale, cfg['tp_max'] * scale, int(cfg['tp_steps']), cfg['sl_min'] * scale, cfg['sl_max'] * scale, int(cfg['sl_steps']))
         
-        # ... (rest of the implementation would follow, but I'll stop here for brevity and assume I can copy the rest if needed or implement it fully)
-        # Actually, I need to implement the rest of forecast_barrier_optimize.
-        # I'll add the rest of the logic now.
-        
         elif grid_style_val == 'volatility':
-            # Calculate volatility
-            # Use simple std dev of returns over window
+            # Calculate simple volatility over window
             rets = np.diff(np.log(prices))
             if len(rets) > vol_window_val:
                 rets = rets[-vol_window_val:]
-            vol_daily = np.std(rets) * np.sqrt(24*3600/TIMEFRAME_SECONDS.get(timeframe, 3600)) # approx daily vol?
-            # Actually let's just use the horizon volatility
-            # Volatility per bar
             vol_per_bar = np.std(rets)
-            # Volatility over horizon
             vol_horizon = vol_per_bar * np.sqrt(horizon)
-            
-            # Convert to percentage
+
+            # Convert to percentage space for baseline
             vol_pct = vol_horizon * 100.0
-            
-            # Generate grid based on multiples of volatility
-            tp_start = max(vol_floor_pct_val, vol_pct * vol_min_mult_val)
-            tp_end = max(tp_start * 1.1, vol_pct * vol_max_mult_val)
-            
-            sl_start = max(vol_floor_pct_val, vol_pct * vol_min_mult_val * 0.8) # SL usually tighter or wider? Depends.
-            # The original code had specific logic. Let's try to replicate generic vol logic.
-            
-            _add_fixed(base_candidates, tp_start, tp_end, vol_steps_val, sl_start, sl_start * vol_sl_multiplier_val, vol_sl_steps_val)
+
+            if mode_val == 'pct':
+                tp_start = max(vol_floor_pct_val, vol_pct * vol_min_mult_val)
+                tp_end = max(tp_start * 1.1, vol_pct * vol_max_mult_val)
+                sl_start = max(vol_floor_pct_val, vol_pct * vol_min_mult_val * 0.8)
+                _add_fixed(base_candidates, tp_start, tp_end, vol_steps_val, sl_start, sl_start * vol_sl_multiplier_val, vol_sl_steps_val)
+            else:
+                # Convert volatility to pips and apply pips floor when in pips mode
+                vol_pips = (vol_pct / 100.0) * (last_price / float(pip_size))
+                tp_start = max(vol_floor_pips_val, vol_pips * vol_min_mult_val)
+                tp_end = max(tp_start * 1.1, vol_pips * vol_max_mult_val)
+                sl_start = max(vol_floor_pips_val, vol_pips * vol_min_mult_val * 0.8)
+                _add_fixed(base_candidates, tp_start, tp_end, vol_steps_val, sl_start, sl_start * vol_sl_multiplier_val, vol_sl_steps_val)
             
         elif grid_style_val == 'ratio':
             # Fixed SL grid, TP derived from ratios
@@ -540,119 +587,149 @@ def forecast_barrier_optimize(
             _add_fixed(base_candidates, tp_min_val, tp_max_val, tp_steps_val, sl_min_val, sl_max_val, sl_steps_val)
 
         # Evaluate candidates
-        results = []
+        results: List[Dict[str, Any]] = []
         dir_long = str(direction).lower() == 'long'
-        
-        for tp_unit, sl_unit in base_candidates:
-            # Convert to price levels
-            if mode_val == 'pct':
+
+        def _evaluate(bucket: List[Tuple[float, float]]) -> List[Dict[str, Any]]:
+            out: List[Dict[str, Any]] = []
+            for tp_unit, sl_unit in bucket:
+                # Convert to price levels
+                if mode_val == 'pct':
+                    if dir_long:
+                        tp_p = last_price * (1.0 + tp_unit/100.0)
+                        sl_p = last_price * (1.0 - sl_unit/100.0)
+                    else:
+                        tp_p = last_price * (1.0 - tp_unit/100.0)
+                        sl_p = last_price * (1.0 + sl_unit/100.0)
+                else: # pips
+                    if dir_long:
+                        tp_p = last_price + tp_unit * pip_size
+                        sl_p = last_price - sl_unit * pip_size
+                    else:
+                        tp_p = last_price - tp_unit * pip_size
+                        sl_p = last_price + sl_unit * pip_size
+
+                # Vectorized hit detection
                 if dir_long:
-                    tp_p = last_price * (1.0 + tp_unit/100.0)
-                    sl_p = last_price * (1.0 - sl_unit/100.0)
+                    hit_tp = (paths >= tp_p)
+                    hit_sl = (paths <= sl_p)
                 else:
-                    tp_p = last_price * (1.0 - tp_unit/100.0)
-                    sl_p = last_price * (1.0 + sl_unit/100.0)
-            else: # pips
-                if dir_long:
-                    tp_p = last_price + tp_unit * pip_size
-                    sl_p = last_price - sl_unit * pip_size
-                else:
-                    tp_p = last_price - tp_unit * pip_size
-                    sl_p = last_price + sl_unit * pip_size
-            
-            # Check hit probs
-            # Vectorized check across paths
-            # paths: (S, H)
-            if dir_long:
-                # TP hit: >= tp_p
-                # SL hit: <= sl_p
-                hit_tp = (paths >= tp_p)
-                hit_sl = (paths <= sl_p)
-            else:
-                # TP hit: <= tp_p
-                # SL hit: >= sl_p
-                hit_tp = (paths <= tp_p)
-                hit_sl = (paths >= sl_p)
-            
-            # Find first occurrence
-            # argmax returns 0 if not found, so we need to check any()
-            any_tp = hit_tp.any(axis=1)
-            any_sl = hit_sl.any(axis=1)
-            
-            first_tp = hit_tp.argmax(axis=1)
-            first_sl = hit_sl.argmax(axis=1)
-            
-            # Correct indices for not found (argmax returns 0)
-            # Set to H (beyond horizon) if not found
-            first_tp[~any_tp] = H
-            first_sl[~any_sl] = H
-            
-            # Determine outcome
-            # TP first: first_tp < first_sl
-            # SL first: first_sl < first_tp
-            # Tie: first_tp == first_sl (can happen if gap? or same bar? assume same bar tie = both? or split?)
-            # Let's count strictly first
-            
-            wins = (first_tp < first_sl)
-            losses = (first_sl < first_tp)
-            # ties = (first_tp == first_sl) & (first_tp < H)
-            
-            n_wins = wins.sum()
-            n_losses = losses.sum()
-            
-            prob_win = n_wins / S
-            prob_loss = n_losses / S
-            
-            # Metrics
-            risk = sl_unit
-            reward = tp_unit
-            rr = reward / risk if risk > 0 else 0
-            
-            if rr_min_val and rr < rr_min_val: continue
-            if rr_max_val and rr > rr_max_val: continue
-            
-            ev = prob_win * reward - prob_loss * risk
-            edge = prob_win - prob_loss
-            
-            # Kelly
-            # b = odds = reward/risk = rr
-            # p = prob_win
-            # q = 1-p (or prob_loss?) -> Kelly uses win/loss probs summing to 1 usually, or p - q/b
-            # Here outcomes are Win, Loss, Neither.
-            # Kelly fraction f = p/a - q/b ? No.
-            # Simple Kelly f = p - q/b where b = net odds.
-            # Here b = rr.
-            # If we ignore 'neither', p_cond = p / (p+q).
-            # Unconditional Kelly?
-            
-            kelly = 0.0
-            if rr > 0:
-                kelly = prob_win - (prob_loss / rr)
+                    hit_tp = (paths <= tp_p)
+                    hit_sl = (paths >= sl_p)
+
+                any_tp = hit_tp.any(axis=1)
+                any_sl = hit_sl.any(axis=1)
                 
-            res = {
-                'tp': tp_unit,
-                'sl': sl_unit,
-                'rr': rr,
-                'prob_win': prob_win,
-                'prob_loss': prob_loss,
-                'ev': ev,
-                'edge': edge,
-                'kelly': kelly
-            }
-            results.append(res)
-            
-        # Sort by objective
-        if objective_val == 'edge':
-            results.sort(key=lambda x: x['edge'], reverse=True)
-        elif objective_val == 'ev':
-            results.sort(key=lambda x: x['ev'], reverse=True)
-        elif objective_val == 'kelly':
-            results.sort(key=lambda x: x['kelly'], reverse=True)
-        elif objective_val == 'prob_tp_first':
-            results.sort(key=lambda x: x['prob_win'], reverse=True)
-            
+                first_tp = hit_tp.argmax(axis=1)
+                first_sl = hit_sl.argmax(axis=1)
+
+                first_tp[~any_tp] = H
+                first_sl[~any_sl] = H
+
+                wins = (first_tp < first_sl)
+                losses = (first_sl < first_tp)
+                ties = (first_tp == first_sl) & (first_tp < H)
+
+                n_wins = wins.sum()
+                n_losses = losses.sum()
+
+                prob_win = n_wins / S
+                prob_loss = n_losses / S
+                prob_tie = ties.sum() / S
+                prob_neutral = max(0.0, 1.0 - prob_win - prob_loss)
+
+                risk = sl_unit
+                reward = tp_unit
+                rr = reward / risk if risk > 0 else 0
+
+                if rr_min_val and rr < rr_min_val:
+                    continue
+                if rr_max_val and rr > rr_max_val:
+                    continue
+
+                ev_uncond = prob_win * reward - prob_loss * risk
+                edge = prob_win - prob_loss
+
+                kelly_uncond = 0.0
+                if rr > 0:
+                    kelly_uncond = prob_win - (prob_loss / rr)
+
+                # Conditional metrics (ignore neutral paths)
+                active = prob_win + prob_loss
+                if active > 0:
+                    prob_win_c = prob_win / active
+                    prob_loss_c = prob_loss / active
+                    ev_cond = prob_win_c * reward - prob_loss_c * risk
+                    kelly_cond = prob_win_c - (prob_loss_c / rr if rr > 0 else 0.0)
+                else:
+                    ev_cond = 0.0
+                    kelly_cond = 0.0
+
+                # Hit time medians (bars, 1-based) for transparency
+                t_hit_tp = (first_tp[wins | ties] + 1)
+                t_hit_sl = (first_sl[losses | ties] + 1)
+                t_tp_med = float(np.median(t_hit_tp)) if t_hit_tp.size else None
+                t_sl_med = float(np.median(t_hit_sl)) if t_hit_sl.size else None
+
+                res = {
+                    'tp': tp_unit,
+                    'sl': sl_unit,
+                    'rr': rr,
+                    'prob_win': prob_win,
+                    'prob_loss': prob_loss,
+                    'prob_tp_first': prob_win,
+                    'prob_sl_first': prob_loss,
+                    'prob_no_hit': prob_neutral,
+                    'prob_tie': prob_tie,
+                    'ev': ev_uncond,
+                    'ev_uncond': ev_uncond,
+                    'edge': edge,
+                    'kelly': kelly_uncond,
+                    'kelly_uncond': kelly_uncond,
+                    't_hit_tp_median': t_tp_med,
+                    't_hit_sl_median': t_sl_med,
+                }
+                out.append(res)
+            return out
+
+        results.extend(_evaluate(base_candidates))
+
+        def _sort(res_list: List[Dict[str, Any]]) -> None:
+            if objective_val == 'edge':
+                res_list.sort(key=lambda x: x['edge'], reverse=True)
+            elif objective_val == 'ev':
+                res_list.sort(key=lambda x: x['ev'], reverse=True)
+            elif objective_val == 'ev_uncond':
+                res_list.sort(key=lambda x: x['ev_uncond'], reverse=True)
+            elif objective_val == 'kelly':
+                res_list.sort(key=lambda x: x['kelly'], reverse=True)
+            elif objective_val == 'kelly_uncond':
+                res_list.sort(key=lambda x: x['kelly_uncond'], reverse=True)
+            elif objective_val == 'prob_tp_first':
+                res_list.sort(key=lambda x: x['prob_win'], reverse=True)
+
+        _sort(results)
+
+        if refine_flag and results:
+            best_seed = results[0]
+            tp_c = best_seed['tp']
+            sl_c = best_seed['sl']
+            tp_a = max(1e-9, tp_c * (1.0 - refine_radius_val))
+            tp_b = tp_c * (1.0 + refine_radius_val)
+            sl_a = max(1e-9, sl_c * (1.0 - refine_radius_val))
+            sl_b = sl_c * (1.0 + refine_radius_val)
+            refine_candidates: List[Tuple[float, float]] = []
+            _add_fixed(refine_candidates, tp_a, tp_b, refine_steps_val, sl_a, sl_b, refine_steps_val)
+            results.extend(_evaluate(refine_candidates))
+            _sort(results)
+
         if top_k:
             results = results[:top_k]
+
+        grid_out = results if return_grid else None
+        if output == 'summary' and grid_out is not None:
+            limit = top_k or min(10, len(grid_out))
+            grid_out = grid_out[:limit]
             
         return {
             "success": True,
@@ -665,7 +742,7 @@ def forecast_barrier_optimize(
             "objective": objective,
             "results": results,
             "best": results[0] if results else None,
-            "grid": results if return_grid else None
+            "grid": grid_out
         }
 
     except Exception as e:

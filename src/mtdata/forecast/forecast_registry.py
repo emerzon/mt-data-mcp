@@ -90,6 +90,7 @@ def get_forecast_methods_data() -> Dict[str, Any]:
     _register_sktime_methods(add)
     _register_sktime_aliases(add)
     _register_gluonts_methods(add)
+    _register_analog_methods(add)
 
     return {
         "methods": methods,
@@ -338,3 +339,17 @@ __all__ = [
     '_TIMESFM_AVAILABLE',
     '_LAG_LLAMA_AVAILABLE'
 ]
+
+
+def _register_analog_methods(add_func):
+    """Register Analog forecasting methods."""
+    add_func("analog", "Nearest-neighbor search based on historical patterns", [
+        {"name": "window_size", "type": "int", "description": "Length of pattern to match (default: 64)"},
+        {"name": "search_depth", "type": "int", "description": "Bars back to search (default: 5000)"},
+        {"name": "top_k", "type": "int", "description": "Number of analogs (default: 20)"},
+        {"name": "metric", "type": "str", "description": "Similarity metric: euclidean|cosine|correlation (default: euclidean)"},
+        {"name": "scale", "type": "str", "description": "zscore|minmax|none (default: zscore)"},
+        {"name": "refine_metric", "type": "str", "description": "dtw|softdtw|affine|ncc|none (default: dtw)"},
+        {"name": "search_engine", "type": "str", "description": "ckdtree|hnsw|matrix_profile|mass (default: ckdtree)"},
+        {"name": "secondary_timeframes", "type": "str|list", "description": "List of timeframes to ensemble (e.g. 'D1,H4')"}
+    ], ["scipy", "numpy"], {"price": True, "return": False, "volatility": False, "ci": True})

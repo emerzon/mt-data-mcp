@@ -21,39 +21,78 @@ def data_fetch_candles(
     denoise: Optional[DenoiseSpec] = None,
     simplify: Optional[SimplifySpec] = None,
 ) -> Dict[str, Any]:
-    """Return historical candles as CSV.
-       Parameters: symbol, timeframe, limit, start?, end?, ohlcv?, indicators?, denoise?, simplify?
-       Can include OHLCV data, optionally along with technical indicators.
-       Returns the last candles by default, unless a date range is specified.
-         Parameters:
-         - symbol: The symbol to retrieve data for (e.g., "EURUSD").
-         - timeframe: The timeframe to use (e.g., "H1", "M30").
-         - limit: The maximum number of bars to return when not using a date range (default 10).
-         - start: Optional start date (e.g., "2025-08-29" or "yesterday 14:00").
-         - end: Optional end date.
-         - ohlcv: Optional fields to include.
-             Accepts friendly forms like: 'close', 'price', 'ohlc', 'ohlcv', 'all',
-             compact 'cl' or letters 'OHLCV', or names 'open,high,low,close'.
-         - indicators: Optional technical indicators to include (e.g., "rsi(20),macd(12,26,9),ema(26)")
-         - denoise: Optional denoising spec to smooth selected columns either pre‑ or post‑TI
-         - simplify: Optional dict to reduce or transform rows.
-             keys:
-               - mode: 'select' (default, select points), 'approximate' (aggregate segments),
-                       'encode' (transform data), 'segment' (detect turning points), 'symbolic' (SAX transform).
-               - method: (for 'select'/'approximate' modes) 'lttb' (default), 'rdp', 'pla', 'apca'.
-               - points: Target number of data points for LTTB, RDP, PLA, APCA, and encode modes.
-               - ratio: Alternative to points (0.0 to 1.0).
-               - For 'rdp': epsilon (tolerance in y-units).
-               - For 'pla'/'apca': max_error (in y-units) or 'segments'.
-               - For 'encode' mode:
-                 - schema: 'envelope' (OHLC -> high/low/o_pos/c_pos) or 'delta' (OHLC -> d_open/d_high/d_low/d_close).
-               - For 'segment' mode:
-                 - algo: 'zigzag'.
-                 - threshold_pct: Reversal threshold (e.g., 0.5 for 0.5%).
-               - For 'symbolic' mode:
-                 - schema: 'sax'.
-                 - paa: Number of PAA segments (defaults from 'points').
-       The full list of supported technical indicators can be retrieved from `get_indicators`.
+    """Fetch historical candle data with optional technical indicators and denoising.
+    
+    **REQUIRED**: symbol parameter must be provided (e.g., "EURUSD", "BTCUSD")
+    
+    Features:
+    ---------
+    - OHLCV data in CSV format
+    - Technical indicators (RSI, MACD, EMA, SMA, etc.)
+    - Data denoising and smoothing
+    - Data simplification for large datasets
+    - Includes metadata: last_candle_open (true if last candle is still forming)
+    
+    Parameters:
+    -----------
+    symbol : str (REQUIRED)
+        Trading symbol (e.g., "EURUSD", "GBPUSD", "BTCUSD")
+    
+    timeframe : str, optional (default="H1")
+        Candle timeframe: "M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"
+    
+    limit : int, optional (default=10)
+        Maximum number of candles to return
+    
+    start : str, optional
+        Start date (e.g., "2025-08-29", "yesterday 14:00", "2 days ago")
+    
+    end : str, optional
+        End date (same formats as start)
+    
+    ohlcv : str, optional
+        Fields to include: "close", "ohlc", "ohlcv", "all"
+    
+    indicators : list, optional
+        Technical indicators list, e.g., [{"name": "rsi", "params": [14]}]
+        Or compact string: "rsi(14),ema(20),macd(12,26,9)"
+    
+    denoise : dict, optional
+        Denoising configuration to smooth price data
+    
+    simplify : dict, optional
+        Data reduction options for large datasets
+    
+    Returns:
+    --------
+    dict
+        - success: bool
+        - symbol: str
+        - timeframe: str
+        - candles: int (number of candles returned)
+        - last_candle_open: bool (true if last candle is still forming)
+        - csv: str (CSV formatted candle data)
+    
+    Examples:
+    ---------
+    # Get last 10 H1 candles
+    data_fetch_candles(symbol="EURUSD")
+    
+    # Get 100 M15 candles with RSI indicator
+    data_fetch_candles(
+        symbol="EURUSD",
+        timeframe="M15",
+        limit=100,
+        indicators="rsi(14)"
+    )
+    
+    # Get date range with multiple indicators
+    data_fetch_candles(
+        symbol="GBPUSD",
+        start="2025-11-01",
+        end="2025-11-30",
+        indicators="rsi(14),ema(20),macd(12,26,9)"
+    )
     """
     return fetch_candles(
         symbol=symbol,

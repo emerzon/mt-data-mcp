@@ -618,6 +618,9 @@ def forecast(
         
         # Map legacy arguments to engine arguments
         engine_params = params or {}
+        # Inject context for methods that need it (like analog)
+        engine_params['symbol'] = symbol
+        engine_params['timeframe'] = timeframe
         
         # Call engine
         result = forecast_engine(
