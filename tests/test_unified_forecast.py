@@ -5,8 +5,12 @@ import numpy as np
 import sys
 import os
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+# Add project roots to path for imports
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+_SRC = os.path.join(_ROOT, 'src')
+for _p in (_SRC, _ROOT):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from mtdata.forecast.registry import ForecastRegistry
 from mtdata.forecast.forecast_engine import forecast_engine
@@ -22,6 +26,7 @@ class TestUnifiedForecast(unittest.TestCase):
         # Add epoch for engine
         self.df = pd.DataFrame({'close': self.series})
         self.df['__epoch'] = self.series.index.astype(np.int64) // 10**9
+        self.df['time'] = self.df['__epoch'].astype(float)
         
         # Mock fetch_history to return our dummy data
         # We'll patch it in the test methods or just test the registry/methods directly first
@@ -164,6 +169,46 @@ class TestUnifiedForecast(unittest.TestCase):
             self.assertTrue(res['success'])
             self.assertIn('ensemble', res)
             self.assertEqual(len(res['forecast_price']), 5)
+
+    def test_engine_returns_quantity_outputs_return_and_price(self):
+        """Return-mode forecasts expose forecast_return and reconstructed prices."""
+        from unittest.mock import patch
+        df = pd.DataFrame({
+            'time': np.arange(50, dtype=float),
+            'close': np.linspace(100.0, 105.0, 50),
+        })
+        with patch('mtdata.forecast.forecast_engine._fetch_history', return_value=df):
+            res = forecast_engine('dummy', method='naive', horizon=3, quantity='return')
+        self.assertTrue(res['success'])
+        self.assertIn('forecast_return', res)
+        self.assertEqual(len(res['forecast_return']), 3)
+        self.assertIn('forecast_price', res)
+        self.assertEqual(len(res['forecast_price']), 3)
+
+    def test_wrapper_dimred_no_nameerror(self):
+        """Wrapper dimred builder should not raise when dimred_method is set."""
+        from unittest.mock import patch
+        df = pd.DataFrame({
+            'time': np.arange(30, dtype=float),
+            'open': np.linspace(100, 101, 30),
+            'high': np.linspace(101, 102, 30),
+            'low': np.linspace(99, 100, 30),
+            'close': np.linspace(100, 101, 30),
+            'volume': np.ones(30) * 1000,
+        })
+        with patch('mtdata.forecast.forecast._fetch_history', return_value=df), \
+             patch('mtdata.forecast.forecast_engine._fetch_history', return_value=df), \
+             patch('mtdata.forecast.forecast_engine.mt5') as mock_mt5:
+            mock_mt5.symbol_info.return_value = None
+            res = forecast(
+                symbol='X',
+                timeframe='H1',
+                method='naive',
+                horizon=3,
+                features={'include': 'ohlcv'},
+                dimred_method='pca',
+            )
+        self.assertTrue(res['success'])
 
 if __name__ == '__main__':
     unittest.main()

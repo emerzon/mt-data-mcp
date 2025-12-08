@@ -14,7 +14,7 @@ def _attach_toon_rows(payload: Dict[str, Any], method: str) -> Dict[str, Any]:
     try:
         times = payload.get("times")
         if not isinstance(times, list) or not times:
-            return _attach_toon_rows(payload, method)
+            return payload
         rows: List[Dict[str, Any]] = []
         if method == "bocpd":
             probs = payload.get("cp_prob")
@@ -148,9 +148,12 @@ def regime_detect(
                 mod = MarkovRegression(endog=x, k_regimes=max(2, k_regimes), trend='c', order=max(0, order), switching_variance=True)
                 res = mod.fit(disp=False, maxiter=int(p.get('maxiter', 100)))
                 smoothed = res.smoothed_marginal_probabilities
+                if hasattr(smoothed, "values"):
+                    smoothed = smoothed.values
                 # choose most probable regime per time
-                state = np.argmax(smoothed, axis=0)
-                probs = smoothed.T  # shape (T, K)
+                # smoothed shape is usually (T, K)
+                state = np.argmax(smoothed, axis=1)
+                probs = smoothed  # shape (T, K)
             except Exception as ex:
                 return {"error": f"MS-AR fitting error: {ex}"}
             payload = {
@@ -227,6 +230,7 @@ def regime_detect(
                         # If gamma present, truncate probabilities too
                         if isinstance(gamma, np.ndarray) and gamma.ndim == 2 and gamma.shape[0] >= n:
                             payload["state_probabilities"] = [[float(v) for v in row] for row in gamma[-n:].tolist()]
-            return payload
+            return _attach_toon_rows(payload, method)
+
     except Exception as e:
         return {"error": f"Error detecting regimes: {str(e)}"}

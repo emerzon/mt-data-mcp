@@ -33,6 +33,31 @@ from .helpers import (
 )
 from .target_builder import build_target_series, aggregate_horizon_target
 from .forecast_methods import get_forecast_methods_data
+# Simple dimred factory used by the wrapper when building exogenous features.
+def _create_dimred_reducer(method: Any, params: Optional[Dict[str, Any]]) -> Any:
+    try:
+        from sklearn.decomposition import PCA
+        from sklearn.manifold import TSNE
+        from sklearn.feature_selection import SelectKBest, f_regression
+    except Exception as ex:
+        raise RuntimeError(f"dimred dependencies missing: {ex}")
+    m = str(method).lower().strip()
+    p = params or {}
+    if m == 'pca':
+        n_components = p.get('n_components', None)
+        return PCA(n_components=n_components), {"n_components": n_components}
+    if m == 'tsne':
+        n_components = p.get('n_components', 2)
+        return TSNE(n_components=n_components, random_state=42), {"n_components": n_components}
+    if m == 'selectkbest':
+        k = p.get('k', 5)
+        selector = SelectKBest(score_func=f_regression, k=k)
+        return selector, {"k": k}
+    # Identity fallback to avoid crashes; caller already wraps in try/except.
+    class _Identity:
+        def fit_transform(self, X):
+            return X
+    return _Identity(), {"method": "identity"}
 
 # Removed unused imports of specific method implementations
 # Logic is now handled by forecast_engine via registry
@@ -640,15 +665,21 @@ def forecast(
             dimred_params=dimred_params,
             target_spec=target_spec,
             exog_used=exog_used,
-            exog_future=exog_future
+            exog_future=exog_future,
+            prefetched_df=df,
+            prefetched_base_col=base_col,
+            prefetched_denoise_spec=dn_spec_used,
         )
         
         if "error" in result:
             return result
             
         # Add legacy fields if missing (for backward compatibility with CLI/API consumers)
-        if "forecast" not in result and "forecast_price" in result:
-            result["forecast"] = result["forecast_price"]
+        if "forecast" not in result:
+            if "forecast_price" in result:
+                result["forecast"] = result["forecast_price"]
+            elif "forecast_return" in result:
+                result["forecast"] = result["forecast_return"]
             
         return result
 

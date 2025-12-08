@@ -30,6 +30,10 @@ def _apply_fastmcp_env_overrides() -> None:
         if val and not os.getenv(target):
             os.environ[target] = val
 
+    # Default to listen on all interfaces if no host is specified
+    if not os.getenv("FASTMCP_HOST"):
+        os.environ["FASTMCP_HOST"] = "0.0.0.0"
+
 # Create MCP instance early to avoid circular imports when tools import `mcp`.
 _apply_fastmcp_env_overrides()
 mcp = FastMCP(SERVICE_NAME)

@@ -191,6 +191,11 @@ class PatternIndex:
 
     def _profile_search(self, anchor_values: np.ndarray, top_k: int) -> Tuple[np.ndarray, np.ndarray]:
         """Sliding search using matrix profile / MASS style distances."""
+        if self.scale not in ("zscore",):
+            raise ValueError("matrix_profile/mass engines require scale='zscore'")
+        if self.metric not in ("euclidean", "l2"):
+            raise ValueError("matrix_profile/mass engines require metric='euclidean'")
+
         q = np.asarray(anchor_values, dtype=float).ravel()
         m = q.size
         idxs_all: List[int] = []
@@ -210,7 +215,9 @@ class PatternIndex:
             if self.engine == "matrix_profile":
                 if _stumpy is None:
                     raise RuntimeError("matrix_profile engine requested but 'stumpy' is not installed")
-                profile = _stumpy.mass(q, series_slice)
+                # AB-join: distances from every subsequence in series_slice to the query subsequence
+                mp = _stumpy.stump(series_slice.astype(float), m, T_B=q.astype(float), ignore_trivial=False)
+                profile = np.asarray(mp[:, 0], dtype=float)
             else:
                 profile = _mass_distance_profile(q, series_slice)
 

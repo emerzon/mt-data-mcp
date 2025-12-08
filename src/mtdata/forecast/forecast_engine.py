@@ -31,6 +31,7 @@ from mtdata.forecast.common import (
     next_times_from_last as _next_times_from_last,
     pd_freq_from_timeframe as _pd_freq_from_timeframe,
 )
+from mtdata.forecast.target_builder import build_target_series
 from mtdata.forecast.registry import ForecastRegistry
 # Import all method modules to ensure registration
 import mtdata.forecast.methods.classical
@@ -283,12 +284,23 @@ def _apply_dimensionality_reduction(X: pd.DataFrame, dimred_method: Optional[str
     return X
 
 
-def _format_forecast_output(forecast_values: np.ndarray, last_epoch: float, tf_secs: int,
-                            horizon: int, base_col: str, df: pd.DataFrame,
-                            ci_alpha: Optional[float], ci_values: Optional[np.ndarray],
-                            method: str, quantity: str, denoise_used: bool,
-                            metadata: Optional[Dict[str, Any]] = None,
-                            digits: Optional[int] = None) -> Dict[str, Any]:
+def _format_forecast_output(
+    forecast_values: np.ndarray,
+    last_epoch: float,
+    tf_secs: int,
+    horizon: int,
+    base_col: str,
+    df: pd.DataFrame,
+    ci_alpha: Optional[float],
+    ci_values: Optional[np.ndarray],
+    method: str,
+    quantity: str,
+    denoise_used: bool,
+    metadata: Optional[Dict[str, Any]] = None,
+    digits: Optional[int] = None,
+    forecast_return_values: Optional[np.ndarray] = None,
+    reconstructed_prices: Optional[np.ndarray] = None,
+) -> Dict[str, Any]:
     """Format forecast output with proper structure."""
     # Generate future time indices
     future_epochs = _next_times_from_last(last_epoch, tf_secs, horizon)
@@ -301,15 +313,24 @@ def _format_forecast_output(forecast_values: np.ndarray, last_epoch: float, tf_s
         future_times = [_format_time_minimal_util(e) for e in future_epochs]
 
     # Build base result
-    result = {
+    result: Dict[str, Any] = {
         "success": True,
         "method": method,
         "horizon": horizon,
         "base_col": base_col,
-        "forecast_price": [float(v) for v in forecast_values],
         "forecast_time": future_times,
         "forecast_epoch": future_epochs,
     }
+
+    # Choose which arrays to expose
+    if quantity == 'return':
+        if forecast_return_values is None:
+            forecast_return_values = forecast_values
+        result["forecast_return"] = [float(v) for v in forecast_return_values]
+        if reconstructed_prices is not None:
+            result["forecast_price"] = [float(v) for v in reconstructed_prices]
+    else:
+        result["forecast_price"] = [float(v) for v in forecast_values]
     
     if digits is not None:
         result["digits"] = int(digits)
@@ -352,12 +373,16 @@ def forecast_engine(
     target_spec: Optional[Dict[str, Any]] = None,
     exog_used: Optional[np.ndarray] = None,
     exog_future: Optional[np.ndarray] = None,
+    prefetched_df: Optional[pd.DataFrame] = None,
+    prefetched_base_col: Optional[str] = None,
+    prefetched_denoise_spec: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Core forecast engine implementation.
 
     This is the main orchestration function that coordinates all forecasting operations.
     """
     try:
+        ci_values = None
         # Coerce CLI string inputs to proper types
         try:
             horizon = int(horizon) if horizon is not None else 12
@@ -399,35 +424,63 @@ def forecast_engine(
         # Calculate lookback bars
         need = _calculate_lookback_bars(method_l, horizon, lookback, seasonality, timeframe)
 
-        # Fetch data
-        try:
-            df = _fetch_history(symbol, timeframe, int(need), as_of)
-        except Exception as ex:
-            return {"error": str(ex)}
-        if len(df) < 3:
-            return {"error": "Not enough closed bars to compute forecast"}
-
-        # Apply denoising
-        base_col = 'close'
-        dn_spec_used = None
-        if denoise:
+        # Fetch data (or reuse prefetched) and optional denoise
+        if prefetched_df is not None:
+            df = prefetched_df
+            base_col = prefetched_base_col or ('close_dn' if 'close_dn' in df.columns else 'close')
+            dn_spec_used = prefetched_denoise_spec
+        else:
             try:
-                _dn = _normalize_denoise_spec(denoise, default_when='pre_ti')
-            except Exception:
-                _dn = None
-            added = _apply_denoise(df, _dn, default_when='pre_ti') if _dn else []
-            dn_spec_used = _dn
-            if len(added) > 0 and f"{base_col}_dn" in added:
-                base_col = f"{base_col}_dn"
+                df = _fetch_history(symbol, timeframe, int(need), as_of)
+            except Exception as ex:
+                return {"error": str(ex)}
+            if len(df) < 3:
+                return {"error": "Not enough closed bars to compute forecast"}
+
+            # Apply denoising
+            base_col = 'close'
+            dn_spec_used = None
+            if denoise:
+                try:
+                    _dn = _normalize_denoise_spec(denoise, default_when='pre_ti')
+                except Exception:
+                    _dn = None
+                added = _apply_denoise(df, _dn, default_when='pre_ti') if _dn else []
+                dn_spec_used = _dn
+                if len(added) > 0 and f"{base_col}_dn" in added:
+                    base_col = f"{base_col}_dn"
+
+        # Track last close for potential price reconstruction
+        try:
+            last_close = float(df['close'].iloc[-1])
+        except Exception:
+            last_close = float('nan')
 
         # Prepare base data
-        base_col = _prepare_base_data(df, quantity_l, target)
+        base_col_initial = base_col
+        base_col_prepared = _prepare_base_data(df, quantity_l, target)
 
         # Apply features and target specification
-        base_col = _apply_features_and_target_spec(df, features, target_spec, base_col)
+        base_col_prepared = _apply_features_and_target_spec(df, features, target_spec, base_col_prepared)
 
-        # Prepare target series
-        target_series = df[base_col].dropna()
+        # Prepare target series, honoring target_spec if provided
+        target_series = df[base_col_prepared].dropna()
+        target_info: Dict[str, Any] = {}
+        if target_spec:
+            try:
+                y_arr, target_info = build_target_series(df, base_col_initial, target_spec, legacy_target=str(target))
+                target_series = pd.Series(y_arr, index=df.index)
+                base_col = target_info.get('base', base_col_initial)
+            except Exception as ex:
+                return {"error": f"Invalid target_spec: {ex}"}
+        else:
+            base_col = base_col_prepared
+            if quantity_l == 'return' or str(target).lower() == 'return':
+                target_series = df[base_col].dropna()
+            else:
+                target_series = df[base_col]
+
+        target_series = target_series.dropna()
         if len(target_series) < 3:
             return {"error": f"Not enough valid data points in column '{base_col}'"}
 
@@ -608,12 +661,32 @@ def forecast_engine(
         if forecast_values is None:
             return {"error": f"Method '{method}' returned no forecast values"}
 
+        # Prepare output arrays
+        forecast_return_vals = None
+        reconstructed_prices = None
+        if quantity_l == 'return':
+            forecast_return_vals = np.asarray(forecast_values, dtype=float)
+            if np.isfinite(last_close):
+                reconstructed_prices = last_close * np.exp(np.cumsum(forecast_return_vals))
+
         # Format and return output
         denoise_used = dn_spec_used is not None
         result = _format_forecast_output(
-            forecast_values, last_epoch, tf_secs, horizon, base_col, df,
-            ci_alpha, ci_values, method, quantity_l, denoise_used, metadata,
-            digits=digits
+            forecast_values,
+            last_epoch,
+            tf_secs,
+            horizon,
+            base_col,
+            df,
+            ci_alpha,
+            ci_values,
+            method,
+            quantity_l,
+            denoise_used,
+            metadata,
+            digits=digits,
+            forecast_return_values=forecast_return_vals,
+            reconstructed_prices=reconstructed_prices,
         )
         if method_l == 'ensemble' and ensemble_meta:
             result['ensemble'] = ensemble_meta

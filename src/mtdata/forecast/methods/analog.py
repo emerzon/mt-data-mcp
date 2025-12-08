@@ -62,6 +62,8 @@ class AnalogMethod(ForecastMethod):
         drop_last_live = bool(params.get('drop_last_live', drop_last_live))
         # Profile-based engines expect z-normalized inputs
         idx_scale = 'zscore' if search_engine in ('matrix_profile', 'mass') else scale
+        if search_engine in ('matrix_profile', 'mass') and metric.lower() not in ('euclidean', 'l2'):
+            metric = 'euclidean'
         
         # Build Index (for HISTORY lookup)
         try:
