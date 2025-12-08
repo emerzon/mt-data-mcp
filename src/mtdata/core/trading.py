@@ -84,7 +84,7 @@ def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tupl
             raise ValueError(f"Expiration timestamp out of range: {expiration}") from exc
 
     if isinstance(expiration, str):
-        cleaned = expiration.strip()
+        cleaned = expiration.strip().strip('"').strip("'")
         if cleaned == "":
             return None, False
 
@@ -92,13 +92,38 @@ def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tupl
         if upper_cleaned in _GTC_EXPIRATION_TOKENS:
             return None, True
 
+        # Regex for simple relative time like 'in 30 minutes', '1h', '30m'
+        import re
+        # Pattern for "in X units" or just "X units" or "Xunits"
+        # Matches: "in 30 min", "30m", "1 hour", "2h", "10 seconds"
+        simple_rel_pattern = re.compile(r'^(?:in\s+)?(\d+(?:\.\d+)?)\s*([a-zA-Z]+)$', re.IGNORECASE)
+        match = simple_rel_pattern.match(cleaned)
+        if match:
+            val = float(match.group(1))
+            unit = match.group(2).lower()
+            delta = None
+            if unit in ('s', 'sec', 'secs', 'second', 'seconds'):
+                delta = timedelta(seconds=val)
+            elif unit in ('m', 'min', 'mins', 'minute', 'minutes'):
+                delta = timedelta(minutes=val)
+            elif unit in ('h', 'hr', 'hrs', 'hour', 'hours'):
+                delta = timedelta(hours=val)
+            elif unit in ('d', 'day', 'days'):
+                delta = timedelta(days=val)
+            elif unit in ('w', 'wk', 'weeks'):
+                delta = timedelta(weeks=val)
+            
+            if delta is not None:
+                # Relative to now (UTC) then converted to server time
+                return _to_server_time_naive(datetime.now(timezone.utc) + delta), True
+
         # Try flexible date parsing first (e.g., 'tomorrow 14:00', 'in 2 hours')
         try:
             import dateparser  # type: ignore
             dt = dateparser.parse(cleaned, settings={
                 'RETURN_AS_TIMEZONE_AWARE': False,
                 'PREFER_DATES_FROM': 'future',
-                'RELATIVE_BASE': None,
+                'RELATIVE_BASE': datetime.now(), # explicit base
             })
             if dt is not None:
                 return _to_server_time_naive(dt), True
