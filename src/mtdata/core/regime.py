@@ -67,6 +67,7 @@ def regime_detect(
     - params: method-specific kwargs, e.g., bocpd: hazard_lambda, max_run_length; hmm: n_states; ms_ar: k_regimes, order.
     - denoise: optional denoising on 'close' prior to target transform.
     - threshold: decision threshold for change-point marking (bocpd cp_prob >= threshold).
+    - output: 'full' (default; all time series), 'summary' (stats only), or 'compact' (summary + tail series).
     """
     try:
         p = dict(params or {})

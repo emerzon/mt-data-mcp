@@ -219,6 +219,7 @@ Generate point forecasts for the next `horizon` bars. The server supports lightw
 - Run forecast: `python cli.py forecast_generate <symbol> --timeframe <TF> --method <name> --horizon <N> [--params JSON]`
 - Rolling backtest: `python cli.py forecast_backtest_run <symbol> --timeframe <TF> --horizon <N> [--steps S --spacing K --methods ...]`
 - Volatility forecasts: use `forecast_volatility_estimate` with methods like `ewma`, `parkinson`, `har_rv`, `garch`, or general `arima`/`ets` with a `--proxy` (e.g., `log_r2`).
+- **Analog / Pattern Matching**: `forecast_generate ... --method analog` finds historical price patterns similar to recent price action and projects them forward.
 
 Classical example
 ```bash
@@ -306,6 +307,31 @@ Compute single-barrier hit probability using GBM formulas (fast sanity check vs.
 ```bash
 python cli.py forecast_barrier_closed_form EURUSD --timeframe H1 --horizon 12 --direction up --barrier 1.1000 --format json
 ```
+
+### Trading & Order Management
+
+Execute trades and manage portfolio risk directly from the CLI or MCP tools.
+
+#### Account & Positions
+- `trading_account_info` - View balance, equity, margin, and free margin.
+- `trading_positions_get [--symbol SYM] [--ticket ID]` - List open positions.
+- `trading_positions_close [--symbol SYM] [--ticket ID] [--profit-only] [--loss-only]` - Close positions.
+- `trading_positions_modify <ticket> [--sl PRICE] [--tp PRICE]` - Modify SL/TP for an open position.
+
+#### Orders
+- `trading_orders_place_market <symbol> <volume> <BUY|SELL> [--sl PRICE] [--tp PRICE]` - Place an instant market order.
+- `trading_pending_place <symbol> <volume> <TYPE> <price> [--sl PRICE] [--tp PRICE] [--expiration "TIME"]` - Place a pending order (LIMIT/STOP).
+  - Types: `BUYLIMIT`, `BUYSTOP`, `SELLLIMIT`, `SELLSTOP`.
+  - Expiration: `GTC` (default), or time string (e.g., "today 15:00", "2025-12-31").
+- `trading_pending_get` - List active pending orders.
+- `trading_pending_cancel [--ticket ID] [--symbol SYM]` - Cancel pending orders.
+- `trading_pending_modify <ticket> [--price PRICE] [--sl PRICE] [--tp PRICE] [--expiration "TIME"]` - Modify a pending order.
+
+#### History & Analysis
+- `trading_deals_history [--from DATE] [--to DATE] [--symbol SYM]` - View historical executed deals.
+- `trading_orders_active [--from DATE] [--to DATE]` - View historical order history.
+- `trading_risk_analyze [--symbol SYM] [--desired-risk-pct PCT] ...` - Portfolio risk analysis and position sizing calculator.
+  - Calculate lot size: `trading_risk_analyze --symbol EURUSD --desired-risk-pct 1.0 --proposed-entry 1.05 --proposed-sl 1.045`
 
 #### Dimensionality Reduction (Pattern Search)
 
