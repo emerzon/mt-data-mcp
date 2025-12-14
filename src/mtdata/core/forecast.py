@@ -15,6 +15,7 @@ from .constants import TIMEFRAME_SECONDS
 import MetaTrader5 as mt5
 import numpy as _np
 from functools import lru_cache
+import difflib
 
 
 @lru_cache(maxsize=1)
@@ -67,6 +68,49 @@ def _discover_sktime_forecasters() -> Dict[str, Tuple[str, str]]:
             if key not in mapping:
                 mapping[key] = (name, f"{obj.__module__}.{name}")
     return mapping
+
+
+def _normalize_forecaster_name(name: str) -> str:
+    return "".join(ch for ch in str(name).lower() if ch.isalnum())
+
+
+def _resolve_sktime_forecaster(model: str) -> Optional[Tuple[str, str]]:
+    """Resolve a user-provided model name to (class_name, dotted_path) using fuzzy matching."""
+    model_s = str(model or "").strip()
+    if not model_s:
+        return None
+
+    mapping = _discover_sktime_forecasters()
+    if not mapping:
+        return None
+
+    # Exact match on class name (case-insensitive)
+    exact = mapping.get(model_s.lower())
+    if exact:
+        return exact
+
+    # Normalized match (e.g. "theta", "theta_forecaster", "ThetaForecaster")
+    norm_map: Dict[str, Tuple[str, str]] = {}
+    for _, (cls_name, dotted) in mapping.items():
+        norm_map.setdefault(_normalize_forecaster_name(cls_name), (cls_name, dotted))
+
+    qn = _normalize_forecaster_name(model_s)
+    if qn in norm_map:
+        return norm_map[qn]
+
+    # Prefer startswith/contains in normalized space (more intuitive than difflib alone).
+    starts = [v for k, v in norm_map.items() if k.startswith(qn)]
+    if starts:
+        return sorted(starts, key=lambda t: len(t[0]))[0]
+    contains = [v for k, v in norm_map.items() if qn and qn in k]
+    if contains:
+        return sorted(contains, key=lambda t: len(t[0]))[0]
+
+    # Fallback to difflib against normalized names.
+    candidates = difflib.get_close_matches(qn, list(norm_map.keys()), n=1, cutoff=0.6)
+    if candidates:
+        return norm_map[candidates[0]]
+    return None
 
 @mcp.tool()
 @_auto_connect_wrapper
@@ -129,22 +173,22 @@ def forecast_generate(
                 resolved_method = "sktime"
                 p.setdefault("estimator", mdl)
             else:
-                base = (mdl.strip() if mdl else "theta")
-                base_l = base.lower()
-                # Support a small set of friendly aliases mapped to our registered skt_* methods.
-                if base_l in {"theta", "naive", "autoets", "arima", "autoarima"}:
-                    resolved_method = f"skt_{base_l}"
-                elif base_l.startswith("skt_"):
-                    resolved_method = base_l
+                # Resolve by closest matching forecaster class name.
+                # Examples:
+                # - "theta" -> ThetaForecaster
+                # - "MOIRAI" -> MOIRAIForecaster
+                query = mdl.strip() if mdl else "ThetaForecaster"
+                found = _resolve_sktime_forecaster(query)
+                if found:
+                    _, dotted = found
+                    resolved_method = "sktime"
+                    p.setdefault("estimator", dotted)
                 else:
-                    # Attempt to resolve an sktime forecaster class name to a dotted path.
-                    found = _discover_sktime_forecasters().get(base_l)
-                    if found:
-                        _, dotted = found
-                        resolved_method = "sktime"
-                        p.setdefault("estimator", dotted)
-                    else:
-                        resolved_method = f"skt_{base_l}"
+                    # Fall back to the generic wrapper with an explicit dotted path if possible.
+                    raise ValueError(
+                        f"Unknown sktime forecaster '{query}'. "
+                        "Run `python cli.py forecast_generate --library sktime` to list available forecasters."
+                    )
         elif lib == "pretrained":
             resolved_method = mdl or "chronos2"
         elif lib == "analog":
@@ -218,23 +262,17 @@ def forecast_list_library_models(
         }
 
     if lib == "sktime":
-        aliases = ["theta", "naive", "autoets", "arima", "autoarima"]
-
-        # Best-effort discovery of importable forecasters without hard-failing
-        # on optional dependency import errors.
         mapping = _discover_sktime_forecasters()
         forecasters = sorted({v[0] for v in mapping.values()})
-
         return {
             "library": lib,
-            "aliases": aliases,
             "models": forecasters,
             "usage": [
                 "python cli.py forecast_generate SYMBOL --library sktime --model theta",
                 "python cli.py forecast_generate SYMBOL --library sktime --model ThetaForecaster",
                 "python cli.py forecast_generate SYMBOL --library sktime --model sktime.forecasting.theta.ThetaForecaster --params \"sp=24\"",
             ],
-            "note": "You can pass either a forecaster class name (e.g. ThetaForecaster) or a dotted class path via --model; constructor kwargs go in --params.",
+            "note": "The --model value is matched to the closest available forecaster name; you can also pass a dotted class path. Constructor kwargs go in --params.",
         }
 
     if lib == "pretrained":
