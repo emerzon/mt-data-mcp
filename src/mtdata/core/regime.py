@@ -9,41 +9,193 @@ from ..utils.utils import _format_time_minimal as _format_time_minimal_util
 from ..utils.denoise import _apply_denoise as _apply_denoise_util
 
 
-def _attach_toon_rows(payload: Dict[str, Any], method: str) -> Dict[str, Any]:
-    """Attach tabular rows so TOON output keeps columns aligned."""
+def _consolidate_payload(payload: Dict[str, Any], method: str, output_mode: str, include_series: bool = False) -> Dict[str, Any]:
+    """Consolidate time series into regime segments and restructure payload."""
     try:
         times = payload.get("times")
-        if not isinstance(times, list) or not times:
+        if not times or not isinstance(times, list):
             return payload
-        rows: List[Dict[str, Any]] = []
+
+        # Prepare consolidation
+        segments: List[Dict[str, Any]] = []
+        
+        # Extract states/regimes
+        states = []
+        probs = []
+        is_change_point = []
+        
         if method == "bocpd":
-            probs = payload.get("cp_prob")
-            if isinstance(probs, list):
-                cp_times = set()
-                cps = payload.get("change_points") if isinstance(payload.get("change_points"), list) else []
-                for cp in cps or []:
-                    t = cp.get("time") if isinstance(cp, dict) else None
-                    if isinstance(t, str):
-                        cp_times.add(t)
-                for t, p in zip(times, probs):
-                    rows.append({"time": t, "cp_prob": p, "change_point": t in cp_times})
+            # For BOCPD, we define regimes by change points
+            # We can create a 'regime_id' that increments at each CP
+            # We also look at 'change_points' list in payload
+            cps_idx = set()
+            if "change_points" in payload and isinstance(payload["change_points"], list):
+                for cp in payload["change_points"]:
+                    if isinstance(cp, dict) and "idx" in cp:
+                        cps_idx.add(cp["idx"])
+            
+            curr_regime = 0
+            # Reconstruct per-step state
+            for i in range(len(times)):
+                if i in cps_idx:
+                    curr_regime += 1
+                states.append(curr_regime)
+                
+            # Probs
+            raw_probs = payload.get("cp_prob")
+            if isinstance(raw_probs, list):
+                probs = raw_probs
+            else:
+                probs = [0.0] * len(times)
+                
         elif method in ("ms_ar", "hmm"):
-            state = payload.get("state")
-            probs = payload.get("state_probabilities")
-            if isinstance(state, list) and isinstance(probs, list) and probs and isinstance(probs[0], list):
-                n_states = len(probs[0])
-                for t, s, prow in zip(times, state, probs):
-                    row: Dict[str, Any] = {"time": t, "state": s}
-                    for j in range(n_states):
-                        row[f"p{j}"] = prow[j] if j < len(prow) else None
-                    rows.append(row)
-            elif isinstance(state, list):
-                rows = [{"time": t, "state": s} for t, s in zip(times, state)]
-        if rows:
-            payload["rows"] = rows
+            raw_state = payload.get("state")
+            if isinstance(raw_state, list):
+                states = raw_state
+            
+            # Probs
+            # structure is usually list of lists [ [p0, p1...], ... ]
+            raw_probs = payload.get("state_probabilities")
+            # We might just store the max prob or the prob of the current state?
+            if isinstance(raw_probs, list) and raw_probs:
+                if isinstance(raw_probs[0], list):
+                    # Pick prob of selected state
+                    for s, p_vec in zip(states, raw_probs):
+                        if isinstance(p_vec, list) and 0 <= s < len(p_vec):
+                            probs.append(p_vec[s])
+                        else:
+                            probs.append(None)
+                else:
+                    probs = raw_probs # Should not happen based on current logic but safe fallback
+
+        if not states or len(states) != len(times):
+            # Fallback if creation failed
+            return payload
+
+        # Consolidate
+        # Loop through
+        curr_start = times[0]
+        curr_state = states[0]
+        curr_prob_sum = 0.0
+        curr_count = 0
+        
+        i = 0
+        while i < len(times):
+             t = times[i]
+             s = states[i]
+             p = probs[i] if i < len(probs) and probs[i] is not None else 0.0
+             
+             # Check change (state change)
+             # For BOCPD, 's' changes exactly at CP.
+             if s != curr_state and curr_count > 0:
+                 # close segment
+                 avg_prob = curr_prob_sum / max(1, curr_count)
+                 segments.append({
+                     "start": curr_start,
+                     "end": times[i-1] if i > 0 else curr_start,
+                     "duration": curr_count,
+                     "regime": curr_state, # state ID or regime ID
+                     "confidence": avg_prob # average prob of being in this state/regime (for HMM) or CP prob (BOCPD - meaningless inside segment usually)
+                 })
+                 # New segment
+                 curr_start = t
+                 curr_state = s
+                 curr_prob_sum = 0.0
+                 curr_count = 0
+             
+             curr_prob_sum += p
+             curr_count += 1
+             i += 1
+             
+        # Final segment
+        if curr_count > 0:
+            avg_prob = curr_prob_sum / max(1, curr_count)
+            segments.append({
+                "start": curr_start,
+                "end": times[-1],
+                "duration": curr_count,
+                "regime": curr_state,
+                "confidence": avg_prob
+            })
+
+        # Post-process segments for readability
+        # For BOCPD, 'confidence' is avg cp_prob which is usually low except at edges.
+        # Maybe we want the PEAK prob? or just drop it.
+        # For HMM, 'confidence' is avg prob of that state.
+        
+        final_segments = []
+        for i, seg in enumerate(segments):
+            row = {
+                "start": seg["start"],
+                "end": seg["end"],
+                "bars": seg["duration"],
+                "regime": seg["regime"]
+            }
+            if method != 'bocpd':
+                row["avg_conf"] = round(seg["confidence"], 4)
+            final_segments.append(row)
+
+        # Restructure Payload
+        # We want 'regimes' to be the MAIN table.
+        # We want to hide raw series under 'series' if output='full'.
+        
+        new_payload = {
+            "symbol": payload.get("symbol"),
+            "timeframe": payload.get("timeframe"),
+            "method": payload.get("method"),
+            "success": True
+        }
+        
+        # Copy summary if exists
+        if "summary" in payload:
+            new_payload["summary"] = payload["summary"]
+            
+        # Add consolidated table
+        new_payload["regimes"] = final_segments
+        
+        # Handle raw series
+        if output_mode == 'full' and include_series:
+            series_data = {}
+            for k in ["times", "cp_prob", "state", "state_probabilities", "change_points"]:
+                if k in payload:
+                    series_data[k] = payload[k]
+            new_payload["series"] = series_data
+        elif output_mode == 'compact' and include_series:
+            # Maybe keep tail of series in 'series'?
+            series_data = {}
+            for k in ["times", "cp_prob", "state"]:
+                 if k in payload:
+                     series_data[k] = payload[k] # Already truncated by caller?
+            new_payload["series"] = series_data
+
+        # Add params
+        if "params_used" in payload:
+            new_payload["params_used"] = payload["params_used"]
+            
+        return new_payload
+
+    except Exception as e:
+        # Fallback to original payload on error
+        payload["consolidation_error"] = str(e)
         return payload
-    except Exception:
-        return payload
+
+
+def _summary_only_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a minimal payload for `output='summary'` (no regimes/series)."""
+    out: Dict[str, Any] = {
+        "symbol": payload.get("symbol"),
+        "timeframe": payload.get("timeframe"),
+        "method": payload.get("method"),
+        "target": payload.get("target"),
+        "success": bool(payload.get("success", True)),
+    }
+    if "summary" in payload:
+        out["summary"] = payload["summary"]
+    if "params_used" in payload:
+        out["params_used"] = payload["params_used"]
+    if "threshold" in payload:
+        out["threshold"] = payload["threshold"]
+    return out
 
 
 @mcp.tool()
@@ -59,15 +211,16 @@ def regime_detect(
     threshold: float = 0.5,
     output: Literal['full','summary','compact'] = 'full',  # type: ignore
     lookback: int = 300,
+    include_series: bool = False,
 ) -> Dict[str, Any]:
     """Detect regimes and/or change-points over the last `limit` bars.
 
-    - method: 'bocpd' (Bayesian online change-point; Gaussian), 'hmm' (Gaussian mixture/HMM-lite), or 'ms_ar' (Markov-switching AR via statsmodels if available).
-    - target: 'return' (default; log returns) or 'price'.
-    - params: method-specific kwargs, e.g., bocpd: hazard_lambda, max_run_length; hmm: n_states; ms_ar: k_regimes, order.
-    - denoise: optional denoising on 'close' prior to target transform.
-    - threshold: decision threshold for change-point marking (bocpd cp_prob >= threshold).
-    - output: 'full' (default; all time series), 'summary' (stats only), or 'compact' (summary + tail series).
+    - method: 'bocpd' (Bayesian online change-point; Gaussian), 'hmm' (Gaussian mixture/HMM-lite), or 'ms_ar' (Markov-switching AR).
+    - include_series: If True, include raw time series data (probs, states) in output even if output='full'. Default False.
+    - output:
+        - 'full': Returns consolidated 'regimes' table. Raw 'series' included only if include_series=True.
+        - 'summary': Returns stats only.
+        - 'compact': Returns 'regimes' and tail of 'series'.
     """
     try:
         p = dict(params or {})
@@ -128,15 +281,27 @@ def regime_detect(
                     "change_points_count": int(len(recent_cps)),
                     "recent_change_points": recent_cps[-5:],
                 }
-                if output == 'summary':
-                    payload = {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method, "summary": summary}
-                else:  # compact: keep cp_prob only as tail
-                    payload["summary"] = summary
-                    if n > 0:
-                        payload["cp_prob"] = [float(v) for v in tail.tolist()]
-                        payload["times"] = t_fmt[-n:]
-                        payload["change_points"] = recent_cps
-            return _attach_toon_rows(payload, method)
+                payload["summary"] = summary
+                if output == "summary":
+                    return _summary_only_payload(payload)
+                if output == 'compact' and n > 0:
+                    # Compact mode uses the tail of the series; remap CP indices so they
+                    # remain consistent with the truncated `times` array used by consolidation.
+                    tail_offset = len(t_fmt) - n
+                    payload["times"] = t_fmt[-n:]
+                    payload["cp_prob"] = payload["cp_prob"][-n:]
+                    tail_cps: List[Dict[str, Any]] = []
+                    for cp in payload.get("change_points", []):
+                        if not isinstance(cp, dict):
+                            continue
+                        idx = cp.get("idx")
+                        if isinstance(idx, int) and idx >= tail_offset:
+                            cp_tail = dict(cp)
+                            cp_tail["idx"] = idx - tail_offset
+                            tail_cps.append(cp_tail)
+                    payload["change_points"] = tail_cps
+
+            return _consolidate_payload(payload, method, output, include_series=include_series)
 
         elif method == 'ms_ar':
             try:
@@ -151,10 +316,8 @@ def regime_detect(
                 smoothed = res.smoothed_marginal_probabilities
                 if hasattr(smoothed, "values"):
                     smoothed = smoothed.values
-                # choose most probable regime per time
-                # smoothed shape is usually (T, K)
                 state = np.argmax(smoothed, axis=1)
-                probs = smoothed  # shape (T, K)
+                probs = smoothed
             except Exception as ex:
                 return {"error": f"MS-AR fitting error: {ex}"}
             payload = {
@@ -172,19 +335,18 @@ def regime_detect(
                 n = min(int(lookback), len(state))
                 st_tail = state[-n:] if n > 0 else state
                 last_s = int(state[-1]) if len(state) else None
-                # Shares
                 unique, counts = np.unique(st_tail, return_counts=True)
                 shares = {int(k): float(c) / float(len(st_tail) or 1) for k, c in zip(unique, counts)}
                 summary = {"lookback": int(n), "last_state": last_s, "state_shares": shares}
-                if output == 'summary':
-                    payload = {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method, "summary": summary}
-                else:
-                    payload["summary"] = summary
-                    if n > 0:
-                        payload["state"] = [int(s) for s in st_tail.tolist()]
-                        payload["times"] = t_fmt[-n:]
-                        payload["state_probabilities"] = [[float(v) for v in row] for row in probs.tolist()][-n:]
-            return _attach_toon_rows(payload, method)
+                payload["summary"] = summary
+                if output == "summary":
+                    return _summary_only_payload(payload)
+                if output == 'compact' and n > 0:
+                    payload["times"] = t_fmt[-n:]
+                    payload["state"] = payload["state"][-n:]
+                    payload["state_probabilities"] = payload["state_probabilities"][-n:]
+            
+            return _consolidate_payload(payload, method, output, include_series=include_series)
 
         else:  # 'hmm' (mixture/HMM-lite)
             try:
@@ -211,7 +373,6 @@ def regime_detect(
                 last_s = int(state[-1]) if len(state) else None
                 unique, counts = np.unique(st_tail, return_counts=True)
                 shares = {int(k): float(c) / float(len(st_tail) or 1) for k, c in zip(unique, counts)}
-                # Order states by sigma ascending for interpretability
                 order = np.argsort(sigma)
                 ranks = {int(s): int(r) for r, s in enumerate(order)}
                 summary = {
@@ -221,17 +382,16 @@ def regime_detect(
                     "state_sigma": {int(i): float(sigma[i]) for i in range(len(sigma))},
                     "state_order_by_sigma": ranks,
                 }
-                if output == 'summary':
-                    payload = {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method, "summary": summary}
-                else:
-                    payload["summary"] = summary
-                    if n > 0:
-                        payload["state"] = [int(s) for s in st_tail.tolist()]
-                        payload["times"] = t_fmt[-n:]
-                        # If gamma present, truncate probabilities too
-                        if isinstance(gamma, np.ndarray) and gamma.ndim == 2 and gamma.shape[0] >= n:
-                            payload["state_probabilities"] = [[float(v) for v in row] for row in gamma[-n:].tolist()]
-            return _attach_toon_rows(payload, method)
+                payload["summary"] = summary
+                if output == "summary":
+                    return _summary_only_payload(payload)
+                if output == 'compact' and n > 0:
+                    payload["times"] = t_fmt[-n:]
+                    payload["state"] = payload["state"][-n:]
+                    if isinstance(gamma, np.ndarray) and len(gamma) >= n:
+                         payload["state_probabilities"] = payload["state_probabilities"][-n:]
+
+            return _consolidate_payload(payload, method, output, include_series=include_series)
 
     except Exception as e:
         return {"error": f"Error detecting regimes: {str(e)}"}

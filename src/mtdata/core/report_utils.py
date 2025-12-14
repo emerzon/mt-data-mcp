@@ -231,7 +231,7 @@ def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]
     try:
         from .data import data_fetch_candles as _fetch_candles
         indicators = "ema(20),ema(50),ema(200),rsi(14),macd(12,26,9)"
-        res = _fetch_candles(symbol=symbol, timeframe=timeframe, limit=int(limit), indicators=indicators, denoise=denoise)
+        res = _fetch_candles(symbol=symbol, timeframe=timeframe, limit=int(limit), indicators=indicators, denoise=denoise, __cli_raw=True)
 
         # Handle both dictionary and string response formats
         if isinstance(res, dict):
@@ -600,7 +600,7 @@ def _render_context_section(data: Any) -> List[str]:
                 f"{bars_high if bars_high is not None else 'n/a'} / {bars_low if bars_low is not None else 'n/a'}",
             ])
     if metrics:
-        lines.extend(_format_table(['Metric', 'Value'], metrics))
+        lines.extend(_format_table(['Metric', 'Value'], metrics, name='metrics'))
     note = str(data.get('notes', '')).strip()
     if note:
         lines.append(f'- Note: {note}')
@@ -643,7 +643,7 @@ def _render_contexts_multi_section(data: Any) -> List[str]:
     if not rows:
         return []
     lines = ['## Multi-Timeframe Context']
-    lines.extend(_format_table(['TF', 'Close', 'EMA20', 'EMA50', 'EMA200', 'RSI', 'Slope(5)', 'ATR bps'], rows))
+    lines.extend(_format_table(['TF', 'Close', 'EMA20', 'EMA50', 'EMA200', 'RSI', 'Slope(5)', 'ATR bps'], rows, name='timeframes'))
     return lines
 
 
@@ -694,40 +694,10 @@ def _render_pivot_section(data: Any) -> List[str]:
             value = row.get(method)
             row_vals.append(format_number(value) if value is not None else None)
         table_rows.append(row_vals)
-    lines.extend(_format_table(headers, table_rows))
+    lines.extend(_format_table(headers, table_rows, name='levels'))
     return lines
 
 
-def _render_pivot_multi_section(data: Any) -> List[str]:
-    if not isinstance(data, dict):
-        return []
-    base_tf = str(data.get('__base_timeframe__') or '').upper()
-    lines = ['## Multi-Timeframe Pivots']
-    for tf in sorted(data.keys()):
-        if str(tf).startswith('__'):
-            continue
-        if base_tf and str(tf).upper() == base_tf:
-            continue
-        piv = data[tf]
-        if not isinstance(piv, dict):
-            continue
-        levels = piv.get('levels')
-        if not isinstance(levels, list) or not levels:
-            continue
-        rows: List[List[str]] = []
-        for row in levels:
-            if not isinstance(row, dict):
-                continue
-            level = str(row.get('level') or '').upper()
-            piv_val = row.get('classic') or row.get('Classic') or None
-            rows.append([level or 'n/a', format_number(piv_val) if piv_val is not None else None])
-        filtered_rows = [r for r in rows if not all((c is None or str(c).lower() == 'n/a') for c in r[1:])]
-        if filtered_rows:
-            lines.append(f"### {tf}")
-            lines.extend(_format_table(['Level', 'Classic'], filtered_rows))
-            lines.append('')
-    result = [line for line in lines if line != '']
-    return result if len(result) > 1 else []
 def _render_pivot_multi_section(data: Any) -> List[str]:
     if not isinstance(data, dict):
         return []
@@ -753,7 +723,7 @@ def _render_pivot_multi_section(data: Any) -> List[str]:
             rows.append([level, format_number(piv_val)])
         if rows:
             lines.append(f"### {tf}")
-            lines.extend(_format_table(['Level', 'Classic'], rows))
+            lines.extend(_format_table(['Level', 'Classic'], rows, name='levels'))
             lines.append('')
     return [line for line in lines if line != '']
 
@@ -785,7 +755,7 @@ def _render_volatility_section(data: Any) -> List[str]:
     if not rows:
         return []
     lines = ['## Volatility Snapshot', '*values are horizon sigma (returns)*']
-    lines.extend(_format_table(headers, rows))
+    lines.extend(_format_table(headers, rows, name='estimates'))
     return lines
 
 
@@ -814,8 +784,15 @@ def _render_barriers_section(data: Any) -> List[str]:
         return []
     # If nested long/short payloads present, render a single matrix
     if any(k in data for k in ('long','short')):
+        mode = str(data.get('mode', 'pct')).lower()
+        unit_lbl = '%'
+        if mode == 'pips':
+            unit_lbl = '(pips)'
+        elif mode == 'bps':
+            unit_lbl = '(bps)'
+            
         lines: List[str] = ['## Barrier Analytics']
-        headers = ['Direction', 'TP %', 'SL %', 'TP lvl', 'SL lvl', 'Edge', 'Kelly', 'EV', 'TP hit %', 'SL hit %', 'No-hit %']
+        headers = ['Direction', f'TP {unit_lbl}', f'SL {unit_lbl}', 'TP lvl', 'SL lvl', 'Edge', 'Kelly', 'EV', 'TP hit %', 'SL hit %', 'No-hit %']
         rows: List[List[str]] = []
         for dir_name in ('long','short'):
             sub = data.get(dir_name)
@@ -838,7 +815,7 @@ def _render_barriers_section(data: Any) -> List[str]:
                 _format_probability(best.get('prob_no_hit')),
             ])
         if rows:
-            lines.extend(_format_table(headers, rows))
+            lines.extend(_format_table(headers, rows, name='candidates'))
             return lines
         return []
     # Fallback: single-direction shape
@@ -861,7 +838,7 @@ def _render_barriers_section(data: Any) -> List[str]:
             _format_probability(best.get('prob_sl_first')),
             _format_probability(best.get('prob_no_hit')),
         ]
-        lines.extend(_format_table(headers, [row]))
+        lines.extend(_format_table(headers, [row], name='best'))
     top = data.get('top')
     if isinstance(top, list) and top:
         headers = ['Rank', 'TP %', 'SL %', 'Edge', 'Kelly', 'EV']
@@ -879,7 +856,7 @@ def _render_barriers_section(data: Any) -> List[str]:
             ])
         if rows:
             lines.append('')
-            lines.extend(_format_table(headers, rows))
+            lines.extend(_format_table(headers, rows, name='top'))
     return lines if len(lines) > 1 else []
 
 
@@ -922,7 +899,7 @@ def _render_backtest_section(data: Any) -> List[str]:
             str(row.get('successful_tests') or '0'),
         ])
     lines = ['## Backtest Ranking']
-    lines.extend(_format_table(['Method', 'RMSE', 'MAE', 'DirAcc', 'Wins'], rows))
+    lines.extend(_format_table(['Method', 'RMSE', 'MAE', 'DirAcc', 'Wins'], rows, name='results'))
     return lines
 
 
@@ -1041,22 +1018,23 @@ def _render_generic_section(name: str, payload: Any) -> List[str]:
     return lines
 
 
-def _format_table(headers: List[str], rows: List[List[Optional[Any]]]) -> List[str]:
+def _format_table(headers: List[str], rows: List[List[Optional[Any]]], name: str = 'data') -> List[str]:
     if not headers or not rows:
         return []
-    header_line = ' | '.join(headers)
-    divider = ' | '.join(['-' * max(3, len(h)) for h in headers])
-    table = [header_line, divider]
+    
+    def q(v): return _compact_csv_value(v)
+    
+    header_line = ','.join(q(h) for h in headers)
+    lines = [f"{name}[{len(rows)}]{{{header_line}}}:"]
+    
     for row in rows:
-        formatted_row: List[str] = []
+        vals = []
         for idx in range(len(headers)):
             val = row[idx] if idx < len(row) else None
-            if val is None or val == '' or str(val).lower() == 'null':
-                formatted_row.append('n/a')
-            else:
-                formatted_row.append(str(val))
-        table.append(' | '.join(formatted_row))
-    return table
+            vals.append(q(val))
+        lines.append('  ' + ','.join(vals))
+        
+    return lines
 
 
 def _format_signed(value: Optional[float]) -> str:
@@ -1093,22 +1071,6 @@ def _as_float(value: Any) -> Optional[float]:
         return None
     return result
 
-_SECTION_RENDERERS: List[Tuple[str, Callable[[Any], List[str]]]] = [
-    ('context', _render_context_section),
-    ('contexts_multi', _render_contexts_multi_section),
-    ('pivot', _render_pivot_section),
-    ('pivot_multi', _render_pivot_multi_section),
-    ('volatility', _render_volatility_section),
-    ('forecast', _render_forecast_section),
-    ('barriers', _render_barriers_section),
-    ('market', _render_market_section),
-    ('backtest', _render_backtest_section),
-    ('patterns', _render_patterns_section),
-    ('regime', _render_regime_section),
-    ('execution_gates', _render_execution_gates_section),
-    ('volatility_har_rv', _render_volatility_har_section),
-    ('forecast_conformal', _render_forecast_conformal_section),
-]
 
 _SECTION_RENDERERS: List[Tuple[str, Callable[[Any], List[str]]]] = [
     ('context', _render_context_section),
