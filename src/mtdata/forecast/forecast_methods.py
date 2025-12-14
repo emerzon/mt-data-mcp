@@ -382,6 +382,46 @@ def get_forecast_methods_data() -> Dict[str, Any]:
         ["scipy", "numpy"],
         {"price": True, "return": False, "volatility": False, "ci": True})
 
+    # Autodiscovered methods (e.g. sf_* models) registered at import time.
+    try:
+        from mtdata.forecast.registry import ForecastRegistry  # local import to avoid import-time cycles
+
+        for mod_name in (
+            "mtdata.forecast.methods.statsforecast",
+            "mtdata.forecast.methods.sktime",
+        ):
+            try:
+                __import__(mod_name)
+            except Exception:
+                pass
+
+        known = {m.get("method") for m in methods if isinstance(m, dict)}
+        for name in ForecastRegistry.get_all_method_names():
+            if name in known:
+                continue
+
+            if name.startswith("sf_"):
+                add(
+                    name,
+                    "StatsForecast model alias (autodiscovered)",
+                    [],
+                    ["statsforecast"],
+                    {"price": True, "return": True, "volatility": True, "ci": True},
+                )
+            elif name.startswith("skt_"):
+                add(
+                    name,
+                    "sktime forecaster alias (autodiscovered)",
+                    [],
+                    ["sktime"],
+                    {"price": True, "return": True, "volatility": True, "ci": True},
+                )
+    except Exception:
+        pass
+
+    sf_all = [m["method"] for m in methods if isinstance(m, dict) and isinstance(m.get("method"), str) and m["method"].startswith("sf_")]
+    skt_all = [m["method"] for m in methods if isinstance(m, dict) and isinstance(m.get("method"), str) and m["method"].startswith("skt_")]
+
     return {
         "methods": methods,
         "total": len(methods),
@@ -391,7 +431,8 @@ def get_forecast_methods_data() -> Dict[str, Any]:
             "arima": ["arima", "sarima"],
             "monte_carlo": ["mc_gbm", "hmm_mc"],
             "neural": ["nhits", "nbeatsx", "tft", "patchtst"],
-            "statsforecast": ["sf_autoarima", "sf_theta", "sf_autoets", "sf_seasonalnaive"],
+            "statsforecast": sf_all,
+            "sktime": (["sktime"] + skt_all) if skt_all else ["sktime"],
             "machine_learning": ["mlf_rf", "mlf_lightgbm"],
             "pretrained": ["chronos_bolt", "chronos2", "timesfm", "lag_llama"],
             "ensemble": ["ensemble"]

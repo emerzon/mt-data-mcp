@@ -153,61 +153,112 @@ class GenericStatsForecastMethod(StatsForecastMethod):
             
         return model_cls(**model_params)
 
-# Register specific aliases for common models
-def _register_sf_aliases():
-    common_models = [
-        ('sf_autoarima', 'AutoARIMA'),
-        ('sf_theta', 'Theta'),
-        ('sf_autoets', 'AutoETS'),
-        ('sf_seasonalnaive', 'SeasonalNaive'),
-        ('sf_adida', 'ADIDA'),
-        ('sf_croston', 'CrostonClassic'),
-        ('sf_imapa', 'IMAPA'),
-        ('sf_tsb', 'TSB'),
-    ]
-    
-    for alias, model_name in common_models:
-        # We create a subclass for each to ensure they show up as distinct methods in registry
-        # and can be instantiated without passing 'model_name' in params
-        
-        # Dynamic class creation to avoid boilerplate
+def _register_statsforecast_models() -> None:
+    """Register StatsForecast models as individual method names.
+
+    Two naming schemes are supported:
+    - Canonical: `sf_<modelclassname.lower()>` (autodiscovered from statsforecast.models)
+    - Short aliases for common models (backward-compatible / nicer CLI ergonomics)
+    """
+    try:
+        from statsforecast import models as _models  # type: ignore
+    except Exception:
+        return
+
+    existing = set(ForecastRegistry.list_available())
+
+    def _register(alias: str, model_name: str) -> None:
+        nonlocal existing
+        if alias in existing:
+            return
+
         class DynamicSFMethod(StatsForecastMethod):
             _model_name = model_name
             _alias = alias
-            
+
             @property
             def name(self) -> str:
                 return self._alias
-                
+
             def _get_model(self, seasonality: int, params: Dict[str, Any]):
-                from statsforecast import models
-                model_cls = getattr(models, self._model_name)
-                
+                model_cls = getattr(_models, self._model_name)
+
                 import inspect
+
                 try:
                     sig = inspect.signature(model_cls)
                     valid_params = set(sig.parameters.keys())
-                except ValueError:
+                except Exception:
                     valid_params = set()
-                
-                model_params = {k: v for k, v in params.items() if k in valid_params}
-                
-                if 'season_length' in valid_params and 'season_length' not in model_params:
-                    model_params['season_length'] = max(1, seasonality)
 
-                # TSB requires smoothing params with no defaults.
-                if self._alias == 'sf_tsb':
-                    if 'alpha_d' in valid_params and 'alpha_d' not in model_params:
-                        model_params['alpha_d'] = 0.1
-                    if 'alpha_p' in valid_params and 'alpha_p' not in model_params:
-                        model_params['alpha_p'] = 0.1
-                    
+                model_params = {k: v for k, v in (params or {}).items() if k in valid_params}
+
+                if "season_length" in valid_params and "season_length" not in model_params:
+                    model_params["season_length"] = max(1, int(seasonality) if seasonality else 1)
+
+                # Some models require smoothing params with no defaults.
+                if self._model_name == "TSB":
+                    if "alpha_d" in valid_params and "alpha_d" not in model_params:
+                        model_params["alpha_d"] = 0.1
+                    if "alpha_p" in valid_params and "alpha_p" not in model_params:
+                        model_params["alpha_p"] = 0.1
+
                 return model_cls(**model_params)
-        
-        # Register the class
-        ForecastRegistry.register(alias)(DynamicSFMethod)
 
-_register_sf_aliases()
+        ForecastRegistry.register(alias)(DynamicSFMethod)
+        existing.add(alias)
+
+    # 1) Autodiscover all model classes in statsforecast.models
+    for attr in dir(_models):
+        if attr.startswith("_"):
+            continue
+        obj = getattr(_models, attr, None)
+        if not isinstance(obj, type):
+            continue
+        if getattr(obj, "__module__", None) != getattr(_models, "__name__", None):
+            continue
+        if not any(callable(getattr(obj, a, None)) for a in ("fit", "forecast", "predict")):
+            continue
+        # Avoid registering base/internal "models" that aren't real forecasting algorithms.
+        if attr in {"SklearnModel"}:
+            continue
+        _register(f"sf_{attr.lower()}", attr)
+
+    # 2) Short aliases (keep existing behavior / nicer names)
+    short = {
+        "sf_autoarima": "AutoARIMA",
+        "sf_autoets": "AutoETS",
+        "sf_autoces": "AutoCES",
+        "sf_autotheta": "AutoTheta",
+        "sf_theta": "Theta",
+        "sf_seasonalnaive": "SeasonalNaive",
+        "sf_naive": "Naive",
+        "sf_historicaverage": "HistoricAverage",
+        "sf_rwd": "RandomWalkWithDrift",
+        "sf_holt": "Holt",
+        "sf_holtwinters": "HoltWinters",
+        "sf_ses": "SimpleExponentialSmoothing",
+        "sf_ses_opt": "SimpleExponentialSmoothingOptimized",
+        "sf_seas_ses": "SeasonalExponentialSmoothing",
+        "sf_seas_ses_opt": "SeasonalExponentialSmoothingOptimized",
+        "sf_windowavg": "WindowAverage",
+        "sf_seasonalwindowavg": "SeasonalWindowAverage",
+        "sf_mstl": "MSTL",
+        "sf_tbats": "TBATS",
+        "sf_autotbats": "AutoTBATS",
+        "sf_adida": "ADIDA",
+        "sf_croston": "CrostonClassic",
+        "sf_crostonopt": "CrostonOptimized",
+        "sf_crostonsba": "CrostonSBA",
+        "sf_imapa": "IMAPA",
+        "sf_tsb": "TSB",
+    }
+    for alias, model in short.items():
+        if hasattr(_models, model):
+            _register(alias, model)
+
+
+_register_statsforecast_models()
 
 # Backward compatibility wrapper
 def forecast_statsforecast(
