@@ -358,7 +358,11 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
             # Special-case forecast_generate UX: allow omitting the symbol to show
             # contextual help (e.g. listing models for a library).
             if cmd_name == "forecast_generate":
-                parser.add_argument(param['name'], nargs='?', help=f"{param['name']} (required)")
+                parser.add_argument(
+                    param['name'],
+                    nargs='?',
+                    help=f"{param['name']} (omit to list models when --library is set)",
+                )
             else:
                 parser.add_argument(param['name'], help=f"{param['name']} (required)")
         else:
@@ -393,7 +397,7 @@ def _parse_kv_string(s: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def create_command_function(func_info, cmd_name: str = ""):
+def create_command_function(func_info, cmd_name: str = "", cmd_parser: Optional[argparse.ArgumentParser] = None):
     """Create a command function that calls the MCP function dynamically"""
     def command_func(args):
         # CLI-only convenience: if forecast_generate is invoked without symbol,
@@ -407,12 +411,17 @@ def create_command_function(func_info, cmd_name: str = ""):
                     if text:
                         print(text)
                 except Exception:
-                    pass
-            try:
-                parser.print_help()
-            except Exception:
-                pass
-            return
+                    lib = None
+
+            # If the user explicitly asked for a library, treat this as a successful
+            # list-models invocation (no need to dump full argparse help).
+            if lib:
+                return
+
+            # Otherwise, show help and exit non-zero to signal missing args.
+            if cmd_parser is not None:
+                cmd_parser.print_help()
+            raise SystemExit(2)
 
         # Build kwargs from args
         kwargs = {}
@@ -770,7 +779,7 @@ def main():
         add_dynamic_arguments(cmd_parser, func_info, meta.get('param_docs'), cmd_name=cmd_name)
         
         # Set the command function
-        cmd_parser.set_defaults(func=create_command_function(func_info, cmd_name))
+        cmd_parser.set_defaults(func=create_command_function(func_info, cmd_name, cmd_parser=cmd_parser))
     
     # Parse arguments
     args = parser.parse_args()
