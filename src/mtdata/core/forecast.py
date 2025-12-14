@@ -122,7 +122,7 @@ def forecast_generate(
 
 @mcp.tool()
 def forecast_list_library_models(
-    library: Literal["statsforecast", "sktime"],
+    library: Literal["statsforecast", "sktime", "pretrained"],
 ) -> Dict[str, Any]:
     """List available model names within a forecast library.
 
@@ -166,7 +166,40 @@ def forecast_list_library_models(
             "note": "For arbitrary sktime forecasters, pass a dotted class path via --model and optional constructor kwargs via --params.",
         }
 
-    return {"library": lib, "error": "Unsupported library (supported: statsforecast, sktime)"}
+    if lib == "pretrained":
+        # These are the pretrained adapters shipped with mtdata.
+        pretrained = [
+            {
+                "model": "chronos2",
+                "requires": ["chronos-forecasting>=2.0.0", "torch"],
+                "notes": "Hugging Face model id via params.model_name (default: amazon/chronos-bolt-base for compatibility).",
+            },
+            {
+                "model": "chronos_bolt",
+                "requires": ["chronos-forecasting>=2.0.0", "torch"],
+                "notes": "Same adapter as chronos2; different default naming.",
+            },
+            {
+                "model": "timesfm",
+                "requires": ["timesfm", "torch"],
+                "notes": "Uses timesfm 2.x (GitHub) API; runs without downloading external weights.",
+            },
+            {
+                "model": "lag_llama",
+                "requires": ["lag-llama", "gluonts", "torch"],
+                "notes": "May not be installable on Python 3.13 due to upstream pins; included for completeness.",
+            },
+        ]
+        return {
+            "library": lib,
+            "models": pretrained,
+            "usage": [
+                "python cli.py forecast_generate SYMBOL --library pretrained --model chronos2",
+                "python cli.py forecast_generate SYMBOL --library pretrained --model timesfm",
+            ],
+        }
+
+    return {"library": lib, "error": "Unsupported library (supported: statsforecast, sktime, pretrained)"}
 
 
 @mcp.tool()

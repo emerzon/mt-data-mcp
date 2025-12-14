@@ -355,7 +355,12 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
         
         # Add positional argument for first required parameter
         if param['required'] and param == param_info['params'][0]:
-            parser.add_argument(param['name'], help=f"{param['name']} (required)")
+            # Special-case forecast_generate UX: allow omitting the symbol to show
+            # contextual help (e.g. listing models for a library).
+            if cmd_name == "forecast_generate":
+                parser.add_argument(param['name'], nargs='?', help=f"{param['name']} (required)")
+            else:
+                parser.add_argument(param['name'], help=f"{param['name']} (required)")
         else:
             # For mapping-like params (e.g., --simplify), allow bare flag: '--simplify' triggers defaults
             if is_mapping_type:
@@ -391,6 +396,24 @@ def _parse_kv_string(s: str) -> Optional[Dict[str, Any]]:
 def create_command_function(func_info, cmd_name: str = ""):
     """Create a command function that calls the MCP function dynamically"""
     def command_func(args):
+        # CLI-only convenience: if forecast_generate is invoked without symbol,
+        # show contextual help and optionally list library models.
+        if cmd_name == "forecast_generate" and not getattr(args, "symbol", None):
+            lib = getattr(args, "library", None)
+            if lib:
+                try:
+                    out = server.forecast_list_library_models(library=str(lib))  # type: ignore[attr-defined]
+                    text = _format_result_minimal(out, verbose=getattr(args, "verbose", False))
+                    if text:
+                        print(text)
+                except Exception:
+                    pass
+            try:
+                parser.print_help()
+            except Exception:
+                pass
+            return
+
         # Build kwargs from args
         kwargs = {}
         for param in func_info['params']:
