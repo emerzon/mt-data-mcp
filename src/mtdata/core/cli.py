@@ -217,11 +217,15 @@ def discover_tools():
 
 def _resolve_param_kwargs(param: Dict[str, Any], param_docs: Optional[Dict[str, str]]) -> Tuple[Dict[str, Any], bool]:
     """Resolve CLI argument kwargs and determine if parameter is a mapping type."""
+    def _escape_argparse_help(text: Optional[str]) -> Optional[str]:
+        # argparse expands help strings using old-style % formatting; escape literal percents.
+        return text.replace('%', '%%') if isinstance(text, str) else text
+
     desc = None
     if param_docs and param['name'] in param_docs:
         desc = param_docs[param['name']]
     hint = desc or _PARAM_HINTS.get(param['name'])
-    kwargs = {'help': hint or f"{param['name']} parameter", 'dest': param['name']}
+    kwargs = {'help': _escape_argparse_help(hint) or f"{param['name']} parameter", 'dest': param['name']}
     is_mapping_type = False
 
     # Dynamically populate choices for 'method' parameter
@@ -236,6 +240,7 @@ def _resolve_param_kwargs(param: Dict[str, Any], param_docs: Optional[Dict[str, 
             import mtdata.forecast.methods.neural
             import mtdata.forecast.methods.sktime
             import mtdata.forecast.methods.analog
+            import mtdata.forecast.methods.monte_carlo
             
             kwargs['choices'] = ForecastRegistry.get_all_method_names()
         except Exception as e:
@@ -691,7 +696,7 @@ def main():
         # Create subparser
         cmd_parser = subparsers.add_parser(
             cmd_name, 
-            help=(meta.get('description') or func_info['doc'].split('\n')[0] if func_info['doc'] else f"Execute {cmd_name}"),
+            help=((meta.get('description') or func_info['doc'].split('\n')[0] if func_info['doc'] else f"Execute {cmd_name}").replace('%', '%%')),
             formatter_class=argparse.RawDescriptionHelpFormatter
         )
         

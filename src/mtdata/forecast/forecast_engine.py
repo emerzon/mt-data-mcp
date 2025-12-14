@@ -42,6 +42,7 @@ import mtdata.forecast.methods.pretrained
 import mtdata.forecast.methods.neural
 import mtdata.forecast.methods.sktime
 import mtdata.forecast.methods.analog
+import mtdata.forecast.methods.monte_carlo
 
 import MetaTrader5 as mt5
 
