@@ -241,8 +241,12 @@ def fetch_candles(
         # Optional pre-TI denoising (in-place by default)
         if denoise:
             _dn_pre = _normalize_denoise_spec(denoise, default_when='pre_ti')
+            added_dn_pre: List[str] = []
             if _dn_pre and str(_dn_pre.get('when', 'pre_ti')).lower() == 'pre_ti':
-                _apply_denoise_util(df, _dn_pre, default_when='pre_ti')
+                added_dn_pre = _apply_denoise_util(df, _dn_pre, default_when='pre_ti')
+                for c in added_dn_pre:
+                    if c not in headers:
+                        headers.append(c)
             try:
                 dn = dict(denoise)
                 denoise_apps.append({
@@ -252,6 +256,7 @@ def fetch_candles(
                     'keep_original': bool(dn.get('keep_original', False)),
                     'columns': dn.get('columns','close'),
                     'params': dn.get('params') or {},
+                    'added_columns': added_dn_pre,
                 })
             except Exception:
                 pass
@@ -389,10 +394,7 @@ def fetch_candles(
                 pass
 
         # Ensure headers are unique and exist in df
-        # Always include indicator columns regardless of OHLCV filtering
-        base_headers = {"time", "open", "high", "low", "close", "tick_volume", "real_volume"}
-        # Keep all columns that exist: base headers (as filtered) + all indicators
-        headers = [h for h in headers if h in df.columns and (h in base_headers or h in ti_cols)]
+        headers = [h for h in headers if h in df.columns]
 
         # Reformat time consistently across rows for display
         if 'time' in headers and len(df) > 0:
