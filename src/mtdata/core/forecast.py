@@ -144,6 +144,13 @@ def forecast_generate(
     # Resolve method selection:
     # - Backward compatible: `method` can still be provided directly.
     # - Preferred: (`library`, `model`) selects a method within an optional library without huge CLI enums.
+    #
+    # CLI compatibility: if `--library` is provided but the caller still passes `--method`,
+    # interpret `method` as `model` unless `model` is already provided.
+    if library is not None and model is None and method is not None:
+        model = str(method)
+        method = None
+
     resolved_method = (str(method).strip() if method is not None else "")
     p = dict(params or {})
 
