@@ -397,6 +397,159 @@ def _parse_kv_string(s: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _coerce_cli_scalar(v: str) -> Any:
+    s = v.strip()
+    if not s:
+        return s
+    sl = s.lower()
+    if sl == "true":
+        return True
+    if sl == "false":
+        return False
+    if sl == "null" or sl == "none":
+        return None
+    # JSON value (string/number/list/object/bool/null)
+    if s[0] in ('{', '[', '"') or sl in ("true", "false", "null") or s.replace(".", "", 1).isdigit():
+        try:
+            import json
+            return json.loads(s)
+        except Exception:
+            pass
+    # Number
+    try:
+        if "." in s:
+            return float(s)
+        return int(s)
+    except Exception:
+        return s
+
+
+def _parse_set_overrides(items: Optional[List[str]]) -> Dict[str, Dict[str, Any]]:
+    """Parse repeated --set entries like 'model.sp=24' into nested dicts."""
+    out: Dict[str, Dict[str, Any]] = {}
+    for item in items or []:
+        if not isinstance(item, str) or not item.strip():
+            continue
+        if "=" not in item:
+            raise ValueError(f"Invalid --set '{item}': expected section.key=value")
+        left, right = item.split("=", 1)
+        left = left.strip()
+        if "." not in left:
+            raise ValueError(f"Invalid --set '{item}': expected section.key=value")
+        section, key = left.split(".", 1)
+        section = section.strip().lower()
+        key = key.strip()
+        if not section or not key:
+            raise ValueError(f"Invalid --set '{item}': expected section.key=value")
+        out.setdefault(section, {})[key] = _coerce_cli_scalar(right)
+    return out
+
+
+def _merge_dict(dst: Optional[Dict[str, Any]], src: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    d = dict(dst or {})
+    for k, v in (src or {}).items():
+        d[k] = v
+    return d
+
+
+def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
+    cmd_parser.description = "Generate forecasts with a structured pipeline (model + optional preprocessing)."
+
+    cmd_parser.add_argument(
+        "symbol",
+        nargs="?",
+        help="symbol (omit to list models when --library is set)",
+    )
+
+    group_model = cmd_parser.add_argument_group("Model Selection")
+    group_model.add_argument(
+        "--method",
+        dest="method",
+        type=str,
+        default=None,
+        help="Native mtdata method name (e.g. theta, arima, analog). If --library is set and --model is omitted, this is treated as --model for backward compatibility.",
+    )
+    group_model.add_argument(
+        "--library",
+        dest="library",
+        type=str,
+        choices=["native", "statsforecast", "sktime", "mlforecast", "pretrained"],
+        default=None,
+        help="External library/group to use with --model.",
+    )
+    group_model.add_argument(
+        "--model",
+        dest="model",
+        type=str,
+        default=None,
+        help="Model name within --library (e.g. AutoARIMA; ThetaForecaster; or dotted class path).",
+    )
+    group_model.add_argument(
+        "--model-params",
+        dest="model_params",
+        type=str,
+        default=None,
+        help="Model constructor/adapter params as JSON or k=v pairs (e.g. 'sp=24').",
+    )
+    group_model.add_argument(
+        "--set",
+        dest="set_overrides",
+        action="append",
+        default=None,
+        metavar="SECTION.KEY=VALUE",
+        help="Override nested params (sections: model, denoise, features, dimred, target). Repeatable.",
+    )
+
+    # Backward-compat aliases (hidden): keep old names working
+    group_model.add_argument("--params", dest="model_params", type=str, default=None, help=argparse.SUPPRESS)
+    group_model.add_argument("--params-params", dest="model_params_kv", type=str, default=None, help=argparse.SUPPRESS)
+
+    group_window = cmd_parser.add_argument_group("Window & Target")
+    group_window.add_argument("--horizon", type=int, default=12, help="Forecast horizon in bars.")
+    group_window.add_argument("--lookback", type=int, default=None, help="Historical bars to use (default: auto).")
+    group_window.add_argument(
+        "--quantity",
+        choices=["price", "return", "volatility"],
+        default="price",
+        help="Quantity to model.",
+    )
+    group_window.add_argument(
+        "--target",
+        choices=["price", "return"],
+        default="price",
+        help=argparse.SUPPRESS,
+    )
+
+    group_data = cmd_parser.add_argument_group("Data Selection")
+    group_data.add_argument("--timeframe", type=str, default="H1", help="MT5 timeframe (e.g. H1/M30/D1).")
+    group_data.add_argument("--as-of", dest="as_of", type=str, default=None, help="Override reference time for 'now'.")
+
+    group_uncertainty = cmd_parser.add_argument_group("Uncertainty")
+    group_uncertainty.add_argument("--ci-alpha", dest="ci_alpha", type=float, default=0.05, help="CI alpha (0.05 => 95%%).")
+
+    group_pipe = cmd_parser.add_argument_group("Pipeline (Optional)")
+    group_pipe.add_argument("--denoise", type=str, default=None, help="Denoise preset name or JSON spec (e.g. 'wavelet').")
+    group_pipe.add_argument("--denoise-params", dest="denoise_params", type=str, default=None, help="Extra denoise params k=v pairs.")
+    group_pipe.add_argument("--features", type=str, default=None, help="Feature spec JSON or shorthand.")
+    group_pipe.add_argument("--features-params", dest="features_params", type=str, default=None, help="Extra features params k=v pairs.")
+    group_pipe.add_argument("--dimred-method", dest="dimred_method", type=str, default=None, help="Dimensionality reduction method (e.g. pca).")
+    group_pipe.add_argument("--dimred-params", dest="dimred_params", type=str, default=None, help="Dimred params as JSON or k=v pairs.")
+    group_pipe.add_argument("--dimred-params-params", dest="dimred_params_kv", type=str, default=None, help=argparse.SUPPRESS)
+    group_pipe.add_argument("--target-spec", dest="target_spec", type=str, default=None, help="Target spec JSON or k=v pairs.")
+    group_pipe.add_argument("--target-spec-params", dest="target_spec_params", type=str, default=None, help="Extra target spec params k=v pairs.")
+    group_pipe.add_argument("--future-covariates", dest="future_covariates", type=str, default=None, help="Comma-separated date features (e.g. hour,dow,is_holiday).")
+    group_pipe.add_argument("--country", type=str, default=None, help="Country code for holiday calendar (e.g. US).")
+
+    group_dbg = cmd_parser.add_argument_group("Debug")
+    group_dbg.add_argument("--verbose", action="store_true", default=False, help="Show detailed metadata in output.")
+    group_dbg.add_argument(
+        "--print-config",
+        action="store_true",
+        default=False,
+        help="Print the resolved forecast config and exit.",
+    )
+
+
 def create_command_function(func_info, cmd_name: str = "", cmd_parser: Optional[argparse.ArgumentParser] = None):
     """Create a command function that calls the MCP function dynamically"""
     def command_func(args):
@@ -754,12 +907,18 @@ def main():
 
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
     
-    # Dynamically create subparsers for each function
+    # Dynamically create subparsers for each function, except forecast_generate
+    forecast_tool = None
+    forecast_tool_info = None
     for cmd_name, tool in sorted(functions.items()):
         func = tool['func']
         func_info = tool.setdefault('_cli_func_info', get_function_info(func))
         _apply_schema_overrides(tool, func_info)
         meta = tool.get('meta') or {}
+        if cmd_name == "forecast_generate":
+            forecast_tool = tool
+            forecast_tool_info = func_info
+            continue
 
         # Create subparser
         cmd_parser = subparsers.add_parser(
@@ -780,6 +939,119 @@ def main():
         
         # Set the command function
         cmd_parser.set_defaults(func=create_command_function(func_info, cmd_name, cmd_parser=cmd_parser))
+
+    # Custom forecast_generate parser (grouped UX + backward-compat aliases)
+    if forecast_tool is not None:
+        cmd_name = "forecast_generate"
+        func = forecast_tool["func"]
+        func_info = forecast_tool_info or get_function_info(func)
+        meta = forecast_tool.get("meta") or {}
+        cmd_parser = subparsers.add_parser(
+            cmd_name,
+            help=((meta.get('description') or func_info['doc'].split('\n')[0] if func_info['doc'] else f"Execute {cmd_name}").replace('%', '%%')),
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+        )
+        # Add global parameters to each subparser, excluding any that conflict
+        exclude_globals = ["symbol", "timeframe", "verbose"]  # handled manually
+        add_global_args_to_parser(cmd_parser, exclude_params=exclude_globals)
+        _add_forecast_generate_args(cmd_parser)
+
+        def _forecast_generate_cmd(args):
+            # List models if symbol omitted and library is specified.
+            if not getattr(args, "symbol", None):
+                lib = getattr(args, "library", None)
+                if lib:
+                    out = server.forecast_list_library_models(library=str(lib))  # type: ignore[attr-defined]
+                    text = _format_result_minimal(out, verbose=getattr(args, "verbose", False))
+                    if text:
+                        print(text)
+                    return
+                cmd_parser.print_help()
+                raise SystemExit(2)
+
+            # Validate selection: method OR library/model.
+            if args.library and not args.model and args.method:
+                # Backward compatible: `--library X --method Y` means `--library X --model Y`.
+                args.model = args.method
+                args.method = None
+            if args.library and not args.model:
+                raise ValueError("--library requires --model (or use --method as a backward-compatible alias)")
+            if args.model and not args.library:
+                raise ValueError("--model requires --library")
+
+            # Model params
+            model_params = _parse_kv_string(args.model_params) if isinstance(args.model_params, str) else None
+            if getattr(args, "model_params_kv", None):
+                model_params = _merge_dict(model_params, _parse_kv_string(args.model_params_kv))
+
+            # Pipeline mapping-like params
+            denoise = None
+            if args.denoise:
+                denoise = {"method": args.denoise.strip()}
+                if args.denoise.strip().startswith("{"):
+                    parsed = _parse_kv_string(args.denoise)
+                    denoise = parsed if parsed is not None else denoise
+            if args.denoise_params:
+                denoise = _merge_dict(denoise, _parse_kv_string(args.denoise_params))
+
+            features = _parse_kv_string(args.features) if args.features else None
+            if args.features and not args.features.strip().startswith("{"):
+                # Accept shorthand like "include=close,volume" (already handled by parse_kv_or_json)
+                pass
+            if args.features_params:
+                features = _merge_dict(features, _parse_kv_string(args.features_params))
+
+            dimred_params = _parse_kv_string(args.dimred_params) if args.dimred_params else None
+            if getattr(args, "dimred_params_kv", None):
+                dimred_params = _merge_dict(dimred_params, _parse_kv_string(args.dimred_params_kv))
+            target_spec = _parse_kv_string(args.target_spec) if args.target_spec else None
+            if args.target_spec_params:
+                target_spec = _merge_dict(target_spec, _parse_kv_string(args.target_spec_params))
+
+            # --set overrides (sections: model/denoise/features/dimred/target)
+            overrides = _parse_set_overrides(args.set_overrides)
+            model_params = _merge_dict(model_params, overrides.get("model"))
+            denoise = _merge_dict(denoise, overrides.get("denoise"))
+            features = _merge_dict(features, overrides.get("features"))
+            dimred_params = _merge_dict(dimred_params, overrides.get("dimred"))
+            target_spec = _merge_dict(target_spec, overrides.get("target"))
+
+            future_covariates = None
+            if args.future_covariates:
+                future_covariates = [s.strip() for s in str(args.future_covariates).split(",") if s.strip()]
+
+            kwargs = {
+                "symbol": args.symbol,
+                "timeframe": args.timeframe,
+                "method": args.method,
+                "library": args.library,
+                "model": args.model,
+                "horizon": int(args.horizon),
+                "lookback": args.lookback,
+                "as_of": args.as_of,
+                "params": model_params,
+                "ci_alpha": args.ci_alpha,
+                "quantity": args.quantity,
+                "target": args.target,
+                "denoise": denoise or None,
+                "features": features or None,
+                "dimred_method": args.dimred_method,
+                "dimred_params": dimred_params or None,
+                "target_spec": target_spec or None,
+                "future_covariates": future_covariates,
+                "country": args.country,
+            }
+
+            if getattr(args, "print_config", False):
+                print(_format_result_minimal({"forecast_generate": kwargs}, verbose=True))
+                return
+
+            out = func(**kwargs)
+            text = _format_result_minimal(out, verbose=getattr(args, "verbose", False))
+            if text:
+                print(text)
+
+        cmd_parser.set_defaults(func=_forecast_generate_cmd)
     
     # Parse arguments
     args = parser.parse_args()

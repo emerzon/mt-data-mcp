@@ -307,9 +307,9 @@ def forecast_list_library_models(
             "usage": [
                 "python cli.py forecast_generate SYMBOL --library sktime --model theta",
                 "python cli.py forecast_generate SYMBOL --library sktime --model ThetaForecaster",
-                "python cli.py forecast_generate SYMBOL --library sktime --model sktime.forecasting.theta.ThetaForecaster --params \"sp=24\"",
+                "python cli.py forecast_generate SYMBOL --library sktime --model sktime.forecasting.theta.ThetaForecaster --model-params \"sp=24\"",
             ],
-            "note": "The --model value is matched to the closest available forecaster name; you can also pass a dotted class path. Constructor kwargs go in --params.",
+            "note": "The --model value is matched to the closest available forecaster name; you can also pass a dotted class path. Constructor kwargs go in --model-params (or use --set model.<k>=<v>).",
         }
 
     if lib == "pretrained":
@@ -348,9 +348,9 @@ def forecast_list_library_models(
     if lib == "mlforecast":
         return {
             "library": lib,
-            "note": "Use `--model <dotted sklearn/lightgbm regressor class>` plus optional constructor kwargs in --params.",
+            "note": "Use `--model <dotted sklearn/lightgbm regressor class>` plus optional constructor kwargs in --model-params (or use --set model.<k>=<v>).",
             "usage": [
-                "python cli.py forecast_generate SYMBOL --library mlforecast --model sklearn.ensemble.RandomForestRegressor --params \"n_estimators=200\"",
+                "python cli.py forecast_generate SYMBOL --library mlforecast --model sklearn.ensemble.RandomForestRegressor --model-params \"n_estimators=200\"",
                 "python cli.py forecast_generate SYMBOL --method mlf_rf",
             ],
         }
