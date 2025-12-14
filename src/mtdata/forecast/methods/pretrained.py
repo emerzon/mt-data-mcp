@@ -249,6 +249,79 @@ class TimesFMMethod(PretrainedMethod):
         exog_future: Optional[pd.DataFrame] = None,
         **kwargs
     ) -> ForecastResult:
+        def _try_import_timesfm_extras() -> List[Any]:
+            mods: List[Any] = []
+            try:
+                from timesfm import torch as _timesfm_torch  # type: ignore
+                mods.append(_timesfm_torch)
+            except Exception:
+                pass
+            try:
+                from timesfm.timesfm_2p5 import timesfm_2p5_torch as _timesfm_2p5_torch  # type: ignore
+                mods.append(_timesfm_2p5_torch)
+            except Exception:
+                pass
+            return mods
+
+        def _resolve_forecast_config(timesfm_root: Any) -> Any:
+            cfg = getattr(timesfm_root, "ForecastConfig", None)
+            if cfg is not None:
+                return cfg
+            try:
+                from timesfm.configs import ForecastConfig as _ForecastConfig  # type: ignore
+                return _ForecastConfig
+            except Exception:
+                return None
+
+        def _resolve_timesfm_torch_class(timesfm_modules: List[Any], requested: Optional[str]) -> Tuple[Optional[Any], Optional[str]]:
+            candidates = [
+                requested,
+                "TimesFM_2p5_200M_torch",
+                "TimesFM2p5Torch",
+                "TimesFM_2p5_torch",
+                "TimesFM2p5",
+            ]
+            candidates = [c for c in candidates if isinstance(c, str) and c.strip()]
+            for mod in timesfm_modules:
+                for name in candidates:
+                    if hasattr(mod, name):
+                        return getattr(mod, name), name
+
+            # Fallback: scan for a plausible torch pipeline class.
+            for mod in timesfm_modules:
+                try:
+                    items = vars(mod).items()
+                except Exception:
+                    continue
+                for name, obj in items:
+                    if not isinstance(name, str):
+                        continue
+                    lname = name.lower()
+                    if "timesfm" in lname and "torch" in lname and isinstance(obj, type):
+                        return obj, name
+
+            return None, None
+
+        def _call_forecast(model: Any, context_arr: np.ndarray, fh: int) -> Tuple[Any, Any]:
+            inputs = [np.asarray(context_arr, dtype=float)]
+            for call in (
+                lambda: model.forecast(horizon=int(fh), inputs=inputs),
+                lambda: model.forecast(inputs=inputs, horizon=int(fh)),
+                lambda: model.forecast(inputs, int(fh)),
+            ):
+                try:
+                    res = call()
+                    if isinstance(res, tuple) and len(res) >= 2:
+                        return res[0], res[1]
+                    if isinstance(res, dict):
+                        pf = res.get("point_forecast") or res.get("mean") or res.get("forecast")
+                        qf = res.get("quantiles") or res.get("quantile_forecast")
+                        return pf, qf
+                    return res, None
+                except TypeError:
+                    continue
+            raise RuntimeError("timesfm forecast call signature not recognized")
+
         p = params or {}
         ctx_len = int(p.get('context_length', 0) or 0)
         quantiles = process_quantile_levels(p.get('quantiles'))
@@ -263,30 +336,36 @@ class TimesFMMethod(PretrainedMethod):
         fq: Dict[str, List[float]] = {}
         
         # Import required modules using DRY helper
-        modules, import_error = safe_import_modules(['timesfm'], 'timesfm')
+        modules, import_error = safe_import_modules(['timesfm', 'torch'], 'timesfm')
         if import_error:
             raise RuntimeError(import_error)
         
-        _timesfm = modules['timesfm']
-        
-        # Try to detect namespace shadowing
-        if not (hasattr(_timesfm, 'TimesFM_2p5_200M_torch') or hasattr(_timesfm, 'ForecastConfig')):
-            try:
-                from timesfm import torch as _timesfm_torch  # type: ignore
-                _timesfm = _timesfm_torch
-            except Exception:
-                _p = getattr(_timesfm, '__path__', None)
-                _p_str = str(list(_p)) if _p is not None else 'unknown'
-                raise RuntimeError(f"timesfm import resolved to namespace at {_p_str}. Rename/remove local 'timesfm' folder or pip install -e the official repo.")
-        # Prefer new API
-        _cls_name = 'TimesFM_2p5_200M_torch'
-        _has_new = hasattr(_timesfm, _cls_name) and hasattr(_timesfm, 'ForecastConfig')
-        if not _has_new:
-            raise RuntimeError("timesfm installed but API not recognized (missing TimesFM_2p5_200M_torch/ForecastConfig). Update the package.")
+        _timesfm_root = modules['timesfm']
+        _ForecastConfig = _resolve_forecast_config(_timesfm_root)
+        if _ForecastConfig is None:
+            _p = getattr(_timesfm_root, '__path__', None)
+            _p_str = str(list(_p)) if _p is not None else 'unknown'
+            raise RuntimeError(
+                "timesfm installed but ForecastConfig is missing (unexpected API). "
+                f"If you have a local 'timesfm' folder shadowing the package, remove/rename it. "
+                f"Resolved package path: {_p_str}"
+            )
+
+        timesfm_modules = [_timesfm_root] + _try_import_timesfm_extras()
+        requested_class = p.get("model_class") or p.get("class_name") or p.get("model") or None
+        _Cls, _cls_name = _resolve_timesfm_torch_class(timesfm_modules, str(requested_class) if requested_class else None)
+        if _Cls is None or not callable(_Cls):
+            raise RuntimeError(
+                "timesfm installed but no torch pipeline class was found. "
+                "Install the GitHub version (timesfm==2.x) and ensure torch is installed."
+            )
         
         try:
-            _Cls = getattr(_timesfm, _cls_name)
-            _mdl = _Cls()
+            try:
+                _mdl = _Cls()
+            except TypeError:
+                # Some versions accept device/config in constructor.
+                _mdl = _Cls(device=p.get("device"))  # type: ignore[arg-type]
             _max_ctx = int(ctx_len) if ctx_len and int(ctx_len) > 0 else None
             _cfg_kwargs: Dict[str, Any] = {
                 'max_context': _max_ctx or min(int(n), 1024),
@@ -297,37 +376,60 @@ class TimesFMMethod(PretrainedMethod):
                 'infer_is_positive': False,
                 'fix_quantile_crossing': True,
             }
-            _cfg = getattr(_timesfm, 'ForecastConfig')(**_cfg_kwargs)
+            _cfg = _ForecastConfig(**_cfg_kwargs)
             try:
-                _mdl.load_checkpoint()
+                if hasattr(_mdl, "load_checkpoint"):
+                    _mdl.load_checkpoint()
             except Exception:
                 pass
-            _mdl.compile(_cfg)
-            _inp = [np.asarray(context, dtype=float)]
-            pf, qf = _mdl.forecast(horizon=int(horizon), inputs=_inp)
+            try:
+                if hasattr(_mdl, "compile"):
+                    _mdl.compile(_cfg)
+            except Exception:
+                pass
+
+            pf, qf = _call_forecast(_mdl, np.asarray(context, dtype=float), int(horizon))
             if pf is not None:
                 arr = np.asarray(pf, dtype=float)
                 arr = arr[0] if arr.ndim == 2 else arr
                 vals_arr = np.asarray(arr, dtype=float)
                 f_vals = adjust_forecast_length(vals_arr, horizon)
             if quantiles and qf is not None:
-                qarr = np.asarray(qf, dtype=float)
-                if qarr.ndim == 3 and qarr.shape[0] >= 1:
-                    Q = qarr.shape[-1]
-                    level_map = {str(l/10.0): (l if Q >= 10 else None) for l in range(1, 10)}
+                if isinstance(qf, dict):
                     for q in list(quantiles or []):
                         try:
-                            key = f"{float(q):.1f}"
+                            key = f"{float(q):.3f}".rstrip("0").rstrip(".")
                         except Exception:
                             continue
-                        idx = level_map.get(key)
-                        if idx is None:
-                            continue
-                        col = qarr[0, :horizon, idx] if idx < qarr.shape[-1] else None
-                        if col is not None:
+                        if key in qf:
+                            try:
+                                fq[key] = [float(v) for v in np.asarray(qf[key], dtype=float).tolist()]
+                            except Exception:
+                                continue
+                else:
+                    qarr = np.asarray(qf, dtype=float)
+                    if qarr.ndim == 2:
+                        qarr = qarr[None, ...]
+                    if qarr.ndim == 3 and qarr.shape[0] >= 1:
+                        Q = int(qarr.shape[-1])
+                        # Common layout: Q=9 corresponds to 0.1..0.9
+                        if Q == 9:
+                            levels = [0.1 * (i + 1) for i in range(9)]
+                        else:
+                            levels = [0.1 * (i + 1) for i in range(min(Q, 9))]
+                        level_map = {f"{lv:.1f}": i for i, lv in enumerate(levels)}
+                        for q in list(quantiles or []):
+                            try:
+                                key = f"{float(q):.1f}"
+                            except Exception:
+                                continue
+                            idx = level_map.get(key)
+                            if idx is None or idx >= Q:
+                                continue
+                            col = qarr[0, :horizon, idx]
                             fq[key] = [float(v) for v in np.asarray(col, dtype=float).tolist()]
             params_used = build_params_used(
-                {'timesfm_model': _cls_name},
+                {'timesfm_model': str(_cls_name or getattr(_Cls, "__name__", "timesfm"))},
                 quantiles_dict=fq,
                 context_length=int(_max_ctx or n)
             )

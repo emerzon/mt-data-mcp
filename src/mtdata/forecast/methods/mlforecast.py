@@ -51,6 +51,13 @@ class MLForecastMethod(ForecastMethod):
 
         model = self._get_model(params)
         lags = params.get('lags')
+        if not lags:
+            # Provide a safe default lag set so the method works out-of-the-box.
+            base = int(seasonality) if seasonality and int(seasonality) > 0 else 24
+            max_lag = int(min(30, max(1, base)))
+            lags = list(range(1, max_lag + 1))
+            params = dict(params or {})
+            params["lags"] = lags
         rolling_agg = params.get('rolling_agg')
         
         try:

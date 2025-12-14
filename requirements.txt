@@ -12,15 +12,20 @@ python-dotenv>=1.2.1
 dateparser>=1.2.2
 
 # NumPy 2.x required by pandas-ta-classic (latest)
-numpy>=2.0.0,<3.0.0
+# Keep <2.2 to satisfy GluonTS (numpy<2.2) if installed.
+numpy>=2.0.0,<2.2.0
 
 # pandas (must support NumPy 2.x; pandas>=2.3 supports numpy>=2 on py>=3.12)
 pandas>=2.3.3
 
-# pandas-ta classic fork (PyPI)
-pandas-ta-classic>=0.3.59
+# pandas-ta classic fork (PyPI) - pin to current latest
+pandas-ta-classic==0.3.59
 
-# lag-llama (GitHub). Pulls in GluonTS (NumPy~=1.16) which conflicts with NumPy 2.x.
+# GluonTS (gt_* methods)
+gluonts[torch]>=0.16.2
+
+# Lag-Llama currently pins `gluonts<=0.14.4`, which has no wheels for Python 3.13.
+# Keep it optional for now.
 # lag-llama @ git+https://github.com/time-series-foundation-models/lag-llama.git
 
 # ARCH (heteroskedasticity models)
@@ -47,7 +52,7 @@ uvicorn[standard]>=0.38.0
 # statsforecast (classical, numba-accelerated)
 statsforecast>=2.0.2
 # sktime unified forecasting API
-sktime>=0.28.0
+sktime>=0.40.1
 # mlforecast (tree/GBM over lags); LightGBM optional
 mlforecast>=1.0.2
 lightgbm>=4.6.0
@@ -72,15 +77,18 @@ pillow>=10.3.0,<11.1
 
 # Optional: foundation models (native packages)
 chronos-forecasting>=2.0.0   # Chronos-2 foundation model
-# timesfm==1.0.0             # TimesFM pins utilsforecast==0.1.10 (conflicts with statsforecast/mlforecast)
+timesfm @ git+https://github.com/google-research/timesfm.git@6bd8044275f8b76cdc9554f2fecccac5f31a156c
 
-# uni2ts>=1.0.1          # Moirai via uni2ts (pins python-dotenv==1.0.0; conflicts with fastmcp)
+# uni2ts (Moirai) is currently incompatible with Python 3.13 due to upstream pins.
+# Use a separate Python 3.11/3.12 env if you need `--method moirai`.
+# uni2ts==2.0.0
 
 # Optional: pattern search ANN and DTW backends
-# hnswlib>=0.8.0
-# tslearn>=0.6.3
-# dtaidistance>=2.3.10
-# stumpy>=1.12.0            # matrix_profile search engine for analog
+hnswlib>=0.8.0
+tslearn>=0.7.0
+h5py>=3.15.1
+dtaidistance>=2.3.13
+stumpy>=1.13.0            # matrix_profile search engine for analog
 
 # Optional: dimensionality reduction methods / ML utilities
 scikit-learn>=1.7.2; python_version >= "3.10"
@@ -89,6 +97,10 @@ scikit-learn>=1.3.2; python_version < "3.9"
 # umap-learn>=0.5.5
 # pydiffmap>=0.2.0
 # pykeops>=2.2.3   # optional acceleration for CNE graph (GPU)
+
+# Additional optional forecasting deps
+hmmlearn>=0.3.3
+pmdarima>=2.1.1
 
 # Plotting for helper scripts
 matplotlib>=3.8.0

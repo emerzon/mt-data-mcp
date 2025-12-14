@@ -56,8 +56,8 @@ class SktimeMethod(ForecastMethod):
         # Our series usually has DatetimeIndex from the engine
         
         y = series.copy()
-        # Ensure frequency is set if missing
-        if y.index.freq is None:
+        # Ensure frequency is set if missing (DatetimeIndex / PeriodIndex only).
+        if not isinstance(y.index, pd.RangeIndex) and getattr(y.index, "freq", None) is None:
             try:
                 y.index.freq = pd.infer_freq(y.index)
             except Exception:
@@ -65,8 +65,8 @@ class SktimeMethod(ForecastMethod):
                 
         # If inference failed, we might need to use integer index or period index
         # For simplicity, let's assume the engine provides a good index or we fallback to RangeIndex
-        if y.index.freq is None:
-             y = y.reset_index(drop=True)
+        if not isinstance(y.index, pd.RangeIndex) and getattr(y.index, "freq", None) is None:
+            y = y.reset_index(drop=True)
 
         estimator = self._get_estimator(seasonality, params)
         

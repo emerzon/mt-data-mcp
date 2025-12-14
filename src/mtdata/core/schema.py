@@ -230,13 +230,23 @@ try:
     # so they can register themselves with the ForecastRegistry.
     # This might make schema.py import slower, but it reflects available methods.
     if ForecastRegistry: # Check if ForecastRegistry was successfully imported
-        import mtdata.forecast.methods.classical
-        import mtdata.forecast.methods.ets_arima
-        import mtdata.forecast.methods.statsforecast
-        import mtdata.forecast.methods.mlforecast
-        import mtdata.forecast.methods.pretrained
-        import mtdata.forecast.methods.neural
-        import mtdata.forecast.methods.sktime
+        # Best-effort: some method modules may require optional third-party deps.
+        for mod_name in (
+            "mtdata.forecast.methods.classical",
+            "mtdata.forecast.methods.ets_arima",
+            "mtdata.forecast.methods.statsforecast",
+            "mtdata.forecast.methods.mlforecast",
+            "mtdata.forecast.methods.pretrained",
+            "mtdata.forecast.methods.neural",
+            "mtdata.forecast.methods.sktime",
+            "mtdata.forecast.methods.analog",
+            "mtdata.forecast.methods.monte_carlo",
+        ):
+            try:
+                __import__(mod_name)
+            except Exception:
+                # Keep schema import robust even if optional deps are missing.
+                pass
 
         _FORECAST_METHODS = tuple(ForecastRegistry.get_all_method_names())
     else:

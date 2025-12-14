@@ -250,15 +250,24 @@ def _resolve_param_kwargs(
     ):
         try:
             from mtdata.forecast.registry import ForecastRegistry
-            import mtdata.forecast.methods.classical
-            import mtdata.forecast.methods.ets_arima
-            import mtdata.forecast.methods.statsforecast
-            import mtdata.forecast.methods.mlforecast
-            import mtdata.forecast.methods.pretrained
-            import mtdata.forecast.methods.neural
-            import mtdata.forecast.methods.sktime
-            import mtdata.forecast.methods.analog
-            import mtdata.forecast.methods.monte_carlo
+
+            # Best-effort import: optional method modules may fail to import if their
+            # third-party deps are missing; still surface whatever registers successfully.
+            for mod_name in (
+                "mtdata.forecast.methods.classical",
+                "mtdata.forecast.methods.ets_arima",
+                "mtdata.forecast.methods.statsforecast",
+                "mtdata.forecast.methods.mlforecast",
+                "mtdata.forecast.methods.pretrained",
+                "mtdata.forecast.methods.neural",
+                "mtdata.forecast.methods.sktime",
+                "mtdata.forecast.methods.analog",
+                "mtdata.forecast.methods.monte_carlo",
+            ):
+                try:
+                    __import__(mod_name)
+                except Exception as import_ex:
+                    _debug(f"Skipping method module import '{mod_name}': {import_ex}")
             
             kwargs['choices'] = ForecastRegistry.get_all_method_names()
         except Exception as e:
