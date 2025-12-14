@@ -230,6 +230,7 @@ class ChronosBoltMethod(PretrainedMethod):
         except Exception as ex:
             raise RuntimeError(f"chronos2 error ({type(ex).__name__}): {ex!r}") from ex
 
+@ForecastRegistry.register("timesfm")
 class TimesFMMethod(PretrainedMethod):
     @property
     def name(self) -> str:
@@ -338,10 +339,7 @@ class TimesFMMethod(PretrainedMethod):
         except Exception as ex:
             raise RuntimeError(f"timesfm error: {ex}")
 
-
-if _HAS_TIMESFM:
-    ForecastRegistry.register("timesfm")(TimesFMMethod)
-
+@ForecastRegistry.register("lag_llama")
 class LagLlamaMethod(PretrainedMethod):
     @property
     def name(self) -> str:
@@ -538,12 +536,6 @@ class LagLlamaMethod(PretrainedMethod):
             params_used['quantiles'] = sorted({str(float(q)) for q in quantiles}, key=lambda x: float(x))
 
         return ForecastResult(forecast=f_vals, params_used=params_used, metadata={"quantiles": fq})
-
-
-if _HAS_LAG_LLAMA:
-    ForecastRegistry.register("lag_llama")(LagLlamaMethod)
-
-
 @ForecastRegistry.register("moirai")
 class MoiraiMethod(PretrainedMethod):
     @property
