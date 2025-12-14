@@ -107,3 +107,6 @@ matplotlib>=3.10.8
 
 # Optional: DREAMS-CNE (install from source)
 # git+https://github.com/berenslab/DREAMS-CNE@tp
+
+# Feature extraction
+tsfresh>=0.20.3

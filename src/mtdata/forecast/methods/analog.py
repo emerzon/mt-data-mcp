@@ -207,6 +207,15 @@ class AnalogMethod(ForecastMethod):
         if not (0.0 < ci_alpha < 1.0):
             ci_alpha = 0.05
 
+        # Capture actual parameter values used (with defaults)
+        window_size = int(params.get('window_size', 64))
+        search_depth = int(params.get('search_depth', 5000))
+        top_k = int(params.get('top_k', 20))
+        metric = str(params.get('metric', 'euclidean'))
+        scale = str(params.get('scale', 'zscore'))
+        refine_metric = str(params.get('refine_metric', 'dtw'))
+        search_engine = str(params.get('search_engine', 'ckdtree'))
+
         # Use input series for primary query vector
         # Handle case where series is empty or missing
         primary_query = series.values if series is not None and not series.empty else None
@@ -295,29 +304,45 @@ class AnalogMethod(ForecastMethod):
         p_lower = np.nanpercentile(futures_matrix, lower_q, axis=0)
         p_upper = np.nanpercentile(futures_matrix, upper_q, axis=0)
         
+        # Compute ensemble metrics
+        spread = np.nanmean(np.nanstd(futures_matrix, axis=0))
+        stdev = float(np.nanmean(np.nanstd(futures_matrix, axis=0)))
+        
+        # Build params_used with actual values (including defaults)
+        params_used = {
+            "window_size": window_size,
+            "search_depth": search_depth,
+            "top_k": top_k,
+            "metric": metric,
+            "scale": scale,
+            "refine_metric": refine_metric,
+            "search_engine": search_engine,
+            "ci_alpha": ci_alpha,
+            "n_paths": int(futures_matrix.shape[0]),
+            "stdev": stdev,
+        }
+        if secondary_tfs:
+            params_used["secondary_timeframes"] = secondary_tfs
+        
         # Metrics
         metadata = {
             "method": "analog",
             "components": [primary_tf] + secondary_tfs,
-            "params_used": {k: v for k, v in params.items() if k in ['window_size', 'metric', 'scale', 'secondary_timeframes', 'refine_metric', 'top_k', 'search_depth', 'ci_alpha', 'search_engine']},
+            "params_used": params_used,
             # Just first few analogs from primary for display
             "analogs": [
                 {"values": p_futures[i].tolist(), "meta": p_analogs[i]}
                 for i in range(min(5, len(p_futures)))
-            ]
-        }
-        
-        # Alignment metrics (on the MEANS of components? or just strict spread of pool?)
-        # Feedback asked for dispersion. The std of the pool represents uncertainty well.
-        spread = np.nanmean(np.nanstd(futures_matrix, axis=0))
-        metadata['ensemble_metrics'] = {
-            "spread": float(spread),
-            "n_paths": int(futures_matrix.shape[0])
+            ],
+            "ensemble_metrics": {
+                "spread": float(spread),
+                "n_paths": int(futures_matrix.shape[0])
+            }
         }
         
         return ForecastResult(
             forecast=p50,
             ci_values=(p_lower, p_upper),
-            params_used=metadata['params_used'],
+            params_used=params_used,
             metadata=metadata
         )

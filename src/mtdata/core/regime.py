@@ -48,7 +48,7 @@ def _consolidate_payload(payload: Dict[str, Any], method: str, output_mode: str,
             else:
                 probs = [0.0] * len(times)
                 
-        elif method in ("ms_ar", "hmm"):
+        elif method in ("ms_ar", "hmm", "clustering"):
             raw_state = payload.get("state")
             if isinstance(raw_state, list):
                 states = raw_state
@@ -348,7 +348,7 @@ def regime_detect(
             
             return _consolidate_payload(payload, method, output, include_series=include_series)
 
-        else:  # 'hmm' (mixture/HMM-lite)
+        elif method == 'hmm':  # 'hmm' (mixture/HMM-lite)
             try:
                 from ..forecast.monte_carlo import fit_gaussian_mixture_1d
             except Exception as ex:
@@ -390,6 +390,105 @@ def regime_detect(
                     payload["state"] = payload["state"][-n:]
                     if isinstance(gamma, np.ndarray) and len(gamma) >= n:
                          payload["state_probabilities"] = payload["state_probabilities"][-n:]
+
+            return _consolidate_payload(payload, method, output, include_series=include_series)
+
+        elif method == 'clustering':
+            try:
+                from .features import extract_rolling_features
+                from sklearn.preprocessing import StandardScaler
+                from sklearn.cluster import KMeans
+                from sklearn.decomposition import PCA
+            except ImportError as ex:
+                return {"error": f"Clustering dependencies missing: {ex}"}
+
+            window_size = int(p.get('window_size', 20))
+            k_regimes = int(p.get('k_regimes', 3))
+            use_pca = bool(p.get('use_pca', True))
+            n_components = int(p.get('n_components', 3))
+
+            # Extract features (use 'return' or 'price'? 'return' is stationary, usually better)
+            # x is already computed based on target input
+            features_df = extract_rolling_features(x, window_size=window_size)
+            
+            # Align features with time
+            # valid_indices are where features are not NaN
+            valid_mask = ~features_df.isna().any(axis=1)
+            X_valid = features_df.loc[valid_mask]
+            
+            if X_valid.empty:
+                 return {"error": "Not enough data for feature extraction (check window_size)"}
+
+            # Normalize
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X_valid)
+
+            # PCA
+            if use_pca and X_scaled.shape[1] > n_components:
+                pca = PCA(n_components=min(n_components, X_scaled.shape[1]))
+                X_final = pca.fit_transform(X_scaled)
+            else:
+                X_final = X_scaled
+
+            # Cluster
+            kmeans = KMeans(n_clusters=k_regimes, random_state=42, n_init='auto')
+            labels = kmeans.fit_predict(X_final)
+            
+            # Map back to full length
+            # features_df has same length as x (n), but with NaNs at start
+            # We want to fill the result states.
+            # 0-fill or forward fill or -1? 
+            # Let's say -1 for undefined.
+            full_states = np.full(len(x), -1, dtype=int)
+            full_states[valid_mask] = labels
+            
+            # Probabilities? KMeans doesn't give probs easily (distance based).
+            # We can use 1.0 for the assigned cluster or distance-to-center logic.
+            # Simplified: 1.0 for assigned.
+            full_probs = np.zeros((len(x), k_regimes))
+            full_probs[valid_mask, labels] = 1.0
+            
+            # Reconstruct payload
+            payload = {
+                "success": True,
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "method": method,
+                "target": target,
+                "times": t_fmt,
+                "state": [int(s) for s in full_states.tolist()],
+                "state_probabilities": [[float(v) for v in row] for row in full_probs.tolist()],
+                "params_used": {
+                    "k_regimes": k_regimes, 
+                    "window_size": window_size,
+                    "use_pca": use_pca,
+                    "n_components": n_components
+                },
+            }
+            
+            # Summary stats
+            if output in ('summary','compact'):
+                n_summary = min(int(lookback), len(full_states))
+                st_tail = full_states[-n_summary:] if n_summary > 0 else full_states
+                # Filter out -1
+                st_tail_valid = st_tail[st_tail != -1]
+                
+                unique, counts = np.unique(st_tail_valid, return_counts=True)
+                shares = {int(k): float(c) / float(len(st_tail_valid) or 1) for k, c in zip(unique, counts)}
+                
+                summary = {
+                    "lookback": int(n_summary),
+                    "last_state": int(full_states[-1]) if len(full_states) else None,
+                    "state_shares": shares
+                }
+                payload["summary"] = summary
+
+                if output == "summary":
+                     return _summary_only_payload(payload)
+                if output == 'compact' and n_summary > 0:
+                     payload["times"] = t_fmt[-n_summary:]
+                     payload["state"] = payload["state"][-n_summary:]
+                     payload["state_probabilities"] = payload["state_probabilities"][-n_summary:]
 
             return _consolidate_payload(payload, method, output, include_series=include_series)
 

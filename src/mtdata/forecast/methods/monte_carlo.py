@@ -75,8 +75,15 @@ class MonteCarloGBMMethod(ForecastMethod):
                 ci = None
                 if isinstance(ci_alpha, (float, int)) and 0.0 < float(ci_alpha) < 1.0:
                     ci = _ci_from_sims(paths, float(ci_alpha))
-                meta = {"n_sims": n_sims, "seed": seed}
-                return ForecastResult(forecast=point, ci_values=ci, params_used=params, metadata=meta)
+                params_used = {
+                    "n_sims": n_sims,
+                    "seed": seed,
+                    "mu": float(sim.get("mu", 0.0)),
+                    "sigma": float(sim.get("sigma", 0.0)),
+                }
+                if ci_alpha is not None:
+                    params_used["ci_alpha"] = float(ci_alpha)
+                return ForecastResult(forecast=point, ci_values=ci, params_used=params_used)
 
             rets = np.diff(np.log(np.clip(prices, 1e-12, None)))
             mu = float(mu_override) if mu_override is not None else float(np.mean(rets))
@@ -92,8 +99,10 @@ class MonteCarloGBMMethod(ForecastMethod):
             ci = None
             if isinstance(ci_alpha, (float, int)) and 0.0 < float(ci_alpha) < 1.0:
                 ci = _ci_from_sims(price_paths, float(ci_alpha))
-            meta = {"n_sims": n_sims, "seed": seed, "mu": mu, "sigma": sigma}
-            return ForecastResult(forecast=point, ci_values=ci, params_used=params, metadata=meta)
+            params_used = {"n_sims": n_sims, "seed": seed, "mu": mu, "sigma": sigma}
+            if ci_alpha is not None:
+                params_used["ci_alpha"] = float(ci_alpha)
+            return ForecastResult(forecast=point, ci_values=ci, params_used=params_used)
 
         # Return-series target: simulate Gaussian log-returns directly.
         rets = x
@@ -105,8 +114,10 @@ class MonteCarloGBMMethod(ForecastMethod):
         ci = None
         if isinstance(ci_alpha, (float, int)) and 0.0 < float(ci_alpha) < 1.0:
             ci = _ci_from_sims(ret_paths, float(ci_alpha))
-        meta = {"n_sims": n_sims, "seed": seed, "mu": mu, "sigma": sigma, "target": "return"}
-        return ForecastResult(forecast=point, ci_values=ci, params_used=params, metadata=meta)
+        params_used = {"n_sims": n_sims, "seed": seed, "mu": mu, "sigma": sigma, "target": "return"}
+        if ci_alpha is not None:
+            params_used["ci_alpha"] = float(ci_alpha)
+        return ForecastResult(forecast=point, ci_values=ci, params_used=params_used)
 
 
 @ForecastRegistry.register("hmm_mc")
@@ -154,14 +165,16 @@ class MonteCarloHMMMethod(ForecastMethod):
             ci = None
             if isinstance(ci_alpha, (float, int)) and 0.0 < float(ci_alpha) < 1.0:
                 ci = _ci_from_sims(paths, float(ci_alpha))
-            meta = {
+            params_used = {
                 "n_sims": n_sims,
                 "seed": seed,
                 "n_states": n_states,
                 "mu": [float(v) for v in np.asarray(sim.get("mu", []), dtype=float).tolist()],
                 "sigma": [float(v) for v in np.asarray(sim.get("sigma", []), dtype=float).tolist()],
             }
-            return ForecastResult(forecast=point, ci_values=ci, params_used=params, metadata=meta)
+            if ci_alpha is not None:
+                params_used["ci_alpha"] = float(ci_alpha)
+            return ForecastResult(forecast=point, ci_values=ci, params_used=params_used)
 
         # Return-series target: treat inputs as log-returns and build a pseudo price series.
         rets = x
@@ -172,7 +185,7 @@ class MonteCarloHMMMethod(ForecastMethod):
         ci = None
         if isinstance(ci_alpha, (float, int)) and 0.0 < float(ci_alpha) < 1.0:
             ci = _ci_from_sims(ret_paths, float(ci_alpha))
-        meta = {
+        params_used = {
             "n_sims": n_sims,
             "seed": seed,
             "n_states": n_states,
@@ -180,5 +193,7 @@ class MonteCarloHMMMethod(ForecastMethod):
             "mu": [float(v) for v in np.asarray(sim.get("mu", []), dtype=float).tolist()],
             "sigma": [float(v) for v in np.asarray(sim.get("sigma", []), dtype=float).tolist()],
         }
-        return ForecastResult(forecast=point, ci_values=ci, params_used=params, metadata=meta)
+        if ci_alpha is not None:
+            params_used["ci_alpha"] = float(ci_alpha)
+        return ForecastResult(forecast=point, ci_values=ci, params_used=params_used)
 

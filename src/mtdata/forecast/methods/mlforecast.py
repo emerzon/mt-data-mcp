@@ -86,10 +86,14 @@ class MLForecastMethod(ForecastMethod):
             
             f_vals = _extract_forecast_values(Yf, horizon, self.name)
             
+            # Filter out internal context params
+            internal_keys = {'symbol', 'timeframe', 'as_of', 'exog_used', 'exog_future'}
+            clean_params = {k: v for k, v in params.items() if k not in internal_keys}
+            
             return ForecastResult(
                 forecast=f_vals,
                 ci_values=None,
-                params_used=params
+                params_used=clean_params
             )
             
         except Exception as ex:

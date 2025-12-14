@@ -106,10 +106,15 @@ class StatsForecastMethod(ForecastMethod):
                         
                     ci_values = np.stack([lo_vals.astype(float), hi_vals.astype(float)])
 
+            # Filter out internal context params and build clean params_used
+            internal_keys = {'symbol', 'timeframe', 'as_of', 'exog_used', 'exog_future'}
+            clean_params = {k: v for k, v in params.items() if k not in internal_keys}
+            params_used = {"seasonality": seasonality, **clean_params}
+            
             return ForecastResult(
                 forecast=f_vals,
                 ci_values=ci_values,
-                params_used={"seasonality": seasonality, **params}
+                params_used=params_used
             )
             
         except Exception as ex:
