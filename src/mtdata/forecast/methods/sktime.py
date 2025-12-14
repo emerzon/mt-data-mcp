@@ -8,6 +8,19 @@ import pandas as pd
 from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 
+try:
+    import importlib.util as _importlib_util
+    _HAS_SKTIME = _importlib_util.find_spec('sktime') is not None
+except Exception:
+    _HAS_SKTIME = False
+
+if not _HAS_SKTIME:
+    # sktime is an optional dependency; avoid registering methods unless installed.
+    # This keeps CLI method choices aligned with what can actually run.
+    _SKTIME_IMPORT_ERROR = "sktime is not installed; install it to enable sktime-based forecast methods."
+else:
+    _SKTIME_IMPORT_ERROR = None
+
 class SktimeMethod(ForecastMethod):
     """Base class for Sktime methods."""
     
@@ -156,87 +169,88 @@ class SktimeMethod(ForecastMethod):
         except Exception as ex:
             raise RuntimeError(f"Sktime {self.name} error: {ex}")
 
-@ForecastRegistry.register("sktime")
-class GenericSktimeMethod(SktimeMethod):
-    """Generic wrapper for any Sktime estimator."""
-    
-    @property
-    def name(self) -> str:
-        return "sktime"
+if _HAS_SKTIME:
+    @ForecastRegistry.register("sktime")
+    class GenericSktimeMethod(SktimeMethod):
+        """Generic wrapper for any Sktime estimator."""
         
-    def _get_estimator(self, seasonality: int, params: Dict[str, Any]):
-        estimator_path = params.get('estimator')
-        if not estimator_path:
-            raise ValueError("GenericSktimeMethod requires 'estimator' (dotted path) in params")
+        @property
+        def name(self) -> str:
+            return "sktime"
             
-        # Import dynamically
-        try:
-            module_path, class_name = estimator_path.rsplit('.', 1)
-            import importlib
-            module = importlib.import_module(module_path)
-            estimator_cls = getattr(module, class_name)
-        except (ValueError, ImportError, AttributeError) as e:
-             raise ValueError(f"Could not import sktime estimator '{estimator_path}': {e}")
-             
-        # Filter params
-        import inspect
-        try:
-            sig = inspect.signature(estimator_cls)
-            valid_params = set(sig.parameters.keys())
-        except ValueError:
-            valid_params = set()
-            
-        est_params = {k: v for k, v in params.items() if k in valid_params}
-        
-        # Inject seasonality (sp) if applicable
-        if 'sp' in valid_params and 'sp' not in est_params:
-            est_params['sp'] = max(1, seasonality)
-            
-        return estimator_cls(**est_params)
-
-# Register aliases
-def _register_sktime_aliases():
-    aliases = [
-        ('skt_naive', 'sktime.forecasting.naive.NaiveForecaster', {'strategy': 'last'}),
-        ('skt_theta', 'sktime.forecasting.theta.ThetaForecaster', {}),
-        ('skt_autoets', 'sktime.forecasting.ets.AutoETS', {}),
-        ('skt_arima', 'sktime.forecasting.arima.ARIMA', {}),
-        ('skt_autoarima', 'sktime.forecasting.arima.AutoARIMA', {}),
-    ]
-    
-    for alias, path, default_params in aliases:
-        class DynamicSktMethod(SktimeMethod):
-            _path = path
-            _defaults = default_params
-            _alias = alias
-            
-            @property
-            def name(self) -> str:
-                return self._alias
+        def _get_estimator(self, seasonality: int, params: Dict[str, Any]):
+            estimator_path = params.get('estimator')
+            if not estimator_path:
+                raise ValueError("GenericSktimeMethod requires 'estimator' (dotted path) in params")
                 
-            def _get_estimator(self, seasonality: int, params: Dict[str, Any]):
-                module_path, class_name = self._path.rsplit('.', 1)
+            # Import dynamically
+            try:
+                module_path, class_name = estimator_path.rsplit('.', 1)
                 import importlib
                 module = importlib.import_module(module_path)
                 estimator_cls = getattr(module, class_name)
+            except (ValueError, ImportError, AttributeError) as e:
+                 raise ValueError(f"Could not import sktime estimator '{estimator_path}': {e}")
+                 
+            # Filter params
+            import inspect
+            try:
+                sig = inspect.signature(estimator_cls)
+                valid_params = set(sig.parameters.keys())
+            except ValueError:
+                valid_params = set()
                 
-                combined_params = self._defaults.copy()
-                combined_params.update(params)
+            est_params = {k: v for k, v in params.items() if k in valid_params}
+            
+            # Inject seasonality (sp) if applicable
+            if 'sp' in valid_params and 'sp' not in est_params:
+                est_params['sp'] = max(1, seasonality)
                 
-                import inspect
-                try:
-                    sig = inspect.signature(estimator_cls)
-                    valid_params = set(sig.parameters.keys())
-                except ValueError:
-                    valid_params = set()
-                
-                est_params = {k: v for k, v in combined_params.items() if k in valid_params}
-                
-                if 'sp' in valid_params and 'sp' not in est_params:
-                    est_params['sp'] = max(1, seasonality)
-                    
-                return estimator_cls(**est_params)
-                
-        ForecastRegistry.register(alias)(DynamicSktMethod)
+            return estimator_cls(**est_params)
 
-_register_sktime_aliases()
+    # Register aliases
+    def _register_sktime_aliases():
+        aliases = [
+            ('skt_naive', 'sktime.forecasting.naive.NaiveForecaster', {'strategy': 'last'}),
+            ('skt_theta', 'sktime.forecasting.theta.ThetaForecaster', {}),
+            ('skt_autoets', 'sktime.forecasting.ets.AutoETS', {}),
+            ('skt_arima', 'sktime.forecasting.arima.ARIMA', {}),
+            ('skt_autoarima', 'sktime.forecasting.arima.AutoARIMA', {}),
+        ]
+        
+        for alias, path, default_params in aliases:
+            class DynamicSktMethod(SktimeMethod):
+                _path = path
+                _defaults = default_params
+                _alias = alias
+                
+                @property
+                def name(self) -> str:
+                    return self._alias
+                    
+                def _get_estimator(self, seasonality: int, params: Dict[str, Any]):
+                    module_path, class_name = self._path.rsplit('.', 1)
+                    import importlib
+                    module = importlib.import_module(module_path)
+                    estimator_cls = getattr(module, class_name)
+                    
+                    combined_params = self._defaults.copy()
+                    combined_params.update(params)
+                    
+                    import inspect
+                    try:
+                        sig = inspect.signature(estimator_cls)
+                        valid_params = set(sig.parameters.keys())
+                    except ValueError:
+                        valid_params = set()
+                    
+                    est_params = {k: v for k, v in combined_params.items() if k in valid_params}
+                    
+                    if 'sp' in valid_params and 'sp' not in est_params:
+                        est_params['sp'] = max(1, seasonality)
+                        
+                    return estimator_cls(**est_params)
+                    
+            ForecastRegistry.register(alias)(DynamicSktMethod)
+
+    _register_sktime_aliases()

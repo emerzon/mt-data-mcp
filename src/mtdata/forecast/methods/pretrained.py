@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
+import importlib.util as _importlib_util
 import numpy as np
 import pandas as pd
 
@@ -28,6 +29,11 @@ class PretrainedMethod(ForecastMethod):
     @property
     def supports_features(self) -> Dict[str, bool]:
         return {"price": True, "return": True, "volatility": True, "ci": True}
+
+
+_HAS_TIMESFM = _importlib_util.find_spec('timesfm') is not None
+_HAS_LAG_LLAMA = _importlib_util.find_spec('lag_llama') is not None
+
 
 @ForecastRegistry.register("chronos_bolt")
 @ForecastRegistry.register("chronos2")
@@ -224,7 +230,6 @@ class ChronosBoltMethod(PretrainedMethod):
         except Exception as ex:
             raise RuntimeError(f"chronos2 error ({type(ex).__name__}): {ex!r}") from ex
 
-@ForecastRegistry.register("timesfm")
 class TimesFMMethod(PretrainedMethod):
     @property
     def name(self) -> str:
@@ -333,7 +338,10 @@ class TimesFMMethod(PretrainedMethod):
         except Exception as ex:
             raise RuntimeError(f"timesfm error: {ex}")
 
-@ForecastRegistry.register("lag_llama")
+
+if _HAS_TIMESFM:
+    ForecastRegistry.register("timesfm")(TimesFMMethod)
+
 class LagLlamaMethod(PretrainedMethod):
     @property
     def name(self) -> str:
@@ -531,6 +539,11 @@ class LagLlamaMethod(PretrainedMethod):
 
         return ForecastResult(forecast=f_vals, params_used=params_used, metadata={"quantiles": fq})
 
+
+if _HAS_LAG_LLAMA:
+    ForecastRegistry.register("lag_llama")(LagLlamaMethod)
+
+
 @ForecastRegistry.register("moirai")
 class MoiraiMethod(PretrainedMethod):
     @property
@@ -704,6 +717,8 @@ def forecast_timesfm(
     n: int,
 ) -> Tuple[Optional[np.ndarray], Optional[Dict[str, List[float]]], Dict[str, Any], Optional[str]]:
     try:
+        if not _HAS_TIMESFM:
+            return None, None, {}, "timesfm is not installed; install it to enable the timesfm forecast method."
         res = ForecastRegistry.get("timesfm").forecast(pd.Series(series), fh, 0, params)
         return res.forecast, res.metadata.get("quantiles"), res.params_used, None
     except Exception as e:
@@ -717,6 +732,8 @@ def forecast_lag_llama(
     n: int,
 ) -> Tuple[Optional[np.ndarray], Optional[Dict[str, List[float]]], Dict[str, Any], Optional[str]]:
     try:
+        if not _HAS_LAG_LLAMA:
+            return None, None, {}, "lag_llama is not installed; install it (and its dependencies) to enable the lag_llama forecast method."
         res = ForecastRegistry.get("lag_llama").forecast(pd.Series(series), fh, 0, params)
         return res.forecast, res.metadata.get("quantiles"), res.params_used, None
     except Exception as e:

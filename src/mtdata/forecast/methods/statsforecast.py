@@ -124,9 +124,7 @@ class GenericStatsForecastMethod(StatsForecastMethod):
         return "statsforecast"
         
     def _get_model(self, seasonality: int, params: Dict[str, Any]):
-        model_name = params.get('model_name')
-        if not model_name:
-            raise ValueError("GenericStatsForecastMethod requires 'model_name' in params")
+        model_name = params.get('model_name') or params.get('model') or 'autoarima'
             
         from statsforecast import models
         
@@ -196,6 +194,13 @@ def _register_sf_aliases():
                 
                 if 'season_length' in valid_params and 'season_length' not in model_params:
                     model_params['season_length'] = max(1, seasonality)
+
+                # TSB requires smoothing params with no defaults.
+                if self._alias == 'sf_tsb':
+                    if 'alpha_d' in valid_params and 'alpha_d' not in model_params:
+                        model_params['alpha_d'] = 0.1
+                    if 'alpha_p' in valid_params and 'alpha_p' not in model_params:
+                        model_params['alpha_p'] = 0.1
                     
                 return model_cls(**model_params)
         

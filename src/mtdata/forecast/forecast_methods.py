@@ -3,6 +3,7 @@ Forecast method definitions and metadata.
 """
 
 from typing import Any, Dict, List, Literal
+import importlib.util as _importlib_util
 
 # Local fallbacks for typing aliases (avoid import cycle)
 try:
@@ -57,13 +58,41 @@ def get_forecast_methods_data() -> Dict[str, Any]:
     """Get comprehensive data about available forecast methods."""
     methods = []
 
+    module_name_overrides = {
+        # pip name -> importable module name
+        "scikit-learn": "sklearn",
+        "lag-llama": "lag_llama",
+        "chronos-forecasting>=2.0.0": "chronos",
+        "pandas-ta-classic": "pandas_ta_classic",
+        "pandas-ta": "pandas_ta",
+        "python-dotenv": "dotenv",
+    }
+
+    def _is_available(requirement: str) -> bool:
+        name = str(requirement).strip()
+        if not name:
+            return True
+        # Strip simple version constraints like "pkg>=1.2"
+        for sep in (">=", "==", "<=", "~=", ">", "<"):
+            if sep in name:
+                name = name.split(sep, 1)[0].strip()
+                break
+        name = module_name_overrides.get(name, name)
+        try:
+            return _importlib_util.find_spec(name) is not None
+        except Exception:
+            return False
+
     def add(method: str, description: str, params: List[Dict[str, Any]], requires: List[str], supports: Dict[str, bool]) -> None:
+        missing = [pkg for pkg in (requires or []) if not _is_available(pkg)]
         methods.append({
             "method": method,
             "description": description,
             "params": params,
             "requires": requires,
-            "supports": supports
+            "supports": supports,
+            "available": len(missing) == 0,
+            "missing": missing,
         })
 
     # Classical methods
