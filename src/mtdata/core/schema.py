@@ -263,16 +263,10 @@ _FORECAST_METHODS: Tuple[str, ...] = (
 )
 
 ForecastLibraryLiteral = Literal[
-    "classical",
-    "ets",
-    "arima",
     "statsforecast",
     "sktime",
     "mlforecast",
     "pretrained",
-    "monte_carlo",
-    "analog",
-    "ensemble",
 ]
 
 try:

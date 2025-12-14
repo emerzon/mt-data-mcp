@@ -153,76 +153,8 @@ class GenericStatsForecastMethod(StatsForecastMethod):
             
         return model_cls(**model_params)
 
-def _register_sf_aliases() -> None:
-    """Register a small set of backwards-compatible sf_* aliases.
-
-    For exhaustive model selection, prefer using:
-      method='statsforecast' with params={'model_name': '<ModelClassName>'}
-    (or via CLI: `--library statsforecast --model AutoARIMA`).
-    """
-    try:
-        from statsforecast import models as _models  # type: ignore
-    except Exception:
-        return
-
-    existing = set(ForecastRegistry.list_available())
-
-    def _register(alias: str, model_name: str) -> None:
-        nonlocal existing
-        if alias in existing:
-            return
-
-        class DynamicSFMethod(StatsForecastMethod):
-            _model_name = model_name
-            _alias = alias
-
-            @property
-            def name(self) -> str:
-                return self._alias
-
-            def _get_model(self, seasonality: int, params: Dict[str, Any]):
-                model_cls = getattr(_models, self._model_name)
-
-                import inspect
-
-                try:
-                    sig = inspect.signature(model_cls)
-                    valid_params = set(sig.parameters.keys())
-                except Exception:
-                    valid_params = set()
-
-                model_params = {k: v for k, v in (params or {}).items() if k in valid_params}
-
-                if "season_length" in valid_params and "season_length" not in model_params:
-                    model_params["season_length"] = max(1, int(seasonality) if seasonality else 1)
-
-                if self._model_name == "TSB":
-                    if "alpha_d" in valid_params and "alpha_d" not in model_params:
-                        model_params["alpha_d"] = 0.1
-                    if "alpha_p" in valid_params and "alpha_p" not in model_params:
-                        model_params["alpha_p"] = 0.1
-
-                return model_cls(**model_params)
-
-        ForecastRegistry.register(alias)(DynamicSFMethod)
-        existing.add(alias)
-
-    short = {
-        "sf_autoarima": "AutoARIMA",
-        "sf_theta": "Theta",
-        "sf_autoets": "AutoETS",
-        "sf_seasonalnaive": "SeasonalNaive",
-        "sf_adida": "ADIDA",
-        "sf_croston": "CrostonClassic",
-        "sf_imapa": "IMAPA",
-        "sf_tsb": "TSB",
-    }
-    for alias, model in short.items():
-        if hasattr(_models, model):
-            _register(alias, model)
-
-
-_register_sf_aliases()
+# Intentionally do not register per-model sf_* aliases here.
+# Prefer the generic method "statsforecast" with params["model_name"] selecting the model.
 
 # Backward compatibility wrapper
 def forecast_statsforecast(

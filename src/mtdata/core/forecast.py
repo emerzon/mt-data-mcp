@@ -154,21 +154,32 @@ def forecast_generate(
     resolved_method = (str(method).strip() if method is not None else "")
     p = dict(params or {})
 
+    # Backward compatibility shorthands (method-only callers):
+    # - sf_* -> statsforecast wrapper + model_name
+    # - skt_* -> sktime wrapper + estimator lookup
+    # - moirai -> sktime MOIRAIForecaster
+    if resolved_method:
+        m0 = resolved_method.strip()
+        m0_l = m0.lower()
+        if m0_l.startswith("sf_"):
+            library = "statsforecast"
+            model = m0[3:]
+            resolved_method = ""
+        elif m0_l.startswith("skt_"):
+            library = "sktime"
+            model = m0[4:]
+            resolved_method = ""
+        elif m0_l == "moirai":
+            library = "sktime"
+            model = "MOIRAIForecaster"
+            resolved_method = ""
+
     if not resolved_method:
         lib = (str(library).strip().lower() if library is not None else "")
         mdl = (str(model).strip() if model is not None else "")
 
-        if lib in ("", "classical"):
+        if lib in ("",):
             resolved_method = mdl or "theta"
-        elif lib == "ets":
-            resolved_method = mdl or "ses"
-        elif lib == "arima":
-            resolved_method = mdl or "arima"
-        elif lib == "monte_carlo":
-            resolved_method = mdl or "hmm_mc"
-        elif lib == "mlforecast":
-            # Generic MLForecast wrapper; optional model provided via params.
-            resolved_method = "mlforecast" if not mdl else str(mdl)
         elif lib == "statsforecast":
             resolved_method = "statsforecast"
             if mdl:
@@ -198,10 +209,10 @@ def forecast_generate(
                     )
         elif lib == "pretrained":
             resolved_method = mdl or "chronos2"
-        elif lib == "analog":
-            resolved_method = mdl or "analog"
-        elif lib == "ensemble":
-            resolved_method = mdl or "ensemble"
+        elif lib == "mlforecast":
+            resolved_method = "mlforecast"
+            if mdl:
+                p.setdefault("model", mdl)
         else:
             # Unknown library: fall back safely.
             resolved_method = mdl or "theta"
@@ -236,7 +247,7 @@ def forecast_generate(
 
 @mcp.tool()
 def forecast_list_library_models(
-    library: Literal["statsforecast", "sktime", "pretrained"],
+    library: Literal["statsforecast", "sktime", "pretrained", "mlforecast"],
 ) -> Dict[str, Any]:
     """List available model names within a forecast library.
 
@@ -315,7 +326,17 @@ def forecast_list_library_models(
             ],
         }
 
-    return {"library": lib, "error": "Unsupported library (supported: statsforecast, sktime, pretrained)"}
+    if lib == "mlforecast":
+        return {
+            "library": lib,
+            "note": "Use `--model <dotted sklearn/lightgbm regressor class>` plus optional constructor kwargs in --params.",
+            "usage": [
+                "python cli.py forecast_generate SYMBOL --library mlforecast --model sklearn.ensemble.RandomForestRegressor --params \"n_estimators=200\"",
+                "python cli.py forecast_generate SYMBOL --method mlf_rf",
+            ],
+        }
+
+    return {"library": lib, "error": "Unsupported library (supported: statsforecast, sktime, pretrained, mlforecast)"}
 
 
 @mcp.tool()

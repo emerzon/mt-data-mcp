@@ -32,11 +32,17 @@ for _mod in (
 
 def _run_method(method: str, series: pd.Series, horizon: int, seasonality: int) -> Tuple[bool, str]:
     try:
+        params = {}
+        if method == "statsforecast":
+            params = {"model_name": "Theta"}
+        elif method == "sktime":
+            params = {"estimator": "sktime.forecasting.theta.ThetaForecaster"}
+
         res = ForecastRegistry.get(method).forecast(
             series,
             horizon=horizon,
             seasonality=seasonality,
-            params={},
+            params=params,
             ci_alpha=0.1,
         )
         first = float(res.forecast[0]) if getattr(res, "forecast", None) is not None and len(res.forecast) else float("nan")
@@ -56,10 +62,10 @@ def main() -> int:
         # Classical / statsmodels
         "theta",
         "arima",
-        # StatsForecast
-        "sf_theta",
-        # sktime
-        "skt_theta",
+        # StatsForecast generic wrapper
+        "statsforecast",
+        # sktime generic wrapper
+        "sktime",
         # MLForecast
         "mlf_rf",
         # Monte Carlo

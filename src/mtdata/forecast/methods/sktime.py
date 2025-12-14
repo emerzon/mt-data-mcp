@@ -179,7 +179,8 @@ class GenericSktimeMethod(SktimeMethod):
             raise RuntimeError(_SKTIME_IMPORT_ERROR)
         estimator_path = params.get('estimator')
         if not estimator_path:
-            raise ValueError("GenericSktimeMethod requires 'estimator' (dotted path) in params")
+            # Default to a robust, commonly available estimator.
+            estimator_path = "sktime.forecasting.theta.ThetaForecaster"
             
         # Import dynamically
         try:
@@ -205,53 +206,3 @@ class GenericSktimeMethod(SktimeMethod):
             est_params['sp'] = max(1, seasonality)
             
         return estimator_cls(**est_params)
-
-
-def _register_sktime_aliases() -> None:
-    aliases = [
-        ('skt_naive', 'sktime.forecasting.naive.NaiveForecaster', {'strategy': 'last'}),
-        ('skt_theta', 'sktime.forecasting.theta.ThetaForecaster', {}),
-        ('skt_autoets', 'sktime.forecasting.ets.AutoETS', {}),
-        ('skt_arima', 'sktime.forecasting.arima.ARIMA', {}),
-        ('skt_autoarima', 'sktime.forecasting.arima.AutoARIMA', {}),
-    ]
-    
-    for alias, path, default_params in aliases:
-        class DynamicSktMethod(SktimeMethod):
-            _path = path
-            _defaults = default_params
-            _alias = alias
-            
-            @property
-            def name(self) -> str:
-                return self._alias
-                
-            def _get_estimator(self, seasonality: int, params: Dict[str, Any]):
-                if not _HAS_SKTIME:
-                    raise RuntimeError(_SKTIME_IMPORT_ERROR)
-                module_path, class_name = self._path.rsplit('.', 1)
-                import importlib
-                module = importlib.import_module(module_path)
-                estimator_cls = getattr(module, class_name)
-                
-                combined_params = self._defaults.copy()
-                combined_params.update(params)
-                
-                import inspect
-                try:
-                    sig = inspect.signature(estimator_cls)
-                    valid_params = set(sig.parameters.keys())
-                except ValueError:
-                    valid_params = set()
-                
-                est_params = {k: v for k, v in combined_params.items() if k in valid_params}
-                
-                if 'sp' in valid_params and 'sp' not in est_params:
-                    est_params['sp'] = max(1, seasonality)
-                    
-                return estimator_cls(**est_params)
-                
-        ForecastRegistry.register(alias)(DynamicSktMethod)
-
-
-_register_sktime_aliases()
