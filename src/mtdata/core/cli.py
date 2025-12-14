@@ -10,7 +10,7 @@ import csv
 import sys
 import inspect
 import os
-from typing import get_type_hints, get_origin, get_args, Optional, Dict, Any, List, Tuple
+from typing import get_type_hints, get_origin, get_args, Optional, Dict, Any, List, Tuple, Literal
 import json
 import math
 from ..utils.minimal_output import format_result_minimal as _shared_minimal
@@ -215,11 +215,26 @@ def discover_tools():
 
     return tools
 
-def _resolve_param_kwargs(param: Dict[str, Any], param_docs: Optional[Dict[str, str]]) -> Tuple[Dict[str, Any], bool]:
+def _resolve_param_kwargs(
+    param: Dict[str, Any],
+    param_docs: Optional[Dict[str, str]],
+    cmd_name: Optional[str] = None,
+) -> Tuple[Dict[str, Any], bool]:
     """Resolve CLI argument kwargs and determine if parameter is a mapping type."""
     def _escape_argparse_help(text: Optional[str]) -> Optional[str]:
         # argparse expands help strings using old-style % formatting; escape literal percents.
         return text.replace('%', '%%') if isinstance(text, str) else text
+
+    def _looks_like_forecast_method_literal(ptype: Any) -> bool:
+        try:
+            origin = get_origin(ptype)
+            if origin is not Literal:
+                return False
+            args = set(str(v) for v in get_args(ptype) if v is not None)
+            # Heuristic: Forecast methods always include at least one of these canonical names.
+            return bool(args.intersection({'theta', 'naive', 'arima', 'chronos2', 'statsforecast'}))
+        except Exception:
+            return False
 
     desc = None
     if param_docs and param['name'] in param_docs:
@@ -229,7 +244,10 @@ def _resolve_param_kwargs(param: Dict[str, Any], param_docs: Optional[Dict[str, 
     is_mapping_type = False
 
     # Dynamically populate choices for 'method' parameter
-    if param['name'] == 'method':
+    if param['name'] == 'method' and (
+        (cmd_name in {'forecast_generate', 'forecast_conformal_intervals', 'forecast_tune_genetic'})
+        or _looks_like_forecast_method_literal(param.get('type'))
+    ):
         try:
             from mtdata.forecast.registry import ForecastRegistry
             import mtdata.forecast.methods.classical
@@ -268,6 +286,9 @@ def _resolve_param_kwargs(param: Dict[str, Any], param_docs: Optional[Dict[str, 
             is_typed_dict = hasattr(base_type, '__annotations__') and isinstance(getattr(base_type, '__annotations__', {}), dict)
             is_mapping_type = (base_type in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
 
+            # Default to string parsing unless we can provide a better type.
+            kwargs['type'] = str
+
             if base_type in (int, float, str):
                 kwargs['type'] = base_type
             elif base_type is bool:
@@ -292,8 +313,6 @@ def _resolve_param_kwargs(param: Dict[str, Any], param_docs: Optional[Dict[str, 
                 if choices:
                     kwargs['choices'] = choices
                 kwargs['type'] = str
-            else:
-                kwargs['type'] = str
         except Exception as e:
             _debug(f"Type resolution failed for param '{param['name']}': {e}")
             kwargs['type'] = str
@@ -304,7 +323,7 @@ def _resolve_param_kwargs(param: Dict[str, Any], param_docs: Optional[Dict[str, 
 
     return kwargs, is_mapping_type
 
-def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str]] = None):
+def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str]] = None, cmd_name: Optional[str] = None):
     """Add arguments to parser based on parameter info.
 
     Adds both hyphen and underscore long-option aliases and sets dest to the
@@ -315,7 +334,7 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
         hyph = f"--{param['name'].replace('_', '-')}"
         uscr = f"--{param['name']}"
         
-        kwargs, is_mapping_type = _resolve_param_kwargs(param, param_docs)
+        kwargs, is_mapping_type = _resolve_param_kwargs(param, param_docs, cmd_name)
         
         # Add positional argument for first required parameter
         if param['required'] and param == param_info['params'][0]:
@@ -708,7 +727,7 @@ def main():
         add_global_args_to_parser(cmd_parser, exclude_params=exclude_globals)
         
         # Add dynamic arguments
-        add_dynamic_arguments(cmd_parser, func_info, meta.get('param_docs'))
+        add_dynamic_arguments(cmd_parser, func_info, meta.get('param_docs'), cmd_name=cmd_name)
         
         # Set the command function
         cmd_parser.set_defaults(func=create_command_function(func_info, cmd_name))
