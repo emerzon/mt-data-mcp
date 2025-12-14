@@ -28,7 +28,7 @@ PARAM_HINTS = {
     "denoise": "Denoise spec JSON or preset (e.g. 'wavelet', 'ema'). Pre-processes data.",
     "simplify": "Simplify spec for downsampling (e.g. 'lttb', 'rdp'). Reduces point count.",
     "method": "Forecast algorithm/method name (e.g. 'theta', 'chronos2'). Prefer --library/--model for library-backed methods.",
-    "library": "Forecast library/group (e.g. statsforecast, sktime). Used with --model.",
+    "library": "Forecast library/group (e.g. native, statsforecast, sktime). Used with --model.",
     "model": "Model name within a library (e.g. AutoARIMA for statsforecast; or a dotted class path for sktime).",
     "horizon": "Forecast horizon in bars (how many steps into the future).",
     "steps": "Number of backtest anchors or steps to run.",
@@ -263,6 +263,7 @@ _FORECAST_METHODS: Tuple[str, ...] = (
 )
 
 ForecastLibraryLiteral = Literal[
+    "native",
     "statsforecast",
     "sktime",
     "mlforecast",

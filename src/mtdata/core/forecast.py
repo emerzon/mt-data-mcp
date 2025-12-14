@@ -178,7 +178,7 @@ def forecast_generate(
         lib = (str(library).strip().lower() if library is not None else "")
         mdl = (str(model).strip() if model is not None else "")
 
-        if lib in ("",):
+        if lib in ("", "native"):
             resolved_method = mdl or "theta"
         elif lib == "statsforecast":
             resolved_method = "statsforecast"
@@ -247,7 +247,7 @@ def forecast_generate(
 
 @mcp.tool()
 def forecast_list_library_models(
-    library: Literal["statsforecast", "sktime", "pretrained", "mlforecast"],
+    library: Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast"],
 ) -> Dict[str, Any]:
     """List available model names within a forecast library.
 
@@ -255,6 +255,25 @@ def forecast_list_library_models(
     - sktime: lists supported aliases plus notes for using dotted estimator paths.
     """
     lib = str(library).strip().lower()
+    if lib == "native":
+        # "Native" methods are mtdata-provided top-level algorithms (as opposed to
+        # external-library model spaces like sktime/statsforecast).
+        try:
+            from mtdata.forecast.forecast_methods import FORECAST_METHODS as _METHODS
+        except Exception:
+            _METHODS = ()
+
+        excluded = {"statsforecast", "sktime", "mlforecast", "chronos2", "chronos_bolt", "timesfm", "lag_llama"}
+        models = [m for m in _METHODS if m not in excluded]
+        return {
+            "library": lib,
+            "models": sorted(models),
+            "usage": [
+                "python cli.py forecast_generate SYMBOL --library native --model analog",
+                "python cli.py forecast_generate SYMBOL --library native --model theta",
+            ],
+        }
+
     if lib == "statsforecast":
         try:
             from statsforecast import models as _models  # type: ignore
@@ -336,7 +355,7 @@ def forecast_list_library_models(
             ],
         }
 
-    return {"library": lib, "error": "Unsupported library (supported: statsforecast, sktime, pretrained, mlforecast)"}
+    return {"library": lib, "error": "Unsupported library (supported: native, statsforecast, sktime, pretrained, mlforecast)"}
 
 
 @mcp.tool()
