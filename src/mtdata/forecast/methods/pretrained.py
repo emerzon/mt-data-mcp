@@ -50,7 +50,10 @@ class ChronosBoltMethod(PretrainedMethod):
         **kwargs
     ) -> ForecastResult:
         p = params or {}
-        model_name = str(p.get('model_name', 'amazon/chronos-2'))
+        # NOTE: The upstream HF model `amazon/chronos-2` may require a newer `chronos`
+        # package API than some environments have; default to a widely compatible
+        # Bolt checkpoint unless the caller explicitly overrides it.
+        model_name = str(p.get('model_name') or 'amazon/chronos-bolt-base')
         ctx_len = int(p.get('context_length', 0) or 0)
         device_map = p.get('device_map', 'auto')
         series_id = str(p.get('series_id', 'series'))
@@ -69,7 +72,17 @@ class ChronosBoltMethod(PretrainedMethod):
         
         _pd = modules['pandas']
         _torch = modules['torch']
-        _Chronos2Pipeline = modules['chronos'].Chronos2Pipeline
+        _chronos = modules['chronos']
+        _Pipeline = None
+        for attr in ("Chronos2Pipeline", "ChronosBoltPipeline", "ChronosPipeline"):
+            if hasattr(_chronos, attr):
+                _Pipeline = getattr(_chronos, attr)
+                break
+        if _Pipeline is None:
+            raise RuntimeError(
+                "chronos installed but no supported pipeline found "
+                "(expected one of Chronos2Pipeline/ChronosBoltPipeline/ChronosPipeline)."
+            )
         
         try:
             q_levels = quantiles or [0.5]
@@ -113,79 +126,85 @@ class ChronosBoltMethod(PretrainedMethod):
                     # Fallback: ignore covariates on error
                     pass
 
-            pipe = _Chronos2Pipeline.from_pretrained(model_name, device_map=device_map)
+            try:
+                pipe = _Pipeline.from_pretrained(model_name, device_map=device_map)
+            except TypeError:
+                pipe = _Pipeline.from_pretrained(model_name)
             
-            # Use predict() instead of predict_df to support known_covariates
-            # Convert context to tensor
-            # Chronos expects (batch, n_variates, time) -> (1, 1, L)
-            ctx_tensor = _torch.tensor(context, dtype=_torch.float32).unsqueeze(0).unsqueeze(1)
+            # Convert context to tensor. Chronos pipelines expect (batch, time) -> (1, L).
+            ctx_tensor = _torch.tensor(context, dtype=_torch.float32).unsqueeze(0)
             if device_map and device_map not in ('auto', 'cpu'):
                 try:
                     ctx_tensor = ctx_tensor.to(device_map)
                 except Exception:
                     pass
 
-            # Attempt prediction with fallback for varying signatures
-            # Strategy: 
-            # 1. Try with known_covariates + num_samples (Bolt/Chronos-2-Bolt style)
-            # 2. Try without known_covariates (T5 style or if covariates not supported)
-            # 3. Try minimal args
-            
-            forecast_samples = None
-            
-            # Case 1: Full args
-            if known_covariates is not None:
-                try:
-                    predict_kwargs = {
-                        "prediction_length": int(horizon),
-                        "num_samples": int(p.get('num_samples', 20)),
-                        "known_covariates": known_covariates
-                    }
-                    forecast_samples = pipe.predict(ctx_tensor, **predict_kwargs)
-                except (TypeError, ValueError) as e:
-                    # "Unexpected keyword argument" or similar
-                    pass
-            
-            # Case 2: No covariates (if Case 1 failed or no covariates)
-            if forecast_samples is None:
-                try:
-                    predict_kwargs = {
-                        "prediction_length": int(horizon),
-                        "num_samples": int(p.get('num_samples', 20)),
-                    }
-                    forecast_samples = pipe.predict(ctx_tensor, **predict_kwargs)
-                except (TypeError, ValueError):
-                    pass
-            
-            # Case 3: Minimal (if num_samples also rejected)
-            if forecast_samples is None:
-                try:
-                    forecast_samples = pipe.predict(ctx_tensor, prediction_length=int(horizon))
-                except Exception as e:
-                    raise RuntimeError(f"Chronos predict failed even with minimal args: {e}")
-
-            # Extract samples for first batch
-            if isinstance(forecast_samples, list):
-                f_tensor = forecast_samples[0]
-            else:
-                f_tensor = forecast_samples[0]
-                
-            samples = f_tensor.detach().cpu().numpy() # (S, H) or (1, S, H)
-            
-            # Handle variate dimension if present (1, S, H) -> (S, H)
-            if samples.ndim == 3 and samples.shape[0] == 1:
-                samples = samples[0]
-            
             fq: Dict[str, List[float]] = {}
-            for q in q_levels:
-                try:
-                    q_val = np.quantile(samples, float(q), axis=0)
-                    fq[f"{float(q):g}"] = [float(v) for v in q_val.tolist()]
-                except Exception:
-                    pass
+            f_vals: Optional[np.ndarray] = None
 
-            # Point forecast: median
-            f_vals = np.quantile(samples, 0.5, axis=0)
+            predict_kwargs: Dict[str, Any] = {}
+            if known_covariates is not None:
+                predict_kwargs["known_covariates"] = known_covariates
+
+            quantiles_tensor = None
+            mean_tensor = None
+            if hasattr(pipe, "predict_quantiles"):
+                try:
+                    quantiles_tensor, mean_tensor = pipe.predict_quantiles(
+                        ctx_tensor,
+                        prediction_length=int(horizon),
+                        quantile_levels=[float(q) for q in q_levels],
+                        **predict_kwargs,
+                    )
+                except TypeError:
+                    quantiles_tensor, mean_tensor = pipe.predict_quantiles(
+                        ctx_tensor,
+                        prediction_length=int(horizon),
+                        quantile_levels=[float(q) for q in q_levels],
+                    )
+
+            if quantiles_tensor is None or mean_tensor is None:
+                # Fallback to point prediction only
+                try:
+                    mean_tensor = pipe.predict(ctx_tensor, prediction_length=int(horizon))
+                except Exception as e:
+                    raise RuntimeError(f"Chronos predict failed: {e}")
+
+            if quantiles_tensor is not None:
+                q_np = np.asarray([float(q) for q in q_levels], dtype=float).reshape(-1)
+                qf_np = np.asarray(quantiles_tensor.detach().cpu().numpy(), dtype=float)
+
+                if qf_np.ndim == 3:
+                    qf_np = qf_np[0]
+                elif qf_np.ndim == 2 and qf_np.shape[0] == 1:
+                    qf_np = qf_np[0]
+
+                q_axis = None
+                if qf_np.ndim == 2:
+                    if qf_np.shape[0] == q_np.size:
+                        q_axis = 0
+                    elif qf_np.shape[1] == q_np.size:
+                        q_axis = 1
+                if q_axis is None:
+                    raise RuntimeError(f"chronos2 error: unexpected quantile forecast shape {tuple(qf_np.shape)}")
+
+                for idx, q in enumerate(q_np.tolist()):
+                    if q_axis == 0:
+                        fq[f"{float(q):g}"] = [float(v) for v in qf_np[idx, :].tolist()]
+                    else:
+                        fq[f"{float(q):g}"] = [float(v) for v in qf_np[:, idx].tolist()]
+
+                # Point forecast: prefer explicit mean/median output if provided
+                mean_np = np.asarray(mean_tensor.detach().cpu().numpy(), dtype=float)
+                if mean_np.ndim == 2:
+                    mean_np = mean_np[0]
+                f_vals = mean_np
+            else:
+                # mean_tensor from predict(); accept either (H,) or (B, H)
+                f_np = np.asarray(mean_tensor.detach().cpu().numpy(), dtype=float)
+                if f_np.ndim == 2:
+                    f_np = f_np[0]
+                f_vals = f_np
 
             params_used = build_params_used(
                 {'model_name': model_name, 'device_map': device_map},
@@ -203,7 +222,7 @@ class ChronosBoltMethod(PretrainedMethod):
             return ForecastResult(forecast=f_vals, params_used=params_used, metadata={"quantiles": fq})
             
         except Exception as ex:
-            raise RuntimeError(f"chronos2 error: {ex}")
+            raise RuntimeError(f"chronos2 error ({type(ex).__name__}): {ex!r}") from ex
 
 @ForecastRegistry.register("timesfm")
 class TimesFMMethod(PretrainedMethod):
