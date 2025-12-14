@@ -153,12 +153,12 @@ class GenericStatsForecastMethod(StatsForecastMethod):
             
         return model_cls(**model_params)
 
-def _register_statsforecast_models() -> None:
-    """Register StatsForecast models as individual method names.
+def _register_sf_aliases() -> None:
+    """Register a small set of backwards-compatible sf_* aliases.
 
-    Two naming schemes are supported:
-    - Canonical: `sf_<modelclassname.lower()>` (autodiscovered from statsforecast.models)
-    - Short aliases for common models (backward-compatible / nicer CLI ergonomics)
+    For exhaustive model selection, prefer using:
+      method='statsforecast' with params={'model_name': '<ModelClassName>'}
+    (or via CLI: `--library statsforecast --model AutoARIMA`).
     """
     try:
         from statsforecast import models as _models  # type: ignore
@@ -196,7 +196,6 @@ def _register_statsforecast_models() -> None:
                 if "season_length" in valid_params and "season_length" not in model_params:
                     model_params["season_length"] = max(1, int(seasonality) if seasonality else 1)
 
-                # Some models require smoothing params with no defaults.
                 if self._model_name == "TSB":
                     if "alpha_d" in valid_params and "alpha_d" not in model_params:
                         model_params["alpha_d"] = 0.1
@@ -208,48 +207,13 @@ def _register_statsforecast_models() -> None:
         ForecastRegistry.register(alias)(DynamicSFMethod)
         existing.add(alias)
 
-    # 1) Autodiscover all model classes in statsforecast.models
-    for attr in dir(_models):
-        if attr.startswith("_"):
-            continue
-        obj = getattr(_models, attr, None)
-        if not isinstance(obj, type):
-            continue
-        if getattr(obj, "__module__", None) != getattr(_models, "__name__", None):
-            continue
-        if not any(callable(getattr(obj, a, None)) for a in ("fit", "forecast", "predict")):
-            continue
-        # Avoid registering base/internal "models" that aren't real forecasting algorithms.
-        if attr in {"SklearnModel"}:
-            continue
-        _register(f"sf_{attr.lower()}", attr)
-
-    # 2) Short aliases (keep existing behavior / nicer names)
     short = {
         "sf_autoarima": "AutoARIMA",
-        "sf_autoets": "AutoETS",
-        "sf_autoces": "AutoCES",
-        "sf_autotheta": "AutoTheta",
         "sf_theta": "Theta",
+        "sf_autoets": "AutoETS",
         "sf_seasonalnaive": "SeasonalNaive",
-        "sf_naive": "Naive",
-        "sf_historicaverage": "HistoricAverage",
-        "sf_rwd": "RandomWalkWithDrift",
-        "sf_holt": "Holt",
-        "sf_holtwinters": "HoltWinters",
-        "sf_ses": "SimpleExponentialSmoothing",
-        "sf_ses_opt": "SimpleExponentialSmoothingOptimized",
-        "sf_seas_ses": "SeasonalExponentialSmoothing",
-        "sf_seas_ses_opt": "SeasonalExponentialSmoothingOptimized",
-        "sf_windowavg": "WindowAverage",
-        "sf_seasonalwindowavg": "SeasonalWindowAverage",
-        "sf_mstl": "MSTL",
-        "sf_tbats": "TBATS",
-        "sf_autotbats": "AutoTBATS",
         "sf_adida": "ADIDA",
         "sf_croston": "CrostonClassic",
-        "sf_crostonopt": "CrostonOptimized",
-        "sf_crostonsba": "CrostonSBA",
         "sf_imapa": "IMAPA",
         "sf_tsb": "TSB",
     }
@@ -258,7 +222,7 @@ def _register_statsforecast_models() -> None:
             _register(alias, model)
 
 
-_register_statsforecast_models()
+_register_sf_aliases()
 
 # Backward compatibility wrapper
 def forecast_statsforecast(

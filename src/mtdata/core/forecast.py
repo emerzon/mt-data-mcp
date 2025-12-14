@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional, List, Literal, Tuple, Set
 
-from .schema import TimeframeLiteral, DenoiseSpec, ForecastMethodLiteral
+from .schema import TimeframeLiteral, DenoiseSpec, ForecastLibraryLiteral, ForecastMethodLiteral
 from .server import mcp, _auto_connect_wrapper
 from ..forecast.forecast import forecast as _forecast_impl
 from ..forecast.backtest import forecast_backtest as _forecast_backtest_impl
@@ -20,7 +20,9 @@ import numpy as _np
 def forecast_generate(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    method: ForecastMethodLiteral = "theta",
+    method: Optional[str] = None,
+    library: Optional[ForecastLibraryLiteral] = None,
+    model: Optional[str] = None,
     horizon: int = 12,
     lookback: Optional[int] = None,
     as_of: Optional[str] = None,
@@ -42,6 +44,54 @@ def forecast_generate(
     
     Features can include `future_covariates` like 'hour', 'dow', 'month', 'is_holiday' (requires holidays lib).
     """
+    # Resolve method selection:
+    # - Backward compatible: `method` can still be provided directly.
+    # - Preferred: (`library`, `model`) selects a method within an optional library without huge CLI enums.
+    resolved_method = (str(method).strip() if method is not None else "")
+    p = dict(params or {})
+
+    if not resolved_method:
+        lib = (str(library).strip().lower() if library is not None else "")
+        mdl = (str(model).strip() if model is not None else "")
+
+        if lib in ("", "classical"):
+            resolved_method = mdl or "theta"
+        elif lib == "ets":
+            resolved_method = mdl or "ses"
+        elif lib == "arima":
+            resolved_method = mdl or "arima"
+        elif lib == "monte_carlo":
+            resolved_method = mdl or "hmm_mc"
+        elif lib == "mlforecast":
+            # Generic MLForecast wrapper; optional model provided via params.
+            resolved_method = "mlforecast" if not mdl else str(mdl)
+        elif lib == "statsforecast":
+            resolved_method = "statsforecast"
+            if mdl:
+                # Accept either AutoARIMA / autoarima; normalize to StatsForecast model_name.
+                p.setdefault("model_name", mdl)
+        elif lib == "sktime":
+            # If model looks like a dotted estimator path, use generic `sktime` wrapper.
+            if "." in mdl:
+                resolved_method = "sktime"
+                p.setdefault("estimator", mdl)
+            else:
+                # Support a small set of aliases mapped to our registered skt_* methods.
+                base = (mdl.lower() if mdl else "theta")
+                if base.startswith("skt_"):
+                    resolved_method = base
+                else:
+                    resolved_method = f"skt_{base}"
+        elif lib == "pretrained":
+            resolved_method = mdl or "chronos2"
+        elif lib == "analog":
+            resolved_method = mdl or "analog"
+        elif lib == "ensemble":
+            resolved_method = mdl or "ensemble"
+        else:
+            # Unknown library: fall back safely.
+            resolved_method = mdl or "theta"
+
     features = features or {}
     if future_covariates:
         # If passed as list, join them for the features dict string/list support
@@ -54,11 +104,11 @@ def forecast_generate(
     return _forecast_impl(
         symbol=symbol,
         timeframe=timeframe,  # type: ignore[arg-type]
-        method=method,        # type: ignore[arg-type]
+        method=str(resolved_method),  # type: ignore[arg-type]
         horizon=horizon,
         lookback=lookback,
         as_of=as_of,
-        params=params,
+        params=p,
         ci_alpha=ci_alpha,
         quantity=quantity,    # type: ignore[arg-type]
         target=target,        # type: ignore[arg-type]
@@ -68,6 +118,55 @@ def forecast_generate(
         dimred_params=dimred_params,
         target_spec=target_spec,
     )
+
+
+@mcp.tool()
+def forecast_list_library_models(
+    library: Literal["statsforecast", "sktime"],
+) -> Dict[str, Any]:
+    """List available model names within a forecast library.
+
+    - statsforecast: lists `statsforecast.models.*` class names.
+    - sktime: lists supported aliases plus notes for using dotted estimator paths.
+    """
+    lib = str(library).strip().lower()
+    if lib == "statsforecast":
+        try:
+            from statsforecast import models as _models  # type: ignore
+        except Exception as ex:
+            return {"library": lib, "error": f"statsforecast import failed: {ex}"}
+        names: List[str] = []
+        for attr in dir(_models):
+            if attr.startswith("_"):
+                continue
+            obj = getattr(_models, attr, None)
+            if not isinstance(obj, type):
+                continue
+            if getattr(obj, "__module__", None) != getattr(_models, "__name__", None):
+                continue
+            if not any(callable(getattr(obj, a, None)) for a in ("fit", "forecast", "predict")):
+                continue
+            names.append(attr)
+        names = sorted(set(names))
+        return {
+            "library": lib,
+            "models": names,
+            "usage": "python cli.py forecast_generate SYMBOL --library statsforecast --model AutoARIMA",
+        }
+
+    if lib == "sktime":
+        aliases = ["theta", "naive", "autoets", "arima", "autoarima"]
+        return {
+            "library": lib,
+            "aliases": aliases,
+            "usage": [
+                "python cli.py forecast_generate SYMBOL --library sktime --model theta",
+                "python cli.py forecast_generate SYMBOL --library sktime --model sktime.forecasting.theta.ThetaForecaster --params \"strategy=...\"",
+            ],
+            "note": "For arbitrary sktime forecasters, pass a dotted class path via --model and optional constructor kwargs via --params.",
+        }
+
+    return {"library": lib, "error": "Unsupported library (supported: statsforecast, sktime)"}
 
 
 @mcp.tool()

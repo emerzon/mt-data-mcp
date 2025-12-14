@@ -219,6 +219,7 @@ def _resolve_param_kwargs(
     param: Dict[str, Any],
     param_docs: Optional[Dict[str, str]],
     cmd_name: Optional[str] = None,
+    param_names: Optional[set] = None,
 ) -> Tuple[Dict[str, Any], bool]:
     """Resolve CLI argument kwargs and determine if parameter is a mapping type."""
     def _escape_argparse_help(text: Optional[str]) -> Optional[str]:
@@ -248,35 +249,41 @@ def _resolve_param_kwargs(
         (cmd_name in {'forecast_generate', 'forecast_conformal_intervals', 'forecast_tune_genetic'})
         or _looks_like_forecast_method_literal(param.get('type'))
     ):
-        try:
-            from mtdata.forecast.registry import ForecastRegistry
+        # If the tool exposes the newer (library, model) selection, don't explode
+        # help output by enumerating every possible method name.
+        if param_names and ('library' in param_names or 'model' in param_names):
+            # No choices -> free string. Users can use --library/--model for guided selection.
+            pass
+        else:
+            try:
+                from mtdata.forecast.registry import ForecastRegistry
 
-            # Best-effort import: optional method modules may fail to import if their
-            # third-party deps are missing; still surface whatever registers successfully.
-            for mod_name in (
-                "mtdata.forecast.methods.classical",
-                "mtdata.forecast.methods.ets_arima",
-                "mtdata.forecast.methods.statsforecast",
-                "mtdata.forecast.methods.mlforecast",
-                "mtdata.forecast.methods.pretrained",
-                "mtdata.forecast.methods.neural",
-                "mtdata.forecast.methods.sktime",
-                "mtdata.forecast.methods.analog",
-                "mtdata.forecast.methods.monte_carlo",
-            ):
-                try:
-                    __import__(mod_name)
-                except Exception as import_ex:
-                    _debug(f"Skipping method module import '{mod_name}': {import_ex}")
-            
-            kwargs['choices'] = ForecastRegistry.get_all_method_names()
-        except Exception as e:
-            _debug(f"Failed to dynamically load forecast methods for CLI: {e}")
-            # Fallback to static type choices if dynamic loading fails
-            ptype = param.get('type')
-            origin = get_origin(ptype)
-            if origin is Literal:
-                kwargs['choices'] = [str(v) for v in get_args(ptype) if v is not None]
+                # Best-effort import: optional method modules may fail to import if their
+                # third-party deps are missing; still surface whatever registers successfully.
+                for mod_name in (
+                    "mtdata.forecast.methods.classical",
+                    "mtdata.forecast.methods.ets_arima",
+                    "mtdata.forecast.methods.statsforecast",
+                    "mtdata.forecast.methods.mlforecast",
+                    "mtdata.forecast.methods.pretrained",
+                    "mtdata.forecast.methods.neural",
+                    "mtdata.forecast.methods.sktime",
+                    "mtdata.forecast.methods.analog",
+                    "mtdata.forecast.methods.monte_carlo",
+                ):
+                    try:
+                        __import__(mod_name)
+                    except Exception as import_ex:
+                        _debug(f"Skipping method module import '{mod_name}': {import_ex}")
+
+                kwargs['choices'] = ForecastRegistry.get_all_method_names()
+            except Exception as e:
+                _debug(f"Failed to dynamically load forecast methods for CLI: {e}")
+                # Fallback to static type choices if dynamic loading fails
+                ptype = param.get('type')
+                origin = get_origin(ptype)
+                if origin is Literal:
+                    kwargs['choices'] = [str(v) for v in get_args(ptype) if v is not None]
     else:
         # Handle other types
         try:
@@ -318,7 +325,7 @@ def _resolve_param_kwargs(
                 else:
                     kwargs['type'] = str
             elif origin and str(origin).endswith('Literal'):
-                choices = [str(v) for v in get_args(ptype)]
+                choices = [str(v) for v in get_args(base_type)]
                 if choices:
                     kwargs['choices'] = choices
                 kwargs['type'] = str
@@ -343,7 +350,8 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
         hyph = f"--{param['name'].replace('_', '-')}"
         uscr = f"--{param['name']}"
         
-        kwargs, is_mapping_type = _resolve_param_kwargs(param, param_docs, cmd_name)
+        param_names = {p.get('name') for p in (param_info.get('params') or []) if isinstance(p, dict)}
+        kwargs, is_mapping_type = _resolve_param_kwargs(param, param_docs, cmd_name, param_names=param_names)
         
         # Add positional argument for first required parameter
         if param['required'] and param == param_info['params'][0]:

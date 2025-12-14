@@ -27,7 +27,9 @@ PARAM_HINTS = {
     "indicators": "List of technical indicators to apply (e.g. 'rsi(14), sma(20)').",
     "denoise": "Denoise spec JSON or preset (e.g. 'wavelet', 'ema'). Pre-processes data.",
     "simplify": "Simplify spec for downsampling (e.g. 'lttb', 'rdp'). Reduces point count.",
-    "method": "Forecast algorithm/method name (e.g. 'theta', 'chronos2', 'nhits').",
+    "method": "Forecast algorithm/method name (e.g. 'theta', 'chronos2'). Prefer --library/--model for library-backed methods.",
+    "library": "Forecast library/group (e.g. statsforecast, sktime). Used with --model.",
+    "model": "Model name within a library (e.g. AutoARIMA for statsforecast; or a dotted class path for sktime).",
     "horizon": "Forecast horizon in bars (how many steps into the future).",
     "steps": "Number of backtest anchors or steps to run.",
     "spacing": "Spacing between backtest anchors (in bars).",
@@ -223,62 +225,55 @@ except Exception:
 # Let's stick to the hardcoded list for now but ensure it's up to date with our knowledge.
 
 # ---- Fast Forecast methods (enums) ----
+#
+# Keep this list intentionally small and stable.
+# Library-specific model selection is handled via (library, model) parameters to tools
+# rather than enumerating thousands of dynamically discovered method names.
 
-_FORECAST_METHODS: Tuple[str, ...] = ()
-try:
-    # To get a fully dynamic list, we need to ensure all method modules are imported
-    # so they can register themselves with the ForecastRegistry.
-    # This might make schema.py import slower, but it reflects available methods.
-    if ForecastRegistry: # Check if ForecastRegistry was successfully imported
-        # Best-effort: some method modules may require optional third-party deps.
-        for mod_name in (
-            "mtdata.forecast.methods.classical",
-            "mtdata.forecast.methods.ets_arima",
-            "mtdata.forecast.methods.statsforecast",
-            "mtdata.forecast.methods.mlforecast",
-            "mtdata.forecast.methods.pretrained",
-            "mtdata.forecast.methods.neural",
-            "mtdata.forecast.methods.sktime",
-            "mtdata.forecast.methods.analog",
-            "mtdata.forecast.methods.monte_carlo",
-        ):
-            try:
-                __import__(mod_name)
-            except Exception:
-                # Keep schema import robust even if optional deps are missing.
-                pass
+_FORECAST_METHODS: Tuple[str, ...] = (
+    # Classical
+    "naive",
+    "seasonal_naive",
+    "drift",
+    "theta",
+    "fourier_ols",
+    # ETS / ARIMA
+    "ses",
+    "holt",
+    "holt_winters_add",
+    "holt_winters_mul",
+    "arima",
+    "sarima",
+    # Monte Carlo
+    "mc_gbm",
+    "hmm_mc",
+    # ML / libraries
+    "mlforecast",
+    "mlf_rf",
+    "mlf_lightgbm",
+    "statsforecast",
+    "sktime",
+    # Pretrained
+    "chronos2",
+    "chronos_bolt",
+    "timesfm",
+    # Meta
+    "ensemble",
+    "analog",
+)
 
-        _FORECAST_METHODS = tuple(ForecastRegistry.get_all_method_names())
-    else:
-        # Fallback to hardcoded list if registry import failed (e.g. env issues)
-        _FORECAST_METHODS = (
-            "arima", "chronos2", "chronos_bolt", "drift", "ensemble",
-            "fourier_ols", "gt_deepar", "gt_deepnpts", "gt_mqf2", "gt_npts",
-            "gt_prophet", "gt_sfeedforward", "gt_tft", "gt_wavenet",
-            "hmm_mc", "holt", "holt_winters_add", "holt_winters_mul",
-            "lag_llama", "mc_gbm", "mlf_lightgbm", "mlf_rf", "mlforecast",
-            "moirai", "naive", "nbeatsx", "nhits", "patchtst", "sarima",
-            "seasonal_naive", "ses", "sf_adida", "sf_autoets", "sf_autoarima",
-            "sf_croston", "sf_imapa", "sf_seasonalnaive", "sf_theta", "sf_tsb",
-            "skt_arima", "skt_autoets", "skt_autoarima", "skt_naive", "skt_snaive",
-            "skt_theta", "sktime", "statsforecast", "tft", "theta", "timesfm",
-        )
-except Exception as e:
-    # Log the error and fall back to hardcoded list
-    import sys
-    print(f"Warning: Failed to dynamically load forecast methods in schema.py: {e}", file=sys.stderr)
-    _FORECAST_METHODS = ( # Hardcoded fallback
-        "arima", "chronos2", "chronos_bolt", "drift", "ensemble",
-        "fourier_ols", "gt_deepar", "gt_deepnpts", "gt_mqf2", "gt_npts",
-        "gt_prophet", "gt_sfeedforward", "gt_tft", "gt_wavenet",
-        "hmm_mc", "holt", "holt_winters_add", "holt_winters_mul",
-        "lag_llama", "mc_gbm", "mlf_lightgbm", "mlf_rf", "mlforecast",
-        "moirai", "naive", "nbeatsx", "nhits", "patchtst", "sarima",
-        "seasonal_naive", "ses", "sf_adida", "sf_autoets", "sf_autoarima",
-        "sf_croston", "sf_imapa", "sf_seasonalnaive", "sf_theta", "sf_tsb",
-        "skt_arima", "skt_autoets", "skt_autoarima", "skt_naive", "skt_snaive",
-        "skt_theta", "sktime", "statsforecast", "tft", "theta", "timesfm",
-    )
+ForecastLibraryLiteral = Literal[
+    "classical",
+    "ets",
+    "arima",
+    "statsforecast",
+    "sktime",
+    "mlforecast",
+    "pretrained",
+    "monte_carlo",
+    "analog",
+    "ensemble",
+]
 
 try:
     ForecastMethodLiteral = Literal[_FORECAST_METHODS]  # type: ignore
