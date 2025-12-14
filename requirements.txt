@@ -103,7 +103,7 @@ hmmlearn>=0.3.3
 pmdarima>=2.1.1
 
 # Plotting for helper scripts
-matplotlib>=3.8.0
+matplotlib>=3.10.8
 
 # Optional: DREAMS-CNE (install from source)
 # git+https://github.com/berenslab/DREAMS-CNE@tp

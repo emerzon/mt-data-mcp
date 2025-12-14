@@ -39,6 +39,7 @@ dependencies = [
     "hnswlib>=0.8.0",
     "stumpy>=1.13.0",
     "dtaidistance>=2.3.13",
+    "matplotlib>=3.10.8",
     "fastapi>=0.124.4",
     "uvicorn[standard]>=0.38.0",
 ]

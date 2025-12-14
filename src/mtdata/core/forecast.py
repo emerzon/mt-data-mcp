@@ -14,6 +14,59 @@ from .constants import TIMEFRAME_SECONDS
 
 import MetaTrader5 as mt5
 import numpy as _np
+from functools import lru_cache
+
+
+@lru_cache(maxsize=1)
+def _discover_sktime_forecasters() -> Dict[str, Tuple[str, str]]:
+    """Return mapping of forecaster class name (lower) -> (class_name, dotted path).
+
+    Best-effort: skips modules that fail to import (optional dependencies).
+    Filters out test modules and private/internal classes.
+    """
+    try:
+        import pkgutil
+        import importlib
+        import sktime.forecasting as _sf  # type: ignore
+        from sktime.forecasting.base import BaseForecaster  # type: ignore
+    except Exception:
+        return {}
+
+    mapping: Dict[str, Tuple[str, str]] = {}
+
+    def _skip_module(mod_name: str) -> bool:
+        parts = mod_name.split(".")
+        if "tests" in parts:
+            return True
+        if any(p.startswith("test") for p in parts):
+            return True
+        return False
+
+    for mod in pkgutil.walk_packages(getattr(_sf, "__path__", []), _sf.__name__ + "."):
+        mod_name = getattr(mod, "name", None)
+        if not isinstance(mod_name, str) or _skip_module(mod_name):
+            continue
+        try:
+            m = importlib.import_module(mod_name)
+        except Exception:
+            continue
+        for _, obj in vars(m).items():
+            if not isinstance(obj, type):
+                continue
+            if obj is BaseForecaster:
+                continue
+            name = getattr(obj, "__name__", None)
+            if not isinstance(name, str) or not name or name.startswith("_"):
+                continue
+            try:
+                if not issubclass(obj, BaseForecaster):
+                    continue
+            except Exception:
+                continue
+            key = name.lower()
+            if key not in mapping:
+                mapping[key] = (name, f"{obj.__module__}.{name}")
+    return mapping
 
 @mcp.tool()
 @_auto_connect_wrapper
@@ -76,12 +129,22 @@ def forecast_generate(
                 resolved_method = "sktime"
                 p.setdefault("estimator", mdl)
             else:
-                # Support a small set of aliases mapped to our registered skt_* methods.
-                base = (mdl.lower() if mdl else "theta")
-                if base.startswith("skt_"):
-                    resolved_method = base
+                base = (mdl.strip() if mdl else "theta")
+                base_l = base.lower()
+                # Support a small set of friendly aliases mapped to our registered skt_* methods.
+                if base_l in {"theta", "naive", "autoets", "arima", "autoarima"}:
+                    resolved_method = f"skt_{base_l}"
+                elif base_l.startswith("skt_"):
+                    resolved_method = base_l
                 else:
-                    resolved_method = f"skt_{base}"
+                    # Attempt to resolve an sktime forecaster class name to a dotted path.
+                    found = _discover_sktime_forecasters().get(base_l)
+                    if found:
+                        _, dotted = found
+                        resolved_method = "sktime"
+                        p.setdefault("estimator", dotted)
+                    else:
+                        resolved_method = f"skt_{base_l}"
         elif lib == "pretrained":
             resolved_method = mdl or "chronos2"
         elif lib == "analog":
@@ -156,14 +219,22 @@ def forecast_list_library_models(
 
     if lib == "sktime":
         aliases = ["theta", "naive", "autoets", "arima", "autoarima"]
+
+        # Best-effort discovery of importable forecasters without hard-failing
+        # on optional dependency import errors.
+        mapping = _discover_sktime_forecasters()
+        forecasters = sorted({v[0] for v in mapping.values()})
+
         return {
             "library": lib,
             "aliases": aliases,
+            "models": forecasters,
             "usage": [
                 "python cli.py forecast_generate SYMBOL --library sktime --model theta",
-                "python cli.py forecast_generate SYMBOL --library sktime --model sktime.forecasting.theta.ThetaForecaster --params \"strategy=...\"",
+                "python cli.py forecast_generate SYMBOL --library sktime --model ThetaForecaster",
+                "python cli.py forecast_generate SYMBOL --library sktime --model sktime.forecasting.theta.ThetaForecaster --params \"sp=24\"",
             ],
-            "note": "For arbitrary sktime forecasters, pass a dotted class path via --model and optional constructor kwargs via --params.",
+            "note": "You can pass either a forecaster class name (e.g. ThetaForecaster) or a dotted class path via --model; constructor kwargs go in --params.",
         }
 
     if lib == "pretrained":
