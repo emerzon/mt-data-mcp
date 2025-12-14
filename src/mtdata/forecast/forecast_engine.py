@@ -514,6 +514,7 @@ def forecast_engine(
             pass
 
         # Call engine
+        metadata: Dict[str, Any] = {}
         try:
             if method_l == 'ensemble':
                 ensemble_meta = {}
@@ -620,6 +621,7 @@ def forecast_engine(
                     'cv_points_used': cv_rows,
                     'weights': [float(w) for w in (weights_vec.tolist() if isinstance(weights_vec, np.ndarray) else weights_vec)],
                 })
+                metadata = ensemble_meta
                 if rmse is not None:
                     ensemble_meta['cv_rmse'] = [float(v) for v in rmse.tolist()]
                 if effective_mode == 'stacking':
