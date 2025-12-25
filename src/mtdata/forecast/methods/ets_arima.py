@@ -37,6 +37,10 @@ class ETSArimaMethod(ForecastMethod):
 
 @ForecastRegistry.register("ses")
 class SESMethod(ETSArimaMethod):
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "alpha", "type": "float|null", "description": "Smoothing level (auto if omitted)."},
+    ]
+
     @property
     def name(self) -> str:
         return "ses"
@@ -78,6 +82,12 @@ class SESMethod(ETSArimaMethod):
 
 @ForecastRegistry.register("holt")
 class HoltMethod(ETSArimaMethod):
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "alpha", "type": "float|null", "description": "Level smoothing (auto if omitted)."},
+        {"name": "beta", "type": "float|null", "description": "Trend smoothing (auto if omitted)."},
+        {"name": "damped", "type": "bool", "description": "Use damped trend (default: False)."},
+    ]
+
     @property
     def name(self) -> str:
         return "holt"
@@ -96,17 +106,40 @@ class HoltMethod(ETSArimaMethod):
             
         vals = series.values
         damped = bool(params.get('damped', False))
+        alpha = params.get('alpha')
+        beta = params.get('beta')
         
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             model = _ETS(vals, trend='add', damped_trend=damped, initialization_method='heuristic')
-            res = model.fit(optimized=True)
+            use_manual = alpha is not None or beta is not None
+            if use_manual:
+                res = model.fit(
+                    optimized=False,
+                    smoothing_level=None if alpha is None else float(alpha),
+                    smoothing_trend=None if beta is None else float(beta),
+                )
+            else:
+                res = model.fit(optimized=True)
             
         f_vals = np.asarray(res.forecast(int(horizon)), dtype=float)
-        return ForecastResult(forecast=f_vals, params_used={"damped": damped})
+        params_used = {"damped": damped}
+        if alpha is not None:
+            params_used["alpha"] = float(alpha)
+        if beta is not None:
+            params_used["beta"] = float(beta)
+        return ForecastResult(forecast=f_vals, params_used=params_used)
 
 @ForecastRegistry.register("holt_winters_add")
 class HoltWintersAddMethod(ETSArimaMethod):
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "seasonality", "type": "int", "description": "Seasonal period (m)."},
+        {"name": "alpha", "type": "float|null", "description": "Level smoothing (auto if omitted)."},
+        {"name": "beta", "type": "float|null", "description": "Trend smoothing (auto if omitted)."},
+        {"name": "gamma", "type": "float|null", "description": "Seasonal smoothing (auto if omitted)."},
+        {"name": "damped", "type": "bool", "description": "Use damped trend (default: False)."},
+    ]
+
     @property
     def name(self) -> str:
         return "holt_winters_add"
@@ -132,17 +165,38 @@ class HoltWintersAddMethod(ETSArimaMethod):
             
         vals = series.values
         damped = bool(params.get('damped', False))
+        alpha = params.get('alpha')
+        beta = params.get('beta')
+        gamma = params.get('gamma')
         
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             model = _ETS(vals, trend='add', seasonal=seasonal_type, seasonal_periods=m, damped_trend=damped, initialization_method='heuristic')
-            res = model.fit(optimized=True)
+            use_manual = alpha is not None or beta is not None or gamma is not None
+            if use_manual:
+                res = model.fit(
+                    optimized=False,
+                    smoothing_level=None if alpha is None else float(alpha),
+                    smoothing_trend=None if beta is None else float(beta),
+                    smoothing_seasonal=None if gamma is None else float(gamma),
+                )
+            else:
+                res = model.fit(optimized=True)
             
         f_vals = np.asarray(res.forecast(int(horizon)), dtype=float)
-        return ForecastResult(forecast=f_vals, params_used={"seasonal": seasonal_type, "m": m, "damped": damped})
+        params_used = {"seasonal": seasonal_type, "m": m, "damped": damped}
+        if alpha is not None:
+            params_used["alpha"] = float(alpha)
+        if beta is not None:
+            params_used["beta"] = float(beta)
+        if gamma is not None:
+            params_used["gamma"] = float(gamma)
+        return ForecastResult(forecast=f_vals, params_used=params_used)
 
 @ForecastRegistry.register("holt_winters_mul")
 class HoltWintersMulMethod(HoltWintersAddMethod):
+    PARAMS: List[Dict[str, Any]] = HoltWintersAddMethod.PARAMS
+
     @property
     def name(self) -> str:
         return "holt_winters_mul"
@@ -160,6 +214,15 @@ class HoltWintersMulMethod(HoltWintersAddMethod):
 
 @ForecastRegistry.register("arima")
 class ARIMAMethod(ETSArimaMethod):
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "order", "type": "tuple", "description": "(p,d,q) order (optional)."},
+        {"name": "p", "type": "int", "description": "AR order (default: 1)."},
+        {"name": "d", "type": "int", "description": "Differencing order (default: 1)."},
+        {"name": "q", "type": "int", "description": "MA order (default: 1)."},
+        {"name": "trend", "type": "str", "description": "Trend spec (default: c)."},
+        {"name": "alpha", "type": "float", "description": "CI alpha (default: 0.05)."},
+    ]
+
     @property
     def name(self) -> str:
         return "arima"
@@ -184,8 +247,21 @@ class ARIMAMethod(ETSArimaMethod):
             raise RuntimeError("SARIMAX requires statsmodels")
             
         vals = series.values.astype(float)
-        order = params.get('order', (1, 1, 1))
-        seasonal_order = params.get('seasonal_order', (0, 0, 0, 0))
+        if params.get('order') is not None:
+            order = params.get('order')
+        else:
+            p = int(params.get('p', 1))
+            d = int(params.get('d', 1))
+            q = int(params.get('q', 1))
+            order = (p, d, q)
+
+        if params.get('seasonal_order') is not None:
+            seasonal_order = params.get('seasonal_order')
+        else:
+            P = int(params.get('P', 0))
+            D = int(params.get('D', 0))
+            Q = int(params.get('Q', 0))
+            seasonal_order = (P, D, Q, int(seasonality or 0))
         if seasonal and seasonality > 1 and seasonal_order == (0, 0, 0, 0):
              # Auto-guess seasonal order if not provided but requested
              seasonal_order = (0, 1, 1, seasonality)
@@ -246,6 +322,20 @@ class ARIMAMethod(ETSArimaMethod):
 
 @ForecastRegistry.register("sarima")
 class SARIMAMethod(ARIMAMethod):
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "order", "type": "tuple", "description": "(p,d,q) order (optional)."},
+        {"name": "seasonal_order", "type": "tuple", "description": "(P,D,Q,m) order (optional)."},
+        {"name": "p", "type": "int", "description": "AR order (default: 1)."},
+        {"name": "d", "type": "int", "description": "Differencing order (default: 1)."},
+        {"name": "q", "type": "int", "description": "MA order (default: 1)."},
+        {"name": "P", "type": "int", "description": "Seasonal AR order (default: 0)."},
+        {"name": "D", "type": "int", "description": "Seasonal differencing order (default: 0)."},
+        {"name": "Q", "type": "int", "description": "Seasonal MA order (default: 0)."},
+        {"name": "seasonality", "type": "int", "description": "Seasonal period (m)."},
+        {"name": "trend", "type": "str", "description": "Trend spec (default: c)."},
+        {"name": "alpha", "type": "float", "description": "CI alpha (default: 0.05)."},
+    ]
+
     @property
     def name(self) -> str:
         return "sarima"

@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from ..core.constants import TIMEFRAME_SECONDS, TIMEFRAME_MAP
-from ..utils.mt5 import _mt5_epoch_to_utc, _ensure_symbol_ready, _mt5_copy_rates_from
+from ..utils.mt5 import _mt5_epoch_to_utc, _ensure_symbol_ready, _mt5_copy_rates_from, get_symbol_info_cached
 import MetaTrader5 as mt5
 from ..utils.utils import _parse_start_datetime as _parse_start_datetime_util
 
@@ -345,7 +345,7 @@ def fetch_history(
         raise RuntimeError(f"Invalid timeframe: {timeframe}")
     mt5_tf = TIMEFRAME_MAP[timeframe]
     # Ensure symbol visibility and restore later
-    info_before = mt5.symbol_info(symbol)
+    info_before = get_symbol_info_cached(symbol)
     was_visible = bool(info_before.visible) if info_before is not None else None
     err = _ensure_symbol_ready(symbol)
     if err:

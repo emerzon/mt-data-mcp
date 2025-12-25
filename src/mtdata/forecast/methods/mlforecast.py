@@ -21,7 +21,7 @@ class MLForecastMethod(ForecastMethod):
 
     @property
     def supports_features(self) -> Dict[str, bool]:
-        return {"price": True, "return": True, "volatility": True, "ci": True}
+        return {"price": True, "return": True, "volatility": True, "ci": False}
 
     def _get_model(self, params: Dict[str, Any]):
         raise NotImplementedError
@@ -72,7 +72,10 @@ class MLForecastMethod(ForecastMethod):
             
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                mlf.fit(Y_df)
+                if X_df is not None:
+                    mlf.fit(Y_df, X_df=X_df)
+                else:
+                    mlf.fit(Y_df)
             
             if Xf_df is not None:
                 Yf = mlf.predict(h=int(horizon), X_df=Xf_df)
@@ -101,6 +104,13 @@ class MLForecastMethod(ForecastMethod):
 
 @ForecastRegistry.register("mlf_rf")
 class MLFRandomForest(MLForecastMethod):
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "n_estimators", "type": "int", "description": "Number of trees (default: 200)."},
+        {"name": "max_depth", "type": "int|null", "description": "Maximum depth (default: None)."},
+        {"name": "lags", "type": "list", "description": "Lag features to use (auto if omitted)."},
+        {"name": "rolling_agg", "type": "str|null", "description": "Rolling agg (reserved)."},
+    ]
+
     @property
     def name(self) -> str:
         return "mlf_rf"
@@ -117,6 +127,15 @@ class MLFRandomForest(MLForecastMethod):
 
 @ForecastRegistry.register("mlf_lightgbm")
 class MLFLightGBM(MLForecastMethod):
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "n_estimators", "type": "int", "description": "Number of trees (default: 200)."},
+        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 0.05)."},
+        {"name": "num_leaves", "type": "int", "description": "Number of leaves (default: 31)."},
+        {"name": "max_depth", "type": "int", "description": "Maximum depth (default: -1)."},
+        {"name": "lags", "type": "list", "description": "Lag features to use (auto if omitted)."},
+        {"name": "rolling_agg", "type": "str|null", "description": "Rolling agg (reserved)."},
+    ]
+
     @property
     def name(self) -> str:
         return "mlf_lightgbm"
@@ -138,6 +157,12 @@ class MLFLightGBM(MLForecastMethod):
 @ForecastRegistry.register("mlforecast")
 class GenericMLForecastMethod(MLForecastMethod):
     """Generic wrapper for any MLForecast compatible model."""
+
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "model", "type": "str", "description": "Dotted class path for ML model."},
+        {"name": "lags", "type": "list", "description": "Lag features to use (auto if omitted)."},
+        {"name": "rolling_agg", "type": "str|null", "description": "Rolling agg (reserved)."},
+    ]
     
     @property
     def name(self) -> str:

@@ -104,7 +104,7 @@ class StatsForecastMethod(ForecastMethod):
                         lo_vals = np.pad(lo_vals, (0, pad_width), mode='edge')
                         hi_vals = np.pad(hi_vals, (0, pad_width), mode='edge')
                         
-                    ci_values = np.stack([lo_vals.astype(float), hi_vals.astype(float)])
+                    ci_values = (lo_vals.astype(float), hi_vals.astype(float))
 
             # Filter out internal context params and build clean params_used
             internal_keys = {'symbol', 'timeframe', 'as_of', 'exog_used', 'exog_future'}
@@ -123,6 +123,11 @@ class StatsForecastMethod(ForecastMethod):
 @ForecastRegistry.register("statsforecast")
 class GenericStatsForecastMethod(StatsForecastMethod):
     """Generic wrapper for any StatsForecast model."""
+
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "model_name", "type": "str", "description": "StatsForecast model class name."},
+        {"name": "season_length", "type": "int", "description": "Season length (auto if omitted)."},
+    ]
     
     @property
     def name(self) -> str:

@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 
 from ...utils.patterns import build_index, PatternIndex
-from ...core.schema import TimeframeLiteral
 from ...utils.mt5 import _mt5_epoch_to_utc
 from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
@@ -17,6 +16,19 @@ class AnalogMethod(ForecastMethod):
     Finds the top-k most similar historical windows to the current market state
     and projects their future trajectories. Supports multi-timeframe consensus.
     """
+
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "window_size", "type": "int", "description": "Length of pattern window (default: 64)."},
+        {"name": "search_depth", "type": "int", "description": "Bars back to search (default: 5000)."},
+        {"name": "top_k", "type": "int", "description": "Number of analogs (default: 20)."},
+        {"name": "metric", "type": "str", "description": "Similarity metric (default: euclidean)."},
+        {"name": "scale", "type": "str", "description": "Scaling (zscore|minmax|none)."},
+        {"name": "refine_metric", "type": "str", "description": "Refinement metric (dtw|softdtw|affine|ncc|none)."},
+        {"name": "search_engine", "type": "str", "description": "Search engine (ckdtree|hnsw|matrix_profile|mass)."},
+        {"name": "secondary_timeframes", "type": "str|list", "description": "Secondary timeframes to ensemble."},
+        {"name": "drop_last_live", "type": "bool", "description": "Drop last live bar (default: True)."},
+        {"name": "ci_alpha", "type": "float", "description": "CI alpha (default: 0.05)."},
+    ]
     
     @property
     def name(self) -> str:

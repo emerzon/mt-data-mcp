@@ -21,6 +21,8 @@ class ClassicalMethod(ForecastMethod):
 
 @ForecastRegistry.register("naive")
 class NaiveMethod(ClassicalMethod):
+    PARAMS: List[Dict[str, Any]] = []
+
     @property
     def name(self) -> str:
         return "naive"
@@ -40,6 +42,8 @@ class NaiveMethod(ClassicalMethod):
 
 @ForecastRegistry.register("drift")
 class DriftMethod(ClassicalMethod):
+    PARAMS: List[Dict[str, Any]] = []
+
     @property
     def name(self) -> str:
         return "drift"
@@ -61,6 +65,10 @@ class DriftMethod(ClassicalMethod):
 
 @ForecastRegistry.register("seasonal_naive")
 class SeasonalNaiveMethod(ClassicalMethod):
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "seasonality", "type": "int", "description": "Seasonal period (m)."},
+    ]
+
     @property
     def name(self) -> str:
         return "seasonal_naive"
@@ -85,6 +93,10 @@ class SeasonalNaiveMethod(ClassicalMethod):
 
 @ForecastRegistry.register("theta")
 class ThetaMethod(ClassicalMethod):
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "alpha", "type": "float", "description": "SES smoothing factor (default: 0.2)."},
+    ]
+
     @property
     def name(self) -> str:
         return "theta"
@@ -118,6 +130,12 @@ class ThetaMethod(ClassicalMethod):
 
 @ForecastRegistry.register("fourier_ols")
 class FourierOLSMethod(ClassicalMethod):
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "seasonality", "type": "int", "description": "Seasonal period (m)."},
+        {"name": "terms", "type": "int", "description": "Number of Fourier harmonics (default: 3)."},
+        {"name": "trend", "type": "bool", "description": "Include linear trend (default: True)."},
+    ]
+
     @property
     def name(self) -> str:
         return "fourier_ols"
@@ -196,4 +214,3 @@ def forecast_theta(series: np.ndarray, fh: int, alpha: float = 0.2) -> Tuple[np.
 def forecast_fourier_ols(series: np.ndarray, fh: int, m: Optional[int], K: Optional[int], trend: bool = True) -> Tuple[np.ndarray, Dict[str, Any]]:
     res = ForecastRegistry.get("fourier_ols").forecast(pd.Series(series), fh, m or 0, {"terms": K, "trend": trend})
     return res.forecast, res.params_used
-

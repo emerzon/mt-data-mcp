@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional, List, Literal
 from datetime import datetime
+import logging
 import os
 import json
 import math
@@ -12,7 +13,7 @@ import warnings
 os.environ.setdefault("NIXTLA_ID_AS_COL", "1")
 
 from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..utils.mt5 import _mt5_epoch_to_utc, _mt5_copy_rates_from, _ensure_symbol_ready
+from ..utils.mt5 import _mt5_epoch_to_utc, _mt5_copy_rates_from, _ensure_symbol_ready, get_symbol_info_cached
 from ..utils.utils import (
     _parse_start_datetime as _parse_start_datetime_util,
     _format_time_minimal as _format_time_minimal_util,
@@ -33,6 +34,8 @@ from .helpers import (
 )
 from .target_builder import build_target_series, aggregate_horizon_target
 from .forecast_methods import get_forecast_methods_data
+
+logger = logging.getLogger(__name__)
 # Simple dimred factory used by the wrapper when building exogenous features.
 def _create_dimred_reducer(method: Any, params: Optional[Dict[str, Any]]) -> Any:
     try:
@@ -59,6 +62,60 @@ def _create_dimred_reducer(method: Any, params: Optional[Dict[str, Any]]) -> Any
             return X
     return _Identity(), {"method": "identity"}
 
+
+def _parse_feature_kv_pairs(text: str) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    cleaned = text.replace(",", " ")
+    tokens = [tok for tok in cleaned.split() if tok]
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i].strip().strip(",")
+        if not tok:
+            i += 1
+            continue
+        if "=" in tok:
+            k, v = tok.split("=", 1)
+            out[k.strip()] = v.strip().strip(",")
+            i += 1
+            continue
+        if ":" in tok and not tok.endswith(":"):
+            k, v = tok.split(":", 1)
+            out[k.strip()] = v.strip().strip(",")
+            i += 1
+            continue
+        if tok.endswith(":"):
+            key = tok[:-1].strip()
+            val = ""
+            if i + 1 < len(tokens):
+                val = tokens[i + 1].strip().strip(",")
+                i += 2
+            else:
+                i += 1
+            out[key] = val
+            continue
+        i += 1
+    return out
+
+
+def _parse_features_config(features: Any) -> Dict[str, Any]:
+    if not features:
+        return {}
+    if isinstance(features, dict):
+        return dict(features)
+    if isinstance(features, str):
+        s = features.strip()
+        if not s:
+            return {}
+        if s.startswith("{") and s.endswith("}"):
+            try:
+                parsed = json.loads(s)
+                if isinstance(parsed, dict):
+                    return dict(parsed)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                s = s.strip().strip("{}")
+        return _parse_feature_kv_pairs(s)
+    return {}
+
 # Removed unused imports of specific method implementations
 # Logic is now handled by forecast_engine via registry
 
@@ -79,21 +136,6 @@ except Exception:
     _SM_ETS_AVAILABLE = False
     _SES = _ETS = None  # type: ignore
 # ... (other availability checks can remain or be cleaned up, keeping for safety) ...
-
-
-def _default_seasonality_period(timeframe: str) -> int:
-    from .common import default_seasonality
-    return int(default_seasonality(timeframe))
-
-
-def _next_times_from_last(last_epoch: float, tf_secs: int, horizon: int) -> List[float]:
-    from .common import next_times_from_last
-    return next_times_from_last(last_epoch, tf_secs, horizon)
-
-
-def _pd_freq_from_timeframe(tf: str) -> str:
-    from .common import pd_freq_from_timeframe
-    return pd_freq_from_timeframe(tf)
 
 
 def forecast(
@@ -143,9 +185,17 @@ def forecast(
         method_l = str(method).lower().strip()
         quantity_l = str(quantity).lower().strip()
         
-        # Volatility models have a dedicated endpoint; keep forecast focused on price/return
+        # Volatility models have a dedicated endpoint; route to that handler.
         if quantity_l == 'volatility' or method_l.startswith('vol_'):
-            return {"error": "Use forecast_volatility for volatility models"}
+            from .volatility import forecast_volatility
+            return forecast_volatility(
+                symbol=symbol,
+                timeframe=timeframe,
+                horizon=horizon,
+                method=method,
+                params=params,
+                as_of=as_of
+            )
 
         # Parse method params via shared helper
         from .common import parse_kv_or_json as _parse_kv_or_json  # local import to avoid cycles
@@ -160,7 +210,7 @@ def forecast(
         try:
             if lookback is not None:
                 lb = int(lookback)  # CLI may pass strings; coerce
-        except Exception:
+        except (TypeError, ValueError):
             lb = None
         if lb is not None and lb > 0:
             need = int(lb) + 2
@@ -173,7 +223,7 @@ def forecast(
                 need = max(100, int(horizon) + 10)
 
         # Fetch via shared helper (normalizes UTC time and drops live last bar)
-        _info_before = mt5.symbol_info(symbol)
+        _info_before = get_symbol_info_cached(symbol)
         try:
             df = _fetch_history(symbol, timeframe, int(need), as_of)
         except Exception as ex:
@@ -187,7 +237,8 @@ def forecast(
         if denoise:
             try:
                 _dn = _normalize_denoise_spec(denoise, default_when='pre_ti')
-            except Exception:
+            except Exception as ex:
+                logger.debug("Denoise spec normalization failed: %s", ex)
                 _dn = None
             added = _apply_denoise(df, _dn, default_when='pre_ti') if _dn else []
             dn_spec_used = _dn
@@ -312,62 +363,7 @@ def forecast(
         __stage = 'features_start'
         if features:
             try:
-                # Accept dict, JSON string, or key=value pairs
-                if isinstance(features, dict):
-                    fcfg = dict(features)
-                elif isinstance(features, str):
-                    s = features.strip()
-                    if (s.startswith('{') and s.endswith('}')):
-                        try:
-                            fcfg = json.loads(s)
-                        except Exception:
-                            # Fallback: parse colon/equals pairs inside braces
-                            fcfg = {}
-                            toks = [tok for tok in s.strip().strip('{}').split() if tok]
-                            i = 0
-                            while i < len(toks):
-                                tok = toks[i].strip().strip(',')
-                                if not tok:
-                                    i += 1; continue
-                                if '=' in tok:
-                                    k, v = tok.split('=', 1)
-                                    fcfg[k.strip()] = v.strip().strip(',')
-                                    i += 1; continue
-                                if tok.endswith(':'):
-                                    key = tok[:-1].strip()
-                                    val = ''
-                                    if i + 1 < len(toks):
-                                        val = toks[i+1].strip().strip(',')
-                                        i += 2
-                                    else:
-                                        i += 1
-                                    fcfg[key] = val
-                                    continue
-                                i += 1
-                    else:
-                        # Parse k=v or k: v pairs split on whitespace
-                        fcfg = {}
-                        toks = [tok for tok in s.split() if tok]
-                        i = 0
-                        while i < len(toks):
-                            tok = toks[i].strip().strip(',')
-                            if '=' in tok:
-                                k, v = tok.split('=', 1)
-                                fcfg[k.strip()] = v.strip()
-                                i += 1; continue
-                            if tok.endswith(':'):
-                                key = tok[:-1].strip()
-                                val = ''
-                                if i + 1 < len(toks):
-                                    val = toks[i+1].strip().strip(',')
-                                    i += 2
-                                else:
-                                    i += 1
-                                fcfg[key] = val
-                                continue
-                            i += 1
-                else:
-                    fcfg = {}
+                fcfg = _parse_features_config(features)
                 include = fcfg.get('include', 'ohlcv')
                 include_cols: list[str] = []
                 if isinstance(include, str):
@@ -394,8 +390,8 @@ def forecast(
                     try:
                         specs = _parse_ti_specs_util(str(ind_specs)) if isinstance(ind_specs, str) else ind_specs
                         _apply_ta_indicators_util(df, specs, default_when='pre_ti')
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("Failed to apply indicators: %s", exc)
                 # Add any newly created indicator columns (heuristic: non-time, non-OHLCV)
                 __stage = 'features_collect'
                 ti_cols = []
@@ -622,21 +618,6 @@ def forecast(
             except Exception as _ex:
                 feat_info['error'] = f"feature_build_error: {str(_ex)}"
                 __stage = 'features_error'
-
-        # Volatility branch: compute and return volatility metrics
-        __stage = 'quantity_branch'
-        if quantity_l == 'volatility':
-            mt5_tf = TIMEFRAME_MAP[timeframe]
-            # Use the dedicated volatility engine
-            from .volatility import forecast_volatility
-            return forecast_volatility(
-                symbol=symbol,
-                timeframe=timeframe,
-                horizon=horizon,
-                method=method,
-                params=params,
-                as_of=as_of
-            )
 
         # Use the unified forecast engine
         from .forecast_engine import forecast_engine

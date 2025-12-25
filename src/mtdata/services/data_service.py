@@ -1,5 +1,6 @@
 
 from datetime import datetime, timedelta, timezone as dt_timezone
+import logging
 from typing import Any, Dict, Optional, List, Set
 import pandas as pd
 import warnings
@@ -19,7 +20,7 @@ from ..core.constants import (
 # Imports from utils
 from ..utils.mt5 import (
     _mt5_copy_rates_from, _mt5_copy_rates_range, _mt5_copy_ticks_from,
-    _mt5_copy_ticks_range, _mt5_epoch_to_utc, _ensure_symbol_ready
+    _mt5_copy_ticks_range, _mt5_epoch_to_utc, _ensure_symbol_ready, get_symbol_info_cached
 )
 from ..utils.utils import (
     _csv_from_rows_util, _format_time_minimal_util, _format_time_minimal_local_util,
@@ -38,6 +39,8 @@ from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_den
 from ..core.simplify import _simplify_dataframe_rows_ext, _choose_simplify_points, _select_indices_for_timeseries, _lttb_select_indices
 
 import MetaTrader5 as mt5
+
+logger = logging.getLogger(__name__)
 
 def fetch_candles(
     symbol: str,
@@ -63,7 +66,7 @@ def fetch_candles(
         mt5_timeframe = TIMEFRAME_MAP[timeframe]
         
         # Ensure symbol is ready; remember original visibility to restore later
-        _info_before = mt5.symbol_info(symbol)
+        _info_before = get_symbol_info_cached(symbol)
         _was_visible = bool(_info_before.visible) if _info_before is not None else None
         err = _ensure_symbol_ready(symbol)
         if err:
@@ -80,7 +83,7 @@ def fetch_candles(
                     if (s.startswith('[') and s.endswith(']')) or (s.startswith('{') and s.endswith('}')):
                         try:
                             source = json.loads(s)
-                        except Exception:
+                        except (json.JSONDecodeError, TypeError, ValueError):
                             source = ti  # leave as original string if parse fails
                 if isinstance(source, (list, tuple)):
                     parts = []
@@ -174,8 +177,8 @@ def fetch_candles(
             if _was_visible is False:
                 try:
                     mt5.symbol_select(symbol, False)
-                except Exception:
-                    pass
+                except Exception as ex:
+                    logger.debug("Failed to restore symbol visibility for %s: %s", symbol, ex)
         
         if rates is None:
             return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}
@@ -489,7 +492,7 @@ def fetch_ticks(
     """Return latest ticks as CSV."""
     try:
         # Ensure symbol is ready; remember original visibility to restore later
-        _info_before = mt5.symbol_info(symbol)
+        _info_before = get_symbol_info_cached(symbol)
         _was_visible = bool(_info_before.visible) if _info_before is not None else None
         err = _ensure_symbol_ready(symbol)
         if err:

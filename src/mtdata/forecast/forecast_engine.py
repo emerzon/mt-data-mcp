@@ -8,14 +8,9 @@ import numpy as np
 import pandas as pd
 import math
 import warnings
-import sys
-import os
-
-# Add the src directory to path for relative imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from mtdata.core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from mtdata.utils.mt5 import _mt5_epoch_to_utc, _mt5_copy_rates_from, _ensure_symbol_ready
+from mtdata.utils.mt5 import _mt5_epoch_to_utc, _mt5_copy_rates_from, _ensure_symbol_ready, get_symbol_info_cached
 from mtdata.utils.utils import (
     _parse_start_datetime as _parse_start_datetime_util,
     _format_time_minimal as _format_time_minimal_util,
@@ -507,7 +502,7 @@ def forecast_engine(
         # Get symbol info for digits
         digits = None
         try:
-            s_info = mt5.symbol_info(symbol)
+            s_info = get_symbol_info_cached(symbol)
             if s_info:
                 digits = s_info.digits
         except Exception:
@@ -574,12 +569,6 @@ def forecast_engine(
                             effective_mode = 'stacking'
                     else:
                         effective_mode = 'average'
-                if effective_mode != 'stacking':
-                    if weights_vec is None:
-                        weights_vec = np.full(len(base_methods), 1.0 / max(1, len(base_methods)))
-                    else:
-                        total = float(np.sum(weights_vec))
-                        weights_vec = (weights_vec / total) if total > 0 else np.full(len(base_methods), 1.0 / max(1, len(base_methods)))
                 component_methods: List[str] = []
                 component_forecasts: List[np.ndarray] = []
                 for m in base_methods:
@@ -644,6 +633,8 @@ def forecast_engine(
                 kwargs = dict(p)
                 kwargs['ci_alpha'] = ci_alpha
                 kwargs['as_of'] = as_of
+                kwargs['quantity'] = quantity_l
+                kwargs['target'] = target
                 if X is not None:
                     kwargs['exog_used'] = X
                 if exog_future is not None:

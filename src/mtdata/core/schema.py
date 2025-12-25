@@ -226,41 +226,42 @@ except Exception:
 
 # ---- Fast Forecast methods (enums) ----
 #
-# Keep this list intentionally small and stable.
-# Library-specific model selection is handled via (library, model) parameters to tools
-# rather than enumerating thousands of dynamically discovered method names.
-
-_FORECAST_METHODS: Tuple[str, ...] = (
-    # Classical
+# Derive the list from the ForecastRegistry to avoid drift. Fall back to a
+# conservative static list if registry import fails.
+_FALLBACK_FORECAST_METHODS: Tuple[str, ...] = (
     "naive",
     "seasonal_naive",
     "drift",
     "theta",
     "fourier_ols",
-    # ETS / ARIMA
     "ses",
     "holt",
     "holt_winters_add",
     "holt_winters_mul",
     "arima",
     "sarima",
-    # Monte Carlo
     "mc_gbm",
     "hmm_mc",
-    # ML / libraries
     "mlforecast",
     "mlf_rf",
     "mlf_lightgbm",
     "statsforecast",
     "sktime",
-    # Pretrained
     "chronos2",
     "chronos_bolt",
     "timesfm",
-    # Meta
+    "lag_llama",
     "ensemble",
     "analog",
 )
+
+try:
+    from mtdata.forecast.forecast_registry import get_forecast_methods_data as _get_forecast_methods_data
+    _method_data = _get_forecast_methods_data()
+    _derived = [m.get("method") for m in _method_data.get("methods", []) if m.get("method")]
+    _FORECAST_METHODS: Tuple[str, ...] = tuple(_derived) if _derived else _FALLBACK_FORECAST_METHODS
+except Exception:
+    _FORECAST_METHODS = _FALLBACK_FORECAST_METHODS
 
 ForecastLibraryLiteral = Literal[
     "native",

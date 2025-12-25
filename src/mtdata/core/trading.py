@@ -148,6 +148,61 @@ def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tupl
     raise TypeError(f"Unsupported expiration type: {type(expiration).__name__}")
 
 
+def _validate_volume(volume: Union[int, float], symbol_info: Any) -> Tuple[Optional[float], Optional[str]]:
+    """Validate lot size against symbol constraints (min/max/step)."""
+    try:
+        vol = float(volume)
+    except (TypeError, ValueError):
+        return None, "volume must be numeric"
+
+    if not math.isfinite(vol) or vol <= 0:
+        return None, "volume must be positive and finite"
+
+    min_vol = getattr(symbol_info, "volume_min", None)
+    max_vol = getattr(symbol_info, "volume_max", None)
+    step = getattr(symbol_info, "volume_step", None)
+
+    try:
+        min_vol = float(min_vol) if min_vol is not None else None
+    except (TypeError, ValueError):
+        min_vol = None
+    if min_vol is not None and min_vol <= 0:
+        min_vol = None
+
+    try:
+        max_vol = float(max_vol) if max_vol is not None else None
+    except (TypeError, ValueError):
+        max_vol = None
+    if max_vol is not None and max_vol <= 0:
+        max_vol = None
+
+    try:
+        step = float(step) if step is not None else None
+    except (TypeError, ValueError):
+        step = None
+    if step is not None and step <= 0:
+        step = None
+
+    if min_vol is not None and vol < (min_vol - 1e-12):
+        return None, f"volume must be >= {min_vol}"
+    if max_vol is not None and vol > (max_vol + 1e-12):
+        return None, f"volume must be <= {max_vol}"
+
+    if step is not None:
+        normalized = round(vol / step) * step
+        normalized = float(f"{normalized:.10f}")
+        tol = step * 1e-6
+        if abs(normalized - vol) > tol:
+            return None, f"volume must align to step {step}. Try {normalized}"
+        vol = normalized
+        if min_vol is not None and vol < (min_vol - 1e-12):
+            return None, f"volume must be >= {min_vol}"
+        if max_vol is not None and vol > (max_vol + 1e-12):
+            return None, f"volume must be <= {max_vol}"
+
+    return vol, None
+
+
 @mcp.tool()
 def trading_account_info() -> dict:
     """Get account information (balance, equity, profit, margin level, free margin, account type, leverage, currency)."""
@@ -370,6 +425,11 @@ def trading_orders_place_market(
                 if not mt5.symbol_select(symbol, True):
                     return {"error": f"Failed to select symbol {symbol}"}
 
+            volume_checked, volume_error = _validate_volume(volume, symbol_info)
+            if volume_error:
+                return {"error": volume_error}
+            volume = volume_checked
+
             current_tick = mt5.symbol_info_tick(symbol)
             if current_tick is None:
                 return {"error": f"Failed to get current price for {symbol}"}
@@ -530,6 +590,11 @@ def trading_pending_place(
             if not symbol_info.visible:
                 if not mt5.symbol_select(symbol, True):
                     return {"error": f"Failed to select symbol {symbol}"}
+
+            volume_checked, volume_error = _validate_volume(volume, symbol_info)
+            if volume_error:
+                return {"error": volume_error}
+            volume = volume_checked
 
             current_price = mt5.symbol_info_tick(symbol)
             if current_price is None:

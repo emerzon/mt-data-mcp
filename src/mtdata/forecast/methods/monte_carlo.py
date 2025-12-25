@@ -29,6 +29,14 @@ def _series_looks_like_prices(series: pd.Series) -> bool:
 
 @ForecastRegistry.register("mc_gbm")
 class MonteCarloGBMMethod(ForecastMethod):
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "n_sims", "type": "int", "description": "Number of simulations (default: 500)."},
+        {"name": "seed", "type": "int", "description": "Random seed (default: 42)."},
+        {"name": "mu", "type": "float|null", "description": "Drift override (auto if omitted)."},
+        {"name": "sigma", "type": "float|null", "description": "Volatility override (auto if omitted)."},
+        {"name": "ci_alpha", "type": "float|null", "description": "CI alpha (default: 0.05)."},
+    ]
+
     @property
     def name(self) -> str:
         return "mc_gbm"
@@ -64,7 +72,19 @@ class MonteCarloGBMMethod(ForecastMethod):
         if x.size < 5:
             raise ValueError("Not enough history for Monte Carlo simulation")
 
-        if _series_looks_like_prices(series):
+        quantity = kwargs.get("quantity")
+        treat_as_price = None
+        if isinstance(quantity, str):
+            ql = quantity.strip().lower()
+            if ql == "price":
+                treat_as_price = True
+            elif ql == "return":
+                treat_as_price = False
+
+        if treat_as_price is None:
+            treat_as_price = _series_looks_like_prices(series)
+
+        if treat_as_price:
             prices = x
             mu_override = params.get("mu", None)
             sigma_override = params.get("sigma", None)
@@ -122,6 +142,13 @@ class MonteCarloGBMMethod(ForecastMethod):
 
 @ForecastRegistry.register("hmm_mc")
 class MonteCarloHMMMethod(ForecastMethod):
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "n_states", "type": "int", "description": "Number of regimes (default: 2)."},
+        {"name": "n_sims", "type": "int", "description": "Number of simulations (default: 500)."},
+        {"name": "seed", "type": "int", "description": "Random seed (default: 42)."},
+        {"name": "ci_alpha", "type": "float|null", "description": "CI alpha (default: 0.05)."},
+    ]
+
     @property
     def name(self) -> str:
         return "hmm_mc"
@@ -158,7 +185,19 @@ class MonteCarloHMMMethod(ForecastMethod):
         if x.size < 5:
             raise ValueError("Not enough history for Monte Carlo simulation")
 
-        if _series_looks_like_prices(series):
+        quantity = kwargs.get("quantity")
+        treat_as_price = None
+        if isinstance(quantity, str):
+            ql = quantity.strip().lower()
+            if ql == "price":
+                treat_as_price = True
+            elif ql == "return":
+                treat_as_price = False
+
+        if treat_as_price is None:
+            treat_as_price = _series_looks_like_prices(series)
+
+        if treat_as_price:
             sim = simulate_hmm_mc(prices=x, horizon=fh, n_states=n_states, n_sims=n_sims, seed=seed)
             paths = np.asarray(sim["price_paths"], dtype=float)
             point = np.median(paths, axis=0)
@@ -196,4 +235,3 @@ class MonteCarloHMMMethod(ForecastMethod):
         if ci_alpha is not None:
             params_used["ci_alpha"] = float(ci_alpha)
         return ForecastResult(forecast=point, ci_values=ci, params_used=params_used)
-

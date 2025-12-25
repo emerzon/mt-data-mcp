@@ -38,6 +38,13 @@ _HAS_LAG_LLAMA = _importlib_util.find_spec('lag_llama') is not None
 @ForecastRegistry.register("chronos_bolt")
 @ForecastRegistry.register("chronos2")
 class ChronosBoltMethod(PretrainedMethod):
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "model_name", "type": "str", "description": "Hugging Face model id."},
+        {"name": "context_length", "type": "int|null", "description": "Context window length."},
+        {"name": "quantiles", "type": "list|null", "description": "Quantile levels to return."},
+        {"name": "device_map", "type": "str|null", "description": "Device map (default: auto)."},
+    ]
+
     @property
     def name(self) -> str:
         return "chronos_bolt"
@@ -232,6 +239,13 @@ class ChronosBoltMethod(PretrainedMethod):
 
 @ForecastRegistry.register("timesfm")
 class TimesFMMethod(PretrainedMethod):
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "device", "type": "str|null", "description": "Compute device (cpu/cuda)."},
+        {"name": "model_class", "type": "str|null", "description": "TimesFM torch class name override."},
+        {"name": "context_length", "type": "int|null", "description": "Context window length."},
+        {"name": "quantiles", "type": "list|null", "description": "Quantile levels to return."},
+    ]
+
     @property
     def name(self) -> str:
         return "timesfm"
@@ -443,6 +457,18 @@ class TimesFMMethod(PretrainedMethod):
 
 @ForecastRegistry.register("lag_llama")
 class LagLlamaMethod(PretrainedMethod):
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "ckpt_path", "type": "str|null", "description": "Checkpoint path."},
+        {"name": "hf_repo", "type": "str|null", "description": "HF repo id (if auto-download)."},
+        {"name": "hf_filename", "type": "str|null", "description": "HF checkpoint filename."},
+        {"name": "context_length", "type": "int", "description": "Context window length."},
+        {"name": "num_samples", "type": "int", "description": "Number of samples (default: 100)."},
+        {"name": "use_rope_scaling", "type": "bool", "description": "Enable rope scaling (default: False)."},
+        {"name": "device", "type": "str|null", "description": "Compute device (cpu/cuda)."},
+        {"name": "freq", "type": "str", "description": "Pandas frequency string (default: H)."},
+        {"name": "quantiles", "type": "list|null", "description": "Quantile levels to return."},
+    ]
+
     @property
     def name(self) -> str:
         return "lag_llama"

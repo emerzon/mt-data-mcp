@@ -1,5 +1,6 @@
 import logging
 import time
+from functools import lru_cache
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -9,6 +10,30 @@ from ..core.config import mt5_config
 from ..core.constants import DATA_READY_TIMEOUT, DATA_POLL_INTERVAL
 
 logger = logging.getLogger(__name__)
+
+_SYMBOL_INFO_TTL_SECONDS = 5
+
+
+@lru_cache(maxsize=256)
+def _cached_symbol_info(symbol: str, ttl_bucket: int):
+    return mt5.symbol_info(symbol)
+
+
+def get_symbol_info_cached(symbol: str, ttl_seconds: int = _SYMBOL_INFO_TTL_SECONDS):
+    """Fetch symbol info with a short-lived cache to reduce repeated MT5 calls."""
+    try:
+        ttl = int(ttl_seconds)
+        if ttl <= 0:
+            return mt5.symbol_info(symbol)
+        bucket = int(time.time() / ttl)
+    except Exception:
+        bucket = int(time.time())
+    return _cached_symbol_info(symbol, bucket)
+
+
+def clear_symbol_info_cache() -> None:
+    """Clear the cached symbol info entries."""
+    _cached_symbol_info.cache_clear()
 
 
 def _mt5_epoch_to_utc(epoch_seconds: float) -> float:

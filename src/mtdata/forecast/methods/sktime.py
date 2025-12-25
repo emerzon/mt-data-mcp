@@ -96,15 +96,29 @@ class SktimeMethod(ForecastMethod):
                     # For now, let's assume if X was numpy, X_future is too, and we need to match length
                     if isinstance(X_future, np.ndarray):
                         # We need to create an index for X_future
-                        # If y has RangeIndex, it's easy
                         if isinstance(y.index, pd.RangeIndex):
                             start = y.index[-1] + 1
                             idx = pd.RangeIndex(start, start + horizon)
                             X_future = pd.DataFrame(X_future, index=idx)
-                        # If DatetimeIndex, we need to extend it. 
-                        # But we don't have the frequency easily if it wasn't inferred.
-                        # This is a limitation.
-                        pass
+                        elif isinstance(y.index, pd.DatetimeIndex):
+                            freq = y.index.freq or pd.infer_freq(y.index)
+                            if freq is not None:
+                                try:
+                                    offset = pd.tseries.frequencies.to_offset(freq)
+                                    start = y.index[-1] + offset
+                                    idx = pd.date_range(start=start, periods=horizon, freq=offset)
+                                    X_future = pd.DataFrame(X_future, index=idx)
+                                except Exception:
+                                    pass
+                        elif isinstance(y.index, pd.PeriodIndex):
+                            try:
+                                freq = y.index.freq
+                                if freq is not None:
+                                    start = y.index[-1] + 1
+                                    idx = pd.period_range(start=start, periods=horizon, freq=freq)
+                                    X_future = pd.DataFrame(X_future, index=idx)
+                            except Exception:
+                                pass
                         
                     y_pred = estimator.predict(fh=fh, X=X_future)
                 else:
@@ -152,7 +166,7 @@ class SktimeMethod(ForecastMethod):
                                     hi_vals = intervals[col].values
                     
                     if lo_vals is not None and hi_vals is not None:
-                         ci_values = np.stack([lo_vals.astype(float), hi_vals.astype(float)])
+                         ci_values = (lo_vals.astype(float), hi_vals.astype(float))
                          
                 except Exception:
                     pass
@@ -169,6 +183,12 @@ class SktimeMethod(ForecastMethod):
 @ForecastRegistry.register("sktime")
 class GenericSktimeMethod(SktimeMethod):
     """Generic wrapper for any Sktime estimator."""
+
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "estimator", "type": "str", "description": "Fully qualified class path."},
+        {"name": "estimator_params", "type": "dict", "description": "Constructor kwargs for estimator."},
+        {"name": "seasonality", "type": "int|null", "description": "Seasonal period (sp) if supported."},
+    ]
     
     @property
     def name(self) -> str:
