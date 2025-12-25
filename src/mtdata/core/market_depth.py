@@ -2,7 +2,7 @@
 from typing import Any, Dict
 
 from ..utils.mt5 import _mt5_epoch_to_utc
-from ..utils.utils import _format_time_minimal_util, _format_time_minimal_local_util, _use_client_tz_util
+from ..utils.utils import _format_time_minimal, _format_time_minimal_local, _use_client_tz
 from .server import mcp, _auto_connect_wrapper
 import MetaTrader5 as mt5
 
@@ -72,11 +72,11 @@ def market_depth_fetch(symbol: str) -> Dict[str, Any]:
                     "note": "Full market depth not available, showing current bid/ask"
                 }
             }
-            _use_ctz = _use_client_tz_util()
+            _use_ctz = _use_client_tz()
             if tick.time and _use_ctz:
-                out["data"]["time_display"] = _format_time_minimal_local_util(_mt5_epoch_to_utc(float(tick.time)))
+                out["data"]["time_display"] = _format_time_minimal_local(_mt5_epoch_to_utc(float(tick.time)))
             elif tick.time:
-                out["data"]["time_display"] = _format_time_minimal_util(_mt5_epoch_to_utc(float(tick.time)))
+                out["data"]["time_display"] = _format_time_minimal(_mt5_epoch_to_utc(float(tick.time)))
             if not _use_ctz:
                 out["timezone"] = "UTC"
             return out

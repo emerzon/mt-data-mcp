@@ -1,7 +1,7 @@
 
 from typing import Any, Dict, Optional, List
 
-from ..utils.utils import _csv_from_rows_util
+from ..utils.utils import _csv_from_rows
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from .server import mcp, _auto_connect_wrapper
 from .constants import GROUP_SEARCH_THRESHOLD
@@ -131,7 +131,7 @@ def symbols_list(
             symbol_list = symbol_list[:limit_value]
         # Convert to CSV format using proper escaping
         rows = [[s["name"], s["group"], s["description"]] for s in symbol_list]
-        return _csv_from_rows_util(["name", "group", "description"], rows)
+        return _csv_from_rows(["name", "group", "description"], rows)
     except Exception as e:
         return {"error": f"Error getting symbols: {str(e)}"}
 
@@ -176,7 +176,7 @@ def symbols_list_groups(search_term: Optional[str] = None, limit: Optional[int] 
         # Build CSV with only group names
         group_names = [name for name, _ in filtered_items]
         rows = [[g] for g in group_names]
-        return _csv_from_rows_util(["group"], rows)
+        return _csv_from_rows(["group"], rows)
     except Exception as e:
         return {"error": f"Error getting symbol groups: {str(e)}"}
 

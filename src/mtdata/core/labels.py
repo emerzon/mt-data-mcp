@@ -6,7 +6,7 @@ import MetaTrader5 as mt5
 from .server import mcp, _auto_connect_wrapper
 from .schema import TimeframeLiteral, DenoiseSpec
 from ..forecast.common import fetch_history as _fetch_history
-from ..utils.utils import _format_time_minimal as _format_time_minimal_util
+from ..utils.utils import _format_time_minimal
 from ..utils.denoise import _apply_denoise as _apply_denoise_util
 
 
@@ -116,13 +116,13 @@ def labels_triple_barrier(
             if hit_tp < 0 and hit_sl < 0:
                 labels.append(0); hold.append(int(horizon)); tp_times.append(None); sl_times.append(None)
             elif hit_tp > 0 and (hit_sl < 0 or hit_tp < hit_sl):
-                labels.append(1); hold.append(hit_tp); tp_times.append(_format_time_minimal_util(times[i+hit_tp])); sl_times.append(None)
+                labels.append(1); hold.append(hit_tp); tp_times.append(_format_time_minimal(times[i+hit_tp])); sl_times.append(None)
             elif hit_sl > 0 and (hit_tp < 0 or hit_sl < hit_tp):
-                labels.append(-1); hold.append(hit_sl); tp_times.append(None); sl_times.append(_format_time_minimal_util(times[i+hit_sl]))
+                labels.append(-1); hold.append(hit_sl); tp_times.append(None); sl_times.append(_format_time_minimal(times[i+hit_sl]))
             else:
                 # tie -> neutral label, track first hit
-                labels.append(0); hold.append(min(hit_tp, hit_sl)); tp_times.append(_format_time_minimal_util(times[i+hit_tp])); sl_times.append(_format_time_minimal_util(times[i+hit_sl]))
-            t_entry.append(_format_time_minimal_util(times[i]))
+                labels.append(0); hold.append(min(hit_tp, hit_sl)); tp_times.append(_format_time_minimal(times[i+hit_tp])); sl_times.append(_format_time_minimal(times[i+hit_sl]))
+            t_entry.append(_format_time_minimal(times[i]))
 
         payload: Dict[str, Any] = {
             "success": True,

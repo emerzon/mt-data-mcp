@@ -5,7 +5,7 @@ import pandas as pd
 from .server import mcp, _auto_connect_wrapper
 from .schema import TimeframeLiteral, DenoiseSpec
 from ..forecast.common import fetch_history as _fetch_history
-from ..utils.utils import _format_time_minimal as _format_time_minimal_util
+from ..utils.utils import _format_time_minimal
 from ..utils.denoise import _apply_denoise as _apply_denoise_util
 
 
@@ -247,7 +247,7 @@ def regime_detect(
             t = times[: x.size]
 
         # format times
-        t_fmt = [_format_time_minimal_util(tt) for tt in t]
+        t_fmt = [_format_time_minimal(tt) for tt in t]
 
         if method == 'bocpd':
             from ..utils.regime import bocpd_gaussian

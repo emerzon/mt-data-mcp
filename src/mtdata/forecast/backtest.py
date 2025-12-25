@@ -9,7 +9,7 @@ import MetaTrader5 as mt5
 from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..core.schema import TimeframeLiteral, DenoiseSpec
 from ..utils.mt5 import _mt5_epoch_to_utc, _mt5_copy_rates_from, _ensure_symbol_ready
-from ..utils.utils import _format_time_minimal as _format_time_minimal_util
+from ..utils.utils import _format_time_minimal
 from .volatility import forecast_volatility
 from .forecast import forecast
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
@@ -162,7 +162,7 @@ def forecast_backtest(
         anchor_indices: List[int] = []
         if anchors and isinstance(anchors, (list, tuple)) and len(anchors) > 0:
             tvals = df['time'].astype(float).to_numpy()
-            tstr = [_format_time_minimal_util(ts) for ts in tvals]
+            tstr = [_format_time_minimal(ts) for ts in tvals]
             idx_by_time = {s: i for i, s in enumerate(tstr)}
             for s in anchors:
                 i = idx_by_time.get(str(s).strip())
@@ -226,7 +226,7 @@ def forecast_backtest(
             for idx in anchor_indices:
                 if idx not in actual_windows:
                     continue
-                anchor_time = _format_time_minimal_util(times[idx])
+                anchor_time = _format_time_minimal(times[idx])
                 truth, ts = actual_windows[idx]
                 try:
                     if quantity == 'volatility':

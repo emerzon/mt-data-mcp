@@ -9,7 +9,7 @@ import math
 from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..core.schema import TimeframeLiteral, DenoiseSpec
 from ..utils.mt5 import _mt5_epoch_to_utc, _mt5_copy_rates_from, _ensure_symbol_ready
-from ..utils.utils import _parse_start_datetime as _parse_start_datetime_util
+from ..utils.utils import _parse_start_datetime
 from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
 from .common import default_seasonality as _default_seasonality_period, pd_freq_from_timeframe as _pd_freq_from_timeframe
 
@@ -397,7 +397,7 @@ def forecast_volatility(
                 return {"error": err}
             try:
                 if as_of:
-                    to_dt = _parse_start_datetime_util(as_of)
+                    to_dt = _parse_start_datetime(as_of)
                     if not to_dt:
                         return {"error": "Invalid as_of time."}
                     rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, need)
@@ -587,7 +587,7 @@ def forecast_volatility(
             return {"error": err}
         try:
             if as_of:
-                to_dt = _parse_start_datetime_util(as_of)
+                to_dt = _parse_start_datetime(as_of)
                 if not to_dt:
                     return {"error": "Invalid as_of time."}
                 rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, need)
@@ -960,7 +960,7 @@ def forecast_volatility(
         try:
             # Use explicit as-of time if provided, else server time for alignment
             if as_of:
-                to_dt = _parse_start_datetime_util(as_of)
+                to_dt = _parse_start_datetime(as_of)
                 if not to_dt:
                     return {"error": "Invalid as_of_datetime. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."}
                 rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, need)
@@ -1095,7 +1095,7 @@ def forecast_volatility(
                     return {"error": err}
                 try:
                     if as_of:
-                        to_dt = _parse_start_datetime_util(as_of)
+                        to_dt = _parse_start_datetime(as_of)
                         if not to_dt:
                             return {"error": "Invalid as_of time."}
                         rates_rv = _mt5_copy_rates_from(symbol, rv_mt5_tf, to_dt, bars_needed)

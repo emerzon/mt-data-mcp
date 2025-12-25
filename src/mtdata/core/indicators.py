@@ -2,7 +2,7 @@
 from typing import Any, Dict, Optional, List
 
 from .schema import CategoryLiteral, IndicatorNameLiteral
-from ..utils.utils import _csv_from_rows_util
+from ..utils.utils import _csv_from_rows
 from .server import mcp
 # Import the actual implementation from utils
 from ..utils.indicators import _list_ta_indicators
@@ -45,7 +45,7 @@ def indicators_list(search_term: Optional[str] = None, category: Optional[Catego
             items = [it for it in items if (it.get('category') or '').lower() == cat_q]
         items.sort(key=lambda x: (x.get('category') or '', x.get('name') or ''))
         rows = [[it.get('name',''), it.get('category','')] for it in items]
-        return _csv_from_rows_util(["name", "category"], rows)
+        return _csv_from_rows(["name", "category"], rows)
     except Exception as e:
         return {"error": f"Error listing indicators: {e}"}
 

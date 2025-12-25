@@ -6,7 +6,7 @@ import math
 from .schema import TimeframeLiteral, _PIVOT_METHODS
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..utils.mt5 import _mt5_copy_rates_from, _mt5_epoch_to_utc
-from ..utils.utils import _format_time_minimal_util, _format_time_minimal_local_util, _use_client_tz_util
+from ..utils.utils import _format_time_minimal, _format_time_minimal_local, _use_client_tz
 from .server import mcp, _auto_connect_wrapper, _ensure_symbol_ready
 import MetaTrader5 as mt5
 
@@ -262,9 +262,9 @@ def pivot_compute_points(
                 row[name] = level_map.get(lvl)
             levels_table.append(row)
 
-        _use_ctz = _use_client_tz_util()
-        start_str = _format_time_minimal_local_util(period_start) if _use_ctz else _format_time_minimal_util(period_start)
-        end_str = _format_time_minimal_local_util(period_end) if _use_ctz else _format_time_minimal_util(period_end)
+        _use_ctz = _use_client_tz()
+        start_str = _format_time_minimal_local(period_start) if _use_ctz else _format_time_minimal(period_start)
+        end_str = _format_time_minimal_local(period_end) if _use_ctz else _format_time_minimal(period_end)
 
         payload: Dict[str, Any] = {
             "success": True,

@@ -23,9 +23,9 @@ from ..utils.mt5 import (
     _mt5_copy_ticks_range, _mt5_epoch_to_utc, _ensure_symbol_ready, get_symbol_info_cached
 )
 from ..utils.utils import (
-    _csv_from_rows_util, _format_time_minimal_util, _format_time_minimal_local_util,
-    _resolve_client_tz_util, _time_format_from_epochs_util, _maybe_strip_year_util,
-    _style_time_format_util, _format_numeric_rows_from_df_util, _parse_start_datetime_util,
+    _csv_from_rows, _format_time_minimal, _format_time_minimal_local,
+    _resolve_client_tz, _time_format_from_epochs, _maybe_strip_year,
+    _style_time_format, _format_numeric_rows_from_df, _parse_start_datetime,
     _coerce_scalar, _normalize_ohlcv_arg
 )
 from ..utils.indicators import _estimate_warmup_bars_util, _apply_ta_indicators_util
@@ -57,8 +57,8 @@ def _fetch_rates_with_warmup(
 ):
     """Fetch MT5 rates with optional warmup, retry, and end-bar sanity checks."""
     if start_datetime and end_datetime:
-        from_date = _parse_start_datetime_util(start_datetime)
-        to_date = _parse_start_datetime_util(end_datetime)
+        from_date = _parse_start_datetime(start_datetime)
+        to_date = _parse_start_datetime(end_datetime)
         if not from_date or not to_date:
             return None, "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."
         if from_date > to_date:
@@ -71,7 +71,7 @@ def _fetch_rates_with_warmup(
             return _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date)
 
     elif start_datetime:
-        from_date = _parse_start_datetime_util(start_datetime)
+        from_date = _parse_start_datetime(start_datetime)
         if not from_date:
             return None, "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe)
@@ -85,7 +85,7 @@ def _fetch_rates_with_warmup(
             return _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date)
 
     elif end_datetime:
-        to_date = _parse_start_datetime_util(end_datetime)
+        to_date = _parse_start_datetime(end_datetime)
         if not to_date:
             return None, "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
@@ -128,7 +128,7 @@ def _build_rates_df(rates: Any, use_client_tz: bool) -> pd.DataFrame:
     df['__epoch'] = df['time']
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        df["time"] = df["time"].apply(_format_time_minimal_local_util if use_client_tz else _format_time_minimal_util)
+        df["time"] = df["time"].apply(_format_time_minimal_local if use_client_tz else _format_time_minimal)
     if 'volume' not in df.columns and 'tick_volume' in df.columns:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -145,11 +145,11 @@ def _trim_df_to_target(
     copy_rows: bool = True,
 ) -> pd.DataFrame:
     if start_datetime and end_datetime:
-        target_from = _parse_start_datetime_util(start_datetime).timestamp()
-        target_to = _parse_start_datetime_util(end_datetime).timestamp()
+        target_from = _parse_start_datetime(start_datetime).timestamp()
+        target_to = _parse_start_datetime(end_datetime).timestamp()
         out = df.loc[(df['__epoch'] >= target_from) & (df['__epoch'] <= target_to)]
     elif start_datetime:
-        target_from = _parse_start_datetime_util(start_datetime).timestamp()
+        target_from = _parse_start_datetime(start_datetime).timestamp()
         out = df.loc[df['__epoch'] >= target_from]
         if len(out) > candles:
             out = out.iloc[:candles]
@@ -284,7 +284,7 @@ def fetch_candles(
                 headers.append("real_volume")
         
         # Construct DataFrame to support indicators and consistent CSV building
-        client_tz = _resolve_client_tz_util()
+        client_tz = _resolve_client_tz()
         _use_ctz = client_tz is not None
         df = _build_rates_df(rates, _use_ctz)
 
@@ -407,9 +407,9 @@ def fetch_candles(
         # Reformat time consistently across rows for display
         if 'time' in headers and len(df) > 0:
             epochs_list = df['__epoch'].tolist()
-            fmt = _time_format_from_epochs_util(epochs_list)
-            fmt = _maybe_strip_year_util(fmt, epochs_list)
-            fmt = _style_time_format_util(fmt)
+            fmt = _time_format_from_epochs(epochs_list)
+            fmt = _maybe_strip_year(fmt, epochs_list)
+            fmt = _style_time_format(fmt)
             tz_used_name = 'UTC'
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
@@ -447,10 +447,10 @@ def fetch_candles(
             headers = [h for h in simplify_meta['headers'] if isinstance(h, str)]
 
         # Assemble rows from (possibly reduced) DataFrame for selected headers
-        rows = _format_numeric_rows_from_df_util(df, headers)
+        rows = _format_numeric_rows_from_df(df, headers)
 
         # Build CSV via writer for escaping
-        payload = _csv_from_rows_util(headers, rows)
+        payload = _csv_from_rows(headers, rows)
         
         # Determine if the last candle is open or closed
         last_candle_open = False
@@ -507,11 +507,11 @@ def fetch_ticks(
             # Normalized params only
             effective_limit = int(limit)
             if start:
-                from_date = _parse_start_datetime_util(start)
+                from_date = _parse_start_datetime(start)
                 if not from_date:
                     return {"error": "Invalid date format. Try examples like '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00', '2 days ago'."}
                 if end:
-                    to_date = _parse_start_datetime_util(end)
+                    to_date = _parse_start_datetime(end)
                     if not to_date:
                         return {"error": "Invalid 'end' date format. Try '2025-08-29 14:30' or 'yesterday 18:00'."}
                     ticks = None
@@ -578,12 +578,12 @@ def fetch_ticks(
         # Choose a consistent time format for all rows (strip year if constant)
         # Normalize tick times to UTC
         _epochs = [_mt5_epoch_to_utc(float(t["time"])) for t in ticks]
-        client_tz = _resolve_client_tz_util()
+        client_tz = _resolve_client_tz()
         _use_ctz = client_tz is not None
         if not _use_ctz:
-            fmt = _time_format_from_epochs_util(_epochs)
-            fmt = _maybe_strip_year_util(fmt, _epochs)
-            fmt = _style_time_format_util(fmt)
+            fmt = _time_format_from_epochs(_epochs)
+            fmt = _maybe_strip_year(fmt, _epochs)
+            fmt = _style_time_format(fmt)
         # Build a DataFrame of ticks to support non-select simplify modes
         def _tick_field(t, name: str):
             try:
@@ -616,7 +616,7 @@ def fetch_ticks(
         # Add display time column
         if _use_ctz:
             df_ticks["time"] = [
-                _format_time_minimal_local_util(e) for e in _epochs
+                _format_time_minimal_local(e) for e in _epochs
             ]
         else:
             df_ticks["time"] = [
@@ -640,8 +640,8 @@ def fetch_ticks(
         _mode = str((simplify_used or {}).get('mode', SIMPLIFY_DEFAULT_MODE)).lower().strip() if simplify_present else SIMPLIFY_DEFAULT_MODE
         if simplify_present and _mode in ('approximate', 'resample'):
             df_out, simplify_meta = _simplify_dataframe_rows_ext(df_ticks, headers, simplify_used)
-            rows = _format_numeric_rows_from_df_util(df_out, headers)
-            payload = _csv_from_rows_util(headers, rows)
+            rows = _format_numeric_rows_from_df(df_out, headers)
+            payload = _csv_from_rows(headers, rows)
             payload.update({
                 "success": True,
                 "symbol": symbol,
@@ -750,7 +750,7 @@ def fetch_ticks(
         for i in select_indices:
             tick = ticks[i]
             if _use_ctz:
-                time_str = _format_time_minimal_local_util(_epochs[i])
+                time_str = _format_time_minimal_local(_epochs[i])
             else:
                 time_str = datetime.utcfromtimestamp(_epochs[i]).strftime(fmt)
             values = [time_str, str(tick['bid']), str(tick['ask'])]
@@ -762,7 +762,7 @@ def fetch_ticks(
                 values.append(str(tick['flags']))
             rows.append(values)
 
-        payload = _csv_from_rows_util(headers, rows)
+        payload = _csv_from_rows(headers, rows)
         payload.update({
             "success": True,
             "symbol": symbol,

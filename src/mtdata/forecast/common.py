@@ -10,7 +10,7 @@ import pandas as pd
 from ..core.constants import TIMEFRAME_SECONDS, TIMEFRAME_MAP
 from ..utils.mt5 import _mt5_epoch_to_utc, _ensure_symbol_ready, _mt5_copy_rates_from, get_symbol_info_cached
 import MetaTrader5 as mt5
-from ..utils.utils import _parse_start_datetime as _parse_start_datetime_util
+from ..utils.utils import _parse_start_datetime
 
 
 def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
@@ -352,7 +352,7 @@ def fetch_history(
         raise RuntimeError(err)
     try:
         if as_of:
-            to_dt = _parse_start_datetime_util(as_of)
+            to_dt = _parse_start_datetime(as_of)
             if not to_dt:
                 raise RuntimeError("Invalid as_of time.")
             rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, int(need))

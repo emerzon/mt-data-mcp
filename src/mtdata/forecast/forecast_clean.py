@@ -13,8 +13,8 @@ import warnings
 from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..utils.mt5 import _mt5_epoch_to_utc, _mt5_copy_rates_from, _ensure_symbol_ready
 from ..utils.utils import (
-    _parse_start_datetime as _parse_start_datetime_util,
-    _format_time_minimal as _format_time_minimal_util,
+    _parse_start_datetime,
+    _format_time_minimal,
     to_float_np
 )
 
@@ -173,7 +173,7 @@ def forecast(
         # Format output
         forecast_dict = {}
         for i, (t, v) in enumerate(zip(future_times, f_vals)):
-            forecast_dict[_format_time_minimal_util(t)] = float(v)
+            forecast_dict[_format_time_minimal(t)] = float(v)
         
         # Build response
         response = {

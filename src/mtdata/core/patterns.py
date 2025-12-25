@@ -8,7 +8,7 @@ import numpy as np
 from .schema import TimeframeLiteral
 from .constants import TIMEFRAME_MAP
 from ..utils.mt5 import _mt5_copy_rates_from, _mt5_epoch_to_utc
-from ..utils.utils import _csv_from_rows_util, _format_time_minimal_util, _format_time_minimal_local_util, _use_client_tz_util, _time_format_from_epochs_util, _maybe_strip_year_util, _style_time_format_util, to_float_np as __to_float_np
+from ..utils.utils import _csv_from_rows, _format_time_minimal, _format_time_minimal_local, _use_client_tz, _time_format_from_epochs, _maybe_strip_year, _style_time_format, to_float_np as __to_float_np
 from ..patterns.classic import detect_classic_patterns as _detect_classic_patterns, ClassicDetectorConfig as _ClassicCfg
 from ..patterns.eliott import detect_elliott_waves as _detect_elliott_waves, ElliottWaveConfig as _ElliottCfg
 from datetime import datetime
@@ -20,7 +20,7 @@ import numpy as np
 from .schema import TimeframeLiteral
 from .constants import TIMEFRAME_MAP
 from ..utils.mt5 import _mt5_copy_rates_from, _mt5_epoch_to_utc
-from ..utils.utils import _csv_from_rows_util, _format_time_minimal_util, _format_time_minimal_local_util, _use_client_tz_util, _time_format_from_epochs_util, _maybe_strip_year_util, _style_time_format_util, to_float_np as __to_float_np
+from ..utils.utils import _csv_from_rows, _format_time_minimal, _format_time_minimal_local, _use_client_tz, _time_format_from_epochs, _maybe_strip_year, _style_time_format, to_float_np as __to_float_np
 from ..patterns.classic import detect_classic_patterns as _detect_classic_patterns, ClassicDetectorConfig as _ClassicCfg
 from ..patterns.eliott import detect_elliott_waves as _detect_elliott_waves, ElliottWaveConfig as _ElliottCfg
 from .server import mcp, _auto_connect_wrapper, _ensure_symbol_ready
@@ -171,15 +171,15 @@ def patterns_detect(
             except Exception:
                 pass
             epochs = [float(t) for t in df['time'].tolist()] if 'time' in df.columns else []
-            _use_ctz = _use_client_tz_util()
+            _use_ctz = _use_client_tz()
             if _use_ctz:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    df['time'] = df['time'].apply(_format_time_minimal_local_util)
+                    df['time'] = df['time'].apply(_format_time_minimal_local)
             else:
-                time_fmt = _time_format_from_epochs_util(epochs) if epochs else "%Y-%m-%d %H:%M"
-                time_fmt = _maybe_strip_year_util(time_fmt, epochs)
-                time_fmt = _style_time_format_util(time_fmt)
+                time_fmt = _time_format_from_epochs(epochs) if epochs else "%Y-%m-%d %H:%M"
+                time_fmt = _maybe_strip_year(time_fmt, epochs)
+                time_fmt = _style_time_format(time_fmt)
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     df['time'] = df['time'].apply(lambda t: datetime.utcfromtimestamp(float(t)).strftime(time_fmt))
@@ -295,7 +295,7 @@ def patterns_detect(
                 last_pick_idx = i
 
             headers = ["time", "pattern"]
-            payload = _csv_from_rows_util(headers, rows)
+            payload = _csv_from_rows(headers, rows)
             payload.update({
                 "success": True,
                 "symbol": symbol,
@@ -400,11 +400,11 @@ def patterns_detect(
                     st_epoch = float(p.start_time) if p.start_time is not None else None
                     et_epoch = float(p.end_time) if p.end_time is not None else None
                     try:
-                        start_date = _format_time_minimal_util(st_epoch) if st_epoch is not None else None
+                        start_date = _format_time_minimal(st_epoch) if st_epoch is not None else None
                     except Exception:
                         start_date = None
                     try:
-                        end_date = _format_time_minimal_util(et_epoch) if et_epoch is not None else None
+                        end_date = _format_time_minimal(et_epoch) if et_epoch is not None else None
                     except Exception:
                         end_date = None
                     d = {
@@ -443,7 +443,7 @@ def patterns_detect(
                         resp["series_epoch"] = [float(v) for v in __to_float_np(df.get('time')).tolist()]
                     else:
                         resp["series_time"] = [
-                            _format_time_minimal_util(float(v)) for v in __to_float_np(df.get('time')).tolist()
+                            _format_time_minimal(float(v)) for v in __to_float_np(df.get('time')).tolist()
                         ]
             return resp
 
@@ -507,11 +507,11 @@ def patterns_detect(
                     st_epoch = float(p.start_time) if p.start_time is not None else None
                     et_epoch = float(p.end_time) if p.end_time is not None else None
                     try:
-                        start_date = _format_time_minimal_util(st_epoch) if st_epoch is not None else None
+                        start_date = _format_time_minimal(st_epoch) if st_epoch is not None else None
                     except Exception:
                         start_date = None
                     try:
-                        end_date = _format_time_minimal_util(et_epoch) if et_epoch is not None else None
+                        end_date = _format_time_minimal(et_epoch) if et_epoch is not None else None
                     except Exception:
                         end_date = None
                     try:
@@ -551,7 +551,7 @@ def patterns_detect(
                         resp["series_epoch"] = [float(v) for v in __to_float_np(df.get('time')).tolist()]
                     else:
                         resp["series_time"] = [
-                            _format_time_minimal_util(float(v)) for v in __to_float_np(df.get('time')).tolist()
+                            _format_time_minimal(float(v)) for v in __to_float_np(df.get('time')).tolist()
                         ]
             return resp
         

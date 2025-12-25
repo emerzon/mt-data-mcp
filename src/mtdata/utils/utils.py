@@ -85,10 +85,6 @@ def _csv_from_rows(headers: List[str], rows: List[List[Any]]) -> Dict[str, Any]:
         "count": len(rows),
     }
 
-# Backwards-compat alias for refactored imports
-_csv_from_rows_util = _csv_from_rows
-
-
 def _format_time_minimal(epoch_seconds: float) -> str:
     """Format epoch seconds into a normalized UTC datetime string.
 
@@ -96,10 +92,6 @@ def _format_time_minimal(epoch_seconds: float) -> str:
     """
     dt = datetime.utcfromtimestamp(epoch_seconds)
     return dt.strftime(TIME_DISPLAY_FORMAT)
-
-# Backwards-compat alias
-_format_time_minimal_util = _format_time_minimal
-
 
 def _format_time_minimal_local(epoch_seconds: float) -> str:
     """Format epoch seconds into a normalized local/client datetime string.
@@ -118,10 +110,6 @@ def _format_time_minimal_local(epoch_seconds: float) -> str:
     except Exception:
         return _format_time_minimal(epoch_seconds)
 
-# Backwards-compat alias
-_format_time_minimal_local_util = _format_time_minimal_local
-
-
 def _use_client_tz(_: object = None) -> bool:
     """Return True when a client timezone is configured."""
     from ..core.config import mt5_config
@@ -129,10 +117,6 @@ def _use_client_tz(_: object = None) -> bool:
         return mt5_config.get_client_tz() is not None
     except Exception:
         return False
-
-# Backwards-compat alias
-_use_client_tz_util = _use_client_tz
-
 
 def _resolve_client_tz(_: object = None):
     """Return the configured client timezone, if any."""
@@ -142,25 +126,13 @@ def _resolve_client_tz(_: object = None):
     except Exception:
         return None
 
-# Backwards-compat alias
-_resolve_client_tz_util = _resolve_client_tz
-
-
 def _time_format_from_epochs(epochs: List[float]) -> str:
     """Return the normalized display format regardless of epoch contents."""
     return TIME_DISPLAY_FORMAT
 
-# Backwards-compat alias
-_time_format_from_epochs_util = _time_format_from_epochs
-
-
 def _maybe_strip_year(fmt: str, epochs: List[float]) -> str:
     """No-op when normalization is requested; keep full year for consistency."""
     return fmt
-
-# Backwards-compat alias
-_maybe_strip_year_util = _maybe_strip_year
-
 
 def _style_time_format(fmt: str) -> str:
     """No special styling; keep normalized spacing."""
@@ -170,10 +142,6 @@ def _style_time_format(fmt: str) -> str:
     except Exception:
         pass
     return fmt
-
-# Backwards-compat alias
-_style_time_format_util = _style_time_format
-
 
 def _optimal_decimals(values: List[float], rel_tol: float = PRECISION_REL_TOL, abs_tol: float = PRECISION_ABS_TOL,
                       max_decimals: int = PRECISION_MAX_DECIMALS) -> int:
@@ -276,10 +244,6 @@ def _format_numeric_rows_from_df(df: pd.DataFrame, headers: List[str]) -> List[L
                 out_row.append(str(val))
         out_rows.append(out_row)
     return out_rows
-
-# Backwards-compat alias
-_format_numeric_rows_from_df_util = _format_numeric_rows_from_df
-
 
 def to_float_np(
     values: Any,
@@ -386,5 +350,3 @@ def _parse_start_datetime(value: str) -> Optional[datetime]:
         dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt
 
-# Backwards-compat alias
-_parse_start_datetime_util = _parse_start_datetime
