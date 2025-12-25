@@ -161,16 +161,42 @@ class MT5Connection:
 mt5_connection = MT5Connection()
 
 
-def _auto_connect_wrapper(func):
-    """Decorator to ensure MT5 connection before tool execution"""
+class MT5Service:
+    """Thin wrapper to group MT5 connection state for easier testing/injection."""
+
+    def __init__(self, connection: Optional[MT5Connection] = None):
+        self.connection = connection or MT5Connection()
+
+    def ensure_connected(self) -> bool:
+        return self.connection._ensure_connection()
+
+    def disconnect(self) -> None:
+        self.connection.disconnect()
+
+
+mt5_service = MT5Service(mt5_connection)
+
+
+def _auto_connect_wrapper(func=None, *, service: Optional[MT5Service] = None):
+    """Decorator to ensure MT5 connection before tool execution.
+
+    Supports both:
+    - ``@_auto_connect_wrapper`` (uses the global ``mt5_service``)
+    - ``@_auto_connect_wrapper(service=MT5Service(...))`` for tests/injection
+    """
     import functools
 
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        if not mt5_connection._ensure_connection():
-            return {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
-        return func(*args, **kwargs)
-    return wrapper
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            svc = service or mt5_service
+            if not svc.ensure_connected():
+                return {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    return decorator(func) if callable(func) else decorator
 
 
 def _ensure_symbol_ready(symbol: str) -> Optional[str]:

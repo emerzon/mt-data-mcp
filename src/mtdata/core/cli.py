@@ -166,13 +166,22 @@ def discover_tools():
     """Discover MCP tools from the server.
 
     Priority:
-    1) Use server.mcp registry if available
+    1) Use server.get_tool_registry() if available
+    2) Use server.mcp registry if available
     2) Fallback to scanning public callables in server module (excluding helpers)
     """
     tools: Dict[str, ToolInfo] = {}
 
     mcp = getattr(server, 'mcp', None)
     registry = None
+    try:
+        get_reg = getattr(server, "get_tool_registry", None)
+        if callable(get_reg):
+            reg = get_reg()
+            if reg and hasattr(reg, "items"):
+                registry = reg
+    except Exception as e:
+        _debug(f"get_tool_registry failed: {e}")
     if mcp is not None:
         # Try common registry attribute names on FastMCP
         for attr in ("tools", "_tools", "registry", "tool_registry", "_tool_registry"):

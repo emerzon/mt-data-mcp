@@ -3,7 +3,7 @@
 import logging
 import os
 import atexit
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from mcp.server.fastmcp import FastMCP
 from functools import wraps as _wraps
@@ -48,7 +48,8 @@ try:
     _ORIG_TOOL_DECORATOR = mcp.tool  # type: ignore[attr-defined]
 except Exception:
     _ORIG_TOOL_DECORATOR = None
-_TOOL_REGISTRY = {}
+_TOOL_REGISTRY: Dict[str, Any] = {}
+_TOOL_OBJECT_REGISTRY: Dict[str, Any] = {}
 
 def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
     if _ORIG_TOOL_DECORATOR is None:
@@ -97,7 +98,14 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
                     kw['denoise'] = _norm_dn(kw.get('denoise'))
             except Exception:
                 pass
-            out = func(*a, **kw)
+            try:
+                out = func(*a, **kw)
+            except Exception as exc:
+                try:
+                    logging.getLogger(__name__).exception("Tool '%s' failed", getattr(func, "__name__", "tool"))
+                except Exception:
+                    pass
+                out = {"error": str(exc)}
             
             if raw_output:
                 return out
@@ -136,6 +144,10 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
         if name:
             # Store the original callable for CLI discovery
             _TOOL_REGISTRY[str(name)] = _wrapped
+            try:
+                _TOOL_OBJECT_REGISTRY[str(name)] = res
+            except Exception:
+                pass
         return res
     return _wrap
 
@@ -148,6 +160,18 @@ try:
     setattr(mcp, '_tool_registry', _TOOL_REGISTRY)
 except Exception:
     pass
+
+
+def get_tool_registry() -> Dict[str, Any]:
+    """Return the registered tool objects (preferred) or callables for CLI discovery."""
+    if _TOOL_OBJECT_REGISTRY:
+        return dict(_TOOL_OBJECT_REGISTRY)
+    return dict(_TOOL_REGISTRY)
+
+
+def get_tool_functions() -> Dict[str, Any]:
+    """Return the registered tool callables (wrapped) for direct invocation."""
+    return dict(_TOOL_REGISTRY)
 
 from .data import *
 from ..utils.denoise import denoise_list_methods

@@ -62,60 +62,6 @@ def _create_dimred_reducer(method: Any, params: Optional[Dict[str, Any]]) -> Any
             return X
     return _Identity(), {"method": "identity"}
 
-
-def _parse_feature_kv_pairs(text: str) -> Dict[str, Any]:
-    out: Dict[str, Any] = {}
-    cleaned = text.replace(",", " ")
-    tokens = [tok for tok in cleaned.split() if tok]
-    i = 0
-    while i < len(tokens):
-        tok = tokens[i].strip().strip(",")
-        if not tok:
-            i += 1
-            continue
-        if "=" in tok:
-            k, v = tok.split("=", 1)
-            out[k.strip()] = v.strip().strip(",")
-            i += 1
-            continue
-        if ":" in tok and not tok.endswith(":"):
-            k, v = tok.split(":", 1)
-            out[k.strip()] = v.strip().strip(",")
-            i += 1
-            continue
-        if tok.endswith(":"):
-            key = tok[:-1].strip()
-            val = ""
-            if i + 1 < len(tokens):
-                val = tokens[i + 1].strip().strip(",")
-                i += 2
-            else:
-                i += 1
-            out[key] = val
-            continue
-        i += 1
-    return out
-
-
-def _parse_features_config(features: Any) -> Dict[str, Any]:
-    if not features:
-        return {}
-    if isinstance(features, dict):
-        return dict(features)
-    if isinstance(features, str):
-        s = features.strip()
-        if not s:
-            return {}
-        if s.startswith("{") and s.endswith("}"):
-            try:
-                parsed = json.loads(s)
-                if isinstance(parsed, dict):
-                    return dict(parsed)
-            except (json.JSONDecodeError, TypeError, ValueError):
-                s = s.strip().strip("{}")
-        return _parse_feature_kv_pairs(s)
-    return {}
-
 # Removed unused imports of specific method implementations
 # Logic is now handled by forecast_engine via registry
 
@@ -363,7 +309,9 @@ def forecast(
         __stage = 'features_start'
         if features:
             try:
-                fcfg = _parse_features_config(features)
+                fcfg = _parse_kv_or_json(features)
+                if not isinstance(fcfg, dict):
+                    fcfg = {}
                 include = fcfg.get('include', 'ohlcv')
                 include_cols: list[str] = []
                 if isinstance(include, str):

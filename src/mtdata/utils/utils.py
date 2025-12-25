@@ -169,7 +169,7 @@ def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
     """Parse params/features provided as dict, JSON string, or k=v pairs into a dict.
 
     - Dict: shallow-copied and returned
-    - JSON-like string: parsed via json.loads (with simple fallback for colon/equals pairs)
+    - JSON-like string: parsed via json.loads (dict or list-of-pairs)
     - Plain string: split on whitespace/commas into k=v assignments
     """
     import json
@@ -182,12 +182,31 @@ def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
         s = obj.strip()
         if not s:
             return {}
-        if (s.startswith('{') and s.endswith('}')):
+        if (s.startswith('{') and s.endswith('}')) or (s.startswith('[') and s.endswith(']')):
             try:
-                return json.loads(s)
+                parsed = json.loads(s)
+                if isinstance(parsed, dict):
+                    return dict(parsed)
+                # Accept list-of-pairs JSON (e.g., [["k","v"],["k2","v2"]])
+                if isinstance(parsed, list):
+                    out_pairs: Dict[str, Any] = {}
+                    ok = True
+                    for item in parsed:
+                        if isinstance(item, (list, tuple)) and len(item) == 2:
+                            out_pairs[str(item[0])] = item[1]
+                        else:
+                            ok = False
+                            break
+                    if ok:
+                        return out_pairs
+                # Non-dict JSON: fall back to token parsing for robustness
             except Exception:
-                # Fallback to simple token parser inside braces
-                s = s.strip().strip('{}').strip()
+                # Fallback to simple token parser inside braces; list-shaped JSON
+                # should just fall through to return {}.
+                if s.startswith('{') and s.endswith('}'):
+                    s = s.strip().strip('{}').strip()
+                else:
+                    return {}
         # Parse simple k=v tokens separated by whitespace/commas
         out: Dict[str, Any] = {}
         toks = [tok for tok in s.replace(',', ' ').split() if tok]
@@ -199,6 +218,15 @@ def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
                 continue
             if '=' in tok:
                 k, v = tok.split('=', 1)
+                out[k.strip()] = v.strip().strip(',')
+                i += 1
+                continue
+            # Support "k:v" tokens (avoid Windows drive paths like "C:\\foo")
+            if ':' in tok and not tok.endswith(':') and tok.count(':') == 1:
+                k, v = tok.split(':', 1)
+                if len(k) == 1 and v.startswith(("\\", "/")):
+                    i += 1
+                    continue
                 out[k.strip()] = v.strip().strip(',')
                 i += 1
                 continue
