@@ -42,6 +42,124 @@ import MetaTrader5 as mt5
 
 logger = logging.getLogger(__name__)
 
+
+def _fetch_rates_with_warmup(
+    symbol: str,
+    mt5_timeframe: int,
+    timeframe: TimeframeLiteral,
+    candles: int,
+    warmup_bars: int,
+    start_datetime: Optional[str],
+    end_datetime: Optional[str],
+    *,
+    retry: bool = True,
+    sanity_check: bool = True,
+):
+    """Fetch MT5 rates with optional warmup, retry, and end-bar sanity checks."""
+    if start_datetime and end_datetime:
+        from_date = _parse_start_datetime_util(start_datetime)
+        to_date = _parse_start_datetime_util(end_datetime)
+        if not from_date or not to_date:
+            return None, "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."
+        if from_date > to_date:
+            return None, "start_datetime must be before end_datetime"
+        seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
+        from_date_internal = from_date - timedelta(seconds=seconds_per_bar * warmup_bars)
+        expected_end_ts = to_date.timestamp()
+
+        def _fetch():
+            return _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date)
+
+    elif start_datetime:
+        from_date = _parse_start_datetime_util(start_datetime)
+        if not from_date:
+            return None, "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."
+        seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe)
+        if not seconds_per_bar:
+            return None, f"Unable to determine timeframe seconds for {timeframe}"
+        to_date = from_date + timedelta(seconds=seconds_per_bar * (candles + 2))
+        from_date_internal = from_date - timedelta(seconds=seconds_per_bar * warmup_bars)
+        expected_end_ts = to_date.timestamp()
+
+        def _fetch():
+            return _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date)
+
+    elif end_datetime:
+        to_date = _parse_start_datetime_util(end_datetime)
+        if not to_date:
+            return None, "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."
+        seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
+        expected_end_ts = to_date.timestamp()
+
+        def _fetch():
+            return _mt5_copy_rates_from(symbol, mt5_timeframe, to_date, candles + warmup_bars)
+
+    else:
+        utc_now = datetime.utcnow()
+        seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
+        expected_end_ts = utc_now.timestamp()
+
+        def _fetch():
+            return _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, candles + warmup_bars)
+
+    attempts = FETCH_RETRY_ATTEMPTS if retry else 1
+    rates = None
+    for idx in range(attempts):
+        rates = _fetch()
+        if rates is not None and len(rates) > 0:
+            if not sanity_check:
+                break
+            last_t = rates[-1]["time"]
+            if last_t >= (expected_end_ts - seconds_per_bar * SANITY_BARS_TOLERANCE):
+                break
+        if retry and idx < (attempts - 1):
+            time.sleep(FETCH_RETRY_DELAY)
+    return rates, None
+
+
+def _build_rates_df(rates: Any, use_client_tz: bool) -> pd.DataFrame:
+    """Normalize raw MT5 rates into a DataFrame with epoch and display time columns."""
+    df = pd.DataFrame(rates)
+    try:
+        if 'time' in df.columns:
+            df['time'] = df['time'].astype(float).apply(_mt5_epoch_to_utc)
+    except Exception:
+        pass
+    df['__epoch'] = df['time']
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        df["time"] = df["time"].apply(_format_time_minimal_local_util if use_client_tz else _format_time_minimal_util)
+    if 'volume' not in df.columns and 'tick_volume' in df.columns:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            df['volume'] = df['tick_volume']
+    return df
+
+
+def _trim_df_to_target(
+    df: pd.DataFrame,
+    start_datetime: Optional[str],
+    end_datetime: Optional[str],
+    candles: int,
+    *,
+    copy_rows: bool = True,
+) -> pd.DataFrame:
+    if start_datetime and end_datetime:
+        target_from = _parse_start_datetime_util(start_datetime).timestamp()
+        target_to = _parse_start_datetime_util(end_datetime).timestamp()
+        out = df.loc[(df['__epoch'] >= target_from) & (df['__epoch'] <= target_to)]
+    elif start_datetime:
+        target_from = _parse_start_datetime_util(start_datetime).timestamp()
+        out = df.loc[df['__epoch'] >= target_from]
+        if len(out) > candles:
+            out = out.iloc[:candles]
+    elif end_datetime:
+        out = df.iloc[-candles:] if len(df) > candles else df
+    else:
+        out = df.iloc[-candles:] if len(df) > candles else df
+    return out.copy() if copy_rows else out
+
+
 def fetch_candles(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
@@ -105,73 +223,19 @@ def fetch_candles(
             # Determine warmup bars if technical indicators requested
             warmup_bars = _estimate_warmup_bars_util(ti_spec)
 
-            if start_datetime and end_datetime:
-                from_date = _parse_start_datetime_util(start_datetime)
-                to_date = _parse_start_datetime_util(end_datetime)
-                if not from_date or not to_date:
-                    return {"error": "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."}
-                if from_date > to_date:
-                    return {"error": "start_datetime must be before end_datetime"}
-                # Expand range backward by warmup bars for TI calculation
-                seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
-                from_date_internal = from_date - timedelta(seconds=seconds_per_bar * warmup_bars)
-                rates = None
-                for _ in range(FETCH_RETRY_ATTEMPTS):
-                    rates = _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date)
-                    if rates is not None and len(rates) > 0:
-                        # Sanity: last bar should be close to end
-                        last_t = rates[-1]["time"]
-                        seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
-                        if last_t >= (to_date.timestamp() - seconds_per_bar * SANITY_BARS_TOLERANCE):
-                            break
-                    time.sleep(FETCH_RETRY_DELAY)
-            elif start_datetime:
-                from_date = _parse_start_datetime_util(start_datetime)
-                if not from_date:
-                    return {"error": "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."}
-                # Fetch forward from the provided start by using a to_date window
-                seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe)
-                if not seconds_per_bar:
-                    return {"error": f"Unable to determine timeframe seconds for {timeframe}"}
-                to_date = from_date + timedelta(seconds=seconds_per_bar * (candles + 2))
-                # Expand backward for warmup
-                from_date_internal = from_date - timedelta(seconds=seconds_per_bar * warmup_bars)
-                rates = None
-                for _ in range(FETCH_RETRY_ATTEMPTS):
-                    rates = _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date)
-                    if rates is not None and len(rates) > 0:
-                        # Sanity: last bar should be close to computed to_date
-                        last_t = rates[-1]["time"]
-                        if last_t >= (to_date.timestamp() - seconds_per_bar * SANITY_BARS_TOLERANCE):
-                            break
-                    time.sleep(FETCH_RETRY_DELAY)
-            elif end_datetime:
-                to_date = _parse_start_datetime_util(end_datetime)
-                if not to_date:
-                    return {"error": "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."}
-                # Get the last 'count' bars ending at end_datetime
-                rates = None
-                seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
-                for _ in range(FETCH_RETRY_ATTEMPTS):
-                    rates = _mt5_copy_rates_from(symbol, mt5_timeframe, to_date, candles + warmup_bars)
-                    if rates is not None and len(rates) > 0:
-                        # Sanity: last bar near end
-                        last_t = rates[-1]["time"]
-                        if last_t >= (to_date.timestamp() - seconds_per_bar * SANITY_BARS_TOLERANCE):
-                            break
-                    time.sleep(FETCH_RETRY_DELAY)
-            else:
-                # Use copy_rates_from with current time (now) to force fresh data retrieval
-                utc_now = datetime.utcnow()
-                rates = None
-                seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
-                for _ in range(FETCH_RETRY_ATTEMPTS):
-                    rates = _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, candles + warmup_bars)
-                    if rates is not None and len(rates) > 0:
-                        last_t = rates[-1]["time"]
-                        if last_t >= (utc_now.timestamp() - seconds_per_bar * SANITY_BARS_TOLERANCE):
-                            break
-                    time.sleep(FETCH_RETRY_DELAY)
+            rates, rates_error = _fetch_rates_with_warmup(
+                symbol,
+                mt5_timeframe,
+                timeframe,
+                candles,
+                warmup_bars,
+                start_datetime,
+                end_datetime,
+                retry=True,
+                sanity_check=True,
+            )
+            if rates_error:
+                return {"error": rates_error}
         finally:
             # Restore original visibility if we changed it
             if _was_visible is False:
@@ -220,24 +284,9 @@ def fetch_candles(
                 headers.append("real_volume")
         
         # Construct DataFrame to support indicators and consistent CSV building
-        df = pd.DataFrame(rates)
-        # Normalize MT5 epochs to UTC if configured
-        try:
-            if 'time' in df.columns:
-                df['time'] = df['time'].astype(float).apply(_mt5_epoch_to_utc)
-        except Exception:
-            pass
-        # Keep epoch for filtering and convert readable time; ensure 'volume' exists for TA
-        df['__epoch'] = df['time']
         client_tz = _resolve_client_tz_util()
         _use_ctz = client_tz is not None
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            df["time"] = df["time"].apply(_format_time_minimal_local_util if _use_ctz else _format_time_minimal_util)
-        if 'volume' not in df.columns and 'tick_volume' in df.columns:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                df['volume'] = df['tick_volume']
+        df = _build_rates_df(rates, _use_ctz)
 
         # Track denoise metadata if applied
         denoise_apps: List[Dict[str, Any]] = []
@@ -285,22 +334,7 @@ def fetch_candles(
             pass
 
         # Filter out warmup region to return the intended target window only
-        if start_datetime and end_datetime:
-            # Keep within original [from_date, to_date]
-            target_from = _parse_start_datetime_util(start_datetime).timestamp()
-            target_to = _parse_start_datetime_util(end_datetime).timestamp()
-            df = df.loc[(df['__epoch'] >= target_from) & (df['__epoch'] <= target_to)].copy()
-        elif start_datetime:
-            target_from = _parse_start_datetime_util(start_datetime).timestamp()
-            df = df.loc[df['__epoch'] >= target_from].copy()
-            if len(df) > candles:
-                df = df.iloc[:candles].copy()
-        elif end_datetime:
-            if len(df) > candles:
-                df = df.iloc[-candles:].copy()
-        else:
-            if len(df) > candles:
-                df = df.iloc[-candles:].copy()
+        df = _trim_df_to_target(df, start_datetime, end_datetime, candles, copy_rows=True)
 
         # If TI requested, check for NaNs and retry once with increased warmup
         if ti_spec and ti_cols:
@@ -308,35 +342,20 @@ def fetch_candles(
                 if df[ti_cols].isna().any().any():
                     # Increase warmup and refetch once
                     warmup_bars_retry = max(int(warmup_bars * TI_NAN_WARMUP_FACTOR), warmup_bars + TI_NAN_WARMUP_MIN_ADD)
-                    seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
-                    # Refetch rates with larger warmup
-                    if start_datetime and end_datetime:
-                        target_from_dt = _parse_start_datetime_util(start_datetime)
-                        target_to_dt = _parse_start_datetime_util(end_datetime)
-                        from_date_internal = target_from_dt - timedelta(seconds=seconds_per_bar * warmup_bars_retry)
-                        rates = _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, target_to_dt)
-                    elif start_datetime:
-                        target_from_dt = _parse_start_datetime_util(start_datetime)
-                        to_date_dt = target_from_dt + timedelta(seconds=seconds_per_bar * (candles + 2))
-                        from_date_internal = target_from_dt - timedelta(seconds=seconds_per_bar * warmup_bars_retry)
-                        rates = _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date_dt)
-                    elif end_datetime:
-                        target_to_dt = _parse_start_datetime_util(end_datetime)
-                        rates = _mt5_copy_rates_from(symbol, mt5_timeframe, target_to_dt, candles + warmup_bars_retry)
-                    else:
-                        utc_now = datetime.utcnow()
-                        rates = _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, candles + warmup_bars_retry)
+                    rates_retry, _ = _fetch_rates_with_warmup(
+                        symbol,
+                        mt5_timeframe,
+                        timeframe,
+                        candles,
+                        warmup_bars_retry,
+                        start_datetime,
+                        end_datetime,
+                        retry=False,
+                        sanity_check=False,
+                    )
                     # Rebuild df and indicators with the larger window
-                    if rates is not None and len(rates) > 0:
-                        df = pd.DataFrame(rates)
-                        df['__epoch'] = df['time']
-                        with warnings.catch_warnings():
-                            warnings.simplefilter("ignore")
-                            df['time'] = df['time'].apply(_format_time_minimal_local_util if _use_ctz else _format_time_minimal_util)
-                        if 'volume' not in df.columns and 'tick_volume' in df.columns:
-                            with warnings.catch_warnings():
-                                warnings.simplefilter("ignore")
-                                df['volume'] = df['tick_volume']
+                    if rates_retry is not None and len(rates_retry) > 0:
+                        df = _build_rates_df(rates_retry, _use_ctz)
                         # Optional pre-TI denoising on retried window
                         if denoise:
                             _dn_pre2 = _normalize_denoise_spec(denoise, default_when='pre_ti')
@@ -355,21 +374,7 @@ def fetch_candles(
                                 dn_ti2.setdefault('keep_original', False)
                                 _apply_denoise_util(df, dn_ti2, default_when='post_ti')
                         # Re-trim to target window
-                        if start_datetime and end_datetime:
-                            target_from = _parse_start_datetime_util(start_datetime).timestamp()
-                            target_to = _parse_start_datetime_util(end_datetime).timestamp()
-                            df = df[(df['__epoch'] >= target_from) & (df['__epoch'] <= target_to)]
-                        elif start_datetime:
-                            target_from = _parse_start_datetime_util(start_datetime).timestamp()
-                            df = df[df['__epoch'] >= target_from]
-                            if len(df) > candles:
-                                df = df.iloc[:candles]
-                        elif end_datetime:
-                            if len(df) > candles:
-                                df = df.iloc[-candles:]
-                        else:
-                            if len(df) > candles:
-                                df = df.iloc[-candles:]
+                        df = _trim_df_to_target(df, start_datetime, end_datetime, candles, copy_rows=False)
             except Exception:
                 pass
 
