@@ -210,6 +210,9 @@ def _resolve_transport(default: str = "sse") -> tuple[str, Optional[str]]:
 
 def main():
     """Main entry point for the MCP server"""
+    # Force listen on all interfaces
+    mcp.settings.host = "0.0.0.0"
+
     log_level = getattr(logging, str(mcp.settings.log_level).upper(), logging.INFO)
     logging.basicConfig(level=log_level)
     logger = logging.getLogger(__name__)

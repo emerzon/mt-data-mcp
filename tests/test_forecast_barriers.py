@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 import pandas as pd
 import numpy as np
 import sys
@@ -13,12 +13,9 @@ from mtdata.forecast.barriers import forecast_barrier_hit_probabilities, forecas
 class TestForecastBarriers(unittest.TestCase):
 
     def setUp(self):
-        self.mock_mt5 = MagicMock()
-        self.mock_mt5.symbol_info.return_value = MagicMock(digits=5, point=0.00001)
-        
-        # Patch mt5 in barriers module
-        self.mt5_patcher = patch('mtdata.forecast.barriers.mt5', self.mock_mt5)
-        self.mt5_patcher.start()
+        # Patch pip size resolver in barriers module
+        self.pip_size_patcher = patch('mtdata.forecast.barriers._get_pip_size', return_value=0.0001)
+        self.pip_size_patcher.start()
         
         # Mock fetch_history
         self.fetch_history_patcher = patch('mtdata.forecast.barriers._fetch_history')
@@ -35,8 +32,15 @@ class TestForecastBarriers(unittest.TestCase):
         closes = np.full(bars, float(price))
         self.mock_fetch_history.return_value = pd.DataFrame({'time': dates, 'close': closes})
 
+    def _sample_paths(self):
+        return np.array([
+            [1.0, 1.01, 1.02, 1.03],
+            [1.0, 0.99, 0.98, 0.97],
+            [1.0, 1.002, 0.998, 1.006],
+        ])
+
     def tearDown(self):
-        self.mt5_patcher.stop()
+        self.pip_size_patcher.stop()
         self.fetch_history_patcher.stop()
 
     def test_forecast_barrier_hit_probabilities(self):
@@ -181,6 +185,123 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertTrue(grid)
         self.assertEqual(len(grid), 2)
         self.assertEqual(result["best"], grid[0])
+
+    def test_forecast_barrier_optimize_volatility_grid(self):
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                grid_style="volatility",
+                vol_steps=2,
+                return_grid=True,
+            )
+        self.assertTrue(result["success"])
+        grid = result.get("grid")
+        self.assertTrue(grid)
+        self.assertIn("tp", grid[0])
+        self.assertIn("sl", grid[0])
+
+    def test_forecast_barrier_optimize_ratio_grid(self):
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                grid_style="ratio",
+                ratio_min=1.0,
+                ratio_max=2.0,
+                ratio_steps=2,
+                sl_min=0.5,
+                sl_max=1.0,
+                sl_steps=2,
+                return_grid=True,
+            )
+        self.assertTrue(result["success"])
+        grid = result.get("grid")
+        self.assertTrue(grid)
+        for entry in grid:
+            self.assertGreaterEqual(entry["rr"], 1.0)
+            self.assertLessEqual(entry["rr"], 2.0)
+
+    def test_forecast_barrier_optimize_preset_grid(self):
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                grid_style="preset",
+                preset="scalp",
+                return_grid=True,
+            )
+        self.assertTrue(result["success"])
+        grid = result.get("grid")
+        self.assertTrue(grid)
+
+    def test_forecast_barrier_optimize_pips_mode(self):
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pips",
+                tp_min=5.0, tp_max=10.0, tp_steps=2,
+                sl_min=5.0, sl_max=10.0, sl_steps=2,
+                return_grid=True,
+            )
+        self.assertTrue(result["success"])
+        grid = result.get("grid")
+        self.assertTrue(grid)
+
+    def test_forecast_barrier_optimize_tie_probabilities_sum_to_one(self):
+        # Force TP and SL to coincide at zero so every path ties.
+        self._set_flat_history(0.0)
+        paths = np.zeros((3, 4))
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.5, tp_max=1.0, tp_steps=2,
+                sl_min=0.5, sl_max=1.0, sl_steps=2,
+                objective="edge",
+                return_grid=True,
+            )
+        self.assertTrue(result["success"])
+        grid = result.get("grid")
+        self.assertTrue(grid)
+        for entry in grid:
+            total = entry["prob_win"] + entry["prob_loss"] + entry["prob_tie"] + entry["prob_no_hit"]
+            self.assertAlmostEqual(total, 1.0, places=7)
+            self.assertAlmostEqual(entry["prob_tie"], 1.0, places=7)
+            self.assertAlmostEqual(entry["prob_no_hit"], 0.0, places=7)
 
 if __name__ == '__main__':
     unittest.main()

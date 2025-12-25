@@ -1,9 +1,9 @@
 from typing import Any, Dict, Optional, List, Literal, Tuple, Set, Union
 import numpy as np
-import MetaTrader5 as mt5
 from ..core.schema import TimeframeLiteral, DenoiseSpec
 from ..core.constants import TIMEFRAME_SECONDS
 from .common import fetch_history as _fetch_history, parse_kv_or_json as _parse_kv_or_json
+from ..utils.barriers import get_pip_size as _get_pip_size, resolve_barrier_prices as _resolve_barrier_prices
 from .monte_carlo import (
     simulate_gbm_mc as _simulate_gbm_mc, 
     simulate_hmm_mc as _simulate_hmm_mc, 
@@ -58,73 +58,25 @@ def forecast_barrier_hit_probabilities(
             return {"error": "Insufficient history for simulation"}
         # Current price baseline
         last_price = float(df['close'].astype(float).iloc[-1])
-        # Resolve pip size (approximate): use 10*point for 5/3-digit FX, else 1*point
-        pip_size = None
-        try:
-            info = mt5.symbol_info(symbol)
-            if info is not None:
-                digits = int(getattr(info, 'digits', 0) or 0)
-                point = float(getattr(info, 'point', 0.0) or 0.0)
-                pip_size = float(point * (10.0 if digits in (3, 5) else 1.0)) if point > 0 else None
-        except Exception:
-            pip_size = None
-
-        def _coerce_float(v: Any) -> Optional[float]:
-            try:
-                if v is None:
-                    return None
-                return float(str(v))
-            except Exception:
-                return None
+        pip_size = _get_pip_size(symbol)
 
         # Compute absolute TP/SL prices with explicit trade direction
         dir_long = str(direction).lower() == 'long'
-        tp_price = _coerce_float(tp_abs)
-        sl_price = _coerce_float(sl_abs)
-        r_tp = _coerce_float(tp_pct)
-        r_sl = _coerce_float(sl_pct)
-        pp_tp = _coerce_float(tp_pips)
-        pp_sl = _coerce_float(sl_pips)
-
-        if tp_price is None or sl_price is None:
-            # Derive from pct/pips if absolutes not provided
-            if dir_long:
-                if tp_price is None:
-                    if r_tp is not None:
-                        tp_price = last_price * (1.0 + (r_tp / 100.0))
-                    elif pp_tp is not None and pip_size is not None:
-                        tp_price = last_price + pp_tp * pip_size
-                if sl_price is None:
-                    if r_sl is not None:
-                        sl_price = last_price * (1.0 - (r_sl / 100.0))
-                    elif pp_sl is not None and pip_size is not None:
-                        sl_price = last_price - pp_sl * pip_size
-            else:  # short
-                if tp_price is None:
-                    if r_tp is not None:
-                        tp_price = last_price * (1.0 - (r_tp / 100.0))
-                    elif pp_tp is not None and pip_size is not None:
-                        tp_price = last_price - pp_tp * pip_size
-                if sl_price is None:
-                    if r_sl is not None:
-                        sl_price = last_price * (1.0 + (r_sl / 100.0))
-                    elif pp_sl is not None and pip_size is not None:
-                        sl_price = last_price + pp_sl * pip_size
+        tp_price, sl_price = _resolve_barrier_prices(
+            price=last_price,
+            direction=direction,
+            tp_abs=tp_abs,
+            sl_abs=sl_abs,
+            tp_pct=tp_pct,
+            sl_pct=sl_pct,
+            tp_pips=tp_pips,
+            sl_pips=sl_pips,
+            pip_size=pip_size,
+            adjust_inverted=True,
+        )
 
         if tp_price is None or sl_price is None:
             return {"error": "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or tp_pips/sl_pips"}
-
-        # Ensure correct side relative to direction (adjust minimally if inverted)
-        if dir_long:
-            if tp_price <= last_price:
-                tp_price = last_price * 1.000001
-            if sl_price >= last_price:
-                sl_price = last_price * 0.999999
-        else:
-            if tp_price >= last_price:
-                tp_price = last_price * 0.999999
-            if sl_price <= last_price:
-                sl_price = last_price * 1.000001
 
         # Build input series (denoise optional)
         base_col = 'close'
@@ -452,16 +404,7 @@ def forecast_barrier_optimize(
             return {"error": "Insufficient history for simulation"}
         last_price = float(df['close'].astype(float).iloc[-1])
 
-        pip_size = None
-        try:
-            info = mt5.symbol_info(symbol)
-            if info is not None:
-                digits = int(getattr(info, 'digits', 0) or 0)
-                point = float(getattr(info, 'point', 0.0) or 0.0)
-                if point > 0:
-                    pip_size = float(point * (10.0 if digits in (3, 5) else 1.0))
-        except Exception:
-            pip_size = None
+        pip_size = _get_pip_size(symbol)
         if mode_val == 'pips' and (pip_size is None or pip_size <= 0):
             return {"error": "Pip size unavailable for this symbol; use mode='pct' or provide absolute barriers."}
 
@@ -636,7 +579,7 @@ def forecast_barrier_optimize(
                 prob_win = n_wins / S
                 prob_loss = n_losses / S
                 prob_tie = ties.sum() / S
-                prob_neutral = max(0.0, 1.0 - prob_win - prob_loss)
+                prob_neutral = max(0.0, 1.0 - prob_win - prob_loss - prob_tie)
 
                 risk = sl_unit
                 reward = tp_unit

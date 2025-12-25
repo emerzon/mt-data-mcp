@@ -425,10 +425,9 @@ def trading_orders_place_market(
                 if not mt5.symbol_select(symbol, True):
                     return {"error": f"Failed to select symbol {symbol}"}
 
-            volume_checked, volume_error = _validate_volume(volume, symbol_info)
+            volume_validated, volume_error = _validate_volume(volume, symbol_info)
             if volume_error:
                 return {"error": volume_error}
-            volume = volume_checked
 
             current_tick = mt5.symbol_info_tick(symbol)
             if current_tick is None:
@@ -475,7 +474,7 @@ def trading_orders_place_market(
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,
                 "symbol": symbol,
-                "volume": volume,
+                "volume": volume_validated,
                 "type": mt5.ORDER_TYPE_BUY if type.upper() == "BUY" else mt5.ORDER_TYPE_SELL,
                 "price": price,
                 "deviation": 20,
@@ -591,10 +590,9 @@ def trading_pending_place(
                 if not mt5.symbol_select(symbol, True):
                     return {"error": f"Failed to select symbol {symbol}"}
 
-            volume_checked, volume_error = _validate_volume(volume, symbol_info)
+            volume_validated, volume_error = _validate_volume(volume, symbol_info)
             if volume_error:
                 return {"error": volume_error}
-            volume = volume_checked
 
             current_price = mt5.symbol_info_tick(symbol)
             if current_price is None:
@@ -675,7 +673,7 @@ def trading_pending_place(
             request = {
                 "action": mt5.TRADE_ACTION_PENDING,
                 "symbol": symbol,
-                "volume": volume,
+                "volume": volume_validated,
                 "type": order_type,
                 "price": norm_price,
                 "sl": norm_sl or 0.0,

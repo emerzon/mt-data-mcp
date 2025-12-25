@@ -1,13 +1,11 @@
-from typing import Any, Dict, Optional, Literal
-import numpy as np
-import pandas as pd
-import MetaTrader5 as mt5
+from typing import Any, Dict, Optional, Literal, List
 
 from .server import mcp, _auto_connect_wrapper
 from .schema import TimeframeLiteral, DenoiseSpec
 from ..forecast.common import fetch_history as _fetch_history
 from ..utils.utils import _format_time_minimal
 from ..utils.denoise import _apply_denoise as _apply_denoise_util
+from ..utils.barriers import get_pip_size as _get_pip_size, resolve_barrier_prices as _resolve_barrier_prices
 
 
 @mcp.tool()
@@ -55,16 +53,7 @@ def labels_triple_barrier(
         lows = df['low'].astype(float).to_numpy() if 'low' in df.columns else None
         times = df['time'].astype(float).to_numpy()
 
-        # Pip size heuristic
-        pip_size = None
-        try:
-            info = mt5.symbol_info(symbol)
-            if info is not None:
-                digits = int(getattr(info, 'digits', 0) or 0)
-                point = float(getattr(info, 'point', 0.0) or 0.0)
-                pip_size = float(point * (10.0 if digits in (3,5) else 1.0)) if point > 0 else None
-        except Exception:
-            pip_size = None
+        pip_size = _get_pip_size(symbol)
 
         N = len(closes)
         labels: List[int] = []
@@ -75,18 +64,18 @@ def labels_triple_barrier(
 
         for i in range(0, N - int(horizon) - 1):
             p0 = float(closes[i])
-            # Compute absolute barriers
-            tp = tp_abs; sl = sl_abs
-            if tp is None:
-                if tp_pct is not None:
-                    tp = p0 * (1.0 + float(tp_pct) / 100.0)
-                elif tp_pips is not None and pip_size is not None:
-                    tp = p0 + float(tp_pips) * float(pip_size)
-            if sl is None:
-                if sl_pct is not None:
-                    sl = p0 * (1.0 - float(sl_pct) / 100.0)
-                elif sl_pips is not None and pip_size is not None:
-                    sl = p0 - float(sl_pips) * float(pip_size)
+            tp, sl = _resolve_barrier_prices(
+                price=p0,
+                direction="long",
+                tp_abs=tp_abs,
+                sl_abs=sl_abs,
+                tp_pct=tp_pct,
+                sl_pct=sl_pct,
+                tp_pips=tp_pips,
+                sl_pips=sl_pips,
+                pip_size=pip_size,
+                adjust_inverted=True,
+            )
             if tp is None or sl is None:
                 return {"error": "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or tp_pips/sl_pips"}
 
