@@ -44,6 +44,71 @@ def parse_csv_tail(csv_header: Optional[str], csv_data: Optional[str], tail: int
         return []
 
 
+def _indicator_key_variants(key: str) -> List[str]:
+    if not key:
+        return []
+    base = str(key)
+    keys = [base, base.lower()]
+    parts = base.split('_')
+    if parts:
+        changed = False
+        alt_parts: List[str] = []
+        for part in parts:
+            if part.isdigit():
+                alt_parts.append(f"{part}.0")
+                changed = True
+            else:
+                alt_parts.append(part)
+        if changed:
+            alt = "_".join(alt_parts)
+            keys.extend([alt, alt.lower()])
+    return keys
+
+
+def _get_indicator_value(row: Optional[Dict[str, Any]], base_key: str) -> Any:
+    if not isinstance(row, dict):
+        return None
+    for key in _indicator_key_variants(base_key):
+        if key in row:
+            val = row.get(key)
+            if val not in (None, ''):
+                return val
+    return None
+
+
+def _format_series_preview(values: Any, decimals: int = 6, head: int = 3, tail: int = 3) -> Optional[str]:
+    if not isinstance(values, list):
+        return None
+    n = len(values)
+    if n == 0:
+        return "n=0 []"
+
+    def _fmt(val: Any) -> str:
+        if isinstance(val, (int, float)):
+            fmt = _format_decimal(val, decimals)
+            return fmt if fmt is not None else format_number(val)
+        return str(val)
+
+    if n <= head + tail:
+        items = [_fmt(v) for v in values]
+    else:
+        items = [_fmt(v) for v in values[:head]] + ["..."] + [_fmt(v) for v in values[-tail:]]
+    return f"n={n} [" + ", ".join(items) + "]"
+
+
+def _format_state_shares(shares: Any) -> Optional[str]:
+    if not isinstance(shares, dict) or not shares:
+        return None
+    parts: List[str] = []
+    for key in sorted(shares.keys(), key=lambda x: int(x) if str(x).isdigit() else str(x)):
+        try:
+            pct = float(shares[key]) * 100.0
+            parts.append(f"{key}:{pct:.1f}%")
+        except Exception:
+            parts.append(f"{key}:{shares[key]}")
+    return ", ".join(parts) if parts else None
+
+
 def pick_best_forecast_method(bt: Dict[str, Any], rmse_tolerance: float = 0.05) -> Optional[Tuple[str, Dict[str, Any]]]:
     try:
         results = bt.get('results') if isinstance(bt, dict) else None
@@ -149,7 +214,10 @@ def market_snapshot(symbol: str, timezone: str = 'UTC') -> Dict[str, Any]:
     try:
         from .market_depth import market_depth_fetch as _fetch_market_depth
         import MetaTrader5 as _mt5
-        dom = _fetch_market_depth(symbol=symbol, timezone=timezone)
+        try:
+            dom = _fetch_market_depth(symbol=symbol, __cli_raw=True)
+        except TypeError:
+            dom = _fetch_market_depth(symbol=symbol)
         bid = None; ask = None; spread = None
         top_buy_vol = None; top_sell_vol = None; total_buy_vol = None; total_sell_vol = None
         if isinstance(dom, dict) and dom.get('success'):
@@ -262,10 +330,10 @@ def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]
         last = rows[-1]
         out = {
             'close': last.get('close'),
-            'EMA_20': last.get('EMA_20') or last.get('ema_20'),
-            'EMA_50': last.get('EMA_50') or last.get('ema_50'),
-            'RSI_14': last.get('RSI_14') or last.get('rsi_14'),
-            'MACD': last.get('MACD_12_26_9') or last.get('macd_12_26_9'),
+            'EMA_20': _get_indicator_value(last, 'EMA_20'),
+            'EMA_50': _get_indicator_value(last, 'EMA_50'),
+            'RSI_14': _get_indicator_value(last, 'RSI_14'),
+            'MACD': _get_indicator_value(last, 'MACD_12_26_9'),
         }
 
         # Compute trend compact data for MTF matrix
@@ -281,12 +349,12 @@ def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]
         # Add individual indicator values for MTF matrix
         if rows:
             last_row = rows[-1]
-            out['rsi'] = last_row.get('RSI_14') or last_row.get('rsi_14')
-            out['macd'] = last_row.get('MACD_12_26_9') or last_row.get('macd_12_26_9')
-            out['macd_signal'] = last_row.get('MACDs_12_26_9') or last_row.get('macds_12_26_9')
-            out['ema20'] = last_row.get('EMA_20') or last_row.get('ema_20')
-            out['ema50'] = last_row.get('EMA_50') or last_row.get('ema_50')
-            out['ema200'] = last_row.get('EMA_200') or last_row.get('ema_200')
+            out['rsi'] = _get_indicator_value(last_row, 'RSI_14')
+            out['macd'] = _get_indicator_value(last_row, 'MACD_12_26_9')
+            out['macd_signal'] = _get_indicator_value(last_row, 'MACDs_12_26_9')
+            out['ema20'] = _get_indicator_value(last_row, 'EMA_20')
+            out['ema50'] = _get_indicator_value(last_row, 'EMA_50')
+            out['ema200'] = _get_indicator_value(last_row, 'EMA_200')
             out['price'] = last_row.get('close')
 
         return out
@@ -546,8 +614,8 @@ def _render_context_section(data: Any) -> List[str]:
     price = snap.get('close')
     if price is not None:
         metrics.append(['Close', _format_decimal(price, 5)])
-    ema20 = snap.get('EMA_20') or snap.get('ema_20')
-    ema50 = snap.get('EMA_50') or snap.get('ema_50')
+    ema20 = _get_indicator_value(snap, 'EMA_20')
+    ema50 = _get_indicator_value(snap, 'EMA_50')
     if ema20 is not None and ema50 is not None:
         trend_state = 'Above EMAs'
         p_val = _as_float(price)
@@ -559,7 +627,7 @@ def _render_context_section(data: Any) -> List[str]:
             'EMA trend',
             f"{trend_state} (EMA20 {_format_decimal(ema20, 5)}, EMA50 {_format_decimal(ema50, 5)})",
         ])
-    rsi = snap.get('RSI_14') or snap.get('rsi_14')
+    rsi = _get_indicator_value(snap, 'RSI_14')
     if rsi is not None:
         rsi_val = _as_float(rsi)
         if rsi_val is not None:
@@ -624,10 +692,10 @@ def _render_contexts_multi_section(data: Any) -> List[str]:
                 slope_val = slopes[0] / 100.0 if slopes[0] is not None else None
             atr_bps = trend.get('v')
         close_val = snap.get('close')
-        ema20_val = snap.get('EMA_20') or snap.get('ema20')
-        ema50_val = snap.get('EMA_50') or snap.get('ema50')
-        ema200_val = snap.get('EMA_200') or snap.get('ema200')
-        rsi_val = snap.get('RSI_14') or snap.get('rsi')
+        ema20_val = snap.get('ema20') or _get_indicator_value(snap, 'EMA_20')
+        ema50_val = snap.get('ema50') or _get_indicator_value(snap, 'EMA_50')
+        ema200_val = snap.get('ema200') or _get_indicator_value(snap, 'EMA_200')
+        rsi_val = snap.get('rsi') or _get_indicator_value(snap, 'RSI_14')
         rows.append([
             str(tf),
             _format_decimal(close_val, 5),
@@ -767,11 +835,20 @@ def _render_forecast_section(data: Any) -> List[str]:
     if method:
         lines.append(f"- Method: {method}")
     if data.get('forecast_price') is not None:
-        lines.append(f"- Forecast price: {format_number(data['forecast_price'])}")
+        series_preview = _format_series_preview(data.get('forecast_price'), decimals=6)
+        if series_preview is not None:
+            lines.append(f"- Forecast price: {series_preview}")
+        else:
+            lines.append(f"- Forecast price: {format_number(data['forecast_price'])}")
     lower = data.get('lower_price')
     upper = data.get('upper_price')
     if lower is not None or upper is not None:
-        lines.append(f"- Interval: {format_number(lower)} to {format_number(upper)}")
+        if isinstance(lower, list) or isinstance(upper, list):
+            low_preview = _format_series_preview(lower, decimals=6) if isinstance(lower, list) else format_number(lower)
+            up_preview = _format_series_preview(upper, decimals=6) if isinstance(upper, list) else format_number(upper)
+            lines.append(f"- Interval: {low_preview} to {up_preview}")
+        else:
+            lines.append(f"- Interval: {format_number(lower)} to {format_number(upper)}")
     if data.get('trend'):
         lines.append(f"- Trend: {data['trend']}")
     if data.get('ci_alpha') is not None:
@@ -864,6 +941,9 @@ def _render_market_section(data: Any) -> List[str]:
     if not isinstance(data, dict):
         return []
     lines = ['## Market Snapshot']
+    if data.get('error'):
+        lines.append(f"- Error: {data.get('error')}")
+        return lines
     entries = []
     for label, key in [('Bid', 'bid'), ('Ask', 'ask'), ('Spread', 'spread'), ('Spread (pips)', 'spread_pips')]:
         val = data.get(key)
@@ -932,16 +1012,43 @@ def _render_regime_section(data: Any) -> List[str]:
     if not isinstance(data, dict):
         return []
     lines = ['## Regime Signals']
+
+    def _format_regime_summary(name: str, summary: Any) -> Optional[str]:
+        if summary is None:
+            return None
+        if isinstance(summary, dict):
+            parts: List[str] = []
+            if name == 'bocpd':
+                for key in ('last_cp_prob', 'max_cp_prob', 'mean_cp_prob'):
+                    val = summary.get(key)
+                    if val is not None:
+                        parts.append(f"{key}={format_number(val)}")
+                cp_count = summary.get('change_points_count')
+                if cp_count is not None:
+                    parts.append(f"change_points={int(cp_count)}")
+            else:
+                last_state = summary.get('last_state')
+                if last_state is not None:
+                    parts.append(f"last_state={last_state}")
+                shares = _format_state_shares(summary.get('state_shares'))
+                if shares:
+                    parts.append(f"shares={shares}")
+                order = summary.get('state_order_by_sigma')
+                if isinstance(order, dict) and order:
+                    parts.append(f"order_by_sigma={order}")
+            return ", ".join(parts) if parts else str(summary)
+        return str(summary)
+
     bocpd = data.get('bocpd')
     if isinstance(bocpd, dict):
-        summary = bocpd.get('summary')
+        summary = _format_regime_summary('bocpd', bocpd.get('summary'))
         if summary:
             lines.append(f"- BOCPD: {summary}")
         elif bocpd.get('error'):
             lines.append(f"- BOCPD error: {bocpd['error']}")
     hmm = data.get('hmm')
     if isinstance(hmm, dict):
-        summary = hmm.get('summary')
+        summary = _format_regime_summary('hmm', hmm.get('summary'))
         if summary:
             lines.append(f"- HMM: {summary}")
         elif hmm.get('error'):
@@ -979,10 +1086,15 @@ def _render_forecast_conformal_section(data: Any) -> List[str]:
     lines = ['## Conformal Intervals']
     if data.get('method'):
         lines.append(f"- Method: {data['method']}")
-    if data.get('lower_price') is not None or data.get('upper_price') is not None:
-        lines.append(
-            f"- Interval: {format_number(data.get('lower_price'))} to {format_number(data.get('upper_price'))}"
-        )
+    lower = data.get('lower_price')
+    upper = data.get('upper_price')
+    if lower is not None or upper is not None:
+        if isinstance(lower, list) or isinstance(upper, list):
+            low_preview = _format_series_preview(lower, decimals=6) if isinstance(lower, list) else format_number(lower)
+            up_preview = _format_series_preview(upper, decimals=6) if isinstance(upper, list) else format_number(upper)
+            lines.append(f"- Interval: {low_preview} to {up_preview}")
+        else:
+            lines.append(f"- Interval: {format_number(lower)} to {format_number(upper)}")
     per_step = data.get('per_step_q')
     if isinstance(per_step, list) and per_step:
         sliced = per_step[:min(5, len(per_step))]

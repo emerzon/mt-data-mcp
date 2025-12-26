@@ -1055,6 +1055,7 @@ def main():
                 print(_format_result_minimal({"forecast_generate": kwargs}, verbose=True))
                 return
 
+            kwargs["__cli_raw"] = True
             out = func(**kwargs)
             text = _format_result_minimal(out, verbose=getattr(args, "verbose", False))
             if text:

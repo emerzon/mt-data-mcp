@@ -2,7 +2,7 @@ from typing import Any, Dict, Optional, List, Literal
 
 from .server import mcp, _auto_connect_wrapper
 from .schema import DenoiseSpec
-from .report_utils import render_enhanced_report, format_number
+from .report_utils import render_enhanced_report, format_number, _get_indicator_value
 
 TemplateName = Literal['basic','simple','advanced','scalping','intraday','swing','position']
 
@@ -90,9 +90,9 @@ def report_generate(
             ctx = rep.get('sections', {}).get('context', {})
             last = ctx.get('last_snapshot') or {}
             price = last.get('close')
-            ema20 = last.get('EMA_20') if 'EMA_20' in last else last.get('ema_20')
-            ema50 = last.get('EMA_50') if 'EMA_50' in last else last.get('ema_50')
-            rsi = last.get('RSI_14') if 'RSI_14' in last else last.get('rsi_14')
+            ema20 = _get_indicator_value(last, 'EMA_20')
+            ema50 = _get_indicator_value(last, 'EMA_50')
+            rsi = _get_indicator_value(last, 'RSI_14')
             if price is not None:
                 summ.append(f"close={format_number(price)}")
             if ema20 is not None and ema50 is not None:

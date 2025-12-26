@@ -141,6 +141,11 @@ def forecast_generate(
     
     Features can include `future_covariates` like 'hour', 'dow', 'month', 'is_holiday' (requires holidays lib).
     """
+    try:
+        if int(horizon) <= 0:
+            return {"error": "horizon must be a positive integer"}
+    except Exception:
+        return {"error": "horizon must be a positive integer"}
     # Resolve method selection:
     # - Backward compatible: `method` can still be provided directly.
     # - Preferred: (`library`, `model`) selects a method within an optional library without huge CLI enums.

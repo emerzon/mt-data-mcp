@@ -618,6 +618,8 @@ def forecast_barrier_optimize(
                     'tp': tp_unit,
                     'sl': sl_unit,
                     'rr': rr,
+                    'tp_price': float(tp_p),
+                    'sl_price': float(sl_p),
                     'prob_win': prob_win,
                     'prob_loss': prob_loss,
                     'prob_tp_first': prob_win,

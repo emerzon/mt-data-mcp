@@ -8,8 +8,13 @@ from ..report_utils import now_utc_iso, parse_csv_tail, pick_best_forecast_metho
 def _get_raw_result(func, *args, **kwargs):
     """Call function and return raw dict, handling both wrapped and unwrapped cases."""
     try:
-        # First try calling the function normally
-        result = func(*args, **kwargs)
+        if '__cli_raw' not in kwargs:
+            kwargs['__cli_raw'] = True
+        try:
+            result = func(*args, **kwargs)
+        except TypeError:
+            kwargs.pop('__cli_raw', None)
+            result = func(*args, **kwargs)
         
         # If it returns a dict, use it directly
         if isinstance(result, dict):
@@ -746,6 +751,7 @@ def template_basic(
             sec_bar['short'] = summarize_barrier_grid(grid_short, top_k=int(p.get('top_k', 5)))
         else:
             sec_bar['short'] = {'error': grid_short.get('error')}
+    sec_bar['mode'] = mode_val
     report['sections']['barriers'] = sec_bar
 
     # Patterns
