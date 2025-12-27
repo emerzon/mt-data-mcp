@@ -5,14 +5,11 @@ Automatically discovers function parameters and creates CLI arguments
 """
 
 import argparse
-import io
-import csv
 import sys
 import inspect
 import os
 from typing import get_type_hints, get_origin, get_args, Optional, Dict, Any, List, Tuple, Literal
 import json
-import math
 from ..utils.minimal_output import format_result_minimal as _shared_minimal
 
 # Simple debug logging controlled by env var MTDATA_CLI_DEBUG
