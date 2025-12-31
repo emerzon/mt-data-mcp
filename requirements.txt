@@ -98,10 +98,6 @@ scikit-learn>=1.3.2; python_version < "3.9"
 # pydiffmap>=0.2.0
 # pykeops>=2.2.3   # optional acceleration for CNE graph (GPU)
 
-# Additional optional forecasting deps
-hmmlearn>=0.3.3
-pmdarima>=2.1.1
-
 # Plotting for helper scripts
 matplotlib>=3.10.8
 

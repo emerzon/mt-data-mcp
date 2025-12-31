@@ -4,7 +4,7 @@ Simplified forecast execution module.
 This replaces the massive monolithic forecast.py with a clean, focused implementation.
 """
 
-from typing import Any, Dict, Optional, List, Literal
+from typing import Any, Dict, Optional
 from datetime import datetime
 import numpy as np
 import pandas as pd

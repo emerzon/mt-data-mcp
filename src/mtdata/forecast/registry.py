@@ -1,4 +1,4 @@
-from typing import Dict, List, Type, Optional
+from typing import Dict, List, Type
 from .interface import ForecastMethod
 
 class ForecastRegistry:

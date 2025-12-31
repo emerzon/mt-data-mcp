@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, List, Literal
+from typing import Any, Dict, Optional, Literal
 from datetime import datetime
 import logging
 import os

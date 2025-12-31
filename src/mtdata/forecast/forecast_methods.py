@@ -2,7 +2,7 @@
 Forecast method definitions and metadata (registry-derived).
 """
 
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List
 
 from .forecast_registry import get_forecast_methods_data as _registry_methods_data
 

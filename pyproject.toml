@@ -28,8 +28,6 @@ dependencies = [
     "sktime>=0.40.1",
     "mlforecast>=1.0.2",
     "lightgbm>=4.6.0",
-    "hmmlearn>=0.3.3",
-    "pmdarima>=2.1.1",
     "torch>=2.3.0",
     "chronos-forecasting>=2.0.0",
     "timesfm @ git+https://github.com/google-research/timesfm.git@6bd8044275f8b76cdc9554f2fecccac5f31a156c",

@@ -10,7 +10,7 @@ This file is self-contained (NumPy-only) and suitable for streaming or
 offline runs over a few thousand observations.
 """
 
-from typing import Dict, Optional
+from typing import Dict
 import numpy as np
 
 

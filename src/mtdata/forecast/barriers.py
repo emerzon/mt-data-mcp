@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, List, Literal, Tuple, Set, Union
+from typing import Any, Dict, Optional, List, Literal, Tuple, Set
 import numpy as np
 from ..core.schema import TimeframeLiteral, DenoiseSpec
 from ..core.constants import TIMEFRAME_SECONDS

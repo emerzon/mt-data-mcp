@@ -1,5 +1,5 @@
 
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional
 
 from ..utils.utils import _table_from_rows
 from ..utils.symbol import _extract_group_path as _extract_group_path_util

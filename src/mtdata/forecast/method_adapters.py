@@ -4,7 +4,7 @@ Method adapters for different forecasting approaches.
 Provides a clean adapter pattern to isolate method implementations.
 """
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Tuple
 import numpy as np
 
 # Import implementations

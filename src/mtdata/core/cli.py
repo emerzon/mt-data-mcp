@@ -9,7 +9,7 @@ import sys
 import inspect
 import os
 from datetime import datetime
-from typing import get_type_hints, get_origin, get_args, Optional, Dict, Any, List, Tuple, Literal
+from typing import get_origin, get_args, Optional, Dict, Any, List, Tuple, Literal
 import json
 from ..utils.minimal_output import format_result_minimal as _shared_minimal
 

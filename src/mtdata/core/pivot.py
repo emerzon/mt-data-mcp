@@ -1,6 +1,6 @@
 
 from datetime import datetime
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List
 import math
 
 from .schema import TimeframeLiteral, _PIVOT_METHODS
