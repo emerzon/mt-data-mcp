@@ -1,7 +1,8 @@
 
 from datetime import datetime, timedelta, timezone as dt_timezone
 import logging
-from typing import Any, Dict, Optional, List, Set
+import math
+from typing import Any, Dict, Optional, List, Set, Literal
 import pandas as pd
 import warnings
 import json
@@ -14,7 +15,8 @@ from ..core.schema import TimeframeLiteral, IndicatorSpec, DenoiseSpec, Simplify
 from ..core.constants import (
     TIMEFRAME_MAP, TIMEFRAME_SECONDS, FETCH_RETRY_ATTEMPTS, FETCH_RETRY_DELAY,
     SANITY_BARS_TOLERANCE, TI_NAN_WARMUP_FACTOR, TI_NAN_WARMUP_MIN_ADD,
-    SIMPLIFY_DEFAULT_MODE, SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT, TICKS_LOOKBACK_DAYS
+    SIMPLIFY_DEFAULT_MODE, SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT, TICKS_LOOKBACK_DAYS,
+    DEFAULT_ROW_LIMIT
 )
 
 # Imports from utils
@@ -23,9 +25,9 @@ from ..utils.mt5 import (
     _mt5_copy_ticks_range, _mt5_epoch_to_utc, _ensure_symbol_ready, get_symbol_info_cached
 )
 from ..utils.utils import (
-    _csv_from_rows, _format_time_minimal, _format_time_minimal_local,
+    _table_from_rows, _format_time_minimal, _format_time_minimal_local,
     _resolve_client_tz, _time_format_from_epochs, _maybe_strip_year,
-    _style_time_format, _format_numeric_rows_from_df, _parse_start_datetime,
+    _style_time_format, _format_numeric_rows_from_df, _parse_start_datetime,    
     _coerce_scalar, _normalize_ohlcv_arg
 )
 from ..utils.indicators import _estimate_warmup_bars_util, _apply_ta_indicators_util
@@ -163,7 +165,7 @@ def _trim_df_to_target(
 def fetch_candles(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    limit: int = 10,
+    limit: int = DEFAULT_ROW_LIMIT,
     start: Optional[str] = None,
     end: Optional[str] = None,
     ohlcv: Optional[str] = None,
@@ -171,7 +173,7 @@ def fetch_candles(
     denoise: Optional[DenoiseSpec] = None,
     simplify: Optional[SimplifySpec] = None,
 ) -> Dict[str, Any]:
-    """Return historical candles as CSV."""
+    """Return historical candles as tabular data."""
     try:
         # Backward/compat mappings to internal variable names used in implementation
         candles = int(limit)
@@ -247,7 +249,7 @@ def fetch_candles(
         if rates is None:
             return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}
 
-        # Generate CSV-like format with dynamic column filtering
+        # Generate tabular format with dynamic column filtering
         if len(rates) == 0:
             return {"error": "No data available"}
         
@@ -283,7 +285,7 @@ def fetch_candles(
             if has_real_volume:
                 headers.append("real_volume")
         
-        # Construct DataFrame to support indicators and consistent CSV building
+        # Construct DataFrame to support indicators and consistent output
         client_tz = _resolve_client_tz()
         _use_ctz = client_tz is not None
         df = _build_rates_df(rates, _use_ctz)
@@ -449,8 +451,8 @@ def fetch_candles(
         # Assemble rows from (possibly reduced) DataFrame for selected headers
         rows = _format_numeric_rows_from_df(df, headers)
 
-        # Build CSV via writer for escaping
-        payload = _csv_from_rows(headers, rows)
+        # Build tabular payload
+        payload = _table_from_rows(headers, rows)
         
         # Determine if the last candle is open or closed
         last_candle_open = False
@@ -489,12 +491,24 @@ def fetch_candles(
 
 def fetch_ticks(
     symbol: str,
-    limit: int = 100,
+    limit: int = DEFAULT_ROW_LIMIT,
     start: Optional[str] = None,
     end: Optional[str] = None,
     simplify: Optional[SimplifySpec] = None,
+    output: Literal["summary", "stats", "rows"] = "summary",
 ) -> Dict[str, Any]:
-    """Return latest ticks as CSV."""
+    """Fetch tick data and return either a summary (default) or raw rows.
+
+    Parameters
+    ----------
+    output : {"summary","stats","rows"}
+        - "summary" (default): compact descriptive statistics over the fetched
+          ticks (bid/ask/mid, plus last and volume; volume uses real volume when
+          available, otherwise tick_volume).
+        - "stats": more detailed stats (includes extra distribution moments and
+          quantiles).
+        - "rows": return tick rows as structured data.
+    """
     try:
         # Ensure symbol is ready; remember original visibility to restore later
         _info_before = get_symbol_info_cached(symbol)
@@ -506,6 +520,7 @@ def fetch_ticks(
         try:
             # Normalized params only
             effective_limit = int(limit)
+            output_mode = str(output or "summary").lower().strip()
             if start:
                 from_date = _parse_start_datetime(start)
                 if not from_date:
@@ -552,18 +567,34 @@ def fetch_ticks(
         if ticks is None:
             return {"error": f"Failed to get ticks for {symbol}: {mt5.last_error()}"}
         
-        # Generate CSV-like format with dynamic column filtering
+        # Generate tabular format with dynamic column filtering
         if len(ticks) == 0:
             return {"error": "No tick data available"}
-        
-        # Check which optional columns have meaningful data
+
+        if output_mode not in ("summary", "stats", "rows", "raw", "ticks"):
+            return {"error": f"Invalid output mode: {output}. Use 'summary', 'stats', or 'rows'."}
+
+        # Check which optional columns have meaningful data (for row output)
         lasts = [float(tick["last"]) for tick in ticks]
-        volumes = [float(tick["volume"]) for tick in ticks]
         flags = [int(tick["flags"]) for tick in ticks]
-        
+        volume_field_exists = True
+        try:
+            volumes = [float(tick["volume"]) for tick in ticks]
+        except Exception:
+            volumes = []
+            volume_field_exists = False
+
+        volume_real_field_exists = True
+        try:
+            volumes_real = [float(tick["volume_real"]) for tick in ticks]
+        except Exception:
+            volumes_real = []
+            volume_real_field_exists = False
+
         has_last = len(set(lasts)) > 1 or any(v != 0 for v in lasts)
-        has_volume = len(set(volumes)) > 1 or any(v != 0 for v in volumes)
+        has_volume = volume_field_exists and (len(set(volumes)) > 1 or any(v != 0 for v in volumes))
         has_flags = len(set(flags)) > 1 or any(v != 0 for v in flags)
+        has_real_volume = volume_real_field_exists and any(math.isfinite(v) and v != 0.0 for v in volumes_real)
         
         # Build header dynamically (time, bid, ask are always included)
         headers = ["time", "bid", "ask"]
@@ -620,8 +651,177 @@ def fetch_ticks(
             ]
         else:
             df_ticks["time"] = [
-                datetime.utcfromtimestamp(e).strftime(fmt) for e in _epochs
+                datetime.utcfromtimestamp(e).strftime(fmt) for e in _epochs     
             ]
+
+        if output_mode in ("summary", "stats"):
+            detailed_stats = output_mode == "stats"
+
+            def _series_stats(s: pd.Series, *, total_count: int) -> Dict[str, Any]:
+                vals = pd.to_numeric(s, errors="coerce")
+                vals = vals[pd.notna(vals)].astype(float)
+                n = int(vals.shape[0])
+                if n <= 0:
+                    return {"available": False}
+                first = float(vals.iloc[0])
+                last = float(vals.iloc[-1])
+                low = float(vals.min())
+                high = float(vals.max())
+                mean = float(vals.mean())
+                std = float(vals.std(ddof=0)) if n > 0 else float("nan")
+                stderr = float(std / math.sqrt(n)) if n > 0 else float("nan")
+                kurtosis = float(vals.kurtosis()) if n >= 4 else float("nan")
+                change = float(last - first)
+                change_pct = float((change / first) * 100.0) if first != 0.0 else float("nan")
+                out = {
+                    "first": first,
+                    "last": last,
+                    "low": low,
+                    "high": high,
+                    "mean": mean,
+                    "std": std,
+                    "stderr": stderr,
+                    "kurtosis": kurtosis,
+                    "change": change,
+                    "change_pct": change_pct,
+                }
+                if detailed_stats:
+                    out["median"] = float(vals.median())
+                    out["skew"] = float(vals.skew()) if n >= 3 else float("nan")
+                    out["q25"] = float(vals.quantile(0.25))
+                    out["q75"] = float(vals.quantile(0.75))
+                if detailed_stats or n != int(total_count):
+                    out["count"] = n
+                return out
+
+            df_stats = df_ticks.copy()
+            df_stats["mid"] = (df_stats["bid"] + df_stats["ask"]) / 2.0
+
+            start_epoch = float(df_stats["__epoch"].iloc[0])
+            end_epoch = float(df_stats["__epoch"].iloc[-1])
+            duration_seconds = float(max(0.0, end_epoch - start_epoch))
+            tick_rate_per_second = (
+                float(len(df_stats) / duration_seconds) if duration_seconds > 0 else float("nan")
+            )
+
+            timezone = "UTC"
+            if _use_ctz:
+                try:
+                    timezone = str(client_tz)
+                except Exception:
+                    timezone = "local"
+
+            out: Dict[str, Any] = {
+                "success": True,
+                "symbol": symbol,
+                "output": "stats" if detailed_stats else "summary",
+                "count": int(len(df_stats)),
+                "start": str(df_stats["time"].iloc[0]),
+                "end": str(df_stats["time"].iloc[-1]),
+                "start_epoch": start_epoch,
+                "end_epoch": end_epoch,
+                "duration_seconds": duration_seconds,
+                "tick_rate_per_second": tick_rate_per_second,
+                "timezone": timezone,
+                "stats": {
+                    "bid": _series_stats(df_stats["bid"], total_count=len(df_stats)),
+                    "ask": _series_stats(df_stats["ask"], total_count=len(df_stats)),
+                    "mid": _series_stats(df_stats["mid"], total_count=len(df_stats)),
+                },
+            }
+            if has_last:
+                out["stats"]["last"] = _series_stats(df_stats["last"], total_count=len(df_stats))
+
+            volume_kind = "tick_volume"
+            vol_vals = pd.Series([1.0] * int(len(df_stats)), dtype=float)
+            if has_real_volume and len(volumes_real) == len(df_stats):
+                volume_kind = "real_volume"
+                vol_vals = pd.Series(volumes_real, dtype=float)
+
+            if volume_kind == "real_volume":
+                vol_vals_num = pd.to_numeric(vol_vals, errors="coerce").astype(float)
+                vol_sum = float(vol_vals_num.fillna(0.0).sum())
+                vol_nonzero_count = int((vol_vals_num.fillna(0.0) != 0.0).sum())
+                vol_out: Dict[str, Any] = {
+                    "kind": volume_kind,
+                    "sum": vol_sum,
+                    "per_second": (
+                        float(vol_sum / duration_seconds) if duration_seconds > 0 else float("nan")
+                    ),
+                    "per_tick": float(vol_sum / float(len(df_stats) or 1)),
+                    "nonzero_share": float(vol_nonzero_count) / float(len(df_stats) or 1),
+                }
+                try:
+                    mean_v = float(vol_vals_num.mean())
+                    std_v = float(vol_vals_num.std(ddof=0))
+                    vol_out["cv"] = (
+                        float(std_v / mean_v) if (mean_v != 0.0 and not math.isnan(mean_v)) else float("nan")
+                    )
+                except Exception:
+                    pass
+
+                if vol_sum > 0.0:
+                    try:
+                        top_n = min(10, int(len(vol_vals_num)))
+                        if top_n > 0:
+                            vol_top = vol_vals_num.fillna(0.0).sort_values(ascending=False).iloc[:top_n]
+                            vol_out["top10_share"] = float(vol_top.sum() / vol_sum)
+                    except Exception:
+                        pass
+                    try:
+                        q95 = float(vol_vals_num.quantile(0.95))
+                        spikes = vol_vals_num[vol_vals_num >= q95]
+                        vol_out["spike95_count"] = int(spikes.shape[0])
+                        vol_out["spike95_share"] = float(spikes.fillna(0.0).sum() / vol_sum)
+                    except Exception:
+                        pass
+                    try:
+                        w = vol_vals_num.fillna(0.0)
+                        vol_out["vwap_mid"] = float((df_stats["mid"] * w).sum() / vol_sum)
+                        if has_last:
+                            vol_out["vwap_last"] = float((df_stats["last"] * w).sum() / vol_sum)
+                    except Exception:
+                        pass
+
+                    try:
+                        dmid = df_stats["mid"].diff().abs()
+                        corr_df = pd.DataFrame(
+                            {"volume": vol_vals_num, "abs_mid_change": dmid}
+                        ).dropna()
+                        if int(corr_df.shape[0]) >= 3:
+                            vol_out["corr_abs_mid_change"] = float(
+                                corr_df["volume"].corr(corr_df["abs_mid_change"])
+                            )
+                    except Exception:
+                        pass
+
+                    try:
+                        n_v = int(vol_vals_num.shape[0])
+                        if n_v >= 4:
+                            half = max(1, int(n_v // 2))
+                            first_mean = float(vol_vals_num.iloc[:half].mean())
+                            second_mean = float(vol_vals_num.iloc[half:].mean())
+                            vol_out["half_ratio"] = (
+                                float(second_mean / first_mean) if first_mean != 0.0 else float("nan")
+                            )
+                    except Exception:
+                        pass
+
+                if detailed_stats:
+                    vol_out["dist"] = _series_stats(vol_vals_num, total_count=len(df_stats))
+                out["stats"]["volume"] = vol_out
+            else:
+                out["stats"]["volume"] = (
+                    {
+                        "kind": volume_kind,
+                        "per_second": tick_rate_per_second,
+                        "sum": int(len(df_stats)),
+                    }
+                    if detailed_stats
+                    else {"kind": volume_kind}
+                )
+            return out
+
         # If simplify mode requests approximation or resampling, use shared path
         original_count = len(df_ticks)
         simplify_eff = None
@@ -641,7 +841,7 @@ def fetch_ticks(
         if simplify_present and _mode in ('approximate', 'resample'):
             df_out, simplify_meta = _simplify_dataframe_rows_ext(df_ticks, headers, simplify_used)
             rows = _format_numeric_rows_from_df(df_out, headers)
-            payload = _csv_from_rows(headers, rows)
+            payload = _table_from_rows(headers, rows)
             payload.update({
                 "success": True,
                 "symbol": symbol,
@@ -762,7 +962,7 @@ def fetch_ticks(
                 values.append(str(tick['flags']))
             rows.append(values)
 
-        payload = _csv_from_rows(headers, rows)
+        payload = _table_from_rows(headers, rows)
         payload.update({
             "success": True,
             "symbol": symbol,

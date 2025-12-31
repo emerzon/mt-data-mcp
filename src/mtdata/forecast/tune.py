@@ -532,16 +532,11 @@ def genetic_search_forecast_params(
         payload["best_method"] = sel
         if isinstance(agg, dict):
             payload["best_result_summary"] = {"horizon": agg.get('horizon'), "result": agg}
-    # Optional: compact CSV of history
+    # Optional: compact history preview (keeps payload small)
     try:
-        import io, csv
-        buf = io.StringIO()
-        w = csv.writer(buf, lineterminator='\n')
-        w.writerow(["generation", "score", "params", "method"])
-        for h in history:
-            w.writerow([h.get("generation"), h.get("score"), h.get("params"), h.get("method", "")])
-        payload["csv_header"] = "generation,score,params,method"
-        payload["csv_data"] = buf.getvalue().strip()
+        tail_n = 50
+        if isinstance(history, list) and history:
+            payload["history_tail"] = history[-tail_n:]
     except Exception:
         pass
     return payload

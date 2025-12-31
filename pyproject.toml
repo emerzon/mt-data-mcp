@@ -10,7 +10,7 @@ authors = [
     {name = "MCP Developer", email = "dev@example.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 dependencies = [
     "MetaTrader5>=5.0.5430",
     "mcp>=1.24.0",

@@ -11,7 +11,7 @@ Initial scope:
 - POST /api/backtest
 
 This module reuses existing functions in src.mtdata.core and src.mtdata.forecast.
-It performs light CSV->JSON adaptation for tabular endpoints and keeps parameter
+It performs light payload normalization for tabular endpoints and keeps parameter
 surfaces close to the underlying tools. Advanced params are accepted as dicts.
 """
 
@@ -23,8 +23,6 @@ from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.staticfiles import StaticFiles
-import csv
-import io
 
 from .constants import TIMEFRAME_MAP
 from ..forecast.forecast import (
@@ -74,44 +72,6 @@ from ..utils.denoise import get_denoise_methods_data as _get_denoise_methods
 from ..utils.denoise import _apply_denoise as _apply_dn, normalize_denoise_spec as _norm_dn
 from ..utils.dimred import list_dimred_methods as _list_dimred_methods
 import MetaTrader5 as mt5
-
-
-def _csv_payload_to_rows(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Convert mtdata CSV payload dict into list of dict rows with coerced values."""
-    if not isinstance(payload, dict):
-        raise ValueError("Invalid CSV payload type")
-    if payload.get("success") is not True:
-        # Some tools return {error: ...} instead
-        err = payload.get("error") or payload
-        raise ValueError(str(err))
-    header = str(payload.get("csv_header") or "").split(",")
-    data = str(payload.get("csv_data") or "")
-    if not header or header == [""]:
-        return []
-    reader = csv.reader(io.StringIO(data))
-    out: List[Dict[str, Any]] = []
-    for row in reader:
-        # right-pad row if columns missing, avoid crash
-        vals = list(row) + [None] * (len(header) - len(row))
-        rec: Dict[str, Any] = {}
-        for k, v in zip(header, vals):
-            if v is None:
-                rec[k] = None
-                continue
-            s = str(v).strip()
-            if s == "":
-                rec[k] = s
-                continue
-            # try numeric coercion
-            try:
-                if s.isdigit() or (s.startswith("-") and s[1:].isdigit()):
-                    rec[k] = int(s)
-                else:
-                    rec[k] = float(s)
-            except Exception:
-                rec[k] = v
-        out.append(rec)
-    return out
 
 
 class ForecastPriceBody(BaseModel):
@@ -403,7 +363,7 @@ def get_history(
             raise
         except Exception:
             pass
-        # Fetch bars first, then apply denoise locally to avoid CSV encoding/decoding
+        # Fetch bars first, then apply denoise locally to avoid text encoding/decoding
         try:
             need = int(limit)
             df = _fetch_history_impl(symbol=symbol, timeframe=timeframe, need=need, as_of=end)
@@ -738,7 +698,7 @@ def post_forecast_price(body: ForecastPriceBody) -> Dict[str, Any]:
     )
     if isinstance(res, dict) and res.get("error"):
         raise HTTPException(status_code=400, detail=str(res["error"]))
-    return res  # already JSON-like with lists for forecast, times, and optional intervals
+    return res  # already JSON-like with forecast_price/forecast_time and optional intervals
 
 
 @app.post("/api/forecast/volatility")

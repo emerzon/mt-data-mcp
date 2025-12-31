@@ -603,13 +603,6 @@ def forecast(
         if "error" in result:
             return result
             
-        # Add legacy fields if missing (for backward compatibility with CLI/API consumers)
-        if "forecast" not in result:
-            if "forecast_price" in result:
-                result["forecast"] = result["forecast_price"]
-            elif "forecast_return" in result:
-                result["forecast"] = result["forecast_return"]
-            
         return result
 
     except Exception as e:

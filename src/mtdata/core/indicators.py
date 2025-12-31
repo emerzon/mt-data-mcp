@@ -2,7 +2,8 @@
 from typing import Any, Dict, Optional, List
 
 from .schema import CategoryLiteral, IndicatorNameLiteral
-from ..utils.utils import _csv_from_rows
+from .constants import DEFAULT_ROW_LIMIT
+from ..utils.utils import _table_from_rows
 from .server import mcp
 # Import the actual implementation from utils
 from ..utils.indicators import _list_ta_indicators
@@ -23,10 +24,14 @@ def _clean_help_text(text: str, func_name: Optional[str] = None, func: Optional[
     return _impl(text, func_name=func_name)
 
 @mcp.tool()
-def indicators_list(search_term: Optional[str] = None, category: Optional[CategoryLiteral] = None) -> Dict[str, Any]:  # type: ignore
-    """List indicators as CSV with columns: name,category. Optional filters: search_term, category.
+def indicators_list(
+    search_term: Optional[str] = None,
+    category: Optional[CategoryLiteral] = None,
+    limit: Optional[int] = DEFAULT_ROW_LIMIT,
+) -> Dict[str, Any]:  # type: ignore
+    """List indicators as a tabular result with columns: name, category. Optional filters: search_term, category.
 
-    Parameters: search_term?, category?
+    Parameters: search_term?, category?, limit?
     """
     try:
         items = _list_ta_indicators()
@@ -44,8 +49,16 @@ def indicators_list(search_term: Optional[str] = None, category: Optional[Catego
             cat_q = category.strip().lower()
             items = [it for it in items if (it.get('category') or '').lower() == cat_q]
         items.sort(key=lambda x: (x.get('category') or '', x.get('name') or ''))
+        limit_value = None
+        try:
+            if limit is not None:
+                limit_value = int(float(limit))
+        except Exception:
+            limit_value = None
+        if limit_value and limit_value > 0:
+            items = items[:limit_value]
         rows = [[it.get('name',''), it.get('category','')] for it in items]
-        return _csv_from_rows(["name", "category"], rows)
+        return _table_from_rows(["name", "category"], rows)
     except Exception as e:
         return {"error": f"Error listing indicators: {e}"}
 

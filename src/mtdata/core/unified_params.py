@@ -29,3 +29,13 @@ def add_global_args_to_parser(parser: argparse.ArgumentParser, exclude_params: O
             action='store_true',
             help='Show detailed metadata in output'
         )
+
+    # Output format
+    if 'format' not in exclude_params:
+        parser.add_argument(
+            '--format',
+            type=lambda s: str(s).strip().lower(),
+            choices=['text', 'json'],
+            default='text',
+            help="Output format: 'text' (default) or 'json' (raw tool output).",
+        )

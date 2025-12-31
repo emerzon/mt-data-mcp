@@ -34,8 +34,14 @@ symbol
 # Fetch candles - symbol is required
 data_fetch_candles(symbol="EURUSD", timeframe="H1", limit=100)
 
-# Fetch ticks
+# Fetch tick summary stats (default)
 data_fetch_ticks(symbol="EURUSD", limit=100)
+
+# Fetch more detailed tick stats
+data_fetch_ticks(symbol="EURUSD", limit=100, output="stats")
+
+# Fetch raw tick rows
+data_fetch_ticks(symbol="EURUSD", limit=100, output="rows")
 ```
 
 ### Pattern Detection

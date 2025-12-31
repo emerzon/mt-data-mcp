@@ -1,15 +1,15 @@
 """Utilities to render plain-text TOON output from tool results.
 
 Outputs are normalized into the TOON v2.0 core profile so tools emit a single,
-compact encoding instead of mixing CSV and sparse JSON shapes.
+compact encoding instead of mixing ad-hoc tabular text and sparse JSON shapes.
 """
 
 from __future__ import annotations
 
-import io
-import csv
 import math
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional
+
+from .formatting import format_number
 
 
 _INDENT = "  "
@@ -33,25 +33,18 @@ def _is_empty_value(value: Any) -> bool:
 
 
 def _minify_number(num: float) -> str:
-    try:
-        f = float(num)
-    except Exception:
-        return str(num)
-    if not math.isfinite(f):
-        return str(num)
-    text = f"{f:.8f}".rstrip('0').rstrip('.')
-    return text if text else '0'
+    return format_number(num)
 
 
 def _stringify_scalar(value: Any) -> str:
     if value is None:
-        return ""
+        return "null"
     if isinstance(value, bool):
-        return "true" if value else "false"
+        return format_number(value)
     if isinstance(value, int):
-        return str(value)
+        return format_number(value)
     if isinstance(value, float):
-        return _minify_number(value)
+        return format_number(value)
     return str(value)
 
 
@@ -104,33 +97,14 @@ def _quote_key(key: Any, delimiter: str = _DEFAULT_DELIMITER) -> str:
 def _stringify_for_toon(value: Any, delimiter: str = _DEFAULT_DELIMITER) -> str:
     """Canonical scalar rendering for TOON."""
     if value is None:
-        return ""
+        return "null"
     if isinstance(value, bool):
-        return "true" if value else "false"
+        return format_number(value)
     if isinstance(value, int):
-        return str(value)
+        return format_number(value)
     if isinstance(value, float):
-        return _minify_number(value)
+        return format_number(value)
     return _quote_if_needed(str(value), delimiter)
-
-
-def _list_of_dicts_to_csv(items: List[Dict[str, Any]]) -> str:
-    if not items:
-        return ""
-    headers: List[str] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        for key in item.keys():
-            if key not in headers:
-                headers.append(key)
-    buffer = io.StringIO()
-    writer = csv.writer(buffer, lineterminator="\n")
-    writer.writerow(headers)
-    for item in items:
-        row = [_stringify_cell(item.get(header)) for header in headers]
-        writer.writerow(row)
-    return buffer.getvalue().rstrip("\n")
 
 
 def _format_complex_value(value: Any) -> str:
@@ -141,7 +115,8 @@ def _format_complex_value(value: Any) -> str:
         if not values:
             return ""
         if all(isinstance(v, dict) for v in values):
-            return _list_of_dicts_to_csv(values)
+            headers = _headers_from_dicts(values)
+            return _encode_tabular("data", headers, values, indent=0) if headers else ""
         if all(_is_scalar_value(v) for v in values):
             return ", ".join(_stringify_scalar(v) for v in values)
         parts = []
@@ -189,6 +164,20 @@ def _encode_tabular(key: str, headers: List[str], rows: List[Dict[str, Any]], in
         vals = [_stringify_for_toon(row.get(h), delimiter) for h in headers]
         lines.append(f"{row_indent}{delimiter.join(vals)}")
     return "\n".join(lines)
+
+
+def format_table_toon(headers: List[str], rows: List[List[Optional[Any]]], name: str = "data") -> List[str]:
+    """Render a TOON table from headers and row values."""
+    if not headers or not rows:
+        return []
+    cols = [str(h) for h in headers]
+    items: List[Dict[str, Any]] = []
+    for row in rows:
+        item: Dict[str, Any] = {}
+        for idx, col in enumerate(cols):
+            item[col] = row[idx] if idx < len(row) else None
+        items.append(item)
+    return _encode_tabular(name, cols, items, indent=0).splitlines()
 
 
 def _encode_inline_array(key: str, items: List[Any], indent: int = 0, delimiter: str = _DEFAULT_DELIMITER) -> str:
@@ -358,20 +347,6 @@ def _normalize_forecast_payload(payload: Dict[str, Any], verbose: bool = True) -
         return None
 
 
-def _parse_csv_payload(data: Dict[str, Any]) -> Optional[Tuple[List[str], List[Dict[str, Any]]]]:
-    header = data.get('csv_header')
-    rows_raw = data.get('csv_data')
-    if not header or not rows_raw:
-        return None
-    try:
-        csv_text = f"{header}\n{rows_raw}"
-        reader = csv.DictReader(io.StringIO(csv_text))
-        rows: List[Dict[str, Any]] = [dict(r) for r in reader]
-        return list(reader.fieldnames or []), rows
-    except Exception:
-        return None
-
-
 def _format_to_toon(value: Any, key: Optional[str] = None, indent: int = 0,
                     delimiter: str = _DEFAULT_DELIMITER) -> str:
     ind = _INDENT * indent
@@ -416,7 +391,7 @@ def _format_to_toon(value: Any, key: Optional[str] = None, indent: int = 0,
 
 
 def format_result_minimal(result: Any, verbose: bool = True) -> str:
-    """Render tool outputs as TOON text (drop CSV/sparse JSON)."""
+    """Render tool outputs as TOON text."""
     if result is None:
         return ""
     try:
@@ -425,19 +400,6 @@ def format_result_minimal(result: Any, verbose: bool = True) -> str:
             forecast_norm = _normalize_forecast_payload(result, verbose=verbose)
             if forecast_norm is not None:
                 normalized = forecast_norm
-            else:
-                parsed = _parse_csv_payload(result)
-                if parsed:
-                    headers, rows = parsed
-                    extras = {
-                        k: v for k, v in result.items()
-                        if k not in {'csv_header', 'csv_data', 'success', 'count'} and not _is_empty_value(v)
-                    }
-                    merged: Dict[str, Any] = {}
-                    if extras and verbose:
-                        merged['meta'] = extras
-                    merged['data'] = rows
-                    normalized = merged
         if isinstance(normalized, str):
             return normalized.strip()
         toon_text = _format_to_toon(normalized)
@@ -449,7 +411,7 @@ def format_result_minimal(result: Any, verbose: bool = True) -> str:
             return ""
 
 
-def to_methods_availability_csv(methods: List[Dict[str, Any]]) -> str:
+def to_methods_availability_toon(methods: List[Dict[str, Any]]) -> str:
     """Special-case helper: compact TOON for method availability."""
     rows: List[Dict[str, Any]] = []
     for m in methods or []:

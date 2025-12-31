@@ -81,7 +81,7 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
     def _wrap(func):
         # Wrap the callable to ensure plain-text, minimal output for API calls
         try:
-            from ..utils.minimal_output import format_result_minimal as _fmt_min, to_methods_availability_csv as _fmt_methods
+            from ..utils.minimal_output import format_result_minimal as _fmt_min, to_methods_availability_toon as _fmt_methods
         except Exception:
             _fmt_min = lambda x: str(x) if x is not None else ""  # fallback
             _fmt_methods = None  # type: ignore

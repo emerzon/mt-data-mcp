@@ -13,7 +13,7 @@ The language is kept simple so anyone with a basic interest in trading can follo
 | Tool | Call | Why we used it |
 |------|------|----------------|
 | **`data_fetch_candles`** (H1) | `symbol=EURUSD`, `timeframe=H1`, `limit=200`, `indicators=EMA(20), EMA(50), RSI(14), MACD(12,26,9)` | <ul><li>**H1** = one‑hour bars – the natural granularity for short‑term (intraday) analysis.</li><li>200 bars give us roughly the last 8‑9 days of data, enough to see the current trend.</li><li>Adding **EMA‑20** and **EMA‑50** lets us see whether price is above or below short‑ and medium‑term moving averages (a quick trend check).</li><li>**RSI** (Relative Strength Index) shows if the market is “over‑bought” (>70) or “over‑sold” (<30).</li><li>**MACD** (Moving‑Average Convergence Divergence) tells us whether momentum is positive or negative.</li></ul> |
-| **Result** | A CSV table with columns `time,open,high,low,close,EMA_20,EMA_50,RSI_14,MACD,MACDh,MACDs`. The last few rows (the most recent hours) show: <br>‑ Price ≈ 1.1776 <br>‑ EMA‑20 ≈ 1.1754, EMA‑50 ≈ 1.1739 <br>‑ RSI ≈ 65 <br>‑ MACD line > signal (positive) | **Interpretation** <br>‑ Price is **above both EMAs** → bullish alignment. <br>‑ RSI is in the “strength” zone but not over‑bought. <br>‑ MACD histogram is near zero, meaning momentum is still positive but weakening – a possible short‑term pause. |
+| **Result** | A table with columns `time,open,high,low,close,EMA_20,EMA_50,RSI_14,MACD,MACDh,MACDs`. The last few rows (the most recent hours) show: <br>‑ Price ≈ 1.1776 <br>‑ EMA‑20 ≈ 1.1754, EMA‑50 ≈ 1.1739 <br>‑ RSI ≈ 65 <br>‑ MACD line > signal (positive) | **Interpretation** <br>‑ Price is **above both EMAs** → bullish alignment. <br>‑ RSI is in the “strength” zone but not over‑bought. <br>‑ MACD histogram is near zero, meaning momentum is still positive but weakening – a possible short‑term pause. |
 
 ---
 
@@ -22,7 +22,7 @@ The language is kept simple so anyone with a basic interest in trading can follo
 | Tool | Call | Why we used it |
 |------|------|----------------|
 | **`data_fetch_candles`** (D1) | `symbol=EURUSD`, `timeframe=D1`, `limit=30`, `ohlcv=ohlc` | <ul><li>Pivot points are traditionally calculated from the **previous day’s** high, low and close.</li><li>30 daily bars give us a recent history to confirm that the most recent day is representative.</li></ul> |
-| **Result** | CSV with the last 30 daily bars (open‑high‑low‑close). The most recent day (15 Sep) shows: <br>‑ High = 1.17745, Low = 1.16569, Close = 1.17608 | This daily H‑L‑C will be fed into the next step. |
+| **Result** | A table with the last 30 daily bars (open‑high‑low‑close). The most recent day (15 Sep) shows: <br>‑ High = 1.17745, Low = 1.16569, Close = 1.17608 | This daily H‑L‑C will be fed into the next step. |
 
 ---
 

@@ -56,15 +56,9 @@ The following tools are available via `python cli.py <command>`:
 - `symbols_list_groups [--search-term TERM] [--limit N]` - Get available symbol groups.
 - `symbols_describe <symbol>` - Get detailed symbol information.
 - `data_fetch_candles <symbol> [--timeframe TF] [--limit N]` - Get historical OHLCV data.
-- `data_fetch_ticks <symbol> [--limit N]` - Get tick data.
+- `data_fetch_ticks <symbol> [--output summary|stats|rows] [--limit N]` - Get tick stats (default summary), detailed stats, or raw tick rows.
 - `market_depth_fetch <symbol>` - Get market depth (DOM).
-- `indicators_list` - List available technical indicators. (Use `list_capabilities --sections indicators --include-details true` for JSON details.)
-  - CSV: grouped rows (category shown once per group):
-    category,name
-    Momentum,RSI
-    ,MACD
-    ,Stoch
-  - JSON: grouped by category `{ "categories": { "Momentum": ["RSI", ...], ... } }`
+- `indicators_list` - List available technical indicators. Use `--format json` for structured output.
 - `indicators_describe <name>` - Get detailed information for a specific indicator.
 - `denoise_list_methods` - List available denoising methods and their parameters.
 - `patterns_detect_candlesticks <symbol> [--timeframe TF] [--limit N]` - Detect candlestick patterns.
@@ -117,14 +111,20 @@ python cli.py symbols_list --search-term EUR --limit 20
 # Get EUR/USD hourly data
 python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 100
 
-# Get tick data
-python cli.py data_fetch_ticks EURUSD --limit 50
+# Get tick summary stats (default)
+python cli.py data_fetch_ticks EURUSD --limit 200
 python cli.py data_fetch_ticks EURUSD --start "yesterday 14:00" --end "yesterday 15:00" --limit 200
+
+# Get more detailed tick stats
+python cli.py data_fetch_ticks EURUSD --output stats --limit 200
+
+# Get raw tick rows
+python cli.py data_fetch_ticks EURUSD --output rows --limit 50
 ```
 
 #### Data Simplification
 
-The `data_fetch_candles` and `data_fetch_ticks` commands support a powerful `--simplify` and `--simplify-params` option to downsample or transform data.
+The `data_fetch_candles` command and `data_fetch_ticks` (with `--output rows`) support a powerful `--simplify` and `--simplify-params` option to downsample or transform data.
 
 **Modes & Methods:**
 
@@ -319,10 +319,11 @@ Execute trades and manage portfolio risk directly from the CLI or MCP tools.
 - `trading_positions_modify <ticket> [--sl PRICE] [--tp PRICE]` - Modify SL/TP for an open position.
 
 #### Orders
-- `trading_orders_place_market <symbol> <volume> <BUY|SELL> [--sl PRICE] [--tp PRICE]` - Place an instant market order.
-- `trading_pending_place <symbol> <volume> <TYPE> <price> [--sl PRICE] [--tp PRICE] [--expiration "TIME"]` - Place a pending order (LIMIT/STOP).
+- `trading_orders_place_market <symbol> --volume LOTS --type BUY|SELL [--stop-loss PRICE] [--take-profit PRICE] [--comment TEXT] [--deviation N] [--dry-run true|false] [--confirm true|false]` - Place an instant market order.
+- `trading_pending_place <symbol> --volume LOTS --type <TYPE> --price PRICE [--stop-loss PRICE] [--take-profit PRICE] [--expiration "TIME"] [--comment TEXT] [--deviation N] [--dry-run true|false] [--confirm true|false]` - Place a pending order (LIMIT/STOP).
   - Types: `BUYLIMIT`, `BUYSTOP`, `SELLLIMIT`, `SELLSTOP`.
   - Expiration: `GTC` (default), or time string (e.g., "today 15:00", "2025-12-31").
+  - Safety: set `MTDATA_TRADING_REQUIRE_CONFIRM=1` to require `--confirm true` for live requests; use `--dry-run true` to preview the MT5 request payload.
 - `trading_pending_get` - List active pending orders.
 - `trading_pending_cancel [--ticket ID] [--symbol SYM]` - Cancel pending orders.
 - `trading_pending_modify <ticket> [--price PRICE] [--sl PRICE] [--tp PRICE] [--expiration "TIME"]` - Modify a pending order.

@@ -107,7 +107,7 @@ def _check_requirements(method: str, requires: List[str]) -> Tuple[bool, List[st
     reqs = list(requires or [])
 
     # Check availability based on method type and runtime flags.
-    if method in ("ses", "holt", "holt_winters_add", "holt_winters_mul") and not _SM_ETS_AVAILABLE:
+    if method in ("ses", "holt", "holt_winters_add", "holt_winters_mul", "ets") and not _SM_ETS_AVAILABLE:
         available = False; reqs.append("statsmodels")
     if method in ("arima", "sarima") and not _SM_SARIMAX_AVAILABLE:
         available = False; reqs.append("statsmodels")

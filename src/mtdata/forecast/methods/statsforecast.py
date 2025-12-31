@@ -36,10 +36,20 @@ class StatsForecastMethod(ForecastMethod):
         **kwargs
     ) -> ForecastResult:
         try:
-            from statsforecast import StatsForecast
-            import pandas as pd
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"pkg_resources is deprecated as an API\..*",
+                    category=UserWarning,
+                )
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"Deprecated call to `pkg_resources\.declare_namespace\(.*\)`\..*",
+                    category=DeprecationWarning,
+                )
+                from statsforecast import StatsForecast  # type: ignore
         except ImportError as ex:
-            raise RuntimeError(f"Failed to import statsforecast: {ex}")
+            raise RuntimeError(f"Failed to import statsforecast: {ex}") from ex
 
         # Build single-series training dataframe
         from ..common import _create_training_dataframes, _extract_forecast_values
@@ -104,7 +114,10 @@ class StatsForecastMethod(ForecastMethod):
                         lo_vals = np.pad(lo_vals, (0, pad_width), mode='edge')
                         hi_vals = np.pad(hi_vals, (0, pad_width), mode='edge')
                         
-                    ci_values = (lo_vals.astype(float), hi_vals.astype(float))
+                    ci_values = np.vstack([
+                        lo_vals.astype(float),
+                        hi_vals.astype(float),
+                    ])
 
             # Filter out internal context params and build clean params_used
             internal_keys = {'symbol', 'timeframe', 'as_of', 'exog_used', 'exog_future'}
@@ -135,8 +148,22 @@ class GenericStatsForecastMethod(StatsForecastMethod):
         
     def _get_model(self, seasonality: int, params: Dict[str, Any]):
         model_name = params.get('model_name') or params.get('model') or 'autoarima'
-            
-        from statsforecast import models
+
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"pkg_resources is deprecated as an API\..*",
+                    category=UserWarning,
+                )
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"Deprecated call to `pkg_resources\.declare_namespace\(.*\)`\..*",
+                    category=DeprecationWarning,
+                )
+                from statsforecast import models  # type: ignore
+        except ImportError as ex:
+            raise RuntimeError(f"Failed to import statsforecast models: {ex}") from ex
         
         # Handle case-insensitive lookup
         available = {m.lower(): m for m in dir(models) if not m.startswith('_')}
@@ -163,8 +190,82 @@ class GenericStatsForecastMethod(StatsForecastMethod):
             
         return model_cls(**model_params)
 
-# Intentionally do not register per-model sf_* aliases here.
-# Prefer the generic method "statsforecast" with params["model_name"] selecting the model.
+_SF_MODEL_CLASS_NAMES: Tuple[str, ...] = (
+    # Keep this list lightweight (no import-time statsforecast dependency).
+    # These correspond to common classes under statsforecast.models.
+    "ADIDA",
+    "ARCH",
+    "ARIMA",
+    "AutoARIMA",
+    "AutoCES",
+    "AutoETS",
+    "AutoMFLES",
+    "AutoRegressive",
+    "AutoTBATS",
+    "AutoTheta",
+    "ConstantModel",
+    "CrostonClassic",
+    "CrostonOptimized",
+    "CrostonSBA",
+    "DynamicOptimizedTheta",
+    "DynamicTheta",
+    "GARCH",
+    "HistoricAverage",
+    "Holt",
+    "HoltWinters",
+    "IMAPA",
+    "MFLES",
+    "MSTL",
+    "NaNModel",
+    "Naive",
+    "OptimizedTheta",
+    "RandomWalkWithDrift",
+    "SeasonalExponentialSmoothing",
+    "SeasonalExponentialSmoothingOptimized",
+    "SeasonalNaive",
+    "SeasonalWindowAverage",
+    "SimpleExponentialSmoothing",
+    "SimpleExponentialSmoothingOptimized",
+    "SklearnModel",
+    "TBATS",
+    "TSB",
+    "Theta",
+    "WindowAverage",
+    "ZeroModel",
+)
+
+
+def _build_sf_alias_class(model_name: str, alias: str):
+    class _StatsForecastAlias(GenericStatsForecastMethod):
+        @property
+        def name(self) -> str:
+            return alias
+
+        def _get_model(self, seasonality: int, params: Dict[str, Any]):
+            p = dict(params or {})
+            p["model_name"] = model_name
+            return super()._get_model(seasonality, p)
+
+    _StatsForecastAlias.__name__ = f"SF_{model_name}"
+    _StatsForecastAlias.__qualname__ = _StatsForecastAlias.__name__
+    _StatsForecastAlias.__doc__ = (
+        f"StatsForecast {model_name} (alias; equivalent to method='statsforecast' "
+        f"with params.model_name='{model_name}')."
+    )
+    return _StatsForecastAlias
+
+
+def _register_statsforecast_aliases() -> None:
+    for model_name in _SF_MODEL_CLASS_NAMES:
+        alias = f"sf_{str(model_name).lower()}"
+        try:
+            cls = _build_sf_alias_class(model_name, alias)
+            ForecastRegistry.register(alias)(cls)
+        except Exception:
+            continue
+
+
+_register_statsforecast_aliases()
 
 # Backward compatibility wrapper
 def forecast_statsforecast(

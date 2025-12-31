@@ -19,7 +19,7 @@ Generates point forecasts for the next `horizon` bars. Optionally returns confid
 Key parameters
 - `symbol`: instrument, e.g. `EURUSD`.
 - `timeframe`: bar timeframe, e.g. `H1`.
-- `method`: one of `naive`, `drift`, `seasonal_naive`, `theta`, `fourier_ols`, `ses`, `holt`, `holt_winters_add`, `holt_winters_mul`, `arima`, `sarima`, `mc_gbm`, `hmm_mc`.
+- `method`: one of `naive`, `drift`, `seasonal_naive`, `theta`, `fourier_ols`, `ses`, `holt`, `holt_winters_add`, `holt_winters_mul`, `ets`, `arima`, `sarima`, `mc_gbm`, `hmm_mc`.
 - `horizon`: how many future bars to predict.
 - `indicators`: optional technical indicators to include before forecasting.
 - `denoise`: optional denoising applied pre/post indicators.

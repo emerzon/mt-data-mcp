@@ -1,16 +1,3 @@
-
-from datetime import datetime
-from typing import Any, Dict, Optional, List, Tuple, Set
-import pandas as pd
-import warnings
-import numpy as np
-
-from .schema import TimeframeLiteral
-from .constants import TIMEFRAME_MAP
-from ..utils.mt5 import _mt5_copy_rates_from, _mt5_epoch_to_utc
-from ..utils.utils import _csv_from_rows, _format_time_minimal, _format_time_minimal_local, _use_client_tz, _time_format_from_epochs, _maybe_strip_year, _style_time_format, to_float_np as __to_float_np
-from ..patterns.classic import detect_classic_patterns as _detect_classic_patterns, ClassicDetectorConfig as _ClassicCfg
-from ..patterns.eliott import detect_elliott_waves as _detect_elliott_waves, ElliottWaveConfig as _ElliottCfg
 from datetime import datetime
 from typing import Any, Dict, Optional, List, Tuple, Set, Literal
 import pandas as pd
@@ -20,7 +7,7 @@ import numpy as np
 from .schema import TimeframeLiteral
 from .constants import TIMEFRAME_MAP
 from ..utils.mt5 import _mt5_copy_rates_from, _mt5_epoch_to_utc
-from ..utils.utils import _csv_from_rows, _format_time_minimal, _format_time_minimal_local, _use_client_tz, _time_format_from_epochs, _maybe_strip_year, _style_time_format, to_float_np as __to_float_np
+from ..utils.utils import _table_from_rows, _format_time_minimal, _format_time_minimal_local, _use_client_tz, _time_format_from_epochs, _maybe_strip_year, _style_time_format, to_float_np as __to_float_np
 from ..patterns.classic import detect_classic_patterns as _detect_classic_patterns, ClassicDetectorConfig as _ClassicCfg
 from ..patterns.eliott import detect_elliott_waves as _detect_elliott_waves, ElliottWaveConfig as _ElliottCfg
 from .server import mcp, _auto_connect_wrapper, _ensure_symbol_ready
@@ -295,7 +282,7 @@ def patterns_detect(
                 last_pick_idx = i
 
             headers = ["time", "pattern"]
-            payload = _csv_from_rows(headers, rows)
+            payload = _table_from_rows(headers, rows)
             payload.update({
                 "success": True,
                 "symbol": symbol,

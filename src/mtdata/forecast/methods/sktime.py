@@ -226,3 +226,46 @@ class GenericSktimeMethod(SktimeMethod):
             est_params['sp'] = max(1, seasonality)
             
         return estimator_cls(**est_params)
+
+
+@ForecastRegistry.register("skt_theta")
+class SktThetaMethod(GenericSktimeMethod):
+    """Alias for `sktime` using `sktime.forecasting.theta.ThetaForecaster`."""
+
+    @property
+    def name(self) -> str:
+        return "skt_theta"
+
+    def _get_estimator(self, seasonality: int, params: Dict[str, Any]):
+        p = dict(params or {})
+        p.setdefault("estimator", "sktime.forecasting.theta.ThetaForecaster")
+        return super()._get_estimator(seasonality, p)
+
+
+@ForecastRegistry.register("skt_naive")
+class SktNaiveMethod(GenericSktimeMethod):
+    """Alias for `sktime` using `sktime.forecasting.naive.NaiveForecaster`."""
+
+    @property
+    def name(self) -> str:
+        return "skt_naive"
+
+    def _get_estimator(self, seasonality: int, params: Dict[str, Any]):
+        p = dict(params or {})
+        p.setdefault("estimator", "sktime.forecasting.naive.NaiveForecaster")
+        p.setdefault("strategy", "last")
+        return super()._get_estimator(seasonality, p)
+
+
+@ForecastRegistry.register("skt_autoets")
+class SktAutoETSMethod(GenericSktimeMethod):
+    """Alias for `sktime` using `sktime.forecasting.ets.AutoETS`."""
+
+    @property
+    def name(self) -> str:
+        return "skt_autoets"
+
+    def _get_estimator(self, seasonality: int, params: Dict[str, Any]):
+        p = dict(params or {})
+        p.setdefault("estimator", "sktime.forecasting.ets.AutoETS")
+        return super()._get_estimator(seasonality, p)

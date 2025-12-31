@@ -46,10 +46,12 @@ class TestDataService(unittest.TestCase):
         self.assertIsInstance(result, dict)
         self.assertTrue(result.get('success'))
         self.assertEqual(result.get('candles'), 5)
-        # Check CSV content
-        csv_header = result.get('csv_header')
-        self.assertIsInstance(csv_header, str)
-        self.assertIn('time,open,high,low,close', csv_header)
+        # Check tabular rows
+        data = result.get('data')
+        self.assertIsInstance(data, list)
+        self.assertEqual(len(data), 5)
+        self.assertTrue(all(isinstance(row, dict) for row in data))
+        self.assertTrue({'time', 'open', 'high', 'low', 'close'}.issubset(set(data[0].keys())))
         
     @patch('mtdata.services.data_service._mt5_copy_ticks_range')
     @patch('mtdata.services.data_service._ensure_symbol_ready')

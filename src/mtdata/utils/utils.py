@@ -1,12 +1,17 @@
-import io
-import csv
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Set
+from numbers import Number
 
 import pandas as pd
 import dateparser
 
-from .constants import PRECISION_ABS_TOL, PRECISION_MAX_DECIMALS, PRECISION_REL_TOL, TIME_DISPLAY_FORMAT
+from .constants import (
+    PRECISION_ABS_TOL,
+    PRECISION_MAX_DECIMALS,
+    PRECISION_REL_TOL,
+    TIME_DISPLAY_FORMAT,
+)
+from .formatting import format_number
 
 
 def _coerce_scalar(s: str):
@@ -65,30 +70,31 @@ def _normalize_ohlcv_arg(ohlcv: Optional[str]) -> Optional[Set[str]]:
     return out or None
 
 
-def _csv_from_rows(headers: List[str], rows: List[List[Any]]) -> Dict[str, Any]:
-    """Build a normalized CSV payload for tabular results.
+def _table_from_rows(headers: List[str], rows: List[List[Any]]) -> Dict[str, Any]:
+    """Build a normalized tabular payload for results.
 
     Returns a dict with at least:
-    - csv_header: comma-separated column names
-    - csv_data: newline-separated CSV rows
+    - data: list[dict] rows (keys follow the provided headers order)
     - success: True
     - count: number of data rows
     """
-    data_buf = io.StringIO()
-    writer = csv.writer(data_buf, lineterminator="\n")
-    for row in rows:
-        writer.writerow(row)
+    cols = [str(h) for h in (headers or [])]
+    items: List[Dict[str, Any]] = []
+    for row in rows or []:
+        item: Dict[str, Any] = {}
+        for idx, col in enumerate(cols):
+            item[col] = row[idx] if idx < len(row) else None
+        items.append(item)
     return {
-        "csv_header": ",".join(headers),
-        "csv_data": data_buf.getvalue().rstrip("\n"),
+        "data": items,
         "success": True,
-        "count": len(rows),
+        "count": len(items),
     }
 
 def _format_time_minimal(epoch_seconds: float) -> str:
     """Format epoch seconds into a normalized UTC datetime string.
 
-    Normalized format everywhere: YYYY-MM-DD HH:MM:SS (UTC)
+    Normalized format everywhere: YYYY-MM-DD HH:MM
     """
     dt = datetime.utcfromtimestamp(epoch_seconds)
     return dt.strftime(TIME_DISPLAY_FORMAT)
@@ -96,7 +102,7 @@ def _format_time_minimal(epoch_seconds: float) -> str:
 def _format_time_minimal_local(epoch_seconds: float) -> str:
     """Format epoch seconds into a normalized local/client datetime string.
 
-    Normalized format everywhere: YYYY-MM-DD HH:MM:SS (local/client tz)
+    Normalized format everywhere: YYYY-MM-DD HH:MM (local/client tz)
     Falls back to UTC if tz resolution fails.
     """
     from ..core.config import mt5_config
@@ -249,25 +255,23 @@ def _format_float(v: float, d: int) -> str:
     s = f"{v:.{d}f}"
     if '.' in s:
         s = s.rstrip('0').rstrip('.')
+    if s in ("", "-0"):
+        s = "0"
     return s
+
+
 
 
 def _format_numeric_rows_from_df(df: pd.DataFrame, headers: List[str]) -> List[List[str]]:
     out_rows: List[List[str]] = []
-    decimals_by_col: Dict[str, int] = {}
-    for col in headers:
-        if col not in df.columns or col == 'time':
-            continue
-        if pd.api.types.is_float_dtype(df[col]):
-            decimals_by_col[col] = _optimal_decimals(df[col].tolist())
     for _, row in df[headers].iterrows():
         out_row: List[str] = []
         for col in headers:
             val = row[col]
             if col == 'time':
                 out_row.append(str(val))
-            elif isinstance(val, (float,)) and col in decimals_by_col:
-                out_row.append(_format_float(float(val), decimals_by_col[col]))
+            elif val is None or isinstance(val, bool) or isinstance(val, Number):
+                out_row.append(format_number(val))
             else:
                 out_row.append(str(val))
         out_rows.append(out_row)

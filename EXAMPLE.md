@@ -11,7 +11,7 @@ Assumptions
 - You invoke tools via the dynamic CLI: `python cli.py <command> [...args]`.
 - Replace `EURUSD` and `H1` with your symbol/timeframe as needed.
 
-Tip: add `--format json` to print structured JSON instead of CSV summaries.
+Tip: add `--format json` to print structured JSON instead of TOON text output.
 
 ---
 

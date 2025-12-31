@@ -1,10 +1,10 @@
 
 from typing import Any, Dict, Optional, List
 
-from ..utils.utils import _csv_from_rows
+from ..utils.utils import _table_from_rows
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from .server import mcp, _auto_connect_wrapper
-from .constants import GROUP_SEARCH_THRESHOLD
+from .constants import GROUP_SEARCH_THRESHOLD, DEFAULT_ROW_LIMIT
 import MetaTrader5 as mt5
 
 
@@ -26,10 +26,10 @@ def _normalize_limit(limit: Optional[Any]) -> Optional[int]:
 @_auto_connect_wrapper
 def symbols_list(
     search_term: Optional[str] = None,
-    limit: Optional[int] = None
+    limit: Optional[int] = DEFAULT_ROW_LIMIT
 
 ) -> Dict[str, Any]:
-    """List symbols as CSV with columns: name,group,description.
+    """List symbols as a tabular result with columns: name, group, description.
 
     Parameters: search_term?, limit?
 
@@ -129,16 +129,19 @@ def symbols_list(
         limit_value = _normalize_limit(limit)
         if limit_value:
             symbol_list = symbol_list[:limit_value]
-        # Convert to CSV format using proper escaping
+        # Build tabular result
         rows = [[s["name"], s["group"], s["description"]] for s in symbol_list]
-        return _csv_from_rows(["name", "group", "description"], rows)
+        return _table_from_rows(["name", "group", "description"], rows)
     except Exception as e:
         return {"error": f"Error getting symbols: {str(e)}"}
 
 @mcp.tool()
 @_auto_connect_wrapper
-def symbols_list_groups(search_term: Optional[str] = None, limit: Optional[int] = None) -> Dict[str, Any]:
-    """List group paths as CSV with a single column: group.
+def symbols_list_groups(
+    search_term: Optional[str] = None,
+    limit: Optional[int] = DEFAULT_ROW_LIMIT,
+) -> Dict[str, Any]:
+    """List group paths as a tabular result with a single column: group.
 
     Parameters: search_term?, limit?
 
@@ -173,10 +176,10 @@ def symbols_list_groups(search_term: Optional[str] = None, limit: Optional[int] 
         if limit_value:
             filtered_items = filtered_items[:limit_value]
 
-        # Build CSV with only group names
+        # Build tabular result with only group names
         group_names = [name for name, _ in filtered_items]
         rows = [[g] for g in group_names]
-        return _csv_from_rows(["group"], rows)
+        return _table_from_rows(["group"], rows)
     except Exception as e:
         return {"error": f"Error getting symbol groups: {str(e)}"}
 

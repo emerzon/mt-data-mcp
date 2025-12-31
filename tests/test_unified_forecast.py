@@ -14,6 +14,7 @@ for _p in (_SRC, _ROOT):
 
 from mtdata.forecast.registry import ForecastRegistry
 from mtdata.forecast.forecast_engine import forecast_engine
+from mtdata.forecast.forecast import forecast
 from mtdata.forecast.interface import ForecastResult
 # Ensure engine is imported to register methods
 import mtdata.forecast.forecast_engine

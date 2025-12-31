@@ -1,7 +1,8 @@
 
 
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Literal
 from .schema import TimeframeLiteral, IndicatorSpec, DenoiseSpec, SimplifySpec
+from .constants import DEFAULT_ROW_LIMIT
 from .server import mcp, _auto_connect_wrapper
 from ..services.data_service import fetch_candles, fetch_ticks
 
@@ -13,7 +14,7 @@ __all__ = ['data_fetch_candles', 'data_fetch_ticks']
 def data_fetch_candles(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    limit: int = 10,
+    limit: int = DEFAULT_ROW_LIMIT,
     start: Optional[str] = None,
     end: Optional[str] = None,
     ohlcv: Optional[str] = None,
@@ -27,7 +28,7 @@ def data_fetch_candles(
     
     Features:
     ---------
-    - OHLCV data in CSV format
+    - OHLCV data as tabular rows
     - Technical indicators (RSI, MACD, EMA, SMA, etc.)
     - Data denoising and smoothing
     - Data simplification for large datasets
@@ -41,7 +42,7 @@ def data_fetch_candles(
     timeframe : str, optional (default="H1")
         Candle timeframe: "M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"
     
-    limit : int, optional (default=10)
+    limit : int, optional (default=25)
         Maximum number of candles to return
     
     start : str, optional
@@ -71,11 +72,11 @@ def data_fetch_candles(
         - timeframe: str
         - candles: int (number of candles returned)
         - last_candle_open: bool (true if last candle is still forming)
-        - csv: str (CSV formatted candle data)
+        - data: list[dict] (tabular candle rows)
     
     Examples:
     ---------
-    # Get last 10 H1 candles
+    # Get last 25 H1 candles
     data_fetch_candles(symbol="EURUSD")
     
     # Get 100 M15 candles with RSI indicator
@@ -110,21 +111,27 @@ def data_fetch_candles(
 @_auto_connect_wrapper
 def data_fetch_ticks(
     symbol: str,
-    limit: int = 100,
+    limit: int = DEFAULT_ROW_LIMIT,
     start: Optional[str] = None,
     end: Optional[str] = None,
     simplify: Optional[SimplifySpec] = None,
+    output: Literal["summary", "stats", "rows"] = "summary",
 ) -> Dict[str, Any]:
-    """Return latest ticks as CSV with columns: time,bid,ask and optional last,volume,flags.
-    Parameters: symbol, limit, start?, end?, simplify?
-    - `limit` limits the number of rows.
-    - `start` starts from a flexible date/time; optional `end` enables range.
-    - `simplify`: Optional dict to reduce or aggregate rows (select/approximate/resample).
+    """Fetch tick data for a symbol.
+
+    By default (`output="summary"`), returns a compact set of descriptive stats
+    over the fetched ticks (bid/ask/mid, plus last and volume; volume uses real
+    volume when available, otherwise tick_volume).
+
+    Use `output="stats"` for a more detailed stats payload.
+    Use `output="rows"` to return raw tick rows as structured data.
+    `simplify` only applies to row output.
     """
     return fetch_ticks(
         symbol=symbol,
         limit=limit,
         start=start,
         end=end,
-        simplify=simplify
+        simplify=simplify,
+        output=output,
     )

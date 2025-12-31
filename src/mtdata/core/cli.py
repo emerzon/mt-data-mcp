@@ -52,18 +52,6 @@ ToolInfo = Dict[str, Any]
 
 
 
-# Import string formatting utilities from utils to avoid duplication
-from ..utils.minimal_output import (
-    _is_scalar_value, _is_empty_value, _minify_number, _stringify_scalar,
-    _stringify_cell, _indent_text, _list_of_dicts_to_csv, _format_complex_value
-)
-
-
-def _format_meta_block(meta: Dict[str, Any]) -> str:
-    """Delegate to shared format_complex_value for consistency."""
-    return _format_complex_value(meta)
-
-
 def _format_result_minimal(result: Any, verbose: bool = True) -> str:
     # Delegate to shared formatter used by the server so CLI output matches API output exactly
     try:
@@ -72,10 +60,51 @@ def _format_result_minimal(result: Any, verbose: bool = True) -> str:
         return str(result) if result is not None else ""
 
 
+def _json_default(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            return value.decode("utf-8", errors="replace")
+        except Exception:
+            return str(value)
+
+    isoformat = getattr(value, "isoformat", None)
+    if callable(isoformat):
+        try:
+            return isoformat()
+        except Exception:
+            pass
+
+    try:
+        import numpy as np  # type: ignore
+
+        if isinstance(value, (np.integer, np.floating, np.bool_)):
+            return value.item()
+    except Exception:
+        pass
+
+    asdict = getattr(value, "_asdict", None)
+    if callable(asdict):
+        try:
+            return asdict()
+        except Exception:
+            pass
+
+    return str(value)
+
+
+def _format_result_for_cli(result: Any, *, fmt: str, verbose: bool) -> str:     
+    fmt_s = str(fmt or "text").strip().lower()
+    if fmt_s == "json":
+        return json.dumps(result, ensure_ascii=False, indent=2, default=_json_default)
+    return _format_result_minimal(result, verbose=verbose)
+
+
 def _safe_tz_name(value: Any) -> Optional[str]:
     if value is None:
         return None
-    return getattr(value, 'zone', None) or str(value)
+    return getattr(value, "zone", None) or str(value)
 
 
 def _build_cli_timezone_meta(result: Any) -> Dict[str, Any]:
@@ -90,8 +119,8 @@ def _build_cli_timezone_meta(result: Any) -> Dict[str, Any]:
     client_tz_resolved = None
     server_offset_minutes = None
     if mt5_config is not None:
-        server_tz_config = getattr(mt5_config, 'server_tz_name', None) or None
-        client_tz_config = getattr(mt5_config, 'client_tz_name', None) or None
+        server_tz_config = getattr(mt5_config, "server_tz_name", None) or None
+        client_tz_config = getattr(mt5_config, "client_tz_name", None) or None
         try:
             server_tz_resolved = _safe_tz_name(mt5_config.get_server_tz())
         except Exception:
@@ -101,7 +130,7 @@ def _build_cli_timezone_meta(result: Any) -> Dict[str, Any]:
         except Exception:
             client_tz_resolved = None
 
-    offset_env = os.getenv('MT5_TIME_OFFSET_MINUTES')
+    offset_env = os.getenv("MT5_TIME_OFFSET_MINUTES")
     if offset_env is not None:
         try:
             server_offset_minutes = int(offset_env)
@@ -110,18 +139,18 @@ def _build_cli_timezone_meta(result: Any) -> Dict[str, Any]:
 
     output_timezone = None
     if isinstance(result, dict):
-        output_timezone = result.get('timezone')
+        output_timezone = result.get("timezone")
 
     if output_timezone:
         output_hint = str(output_timezone)
     else:
-        output_hint = client_tz_resolved or client_tz_config or 'UTC'
+        output_hint = client_tz_resolved or client_tz_config or "UTC"
 
-    server_source = 'none'
+    server_source = "none"
     if server_tz_config:
-        server_source = 'MT5_SERVER_TZ'
+        server_source = "MT5_SERVER_TZ"
     elif offset_env is not None:
-        server_source = 'MT5_TIME_OFFSET_MINUTES'
+        server_source = "MT5_TIME_OFFSET_MINUTES"
 
     local_tz = None
     try:
@@ -130,15 +159,15 @@ def _build_cli_timezone_meta(result: Any) -> Dict[str, Any]:
         local_tz = None
 
     return {
-        'output_timezone': output_timezone,
-        'output_timezone_hint': output_hint,
-        'server_tz_source': server_source,
-        'server_tz_config': server_tz_config,
-        'server_tz_resolved': server_tz_resolved,
-        'server_offset_minutes': server_offset_minutes,
-        'client_tz_config': client_tz_config,
-        'client_tz_resolved': client_tz_resolved,
-        'local_tz': local_tz,
+        "output_timezone": output_timezone,
+        "output_timezone_hint": output_hint,
+        "server_tz_source": server_source,
+        "server_tz_config": server_tz_config,
+        "server_tz_resolved": server_tz_resolved,
+        "server_offset_minutes": server_offset_minutes,
+        "client_tz_config": client_tz_config,
+        "client_tz_resolved": client_tz_resolved,
+        "local_tz": local_tz,
     }
 
 
@@ -146,13 +175,14 @@ def _attach_cli_meta(result: Any, *, cmd_name: str, verbose: bool) -> Any:
     if not verbose or not isinstance(result, dict):
         return result
     out = dict(result)
-    meta = out.get('cli_meta')
+    meta = out.get("cli_meta")
     if not isinstance(meta, dict):
         meta = {}
-    meta.setdefault('command', cmd_name or '')
-    meta['timezone'] = _build_cli_timezone_meta(result)
-    out['cli_meta'] = meta
+    meta.setdefault("command", cmd_name or "")
+    meta["timezone"] = _build_cli_timezone_meta(result)
+    out["cli_meta"] = meta
     return out
+
 def get_function_info(func):
     """Thin wrapper around schema.get_function_info that attaches the callable.
 
@@ -321,6 +351,25 @@ def _resolve_param_kwargs(
             if origin is not Literal:
                 return False
             args = set(str(v) for v in get_args(ptype) if v is not None)
+            # Avoid misclassifying volatility method enums (e.g. ewma/parkinson)
+            # as forecast-method enums just because they contain overlapping
+            # names like "arima"/"theta".
+            volatility_markers = {
+                "ewma",
+                "parkinson",
+                "gk",
+                "rs",
+                "yang_zhang",
+                "rolling_std",
+                "realized_kernel",
+                "har_rv",
+                "garch_t",
+                "egarch_t",
+                "gjr_garch_t",
+                "figarch",
+            }
+            if args.intersection(volatility_markers):
+                return False
             # Heuristic: Forecast methods always include at least one of these canonical names.
             return bool(args.intersection({'theta', 'naive', 'arima', 'chronos2', 'statsforecast'}))
         except Exception:
@@ -736,16 +785,21 @@ def create_command_function(func_info, cmd_name: str = "", cmd_parser: Optional[
 
         # If the tool already returned text, print it exactly (no stripping)
         if isinstance(result, str):
-            print(result)
+            fmt = getattr(args, 'format', 'text')
+            if str(fmt or '').strip().lower() == 'json':
+                print(json.dumps({"text": result}, ensure_ascii=False, indent=2))
+            else:
+                print(result)
             return
 
-        # Otherwise, use the same shared minimal formatter as the server
+        # Otherwise, use the same shared minimal formatter as the server        
         # Pass verbose flag if available (default to False for cleaner output)
         verbose = getattr(args, 'verbose', False)
         result = _attach_cli_meta(result, cmd_name=cmd_name, verbose=verbose)
-        minimal_output = _format_result_minimal(result, verbose=verbose)
-        if minimal_output:
-            print(minimal_output)
+        fmt = getattr(args, 'format', 'text')
+        output = _format_result_for_cli(result, fmt=fmt, verbose=verbose)
+        if output:
+            print(output)
         return
 
     return command_func
@@ -988,7 +1042,7 @@ def main():
 
     
     parser = argparse.ArgumentParser(
-        description="Dynamic CLI for MetaTrader5 MCP tools (CSV-first output)",
+        description="Dynamic CLI for MetaTrader5 MCP tools (TOON text output)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=_build_epilog(functions),
     )
@@ -1138,9 +1192,18 @@ def main():
 
             kwargs["__cli_raw"] = True
             out = func(**kwargs)
-            text = _format_result_minimal(out, verbose=getattr(args, "verbose", False))
-            if text:
-                print(text)
+            if isinstance(out, str):
+                fmt = getattr(args, "format", "text")
+                if str(fmt or "").strip().lower() == "json":
+                    print(json.dumps({"text": out}, ensure_ascii=False, indent=2))
+                else:
+                    print(out)
+                return
+
+            fmt = getattr(args, "format", "text")
+            output = _format_result_for_cli(out, fmt=fmt, verbose=getattr(args, "verbose", False))
+            if output:
+                print(output)
 
         cmd_parser.set_defaults(func=_forecast_generate_cmd)
     

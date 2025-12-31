@@ -56,7 +56,7 @@ class SESMethod(ETSArimaMethod):
     ) -> ForecastResult:
         if not _SM_ETS_AVAILABLE:
             raise RuntimeError("SES requires statsmodels")
-            
+
         vals = series.values
         alpha = params.get('alpha')
         
@@ -103,7 +103,7 @@ class HoltMethod(ETSArimaMethod):
     ) -> ForecastResult:
         if not _SM_ETS_AVAILABLE:
             raise RuntimeError("Holt requires statsmodels")
-            
+
         vals = series.values
         damped = bool(params.get('damped', False))
         alpha = params.get('alpha')
@@ -158,7 +158,7 @@ class HoltWintersAddMethod(ETSArimaMethod):
     def _forecast_hw(self, series, horizon, seasonality, params, seasonal_type):
         if not _SM_ETS_AVAILABLE:
             raise RuntimeError("Holt-Winters requires statsmodels")
-            
+
         m = int(seasonality)
         if m <= 0:
             raise ValueError("Holt-Winters requires positive seasonality")
@@ -212,6 +212,125 @@ class HoltWintersMulMethod(HoltWintersAddMethod):
     ) -> ForecastResult:
         return self._forecast_hw(series, horizon, seasonality, params, 'mul')
 
+
+@ForecastRegistry.register("ets")
+class ETSMethod(ETSArimaMethod):
+    """Generic exponential smoothing (ETS) with optional trend/seasonality."""
+
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "seasonality", "type": "int", "description": "Seasonal period (m)."},
+        {"name": "trend", "type": "str|null", "description": "Trend: add|mul|null (default: add)."},
+        {
+            "name": "seasonal",
+            "type": "str|null",
+            "description": "Seasonal: add|mul|null|auto (default: auto).",
+        },
+        {"name": "damped", "type": "bool", "description": "Use damped trend (default: False)."},
+        {"name": "alpha", "type": "float|null", "description": "Level smoothing (auto if omitted)."},
+        {"name": "beta", "type": "float|null", "description": "Trend smoothing (auto if omitted)."},
+        {"name": "gamma", "type": "float|null", "description": "Seasonal smoothing (auto if omitted)."},
+    ]
+
+    @property
+    def name(self) -> str:
+        return "ets"
+
+    @staticmethod
+    def _norm_component(val: Any, *, allow_auto: bool = False) -> Optional[str]:
+        if val is None:
+            return None
+        s = str(val).strip().lower()
+        if not s or s in {"none", "null", "nil"}:
+            return None
+        if allow_auto and s == "auto":
+            return "auto"
+        if s in {"add", "a", "additive"}:
+            return "add"
+        if s in {"mul", "m", "multiplicative"}:
+            return "mul"
+        raise ValueError(
+            f"Invalid ETS component: {val!r} (use add|mul|null{'|auto' if allow_auto else ''})"
+        )
+
+    def forecast(
+        self,
+        series: pd.Series,
+        horizon: int,
+        seasonality: int,
+        params: Dict[str, Any],
+        exog_future: Optional[pd.DataFrame] = None,
+        **kwargs
+    ) -> ForecastResult:
+        if not _SM_ETS_AVAILABLE:
+            raise RuntimeError("ETS requires statsmodels")
+
+        vals = series.values
+        m = int(seasonality or 0)
+
+        trend = self._norm_component(params.get("trend", "add"))
+        seasonal_raw = self._norm_component(params.get("seasonal", "auto"), allow_auto=True)
+        if seasonal_raw == "auto":
+            seasonal = "add" if m >= 2 else None
+        else:
+            seasonal = seasonal_raw
+
+        if seasonal is not None and m < 2:
+            raise ValueError("ETS seasonal component requires seasonality >= 2")
+
+        damped = bool(params.get("damped", False))
+        if trend is None:
+            damped = False
+
+        alpha = params.get("alpha")
+        beta = params.get("beta")
+        gamma = params.get("gamma")
+        use_manual = alpha is not None or beta is not None or gamma is not None
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            model = _ETS(
+                vals,
+                trend=trend,
+                seasonal=seasonal,
+                seasonal_periods=m if seasonal is not None else None,
+                damped_trend=damped,
+                initialization_method="heuristic",
+            )
+            if use_manual:
+                res = model.fit(
+                    optimized=False,
+                    smoothing_level=None if alpha is None else float(alpha),
+                    smoothing_trend=None if beta is None else float(beta),
+                    smoothing_seasonal=None if gamma is None else float(gamma),
+                )
+            else:
+                res = model.fit(optimized=True)
+
+        f_vals = np.asarray(res.forecast(int(horizon)), dtype=float)
+
+        params_used: Dict[str, Any] = {
+            "trend": trend,
+            "seasonal": seasonal,
+            "m": m if seasonal is not None else 0,
+            "damped": damped,
+        }
+        try:
+            par = getattr(res, "params", None)
+            if par is not None and hasattr(par, "get"):
+                for key, out_key in (
+                    ("smoothing_level", "alpha"),
+                    ("smoothing_trend", "beta"),
+                    ("smoothing_seasonal", "gamma"),
+                ):
+                    v = par.get(key)
+                    if v is not None:
+                        params_used[out_key] = float(v)
+        except Exception:
+            pass
+
+        return ForecastResult(forecast=f_vals, params_used=params_used)
+
+
 @ForecastRegistry.register("arima")
 class ARIMAMethod(ETSArimaMethod):
     PARAMS: List[Dict[str, Any]] = [
@@ -245,7 +364,7 @@ class ARIMAMethod(ETSArimaMethod):
     def _forecast_sarimax(self, series, horizon, seasonality, params, seasonal, exog_future=None, **kwargs):
         if not _SM_SARIMAX_AVAILABLE:
             raise RuntimeError("SARIMAX requires statsmodels")
-            
+
         vals = series.values.astype(float)
         if params.get('order') is not None:
             order = params.get('order')

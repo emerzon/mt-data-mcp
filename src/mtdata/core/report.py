@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, List, Literal
+from typing import Any, Dict, Optional, List, Literal, Union
 
 from .server import mcp, _auto_connect_wrapper
 from .schema import DenoiseSpec
@@ -14,6 +14,13 @@ def _report_error_text(message: Any) -> str:
     return f"error: {text}\n"
 
 
+def _report_error_payload(message: Any) -> Dict[str, Any]:
+    text = str(message).strip()
+    if not text:
+        text = 'Unknown error.'
+    return {"error": text}
+
+
 @mcp.tool()
 @_auto_connect_wrapper
 def report_generate(
@@ -22,7 +29,8 @@ def report_generate(
     template: TemplateName = 'basic',
     denoise: Optional[DenoiseSpec] = None,
     params: Optional[Dict[str, Any]] = None,
-) -> str:
+    output: Literal['toon', 'markdown'] = 'toon',
+) -> Union[str, Dict[str, Any]]:
     """Generate a consolidated, information-dense analysis report with compact multi-format output.
 
     - template: 'basic'/'simple' (context, pivot, EWMA vol, backtest->best forecast, MC barrier grid, patterns)
@@ -30,8 +38,10 @@ def report_generate(
                 or style-specific ('scalping' | 'intraday' | 'swing' | 'position').
     - params: optional dict to tune steps/spacing, grids, and optionally override timeframe per template via 'timeframe'.
     - denoise: pass-through to candle fetching (e.g., {method:'ema', params:{alpha:0.2}, columns:['close']}).
+    - output: 'toon' (structured TOON) or 'markdown' (rendered report text).
     """
     try:
+        output_mode = str(output or 'toon').strip().lower()
         name = (template or 'basic').lower().strip()
         p = dict(params or {})
 
@@ -45,7 +55,9 @@ def report_generate(
                 template_position as _t_position,
             )
         except Exception as ex:
-            return _report_error_text(f"Failed to import report templates: {ex}")
+            if output_mode == 'markdown':
+                return _report_error_text(f"Failed to import report templates: {ex}")
+            return _report_error_payload(f"Failed to import report templates: {ex}")
 
         default_horizon = {
             'basic': 12,
@@ -76,14 +88,21 @@ def report_generate(
         elif name == 'position':
             rep = _t_position(symbol, eff_horizon, denoise, p)
         else:
-            return _report_error_text(
-                f"Unknown template: {template}. Use one of basic, advanced, scalping, intraday, swing, position."
-            )
+            msg = f"Unknown template: {template}. Use one of basic, advanced, scalping, intraday, swing, position."
+            if output_mode == 'markdown':
+                return _report_error_text(msg)
+            return _report_error_payload(msg)
 
         if not isinstance(rep, dict):
-            return _report_error_text('Report template returned an unexpected payload.')
+            msg = 'Report template returned an unexpected payload.'
+            if output_mode == 'markdown':
+                return _report_error_text(msg)
+            return _report_error_payload(msg)
         if rep.get('error'):
-            return _report_error_text(rep.get('error'))
+            msg = rep.get('error')
+            if output_mode == 'markdown':
+                return _report_error_text(msg)
+            return _report_error_payload(msg)
 
         summ: List[str] = []
         try:
@@ -211,6 +230,11 @@ def report_generate(
             pass
         rep['summary'] = summ
 
-        return render_enhanced_report(rep)
+        if output_mode == 'markdown':
+            return render_enhanced_report(rep)
+        return rep
     except Exception as exc:
-        return _report_error_text(f"Error generating report: {exc}")
+        msg = f"Error generating report: {exc}"
+        if str(output or '').strip().lower() == 'markdown':
+            return _report_error_text(msg)
+        return _report_error_payload(msg)

@@ -2,7 +2,7 @@ from typing import Any, Dict, Optional, List
 
 from math import isfinite
 from ..schema import DenoiseSpec
-from ..report_utils import now_utc_iso, parse_csv_tail, pick_best_forecast_method, summarize_barrier_grid, attach_multi_timeframes
+from ..report_utils import now_utc_iso, parse_table_tail, pick_best_forecast_method, summarize_barrier_grid, attach_multi_timeframes
 
 
 def _get_raw_result(func, *args, **kwargs):
@@ -37,7 +37,7 @@ def _parse_formatted_output(output: str) -> Dict[str, Any]:
         lines = [line.rstrip() for line in output.split('\n')]  # Keep leading spaces
         result = {}
         current_section = None
-        csv_data = []
+        table_lines = []
         
         i = 0
         while i < len(lines):
@@ -57,31 +57,31 @@ def _parse_formatted_output(output: str) -> Dict[str, Any]:
                 if key in ['period', 'best', 'summary', 'levels'] and not val:
                     current_section = key
                     result[key] = {}
-                    # Look ahead for CSV data or nested structure
+                    # Look ahead for table data or nested structure
                     i += 1
-                    
+
                     if key == 'levels':
-                        # Special handling for levels - expect CSV data
-                        csv_data = []
+                        # Special handling for levels - expect delimited table rows
+                        table_lines = []
                         while i < len(lines):
                             next_line = lines[i]
                             stripped_line = next_line.strip()
                             if not stripped_line:
                                 i += 1
                                 continue
-                            # Look for CSV data (may be indented)
-                            if ',' in stripped_line and (stripped_line.startswith('level,') or 
+                            # Look for delimited table rows (may be indented)
+                            if ',' in stripped_line and (stripped_line.startswith('level,') or
                                 all(c.isdigit() or c in '.,- ' or c.isalpha() for c in stripped_line[:20])):
-                                csv_data.append(stripped_line)
+                                table_lines.append(stripped_line)
                                 i += 1
                             elif stripped_line and not next_line.startswith(' ') and ':' in stripped_line and ',' not in stripped_line:
                                 # New section starting
                                 break
                             else:
                                 i += 1
-                        
-                        if csv_data:
-                            result[key] = _parse_csv_data(csv_data)
+
+                        if table_lines:
+                            result[key] = _parse_table_data(table_lines)
                         i -= 1  # Back up one since we'll increment at end of loop
                     else:
                         # Handle other nested sections
@@ -98,24 +98,24 @@ def _parse_formatted_output(output: str) -> Dict[str, Any]:
                     result[current_section][key] = _parse_value(val)
                 else:
                     result[key] = _parse_value(val)
-                    
-            # Standalone CSV data
+
+            # Standalone delimited table data
             elif ',' in line and not line.startswith(' '):
-                csv_data = [line]
+                table_lines = [line]
                 i += 1
-                # Collect following CSV rows
+                # Collect following delimited rows
                 while i < len(lines) and ',' in lines[i] and not (lines[i].count(':') > lines[i].count(',')):
-                    csv_data.append(lines[i])
+                    table_lines.append(lines[i])
                     i += 1
-                
-                if csv_data:
-                    parsed_csv = _parse_csv_data(csv_data)
+
+                if table_lines:
+                    parsed_table = _parse_table_data(table_lines)
                     if current_section:
-                        result[current_section] = parsed_csv
+                        result[current_section] = parsed_table
                     else:
-                        result['data'] = parsed_csv
+                        result['data'] = parsed_table
                 i -= 1  # Back up one
-                        
+
             i += 1
         
         # If we couldn't parse anything meaningful, return error
@@ -144,21 +144,21 @@ def _parse_value(val: str) -> Any:
         return val
 
 
-def _parse_csv_data(csv_lines: List[str]) -> Any:
-    """Parse CSV lines into structured data."""
-    if not csv_lines:
+def _parse_table_data(table_lines: List[str]) -> Any:
+    """Parse comma-delimited table lines into structured data."""
+    if not table_lines:
         return None
-        
+
     try:
         # First line should be headers
-        headers = [h.strip() for h in csv_lines[0].split(',')]
-        
-        if len(csv_lines) == 1:
+        headers = [h.strip() for h in table_lines[0].split(',')]
+
+        if len(table_lines) == 1:
             return {'headers': headers}
-            
+
         # Parse data rows
         rows = []
-        for line in csv_lines[1:]:
+        for line in table_lines[1:]:
             if not line.strip():
                 continue
             values = [v.strip() for v in line.split(',')]
@@ -167,10 +167,10 @@ def _parse_csv_data(csv_lines: List[str]) -> Any:
                 val = values[i] if i < len(values) else ''
                 row[header] = _parse_value(val) if val else None
             rows.append(row)
-            
+
         return rows if rows else {'headers': headers}
     except Exception:
-        return csv_lines
+        return table_lines
 
 
 def _unwrap_mcp_function(func):
@@ -423,16 +423,13 @@ def template_basic(
     if 'error' in ctx:
         report['sections']['context'] = {'error': ctx['error']}
     else:
-        # Try to parse the CSV data if available
-        csv_header = ctx.get('csv_header') if isinstance(ctx, dict) else None
-        csv_data = ctx.get('csv_data') if isinstance(ctx, dict) else None
+        # Extract a tail window of candle rows
         tail_n = int(p.get('context_tail', 40))
-        if csv_header and csv_data:
-            tail_rows = parse_csv_tail(csv_header, csv_data, tail=tail_n)
-        else:
+        tail_rows = parse_table_tail(ctx, tail=tail_n)
+        if not tail_rows:
             # Fallbacks when calling through minimal formatter
-            if isinstance(ctx, dict) and isinstance(ctx.get('data'), list):
-                tail_rows = ctx.get('data')[-tail_n:]  # type: ignore[index]
+            if isinstance(ctx, dict) and isinstance(ctx.get('data'), list):     
+                tail_rows = ctx.get('data')[-tail_n:]  # type: ignore[index]    
             elif isinstance(ctx, list):
                 tail_rows = ctx
             else:
@@ -760,7 +757,7 @@ def template_basic(
     if 'error' in pats:
         report['sections']['patterns'] = {'error': pats['error']}
     else:
-        rows = parse_csv_tail(pats.get('csv_header'), pats.get('csv_data'), tail=20)
+        rows = parse_table_tail(pats, tail=20)
         detections = rows[-5:] if rows else []
         report['sections']['patterns'] = {'recent': detections}
 

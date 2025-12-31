@@ -3,42 +3,59 @@ from datetime import datetime
 import math
 import copy
 
+from ..utils.constants import TIME_DISPLAY_FORMAT
+from ..utils.formatting import format_number as _format_number
+from ..utils.minimal_output import format_table_toon as _format_table_toon
+
 
 
 
 def now_utc_iso() -> str:
     try:
-        return datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+        return datetime.utcnow().strftime(TIME_DISPLAY_FORMAT)
     except Exception:
-        return datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+        return datetime.utcnow().strftime(TIME_DISPLAY_FORMAT)
 
 
-def parse_csv_tail(csv_header: Optional[str], csv_data: Optional[str], tail: int = 1) -> List[Dict[str, Any]]:
+def parse_table_tail(data: Any, tail: int = 1) -> List[Dict[str, Any]]:
+    """Return the last N rows from a tabular payload (list[dict] or {data: ...})."""
     try:
-        if not csv_header or not csv_data:
+        rows_obj = data.get('data') if isinstance(data, dict) else data
+        if not isinstance(rows_obj, list):
             return []
-        cols = [c.strip() for c in csv_header.split(',')]
-        lines = [ln for ln in csv_data.split('\n') if ln.strip()]
-        if tail > 0:
-            lines = lines[-int(tail):]
-        out: List[Dict[str, Any]] = []
-        for ln in lines:
-            vals = [v.strip() for v in ln.split(',')]
-            row: Dict[str, Any] = {}
-            for i, c in enumerate(cols):
-                v = vals[i] if i < len(vals) else ''
+        tail_i = int(tail or 0)
+        rows_in = [r for r in rows_obj if isinstance(r, dict)]
+        if tail_i > 0:
+            rows_in = rows_in[-tail_i:]
+
+        def _coerce(v: Any) -> Any:
+            if v is None or isinstance(v, (int, float, bool)):
+                return v
+            if not isinstance(v, str):
+                return v
+            s = v.strip()
+            if s == "":
+                return ""
+            if s.lower() in ("nan", "inf", "+inf", "-inf"):
                 try:
-                    if v == '' or v is None:
-                        row[c] = v
-                    elif '.' in v or 'e' in v.lower():
-                        row[c] = float(v)
-                    elif v.lstrip('-').isdigit():
-                        row[c] = int(v)
-                    else:
-                        row[c] = v
+                    return float(s)
                 except Exception:
-                    row[c] = v
-            out.append(row)
+                    return v
+            if '.' in s or 'e' in s.lower():
+                try:
+                    return float(s)
+                except Exception:
+                    return v
+            if s.lstrip('-').isdigit():
+                try:
+                    return int(s)
+                except Exception:
+                    return v
+            return v
+
+        out: List[Dict[str, Any]] = []
+        for row in rows_in:
+            out.append({str(k): _coerce(val) for k, val in row.items()})
         return out
     except Exception:
         return []
@@ -301,29 +318,9 @@ def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]
         indicators = "ema(20),ema(50),ema(200),rsi(14),macd(12,26,9)"
         res = _fetch_candles(symbol=symbol, timeframe=timeframe, limit=int(limit), indicators=indicators, denoise=denoise, __cli_raw=True)
 
-        # Handle both dictionary and string response formats
-        if isinstance(res, dict):
-            if 'error' in res:
-                return None
-            rows = parse_csv_tail(res.get('csv_header'), res.get('csv_data'), tail=int(tail))
-        elif isinstance(res, str):
-            # Parse CSV string directly
-            lines = res.strip().split('\n')
-            if len(lines) < 2:
-                return None
-            csv_header = lines[0]
-            # Filter out metadata lines and empty lines
-            data_lines = []
-            for line in lines[1:]:
-                line = line.strip()
-                if line and not line.startswith(('symbol:', 'timeframe:', 'candles:')):
-                    data_lines.append(line)
-            if not data_lines:
-                return None
-            csv_data = '\n'.join(data_lines)
-            rows = parse_csv_tail(csv_header, csv_data, tail=int(tail))
-        else:
+        if not isinstance(res, dict) or res.get('error'):
             return None
+        rows = parse_table_tail(res, tail=int(tail))
 
         if not rows:
             return None
@@ -436,21 +433,7 @@ def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Option
 
 
 def format_number(value: Any) -> str:
-    if value is None:
-        return 'null'
-    if isinstance(value, bool):
-        return '1' if value else '0'
-    try:
-        num = float(value)
-    except (TypeError, ValueError):
-        return str(value)
-    if not math.isfinite(num):
-        return str(value)
-    precision = 6 if abs(num) >= 1 else 8
-    text = f"{num:.{precision}f}".rstrip('0').rstrip('.')
-    if text in ('', '-0'):
-        text = '0'
-    return text
+    return _format_number(value)
 
 
 def _needs_yaml_quotes(text: str) -> bool:
@@ -475,7 +458,7 @@ def _compact_scalar(value: Any) -> str:
     if value is None:
         return 'null'
     if isinstance(value, bool):
-        return 'true' if value else 'false'
+        return format_number(value)
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return format_number(value)
     text = str(value)
@@ -512,11 +495,11 @@ def _compact_yaml(value: Any, indent: int = 0) -> str:
     return f"{prefix}{_compact_scalar(value)}"
 
 
-def _compact_csv_value(value: Any) -> str:
+def _compact_table_value(value: Any) -> str:
     if value is None:
-        return ''
-    if isinstance(value, bool):
-        text = 'true' if value else 'false'
+        text = 'null'
+    elif isinstance(value, bool):
+        text = format_number(value)
     elif isinstance(value, (int, float)) and not isinstance(value, bool):
         text = format_number(value)
     else:
@@ -525,39 +508,6 @@ def _compact_csv_value(value: Any) -> str:
     if any(ch in text for ch in (',', '"')):
         text = '"' + text.replace('"', '""') + '"'
     return text
-
-
-def _register_table(rows: List[Dict[str, Any]], path: str, tables: Dict[str, str], counters: Dict[str, int]) -> str:
-    keys: List[str] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        for key in row.keys():
-            if key not in keys:
-                keys.append(str(key))
-    if not keys:
-        return ''
-    csv_lines = [','.join(keys)]
-    for row in rows:
-        csv_lines.append(','.join(_compact_csv_value(row.get(k)) for k in keys))
-    base = path.lower().replace('.', '_').replace('[', '_').replace(']', '')
-    base = ''.join(ch for ch in base if ch.isalnum() or ch == '_') or 'table'
-    idx = counters.get(base, 0)
-    counters[base] = idx + 1
-    name = base if idx == 0 else f"{base}_{idx}"
-    tables[name] = '\n'.join(csv_lines)
-    return f"{name}_csv"
-
-
-def _extract_tables(value: Any, path: str, tables: Dict[str, str], counters: Dict[str, int]):
-    if isinstance(value, dict):
-        return {k: _extract_tables(v, f"{path}.{k}", tables, counters) for k, v in value.items()}
-    if isinstance(value, list):
-        if value and all(isinstance(item, dict) for item in value):
-            marker = _register_table(value, path, tables, counters)
-            return marker or []
-        return [_extract_tables(item, f"{path}[{idx}]", tables, counters) for idx, item in enumerate(value)]
-    return value
 
 
 def render_enhanced_report(report: Dict[str, Any]) -> str:
@@ -1131,22 +1081,7 @@ def _render_generic_section(name: str, payload: Any) -> List[str]:
 
 
 def _format_table(headers: List[str], rows: List[List[Optional[Any]]], name: str = 'data') -> List[str]:
-    if not headers or not rows:
-        return []
-    
-    def q(v): return _compact_csv_value(v)
-    
-    header_line = ','.join(q(h) for h in headers)
-    lines = [f"{name}[{len(rows)}]{{{header_line}}}:"]
-    
-    for row in rows:
-        vals = []
-        for idx in range(len(headers)):
-            val = row[idx] if idx < len(row) else None
-            vals.append(q(val))
-        lines.append('  ' + ','.join(vals))
-        
-    return lines
+    return _format_table_toon(headers, rows, name=name)
 
 
 def _format_signed(value: Optional[float]) -> str:
