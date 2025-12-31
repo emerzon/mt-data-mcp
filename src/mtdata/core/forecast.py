@@ -669,10 +669,10 @@ def forecast_barrier_prob(
         Stop loss as percentage
     
     tp_pips : float, optional
-        Take profit in pips
+        Take profit in ticks (trade_tick_size)
     
     sl_pips : float, optional
-        Stop loss in pips
+        Stop loss in ticks (trade_tick_size)
     
     Closed Form Parameters (method="closed_form"):
     ----------------------------------------------

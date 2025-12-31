@@ -31,7 +31,7 @@ def labels_triple_barrier(
     Barriers:
       - Absolute prices: tp_abs/sl_abs
       - Percent offsets: tp_pct/sl_pct (0.5 => 0.5%)
-      - Pips: tp_pips/sl_pips (pip≈10×point for 5/3-digit FX)
+      - Ticks: tp_pips/sl_pips (trade_tick_size from symbol info)
 
     label_on='high_low' considers intrabar extremes for barrier hits; 'close' uses closes only.
     Outputs label: +1 (TP first), -1 (SL first), 0 (neither by horizon), and holding_bars until decision.

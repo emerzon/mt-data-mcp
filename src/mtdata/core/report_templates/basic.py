@@ -485,9 +485,25 @@ def template_basic(
         secs = report.setdefault('sections', {})
         if 'contexts_multi' not in secs or 'pivot_multi' not in secs:
             from ..report_utils import context_for_tf
+            base_tf = None
+            try:
+                meta = report.get('meta') if isinstance(report, dict) else None
+                if isinstance(meta, dict) and meta.get('timeframe'):
+                    base_tf = str(meta.get('timeframe')).upper()
+            except Exception:
+                base_tf = None
+            if base_tf is None:
+                try:
+                    context = secs.get('context') if isinstance(secs, dict) else None
+                    if isinstance(context, dict) and context.get('timeframe'):
+                        base_tf = str(context.get('timeframe')).upper()
+                except Exception:
+                    base_tf = None
             tf_list = ['M15','H1','H4','D1']
             ctxs: Dict[str, Any] = {}
             for tf_i in tf_list:
+                if base_tf and tf_i.upper() == base_tf:
+                    continue
                 snap = context_for_tf(symbol, tf_i, denoise, limit=200, tail=30)
                 if snap and any(v is not None for v in snap.values()):
                     ctxs[tf_i] = snap

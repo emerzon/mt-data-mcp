@@ -406,7 +406,7 @@ def forecast_barrier_optimize(
 
         pip_size = _get_pip_size(symbol)
         if mode_val == 'pips' and (pip_size is None or pip_size <= 0):
-            return {"error": "Pip size unavailable for this symbol; use mode='pct' or provide absolute barriers."}
+            return {"error": "Tick size unavailable for this symbol; use mode='pct' or provide absolute barriers."}
 
         base_col = 'close'
         if denoise:
@@ -511,7 +511,7 @@ def forecast_barrier_optimize(
                 sl_start = max(vol_floor_pct_val, vol_pct * vol_min_mult_val * 0.8)
                 _add_fixed(base_candidates, tp_start, tp_end, vol_steps_val, sl_start, sl_start * vol_sl_multiplier_val, vol_sl_steps_val)
             else:
-                # Convert volatility to pips and apply pips floor when in pips mode
+                # Convert volatility to ticks and apply tick floor when in pips mode
                 vol_pips = (vol_pct / 100.0) * (last_price / float(pip_size))
                 tp_start = max(vol_floor_pips_val, vol_pips * vol_min_mult_val)
                 tp_end = max(tp_start * 1.1, vol_pips * vol_max_mult_val)

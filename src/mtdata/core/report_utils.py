@@ -100,6 +100,27 @@ def _format_series_preview(values: Any, decimals: int = 6, head: int = 3, tail: 
     if n == 0:
         return "n=0 []"
 
+    numeric: List[float] = []
+    for val in values:
+        try:
+            num = float(val)
+        except (TypeError, ValueError):
+            numeric = []
+            break
+        if not math.isfinite(num):
+            numeric = []
+            break
+        numeric.append(num)
+
+    if numeric:
+        start = _format_decimal(numeric[0], decimals) or format_number(numeric[0])
+        end = _format_decimal(numeric[-1], decimals) or format_number(numeric[-1])
+        min_val = min(numeric)
+        max_val = max(numeric)
+        min_txt = _format_decimal(min_val, decimals) or format_number(min_val)
+        max_txt = _format_decimal(max_val, decimals) or format_number(max_val)
+        return f"n={n} start={start}, end={end}, min={min_txt}, max={max_txt}"
+
     def _fmt(val: Any) -> str:
         if isinstance(val, (int, float)):
             fmt = _format_decimal(val, decimals)
@@ -268,26 +289,33 @@ def market_snapshot(symbol: str, timezone: str = 'UTC') -> Dict[str, Any]:
                     total_sell_vol = float(sum(float(s.get('volume') or 0.0) for s in sells)) if sells else None
                 except Exception:
                     total_sell_vol = None
-        pip = None
+        tick_size = None
         try:
             info = _mt5.symbol_info(symbol)
             if info is not None:
-                digits = int(getattr(info, 'digits', 0) or 0)
-                point = float(getattr(info, 'point', 0.0) or 0.0)
-                pip = float(point * (10.0 if digits in (3, 5) else 1.0)) if point > 0 else None
+                tick_size = getattr(info, 'trade_tick_size', None)
+                try:
+                    tick_size = float(tick_size) if tick_size is not None else None
+                except Exception:
+                    tick_size = None
+                if tick_size is None or tick_size <= 0:
+                    point = float(getattr(info, 'point', 0.0) or 0.0)
+                    tick_size = point if point > 0 else None
         except Exception:
-            pip = None
-        spread_pips = None
-        if pip and spread is not None:
+            tick_size = None
+        spread_ticks = None
+        if tick_size and spread is not None:
             try:
-                spread_pips = float(spread) / float(pip) if pip > 0 else None
+                spread_ticks = float(spread) / float(tick_size) if tick_size > 0 else None
             except Exception:
-                spread_pips = None
+                spread_ticks = None
         return {
             'bid': bid,
             'ask': ask,
             'spread': spread,
-            'spread_pips': spread_pips,
+            'tick_size': tick_size,
+            'spread_ticks': spread_ticks,
+            'spread_pips': spread_ticks,
             'dom_top_buy_vol': top_buy_vol,
             'dom_top_sell_vol': top_sell_vol,
             'dom_total_buy_vol': total_buy_vol,
@@ -300,9 +328,16 @@ def market_snapshot(symbol: str, timezone: str = 'UTC') -> Dict[str, Any]:
 def apply_market_gates(section: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, Any]:
     gate = {}
     try:
+        max_ticks = params.get('spread_max_ticks')
         max_pips = params.get('spread_max_pips')
-        if max_pips is not None and isinstance(section, dict):
-            sp = section.get('spread_pips')
+        if max_ticks is not None and isinstance(section, dict):
+            sp = section.get('spread_ticks') if section.get('spread_ticks') is not None else section.get('spread_pips')
+            if sp is not None:
+                gate['spread_ok'] = bool(float(sp) <= float(max_ticks))
+                gate['spread_ticks'] = float(sp)
+                gate['spread_max_ticks'] = float(max_ticks)
+        elif max_pips is not None and isinstance(section, dict):
+            sp = section.get('spread_pips') if section.get('spread_pips') is not None else section.get('spread_ticks')
             if sp is not None:
                 gate['spread_ok'] = bool(float(sp) <= float(max_pips))
                 gate['spread_pips'] = float(sp)
@@ -362,8 +397,26 @@ def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]
 def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Optional[Dict[str, Any]], extra_timeframes: List[str], pivot_timeframes: Optional[List[str]] = None) -> None:
     contexts: Dict[str, Any] = {}
     trend_mtf: Dict[str, Any] = {}
+    base_tf = None
+    try:
+        meta = report.get('meta') if isinstance(report, dict) else None
+        if isinstance(meta, dict) and meta.get('timeframe'):
+            base_tf = str(meta.get('timeframe')).upper()
+    except Exception:
+        base_tf = None
+    if base_tf is None:
+        try:
+            sections = report.get('sections') if isinstance(report, dict) else None
+            context = sections.get('context') if isinstance(sections, dict) else None
+            if isinstance(context, dict) and context.get('timeframe'):
+                base_tf = str(context.get('timeframe')).upper()
+        except Exception:
+            base_tf = None
 
     for tf in extra_timeframes or []:
+        tf_str = str(tf).upper()
+        if base_tf and tf_str == base_tf:
+            continue
         snap = context_for_tf(symbol, tf, denoise, limit=200, tail=30)
         if snap:
             contexts[str(tf)] = snap
@@ -814,13 +867,14 @@ def _render_barriers_section(data: Any) -> List[str]:
         mode = str(data.get('mode', 'pct')).lower()
         unit_lbl = '%'
         if mode == 'pips':
-            unit_lbl = '(pips)'
+            unit_lbl = '(ticks)'
         elif mode == 'bps':
             unit_lbl = '(bps)'
             
         lines: List[str] = ['## Barrier Analytics']
         headers = ['Direction', f'TP {unit_lbl}', f'SL {unit_lbl}', 'TP lvl', 'SL lvl', 'Edge', 'Kelly', 'EV', 'TP hit %', 'SL hit %', 'No-hit %']
         rows: List[List[str]] = []
+        negative_edge = False
         for dir_name in ('long','short'):
             sub = data.get(dir_name)
             if not isinstance(sub, dict):
@@ -828,6 +882,12 @@ def _render_barriers_section(data: Any) -> List[str]:
             best = sub.get('best') if isinstance(sub.get('best'), dict) else None
             if not best:
                 continue
+            try:
+                edge_val = float(best.get('edge'))
+                if math.isfinite(edge_val) and edge_val < 0:
+                    negative_edge = True
+            except (TypeError, ValueError):
+                pass
             rows.append([
                 dir_name,
                 _format_decimal(best.get('tp'), 3),
@@ -843,6 +903,8 @@ def _render_barriers_section(data: Any) -> List[str]:
             ])
         if rows:
             lines.extend(_format_table(headers, rows, name='candidates'))
+            if negative_edge:
+                lines.append("- Warning: best candidate has negative edge (expected value).")
             return lines
         return []
     # Fallback: single-direction shape
@@ -852,6 +914,13 @@ def _render_barriers_section(data: Any) -> List[str]:
         lines.append(f"- Direction: {data.get('direction')}")
     best = data.get('best') if isinstance(data.get('best'), dict) else None
     if best:
+        negative_edge = False
+        try:
+            edge_val = float(best.get('edge'))
+            if math.isfinite(edge_val) and edge_val < 0:
+                negative_edge = True
+        except (TypeError, ValueError):
+            negative_edge = False
         headers = ['TP %', 'SL %', 'TP lvl', 'SL lvl', 'Edge', 'Kelly', 'EV', 'TP hit %', 'SL hit %', 'No-hit %']
         row = [
             _format_decimal(best.get('tp'), 3),
@@ -866,6 +935,8 @@ def _render_barriers_section(data: Any) -> List[str]:
             _format_probability(best.get('prob_no_hit')),
         ]
         lines.extend(_format_table(headers, [row], name='best'))
+        if negative_edge:
+            lines.append("- Warning: best candidate has negative edge (expected value).")
     top = data.get('top')
     if isinstance(top, list) and top:
         headers = ['Rank', 'TP %', 'SL %', 'Edge', 'Kelly', 'EV']
@@ -895,10 +966,16 @@ def _render_market_section(data: Any) -> List[str]:
         lines.append(f"- Error: {data.get('error')}")
         return lines
     entries = []
-    for label, key in [('Bid', 'bid'), ('Ask', 'ask'), ('Spread', 'spread'), ('Spread (pips)', 'spread_pips')]:
+    for label, key in [('Bid', 'bid'), ('Ask', 'ask'), ('Spread', 'spread')]:
         val = data.get(key)
         if val is not None:
             entries.append(f"- {label}: {format_number(val)}")
+    if data.get('tick_size') is not None:
+        entries.append(f"- Tick size: {format_number(data.get('tick_size'))}")
+    if data.get('spread_ticks') is not None:
+        entries.append(f"- Spread (ticks): {format_number(data.get('spread_ticks'))}")
+    elif data.get('spread_pips') is not None:
+        entries.append(f"- Spread (pips): {format_number(data.get('spread_pips'))}")
     depth = data.get('depth')
     if isinstance(depth, dict):
         buy = depth.get('total_buy')
@@ -929,7 +1006,7 @@ def _render_backtest_section(data: Any) -> List[str]:
             str(row.get('successful_tests') or '0'),
         ])
     lines = ['## Backtest Ranking']
-    lines.extend(_format_table(['Method', 'RMSE', 'MAE', 'DirAcc', 'Wins'], rows, name='results'))
+    lines.extend(_format_table(['Method', 'RMSE', 'MAE', 'DirAcc', 'Tests'], rows, name='results'))
     return lines
 
 
@@ -1048,7 +1125,27 @@ def _render_forecast_conformal_section(data: Any) -> List[str]:
     per_step = data.get('per_step_q')
     if isinstance(per_step, list) and per_step:
         sliced = per_step[:min(5, len(per_step))]
-        lines.append(f"- First step quantiles: {', '.join(format_number(x) for x in sliced)}")
+        def _format_quantile_value(value: Any) -> str:
+            if value is None:
+                return "null"
+            if isinstance(value, str):
+                text = value.strip()
+                if text == "" or text.lower() in {"nan", "inf", "+inf", "-inf"}:
+                    return "null"
+            try:
+                num = float(value)
+            except (TypeError, ValueError):
+                text = str(value).strip()
+                return text if text else "null"
+            if not math.isfinite(num):
+                return "null"
+            return format_number(num)
+
+        formatted = [
+            f"q{idx}={_format_quantile_value(x)}"
+            for idx, x in enumerate(sliced, start=1)
+        ]
+        lines.append(f"- First step quantiles: {', '.join(formatted)}")
     if data.get('alpha') is not None:
         lines.append(f"- Alpha: {format_number(data['alpha'])}")
     return lines

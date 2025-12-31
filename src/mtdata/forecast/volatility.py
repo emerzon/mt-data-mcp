@@ -661,12 +661,16 @@ def forecast_volatility(
                 v = _rogers_satchell_sigma_sq(o, h, l, c)
             elif method_l == 'yang_zhang':
                 with np.errstate(divide='ignore', invalid='ignore'):
-                    oc = np.log(np.maximum(o[1:],1e-12)) - np.log(np.maximum(c[:-1],1e-12))
-                    co = np.log(np.maximum(c,1e-12)) - np.log(np.maximum(o,1e-12))
-                    rs = (np.log(np.maximum(h,1e-12)) - np.log(np.maximum(c,1e-12))) * (np.log(np.maximum(h,1e-12)) - np.log(np.maximum(o,1e-12))) + \
-                         (np.log(np.maximum(l,1e-12)) - np.log(np.maximum(c,1e-12))) * (np.log(np.maximum(l,1e-12)) - np.log(np.maximum(o,1e-12)))
+                    oc = np.log(np.maximum(o[1:], 1e-12)) - np.log(np.maximum(c[:-1], 1e-12))
+                    co = np.log(np.maximum(c[1:], 1e-12)) - np.log(np.maximum(o[1:], 1e-12))
+                    rs = (
+                        (np.log(np.maximum(h[1:], 1e-12)) - np.log(np.maximum(c[1:], 1e-12)))
+                        * (np.log(np.maximum(h[1:], 1e-12)) - np.log(np.maximum(o[1:], 1e-12)))
+                        + (np.log(np.maximum(l[1:], 1e-12)) - np.log(np.maximum(c[1:], 1e-12)))
+                        * (np.log(np.maximum(l[1:], 1e-12)) - np.log(np.maximum(o[1:], 1e-12)))
+                    )
                 k = 0.34/(1.34 + (window+1)/(window-1)) if window>1 else 0.34
-                co_var = pd.Series(co[1:]).rolling(window=window, min_periods=window).var(ddof=0).to_numpy()
+                co_var = pd.Series(co).rolling(window=window, min_periods=window).var(ddof=0).to_numpy()
                 oc_var = pd.Series(oc).rolling(window=window, min_periods=window).var(ddof=0).to_numpy()
                 rs_mean = pd.Series(rs).rolling(window=window, min_periods=window).mean().to_numpy()
                 v = (co_var + k*oc_var + (1-k)*rs_mean)

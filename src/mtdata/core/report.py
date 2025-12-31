@@ -4,7 +4,7 @@ from .server import mcp, _auto_connect_wrapper
 from .schema import DenoiseSpec
 from .report_utils import render_enhanced_report, format_number, _get_indicator_value
 
-TemplateName = Literal['basic','simple','advanced','scalping','intraday','swing','position']
+TemplateName = Literal['basic','advanced','scalping','intraday','swing','position']
 
 
 def _report_error_text(message: Any) -> str:
@@ -33,7 +33,7 @@ def report_generate(
 ) -> Union[str, Dict[str, Any]]:
     """Generate a consolidated, information-dense analysis report with compact multi-format output.
 
-    - template: 'basic'/'simple' (context, pivot, EWMA vol, backtest->best forecast, MC barrier grid, patterns)
+    - template: 'basic' (context, pivot, EWMA vol, backtest->best forecast, MC barrier grid, patterns)
                 'advanced' (adds regimes, HAR-RV, conformal),
                 or style-specific ('scalping' | 'intraday' | 'swing' | 'position').
     - params: optional dict to tune steps/spacing, grids, and optionally override timeframe per template via 'timeframe'.
@@ -61,7 +61,6 @@ def report_generate(
 
         default_horizon = {
             'basic': 12,
-            'simple': 12,
             'advanced': 12,
             'scalping': 8,
             'intraday': 12,
@@ -75,7 +74,7 @@ def report_generate(
         else:
             eff_horizon = default_horizon.get(name, 12)
 
-        if name in ('basic', 'simple'):
+        if name == 'basic':
             rep = _t_basic(symbol, eff_horizon, denoise, p)
         elif name == 'advanced':
             rep = _t_advanced(symbol, eff_horizon, denoise, p)
