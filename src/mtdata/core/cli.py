@@ -8,6 +8,7 @@ import argparse
 import sys
 import inspect
 import os
+from datetime import datetime
 from typing import get_type_hints, get_origin, get_args, Optional, Dict, Any, List, Tuple, Literal
 import json
 from ..utils.minimal_output import format_result_minimal as _shared_minimal
@@ -70,6 +71,88 @@ def _format_result_minimal(result: Any, verbose: bool = True) -> str:
     except Exception:
         return str(result) if result is not None else ""
 
+
+def _safe_tz_name(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    return getattr(value, 'zone', None) or str(value)
+
+
+def _build_cli_timezone_meta(result: Any) -> Dict[str, Any]:
+    try:
+        from .config import mt5_config
+    except Exception:
+        mt5_config = None
+
+    server_tz_config = None
+    server_tz_resolved = None
+    client_tz_config = None
+    client_tz_resolved = None
+    server_offset_minutes = None
+    if mt5_config is not None:
+        server_tz_config = getattr(mt5_config, 'server_tz_name', None) or None
+        client_tz_config = getattr(mt5_config, 'client_tz_name', None) or None
+        try:
+            server_tz_resolved = _safe_tz_name(mt5_config.get_server_tz())
+        except Exception:
+            server_tz_resolved = None
+        try:
+            client_tz_resolved = _safe_tz_name(mt5_config.get_client_tz())
+        except Exception:
+            client_tz_resolved = None
+
+    offset_env = os.getenv('MT5_TIME_OFFSET_MINUTES')
+    if offset_env is not None:
+        try:
+            server_offset_minutes = int(offset_env)
+        except Exception:
+            server_offset_minutes = None
+
+    output_timezone = None
+    if isinstance(result, dict):
+        output_timezone = result.get('timezone')
+
+    if output_timezone:
+        output_hint = str(output_timezone)
+    else:
+        output_hint = client_tz_resolved or client_tz_config or 'UTC'
+
+    server_source = 'none'
+    if server_tz_config:
+        server_source = 'MT5_SERVER_TZ'
+    elif offset_env is not None:
+        server_source = 'MT5_TIME_OFFSET_MINUTES'
+
+    local_tz = None
+    try:
+        local_tz = _safe_tz_name(datetime.now().astimezone().tzinfo)
+    except Exception:
+        local_tz = None
+
+    return {
+        'output_timezone': output_timezone,
+        'output_timezone_hint': output_hint,
+        'server_tz_source': server_source,
+        'server_tz_config': server_tz_config,
+        'server_tz_resolved': server_tz_resolved,
+        'server_offset_minutes': server_offset_minutes,
+        'client_tz_config': client_tz_config,
+        'client_tz_resolved': client_tz_resolved,
+        'local_tz': local_tz,
+    }
+
+
+def _attach_cli_meta(result: Any, *, cmd_name: str, verbose: bool) -> Any:
+    if not verbose or not isinstance(result, dict):
+        return result
+    out = dict(result)
+    meta = out.get('cli_meta')
+    if not isinstance(meta, dict):
+        meta = {}
+    meta.setdefault('command', cmd_name or '')
+    meta['timezone'] = _build_cli_timezone_meta(result)
+    out['cli_meta'] = meta
+    return out
 def get_function_info(func):
     """Thin wrapper around schema.get_function_info that attaches the callable.
 
@@ -659,6 +742,7 @@ def create_command_function(func_info, cmd_name: str = "", cmd_parser: Optional[
         # Otherwise, use the same shared minimal formatter as the server
         # Pass verbose flag if available (default to False for cleaner output)
         verbose = getattr(args, 'verbose', False)
+        result = _attach_cli_meta(result, cmd_name=cmd_name, verbose=verbose)
         minimal_output = _format_result_minimal(result, verbose=verbose)
         if minimal_output:
             print(minimal_output)

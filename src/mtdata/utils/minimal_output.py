@@ -348,6 +348,9 @@ def _normalize_forecast_payload(payload: Dict[str, Any], verbose: bool = True) -
 
             if meta:
                 out['meta'] = meta
+            cli_meta = payload.get('cli_meta')
+            if isinstance(cli_meta, dict) and cli_meta:
+                out['cli_meta'] = cli_meta
                 
         out['forecast'] = rows
         return out
