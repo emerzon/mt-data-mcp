@@ -369,6 +369,7 @@ Apply smoothing algorithms to data columns.
 
 - **Methods:** `ema`, `sma`, `median`, `lowpass_fft`, `butterworth`, `hp`, `savgol`, `tv`, `kalman`, `hampel`, `bilateral`, `wavelet_packet`, `ssa`, `l1_trend`, `lms`, `rls`, `beta`, `vmd`, `loess`, `stl`, `whittaker`, `gaussian`, `wavelet`, `emd`, `eemd`, `ceemdan`.
 - **Discover methods:** `python cli.py denoise_list_methods`
+- **Adaptive defaults:** `l1_trend`, `lms`, `rls`, `wavelet_packet`, and `vmd` use auto-scaled defaults to preserve scale; override via `--denoise-params`.
 
 ```bash
 # Denoise OHLCV with an EMA before simplifying
@@ -395,10 +396,10 @@ The `start` and `end` parameters for `data_fetch_candles` use `dateparser` for f
 
 - Windows OS (MetaTrader5 requirement)
 - MetaTrader5 terminal installed and running
-- Python 3.8+
+- Python 3.10+
 - Active internet connection
 
-Optional dependencies (uncomment in `requirements.txt`):
+Optional dependencies (install as needed; see `requirements.txt`):
 - Forecast frameworks: `statsforecast`, `mlforecast`, `lightgbm`, `neuralforecast`
 - Foundation models: `torch`, `chronos-forecasting`, `timesfm`, `lag-llama`, `gluonts`
 - Pattern search backends: `hnswlib`, `tslearn`, `dtaidistance`

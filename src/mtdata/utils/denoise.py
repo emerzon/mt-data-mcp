@@ -238,6 +238,7 @@ def _wavelet_packet_denoise(
     level: Optional[int],
     threshold: Any,
     mode: str,
+    threshold_scale: Any = None,
 ) -> np.ndarray:
     if _pywt is None:
         return x
@@ -256,7 +257,18 @@ def _wavelet_packet_denoise(
     coeffs = np.concatenate([node.data.ravel() for node in nodes])
     sigma = np.median(np.abs(coeffs)) / 0.6745 if coeffs.size else float(np.std(x))
     thr = threshold
-    thr_val = float(sigma * np.sqrt(2 * np.log(len(x)))) if thr == "auto" else float(thr)
+    if threshold_scale == "auto":
+        denom = float(np.std(x)) + 1e-12
+        noise_ratio = min(1.0, sigma / denom) if denom > 0 else 0.0
+        scale = 1.2 + 0.8 * noise_ratio
+    elif threshold_scale is None:
+        scale = 1.0
+    else:
+        scale = float(threshold_scale)
+    if thr == "auto":
+        thr_val = float(sigma * np.sqrt(2 * np.log(len(x)))) * scale
+    else:
+        thr_val = float(thr) * scale
     for node in nodes:
         node.data = _pywt.threshold(node.data, thr_val, mode=mode)
     y = wp.reconstruct(update=False)
@@ -345,20 +357,33 @@ def _adaptive_lms_filter(
     x: np.ndarray,
     order: int,
     mu: float,
+    eps: float = 1e-6,
+    leak: float = 0.0,
+    use_bias: bool = True,
 ) -> np.ndarray:
     n = len(x)
     k = max(1, int(order))
     mu_val = float(mu)
     if n < k + 1 or mu_val <= 0:
         return x
-    w = np.zeros(k, dtype=float)
+    leak_val = max(0.0, float(leak))
+    if use_bias:
+        w = np.zeros(k + 1, dtype=float)
+        w[1:] = 1.0 / float(k)
+    else:
+        w = np.full(k, 1.0 / float(k), dtype=float)
     y = x.copy()
     for t in range(k, n):
-        x_vec = x[t - k : t][::-1]
+        if use_bias:
+            x_vec = np.concatenate(([1.0], x[t - k : t][::-1]))
+        else:
+            x_vec = x[t - k : t][::-1]
         y_hat = float(np.dot(w, x_vec))
         y[t] = y_hat
         err = x[t] - y_hat
-        w = w + mu_val * err * x_vec
+        denom = float(np.dot(x_vec, x_vec)) + float(eps)
+        step = mu_val / denom
+        w = (1.0 - leak_val) * w + step * err * x_vec
     return y
 
 
@@ -367,6 +392,7 @@ def _adaptive_rls_filter(
     order: int,
     lam: float,
     delta: float,
+    use_bias: bool = True,
 ) -> np.ndarray:
     n = len(x)
     k = max(1, int(order))
@@ -374,13 +400,21 @@ def _adaptive_rls_filter(
     if n < k + 1 or lam_val <= 0 or lam_val > 1:
         return x
     delta_val = max(float(delta), 1e-6)
-    w = np.zeros(k, dtype=float)
-    p = (1.0 / delta_val) * np.eye(k, dtype=float)
+    if use_bias:
+        w = np.zeros(k + 1, dtype=float)
+        w[1:] = 1.0 / float(k)
+        p = (1.0 / delta_val) * np.eye(k + 1, dtype=float)
+    else:
+        w = np.full(k, 1.0 / float(k), dtype=float)
+        p = (1.0 / delta_val) * np.eye(k, dtype=float)
     y = x.copy()
     for t in range(k, n):
-        x_vec = x[t - k : t][::-1]
+        if use_bias:
+            x_vec = np.concatenate(([1.0], x[t - k : t][::-1]))
+        else:
+            x_vec = x[t - k : t][::-1]
         px = p @ x_vec
-        denom = lam_val + np.dot(x_vec, px)
+        denom = lam_val + float(np.dot(x_vec, px))
         if denom <= 0:
             y[t] = x[t]
             continue
@@ -456,15 +490,36 @@ def _vmd_denoise(
     tol: float,
     keep_modes: Optional[Any],
     drop_modes: Optional[Any],
+    keep_ratio: Optional[float],
 ) -> np.ndarray:
     if _VMD is None:
         return x
     k_val = max(1, int(k))
-    u, _, _ = _VMD(x, float(alpha), float(tau), k_val, int(dc), int(init), float(tol))
+    u, _, omega = _VMD(x, float(alpha), float(tau), k_val, int(dc), int(init), float(tol))
     if u is None:
         return x
     modes = np.atleast_2d(u)
+    if modes.shape[0] == len(x) and modes.shape[1] != len(x):
+        modes = modes.T
+        if omega is not None:
+            omega_arr = np.atleast_2d(omega)
+            if omega_arr.shape[0] == len(x) and omega_arr.shape[1] != len(x):
+                omega = omega_arr.T
     idx_all = list(range(modes.shape[0]))
+    if omega is not None:
+        omega_arr = np.asarray(omega)
+        if omega_arr.ndim > 1 and omega_arr.shape[0] != modes.shape[0] and omega_arr.shape[1] == modes.shape[0]:
+            omega_arr = omega_arr.T
+        if omega_arr.ndim > 1 and omega_arr.shape[0] == modes.shape[0]:
+            freq = omega_arr[:, -1]
+        else:
+            freq = omega_arr
+        try:
+            order = list(np.argsort(freq))
+        except Exception:
+            order = idx_all
+    else:
+        order = idx_all
     if isinstance(keep_modes, (list, tuple)) and len(keep_modes) > 0:
         keep = []
         for idx in keep_modes:
@@ -475,21 +530,39 @@ def _vmd_denoise(
                 keep.append(i)
         idx_sel = keep
     else:
-        drop = drop_modes if drop_modes is not None else [-1]
-        if isinstance(drop, (list, tuple)):
-            drop_set = set()
-            for idx in drop:
-                i = int(idx)
-                if i < 0:
-                    i = modes.shape[0] + i
-                if 0 <= i < modes.shape[0]:
-                    drop_set.add(i)
-            idx_sel = [i for i in idx_all if i not in drop_set]
+        if keep_ratio is not None and drop_modes is None:
+            keep_ratio = max(0.0, min(float(keep_ratio), 1.0))
+            total_energy = float(np.sum(modes ** 2))
+            if total_energy > 0:
+                cumulative = 0.0
+                keep = []
+                for i in order:
+                    cumulative += float(np.sum(modes[i] ** 2))
+                    keep.append(i)
+                    if cumulative / total_energy >= keep_ratio:
+                        break
+                idx_sel = keep
+            else:
+                idx_sel = idx_all
         else:
-            idx_sel = idx_all
+            drop = drop_modes if drop_modes is not None else [-1]
+            if isinstance(drop, (list, tuple)):
+                drop_set = set()
+                for idx in drop:
+                    i = int(idx)
+                    if i < 0:
+                        i = modes.shape[0] + i
+                    if 0 <= i < modes.shape[0]:
+                        drop_set.add(i)
+                idx_sel = [i for i in idx_all if i not in drop_set]
+            else:
+                idx_sel = idx_all
     if not idx_sel:
         idx_sel = idx_all
-    return modes[idx_sel].sum(axis=0)
+    y = modes[idx_sel].sum(axis=0)
+    if len(y) != len(x) and modes.shape[0] == len(x):
+        y = modes[idx_sel].sum(axis=1)
+    return y
 
 def _denoise_series(
     s: pd.Series,
@@ -677,7 +750,15 @@ def _denoise_series(
         level = params.get('level')
         mode = str(params.get('mode', 'soft'))
         thr = params.get('threshold', 'auto')
-        y = _wavelet_packet_denoise(x, wavelet=wavelet, level=level, threshold=thr, mode=mode)
+        thr_scale = params.get('threshold_scale', 'auto')
+        y = _wavelet_packet_denoise(
+            x,
+            wavelet=wavelet,
+            level=level,
+            threshold=thr,
+            mode=mode,
+            threshold_scale=thr_scale,
+        )
         return pd.Series(y, index=s.index)
     if method == 'ssa':
         window = int(params.get('window', max(10, len(x) // 3)))
@@ -685,28 +766,49 @@ def _denoise_series(
         y = _ssa_denoise(x, window=window, components=components)
         return pd.Series(y, index=s.index)
     if method == 'l1_trend':
-        lamb = float(params.get('lamb', params.get('lambda', 5.0)))
+        lamb_param = params.get('lamb', params.get('lambda', 'auto'))
         n_iter = int(params.get('n_iter', 50))
-        rho = float(params.get('rho', 1.0))
-        y = _l1_trend_filter(x, lamb=lamb, n_iter=n_iter, rho=rho)
+        rho_param = params.get('rho', 'auto')
+        rho = float(rho_param) if rho_param not in ('auto', None) else 1.0
+        if lamb_param in ('auto', None):
+            mean = float(np.mean(x))
+            std = float(np.std(x))
+            if std <= 0:
+                return s
+            x_scaled = (x - mean) / std
+            scale = math.sqrt(max(len(x), 1) / 100.0)
+            lamb = 5.0 * scale
+            y_scaled = _l1_trend_filter(x_scaled, lamb=lamb, n_iter=n_iter, rho=rho)
+            y = y_scaled * std + mean
+        else:
+            lamb = float(lamb_param)
+            y = _l1_trend_filter(x, lamb=lamb, n_iter=n_iter, rho=rho)
         return pd.Series(y, index=s.index)
     if method == 'lms':
         order = int(params.get('order', 5))
-        mu = float(params.get('mu', 0.01))
-        y_fwd = _adaptive_lms_filter(x, order=order, mu=mu)
+        mu_param = params.get('mu', 'auto')
+        mu = float(mu_param) if mu_param not in ('auto', None) else 0.5
+        mu = max(1e-4, min(mu, 1.5))
+        eps = float(params.get('eps', 1e-6))
+        leak = float(params.get('leak', 0.0))
+        bias = bool(params.get('bias', True))
+        y_fwd = _adaptive_lms_filter(x, order=order, mu=mu, eps=eps, leak=leak, use_bias=bias)
         if causality == 'zero_phase':
-            y_bwd = _adaptive_lms_filter(x[::-1], order=order, mu=mu)[::-1]
+            y_bwd = _adaptive_lms_filter(x[::-1], order=order, mu=mu, eps=eps, leak=leak, use_bias=bias)[::-1]
             y = 0.5 * (y_fwd + y_bwd)
         else:
             y = y_fwd
         return pd.Series(y, index=s.index)
     if method == 'rls':
         order = int(params.get('order', 5))
-        lam = float(params.get('lambda_', params.get('lam', 0.99)))
+        lam_param = params.get('lambda_', params.get('lam', 'auto'))
+        lam = float(lam_param) if lam_param not in ('auto', None) else 0.99
+        lam = max(0.9, min(lam, 0.999))
         delta = float(params.get('delta', 1.0))
-        y_fwd = _adaptive_rls_filter(x, order=order, lam=lam, delta=delta)
+        bias = bool(params.get('bias', True))
+        y_fwd = _adaptive_rls_filter(x, order=order, lam=lam, delta=delta, use_bias=bias)
         if causality == 'zero_phase':
-            y_bwd = _adaptive_rls_filter(x[::-1], order=order, lam=lam, delta=delta)[::-1]
+            y_bwd = _adaptive_rls_filter(x[::-1], order=order, lam=lam, delta=delta, use_bias=bias)[::-1]
             y = 0.5 * (y_fwd + y_bwd)
         else:
             y = y_fwd
@@ -727,7 +829,26 @@ def _denoise_series(
         tol = float(params.get('tol', 1e-7))
         keep_modes = params.get('keep_modes')
         drop_modes = params.get('drop_modes')
-        y = _vmd_denoise(x, alpha=alpha, tau=tau, k=k, dc=dc, init=init, tol=tol, keep_modes=keep_modes, drop_modes=drop_modes)
+        keep_ratio = params.get('keep_ratio', 'auto')
+        if keep_ratio in ('auto', None):
+            denom = float(np.std(x)) + 1e-12
+            noise_level = float(np.std(np.diff(x))) / denom if denom > 0 else 0.0
+            keep_ratio_val = 0.9 - 0.2 * min(1.0, noise_level)
+            keep_ratio_val = max(0.7, min(0.95, keep_ratio_val))
+        else:
+            keep_ratio_val = float(keep_ratio)
+        y = _vmd_denoise(
+            x,
+            alpha=alpha,
+            tau=tau,
+            k=k,
+            dc=dc,
+            init=init,
+            tol=tol,
+            keep_modes=keep_modes,
+            drop_modes=drop_modes,
+            keep_ratio=keep_ratio_val,
+        )
         return pd.Series(y, index=s.index)
     if method == 'wavelet' and _pywt is not None:
         wavelet = str(params.get('wavelet', 'db4'))
@@ -942,24 +1063,29 @@ def get_denoise_methods_data() -> Dict[str, Any]:
         {"name": "level", "type": "int|null", "default": None, "description": "Packet level; auto if omitted."},
         {"name": "threshold", "type": "float|\"auto\"", "default": "auto", "description": "Shrinkage threshold; 'auto' uses universal threshold."},
         {"name": "mode", "type": "str", "default": "soft", "description": "Shrinkage mode: 'soft' or 'hard'."},
+        {"name": "threshold_scale", "type": "float|\"auto\"", "default": "auto", "description": "Scale factor for threshold; 'auto' adapts to noise ratio."},
     ], {"causal": False, "zero_phase": True})
     add("ssa", "Singular Spectrum Analysis denoising with low-rank reconstruction.", [
         {"name": "window", "type": "int", "default": 10, "description": "SSA window length."},
         {"name": "components", "type": "int|float|null", "default": 2, "description": "Rank or energy ratio (0-1] to retain."},
     ], {"causal": False, "zero_phase": True})
     add("l1_trend", "L1 trend filtering for piecewise-linear trend extraction.", [
-        {"name": "lamb", "type": "float", "default": 5.0, "description": "L1 penalty (alias: lambda)."},
+        {"name": "lamb", "type": "float|\"auto\"", "default": "auto", "description": "L1 penalty (alias: lambda); 'auto' scales by series std and length."},
         {"name": "n_iter", "type": "int", "default": 50, "description": "ADMM iterations."},
-        {"name": "rho", "type": "float", "default": 1.0, "description": "ADMM rho parameter."},
+        {"name": "rho", "type": "float|\"auto\"", "default": "auto", "description": "ADMM rho parameter."},
     ], {"causal": False, "zero_phase": True})
     add("lms", "Adaptive LMS filter for regime-aware smoothing.", [
         {"name": "order", "type": "int", "default": 5, "description": "Filter length."},
-        {"name": "mu", "type": "float", "default": 0.01, "description": "LMS step size."},
+        {"name": "mu", "type": "float|\"auto\"", "default": "auto", "description": "LMS step size; 'auto' uses normalized LMS."},
+        {"name": "eps", "type": "float", "default": 1e-6, "description": "Stability epsilon for NLMS."},
+        {"name": "leak", "type": "float", "default": 0.0, "description": "Leakage factor to prevent drift."},
+        {"name": "bias", "type": "bool", "default": True, "description": "Include bias term for scale preservation."},
     ], {"causal": True, "zero_phase": True})
     add("rls", "Adaptive RLS filter for faster tracking under changing volatility.", [
         {"name": "order", "type": "int", "default": 5, "description": "Filter length."},
-        {"name": "lambda_", "type": "float", "default": 0.99, "description": "Forgetting factor (alias: lam)."},
+        {"name": "lambda_", "type": "float|\"auto\"", "default": "auto", "description": "Forgetting factor (alias: lam)."},
         {"name": "delta", "type": "float", "default": 1.0, "description": "Diagonal loading for initial covariance."},
+        {"name": "bias", "type": "bool", "default": True, "description": "Include bias term for scale preservation."},
     ], {"causal": True, "zero_phase": True})
     add("beta", "Robust beta-IRLS smoothing using fractional-power residuals.", [
         {"name": "window", "type": "int", "default": 9, "description": "Window length in samples."},
@@ -975,7 +1101,8 @@ def get_denoise_methods_data() -> Dict[str, Any]:
         {"name": "init", "type": "int", "default": 1, "description": "Initialization mode (0/1/2)."},
         {"name": "tol", "type": "float", "default": 1e-7, "description": "Convergence tolerance."},
         {"name": "keep_modes", "type": "int[]", "default": None, "description": "Explicit list of modes to keep."},
-        {"name": "drop_modes", "type": "int[]", "default": [-1], "description": "Modes to drop (default drops highest-frequency)."},
+        {"name": "drop_modes", "type": "int[]", "default": None, "description": "Modes to drop (overrides keep_ratio)."},
+        {"name": "keep_ratio", "type": "float|\"auto\"", "default": "auto", "description": "Energy ratio to keep using lowest-frequency modes."},
     ], {"causal": False, "zero_phase": True})
     add("loess", "LOESS/LOWESS local regression smoothing for local trend estimation.", [
         {"name": "frac", "type": "float", "default": 0.2, "description": "Fraction of data used in each local fit."},
@@ -1089,19 +1216,19 @@ def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[
     elif method == 'bilateral':
         params = {"sigma_s": 2.0, "sigma_r": 0.5, "truncate": 3.0}
     elif method == 'wavelet_packet':
-        params = {"wavelet": "db4", "level": None, "threshold": "auto", "mode": "soft"}
+        params = {"wavelet": "db4", "level": None, "threshold": "auto", "mode": "soft", "threshold_scale": "auto"}
     elif method == 'ssa':
         params = {"window": 10, "components": 2}
     elif method == 'l1_trend':
-        params = {"lamb": 5.0, "n_iter": 50, "rho": 1.0}
+        params = {"lamb": "auto", "n_iter": 50, "rho": "auto"}
     elif method == 'lms':
-        params = {"order": 5, "mu": 0.01}
+        params = {"order": 5, "mu": "auto", "eps": 1e-6, "leak": 0.0, "bias": True}
     elif method == 'rls':
-        params = {"order": 5, "lambda_": 0.99, "delta": 1.0}
+        params = {"order": 5, "lambda_": "auto", "delta": 1.0, "bias": True}
     elif method == 'beta':
         params = {"window": 9, "beta": 1.3, "n_iter": 20, "eps": 1e-6}
     elif method == 'vmd':
-        params = {"alpha": 2000.0, "tau": 0.0, "k": 5, "dc": 0, "init": 1, "tol": 1e-7, "keep_modes": None, "drop_modes": [-1]}
+        params = {"alpha": 2000.0, "tau": 0.0, "k": 5, "dc": 0, "init": 1, "tol": 1e-7, "keep_modes": None, "drop_modes": None, "keep_ratio": "auto"}
     elif method == 'loess':
         params = {"frac": 0.2, "it": 0, "delta": 0.0}
     elif method == 'stl':
