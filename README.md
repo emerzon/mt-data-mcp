@@ -367,7 +367,7 @@ See detailed examples and parameters in `docs/FORECAST.md` under Framework Integ
 
 Apply smoothing algorithms to data columns.
 
-- **Methods:** `ema`, `sma`, `median`, `lowpass_fft`, `wavelet`, `emd`, `eemd`, `ceemdan`.
+- **Methods:** `ema`, `sma`, `median`, `lowpass_fft`, `butterworth`, `hp`, `savgol`, `tv`, `kalman`, `hampel`, `bilateral`, `wavelet_packet`, `ssa`, `l1_trend`, `lms`, `rls`, `beta`, `vmd`, `loess`, `stl`, `whittaker`, `gaussian`, `wavelet`, `emd`, `eemd`, `ceemdan`.
 - **Discover methods:** `python cli.py denoise_list_methods`
 
 ```bash

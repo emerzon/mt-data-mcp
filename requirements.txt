@@ -40,6 +40,11 @@ holidays>=0.40
 scipy>=1.15.3,<1.16.0; python_version >= "3.10"
 scipy>=1.10.1,<1.16.0; python_version < "3.10"
 
+# Optional: denoising backends
+PyWavelets>=1.6.0
+EMD-signal>=1.6.4
+vmdpy>=0.2
+
 # statsmodels
 statsmodels>=0.14.5; python_version >= "3.9"
 statsmodels>=0.14.0; python_version < "3.9"

@@ -120,10 +120,28 @@ _DENOISE_METHODS = (
     "sma",         # simple moving average
     "median",      # rolling median
     "lowpass_fft", # zero-phase FFT low-pass
+    "butterworth", # Butterworth IIR filter
+    "hp",          # Hodrick-Prescott trend filter
+    "savgol",      # Savitzky-Golay smoothing
+    "tv",          # total variation denoising
+    "kalman",      # 1D Kalman filter smoothing
+    "hampel",      # Hampel outlier filter
+    "bilateral",   # bilateral smoothing
+    "wavelet_packet", # wavelet packet denoise
+    "ssa",         # singular spectrum analysis
+    "l1_trend",    # L1 trend filtering
+    "lms",         # adaptive LMS filter
+    "rls",         # adaptive RLS filter
+    "beta",        # beta-IRLS smoothing
+    "vmd",         # variational mode decomposition
+    "loess",       # LOESS/LOWESS smoothing
+    "stl",         # seasonal-trend decomposition
+    "whittaker",   # Whittaker smoothing
+    "gaussian",    # Gaussian kernel smoothing
     "wavelet",     # wavelet shrinkage (PyWavelets optional)
     "emd",         # empirical mode decomposition (PyEMD optional)
     "eemd",        # ensemble EMD (PyEMD optional)
-    "ceemdan",     # complementary EEMD with adaptive noise (PyEMD optional)
+    "ceemdan",     # complementary EEMD with adaptive noise (PyEMD optional)    
 )
 
 try:
