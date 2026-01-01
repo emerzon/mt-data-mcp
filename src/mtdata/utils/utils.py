@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import math
 from typing import Any, Dict, List, Optional, Tuple, Set
 from numbers import Number
 
@@ -8,6 +9,7 @@ import dateparser
 from .constants import (
     PRECISION_ABS_TOL,
     PRECISION_MAX_DECIMALS,
+    PRECISION_MAX_LOSS_PCT,
     PRECISION_REL_TOL,
     TIME_DISPLAY_FORMAT,
 )
@@ -163,24 +165,41 @@ def _style_time_format(fmt: str) -> str:
         pass
     return fmt
 
-def _optimal_decimals(values: List[float], rel_tol: float = PRECISION_REL_TOL, abs_tol: float = PRECISION_ABS_TOL,
-                      max_decimals: int = PRECISION_MAX_DECIMALS) -> int:
+def _optimal_decimals(
+    values: List[float],
+    rel_tol: float = PRECISION_REL_TOL,
+    abs_tol: float = PRECISION_ABS_TOL,
+    max_decimals: int = PRECISION_MAX_DECIMALS,
+    max_loss_pct: float = PRECISION_MAX_LOSS_PCT,
+) -> int:
     if not values:
         return 0
-    nums = [float(v) for v in values if v is not None and not pd.isna(v)]
+    nums = [
+        float(v)
+        for v in values
+        if v is not None and not pd.isna(v) and math.isfinite(float(v))
+    ]
     if not nums:
         return 0
-    scale = max(1.0, max(abs(v) for v in nums))
-    tol = max(abs_tol, rel_tol * scale)
+    vmin = min(nums)
+    vmax = max(nums)
+    value_range = vmax - vmin
+    if value_range <= 0:
+        scale = max(1.0, max(abs(v) for v in nums))
+        tol = max(abs_tol, rel_tol * scale)
+    else:
+        tol = max(abs_tol, value_range * max_loss_pct)
     for d in range(0, max_decimals + 1):
-        ok = True
         factor = 10.0 ** d
+        max_diff = 0.0
         for v in nums:
             rv = round(v * factor) / factor
-            if abs(rv - v) > tol:
-                ok = False
+            diff = abs(rv - v)
+            if diff > max_diff:
+                max_diff = diff
+            if max_diff > tol:
                 break
-        if ok:
+        if max_diff <= tol:
             return d
     return max_decimals
 
@@ -277,6 +296,23 @@ def _format_float(v: float, d: int) -> str:
 
 
 def _format_numeric_rows_from_df(df: pd.DataFrame, headers: List[str]) -> List[List[str]]:
+    # Precompute per-column decimals to trim numeric noise without losing precision.
+    col_decimals: Dict[str, int] = {}
+    for col in headers:
+        if col == 'time' or col not in df.columns:
+            continue
+        try:
+            series = pd.to_numeric(df[col], errors="coerce")
+            values = [
+                float(v)
+                for v in series
+                if v is not None and not pd.isna(v) and math.isfinite(v)
+            ]
+        except Exception:
+            values = []
+        if values:
+            col_decimals[col] = _optimal_decimals(values)
+
     out_rows: List[List[str]] = []
     for _, row in df[headers].iterrows():
         out_row: List[str] = []
@@ -284,8 +320,22 @@ def _format_numeric_rows_from_df(df: pd.DataFrame, headers: List[str]) -> List[L
             val = row[col]
             if col == 'time':
                 out_row.append(str(val))
-            elif val is None or isinstance(val, bool) or isinstance(val, Number):
+            elif val is None or isinstance(val, bool):
                 out_row.append(format_number(val))
+            elif isinstance(val, Number):
+                try:
+                    num = float(val)
+                except Exception:
+                    out_row.append(str(val))
+                    continue
+                if not math.isfinite(num):
+                    out_row.append(format_number(num))
+                    continue
+                decimals = col_decimals.get(col)
+                if decimals is None:
+                    out_row.append(format_number(num))
+                else:
+                    out_row.append(_format_float(num, decimals))
             else:
                 out_row.append(str(val))
         out_rows.append(out_row)

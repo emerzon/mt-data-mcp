@@ -7,9 +7,11 @@ compact encoding instead of mixing ad-hoc tabular text and sparse JSON shapes.
 from __future__ import annotations
 
 import math
+from numbers import Number
 from typing import Any, Dict, Iterable, List, Optional
 
 from .formatting import format_number
+from .utils import _optimal_decimals, _format_float
 
 
 _INDENT = "  "
@@ -152,16 +154,60 @@ def _headers_from_dicts(items: Iterable[Dict[str, Any]]) -> List[str]:
     return headers
 
 
+def _column_decimals(headers: List[str], rows: List[Dict[str, Any]]) -> Dict[str, int]:
+    col_decimals: Dict[str, int] = {}
+    for h in headers:
+        values: List[float] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            val = row.get(h)
+            if val is None or isinstance(val, bool):
+                continue
+            if isinstance(val, Number):
+                try:
+                    num = float(val)
+                except Exception:
+                    continue
+                if math.isfinite(num):
+                    values.append(num)
+        if values:
+            col_decimals[h] = _optimal_decimals(values)
+    return col_decimals
+
+
+def _stringify_for_toon_value(value: Any, decimals: Optional[int], delimiter: str) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return format_number(value)
+    if isinstance(value, Number):
+        try:
+            num = float(value)
+        except Exception:
+            return _quote_if_needed(str(value), delimiter)
+        if not math.isfinite(num):
+            return format_number(num)
+        if decimals is None:
+            return format_number(num)
+        return _format_float(num, int(decimals))
+    return _quote_if_needed(str(value), delimiter)
+
+
 def _encode_tabular(key: str, headers: List[str], rows: List[Dict[str, Any]], indent: int = 0,
                     delimiter: str = _DEFAULT_DELIMITER) -> str:
     """Render a uniform list of dicts as a TOON tabular array."""
     ind = _INDENT * indent
     name = _quote_key(key, delimiter) or "items"
     header_line = delimiter.join(_quote_key(h, delimiter) for h in headers)
+    col_decimals = _column_decimals(headers, rows)
     lines = [f"{ind}{name}[{len(rows)}]{{{header_line}}}:"]
     row_indent = ind + _INDENT
     for row in rows:
-        vals = [_stringify_for_toon(row.get(h), delimiter) for h in headers]
+        vals = [
+            _stringify_for_toon_value(row.get(h), col_decimals.get(h), delimiter)
+            for h in headers
+        ]
         lines.append(f"{row_indent}{delimiter.join(vals)}")
     return "\n".join(lines)
 
@@ -183,7 +229,21 @@ def format_table_toon(headers: List[str], rows: List[List[Optional[Any]]], name:
 def _encode_inline_array(key: str, items: List[Any], indent: int = 0, delimiter: str = _DEFAULT_DELIMITER) -> str:
     ind = _INDENT * indent
     name = _quote_key(key, delimiter) or "items"
-    vals = delimiter.join(_stringify_for_toon(v, delimiter) for v in items)
+    dec = None
+    values: List[float] = []
+    for item in items:
+        if item is None or isinstance(item, bool):
+            continue
+        if isinstance(item, Number):
+            try:
+                num = float(item)
+            except Exception:
+                continue
+            if math.isfinite(num):
+                values.append(num)
+    if values:
+        dec = _optimal_decimals(values)
+    vals = delimiter.join(_stringify_for_toon_value(v, dec, delimiter) for v in items)
     return f"{ind}{name}[{len(items)}]: {vals}"
 
 
