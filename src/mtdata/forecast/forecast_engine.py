@@ -16,11 +16,11 @@ from mtdata.utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
     _use_client_tz,
+    parse_kv_or_json as _parse_kv_or_json,
 )
 from mtdata.utils.indicators import _parse_ti_specs as _parse_ti_specs_util, _apply_ta_indicators as _apply_ta_indicators_util
 from mtdata.utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
 from mtdata.forecast.common import (
-    parse_kv_or_json as _parse_kv_or_json,
     fetch_history as _fetch_history,
     default_seasonality as _default_seasonality_period,
     next_times_from_last as _next_times_from_last,

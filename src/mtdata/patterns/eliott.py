@@ -7,6 +7,7 @@ from scipy.signal import find_peaks
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 from ..utils.utils import to_float_np
+from .common import PatternResultBase
 
 @dataclass
 class ElliottWaveConfig:
@@ -24,15 +25,10 @@ class ElliottWaveConfig:
     tune_min_distance: Optional[List[int]] = None  # e.g., [4, 6, 8]
 
 @dataclass
-class ElliottWaveResult:
+class ElliottWaveResult(PatternResultBase):
     """Result of an Elliott Wave pattern detection."""
     wave_type: str  # "Impulse" or "Correction"
     wave_sequence: List[int]
-    confidence: float
-    start_index: int
-    end_index: int
-    start_time: Optional[float]
-    end_time: Optional[float]
     details: Dict[str, Any] = field(default_factory=dict)
 
 def _zigzag_pivots_indices(close: np.ndarray, threshold_pct: float) -> Tuple[List[int], List[str]]:

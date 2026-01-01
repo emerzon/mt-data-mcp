@@ -971,6 +971,25 @@ def _apply_denoise(
     return added_cols
 
 
+def _resolve_denoise_base_col(
+    df: pd.DataFrame,
+    denoise: Optional[Dict[str, Any]],
+    *,
+    base_col: str = "close",
+    default_when: str = "pre_ti",
+) -> str:
+    """Apply denoise when requested and return the effective base column name."""
+    if not denoise:
+        return base_col
+    try:
+        added = _apply_denoise(df, denoise, default_when=default_when)
+        if f"{base_col}_dn" in added:
+            return f"{base_col}_dn"
+    except Exception:
+        pass
+    return base_col
+
+
 def get_denoise_methods_data() -> Dict[str, Any]:
     def avail_requires(name: str) -> Tuple[bool, str]:
         if name == 'wavelet':

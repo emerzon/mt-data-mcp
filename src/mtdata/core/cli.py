@@ -31,18 +31,9 @@ def _debug(msg: str) -> None:
 
 
 # Import server module and attempt to discover tools dynamically
-try:
-    # Ensure .env is loaded for CLI runs too (redundant with server/config, but robust)
-    from dotenv import load_dotenv, find_dotenv  # type: ignore
-    _env_path = find_dotenv()
-    if _env_path:
-        load_dotenv(_env_path)
-    else:
-        load_dotenv()
-except Exception as e:
-    _debug(f"dotenv load failed: {e}")
 from . import server
 from .unified_params import add_global_args_to_parser
+from .server_utils import get_mcp_registry
 from .schema import enrich_schema_with_shared_defs, get_function_info as _schema_get_function_info, PARAM_HINTS as _PARAM_HINTS
 
 # Types for discovered metadata
@@ -293,12 +284,7 @@ def discover_tools():
     except Exception as e:
         _debug(f"get_tool_registry failed: {e}")
     if mcp is not None:
-        # Try common registry attribute names on FastMCP
-        for attr in ("tools", "_tools", "registry", "tool_registry", "_tool_registry"):
-            reg = getattr(mcp, attr, None)
-            if reg and hasattr(reg, 'items'):
-                registry = reg
-                break
+        registry = get_mcp_registry(mcp) or registry
 
     if registry:
         pkg_prefix = server.__name__.rsplit('.', 1)[0] + '.'

@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional
 from ..schema import DenoiseSpec
-from .basic import template_basic
-from ..report_utils import merge_params, attach_multi_timeframes
+from .common import build_report_with_timeframes
+from ..report_utils import merge_params
 
 
 def template_swing(
@@ -27,12 +27,4 @@ def template_swing(
     })
     if 'timeframe' not in p:
         p['timeframe'] = 'H4'
-    base = template_basic(symbol, horizon, denoise, p)
-    attach_multi_timeframes(
-        base,
-        symbol,
-        denoise,
-        extra_timeframes=p.get('extra_timeframes') or ['H1','H4','D1','W1'],
-        pivot_timeframes=p.get('pivot_timeframes') or ['D1','W1']
-    )
-    return base
+    return build_report_with_timeframes(symbol, horizon, denoise, p, default_extra=['H1','H4','D1','W1'], default_pivots=['D1','W1'])

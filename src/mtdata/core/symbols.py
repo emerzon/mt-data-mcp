@@ -1,25 +1,12 @@
 
 from typing import Any, Dict, Optional
 
-from ..utils.utils import _table_from_rows
+from ..utils.utils import _table_from_rows, _normalize_limit
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from .server import mcp, _auto_connect_wrapper
 from .constants import GROUP_SEARCH_THRESHOLD, DEFAULT_ROW_LIMIT
 import MetaTrader5 as mt5
 
-
-def _normalize_limit(limit: Optional[Any]) -> Optional[int]:
-    try:
-        if limit is None:
-            return None
-        if isinstance(limit, str):
-            limit = limit.strip()
-            if not limit:
-                return None
-        value = int(float(limit))
-        return value if value > 0 else None
-    except Exception:
-        return None
 
 
 @mcp.tool()

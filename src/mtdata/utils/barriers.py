@@ -1,4 +1,4 @@
-from typing import Any, Optional, Tuple, Literal
+from typing import Any, Optional, Tuple, Literal, Dict
 
 from .mt5 import get_symbol_info_cached
 
@@ -83,3 +83,35 @@ def resolve_barrier_prices(
                 sl_price = price * 1.000001
 
     return float(tp_price), float(sl_price)
+
+
+def build_barrier_kwargs(
+    *,
+    tp_abs: Optional[float] = None,
+    sl_abs: Optional[float] = None,
+    tp_pct: Optional[float] = None,
+    sl_pct: Optional[float] = None,
+    tp_pips: Optional[float] = None,
+    sl_pips: Optional[float] = None,
+) -> Dict[str, Optional[float]]:
+    """Collect barrier arguments into a single kwargs dict."""
+    return {
+        "tp_abs": tp_abs,
+        "sl_abs": sl_abs,
+        "tp_pct": tp_pct,
+        "sl_pct": sl_pct,
+        "tp_pips": tp_pips,
+        "sl_pips": sl_pips,
+    }
+
+
+def build_barrier_kwargs_from(values: Dict[str, Any]) -> Dict[str, Optional[float]]:
+    """Build barrier kwargs from a dict of values (e.g., locals())."""
+    return build_barrier_kwargs(
+        tp_abs=values.get("tp_abs"),
+        sl_abs=values.get("sl_abs"),
+        tp_pct=values.get("tp_pct"),
+        sl_pct=values.get("sl_pct"),
+        tp_pips=values.get("tp_pips"),
+        sl_pips=values.get("sl_pips"),
+    )

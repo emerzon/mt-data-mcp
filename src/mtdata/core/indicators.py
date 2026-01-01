@@ -6,7 +6,7 @@ from .constants import DEFAULT_ROW_LIMIT
 from ..utils.utils import _table_from_rows
 from .server import mcp
 # Import the actual implementation from utils
-from ..utils.indicators import _list_ta_indicators
+from ..utils.indicators import list_ta_indicators as _list_ta_indicators
 
 def _infer_defaults_from_doc(func_name: str, doc_text: str, params: List[Dict[str, Any]]):
     """Delegate to utils implementation."""
@@ -34,7 +34,7 @@ def indicators_list(
     Parameters: search_term?, category?, limit?
     """
     try:
-        items = _list_ta_indicators()
+        items = _list_ta_indicators(detailed=False)
         if search_term:
             q = search_term.strip().lower()
             filtered = []
@@ -72,7 +72,7 @@ def indicators_describe(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: 
     Parameters: name
     """
     try:
-        items = _list_ta_indicators()
+        items = _list_ta_indicators(detailed=True)
         target = next((it for it in items if it.get('name','').lower() == str(name).lower()), None)
         if not target:
             return {"error": f"Indicator '{name}' not found"}

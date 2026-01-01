@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional
 from ..schema import DenoiseSpec
-from .basic import template_basic
-from ..report_utils import merge_params, market_snapshot, apply_market_gates, attach_multi_timeframes
+from .common import build_report_with_market
+from ..report_utils import merge_params, market_snapshot
 from ...utils.barriers import get_pip_size as _get_pip_size
 
 
@@ -74,16 +74,4 @@ def template_scalping(
             _set_default('sl_min', sl_min_ticks)
             _set_default('sl_max', sl_max_ticks)
 
-    base = template_basic(symbol, horizon, denoise, p)
-    base.setdefault('sections', {})['market'] = snap
-    gates = apply_market_gates(snap if isinstance(snap, dict) else {}, p)
-    if gates:
-        base['sections']['execution_gates'] = gates
-    attach_multi_timeframes(
-        base,
-        symbol,
-        denoise,
-        extra_timeframes=p.get('extra_timeframes') or ['M1','M5','M15','D1'],
-        pivot_timeframes=p.get('pivot_timeframes') or ['D1']
-    )
-    return base
+    return build_report_with_market(symbol, horizon, denoise, p, default_extra=['M1','M5','M15','D1'], default_pivots=['D1'], snapshot=snap)

@@ -10,6 +10,7 @@ from .server import mcp
 from ..utils.mt5 import _auto_connect_wrapper
 from .config import mt5_config
 from .constants import DEFAULT_ROW_LIMIT
+from ..utils.utils import _normalize_limit
 
 
 ExpirationValue = Union[int, float, str, datetime]
@@ -61,19 +62,6 @@ def _to_server_time_naive(dt: datetime) -> datetime:
     server_dt = utc_dt + timedelta(seconds=offset_sec)
     return server_dt.replace(tzinfo=None)
 
-
-def _normalize_limit(limit: Optional[Any]) -> Optional[int]:
-    try:
-        if limit is None:
-            return None
-        if isinstance(limit, str):
-            limit = limit.strip()
-            if not limit:
-                return None
-        value = int(float(limit))
-        return value if value > 0 else None
-    except Exception:
-        return None
 
 
 def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tuple[Optional[datetime], bool]:

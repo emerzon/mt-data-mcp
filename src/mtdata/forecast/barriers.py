@@ -2,7 +2,8 @@ from typing import Any, Dict, Optional, List, Literal, Tuple, Set
 import numpy as np
 from ..core.schema import TimeframeLiteral, DenoiseSpec
 from ..core.constants import TIMEFRAME_SECONDS
-from .common import fetch_history as _fetch_history, parse_kv_or_json as _parse_kv_or_json
+from .common import fetch_history as _fetch_history
+from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import get_pip_size as _get_pip_size, resolve_barrier_prices as _resolve_barrier_prices
 from .monte_carlo import (
     simulate_gbm_mc as _simulate_gbm_mc, 

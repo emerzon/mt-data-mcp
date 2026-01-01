@@ -70,6 +70,20 @@ def _normalize_ohlcv_arg(ohlcv: Optional[str]) -> Optional[Set[str]]:
     return out or None
 
 
+def _normalize_limit(limit: Optional[Any]) -> Optional[int]:
+    try:
+        if limit is None:
+            return None
+        if isinstance(limit, str):
+            limit = limit.strip()
+            if not limit:
+                return None
+        value = int(float(limit))
+        return value if value > 0 else None
+    except Exception:
+        return None
+
+
 def _table_from_rows(headers: List[str], rows: List[List[Any]]) -> Dict[str, Any]:
     """Build a normalized tabular payload for results.
 

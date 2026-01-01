@@ -5,9 +5,9 @@ import math
 
 from .schema import TimeframeLiteral, _PIVOT_METHODS
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..utils.mt5 import _mt5_copy_rates_from, _mt5_epoch_to_utc
+from ..utils.mt5 import _mt5_copy_rates_from, _mt5_epoch_to_utc, _symbol_ready_guard
 from ..utils.utils import _format_time_minimal, _format_time_minimal_local, _use_client_tz
-from .server import mcp, _auto_connect_wrapper, _ensure_symbol_ready
+from .server import mcp, _auto_connect_wrapper
 import MetaTrader5 as mt5
 
 
@@ -30,13 +30,9 @@ def pivot_compute_points(
         if not tf_secs:
             return {"error": f"Unsupported timeframe seconds for {timeframe}"}
 
-        _info_before = mt5.symbol_info(symbol)
-        _was_visible = bool(_info_before.visible) if _info_before is not None else None
-        err = _ensure_symbol_ready(symbol)
-        if err:
-            return {"error": err}
-
-        try:
+        with _symbol_ready_guard(symbol) as (err, _info_before):
+            if err:
+                return {"error": err}
             _tick = mt5.symbol_info_tick(symbol)
             if _tick is not None and getattr(_tick, "time", None):
                 t_utc = _mt5_epoch_to_utc(float(_tick.time))
@@ -46,15 +42,9 @@ def pivot_compute_points(
                 server_now_dt = datetime.utcnow()
                 server_now_ts = server_now_dt.timestamp()
             rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, 5)
-        finally:
-            if _was_visible is False:
-                try:
-                    mt5.symbol_select(symbol, False)
-                except Exception:
-                    pass
 
         if rates is None or len(rates) == 0:
-            return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}
+            return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"} 
 
         now_ts = server_now_ts
         if len(rates) >= 2:
@@ -87,7 +77,7 @@ def pivot_compute_points(
         period_start = _mt5_epoch_to_utc(period_start)
         period_end = period_start + float(tf_secs)
 
-        digits = int(getattr(_info_before, "digits", 0) or 0)
+        digits = int(getattr(_info_before, "digits", 0) or 0) if _info_before is not None else 0
 
         def _round(v: float) -> float:
             try:

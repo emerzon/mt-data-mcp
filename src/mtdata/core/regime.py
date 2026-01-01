@@ -6,7 +6,7 @@ from .server import mcp, _auto_connect_wrapper
 from .schema import TimeframeLiteral, DenoiseSpec
 from ..forecast.common import fetch_history as _fetch_history
 from ..utils.utils import _format_time_minimal
-from ..utils.denoise import _apply_denoise as _apply_denoise_util
+from ..utils.denoise import _resolve_denoise_base_col
 
 
 def _consolidate_payload(payload: Dict[str, Any], method: str, output_mode: str, include_series: bool = False) -> Dict[str, Any]:
@@ -227,14 +227,7 @@ def regime_detect(
         df = _fetch_history(symbol, timeframe, int(max(limit, 50)), as_of=None)
         if len(df) < 10:
             return {"error": "Insufficient history"}
-        base_col = 'close'
-        if denoise:
-            try:
-                added = _apply_denoise_util(df, denoise, default_when='pre_ti')
-                if f"{base_col}_dn" in added:
-                    base_col = f"{base_col}_dn"
-            except Exception:
-                pass
+        base_col = _resolve_denoise_base_col(df, denoise, base_col='close', default_when='pre_ti')
         y = df[base_col].astype(float).to_numpy()
         times = df['time'].astype(float).to_numpy()
         if target == 'return':

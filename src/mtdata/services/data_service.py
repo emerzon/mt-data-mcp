@@ -22,7 +22,8 @@ from ..core.constants import (
 # Imports from utils
 from ..utils.mt5 import (
     _mt5_copy_rates_from, _mt5_copy_rates_range, _mt5_copy_ticks_from,
-    _mt5_copy_ticks_range, _mt5_epoch_to_utc, _ensure_symbol_ready, get_symbol_info_cached
+    _mt5_copy_ticks_range, _mt5_epoch_to_utc, _rates_to_df, _symbol_ready_guard,
+    get_symbol_info_cached
 )
 from ..utils.utils import (
     _table_from_rows, _format_time_minimal, _format_time_minimal_local,
@@ -33,12 +34,9 @@ from ..utils.utils import (
 from ..utils.indicators import _estimate_warmup_bars_util, _apply_ta_indicators_util
 from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
 
-# Imports from core (simplify - to be refactored later, but for now import from core or utils?)
-# The plan says "Refactor core/simplify.py" is next.
-# For now, I will import from core.simplify to keep it working, or better, import the utils directly if possible.
-# core/simplify.py delegates to utils/simplify.py mostly.
-# But `_simplify_dataframe_rows_ext` is in core/simplify.py.
-from ..core.simplify import _simplify_dataframe_rows_ext, _choose_simplify_points, _select_indices_for_timeseries, _lttb_select_indices
+# Simplify entrypoint and helpers.
+from ..services.simplification import _simplify_dataframe_rows_ext
+from ..utils.simplify import _choose_simplify_points, _select_indices_for_timeseries, _lttb_select_indices
 
 import MetaTrader5 as mt5
 
@@ -121,12 +119,7 @@ def _fetch_rates_with_warmup(
 
 def _build_rates_df(rates: Any, use_client_tz: bool) -> pd.DataFrame:
     """Normalize raw MT5 rates into a DataFrame with epoch and display time columns."""
-    df = pd.DataFrame(rates)
-    try:
-        if 'time' in df.columns:
-            df['time'] = df['time'].astype(float).apply(_mt5_epoch_to_utc)
-    except Exception:
-        pass
+    df = _rates_to_df(rates)
     df['__epoch'] = df['time']
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -187,12 +180,10 @@ def fetch_candles(
         
         # Ensure symbol is ready; remember original visibility to restore later
         _info_before = get_symbol_info_cached(symbol)
-        _was_visible = bool(_info_before.visible) if _info_before is not None else None
-        err = _ensure_symbol_ready(symbol)
-        if err:
-            return {"error": err}
-        
-        try:
+        with _symbol_ready_guard(symbol, info_before=_info_before) as (err, _info):
+            if err:
+                return {"error": err}
+
             # Normalize TI spec from structured list, JSON string, or compact string for internal processing
             ti_spec = None
             if ti is not None:
@@ -238,13 +229,7 @@ def fetch_candles(
             )
             if rates_error:
                 return {"error": rates_error}
-        finally:
-            # Restore original visibility if we changed it
-            if _was_visible is False:
-                try:
-                    mt5.symbol_select(symbol, False)
-                except Exception as ex:
-                    logger.debug("Failed to restore symbol visibility for %s: %s", symbol, ex)
+        # visibility handled by _symbol_ready_guard
         
         if rates is None:
             return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}
@@ -512,12 +497,10 @@ def fetch_ticks(
     try:
         # Ensure symbol is ready; remember original visibility to restore later
         _info_before = get_symbol_info_cached(symbol)
-        _was_visible = bool(_info_before.visible) if _info_before is not None else None
-        err = _ensure_symbol_ready(symbol)
-        if err:
-            return {"error": err}
-        
-        try:
+        with _symbol_ready_guard(symbol, info_before=_info_before) as (err, _info):
+            if err:
+                return {"error": err}
+
             # Normalized params only
             effective_limit = int(limit)
             output_mode = str(output or "summary").lower().strip()
@@ -556,13 +539,7 @@ def fetch_ticks(
                     time.sleep(FETCH_RETRY_DELAY)
                 if ticks is not None and effective_limit and len(ticks) > effective_limit:
                     ticks = ticks[-effective_limit:]  # Get the last ticks
-        finally:
-            # Restore original visibility if we changed it
-            if _was_visible is False:
-                try:
-                    mt5.symbol_select(symbol, False)
-                except Exception:
-                    pass
+        # visibility handled by _symbol_ready_guard
         
         if ticks is None:
             return {"error": f"Failed to get ticks for {symbol}: {mt5.last_error()}"}

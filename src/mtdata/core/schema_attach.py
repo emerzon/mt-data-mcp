@@ -3,6 +3,7 @@ Shared schema defs and dynamic attachment of JSON Schemas to MCP tools.
 Extracted from core.server to keep server thinner.
 """
 from typing import Any, Dict
+from .server_utils import get_mcp_registry
 
 from .schema import (
     enrich_schema_with_shared_defs as _enrich_schema_with_shared_defs,
@@ -48,12 +49,7 @@ def server_shared_defs(shared_enums: Dict[str, Any]) -> Dict[str, Any]:
 def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
     """Attach enriched JSON Schemas to registered MCP tools on the given server."""
     try:
-        registry = None
-        for attr in ("tools", "_tools", "registry", "tool_registry", "_tool_registry"):
-            reg = getattr(mcp, attr, None)
-            if reg and hasattr(reg, 'items'):
-                registry = reg
-                break
+        registry = get_mcp_registry(mcp)
         if not registry:
             return
         shared_defs = server_shared_defs(shared_enums)

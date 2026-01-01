@@ -14,7 +14,7 @@ from ..utils.mt5 import (
     _mt5_copy_rates_from,
     _mt5_copy_rates_range,
     _mt5_epoch_to_utc,
-    _ensure_symbol_ready,
+    _symbol_ready_guard,
     get_symbol_info_cached,
 )
 from ..utils.utils import (
@@ -292,21 +292,14 @@ def temporal_analyze(
             return {"error": tr_err}
 
         info_before = get_symbol_info_cached(symbol)
-        was_visible = bool(info_before.visible) if info_before is not None else None
-        err = _ensure_symbol_ready(symbol)
-        if err:
-            return {"error": err}
+        with _symbol_ready_guard(symbol, info_before=info_before) as (err, _info):
+            if err:
+                return {"error": err}
 
-        try:
             rates, fetch_err = _fetch_rates(symbol, timeframe, limit, start, end)
             if fetch_err:
                 return {"error": fetch_err}
-        finally:
-            if was_visible is False:
-                try:
-                    mt5.symbol_select(symbol, False)
-                except Exception:
-                    pass
+        # visibility handled by _symbol_ready_guard
 
         if rates is None or len(rates) < 2:
             return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}

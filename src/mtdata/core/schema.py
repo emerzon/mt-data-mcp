@@ -81,8 +81,8 @@ OhlcvCharLiteral = Literal['O', 'H', 'L', 'C', 'V']  # type: ignore
 
 # ---- Technical Indicators (dynamic discovery and application) ----
 try:
-    from .indicators_docs import list_ta_indicators as _list_ta_indicators_docs
-    _CATEGORY_CHOICES = sorted({it.get('category') for it in _list_ta_indicators_docs() if it.get('category')})
+    from ..utils.indicators import list_ta_indicators as _list_ta_indicators_docs
+    _CATEGORY_CHOICES = sorted({it.get('category') for it in _list_ta_indicators_docs(detailed=False) if it.get('category')})
 except Exception:
     _CATEGORY_CHOICES = []
 
@@ -94,8 +94,8 @@ else:
 
 # Build indicator name Literal so details endpoint has enum name choices
 try:
-    from .indicators_docs import list_ta_indicators as _list_ta_indicators_docs
-    _INDICATOR_NAME_CHOICES = sorted({it.get('name') for it in _list_ta_indicators_docs() if it.get('name')})
+    from ..utils.indicators import list_ta_indicators as _list_ta_indicators_docs
+    _INDICATOR_NAME_CHOICES = sorted({it.get('name') for it in _list_ta_indicators_docs(detailed=False) if it.get('name')})
 except Exception:
     _INDICATOR_NAME_CHOICES = []
 

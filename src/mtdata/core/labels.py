@@ -4,8 +4,12 @@ from .server import mcp, _auto_connect_wrapper
 from .schema import TimeframeLiteral, DenoiseSpec
 from ..forecast.common import fetch_history as _fetch_history
 from ..utils.utils import _format_time_minimal
-from ..utils.denoise import _apply_denoise as _apply_denoise_util
-from ..utils.barriers import get_pip_size as _get_pip_size, resolve_barrier_prices as _resolve_barrier_prices
+from ..utils.denoise import _resolve_denoise_base_col
+from ..utils.barriers import (
+    get_pip_size as _get_pip_size,
+    resolve_barrier_prices as _resolve_barrier_prices,
+    build_barrier_kwargs_from as _build_barrier_kwargs_from,
+)
 
 
 @mcp.tool()
@@ -40,14 +44,7 @@ def labels_triple_barrier(
         df = _fetch_history(symbol, timeframe, int(max(limit, horizon + 50)), as_of=None)
         if len(df) < horizon + 2:
             return {"error": "Insufficient history for labeling"}
-        base_col = 'close'
-        if denoise:
-            try:
-                added = _apply_denoise_util(df, denoise, default_when='pre_ti')
-                if f"{base_col}_dn" in added:
-                    base_col = f"{base_col}_dn"
-            except Exception:
-                pass
+        base_col = _resolve_denoise_base_col(df, denoise, base_col='close', default_when='pre_ti')
         closes = df[base_col].astype(float).to_numpy()
         highs = df['high'].astype(float).to_numpy() if 'high' in df.columns else None
         lows = df['low'].astype(float).to_numpy() if 'low' in df.columns else None
@@ -64,17 +61,13 @@ def labels_triple_barrier(
 
         for i in range(0, N - int(horizon) - 1):
             p0 = float(closes[i])
+            barrier_kwargs = _build_barrier_kwargs_from(locals())
             tp, sl = _resolve_barrier_prices(
                 price=p0,
                 direction="long",
-                tp_abs=tp_abs,
-                sl_abs=sl_abs,
-                tp_pct=tp_pct,
-                sl_pct=sl_pct,
-                tp_pips=tp_pips,
-                sl_pips=sl_pips,
                 pip_size=pip_size,
                 adjust_inverted=True,
+                **barrier_kwargs,
             )
             if tp is None or sl is None:
                 return {"error": "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or tp_pips/sl_pips"}

@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from ..utils.utils import to_float_np
+from .common import PatternResultBase
 from scipy.signal import find_peaks
 
 
@@ -42,14 +43,9 @@ class ClassicDetectorConfig:
 
 
 @dataclass
-class ClassicPatternResult:
+class ClassicPatternResult(PatternResultBase):
     name: str
     status: str  # "completed" | "forming"
-    confidence: float
-    start_index: int
-    end_index: int
-    start_time: Optional[float]
-    end_time: Optional[float]
     details: Dict[str, Any]
 
 

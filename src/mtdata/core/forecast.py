@@ -7,9 +7,11 @@ from ..forecast.backtest import forecast_backtest as _forecast_backtest_impl
 from ..forecast.volatility import forecast_volatility as _forecast_volatility_impl
 from ..forecast.forecast import get_forecast_methods_data as _get_forecast_methods_data
 from ..forecast.tune import genetic_search_forecast_params as _genetic_search_impl
-from ..forecast.common import fetch_history as _fetch_history, parse_kv_or_json as _parse_kv_or_json
+from ..forecast.common import fetch_history as _fetch_history
+from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ..forecast.monte_carlo import simulate_gbm_mc as _simulate_gbm_mc, simulate_hmm_mc as _simulate_hmm_mc, summarize_paths as _summarize_paths
 from ..forecast.monte_carlo import gbm_single_barrier_upcross_prob as _gbm_upcross_prob
+from ..utils.barriers import build_barrier_kwargs_from as _build_barrier_kwargs_from
 from .constants import TIMEFRAME_SECONDS
 
 import MetaTrader5 as mt5
@@ -738,18 +740,14 @@ def forecast_barrier_prob(
              # fallback mapping
              d = 'long' if d == 'up' else 'short'
 
+        barrier_kwargs = _build_barrier_kwargs_from(locals())
         return _impl(
             symbol=symbol,
             timeframe=timeframe,
             horizon=horizon,
             method=mc_method,
             direction=d, # type: ignore
-            tp_abs=tp_abs,
-            sl_abs=sl_abs,
-            tp_pct=tp_pct,
-            sl_pct=sl_pct,
-            tp_pips=tp_pips,
-            sl_pips=sl_pips,
+            **barrier_kwargs,
             params=params,
             denoise=denoise,
         )

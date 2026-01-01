@@ -15,7 +15,8 @@ from ..utils.mt5 import _mt5_epoch_to_utc, _mt5_copy_rates_from, _ensure_symbol_
 from ..utils.utils import (
     _parse_start_datetime,
     _format_time_minimal,
-    to_float_np
+    to_float_np,
+    parse_kv_or_json as _parse_kv_or_json,
 )
 
 # Import our new modular components
@@ -27,7 +28,7 @@ from .forecast_preprocessing import (
     apply_preprocessing
 )
 from .method_adapters import get_method_adapter
-from .common import fetch_history as _fetch_history, parse_kv_or_json as _parse_kv_or_json
+from .common import fetch_history as _fetch_history
 
 # Import only availability flags we need
 from .forecast_registry import (

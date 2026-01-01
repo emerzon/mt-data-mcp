@@ -6,6 +6,7 @@ import copy
 from ..utils.constants import TIME_DISPLAY_FORMAT
 from ..utils.formatting import format_number as _format_number
 from ..utils.minimal_output import format_table_toon as _format_table_toon
+from ..utils.barriers import get_pip_size as _get_pip_size
 
 
 
@@ -289,20 +290,7 @@ def market_snapshot(symbol: str, timezone: str = 'UTC') -> Dict[str, Any]:
                     total_sell_vol = float(sum(float(s.get('volume') or 0.0) for s in sells)) if sells else None
                 except Exception:
                     total_sell_vol = None
-        tick_size = None
-        try:
-            info = _mt5.symbol_info(symbol)
-            if info is not None:
-                tick_size = getattr(info, 'trade_tick_size', None)
-                try:
-                    tick_size = float(tick_size) if tick_size is not None else None
-                except Exception:
-                    tick_size = None
-                if tick_size is None or tick_size <= 0:
-                    point = float(getattr(info, 'point', 0.0) or 0.0)
-                    tick_size = point if point > 0 else None
-        except Exception:
-            tick_size = None
+        tick_size = _get_pip_size(symbol)
         spread_ticks = None
         if tick_size and spread is not None:
             try:
@@ -394,9 +382,8 @@ def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]
         return None
 
 
-def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Optional[Dict[str, Any]], extra_timeframes: List[str], pivot_timeframes: Optional[List[str]] = None) -> None:
-    contexts: Dict[str, Any] = {}
-    trend_mtf: Dict[str, Any] = {}
+def _extract_base_timeframe(report: Dict[str, Any]) -> Optional[str]:
+    """Try to infer the base timeframe from report metadata or context."""
     base_tf = None
     try:
         meta = report.get('meta') if isinstance(report, dict) else None
@@ -412,6 +399,13 @@ def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Option
                 base_tf = str(context.get('timeframe')).upper()
         except Exception:
             base_tf = None
+    return base_tf
+
+
+def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Optional[Dict[str, Any]], extra_timeframes: List[str], pivot_timeframes: Optional[List[str]] = None) -> None:
+    contexts: Dict[str, Any] = {}
+    trend_mtf: Dict[str, Any] = {}
+    base_tf = _extract_base_timeframe(report)
 
     for tf in extra_timeframes or []:
         tf_str = str(tf).upper()
@@ -483,6 +477,52 @@ def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Option
             if base_pivot_tf:
                 pivs['__base_timeframe__'] = base_pivot_tf
             report.setdefault('sections', {})['pivot_multi'] = pivs
+
+
+def attach_report_timeframes(
+    report: Dict[str, Any],
+    symbol: str,
+    denoise: Optional[Dict[str, Any]],
+    params: Optional[Dict[str, Any]],
+    *,
+    default_extra: List[str],
+    default_pivots: Optional[List[str]] = None,
+) -> None:
+    extra = (params or {}).get('extra_timeframes') or default_extra
+    pivots = (params or {}).get('pivot_timeframes') or default_pivots
+    attach_multi_timeframes(
+        report,
+        symbol,
+        denoise,
+        extra_timeframes=extra,
+        pivot_timeframes=pivots,
+    )
+
+
+def attach_market_and_timeframes(
+    report: Dict[str, Any],
+    symbol: str,
+    denoise: Optional[Dict[str, Any]],
+    params: Optional[Dict[str, Any]],
+    *,
+    default_extra: List[str],
+    default_pivots: Optional[List[str]] = None,
+    snapshot: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    snap = snapshot if snapshot is not None else market_snapshot(symbol)
+    report.setdefault('sections', {})['market'] = snap
+    gates = apply_market_gates(snap if isinstance(snap, dict) else {}, params or {})
+    if gates:
+        report['sections']['execution_gates'] = gates
+    attach_report_timeframes(
+        report,
+        symbol,
+        denoise,
+        params,
+        default_extra=default_extra,
+        default_pivots=default_pivots,
+    )
+    return snap
 
 
 def format_number(value: Any) -> str:

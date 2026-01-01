@@ -1,8 +1,9 @@
 import logging
 import time
+from contextlib import contextmanager
 from functools import lru_cache
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, Optional, Iterator, Tuple
 
 import MetaTrader5 as mt5
 
@@ -56,6 +57,19 @@ def _mt5_epoch_to_utc(epoch_seconds: float) -> float:
         return float(epoch_seconds) - float(off)
     except Exception:
         return float(epoch_seconds)
+
+
+def _rates_to_df(rates: Any):
+    """Convert raw MT5 rates into a DataFrame with UTC epoch seconds in 'time'."""
+    import pandas as pd
+
+    df = pd.DataFrame(rates)
+    try:
+        if 'time' in df.columns:
+            df['time'] = df['time'].astype(float).apply(_mt5_epoch_to_utc)
+    except Exception:
+        pass
+    return df
 
 
 def _to_server_naive_dt(dt: datetime) -> datetime:
@@ -224,3 +238,22 @@ def _ensure_symbol_ready(symbol: str) -> Optional[str]:
         return None
     except Exception as e:
         return f"Error ensuring symbol readiness: {e}"
+
+
+@contextmanager
+def _symbol_ready_guard(
+    symbol: str,
+    info_before: Optional[Any] = None,
+) -> Iterator[Tuple[Optional[str], Optional[Any]]]:
+    """Ensure symbol readiness and restore original visibility on exit."""
+    info = info_before if info_before is not None else mt5.symbol_info(symbol)
+    was_visible = bool(info.visible) if info is not None else None
+    err = _ensure_symbol_ready(symbol)
+    try:
+        yield err, info
+    finally:
+        if was_visible is False:
+            try:
+                mt5.symbol_select(symbol, False)
+            except Exception:
+                pass

@@ -36,7 +36,7 @@ from .dimred import create_reducer as _create_reducer, DimReducer as _DimReducer
 
 # Reuse existing MT5 helpers and denoise utilities
 from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from .mt5 import _mt5_copy_rates_from, _mt5_epoch_to_utc
+from .mt5 import _mt5_copy_rates_from, _rates_to_df
 from .denoise import _apply_denoise as _apply_denoise_util
 from .utils import to_float_np, align_finite
 
@@ -507,13 +507,7 @@ def _fetch_symbol_df(
     rates = _mt5_copy_rates_from(symbol, tf, to_dt, int(bars) + 2)
     if rates is None or len(rates) == 0:
         raise RuntimeError(f"Failed to fetch rates for {symbol}")
-    df = pd.DataFrame(rates)
-    # Normalize epoch to UTC epoch float seconds
-    try:
-        if 'time' in df.columns:
-            df['time'] = df['time'].astype(float).apply(_mt5_epoch_to_utc)
-    except Exception:
-        pass
+    df = _rates_to_df(rates)
     if drop_last_live and as_of is None and len(df) >= 2:
         df = df.iloc[:-1]
     # Keep last `bars` rows

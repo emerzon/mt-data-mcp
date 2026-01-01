@@ -13,15 +13,6 @@ import MetaTrader5 as mt5
 from ..utils.utils import _parse_start_datetime
 
 
-def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
-    """Parse params/features provided as dict, JSON string, or k=v pairs into a dict.
-    
-    This is the main implementation - CLI and other modules should use this.
-    """
-    from ..utils.utils import parse_kv_or_json as _impl
-    return _impl(obj)
-
-
 def _extract_forecast_values(Yf: Any, fh: int, method_name: str = "forecast") -> "np.ndarray":
     """Extract forecast values from prediction DataFrame.
     

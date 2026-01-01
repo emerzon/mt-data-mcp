@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional
 from ..schema import DenoiseSpec
-from .basic import template_basic
-from ..report_utils import merge_params, market_snapshot, apply_market_gates, attach_multi_timeframes
+from .common import build_report_with_market
+from ..report_utils import merge_params
 
 
 def template_intraday(
@@ -41,17 +41,4 @@ def template_intraday(
     })
     if 'timeframe' not in p:
         p['timeframe'] = 'H1'
-    base = template_basic(symbol, horizon, denoise, p)
-    snap = market_snapshot(symbol)
-    base.setdefault('sections', {})['market'] = snap
-    gates = apply_market_gates(snap if isinstance(snap, dict) else {}, p)
-    if gates:
-        base['sections']['execution_gates'] = gates
-    attach_multi_timeframes(
-        base,
-        symbol,
-        denoise,
-        extra_timeframes=p.get('extra_timeframes') or ['M15','H1','H4','D1'],
-        pivot_timeframes=p.get('pivot_timeframes') or ['D1','W1']
-    )
-    return base
+    return build_report_with_market(symbol, horizon, denoise, p, default_extra=['M15','H1','H4','D1'], default_pivots=['D1','W1'])

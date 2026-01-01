@@ -12,7 +12,7 @@ import pandas as pd
 from ..core.constants import TIMEFRAME_SECONDS
 from ..utils.indicators import _parse_ti_specs as _parse_ti_specs_util, _apply_ta_indicators as _apply_ta_indicators_util
 from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
-from .common import parse_kv_or_json as _parse_kv_or_json
+from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 
 
 def _default_seasonality_period(timeframe: str) -> int:

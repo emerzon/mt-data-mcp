@@ -19,13 +19,11 @@ from ..utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
     _use_client_tz,
+    parse_kv_or_json as _parse_kv_or_json,
 )
 from ..utils.indicators import _parse_ti_specs as _parse_ti_specs_util, _apply_ta_indicators as _apply_ta_indicators_util
 from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
-from .common import (
-    parse_kv_or_json as _parse_kv_or_json,
-    fetch_history as _fetch_history,
-)
+from .common import fetch_history as _fetch_history
 # Removed invalid import: from .registry import get_forecast_methods_data
 from .helpers import (
     default_seasonality_period as _default_seasonality_period,
@@ -144,7 +142,6 @@ def forecast(
             )
 
         # Parse method params via shared helper
-        from .common import parse_kv_or_json as _parse_kv_or_json  # local import to avoid cycles
         p = _parse_kv_or_json(params)
         # Prefer explicit seasonality inside params; otherwise auto by timeframe
         m = int(p.get('seasonality')) if p.get('seasonality') is not None else _default_seasonality_period(timeframe)
