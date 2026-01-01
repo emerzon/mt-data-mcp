@@ -2,10 +2,14 @@
 
 **Related Documentation:**
 - [SAMPLE-TRADE.md](SAMPLE-TRADE.md) - Basic workflow (start here if new)
-- [FORECAST.md](FORECAST.md) - Detailed forecasting methods
+- [FORECAST.md](FORECAST.md) - Forecasting overview and submodules
+- [forecast/FORECAST_GENERATE.md](forecast/FORECAST_GENERATE.md) - Price forecasts (`forecast_generate`)
+- [forecast/VOLATILITY.md](forecast/VOLATILITY.md) - Volatility forecasting
 - [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) - Barrier analytics deep dive
+- [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md) - Indicator meanings and usage
+- [DENOISING.md](DENOISING.md) - Smoothing and spike removal
 - [EXAMPLE.md](EXAMPLE.md) - Complete end-to-end workflow
-- [COMMON_ERRORS.md](COMMON_ERRORS.md) - Troubleshooting
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Troubleshooting
 
 This guide extends the basic workflow with regime filters, conformal intervals, realized‑volatility (HAR‑RV), Monte‑Carlo barrier analytics, and disciplined risk/execution controls. It is designed to be modular: run each block, inspect outputs, and gate the next step by thresholds you calibrate via backtests.
 
@@ -105,7 +109,7 @@ python cli.py forecast_conformal_intervals EURUSD --timeframe H1 --method fourie
 ```bash
 python cli.py forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --grid-style volatility --refine true --refine-radius 0.35 \
-  --tp_min 0.25 --tp_max 1.5 --tp_steps 7 --sl_min 0.25 --sl_max 2.5 --sl_steps 9 \
+  --tp-min 0.25 --tp-max 1.5 --tp-steps 7 --sl-min 0.25 --sl-max 2.5 --sl-steps 9 \
   --params "n_sims=5000 seed=7" --top-k 5 --return-grid false --output summary --format json
 ```
 
@@ -115,15 +119,15 @@ python cli.py forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
 5.2 TP/SL odds for the chosen combo
 
 ```bash
-python cli.py forecast_barrier_hit_probabilities EURUSD --timeframe H1 --horizon 12 \
-  --method hmm_mc --tp_pct 0.4 --sl_pct 0.8 --params "n_sims=5000 seed=7" --format json
+python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
+  --method mc --mc-method hmm_mc --tp-pct 0.4 --sl-pct 0.8 --params "n_sims=5000 seed=7" --format json
 ```
 
 5.3 Closed‑form GBM sanity check (fast)
 
 ```bash
-python cli.py forecast_barrier_closed_form EURUSD --timeframe H1 --horizon 12 \
-  --direction up --barrier 1.1795 --format json
+python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
+  --method closed_form --direction up --barrier 1.1795 --format json
 ```
 
 - Flag discrepancies (e.g., MC>>GBM) to reduce size or re‑check calibration.

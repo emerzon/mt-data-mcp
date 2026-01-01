@@ -1,435 +1,78 @@
-# MetaTrader5 MCP Server
+# mtdata-mcp-server
 
-A Model Context Protocol (MCP) server that provides access to MetaTrader5 market data and trading functionality.
+`mtdata-mcp-server` is a Model Context Protocol (MCP) server + CLI that connects to a running MetaTrader 5 terminal and exposes market data, analytics, and (optionally) trading operations.
 
-## Features
+## What it does
 
-- Connect to MetaTrader5 terminal
-- Retrieve symbol information and market data
-- Get historical rates (OHLCV) for any timeframe
-- Access tick data and market depth (DOM)
-- Real-time market data streaming
-- Support for all major trading instruments
+- Market data: symbols, OHLCV candles, ticks, and DOM/market depth.
+- Analytics: technical indicators, denoising/smoothing, forecasting, volatility estimation, and risk/barrier analytics.
+- Workflows: a one-shot `report_generate` tool and step-by-step trading guides in `docs/`.
 
-## Installation
+## Requirements
 
-1. Install the MetaTrader5 terminal.
-2. Install Python dependencies:
+- Windows (MetaTrader 5 requirement)
+- MetaTrader 5 terminal installed and running
+- Python 3.10+
+
+## Install
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Configuration
+For editable installs (enables `mtdata-server` / `mtdata-cli` entrypoints):
 
-You can configure the server by creating a `.env` file in the project root. This is optional, as the server can connect to an already running and logged-in MetaTrader5 terminal.
-
-To pre-configure credentials, create a `.env` file and add the following:
-
-```
-MT5_LOGIN=<your_account_number>
-MT5_PASSWORD=<your_password>
-MT5_SERVER=<your_broker_server>
+```bash
+pip install -e .
 ```
 
-**Timezone Configuration:**
-- If your MT5 server time is not UTC, set `MT5_TIME_OFFSET_MINUTES` in the `.env` file to the offset in minutes (can be negative).
-- Example: For UTC+2, use `MT5_TIME_OFFSET_MINUTES=120`. For UTC-4, use `MT5_TIME_OFFSET_MINUTES=-240`.
-- All timestamps are normalized to UTC using this offset.
+## Quick start
 
-## Documentation
-
-This project includes comprehensive documentation:
-
-- **AGENTS.md** - Repository guidelines, coding standards, and contribution workflow
-- **docs/EXAMPLE.md** - End-to-end trading workflow examples
-- **docs/SAMPLE-TRADE.md** - Beginner step-by-step trading guide
-- **docs/SAMPLE-TRADE-ADVANCED.md** - Advanced playbook with regimes, HAR-RV, conformal intervals, MC barriers
-- **docs/FORECAST.md** - Comprehensive forecasting guide (statistical, MC, pattern-based, regime detection, volatility)
-- **docs/BARRIER_FUNCTIONS.md** - Deep dive into barrier analytics methods and algorithms
-- **docs/SKTIME.md** - Sktime adapter documentation
-- **docs/COMMON_ERRORS.md** - Troubleshooting common MCP tool errors
-
-**Quick Start**: See [docs/EXAMPLE.md](docs/EXAMPLE.md) for a complete end-to-end workflow.
-
-## Usage
-
-### Starting the MCP Server
+Start the server:
 
 ```bash
 python server.py
+# or: mtdata-server
 ```
 
-The server exposes tools that can be called programmatically or via the command-line interface (`cli.py`).
-
-### Available Tools (CLI)
-
-The following tools are available via `python cli.py <command>`:
-
-#### Market Data
-- `symbols_list [--list-mode symbols|groups] [--search-term TERM] [--limit N]` - List symbols or group paths.
-- `symbols_describe <symbol>` - Get detailed symbol information.
-- `data_fetch_candles <symbol> [--timeframe TF] [--limit N]` - Get historical OHLCV data.
-- `data_fetch_ticks <symbol> [--output summary|stats|rows] [--limit N]` - Get tick stats (default summary), detailed stats, or raw tick rows.
-- `market_depth_fetch <symbol>` - Get market depth (DOM).
-- `indicators_list` - List available technical indicators. Use `--format json` for structured output.
-- `indicators_describe <name>` - Get detailed information for a specific indicator.
-- `denoise_list_methods` - List available denoising methods and their parameters.
-- `patterns_detect_candlesticks <symbol> [--timeframe TF] [--limit N]` - Detect candlestick patterns.
-- `pivot_compute_points <symbol> [--timeframe TF]` - Compute pivot point levels across all supported methods.
-- `forecast_generate <symbol> [--timeframe TF] [--library LIB] [--model NAME] [--horizon N] ...` - Generate price forecasts.
-- `forecast_volatility_estimate <symbol> [--timeframe TF] [--horizon N] [--method METHOD] [--proxy PROXY]` - Forecast volatility using direct estimators, GARCH, or general forecasters on a proxy.
-- `report_generate <symbol> [--horizon N] [--template basic|advanced|scalping|intraday|swing|position]` - One-stop consolidated report rendered as Markdown (context, pivots, vol, backtest->best forecast, MC barriers; advanced adds regimes, HAR-RV, conformal). Templates infer timeframes.
-  - Default horizons per template: scalping=8 bars, intraday=12, swing=24, position=30, basic/advanced=12. Override with `--horizon` or `--params "horizon=..."` if needed.
-  
-- `list_capabilities [--sections ...] [--include-details true|false]` - Consolidated features: frameworks, forecast/volatility methods, denoise, indicators, dimred, and pattern_search backends.
-
-*(Note: Programmatic access uses function names like `get_symbols`, `get_rates`, etc.)*
-
-### Example Usage
-
-#### Sample Trade Guides
-
-- **Beginner**: [docs/SAMPLE-TRADE.md](docs/SAMPLE-TRADE.md) - Step-by-step analysis workflow
-- **Advanced**: [docs/SAMPLE-TRADE-ADVANCED.md](docs/SAMPLE-TRADE-ADVANCED.md) - Regimes, HAR-RV, conformal intervals, MC barriers, risk controls
-- **Complete Example**: [docs/EXAMPLE.md](docs/EXAMPLE.md) - End-to-end workflow with all features
-
-#### One-Stop Consolidated Report
+Try a couple CLI calls:
 
 ```bash
-# Basic report (context, pivots, EWMA vol, backtest->best forecast, MC barrier grid)
+python cli.py symbols_list --limit 20
+python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 300 --format json
 python cli.py report_generate EURUSD --template basic
-
-# Advanced report (adds regime summaries, HAR-RV vol, conformal intervals)
-python cli.py report_generate EURUSD --template advanced
-
-# Style-specific templates
-python cli.py report_generate EURUSD --template scalping
-python cli.py report_generate EURUSD --template intraday
-python cli.py report_generate EURUSD --template swing
-python cli.py report_generate EURUSD --template position
-
-# Optional fine-tuning via params (grid and backtest sizing)
-python cli.py report_generate EURUSD --horizon 12 --template basic \
-  --params "backtest_steps=25 backtest_spacing=10 tp_min=0.25 tp_max=1.5 tp_steps=7 sl_min=0.25 sl_max=2.5 sl_steps=9 top_k=5"
 ```
 
-#### Fetching Data
+## Configuration
 
-```bash
-# Get all visible symbols
-python cli.py symbols_list
+Create a `.env` file (optional) to preconfigure MT5 credentials:
 
-# Smart search for symbols containing "EUR"
-python cli.py symbols_list --search-term EUR --limit 20
-
-# Get EUR/USD hourly data
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 100
-
-# Get tick summary stats (default)
-python cli.py data_fetch_ticks EURUSD --limit 200
-python cli.py data_fetch_ticks EURUSD --start "yesterday 14:00" --end "yesterday 15:00" --limit 200
-
-# Get more detailed tick stats
-python cli.py data_fetch_ticks EURUSD --output stats --limit 200
-
-# Get raw tick rows
-python cli.py data_fetch_ticks EURUSD --output rows --limit 50
+```ini
+MT5_LOGIN=12345678
+MT5_PASSWORD=...
+MT5_SERVER=...
 ```
 
-#### Data Simplification
+If your MT5 server time is not UTC, set `MT5_TIME_OFFSET_MINUTES` (can be negative). All timestamps are normalized to UTC.
 
-The `data_fetch_candles` command and `data_fetch_ticks` (with `--output rows`) support a powerful `--simplify` and `--simplify-params` option to downsample or transform data.
+See `docs/SETUP.md` for setup and troubleshooting.
 
-**Modes & Methods:**
+## Documentation
 
-**1. SELECT Mode (Default)**
-- **`lttb`** (Largest Triangle Three Buckets): General-purpose downsampling preserving chart shape
-- **`rdp`** (Ramer-Douglas-Peucker): Error-tolerance based simplification
-- **`pla`** (Piecewise Linear Approximation): Linear segment approximation
-- **`apca`** (Adaptive Piecewise Constant Approximation): Constant segment approximation
+Start here: `docs/README.md`
 
-**2. RESAMPLE Mode**
-- Buckets data into fixed time intervals
-- Parameters: `bucket_seconds` (time window in seconds)
+- Trading workflows: `docs/SAMPLE-TRADE.md`, `docs/SAMPLE-TRADE-ADVANCED.md`, `docs/EXAMPLE.md`
+- Forecasting: `docs/FORECAST.md`
+- Barrier analytics: `docs/BARRIER_FUNCTIONS.md`
+- Denoising: `docs/DENOISING.md`
+- Technical indicators: `docs/TECHNICAL_INDICATORS.md`
+- Troubleshooting: `docs/TROUBLESHOOTING.md`
 
-**3. ENCODE Mode**
-- **`envelope`**: High/Low bands with Open/Close position encoding
-- **`delta`**: Integer or character-encoded deltas of O/H/L/C vs previous close
-- Parameters: `bits` (precision), `as_chars` (character output), `alphabet` (custom symbols), `scale` (delta tick size)
+## Notes
 
-**4. SEGMENT Mode (ZigZag)**
-- **`zigzag`** (alias: `zz`): Detects price turning points and trend changes
-- Parameters: `threshold_pct` (minimum % change), `value_col` (price column to analyze)
-- Preserves all original columns at pivot rows and adds: `value`, `direction`, `change_pct`.
-
-**5. SYMBOLIC Mode**
-- **`sax`** (Symbolic Aggregate approXimation): Converts time series to symbolic patterns
-- Parameters: `paa` (segments), `alphabet` (symbol set), `znorm` (z-normalization)
-- Preserves all requested columns via per-segment aggregation (mean for numeric columns). Time is represented by `start_time` and `end_time`.
-
-**6. APPROXIMATE Mode**
-- Aggregates data into segments based on selected points
-
-### Simplify Method Comparison
-
-| Method | Best For | Output Size | Key Parameters |
-|--------|----------|-------------|-----------------|
-| `lttb` | General downsampling | User-controlled | `points`, `ratio` |
-| `rdp` | Shape preservation | Varies | `epsilon` (tolerance) |
-| `zigzag` | Swing/trend analysis | Varies | `threshold_pct` |
-| `sax` | Pattern recognition | Fixed segments | `paa`, `alphabet` |
-| `envelope`/`delta` | Compact storage | Fixed | `bits`, `as_chars`, `scale` |
-| `resample` | Regular intervals | Time-based | `bucket_seconds` |
-
-Notes:
-- Encode preserves all requested columns (e.g., indicators, volumes); it replaces OHLC with envelope positions or deltas.
-- When a transform changes columns, the response includes the exact output headers in metadata.
-
-**CLI Examples:**
-
-```bash
-# Select 200 points using LTTB algorithm
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 2000 --simplify lttb --simplify-params points=200 --format json
-
-# Use ratio instead of fixed points
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 1000 --simplify lttb --simplify-params ratio=0.2 --format json
-
-# RDP with error tolerance
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 1000 --simplify rdp --simplify-params epsilon=0.001 --format json
-
-# ZigZag trend analysis - sensitive (0.2% threshold)
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 500 --simplify segment --simplify-params "algo=zigzag,threshold_pct=0.2" --format json
-
-# ZigZag swing analysis - moderate (0.6% threshold)
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 500 --simplify segment --simplify-params "algo=zigzag,threshold_pct=0.6" --format json
-
-# Resample into 6-hour buckets
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 2000 --simplify resample --simplify-params bucket_seconds=21600 --format json
-
-# Envelope encoding with numeric positions
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 200 --simplify encode --simplify-params "schema=envelope,bits=8" --format json
-
-# Envelope encoding with character output (compact UTF-8)
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 200 --simplify encode --simplify-params "schema=envelope,as_chars=true,bits=4" --format json
-
-# Delta encoding (scaled integer or base-N char deltas)
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 300 --simplify encode --simplify-params "schema=delta,scale=1e-5,as_chars=true,zero_char=." --format json
-
-# Symbolic representation (SAX)
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 500 --simplify symbolic --simplify-params "schema=sax,paa=24,znorm=true" --format json
-
-# Approximate mode with aggregation
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 2000 --simplify approximate --simplify-params points=150 --format json
-
-# ZigZag on different price columns
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 500 --simplify segment --simplify-params "algo=zigzag,threshold_pct=0.8,value_col=high" --format json
-```
-
-### Forecasting
-
-Generate point forecasts for the next `horizon` bars. The server supports lightweight classical models, Monte Carlo/HMM simulation, and optional integrations with modern forecasting frameworks.
-
-- Discover methods: `python cli.py list_capabilities --sections forecast`
-- Run forecast: `python cli.py forecast_generate <symbol> --timeframe <TF> --library <LIB> --model <NAME> --horizon <N> [--model-params JSON]`
-- Rolling backtest: `python cli.py forecast_backtest_run <symbol> --timeframe <TF> --horizon <N> [--steps S --spacing K --methods ...]`
-- Volatility forecasts: use `forecast_volatility_estimate` with methods like `ewma`, `parkinson`, `har_rv`, `garch`, or general `arima`/`ets` with a `--proxy` (e.g., `log_r2`).
-- **Analog / Pattern Matching**: `forecast_generate ... --model analog` finds historical price patterns similar to recent price action and projects them forward.
-
-Classical example
-```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --model theta --horizon 12 --format json
-```
-
-HAR-RV volatility (daily RV from M5 returns)
-```bash
-python cli.py forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
-  --method har_rv --params "rv_timeframe=M5,days=150,window_w=5,window_m=22" --format json
-```
-
-Monte Carlo forecasts (distribution + bands)
-```bash
-# GBM Monte Carlo
-python cli.py forecast_generate EURUSD --timeframe H1 --model mc_gbm --horizon 12 --model-params "n_sims=2000 seed=7" --format json
-# Regime-aware HMM Monte Carlo
-python cli.py forecast_generate EURUSD --timeframe H1 --model hmm_mc --horizon 12 --model-params "n_states=3 n_sims=3000 seed=7" --format json
-```
-
-Barrier analytics (TP/SL odds from MC paths)
-```bash
-# Probability of hitting TP before SL within 12 bars (percent barriers)
-# Specify trade direction explicitly:
-# - long: TP above, SL below; prob_tp_first = P(TP before SL) for the long context
-# - short: TP below, SL above; prob_tp_first = P(TP before SL) for the short context
-python cli.py forecast_barrier_hit_probabilities --symbol EURUSD --timeframe H1 --horizon 12 \
-  --method hmm_mc --direction long --tp_pct 0.5 --sl_pct 0.3 --params "n_sims=5000 seed=7" --format json
-
-# Optimize TP/SL grid to maximize edge/kelly/ev/prob_resolve/etc (percent mode)
-# Add --direction long|short to evaluate from the chosen trade perspective
-python cli.py forecast_barrier_optimize --symbol EURUSD --timeframe H1 --horizon 12 \
-  --method hmm_mc --mode pct --tp_min 0.25 --tp_max 1.5 --tp_steps 7 --sl_min 0.25 --sl_max 2.5 --sl_steps 9 \
-  --params "n_sims=5000 seed=7" --format json
-```
-
-Optional switches: `--grid-style` (fixed/volatility/ratio/preset), `--preset` (scalp/intraday/swing/position),
-`--refine`/`--refine-radius`/`--refine-steps` for the zoom-in pass, constraint filters (`--min-prob-win`, `--max-prob-no-hit`,
-`--max-median-time`), and the volatility/ratio knobs described in [docs/FORECAST.md](docs/FORECAST.md).
-
-For advanced usage, pattern-based signals, Monte Carlo/HMM details, and barrier analytics, see [docs/FORECAST.md](docs/FORECAST.md). For a deep dive into barrier algorithms and methods, see [docs/BARRIER_FUNCTIONS.md](docs/BARRIER_FUNCTIONS.md).
-
-### Regime & Change-Points
-
-Detect significant structural changes and market regimes to adapt strategies:
-
-```bash
-# Bayesian Online Change-Point Detection (BOCPD) on log-returns
-python cli.py regime_detect EURUSD --timeframe H1 --limit 1000 --method bocpd --threshold 0.6 --format json
-
-# HMM-lite regime labeling (Gaussian mixture over returns)
-python cli.py regime_detect EURUSD --timeframe H1 --limit 1000 --method hmm --params "n_states=3" --format json
-
-# Markov-Switching AR (statsmodels, if available)
-python cli.py regime_detect EURUSD --timeframe H1 --limit 1200 --method ms_ar --params "k_regimes=2 order=1" --format json
-```
-
-Use `cp_prob` and `change_points` from BOCPD to reset models/sizes after structural breaks; use `state`/`state_probabilities` from HMM/MS-AR to switch playbooks (trend vs. range) and adjust risk.
-
-### Conformal Prediction (Valid Intervals)
-
-Build statistically valid prediction intervals around any base method:
-
-```bash
-python cli.py forecast_conformal_intervals EURUSD --timeframe H1 --method theta --horizon 12 \
-  --steps 25 --spacing 10 --alpha 0.1 --format json
-```
-
-This runs a rolling backtest to calibrate per-step residual quantiles and then returns point forecast + conformal bands.
-
-### Triple-Barrier Labeling
-
-Create labels (+1 TP first, -1 SL first, 0 neither) for supervised learning and signal analysis:
-
-```bash
-python cli.py labels_triple_barrier EURUSD --timeframe H1 --limit 1500 --horizon 12 \
-  --tp_pct 0.5 --sl_pct 0.3 --label-on high_low --format json
-```
-
-Use these labels to train meta-models or to evaluate rule performance across regimes.
-
-### Closed-Form Barrier (GBM)
-
-Compute single-barrier hit probability using GBM formulas (fast sanity check vs. MC):
-
-```bash
-python cli.py forecast_barrier_closed_form EURUSD --timeframe H1 --horizon 12 --direction up --barrier 1.1000 --format json
-```
-
-### Trading & Order Management
-
-Execute trades and manage portfolio risk directly from the CLI or MCP tools.
-
-#### Account & Positions
-- `trading_account_info` - View balance, equity, margin, and free margin.
-- `trading_open_get [--open-kind positions|pending] [--symbol SYM] [--ticket ID]` - List open positions or pending orders.
-- `trading_close [--close-kind positions|pending] [--symbol SYM] [--ticket ID] [--profit-only] [--loss-only]` - Close positions or cancel pending orders.
-- `trading_modify <ticket> [--modify-kind position|pending] [--price PRICE] [--sl PRICE] [--tp PRICE] [--expiration TIME]` - Modify a position or pending order.
-
-#### Orders
-- `trading_place <symbol> --volume LOTS --order-type TYPE [--place-kind market|pending] [--price PRICE] [--stop-loss PRICE] [--take-profit PRICE] [--expiration TIME] [--comment TEXT] [--deviation N]` - Place a market or pending order.
-
-#### History & Analysis
-- `trading_history [--history-kind deals|orders] [--start DATE] [--end DATE] [--symbol SYM] [--limit N]` - View deal or order history.
-- `trading_risk_analyze [--symbol SYM] [--desired-risk-pct PCT] ...` - Portfolio risk analysis and position sizing calculator.
-  - Calculate lot size: `trading_risk_analyze --symbol EURUSD --desired-risk-pct 1.0 --proposed-entry 1.05 --proposed-sl 1.045`
-
-#### Dimensionality Reduction (Pattern Search)
-
-- Discover reducers: `python cli.py list_capabilities --sections dimred`
-- Use PCA quickly: `--pca-components 8`
-- Flexible: `--dimred-method pca|kpca|umap|isomap|diffusion|dreams_cne|dreams_cne_fast --dimred-params "key=value,..."`
-- Notes:
-  - Prefer reducers with transform support for online queries (e.g., PCA, KPCA, UMAP, parametric DREAMS-CNE).
-  - t-SNE/Laplacian embeddings cannot transform new queries; avoid for pattern_search.
-  - DREAMS-CNE requires installation from source; `dreams_cne_fast` uses lighter defaults for speed.
-
-#### Optional Framework Integrations
-
-You can extend forecasting with additional frameworks. Install as needed; methods will appear under `forecast_methods` in `list_capabilities` once available.
-
-- StatsForecast (classical, fast): `pip install statsforecast`
-  - Methods: `sf_autoarima`, `sf_theta`, `sf_autoets`, `sf_seasonalnaive`
-- MLForecast (tree/GBMs over lags): `pip install mlforecast scikit-learn` (and `lightgbm` for LGBM)
-  - Methods: `mlf_rf`, `mlf_lightgbm`
-- NeuralForecast (deep learning): `pip install neuralforecast[torch]`
-  - Methods: `nhits`, `nbeatsx`, `tft`, `patchtst`
-- GluonTS (PyTorch): `pip install gluonts torch`
-  - Methods: `gt_deepar`, `gt_sfeedforward`, `gt_npts`, `gt_prophet` (wrapper)
-  - Optional: Prophet via GluonTS wrapper: `pip install prophet` (use method `gt_prophet`)
-- Foundation models (native libs): install per model — Chronos: `pip install chronos-forecasting torch`; TimesFM: `pip install timesfm torch`; Lag‑Llama: `pip install lag-llama gluonts torch`
-  - Methods: `chronos_bolt`, `timesfm`, `lag_llama`
-
-See detailed examples and parameters in [docs/FORECAST.md](docs/FORECAST.md) under Framework Integrations.
-
-
-### Denoising
-
-Apply smoothing algorithms to data columns.
-
-- **Methods:** `ema`, `sma`, `median`, `lowpass_fft`, `butterworth`, `hp`, `savgol`, `tv`, `kalman`, `hampel`, `bilateral`, `wavelet_packet`, `ssa`, `l1_trend`, `lms`, `rls`, `beta`, `vmd`, `loess`, `stl`, `whittaker`, `gaussian`, `wavelet`, `emd`, `eemd`, `ceemdan`.
-- **Discover methods:** `python cli.py denoise_list_methods`
-- **Adaptive defaults:** `l1_trend`, `lms`, `rls`, `wavelet_packet`, and `vmd` use auto-scaled defaults to preserve scale; override via `--denoise-params`.
-
-```bash
-# Denoise OHLCV with an EMA before simplifying
-python cli.py data_fetch_candles EURUSD --timeframe H1 --denoise ema --simplify lttb --simplify-params points=50 --limit 1000 --format json
-
-# Denoise the close and an RSI indicator after they are calculated
-python cli.py data_fetch_candles EURUSD --timeframe H1 --indicators "rsi(14)" --denoise ema --denoise-params "columns=close,RSI_14,when=post_ti" --format json
-```
-
-## Intelligent Symbol Search
-
-The `symbols_list` command uses a smart 3-tier search strategy:
-1.  **Group name match** (e.g., `Majors`, `Forex`)
-2.  **Symbol name match** (e.g., `EUR` → EURUSD, JPYEUR, ...)
-3.  **Description match** (symbol or group path)
-
-## Date Inputs
-
-The `start` and `end` parameters for `data_fetch_candles` use `dateparser` for flexible date/time parsing.
-- **Natural language:** `yesterday 14:00`, `2 days ago`
-- **Common formats:** `2025-08-29`, `2025/08/29 14:30`
-
-## Requirements
-
-- Windows OS (MetaTrader5 requirement)
-- MetaTrader5 terminal installed and running
-- Python 3.10+
-- Active internet connection
-
-Optional dependencies (install as needed; see `requirements.txt`):
-- Forecast frameworks: `statsforecast`, `mlforecast`, `lightgbm`, `neuralforecast`
-- Foundation models: `torch`, `chronos-forecasting`, `timesfm`, `lag-llama`, `gluonts`
-- Pattern search backends: `hnswlib`, `tslearn`, `dtaidistance`
-- Dimensionality reduction: `scikit-learn`, `umap-learn`, `pydiffmap`, `pykeops`, and DREAMS-CNE from source
-
-## Error Handling
-
-All functions return a JSON object with a `success` flag. If `success` is `false`, an `error` field will contain the error message.
-
-For common MCP tool errors and solutions, see [docs/COMMON_ERRORS.md](docs/COMMON_ERRORS.md).
-
-## Security Notes
-
-- For unattended use, store credentials securely in a `.env` file.
-- Do not commit `.env` files to version control.
-- Use demo accounts for testing.
+- This project is for research/automation tooling; it is not financial advice.
+- Keep credentials out of git: copy `.env.example` to `.env` and do not commit it.
 
 ## License
 
-MIT License
-
-
-
-
-
+MIT

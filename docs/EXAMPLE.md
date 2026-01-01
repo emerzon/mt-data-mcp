@@ -1,57 +1,65 @@
 # End-to-End Trading Workflow Example
 
-**Related Documentation:**
-- [SAMPLE-TRADE.md](SAMPLE-TRADE.md) - Basic guide
-- [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) - Advanced playbook (regimes, HAR‑RV, conformal, MC barriers, risk/execution)
-- [FORECAST.md](FORECAST.md) - Detailed forecasting methods
+**Related documentation:**
+- [README.md](../README.md) - Project overview
+- [README.md](README.md) - Docs index
+- [CLI.md](CLI.md) - CLI usage patterns
+- [SAMPLE-TRADE.md](SAMPLE-TRADE.md) - Beginner guide
+- [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) - Advanced playbook
+- [FORECAST.md](FORECAST.md) - Forecasting overview
+- [forecast/FORECAST_GENERATE.md](forecast/FORECAST_GENERATE.md) - `forecast_generate`
+- [forecast/VOLATILITY.md](forecast/VOLATILITY.md) - Volatility forecasting
 - [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) - Barrier analytics deep dive
-- [SKTIME.md](SKTIME.md) - Sktime adapter
-- [COMMON_ERRORS.md](COMMON_ERRORS.md) - Troubleshooting
+- [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md) - Indicators
+- [DENOISING.md](DENOISING.md) - Denoising and smoothing
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Common issues
 
-This example walks through discovering capabilities, preparing data, generating price and volatility forecasts, running a quick backtest, performing advanced pattern search with dimensionality reduction, and combining signals into a trading decision. Every step includes a runnable CLI command and highlights advanced parameters.
+This walkthrough shows a practical “research loop”: discover methods, fetch data, add context (indicators/denoise), generate forecasts, size risk (volatility + barriers), and validate with a quick backtest.
 
-Assumptions
-- You have MetaTrader5 running and the server available via `python server.py`.
-- You invoke tools via the dynamic CLI: `python cli.py <command> [...args]`.
-- Replace `EURUSD` and `H1` with your symbol/timeframe as needed.
+Assumptions:
+- MetaTrader 5 terminal is running.
+- You call tools via `python cli.py <command> ...`.
+- Replace `EURUSD` and `H1` with your symbol/timeframe.
 
-Tip: add `--format json` to print structured JSON instead of TOON text output.
+Tip: add `--format json` for structured output.
 
 ---
 
-## 1) Discover Capabilities and Methods
+## 1) Discover what’s available
 
-See what features are available on your machine (frameworks, methods, reducers, backends):
+Forecast methods + availability (optional libraries show up here):
 
 ```bash
-python cli.py list_capabilities --format json
-
-# Focus on specific sections
-python cli.py list_capabilities --sections frameworks forecast dimred pattern_search --format json
+python cli.py forecast_list_methods --format json
 ```
 
-Notes
-- `frameworks` reports availability of optional libraries (NeuralForecast, StatsForecast, MLForecast, foundation models, ARCH, Torch/CUDA).
-- `forecast_methods`, `volatility_methods`, `denoise_methods`, and `dimred_methods` enumerate methods, params, and availability.
+Forecast model spaces:
+
+```bash
+python cli.py forecast_list_library_models native --format json
+python cli.py forecast_list_library_models statsforecast --format json
+python cli.py forecast_list_library_models sktime --format json
+python cli.py forecast_list_library_models pretrained --format json
+```
+
+Indicators:
+
+```bash
+python cli.py indicators_list --limit 50
+python cli.py indicators_describe rsi --format json
+```
 
 ---
 
-## 2) Choose Symbol, Timeframe, and Inspect Basics
-
-List visible symbols and describe one:
+## 2) Inspect symbol and fetch candles
 
 ```bash
 python cli.py symbols_list --limit 20
 python cli.py symbols_describe EURUSD --format json
-```
-
-Fetch recent candles for sanity checks:
-
-```bash
 python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 300 --format json
 ```
 
-Optional: Market depth (liquidity snapshot):
+Optional (liquidity snapshot):
 
 ```bash
 python cli.py market_depth_fetch EURUSD --format json
@@ -59,260 +67,175 @@ python cli.py market_depth_fetch EURUSD --format json
 
 ---
 
-## 3) Prepare Data: Denoise and Indicators
+## 3) Prepare data: indicators + denoise
 
-Denoise the close series before feature engineering or forecasting (EMA example):
+Compute a few indicators:
 
 ```bash
 python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 1500 \
-  --denoise ema --denoise-params "columns=close,when=pre_ti,alpha=0.2,keep_original=false" --format json
+  --indicators "ema(20),ema(50),rsi(14),macd(12,26,9)" \
+  --format json
 ```
 
-Compute indicators with denoise (post-indicator smoothing):
+Denoise before indicators (smoother inputs):
 
 ```bash
 python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 1500 \
   --indicators "rsi(14),ema(50)" \
+  --denoise ema --denoise-params "columns=close,when=pre_ti,alpha=0.2,keep_original=true" \
+  --format json
+```
+
+Denoise after indicators (smoother signals):
+
+```bash
+python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 1500 \
+  --indicators "rsi(14)" \
   --denoise ema --denoise-params "columns=RSI_14,when=post_ti,alpha=0.3,keep_original=true" \
   --format json
 ```
 
-Notes
-- `when=pre_ti` applies denoise before indicators, `post_ti` after.
-- `keep_original=true` preserves original columns (adds `_dn` suffix by default).
-
 ---
 
-## 4) Baseline Price Forecasts (Classical + Frameworks)
+## 4) Baseline price forecasts
 
-Quick baseline (Theta):
+Simple baseline (Theta):
 
 ```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --method theta --horizon 12 --format json
+python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
+  --library native --model theta --format json
 ```
 
-StatsForecast AutoARIMA (if installed):
+Pattern-based “analog” forecast (nearest-neighbor style):
 
 ```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --method sf_autoarima --horizon 24 \
-  --params "{\"seasonality\":24,\"stepwise\":true}" --format json
-```
-
-MLForecast + LightGBM (if installed):
-
-```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --method mlf_lightgbm --horizon 12 \
-  --params "{\"lags\":[1,2,3,24],\"rolling_agg\":\"mean\",\"n_estimators\":400,\"learning_rate\":0.05}" \
+python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
+  --library native --model analog --model-params "window_size=64 search_depth=5000 top_k=20 scale=zscore" \
   --format json
 ```
 
-NeuralForecast NHITS (if installed):
+Optional: foundation model (if available):
 
 ```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --method nhits --horizon 24 \
-  --params "{\"max_epochs\":30,\"input_size\":256,\"batch_size\":64}" --format json
-```
-
-Foundation model (Chronos‑Bolt) with quantiles and device mapping:
-
-```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --method chronos_bolt --horizon 24 \
-  --params "{\"model_name\":\"amazon/chronos-bolt-base\",\"context_length\":512,\"quantiles\":[0.1,0.5,0.9],\"device_map\":\"auto\",\"trust_remote_code\":true}" \
+python cli.py forecast_generate EURUSD --timeframe H1 --horizon 24 \
+  --library pretrained --model chronos2 --model-params "context_length=512" \
   --format json
 ```
 
-Notes
-- Many methods accept `denoise` and `indicators` too (see data_fetch_candles step), but keep it simple unless you need exogenous features.
-- Foundation models can accept `quantization` (e.g., `int8`, `int4`) when supported by the backend.
+Optional: Monte Carlo simulation forecast (range of outcomes):
+
+```bash
+python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
+  --library native --model mc_gbm --model-params "n_sims=3000 seed=7" \
+  --format json
+```
 
 ---
 
-## 5) Volatility Forecasts (Risk Sizing)
+## 5) Volatility forecast (risk sizing)
 
-Direct estimators:
+EWMA (fast default):
 
 ```bash
 python cli.py forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
-  --method ewma --params "halflife=60,lookback=1500" --format json
+  --method ewma --params "lambda=0.94" --format json
 ```
 
-GARCH via `arch` (if installed):
+HAR-RV (uses intraday realized volatility):
 
 ```bash
 python cli.py forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
-  --method garch --params "fit_bars=2000,mean=Zero,dist=t" --format json
+  --method har_rv --params "rv_timeframe=M5,days=150,window_w=5,window_m=22" --format json
 ```
-
-Proxy modeling (ARIMA over `log_r2`):
-
-```bash
-python cli.py forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
-  --method arima --proxy log_r2 --params "p=1,d=0,q=1" --format json
-```
-
-Use volatility to set position size e.g., target risk per trade by scaling lot size inversely to forecasted sigma.
 
 ---
 
-## 6) Monte Carlo Forecasts and Barrier Analytics
+## 6) Barrier analytics (TP/SL planning)
 
-Monte Carlo distributional forecasts for sizing and TP/SL planning:
-
-```bash
-# GBM Monte Carlo, 12 bars
-python cli.py forecast_generate EURUSD --timeframe H1 --method mc_gbm --horizon 12 --params "n_sims=3000 seed=7" --format json
-
-# Regime-aware HMM (2–3 states), 12 bars
-python cli.py forecast_generate EURUSD --timeframe H1 --method hmm_mc --horizon 12 --params "n_states=3 n_sims=3000 seed=7" --format json
-```
-
-Barrier probabilities (percent or pips):
+Barrier probabilities (TP/SL odds within the horizon):
 
 ```bash
-# TP/SL odds (percent)
-python cli.py forecast_barrier_hit_probabilities --symbol EURUSD --timeframe H1 --horizon 12 \
-  --method hmm_mc --tp_pct 0.5 --sl_pct 0.3 --params "n_sims=5000 seed=7" --format json
-
-# TP/SL odds (pips)
-python cli.py forecast_barrier_hit_probabilities --symbol USDJPY --timeframe M30 --horizon 16 \
-  --method mc_gbm --tp_pips 20 --sl_pips 15 --params "n_sims=10000 seed=1" --format json
+python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
+  --method mc --mc-method hmm_mc --tp-pct 0.5 --sl-pct 0.3 --params "n_sims=5000 seed=7" \
+  --format json
 ```
 
-Barrier optimization over a grid (maximize edge/kelly/ev/prob_resolve/etc):
+Barrier optimization (search a TP/SL grid):
 
 ```bash
-python cli.py forecast_barrier_optimize --symbol EURUSD --timeframe H1 --horizon 12 \
-  --method hmm_mc --mode pct --grid-style volatility --refine true --refine-radius 0.35 \
-  --tp_min 0.25 --tp_max 1.5 --tp_steps 7 --sl_min 0.25 --sl_max 2.5 --sl_steps 9 --params "n_sims=5000 seed=7" --format json
+python cli.py forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
+  --method hmm_mc --mode pct --grid-style volatility --refine true \
+  --tp-min 0.25 --tp-max 1.5 --tp-steps 7 \
+  --sl-min 0.25 --sl-max 2.5 --sl-steps 9 \
+  --params "n_sims=5000 seed=7" --format json
 ```
 
-Interpretation tips:
-- edge = P(TP first) − P(SL first)
-- prob_resolve = 1 − P(no hit)
-- Kelly ≈ p − (1−p)/b with p = P(TP first | hit), b = TP/SL payoff ratio
-- EV ≈ P(win)·TP − P(loss)·SL; ev_per_bar normalizes by mean resolve time
+Interpretation shortcuts:
+
+- `edge` ≈ P(TP first) − P(SL first)
+- `prob_resolve` ≈ 1 − P(no hit)
+- Wider stops/targets may look “worse” on edge but can be better after accounting for time-to-hit and payoff ratio.
 
 ---
 
-## 7) Regime Detection (Adapt to Market Structure)
+## 7) Regime detection (gatekeeper)
 
-Detect change-points and label regimes to switch strategies or reset risk:
+Change-points (BOCPD):
 
 ```bash
-# BOCPD change-points (log-returns) with higher threshold
-python cli.py regime_detect EURUSD --timeframe H1 --limit 1500 --method bocpd --threshold 0.6 --format json
-
-# HMM-lite regimes with 3 states (e.g., low-vol, mid, high-vol)
-python cli.py regime_detect EURUSD --timeframe H1 --limit 1500 --method hmm --params "n_states=3" --format json
-
-# Markov-Switching AR(1) with 2 regimes (requires statsmodels)
-python cli.py regime_detect EURUSD --timeframe H1 --limit 1500 --method ms_ar --params "k_regimes=2 order=1" --format json
+python cli.py regime_detect EURUSD --timeframe H1 --limit 1500 \
+  --method bocpd --threshold 0.6 --output summary --lookback 300 --format json
 ```
 
-Use BOCPD `cp_prob` spikes to avoid trading through breaks and to retrain models; use regime labels to widen/narrow stops, switch momentum vs. mean-reversion logic, and adjust leverage.
+Regime labels (HMM):
+
+```bash
+python cli.py regime_detect EURUSD --timeframe H1 --limit 1500 \
+  --method hmm --params "n_states=3" --output compact --lookback 300 --format json
+```
 
 ---
 
-## 8) Quick Backtest (Sanity Check)
+## 8) Quick backtest (sanity check)
 
-Run a rolling backtest to compare a few methods quickly:
+Run a rolling-origin backtest to compare a few methods:
 
 ```bash
 python cli.py forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
-  --steps 50 --spacing 5 \
-  --methods "theta sf_autoarima nhits" --format json
+  --steps 50 --spacing 5 --methods "theta sf_autoarima analog" --format json
 ```
-
-Notes
-- Metrics include MAE, RMSE, and directional accuracy. Use this to select a small set of candidate models.
 
 ---
 
-## 9) Advanced Pattern Search (Similarity + Dimensionality Reduction)
+## 9) Pattern detection (optional context)
 
-Run a similarity search using many instruments, correlation filtering, ANN engine, DTW refinement, and UMAP dim‑red:
+Candlestick patterns:
 
 ```bash
-python cli.py pattern_search EURUSD --timeframe H1 \
-  --window-size 30 --future-size 8 --top-k 100 \
-  --max-symbols 50 --scale zscore --metric euclidean --engine hnsw \
-  --min-symbol-correlation 0.3 --corr-lookback 1000 \
-  --refine-k 400 --shape-metric dtw --allow-lag 5 \
-  --dimred-method umap --dimred-params "n_components=8,n_neighbors=15,min_dist=0.1" \
-  --cache-id eurusd_h1_w30_f8_umap --format json
+python cli.py patterns_detect EURUSD --timeframe H1 --mode candlestick --limit 500 \
+  --robust-only true --format json
 ```
 
-Faster parametric DREAMS‑CNE dimensionality reduction (if installed):
+Classic chart patterns:
 
 ```bash
-python cli.py pattern_search EURUSD --timeframe H1 \
-  --window-size 30 --future-size 8 --top-k 80 \
-  --max-symbols 25 --scale minmax --metric cosine --engine ckdtree \
-  --refine-k 300 --shape-metric ncc --allow-lag 5 \
-  --dimred-method dreams_cne_fast --dimred-params "n_components=2" \
-  --cache-id eurusd_h1_w30_f8_cne --format json
+python cli.py patterns_detect EURUSD --timeframe H1 --mode classic --limit 800 --format json
 ```
 
-Notes
-- `cache_id` persists the index to disk for reuse; pair with `cache_dir` to control location.
-- Transform‑capable reducers (PCA, KPCA, UMAP, Isomap, parametric DREAMS‑CNE) support querying; t‑SNE/Laplacian do not.
-- Use `scale=zscore` + `metric=cosine` to emphasize shape over level.
-- Try `time_scale_span=0.1` to allow multi‑scale coarse retrieval across ±10% time stretch with re‑ranking.
-
 ---
 
-## 10) Combine Signals into a Decision
+## 10) Combine signals into a decision (simple recipe)
 
-A simple decision recipe:
-- Go long if all three align:
-  - Pattern search: `prob_gain >= 0.60` and `distance_weighted_avg_pct_change > 0.0`.
-  - Price forecast median/mean: positive for your selected method(s) over horizon.
-  - Volatility forecast: below your risk threshold (e.g., projected 1% daily sigma).
-- Go short if signs flip symmetrically.
-- Else: no trade or smaller position.
+A pragmatic decision checklist:
 
-Example: Fetch all inputs programmatically or via sequential CLI + scripting. For illustration, here are the key fields to check in JSON:
-
-- From `pattern_search` (with `--format json --compact false` recommended):
-  - `prob_gain`, `distance_weighted_avg_pct_change`, `avg_pct_change`, `forecast_confidence`.
-- From `forecast_generate`:
-  - `forecast_price` or `forecast_return`, optional `forecast_quantiles`.
-- From `forecast_volatility_estimate`:
-  - `forecast_sigma` (per‑bar sigma), or horizon sigma if modeled that way.
-
----
-
-## 11) Execute and Monitor
-
-Check market depth to validate liquidity and current spread:
-
-```bash
-python cli.py market_depth_fetch EURUSD --format json
-```
-
-Monitor outcome after entering a trade (not covered by tools; depends on your execution stack). Consider scheduling periodic refresh of forecasts and similarity signals.
-
----
-
-## 12) Reproducibility and Caching
-
-- Use `cache_id` and optionally `cache_dir` in `pattern_search` to persist/load indexes.
-- Pin framework versions in your environment; record params in a run log (see CLI stdout and JSON fields).
-- For foundation models, specify `revision` to pin model weights and `trust_remote_code` only when you trust the repo.
+- Forecast direction: do multiple methods agree on the sign of the next `horizon` bars?
+- Volatility: is projected volatility within your risk budget?
+- Regime: are you trading in a regime your strategy is designed for?
+- Barriers: does the TP/SL pair have acceptable `edge` / `prob_resolve`?
+- Patterns: do detections support or contradict the idea (optional)?
 
 ---
 
 ## Appendix: Troubleshooting
 
-- No methods listed? Run `python cli.py list_capabilities --sections frameworks` to check availability flags and install optional packages.
-- t‑SNE/Laplacian reducers throw on query? They don’t support transforming new samples; use PCA/KPCA/UMAP/parametric DREAMS‑CNE instead.
-- Pattern search returns few matches? Increase `max_bars_per_symbol` and/or `max_symbols`; reduce `min_symbol_correlation`.
-- Forecast errors about history depth? Increase candle `--limit` in your historical fetch or relax model complexity.
-- ARCH/GARCH fits are slow? Reduce `fit_bars` or use EWMA/rolling estimators for faster volatility proxies.
-- For common MCP tool errors, see [COMMON_ERRORS.md](COMMON_ERRORS.md).
-
----
-
-Happy trading! Tune thresholds and horizons to your instrument’s regime and always validate with backtests.
-
-
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
