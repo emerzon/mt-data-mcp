@@ -319,11 +319,10 @@ Execute trades and manage portfolio risk directly from the CLI or MCP tools.
 - `trading_positions_modify <ticket> [--sl PRICE] [--tp PRICE]` - Modify SL/TP for an open position.
 
 #### Orders
-- `trading_orders_place_market <symbol> --volume LOTS --type BUY|SELL [--stop-loss PRICE] [--take-profit PRICE] [--comment TEXT] [--deviation N] [--dry-run true|false] [--confirm true|false]` - Place an instant market order.
-- `trading_pending_place <symbol> --volume LOTS --type <TYPE> --price PRICE [--stop-loss PRICE] [--take-profit PRICE] [--expiration "TIME"] [--comment TEXT] [--deviation N] [--dry-run true|false] [--confirm true|false]` - Place a pending order (LIMIT/STOP).
+- `trading_orders_place_market <symbol> --volume LOTS --type BUY|SELL [--stop-loss PRICE] [--take-profit PRICE] [--comment TEXT] [--deviation N]` - Place an instant market order.
+- `trading_pending_place <symbol> --volume LOTS --type <TYPE> --price PRICE [--stop-loss PRICE] [--take-profit PRICE] [--expiration "TIME"] [--comment TEXT] [--deviation N]` - Place a pending order (LIMIT/STOP).
   - Types: `BUYLIMIT`, `BUYSTOP`, `SELLLIMIT`, `SELLSTOP`.
   - Expiration: `GTC` (default), or time string (e.g., "today 15:00", "2025-12-31").
-  - Safety: set `MTDATA_TRADING_REQUIRE_CONFIRM=1` to require `--confirm true` for live requests; use `--dry-run true` to preview the MT5 request payload.
 - `trading_pending_get` - List active pending orders.
 - `trading_pending_cancel [--ticket ID] [--symbol SYM]` - Cancel pending orders.
 - `trading_pending_modify <ticket> [--price PRICE] [--sl PRICE] [--tp PRICE] [--expiration "TIME"]` - Modify a pending order.

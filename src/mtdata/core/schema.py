@@ -61,8 +61,6 @@ PARAM_HINTS = {
     "volume": "Order volume (lots) for trading commands.",
     "comment": "Order comment (tag) attached to MT5 requests.",
     "deviation": "Max slippage in points (MT5 request 'deviation').",
-    "dry_run": "If true, return the prepared request(s) without sending.",
-    "confirm": "Set true to confirm execution when MTDATA_TRADING_REQUIRE_CONFIRM=1.",
     "type": "Order type (e.g. 'buy', 'sell_limit').",
     "price": "Price level for pending orders or checks.",
     "stop_loss": "Stop-loss level price.",
@@ -447,13 +445,11 @@ def _allow_null(schema: Dict[str, Any]) -> Dict[str, Any]:
     updated = dict(schema)
     schema_type = updated.get("type")
     if schema_type is None:
-        if "oneOf" in updated:
-            updated["oneOf"] = list(updated["oneOf"]) + [{"type": "null"}]
-        elif "anyOf" in updated:
-            updated["anyOf"] = list(updated["anyOf"]) + [{"type": "null"}]
-        else:
-            updated = {"anyOf": [schema, {"type": "null"}]}
+        # Avoid explicit {"type": "null"} in anyOf/oneOf constructs as it triggers
+        # "Cannot apply filter 'string' to type: NullValue" in some MCP clients (Jinja).
+        # For optional parameters, relying on "required": False is sufficient.
         return updated
+
     if isinstance(schema_type, list):
         if "null" not in schema_type:
             updated["type"] = schema_type + ["null"]

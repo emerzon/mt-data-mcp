@@ -1,7 +1,6 @@
 """Trading functions for MetaTrader integration."""
 
 
-import os
 import math
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple, Union, List, Dict, Any
@@ -205,18 +204,6 @@ def _validate_volume(volume: Union[int, float], symbol_info: Any) -> Tuple[Optio
             return None, f"volume must be <= {max_vol}"
 
     return vol, None
-
-
-def _trading_requires_confirm() -> bool:
-    """Return True when trading tools should require confirm=true before execution.
-
-    Enable by setting env var `MTDATA_TRADING_REQUIRE_CONFIRM=1` (or any truthy value).
-    """
-    try:
-        v = os.getenv("MTDATA_TRADING_REQUIRE_CONFIRM", "").strip().lower()
-        return v not in ("", "0", "false", "no")
-    except Exception:
-        return False
 
 
 def _validate_deviation(deviation: Union[int, float]) -> Tuple[Optional[int], Optional[str]]:
@@ -503,8 +490,6 @@ def trading_orders_place_market(
     take_profit: Optional[Union[int, float]] = None,
     comment: Optional[str] = None,
     deviation: int = 20,
-    dry_run: bool = False,
-    confirm: bool = False,
 ) -> dict:
     """
     Place a market order. Parameters:
@@ -515,8 +500,6 @@ def trading_orders_place_market(
         take_profit (optional): Take profit price.
         comment (optional): Order comment (tag) attached to the MT5 request.
         deviation (optional): Max slippage in points (MT5 request 'deviation').
-        dry_run (optional): If True, return the prepared request without sending it.
-        confirm (optional): Must be True when `MTDATA_TRADING_REQUIRE_CONFIRM=1`.
     """
     import MetaTrader5 as mt5
 
@@ -604,26 +587,6 @@ def trading_orders_place_market(
                 "type_filling": mt5.ORDER_FILLING_IOC,
             }
 
-            if dry_run:
-                return {
-                    "success": True,
-                    "dry_run": True,
-                    "side": side,
-                    "price": price,
-                    "bid": current_tick.bid,
-                    "ask": current_tick.ask,
-                    "sl": norm_sl,
-                    "tp": norm_tp,
-                    "request": request,
-                    "note": "Market orders are sent without SL/TP; SL/TP is applied via a follow-up TRADE_ACTION_SLTP modification when specified.",
-                }
-
-            if _trading_requires_confirm() and not confirm:
-                return {
-                    "error": "Confirmation required (set confirm=true or unset MTDATA_TRADING_REQUIRE_CONFIRM).",
-                    "request": request,
-                }
-
             result = mt5.order_send(request)
             if result is None:
                 # Surface MetaTrader last_error when available for easier debugging
@@ -710,8 +673,6 @@ def trading_pending_place(
     expiration: Optional[ExpirationValue] = None,
     comment: Optional[str] = None,
     deviation: int = 20,
-    dry_run: bool = False,
-    confirm: bool = False,
 ) -> dict:
     """
     Place a pending order. Parameters:
@@ -726,8 +687,6 @@ def trading_pending_place(
             Use 0 or 'GTC' to submit GTC orders.
         comment (optional): Order comment (tag) attached to the MT5 request.
         deviation (optional): Max slippage in points (MT5 request 'deviation').
-        dry_run (optional): If True, return the prepared request without sending it.
-        confirm (optional): Must be True when `MTDATA_TRADING_REQUIRE_CONFIRM=1`.
     """
     import MetaTrader5 as mt5
 
@@ -848,19 +807,6 @@ def trading_pending_place(
                     request["type_time"] = mt5.ORDER_TIME_SPECIFIED
                     request["expiration"] = normalized_expiration
 
-            if dry_run:
-                return {
-                    "success": True,
-                    "dry_run": True,
-                    "request": request,
-                }
-
-            if _trading_requires_confirm() and not confirm:
-                return {
-                    "error": "Confirmation required (set confirm=true or unset MTDATA_TRADING_REQUIRE_CONFIRM).",
-                    "request": request,
-                }
-
             result = mt5.order_send(request)
             if result is None:
                 # Surface MetaTrader last_error when available for easier debugging
@@ -906,14 +852,10 @@ def trading_positions_modify(
     stop_loss: Optional[Union[int, float]] = None,
     take_profit: Optional[Union[int, float]] = None,
     comment: Optional[str] = None,
-    dry_run: bool = False,
-    confirm: bool = False,
 ) -> dict:
     """Modify an open position by ID.
 
     - comment: Order comment (tag) attached to the MT5 request.
-    - dry_run: If True, return the prepared request without sending it.
-    - confirm: Must be True when `MTDATA_TRADING_REQUIRE_CONFIRM=1`.
     """
     import MetaTrader5 as mt5
 
@@ -971,15 +913,6 @@ def trading_positions_modify(
                 "comment": _normalize_trade_comment(comment, default="MCP modify position"),
             }
 
-            if dry_run:
-                return {"success": True, "dry_run": True, "request": request}
-
-            if _trading_requires_confirm() and not confirm:
-                return {
-                    "error": "Confirmation required (set confirm=true or unset MTDATA_TRADING_REQUIRE_CONFIRM).",
-                    "request": request,
-                }
-
             result = mt5.order_send(request)
             if result is None:
                 # surface the MT5 terminal error for debugging
@@ -1023,14 +956,10 @@ def trading_pending_modify(
     take_profit: Optional[Union[int, float]] = None,
     expiration: Optional[ExpirationValue] = None,
     comment: Optional[str] = None,
-    dry_run: bool = False,
-    confirm: bool = False,
 ) -> dict:
     """Modify a pending order by ID.
 
     - comment: Order comment (tag) attached to the MT5 request.
-    - dry_run: If True, return the prepared request without sending it.
-    - confirm: Must be True when `MTDATA_TRADING_REQUIRE_CONFIRM=1`.
     """
     import MetaTrader5 as mt5
 
@@ -1068,15 +997,6 @@ def trading_pending_modify(
                     request["type_time"] = current_type_time
                     if current_type_time == mt5.ORDER_TIME_SPECIFIED and current_expiration:
                         request["expiration"] = current_expiration
-
-            if dry_run:
-                return {"success": True, "dry_run": True, "request": request}
-
-            if _trading_requires_confirm() and not confirm:
-                return {
-                    "error": "Confirmation required (set confirm=true or unset MTDATA_TRADING_REQUIRE_CONFIRM).",
-                    "request": request,
-                }
 
             result = mt5.order_send(request)
             if result is None:
@@ -1120,8 +1040,6 @@ def trading_positions_close(
     loss_only: bool = False,
     comment: Optional[str] = None,
     deviation: int = 20,
-    dry_run: bool = False,
-    confirm: bool = False,
 ) -> dict:
     """Close open positions.
     
@@ -1132,8 +1050,6 @@ def trading_positions_close(
     - loss_only: If True, only close losing positions.
     - comment: Order comment (tag) attached to the MT5 request.
     - deviation: Max slippage in points (MT5 request 'deviation').
-    - dry_run: If True, return the prepared requests without sending them.
-    - confirm: Must be True when `MTDATA_TRADING_REQUIRE_CONFIRM=1`.
 
     If no parameters are provided, closes ALL open positions.
     """
@@ -1173,12 +1089,6 @@ def trading_positions_close(
             if deviation_error:
                 return {"error": deviation_error}
 
-            if not dry_run and _trading_requires_confirm() and not confirm:
-                return {
-                    "error": "Confirmation required (set confirm=true or unset MTDATA_TRADING_REQUIRE_CONFIRM).",
-                    "positions_count": len(to_close),
-                }
-
             # 3. Close positions
             results = []
             for position in to_close:
@@ -1204,14 +1114,6 @@ def trading_positions_close(
                     "type_filling": mt5.ORDER_FILLING_IOC,
                 }
 
-                if dry_run:
-                    results.append({
-                        "ticket": position.ticket,
-                        "symbol": position.symbol,
-                        "request": request,
-                    })
-                    continue
-
                 result = mt5.order_send(request)
                 if result is None:
                     results.append({"ticket": position.ticket, "error": "Failed to send close order"})
@@ -1226,14 +1128,6 @@ def trading_positions_close(
                         "comment": result.comment,
                     }
                     results.append(res_dict)
-
-            if dry_run:
-                if ticket is not None and len(results) == 1:
-                    single = dict(results[0]) if isinstance(results[0], dict) else {"result": results[0]}
-                    single.setdefault("success", True)
-                    single["dry_run"] = True
-                    return single
-                return {"success": True, "dry_run": True, "close_count": len(results), "requests": results}
 
             # If only one position was targeted by ticket, return single result for backward compatibility/convenience
             if ticket is not None and len(results) == 1:
@@ -1252,8 +1146,6 @@ def trading_pending_cancel(
     ticket: Optional[Union[int, str]] = None,
     symbol: Optional[str] = None,
     comment: Optional[str] = None,
-    dry_run: bool = False,
-    confirm: bool = False,
 ) -> dict:
     """Cancel pending orders.
     
@@ -1261,9 +1153,7 @@ def trading_pending_cancel(
     - ticket: Cancel a specific order by ticket ID.
     - symbol: Cancel all pending orders for a specific symbol.
     - comment: Order comment (tag) attached to the MT5 request.
-    - dry_run: If True, return the prepared requests without sending them.
-    - confirm: Must be True when `MTDATA_TRADING_REQUIRE_CONFIRM=1`.
-    
+
     If no parameters are provided, cancels ALL pending orders.
     """
     import MetaTrader5 as mt5
@@ -1286,12 +1176,6 @@ def trading_pending_cancel(
                 if orders is None or len(orders) == 0:
                     return {"message": "No pending orders"}
 
-            if not dry_run and _trading_requires_confirm() and not confirm:
-                return {
-                    "error": "Confirmation required (set confirm=true or unset MTDATA_TRADING_REQUIRE_CONFIRM).",
-                    "orders_count": len(orders) if orders is not None else 0,
-                }
-
             # 2. Cancel orders
             results = []
             for order in orders:
@@ -1301,10 +1185,6 @@ def trading_pending_cancel(
                     "magic": 234000,
                     "comment": _normalize_trade_comment(comment, default="MCP cancel pending order"),
                 }
-
-                if dry_run:
-                    results.append({"ticket": order.ticket, "request": request})
-                    continue
 
                 result = mt5.order_send(request)
                 if result is None:
@@ -1317,14 +1197,6 @@ def trading_pending_cancel(
                         "order": result.order,
                         "comment": result.comment,
                     })
-
-            if dry_run:
-                if ticket is not None and len(results) == 1:
-                    single = dict(results[0]) if isinstance(results[0], dict) else {"result": results[0]}
-                    single.setdefault("success", True)
-                    single["dry_run"] = True
-                    return single
-                return {"success": True, "dry_run": True, "cancel_count": len(results), "requests": results}
 
             # If only one order was targeted by ticket, return single result
             if ticket is not None and len(results) == 1:
