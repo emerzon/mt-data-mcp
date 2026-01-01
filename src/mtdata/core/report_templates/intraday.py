@@ -36,7 +36,7 @@ def template_intraday(
         'sl_min': 0.25, 'sl_max': 2.5, 'sl_steps': 9,
         'top_k': 5,
         # Barrier optimization defaults
-        'objective': 'ev_uncond',
+        'objective': 'ev',
         'params': {'spread_bps': 1.0, 'slippage_bps': 0.5, 'rr_min': 0.8, 'rr_max': 2.0},
     })
     if 'timeframe' not in p:

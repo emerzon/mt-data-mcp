@@ -22,7 +22,7 @@ def template_position(
         'sl_min': 1.0, 'sl_max': 8.0, 'sl_steps': 8,
         'top_k': 5,
         # Barrier optimization defaults
-        'objective': 'ev_uncond',
+        'objective': 'ev',
         'params': {'spread_bps': 0.3, 'slippage_bps': 0.1, 'rr_min': 1.2, 'rr_max': 3.0},
     })
     if 'timeframe' not in p:

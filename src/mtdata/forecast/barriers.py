@@ -1,4 +1,5 @@
 from typing import Any, Dict, Optional, List, Literal, Tuple, Set
+import math
 import numpy as np
 from ..core.schema import TimeframeLiteral, DenoiseSpec
 from ..core.constants import TIMEFRAME_SECONDS
@@ -44,23 +45,43 @@ def _is_crypto_symbol(symbol: str) -> bool:
     return any(tok in sym for tok in crypto_tokens)
 
 
-def _auto_barrier_method(symbol: str, timeframe: str, prices: np.ndarray) -> Tuple[str, str]:
+def _auto_barrier_method(
+    symbol: str,
+    timeframe: str,
+    prices: np.ndarray,
+    horizon: Optional[int] = None,
+) -> Tuple[str, str]:
     tf_secs = TIMEFRAME_SECONDS.get(timeframe, 0) or 0
     prices = np.asarray(prices, dtype=float)
     prices = prices[np.isfinite(prices)]
+    horizon_val: Optional[int] = None
+    try:
+        horizon_val = int(horizon) if horizon is not None else None
+    except Exception:
+        horizon_val = None
+    prefer_bridge = horizon_val is not None and horizon_val <= 12
     if prices.size < 10:
-        return "mc_gbm_bb", "auto: insufficient history; fallback to gbm_bb"
+        if prefer_bridge:
+            return "mc_gbm_bb", "auto: insufficient history; gbm_bb (short horizon)"
+        return "mc_gbm", "auto: insufficient history; gbm baseline"
 
     rets = np.diff(np.log(np.clip(prices, 1e-12, None)))
     rets = rets[np.isfinite(rets)]
     if rets.size < 5:
-        return "mc_gbm_bb", "auto: insufficient returns; fallback to gbm_bb"
+        if prefer_bridge:
+            return "mc_gbm_bb", "auto: insufficient returns; gbm_bb (short horizon)"
+        return "mc_gbm", "auto: insufficient returns; gbm baseline"
+    if rets.size < 30:
+        if prefer_bridge:
+            return "mc_gbm_bb", "auto: limited history; gbm_bb (short horizon)"
+        return "mc_gbm", "auto: limited history; gbm baseline"
 
     mu = float(np.mean(rets))
     sigma = float(np.std(rets, ddof=1)) + 1e-12
     z = (rets - mu) / sigma
     kurt = float(np.mean(z ** 4) - 3.0) if z.size > 0 else 0.0
     jump_ratio = float(np.max(np.abs(rets - mu)) / sigma) if rets.size > 0 else 0.0
+    skew = float(np.mean(z ** 3)) if z.size > 0 else 0.0
 
     r2 = (rets - mu) ** 2
     if r2.size >= 6:
@@ -79,15 +100,41 @@ def _auto_barrier_method(symbol: str, timeframe: str, prices: np.ndarray) -> Tup
     else:
         vol_corr = 0.0
 
+    vol_ratio = 1.0
+    if rets.size >= 60:
+        short_n = min(50, rets.size)
+        long_n = min(200, rets.size)
+        short_std = float(np.std(rets[-short_n:], ddof=1)) + 1e-12
+        long_std = float(np.std(rets[-long_n:], ddof=1)) + 1e-12
+        vol_ratio = short_std / long_std
+
     if _is_crypto_symbol(symbol) or (tf_secs and tf_secs <= 900):
-        if kurt > 2.5 or jump_ratio > 5.0:
+        if kurt > 2.0 or jump_ratio > 4.0:
             return "jump_diffusion", "auto: crypto/short-tf with jumpy tails"
 
-    if kurt > 4.0 or jump_ratio > 6.0:
+    if kurt > 3.5 or jump_ratio > 5.0:
         return "jump_diffusion", "auto: heavy tails/jump risk"
-    if vol_corr > 0.2:
+
+    if vol_ratio >= 1.6 or vol_ratio <= 0.65:
+        if rets.size >= 220:
+            return "hmm_mc", "auto: regime shift (volatility change)"
+
+    if vol_corr > 0.3 and r2.size >= 150:
+        try:
+            import arch  # noqa: F401
+            return "garch", "auto: strong volatility clustering (garch)"
+        except Exception:
+            return "heston", "auto: strong volatility clustering (heston fallback)"
+
+    if vol_corr > 0.15:
         return "heston", "auto: volatility clustering"
-    return "mc_gbm_bb", "auto: mild tails; gbm with bridge correction"
+
+    if rets.size >= 400 and abs(skew) >= 0.7 and jump_ratio < 4.5:
+        return "bootstrap", "auto: non-normal returns; bootstrap"
+
+    if prefer_bridge:
+        return "mc_gbm_bb", "auto: mild tails; gbm with bridge correction"
+    return "mc_gbm", "auto: mild tails; gbm baseline"
 
 
 def _brownian_bridge_hits(
@@ -182,7 +229,9 @@ def forecast_barrier_hit_probabilities(
         method_requested = method_key
         auto_reason = None
         if method_key == 'auto':
-            method_key, auto_reason = _auto_barrier_method(symbol, timeframe, prices)
+            method_key, auto_reason = _auto_barrier_method(
+                symbol, timeframe, prices, horizon=int(horizon)
+            )
         bb_enabled = method_key == 'mc_gbm_bb'
         
         if method_key in ('mc_gbm', 'mc_gbm_bb'):
@@ -460,7 +509,19 @@ def forecast_barrier_optimize(
     sl_steps: int = 9,
     params: Optional[Dict[str, Any]] = None,
     denoise: Optional[DenoiseSpec] = None,
-    objective: Literal['edge','prob_tp_first','kelly','ev','ev_uncond','kelly_uncond'] = 'edge',
+    objective: Literal[
+        'edge',
+        'prob_tp_first',
+        'prob_resolve',
+        'kelly',
+        'kelly_cond',
+        'ev',
+        'ev_cond',
+        'ev_per_bar',
+        'profit_factor',
+        'min_loss_prob',
+        'utility',
+    ] = 'edge',
     return_grid: bool = True,
     top_k: Optional[int] = None,
     output: Literal['full','summary'] = 'full',
@@ -479,6 +540,9 @@ def forecast_barrier_optimize(
     refine: bool = False,
     refine_radius: float = 0.3,
     refine_steps: int = 5,
+    min_prob_win: Optional[float] = None,
+    max_prob_no_hit: Optional[float] = None,
+    max_median_time: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Optimize TP/SL barriers with support for presets, volatility scaling, ratios, and two-stage refinement."""
     try:
@@ -488,7 +552,19 @@ def forecast_barrier_optimize(
         params_dict = _parse_kv_or_json(params)
         mode_val = str(mode).lower()
         objective_val = str(objective).lower()
-        valid_objectives = {'edge', 'prob_tp_first', 'kelly', 'ev', 'kelly_uncond', 'ev_uncond'}
+        valid_objectives = {
+            'edge',
+            'prob_tp_first',
+            'prob_resolve',
+            'kelly',
+            'kelly_cond',
+            'ev',
+            'ev_cond',
+            'ev_per_bar',
+            'profit_factor',
+            'min_loss_prob',
+            'utility',
+        }
         if objective_val not in valid_objectives:
             objective_val = 'edge'
 
@@ -536,6 +612,35 @@ def forecast_barrier_optimize(
         if rr_max_val is not None and rr_max_val <= 0:
             rr_max_val = None
 
+        min_prob_win_val = params_dict.get('min_prob_win', min_prob_win)
+        max_prob_no_hit_val = params_dict.get('max_prob_no_hit', max_prob_no_hit)
+        max_median_time_val = params_dict.get('max_median_time', max_median_time)
+        try:
+            min_prob_win_val = float(min_prob_win_val) if min_prob_win_val is not None else None
+        except Exception:
+            min_prob_win_val = None
+        try:
+            max_prob_no_hit_val = float(max_prob_no_hit_val) if max_prob_no_hit_val is not None else None
+        except Exception:
+            max_prob_no_hit_val = None
+        try:
+            max_median_time_val = float(max_median_time_val) if max_median_time_val is not None else None
+        except Exception:
+            max_median_time_val = None
+        if min_prob_win_val is not None:
+            if not np.isfinite(min_prob_win_val):
+                min_prob_win_val = None
+            else:
+                min_prob_win_val = max(0.0, min(1.0, min_prob_win_val))
+        if max_prob_no_hit_val is not None:
+            if not np.isfinite(max_prob_no_hit_val):
+                max_prob_no_hit_val = None
+            else:
+                max_prob_no_hit_val = max(0.0, min(1.0, max_prob_no_hit_val))
+        if max_median_time_val is not None:
+            if not np.isfinite(max_median_time_val) or max_median_time_val <= 0:
+                max_median_time_val = None
+
         tp_min_val = float(params_dict.get('tp_min', tp_min))
         tp_max_val = float(params_dict.get('tp_max', tp_max))
         tp_steps_val = max(1, int(params_dict.get('tp_steps', tp_steps)))
@@ -572,7 +677,9 @@ def forecast_barrier_optimize(
         method_requested = method_name
         auto_reason = None
         if method_name == 'auto':
-            method_name, auto_reason = _auto_barrier_method(symbol, timeframe, prices)
+            method_name, auto_reason = _auto_barrier_method(
+                symbol, timeframe, prices, horizon=int(horizon)
+            )
         bb_enabled = method_name == 'mc_gbm_bb'
         
         if method_name in ('mc_gbm', 'mc_gbm_bb'):
@@ -781,6 +888,7 @@ def forecast_barrier_optimize(
                 prob_loss = n_losses / S
                 prob_tie = ties.sum() / S
                 prob_neutral = max(0.0, 1.0 - prob_win - prob_loss - prob_tie)
+                prob_resolve = 1.0 - prob_neutral
 
                 risk = sl_unit
                 reward = tp_unit
@@ -791,12 +899,12 @@ def forecast_barrier_optimize(
                 if rr_max_val and rr > rr_max_val:
                     continue
 
-                ev_uncond = prob_win * reward - prob_loss * risk
+                ev_val = prob_win * reward - prob_loss * risk
                 edge = prob_win - prob_loss
 
-                kelly_uncond = 0.0
+                kelly_val = 0.0
                 if rr > 0:
-                    kelly_uncond = prob_win - (prob_loss / rr)
+                    kelly_val = prob_win - (prob_loss / rr)
 
                 # Conditional metrics (ignore neutral paths)
                 active = prob_win + prob_loss
@@ -808,6 +916,43 @@ def forecast_barrier_optimize(
                 else:
                     ev_cond = 0.0
                     kelly_cond = 0.0
+
+                resolve_mask = (first_tp < H) | (first_sl < H)
+                if np.any(resolve_mask):
+                    resolve_times = np.minimum(first_tp, first_sl)[resolve_mask] + 1
+                    t_res_mean = float(np.mean(resolve_times)) if resolve_times.size else None
+                    t_res_med = float(np.median(resolve_times)) if resolve_times.size else None
+                else:
+                    t_res_mean = None
+                    t_res_med = None
+
+                ev_per_bar = 0.0
+                if t_res_mean and t_res_mean > 0:
+                    ev_per_bar = ev_val / t_res_mean
+
+                profit_factor = 0.0
+                denom = prob_loss * risk
+                if denom > 0:
+                    profit_factor = (prob_win * reward) / denom
+                elif prob_win > 0:
+                    profit_factor = 1e9
+
+                reward_frac = 0.0
+                risk_frac = 0.0
+                if last_price > 0:
+                    reward_frac = abs(tp_p - last_price) / last_price
+                    risk_frac = abs(sl_p - last_price) / last_price
+                if risk_frac >= 1.0:
+                    risk_frac = 0.999
+                utility_val = (prob_win * math.log1p(reward_frac)) + (prob_loss * math.log1p(-risk_frac))
+
+                if min_prob_win_val is not None and prob_win < min_prob_win_val:
+                    continue
+                if max_prob_no_hit_val is not None and prob_neutral > max_prob_no_hit_val:
+                    continue
+                if max_median_time_val is not None:
+                    if t_res_med is None or t_res_med > max_median_time_val:
+                        continue
 
                 # Hit time medians (bars, 1-based) for transparency
                 t_hit_tp = (first_tp[wins | ties] + 1)
@@ -827,13 +972,19 @@ def forecast_barrier_optimize(
                     'prob_sl_first': prob_loss,
                     'prob_no_hit': prob_neutral,
                     'prob_tie': prob_tie,
-                    'ev': ev_uncond,
-                    'ev_uncond': ev_uncond,
+                    'prob_resolve': prob_resolve,
+                    'ev': ev_val,
+                    'ev_cond': ev_cond,
                     'edge': edge,
-                    'kelly': kelly_uncond,
-                    'kelly_uncond': kelly_uncond,
+                    'kelly': kelly_val,
+                    'kelly_cond': kelly_cond,
+                    'ev_per_bar': ev_per_bar,
+                    'profit_factor': profit_factor,
+                    'utility': utility_val,
                     't_hit_tp_median': t_tp_med,
                     't_hit_sl_median': t_sl_med,
+                    't_hit_resolve_mean': t_res_mean,
+                    't_hit_resolve_median': t_res_med,
                 }
                 out.append(res)
             return out
@@ -845,14 +996,24 @@ def forecast_barrier_optimize(
                 res_list.sort(key=lambda x: x['edge'], reverse=True)
             elif objective_val == 'ev':
                 res_list.sort(key=lambda x: x['ev'], reverse=True)
-            elif objective_val == 'ev_uncond':
-                res_list.sort(key=lambda x: x['ev_uncond'], reverse=True)
+            elif objective_val == 'ev_cond':
+                res_list.sort(key=lambda x: x['ev_cond'], reverse=True)
+            elif objective_val == 'ev_per_bar':
+                res_list.sort(key=lambda x: x['ev_per_bar'], reverse=True)
             elif objective_val == 'kelly':
                 res_list.sort(key=lambda x: x['kelly'], reverse=True)
-            elif objective_val == 'kelly_uncond':
-                res_list.sort(key=lambda x: x['kelly_uncond'], reverse=True)
+            elif objective_val == 'kelly_cond':
+                res_list.sort(key=lambda x: x['kelly_cond'], reverse=True)
             elif objective_val == 'prob_tp_first':
                 res_list.sort(key=lambda x: x['prob_win'], reverse=True)
+            elif objective_val == 'prob_resolve':
+                res_list.sort(key=lambda x: x['prob_resolve'], reverse=True)
+            elif objective_val == 'profit_factor':
+                res_list.sort(key=lambda x: x['profit_factor'], reverse=True)
+            elif objective_val == 'min_loss_prob':
+                res_list.sort(key=lambda x: x['prob_loss'])
+            elif objective_val == 'utility':
+                res_list.sort(key=lambda x: x['utility'], reverse=True)
 
         _sort(results)
 

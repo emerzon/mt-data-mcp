@@ -140,7 +140,7 @@ class TestForecastBarriers(unittest.TestCase):
                 mode="pct",
                 tp_min=0.5, tp_max=1.0, tp_steps=2,
                 sl_min=0.5, sl_max=1.0, sl_steps=2,
-                objective="kelly_uncond",
+                objective="kelly",
                 refine=True,
                 refine_radius=0.4,
                 refine_steps=3,
@@ -153,7 +153,14 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertGreater(len(grid), 4)
         self.assertIn("prob_no_hit", grid[0])
         self.assertIn("t_hit_tp_median", grid[0])
-        kelly_vals = [g["kelly_uncond"] for g in grid]
+        self.assertIn("prob_resolve", grid[0])
+        self.assertIn("ev_cond", grid[0])
+        self.assertIn("kelly_cond", grid[0])
+        self.assertIn("ev_per_bar", grid[0])
+        self.assertIn("profit_factor", grid[0])
+        self.assertIn("utility", grid[0])
+        self.assertIn("t_hit_resolve_median", grid[0])
+        kelly_vals = [g["kelly"] for g in grid]
         self.assertEqual(kelly_vals, sorted(kelly_vals, reverse=True))
 
     def test_forecast_barrier_optimize_summary_truncates_grid(self):
@@ -235,6 +242,35 @@ class TestForecastBarriers(unittest.TestCase):
         for entry in grid:
             self.assertGreaterEqual(entry["rr"], 1.0)
             self.assertLessEqual(entry["rr"], 2.0)
+
+    def test_forecast_barrier_optimize_constraints(self):
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.2, tp_max=0.2, tp_steps=1,
+                sl_min=2.0, sl_max=2.0, sl_steps=1,
+                objective="prob_resolve",
+                min_prob_win=0.5,
+                max_prob_no_hit=0.2,
+                max_median_time=2,
+                return_grid=True,
+            )
+        self.assertTrue(result["success"])
+        grid = result.get("grid")
+        self.assertTrue(grid)
+        for entry in grid:
+            self.assertGreaterEqual(entry["prob_win"], 0.5)
+            self.assertLessEqual(entry["prob_no_hit"], 0.2)
+            if entry.get("t_hit_resolve_median") is not None:
+                self.assertLessEqual(entry["t_hit_resolve_median"], 2)
 
     def test_forecast_barrier_optimize_preset_grid(self):
         self._set_flat_history(1.0)

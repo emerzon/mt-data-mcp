@@ -52,8 +52,7 @@ The server exposes tools that can be called programmatically or via the command-
 The following tools are available via `python cli.py <command>`:
 
 #### Market Data
-- `symbols_list [--search-term TERM] [--limit N]` - Smart search for trading symbols.
-- `symbols_list_groups [--search-term TERM] [--limit N]` - Get available symbol groups.
+- `symbols_list [--list-mode symbols|groups] [--search-term TERM] [--limit N]` - List symbols or group paths.
 - `symbols_describe <symbol>` - Get detailed symbol information.
 - `data_fetch_candles <symbol> [--timeframe TF] [--limit N]` - Get historical OHLCV data.
 - `data_fetch_ticks <symbol> [--output summary|stats|rows] [--limit N]` - Get tick stats (default summary), detailed stats, or raw tick rows.
@@ -63,7 +62,7 @@ The following tools are available via `python cli.py <command>`:
 - `denoise_list_methods` - List available denoising methods and their parameters.
 - `patterns_detect_candlesticks <symbol> [--timeframe TF] [--limit N]` - Detect candlestick patterns.
 - `pivot_compute_points <symbol> [--timeframe TF]` - Compute pivot point levels across all supported methods.
-- `forecast_generate <symbol> [--timeframe TF] [--method METHOD] [--horizon N] ...` - Generate price forecasts.
+- `forecast_generate <symbol> [--timeframe TF] [--library LIB] [--model NAME] [--horizon N] ...` - Generate price forecasts.
 - `forecast_volatility_estimate <symbol> [--timeframe TF] [--horizon N] [--method METHOD] [--proxy PROXY]` - Forecast volatility using direct estimators, GARCH, or general forecasters on a proxy.
 - `report_generate <symbol> [--horizon N] [--template basic|advanced|scalping|intraday|swing|position]` - One-stop consolidated report rendered as Markdown (context, pivots, vol, backtest->best forecast, MC barriers; advanced adds regimes, HAR-RV, conformal). Templates infer timeframes.
   - Default horizons per template: scalping=8 bars, intraday=12, swing=24, position=30, basic/advanced=12. Override with `--horizon` or `--params "horizon=..."` if needed.
@@ -216,14 +215,14 @@ python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 500 --simplify se
 Generate point forecasts for the next `horizon` bars. The server supports lightweight classical models, Monte Carlo/HMM simulation, and optional integrations with modern forecasting frameworks.
 
 - Discover methods: `python cli.py list_capabilities --sections forecast`
-- Run forecast: `python cli.py forecast_generate <symbol> --timeframe <TF> --method <name> --horizon <N> [--params JSON]`
+- Run forecast: `python cli.py forecast_generate <symbol> --timeframe <TF> --library <LIB> --model <NAME> --horizon <N> [--model-params JSON]`
 - Rolling backtest: `python cli.py forecast_backtest_run <symbol> --timeframe <TF> --horizon <N> [--steps S --spacing K --methods ...]`
 - Volatility forecasts: use `forecast_volatility_estimate` with methods like `ewma`, `parkinson`, `har_rv`, `garch`, or general `arima`/`ets` with a `--proxy` (e.g., `log_r2`).
-- **Analog / Pattern Matching**: `forecast_generate ... --method analog` finds historical price patterns similar to recent price action and projects them forward.
+- **Analog / Pattern Matching**: `forecast_generate ... --model analog` finds historical price patterns similar to recent price action and projects them forward.
 
 Classical example
 ```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --method theta --horizon 12 --format json
+python cli.py forecast_generate EURUSD --timeframe H1 --model theta --horizon 12 --format json
 ```
 
 HAR-RV volatility (daily RV from M5 returns)
@@ -235,9 +234,9 @@ python cli.py forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
 Monte Carlo forecasts (distribution + bands)
 ```bash
 # GBM Monte Carlo
-python cli.py forecast_generate EURUSD --timeframe H1 --method mc_gbm --horizon 12 --params "n_sims=2000 seed=7" --format json
+python cli.py forecast_generate EURUSD --timeframe H1 --model mc_gbm --horizon 12 --model-params "n_sims=2000 seed=7" --format json
 # Regime-aware HMM Monte Carlo
-python cli.py forecast_generate EURUSD --timeframe H1 --method hmm_mc --horizon 12 --params "n_states=3 n_sims=3000 seed=7" --format json
+python cli.py forecast_generate EURUSD --timeframe H1 --model hmm_mc --horizon 12 --model-params "n_states=3 n_sims=3000 seed=7" --format json
 ```
 
 Barrier analytics (TP/SL odds from MC paths)
@@ -249,7 +248,7 @@ Barrier analytics (TP/SL odds from MC paths)
 python cli.py forecast_barrier_hit_probabilities --symbol EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --direction long --tp_pct 0.5 --sl_pct 0.3 --params "n_sims=5000 seed=7" --format json
 
-# Optimize TP/SL grid to maximize edge/Kelly/EV (percent mode)
+# Optimize TP/SL grid to maximize edge/kelly/ev/prob_resolve/etc (percent mode)
 # Add --direction long|short to evaluate from the chosen trade perspective
 python cli.py forecast_barrier_optimize --symbol EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --tp_min 0.25 --tp_max 1.5 --tp_steps 7 --sl_min 0.25 --sl_max 2.5 --sl_steps 9 \
@@ -257,7 +256,8 @@ python cli.py forecast_barrier_optimize --symbol EURUSD --timeframe H1 --horizon
 ```
 
 Optional switches: `--grid-style` (fixed/volatility/ratio/preset), `--preset` (scalp/intraday/swing/position),
-`--refine`/`--refine-radius`/`--refine-steps` for the zoom-in pass, and the volatility/ratio knobs described in `docs/FORECAST.md`.
+`--refine`/`--refine-radius`/`--refine-steps` for the zoom-in pass, constraint filters (`--min-prob-win`, `--max-prob-no-hit`,
+`--max-median-time`), and the volatility/ratio knobs described in `docs/FORECAST.md`.
 
 For advanced usage, pattern-based signals, Monte Carlo/HMM details, and barrier analytics, see `docs/FORECAST.md`.
 
@@ -314,22 +314,15 @@ Execute trades and manage portfolio risk directly from the CLI or MCP tools.
 
 #### Account & Positions
 - `trading_account_info` - View balance, equity, margin, and free margin.
-- `trading_positions_get [--symbol SYM] [--ticket ID]` - List open positions.
-- `trading_positions_close [--symbol SYM] [--ticket ID] [--profit-only] [--loss-only]` - Close positions.
-- `trading_positions_modify <ticket> [--sl PRICE] [--tp PRICE]` - Modify SL/TP for an open position.
+- `trading_open_get [--open-kind positions|pending] [--symbol SYM] [--ticket ID]` - List open positions or pending orders.
+- `trading_close [--close-kind positions|pending] [--symbol SYM] [--ticket ID] [--profit-only] [--loss-only]` - Close positions or cancel pending orders.
+- `trading_modify <ticket> [--modify-kind position|pending] [--price PRICE] [--sl PRICE] [--tp PRICE] [--expiration TIME]` - Modify a position or pending order.
 
 #### Orders
-- `trading_orders_place_market <symbol> --volume LOTS --type BUY|SELL [--stop-loss PRICE] [--take-profit PRICE] [--comment TEXT] [--deviation N]` - Place an instant market order.
-- `trading_pending_place <symbol> --volume LOTS --type <TYPE> --price PRICE [--stop-loss PRICE] [--take-profit PRICE] [--expiration "TIME"] [--comment TEXT] [--deviation N]` - Place a pending order (LIMIT/STOP).
-  - Types: `BUYLIMIT`, `BUYSTOP`, `SELLLIMIT`, `SELLSTOP`.
-  - Expiration: `GTC` (default), or time string (e.g., "today 15:00", "2025-12-31").
-- `trading_pending_get` - List active pending orders.
-- `trading_pending_cancel [--ticket ID] [--symbol SYM]` - Cancel pending orders.
-- `trading_pending_modify <ticket> [--price PRICE] [--sl PRICE] [--tp PRICE] [--expiration "TIME"]` - Modify a pending order.
+- `trading_place <symbol> --volume LOTS --order-type TYPE [--place-kind market|pending] [--price PRICE] [--stop-loss PRICE] [--take-profit PRICE] [--expiration TIME] [--comment TEXT] [--deviation N]` - Place a market or pending order.
 
 #### History & Analysis
-- `trading_deals_history [--from DATE] [--to DATE] [--symbol SYM]` - View historical executed deals.
-- `trading_orders_active [--from DATE] [--to DATE]` - View historical order history.
+- `trading_history [--history-kind deals|orders] [--start DATE] [--end DATE] [--symbol SYM] [--limit N]` - View deal or order history.
 - `trading_risk_analyze [--symbol SYM] [--desired-risk-pct PCT] ...` - Portfolio risk analysis and position sizing calculator.
   - Calculate lot size: `trading_risk_analyze --symbol EURUSD --desired-risk-pct 1.0 --proposed-entry 1.05 --proposed-sl 1.045`
 

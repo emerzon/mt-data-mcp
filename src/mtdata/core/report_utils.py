@@ -211,9 +211,7 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
                 'objective': best.get('objective') or grid.get('objective'),
                 'edge': best.get('edge'),
                 'kelly': best.get('kelly'),
-                'kelly_uncond': best.get('kelly_uncond'),
                 'ev': best.get('ev'),
-                'ev_uncond': best.get('ev_uncond'),
                 'prob_tp_first': best.get('prob_tp_first'),
                 'prob_sl_first': best.get('prob_sl_first'),
                 'prob_no_hit': best.get('prob_no_hit'),
@@ -231,7 +229,7 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
                 trimmed.append({
                     'tp': it.get('tp'), 'sl': it.get('sl'),
                     'tp_price': it.get('tp_price'), 'sl_price': it.get('sl_price'),
-                    'edge': it.get('edge'), 'kelly': it.get('kelly'), 'kelly_uncond': it.get('kelly_uncond'), 'ev': it.get('ev'), 'ev_uncond': it.get('ev_uncond'),
+                    'edge': it.get('edge'), 'kelly': it.get('kelly'), 'ev': it.get('ev'),
                     'prob_tp_first': it.get('prob_tp_first'), 'prob_sl_first': it.get('prob_sl_first'), 'prob_no_hit': it.get('prob_no_hit'),
                 })
             if trimmed:

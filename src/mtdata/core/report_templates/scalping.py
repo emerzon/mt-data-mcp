@@ -25,7 +25,7 @@ def template_scalping(
         'sl_min': 4.0, 'sl_max': 30.0, 'sl_steps': 7,
         'top_k': 5,
         # Barrier optimization defaults
-        'objective': 'ev_uncond',
+        'objective': 'ev',
         'params': {'spread_bps': 1.0, 'slippage_bps': 0.5, 'rr_min': 0.7, 'rr_max': 1.6},
     })
     # Choose default timeframe for scalping if not provided

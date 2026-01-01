@@ -22,7 +22,7 @@ def template_swing(
         'sl_min': 0.5, 'sl_max': 3.0, 'sl_steps': 6,
         'top_k': 5,
         # Barrier optimization defaults
-        'objective': 'ev_uncond',
+        'objective': 'ev',
         'params': {'spread_bps': 0.5, 'slippage_bps': 0.2, 'rr_min': 1.0, 'rr_max': 2.5},
     })
     if 'timeframe' not in p:

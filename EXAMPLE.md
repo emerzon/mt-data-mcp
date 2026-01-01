@@ -174,7 +174,7 @@ python cli.py forecast_barrier_hit_probabilities --symbol USDJPY --timeframe M30
   --method mc_gbm --tp_pips 20 --sl_pips 15 --params "n_sims=10000 seed=1" --format json
 ```
 
-Barrier optimization over a grid (maximize edge/Kelly/EV):
+Barrier optimization over a grid (maximize edge/kelly/ev/prob_resolve/etc):
 
 ```bash
 python cli.py forecast_barrier_optimize --symbol EURUSD --timeframe H1 --horizon 12 \
@@ -184,8 +184,9 @@ python cli.py forecast_barrier_optimize --symbol EURUSD --timeframe H1 --horizon
 
 Interpretation tips:
 - edge = P(TP first) − P(SL first)
+- prob_resolve = 1 − P(no hit)
 - Kelly ≈ p − (1−p)/b with p = P(TP first | hit), b = TP/SL payoff ratio
-- EV ≈ p·b − (1−p)
+- EV ≈ P(win)·TP − P(loss)·SL; ev_per_bar normalizes by mean resolve time
 
 ---
 

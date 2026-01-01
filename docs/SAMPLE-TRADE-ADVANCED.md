@@ -102,8 +102,8 @@ python cli.py forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
   --params "n_sims=5000 seed=7" --top-k 5 --return-grid false --output summary --format json
 ```
 
-- Choose a combo by objective (edge/Kelly/EV) subject to constraints:
-  - Min edge ≥ 0.10; prob_no_hit not excessive; median time‑to‑TP ≤ horizon/2.
+- Choose a combo by objective (edge/kelly/ev/ev_cond/ev_per_bar/prob_resolve/profit_factor/min_loss_prob/utility) subject to constraints:
+  - Use `min_prob_win`, `max_prob_no_hit`, and `max_median_time` (bars) to enforce hit-rate and timing limits.
 
 5.2 TP/SL odds for the chosen combo
 

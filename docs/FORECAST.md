@@ -19,11 +19,13 @@ Generates point forecasts for the next `horizon` bars. Optionally returns confid
 Key parameters
 - `symbol`: instrument, e.g. `EURUSD`.
 - `timeframe`: bar timeframe, e.g. `H1`.
-- `method`: one of `naive`, `drift`, `seasonal_naive`, `theta`, `fourier_ols`, `ses`, `holt`, `holt_winters_add`, `holt_winters_mul`, `ets`, `arima`, `sarima`, `mc_gbm`, `hmm_mc`.
+- `library`: forecast library, e.g. `native`, `statsforecast`, `sktime`, `pretrained`, `mlforecast`.
+- `model`: model name within the library (e.g., `theta`, `AutoARIMA`, `ThetaForecaster`).
+- `model_params`: model configuration (JSON or key=value pairs).
 - `horizon`: how many future bars to predict.
 - `indicators`: optional technical indicators to include before forecasting.
 - `denoise`: optional denoising applied pre/post indicators.
-- `target`: `price` or `return` (if supported).
+- `quantity`: `price`, `return`, or `volatility` (if supported).
  - `target_spec` (optional): define a custom target series and aggregation.
    - `base`: a column name present in the data (e.g., `close`, `RSI_14`, `EMA_50`) or alias `typical|hl2|ohlc4|ha_close`.
    - `indicators`: compute indicators first if `base` references them (e.g., `"rsi(14),ema(50)"`).
@@ -37,17 +39,17 @@ Key parameters
    - Note: In this release, exogenous features are consumed by SARIMAX (`arima`/`sarima`). Other adapters continue to run univariate.
 
 CLI examples
-- `python cli.py forecast_generate EURUSD --timeframe H1 --method theta --horizon 12 --format json`
-- `python cli.py forecast_generate EURUSD --timeframe H4 --method holt_winters_add --horizon 8`
+- `python cli.py forecast_generate EURUSD --timeframe H1 --model theta --horizon 12 --format json`
+- `python cli.py forecast_generate EURUSD --timeframe H4 --model holt_winters_add --horizon 8`
 
 Monte Carlo / HMM examples
 
 ```bash
 # GBM Monte Carlo with 2000 simulations
-python cli.py forecast_generate EURUSD --timeframe H1 --method mc_gbm --horizon 12 --params "n_sims=2000 seed=7" --format json
+python cli.py forecast_generate EURUSD --timeframe H1 --model mc_gbm --horizon 12 --model-params "n_sims=2000 seed=7" --format json
 
 # Regime-aware HMM Monte Carlo (3 states)
-python cli.py forecast_generate EURUSD --timeframe H1 --method hmm_mc --horizon 12 --params "n_states=3 n_sims=3000 seed=7" --format json
+python cli.py forecast_generate EURUSD --timeframe H1 --model hmm_mc --horizon 12 --model-params "n_states=3 n_sims=3000 seed=7" --format json
 ```
 
 Outputs
@@ -74,7 +76,8 @@ Estimate probability of hitting TP before SL within a horizon, plus time-to-hit 
 
 Inputs:
 - `tp_abs`/`sl_abs` (absolute prices) OR `tp_pct`/`sl_pct` (percent points, 0.5 => 0.5%) OR `tp_pips`/`sl_pips` (approx pip = 10×point for 5/3-digit FX)
-- `method`: `mc_gbm` or `hmm_mc`, plus `params` (e.g., `n_sims`, `seed`, `n_states`)
+- `method`: `mc_gbm`, `mc_gbm_bb`, `hmm_mc`, `garch`, `bootstrap`, `heston`, `jump_diffusion`, or `auto` (auto returns `method_used` and `auto_reason`)
+- `garch` requires the `arch` package
 
 Example:
 ```bash
@@ -84,8 +87,16 @@ python cli.py forecast_barrier_hit_probabilities --symbol EURUSD --timeframe H1 
 
 Outputs:
 - `prob_tp_first`, `prob_sl_first`, `prob_no_hit`, `edge` (difference)
+- `method_used`/`auto_reason` when `method=auto`
 - `tp_hit_prob_by_t`, `sl_hit_prob_by_t` (cumulative hit curves)
 - `time_to_tp_bars/seconds`, `time_to_sl_bars/seconds` (mean/median)
+
+Auto method selection (simple):
+- Short history -> `mc_gbm_bb` for short horizons (<=12), otherwise `mc_gbm`.
+- Heavy tails/jumps -> `jump_diffusion`.
+- Regime shift in volatility -> `hmm_mc`.
+- Volatility clustering -> `garch` (if available) or `heston`.
+- Non-normal skew without jumps -> `bootstrap`.
 
 ### barrier_optimize
 
@@ -94,7 +105,28 @@ Search a TP/SL grid (percent or pips) to maximize an objective.
 Inputs:
 - `mode`: `pct` or `pips`
 - `tp_min/max/steps`, `sl_min/max/steps`
-- `objective`: `edge` (default), `prob_tp_first`, `kelly`, or `ev`
+- `method`: `mc_gbm`, `mc_gbm_bb`, `hmm_mc`, `garch`, `bootstrap`, `heston`, `jump_diffusion`, or `auto`
+- `objective`: `edge` (default), `prob_tp_first`, `prob_resolve`, `kelly`, `kelly_cond`, `ev`, `ev_cond`, `ev_per_bar`, `profit_factor`, `min_loss_prob`, or `utility`
+- Constraints: `min_prob_win`, `max_prob_no_hit`, `max_median_time` (bars)
+- `garch` requires the `arch` package
+
+Objectives (plain language):
+- `edge`: maximize win probability minus loss probability.
+- `prob_tp_first`: maximize win rate.
+- `prob_resolve`: avoid trades that never hit TP/SL.
+- `kelly`: maximize long-run growth (raw).
+- `kelly_cond`: same, but only on resolved trades.
+- `ev`: maximize average payoff using TP/SL sizes.
+- `ev_cond`: average payoff on resolved trades only.
+- `ev_per_bar`: prefer faster trades (EV per bar).
+- `profit_factor`: maximize win payout vs loss payout.
+- `min_loss_prob`: minimize chance of loss.
+- `utility`: risk-averse growth (log utility).
+
+Constraints (plain language):
+- `min_prob_win`: only keep candidates with enough win rate.
+- `max_prob_no_hit`: drop candidates that often do not resolve.
+- `max_median_time`: drop candidates that take too long to resolve (bars).
 
 Example:
 ```bash
@@ -109,6 +141,7 @@ Optional flags worth knowing:
 - `--vol-window`, `--vol-min-mult`, `--vol-max-mult` control the volatility-driven grid span; `--vol-sl-extra` widens stops relative to targets.
 - `--ratio-min`, `--ratio-max`, `--ratio-steps` generate TP/SL pairs by reward/risk ratios.
 - `--refine` with `--refine-radius` and `--refine-steps` adds a focused zoom around the best coarse result.
+- `--min-prob-win`, `--max-prob-no-hit`, `--max-median-time` filter candidates before ranking.
 
 Example with volatility scaling and refinement:
 ```bash
@@ -118,7 +151,7 @@ python cli.py forecast_barrier_optimize --symbol EURUSD --timeframe H1 --horizon
 ```
 
 Output highlights:
-- `best`: grid point with metrics (edge, kelly, EV, hit probabilities, median times)
+- `best`: grid point with metrics (edge, kelly, EV, conditional metrics, resolve probability, hit probabilities, resolve time stats)
 - `grid`: all grid evaluations
 
 Usage notes:
@@ -189,7 +222,7 @@ The server can integrate with several forecasting frameworks. These are optional
 
 Install: `pip install statsforecast`
 
-Methods:
+Models:
 - `sf_autoarima` — AutoARIMA with seasonal support
 - `sf_theta` — Theta model
 - `sf_autoets` — Automatic ETS (exponential smoothing)
@@ -197,8 +230,8 @@ Methods:
 
 Examples (with optional exogenous):
 ```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --method sf_autoarima --horizon 12 --params "{\"seasonality\":24,\"stepwise\":true}"
-python cli.py forecast_generate EURUSD --timeframe H1 --method sf_autoets   --horizon 12 --params "{\"seasonality\":24}"
+python cli.py forecast_generate EURUSD --timeframe H1 --model sf_autoarima --horizon 12 --model-params "{\"seasonality\":24,\"stepwise\":true}"
+python cli.py forecast_generate EURUSD --timeframe H1 --model sf_autoets   --horizon 12 --model-params "{\"seasonality\":24}"
 # with exogenous features (if provided via --features), the adapter uses X_df and X_future internally
 ```
 
@@ -211,14 +244,14 @@ Install:
 - RandomForest: `pip install mlforecast scikit-learn`
 - LightGBM: `pip install mlforecast lightgbm`
 
-Methods:
+Models:
 - `mlf_rf` — sklearn RandomForestRegressor on lag + rolling features
 - `mlf_lightgbm` — LightGBM regressor on lag + rolling features
 
 Examples (exogenous supported when provided via --features):
 ```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --method mlf_rf         --horizon 12 --params "{\"lags\":[1,2,3,24],\"rolling_agg\":\"mean\",\"n_estimators\":300}"
-python cli.py forecast_generate EURUSD --timeframe H1 --method mlf_lightgbm  --horizon 12 --params "{\"lags\":[1,2,3,24],\"n_estimators\":400,\"learning_rate\":0.05,\"num_leaves\":63}"
+python cli.py forecast_generate EURUSD --timeframe H1 --model mlf_rf         --horizon 12 --model-params "{\"lags\":[1,2,3,24],\"rolling_agg\":\"mean\",\"n_estimators\":300}"
+python cli.py forecast_generate EURUSD --timeframe H1 --model mlf_lightgbm  --horizon 12 --model-params "{\"lags\":[1,2,3,24],\"n_estimators\":400,\"learning_rate\":0.05,\"num_leaves\":63}"
 # features provided via --features are merged into training and future frames
 ```
 
@@ -229,13 +262,13 @@ Notes:
 
 Install: `pip install neuralforecast[torch]`
 
-Methods:
+Models:
 - `nhits`, `nbeatsx`, `tft`, `patchtst`
 
 Examples (past/future covariates supported when provided via --features):
 ```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --method nhits   --horizon 12 --params "{\"max_epochs\":30,\"input_size\":256}"
-python cli.py forecast_generate EURUSD --timeframe H1 --method nbeatsx --horizon 12 --params "{\"max_epochs\":20,\"model_params\":{\"stack_types\":[\"trend\",\"seasonality\"]}}"
+python cli.py forecast_generate EURUSD --timeframe H1 --model nhits   --horizon 12 --model-params "{\"max_epochs\":30,\"input_size\":256}"
+python cli.py forecast_generate EURUSD --timeframe H1 --model nbeatsx --horizon 12 --model-params "{\"max_epochs\":20,\"model_params\":{\"stack_types\":[\"trend\",\"seasonality\"]}}"
 # --features future_covariates=... (e.g., fourier:24,hour,dow) are passed to model predict horizon
 ```
 
@@ -247,13 +280,13 @@ Notes:
 
 - Predict RSI(14) path and return its mean over the horizon:
 ```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --method sarima --horizon 24 \
+python cli.py forecast_generate EURUSD --timeframe H1 --model sarima --horizon 24 \
   --target-spec "{base:'RSI_14',indicators:'rsi(14)',transform:'none',horizon_agg:'mean'}" --format json
 ```
 
 - Predict EMA(50) changes with slope aggregation (normalized per bar):
 ```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --method theta --horizon 24 \
+python cli.py forecast_generate EURUSD --timeframe H1 --model theta --horizon 24 \
   --target-spec "{base:'EMA_50',indicators:'ema(50)',transform:'diff',horizon_agg:'slope',normalize:'per_bar'}" \
   --format json
 ```
@@ -263,8 +296,8 @@ python cli.py forecast_generate EURUSD --timeframe H1 --method theta --horizon 2
 Pass OHLCV+TIs as exogenous regressors with PCA(8) across feature columns:
 
 ```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --method sarima --horizon 24 \
-  --params "{\"p\":1,\"d\":0,\"q\":1,\"seasonality\":24,\"P\":1,\"D\":0,\"Q\":0}" \
+python cli.py forecast_generate EURUSD --timeframe H1 --model sarima --horizon 24 \
+  --model-params "{\"p\":1,\"d\":0,\"q\":1,\"seasonality\":24,\"P\":1,\"D\":0,\"Q\":0}" \
   --features "include=ohlcv,indicators=rsi(14),macd(12,26,9),dimred_method=pca,dimred_params={n_components:8}" \
   --format json
 ```
@@ -276,7 +309,7 @@ Install per model:
 - TimesFM: `pip install timesfm torch`
 - Lag‑Llama: `pip install lag-llama gluonts torch` (optionally `huggingface_hub` for auto ckpt download)
 
-Methods:
+Models:
 - `chronos_bolt` — Amazon Chronos‑Bolt (native Chronos)
 - `timesfm` — Google TimesFM (native)
 - `lag_llama` — Lag‑Llama (native estimator)
@@ -290,55 +323,56 @@ Methods:
 - `gt_mqf2` — GluonTS MQF2 (quick train, torch; quantiles)
 - `gt_npts` — GluonTS NPTS (non-parametric)
 
-Shared params:
+Shared model_params:
 - `context_length`: tail window size to feed
 - `quantiles`: e.g., `[0.05, 0.5, 0.95]` to request prediction quantiles (if supported)
 
 Examples:
 ```bash
 # Chronos‑Bolt with quantiles
-python cli.py forecast_generate EURUSD --timeframe H1 --method chronos_bolt --horizon 12 \
-  --params "{\"context_length\":512,\"quantiles\":[0.05,0.5,0.95]}"
+python cli.py forecast_generate EURUSD --timeframe H1 --model chronos_bolt --horizon 12 \
+  --model-params "{\"context_length\":512,\"quantiles\":[0.05,0.5,0.95]}"
 
 # TimesFM default model
-python cli.py forecast_generate EURUSD --timeframe H1 --method timesfm --horizon 12 \
-  --params "{\"context_length\":512}"
+python cli.py forecast_generate EURUSD --timeframe H1 --model timesfm --horizon 12 \
+  --model-params "{\"context_length\":512}"
 
 # Lag‑Llama native estimator (auto‑download default ckpt)
-python cli.py forecast_generate EURUSD --timeframe H1 --method lag_llama --horizon 12 \
-  --params "{\"context_length\":512}"
+python cli.py forecast_generate EURUSD --timeframe H1 --model lag_llama --horizon 12 \
+  --model-params "{\"context_length\":512}"
 
 # GluonTS DeepAR with 5 epochs on series
-python cli.py forecast_generate EURUSD --timeframe H1 --method gt_deepar --horizon 12 \
-  --params "{\"context_length\":64,\"train_epochs\":5}"
+python cli.py forecast_generate EURUSD --timeframe H1 --model gt_deepar --horizon 12 \
+  --model-params "{\"context_length\":64,\"train_epochs\":5}"
 
 # GluonTS SimpleFeedForward
-python cli.py forecast_generate EURUSD --timeframe H1 --method gt_sfeedforward --horizon 12 \
-  --params "{\"context_length\":64,\"train_epochs\":5}"
+python cli.py forecast_generate EURUSD --timeframe H1 --model gt_sfeedforward --horizon 12 \
+  --model-params "{\"context_length\":64,\"train_epochs\":5}"
 
 # GluonTS Prophet wrapper
-python cli.py forecast_generate EURUSD --timeframe H1 --method gt_prophet --horizon 12 \
-  --params "{\"prophet_params\":{\"seasonality_mode\":\"additive\"}}"
+python cli.py forecast_generate EURUSD --timeframe H1 --model gt_prophet --horizon 12 \
+  --model-params "{\"prophet_params\":{\"seasonality_mode\":\"additive\"}}"
 
 # GluonTS Temporal Fusion Transformer (PyTorch)
-python cli.py forecast_generate EURUSD --timeframe H1 --method gt_tft --horizon 12 \
-  --params "{\"context_length\":128,\"train_epochs\":5}"
+python cli.py forecast_generate EURUSD --timeframe H1 --model gt_tft --horizon 12 \
+  --model-params "{\"context_length\":128,\"train_epochs\":5}"
 
 # GluonTS WaveNet (PyTorch)
-python cli.py forecast_generate EURUSD --timeframe H1 --method gt_wavenet --horizon 12 \
-  --params "{\"context_length\":128,\"train_epochs\":5}"
+python cli.py forecast_generate EURUSD --timeframe H1 --model gt_wavenet --horizon 12 \
+  --model-params "{\"context_length\":128,\"train_epochs\":5}"
 
 # GluonTS DeepNPTS (PyTorch)
-python cli.py forecast_generate EURUSD --timeframe H1 --method gt_deepnpts --horizon 12 \
-  --params "{\"context_length\":128,\"train_epochs\":5}"
+python cli.py forecast_generate EURUSD --timeframe H1 --model gt_deepnpts --horizon 12 \
+  --model-params "{\"context_length\":128,\"train_epochs\":5}"
 
 # GluonTS MQF2 (PyTorch, quantiles)
-python cli.py forecast_generate EURUSD --timeframe H1 --method gt_mqf2 --horizon 12 \
-  --params "{\"context_length\":128,\"train_epochs\":5,\"quantiles\":[0.05,0.5,0.95]}"
+python cli.py forecast_generate EURUSD --timeframe H1 --model gt_mqf2 --horizon 12 \
+  --model-params "{\"context_length\":128,\"train_epochs\":5,\"quantiles\":[0.05,0.5,0.95]}"
 
 # GluonTS NPTS (non-parametric)
-python cli.py forecast_generate EURUSD --timeframe H1 --method gt_npts --horizon 12 \
-  --params "{\"season_length\":1,\"kernel\":\"parzen\",\"window_size\":128}"
+python cli.py forecast_generate EURUSD --timeframe H1 --model gt_npts --horizon 12 \
+  --model-params "{\"season_length\":1,\"kernel\":\"parzen\",\"window_size\":128}"
+```
 
 # Moirai via uni2ts
 
@@ -346,15 +380,12 @@ Install: `pip install uni2ts torch`
 
 Example:
 ```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --method moirai --horizon 12 \
-  --params "{\"context_length\":512,\"variant\":\"1.0-R-small\"}"
+python cli.py forecast_generate EURUSD --timeframe H1 --model moirai --horizon 12 \
+  --model-params "{\"context_length\":512,\"variant\":\"1.0-R-small\"}"
 ```
-
 Notes:
 - The adapter uses uni2ts.get_timeseries_model(variant) for one‑shot inference.
-- Set params.quantiles to request quantile outputs when supported by the variant.
-
-```
+- Set model_params.quantiles to request quantile outputs when supported by the variant.
 
 Notes:
 - Lag‑Llama loads a pre‑trained `.ckpt` (specify via `ckpt_path` or allow auto‑download with `huggingface_hub`).

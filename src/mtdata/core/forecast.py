@@ -119,119 +119,64 @@ def _resolve_sktime_forecaster(model: str) -> Optional[Tuple[str, str]]:
 def forecast_generate(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    method: Optional[str] = None,
-    library: Optional[ForecastLibraryLiteral] = None,
-    model: Optional[str] = None,
+    library: ForecastLibraryLiteral = "native",
+    model: str = "theta",
     horizon: int = 12,
     lookback: Optional[int] = None,
     as_of: Optional[str] = None,
-    params: Optional[Dict[str, Any]] = None,
+    model_params: Optional[Dict[str, Any]] = None,
     ci_alpha: Optional[float] = 0.05,
     quantity: Literal['price','return','volatility'] = 'price',  # type: ignore
-    target: Literal['price','return'] = 'price',  # type: ignore
     denoise: Optional[DenoiseSpec] = None,
     features: Optional[Dict[str, Any]] = None,
     dimred_method: Optional[str] = None,
     dimred_params: Optional[Dict[str, Any]] = None,
     target_spec: Optional[Dict[str, Any]] = None,
-    future_covariates: Optional[List[str]] = None,
-    country: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Fast forecasts for the next `horizon` bars using lightweight methods.
+    """Generate forecasts for the next `horizon` bars using a selected model.
 
-    Delegates to the implementation under `mtdata.forecast.forecast`.
-    
-    Features can include `future_covariates` like 'hour', 'dow', 'month', 'is_holiday' (requires holidays lib).
+    Supports native or library-backed models with optional preprocessing.
+    Delegates to `mtdata.forecast.forecast`.
     """
     try:
         if int(horizon) <= 0:
             return {"error": "horizon must be a positive integer"}
     except Exception:
         return {"error": "horizon must be a positive integer"}
-    # Resolve method selection:
-    # - Backward compatible: `method` can still be provided directly.
-    # - Preferred: (`library`, `model`) selects a method within an optional library without huge CLI enums.
-    #
-    # CLI compatibility: if `--library` is provided but the caller still passes `--method`,
-    # interpret `method` as `model` unless `model` is already provided.
-    if library is not None and model is None and method is not None:
-        model = str(method)
-        method = None
+    lib = str(library or "native").strip().lower()
+    mdl = str(model or "").strip()
+    p = _parse_kv_or_json(model_params)
 
-    resolved_method = (str(method).strip() if method is not None else "")
-    p = dict(params or {})
-
-    # Backward compatibility shorthands (method-only callers):
-    # - sf_* -> statsforecast wrapper + model_name
-    # - skt_* -> sktime wrapper + estimator lookup
-    # - moirai -> sktime MOIRAIForecaster
-    if resolved_method:
-        m0 = resolved_method.strip()
-        m0_l = m0.lower()
-        if m0_l.startswith("sf_"):
-            library = "statsforecast"
-            model = m0[3:]
-            resolved_method = ""
-        elif m0_l.startswith("skt_"):
-            library = "sktime"
-            model = m0[4:]
-            resolved_method = ""
-        elif m0_l == "moirai":
-            library = "sktime"
-            model = "MOIRAIForecaster"
-            resolved_method = ""
-
-    if not resolved_method:
-        lib = (str(library).strip().lower() if library is not None else "")
-        mdl = (str(model).strip() if model is not None else "")
-
-        if lib in ("", "native"):
-            resolved_method = mdl or "theta"
-        elif lib == "statsforecast":
-            resolved_method = "statsforecast"
-            if mdl:
-                # Accept either AutoARIMA / autoarima; normalize to StatsForecast model_name.
-                p.setdefault("model_name", mdl)
-        elif lib == "sktime":
-            # If model looks like a dotted estimator path, use generic `sktime` wrapper.
-            if "." in mdl:
-                resolved_method = "sktime"
-                p.setdefault("estimator", mdl)
-            else:
-                # Resolve by closest matching forecaster class name.
-                # Examples:
-                # - "theta" -> ThetaForecaster
-                # - "MOIRAI" -> MOIRAIForecaster
-                query = mdl.strip() if mdl else "ThetaForecaster"
-                found = _resolve_sktime_forecaster(query)
-                if found:
-                    _, dotted = found
-                    resolved_method = "sktime"
-                    p.setdefault("estimator", dotted)
-                else:
-                    # Fall back to the generic wrapper with an explicit dotted path if possible.
-                    raise ValueError(
-                        f"Unknown sktime forecaster '{query}'. "
-                        "Run `python cli.py forecast_generate --library sktime` to list available forecasters."
-                    )
-        elif lib == "pretrained":
-            resolved_method = mdl or "chronos2"
-        elif lib == "mlforecast":
-            resolved_method = "mlforecast"
-            if mdl:
-                p.setdefault("model", mdl)
+    if lib in ("", "native"):
+        resolved_method = mdl or "theta"
+    elif lib == "statsforecast":
+        if not mdl:
+            return {"error": "model is required for library=statsforecast"}
+        resolved_method = "statsforecast"
+        p.setdefault("model_name", mdl)
+    elif lib == "sktime":
+        query = mdl.strip() if mdl else "ThetaForecaster"
+        if "." in query:
+            resolved_method = "sktime"
+            p.setdefault("estimator", query)
         else:
-            # Unknown library: fall back safely.
-            resolved_method = mdl or "theta"
+            found = _resolve_sktime_forecaster(query)
+            if not found:
+                return {"error": f"Unknown sktime forecaster '{query}'"}
+            _, dotted = found
+            resolved_method = "sktime"
+            p.setdefault("estimator", dotted)
+    elif lib == "pretrained":
+        resolved_method = mdl or "chronos2"
+    elif lib == "mlforecast":
+        if not mdl:
+            return {"error": "model is required for library=mlforecast"}
+        resolved_method = "mlforecast"
+        p.setdefault("model", mdl)
+    else:
+        return {"error": f"Unsupported library: {library}"}
 
     features = features or {}
-    if future_covariates:
-        # If passed as list, join them for the features dict string/list support
-        if isinstance(features, dict):
-            features['future_covariates'] = future_covariates
-    if country:
-        if isinstance(features, dict):
-            features['country'] = country
 
     return _forecast_impl(
         symbol=symbol,
@@ -243,7 +188,7 @@ def forecast_generate(
         params=p,
         ci_alpha=ci_alpha,
         quantity=quantity,    # type: ignore[arg-type]
-        target=target,        # type: ignore[arg-type]
+        target="price",       # deprecated in core; keep fixed here
         denoise=denoise,
         features=features,
         dimred_method=dimred_method,
@@ -358,7 +303,7 @@ def forecast_list_library_models(
             "note": "Use `--model <dotted sklearn/lightgbm regressor class>` plus optional constructor kwargs in --model-params (or use --set model.<k>=<v>).",
             "usage": [
                 "python cli.py forecast_generate SYMBOL --library mlforecast --model sklearn.ensemble.RandomForestRegressor --model-params \"n_estimators=200\"",
-                "python cli.py forecast_generate SYMBOL --method mlf_rf",
+                "python cli.py forecast_generate SYMBOL --library native --model mlf_rf",
             ],
         }
 
@@ -789,7 +734,19 @@ def forecast_barrier_optimize(
     sl_steps: int = 9,
     params: Optional[Dict[str, Any]] = None,
     denoise: Optional[DenoiseSpec] = None,
-    objective: Literal['edge','prob_tp_first','kelly','ev','ev_uncond','kelly_uncond'] = 'edge',  # type: ignore
+    objective: Literal[
+        'edge',
+        'prob_tp_first',
+        'prob_resolve',
+        'kelly',
+        'kelly_cond',
+        'ev',
+        'ev_cond',
+        'ev_per_bar',
+        'profit_factor',
+        'min_loss_prob',
+        'utility',
+    ] = 'edge',  # type: ignore
     return_grid: bool = True,
     top_k: Optional[int] = None,
     output: Literal['full','summary'] = 'full',  # type: ignore
@@ -808,6 +765,9 @@ def forecast_barrier_optimize(
     refine: bool = False,
     refine_radius: float = 0.3,
     refine_steps: int = 5,
+    min_prob_win: Optional[float] = None,
+    max_prob_no_hit: Optional[float] = None,
+    max_median_time: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Optimize TP/SL barriers with support for presets, volatility scaling, ratios, and two-stage refinement."""
     from ..forecast.barriers import forecast_barrier_optimize as _impl
@@ -845,4 +805,7 @@ def forecast_barrier_optimize(
         refine=refine,
         refine_radius=refine_radius,
         refine_steps=refine_steps,
+        min_prob_win=min_prob_win,
+        max_prob_no_hit=max_prob_no_hit,
+        max_median_time=max_median_time,
     )
