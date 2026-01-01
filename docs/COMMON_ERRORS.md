@@ -2,6 +2,12 @@
 
 This document explains common errors you might encounter when using the MetaTrader MCP server and how to fix them.
 
+**Related Documentation:**
+- [README.md](../README.md) - Main project overview and setup
+- [FORECAST.md](FORECAST.md) - Forecasting parameters and usage
+- [EXAMPLE.md](EXAMPLE.md) - Working command examples
+- [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) - Barrier analytics details
+
 ## Validation Errors
 
 ### "Field required" Error
@@ -58,12 +64,13 @@ patterns_detect(symbol="EURUSD", mode="classic", limit=500)
 # Get account info  - no parameters needed
 trading_account_info()
 
-# Get positions - symbol is optional
-trading_positions_get()  # All positions
-trading_positions_get(symbol="EURUSD")  # Specific symbol
+# Get open positions or pending orders - symbol is optional
+trading_open_get()  # All positions
+trading_open_get(open_kind="pending")  # Pending orders
+trading_open_get(symbol="EURUSD")  # Specific symbol
 
 # Close position - ticket is required
-trading_positions_close(ticket=123456)
+trading_close(ticket=123456)
 
 # Risk analysis - all parameters optional
 trading_risk_analyze()  # Analyze current portfolio

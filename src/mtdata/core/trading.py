@@ -3,13 +3,13 @@
 
 import math
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Tuple, Union, List, Dict, Any
+from typing import Optional, Tuple, Union, List, Dict, Any, Literal
 
 from .server import mcp
 from ..utils.mt5 import _auto_connect_wrapper
 from .config import mt5_config
 from .constants import DEFAULT_ROW_LIMIT
-from ..utils.utils import _normalize_limit
+from ..utils.utils import _normalize_limit, _parse_start_datetime
 
 
 ExpirationValue = Union[int, float, str, datetime]
@@ -275,202 +275,138 @@ def trading_account_info() -> dict:
 
 
 @mcp.tool()
-def trading_deals_history(
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
+def trading_history(
+    history_kind: Literal["deals", "orders"] = "deals",  # type: ignore
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     symbol: Optional[str] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
 ) -> List[Dict[str, Any]]:
-    """Get historical deals as tabular data. Date input in format: 'YYYY-MM-DD'.
-
-    - limit: Maximum rows returned (most recent first).
-    """
+    """Get deal or order history as tabular data."""
     import MetaTrader5 as mt5
     import pandas as pd
-    from datetime import datetime
 
     @_auto_connect_wrapper
-    def _get_deals():
+    def _get_history():
         try:
-            if from_date:
-                from_dt = datetime.strptime(from_date, '%Y-%m-%d')
+            if start:
+                from_dt = _parse_start_datetime(start)
+                if not from_dt:
+                    return {"error": "Invalid start time."}
             else:
                 from_dt = datetime(2020, 1, 1)
 
-            if to_date:
-                to_dt = datetime.strptime(to_date, '%Y-%m-%d')
+            if end:
+                to_dt = _parse_start_datetime(end)
+                if not to_dt:
+                    return {"error": "Invalid end time."}
             else:
-                to_dt = datetime.now()
+                to_dt = datetime.utcnow()
 
-            if symbol:
-                deals = mt5.history_deals_get(from_dt, to_dt, symbol=symbol)
+            if from_dt > to_dt:
+                return {"error": "start must be before end."}
+
+            kind = str(history_kind or "deals").strip().lower()
+            if kind not in ("deals", "orders"):
+                return {"error": "history_kind must be 'deals' or 'orders'."}
+
+            if kind == "deals":
+                if symbol:
+                    rows = mt5.history_deals_get(from_dt, to_dt, symbol=symbol)
+                else:
+                    rows = mt5.history_deals_get(from_dt, to_dt)
+                if rows is None or len(rows) == 0:
+                    return {"message": "No deals found"}
+                df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
+                if 'time' in df.columns:
+                    df['time'] = pd.to_datetime(df['time'], unit='s')
+                sort_col = 'time' if 'time' in df.columns else None
             else:
-                deals = mt5.history_deals_get(from_dt, to_dt)
-
-            if deals is None or len(deals) == 0:
-                return {"message": "No deals found"}
-
-            df = pd.DataFrame(list(deals), columns=deals[0]._asdict().keys())
-            df['time'] = pd.to_datetime(df['time'], unit='s')
-            limit_value = _normalize_limit(limit)
-            if limit_value and len(df) > limit_value:
-                df = df.sort_values('time').tail(limit_value)
-            return df.to_dict(orient='records')
-
-        except Exception as e:
-            return {"error": str(e)}
-
-    return _get_deals()
-
-
-@mcp.tool()
-def trading_orders_active(
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    symbol: Optional[str] = None,
-    limit: Optional[int] = DEFAULT_ROW_LIMIT,
-) -> List[Dict[str, Any]]:
-    """Get historical orders as tabular data. Date input in format: 'YYYY-MM-DD'
-
-    - limit: Maximum rows returned (most recent first).
-    """
-    import MetaTrader5 as mt5
-    import pandas as pd
-    from datetime import datetime
-
-    @_auto_connect_wrapper
-    def _get_orders():
-        try:
-            if from_date:
-                from_dt = datetime.strptime(from_date, '%Y-%m-%d')
-            else:
-                from_dt = datetime(2020, 1, 1)
-
-            if to_date:
-                to_dt = datetime.strptime(to_date, '%Y-%m-%d')
-            else:
-                to_dt = datetime.now()
-
-            if symbol:
-                orders = mt5.history_orders_get(from_dt, to_dt, symbol=symbol)
-            else:
-                orders = mt5.history_orders_get(from_dt, to_dt)
-
-            if orders is None or len(orders) == 0:
-                return {"message": "No orders found"}
-
-            df = pd.DataFrame(list(orders), columns=orders[0]._asdict().keys())
-            df['time_setup'] = pd.to_datetime(df['time_setup'], unit='s')
-            if 'time_done' in df.columns:
-                df['time_done'] = pd.to_datetime(df['time_done'], unit='s')
-            limit_value = _normalize_limit(limit)
-            if limit_value and len(df) > limit_value:
+                if symbol:
+                    rows = mt5.history_orders_get(from_dt, to_dt, symbol=symbol)
+                else:
+                    rows = mt5.history_orders_get(from_dt, to_dt)
+                if rows is None or len(rows) == 0:
+                    return {"message": "No orders found"}
+                df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
                 if 'time_setup' in df.columns:
-                    df = df.sort_values('time_setup').tail(limit_value)
+                    df['time_setup'] = pd.to_datetime(df['time_setup'], unit='s')
+                if 'time_done' in df.columns:
+                    df['time_done'] = pd.to_datetime(df['time_done'], unit='s')
+                sort_col = 'time_setup' if 'time_setup' in df.columns else None
+
+            limit_value = _normalize_limit(limit)
+            if limit_value and len(df) > limit_value:
+                if sort_col:
+                    df = df.sort_values(sort_col).tail(limit_value)
                 else:
                     df = df.tail(limit_value)
             return df.to_dict(orient='records')
-
         except Exception as e:
             return {"error": str(e)}
 
-    return _get_orders()
+    return _get_history()
 
 
 @mcp.tool()
-def trading_positions_get(
+def trading_open_get(
+    open_kind: Literal["positions", "pending"] = "positions",  # type: ignore
     symbol: Optional[str] = None,
     ticket: Optional[Union[int, str]] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
 ) -> List[Dict[str, Any]]:
-    """Get open positions.
-    
-    Parameters:
-    - symbol: Filter by symbol name.
-    - ticket: Filter by position ticket ID.
-    - limit: Maximum rows returned (most recent first).
-    
-    If neither is provided, returns all open positions.
-    """
+    """Get open positions or pending orders."""
     import MetaTrader5 as mt5
     import pandas as pd
 
     @_auto_connect_wrapper
-    def _get_positions():
+    def _get_open():
         try:
-            if ticket is not None:
-                t_int = int(ticket)
-                positions = mt5.positions_get(ticket=t_int)
-                if positions is None or len(positions) == 0:
-                    return [{"message": f"No position found with ID {ticket}"}]
-            elif symbol is not None:
-                positions = mt5.positions_get(symbol=symbol)
-                if positions is None or len(positions) == 0:
-                    return [{"message": f"No open positions for {symbol}"}]
-            else:
-                positions = mt5.positions_get()
-                if positions is None or len(positions) == 0:
-                    return [{"message": "No open positions"}]
+            kind = str(open_kind or "positions").strip().lower()
+            if kind not in ("positions", "pending"):
+                return {"error": "open_kind must be 'positions' or 'pending'."}
 
-            df = pd.DataFrame(list(positions), columns=positions[0]._asdict().keys())
-            if 'time' in df.columns:
-                df['time'] = pd.to_datetime(df['time'], unit='s')
-            limit_value = _normalize_limit(limit)
-            if limit_value and len(df) > limit_value:
+            if kind == "positions":
+                if ticket is not None:
+                    t_int = int(ticket)
+                    rows = mt5.positions_get(ticket=t_int)
+                    if rows is None or len(rows) == 0:
+                        return [{"message": f"No position found with ID {ticket}"}]
+                elif symbol is not None:
+                    rows = mt5.positions_get(symbol=symbol)
+                    if rows is None or len(rows) == 0:
+                        return [{"message": f"No open positions for {symbol}"}]
+                else:
+                    rows = mt5.positions_get()
+                    if rows is None or len(rows) == 0:
+                        return [{"message": "No open positions"}]
+                df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
                 if 'time' in df.columns:
-                    df = df.sort_values('time').tail(limit_value)
-                else:
-                    df = df.head(limit_value)
-            return df.to_dict(orient='records')
-
-        except Exception as e:
-            return [{"error": str(e)}]
-
-    return _get_positions()
-
-
-@mcp.tool()
-def trading_pending_get(
-    symbol: Optional[str] = None,
-    ticket: Optional[Union[int, str]] = None,
-    limit: Optional[int] = DEFAULT_ROW_LIMIT,
-) -> List[Dict[str, Any]]:
-    """Get pending orders.
-    
-    Parameters:
-    - symbol: Filter by symbol name.
-    - ticket: Filter by order ticket ID.
-    - limit: Maximum rows returned (most recent first).
-    
-    If neither is provided, returns all pending orders.
-    """
-    import MetaTrader5 as mt5
-    import pandas as pd
-
-    @_auto_connect_wrapper
-    def _get_pending():
-        try:
-            if ticket is not None:
-                t_int = int(ticket)
-                orders = mt5.orders_get(ticket=t_int)
-                if orders is None or len(orders) == 0:
-                    return [{"message": f"No pending order found with ID {ticket}"}]
-            elif symbol is not None:
-                orders = mt5.orders_get(symbol=symbol)
-                if orders is None or len(orders) == 0:
-                    return [{"message": f"No pending orders for {symbol}"}]
+                    df['time'] = pd.to_datetime(df['time'], unit='s')
+                sort_col = 'time' if 'time' in df.columns else None
             else:
-                orders = mt5.orders_get()
-                if orders is None or len(orders) == 0:
-                    return [{"message": "No pending orders"}]
+                if ticket is not None:
+                    t_int = int(ticket)
+                    rows = mt5.orders_get(ticket=t_int)
+                    if rows is None or len(rows) == 0:
+                        return [{"message": f"No pending order found with ID {ticket}"}]
+                elif symbol is not None:
+                    rows = mt5.orders_get(symbol=symbol)
+                    if rows is None or len(rows) == 0:
+                        return [{"message": f"No pending orders for {symbol}"}]
+                else:
+                    rows = mt5.orders_get()
+                    if rows is None or len(rows) == 0:
+                        return [{"message": "No pending orders"}]
+                df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
+                if 'time_setup' in df.columns:
+                    df['time_setup'] = pd.to_datetime(df['time_setup'], unit='s')
+                sort_col = 'time_setup' if 'time_setup' in df.columns else None
 
-            df = pd.DataFrame(list(orders), columns=orders[0]._asdict().keys())
-            if 'time_setup' in df.columns:
-                df['time_setup'] = pd.to_datetime(df['time_setup'], unit='s')
             limit_value = _normalize_limit(limit)
             if limit_value and len(df) > limit_value:
-                if 'time_setup' in df.columns:
-                    df = df.sort_values('time_setup').tail(limit_value)
+                if sort_col:
+                    df = df.sort_values(sort_col).tail(limit_value)
                 else:
                     df = df.head(limit_value)
             return df.to_dict(orient='records')
@@ -478,29 +414,19 @@ def trading_pending_get(
         except Exception as e:
             return [{"error": str(e)}]
 
-    return _get_pending()
+    return _get_open()
 
 
-@mcp.tool()
-def trading_orders_place_market(
+def _place_market_order(
     symbol: str,
     volume: float,
-    type: str,
+    order_type: str,
     stop_loss: Optional[Union[int, float]] = None,
     take_profit: Optional[Union[int, float]] = None,
     comment: Optional[str] = None,
     deviation: int = 20,
 ) -> dict:
-    """
-    Place a market order. Parameters:
-        symbol: Symbol name (e.g., 'EURUSD')
-        volume: Lot size. (e.g. 1.5)
-        type: Order type ('BUY' or 'SELL')
-        stop_loss (optional): Stop loss price.
-        take_profit (optional): Take profit price.
-        comment (optional): Order comment (tag) attached to the MT5 request.
-        deviation (optional): Max slippage in points (MT5 request 'deviation').
-    """
+    """Internal helper to place a market order."""
     import MetaTrader5 as mt5
 
     @_auto_connect_wrapper
@@ -522,14 +448,14 @@ def trading_orders_place_market(
             if current_tick is None:
                 return {"error": f"Failed to get current price for {symbol}"}
 
-            # Normalize and validate requested order side
-            t = (type or "").strip().upper()
+            # Normalize and validate requested order type
+            t = (order_type or "").strip().upper()
             if t in ("BUY", "LONG"):
                 side = "BUY"
             elif t in ("SELL", "SHORT"):
                 side = "SELL"
             else:
-                return {"error": f"Unsupported type '{type}'. Use BUY or SELL."}
+                return {"error": f"Unsupported order_type '{order_type}'. Use BUY or SELL."}
 
             deviation_validated, deviation_error = _validate_deviation(deviation)
             if deviation_error:
@@ -572,7 +498,8 @@ def trading_orders_place_market(
                 if side == "SELL" and norm_tp >= price:
                     return {"error": f"take_profit must be below entry for SELL orders. tp={norm_tp}, price={price}"}
 
-            # Place market order without TP/SL first (TRADE_ACTION_DEAL doesn't reliably support them)
+            # Place market order without TP/SL first (TRADE_ACTION_DEAL doesn't
+            # reliably support them)
             request_comment = _normalize_trade_comment(comment, default="MCP order")
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,
@@ -586,7 +513,6 @@ def trading_orders_place_market(
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": mt5.ORDER_FILLING_IOC,
             }
-
             result = mt5.order_send(request)
             if result is None:
                 # Surface MetaTrader last_error when available for easier debugging
@@ -595,7 +521,6 @@ def trading_orders_place_market(
                 except Exception:
                     err = None
                 return {"error": "Failed to send order", "last_error": err}
-
             if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
                 return {
                     "error": "Failed to send order",
@@ -661,33 +586,18 @@ def trading_orders_place_market(
     return _place_market_order()
 
 
-
-@mcp.tool()
-def trading_pending_place(
+def _place_pending_order(
     symbol: str,
     volume: float,
-    type: str,
-    price: float,
-    stop_loss: Optional[Union[int, float]] = 0,
-    take_profit: Optional[Union[int, float]] = 0,
+    order_type: str,
+    price: Union[int, float],
+    stop_loss: Optional[Union[int, float]] = None,
+    take_profit: Optional[Union[int, float]] = None,
     expiration: Optional[ExpirationValue] = None,
     comment: Optional[str] = None,
     deviation: int = 20,
 ) -> dict:
-    """
-    Place a pending order. Parameters:
-        symbol: Symbol name (e.g., 'EURUSD')
-        volume: Lot size. (e.g. 1.5)
-        type: Order type ('BUY', 'SELL').
-        price: Pending order price.
-        stop_loss (optional): Stop loss price.
-        take_profit (optional): Take profit price.
-        expiration (optional): Accepts GTC tokens (GTC/GOOD_TILL_CANCEL/...), ISO datetime,
-            numeric epoch seconds, or natural language via dateparser (e.g., 'tomorrow 14:00', 'in 2 hours').
-            Use 0 or 'GTC' to submit GTC orders.
-        comment (optional): Order comment (tag) attached to the MT5 request.
-        deviation (optional): Max slippage in points (MT5 request 'deviation').
-    """
+    """Internal helper to place a pending order."""
     import MetaTrader5 as mt5
 
     @_auto_connect_wrapper
@@ -714,7 +624,7 @@ def trading_pending_place(
                 return {"error": deviation_error}
 
             # Normalize and validate requested order type
-            t = (type or "").strip().upper()
+            t = (order_type or "").strip().upper()
             explicit_map = {
                 "BUYLIMIT": mt5.ORDER_TYPE_BUY_LIMIT,
                 "BUY_LIMIT": mt5.ORDER_TYPE_BUY_LIMIT,
@@ -725,16 +635,6 @@ def trading_pending_place(
                 "SELLSTOP": mt5.ORDER_TYPE_SELL_STOP,
                 "SELL_STOP": mt5.ORDER_TYPE_SELL_STOP,
             }
-
-            order_type = None
-            if t in explicit_map:
-                order_type = explicit_map[t]
-            elif t in ("BUY", "LONG"):
-                order_type = mt5.ORDER_TYPE_BUY_LIMIT if price < current_price.ask else mt5.ORDER_TYPE_BUY_STOP
-            elif t in ("SELL", "SHORT"):
-                order_type = mt5.ORDER_TYPE_SELL_LIMIT if price > current_price.bid else mt5.ORDER_TYPE_SELL_STOP
-            else:
-                return {"error": f"Unsupported type '{type}'. Use one of: BUY, SELL, BUYLIMIT, BUYSTOP, SELLLIMIT, SELLSTOP."}
 
             # Basic side/price sanity checks for explicit pending types
             bid = float(getattr(current_price, "bid", 0.0) or 0.0)
@@ -759,37 +659,49 @@ def trading_pending_place(
                     return None
 
             norm_price = _normalize_price(price)
+            if norm_price is None:
+                return {"error": "price must be a finite number"}
+
+            order_type_value = None
+            if t in explicit_map:
+                order_type_value = explicit_map[t]
+            elif t in ("BUY", "LONG"):
+                order_type_value = mt5.ORDER_TYPE_BUY_LIMIT if norm_price < ask else mt5.ORDER_TYPE_BUY_STOP
+            elif t in ("SELL", "SHORT"):
+                order_type_value = mt5.ORDER_TYPE_SELL_LIMIT if norm_price > bid else mt5.ORDER_TYPE_SELL_STOP
+            else:
+                return {"error": f"Unsupported order_type '{order_type}'. Use BUY/SELL or explicit pending types."}
             norm_sl = _normalize_price(stop_loss) if stop_loss not in (None, 0) else None
             norm_tp = _normalize_price(take_profit) if take_profit not in (None, 0) else None
 
-            if order_type == mt5.ORDER_TYPE_BUY_LIMIT and not (price < ask):
-                return {"error": f"Price must be below ask for BUYLIMIT. price={price}, ask={ask}"}
-            if order_type == mt5.ORDER_TYPE_BUY_STOP and not (price > ask):
-                return {"error": f"Price must be above ask for BUYSTOP. price={price}, ask={ask}"}
-            if order_type == mt5.ORDER_TYPE_SELL_LIMIT and not (price > bid):
-                return {"error": f"Price must be above bid for SELLLIMIT. price={price}, bid={bid}"}
-            if order_type == mt5.ORDER_TYPE_SELL_STOP and not (price < bid):
-                return {"error": f"Price must be below bid for SELLSTOP. price={price}, bid={bid}"}
+            if order_type_value == mt5.ORDER_TYPE_BUY_LIMIT and not (norm_price < ask):
+                return {"error": f"Price must be below ask for BUYLIMIT. price={norm_price}, ask={ask}"}
+            if order_type_value == mt5.ORDER_TYPE_BUY_STOP and not (norm_price > ask):
+                return {"error": f"Price must be above ask for BUYSTOP. price={norm_price}, ask={ask}"}
+            if order_type_value == mt5.ORDER_TYPE_SELL_LIMIT and not (norm_price > bid):
+                return {"error": f"Price must be above bid for SELLLIMIT. price={norm_price}, bid={bid}"}
+            if order_type_value == mt5.ORDER_TYPE_SELL_STOP and not (norm_price < bid):
+                return {"error": f"Price must be below bid for SELLSTOP. price={norm_price}, bid={bid}"}
 
             normalized_expiration, expiration_specified = _normalize_pending_expiration(expiration)
 
             # SL/TP sanity relative to entry
             if norm_sl is not None:
-                if order_type in (mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP) and norm_sl >= norm_price:
+                if order_type_value in (mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP) and norm_sl >= norm_price:
                     return {"error": f"stop_loss must be below entry for BUY orders. sl={norm_sl}, price={norm_price}"}
-                if order_type in (mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP) and norm_sl <= norm_price:
+                if order_type_value in (mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP) and norm_sl <= norm_price:
                     return {"error": f"stop_loss must be above entry for SELL orders. sl={norm_sl}, price={norm_price}"}
             if norm_tp is not None:
-                if order_type in (mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP) and norm_tp <= norm_price:
+                if order_type_value in (mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP) and norm_tp <= norm_price:
                     return {"error": f"take_profit must be above entry for BUY orders. tp={norm_tp}, price={norm_price}"}
-                if order_type in (mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP) and norm_tp >= norm_price:
+                if order_type_value in (mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP) and norm_tp >= norm_price:
                     return {"error": f"take_profit must be below entry for SELL orders. tp={norm_tp}, price={norm_price}"}
 
             request = {
                 "action": mt5.TRADE_ACTION_PENDING,
                 "symbol": symbol,
                 "volume": volume_validated,
-                "type": order_type,
+                "type": order_type_value,
                 "price": norm_price,
                 "sl": norm_sl or 0.0,
                 "tp": norm_tp or 0.0,
@@ -845,27 +757,68 @@ def trading_pending_place(
     return _place_pending_order()
 
 
-
 @mcp.tool()
-def trading_positions_modify(
-    id: Union[int, str],
+def trading_place(
+    symbol: str,
+    volume: float,
+    order_type: str,
+    place_kind: Literal["market", "pending"] = "market",  # type: ignore
+    price: Optional[Union[int, float]] = None,
+    stop_loss: Optional[Union[int, float]] = None,
+    take_profit: Optional[Union[int, float]] = None,
+    expiration: Optional[ExpirationValue] = None,
+    comment: Optional[str] = None,
+    deviation: int = 20,
+) -> dict:
+    """Place a market or pending order."""
+    kind = str(place_kind or "market").strip().lower()
+    if kind not in ("market", "pending"):
+        return {"error": "place_kind must be 'market' or 'pending'."}
+    if kind == "market":
+        if price not in (None, 0):
+            return {"error": "price is only used for pending orders."}
+        if expiration is not None:
+            return {"error": "expiration is only used for pending orders."}
+        return _place_market_order(
+            symbol=symbol,
+            volume=volume,
+            order_type=order_type,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            comment=comment,
+            deviation=deviation,
+        )
+    if price is None:
+        return {"error": "price is required for pending orders."}
+    return _place_pending_order(
+        symbol=symbol,
+        volume=volume,
+        order_type=order_type,
+        price=price,
+        stop_loss=stop_loss,
+        take_profit=take_profit,
+        expiration=expiration,
+        comment=comment,
+        deviation=deviation,
+    )
+
+
+def _modify_position(
+    ticket: Union[int, str],
     stop_loss: Optional[Union[int, float]] = None,
     take_profit: Optional[Union[int, float]] = None,
     comment: Optional[str] = None,
 ) -> dict:
-    """Modify an open position by ID.
-
-    - comment: Order comment (tag) attached to the MT5 request.
-    """
+    """Internal helper to modify a position by ticket."""
     import MetaTrader5 as mt5
 
     @_auto_connect_wrapper
     def _modify_position():
         try:
-            ticket = int(id)
-            positions = mt5.positions_get(ticket=ticket)
+            ticket_id = int(ticket)
+            positions = mt5.positions_get(ticket=ticket_id)
             if positions is None or len(positions) == 0:
-                return {"error": f"Position {id} not found"}
+                return {"error": f"Position {ticket} not found"}
 
             position = positions[0]
 
@@ -906,7 +859,7 @@ def trading_positions_modify(
 
             request = {
                 "action": mt5.TRADE_ACTION_SLTP,
-                "position": ticket,
+                "position": ticket_id,
                 "sl": norm_sl,
                 "tp": norm_tp,
                 "magic": 234000,
@@ -947,36 +900,31 @@ def trading_positions_modify(
     return _modify_position()
 
 
-
-@mcp.tool()
-def trading_pending_modify(
-    id: Union[int, str],
+def _modify_pending_order(
+    ticket: Union[int, str],
     price: Optional[Union[int, float]] = None,
     stop_loss: Optional[Union[int, float]] = None,
     take_profit: Optional[Union[int, float]] = None,
     expiration: Optional[ExpirationValue] = None,
     comment: Optional[str] = None,
 ) -> dict:
-    """Modify a pending order by ID.
-
-    - comment: Order comment (tag) attached to the MT5 request.
-    """
+    """Internal helper to modify a pending order by ticket."""
     import MetaTrader5 as mt5
 
     @_auto_connect_wrapper
     def _modify_pending_order():
         try:
-            ticket = int(id)
-            orders = mt5.orders_get(ticket=ticket)
+            ticket_id = int(ticket)
+            orders = mt5.orders_get(ticket=ticket_id)
             if orders is None or len(orders) == 0:
-                return {"error": f"Pending order {id} not found"}
+                return {"error": f"Pending order {ticket} not found"}
 
             order = orders[0]
             normalized_expiration, expiration_specified = _normalize_pending_expiration(expiration)
 
             request = {
                 "action": mt5.TRADE_ACTION_MODIFY,
-                "order": ticket,
+                "order": ticket_id,
                 "price": price if price is not None else order.price_open,
                 "sl": stop_loss if stop_loss is not None else order.sl,
                 "tp": take_profit if take_profit is not None else order.tp,
@@ -1031,9 +979,42 @@ def trading_pending_modify(
     return _modify_pending_order()
 
 
-
 @mcp.tool()
-def trading_positions_close(
+def trading_modify(
+    ticket: Union[int, str],
+    modify_kind: Literal["position", "pending"] = "position",  # type: ignore
+    price: Optional[Union[int, float]] = None,
+    stop_loss: Optional[Union[int, float]] = None,
+    take_profit: Optional[Union[int, float]] = None,
+    expiration: Optional[ExpirationValue] = None,
+    comment: Optional[str] = None,
+) -> dict:
+    """Modify an open position or pending order by ticket."""
+    kind = str(modify_kind or "position").strip().lower()
+    if kind not in ("position", "pending"):
+        return {"error": "modify_kind must be 'position' or 'pending'."}
+    if kind == "position":
+        if price is not None:
+            return {"error": "price is only used for pending orders."}
+        if expiration is not None:
+            return {"error": "expiration is only used for pending orders."}
+        return _modify_position(
+            ticket=ticket,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            comment=comment,
+        )
+    return _modify_pending_order(
+        ticket=ticket,
+        price=price,
+        stop_loss=stop_loss,
+        take_profit=take_profit,
+        expiration=expiration,
+        comment=comment,
+    )
+
+
+def _close_positions(
     ticket: Optional[Union[int, str]] = None,
     symbol: Optional[str] = None,
     profit_only: bool = False,
@@ -1041,20 +1022,9 @@ def trading_positions_close(
     comment: Optional[str] = None,
     deviation: int = 20,
 ) -> dict:
-    """Close open positions.
-    
-    Parameters:
-    - ticket: Close a specific position by ticket ID.
-    - symbol: Close all positions for a specific symbol.
-    - profit_only: If True, only close profitable positions.
-    - loss_only: If True, only close losing positions.
-    - comment: Order comment (tag) attached to the MT5 request.
-    - deviation: Max slippage in points (MT5 request 'deviation').
-
-    If no parameters are provided, closes ALL open positions.
-    """
+    """Internal helper to close open positions."""
     import MetaTrader5 as mt5
-    
+
     @_auto_connect_wrapper
     def _close_positions():
         try:
@@ -1081,7 +1051,7 @@ def trading_positions_close(
                 if loss_only and pos.profit >= 0:
                     continue
                 to_close.append(pos)
-            
+
             if not to_close:
                 return {"message": "No positions matched criteria"}
 
@@ -1129,10 +1099,10 @@ def trading_positions_close(
                     }
                     results.append(res_dict)
 
-            # If only one position was targeted by ticket, return single result for backward compatibility/convenience
+            # If only one position was targeted by ticket, return single result
             if ticket is not None and len(results) == 1:
                 return results[0]
-                
+
             return {"closed_count": len(results), "results": results}
 
         except Exception as e:
@@ -1141,21 +1111,12 @@ def trading_positions_close(
     return _close_positions()
 
 
-@mcp.tool()
-def trading_pending_cancel(
+def _cancel_pending(
     ticket: Optional[Union[int, str]] = None,
     symbol: Optional[str] = None,
     comment: Optional[str] = None,
 ) -> dict:
-    """Cancel pending orders.
-    
-    Parameters:
-    - ticket: Cancel a specific order by ticket ID.
-    - symbol: Cancel all pending orders for a specific symbol.
-    - comment: Order comment (tag) attached to the MT5 request.
-
-    If no parameters are provided, cancels ALL pending orders.
-    """
+    """Internal helper to cancel pending orders."""
     import MetaTrader5 as mt5
 
     @_auto_connect_wrapper
@@ -1208,6 +1169,34 @@ def trading_pending_cancel(
             return {"error": str(e)}
 
     return _cancel_pending()
+
+
+@mcp.tool()
+def trading_close(
+    close_kind: Literal["positions", "pending"] = "positions",  # type: ignore
+    ticket: Optional[Union[int, str]] = None,
+    symbol: Optional[str] = None,
+    profit_only: bool = False,
+    loss_only: bool = False,
+    comment: Optional[str] = None,
+    deviation: int = 20,
+) -> dict:
+    """Close positions or cancel pending orders."""
+    kind = str(close_kind or "positions").strip().lower()
+    if kind not in ("positions", "pending"):
+        return {"error": "close_kind must be 'positions' or 'pending'."}
+    if kind == "pending":
+        if profit_only or loss_only:
+            return {"error": "profit_only/loss_only only apply to positions."}
+        return _cancel_pending(ticket=ticket, symbol=symbol, comment=comment)
+    return _close_positions(
+        ticket=ticket,
+        symbol=symbol,
+        profit_only=profit_only,
+        loss_only=loss_only,
+        comment=comment,
+        deviation=deviation,
+    )
 
 
 @mcp.tool()

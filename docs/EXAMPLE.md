@@ -1,8 +1,12 @@
 # End-to-End Trading Workflow Example
 
-See also:
-- Basic guide: docs/SAMPLE-TRADE.md
-- Advanced playbook (regimes, HAR‑RV, conformal, MC barriers, risk/execution): docs/SAMPLE-TRADE-ADVANCED.md
+**Related Documentation:**
+- [SAMPLE-TRADE.md](SAMPLE-TRADE.md) - Basic guide
+- [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) - Advanced playbook (regimes, HAR‑RV, conformal, MC barriers, risk/execution)
+- [FORECAST.md](FORECAST.md) - Detailed forecasting methods
+- [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) - Barrier analytics deep dive
+- [SKTIME.md](SKTIME.md) - Sktime adapter
+- [COMMON_ERRORS.md](COMMON_ERRORS.md) - Troubleshooting
 
 This example walks through discovering capabilities, preparing data, generating price and volatility forecasts, running a quick backtest, performing advanced pattern search with dimensionality reduction, and combining signals into a trading decision. Every step includes a runnable CLI command and highlights advanced parameters.
 
@@ -305,6 +309,7 @@ Monitor outcome after entering a trade (not covered by tools; depends on your ex
 - Pattern search returns few matches? Increase `max_bars_per_symbol` and/or `max_symbols`; reduce `min_symbol_correlation`.
 - Forecast errors about history depth? Increase candle `--limit` in your historical fetch or relax model complexity.
 - ARCH/GARCH fits are slow? Reduce `fit_bars` or use EWMA/rolling estimators for faster volatility proxies.
+- For common MCP tool errors, see [COMMON_ERRORS.md](COMMON_ERRORS.md).
 
 ---
 

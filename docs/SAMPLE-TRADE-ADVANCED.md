@@ -1,5 +1,12 @@
 ## Advanced Forecast‑to‑Trade Playbook (EURUSD, H1)
 
+**Related Documentation:**
+- [SAMPLE-TRADE.md](SAMPLE-TRADE.md) - Basic workflow (start here if new)
+- [FORECAST.md](FORECAST.md) - Detailed forecasting methods
+- [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) - Barrier analytics deep dive
+- [EXAMPLE.md](EXAMPLE.md) - Complete end-to-end workflow
+- [COMMON_ERRORS.md](COMMON_ERRORS.md) - Troubleshooting
+
 This guide extends the basic workflow with regime filters, conformal intervals, realized‑volatility (HAR‑RV), Monte‑Carlo barrier analytics, and disciplined risk/execution controls. It is designed to be modular: run each block, inspect outputs, and gate the next step by thresholds you calibrate via backtests.
 
 Assumptions

@@ -1,5 +1,5 @@
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Literal
 
 from ..utils.utils import _table_from_rows, _normalize_limit
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
@@ -13,18 +13,17 @@ import MetaTrader5 as mt5
 @_auto_connect_wrapper
 def symbols_list(
     search_term: Optional[str] = None,
-    limit: Optional[int] = DEFAULT_ROW_LIMIT
-
+    limit: Optional[int] = DEFAULT_ROW_LIMIT,
+    list_mode: Literal["symbols", "groups"] = "symbols",  # type: ignore
 ) -> Dict[str, Any]:
-    """List symbols as a tabular result with columns: name, group, description.
-
-    Parameters: search_term?, limit?
-
-    - If `search_term` is provided, matches group name, then symbol name, then description.
-    - If omitted, returns only visible symbols. When searching, includes non‑visible matches.
-    - `limit` caps the number of returned rows.
-    """
+    """List symbols or symbol groups."""
     try:
+        mode = str(list_mode or "symbols").strip().lower()
+        if mode not in ("symbols", "groups"):
+            return {"error": "list_mode must be 'symbols' or 'groups'."}
+        if mode == "groups":
+            return _list_symbol_groups(search_term=search_term, limit=limit)
+
         search_strategy = "none"
         matched_symbols = []
         
@@ -122,19 +121,11 @@ def symbols_list(
     except Exception as e:
         return {"error": f"Error getting symbols: {str(e)}"}
 
-@mcp.tool()
-@_auto_connect_wrapper
-def symbols_list_groups(
+def _list_symbol_groups(
     search_term: Optional[str] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
 ) -> Dict[str, Any]:
-    """List group paths as a tabular result with a single column: group.
-
-    Parameters: search_term?, limit?
-
-    - Filters by `search_term` (substring, case‑insensitive) when provided.
-    - Sorted by group size (desc); `limit` caps the number of groups.
-    """
+    """List group paths as a tabular result with a single column: group."""
     try:
         # Get all symbols first
         all_symbols = mt5.symbols_get()

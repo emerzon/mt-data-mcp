@@ -2,6 +2,14 @@
 
 This document covers the forecasting features and pattern-based similarity search, their parameters, outputs, and practical guidance. Use it as a reference when building trading signals.
 
+**Related Documentation:**
+- [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) - Deep dive into barrier analytics methods and algorithms
+- [SAMPLE-TRADE.md](SAMPLE-TRADE.md) - Step-by-step trading workflow examples
+- [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) - Advanced playbook with regimes, HAR-RV, conformal intervals
+- [SKTIME.md](SKTIME.md) - Sktime adapter documentation
+- [COMMON_ERRORS.md](COMMON_ERRORS.md) - Troubleshooting common errors
+- [EXAMPLE.md](EXAMPLE.md) - Complete end-to-end workflow
+
 ## Approaches
 
 - Statistical forecasting (`forecast_generate` tool): classical models (naive, theta, Holt-Winters, ARIMA, etc.) that project the next `horizon` bars from a single series.

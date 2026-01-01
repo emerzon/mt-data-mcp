@@ -37,6 +37,21 @@ MT5_SERVER=<your_broker_server>
 - Example: For UTC+2, use `MT5_TIME_OFFSET_MINUTES=120`. For UTC-4, use `MT5_TIME_OFFSET_MINUTES=-240`.
 - All timestamps are normalized to UTC using this offset.
 
+## Documentation
+
+This project includes comprehensive documentation:
+
+- **AGENTS.md** - Repository guidelines, coding standards, and contribution workflow
+- **docs/EXAMPLE.md** - End-to-end trading workflow examples
+- **docs/SAMPLE-TRADE.md** - Beginner step-by-step trading guide
+- **docs/SAMPLE-TRADE-ADVANCED.md** - Advanced playbook with regimes, HAR-RV, conformal intervals, MC barriers
+- **docs/FORECAST.md** - Comprehensive forecasting guide (statistical, MC, pattern-based, regime detection, volatility)
+- **docs/BARRIER_FUNCTIONS.md** - Deep dive into barrier analytics methods and algorithms
+- **docs/SKTIME.md** - Sktime adapter documentation
+- **docs/COMMON_ERRORS.md** - Troubleshooting common MCP tool errors
+
+**Quick Start**: See [docs/EXAMPLE.md](docs/EXAMPLE.md) for a complete end-to-end workflow.
+
 ## Usage
 
 ### Starting the MCP Server
@@ -75,8 +90,9 @@ The following tools are available via `python cli.py <command>`:
 
 #### Sample Trade Guides
 
-- Beginner flow: docs/SAMPLE-TRADE.md
-- Advanced flow (regimes, HAR-RV, conformal, MC barriers, risk controls): docs/SAMPLE-TRADE-ADVANCED.md
+- **Beginner**: [docs/SAMPLE-TRADE.md](docs/SAMPLE-TRADE.md) - Step-by-step analysis workflow
+- **Advanced**: [docs/SAMPLE-TRADE-ADVANCED.md](docs/SAMPLE-TRADE-ADVANCED.md) - Regimes, HAR-RV, conformal intervals, MC barriers, risk controls
+- **Complete Example**: [docs/EXAMPLE.md](docs/EXAMPLE.md) - End-to-end workflow with all features
 
 #### One-Stop Consolidated Report
 
@@ -257,9 +273,9 @@ python cli.py forecast_barrier_optimize --symbol EURUSD --timeframe H1 --horizon
 
 Optional switches: `--grid-style` (fixed/volatility/ratio/preset), `--preset` (scalp/intraday/swing/position),
 `--refine`/`--refine-radius`/`--refine-steps` for the zoom-in pass, constraint filters (`--min-prob-win`, `--max-prob-no-hit`,
-`--max-median-time`), and the volatility/ratio knobs described in `docs/FORECAST.md`.
+`--max-median-time`), and the volatility/ratio knobs described in [docs/FORECAST.md](docs/FORECAST.md).
 
-For advanced usage, pattern-based signals, Monte Carlo/HMM details, and barrier analytics, see `docs/FORECAST.md`.
+For advanced usage, pattern-based signals, Monte Carlo/HMM details, and barrier analytics, see [docs/FORECAST.md](docs/FORECAST.md). For a deep dive into barrier algorithms and methods, see [docs/BARRIER_FUNCTIONS.md](docs/BARRIER_FUNCTIONS.md).
 
 ### Regime & Change-Points
 
@@ -352,7 +368,7 @@ You can extend forecasting with additional frameworks. Install as needed; method
 - Foundation models (native libs): install per model — Chronos: `pip install chronos-forecasting torch`; TimesFM: `pip install timesfm torch`; Lag‑Llama: `pip install lag-llama gluonts torch`
   - Methods: `chronos_bolt`, `timesfm`, `lag_llama`
 
-See detailed examples and parameters in `docs/FORECAST.md` under Framework Integrations.
+See detailed examples and parameters in [docs/FORECAST.md](docs/FORECAST.md) under Framework Integrations.
 
 
 ### Denoising
@@ -400,6 +416,8 @@ Optional dependencies (install as needed; see `requirements.txt`):
 ## Error Handling
 
 All functions return a JSON object with a `success` flag. If `success` is `false`, an `error` field will contain the error message.
+
+For common MCP tool errors and solutions, see [docs/COMMON_ERRORS.md](docs/COMMON_ERRORS.md).
 
 ## Security Notes
 

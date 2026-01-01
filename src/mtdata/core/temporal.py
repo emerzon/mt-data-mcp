@@ -32,6 +32,27 @@ _MONTH_LABELS = [
 ]
 
 
+def _error_response(
+    message: str,
+    stage: str,
+    *,
+    context: Optional[Dict[str, Any]] = None,
+    details: Optional[Any] = None,
+    bars: Optional[int] = None,
+    filters: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {"error": message, "stage": stage}
+    if context:
+        payload["context"] = context
+    if details is not None:
+        payload["details"] = details
+    if bars is not None:
+        payload["bars"] = int(bars)
+    if filters is not None:
+        payload["filters"] = filters
+    return payload
+
+
 def _normalize_group_by(value: Optional[str]) -> str:
     if value is None:
         return "dow"
@@ -237,9 +258,9 @@ def _fetch_rates(
     tick = mt5.symbol_info_tick(symbol)
     if tick is not None and getattr(tick, "time", None):
         t_utc = _mt5_epoch_to_utc(float(tick.time))
-        to_dt = datetime.utcfromtimestamp(t_utc)
+        to_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc).replace(tzinfo=None)
     else:
-        to_dt = datetime.utcnow()
+        to_dt = datetime.now(timezone.utc).replace(tzinfo=None)
     rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, int(limit))
     return rates, None
 
@@ -263,66 +284,124 @@ def temporal_analyze(
     Filters:
     - day_of_week: 0-6 or names like Mon, Tuesday
     - month: 1-12 or names like Jan, September
-    - time_range: 'HH:MM-HH:MM' (local/client timezone if configured)
+    - time_range: 'HH:MM-HH:MM' (local/client timezone if configured, wraps
+      midnight like 22:00-02:00)
+    - volume: uses real_volume when available and non-zero, else tick_volume
 
     Returns grouped averages for returns and volatility plus simple extras.
     Use group_by='all' for a single overall summary.
     """
     try:
+        context: Dict[str, Any] = {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "group_by": group_by,
+            "return_mode": return_mode,
+            "limit": limit,
+            "start": start,
+            "end": end,
+        }
         if limit is None:
             limit = 0
         limit = int(limit)
+        context["limit"] = limit
         if limit <= 1 and not (start and end):
-            return {"error": "limit must be >= 2 for return calculations."}
+            return _error_response(
+                "limit must be >= 2 for return calculations.",
+                stage="validate",
+                context=context,
+            )
 
         group_norm = _normalize_group_by(group_by)
         if group_norm not in ("dow", "hour", "month", "all"):
-            return {"error": "Invalid group_by. Use: dow, hour, month, all."}
+            return _error_response(
+                "Invalid group_by. Use: dow, hour, month, all.",
+                stage="validate",
+                context=context,
+            )
+        context["group_by"] = group_norm
 
         dow_val = _parse_weekday(day_of_week)
         if day_of_week is not None and dow_val is None:
-            return {"error": "Invalid day_of_week. Use 0-6 or day name (e.g., Mon)."}
+            return _error_response(
+                "Invalid day_of_week. Use 0-6 or day name (e.g., Mon).",
+                stage="validate",
+                context=context,
+                details={"day_of_week": day_of_week},
+            )
 
         month_val = _parse_month(month)
         if month is not None and month_val is None:
-            return {"error": "Invalid month. Use 1-12 or month name (e.g., Jan)."}
+            return _error_response(
+                "Invalid month. Use 1-12 or month name (e.g., Jan).",
+                stage="validate",
+                context=context,
+                details={"month": month},
+            )
 
         tr_start, tr_end, tr_err = _parse_time_range(time_range)
         if tr_err:
-            return {"error": tr_err}
+            return _error_response(
+                tr_err,
+                stage="validate",
+                context=context,
+                details={"time_range": time_range},
+            )
+
+        filters: Dict[str, Any] = {}
+        if dow_val is not None:
+            filters["day_of_week"] = {"value": dow_val, "label": _DOW_LABELS[dow_val]}
+        if month_val is not None:
+            filters["month"] = {"value": month_val, "label": _MONTH_LABELS[month_val - 1]}
+        if tr_start is not None and tr_end is not None:
+            filters["time_range"] = {
+                "start": _time_label(tr_start),
+                "end": _time_label(tr_end),
+                "wraps_midnight": bool(tr_start > tr_end),
+            }
 
         info_before = get_symbol_info_cached(symbol)
         with _symbol_ready_guard(symbol, info_before=info_before) as (err, _info):
             if err:
-                return {"error": err}
+                return _error_response(err, stage="symbol", context=context)
 
             rates, fetch_err = _fetch_rates(symbol, timeframe, limit, start, end)
             if fetch_err:
-                return {"error": fetch_err}
+                return _error_response(fetch_err, stage="fetch", context=context)
         # visibility handled by _symbol_ready_guard
 
         if rates is None or len(rates) < 2:
-            return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}
+            return _error_response(
+                f"Failed to get rates for {symbol}.",
+                stage="fetch",
+                context=context,
+                details={"mt5_error": mt5.last_error()},
+            )
 
         df = pd.DataFrame(rates)
         if df.empty:
-            return {"error": "No data available"}
+            return _error_response("No data available.", stage="fetch", context=context, bars=0)
 
         try:
             df["__epoch"] = df["time"].astype(float).apply(_mt5_epoch_to_utc)
         except Exception:
-            return {"error": "Failed to normalize bar times."}
+            return _error_response("Failed to normalize bar times.", stage="process", context=context)
 
         if not end:
             tf_secs = TIMEFRAME_SECONDS.get(timeframe)
             if tf_secs:
-                now_ts = datetime.utcnow().timestamp()
+                now_ts = datetime.now(timezone.utc).timestamp()
                 last_epoch = float(df["__epoch"].iloc[-1])
                 if 0 <= (now_ts - last_epoch) < float(tf_secs) and len(df) > 1:
                     df = df.iloc[:-1]
 
         if len(df) < 2:
-            return {"error": "Insufficient data after trimming live bars."}
+            return _error_response(
+                "Insufficient data after trimming live bars.",
+                stage="trim",
+                context=context,
+                bars=len(df),
+            )
 
         client_tz = _resolve_client_tz()
         use_client_tz = client_tz is not None
@@ -334,7 +413,11 @@ def temporal_analyze(
         df["__dt"] = dt
 
         if "close" not in df.columns:
-            return {"error": "Rates data missing close prices."}
+            return _error_response(
+                "Rates data missing close prices.",
+                stage="process",
+                context=context,
+            )
 
         close = pd.to_numeric(df["close"], errors="coerce").astype(float)
         if return_mode == "log":
@@ -372,7 +455,13 @@ def temporal_analyze(
             df = df.loc[mask]
 
         if len(df) < 2:
-            return {"error": "Insufficient data after applying filters."}
+            return _error_response(
+                "Insufficient data after applying filters.",
+                stage="filter",
+                context=context,
+                bars=len(df),
+                filters=filters,
+            )
 
         overall = _stats_for_group(df, volume_col)
         groups_out: List[Dict[str, Any]] = []
@@ -405,18 +494,6 @@ def temporal_analyze(
         start_str = _format_time_minimal_local(start_epoch) if use_client_tz else _format_time_minimal(start_epoch)
         end_str = _format_time_minimal_local(end_epoch) if use_client_tz else _format_time_minimal(end_epoch)
 
-        filters: Dict[str, Any] = {}
-        if dow_val is not None:
-            filters["day_of_week"] = {"value": dow_val, "label": _DOW_LABELS[dow_val]}
-        if month_val is not None:
-            filters["month"] = {"value": month_val, "label": _MONTH_LABELS[month_val - 1]}
-        if tr_start is not None and tr_end is not None:
-            filters["time_range"] = {
-                "start": _time_label(tr_start),
-                "end": _time_label(tr_end),
-                "wraps_midnight": bool(tr_start > tr_end),
-            }
-
         tz_name = "UTC"
         if use_client_tz:
             try:
@@ -436,9 +513,14 @@ def temporal_analyze(
             "end": end_str,
             "filters": filters,
             "overall": overall,
+            "volume_source": volume_col,
         }
         if groups_out:
             payload["groups"] = groups_out
         return payload
     except Exception as e:
-        return {"error": f"Error computing temporal analysis: {str(e)}"}
+        return _error_response(
+            f"Error computing temporal analysis: {str(e)}",
+            stage="internal",
+            context=context if "context" in locals() else None,
+        )

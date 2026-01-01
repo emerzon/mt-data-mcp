@@ -46,10 +46,10 @@ def data_fetch_candles(
         Maximum number of candles to return
     
     start : str, optional
-        Start date (e.g., "2025-08-29", "yesterday 14:00", "2 days ago")
-    
+        Start time (dateparser)
+
     end : str, optional
-        End date (same formats as start)
+        End time (dateparser)
     
     ohlcv : str, optional
         Fields to include: "close", "ohlc", "ohlcv", "all"

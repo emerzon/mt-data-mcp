@@ -2,6 +2,13 @@
 
 ## Overview
 
+**Related Documentation:**
+- [FORECAST.md](FORECAST.md) - General forecasting guide and MC simulation methods
+- [SAMPLE-TRADE.md](SAMPLE-TRADE.md) - Practical trading workflow examples
+- [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) - Advanced barrier optimization
+- [COMMON_ERRORS.md](COMMON_ERRORS.md) - Troubleshooting
+- [EXAMPLE.md](EXAMPLE.md) - Complete end-to-end workflow
+
 Barrier functions are essential tools for risk management in trading. They help answer the critical question: *"What's the probability that my take-profit will be hit before my stop-loss within a given time horizon?"*
 
 This document provides a deep dive into the barrier analytics available in mtdata, covering the underlying algorithms, when to use each method, and real-world trading scenarios.

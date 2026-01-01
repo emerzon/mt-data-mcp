@@ -90,12 +90,13 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
                         params[param_name] = {"$ref": ref}
 
                 if name == "forecast_generate":
-                    _set_ref("method", "#/$defs/ForecastMethod")
-                    _set_ref("target", "#/$defs/TargetSpec")
                     _set_ref("quantity", "#/$defs/QuantitySpec")
                     _set_ref("denoise", "#/$defs/DenoiseSpec", allow_null=True)
-                    if "params" in params:
-                        params["params"] = {"type": "object", "additionalProperties": True}
+                    if "model_params" in params:
+                        params["model_params"] = {
+                            "type": "object",
+                            "additionalProperties": True,
+                        }
                 if name == "indicators_list" and "category" in params and "IndicatorCategory" in schema.get("$defs", {}):
                     _set_ref("category", "#/$defs/IndicatorCategory")
                 if name == "indicators_describe" and "name" in params and "IndicatorName" in schema.get("$defs", {}):
@@ -128,17 +129,17 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
                             "description": "Barrier simulation method for optimization.",
                         }
                 # Trading schemas: add enums and param docs where helpful
-                if name == "trading_pending_place":
-                    # Clarify acceptable order type values for pending orders
-                    if "type" in params:
-                        params["type"] = {
+                if name == "trading_place":
+                    # Clarify acceptable order type values for orders
+                    if "order_type" in params:
+                        params["order_type"] = {
                             "type": "string",
                             "enum": [
                                 "BUY", "SELL",
                                 "BUYLIMIT", "BUYSTOP",
                                 "SELLLIMIT", "SELLSTOP"
                             ],
-                            "description": "Direction or explicit pending type. BUY/SELL will auto-select LIMIT/STOP based on price relative to Bid/Ask."
+                            "description": "BUY/SELL (market) or explicit pending type."
                         }
                     # Document expiration flexibility
                     if "expiration" in params:
@@ -148,7 +149,7 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
                                 {"type": "number"},
                                 {"type": "null"}
                             ],
-                            "description": "GTC tokens (e.g., 'GTC'), ISO datetime, epoch seconds, or natural language (e.g., 'tomorrow 14:00')."
+                            "description": "Dateparser input, epoch seconds, or GTC token."
                         }
             except Exception:
                 pass

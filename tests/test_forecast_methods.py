@@ -2,7 +2,8 @@
 """Lightweight forecast test runner.
 
 Usage:
-  python tests/test_forecast_methods.py EURUSD H1 12
+  python tests/test_forecast_methods.py EURUSD H1 12 [model ...]
+  python tests/test_forecast_methods.py EURUSD H1 12 statsforecast:AutoARIMA
 
 Writes JSON output into tests/test_results/.
 """
@@ -19,43 +20,52 @@ from mtdata.forecast.helpers import default_seasonality_period
 
 
 def _usage() -> str:
-    return "Usage: python tests/test_forecast_methods.py SYMBOL TIMEFRAME HORIZON [method ...]"
+    return "Usage: python tests/test_forecast_methods.py SYMBOL TIMEFRAME HORIZON [model ...]"
 
 
-def _resolve_methods(args: List[str]) -> List[str]:
+def _resolve_models(args: List[str]) -> List[str]:
     if args:
         return [m.strip() for m in args if m.strip()]
     # Keep defaults lightweight and dependency-free.
     return ["theta", "naive", "drift", "seasonal_naive"]
 
 
-def _run(symbol: str, timeframe: str, horizon: int, methods: List[str]) -> Dict[str, Any]:
+def _parse_model_spec(spec: str) -> tuple[str, str]:
+    parts = spec.split(":", 1)
+    if len(parts) == 2:
+        return parts[0].strip(), parts[1].strip()
+    return "native", spec.strip()
+
+
+def _run(symbol: str, timeframe: str, horizon: int, models: List[str]) -> Dict[str, Any]:
     out: Dict[str, Any] = {
         "symbol": symbol,
         "timeframe": timeframe,
         "horizon": int(horizon),
-        "methods": {},
+        "models": {},
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
     }
     m_eff = default_seasonality_period(timeframe)
     successes = 0
-    for method in methods:
+    for spec in models:
+        library, model = _parse_model_spec(spec)
         params = {}
-        if method == "seasonal_naive":
+        if library in ("", "native") and model == "seasonal_naive":
             params["seasonality"] = int(m_eff)
         res = forecast_generate(
             symbol=symbol,
             timeframe=timeframe,
-            method=method,
+            library=library or "native",
+            model=model,
             horizon=int(horizon),
-            params=params or None,
+            model_params=params or None,
             __cli_raw=True,
         )
-        out["methods"][method] = res
+        out["models"][spec] = res
         if isinstance(res, dict) and not res.get("error"):
             successes += 1
     out["successes"] = successes
-    out["failures"] = max(0, len(methods) - successes)
+    out["failures"] = max(0, len(models) - successes)
     return out
 
 
@@ -70,9 +80,9 @@ def main() -> int:
     except ValueError:
         print("HORIZON must be an integer.")
         return 2
-    methods = _resolve_methods(sys.argv[4:])
+    models = _resolve_models(sys.argv[4:])
 
-    result = _run(symbol, timeframe, horizon, methods)
+    result = _run(symbol, timeframe, horizon, models)
     out_dir = os.path.join(os.path.dirname(__file__), "test_results")
     os.makedirs(out_dir, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -83,7 +93,7 @@ def main() -> int:
 
     print(f"Wrote results to {out_path}")
     if result.get("successes", 0) <= 0:
-        print("No successful methods.")
+        print("No successful models.")
         return 1
     return 0
 

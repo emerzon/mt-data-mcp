@@ -420,15 +420,7 @@ def align_finite(*arrays: Any) -> Tuple["np.ndarray", ...]:
 
 
 def _parse_start_datetime(value: str) -> Optional[datetime]:
-    """Parse a flexible date/time string into a UTC-naive datetime.
-
-    Accepts formats like:
-    - 2025-08-29
-    - 2025-08-29 14:30
-    - yesterday 14:00
-    - 2 days ago
-    - 2025/08/29 14:30 UTC
-    """
+    """Parse a date/time string via dateparser into UTC-naive datetime."""
     if not value:
         return None
     dt = dateparser.parse(
