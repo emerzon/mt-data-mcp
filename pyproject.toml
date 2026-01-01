@@ -5,9 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mtdata-mcp-server"
 version = "0.1.0"
-description = "MetaTrader5 MCP Server for market data retrieval"
+description = "MetaTrader5 MCP Server for market data retrieval and analysis."
 authors = [
-    {name = "MCP Developer", email = "dev@example.com"}
+    {name = "Emerson Gomes", email = "emerson.gomes@gmail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.10"
@@ -63,5 +63,5 @@ mtdata-server = "mtdata.core.server:main"
 mtdata-cli = "mtdata.core.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/mtdata-mcp-server"
-Repository = "https://github.com/yourusername/mtdata-mcp-server"
+Homepage = "https://github.com/emerzon/mt-data-mcp"
+Repository = "https://github.com/emerzon/mt-data-mcp"
