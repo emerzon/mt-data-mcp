@@ -9,6 +9,8 @@ from .monte_carlo import (
     simulate_hmm_mc as _simulate_hmm_mc, 
     simulate_garch_mc as _simulate_garch_mc,
     simulate_bootstrap_mc as _simulate_bootstrap_mc,
+    simulate_heston_mc as _simulate_heston_mc,
+    simulate_jump_diffusion_mc as _simulate_jump_diffusion_mc,
     gbm_single_barrier_upcross_prob as _gbm_upcross_prob
 )
 
@@ -31,11 +33,93 @@ BARRIER_GRID_PRESETS = {
     },
 }
 
+
+def _is_crypto_symbol(symbol: str) -> bool:
+    sym = str(symbol or "").upper()
+    crypto_tokens = {
+        "BTC", "ETH", "XRP", "LTC", "SOL", "ADA", "DOGE", "BNB", "DOT",
+        "AVAX", "LINK", "TRX", "MATIC", "NEAR", "ATOM", "FIL", "UNI",
+    }
+    return any(tok in sym for tok in crypto_tokens)
+
+
+def _auto_barrier_method(symbol: str, timeframe: str, prices: np.ndarray) -> Tuple[str, str]:
+    tf_secs = TIMEFRAME_SECONDS.get(timeframe, 0) or 0
+    prices = np.asarray(prices, dtype=float)
+    prices = prices[np.isfinite(prices)]
+    if prices.size < 10:
+        return "mc_gbm_bb", "auto: insufficient history; fallback to gbm_bb"
+
+    rets = np.diff(np.log(np.clip(prices, 1e-12, None)))
+    rets = rets[np.isfinite(rets)]
+    if rets.size < 5:
+        return "mc_gbm_bb", "auto: insufficient returns; fallback to gbm_bb"
+
+    mu = float(np.mean(rets))
+    sigma = float(np.std(rets, ddof=1)) + 1e-12
+    z = (rets - mu) / sigma
+    kurt = float(np.mean(z ** 4) - 3.0) if z.size > 0 else 0.0
+    jump_ratio = float(np.max(np.abs(rets - mu)) / sigma) if rets.size > 0 else 0.0
+
+    r2 = (rets - mu) ** 2
+    if r2.size >= 6:
+        r2a = r2[1:]
+        r2b = r2[:-1]
+        denom = float(np.std(r2a) * np.std(r2b)) + 1e-12
+        if denom > 0:
+            try:
+                vol_corr = float(np.corrcoef(r2a, r2b)[0, 1])
+                if not np.isfinite(vol_corr):
+                    vol_corr = 0.0
+            except Exception:
+                vol_corr = 0.0
+        else:
+            vol_corr = 0.0
+    else:
+        vol_corr = 0.0
+
+    if _is_crypto_symbol(symbol) or (tf_secs and tf_secs <= 900):
+        if kurt > 2.5 or jump_ratio > 5.0:
+            return "jump_diffusion", "auto: crypto/short-tf with jumpy tails"
+
+    if kurt > 4.0 or jump_ratio > 6.0:
+        return "jump_diffusion", "auto: heavy tails/jump risk"
+    if vol_corr > 0.2:
+        return "heston", "auto: volatility clustering"
+    return "mc_gbm_bb", "auto: mild tails; gbm with bridge correction"
+
+
+def _brownian_bridge_hits(
+    log_paths: np.ndarray,
+    barrier_log: float,
+    sigma: float,
+    *,
+    direction: Literal["up", "down"],
+    uniform: np.ndarray,
+) -> np.ndarray:
+    if sigma <= 0:
+        return np.zeros((log_paths.shape[0], log_paths.shape[1] - 1), dtype=bool)
+    x0 = log_paths[:, :-1]
+    x1 = log_paths[:, 1:]
+    s2 = float(sigma * sigma)
+    if direction == "up":
+        valid = (x0 < barrier_log) & (x1 < barrier_log)
+        dist0 = barrier_log - x0
+        dist1 = barrier_log - x1
+    else:
+        valid = (x0 > barrier_log) & (x1 > barrier_log)
+        dist0 = x0 - barrier_log
+        dist1 = x1 - barrier_log
+    expo = -2.0 * dist0 * dist1 / s2
+    p = np.exp(np.clip(expo, -200.0, 50.0))
+    hits = (uniform < p) & valid
+    return hits
+
 def forecast_barrier_hit_probabilities(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
-    method: Literal['mc_gbm','hmm_mc','garch','bootstrap'] = 'hmm_mc',
+    method: Literal['mc_gbm','mc_gbm_bb','hmm_mc','garch','bootstrap','heston','jump_diffusion','auto'] = 'hmm_mc',
     direction: Literal['long','short'] = 'long',
     tp_abs: Optional[float] = None,
     sl_abs: Optional[float] = None,
@@ -93,9 +177,14 @@ def forecast_barrier_hit_probabilities(
         # Simulate paths
         sims = int(p.get('n_sims', p.get('sims', 2000)) or 2000)
         seed = int(p.get('seed', 42) or 42)
-        method_key = str(method).lower()
+        method_key = str(method).lower().strip()
+        method_requested = method_key
+        auto_reason = None
+        if method_key == 'auto':
+            method_key, auto_reason = _auto_barrier_method(symbol, timeframe, prices)
+        bb_enabled = method_key == 'mc_gbm_bb'
         
-        if method_key == 'mc_gbm':
+        if method_key in ('mc_gbm', 'mc_gbm_bb'):
             sim = _simulate_gbm_mc(prices, horizon=int(horizon), n_sims=int(sims), seed=int(seed))
         elif method_key == 'hmm_mc':
             n_states = int(p.get('n_states', 2) or 2)
@@ -108,11 +197,52 @@ def forecast_barrier_hit_probabilities(
             bs = p.get('block_size')
             if bs: bs = int(bs)
             sim = _simulate_bootstrap_mc(prices, horizon=int(horizon), n_sims=int(sims), seed=int(seed), block_size=bs)
+        elif method_key == 'heston':
+            sim = _simulate_heston_mc(
+                prices,
+                horizon=int(horizon),
+                n_sims=int(sims),
+                seed=int(seed),
+                kappa=p.get('kappa'),
+                theta=p.get('theta'),
+                xi=p.get('xi'),
+                rho=p.get('rho'),
+                v0=p.get('v0'),
+            )
+        elif method_key == 'jump_diffusion':
+            sim = _simulate_jump_diffusion_mc(
+                prices,
+                horizon=int(horizon),
+                n_sims=int(sims),
+                seed=int(seed),
+                jump_lambda=p.get('jump_lambda', p.get('lambda')),
+                jump_mu=p.get('jump_mu'),
+                jump_sigma=p.get('jump_sigma'),
+                jump_threshold=float(p.get('jump_threshold', 3.0)),
+            )
         else:
-            return {"error": f"Unsupported method: {method}. Use 'mc_gbm', 'hmm_mc', 'garch', or 'bootstrap'"}
+            return {"error": f"Unsupported method: {method}. Use 'mc_gbm', 'mc_gbm_bb', 'hmm_mc', 'garch', 'bootstrap', 'heston', 'jump_diffusion', or 'auto'"}
 
         price_paths = np.asarray(sim['price_paths'], dtype=float)
         S, H = price_paths.shape
+
+        bb_sigma = 0.0
+        bb_uniform_tp = None
+        bb_uniform_sl = None
+        bb_log_paths = None
+        if bb_enabled:
+            rets = np.diff(np.log(np.clip(prices, 1e-12, None)))
+            rets = rets[np.isfinite(rets)]
+            bb_sigma = float(np.std(rets, ddof=1)) if rets.size else 0.0
+            if bb_sigma <= 0:
+                bb_enabled = False
+            else:
+                log_paths = np.log(np.clip(price_paths, 1e-12, None))
+                log_s0 = float(np.log(max(last_price, 1e-12)))
+                bb_log_paths = np.concatenate([np.full((S, 1), log_s0), log_paths], axis=1)
+                rng_bb = np.random.RandomState(int(seed) + 7)
+                bb_uniform_tp = rng_bb.rand(S, H)
+                bb_uniform_sl = rng_bb.rand(S, H)
         
         # Vectorized hit detection
         # hits_tp/sl: boolean (S, H)
@@ -122,6 +252,13 @@ def forecast_barrier_hit_probabilities(
         else:
             hits_tp = (price_paths <= tp_price)
             hits_sl = (price_paths >= sl_price)
+        if bb_enabled and bb_log_paths is not None and bb_uniform_tp is not None and bb_uniform_sl is not None:
+            tp_dir = "up" if dir_long else "down"
+            sl_dir = "down" if dir_long else "up"
+            tp_bridge = _brownian_bridge_hits(bb_log_paths, float(np.log(tp_price)), bb_sigma, direction=tp_dir, uniform=bb_uniform_tp)
+            sl_bridge = _brownian_bridge_hits(bb_log_paths, float(np.log(sl_price)), bb_sigma, direction=sl_dir, uniform=bb_uniform_sl)
+            hits_tp = hits_tp | tp_bridge
+            hits_sl = hits_sl | sl_bridge
 
         # Find first hit index (argmax returns 0 if none found, check any)
         idx_tp = np.argmax(hits_tp, axis=1)
@@ -197,7 +334,7 @@ def forecast_barrier_hit_probabilities(
             "success": True,
             "symbol": symbol,
             "timeframe": timeframe,
-            "method": method,
+            "method": method_key,
             "horizon": int(horizon),
             "direction": direction,
             "last_price": last_price,
@@ -213,8 +350,15 @@ def forecast_barrier_hit_probabilities(
             "time_to_sl_bars": sl_stats,
             "time_to_tp_seconds": {k: _finite_or_none(v * tf_secs) for k, v in tp_stats.items()},
             "time_to_sl_seconds": {k: _finite_or_none(v * tf_secs) for k, v in sl_stats.items()},
-            "params_used": {k: p[k] for k in p if k in {"n_sims", "seed", "n_states", "p", "q", "block_size"}},
+            "params_used": {k: p[k] for k in p if k in {"n_sims", "seed", "n_states", "p", "q", "block_size", "kappa", "theta", "xi", "rho", "v0", "jump_lambda", "jump_mu", "jump_sigma", "jump_threshold", "lambda"}},
         }
+        if method_requested != method_key:
+            out["method_requested"] = method_requested
+            out["method_used"] = method_key
+            if auto_reason:
+                out["auto_reason"] = auto_reason
+        if bb_enabled:
+            out["bridge_correction"] = True
         if 'model_summary' in sim:
             out['model_summary'] = str(sim['model_summary'])
             
@@ -304,7 +448,7 @@ def forecast_barrier_optimize(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
-    method: Literal['mc_gbm','hmm_mc','garch','bootstrap'] = 'hmm_mc',
+    method: Literal['mc_gbm','mc_gbm_bb','hmm_mc','garch','bootstrap','heston','jump_diffusion','auto'] = 'hmm_mc',
     direction: Literal['long','short'] = 'long',
     mode: Literal['pct','pips'] = 'pct',
     tp_min: float = 0.25,
@@ -423,9 +567,14 @@ def forecast_barrier_optimize(
         seed = int(params_dict.get('seed', 42) or 42)
         n_seeds = int(params_dict.get('n_seeds', 1) or 1)
         paths_list: List[np.ndarray] = []
-        method_name = str(method).lower()
+        method_name = str(method).lower().strip()
+        method_requested = method_name
+        auto_reason = None
+        if method_name == 'auto':
+            method_name, auto_reason = _auto_barrier_method(symbol, timeframe, prices)
+        bb_enabled = method_name == 'mc_gbm_bb'
         
-        if method_name == 'mc_gbm':
+        if method_name in ('mc_gbm', 'mc_gbm_bb'):
             for offset in range(max(1, n_seeds)):
                 sim = _simulate_gbm_mc(prices, horizon=int(horizon), n_sims=int(sims), seed=int(seed + offset))
                 paths_list.append(np.asarray(sim['price_paths'], dtype=float))
@@ -446,11 +595,55 @@ def forecast_barrier_optimize(
             for offset in range(max(1, n_seeds)):
                 sim = _simulate_bootstrap_mc(prices, horizon=int(horizon), n_sims=int(sims), seed=int(seed + offset), block_size=bs)
                 paths_list.append(np.asarray(sim['price_paths'], dtype=float))
+        elif method_name == 'heston':
+            for offset in range(max(1, n_seeds)):
+                sim = _simulate_heston_mc(
+                    prices,
+                    horizon=int(horizon),
+                    n_sims=int(sims),
+                    seed=int(seed + offset),
+                    kappa=params_dict.get('kappa'),
+                    theta=params_dict.get('theta'),
+                    xi=params_dict.get('xi'),
+                    rho=params_dict.get('rho'),
+                    v0=params_dict.get('v0'),
+                )
+                paths_list.append(np.asarray(sim['price_paths'], dtype=float))
+        elif method_name == 'jump_diffusion':
+            for offset in range(max(1, n_seeds)):
+                sim = _simulate_jump_diffusion_mc(
+                    prices,
+                    horizon=int(horizon),
+                    n_sims=int(sims),
+                    seed=int(seed + offset),
+                    jump_lambda=params_dict.get('jump_lambda', params_dict.get('lambda')),
+                    jump_mu=params_dict.get('jump_mu'),
+                    jump_sigma=params_dict.get('jump_sigma'),
+                    jump_threshold=float(params_dict.get('jump_threshold', 3.0)),
+                )
+                paths_list.append(np.asarray(sim['price_paths'], dtype=float))
         else:
-            return {"error": f"Unsupported method: {method}. Use 'mc_gbm', 'hmm_mc', 'garch', or 'bootstrap'"}
+            return {"error": f"Unsupported method: {method}. Use 'mc_gbm', 'mc_gbm_bb', 'hmm_mc', 'garch', 'bootstrap', 'heston', 'jump_diffusion', or 'auto'"}
 
         paths = np.vstack(paths_list) if len(paths_list) > 1 else paths_list[0]
         S, H = paths.shape
+        bb_sigma = 0.0
+        bb_uniform_tp = None
+        bb_uniform_sl = None
+        bb_log_paths = None
+        if bb_enabled:
+            rets = np.diff(np.log(np.clip(prices, 1e-12, None)))
+            rets = rets[np.isfinite(rets)]
+            bb_sigma = float(np.std(rets, ddof=1)) if rets.size else 0.0
+            if bb_sigma <= 0:
+                bb_enabled = False
+            else:
+                log_paths = np.log(np.clip(paths, 1e-12, None))
+                log_s0 = float(np.log(max(last_price, 1e-12)))
+                bb_log_paths = np.concatenate([np.full((S, 1), log_s0), log_paths], axis=1)
+                rng_bb = np.random.RandomState(int(seed) + 7)
+                bb_uniform_tp = rng_bb.rand(S, H)
+                bb_uniform_sl = rng_bb.rand(S, H)
         last_idx = H - 1
 
         def _linspace(a: float, b: float, n: int) -> np.ndarray:
@@ -559,6 +752,13 @@ def forecast_barrier_optimize(
                 else:
                     hit_tp = (paths <= tp_p)
                     hit_sl = (paths >= sl_p)
+                if bb_enabled and bb_log_paths is not None and bb_uniform_tp is not None and bb_uniform_sl is not None:
+                    tp_dir = "up" if dir_long else "down"
+                    sl_dir = "down" if dir_long else "up"
+                    tp_bridge = _brownian_bridge_hits(bb_log_paths, float(np.log(tp_p)), bb_sigma, direction=tp_dir, uniform=bb_uniform_tp)
+                    sl_bridge = _brownian_bridge_hits(bb_log_paths, float(np.log(sl_p)), bb_sigma, direction=sl_dir, uniform=bb_uniform_sl)
+                    hit_tp = hit_tp | tp_bridge
+                    hit_sl = hit_sl | sl_bridge
 
                 any_tp = hit_tp.any(axis=1)
                 any_sl = hit_sl.any(axis=1)
@@ -676,11 +876,11 @@ def forecast_barrier_optimize(
             limit = top_k or min(10, len(grid_out))
             grid_out = grid_out[:limit]
             
-        return {
+        out = {
             "success": True,
             "symbol": symbol,
             "timeframe": timeframe,
-            "method": method,
+            "method": method_name,
             "horizon": horizon,
             "direction": direction,
             "mode": mode,
@@ -689,6 +889,14 @@ def forecast_barrier_optimize(
             "best": results[0] if results else None,
             "grid": grid_out
         }
+        if method_requested != method_name:
+            out["method_requested"] = method_requested
+            out["method_used"] = method_name
+            if auto_reason:
+                out["auto_reason"] = auto_reason
+        if bb_enabled:
+            out["bridge_correction"] = True
+        return out
 
     except Exception as e:
         return {"error": f"Error optimizing barriers: {str(e)}"}

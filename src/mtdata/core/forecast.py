@@ -602,9 +602,9 @@ def forecast_barrier_prob(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
-    method: Literal['mc', 'closed_form'] = 'mc',
+    method: Literal['mc', 'closed_form', 'auto'] = 'mc',
     # MC params
-    mc_method: Literal['mc_gbm','hmm_mc','garch','bootstrap'] = 'hmm_mc',  # type: ignore
+    mc_method: Literal['mc_gbm','mc_gbm_bb','hmm_mc','garch','bootstrap','heston','jump_diffusion','auto'] = 'hmm_mc',  # type: ignore
     direction: Literal['long','short', 'up', 'down'] = 'long',  # type: ignore
     tp_abs: Optional[float] = None,
     sl_abs: Optional[float] = None,
@@ -644,14 +644,19 @@ def forecast_barrier_prob(
         Calculation method:
         - "mc": Monte Carlo simulation (more flexible, handles complex scenarios)
         - "closed_form": Analytical solution (faster, simpler assumptions)
+        - "auto": Alias for Monte Carlo with mc_method="auto"
     
     Monte Carlo Parameters (method="mc"):
     -------------------------------------
     mc_method : str, optional (default="hmm_mc")
         - "hmm_mc": Hidden Markov Model-based MC
         - "mc_gbm": Geometric Brownian Motion MC
+        - "mc_gbm_bb": GBM MC with Brownian-bridge barrier correction
+        - "heston": Heston stochastic volatility MC
+        - "jump_diffusion": Merton jump-diffusion MC
         - "garch": GARCH(1,1) volatility model (requires 'arch' package)
         - "bootstrap": Circular block bootstrap (historical simulation)
+        - "auto": auto-select based on symbol/timeframe + recent returns
     
     direction : str, optional (default="long")
         Trade direction: "long" / "short" (or "up" / "down" for closed_form)
@@ -721,7 +726,11 @@ def forecast_barrier_prob(
         barrier=1.2700
     )
     """
-    if method == 'mc':
+    method_val = str(method).lower().strip()
+    if method_val == 'auto':
+        method_val = 'mc'
+        mc_method = 'auto'  # type: ignore
+    if method_val == 'mc':
         from ..forecast.barriers import forecast_barrier_hit_probabilities as _impl
         # Ensure direction is valid for MC
         d = str(direction).lower()
@@ -744,7 +753,7 @@ def forecast_barrier_prob(
             params=params,
             denoise=denoise,
         )
-    elif method == 'closed_form':
+    elif method_val == 'closed_form':
         from ..forecast.barriers import forecast_barrier_closed_form as _impl
         # Map direction: long->up, short->down if user passed long/short
         d = str(direction).lower()
@@ -771,7 +780,7 @@ def forecast_barrier_optimize(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
-    method: Literal['mc_gbm','hmm_mc','garch','bootstrap'] = 'hmm_mc',  # type: ignore
+    method: Literal['mc_gbm','mc_gbm_bb','hmm_mc','garch','bootstrap','heston','jump_diffusion','auto'] = 'hmm_mc',  # type: ignore
     direction: Literal['long','short'] = 'long',  # trade direction context for TP/SL
     mode: Literal['pct','pips'] = 'pct',  # type: ignore
     tp_min: float = 0.25,

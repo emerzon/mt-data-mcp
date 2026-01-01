@@ -27,6 +27,8 @@ def report_generate(
     symbol: str,
     horizon: Optional[int] = None,
     template: TemplateName = 'basic',
+    timeframe: Optional[str] = None,
+    methods: Optional[Union[str, List[str]]] = None,
     denoise: Optional[DenoiseSpec] = None,
     params: Optional[Dict[str, Any]] = None,
     output: Literal['toon', 'markdown'] = 'toon',
@@ -36,7 +38,7 @@ def report_generate(
     - template: 'basic' (context, pivot, EWMA vol, backtest->best forecast, MC barrier grid, patterns)
                 'advanced' (adds regimes, HAR-RV, conformal),
                 or style-specific ('scalping' | 'intraday' | 'swing' | 'position').
-    - params: optional dict to tune steps/spacing, grids, and optionally override timeframe per template via 'timeframe'.
+    - params: optional dict to tune steps/spacing, grids, and optionally override timeframe per template via 'timeframe' or methods via 'methods'.
     - denoise: pass-through to candle fetching (e.g., {method:'ema', params:{alpha:0.2}, columns:['close']}).
     - output: 'toon' (structured TOON) or 'markdown' (rendered report text).
     """
@@ -44,6 +46,10 @@ def report_generate(
         output_mode = str(output or 'toon').strip().lower()
         name = (template or 'basic').lower().strip()
         p = dict(params or {})
+        if timeframe:
+            p['timeframe'] = str(timeframe)
+        if methods is not None:
+            p['methods'] = methods
 
         try:
             from .report_templates import (

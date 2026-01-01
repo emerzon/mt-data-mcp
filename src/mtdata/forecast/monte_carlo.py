@@ -8,6 +8,8 @@ This module provides two primary helpers:
   using an EM-like procedure and simulate regime-switching returns forward.
 - simulate_garch_mc: Fit a GARCH(1,1) model (requires 'arch' package) and simulate.
 - simulate_bootstrap_mc: Circular block bootstrap from historical returns.
+- simulate_heston_mc: Heston stochastic volatility simulation (Euler).
+- simulate_jump_diffusion_mc: Merton-style jump diffusion simulation.
 
 No external dependencies beyond numpy/pandas are required (except for GARCH). The HMM fitting is a
 minimal, robust EM tailored for 1D Gaussian emissions and a small number of
@@ -241,6 +243,151 @@ def simulate_gbm_mc(
         cur = cur * np.exp(ret_paths[:, t])
         price_paths[:, t] = cur
     return {'price_paths': price_paths, 'return_paths': ret_paths}
+
+
+def simulate_heston_mc(
+    prices: np.ndarray,
+    horizon: int,
+    n_sims: int = 500,
+    seed: Optional[int] = 42,
+    kappa: Optional[float] = None,
+    theta: Optional[float] = None,
+    xi: Optional[float] = None,
+    rho: Optional[float] = None,
+    v0: Optional[float] = None,
+    dt: float = 1.0,
+) -> Dict[str, np.ndarray]:
+    """Simulate a Heston stochastic volatility model using Euler discretization."""
+    rng = np.random.RandomState(seed)
+    prices = np.asarray(prices, dtype=float)
+    prices = prices[np.isfinite(prices)]
+    if prices.size < 10:
+        raise ValueError("Not enough prices for Heston calibration")
+
+    rets = np.diff(_safe_log(prices))
+    rets = rets[np.isfinite(rets)]
+    if rets.size < 5:
+        raise ValueError("Not enough returns for Heston calibration")
+
+    mu = float(np.mean(rets))
+    ret_var = float(np.var(rets, ddof=1))
+    ret_var = max(ret_var, 1e-10)
+
+    theta_val = float(theta) if theta is not None else ret_var
+    v0_val = float(v0) if v0 is not None else float(np.var(rets[-50:], ddof=1) if rets.size >= 50 else ret_var)
+    kappa_val = float(kappa) if kappa is not None else 2.0
+    xi_val = float(xi) if xi is not None else max(1e-6, 0.5 * np.sqrt(theta_val))
+    rho_val = float(rho) if rho is not None else -0.3
+    rho_val = float(np.clip(rho_val, -0.99, 0.99))
+
+    last_price = float(prices[-1])
+    price_paths = np.zeros((int(n_sims), int(horizon)), dtype=float)
+    ret_paths = np.zeros_like(price_paths, dtype=float)
+    vol_paths = np.zeros_like(price_paths, dtype=float)
+
+    cur = np.full(int(n_sims), last_price, dtype=float)
+    v = np.full(int(n_sims), max(v0_val, 1e-10), dtype=float)
+    sqrt_dt = float(np.sqrt(dt))
+
+    for t in range(int(horizon)):
+        z1 = rng.normal(size=int(n_sims))
+        z2 = rng.normal(size=int(n_sims))
+        z2 = rho_val * z1 + np.sqrt(max(1.0 - rho_val * rho_val, 0.0)) * z2
+
+        v_pos = np.clip(v, 0.0, None)
+        dv = kappa_val * (theta_val - v_pos) * dt + xi_val * np.sqrt(v_pos) * sqrt_dt * z2
+        v = np.clip(v_pos + dv, 1e-10, None)
+
+        ret = (mu - 0.5 * v_pos) * dt + np.sqrt(v_pos) * sqrt_dt * z1
+        cur = cur * np.exp(ret)
+
+        ret_paths[:, t] = ret
+        price_paths[:, t] = cur
+        vol_paths[:, t] = v
+
+    return {
+        'price_paths': price_paths,
+        'return_paths': ret_paths,
+        'vol_paths': vol_paths,
+        'params': {
+            'mu': mu,
+            'kappa': kappa_val,
+            'theta': theta_val,
+            'xi': xi_val,
+            'rho': rho_val,
+            'v0': v0_val,
+        },
+    }
+
+
+def simulate_jump_diffusion_mc(
+    prices: np.ndarray,
+    horizon: int,
+    n_sims: int = 500,
+    seed: Optional[int] = 42,
+    jump_lambda: Optional[float] = None,
+    jump_mu: Optional[float] = None,
+    jump_sigma: Optional[float] = None,
+    jump_threshold: float = 3.0,
+    dt: float = 1.0,
+) -> Dict[str, np.ndarray]:
+    """Simulate a Merton jump-diffusion model."""
+    rng = np.random.RandomState(seed)
+    prices = np.asarray(prices, dtype=float)
+    prices = prices[np.isfinite(prices)]
+    if prices.size < 10:
+        raise ValueError("Not enough prices for jump diffusion calibration")
+
+    rets = np.diff(_safe_log(prices))
+    rets = rets[np.isfinite(rets)]
+    if rets.size < 5:
+        raise ValueError("Not enough returns for jump diffusion calibration")
+
+    mu = float(np.mean(rets))
+    sigma = float(np.std(rets, ddof=1)) + 1e-12
+
+    jump_mask = np.abs(rets - mu) > (float(jump_threshold) * sigma)
+    jump_rets = rets[jump_mask]
+    jump_freq = float(jump_rets.size) / float(max(1, rets.size))
+    lambda_val = float(jump_lambda) if jump_lambda is not None else float(np.clip(jump_freq, 0.0, 1.0))
+    if jump_rets.size >= 3:
+        mu_j = float(jump_mu) if jump_mu is not None else float(np.mean(jump_rets))
+        sigma_j = float(jump_sigma) if jump_sigma is not None else float(np.std(jump_rets, ddof=1))
+    else:
+        mu_j = float(jump_mu) if jump_mu is not None else 0.0
+        sigma_j = float(jump_sigma) if jump_sigma is not None else float(max(0.5 * sigma, 1e-6))
+
+    k = np.exp(mu_j + 0.5 * sigma_j * sigma_j) - 1.0
+    drift = mu - lambda_val * k
+
+    last_price = float(prices[-1])
+    price_paths = np.zeros((int(n_sims), int(horizon)), dtype=float)
+    ret_paths = np.zeros_like(price_paths, dtype=float)
+
+    cur = np.full(int(n_sims), last_price, dtype=float)
+    sqrt_dt = float(np.sqrt(dt))
+
+    for t in range(int(horizon)):
+        z = rng.normal(size=int(n_sims))
+        n_j = rng.poisson(lam=lambda_val * dt, size=int(n_sims))
+        jump = mu_j * n_j + sigma_j * np.sqrt(n_j.astype(float)) * rng.normal(size=int(n_sims))
+        ret = drift * dt + sigma * sqrt_dt * z + jump
+        cur = cur * np.exp(ret)
+        ret_paths[:, t] = ret
+        price_paths[:, t] = cur
+
+    return {
+        'price_paths': price_paths,
+        'return_paths': ret_paths,
+        'params': {
+            'mu': mu,
+            'sigma': sigma,
+            'jump_lambda': lambda_val,
+            'jump_mu': mu_j,
+            'jump_sigma': sigma_j,
+            'jump_threshold': float(jump_threshold),
+        },
+    }
 
 
 def simulate_garch_mc(

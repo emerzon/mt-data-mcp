@@ -111,6 +111,26 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
                     _set_ref("simplify", "#/$defs/SimplifySpec", allow_null=True)
                 if name == "data_fetch_ticks":
                     _set_ref("simplify", "#/$defs/SimplifySpec", allow_null=True)
+                if name == "forecast_barrier_prob":
+                    if "method" in params:
+                        params["method"] = {
+                            "type": "string",
+                            "enum": ["mc", "closed_form", "auto"],
+                            "description": "Barrier probability mode: 'mc' (Monte Carlo), 'closed_form', or 'auto' (MC with auto method).",
+                        }
+                    if "mc_method" in params:
+                        params["mc_method"] = {
+                            "type": "string",
+                            "enum": ["mc_gbm", "mc_gbm_bb", "hmm_mc", "garch", "bootstrap", "heston", "jump_diffusion", "auto"],
+                            "description": "Monte Carlo engine for barrier simulation.",
+                        }
+                if name == "forecast_barrier_optimize":
+                    if "method" in params:
+                        params["method"] = {
+                            "type": "string",
+                            "enum": ["mc_gbm", "mc_gbm_bb", "hmm_mc", "garch", "bootstrap", "heston", "jump_diffusion", "auto"],
+                            "description": "Barrier simulation method for optimization.",
+                        }
                 # Trading schemas: add enums and param docs where helpful
                 if name == "trading_pending_place":
                     # Clarify acceptable order type values for pending orders
