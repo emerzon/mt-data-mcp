@@ -9,11 +9,20 @@ import math
 import pandas as pd
 import numpy as np
 
-# Local defaults to avoid circular import with core package during initialization.
-# Keep in sync with src/mtdata/core/constants.py
-SIMPLIFY_DEFAULT_RATIO = 0.25
-SIMPLIFY_DEFAULT_MIN_POINTS = 100
-SIMPLIFY_DEFAULT_MAX_POINTS = 500
+# Import defaults from core.constants to avoid duplication.
+# Use a lazy import to prevent circular imports during initialization.
+def _get_simplify_defaults() -> Tuple[float, int, int]:
+    """Lazy-load simplify defaults from core.constants to avoid circular imports."""
+    try:
+        from ..core.constants import (
+            SIMPLIFY_DEFAULT_RATIO,
+            SIMPLIFY_DEFAULT_MIN_POINTS,
+            SIMPLIFY_DEFAULT_MAX_POINTS,
+        )
+        return (SIMPLIFY_DEFAULT_RATIO, SIMPLIFY_DEFAULT_MIN_POINTS, SIMPLIFY_DEFAULT_MAX_POINTS)
+    except ImportError:
+        # Fallback if core.constants is not available (e.g., during isolated testing)
+        return (0.25, 100, 500)
 
 
 def _default_target_points(total: int) -> int:
@@ -23,11 +32,12 @@ def _default_target_points(total: int) -> int:
     [SIMPLIFY_DEFAULT_MIN_POINTS, SIMPLIFY_DEFAULT_MAX_POINTS].
     """
     try:
-        t = int(round(total * SIMPLIFY_DEFAULT_RATIO))
-        t = max(SIMPLIFY_DEFAULT_MIN_POINTS, min(SIMPLIFY_DEFAULT_MAX_POINTS, t))
+        ratio, min_pts, max_pts = _get_simplify_defaults()
+        t = int(round(total * ratio))
+        t = max(min_pts, min(max_pts, t))
         return max(3, min(t, total))
     except Exception:
-        return max(3, min(SIMPLIFY_DEFAULT_MIN_POINTS, total))
+        return max(3, min(100, total))
 
 
 def _choose_simplify_points(total: int, spec: Dict[str, Any]) -> int:

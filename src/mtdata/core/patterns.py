@@ -15,6 +15,143 @@ from .server import mcp, _auto_connect_wrapper
 from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
 import MetaTrader5 as mt5
 
+
+def _round_value(x: Any) -> Any:
+    """Round numeric values to 8 decimal places."""
+    try:
+        return float(np.round(float(x), 8))
+    except Exception:
+        return x
+
+
+def _fetch_pattern_data(
+    symbol: str,
+    timeframe: str,
+    limit: int,
+    denoise: Optional[Dict[str, Any]] = None,
+) -> Tuple[Optional[pd.DataFrame], Optional[Dict[str, Any]]]:
+    """Fetch and prepare OHLCV data for pattern detection.
+    
+    Returns (df, error_dict) where error_dict is None on success.
+    """
+    if timeframe not in TIMEFRAME_MAP:
+        return None, {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+    
+    mt5_tf = TIMEFRAME_MAP[timeframe]
+    _info = mt5.symbol_info(symbol)
+    _was_visible = bool(_info.visible) if _info is not None else None
+    try:
+        if _was_visible is False:
+            mt5.symbol_select(symbol, True)
+    except Exception:
+        pass
+    
+    utc_now = datetime.utcnow()
+    count = max(400, int(limit) + 2)
+    rates = _mt5_copy_rates_from(symbol, mt5_tf, utc_now, count)
+    
+    if rates is None or len(rates) < 100:
+        return None, {"error": f"Failed to fetch sufficient bars for {symbol}"}
+    
+    df = pd.DataFrame(rates)
+    if 'volume' not in df.columns and 'tick_volume' in df.columns:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            df['volume'] = df['tick_volume']
+    
+    # Drop the last (potentially incomplete) bar
+    if len(df) >= 2:
+        df = df.iloc[:-1]
+    
+    # Apply denoising if requested
+    if denoise:
+        try:
+            dn = _normalize_denoise_spec(denoise, default_when='pre_ti')
+            if dn:
+                _apply_denoise_util(df, dn, default_when='pre_ti')
+        except Exception:
+            pass
+    
+    # Trim to requested limit
+    if len(df) > int(limit):
+        df = df.iloc[-int(limit):].copy()
+    
+    return df, None
+
+
+def _build_pattern_response(
+    symbol: str,
+    timeframe: str,
+    limit: int,
+    mode: str,
+    patterns: List[Dict[str, Any]],
+    include_completed: bool,
+    include_series: bool,
+    series_time: str,
+    df: pd.DataFrame,
+) -> Dict[str, Any]:
+    """Build the response dict for pattern detection results."""
+    # Filter patterns based on include_completed
+    filtered = patterns if include_completed else [
+        d for d in patterns if str(d.get('status', '')).lower() == 'forming'
+    ]
+    
+    resp: Dict[str, Any] = {
+        "success": True,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "lookback": int(limit),
+        "mode": mode,
+        "patterns": filtered,
+        "n_patterns": int(len(filtered)),
+    }
+    
+    # Include series data if requested
+    if include_series:
+        resp["series_close"] = [float(v) for v in __to_float_np(df.get('close')).tolist()]
+        if 'time' in df.columns:
+            if str(series_time).lower() == 'epoch':
+                resp["series_epoch"] = [float(v) for v in __to_float_np(df.get('time')).tolist()]
+            else:
+                resp["series_time"] = [
+                    _format_time_minimal(float(v)) for v in __to_float_np(df.get('time')).tolist()
+                ]
+    
+    return resp
+
+
+def _format_pattern_dates(start_time: Optional[float], end_time: Optional[float]) -> Tuple[Optional[str], Optional[str]]:
+    """Format epoch times to date strings."""
+    st_epoch = float(start_time) if start_time is not None else None
+    et_epoch = float(end_time) if end_time is not None else None
+    
+    try:
+        start_date = _format_time_minimal(st_epoch) if st_epoch is not None else None
+    except Exception:
+        start_date = None
+    
+    try:
+        end_date = _format_time_minimal(et_epoch) if et_epoch is not None else None
+    except Exception:
+        end_date = None
+    
+    return start_date, end_date
+
+
+def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> None:
+    """Apply config dict values to a config object's attributes."""
+    if not isinstance(config, dict):
+        return
+    for k, v in config.items():
+        if hasattr(cfg, k):
+            try:
+                setattr(cfg, k, type(getattr(cfg, k))(v))
+            except Exception:
+                try:
+                    setattr(cfg, k, v)
+                except Exception:
+                    pass
+
 @mcp.tool()
 @_auto_connect_wrapper
 def patterns_detect(
@@ -127,58 +264,16 @@ def patterns_detect(
             )
 
         elif mode == 'classic':
-            # Logic from patterns_detect_classic
-            if timeframe not in TIMEFRAME_MAP:
-                return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
-            mt5_tf = TIMEFRAME_MAP[timeframe]
-            _info = mt5.symbol_info(symbol)
-            _was_visible = bool(_info.visible) if _info is not None else None
-            try:
-                if _was_visible is False:
-                    mt5.symbol_select(symbol, True)
-            except Exception:
-                pass
-            utc_now = datetime.utcnow()
-            count = max(400, int(limit) + 2)
-            rates = _mt5_copy_rates_from(symbol, mt5_tf, utc_now, count)
-            if rates is None or len(rates) < 100:
-                return {"error": f"Failed to fetch sufficient bars for {symbol}"}
-            df = pd.DataFrame(rates)
-            if 'volume' not in df.columns and 'tick_volume' in df.columns:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    df['volume'] = df['tick_volume']
-            if len(df) >= 2:
-                df = df.iloc[:-1]
-            if denoise:
-                try:
-                    dn = _normalize_denoise_spec(denoise, default_when='pre_ti')
-                    if dn:
-                        _apply_denoise_util(df, dn, default_when='pre_ti')
-                except Exception:
-                    pass
-            if len(df) > int(limit):
-                df = df.iloc[-int(limit):].copy()
+            # Fetch and prepare data using shared helper
+            df, err = _fetch_pattern_data(symbol, timeframe, limit, denoise)
+            if err:
+                return err
 
             cfg = _ClassicCfg()
-            if isinstance(config, dict):
-                for k, v in config.items():
-                    if hasattr(cfg, k):
-                        try:
-                            setattr(cfg, k, type(getattr(cfg, k))(v))
-                        except Exception:
-                            try:
-                                setattr(cfg, k, v)
-                            except Exception:
-                                pass
+            _apply_config_to_obj(cfg, config)
 
             pats = _detect_classic_patterns(df, cfg)
 
-            def _round(x):
-                try:
-                    return float(np.round(float(x), 8))
-                except Exception:
-                    return x
             out_list = []
             n_bars = len(df)
 
@@ -216,16 +311,7 @@ def patterns_detect(
             
             for p in pats:
                 try:
-                    st_epoch = float(p.start_time) if p.start_time is not None else None
-                    et_epoch = float(p.end_time) if p.end_time is not None else None
-                    try:
-                        start_date = _format_time_minimal(st_epoch) if st_epoch is not None else None
-                    except Exception:
-                        start_date = None
-                    try:
-                        end_date = _format_time_minimal(et_epoch) if et_epoch is not None else None
-                    except Exception:
-                        end_date = None
+                    start_date, end_date = _format_pattern_dates(p.start_time, p.end_time)
                     d = {
                         "name": p.name,
                         "status": p.status,
@@ -234,7 +320,7 @@ def patterns_detect(
                         "end_index": int(p.end_index),
                         "start_date": start_date,
                         "end_date": end_date,
-                        "details": {k: _round(v) for k, v in (p.details or {}).items()},
+                        "details": {k: _round_value(v) for k, v in (p.details or {}).items()},
                     }
                     if p.status == 'forming':
                         est = _estimate_bars_to_completion(p.name, d["details"], d["start_index"], d["end_index"])
@@ -244,99 +330,28 @@ def patterns_detect(
                 except Exception:
                     continue
 
-            filtered = out_list if include_completed else [d for d in out_list if str(d.get('status','')).lower() == 'forming']
-
-            resp: Dict[str, Any] = {
-                "success": True,
-                "symbol": symbol,
-                "timeframe": timeframe,
-                "lookback": int(limit),
-                "mode": mode,
-                "patterns": filtered,
-                "n_patterns": int(len(filtered)),
-            }
-            if include_series:
-                resp["series_close"] = [float(v) for v in __to_float_np(df.get('close')).tolist()]
-                if 'time' in df.columns:
-                    if str(series_time).lower() == 'epoch':
-                        resp["series_epoch"] = [float(v) for v in __to_float_np(df.get('time')).tolist()]
-                    else:
-                        resp["series_time"] = [
-                            _format_time_minimal(float(v)) for v in __to_float_np(df.get('time')).tolist()
-                        ]
-            return resp
+            return _build_pattern_response(
+                symbol, timeframe, limit, mode, out_list,
+                include_completed, include_series, series_time, df
+            )
 
         elif mode == 'elliott':
-            # Logic from patterns_detect_elliott_wave
-            if timeframe not in TIMEFRAME_MAP:
-                return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
-            mt5_tf = TIMEFRAME_MAP[timeframe]
-            _info = mt5.symbol_info(symbol)
-            _was_visible = bool(_info.visible) if _info is not None else None
-            try:
-                if _was_visible is False:
-                    mt5.symbol_select(symbol, True)
-            except Exception:
-                pass
-            utc_now = datetime.utcnow()
-            count = max(400, int(limit) + 2)
-            rates = _mt5_copy_rates_from(symbol, mt5_tf, utc_now, count)
-            if rates is None or len(rates) < 100:
-                return {"error": f"Failed to fetch sufficient bars for {symbol}"}
-            df = pd.DataFrame(rates)
-            if 'volume' not in df.columns and 'tick_volume' in df.columns:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    df['volume'] = df['tick_volume']
-            if len(df) >= 2:
-                df = df.iloc[:-1]
-            if denoise:
-                try:
-                    dn = _normalize_denoise_spec(denoise, default_when='pre_ti')
-                    if dn:
-                        _apply_denoise_util(df, dn, default_when='pre_ti')
-                except Exception:
-                    pass
-            if len(df) > int(limit):
-                df = df.iloc[-int(limit):].copy()
+            # Fetch and prepare data using shared helper
+            df, err = _fetch_pattern_data(symbol, timeframe, limit, denoise)
+            if err:
+                return err
 
             cfg = _ElliottCfg()
-            if isinstance(config, dict):
-                for k, v in config.items():
-                    if hasattr(cfg, k):
-                        try:
-                            setattr(cfg, k, type(getattr(cfg, k))(v))
-                        except Exception:
-                            try:
-                                setattr(cfg, k, v)
-                            except Exception:
-                                pass
+            _apply_config_to_obj(cfg, config)
 
             pats = _detect_elliott_waves(df, cfg)
 
-            def _round(x):
-                try:
-                    return float(np.round(float(x), 8))
-                except Exception:
-                    return x
             out_list = []
             n_bars = len(df)
             for p in pats:
                 try:
-                    st_epoch = float(p.start_time) if p.start_time is not None else None
-                    et_epoch = float(p.end_time) if p.end_time is not None else None
-                    try:
-                        start_date = _format_time_minimal(st_epoch) if st_epoch is not None else None
-                    except Exception:
-                        start_date = None
-                    try:
-                        end_date = _format_time_minimal(et_epoch) if et_epoch is not None else None
-                    except Exception:
-                        end_date = None
-                    try:
-                        recent_bars = 3
-                    except Exception:
-                        recent_bars = 3
+                    start_date, end_date = _format_pattern_dates(p.start_time, p.end_time)
+                    recent_bars = 3
                     status = 'forming' if int(p.end_index) >= int(n_bars - recent_bars) else 'completed'
 
                     d = {
@@ -347,32 +362,16 @@ def patterns_detect(
                         "end_index": int(p.end_index),
                         "start_date": start_date,
                         "end_date": end_date,
-                        "details": {k: _round(v) for k, v in (p.details or {}).items()},
+                        "details": {k: _round_value(v) for k, v in (p.details or {}).items()},
                     }
                     out_list.append(d)
                 except Exception:
                     continue
-            filtered = out_list if include_completed else [d for d in out_list if str(d.get('status','')).lower() == 'forming']
 
-            resp: Dict[str, Any] = {
-                "success": True,
-                "symbol": symbol,
-                "timeframe": timeframe,
-                "lookback": int(limit),
-                "mode": mode,
-                "patterns": filtered,
-                "n_patterns": int(len(filtered)),
-            }
-            if include_series:
-                resp["series_close"] = [float(v) for v in __to_float_np(df.get('close')).tolist()]
-                if 'time' in df.columns:
-                    if str(series_time).lower() == 'epoch':
-                        resp["series_epoch"] = [float(v) for v in __to_float_np(df.get('time')).tolist()]
-                    else:
-                        resp["series_time"] = [
-                            _format_time_minimal(float(v)) for v in __to_float_np(df.get('time')).tolist()
-                        ]
-            return resp
+            return _build_pattern_response(
+                symbol, timeframe, limit, mode, out_list,
+                include_completed, include_series, series_time, df
+            )
         
         else:
             return {"error": f"Unknown mode: {mode}"}
