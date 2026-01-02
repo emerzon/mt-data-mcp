@@ -8,9 +8,16 @@ import numpy as np
 import pandas as pd
 
 from ..core.constants import TIMEFRAME_SECONDS, TIMEFRAME_MAP
-from ..utils.mt5 import _mt5_epoch_to_utc, _ensure_symbol_ready, _mt5_copy_rates_from, get_symbol_info_cached
+from ..utils.mt5 import (
+    _mt5_epoch_to_utc,
+    _ensure_symbol_ready,
+    _mt5_copy_rates_from,
+    _mt5_copy_rates_from_pos,
+    get_symbol_info_cached,
+)
 import MetaTrader5 as mt5
 from ..utils.utils import _parse_start_datetime
+
 
 
 def _extract_forecast_values(Yf: Any, fh: int, method_name: str = "forecast") -> "np.ndarray":
@@ -348,17 +355,12 @@ def fetch_history(
                 raise RuntimeError("Invalid as_of time.")
             rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, int(need))
         else:
-            _tick = mt5.symbol_info_tick(symbol)
-            if _tick is not None and getattr(_tick, 'time', None):
-                t_utc = _mt5_epoch_to_utc(float(_tick.time))
-                from datetime import datetime as _dt
-                server_now_dt = _dt.utcfromtimestamp(t_utc)
-            else:
-                from datetime import datetime as _dt
-                server_now_dt = _dt.utcnow()
-            rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, int(need))
+            # Use position-based fetch for "latest" to avoid TZ issues and ensure open candle
+            # start_pos=0 includes the current forming bar
+            rates = _mt5_copy_rates_from_pos(symbol, mt5_tf, 0, int(need))
     finally:
         if was_visible is False:
+
             try:
                 mt5.symbol_select(symbol, False)
             except Exception:

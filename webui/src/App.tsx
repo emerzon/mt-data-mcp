@@ -1,13 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getHistory, getPivots, getSupportResistance, getErrorMessage } from './api/client'
-import { InstrumentPicker } from './components/InstrumentPicker'
-import { TimeframePicker } from './components/TimeframePicker'
-import { OHLCChart } from './components/OHLCChart'
-import { ForecastControls } from './components/ForecastControls'
-import { VolatilityControls } from './components/VolatilityControls'
-import { BacktestControls } from './components/BacktestControls'
-import { ChartDenoiseControls } from './components/ChartDenoiseControls'
+import { getHistory, getPivots, getSupportResistance, getTick } from './api/client'
+import { OHLCChart, type PriceLineSpec } from './components/OHLCChart'
+import { ChartToolbar } from './components/ChartToolbar'
+import { ForecastPanel } from './components/ForecastPanel'
 import type {
   ForecastPayload,
   HistoryBar,
@@ -20,149 +16,156 @@ import type {
 import { toUtcSec } from './lib/time'
 import { tfSeconds } from './lib/timeframes'
 import { loadJSON, saveJSON } from './lib/storage'
-import { formatNumber } from './lib/utils'
+
+const DEFAULT_LIMIT = 800
 
 export default function App() {
-  const [tab, setTab] = useState<'price' | 'vol' | 'backtest'>('price')
+  // Core state
   const [symbol, setSymbol] = useState('')
   const [timeframe, setTimeframe] = useState('H1')
-  const [limit, setLimit] = useState(800)
+  const [limit, setLimit] = useState(DEFAULT_LIMIT)
   const [end, setEnd] = useState<string | undefined>(undefined)
   const [anchor, setAnchor] = useState<number | undefined>(undefined)
+  const [showBid, setShowBid] = useState(true)
+  const [showAsk, setShowAsk] = useState(true)
+  const [isLive, setIsLive] = useState(false)
+
+  // Chart overlays
   const [forecastOverlays, setForecastOverlays] = useState<ChartOverlay[]>([])
   const [chartDenoise, setChartDenoise] = useState<DenoiseSpecUI | undefined>(undefined)
   const [pivotLevels, setPivotLevels] = useState<PivotLevel[] | null>(null)
-  const [pivotLoading, setPivotLoading] = useState(false)
-  const [pivotError, setPivotError] = useState<string | null>(null)
-  const [pivotMeta, setPivotMeta] = useState<{ method: string; period?: { start?: string; end?: string } } | null>(null)
   const [srLevels, setSrLevels] = useState<SupportResistanceLevel[] | null>(null)
-  const [srLoading, setSrLoading] = useState(false)
-  const [srError, setSrError] = useState<string | null>(null)
-  const [srMeta, setSrMeta] = useState<{
-    method: string
-    tolerance_pct: number
-    min_touches: number
-    window?: { start?: string | null; end?: string | null }
-  } | null>(null)
+
+  // UI state
+  const [showForecastPanel, setShowForecastPanel] = useState(false)
   const [metrics, setMetrics] = useState<AnchorMetrics | null>(null)
 
-  const { data, refetch, isFetching } = useQuery({
-    queryKey: ['hist', symbol, timeframe, limit, end, JSON.stringify(chartDenoise || {})],
-    queryFn: () =>
-      getHistory({
-        symbol,
-        timeframe,
-        limit,
-        end,
-        denoise: chartDenoise,
-      }),
+  // Data fetching
+  const { data: histData, refetch, isFetching } = useQuery({
+    queryKey: ['hist', symbol, timeframe, limit, end, JSON.stringify(chartDenoise || {}), isLive],
+    queryFn: () => getHistory({ symbol, timeframe, limit, end, denoise: chartDenoise, include_incomplete: isLive }),
     enabled: !!symbol,
   })
 
-  const bars = (data ?? []) as HistoryBar[]
+  const { data: liveData } = useQuery({
+    queryKey: ['hist-live', symbol, timeframe],
+    queryFn: () => getHistory({ symbol, timeframe, limit: 2, include_incomplete: true }),
+    enabled: isLive && !!symbol && !end,
+    refetchInterval: 2000,
+  })
+
+  const { data: tickData } = useQuery({
+    queryKey: ['tick', symbol],
+    queryFn: () => getTick(symbol),
+    enabled: !!symbol,
+    refetchInterval: 2000,
+  })
+
+  const bars = useMemo(() => {
+    const base = (histData ?? []) as HistoryBar[]
+    if (!isLive || !liveData || !base.length || end) return base
+    
+    const merged = [...base]
+    // Merge live tail
+    liveData.forEach(bar => {
+      const lastIndex = merged.length - 1
+      if (lastIndex >= 0) {
+        const last = merged[lastIndex]
+        // Allow small floating point diffs in time (though typically integers)
+        if (Math.abs(bar.time - last.time) < 0.1) {
+          merged[lastIndex] = bar
+        } else if (bar.time > last.time) {
+          merged.push(bar)
+        }
+      } else {
+        merged.push(bar)
+      }
+    })
+    return merged
+  }, [histData, liveData, isLive, end])
+
   const earliest = bars.length ? bars[0].time : undefined
 
-  useEffect(() => {
+  // Reset state on symbol/timeframe change
+  const handleSymbolChange = useCallback((newSymbol: string) => {
+    setSymbol(newSymbol)
+    setEnd(undefined)
+    setLimit(DEFAULT_LIMIT)
     setForecastOverlays([])
     setAnchor(undefined)
     setPivotLevels(null)
-    setPivotMeta(null)
-    setPivotError(null)
-    setPivotLoading(false)
     setSrLevels(null)
-    setSrMeta(null)
-    setSrError(null)
-    setSrLoading(false)
     setMetrics(null)
-    if (symbol && timeframe) {
-      const saved = loadJSON<DenoiseSpecUI | undefined>(`chart_dn:${symbol}:${timeframe}`)
+    if (newSymbol && timeframe) {
+      const saved = loadJSON<DenoiseSpecUI | undefined>(`chart_dn:${newSymbol}:${timeframe}`)
       setChartDenoise(saved || undefined)
     }
-  }, [symbol, timeframe])
+  }, [timeframe])
 
-  function onNeedMoreLeft(tEarliest: number) {
+  const handleTimeframeChange = useCallback((newTf: string) => {
+    setTimeframe(newTf)
+    setEnd(undefined)
+    setLimit(DEFAULT_LIMIT)
+    setForecastOverlays([])
+    setAnchor(undefined)
+    setPivotLevels(null)
+    setSrLevels(null)
+    setMetrics(null)
+    if (symbol && newTf) {
+      const saved = loadJSON<DenoiseSpecUI | undefined>(`chart_dn:${symbol}:${newTf}`)
+      setChartDenoise(saved || undefined)
+    }
+  }, [symbol])
+
+  const handleNeedMoreLeft = useCallback((tEarliest: number) => {
     if (!symbol || isFetching) return
     const dt = new Date((tEarliest - 1) * 1000)
-    const fmt = dt.toISOString().slice(0, 19).replace('T', ' ')
-    setEnd(fmt)
+    setEnd(dt.toISOString().slice(0, 19).replace('T', ' '))
     setLimit(prev => Math.min(20000, Math.floor(prev * 1.2)))
     setTimeout(() => refetch(), 50)
-  }
+  }, [symbol, isFetching, refetch])
 
-  function onAnchor(t: number) {
-    setAnchor(t)
-  }
-
-  const handlePivotToggle = async () => {
+  const handlePivotToggle = useCallback(async () => {
     if (!symbol) return
     if (pivotLevels) {
       setPivotLevels(null)
-      setPivotMeta(null)
-      setPivotError(null)
       return
     }
     try {
-      setPivotLoading(true)
-      setPivotError(null)
       const data = await getPivots({ symbol, timeframe, method: 'classic' })
       const levels = (data.levels || [])
         .map(row => ({ level: String(row.level), value: Number(row.value) }))
         .filter(row => Number.isFinite(row.value))
-      if (!levels.length) {
-        setPivotError('No pivot levels returned')
-        setPivotLevels(null)
-        setPivotMeta(null)
-        return
-      }
-      setPivotLevels(levels)
-      setPivotMeta({ method: data.method ?? 'classic', period: data.period })
+      if (levels.length) setPivotLevels(levels)
     } catch (err) {
-      setPivotError(getErrorMessage(err))
-      setPivotLevels(null)
-      setPivotMeta(null)
-    } finally {
-      setPivotLoading(false)
+      console.error('Failed to fetch pivots:', err)
     }
-  }
+  }, [symbol, timeframe, pivotLevels])
 
-  const handleSupportToggle = async () => {
+  const handleSRToggle = useCallback(async () => {
     if (!symbol) return
     if (srLevels) {
       setSrLevels(null)
-      setSrMeta(null)
-      setSrError(null)
       return
     }
     try {
-      setSrLoading(true)
-      setSrError(null)
       const data = await getSupportResistance({ symbol, timeframe, limit })
       const levels = (data.levels || []).filter(row => Number.isFinite(row?.value))
-      if (!levels.length) {
-        setSrError('No support/resistance levels detected')
-        setSrLevels(null)
-        setSrMeta(null)
-        return
-      }
-      setSrLevels(levels)
-      setSrMeta({
-        method: data.method ?? 'swing',
-        tolerance_pct: data.tolerance_pct ?? 0,
-        min_touches: data.min_touches ?? 2,
-        window: data.window,
-      })
+      if (levels.length) setSrLevels(levels)
     } catch (err) {
-      setSrError(getErrorMessage(err))
-      setSrLevels(null)
-      setSrMeta(null)
-    } finally {
-      setSrLoading(false)
+      console.error('Failed to fetch S/R:', err)
     }
-  }
+  }, [symbol, timeframe, limit, srLevels])
 
-  function onPriceResult(res: ForecastPayload) {
+  const handleDenoiseChange = useCallback((denoise?: DenoiseSpecUI) => {
+    setChartDenoise(denoise)
+    if (symbol && timeframe) saveJSON(`chart_dn:${symbol}:${timeframe}`, denoise)
+  }, [symbol, timeframe])
+
+  const handleForecastResult = useCallback((res: ForecastPayload) => {
     const main = res.forecast_price ?? res.forecast_return ?? []
     let times: number[] = []
+    
     if (res.forecast_epoch && res.forecast_epoch.length === main.length) {
       times = res.forecast_epoch.map(t => toUtcSec(t))
     } else {
@@ -181,28 +184,30 @@ export default function App() {
       }
     }
 
-    const overlay = times.map((t, i) => ({ time: t, value: main[i] }))
-    const overlays: ChartOverlay[] = [{ name: 'forecast', points: overlay, color: '#60a5fa' }]
+    const overlays: ChartOverlay[] = [
+      { name: 'forecast', points: times.map((t, i) => ({ time: t, value: main[i] })), color: '#60a5fa', lineWidth: 2 }
+    ]
     if (res.lower_price && res.upper_price) {
       overlays.push({
         name: 'lower',
         points: times.map((t, i) => ({ time: t, value: res.lower_price![i] })),
-        color: '#94a3b8',
+        color: '#64748b',
+        lineStyle: 'dashed',
       })
       overlays.push({
         name: 'upper',
         points: times.map((t, i) => ({ time: t, value: res.upper_price![i] })),
-        color: '#94a3b8',
+        color: '#64748b',
+        lineStyle: 'dashed',
       })
     }
     setForecastOverlays(overlays)
 
-    const isPartial = res.__kind === 'partial'
-    if (isPartial && anchor && bars.length) {
+    // Calculate metrics for partial forecasts
+    if (res.__kind === 'partial' && anchor && bars.length) {
       const closeByTime = new Map<number, number>()
-      for (const bar of bars) {
-        closeByTime.set(Math.floor(bar.time), bar.close)
-      }
+      for (const bar of bars) closeByTime.set(Math.floor(bar.time), bar.close)
+      
       const yPred: number[] = []
       const yAct: number[] = []
       for (let i = 0; i < times.length; i++) {
@@ -212,113 +217,89 @@ export default function App() {
           yAct.push(Number(actual))
         }
       }
+      
       if (yPred.length) {
         const n = yPred.length
         const diffs = yPred.map((p, i) => p - yAct[i])
         const mae = diffs.reduce((acc, d) => acc + Math.abs(d), 0) / n
-        const mape =
-          (yPred.reduce((acc, _, i) => {
-            const denom = Math.abs(yAct[i]) || 1
-            return acc + Math.abs((yPred[i] - yAct[i]) / denom)
-          }, 0) / n) * 100
+        const mape = (yPred.reduce((acc, _, i) => acc + Math.abs((yPred[i] - yAct[i]) / (Math.abs(yAct[i]) || 1)), 0) / n) * 100
         const rmse = Math.sqrt(diffs.reduce((acc, d) => acc + d * d, 0) / n)
         const anchorClose = bars.find(b => Math.floor(b.time) === Math.floor(anchor))?.close ?? yAct[0]
         let correct = 0
         for (let i = 0; i < n; i++) {
           const prev = i === 0 ? anchorClose : yAct[i - 1]
-          const dp = Math.sign(yPred[i] - prev)
-          const da = Math.sign(yAct[i] - prev)
-          if (dp === da) correct += 1
+          if (Math.sign(yPred[i] - prev) === Math.sign(yAct[i] - prev)) correct++
         }
-        const dirAcc = (correct / n) * 100
-        setMetrics({ overlap: n, mae, mape, rmse, dirAcc })
+        setMetrics({ overlap: n, mae, mape, rmse, dirAcc: (correct / n) * 100 })
       } else {
         setMetrics(null)
       }
     } else {
       setMetrics(null)
     }
-  }
+  }, [timeframe, bars, anchor])
 
-  const chartAdvancedSummary =
-    [
-      chartDenoise?.method ? `denoise:${chartDenoise.method}` : null,
-      pivotLevels ? `pivots:${pivotMeta?.method ?? 'classic'}` : null,
-      srLevels ? `sr:${srMeta?.method ?? 'swing'}` : null,
-    ]
-      .filter(Boolean)
-      .join(' | ') || 'None'
-
+  // Build chart overlays
   const chartOverlays = useMemo(() => {
     const map = new Map<string, ChartOverlay>()
-    const addOverlay = (ov: ChartOverlay) => {
-      if (!ov?.name || !Array.isArray(ov.points)) return
-      map.set(ov.name, ov)
+    const add = (ov: ChartOverlay) => {
+      if (ov?.name && Array.isArray(ov.points)) map.set(ov.name, ov)
     }
 
-    forecastOverlays.forEach(addOverlay)
+    forecastOverlays.forEach(add)
 
     const startTime = bars.length ? bars[0].time : undefined
     const lastBarTime = bars.length ? bars[bars.length - 1].time : undefined
-    const tfStep = tfSeconds(timeframe) || 0
-    const fallbackStep = tfStep || (bars.length >= 2 ? Math.max(1, bars[1].time - bars[0].time) : 60)
+    const tfStep = tfSeconds(timeframe) || 60
+    
     let maxTime = lastBarTime
     forecastOverlays.forEach(ov => {
-      if (!ov?.points) return
-      ov.points.forEach(pt => {
-        if (pt?.time === undefined) return
-        const t = Number(pt.time)
-        if (!Number.isFinite(t)) return
-        maxTime = maxTime === undefined ? t : Math.max(maxTime, t)
+      ov.points?.forEach(pt => {
+        if (Number.isFinite(pt?.time)) {
+          maxTime = maxTime === undefined ? pt.time : Math.max(maxTime, pt.time)
+        }
       })
     })
-    const lineEnd = maxTime !== undefined ? maxTime + fallbackStep : undefined
+    const lineEnd = maxTime !== undefined ? maxTime + tfStep : undefined
 
+    // Denoised line
     if (bars.length && 'close_dn' in bars[0]) {
       const dnPoints = bars
-        .filter((bar): bar is HistoryBar & { close_dn: number } =>
-          Number.isFinite(bar.time) && Number.isFinite(bar.close_dn)
-        )
+        .filter((bar): bar is HistoryBar & { close_dn: number } => 
+          Number.isFinite(bar.time) && Number.isFinite(bar.close_dn))
         .map(bar => ({ time: bar.time, value: bar.close_dn }))
       if (dnPoints.length) {
-        addOverlay({ name: 'denoise:close', points: dnPoints, color: '#f59e0b', lineWidth: 2 })
+        add({ name: 'denoise:close', points: dnPoints, color: '#f59e0b', lineWidth: 2 })
       }
     }
 
+    // Pivot levels
     if (pivotLevels?.length && startTime !== undefined && lineEnd !== undefined) {
-      const colorForLevel = (level: string) => {
-        if (level.startsWith('R')) return '#f97316'
-        if (level.startsWith('S')) return '#38bdf8'
-        return '#facc15'
-      }
       pivotLevels.forEach(level => {
         if (!Number.isFinite(level.value)) return
-        addOverlay({
+        const color = level.level.startsWith('R') ? '#f97316' : level.level.startsWith('S') ? '#38bdf8' : '#facc15'
+        add({
           name: `pivot-${level.level}`,
-          points: [
-            { time: startTime, value: level.value },
-            { time: lineEnd, value: level.value },
-          ],
-          color: colorForLevel(level.level),
+          points: [{ time: startTime, value: level.value }, { time: lineEnd, value: level.value }],
+          color,
           lineStyle: 'dashed',
-          lineWidth: 1.5,
+          lineWidth: 1,
+          label: level.level,
         })
       })
     }
 
+    // S/R levels
     if (srLevels?.length && startTime !== undefined && lineEnd !== undefined) {
       srLevels.forEach((level, idx) => {
         if (!Number.isFinite(level?.value)) return
-        const color = level.type === 'resistance' ? '#f87171' : '#34d399'
-        addOverlay({
+        add({
           name: `sr-${level.type}-${idx}`,
-          points: [
-            { time: startTime, value: level.value },
-            { time: lineEnd, value: level.value },
-          ],
-          color,
+          points: [{ time: startTime, value: level.value }, { time: lineEnd, value: level.value }],
+          color: level.type === 'resistance' ? '#f87171' : '#34d399',
           lineWidth: 2,
           lineStyle: 'dotted',
+          label: `${level.type === 'resistance' ? 'Res' : 'Sup'} (${level.touches})`,
         })
       })
     }
@@ -326,231 +307,106 @@ export default function App() {
     return Array.from(map.values())
   }, [forecastOverlays, bars, pivotLevels, srLevels, timeframe])
 
-  const pivotButtonLabel = pivotLevels ? 'Hide Pivot Levels' : pivotLoading ? 'Loading...' : 'Plot Pivot Levels'
-  const supportButtonLabel = srLevels ? 'Hide S/R Levels' : srLoading ? 'Loading...' : 'Plot S/R Levels'
+  const priceLines: PriceLineSpec[] = useMemo(() => {
+    if (!tickData) return []
+    const lines: PriceLineSpec[] = []
+    if (showBid) lines.push({ price: tickData.bid, color: '#ef4444', title: 'Bid' })
+    if (showAsk) lines.push({ price: tickData.ask, color: '#22c55e', title: 'Ask' })
+    return lines
+  }, [tickData, showBid, showAsk])
 
   return (
-    <div className="h-full flex flex-col bg-slate-950 text-slate-200">
-      <header className="p-3 border-b border-slate-800 bg-slate-900/60 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto flex items-center gap-3">
-          <h1 className="text-lg font-semibold text-slate-200">MTData WebUI</h1>
-          <nav className="ml-6 flex gap-2">
-            <button
-              className={`btn ${tab === 'price' ? 'bg-sky-600' : 'bg-slate-700 hover:bg-slate-600'}`}
-              onClick={() => setTab('price')}
-            >
-              Price / Returns
-            </button>
-            <button
-              className={`btn ${tab === 'vol' ? 'bg-sky-600' : 'bg-slate-700 hover:bg-slate-600'}`}
-              onClick={() => setTab('vol')}
-            >
-              Volatility
-            </button>
-            <button
-              className={`btn ${tab === 'backtest' ? 'bg-sky-600' : 'bg-slate-700 hover:bg-slate-600'}`}
-              onClick={() => setTab('backtest')}
-            >
-              Backtest
-            </button>
-          </nav>
-          <div className="ml-auto text-xs text-slate-400">{symbol ? `${symbol} / ${timeframe}` : 'Select symbol'}</div>
-        </div>
-      </header>
+    <div className="h-full flex flex-col bg-slate-950">
+      {/* Full-screen chart area */}
+      <main className="flex-1 relative min-h-0">
+        {/* Floating toolbar */}
+        <ChartToolbar
+          symbol={symbol}
+          timeframe={timeframe}
+          anchor={anchor}
+          limit={limit}
+          isLoading={isFetching}
+          onSymbolChange={handleSymbolChange}
+          onTimeframeChange={handleTimeframeChange}
+          onLimitChange={setLimit}
+          onClearAnchor={() => setAnchor(undefined)}
+          onReload={() => { setEnd(undefined); refetch() }}
+          onTogglePivots={handlePivotToggle}
+          onToggleSR={handleSRToggle}
+          onDenoiseChange={handleDenoiseChange}
+          onOpenForecast={() => setShowForecastPanel(true)}
+          hasPivots={!!pivotLevels}
+          hasSR={!!srLevels}
+          denoise={chartDenoise}
+          barsCount={bars.length}
+          showBid={showBid}
+          showAsk={showAsk}
+          isLive={isLive}
+          onToggleBid={() => setShowBid(prev => !prev)}
+          onToggleAsk={() => setShowAsk(prev => !prev)}
+          onToggleLive={() => setIsLive(prev => !prev)}
+        />
 
-      <main className="flex-1 max-w-7xl mx-auto w-full p-4 flex flex-col gap-4 overflow-y-auto">
-        <section className="panel p-4 space-y-4">
-          <h2 className="text-sm font-semibold text-slate-200">Chart Settings</h2>
-          <div className="flex flex-wrap items-end gap-3">
-            <div>
-              <div className="label">Instrument</div>
-              <InstrumentPicker value={symbol} onChange={setSymbol} />
-            </div>
-            <div>
-              <div className="label">Timeframe</div>
-              <TimeframePicker value={timeframe} onChange={setTimeframe} />
-            </div>
-            <label className="flex flex-col">
-              <span className="label">Anchor (click chart to set)</span>
-              <input
-                className="input w-56"
-                value={anchor ? new Date(anchor * 1000).toISOString().slice(0, 19).replace('T', ' ') : ''}
-                readOnly
-                placeholder="YYYY-MM-DD HH:MM:SS"
-              />
-            </label>
-            <div className="ml-auto flex items-end gap-2">
-              <label className="flex flex-col">
-                <span className="label">Bars</span>
-                <input
-                  className="input w-24"
-                  type="number"
-                  min={100}
-                  max={20000}
-                  value={limit}
-                  onChange={e => setLimit(Number(e.target.value))}
-                />
-              </label>
-              <button
-                className="btn"
-                disabled={!symbol}
-                onClick={() => {
-                  setEnd(undefined)
-                  refetch()
-                }}
-              >
-                Reload
-              </button>
-            </div>
-          </div>
-
-          <details className="border border-slate-800 rounded-md" open={!!chartDenoise?.method || !!pivotLevels || !!srLevels}>
-            <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800 flex justify-between items-center">
-              <span>Advanced Settings</span>
-              <span className="text-xs text-slate-400">{chartAdvancedSummary}</span>
-            </summary>
-            <div className="p-3 space-y-3">
-              <ChartDenoiseControls
-                value={chartDenoise}
-                onChange={v => {
-                  setChartDenoise(v)
-                  if (symbol && timeframe) saveJSON(`chart_dn:${symbol}:${timeframe}`, v)
-                }}
-              />
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <button className="btn" onClick={handlePivotToggle} disabled={pivotLoading || !symbol}>
-                    {pivotButtonLabel}
-                  </button>
-                  {pivotError && <span className="text-xs text-rose-400">{pivotError}</span>}
-                </div>
-                <div className="flex items-center gap-2">
-                  <button className="btn" onClick={handleSupportToggle} disabled={srLoading || !symbol}>
-                    {supportButtonLabel}
-                  </button>
-                  {srError && <span className="text-xs text-rose-400">{srError}</span>}
-                </div>
-              </div>
-              {pivotLevels && pivotMeta?.period && (
-                <div className="text-xs text-slate-400">
-                  Pivot source: {pivotMeta.period.start} {'->'} {pivotMeta.period.end}
-                </div>
-              )}
-              {srLevels && (
-                <div className="text-xs text-slate-400 space-y-1">
-                  <div>
-                    S/R ({srLevels.length}) - tol +/- {((srMeta?.tolerance_pct ?? 0) * 100).toFixed(2)}% - min touches{' '}
-                    {srMeta?.min_touches ?? 2}
-                  </div>
-                  {srMeta?.window && (srMeta.window.start || srMeta.window.end) && (
-                    <div>
-                      Window: {srMeta.window.start ?? 'n/a'} {'->'} {srMeta.window.end ?? 'n/a'}
-                    </div>
-                  )}
-                  <div className="grid gap-1 sm:grid-cols-2">
-                    {srLevels.map((lvl, idx) => {
-                      const formatted = formatNumber(lvl.value)
-                      const hue = lvl.type === 'resistance' ? 'text-rose-300' : 'text-emerald-300'
-                      const last = lvl.last_touch ? ` - last ${lvl.last_touch}` : ''
-                      return (
-                        <div key={`sr-chip-${lvl.type}-${idx}`} className="flex justify-between gap-2">
-                          <span className={`capitalize ${hue}`}>
-                            {lvl.type} @ {formatted}
-                          </span>
-                          <span>
-                            {lvl.touches} touches{last}
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          </details>
-        </section>
-
-        <section className="panel p-4 space-y-4">
-          <h2 className="text-sm font-semibold text-slate-200">
-            {tab === 'price' ? 'Forecast Settings' : tab === 'vol' ? 'Volatility Settings' : 'Backtest Settings'}
-          </h2>
-          {tab === 'price' ? (
-            <ForecastControls symbol={symbol} timeframe={timeframe} anchor={anchor} onResult={onPriceResult} />
-          ) : tab === 'vol' ? (
-            <VolatilityControls symbol={symbol} timeframe={timeframe} anchor={anchor} onResult={() => {}} />
-          ) : (
-            <BacktestControls symbol={symbol} timeframe={timeframe} />
-          )}
-        </section>
-
-        <section className="panel p-2">
+        {/* Chart */}
+        <div className="absolute inset-0">
           <OHLCChart
             data={bars}
-            onAnchor={onAnchor}
-            onNeedMoreLeft={earliest ? onNeedMoreLeft : undefined}
+            onAnchor={setAnchor}
+            onNeedMoreLeft={earliest ? handleNeedMoreLeft : undefined}
             anchorTime={anchor}
             overlays={chartOverlays}
+            priceLines={priceLines}
           />
-        </section>
+        </div>
 
+        {/* Metrics overlay */}
         {metrics && (
-          <section className="panel p-3 flex flex-wrap items-center gap-4">
-            <span className="text-xs text-slate-400">Anchor forecast metrics (n={metrics.overlap})</span>
-            <MetricChip
-              label="MAE"
-              value={metrics.mae}
-              unit=""
-              severity={sevPct((metrics.mae / (bars[bars.length - 1]?.close || 1)) * 100)}
-              fmt="abs"
+          <div className="absolute bottom-4 left-4 flex gap-2 z-20">
+            <MetricBadge label="n" value={String(metrics.overlap)} />
+            <MetricBadge label="MAE" value={metrics.mae.toFixed(4)} />
+            <MetricBadge label="MAPE" value={`${metrics.mape.toFixed(1)}%`} />
+            <MetricBadge label="RMSE" value={metrics.rmse.toFixed(4)} />
+            <MetricBadge 
+              label="Dir" 
+              value={`${metrics.dirAcc.toFixed(0)}%`}
+              variant={metrics.dirAcc >= 60 ? 'success' : metrics.dirAcc >= 50 ? 'warning' : 'error'}
             />
-            <MetricChip label="MAPE" value={metrics.mape} unit="%" severity={sevPct(metrics.mape)} fmt="pct" />
-            <MetricChip
-              label="RMSE"
-              value={metrics.rmse}
-              unit=""
-              severity={sevPct((metrics.rmse / (bars[bars.length - 1]?.close || 1)) * 100)}
-              fmt="abs"
-            />
-            <MetricChip label="Dir Acc" value={metrics.dirAcc} unit="%" severity={sevDir(metrics.dirAcc)} fmt="pct" />
-          </section>
+          </div>
         )}
+
+        {/* Forecast panel (slide-in from right) */}
+        <ForecastPanel
+          open={showForecastPanel}
+          onClose={() => setShowForecastPanel(false)}
+          symbol={symbol}
+          timeframe={timeframe}
+          anchor={anchor}
+          onResult={handleForecastResult}
+        />
       </main>
     </div>
   )
 }
 
-function sevPct(pct: number): 'good' | 'med' | 'bad' {
-  const v = Math.abs(pct)
-  if (v < 0.5) return 'good'
-  if (v < 1.5) return 'med'
-  return 'bad'
-}
-
-function sevDir(accPct: number): 'good' | 'med' | 'bad' {
-  if (accPct >= 60) return 'good'
-  if (accPct >= 50) return 'med'
-  return 'bad'
-}
-
-function MetricChip({
-  label,
-  value,
-  unit,
-  severity,
-  fmt,
-}: {
+function MetricBadge({ 
+  label, 
+  value, 
+  variant = 'default' 
+}: { 
   label: string
-  value: number
-  unit: string
-  severity: 'good' | 'med' | 'bad'
-  fmt: 'pct' | 'abs'
+  value: string
+  variant?: 'default' | 'success' | 'warning' | 'error'
 }) {
-  const color = severity === 'good' ? 'bg-emerald-600' : severity === 'med' ? 'bg-amber-600' : 'bg-rose-600'
-  const txt = fmt === 'pct' ? `${value.toFixed(1)}${unit}` : `${value.toFixed(5)}`
+  const colors = {
+    default: 'bg-slate-800/90 text-slate-300 border-slate-700',
+    success: 'bg-emerald-950/90 text-emerald-300 border-emerald-800',
+    warning: 'bg-amber-950/90 text-amber-300 border-amber-800',
+    error: 'bg-rose-950/90 text-rose-300 border-rose-800',
+  }
   return (
-    <span className={`inline-flex items-center gap-2 ${color} text-white px-2 py-1 rounded-md text-xs`}>
-      <strong className="font-semibold">{label}</strong>
-      <span>{txt}</span>
-    </span>
+    <div className={`px-2 py-1 rounded border text-xs font-medium backdrop-blur-sm ${colors[variant]}`}>
+      <span className="text-slate-500 mr-1">{label}</span>
+      {value}
+    </div>
   )
 }

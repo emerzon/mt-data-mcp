@@ -1,20 +1,28 @@
-import { createChart, IChartApi, ISeriesApi, LineStyle, Time } from 'lightweight-charts'
+import { createChart, IChartApi, ISeriesApi, LineStyle, Time, IPriceLine } from 'lightweight-charts'
 import { useEffect, useRef } from 'react'
 import type { HistoryBar, ChartOverlay } from '../types'
+
+export type PriceLineSpec = {
+  price: number
+  color: string
+  title: string
+}
 
 export type OHLCChartProps = {
   data: HistoryBar[]
   onAnchor?: (t: number) => void
   onNeedMoreLeft?: (earliestTime: number) => void
   overlays?: ChartOverlay[]
+  priceLines?: PriceLineSpec[]
   anchorTime?: number
 }
 
-export function OHLCChart({ data, onAnchor, onNeedMoreLeft, overlays, anchorTime }: OHLCChartProps) {
+export function OHLCChart({ data, onAnchor, onNeedMoreLeft, overlays, priceLines, anchorTime }: OHLCChartProps) {
   const ref = useRef<HTMLDivElement | null>(null)
   const apiRef = useRef<IChartApi | null>(null)
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const anchorRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const priceLinesRef = useRef<IPriceLine[]>([])
 
   useEffect(() => {
     if (!ref.current) return
@@ -119,6 +127,19 @@ export function OHLCChart({ data, onAnchor, onNeedMoreLeft, overlays, anchorTime
             value: p.value,
           }))
       )
+
+      if (ov.label && ov.points.length > 0) {
+        const last = ov.points[ov.points.length - 1]
+        series.createPriceLine({
+          price: last.value,
+          color: ov.color || '#60a5fa',
+          lineWidth: (ov.lineWidth ?? 2) as 1 | 2 | 3 | 4,
+          lineStyle: style,
+          axisLabelVisible: true,
+          title: ov.label,
+        })
+      }
+
       overlaySeries.push(series)
     })
 
@@ -126,6 +147,36 @@ export function OHLCChart({ data, onAnchor, onNeedMoreLeft, overlays, anchorTime
       overlaySeries.forEach(series => chart.removeSeries(series))
     }
   }, [overlays])
+
+  // Manage Price Lines (Bid/Ask)
+  useEffect(() => {
+    if (!candleRef.current) return
+    const series = candleRef.current
+    
+    // Clear old lines
+    priceLinesRef.current.forEach(l => series.removePriceLine(l))
+    priceLinesRef.current = []
+
+    // Add new lines
+    priceLines?.forEach(pl => {
+      const line = series.createPriceLine({
+        price: pl.price,
+        color: pl.color,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        axisLabelVisible: true,
+        title: pl.title,
+      })
+      priceLinesRef.current.push(line)
+    })
+    
+    return () => {
+      if (candleRef.current) {
+        priceLinesRef.current.forEach(l => candleRef.current?.removePriceLine(l))
+      }
+      priceLinesRef.current = []
+    }
+  }, [priceLines])
 
   // Anchor vertical marker using a 1-candle series with long wick spanning min..max
   useEffect(() => {
@@ -172,5 +223,5 @@ export function OHLCChart({ data, onAnchor, onNeedMoreLeft, overlays, anchorTime
     }
   }, [anchorTime, data])
 
-  return <div className="w-full h-[520px] rounded-lg overflow-hidden" ref={ref} />
+  return <div className="w-full h-full" ref={ref} />
 }

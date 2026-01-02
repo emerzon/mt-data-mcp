@@ -121,6 +121,11 @@ def _mt5_copy_ticks_from(symbol: str, from_dt_utc: datetime, count: int, flags: 
     return _normalize_times_in_struct(data)
 
 
+def _mt5_copy_rates_from_pos(symbol: str, timeframe, start_pos: int, count: int):
+    data = mt5.copy_rates_from_pos(symbol, timeframe, start_pos, count)
+    return _normalize_times_in_struct(data)
+
+
 def _mt5_copy_ticks_range(symbol: str, from_dt_utc: datetime, to_dt_utc: datetime, flags: int):
     dt_from = _to_server_naive_dt(from_dt_utc)
     dt_to = _to_server_naive_dt(to_dt_utc)

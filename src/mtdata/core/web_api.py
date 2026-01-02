@@ -66,7 +66,7 @@ def _call_tool_raw(func):
     raw = getattr(func, '__wrapped__', None)
     return raw if callable(raw) else func
 
-from ..utils.mt5 import mt5_connection
+from ..utils.mt5 import mt5_connection, _ensure_symbol_ready
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from ..utils.denoise import get_denoise_methods_data as _get_denoise_methods
 from ..utils.denoise import _apply_denoise as _apply_dn, normalize_denoise_spec as _norm_dn
@@ -343,6 +343,7 @@ def get_history(
     start: Optional[str] = Query(None),
     end: Optional[str] = Query(None),
     ohlcv: Optional[str] = Query("ohlc"),
+    include_incomplete: bool = Query(False, description="Include the latest forming candle."),
     denoise_method: Optional[str] = Query(None, description="Denoise method name; if set, returns extra *_dn columns."),
     denoise_params: Optional[str] = Query(None, description="JSON or k=v list of denoise params."),
 ) -> Dict[str, Any]:
@@ -366,10 +367,11 @@ def get_history(
         # Fetch bars first, then apply denoise locally to avoid text encoding/decoding
         try:
             need = int(limit)
-            df = _fetch_history_impl(symbol=symbol, timeframe=timeframe, need=need, as_of=end)
+            df = _fetch_history_impl(symbol=symbol, timeframe=timeframe, need=need, as_of=end, drop_last_live=not include_incomplete)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"history fetch failed: {e}")
         # Build denoise spec and apply
+
         spec_input: Dict[str, Any] = {
             "method": denoise_method,
             "when": "post_ti",
@@ -438,9 +440,10 @@ def get_history(
     # Fast path without denoise
     try:
         need = int(limit)
-        df = _fetch_history_impl(symbol=symbol, timeframe=timeframe, need=need, as_of=end)
+        df = _fetch_history_impl(symbol=symbol, timeframe=timeframe, need=need, as_of=end, drop_last_live=not include_incomplete)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"history fetch failed: {e}")
+
     cols = ['time', 'open', 'high', 'low', 'close', 'tick_volume']
     rows: List[Dict[str, Any]] = []
     try:
@@ -676,6 +679,31 @@ def get_support_resistance(
     if window:
         response["window"] = window
     return response
+
+
+@app.get("/api/tick")
+def get_tick(symbol: str = Query(...)) -> Dict[str, Any]:
+    if not mt5_connection._ensure_connection():
+        raise HTTPException(status_code=500, detail="Failed to connect to MetaTrader5.")
+    tick = mt5.symbol_info_tick(symbol)
+    if tick is None:
+        err = _ensure_symbol_ready(symbol)
+        if err:
+            info = mt5.symbol_info(symbol)
+            if info is None:
+                raise HTTPException(status_code=404, detail=f"Unknown symbol {symbol}")
+            raise HTTPException(status_code=500, detail=str(err))
+        tick = mt5.symbol_info_tick(symbol)
+    if tick is None:
+        raise HTTPException(status_code=404, detail=f"No tick data for {symbol}")
+    return {
+        "symbol": symbol,
+        "time": float(tick.time),
+        "bid": float(tick.bid),
+        "ask": float(tick.ask),
+        "last": float(tick.last),
+        "volume": float(tick.volume),
+    }
 
 @app.post("/api/forecast/price")
 def post_forecast_price(body: ForecastPriceBody) -> Dict[str, Any]:

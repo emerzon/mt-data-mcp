@@ -124,6 +124,8 @@ export type VolatilityMethodsMeta = {
 
 export type DenoiseMethodInfo = {
   method: string
+  available: boolean
+  requires?: string
   description: string
   params: ParamDef[]
 }
@@ -255,6 +257,7 @@ export type ChartOverlay = {
   lineWidth?: number
   lineStyle?: 'solid' | 'dashed' | 'dotted'
   priceScaleId?: string
+  label?: string
 }
 
 // ============================================================================
@@ -267,4 +270,13 @@ export type AnchorMetrics = {
   mape: number
   rmse: number
   dirAcc: number
+}
+
+export type Tick = {
+  symbol: string
+  time: number
+  bid: number
+  ask: number
+  last: number
+  volume: number
 }

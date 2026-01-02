@@ -2,6 +2,7 @@ import axios, { AxiosError } from 'axios'
 import type {
   HistoryBar,
   Instrument,
+  Tick,
   MethodsMeta,
   VolatilityMethodsMeta,
   DenoiseMethodsMeta,
@@ -65,6 +66,7 @@ export type HistoryParams = {
   start?: string
   end?: string
   denoise?: DenoiseSpecUI
+  include_incomplete?: boolean
 }
 
 export async function getHistory(params: HistoryParams): Promise<HistoryBar[]> {
@@ -74,6 +76,7 @@ export async function getHistory(params: HistoryParams): Promise<HistoryBar[]> {
     limit: params.limit,
     start: params.start,
     end: params.end,
+    include_incomplete: params.include_incomplete,
   }
 
   const dn = params.denoise
@@ -92,6 +95,11 @@ export async function getHistory(params: HistoryParams): Promise<HistoryBar[]> {
 
   const { data } = await api.get<{ bars: HistoryBar[] }>('/api/history', { params: query })
   return data.bars ?? []
+}
+
+export async function getTick(symbol: string): Promise<Tick> {
+  const { data } = await api.get<Tick>('/api/tick', { params: { symbol } })
+  return data
 }
 
 // ============================================================================

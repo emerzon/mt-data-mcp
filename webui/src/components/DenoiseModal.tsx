@@ -15,7 +15,7 @@ type Props = {
 
 export function DenoiseModal({ open, title = 'Configure Denoising', value, onClose, onApply }: Props) {
   const { data: methodData } = useQuery({ queryKey: ['dn_methods'], queryFn: getDenoiseMethods })
-  const methods = methodData?.methods ?? []
+  const methods = (methodData?.methods ?? []).filter(m => m.available)
   const [method, setMethod] = useState<string>(value?.method || '')
   const [params, setParams] = useState<Record<string, unknown>>(value?.params || {})
   const [columns, setColumns] = useState<string>(
