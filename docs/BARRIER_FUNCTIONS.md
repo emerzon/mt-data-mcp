@@ -539,25 +539,76 @@ python cli.py forecast_barrier_optimize \
 
 ### Objectives
 
-Choose what to optimize:
+Choose what to optimize. Each objective answers a different trading question:
 
-| Objective | Formula | When to Use |
-|-----------|---------|-------------|
-| `edge` | `P(win) - P(loss)` | General purpose, consistent advantage |
-| `prob_tp_first` | `P(win)` | Maximize win rate |
-| `prob_resolve` | `1 - P(no hit)` | Avoid trades that never resolve |
-| `kelly` | `P(win) - P(loss)/RR` | Optimal position sizing |
-| `kelly_cond` | `P(win|resolve) - P(loss|resolve)/RR` | Kelly on resolved trades only |
-| `ev` | `P(win)*TP - P(loss)*SL` | Maximize expected value |
-| `ev_cond` | Conditional EV | EV on resolved trades |
-| `ev_per_bar` | `EV / mean_resolve_time` | Fast trades |
-| `profit_factor` | `(P(win)*TP) / (P(loss)*SL)` | Risk/reward focus |
+#### Quick Reference Table
+
+| Objective | Formula | Best For |
+|-----------|---------|----------|
+| `edge` | `P(win) - P(loss)` | General purpose, consistent win rate |
+| `prob_tp_first` | `P(win)` | Maximize win rate only |
+| `prob_resolve` | `1 - P(no hit)` | Ensure trades complete |
+| `kelly` | `P(win) - P(loss)/RR` | Position sizing |
+| `kelly_cond` | Kelly on resolved trades only | Position sizing (ignoring timeouts) |
+| `ev` | `P(win)*TP - P(loss)*SL` | Maximize profit per trade |
+| `ev_cond` | EV on resolved trades only | Profit per trade (ignoring timeouts) |
+| `ev_per_bar` | `EV / mean_resolve_time` | Fast trades, capital turnover |
+| `profit_factor` | `(P(win)*TP) / (P(loss)*SL)` | Risk/reward ratio focus |
 | `min_loss_prob` | Minimize `P(loss)` | Capital preservation |
-| `utility` | `P(win)*log(1+TP) + P(loss)*log(1-SL)` | Log utility (risk-averse) |
+| `utility` | `P(win)*log(1+TP) + P(loss)*log(1-SL)` | Risk-averse trading |
+
+#### Detailed Descriptions
+
+**`edge`** — *"How often do I win vs lose?"*
+- Measures raw probability advantage
+- Edge = 0.20 means you win 20% more often than you lose
+- **Use when:** You want consistent winners, regardless of payoff size
+- **Limitation:** Ignores how much you win/lose
+
+**`ev` (Expected Value)** — *"What's my average profit per trade?"*
+- Accounts for both probability AND payoff size
+- EV = 0.15% means you expect to gain 0.15% per trade on average
+- **Use when:** Payoff asymmetry matters (e.g., small wins, big losses)
+- **Limitation:** Doesn't account for trade duration
+
+**`ev_per_bar`** — *"What's my profit per unit of time?"*
+- Normalizes EV by how long trades take
+- Favors fast trades over slow ones with same total EV
+- **Use when:** Capital turnover matters (reinvesting profits)
+- **Limitation:** May favor trades with higher transaction costs
+
+**`kelly`** — *"How much should I bet?"*
+- Optimal fraction of capital for maximum long-term growth
+- Kelly = 0.25 means bet 25% of capital (but use fractional Kelly in practice)
+- **Use when:** Position sizing decisions
+- **Limitation:** Full Kelly leads to large drawdowns; use 0.25× Kelly
+
+**`prob_resolve`** — *"Will my trade actually close?"*
+- Probability that TP or SL is hit within the horizon
+- High value means trades complete; low value means many expire
+- **Use when:** You need trades to close (e.g., day trading)
+- **Limitation:** High resolve doesn't mean profitable
+
+**`profit_factor`** — *"What's my gains-to-losses ratio?"*
+- Profit factor > 1 means profitable; > 2 is very good
+- Common metric in backtesting reports
+- **Use when:** Comparing strategies by risk/reward
+- **Limitation:** Doesn't account for trade frequency
+
+**`min_loss_prob`** — *"How do I avoid losses?"*
+- Minimizes probability of stop-loss being hit
+- **Use when:** Capital preservation is priority
+- **Limitation:** May result in tiny TP or trades that never resolve
+
+**`utility`** — *"What's my risk-adjusted outcome?"*
+- Logarithmic utility penalizes large losses more than it rewards equivalent gains
+- Naturally avoids bets that could wipe you out
+- **Use when:** Risk-averse trading, avoiding ruin
+- **Limitation:** More theoretical than practical
 
 Notes:
+- `_cond` variants (e.g., `ev_cond`, `kelly_cond`) calculate metrics only on trades that resolved (hit TP or SL), ignoring timeouts.
 - `ev_per_bar` uses mean resolution time (`t_hit_resolve_mean`) when available.
-- `utility` uses TP/SL as fractional moves (pips are normalized by price).
 
 ---
 

@@ -15,6 +15,7 @@ This folder contains user-facing documentation for mtdata. Start with setup, the
 | Document | Description |
 |----------|-------------|
 | [FORECAST.md](FORECAST.md) | Price forecasting methods and usage |
+| [forecast/BACKTESTING.md](forecast/BACKTESTING.md) | Rolling backtests and parameter optimization |
 | [forecast/VOLATILITY.md](forecast/VOLATILITY.md) | Volatility estimation and forecasting |
 | [forecast/REGIMES.md](forecast/REGIMES.md) | Market regime and change-point detection |
 | [forecast/UNCERTAINTY.md](forecast/UNCERTAINTY.md) | Confidence and conformal intervals |

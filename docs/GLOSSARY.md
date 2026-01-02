@@ -197,20 +197,292 @@ A method to label historical data based on which barrier was hit first:
 
 **Use case:** Creating labels for machine learning models.
 
+---
+
+## Barrier Optimization Objectives
+
+When optimizing TP/SL levels, you must choose what to maximize. Each objective answers a different trading question.
+
 ### Edge
-The probability advantage of a trade setup.
+**What it measures:** The raw probability advantage of winning vs losing.
 
 **Formula:** `Edge = P(TP first) - P(SL first)`
 
-**Interpretation:**
-- Edge > 0: Setup has positive expectation
-- Edge = 0.15: 15% more likely to win than lose
-- Doesn't account for reward/risk ratio
+**Example:** Edge = 0.20 means you win 20% more often than you lose.
+
+**When to use:**
+- General-purpose objective for consistent advantage
+- When you want high win rates regardless of payoff size
+- Good starting point for most strategies
+
+**Limitation:** Ignores how much you win/lose. A setup with 60% wins but tiny TP and large SL may have positive edge but negative EV.
+
+---
 
 ### Kelly Criterion
-Optimal position sizing based on win probability and payoff ratio.
+**What it measures:** The optimal fraction of your capital to bet for maximum long-term growth.
 
-**Interpretation:** Tells you what fraction of capital to risk for maximum long-term growth. Use a fraction (e.g., 0.25 × Kelly) in practice to reduce volatility.
+**Formula:** `Kelly = P(win) - P(loss) / (TP/SL)`
+
+**Example:** Kelly = 0.25 means bet 25% of capital per trade for maximum growth.
+
+**When to use:**
+- Position sizing decisions
+- When you want to grow capital as fast as possible
+- Long-term systematic trading
+
+**Limitation:** Full Kelly is aggressive and leads to large drawdowns. Most traders use "fractional Kelly" (e.g., 0.25 × Kelly).
+
+**Interpretation of output:**
+- `kelly`: Raw Kelly fraction based on all paths
+- `kelly_cond`: Kelly fraction based only on paths that resolved (TP or SL hit)
+
+---
+
+### EV (Expected Value)
+**What it measures:** The average profit per trade, accounting for both probability and payoff size.
+
+**Formula:** `EV = P(win) × TP - P(loss) × SL`
+
+**Example:** EV = 0.15 means you expect to gain 0.15% per trade on average.
+
+**When to use:**
+- When payoff asymmetry matters (small wins, big losses or vice versa)
+- Comparing setups with different TP/SL ratios
+- Maximizing total profit over many trades
+
+**Variants:**
+- `ev`: Based on all paths (includes no-hit scenarios as 0)
+- `ev_cond`: Based only on resolved paths (ignores trades that never hit TP or SL)
+
+---
+
+### EV Per Bar
+**What it measures:** Expected value normalized by how long the trade takes.
+
+**Formula:** `EV_per_bar = EV / mean_time_to_resolution`
+
+**Example:** Setup A has EV=0.30 but takes 20 bars; Setup B has EV=0.15 but takes 5 bars. Setup B has higher EV per bar (0.03 vs 0.015).
+
+**When to use:**
+- When capital turnover matters (you want fast trades to reinvest)
+- Comparing setups across different timeframes
+- Scalping and high-frequency strategies
+
+**Limitation:** Favors fast trades, which may have higher transaction costs.
+
+---
+
+### Prob Resolve
+**What it measures:** The probability that the trade closes (hits either TP or SL) within the horizon.
+
+**Formula:** `Prob_resolve = P(TP first) + P(SL first) = 1 - P(no hit)`
+
+**Example:** Prob_resolve = 0.85 means 85% of trades close before the time limit.
+
+**When to use:**
+- When you want trades to actually complete
+- Avoiding setups where most trades expire without hitting targets
+- Day trading where you must close by end of session
+
+**Limitation:** High resolve probability doesn't mean profitable—could resolve at a loss.
+
+---
+
+### Profit Factor
+**What it measures:** Ratio of expected gains to expected losses.
+
+**Formula:** `Profit_factor = (P(win) × TP) / (P(loss) × SL)`
+
+**Example:** Profit factor = 2.0 means you expect $2 in wins for every $1 in losses.
+
+**When to use:**
+- When you want a risk/reward focused metric
+- Comparing profitability of different strategies
+- Common in backtesting reports
+
+**Interpretation:**
+- Profit factor > 1: Profitable
+- Profit factor > 2: Very good
+- Profit factor < 1: Losing money
+
+---
+
+### Min Loss Prob
+**What it measures:** Minimizes the probability of losing (SL hit first).
+
+**Formula:** Minimize `P(SL first)`
+
+**Example:** Setup with min_loss_prob = 0.15 means only 15% chance of hitting stop loss.
+
+**When to use:**
+- Capital preservation is priority
+- Conservative trading styles
+- When you can't afford drawdowns (e.g., trading client money)
+
+**Limitation:** May result in very small TP targets or trades that rarely resolve.
+
+---
+
+### Utility (Log Utility)
+**What it measures:** Risk-adjusted expected value using logarithmic utility (diminishing returns on gains).
+
+**Formula:** `Utility = P(win) × log(1 + TP) + P(loss) × log(1 - SL)`
+
+**Example:** Log utility penalizes large losses more than it rewards equivalent gains.
+
+**When to use:**
+- Risk-averse traders
+- When you want to avoid ruin (log utility naturally avoids bets that could wipe you out)
+- Academic/theoretical contexts
+
+**Interpretation:** Higher utility = better risk-adjusted outcome. Negative utility means the trade is worse than doing nothing.
+
+---
+
+## Objective Selection Guide
+
+| Your Priority | Use Objective | Why |
+|---------------|---------------|-----|
+| Win rate | `edge` | Maximizes probability advantage |
+| Total profit | `ev` | Accounts for both probability and payoff |
+| Fast trades | `ev_per_bar` | Optimizes profit per unit time |
+| Position sizing | `kelly` | Tells you how much to bet |
+| Avoid losses | `min_loss_prob` | Minimizes chance of stop-loss hit |
+| Trade completion | `prob_resolve` | Ensures trades actually close |
+| Risk-adjusted | `utility` | Penalizes large losses |
+| Gross profit ratio | `profit_factor` | Gains vs losses ratio |
+
+---
+
+## Backtesting Metrics
+
+### MAE (Mean Absolute Error)
+**What it measures:** Average size of forecast errors, ignoring direction.
+
+**Formula:** `MAE = average(|actual - predicted|)`
+
+**Example:** MAE = 0.0015 means forecasts are off by 0.15% on average.
+
+**Interpretation:**
+- Lower is better
+- Easy to interpret (same units as forecast)
+- Doesn't penalize large errors more than small ones
+
+---
+
+### RMSE (Root Mean Squared Error)
+**What it measures:** Average size of forecast errors, penalizing large errors more.
+
+**Formula:** `RMSE = sqrt(average((actual - predicted)²))`
+
+**Example:** RMSE = 0.0020 with MAE = 0.0015 suggests some large outlier errors.
+
+**Interpretation:**
+- Lower is better
+- Always ≥ MAE (equality means all errors are same size)
+- RMSE much larger than MAE → outliers are a problem
+
+---
+
+### Directional Accuracy
+**What it measures:** How often the forecast predicts the correct direction (up/down).
+
+**Example:** Directional accuracy = 0.58 means 58% of forecasts got the direction right.
+
+**Interpretation:**
+- 0.50 = random guessing
+- 0.55+ is generally useful for trading
+- High directional accuracy with high MAE: right direction, wrong magnitude
+
+---
+
+## Monte Carlo Simulation Terms
+
+### n_sims (Number of Simulations)
+How many random price paths to generate. More simulations = more stable results but slower.
+
+**Guidelines:**
+- Quick checks: 1,000
+- Normal use: 2,000-5,000
+- Publication/final decisions: 10,000+
+
+---
+
+### seed
+Random number generator seed. Set this for reproducible results.
+
+**Example:** `--params "seed=42"` ensures the same random paths each time.
+
+---
+
+### Drift (μ)
+The expected average return per period. In GBM simulations, drift represents the trend component.
+
+---
+
+### Diffusion (σ)
+The volatility component of price movement. Represents random fluctuation around the drift.
+
+---
+
+## Probability Terms
+
+### prob_tp_first
+Probability that take-profit is hit before stop-loss.
+
+**Example:** prob_tp_first = 0.62 means 62% of simulated paths hit TP first.
+
+---
+
+### prob_sl_first
+Probability that stop-loss is hit before take-profit.
+
+**Example:** prob_sl_first = 0.28 means 28% of simulated paths hit SL first.
+
+---
+
+### prob_no_hit
+Probability that neither TP nor SL is hit within the horizon.
+
+**Example:** prob_no_hit = 0.10 means 10% of paths expire without hitting either barrier.
+
+**Important:** High prob_no_hit means your barriers may be too far or horizon too short.
+
+---
+
+### prob_resolve
+Probability that the trade completes (hits TP or SL).
+
+**Formula:** prob_resolve = prob_tp_first + prob_sl_first = 1 - prob_no_hit
+
+---
+
+## Grid Optimization Terms
+
+### grid_style
+How to generate the TP/SL combinations to test:
+
+| Style | Description | Use When |
+|-------|-------------|----------|
+| `fixed` | Regular grid from min to max | You know the range to search |
+| `volatility` | Scales barriers to current volatility | Adaptive to market conditions |
+| `ratio` | Varies risk/reward ratios | You want specific RR profiles |
+| `preset` | Pre-configured for trading styles | Quick setup for scalp/swing/position |
+
+---
+
+### refine
+Two-stage optimization: coarse search, then fine search around the best result.
+
+**Example:** `--refine true --refine-radius 0.3` searches ±30% around the best initial candidate.
+
+---
+
+### top_k
+Number of best candidates to return from optimization.
+
+**Example:** `--top-k 5` returns the top 5 TP/SL combinations instead of just the best.
 
 ---
 
@@ -312,8 +584,47 @@ Order book showing pending buy/sell orders at various price levels.
 ### Slippage
 Difference between expected execution price and actual fill price. Occurs due to market movement or insufficient liquidity.
 
+**Example:** You place a market buy at 1.1750, but get filled at 1.1752. Slippage = 2 pips.
+
+**Why it matters:** Slippage reduces profits and increases losses. Account for it when backtesting.
+
 ### Pip
 Smallest price increment for a currency pair. For most pairs: 0.0001. For JPY pairs: 0.01.
+
+**Example:** EURUSD moves from 1.1750 to 1.1775 = 25 pips.
+
+**Note:** Some brokers show "pipettes" (5 decimal places), where 1 pip = 10 pipettes.
+
+### Spread
+Difference between bid (sell) and ask (buy) price. This is a transaction cost.
+
+**Example:** Bid 1.1748, Ask 1.1750 → Spread = 2 pips.
+
+**Impact:** You start every trade 1 spread behind. Tight spreads are crucial for scalping.
+
+### Lot Size
+Standard position size in forex:
+- **Standard lot:** 100,000 units
+- **Mini lot:** 10,000 units
+- **Micro lot:** 1,000 units
+
+**Example:** 0.1 lots of EURUSD = 10,000 EUR notional.
+
+### Risk/Reward Ratio (RR)
+Ratio of potential profit to potential loss.
+
+**Formula:** RR = TP distance / SL distance
+
+**Example:** TP = 50 pips, SL = 25 pips → RR = 2.0 (you risk 25 to make 50).
+
+**Rule of thumb:** Higher RR means you can be wrong more often and still profit.
+
+### Drawdown
+Peak-to-trough decline in account equity.
+
+**Example:** Account peaks at $10,000, drops to $8,500 → Drawdown = 15%.
+
+**Maximum drawdown:** Largest historical drawdown. Key risk metric.
 
 ---
 

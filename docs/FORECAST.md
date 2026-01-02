@@ -160,6 +160,8 @@ python cli.py forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
 - RMSE (Root Mean Squared Error)
 - Directional accuracy
 
+See **[BACKTESTING.md](forecast/BACKTESTING.md)** for complete guide including parameter optimization.
+
 ---
 
 ## Adding Features
@@ -186,6 +188,7 @@ See [DENOISING.md](DENOISING.md) for available filters.
 
 ## Submodule Documentation
 
+- **[BACKTESTING.md](forecast/BACKTESTING.md)** — Rolling backtests and parameter optimization
 - **[FORECAST_GENERATE.md](forecast/FORECAST_GENERATE.md)** — Detailed `forecast_generate` reference
 - **[VOLATILITY.md](forecast/VOLATILITY.md)** — Volatility forecasting methods
 - **[REGIMES.md](forecast/REGIMES.md)** — Regime and change-point detection
