@@ -262,3 +262,46 @@ def _symbol_ready_guard(
                 mt5.symbol_select(symbol, False)
             except Exception:
                 pass
+
+
+def estimate_server_offset(symbol: str = "EURUSD", samples: int = 5) -> int:
+    """Estimate server offset from UTC in seconds by comparing tick time to local UTC time.
+    
+    Returns 0 if failed.
+    """
+    try:
+        if not mt5_connection._ensure_connection():
+            return 0
+        
+        # Ensure symbol is ready
+        if not mt5.symbol_select(symbol, True):
+            # Try a fallback if EURUSD not found
+            for s in ["GBPUSD", "USDJPY", "XAUUSD", "BTCUSD"]:
+                if mt5.symbol_select(s, True):
+                    symbol = s
+                    break
+        
+        deltas = []
+        for _ in range(samples):
+            tick = mt5.symbol_info_tick(symbol)
+            if tick:
+                # MT5 tick.time is epoch seconds (server time)
+                # We compare to time.time() (system local epoch -> UTC)
+                # If server is UTC+2, tick.time will be ~ (now + 7200)
+                diff = float(tick.time) - time.time()
+                deltas.append(diff)
+            time.sleep(0.2)
+            
+        if not deltas:
+            return 0
+            
+        # Median
+        deltas.sort()
+        med = deltas[len(deltas) // 2]
+        
+        # Round to nearest 15 minutes (900s) to be safe/clean
+        offset = int(round(med / 900.0) * 900)
+        return offset
+    except Exception as e:
+        logger.error(f"Failed to estimate server offset: {e}")
+        return 0

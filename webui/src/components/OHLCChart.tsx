@@ -24,6 +24,17 @@ export function OHLCChart({ data, onAnchor, onNeedMoreLeft, overlays, priceLines
   const anchorRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const priceLinesRef = useRef<IPriceLine[]>([])
 
+  // Keep refs up to date for event handlers
+  const dataRef = useRef(data)
+  const onNeedMoreLeftRef = useRef(onNeedMoreLeft)
+  const onAnchorRef = useRef(onAnchor)
+
+  useEffect(() => {
+    dataRef.current = data
+    onNeedMoreLeftRef.current = onNeedMoreLeft
+    onAnchorRef.current = onAnchor
+  }, [data, onNeedMoreLeft, onAnchor])
+
   useEffect(() => {
     if (!ref.current) return
 
@@ -42,6 +53,8 @@ export function OHLCChart({ data, onAnchor, onNeedMoreLeft, overlays, priceLines
       borderVisible: false,
       wickUpColor: '#22c55e',
       wickDownColor: '#ef4444',
+      lastValueVisible: false,
+      priceLineVisible: false,
     })
 
     apiRef.current = chart
@@ -49,17 +62,23 @@ export function OHLCChart({ data, onAnchor, onNeedMoreLeft, overlays, priceLines
 
     const clickHandler = (p: { time?: Time }) => {
       if (!p || p.time === undefined) return
-      const t = p.time as number
-      onAnchor?.(t)
+      const t = Number(p.time)
+      if (!Number.isFinite(t)) return
+      onAnchorRef.current?.(t)
     }
 
     const rangeHandler = (r: { from: Time; to: Time } | null) => {
-      if (!r || !onNeedMoreLeft) return
+      const currentData = dataRef.current
+      const needMore = onNeedMoreLeftRef.current
+      
+      if (!r || !needMore || !currentData.length) return
+      
       const from = r.from as number | undefined
-      if (from && data.length > 0) {
-        const earliest = data[0]?.time
-        if (from <= earliest + 2) {
-          onNeedMoreLeft(earliest)
+      if (from) {
+        const earliest = currentData[0].time
+        // Trigger if visible range start is at or before the earliest bar
+        if (from <= earliest) {
+          needMore(earliest)
         }
       }
     }

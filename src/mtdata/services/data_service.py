@@ -18,6 +18,7 @@ from ..core.constants import (
     SIMPLIFY_DEFAULT_MODE, SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT, TICKS_LOOKBACK_DAYS,
     DEFAULT_ROW_LIMIT
 )
+from ..core.config import mt5_config
 
 # Imports from utils
 from ..utils.mt5 import (
@@ -91,8 +92,15 @@ def _fetch_rates_with_warmup(
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
         expected_end_ts = to_date.timestamp()
 
+        # We need to fetch 'candles' bars ending at 'to_date'.
+        # Since we can't easily query by count backwards from a date in MT5 (without pos),
+        # we estimate a start date far enough back to cover the requested candles (plus warmup).
+        # We multiply by 2.0 to account for weekends/gaps (7/5 = 1.4, plus buffers).
+        estimated_seconds_needed = int(seconds_per_bar * (candles + warmup_bars) * 2.0)
+        from_date_est = to_date - timedelta(seconds=estimated_seconds_needed)
+
         def _fetch():
-            return _mt5_copy_rates_from(symbol, mt5_timeframe, to_date, candles + warmup_bars)
+            return _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_est, to_date)
 
     else:
         utc_now = datetime.utcnow()
@@ -456,6 +464,9 @@ def fetch_candles(
             "timeframe": timeframe,
             "candles": len(df),
             "last_candle_open": last_candle_open,
+            "meta": {
+                "server_tz_offset": int(mt5_config.get_time_offset_seconds()),
+            },
         })
         if not _use_ctz:
             payload["timezone"] = "UTC"

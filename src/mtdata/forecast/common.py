@@ -16,7 +16,7 @@ from ..utils.mt5 import (
     get_symbol_info_cached,
 )
 import MetaTrader5 as mt5
-from ..utils.utils import _parse_start_datetime
+from ..utils.utils import _parse_start_datetime, _utc_epoch_seconds
 
 
 
@@ -353,14 +353,24 @@ def fetch_history(
             to_dt = _parse_start_datetime(as_of)
             if not to_dt:
                 raise RuntimeError("Invalid as_of time.")
-            rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, int(need))
+            
+            # SAFE MODE: Fetch from latest and filter in Python to avoid Server TZ mismatch in copy_rates_from
+            # Fetch 'need' + buffer to ensure we cover the history
+            # Estimate how far back we need to go? No, just fetch latest N bars
+            # If 'as_of' is far in the past, we might need more bars.
+            # But usually 'as_of' is recent (anchor).
+            # Let's try fetching a large chunk if as_of is provided
+            
+            # Heuristic: Fetch 'need' + 2000 bars from latest
+            # If as_of is older than that, we might miss it, but for UI anchor it's usually visible.
+            safe_limit = int(need) + 5000 
+            rates = _mt5_copy_rates_from_pos(symbol, mt5_tf, 0, safe_limit)
         else:
             # Use position-based fetch for "latest" to avoid TZ issues and ensure open candle
             # start_pos=0 includes the current forming bar
             rates = _mt5_copy_rates_from_pos(symbol, mt5_tf, 0, int(need))
     finally:
         if was_visible is False:
-
             try:
                 mt5.symbol_select(symbol, False)
             except Exception:
@@ -368,12 +378,21 @@ def fetch_history(
     if rates is None or len(rates) < 1:
         raise RuntimeError(f"Failed to get rates for {symbol}: {mt5.last_error()}")
     df = pd.DataFrame(rates)
-    # Normalize times
-    try:
-        if 'time' in df.columns:
-            df['time'] = df['time'].astype(float).apply(_mt5_epoch_to_utc)
-    except Exception:
-        pass
+    # Times are already normalized to UTC by _mt5_copy_rates_from_pos via _normalize_times_in_struct
+    # DO NOT normalize again.
+    
+    # Manual truncation if as_of provided
+    if as_of and not df.empty and 'time' in df.columns:
+        to_dt = _parse_start_datetime(as_of)
+        if to_dt:
+            cutoff = _utc_epoch_seconds(to_dt)
+            # Filter: include the bar exactly AT the cutoff if it exists
+            # We use a small epsilon for float comparison safety
+            df = df[df['time'] <= cutoff + 1.0]
+            # Take last 'need'
+            if len(df) > need:
+                df = df.iloc[-int(need):]
+    
     if as_of is None and drop_last_live and len(df) >= 2:
         df = df.iloc[:-1]
     return df.reset_index(drop=True)

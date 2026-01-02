@@ -72,6 +72,7 @@ from ..utils.denoise import get_denoise_methods_data as _get_denoise_methods
 from ..utils.denoise import _apply_denoise as _apply_dn, normalize_denoise_spec as _norm_dn
 from ..utils.dimred import list_dimred_methods as _list_dimred_methods
 import MetaTrader5 as mt5
+from ..core.config import mt5_config
 
 
 class ForecastPriceBody(BaseModel):
@@ -436,7 +437,12 @@ def get_history(
                 if k in df.columns:
                     rec[k] = float(r[k])
             rows.append(rec)
-        return {"bars": rows}
+        return {
+            "bars": rows,
+            "meta": {
+                "server_tz_offset": int(mt5_config.get_time_offset_seconds()),
+            }
+        }
     # Fast path without denoise
     try:
         need = int(limit)
@@ -451,7 +457,12 @@ def get_history(
             rows.append({k: float(r[k]) if k != 'time' else float(r[k]) for k in cols if k in df.columns})
     except Exception:
         pass
-    return {"bars": rows}
+    return {
+        "bars": rows,
+        "meta": {
+            "server_tz_offset": int(mt5_config.get_time_offset_seconds()),
+        }
+    }
 
 
 

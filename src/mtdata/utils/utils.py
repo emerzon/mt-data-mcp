@@ -438,3 +438,14 @@ def _parse_start_datetime(value: str) -> Optional[datetime]:
         dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt
 
+
+def _utc_epoch_seconds(dt: datetime) -> float:
+    """Convert a datetime to UTC epoch seconds, treating naive values as UTC.
+
+    Python's `datetime.timestamp()` interprets naive datetimes as *local time*,
+    which can silently shift values when the host isn't running in UTC.
+    """
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc).timestamp()
+    return dt.astimezone(timezone.utc).timestamp()
+

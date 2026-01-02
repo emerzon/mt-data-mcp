@@ -69,7 +69,15 @@ export type HistoryParams = {
   include_incomplete?: boolean
 }
 
-export async function getHistory(params: HistoryParams): Promise<HistoryBar[]> {
+export type HistoryResponse = {
+  success: boolean
+  bars: HistoryBar[]
+  meta?: {
+    server_tz_offset: number
+  }
+}
+
+export async function getHistory(params: HistoryParams): Promise<HistoryResponse> {
   const query: Record<string, unknown> = {
     symbol: params.symbol,
     timeframe: params.timeframe,
@@ -93,8 +101,12 @@ export async function getHistory(params: HistoryParams): Promise<HistoryBar[]> {
     }
   }
 
-  const { data } = await api.get<{ bars: HistoryBar[] }>('/api/history', { params: query })
-  return data.bars ?? []
+  const { data } = await api.get<{ bars: HistoryBar[], meta?: { server_tz_offset: number } }>('/api/history', { params: query })
+  return {
+    success: true,
+    bars: data.bars ?? [],
+    meta: data.meta
+  }
 }
 
 export async function getTick(symbol: string): Promise<Tick> {

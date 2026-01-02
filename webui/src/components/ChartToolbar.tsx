@@ -1,13 +1,13 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { searchInstruments, getTimeframes, getDenoiseMethods, getWavelets } from '../api/client'
 import type { DenoiseSpecUI } from '../types'
+import { loadJSON } from '../lib/storage'
 
 type Props = {
   symbol: string
   timeframe: string
   anchor?: number
-  limit: number
   isLoading: boolean
   barsCount: number
   hasPivots: boolean
@@ -15,10 +15,10 @@ type Props = {
   denoise?: DenoiseSpecUI
   showBid: boolean
   showAsk: boolean
+  showLast: boolean
   isLive: boolean
   onSymbolChange: (s: string) => void
   onTimeframeChange: (tf: string) => void
-  onLimitChange: (n: number) => void
   onClearAnchor: () => void
   onReload: () => void
   onTogglePivots: () => void
@@ -27,14 +27,16 @@ type Props = {
   onOpenForecast: () => void
   onToggleBid: () => void
   onToggleAsk: () => void
+  onToggleLast: () => void
   onToggleLive: () => void
+  timezoneMode: 'utc' | 'local' | 'server'
+  onTimezoneChange: (mode: 'utc' | 'local' | 'server') => void
 }
 
 export function ChartToolbar({
   symbol,
   timeframe,
   anchor,
-  limit,
   isLoading,
   barsCount,
   hasPivots,
@@ -42,10 +44,10 @@ export function ChartToolbar({
   denoise,
   showBid,
   showAsk,
+  showLast,
   isLive,
   onSymbolChange,
   onTimeframeChange,
-  onLimitChange,
   onClearAnchor,
   onReload,
   onTogglePivots,
@@ -54,11 +56,15 @@ export function ChartToolbar({
   onOpenForecast,
   onToggleBid,
   onToggleAsk,
+  onToggleLast,
   onToggleLive,
+  timezoneMode,
+  onTimezoneChange,
 }: Props) {
   const [showSymbolMenu, setShowSymbolMenu] = useState(false)
   const [showDenoiseMenu, setShowDenoiseMenu] = useState(false)
   const [showPriceMenu, setShowPriceMenu] = useState(false)
+  const [showTzMenu, setShowTzMenu] = useState(false)
   const [symbolSearch, setSymbolSearch] = useState('')
 
   return (
@@ -89,21 +95,33 @@ export function ChartToolbar({
 
         <div className="w-px h-5 bg-slate-700" />
 
+        {/* Timezone selector */}
+        <div className="relative">
+          <button
+            className="toolbar-btn min-w-[60px] justify-between text-slate-400"
+            onClick={() => setShowTzMenu(!showTzMenu)}
+            title="Timezone"
+          >
+            <span className="text-xs font-medium uppercase">
+              {timezoneMode === 'server' ? 'Exch' : timezoneMode}
+            </span>
+            <ChevronDown />
+          </button>
+          {showTzMenu && (
+            <TimezoneDropdown
+              value={timezoneMode}
+              onChange={(m) => { onTimezoneChange(m); setShowTzMenu(false) }}
+              onClose={() => setShowTzMenu(false)}
+            />
+          )}
+        </div>
+
+        <div className="w-px h-5 bg-slate-700" />
+
         {/* Timeframe selector */}
         <TimeframeDropdown value={timeframe} onChange={onTimeframeChange} />
 
         <div className="w-px h-5 bg-slate-700" />
-
-        {/* Bars count */}
-        <input
-          type="number"
-          className="w-16 bg-transparent text-xs text-slate-300 text-center focus:outline-none"
-          value={limit}
-          onChange={(e) => onLimitChange(Number(e.target.value))}
-          min={100}
-          max={20000}
-          title="Number of bars"
-        />
 
         <button className="toolbar-btn" onClick={onReload} disabled={!symbol || isLoading} title="Reload data">
           <RefreshIcon className={isLoading ? 'animate-spin' : ''} />
@@ -150,7 +168,7 @@ export function ChartToolbar({
             
             <div className="relative">
               <button
-                className={`toolbar-btn ${showBid || showAsk ? 'text-sky-400' : ''}`}
+                className={`toolbar-btn ${showBid || showAsk || showLast ? 'text-sky-400' : ''}`}
                 onClick={() => setShowPriceMenu(!showPriceMenu)}
                 disabled={!symbol}
                 title="Price Lines"
@@ -162,9 +180,11 @@ export function ChartToolbar({
                 <PriceLinesDropdown
                   showBid={showBid}
                   showAsk={showAsk}
+                  showLast={showLast}
                   isLive={isLive}
                   onToggleBid={onToggleBid}
                   onToggleAsk={onToggleAsk}
+                  onToggleLast={onToggleLast}
                   onToggleLive={onToggleLive}
                   onClose={() => setShowPriceMenu(false)}
                 />
@@ -219,11 +239,21 @@ function SymbolDropdown({
   onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const { data } = useQuery({
+  
+  // Fetch from API
+  const { data: searchResults } = useQuery({
     queryKey: ['instruments', search],
     queryFn: () => searchInstruments(search || undefined, 50),
+    enabled: !!search // Only search if there is a term
   })
-  const items = data ?? []
+
+  // Load recent if no search
+  const items = useMemo(() => {
+    if (search) return searchResults ?? []
+    
+    const recent = loadJSON<string[]>('recent_symbols') || []
+    return recent.map(name => ({ name, description: 'Recent' }))
+  }, [search, searchResults])
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -377,17 +407,21 @@ function DenoiseDropdown({
 function PriceLinesDropdown({
   showBid,
   showAsk,
+  showLast,
   isLive,
   onToggleBid,
   onToggleAsk,
+  onToggleLast,
   onToggleLive,
   onClose,
 }: {
   showBid: boolean
   showAsk: boolean
+  showLast: boolean
   isLive: boolean
   onToggleBid: () => void
   onToggleAsk: () => void
+  onToggleLast: () => void
   onToggleLive: () => void
   onClose: () => void
 }) {
@@ -421,6 +455,15 @@ function PriceLinesDropdown({
           <input
             type="checkbox"
             className="rounded border-slate-600 bg-slate-700 text-sky-500 focus:ring-offset-slate-900"
+            checked={showLast}
+            onChange={onToggleLast}
+          />
+          <span className="text-sm text-slate-300">Show Last</span>
+        </label>
+        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-800 rounded cursor-pointer">
+          <input
+            type="checkbox"
+            className="rounded border-slate-600 bg-slate-700 text-sky-500 focus:ring-offset-slate-900"
             checked={showBid}
             onChange={onToggleBid}
           />
@@ -436,6 +479,52 @@ function PriceLinesDropdown({
           <span className="text-sm text-slate-300">Show Ask</span>
         </label>
       </div>
+    </div>
+  )
+}
+
+function TimezoneDropdown({
+  value,
+  onChange,
+  onClose,
+}: {
+  value: 'utc' | 'local' | 'server'
+  onChange: (m: 'utc' | 'local' | 'server') => void
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [onClose])
+
+  return (
+    <div ref={ref} className="absolute top-full left-0 mt-1 w-32 bg-slate-900 border border-slate-700 rounded-lg shadow-xl overflow-hidden z-50">
+      <div className="px-3 py-2 text-xs text-slate-400 border-b border-slate-700 font-medium">
+        Timezone
+      </div>
+      <button
+        className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-800 ${value === 'utc' ? 'text-sky-400' : 'text-slate-300'}`}
+        onClick={() => onChange('utc')}
+      >
+        UTC
+      </button>
+      <button
+        className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-800 ${value === 'server' ? 'text-sky-400' : 'text-slate-300'}`}
+        onClick={() => onChange('server')}
+      >
+        Exchange
+      </button>
+      <button
+        className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-800 ${value === 'local' ? 'text-sky-400' : 'text-slate-300'}`}
+        onClick={() => onChange('local')}
+      >
+        Local
+      </button>
     </div>
   )
 }

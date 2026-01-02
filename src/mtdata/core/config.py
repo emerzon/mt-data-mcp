@@ -80,10 +80,21 @@ class MT5Config:
         All MT5 timestamps read from the terminal should be adjusted by subtracting this offset
         to normalize into UTC epochs.
         """
-        try:
+        # 1. Prefer explicit offset in minutes (if set)
+        if self.time_offset_minutes != 0:
             return int(self.time_offset_minutes) * 60
-        except Exception:
-            return 0
+            
+        # 2. Derive from MT5_SERVER_TZ if available
+        if self.server_tz_name and pytz:
+            try:
+                from datetime import datetime
+                tz = pytz.timezone(self.server_tz_name)
+                # Calculate current offset (aware of DST)
+                return int(datetime.now(tz).utcoffset().total_seconds())
+            except Exception:
+                pass
+                
+        return 0
 
     def get_server_tz(self):
         """Return a pytz timezone for the MT5 server, if configured and pytz is available."""

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getHistory, getPivots, getSupportResistance, getTick } from './api/client'
 import { OHLCChart, type PriceLineSpec } from './components/OHLCChart'
@@ -17,18 +17,24 @@ import { toUtcSec } from './lib/time'
 import { tfSeconds } from './lib/timeframes'
 import { loadJSON, saveJSON } from './lib/storage'
 
-const DEFAULT_LIMIT = 800
+const QUERY_LIMIT = 1000
 
 export default function App() {
   // Core state
-  const [symbol, setSymbol] = useState('')
+  const [symbol, setSymbol] = useState(() => loadJSON<string>('last_symbol') || '')
   const [timeframe, setTimeframe] = useState('H1')
-  const [limit, setLimit] = useState(DEFAULT_LIMIT)
+  // extraHistory stores older bars fetched via infinite scroll
+  const [extraHistory, setExtraHistory] = useState<HistoryBar[]>([])
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  
   const [end, setEnd] = useState<string | undefined>(undefined)
   const [anchor, setAnchor] = useState<number | undefined>(undefined)
-  const [showBid, setShowBid] = useState(true)
-  const [showAsk, setShowAsk] = useState(true)
-  const [isLive, setIsLive] = useState(false)
+  const [showBid, setShowBid] = useState(false)
+  const [showAsk, setShowAsk] = useState(false)
+  const [showLast, setShowLast] = useState(true)
+  const [isLive, setIsLive] = useState(true)
+  const [timezoneMode, setTimezoneMode] = useState<'utc' | 'local' | 'server'>('utc')
+  const [serverOffset, setServerOffset] = useState(0)
 
   // Chart overlays
   const [forecastOverlays, setForecastOverlays] = useState<ChartOverlay[]>([])
@@ -41,13 +47,20 @@ export default function App() {
   const [metrics, setMetrics] = useState<AnchorMetrics | null>(null)
 
   // Data fetching
-  const { data: histData, refetch, isFetching } = useQuery({
-    queryKey: ['hist', symbol, timeframe, limit, end, JSON.stringify(chartDenoise || {}), isLive],
-    queryFn: () => getHistory({ symbol, timeframe, limit, end, denoise: chartDenoise, include_incomplete: isLive }),
+  const { data: histDataResponse, refetch, isFetching } = useQuery({
+    queryKey: ['hist', symbol, timeframe, QUERY_LIMIT, end, JSON.stringify(chartDenoise || {}), isLive],
+    queryFn: () => getHistory({ symbol, timeframe, limit: QUERY_LIMIT, end, denoise: chartDenoise, include_incomplete: isLive }),
     enabled: !!symbol,
   })
 
-  const { data: liveData } = useQuery({
+  // Update server offset if available
+  useEffect(() => {
+    if (histDataResponse?.meta?.server_tz_offset !== undefined) {
+      setServerOffset(histDataResponse.meta.server_tz_offset)
+    }
+  }, [histDataResponse])
+
+  const { data: liveDataResponse } = useQuery({
     queryKey: ['hist-live', symbol, timeframe],
     queryFn: () => getHistory({ symbol, timeframe, limit: 2, include_incomplete: true }),
     enabled: isLive && !!symbol && !end,
@@ -62,12 +75,24 @@ export default function App() {
   })
 
   const bars = useMemo(() => {
-    const base = (histData ?? []) as HistoryBar[]
-    if (!isLive || !liveData || !base.length || end) return base
+    const base = (histDataResponse?.bars ?? []) as HistoryBar[]
+    const live = (liveDataResponse?.bars ?? []) as HistoryBar[]
     
-    const merged = [...base]
+    let combined = base
+
+    // Prepend extraHistory
+    if (extraHistory.length) {
+      // Dedup: filter extraHistory to ensure all bars are older than base[0]
+      const mainStart = base.length ? base[0].time : Infinity
+      const older = extraHistory.filter(b => b.time < mainStart)
+      combined = [...older, ...base]
+    }
+
+    if (!isLive || !live.length || !combined.length || end) return combined
+    
+    const merged = [...combined]
     // Merge live tail
-    liveData.forEach(bar => {
+    live.forEach(bar => {
       const lastIndex = merged.length - 1
       if (lastIndex >= 0) {
         const last = merged[lastIndex]
@@ -82,7 +107,67 @@ export default function App() {
       }
     })
     return merged
-  }, [histData, liveData, isLive, end])
+  }, [histDataResponse, liveDataResponse, isLive, end, extraHistory])
+
+  // Compute timezone-adjusted bars for display
+  const displayBars = useMemo(() => {
+    // bars are in Canonical UTC (from API)
+    // We need to shift them to the target display time
+    
+    // Target: UTC (no shift)
+    if (timezoneMode === 'utc') {
+      return bars
+    }
+    
+    // Target: Server (Exchange) - shift by server offset
+    if (timezoneMode === 'server') {
+      return bars.map(b => ({ ...b, time: b.time + serverOffset }))
+    }
+
+    // Target: Local - shift by local offset
+    if (timezoneMode === 'local') {
+      // Local offset in seconds (e.g. UTC-6 -> -21600)
+      const localOffset = -new Date().getTimezoneOffset() * 60
+      return bars.map(b => ({ ...b, time: b.time + localOffset }))
+    }
+
+    return bars
+  }, [bars, timezoneMode, serverOffset])
+
+  const getCanonicalTime = useCallback((displayTime: number) => {
+    // Convert Display Time -> Canonical UTC
+    if (timezoneMode === 'utc') return displayTime
+    
+    if (timezoneMode === 'server') {
+      return displayTime - serverOffset
+    }
+    
+    if (timezoneMode === 'local') {
+      const localOffset = -new Date().getTimezoneOffset() * 60
+      return displayTime - localOffset
+    }
+    return displayTime
+  }, [timezoneMode, serverOffset])
+
+  const getDisplayTime = useCallback((utcTime: number) => {
+    // Convert Canonical UTC -> Display Time
+    if (timezoneMode === 'utc') return utcTime
+    
+    if (timezoneMode === 'server') {
+      return utcTime + serverOffset
+    }
+    
+    if (timezoneMode === 'local') {
+      const localOffset = -new Date().getTimezoneOffset() * 60
+      return utcTime + localOffset
+    }
+    return utcTime
+  }, [timezoneMode, serverOffset])
+
+  // Handler for anchor selection from chart (receives display time)
+  const handleAnchorSelect = useCallback((t: number) => {
+    setAnchor(getCanonicalTime(t))
+  }, [getCanonicalTime])
 
   const earliest = bars.length ? bars[0].time : undefined
 
@@ -90,12 +175,23 @@ export default function App() {
   const handleSymbolChange = useCallback((newSymbol: string) => {
     setSymbol(newSymbol)
     setEnd(undefined)
-    setLimit(DEFAULT_LIMIT)
+    setExtraHistory([])
     setForecastOverlays([])
     setAnchor(undefined)
     setPivotLevels(null)
     setSrLevels(null)
     setMetrics(null)
+    
+    // Save state
+    saveJSON('last_symbol', newSymbol)
+    
+    // Update recent symbols
+    if (newSymbol) {
+      const recent = loadJSON<string[]>('recent_symbols') || []
+      const updated = [newSymbol, ...recent.filter(s => s !== newSymbol)].slice(0, 10)
+      saveJSON('recent_symbols', updated)
+    }
+
     if (newSymbol && timeframe) {
       const saved = loadJSON<DenoiseSpecUI | undefined>(`chart_dn:${newSymbol}:${timeframe}`)
       setChartDenoise(saved || undefined)
@@ -105,7 +201,7 @@ export default function App() {
   const handleTimeframeChange = useCallback((newTf: string) => {
     setTimeframe(newTf)
     setEnd(undefined)
-    setLimit(DEFAULT_LIMIT)
+    setExtraHistory([])
     setForecastOverlays([])
     setAnchor(undefined)
     setPivotLevels(null)
@@ -117,13 +213,33 @@ export default function App() {
     }
   }, [symbol])
 
-  const handleNeedMoreLeft = useCallback((tEarliest: number) => {
-    if (!symbol || isFetching) return
-    const dt = new Date((tEarliest - 1) * 1000)
-    setEnd(dt.toISOString().slice(0, 19).replace('T', ' '))
-    setLimit(prev => Math.min(20000, Math.floor(prev * 1.2)))
-    setTimeout(() => refetch(), 50)
-  }, [symbol, isFetching, refetch])
+  const handleNeedMoreLeft = useCallback(async (tEarliestDisplay: number) => {
+    if (!symbol || isLoadingMore || isFetching) return
+    setIsLoadingMore(true)
+    try {
+      // Convert display time back to UTC for the API query
+      const tUtc = getCanonicalTime(tEarliestDisplay)
+      const dt = new Date((tUtc - 1) * 1000).toISOString().slice(0, 19).replace('T', ' ')
+      
+      const older = await getHistory({ 
+        symbol, 
+        timeframe, 
+        limit: QUERY_LIMIT, 
+        end: dt, 
+        denoise: chartDenoise 
+      })
+      if (older.bars.length) {
+        setExtraHistory(prev => {
+           // Simple prepend; useMemo will dedup based on time
+           return [...older.bars, ...prev]
+        })
+      }
+    } catch (err) {
+      console.error('Failed to load more history:', err)
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }, [symbol, timeframe, chartDenoise, isLoadingMore, isFetching, getCanonicalTime])
 
   const handlePivotToggle = useCallback(async () => {
     if (!symbol) return
@@ -149,13 +265,13 @@ export default function App() {
       return
     }
     try {
-      const data = await getSupportResistance({ symbol, timeframe, limit })
+      const data = await getSupportResistance({ symbol, timeframe, limit: QUERY_LIMIT })
       const levels = (data.levels || []).filter(row => Number.isFinite(row?.value))
       if (levels.length) setSrLevels(levels)
     } catch (err) {
       console.error('Failed to fetch S/R:', err)
     }
-  }, [symbol, timeframe, limit, srLevels])
+  }, [symbol, timeframe, srLevels])
 
   const handleDenoiseChange = useCallback((denoise?: DenoiseSpecUI) => {
     setChartDenoise(denoise)
@@ -263,8 +379,8 @@ export default function App() {
     const lineEnd = maxTime !== undefined ? maxTime + tfStep : undefined
 
     // Denoised line
-    if (bars.length && 'close_dn' in bars[0]) {
-      const dnPoints = bars
+    if (histDataResponse?.bars.length && 'close_dn' in histDataResponse.bars[0]) {
+      const dnPoints = histDataResponse.bars
         .filter((bar): bar is HistoryBar & { close_dn: number } => 
           Number.isFinite(bar.time) && Number.isFinite(bar.close_dn))
         .map(bar => ({ time: bar.time, value: bar.close_dn }))
@@ -312,8 +428,22 @@ export default function App() {
     const lines: PriceLineSpec[] = []
     if (showBid) lines.push({ price: tickData.bid, color: '#ef4444', title: 'Bid' })
     if (showAsk) lines.push({ price: tickData.ask, color: '#22c55e', title: 'Ask' })
+    
+    if (showLast) {
+      // Always show Last price line, labeled 'Last'
+      // Prefer tick data, fallback to last bar close
+      let lastPrice = tickData?.last
+      if (!lastPrice && bars.length > 0) {
+        lastPrice = bars[bars.length - 1].close
+      }
+
+      if (lastPrice && lastPrice > 0) {
+        lines.push({ price: lastPrice, color: '#facc15', title: 'Last' })
+      }
+    }
+    
     return lines
-  }, [tickData, showBid, showAsk])
+  }, [tickData, showBid, showAsk, showLast, bars])
 
   return (
     <div className="h-full flex flex-col bg-slate-950">
@@ -324,13 +454,11 @@ export default function App() {
           symbol={symbol}
           timeframe={timeframe}
           anchor={anchor}
-          limit={limit}
-          isLoading={isFetching}
+          isLoading={isFetching || isLoadingMore}
           onSymbolChange={handleSymbolChange}
           onTimeframeChange={handleTimeframeChange}
-          onLimitChange={setLimit}
           onClearAnchor={() => setAnchor(undefined)}
-          onReload={() => { setEnd(undefined); refetch() }}
+          onReload={() => { setEnd(undefined); setExtraHistory([]); refetch() }}
           onTogglePivots={handlePivotToggle}
           onToggleSR={handleSRToggle}
           onDenoiseChange={handleDenoiseChange}
@@ -341,20 +469,27 @@ export default function App() {
           barsCount={bars.length}
           showBid={showBid}
           showAsk={showAsk}
+          showLast={showLast}
           isLive={isLive}
+          timezoneMode={timezoneMode}
           onToggleBid={() => setShowBid(prev => !prev)}
           onToggleAsk={() => setShowAsk(prev => !prev)}
+          onToggleLast={() => setShowLast(prev => !prev)}
           onToggleLive={() => setIsLive(prev => !prev)}
+          onTimezoneChange={setTimezoneMode}
         />
 
         {/* Chart */}
         <div className="absolute inset-0">
           <OHLCChart
-            data={bars}
-            onAnchor={setAnchor}
+            data={displayBars}
+            onAnchor={handleAnchorSelect}
             onNeedMoreLeft={earliest ? handleNeedMoreLeft : undefined}
-            anchorTime={anchor}
-            overlays={chartOverlays}
+            anchorTime={anchor ? getDisplayTime(anchor) : undefined}
+            overlays={chartOverlays.map(ov => ({
+              ...ov,
+              points: ov.points.map(p => ({ ...p, time: getDisplayTime(p.time) }))
+            }))}
             priceLines={priceLines}
           />
         </div>

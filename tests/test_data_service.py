@@ -2,6 +2,8 @@
 
 import unittest
 from unittest.mock import patch, MagicMock
+from contextlib import contextmanager
+from typing import Any, Iterator, Tuple
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -17,13 +19,17 @@ import MetaTrader5 as mt5
 
 from mtdata.services.data_service import fetch_candles, fetch_ticks
 
+
+@contextmanager
+def _mock_symbol_ready_guard(*args: Any, **kwargs: Any) -> Iterator[Tuple[None, MagicMock]]:
+    yield None, MagicMock()
+
+
 class TestDataService(unittest.TestCase):
     
     @patch('mtdata.services.data_service._mt5_copy_rates_from')
-    @patch('mtdata.services.data_service._ensure_symbol_ready')
-    def test_fetch_candles_basic(self, mock_ensure, mock_copy_rates):
-        # Setup
-        mock_ensure.return_value = None
+    @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
+    def test_fetch_candles_basic(self, mock_copy_rates):
         
         # Mock rates data
         now = datetime.utcnow()
@@ -54,10 +60,8 @@ class TestDataService(unittest.TestCase):
         self.assertTrue({'time', 'open', 'high', 'low', 'close'}.issubset(set(data[0].keys())))
         
     @patch('mtdata.services.data_service._mt5_copy_ticks_range')
-    @patch('mtdata.services.data_service._ensure_symbol_ready')
-    def test_fetch_ticks_basic(self, mock_ensure, mock_copy_ticks):
-        # Setup
-        mock_ensure.return_value = None
+    @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
+    def test_fetch_ticks_basic(self, mock_copy_ticks):
         
         # Mock ticks data
         now = datetime.utcnow()

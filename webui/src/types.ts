@@ -20,6 +20,18 @@ export type HistoryBar = {
   close_dn?: number // denoised close (when denoising applied)
 }
 
+export type HistoryResponse = {
+  success: boolean
+  symbol: string
+  timeframe: string
+  candles: number
+  last_candle_open: boolean
+  data: HistoryBar[]
+  meta?: {
+    server_tz_offset: number
+  }
+}
+
 // ============================================================================
 // Support/Resistance & Pivot Types
 // ============================================================================
