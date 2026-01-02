@@ -19,6 +19,7 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 
 - `mtdata` includes `trading_*` commands that can **place/modify/close real orders** on the account currently logged into MT5.
 - Use a **demo account** until you understand the tools and your broker setup.
+- There is no built-in “paper trading” mode in mtdata; use an MT5 demo account for simulated execution.
 - If you only want research, stick to `data_*`, `forecast_*`, `regime_*`, `patterns_*`, and `report_*` commands.
 
 ## Capabilities

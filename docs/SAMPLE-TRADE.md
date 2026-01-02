@@ -1,14 +1,9 @@
 ## A Sample Forecast Analysis Guide
 
 **Related Documentation:**
-- [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) - Advanced version with regimes, HAR-RV, conformal intervals, MC barriers
-- [FORECAST.md](FORECAST.md) - Forecasting overview and submodules
-- [forecast/FORECAST_GENERATE.md](forecast/FORECAST_GENERATE.md) - Price forecasts (`forecast_generate`)
-- [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) - Deep dive into barrier analytics
-- [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md) - Indicator meanings and usage
-- [DENOISING.md](DENOISING.md) - Smoothing and spike removal
-- [EXAMPLE.md](EXAMPLE.md) - Complete end-to-end workflow
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Troubleshooting
+- [GLOSSARY.md](GLOSSARY.md) — Terms (TP/SL, pips, spread, indicators)
+- [CLI.md](CLI.md) — CLI usage and output formats
+- [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) — Next step (regimes, volatility, barriers, risk controls)
 
 Looking for a more advanced, risk‑aware version? See [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) (regimes, HAR‑RV, conformal intervals, Monte‑Carlo barrier optimization, and execution controls).
 

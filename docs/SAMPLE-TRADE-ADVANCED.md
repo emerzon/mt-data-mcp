@@ -1,15 +1,9 @@
 ## Advanced Forecast‑to‑Trade Playbook (EURUSD, H1)
 
 **Related Documentation:**
-- [SAMPLE-TRADE.md](SAMPLE-TRADE.md) - Basic workflow (start here if new)
-- [FORECAST.md](FORECAST.md) - Forecasting overview and submodules
-- [forecast/FORECAST_GENERATE.md](forecast/FORECAST_GENERATE.md) - Price forecasts (`forecast_generate`)
-- [forecast/VOLATILITY.md](forecast/VOLATILITY.md) - Volatility forecasting
-- [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) - Barrier analytics deep dive
-- [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md) - Indicator meanings and usage
-- [DENOISING.md](DENOISING.md) - Smoothing and spike removal
-- [EXAMPLE.md](EXAMPLE.md) - Complete end-to-end workflow
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Troubleshooting
+- [SAMPLE-TRADE.md](SAMPLE-TRADE.md) — Basic workflow (start here if new)
+- [CLI.md](CLI.md) — CLI usage and output formats
+- [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) — Barrier analytics (concepts + methods)
 
 This guide extends the basic workflow with regime filters, conformal intervals, realized‑volatility (HAR‑RV), Monte‑Carlo barrier analytics, and disciplined risk/execution controls. It is designed to be modular: run each block, inspect outputs, and gate the next step by thresholds you calibrate via backtests.
 
@@ -140,7 +134,7 @@ Use triple‑barrier labels offline for signal evaluation and meta‑models.
 
 ```bash
 python cli.py labels_triple_barrier EURUSD --timeframe H1 --limit 2000 \
-  --horizon 12 --tp_pct 0.4 --sl_pct 0.8 --label-on high_low \
+  --horizon 12 --tp-pct 0.4 --sl-pct 0.8 --label-on high_low \
   --output summary --lookback 300 --format json
 ```
 

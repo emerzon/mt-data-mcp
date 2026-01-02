@@ -1,18 +1,9 @@
 # End-to-End Trading Workflow Example
 
-**Related documentation:**
-- [README.md](../README.md) - Project overview
-- [README.md](README.md) - Docs index
-- [CLI.md](CLI.md) - CLI usage patterns
-- [SAMPLE-TRADE.md](SAMPLE-TRADE.md) - Beginner guide
-- [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) - Advanced playbook
-- [FORECAST.md](FORECAST.md) - Forecasting overview
-- [forecast/FORECAST_GENERATE.md](forecast/FORECAST_GENERATE.md) - `forecast_generate`
-- [forecast/VOLATILITY.md](forecast/VOLATILITY.md) - Volatility forecasting
-- [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) - Barrier analytics deep dive
-- [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md) - Indicators
-- [DENOISING.md](DENOISING.md) - Denoising and smoothing
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Common issues
+**Related:**
+- [SETUP.md](SETUP.md) — Installation and MT5 connection
+- [CLI.md](CLI.md) — CLI usage patterns and output formats
+- [SAMPLE-TRADE.md](SAMPLE-TRADE.md) — Guided workflow (start here if new)
 
 This walkthrough shows a practical “research loop”: discover methods, fetch data, add context (indicators/denoise), generate forecasts, size risk (volatility + barriers), and validate with a quick backtest.
 

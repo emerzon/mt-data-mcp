@@ -2,16 +2,35 @@
 
 ## Overview
 
-**Related Documentation:**
-- [FORECAST.md](FORECAST.md) - General forecasting guide and MC simulation methods
-- [SAMPLE-TRADE.md](SAMPLE-TRADE.md) - Practical trading workflow examples
-- [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) - Advanced barrier optimization
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Troubleshooting
-- [EXAMPLE.md](EXAMPLE.md) - Complete end-to-end workflow
+**Related:**
+- [GLOSSARY.md](GLOSSARY.md) — TP/SL, pips, and spread
+- [SAMPLE-TRADE.md](SAMPLE-TRADE.md) — Practical workflow example
+- [CLI.md](CLI.md) — CLI usage and output formats
 
 Barrier functions are essential tools for risk management in trading. They help answer the critical question: *"What's the probability that my take-profit will be hit before my stop-loss within a given time horizon?"*
 
 This document provides a deep dive into the barrier analytics available in mtdata, covering the underlying algorithms, when to use each method, and real-world trading scenarios.
+
+---
+
+## Quick Start (Simple Usage First)
+
+### 1) Probability for one TP/SL pair
+
+Percent barriers are expressed in percent (e.g., `--tp-pct 0.40` means **0.40%**, not 40%):
+```bash
+python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
+  --method mc --mc-method mc_gbm --direction long --tp-pct 0.40 --sl-pct 0.60 --format json
+```
+
+Look for `prob_tp_first`, `prob_sl_first`, `prob_no_hit`, and `edge` in the output.
+
+### 2) Search for “good” TP/SL levels
+
+```bash
+python cli.py forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
+  --method hmm_mc --mode pct --grid-style volatility --objective edge --format json
+```
 
 ---
 
@@ -34,7 +53,7 @@ Given:
 
 We want to compute:
 - `P(TP first)`: Probability TP is hit before SL
-- `P(SL first)`: Probability SL is hit before SL
+- `P(SL first)`: Probability SL is hit before TP
 - `P(no hit)`: Probability neither is hit by time T
 - `E[time to hit]`: Expected time until resolution
 
@@ -84,7 +103,7 @@ where:
 > **Command**:
 > ```bash
 > python cli.py forecast_barrier_prob EURUSD --timeframe M5 --horizon 12 \
->   --method mc --mc-method mc_gbm --tp_pct 0.2 --sl_pct 0.15
+>   --method mc --mc-method mc_gbm --tp-pct 0.2 --sl-pct 0.15
 > ```
 
 ---
@@ -129,7 +148,7 @@ P(hit | S_t, S_T) = exp(-2 * (B - S_t)(B - S_T) / (σ²Δt))
 > **Command**:
 > ```bash
 > python cli.py forecast_barrier_prob BTCUSD --timeframe M1 --horizon 6 \
->   --method mc --mc-method mc_gbm_bb --tp_pct 0.1 --sl_pct 0.08
+>   --method mc --mc-method mc_gbm_bb --tp-pct 0.1 --sl-pct 0.08
 > ```
 
 ---
@@ -177,7 +196,7 @@ Transition: P(s_t = j | s_{t-1} = i) = A_{ij}
 > **Command**:
 > ```bash
 > python cli.py forecast_barrier_prob GBPUSD --timeframe H4 --horizon 48 \
->   --method mc --mc-method hmm_mc --tp_pct 1.5 --sl_pct 1.0 \
+>   --method mc --mc-method hmm_mc --tp-pct 1.5 --sl-pct 1.0 \
 >   --params "n_states=2 n_sims=5000"
 > ```
 
@@ -226,7 +245,7 @@ r_t = μ + ε_t
 > **Command**:
 > ```bash
 > python cli.py forecast_barrier_prob SPY --timeframe D1 --horizon 20 \
->   --method mc --mc-method garch --tp_pct 3.0 --sl_pct 2.0 \
+>   --method mc --mc-method garch --tp-pct 3.0 --sl-pct 2.0 \
 >   --params "p=1 q=1"
 > ```
 
@@ -267,7 +286,7 @@ r_t = μ + ε_t
 > **Command**:
 > ```bash
 > python cli.py forecast_barrier_prob USDTRY --timeframe H1 --horizon 24 \
->   --method mc --mc-method bootstrap --tp_pct 2.0 --sl_pct 1.5 \
+>   --method mc --mc-method bootstrap --tp-pct 2.0 --sl-pct 1.5 \
 >   --params "block_size=5"
 > ```
 
@@ -317,7 +336,7 @@ dW_t^1 dW_t^2 = ρ dt
 > **Command**:
 > ```bash
 > python cli.py forecast_barrier_prob AAPL --timeframe D1 --horizon 60 \
->   --method mc --mc-method heston --tp_pct 10.0 --sl_pct 5.0 \
+>   --method mc --mc-method heston --tp-pct 10.0 --sl-pct 5.0 \
 >   --params "kappa=2.0 theta=0.04 xi=0.3 rho=-0.5"
 > ```
 
@@ -365,7 +384,7 @@ J_t: compound Poisson process with log-normal jumps
 > **Command**:
 > ```bash
 > python cli.py forecast_barrier_prob EURUSD --timeframe M15 --horizon 16 \
->   --method mc --mc-method jump_diffusion --tp_pct 0.5 --sl_pct 0.3 \
+>   --method mc --mc-method jump_diffusion --tp-pct 0.5 --sl-pct 0.3 \
 >   --params "jump_lambda=0.5 jump_mu=0.001 jump_sigma=0.002"
 > ```
 
@@ -431,7 +450,7 @@ Note: `garch` requires the `arch` package; auto falls back to `heston` if it is 
 > **Command**:
 > ```bash
 > python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
->   --method auto --tp_pct 0.5 --sl_pct 0.3
+>   --method auto --tp-pct 0.5 --sl-pct 0.3
 >
 > # Returns: method_used: "hmm_mc", auto_reason: "auto: regime shift (volatility change)"
 > ```
@@ -880,7 +899,7 @@ python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 500
 
 # If insufficient, use mc_gbm (or mc_gbm_bb for short horizons)
 python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 10 \
-  --method mc --mc-method mc_gbm --tp_pct 0.2 --sl_pct 0.15
+  --method mc --mc-method mc_gbm --tp-pct 0.2 --sl-pct 0.15
 ```
 
 ---
@@ -961,7 +980,7 @@ for H in 6 12 24 48; do
   echo "Horizon $H bars:"
   python cli.py forecast_barrier_prob \
     EURUSD --timeframe H1 --horizon $H \
-    --method mc --mc-method hmm_mc --tp_pct 0.5 --sl_pct 0.3 \
+    --method mc --mc-method hmm_mc --tp-pct 0.5 --sl-pct 0.3 \
     --format json | jq '{horizon: .horizon, edge: .edge, prob_resolve: (.prob_tp_first + .prob_sl_first)}'
 done
 ```
@@ -1001,7 +1020,7 @@ Test stability of results:
 # Vary n_sims
 for N in 1000 2000 5000 10000; do
   python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
-    --method mc --mc-method hmm_mc --tp_pct 0.5 --sl_pct 0.3 --params "n_sims=$N" \
+    --method mc --mc-method hmm_mc --tp-pct 0.5 --sl-pct 0.3 --params "n_sims=$N" \
     --format json | jq '.prob_tp_first'
 done
 ```
@@ -1016,7 +1035,7 @@ Compare methods on same data:
 for METHOD in mc_gbm hmm_mc bootstrap; do
   echo "Method: $METHOD"
   python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
-    --method mc --mc-method $METHOD --tp_pct 0.5 --sl_pct 0.3 \
+    --method mc --mc-method $METHOD --tp-pct 0.5 --sl-pct 0.3 \
     --format json | jq '{method: .method, edge: .edge, prob_resolve: (.prob_tp_first + .prob_sl_first)}'
 done
 ```
@@ -1091,7 +1110,7 @@ Validate:
 ```bash
 python cli.py forecast_barrier_prob \
   EURUSD --timeframe H1 --horizon 12 \
-  --method auto --tp_pct 0.5 --sl_pct 0.3
+  --method auto --tp-pct 0.5 --sl-pct 0.3
 ```
 
 **Find optimal**:

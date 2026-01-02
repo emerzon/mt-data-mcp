@@ -9,9 +9,11 @@ Installation and configuration guide for mtdata.
 
 ---
 
+> Important: The MetaTrader 5 Python integration is **Windows-only**. If you're on macOS/Linux, run `mtdata` on a Windows VM or Windows machine and connect remotely (MCP/Web API).
+
 ## Requirements
 
-- **Operating System:** Windows (MetaTrader 5 requirement)
+- **Operating System:** Windows (required for MetaTrader 5)
 - **Python:** 3.10 or higher
 - **MetaTrader 5:** Installed and running
 
@@ -67,13 +69,22 @@ Download from your broker or [MetaQuotes](https://www.metatrader5.com/en/downloa
 ### 2. Launch and Login
 
 1. Start the MetaTrader 5 terminal
-2. Log in to your broker account (demo account works)
+2. Log in to your broker account (demo account works and is recommended for first use)
 3. Keep the terminal running while using mtdata
+
+If you don't have a broker account yet, you can still get started:
+- In MT5: **File → Open an Account** → choose a demo provider (often **MetaQuotes-Demo**) → create a demo account.
+- Confirm prices are updating in **Market Watch** (this avoids “stale”/empty data).
 
 ### 3. Verify Connection
 
 ```bash
 python cli.py symbols_list --limit 10
+```
+
+Optional deeper check:
+```bash
+python cli.py trading_account_info --format json
 ```
 
 Expected output:
@@ -83,6 +94,12 @@ data[10]{name,group,description}:
     GBPUSD,Forex\Majors,Great Britain Pound vs US Dollar
     ...
 ```
+
+If you don't see symbols (or you get a connection error):
+- Make sure MT5 is **running** and **logged in**
+- Make sure the symbol is visible in **Market Watch** (right-click → “Show All”)
+- If you have multiple MT5 terminals installed, close extras and retry
+- See [TROUBLESHOOTING.md](TROUBLESHOOTING.md#connection-issues)
 
 ---
 
@@ -118,10 +135,16 @@ MT5_SERVER_TZ=Europe/Athens
 MT5_SERVER_TZ=America/New_York
 ```
 
-**How to determine your broker's timezone:**
-1. Check broker documentation
-2. Compare MT5 chart time with UTC
-3. Look at when daily candles open/close
+**How to determine your broker's timezone/offset (practical):**
+1. Prefer `MT5_SERVER_TZ` if you know the broker's IANA timezone name (handles DST automatically).
+2. If you don't know it, estimate an offset during active market hours (so ticks are current):
+   ```bash
+   python scripts/detect_mt5_time_offset.py --symbol EURUSD
+   ```
+   Then set `MT5_TIME_OFFSET_MINUTES` to the recommended value.
+
+What happens if it's wrong?
+- Candle timestamps may be shifted, which can affect **daily pivots**, **session filters**, and **backtests**.
 
 ---
 

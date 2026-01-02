@@ -189,6 +189,11 @@ Or use server timezone name:
 MT5_SERVER_TZ=Europe/Athens
 ```
 
+To estimate an offset quickly (run during active market hours so ticks are current):
+```bash
+python scripts/detect_mt5_time_offset.py --symbol EURUSD
+```
+
 ### Volume is Always Zero
 
 **Cause:** Forex spot typically has indicative volume (tick count, not real volume).

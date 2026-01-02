@@ -4,6 +4,36 @@ This glossary explains technical terms used in mtdata with simple language and r
 
 ---
 
+## Basic Trading Concepts (Start Here)
+
+If you're new to trading, skim this section first. It's enough to follow the examples in this repo.
+
+### Long vs Short
+- **Long**: you profit if price goes **up** (buy now, sell later).
+- **Short**: you profit if price goes **down** (sell now, buy back later).
+
+### TP/SL (Take Profit / Stop Loss)
+- **Take Profit (TP)**: close a position when price reaches your profit target.
+- **Stop Loss (SL)**: close a position to cap the loss if price moves against you.
+
+### Bid/Ask and Spread
+- **Ask**: the price you pay to buy.
+- **Bid**: the price you receive when you sell.
+- **Spread**: `ask - bid` (a cost you pay to enter/exit). See also: [Spread](#spread).
+
+### Pip (and Pipette)
+- A **pip** is a standard unit of FX price movement (often `0.0001`, or `0.01` for JPY pairs). See also: [Pip](#pip).
+- Some brokers quote an extra digit (“pipettes”): `1 pip = 10 pipettes`.
+
+### Timeframe and Candles (Bars)
+- A **timeframe** (e.g., `M5`, `H1`, `D1`) controls how data is grouped.
+- A **candle/bar** summarizes that period (open/high/low/close and volume).
+
+### Lot Size
+Forex position sizes are often expressed in **lots** (see: [Lot Size](#lot-size)).
+
+---
+
 ## Core Concepts
 
 ### Time Series

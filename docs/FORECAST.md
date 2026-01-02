@@ -5,9 +5,7 @@ This guide covers tools for predicting future market behavior: price direction, 
 **Related:**
 - [GLOSSARY.md](GLOSSARY.md) — Definitions of terms
 - [forecast/VOLATILITY.md](forecast/VOLATILITY.md) — Volatility estimation
-- [forecast/REGIMES.md](forecast/REGIMES.md) — Market state detection
 - [forecast/UNCERTAINTY.md](forecast/UNCERTAINTY.md) — Confidence intervals
-- [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) — TP/SL probability analysis
 
 ---
 

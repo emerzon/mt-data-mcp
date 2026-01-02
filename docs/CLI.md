@@ -9,6 +9,12 @@ The CLI is the quickest way to explore mtdata capabilities. All tools are access
 
 ---
 
+## Safety (Trading Commands)
+
+`trading_*` commands can place/modify/close real orders on the account currently logged into MT5 (demo or live). Use a demo account until you're confident in your setup.
+
+There is no built-in “paper trading” mode in mtdata; for simulated execution use an MT5 demo account and double-check which account is logged in before running any `trading_*` commands.
+
 ## Getting Help
 
 **List all commands:**
@@ -39,6 +45,15 @@ Human-readable compact output:
 python cli.py symbols_list --limit 5
 ```
 
+The text format includes a quick schema hint:
+```
+data[5]{name,group,description}:
+    EURUSD,Forex\Majors,Euro vs US Dollar
+    ...
+```
+- `data[5]` is the number of rows returned
+- `{name,group,description}` are the columns/keys in each row
+
 ### JSON
 Structured output for programmatic use:
 ```bash
@@ -50,6 +65,8 @@ Include additional metadata:
 ```bash
 python cli.py forecast_generate EURUSD --horizon 12 --verbose
 ```
+
+Tip: with `--format json`, `--verbose` also adds `cli_meta` (including timezone hints) to many tool results.
 
 ---
 
