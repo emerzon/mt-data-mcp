@@ -3,7 +3,7 @@
 import logging
 import os
 import atexit
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Literal, Optional, TYPE_CHECKING, cast
 
 from mcp.server.fastmcp import FastMCP
 from functools import wraps as _wraps
@@ -84,7 +84,7 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
             from ..utils.minimal_output import format_result_minimal as _fmt_min, to_methods_availability_toon as _fmt_methods
         except Exception:
             _fmt_min = lambda x: str(x) if x is not None else ""  # fallback
-            _fmt_methods = None  # type: ignore
+            _fmt_methods = None
 
         @_wraps(func)
         def _wrapped(*a, **kw):
@@ -114,9 +114,9 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
                 # Special-case: compact method availability where applicable
                 fname = getattr(func, '__name__', '')
                 if fname in ('forecast_list_methods', 'denoise_list_methods') and isinstance(out, dict):
-                    methods = out.get('methods') or []
-                    if _fmt_methods:
-                        s = _fmt_methods(methods)
+                    methods_list = out.get('methods') or []
+                    if _fmt_methods and isinstance(methods_list, list):
+                        s = _fmt_methods(cast(List[Dict[str, Any]], methods_list))
                         if s:
                             return s
                 return _fmt_min(out)
@@ -135,7 +135,7 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
                     param.replace(annotation=cleaned.get(name))
                 )
             return_ann = cleaned.get("return", inspect._empty)
-            _wrapped.__signature__ = inspect.Signature(parameters=params, return_annotation=return_ann)
+            setattr(_wrapped, '__signature__', inspect.Signature(parameters=params, return_annotation=return_ann))
         except Exception:
             pass
 
@@ -212,26 +212,33 @@ def _resolve_transport(default: str = "sse") -> tuple[str, Optional[str]]:
 def main():
     """Main entry point for the MCP server"""
     # Force listen on all interfaces
-    mcp.settings.host = "0.0.0.0"
-
-    log_level = getattr(logging, str(mcp.settings.log_level).upper(), logging.INFO)
+    settings = getattr(mcp, 'settings', None)
+    if settings is not None:
+        settings.host = "0.0.0.0"
+        log_level = getattr(logging, str(getattr(settings, 'log_level', 'INFO')).upper(), logging.INFO)
+    else:
+        log_level = logging.INFO
+    
     logging.basicConfig(level=log_level)
     logger = logging.getLogger(__name__)
     transport, mount_path = _resolve_transport()
     logger.info(f"Starting {SERVICE_NAME} server... transport={transport}")
 
-    if transport == "sse":
-        base_path = mcp.settings.mount_path.rstrip("/") or "/"
+    if transport == "sse" and settings is not None:
+        base_path = str(getattr(settings, 'mount_path', '') or '').rstrip("/") or "/"
         logger.info(
             "SSE listening at http://%s:%s%s (event path %s, message path %s)",
-            mcp.settings.host,
-            mcp.settings.port,
+            getattr(settings, 'host', '0.0.0.0'),
+            getattr(settings, 'port', 8000),
             base_path,
-            mcp.settings.sse_path,
-            mcp.settings.message_path,
+            getattr(settings, 'sse_path', '/sse'),
+            getattr(settings, 'message_path', '/message'),
         )
 
-    mcp.run(transport=transport, mount_path=mount_path if transport == "sse" else None)
+    run_fn = getattr(mcp, 'run', None)
+    if run_fn is not None:
+        transport_literal = cast(Literal['stdio', 'sse', 'streamable-http'], transport)
+        run_fn(transport=transport_literal, mount_path=mount_path if transport == "sse" else None)
 
 
 if __name__ == "__main__":

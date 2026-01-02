@@ -1,103 +1,246 @@
 # Denoising & Smoothing
 
-**Related documentation:**
-- [CLI.md](CLI.md) - How to run commands
-- [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md) - Indicators you may denoise
-- [FORECAST.md](FORECAST.md) - Forecasting pipelines that can use denoising
+Denoising removes random fluctuations ("noise") from price data to reveal the underlying trend ("signal").
 
-“Denoising” means applying a smoothing filter to a price series (or to indicator series) to reduce short-term randomness and make structure easier to see or model.
+**Related:**
+- [CLI.md](CLI.md) — Command usage
+- [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md) — Indicators to denoise
+- [FORECAST.md](FORECAST.md) — Using denoising in forecasts
+- [GLOSSARY.md](GLOSSARY.md) — Term definitions
 
-## Why denoise?
+---
 
-In real market data, the “true” trend/mean you care about is often hidden under:
+## Why Denoise?
 
-- Microstructure noise (spreads, quote jitter)
-- One-off spikes (news candles, data glitches)
-- Choppy ranges where direction is unclear
+Market data contains:
+- **Signal:** The true underlying trend or pattern
+- **Noise:** Random fluctuations from microstructure, spreads, and short-term volatility
 
-Denoising can help:
+Denoising helps:
+- Reduce false indicator crossovers
+- Clarify trend direction
+- Improve model stability
+- Remove outliers and spikes
 
-- Make indicators less twitchy (fewer false “crossovers”)
-- Stabilize models that assume smoother dynamics
-- Reduce sensitivity to outliers when building signals
+**Trade-off:** More smoothing = clearer trend but more lag (delay in detecting changes).
 
-## Where denoising is used
+---
 
-Denoising is available in several tools, typically via `--denoise` and `--denoise-params`.
+## Quick Start
 
-Most commonly:
+**Smooth closing prices:**
+```bash
+python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 200 \
+  --denoise ema --denoise-params "alpha=0.2"
+```
 
-- `data_fetch_candles ... --denoise ...`
-- `patterns_detect ... --denoise ...`
-- `report_generate ... --denoise ...`
+**Remove spikes:**
+```bash
+python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 200 \
+  --denoise median --denoise-params "window=5"
+```
 
-## Pre vs post indicators
+---
 
-When denoising is applied relative to technical indicators:
+## When to Apply: Pre vs Post Indicators
 
-- `when=pre_ti`: denoise the raw price series first, then compute indicators on the smoothed series.
-- `when=post_ti`: compute indicators first, then denoise the indicator columns.
+### Pre-Indicator (`when=pre_ti`)
+Apply denoising to raw price, then calculate indicators on smoothed data.
 
-Rule of thumb:
+**Use when:** You want smoother inputs for trend estimation.
 
-- Use `pre_ti` when you want smoother inputs (trend estimation).
-- Use `post_ti` when you want to keep the raw price intact but smooth an indicator output (signal stabilization).
+```bash
+python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 200 \
+  --indicators "rsi(14)" \
+  --denoise ema --denoise-params "columns=close,when=pre_ti,alpha=0.2"
+```
 
-## Avoiding look-ahead bias (important for backtests)
+### Post-Indicator (`when=post_ti`)
+Calculate indicators on raw data, then smooth the indicator output.
 
-Some filters can be run in a “zero-phase” way (they look both backward and forward to smooth a point). That can look great on charts, but it is not usable in a causal trading system.
+**Use when:** You want to keep raw price intact but reduce indicator noise.
 
-Rule of thumb:
+```bash
+python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 200 \
+  --indicators "rsi(14)" \
+  --denoise ema --denoise-params "columns=RSI_14,when=post_ti,alpha=0.3"
+```
 
-- For live trading / backtesting: use causal filters (only past data).
-- For visualization / exploration: zero-phase filters can be acceptable.
+---
 
-## Common parameters
+## Denoising Methods
 
-Most denoise specs support these concepts:
+### Moving Averages
 
-- `columns`: which columns to denoise (default is usually `close`)
-- `when`: `pre_ti` or `post_ti`
-- `keep_original`: keep original columns and add a suffixed copy (e.g., `_dn`)
+General-purpose smoothing.
+
+| Method | Description | Parameters |
+|--------|-------------|------------|
+| `ema` | Exponential Moving Average | `alpha` (0.1-0.5) |
+| `sma` | Simple Moving Average | `window` |
+
+**Example:**
+```bash
+--denoise ema --denoise-params "alpha=0.2"
+```
+
+### Robust Filters
+
+Remove outliers and spikes without excessive smoothing.
+
+| Method | Description | Parameters |
+|--------|-------------|------------|
+| `median` | Median filter | `window` |
+| `hampel` | Hampel identifier | `window`, `threshold` |
+
+**Example (spike removal):**
+```bash
+--denoise median --denoise-params "window=5"
+```
+
+### Frequency Filters
+
+Separate high-frequency noise from low-frequency trend.
+
+| Method | Description | Parameters |
+|--------|-------------|------------|
+| `lowpass_fft` | FFT low-pass filter | `cutoff_ratio` |
+| `butterworth` | Butterworth filter | `order`, `cutoff` |
+
+**Example:**
+```bash
+--denoise lowpass_fft --denoise-params "cutoff_ratio=0.1"
+```
+
+### Trend Extractors
+
+Isolate the slow-moving trend component.
+
+| Method | Description | Parameters |
+|--------|-------------|------------|
+| `hp` | Hodrick-Prescott filter | `lambda` |
+| `l1_trend` | L1 trend filter | `lambda` |
+| `tv` | Total variation denoising | `lambda` |
+
+**Example:**
+```bash
+--denoise hp --denoise-params "lambda=1600"
+```
+
+### Adaptive Filters
+
+Automatically adjust smoothing based on data.
+
+| Method | Description | Parameters |
+|--------|-------------|------------|
+| `kalman` | Kalman filter | `transition_cov`, `observation_cov` |
+| `lms` | Least Mean Squares | `mu`, `order` |
+| `rls` | Recursive Least Squares | `delta`, `order` |
+
+**Example:**
+```bash
+--denoise kalman --denoise-params "transition_cov=0.01"
+```
+
+### Decomposition Methods
+
+Split into components and reconstruct smoother parts.
+
+| Method | Description | Parameters |
+|--------|-------------|------------|
+| `stl` | Seasonal-Trend decomposition | `period` |
+| `ssa` | Singular Spectrum Analysis | `window` |
+| `vmd` | Variational Mode Decomposition | `K`, `alpha` |
+| `wavelet` | Wavelet denoising | `wavelet`, `level` |
+
+**Example:**
+```bash
+--denoise wavelet --denoise-params "wavelet=db4,level=3"
+```
+
+---
+
+## Common Parameters
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `columns` | Which columns to denoise | `close` |
+| `when` | `pre_ti` or `post_ti` | `pre_ti` |
+| `keep_original` | Keep original column (adds `_dn` suffix) | `false` |
+| `alpha` | Smoothing factor (EMA) | 0.1 |
+| `window` | Window size (filters) | 5 |
+
+---
+
+## Avoiding Look-Ahead Bias
+
+**Critical for backtesting:** Some filters use future data to smooth each point (zero-phase filtering). This looks great on charts but creates unrealistic results.
+
+**Causal filters** (use only past data):
+- `ema`, `sma`, `kalman`, `lms`, `rls`
+
+**Non-causal filters** (use past and future):
+- `lowpass_fft`, `butterworth`, `hp`, `wavelet` (default mode)
+
+**Recommendation:** Use causal filters for backtesting and live trading.
+
+---
+
+## Method Selection Guide
+
+| Noise Type | Recommended Method |
+|------------|-------------------|
+| General high-frequency noise | `ema`, `sma` |
+| Spikes/outliers | `median`, `hampel` |
+| Microstructure noise | `kalman` |
+| Seasonal patterns | `stl` |
+| Unknown/complex | Start with `ema`, try `kalman` |
+
+---
 
 ## Examples
 
-### 1) Denoise close before indicators (EMA)
-
+### Smooth Closing Prices
 ```bash
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 1500 \
-  --indicators "rsi(14),ema(50)" \
-  --denoise ema --denoise-params "columns=close,when=pre_ti,alpha=0.2,keep_original=true" \
-  --format json
+python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 500 \
+  --denoise ema --denoise-params "alpha=0.2,keep_original=true"
 ```
 
-### 2) Denoise an indicator after it’s computed (smooth RSI)
-
+### Remove Price Spikes
 ```bash
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 1500 \
+python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 500 \
+  --denoise hampel --denoise-params "window=7,threshold=3"
+```
+
+### Smooth RSI Output
+```bash
+python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 500 \
   --indicators "rsi(14)" \
-  --denoise ema --denoise-params "columns=RSI_14,when=post_ti,alpha=0.3,keep_original=true" \
-  --format json
+  --denoise ema --denoise-params "columns=RSI_14,when=post_ti,alpha=0.3"
 ```
 
-### 3) Use a robust filter to remove spikes (median / Hampel)
-
+### Kalman Filter (Adaptive)
 ```bash
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 2000 \
-  --denoise median --denoise-params "window=7,columns=close,keep_original=true" \
-  --format json
+python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 500 \
+  --denoise kalman --denoise-params "transition_cov=0.01"
 ```
 
-## Denoising methods (high level)
+---
 
-Different methods solve different “kinds of noise”:
+## Quick Reference
 
-- Moving averages (`ema`, `sma`): general-purpose smoothing.
-- Robust rolling filters (`median`, `hampel`): reduce spikes/outliers.
-- Frequency filters (`lowpass_fft`, `butterworth`): remove high-frequency jitter.
-- Trend extractors (`hp`, `l1_trend`, `tv`): keep slow trend, reduce fast noise.
-- Adaptive/state-space (`kalman`, `lms`, `rls`): adjust smoothing as conditions change.
-- Decomposition (`stl`, `ssa`, `vmd`, `wavelet_packet`): split into components and reconstruct smoother parts.
+| Task | Command |
+|------|---------|
+| Basic EMA smoothing | `--denoise ema --denoise-params "alpha=0.2"` |
+| Spike removal | `--denoise median --denoise-params "window=5"` |
+| Adaptive filter | `--denoise kalman` |
+| Keep original column | `--denoise-params "keep_original=true"` |
+| Post-indicator smoothing | `--denoise-params "when=post_ti"` |
 
-If you’re unsure, start with `ema` and `median`, then try `kalman` or `tv` for more structure-preserving smoothing.
+---
 
+## See Also
+
+- [GLOSSARY.md](GLOSSARY.md) — Term definitions
+- [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md) — Indicators to denoise
+- [FORECAST.md](FORECAST.md) — Using denoising in forecasts

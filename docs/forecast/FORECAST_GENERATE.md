@@ -1,123 +1,254 @@
-# `forecast_generate`: Price Forecasts
+# `forecast_generate` Reference
 
-**Related documentation:**
-- [../FORECAST.md](../FORECAST.md) - Forecasting overview (start here)
-- [../TECHNICAL_INDICATORS.md](../TECHNICAL_INDICATORS.md) - Indicators as inputs/targets
-- [../DENOISING.md](../DENOISING.md) - Denoising as preprocessing
-- [../BARRIER_FUNCTIONS.md](../BARRIER_FUNCTIONS.md) - Using forecasts for TP/SL sizing
+Detailed reference for the `forecast_generate` command, which produces price forecasts for the next N bars.
 
-`forecast_generate` produces a forecast for the next `horizon` bars. In plain terms: “given the recent history, what do the next N candles look like?”
+**Related:**
+- [../FORECAST.md](../FORECAST.md) — Forecasting overview
+- [../TECHNICAL_INDICATORS.md](../TECHNICAL_INDICATORS.md) — Indicators as features
+- [../DENOISING.md](../DENOISING.md) — Preprocessing
+- [../BARRIER_FUNCTIONS.md](../BARRIER_FUNCTIONS.md) — Using forecasts for TP/SL
 
-## Quick start
+---
 
-```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
-  --library native --model theta --format json
-```
-
-## Key ideas (non-quant friendly)
-
-- A forecast is an *estimate*, not a promise. Always combine it with risk controls.
-- `horizon` is “how far into the future” (in bars).
-- `lookback` is “how much past data” the model uses.
-- Forecasts are often more useful for *risk sizing* (how big can moves be?) than for pinpointing an exact price.
-
-## Picking a model
-
-To see what’s available on your machine:
+## Basic Usage
 
 ```bash
-python cli.py forecast_list_library_models native --format json
-python cli.py forecast_list_library_models statsforecast --format json
-python cli.py forecast_list_library_models sktime --format json
-python cli.py forecast_list_library_models pretrained --format json
+python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
 ```
 
-If you want a single consolidated list with availability + parameter docs:
+**Output:**
+```
+forecast[12]{time,forecast}:
+    "2026-01-01 18:00",1.17569
+    "2026-01-01 19:00",1.17570
+    ...
+```
+
+---
+
+## Parameters
+
+### Required
+| Parameter | Description |
+|-----------|-------------|
+| `symbol` | Trading symbol (positional argument) |
+
+### Model Selection
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--library` | `native` | Model library: native, statsforecast, sktime, mlforecast, pretrained |
+| `--model` | `theta` | Model name within the library |
+| `--model-params` | — | Model-specific parameters (JSON or `key=value`) |
+
+### Window
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--timeframe` | `H1` | Candle timeframe |
+| `--horizon` | 12 | Bars to forecast |
+| `--lookback` | auto | Historical bars to use |
+| `--as-of` | now | Reference time (for backtesting) |
+
+### Target
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--quantity` | `price` | What to forecast: price, return, volatility |
+
+### Uncertainty
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--ci-alpha` | 0.05 | Confidence interval alpha (0.05 = 95% CI) |
+
+### Pipeline
+| Parameter | Description |
+|-----------|-------------|
+| `--denoise` | Denoising method (ema, kalman, etc.) |
+| `--features` | Feature specification |
+| `--dimred-method` | Dimensionality reduction method |
+| `--dimred-params` | Dimred parameters |
+
+---
+
+## Model Libraries
+
+### Native (`--library native`)
+
+Built-in implementations with minimal dependencies.
 
 ```bash
-python cli.py forecast_list_methods --format json
+python cli.py forecast_generate EURUSD --library native --model theta
+python cli.py forecast_generate EURUSD --library native --model arima
+python cli.py forecast_generate EURUSD --library native --model mc_gbm
+python cli.py forecast_generate EURUSD --library native --model analog
 ```
 
-## Common parameters
+**Available models:**
+```bash
+python cli.py forecast_list_library_models native
+```
 
-- `--timeframe`: candle timeframe (e.g., `H1`, `M15`, `D1`)
-- `--horizon`: number of future bars to predict
-- `--lookback`: how many historical bars to use (optional; defaults are chosen for you)
-- `--ci-alpha`: request confidence intervals where supported (0.05 = 95%)
-- `--denoise` / `--denoise-params`: optional smoothing (see [../DENOISING.md](../DENOISING.md))
+### StatsForecast (`--library statsforecast`)
+
+Fast statistical models from Nixtla.
+
+```bash
+python cli.py forecast_generate EURUSD --library statsforecast --model AutoARIMA
+python cli.py forecast_generate EURUSD --library statsforecast --model AutoETS
+```
+
+**Requires:** `pip install statsforecast`
+
+**Note:** Use capitalized class names (AutoARIMA, not autoarima). Or use native wrappers (`sf_autoarima`).
+
+### Pretrained (`--library pretrained`)
+
+Foundation models pre-trained on large time series datasets.
+
+```bash
+python cli.py forecast_generate EURUSD --library pretrained --model chronos2
+python cli.py forecast_generate EURUSD --library pretrained --model chronos_bolt
+```
+
+**Requires:** `pip install chronos-forecasting torch`
+
+**Parameters:**
+- `context_length`: How many bars to feed (default: auto)
+- `device_map`: Device to use (auto, cpu, cuda)
+
+### sktime (`--library sktime`)
+
+Scikit-learn style time series forecasters.
+
+```bash
+python cli.py forecast_generate EURUSD --library sktime --model ThetaForecaster
+python cli.py forecast_generate EURUSD --library sktime --model NaiveForecaster \
+  --model-params "strategy=last sp=24"
+```
+
+**Requires:** `pip install sktime`
+
+### MLForecast (`--library mlforecast`)
+
+Machine learning models with lag features.
+
+```bash
+python cli.py forecast_generate EURUSD --library mlforecast --model LGBMRegressor
+```
+
+**Requires:** `pip install mlforecast lightgbm`
+
+---
+
+## Common Models
+
+### Classical
+
+| Model | Description | Example Params |
+|-------|-------------|----------------|
+| `theta` | Theta decomposition | — |
+| `naive` | Last value repeated | — |
+| `ses` | Simple exponential smoothing | `alpha=0.3` |
+| `holt` | Double exponential smoothing | `damped=true` |
+| `arima` | ARIMA(p,d,q) | `p=2 d=1 q=2` |
+| `sarima` | Seasonal ARIMA | `seasonality=24` |
+
+### Simulation
+
+| Model | Description | Example Params |
+|-------|-------------|----------------|
+| `mc_gbm` | Monte Carlo GBM | `n_sims=2000 seed=42` |
+| `hmm_mc` | HMM-based Monte Carlo | `n_states=2 n_sims=1000` |
+
+### Pattern-Based
+
+| Model | Description | Example Params |
+|-------|-------------|----------------|
+| `analog` | Historical pattern matching | `window_size=64 top_k=20` |
+| `ensemble` | Combine multiple methods | `methods=theta,naive,arima` |
+
+### Foundation
+
+| Model | Description | Example Params |
+|-------|-------------|----------------|
+| `chronos2` | Amazon Chronos-II | `context_length=512` |
+| `chronos_bolt` | Fast Chronos variant | `context_length=256` |
+
+---
 
 ## Examples
 
-### Baseline classical forecast (Theta)
-
+### Basic Forecast
 ```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --horizon 24 \
-  --library native --model theta --format json
+python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
 ```
 
-### Monte Carlo simulation forecast (distributional)
-
-Useful when you care about the range of outcomes (risk sizing), not only the point forecast.
-
+### With Confidence Intervals
 ```bash
 python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
-  --library native --model mc_gbm --model-params "n_sims=2000 seed=7" --format json
+  --model arima --ci-alpha 0.1 --format json
 ```
 
-### StatsForecast (fast classical models)
-
-StatsForecast uses its own model names (class-like names). Example:
-
-```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --horizon 24 \
-  --library statsforecast --model AutoARIMA --format json
-```
-
-Tip: if you prefer method-style names, the “native” library also exposes wrappers like `sf_autoarima`:
-
-```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --horizon 24 \
-  --library native --model sf_autoarima --format json
-```
-
-### MLForecast (tree/GBM over lag features)
-
-You can use native wrappers (`mlf_rf`, `mlf_lightgbm`) or provide a regressor class via `--library mlforecast`.
-
+### Monte Carlo Simulation
 ```bash
 python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
-  --library native --model mlf_lightgbm --format json
+  --model mc_gbm --model-params "n_sims=3000 seed=7"
 ```
 
-## Using sktime forecasters (SKTIME adapter)
-
-sktime is a large forecasting library. The adapter lets you run many sktime forecasters through `forecast_generate`.
-
-You can pass:
-
-- An alias name (best-effort match), e.g. `ThetaForecaster`
-- Or a dotted class path, e.g. `sktime.forecasting.theta.ThetaForecaster`
-
-Example:
-
-```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --horizon 16 \
-  --library sktime --model ThetaForecaster --format json
-```
-
-Seasonality (when supported by the estimator) is typically `sp`:
-
+### Foundation Model
 ```bash
 python cli.py forecast_generate EURUSD --timeframe H1 --horizon 24 \
-  --library sktime --model sktime.forecasting.naive.NaiveForecaster \
-  --model-params "strategy=last sp=24" --format json
+  --library pretrained --model chronos2 --model-params "context_length=512"
 ```
 
-Tip: Run `python cli.py forecast_list_library_models sktime --format json` for the latest usage notes.
+### Analog Forecasting
+```bash
+python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
+  --model analog --model-params "window_size=64 search_depth=5000 top_k=20"
+```
 
-Notes:
+### With Denoising
+```bash
+python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
+  --model theta --denoise ema
+```
 
-- If `--model` is omitted with `--library sktime`, the adapter defaults to `ThetaForecaster`.
-- `--model-params` values are passed through as forecaster constructor kwargs.
-- If you provide exogenous features via `--features`, they are forwarded to `fit(X=...)` / `predict(X=...)` when the estimator supports it.
+### Ensemble
+```bash
+python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
+  --model ensemble --model-params "methods=theta,naive,arima"
+```
+
+---
+
+## Output Fields
+
+| Field | Description |
+|-------|-------------|
+| `forecast` | Array of predicted values |
+| `time` | Timestamps for each forecast point |
+| `lower` | Lower confidence bound (if `--ci-alpha`) |
+| `upper` | Upper confidence bound (if `--ci-alpha`) |
+| `trend` | Detected trend direction (if available) |
+| `method` | Method used |
+| `params_used` | Actual parameters applied |
+
+---
+
+## Quick Reference
+
+| Task | Command |
+|------|---------|
+| List methods | `python cli.py forecast_list_methods` |
+| List library models | `python cli.py forecast_list_library_models native` |
+| Basic forecast | `python cli.py forecast_generate EURUSD --model theta --horizon 12` |
+| With CI | `python cli.py forecast_generate EURUSD --model theta --ci-alpha 0.1` |
+| Foundation model | `python cli.py forecast_generate EURUSD --library pretrained --model chronos2` |
+| JSON output | `python cli.py forecast_generate EURUSD --model theta --format json` |
+
+---
+
+## See Also
+
+- [../FORECAST.md](../FORECAST.md) — Overview
+- [../DENOISING.md](../DENOISING.md) — Preprocessing
+- [VOLATILITY.md](VOLATILITY.md) — Volatility forecasting
+- [UNCERTAINTY.md](UNCERTAINTY.md) — Confidence intervals

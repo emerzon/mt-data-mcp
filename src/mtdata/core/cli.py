@@ -286,9 +286,9 @@ def discover_tools():
     if mcp is not None:
         registry = get_mcp_registry(mcp) or registry
 
-    if registry:
+    if registry and hasattr(registry, 'items'):
         pkg_prefix = server.__name__.rsplit('.', 1)[0] + '.'
-        for name, obj in registry.items():
+        for name, obj in registry.items():  # type: ignore[union-attr]
             func = _extract_function_from_tool_obj(obj)
             mod = getattr(func, '__module__', None) if func else None
             if func and isinstance(mod, str) and (mod == server.__name__ or mod.startswith(pkg_prefix)):

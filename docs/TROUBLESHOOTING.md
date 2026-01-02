@@ -1,77 +1,265 @@
 # Troubleshooting
 
-**Related documentation:**
-- [SETUP.md](SETUP.md) - Installation and MT5 setup
-- [CLI.md](CLI.md) - CLI conventions and help
-- [EXAMPLE.md](EXAMPLE.md) - Working command examples
+Common issues when running mtdata and how to resolve them.
 
-This page collects the most common issues when running the server/CLI and how to resolve them.
+**Related:**
+- [SETUP.md](SETUP.md) — Installation and configuration
+- [CLI.md](CLI.md) — Command usage
 
-## “Could not connect to MT5” / empty data
+---
 
-Checklist:
+## Connection Issues
 
-1. Ensure the MetaTrader 5 terminal is installed and running.
-2. Make sure the terminal is logged in (or provide credentials in `.env`).
-3. Try a minimal command:
+### "Could not connect to MT5" or Empty Data
 
+**Checklist:**
+1. MetaTrader 5 terminal is installed and running
+2. Terminal is logged in to a broker account
+3. Symbol is visible in Market Watch
+
+**Test connection:**
 ```bash
 python cli.py symbols_list --limit 10
 ```
 
-If symbol listing works but candles fail, confirm the symbol exists and is visible in Market Watch.
+If this works but candles fail:
+- Check symbol spelling (case-sensitive for some brokers)
+- Ensure symbol is added to Market Watch in MT5
 
-## Validation errors (missing required fields)
+### Terminal Keeps Disconnecting
 
-Example error:
+**Possible causes:**
+- MT5 requires periodic reconnection
+- Internet stability issues
 
+**Solution:** The library auto-reconnects, but long-running scripts may need error handling:
+```python
+try:
+    result = tool_function(...)
+except Exception as e:
+    # Retry logic here
+```
+
+---
+
+## Parameter Errors
+
+### "validation error ... Field required"
+
+**Example:**
 ```
 1 validation error for InputSchema
 symbol
   Field required [type=missing, input_value={}, input_type=dict]
 ```
 
-What it means: a tool needs a required parameter and you didn’t pass it.
+**Cause:** A required parameter is missing.
 
-Fix:
-
-- Use command help to see required arguments:
-
+**Solution:** Check command help and provide required arguments:
 ```bash
-python cli.py data_fetch_candles --help
+python cli.py forecast_generate --help
+python cli.py forecast_generate EURUSD --horizon 12  # symbol is positional
 ```
 
-- Many tools require `symbol` as a positional argument, for example:
+### "Invalid choice" for Timeframe/Method/Mode
 
-```bash
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 200
-```
+**Cause:** Invalid value for a constrained parameter.
 
-## “Invalid choice” for timeframe/mode/method
-
-Many tools restrict values (timeframes, modes, methods). Use `--help` to see allowed values:
-
+**Solution:** Use `--help` to see allowed values:
 ```bash
 python cli.py forecast_volatility_estimate --help
 python cli.py patterns_detect --help
 ```
 
-## Output is hard to parse
+**Common timeframes:** `M1`, `M5`, `M15`, `M30`, `H1`, `H4`, `D1`, `W1`, `MN1`
 
-Use JSON output:
+### "Unknown parameter" in --params
 
+**Example:**
 ```bash
-python cli.py symbols_describe EURUSD --format json
-python cli.py report_generate EURUSD --template basic --format json
+--params "invalid_param=5"
 ```
 
-## Getting unstuck quickly
+**Solution:** Check method documentation:
+```bash
+python cli.py forecast_list_methods --format json
+python cli.py indicators_describe rsi --format json
+```
 
-- Run `python cli.py --help <keyword>` to search for a command by topic:
+---
 
+## Model/Library Issues
+
+### "Method X not available"
+
+**Cause:** Required optional dependency not installed.
+
+**Solution:** Check availability:
+```bash
+python cli.py forecast_list_methods --format json
+```
+
+Look for `available: false` and the `requires` field. Install missing packages:
+```bash
+pip install chronos-forecasting torch  # For Chronos
+pip install statsforecast              # For StatsForecast models
+pip install arch                       # For GARCH
+```
+
+### "Import error" or "Module not found"
+
+**Solution:** Install the package or use a different method:
+```bash
+pip install <missing_package>
+```
+
+Or check if a similar method is available without extra dependencies:
+```bash
+python cli.py forecast_list_library_models native  # Native methods have minimal deps
+```
+
+---
+
+## Output Issues
+
+### Output is Hard to Parse
+
+**Solution:** Use JSON format:
+```bash
+python cli.py symbols_describe EURUSD --format json
+python cli.py forecast_generate EURUSD --horizon 12 --format json
+```
+
+Pipe to `jq` for processing:
+```bash
+python cli.py forecast_generate EURUSD --format json | jq '.forecast'
+```
+
+### Output is Too Verbose
+
+**Solution:** Omit `--verbose` flag (default is compact output).
+
+### Missing Columns in Output
+
+**Cause:** Indicator calculation failed or data insufficient.
+
+**Solution:** Check that:
+1. Enough bars are fetched for the indicator period
+2. Indicator name is spelled correctly
+
+```bash
+# Check indicator syntax
+python cli.py indicators_describe rsi
+
+# Fetch enough bars (at least period + some buffer)
+python cli.py data_fetch_candles EURUSD --limit 200 --indicators "rsi(14)"
+```
+
+---
+
+## Data Issues
+
+### No Data Returned
+
+**Possible causes:**
+- Symbol not in Market Watch
+- Time range has no data (weekend, holiday)
+- Broker doesn't provide history for this symbol
+
+**Solution:**
+```bash
+# Check if symbol exists
+python cli.py symbols_list --limit 100
+
+# Try without date filters
+python cli.py data_fetch_candles EURUSD --limit 100
+```
+
+### Timestamps Look Wrong
+
+**Cause:** Server timezone offset not configured.
+
+**Solution:** Set timezone in `.env`:
+```ini
+MT5_TIME_OFFSET_MINUTES=120  # If server is UTC+2
+```
+
+Or use server timezone name:
+```ini
+MT5_SERVER_TZ=Europe/Athens
+```
+
+### Volume is Always Zero
+
+**Cause:** Forex spot typically has indicative volume (tick count, not real volume).
+
+**Note:** This is expected for most forex pairs. Use volume-based indicators cautiously.
+
+---
+
+## Performance Issues
+
+### Command is Slow
+
+**Possible causes:**
+- Large `--lookback` or `--limit`
+- Complex model (Chronos, GARCH)
+- First run of pre-trained model (downloading weights)
+
+**Solutions:**
+1. Reduce data size: `--limit 500` instead of `--limit 5000`
+2. Use faster methods: `theta` instead of `chronos2`
+3. Reduce simulation count: `--params "n_sims=1000"` instead of 5000
+
+### Memory Error
+
+**Cause:** Large data or too many simulations.
+
+**Solution:**
+- Reduce `--limit`
+- Reduce `n_sims` for barrier analysis
+- Use streaming instead of batch when possible
+
+---
+
+## Getting Help
+
+### Search Commands by Topic
 ```bash
 python cli.py --help forecast
 python cli.py --help barrier
 python cli.py --help indicators
 ```
 
+### Get Command-Specific Help
+```bash
+python cli.py forecast_generate --help
+python cli.py regime_detect --help
+```
+
+### Enable Debug Mode
+```bash
+MTDATA_CLI_DEBUG=1 python cli.py forecast_generate EURUSD --horizon 12
+```
+
+---
+
+## Quick Fixes
+
+| Issue | Quick Fix |
+|-------|-----------|
+| MT5 not connecting | Restart MT5 terminal, ensure login |
+| Missing parameter | Check `--help` for required arguments |
+| Invalid timeframe | Use: M1, M5, M15, M30, H1, H4, D1, W1, MN1 |
+| Method not available | Check `forecast_list_methods` and install deps |
+| Output hard to read | Add `--format json` |
+| Wrong timestamps | Set `MT5_TIME_OFFSET_MINUTES` in `.env` |
+| Command slow | Reduce `--limit`, use faster method |
+
+---
+
+## See Also
+
+- [SETUP.md](SETUP.md) — Installation guide
+- [CLI.md](CLI.md) — Command usage
+- [GLOSSARY.md](GLOSSARY.md) — Term definitions
