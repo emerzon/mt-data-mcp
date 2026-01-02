@@ -43,6 +43,20 @@ def _try_number(s: str):
         return None
 
 
+def _parse_ti_number(token: str) -> int | float | None:
+    """Parse a numeric TI arg, normalizing integral floats to int.
+
+    pandas_ta uses the provided parameter values when building output column
+    names; passing floats like 20.0 results in names like 'EMA_20.0'. Normalizing
+    integer-like values to int keeps stable, expected names like 'EMA_20'.
+    """
+    try:
+        val = float(token)
+    except Exception:
+        return None
+    return int(val) if val.is_integer() else val
+
+
 def infer_defaults_from_doc(func_name: str, doc_text: str, params: List[Dict[str, Any]]):
     if not doc_text:
         return
@@ -153,7 +167,7 @@ def _list_ta_indicators() -> List[Dict[str, Any]]:
     return list_ta_indicators(detailed=False)
 
 
-def _parse_ti_specs(spec: str) -> List[Tuple[str, List[float], Dict[str, float]]]:
+def _parse_ti_specs(spec: str) -> List[Tuple[str, List[int | float], Dict[str, int | float]]]:
     """Parse a compact indicator spec string into [(name, args, kwargs)].
 
     Splits top-level by comma, respecting parentheses so nested commas in
@@ -185,14 +199,14 @@ def _parse_ti_specs(spec: str) -> List[Tuple[str, List[float], Dict[str, float]]
     if last:
         parts.append(last)
 
-    specs: List[Tuple[str, List[float], Dict[str, float]]] = []
+    specs: List[Tuple[str, List[int | float], Dict[str, int | float]]] = []
     for part in parts:
         part = part.strip()
         if not part:
             continue
         name = part
-        args: List[float] = []
-        kwargs: Dict[str, float] = {}
+        args: List[int | float] = []
+        kwargs: Dict[str, int | float] = {}
         if '(' in part and part.endswith(')'):
             name = part[: part.index('(')].strip()
             inside = part[part.index('(') + 1 : -1]
@@ -205,22 +219,19 @@ def _parse_ti_specs(spec: str) -> List[Tuple[str, List[float], Dict[str, float]]
                     k, v = tok.split('=', 1)
                     k = k.strip()
                     v = v.strip()
-                    try:
-                        kwargs[k] = float(v)
-                    except Exception:
-                        # Keep non-numeric as-is? For now ignore invalid
-                        pass
+                    num = _parse_ti_number(v)
+                    if num is not None:
+                        kwargs[k] = num
                 else:
-                    try:
-                        args.append(float(tok))
-                    except Exception:
-                        pass
+                    num = _parse_ti_number(tok)
+                    if num is not None:
+                        args.append(num)
         # Flex: detect trailing number in name (EMA21 -> length=21)
         import re
         m = re.search(r"(.*?)[_\-]?([0-9]{1,3})$", name)
         if m and not args and 'length' not in kwargs:
             try:
-                kwargs['length'] = float(m.group(2))
+                kwargs['length'] = int(m.group(2))
                 name = m.group(1)
             except Exception:
                 pass
