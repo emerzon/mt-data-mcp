@@ -15,6 +15,16 @@ from ..utils.utils import _normalize_limit, _parse_start_datetime
 ExpirationValue = Union[int, float, str, datetime]
 _GTC_EXPIRATION_TOKENS = {"GTC", "GOOD_TILL_CANCEL", "GOOD_TILL_CANCELLED", "NONE", "NO_EXPIRATION"}
 
+MarketOrderTypeLiteral = Literal["BUY", "SELL"]
+OrderTypeLiteral = Literal[
+    "BUY",
+    "SELL",
+    "BUY_LIMIT",
+    "BUY_STOP",
+    "SELL_LIMIT",
+    "SELL_STOP",
+]
+
 
 def _to_server_time_naive(dt: datetime) -> datetime:
     """Convert a datetime (naive or aware) to broker/server local time and drop tzinfo.
@@ -420,7 +430,7 @@ def trading_open_get(
 def _place_market_order(
     symbol: str,
     volume: float,
-    order_type: str,
+    order_type: MarketOrderTypeLiteral,
     stop_loss: Optional[Union[int, float]] = None,
     take_profit: Optional[Union[int, float]] = None,
     comment: Optional[str] = None,
@@ -450,9 +460,9 @@ def _place_market_order(
 
             # Normalize and validate requested order type
             t = (order_type or "").strip().upper()
-            if t in ("BUY", "LONG"):
+            if t == "BUY":
                 side = "BUY"
-            elif t in ("SELL", "SHORT"):
+            elif t == "SELL":
                 side = "SELL"
             else:
                 return {"error": f"Unsupported order_type '{order_type}'. Use BUY or SELL."}
@@ -589,7 +599,7 @@ def _place_market_order(
 def _place_pending_order(
     symbol: str,
     volume: float,
-    order_type: str,
+    order_type: OrderTypeLiteral,
     price: Union[int, float],
     stop_loss: Optional[Union[int, float]] = None,
     take_profit: Optional[Union[int, float]] = None,
@@ -626,13 +636,9 @@ def _place_pending_order(
             # Normalize and validate requested order type
             t = (order_type or "").strip().upper()
             explicit_map = {
-                "BUYLIMIT": mt5.ORDER_TYPE_BUY_LIMIT,
                 "BUY_LIMIT": mt5.ORDER_TYPE_BUY_LIMIT,
-                "BUYSTOP": mt5.ORDER_TYPE_BUY_STOP,
                 "BUY_STOP": mt5.ORDER_TYPE_BUY_STOP,
-                "SELLLIMIT": mt5.ORDER_TYPE_SELL_LIMIT,
                 "SELL_LIMIT": mt5.ORDER_TYPE_SELL_LIMIT,
-                "SELLSTOP": mt5.ORDER_TYPE_SELL_STOP,
                 "SELL_STOP": mt5.ORDER_TYPE_SELL_STOP,
             }
 
@@ -665,23 +671,28 @@ def _place_pending_order(
             order_type_value = None
             if t in explicit_map:
                 order_type_value = explicit_map[t]
-            elif t in ("BUY", "LONG"):
+            elif t == "BUY":
                 order_type_value = mt5.ORDER_TYPE_BUY_LIMIT if norm_price < ask else mt5.ORDER_TYPE_BUY_STOP
-            elif t in ("SELL", "SHORT"):
+            elif t == "SELL":
                 order_type_value = mt5.ORDER_TYPE_SELL_LIMIT if norm_price > bid else mt5.ORDER_TYPE_SELL_STOP
             else:
-                return {"error": f"Unsupported order_type '{order_type}'. Use BUY/SELL or explicit pending types."}
+                return {
+                    "error": (
+                        f"Unsupported order_type '{order_type}'. "
+                        "Use BUY/SELL or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
+                    )
+                }
             norm_sl = _normalize_price(stop_loss) if stop_loss not in (None, 0) else None
             norm_tp = _normalize_price(take_profit) if take_profit not in (None, 0) else None
 
             if order_type_value == mt5.ORDER_TYPE_BUY_LIMIT and not (norm_price < ask):
-                return {"error": f"Price must be below ask for BUYLIMIT. price={norm_price}, ask={ask}"}
+                return {"error": f"Price must be below ask for BUY_LIMIT. price={norm_price}, ask={ask}"}
             if order_type_value == mt5.ORDER_TYPE_BUY_STOP and not (norm_price > ask):
-                return {"error": f"Price must be above ask for BUYSTOP. price={norm_price}, ask={ask}"}
+                return {"error": f"Price must be above ask for BUY_STOP. price={norm_price}, ask={ask}"}
             if order_type_value == mt5.ORDER_TYPE_SELL_LIMIT and not (norm_price > bid):
-                return {"error": f"Price must be above bid for SELLLIMIT. price={norm_price}, bid={bid}"}
+                return {"error": f"Price must be above bid for SELL_LIMIT. price={norm_price}, bid={bid}"}
             if order_type_value == mt5.ORDER_TYPE_SELL_STOP and not (norm_price < bid):
-                return {"error": f"Price must be below bid for SELLSTOP. price={norm_price}, bid={bid}"}
+                return {"error": f"Price must be below bid for SELL_STOP. price={norm_price}, bid={bid}"}
 
             normalized_expiration, expiration_specified = _normalize_pending_expiration(expiration)
 
@@ -761,8 +772,7 @@ def _place_pending_order(
 def trading_place(
     symbol: str,
     volume: float,
-    order_type: str,
-    place_kind: Literal["market", "pending"] = "market",  # type: ignore
+    order_type: OrderTypeLiteral,
     price: Optional[Union[int, float]] = None,
     stop_loss: Optional[Union[int, float]] = None,
     take_profit: Optional[Union[int, float]] = None,
@@ -770,19 +780,38 @@ def trading_place(
     comment: Optional[str] = None,
     deviation: int = 20,
 ) -> dict:
-    """Place a market or pending order."""
-    kind = str(place_kind or "market").strip().lower()
-    if kind not in ("market", "pending"):
-        return {"error": "place_kind must be 'market' or 'pending'."}
-    if kind == "market":
-        if price not in (None, 0):
-            return {"error": "price is only used for pending orders."}
-        if expiration is not None:
-            return {"error": "expiration is only used for pending orders."}
+    """Place a market or pending order.
+
+    - BUY/SELL: market by default; treated as pending when `price`/`expiration` is provided.
+    - BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP: pending (requires `price`).
+    """
+
+    t = (order_type or "").strip().upper()
+    explicit_pending_types = {
+        "BUY_LIMIT",
+        "BUY_STOP",
+        "SELL_LIMIT",
+        "SELL_STOP",
+    }
+    market_side_types = {"BUY", "SELL"}
+    supported_order_types = explicit_pending_types.union(market_side_types)
+    if t not in supported_order_types:
+        return {
+            "error": (
+                f"Unsupported order_type '{order_type}'. "
+                "Use BUY/SELL or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
+            )
+        }
+
+    price_provided = price not in (None, 0)
+    expiration_provided = expiration is not None
+
+    is_pending = (t in explicit_pending_types) or price_provided or expiration_provided
+    if not is_pending:
         return _place_market_order(
             symbol=symbol,
             volume=volume,
-            order_type=order_type,
+            order_type=t,
             stop_loss=stop_loss,
             take_profit=take_profit,
             comment=comment,
@@ -793,7 +822,7 @@ def trading_place(
     return _place_pending_order(
         symbol=symbol,
         volume=volume,
-        order_type=order_type,
+        order_type=t,
         price=price,
         stop_loss=stop_loss,
         take_profit=take_profit,

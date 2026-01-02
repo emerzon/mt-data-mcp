@@ -135,11 +135,14 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
                         params["order_type"] = {
                             "type": "string",
                             "enum": [
-                                "BUY", "SELL",
-                                "BUYLIMIT", "BUYSTOP",
-                                "SELLLIMIT", "SELLSTOP"
+                                "BUY",
+                                "SELL",
+                                "BUY_LIMIT",
+                                "BUY_STOP",
+                                "SELL_LIMIT",
+                                "SELL_STOP",
                             ],
-                            "description": "BUY/SELL (market) or explicit pending type."
+                            "description": "BUY/SELL (market by default; pending if price is provided) or explicit pending type."
                         }
                     # Document expiration flexibility
                     if "expiration" in params:
