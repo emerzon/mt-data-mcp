@@ -1,36 +1,44 @@
 import { useMemo, useState } from 'react'
-import type { MethodsMeta } from '../types'
 import { useQuery } from '@tanstack/react-query'
 import { getDimredMethods, getSktimeEstimators } from '../api/client'
-import { DenoiseModal, DenoiseSpecUI } from './DenoiseModal'
-
-type ParamDef = { name: string; type: string; default?: any; description?: string }
+import { DenoiseModal } from './DenoiseModal'
+import type { MethodsMeta, DenoiseSpecUI, ParamDef } from '../types'
+import { coerce } from '../lib/utils'
 
 type Props = {
   methods?: MethodsMeta
   method: string
-  methodParams: any
-  onMethodParams: (p: any) => void
+  methodParams: Record<string, unknown>
+  onMethodParams: (p: Record<string, unknown>) => void
   denoise?: DenoiseSpecUI
   onDenoise: (d?: DenoiseSpecUI) => void
   dimredMethod?: string
-  dimredParams?: any
-  onDimred: (m?: string, p?: any) => void
+  dimredParams?: Record<string, unknown>
+  onDimred: (m?: string, p?: Record<string, unknown>) => void
   showDimred?: boolean
 }
 
-export function AdvancedPanel({ methods, method, methodParams, onMethodParams, denoise, onDenoise, dimredMethod, dimredParams, onDimred, showDimred = true }: Props) {
+export function AdvancedPanel({
+  methods,
+  method,
+  methodParams,
+  onMethodParams,
+  denoise,
+  onDenoise,
+  dimredMethod,
+  dimredParams,
+  onDimred,
+  showDimred = true,
+}: Props) {
   const [showDenoise, setShowDenoise] = useState(false)
   const meta = useMemo(() => methods?.methods.find(m => m.method === method), [methods, method])
   const { data: dr } = useQuery({ queryKey: ['dr_methods'], queryFn: getDimredMethods })
-  const drMethods = (dr?.methods ?? []).filter((m: any) => m.available)
-  const drParams: ParamDef[] = (drMethods.find((m: any) => m.method === (dimredMethod || ''))?.params) || []
+  const drMethods = (dr?.methods ?? []).filter(m => m.available)
+  const drParams: ParamDef[] = drMethods.find(m => m.method === (dimredMethod || ''))?.params || []
   const isSktime = method === 'sktime'
   const { data: skt } = useQuery({ queryKey: ['sktime_estimators'], queryFn: getSktimeEstimators, enabled: isSktime })
 
-  const denoiseSummary = denoise?.method
-    ? `${denoise.method}${denoise.params ? ' • params' : ''}`
-    : 'None'
+  const denoiseSummary = denoise?.method ? `${denoise.method}${denoise.params ? ' • params' : ''}` : 'None'
 
   return (
     <div className="space-y-4">
@@ -41,10 +49,10 @@ export function AdvancedPanel({ methods, method, methodParams, onMethodParams, d
             <span className="text-xs text-slate-400">Preset:</span>
             <select
               className="select"
-              onChange={(e) => {
+              onChange={e => {
                 const v = e.target.value
                 if (!v) return
-                const presets: Record<string, any> = {
+                const presets: Record<string, Record<string, unknown>> = {
                   naive: { estimator: 'sktime.forecasting.naive.NaiveForecaster', estimator_params: { strategy: 'last' } },
                   snaive: { estimator: 'sktime.forecasting.naive.NaiveForecaster', estimator_params: { strategy: 'last' } },
                   theta: { estimator: 'sktime.forecasting.theta.ThetaForecaster' },
@@ -72,28 +80,36 @@ export function AdvancedPanel({ methods, method, methodParams, onMethodParams, d
             <span className="text-xs text-slate-400">Estimator:</span>
             <select
               className="select w-96"
-              value={methodParams?.estimator || ''}
-              onChange={(e) => onMethodParams({ ...methodParams, estimator: e.target.value })}
+              value={(methodParams?.estimator as string) || ''}
+              onChange={e => onMethodParams({ ...methodParams, estimator: e.target.value })}
             >
               <option value="">select class…</option>
-              {(skt?.estimators || []).map((it: any) => (
-                <option key={it.class_path} value={it.class_path}>{it.class_path}</option>
+              {(skt?.estimators || []).map(it => (
+                <option key={it.class_path} value={it.class_path}>
+                  {it.class_path}
+                </option>
               ))}
             </select>
-            {!skt?.available && <span className="text-xs text-amber-500">sktime not installed{skt?.error ? ` (${skt.error})` : ''}</span>}
+            {!skt?.available && (
+              <span className="text-xs text-amber-500">
+                sktime not installed{skt?.error ? ` (${skt.error})` : ''}
+              </span>
+            )}
           </div>
         )}
         <div className="grid grid-cols-2 gap-2">
           {meta?.params?.map(p => (
             <label key={p.name} className="flex flex-col gap-1" title={p.description || ''}>
-              <span className="label">{p.name} {p.type ? <em className="not-italic text-slate-500">({p.type})</em> : null}</span>
+              <span className="label">
+                {p.name} {p.type && <em className="not-italic text-slate-500">({p.type})</em>}
+              </span>
               <input
                 className="input"
-                value={methodParams?.[p.name] ?? ''}
+                value={String(methodParams?.[p.name] ?? '')}
                 onChange={e => onMethodParams({ ...methodParams, [p.name]: coerce(e.target.value) })}
                 placeholder={String(p.default ?? '')}
               />
-              {p.description ? <span className="text-xs text-slate-400">{p.description}</span> : null}
+              {p.description && <span className="text-xs text-slate-400">{p.description}</span>}
             </label>
           ))}
           {(!meta?.params || meta.params.length === 0) && (
@@ -110,7 +126,9 @@ export function AdvancedPanel({ methods, method, methodParams, onMethodParams, d
         <div className="p-3">
           <div className="flex items-center justify-between">
             <div className="text-xs text-slate-400">Configure forecast-level denoising.</div>
-            <button type="button" className="btn" onClick={() => setShowDenoise(true)}>{denoise?.method ? 'Edit' : 'Configure'}</button>
+            <button type="button" className="btn" onClick={() => setShowDenoise(true)}>
+              {denoise?.method ? 'Edit' : 'Configure'}
+            </button>
           </div>
         </div>
       </details>
@@ -119,32 +137,45 @@ export function AdvancedPanel({ methods, method, methodParams, onMethodParams, d
         <div>
           <div className="text-xs text-slate-400 mb-2">Dimensionality Reduction</div>
           <label className="label">Method</label>
-          <select className="select" value={dimredMethod || ''} onChange={e => onDimred(e.target.value || undefined, dimredParams)}>
+          <select
+            className="select"
+            value={dimredMethod || ''}
+            onChange={e => onDimred(e.target.value || undefined, dimredParams)}
+          >
             <option value="">none</option>
-            {drMethods.map((m: any) => <option key={m.method} value={m.method}>{m.method}</option>)}
+            {drMethods.map(m => (
+              <option key={m.method} value={m.method}>
+                {m.method}
+              </option>
+            ))}
           </select>
-          {dimredMethod ? (
-            <div className="text-xs text-slate-400 mt-1">{drMethods.find((m: any) => m.method === dimredMethod)?.description}</div>
-          ) : null}
+          {dimredMethod && (
+            <div className="text-xs text-slate-400 mt-1">
+              {drMethods.find(m => m.method === dimredMethod)?.description}
+            </div>
+          )}
           {drParams.length > 0 && (
             <div className="mt-2 grid grid-cols-2 gap-2">
               {drParams.map(p => (
                 <label key={p.name} className="flex flex-col gap-1" title={p.description || ''}>
-                  <span className="label">{p.name} {p.type ? <em className="not-italic text-slate-500">({p.type})</em> : null}</span>
+                  <span className="label">
+                    {p.name} {p.type && <em className="not-italic text-slate-500">({p.type})</em>}
+                  </span>
                   <input
                     className="input"
-                    value={dimredParams?.[p.name] ?? ''}
-                    onChange={e => onDimred(dimredMethod, { ...(dimredParams || {}), [p.name]: coerce(e.target.value) })}
+                    value={String(dimredParams?.[p.name] ?? '')}
+                    onChange={e =>
+                      onDimred(dimredMethod, { ...(dimredParams || {}), [p.name]: coerce(e.target.value) })
+                    }
                     placeholder={String(p.default ?? '')}
                   />
-                  {p.description ? <span className="text-xs text-slate-400">{p.description}</span> : null}
+                  {p.description && <span className="text-xs text-slate-400">{p.description}</span>}
                 </label>
               ))}
             </div>
           )}
         </div>
       )}
-
 
       <DenoiseModal
         open={showDenoise}
@@ -156,13 +187,3 @@ export function AdvancedPanel({ methods, method, methodParams, onMethodParams, d
     </div>
   )
 }
-
-function coerce(v: string) {
-  const t = v.trim()
-  if (t === '') return ''
-  if (!Number.isNaN(Number(t))) return Number(t)
-  if (t === 'true') return true
-  if (t === 'false') return false
-  return t
-}
-

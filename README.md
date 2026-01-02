@@ -4,6 +4,23 @@
 
 It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 
+## Who Is This For?
+
+- **Newer traders / learners:** Follow guided workflows (no quant background required).
+- **Systematic traders:** Prototype ideas, backtest quickly, and automate via CLI/MCP.
+- **Data folks:** Pull MT5 market data into repeatable analysis pipelines.
+
+## Platform Support (Important)
+
+- **Windows is required** to run MetaTrader 5 (and therefore to run `mtdata` against MT5).
+- If you're on macOS/Linux, run `mtdata` on a **Windows VM or Windows machine** and connect remotely (MCP/Web API).
+
+## Safety First
+
+- `mtdata` includes `trading_*` commands that can **place/modify/close real orders** on the account currently logged into MT5.
+- Use a **demo account** until you understand the tools and your broker setup.
+- If you only want research, stick to `data_*`, `forecast_*`, `regime_*`, `patterns_*`, and `report_*` commands.
+
 ## Capabilities
 
 | Category | What It Does | Key Tools |
@@ -20,31 +37,32 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 
 ## Quick Start
 
-**Prerequisites:** MetaTrader 5 installed and running (demo account works).
+**Prerequisites:** Windows + MetaTrader 5 installed and running (demo account recommended).
 
 ```bash
 # Install dependencies
 pip install -r requirements.txt
 
-# List available symbols
-python cli.py symbols_list --limit 10
+# Verify MT5 connection (lists symbols from the running terminal)
+python cli.py symbols_list --limit 5
 
-# Generate a price forecast
+# Fetch recent candles
+python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 50
+
+# Generate a baseline price forecast
 python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
-
-# Detect market regime
-python cli.py regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=2"
-
-# Estimate volatility
-python cli.py forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 --method ewma
 ```
 
 ## Documentation
+
+New here? Follow this learning path:
+`docs/SETUP.md` → `docs/GLOSSARY.md` → `docs/CLI.md` → `docs/SAMPLE-TRADE.md` (then `docs/SAMPLE-TRADE-ADVANCED.md` and deep dives).
 
 ### Getting Started
 - **[Setup & Configuration](docs/SETUP.md)** — Installation, MT5 connection, environment variables
 - **[CLI Guide](docs/CLI.md)** — Command conventions, output formats, help system
 - **[Glossary](docs/GLOSSARY.md)** — Explanations of all technical terms with real-world examples
+- **[Docs Index](docs/README.md)** — One-page map of all docs
 
 ### Core Topics
 - **[Forecasting](docs/FORECAST.md)** — Price prediction methods (Theta, ARIMA, Chronos, etc.)

@@ -1,43 +1,49 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getHistory, getPivots, getSupportResistance } from './api/client'
+import { getHistory, getPivots, getSupportResistance, getErrorMessage } from './api/client'
 import { InstrumentPicker } from './components/InstrumentPicker'
 import { TimeframePicker } from './components/TimeframePicker'
 import { OHLCChart } from './components/OHLCChart'
 import { ForecastControls } from './components/ForecastControls'
 import { VolatilityControls } from './components/VolatilityControls'
+import { BacktestControls } from './components/BacktestControls'
 import { ChartDenoiseControls } from './components/ChartDenoiseControls'
-import type { ForecastPayload, HistoryBar, SupportResistanceLevel } from './types'
+import type {
+  ForecastPayload,
+  HistoryBar,
+  SupportResistanceLevel,
+  DenoiseSpecUI,
+  ChartOverlay,
+  AnchorMetrics,
+  PivotLevel,
+} from './types'
 import { toUtcSec } from './lib/time'
 import { tfSeconds } from './lib/timeframes'
-import type { DenoiseSpecUI } from './components/DenoiseModal'
 import { loadJSON, saveJSON } from './lib/storage'
-
-type AnchorMetrics = {
-  overlap: number
-  mae: number
-  mape: number
-  rmse: number
-  dirAcc: number
-}
+import { formatNumber } from './lib/utils'
 
 export default function App() {
-  const [tab, setTab] = useState<'price' | 'vol'>('price')
+  const [tab, setTab] = useState<'price' | 'vol' | 'backtest'>('price')
   const [symbol, setSymbol] = useState('')
   const [timeframe, setTimeframe] = useState('H1')
   const [limit, setLimit] = useState(800)
   const [end, setEnd] = useState<string | undefined>(undefined)
   const [anchor, setAnchor] = useState<number | undefined>(undefined)
-  const [forecastOverlays, setForecastOverlays] = useState<any[]>([])
+  const [forecastOverlays, setForecastOverlays] = useState<ChartOverlay[]>([])
   const [chartDenoise, setChartDenoise] = useState<DenoiseSpecUI | undefined>(undefined)
-  const [pivotLevels, setPivotLevels] = useState<{ level: string; value: number }[] | null>(null)
+  const [pivotLevels, setPivotLevels] = useState<PivotLevel[] | null>(null)
   const [pivotLoading, setPivotLoading] = useState(false)
   const [pivotError, setPivotError] = useState<string | null>(null)
   const [pivotMeta, setPivotMeta] = useState<{ method: string; period?: { start?: string; end?: string } } | null>(null)
   const [srLevels, setSrLevels] = useState<SupportResistanceLevel[] | null>(null)
   const [srLoading, setSrLoading] = useState(false)
   const [srError, setSrError] = useState<string | null>(null)
-  const [srMeta, setSrMeta] = useState<{ method: string; tolerance_pct: number; min_touches: number; window?: { start?: string | null; end?: string | null } } | null>(null)
+  const [srMeta, setSrMeta] = useState<{
+    method: string
+    tolerance_pct: number
+    min_touches: number
+    window?: { start?: string | null; end?: string | null }
+  } | null>(null)
   const [metrics, setMetrics] = useState<AnchorMetrics | null>(null)
 
   const { data, refetch, isFetching } = useQuery({
@@ -67,6 +73,7 @@ export default function App() {
     setSrMeta(null)
     setSrError(null)
     setSrLoading(false)
+    setMetrics(null)
     if (symbol && timeframe) {
       const saved = loadJSON<DenoiseSpecUI | undefined>(`chart_dn:${symbol}:${timeframe}`)
       setChartDenoise(saved || undefined)
@@ -78,7 +85,7 @@ export default function App() {
     const dt = new Date((tEarliest - 1) * 1000)
     const fmt = dt.toISOString().slice(0, 19).replace('T', ' ')
     setEnd(fmt)
-    setLimit((prev) => Math.min(20000, Math.floor(prev * 1.2)))
+    setLimit(prev => Math.min(20000, Math.floor(prev * 1.2)))
     setTimeout(() => refetch(), 50)
   }
 
@@ -99,8 +106,8 @@ export default function App() {
       setPivotError(null)
       const data = await getPivots({ symbol, timeframe, method: 'classic' })
       const levels = (data.levels || [])
-        .map((row: any) => ({ level: String(row.level), value: Number(row.value) }))
-        .filter((row) => Number.isFinite(row.value))
+        .map(row => ({ level: String(row.level), value: Number(row.value) }))
+        .filter(row => Number.isFinite(row.value))
       if (!levels.length) {
         setPivotError('No pivot levels returned')
         setPivotLevels(null)
@@ -110,8 +117,7 @@ export default function App() {
       setPivotLevels(levels)
       setPivotMeta({ method: data.method ?? 'classic', period: data.period })
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch pivot levels'
-      setPivotError(message)
+      setPivotError(getErrorMessage(err))
       setPivotLevels(null)
       setPivotMeta(null)
     } finally {
@@ -131,7 +137,7 @@ export default function App() {
       setSrLoading(true)
       setSrError(null)
       const data = await getSupportResistance({ symbol, timeframe, limit })
-      const levels = ((data.levels || []) as SupportResistanceLevel[]).filter((row) => Number.isFinite(row?.value))
+      const levels = (data.levels || []).filter(row => Number.isFinite(row?.value))
       if (!levels.length) {
         setSrError('No support/resistance levels detected')
         setSrLevels(null)
@@ -146,8 +152,7 @@ export default function App() {
         window: data.window,
       })
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch S/R levels'
-      setSrError(message)
+      setSrError(getErrorMessage(err))
       setSrLevels(null)
       setSrMeta(null)
     } finally {
@@ -159,10 +164,10 @@ export default function App() {
     const main = res.forecast_price ?? res.forecast_return ?? []
     let times: number[] = []
     if (res.forecast_epoch && res.forecast_epoch.length === main.length) {
-      times = res.forecast_epoch.map((t) => toUtcSec(t as any))
+      times = res.forecast_epoch.map(t => toUtcSec(t))
     } else {
       const step = tfSeconds(timeframe)
-      const anchorOverride = (res as any).__anchor ? Number((res as any).__anchor) : undefined
+      const anchorOverride = res.__anchor ? Number(res.__anchor) : undefined
       if (anchorOverride && step) {
         times = Array.from({ length: main.length }, (_, i) => anchorOverride + step * (i + 1))
       } else {
@@ -170,13 +175,14 @@ export default function App() {
         if (last && step) {
           times = Array.from({ length: main.length }, (_, i) => last + step * (i + 1))
         } else {
-          const fallback = (res.forecast_time || res.times || []) as any[]
-          times = fallback.map((t) => toUtcSec(t as any))
+          const fallback = (res.forecast_time || res.times || []) as (number | string)[]
+          times = fallback.map(t => toUtcSec(t))
         }
       }
     }
+
     const overlay = times.map((t, i) => ({ time: t, value: main[i] }))
-    const overlays = [{ name: 'forecast', points: overlay, color: '#60a5fa' }]
+    const overlays: ChartOverlay[] = [{ name: 'forecast', points: overlay, color: '#60a5fa' }]
     if (res.lower_price && res.upper_price) {
       overlays.push({
         name: 'lower',
@@ -191,7 +197,7 @@ export default function App() {
     }
     setForecastOverlays(overlays)
 
-    const isPartial = (res as any).__kind === 'partial'
+    const isPartial = res.__kind === 'partial'
     if (isPartial && anchor && bars.length) {
       const closeByTime = new Map<number, number>()
       for (const bar of bars) {
@@ -214,11 +220,9 @@ export default function App() {
           (yPred.reduce((acc, _, i) => {
             const denom = Math.abs(yAct[i]) || 1
             return acc + Math.abs((yPred[i] - yAct[i]) / denom)
-          }, 0) /
-            n) *
-          100
+          }, 0) / n) * 100
         const rmse = Math.sqrt(diffs.reduce((acc, d) => acc + d * d, 0) / n)
-        const anchorClose = bars.find((b) => Math.floor(b.time) === Math.floor(anchor))?.close ?? yAct[0]
+        const anchorClose = bars.find(b => Math.floor(b.time) === Math.floor(anchor))?.close ?? yAct[0]
         let correct = 0
         for (let i = 0; i < n; i++) {
           const prev = i === 0 ? anchorClose : yAct[i - 1]
@@ -227,13 +231,7 @@ export default function App() {
           if (dp === da) correct += 1
         }
         const dirAcc = (correct / n) * 100
-        setMetrics({
-          overlap: n,
-          mae,
-          mape,
-          rmse,
-          dirAcc,
-        })
+        setMetrics({ overlap: n, mae, mape, rmse, dirAcc })
       } else {
         setMetrics(null)
       }
@@ -252,8 +250,8 @@ export default function App() {
       .join(' | ') || 'None'
 
   const chartOverlays = useMemo(() => {
-    const map = new Map<string, any>()
-    const addOverlay = (ov: any) => {
+    const map = new Map<string, ChartOverlay>()
+    const addOverlay = (ov: ChartOverlay) => {
       if (!ov?.name || !Array.isArray(ov.points)) return
       map.set(ov.name, ov)
     }
@@ -265,9 +263,9 @@ export default function App() {
     const tfStep = tfSeconds(timeframe) || 0
     const fallbackStep = tfStep || (bars.length >= 2 ? Math.max(1, bars[1].time - bars[0].time) : 60)
     let maxTime = lastBarTime
-    forecastOverlays.forEach((ov) => {
+    forecastOverlays.forEach(ov => {
       if (!ov?.points) return
-      ov.points.forEach((pt: any) => {
+      ov.points.forEach(pt => {
         if (pt?.time === undefined) return
         const t = Number(pt.time)
         if (!Number.isFinite(t)) return
@@ -276,22 +274,24 @@ export default function App() {
     })
     const lineEnd = maxTime !== undefined ? maxTime + fallbackStep : undefined
 
-    if (bars.length && 'close_dn' in (bars[0] as any)) {
+    if (bars.length && 'close_dn' in bars[0]) {
       const dnPoints = bars
-        .filter((bar: any) => Number.isFinite(bar.time) && Number.isFinite(bar.close_dn))
-        .map((bar: any) => ({ time: bar.time, value: bar.close_dn }))
+        .filter((bar): bar is HistoryBar & { close_dn: number } =>
+          Number.isFinite(bar.time) && Number.isFinite(bar.close_dn)
+        )
+        .map(bar => ({ time: bar.time, value: bar.close_dn }))
       if (dnPoints.length) {
         addOverlay({ name: 'denoise:close', points: dnPoints, color: '#f59e0b', lineWidth: 2 })
       }
     }
 
-    if (pivotLevels && pivotLevels.length && startTime !== undefined && lineEnd !== undefined) {
+    if (pivotLevels?.length && startTime !== undefined && lineEnd !== undefined) {
       const colorForLevel = (level: string) => {
         if (level.startsWith('R')) return '#f97316'
         if (level.startsWith('S')) return '#38bdf8'
         return '#facc15'
       }
-      pivotLevels.forEach((level) => {
+      pivotLevels.forEach(level => {
         if (!Number.isFinite(level.value)) return
         addOverlay({
           name: `pivot-${level.level}`,
@@ -306,7 +306,7 @@ export default function App() {
       })
     }
 
-    if (srLevels && srLevels.length && startTime !== undefined && lineEnd !== undefined) {
+    if (srLevels?.length && startTime !== undefined && lineEnd !== undefined) {
       srLevels.forEach((level, idx) => {
         if (!Number.isFinite(level?.value)) return
         const color = level.type === 'resistance' ? '#f87171' : '#34d399'
@@ -330,8 +330,8 @@ export default function App() {
   const supportButtonLabel = srLevels ? 'Hide S/R Levels' : srLoading ? 'Loading...' : 'Plot S/R Levels'
 
   return (
-    <div className="h-full flex flex-col">
-      <header className="p-3 border-b border-slate-800 bg-slate-900/60">
+    <div className="h-full flex flex-col bg-slate-950 text-slate-200">
+      <header className="p-3 border-b border-slate-800 bg-slate-900/60 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto flex items-center gap-3">
           <h1 className="text-lg font-semibold text-slate-200">MTData WebUI</h1>
           <nav className="ml-6 flex gap-2">
@@ -347,11 +347,18 @@ export default function App() {
             >
               Volatility
             </button>
+            <button
+              className={`btn ${tab === 'backtest' ? 'bg-sky-600' : 'bg-slate-700 hover:bg-slate-600'}`}
+              onClick={() => setTab('backtest')}
+            >
+              Backtest
+            </button>
           </nav>
           <div className="ml-auto text-xs text-slate-400">{symbol ? `${symbol} / ${timeframe}` : 'Select symbol'}</div>
         </div>
       </header>
-      <main className="max-w-7xl mx-auto w-full p-4 flex flex-col gap-4">
+
+      <main className="flex-1 max-w-7xl mx-auto w-full p-4 flex flex-col gap-4 overflow-y-auto">
         <section className="panel p-4 space-y-4">
           <h2 className="text-sm font-semibold text-slate-200">Chart Settings</h2>
           <div className="flex flex-wrap items-end gap-3">
@@ -381,7 +388,7 @@ export default function App() {
                   min={100}
                   max={20000}
                   value={limit}
-                  onChange={(e) => setLimit(Number(e.target.value))}
+                  onChange={e => setLimit(Number(e.target.value))}
                 />
               </label>
               <button
@@ -396,6 +403,7 @@ export default function App() {
               </button>
             </div>
           </div>
+
           <details className="border border-slate-800 rounded-md" open={!!chartDenoise?.method || !!pivotLevels || !!srLevels}>
             <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800 flex justify-between items-center">
               <span>Advanced Settings</span>
@@ -404,7 +412,7 @@ export default function App() {
             <div className="p-3 space-y-3">
               <ChartDenoiseControls
                 value={chartDenoise}
-                onChange={(v) => {
+                onChange={v => {
                   setChartDenoise(v)
                   if (symbol && timeframe) saveJSON(`chart_dn:${symbol}:${timeframe}`, v)
                 }}
@@ -424,25 +432,34 @@ export default function App() {
                 </div>
               </div>
               {pivotLevels && pivotMeta?.period && (
-                <div className="text-xs text-slate-400">Pivot source: {pivotMeta.period.start}{' -> '}{pivotMeta.period.end}</div>
+                <div className="text-xs text-slate-400">
+                  Pivot source: {pivotMeta.period.start} {'->'} {pivotMeta.period.end}
+                </div>
               )}
               {srLevels && (
                 <div className="text-xs text-slate-400 space-y-1">
                   <div>
-                    S/R ({srLevels.length}) - tol +/- {((srMeta?.tolerance_pct ?? 0) * 100).toFixed(2)}% - min touches {srMeta?.min_touches ?? 2}
+                    S/R ({srLevels.length}) - tol +/- {((srMeta?.tolerance_pct ?? 0) * 100).toFixed(2)}% - min touches{' '}
+                    {srMeta?.min_touches ?? 2}
                   </div>
                   {srMeta?.window && (srMeta.window.start || srMeta.window.end) && (
-                    <div>Window: {srMeta.window.start ?? 'n/a'}{' -> '}{srMeta.window.end ?? 'n/a'}</div>
+                    <div>
+                      Window: {srMeta.window.start ?? 'n/a'} {'->'} {srMeta.window.end ?? 'n/a'}
+                    </div>
                   )}
                   <div className="grid gap-1 sm:grid-cols-2">
                     {srLevels.map((lvl, idx) => {
-                      const formatted = lvl.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })
+                      const formatted = formatNumber(lvl.value)
                       const hue = lvl.type === 'resistance' ? 'text-rose-300' : 'text-emerald-300'
                       const last = lvl.last_touch ? ` - last ${lvl.last_touch}` : ''
                       return (
                         <div key={`sr-chip-${lvl.type}-${idx}`} className="flex justify-between gap-2">
-                          <span className={`capitalize ${hue}`}>{lvl.type} @ {formatted}</span>
-                          <span>{lvl.touches} touches{last}</span>
+                          <span className={`capitalize ${hue}`}>
+                            {lvl.type} @ {formatted}
+                          </span>
+                          <span>
+                            {lvl.touches} touches{last}
+                          </span>
                         </div>
                       )
                     })}
@@ -454,11 +471,15 @@ export default function App() {
         </section>
 
         <section className="panel p-4 space-y-4">
-          <h2 className="text-sm font-semibold text-slate-200">Forecast Settings</h2>
+          <h2 className="text-sm font-semibold text-slate-200">
+            {tab === 'price' ? 'Forecast Settings' : tab === 'vol' ? 'Volatility Settings' : 'Backtest Settings'}
+          </h2>
           {tab === 'price' ? (
             <ForecastControls symbol={symbol} timeframe={timeframe} anchor={anchor} onResult={onPriceResult} />
-          ) : (
+          ) : tab === 'vol' ? (
             <VolatilityControls symbol={symbol} timeframe={timeframe} anchor={anchor} onResult={() => {}} />
+          ) : (
+            <BacktestControls symbol={symbol} timeframe={timeframe} />
           )}
         </section>
 
@@ -475,9 +496,21 @@ export default function App() {
         {metrics && (
           <section className="panel p-3 flex flex-wrap items-center gap-4">
             <span className="text-xs text-slate-400">Anchor forecast metrics (n={metrics.overlap})</span>
-            <MetricChip label="MAE" value={metrics.mae} unit="" severity={sevPct((metrics.mae / (bars[bars.length - 1]?.close || 1)) * 100)} fmt="abs" />
+            <MetricChip
+              label="MAE"
+              value={metrics.mae}
+              unit=""
+              severity={sevPct((metrics.mae / (bars[bars.length - 1]?.close || 1)) * 100)}
+              fmt="abs"
+            />
             <MetricChip label="MAPE" value={metrics.mape} unit="%" severity={sevPct(metrics.mape)} fmt="pct" />
-            <MetricChip label="RMSE" value={metrics.rmse} unit="" severity={sevPct((metrics.rmse / (bars[bars.length - 1]?.close || 1)) * 100)} fmt="abs" />
+            <MetricChip
+              label="RMSE"
+              value={metrics.rmse}
+              unit=""
+              severity={sevPct((metrics.rmse / (bars[bars.length - 1]?.close || 1)) * 100)}
+              fmt="abs"
+            />
             <MetricChip label="Dir Acc" value={metrics.dirAcc} unit="%" severity={sevDir(metrics.dirAcc)} fmt="pct" />
           </section>
         )}

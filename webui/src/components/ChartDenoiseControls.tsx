@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { DenoiseModal, DenoiseSpecUI } from './DenoiseModal'
+import { DenoiseModal } from './DenoiseModal'
+import type { DenoiseSpecUI } from '../types'
 
 type Props = {
   value?: DenoiseSpecUI

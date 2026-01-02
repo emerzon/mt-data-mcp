@@ -1,50 +1,53 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getMethods, forecastPrice } from '../api/client'
-import type { ForecastPayload, MethodsMeta } from '../types'
+import { getMethods, forecastPrice, getErrorMessage } from '../api/client'
+import type { ForecastPayload, MethodsMeta, DenoiseSpecUI, ForecastPriceBody } from '../types'
 import { AdvancedPanel } from './AdvancedPanel'
-import type { DenoiseSpecUI } from './DenoiseModal'
 import { loadJSON, saveJSON } from '../lib/storage'
+import { formatDateTime } from '../lib/utils'
 
 const DIMRED_METHODS = new Set<string>([
-  'mlf_rf',
-  'mlf_lightgbm',
-  'nhits',
-  'nbeatsx',
-  'tft',
-  'patchtst',
-  'chronos_bolt',
-  'timesfm',
-  'lag_llama',
-  'gt_deepar',
-  'gt_sfeedforward',
-  'gt_prophet',
-  'gt_tft',
-  'gt_wavenet',
-  'gt_deepnpts',
-  'gt_mqf2',
-  'gt_npts',
-  'ensemble',
+  'mlf_rf', 'mlf_lightgbm', 'nhits', 'nbeatsx', 'tft', 'patchtst',
+  'chronos_bolt', 'timesfm', 'lag_llama', 'gt_deepar', 'gt_sfeedforward',
+  'gt_prophet', 'gt_tft', 'gt_wavenet', 'gt_deepnpts', 'gt_mqf2', 'gt_npts', 'ensemble',
 ])
 
-export function ForecastControls({ symbol, timeframe, anchor, onResult }: { symbol?: string; timeframe: string; anchor?: number; onResult: (res: ForecastPayload) => void }) {
-  const { data: methods, refetch: refetchMethods } = useQuery({ queryKey: ['methods'], queryFn: getMethods, refetchOnWindowFocus: true })
-  const defaultMethod = useMemo(() => methods?.methods?.find((m) => m.method === 'theta')?.method || methods?.methods?.[0]?.method || 'theta', [methods])
+type Props = {
+  symbol?: string
+  timeframe: string
+  anchor?: number
+  onResult: (res: ForecastPayload) => void
+}
+
+export function ForecastControls({ symbol, timeframe, anchor, onResult }: Props) {
+  const { data: methods, refetch: refetchMethods } = useQuery({
+    queryKey: ['methods'],
+    queryFn: getMethods,
+    refetchOnWindowFocus: true,
+  })
+
+  const defaultMethod = useMemo(
+    () => methods?.methods?.find(m => m.method === 'theta')?.method || methods?.methods?.[0]?.method || 'theta',
+    [methods]
+  )
+
   const [method, setMethod] = useState<string>(defaultMethod)
   const [horizon, setHorizon] = useState<number>(12)
   const [ci, setCi] = useState<number>(0.1)
   const [target, setTarget] = useState<'price' | 'return'>('price')
   const [lookback, setLookback] = useState<number | ''>('')
-  const [methodParams, setMethodParams] = useState<any>({})
+  const [methodParams, setMethodParams] = useState<Record<string, unknown>>({})
   const [denoise, setDenoise] = useState<DenoiseSpecUI | undefined>(undefined)
   const [dimredMethod, setDimredMethod] = useState<string | undefined>(undefined)
-  const [dimredParams, setDimredParams] = useState<any>(undefined)
+  const [dimredParams, setDimredParams] = useState<Record<string, unknown> | undefined>(undefined)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (defaultMethod) setMethod(defaultMethod)
   }, [defaultMethod])
 
-  const selectedMeta = useMemo(() => methods?.methods?.find((m) => m.method === method), [methods, method])
+  const selectedMeta = useMemo(() => methods?.methods?.find(m => m.method === method), [methods, method])
   const canRun = !!symbol && !!selectedMeta?.available
   const supportsDimred = DIMRED_METHODS.has(method)
 
@@ -55,10 +58,21 @@ export function ForecastControls({ symbol, timeframe, anchor, onResult }: { symb
     .filter(Boolean)
     .join(' • ') || 'None'
 
+  // Load saved settings
   useEffect(() => {
     if (!symbol || !timeframe) return
     const key = `fc:${symbol}:${timeframe}`
-    const saved = loadJSON<any>(key)
+    const saved = loadJSON<{
+      method?: string
+      horizon?: number
+      ci?: number
+      target?: 'price' | 'return'
+      lookback?: number | ''
+      methodParams?: Record<string, unknown>
+      denoise?: DenoiseSpecUI
+      dimredMethod?: string
+      dimredParams?: Record<string, unknown>
+    }>(key)
     if (!saved) return
     if (saved.method) setMethod(saved.method)
     if (typeof saved.horizon === 'number') setHorizon(saved.horizon)
@@ -71,6 +85,7 @@ export function ForecastControls({ symbol, timeframe, anchor, onResult }: { symb
     setDimredParams(saved.dimredParams)
   }, [symbol, timeframe])
 
+  // Save settings
   useEffect(() => {
     if (!symbol || !timeframe) return
     const key = `fc:${symbol}:${timeframe}`
@@ -78,6 +93,7 @@ export function ForecastControls({ symbol, timeframe, anchor, onResult }: { symb
     saveJSON(key, payload)
   }, [symbol, timeframe, method, horizon, ci, target, lookback, methodParams, denoise, dimredMethod, dimredParams])
 
+  // Clear dimred when method doesn't support it
   useEffect(() => {
     if (!supportsDimred) {
       setDimredMethod(undefined)
@@ -85,24 +101,33 @@ export function ForecastControls({ symbol, timeframe, anchor, onResult }: { symb
     }
   }, [supportsDimred])
 
-  async function run(kind: 'full' | 'partial' | 'backtest') {
+  async function run(kind: 'full' | 'partial') {
     if (!symbol) return
-    const body = {
-      symbol,
-      timeframe,
-      method,
-      horizon,
-      lookback: lookback === '' ? undefined : Number(lookback),
-      ci_alpha: ci,
-      target,
-      as_of: kind === 'full' ? undefined : anchor ? new Date(anchor * 1000).toISOString().slice(0, 19).replace('T', ' ') : undefined,
-      params: methodParams,
-      denoise,
-      dimred_method: supportsDimred ? dimredMethod : undefined,
-      dimred_params: supportsDimred ? dimredParams : undefined,
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const body: ForecastPriceBody = {
+        symbol,
+        timeframe,
+        method,
+        horizon,
+        lookback: lookback === '' ? undefined : Number(lookback),
+        ci_alpha: ci,
+        target,
+        as_of: kind === 'full' ? undefined : anchor ? formatDateTime(anchor) : undefined,
+        params: methodParams,
+        denoise,
+        dimred_method: supportsDimred ? dimredMethod : undefined,
+        dimred_params: supportsDimred ? dimredParams : undefined,
+      }
+      const res = await forecastPrice(body)
+      onResult({ ...res, __anchor: kind === 'full' ? undefined : anchor, __kind: kind })
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setIsLoading(false)
     }
-    const res = await forecastPrice(body)
-    onResult({ ...res, __anchor: kind === 'full' ? undefined : anchor, __kind: kind } as any)
   }
 
   return (
@@ -111,9 +136,14 @@ export function ForecastControls({ symbol, timeframe, anchor, onResult }: { symb
         <label className="flex flex-col">
           <span className="label">Method</span>
           <div className="flex gap-2 items-center">
-            <select className="select w-48" value={method} onChange={(e) => setMethod(e.target.value)}>
-              {methods?.methods?.map((m) => (
-                <option key={m.method} value={m.method} disabled={!m.available} title={!m.available ? `Requires: ${m.requires?.join(', ') || 'extra dependencies'}` : ''}>
+            <select className="select w-48" value={method} onChange={e => setMethod(e.target.value)}>
+              {methods?.methods?.map(m => (
+                <option
+                  key={m.method}
+                  value={m.method}
+                  disabled={!m.available}
+                  title={!m.available ? `Requires: ${m.requires?.join(', ') || 'extra dependencies'}` : ''}
+                >
                   {m.method}
                   {!m.available ? ' (unavailable)' : ''}
                 </option>
@@ -126,7 +156,13 @@ export function ForecastControls({ symbol, timeframe, anchor, onResult }: { symb
         </label>
         <label className="flex flex-col">
           <span className="label">Horizon</span>
-          <input className="input w-24" type="number" min={1} value={horizon} onChange={(e) => setHorizon(Number(e.target.value))} />
+          <input
+            className="input w-24"
+            type="number"
+            min={1}
+            value={horizon}
+            onChange={e => setHorizon(Number(e.target.value))}
+          />
         </label>
         <label className="flex flex-col">
           <span className="label">Lookback Bars</span>
@@ -135,7 +171,7 @@ export function ForecastControls({ symbol, timeframe, anchor, onResult }: { symb
             type="number"
             min={50}
             value={lookback}
-            onChange={(e) => {
+            onChange={e => {
               const val = e.target.value
               setLookback(val === '' ? '' : Number(val))
             }}
@@ -144,29 +180,45 @@ export function ForecastControls({ symbol, timeframe, anchor, onResult }: { symb
         </label>
         <label className="flex flex-col">
           <span className="label">Target</span>
-          <select className="select w-28" value={target} onChange={(e) => setTarget(e.target.value as any)}>
+          <select className="select w-28" value={target} onChange={e => setTarget(e.target.value as 'price' | 'return')}>
             <option value="price">price</option>
             <option value="return">return</option>
           </select>
         </label>
         <label className="flex flex-col" title="Tail probability for confidence intervals. Example: 0.10 -> 90% interval, 0.05 -> 95%.">
           <span className="label">CI alpha</span>
-          <input className="input w-24" type="number" step="0.01" min={0} max={0.5} value={ci} onChange={(e) => setCi(Number(e.target.value))} />
+          <input
+            className="input w-24"
+            type="number"
+            step="0.01"
+            min={0}
+            max={0.5}
+            value={ci}
+            onChange={e => setCi(Number(e.target.value))}
+          />
         </label>
         <div className="flex gap-2 ml-auto items-end">
           {!selectedMeta?.available && (
             <div className="text-xs text-amber-400 max-w-[24rem]">
-              {selectedMeta?.method} is not available. {selectedMeta?.requires?.length ? `Requires: ${selectedMeta?.requires.join(', ')}` : 'Install the required package.'}
+              {selectedMeta?.method} is not available.{' '}
+              {selectedMeta?.requires?.length ? `Requires: ${selectedMeta.requires.join(', ')}` : 'Install the required package.'}
             </div>
           )}
-          <button className="btn" disabled={!canRun} onClick={() => run('full')}>
-            Full Forecast
+          <button className="btn" disabled={!canRun || isLoading} onClick={() => run('full')}>
+            {isLoading ? 'Running...' : 'Full Forecast'}
           </button>
-          <button className="btn" disabled={!canRun || !anchor} onClick={() => run('partial')}>
+          <button className="btn" disabled={!canRun || !anchor || isLoading} onClick={() => run('partial')}>
             Forecast from Anchor
           </button>
         </div>
       </div>
+
+      {error && (
+        <div className="text-sm text-rose-400 bg-rose-950/30 border border-rose-800 rounded-md px-3 py-2">
+          {error}
+        </div>
+      )}
+
       <details className="border border-slate-800 rounded-md" open={!!denoise?.method || (!!dimredMethod && supportsDimred)}>
         <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800 flex justify-between items-center">
           <span>Advanced Settings</span>
