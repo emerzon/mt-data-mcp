@@ -218,7 +218,7 @@ def main():
         log_level = getattr(logging, str(getattr(settings, 'log_level', 'INFO')).upper(), logging.INFO)
     else:
         log_level = logging.INFO
-    
+
     logging.basicConfig(level=log_level)
     logger = logging.getLogger(__name__)
     transport, mount_path = _resolve_transport()
@@ -239,6 +239,18 @@ def main():
     if run_fn is not None:
         transport_literal = cast(Literal['stdio', 'sse', 'streamable-http'], transport)
         run_fn(transport=transport_literal, mount_path=mount_path if transport == "sse" else None)
+
+
+def main_stdio():
+    """Entry point for stdio mode (forced)"""
+    os.environ["MCP_TRANSPORT"] = "stdio"
+    main()
+
+
+def main_sse():
+    """Entry point for SSE mode (forced)"""
+    os.environ["MCP_TRANSPORT"] = "sse"
+    main()
 
 
 if __name__ == "__main__":

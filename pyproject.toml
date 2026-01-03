@@ -59,7 +59,9 @@ where = ["src"]
 include = ["mtdata*"]
 
 [project.scripts]
-mtdata-server = "mtdata.core.server:main"
+mtdata-sse = "mtdata.core.server:main_sse"
+mtdata-stdio = "mtdata.core.server:main_stdio"
+mtdata-webapi = "mtdata.core.web_api:main_webapi"
 mtdata-cli = "mtdata.core.cli:main"
 
 [project.urls]

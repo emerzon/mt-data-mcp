@@ -791,3 +791,9 @@ try:
     app.mount("/app", StaticFiles(directory="webui/dist", html=True), name="webui")
 except Exception:
     pass
+
+
+def main_webapi():
+    """Entry point to run the FastAPI web server."""
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
