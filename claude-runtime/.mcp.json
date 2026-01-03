@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "mtdata": {
+      "type": "stdio",
+      "command": "mtdata-stdio",
+      "args": [],
+      "env": {}
+    }
+  }
+}

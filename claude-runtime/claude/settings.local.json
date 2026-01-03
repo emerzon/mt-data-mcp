@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__mtdata__causal_discover_signals",
+      "mcp__mtdata__data_fetch_candles",
+      "mcp__mtdata__data_fetch_ticks",
+      "mcp__mtdata__forecast_backtest_run",
+      "mcp__mtdata__forecast_barrier_optimize",
+      "mcp__mtdata__forecast_barrier_prob",
+      "mcp__mtdata__forecast_conformal_intervals",
+      "mcp__mtdata__forecast_generate",
+      "mcp__mtdata__forecast_list_library_models",
+      "mcp__mtdata__forecast_list_methods",
+      "mcp__mtdata__forecast_tune_genetic",
+      "mcp__mtdata__forecast_volatility_estimate",
+      "mcp__mtdata__indicators_describe",
+      "mcp__mtdata__indicators_list",
+      "mcp__mtdata__labels_triple_barrier",
+      "mcp__mtdata__market_depth_fetch",
+      "mcp__mtdata__patterns_detect",
+      "mcp__mtdata__pivot_compute_points",
+      "mcp__mtdata__regime_detect",
+      "mcp__mtdata__report_generate",
+      "mcp__mtdata__symbols_describe",
+      "mcp__mtdata__symbols_list",
+      "mcp__mtdata__temporal_analyze",
+      "mcp__mtdata__trading_account_info",
+      "mcp__mtdata__trading_close",
+      "mcp__mtdata__trading_history",
+      "mcp__mtdata__trading_modify",
+      "mcp__mtdata__trading_open_get",
+      "mcp__mtdata__trading_place",
+      "mcp__mtdata__trading_risk_analyze"
+    ]
+  }
+}

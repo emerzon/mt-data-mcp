@@ -3,7 +3,10 @@
 import logging
 import os
 import atexit
-from typing import Any, Dict, List, Literal, Optional, TYPE_CHECKING, cast
+import inspect
+import math
+import types
+from typing import Any, Dict, List, Literal, Optional, TYPE_CHECKING, Union, cast, get_args, get_origin
 
 from mcp.server.fastmcp import FastMCP
 from functools import wraps as _wraps
@@ -51,6 +54,163 @@ except Exception:
 _TOOL_REGISTRY: Dict[str, Any] = {}
 _TOOL_OBJECT_REGISTRY: Dict[str, Any] = {}
 
+
+def _unwrap_optional_annotation(annotation: Any) -> tuple[Any, bool]:
+    if isinstance(annotation, str):
+        cleaned = annotation.strip()
+        scalar_map: dict[str, type] = {
+            "bool": bool,
+            "builtins.bool": bool,
+            "int": int,
+            "builtins.int": int,
+            "float": float,
+            "builtins.float": float,
+        }
+
+        # PEP 604 unions expressed as strings under `from __future__ import annotations`
+        # e.g. "int | None".
+        if "|" in cleaned:
+            parts = [p.strip() for p in cleaned.split("|") if p.strip()]
+            if any(p in ("None", "NoneType") for p in parts):
+                non_none = [p for p in parts if p not in ("None", "NoneType")]
+                if len(non_none) == 1:
+                    mapped = scalar_map.get(non_none[0])
+                    if mapped is not None:
+                        return mapped, True
+
+        # typing.Optional / typing.Union expressed as strings.
+        for prefix in ("Optional[", "typing.Optional["):
+            if cleaned.startswith(prefix) and cleaned.endswith("]"):
+                inner = cleaned[len(prefix) : -1].strip()
+                mapped = scalar_map.get(inner)
+                if mapped is not None:
+                    return mapped, True
+
+        for prefix in ("Union[", "typing.Union["):
+            if cleaned.startswith(prefix) and cleaned.endswith("]"):
+                inner = cleaned[len(prefix) : -1]
+                parts = [p.strip() for p in inner.split(",") if p.strip()]
+                if any(p in ("None", "NoneType") for p in parts):
+                    non_none = [p for p in parts if p not in ("None", "NoneType")]
+                    if len(non_none) == 1:
+                        mapped = scalar_map.get(non_none[0])
+                        if mapped is not None:
+                            return mapped, True
+
+        mapped = scalar_map.get(cleaned)
+        if mapped is not None:
+            return mapped, False
+        return annotation, False
+
+    origin = get_origin(annotation)
+    if origin in (Union, getattr(types, "UnionType", None)):
+        args = get_args(annotation)
+        if len(args) == 2 and type(None) in args:
+            other = args[0] if args[1] is type(None) else args[1]
+            return other, True
+    return annotation, False
+
+
+def _coerce_bool(value: Any, *, allow_none: bool, name: str) -> Any:
+    if value is None:
+        if allow_none:
+            return None
+        raise ValueError(f"Invalid value for '{name}': expected boolean, got {value!r}")
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if s in ("none", "null"):
+            if allow_none:
+                return None
+            raise ValueError(f"Invalid value for '{name}': expected boolean, got {value!r}")
+        if s in ("true", "1", "yes", "y", "on"):
+            return True
+        if s in ("false", "0", "no", "n", "off"):
+            return False
+    raise ValueError(f"Invalid value for '{name}': expected boolean, got {value!r}")
+
+
+def _coerce_int(value: Any, *, allow_none: bool, name: str) -> Any:
+    if value is None:
+        if allow_none:
+            return None
+        raise ValueError(f"Invalid value for '{name}': expected integer, got {value!r}")
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"Invalid value for '{name}': expected integer, got {value!r}")
+        if value.is_integer():
+            return int(value)
+        raise ValueError(f"Invalid value for '{name}': expected integer, got {value!r}")
+    if isinstance(value, str):
+        s = value.strip()
+        if s.lower() in ("none", "null"):
+            if allow_none:
+                return None
+            raise ValueError(f"Invalid value for '{name}': expected integer, got {value!r}")
+        coerced = _coerce_scalar(s)
+        if isinstance(coerced, int) and not isinstance(coerced, bool):
+            return coerced
+        if isinstance(coerced, float) and math.isfinite(coerced) and coerced.is_integer():
+            return int(coerced)
+    raise ValueError(f"Invalid value for '{name}': expected integer, got {value!r}")
+
+
+def _coerce_float(value: Any, *, allow_none: bool, name: str) -> Any:
+    if value is None:
+        if allow_none:
+            return None
+        raise ValueError(f"Invalid value for '{name}': expected number, got {value!r}")
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, (int, float)):
+        out = float(value)
+        if not math.isfinite(out):
+            raise ValueError(f"Invalid value for '{name}': expected number, got {value!r}")
+        return out
+    if isinstance(value, str):
+        s = value.strip()
+        if s.lower() in ("none", "null"):
+            if allow_none:
+                return None
+            raise ValueError(f"Invalid value for '{name}': expected number, got {value!r}")
+        coerced = _coerce_scalar(s)
+        if isinstance(coerced, (int, float)) and not isinstance(coerced, bool):
+            out = float(coerced)
+            if not math.isfinite(out):
+                raise ValueError(f"Invalid value for '{name}': expected number, got {value!r}")
+            return out
+    raise ValueError(f"Invalid value for '{name}': expected number, got {value!r}")
+
+
+def _coerce_kwargs_for_callable(func: Any, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    """Coerce common scalar string inputs (from MCP clients) based on annotations."""
+    try:
+        sig = inspect.signature(func)
+    except Exception:
+        return kwargs
+    for param_name, param in sig.parameters.items():
+        if param_name not in kwargs:
+            continue
+        ann = param.annotation
+        if ann is inspect._empty:
+            continue
+        base_ann, allow_none = _unwrap_optional_annotation(ann)
+        if base_ann is bool:
+            kwargs[param_name] = _coerce_bool(kwargs.get(param_name), allow_none=allow_none, name=param_name)
+        elif base_ann is int:
+            kwargs[param_name] = _coerce_int(kwargs.get(param_name), allow_none=allow_none, name=param_name)
+        elif base_ann is float:
+            kwargs[param_name] = _coerce_float(kwargs.get(param_name), allow_none=allow_none, name=param_name)
+    return kwargs
+
+
 def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
     if _ORIG_TOOL_DECORATOR is None:
         # Fallback: no-op decorator
@@ -90,15 +250,18 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
         def _wrapped(*a, **kw):
             # Check for raw output flag (used by CLI to bypass formatting)
             raw_output = kw.pop('__cli_raw', False)
-            
-            # Uniform input normalization for common structured args
+
             try:
-                if 'denoise' in kw:
-                    from ..utils.denoise import normalize_denoise_spec as _norm_dn  # type: ignore
-                    kw['denoise'] = _norm_dn(kw.get('denoise'))
-            except Exception:
-                pass
-            try:
+                _coerce_kwargs_for_callable(func, kw)
+
+                # Uniform input normalization for common structured args
+                try:
+                    if 'denoise' in kw:
+                        from ..utils.denoise import normalize_denoise_spec as _norm_dn  # type: ignore
+                        kw['denoise'] = _norm_dn(kw.get('denoise'))
+                except Exception:
+                    pass
+
                 out = func(*a, **kw)
             except Exception as exc:
                 try:
