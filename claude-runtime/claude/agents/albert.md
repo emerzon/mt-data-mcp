@@ -48,6 +48,7 @@ When asked to analyze a symbol or finding opportunities:
     -   Weight agents based on confidence and regime.
     -   Determine specific Entry, Stop Loss, and Take Profit levels based on technical levels (Will/Moe) and volatility (Tim).
     -   If using Tim’s barrier outputs, keep Entry/SL/TP anchored consistently (e.g., use `last_price` + `tp_price/sl_price` or recompute from the % levels when choosing a different entry).
+    -   If recommending a **pending entry** (LIMIT/STOP), include an explicit `pending_expiration` based on the expected time-to-resolution (e.g., Tim’s `t_hit_resolve_median`) so stale orders don’t remain open if market conditions change.
     -   **Formulate the Trade Plan for Rhea -> Xavier.**
 
 ## Output Format
@@ -93,6 +94,7 @@ When asked to analyze a symbol or finding opportunities:
 - **Entry Zone:** {price_range}
 - **Stop Loss:** {price}
 - **Take Profit:** {price}
+- **Pending Expiration:** {expiration_string or None}
 - **Desired Risk:** {risk_pct}% (for sizing)
 - **Rationale:** {brief reason for execution}
 
@@ -114,9 +116,10 @@ When asked to analyze a symbol or finding opportunities:
   "opposing_agents": ["list"],
   "confluence_level": "high|medium|low",
   "action_directive": "BUY|SELL|WAIT",
-  "desired_risk_pct": 0.0
+  "desired_risk_pct": 0.0,
+  "pending_expiration": "in 8h"
 }
-``` 
+```
 
 ## Key Principles
 

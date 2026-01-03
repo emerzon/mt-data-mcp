@@ -38,6 +38,7 @@ The Orchestrator coordinates the entire team of specialist agents, running analy
 | **Fiona** | Forecasting | Predictive models, backtesting |
 | **Mike** | Microstructure | DOM, Order Flow, Ticks |
 | **Albert**| Generalist | Synthesis, Summary Reports |
+| **Harper**| Portfolio | Allocation, hedging, diversification |
 | **Rhea**| Risk Manager | Sizing, portfolio risk gate |
 | **Xavier**| Trade Desk Executor | Execution, Account, Risk |
 
@@ -45,19 +46,21 @@ The Orchestrator coordinates the entire team of specialist agents, running analy
 
 ### 1. Full Team Analysis (default)
 Nina resolves symbols (if needed), analysts run in parallel, Albert synthesizes.
-**Agents:** Nina (as needed), Joaquim, Joe, Moe, Ada, Will, Zack, Roy, Tom, Luna, Chrono, Tim, Fiona, Mike.
+**Agents:** Nina (as needed), Joaquim, Joe, Moe, Ada, Will, Zack, Roy, Tom, Luna, Chrono, Tim, Fiona, Mike, Albert.
+**Multi-symbol add-on:** Harper (portfolio allocation/hedging).
 
 **Use when:** Comprehensive analysis needed for major decisions.
 
 ### 2. Quick Analysis
 Subset of key agents + Albert.
-**Agents:** Joe, Moe, Ada, Will, Zack, Tim, Mike (Joaquim optional).
+**Agents:** Joe, Moe, Ada, Will, Zack, Tim, Mike, Albert (Joaquim optional).
+**Multi-symbol add-on:** Harper (portfolio allocation/hedging).
 
 **Use when:** Faster turnaround needed, routine intraday analysis.
 
 ### 3. End-to-End Trading (Auto/Semi-Auto)
 Complete flow from analysis to execution.
-**Flow:** Orchestrator -> Analysts (Parallel) -> Albert (Decision) -> Rhea (Risk Gate) -> Xavier (Execution).
+**Flow:** Orchestrator -> Analysts (Parallel) -> Albert (Decision) -> Harper (Portfolio) -> Rhea (Risk Gate) -> Xavier (Execution).
 
 **Use when:** Taking a trade idea from conception to market execution.
 
@@ -94,7 +97,7 @@ Agents should append this block to their response when they need another agent:
 ```
 Input: symbols (list), timeframe, risk_parameters
 ```
-*If multiple symbols provided, perform multi-instrument analysis to pick the best candidates.*
+*If multiple symbols provided, perform multi-instrument analysis to pick the best candidates and use Harper for portfolio allocation/hedging.*
 
 ### Step 2: Parallel Analysis
 Spawns selected analytical agents for each target symbol.
@@ -105,11 +108,12 @@ WAIT for results
 ```
 
 ### Step 3: Synthesis & Decision (Albert)
-Albert reviews all agent outputs to form a directional bias and trading plan.
+Albert reviews all agent outputs to form a directional bias and trading plan.   
 ```
 Input: Agent Results
-Output: Direction, Entry Zone, SL/TP, Confidence, "GO/NO-GO" Recommendation
+Output: Direction, Entry Zone, SL/TP, Confidence, "GO/NO-GO" Recommendation, Pending Expiration (if pending)
 ```
+*If the plan uses a pending entry (LIMIT/STOP), request Tim to estimate time-to-resolution (e.g., `t_hit_resolve_median`) and include a concrete `pending_expiration` so orders don’t remain open after conditions change.*
 
 ### Step 4: Risk Gate (Rhea)
 If Albert recommends a trade ("GO"), Rhea validates portfolio risk and produces an execution-safe size.
@@ -121,7 +125,7 @@ Input: Albert's Trade Plan
 Action:
   1. Check Account & Risk
   2. Check Microstructure (Mike) - Optional final check
-  3. Execute Trade (Market/Pending)
+  3. Execute Trade (Market/Pending; pending orders must include an expiration)
   4. Report Fill Details
 ```
 
@@ -216,6 +220,7 @@ ELSE:
 "Check EURUSD, GBPUSD, and USDJPY. Pick the best trend."
 -> Orchestrator analyzes all three.
 -> Albert compares confidence scores and selects the best candidate.
+-> Harper proposes portfolio allocation/hedges (as needed).
 -> Rhea sizes and approves.
 -> Xavier executes trade on the selected symbol.
 ```
