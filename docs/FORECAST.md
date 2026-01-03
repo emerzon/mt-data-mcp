@@ -52,9 +52,11 @@ python cli.py forecast_list_methods
 | **Seasonal** | `seasonal_naive`, `ets`, `holt_winters_add` | Data with recurring patterns |
 | **Statistical** | `sf_autoarima`, `sf_autoets` | Auto-tuning, medium horizons |
 | **ML-Based** | `mlf_lightgbm`, `mlf_rf` | Non-linear patterns, feature engineering |
-| **Foundation** | `chronos2`, `chronos_bolt` | State-of-the-art, no tuning required |
+| **Foundation** | `chronos2`, `chronos_bolt`, `timesfm`, `lag_llama` | Pretrained models (optional deps) |
 | **Simulation** | `mc_gbm`, `hmm_mc` | Risk sizing, barrier analysis |
 | **Ensemble** | `ensemble` | Combine multiple models |
+
+**Ensemble note:** `ensemble` supports advanced modes (`average`, `bma`, `stacking`). See [forecast/FORECAST_GENERATE.md](forecast/FORECAST_GENERATE.md) for parameters and examples.
 
 ### Classical Models
 
@@ -86,6 +88,28 @@ python cli.py forecast_generate EURUSD --timeframe H1 --horizon 24 \
 ```
 
 *Requires: `pip install chronos-forecasting torch`*
+
+**Chronos-Bolt** — Faster Chronos variant.
+```bash
+python cli.py forecast_generate EURUSD --timeframe H1 --horizon 24 \
+  --library pretrained --model chronos_bolt
+```
+
+**TimesFM** — Google's foundation model (TimesFM 2.x adapter).
+```bash
+python cli.py forecast_generate EURUSD --timeframe H1 --horizon 24 \
+  --library pretrained --model timesfm
+```
+
+*Requires: `pip install torch` plus a TimesFM install (see `requirements.txt`).*
+
+**Lag-Llama** — Foundation model via GluonTS.
+```bash
+python cli.py forecast_generate EURUSD --timeframe H1 --horizon 24 \
+  --library pretrained --model lag_llama --model-params '{"ckpt_path":"C:/path/to/lag-llama.ckpt"}'
+```
+
+*Requires: `pip install gluonts[torch]` plus Lag-Llama; may not be installable on all Python versions due to upstream pins.*
 
 ### Monte Carlo Simulation
 
@@ -128,7 +152,7 @@ mtdata supports multiple forecasting libraries. Use `--library` to select:
 | `statsforecast` | Nixtla's fast statistical models | AutoARIMA, AutoETS, Theta |
 | `sktime` | Scikit-learn style time series | Various forecasters |
 | `mlforecast` | ML models with lag features | LightGBM, RandomForest |
-| `pretrained` | Foundation models | Chronos, Chronos-Bolt |
+| `pretrained` | Foundation models | Chronos, Chronos-Bolt, TimesFM, Lag-Llama |
 
 **List models in a library:**
 ```bash
@@ -177,7 +201,7 @@ python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
 Smooth data before forecasting:
 ```bash
 python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta \
-  --denoise ema --model-params "alpha=0.2"
+  --denoise '{"method":"ema","params":{"alpha":0.2}}'
 ```
 
 See [DENOISING.md](DENOISING.md) for available filters.

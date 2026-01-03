@@ -68,6 +68,48 @@ forecast[12]{time,forecast}:
 
 ---
 
+## Quantity (`--quantity`)
+
+`forecast_generate` can model different target quantities:
+
+- `price` (default): forecasts the future **close price** (output includes `forecast_price`).
+- `return`: forecasts **log returns** (`ln(close_t / close_{t-1})`). Output includes `forecast_return` and a reconstructed `forecast_price` path when possible.
+- `volatility`: routes to the volatility forecasters (same family as `forecast_volatility_estimate`). When using `--quantity volatility`, set `--model` to a volatility method (e.g., `ewma`, `garch`).
+
+Examples:
+```bash
+# Price forecast (default)
+python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --quantity price
+
+# Return forecast (log returns) + reconstructed price path
+python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --quantity return
+
+# Volatility forecast (recommended alternative: use forecast_volatility_estimate)
+python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --quantity volatility --model ewma
+```
+
+---
+
+## Dimensionality Reduction (`--dimred-method`)
+
+Dimensionality reduction (dimred) compresses the feature matrix when you provide many inputs (for example via `--features`). This is most useful for ML-style methods that consume multiple features.
+
+Supported dimred methods in the forecasting pipeline:
+- `pca` — Principal Component Analysis (`n_components`)
+- `tsne` — t-SNE (`n_components` is typically 2 or 3)
+- `selectkbest` — keep top-K features (`k`)
+
+Examples:
+```bash
+python cli.py forecast_generate EURUSD --horizon 12 --model mlf_lightgbm \
+  --features '{"include":["close","volume"]}' \
+  --dimred-method pca --dimred-params "n_components=5"
+```
+
+Tip: the Web UI exposes a broader method list via `GET /api/dimred/methods` (for example: `svd` (TruncatedSVD), `umap`, `isomap`), depending on what is installed (see [../WEB_API.md](../WEB_API.md)).
+
+---
+
 ## Model Libraries
 
 ### Native (`--library native`)
@@ -104,15 +146,25 @@ python cli.py forecast_generate EURUSD --library statsforecast --model AutoETS
 Foundation models pre-trained on large time series datasets.
 
 ```bash
-python cli.py forecast_generate EURUSD --library pretrained --model chronos2
+python cli.py forecast_generate EURUSD --library pretrained --model chronos2    
 python cli.py forecast_generate EURUSD --library pretrained --model chronos_bolt
+python cli.py forecast_generate EURUSD --library pretrained --model timesfm
+python cli.py forecast_generate EURUSD --library pretrained --model lag_llama \
+  --model-params '{"ckpt_path":"C:/path/to/lag-llama.ckpt"}'
 ```
 
-**Requires:** `pip install chronos-forecasting torch`
+Tip: `python cli.py forecast_list_library_models pretrained` shows requirements for your current environment.
+
+**Dependencies (by model):**
+- `chronos2` / `chronos_bolt`: `chronos-forecasting`, `torch`
+- `timesfm`: `timesfm`, `torch` (TimesFM is installed from Git in `requirements.txt`)
+- `lag_llama`: `lag-llama`, `gluonts[torch]`, `torch` (may not be installable on all Python versions due to upstream pins)
 
 **Parameters:**
-- `context_length`: How many bars to feed (default: auto)
-- `device_map`: Device to use (auto, cpu, cuda)
+- Common: `context_length`, `quantiles`
+- Chronos: `model_name`, `device_map`
+- TimesFM: `device`, `model_class`
+- Lag-Llama: `ckpt_path` (or `hf_repo`/`hf_filename` for auto-download), `num_samples`, `device`, `freq`
 
 ### sktime (`--library sktime`)
 
@@ -163,7 +215,7 @@ python cli.py forecast_generate EURUSD --library mlforecast --model LGBMRegresso
 | Model | Description | Example Params |
 |-------|-------------|----------------|
 | `analog` | Historical pattern matching | `window_size=64 top_k=20` |
-| `ensemble` | Combine multiple methods | `methods=theta,naive,arima` |
+| `ensemble` | Combine multiple methods | `{"methods":["theta","naive"],"mode":"bma"}` |
 
 ### Foundation
 
@@ -171,6 +223,8 @@ python cli.py forecast_generate EURUSD --library mlforecast --model LGBMRegresso
 |-------|-------------|----------------|
 | `chronos2` | Amazon Chronos-II | `context_length=512` |
 | `chronos_bolt` | Fast Chronos variant | `context_length=256` |
+| `timesfm` | TimesFM (foundation model adapter) | `context_length=512` |
+| `lag_llama` | Lag-Llama via GluonTS | `context_length=32 num_samples=100` |
 
 ---
 
@@ -212,9 +266,22 @@ python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
 ```
 
 ### Ensemble
+
+`ensemble` combines multiple base methods. Common `--model-params` keys:
+- `methods` (list): component methods to run
+- `mode` (str): `average`, `bma`, or `stacking`
+- `weights` (list): manual weights (only used when `mode=average`)
+- `cv_points` (int): walk-forward anchors used for `bma`/`stacking` weighting
+- `method_params` (dict): per-method parameter overrides
+- `expose_components` (bool): include component forecasts in the JSON output
+
 ```bash
 python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
-  --model ensemble --model-params "methods=theta,naive,arima"
+  --model ensemble --model-params '{"methods":["theta","naive","arima"],"mode":"average"}'
+
+# Bayesian model averaging (weights inferred from walk-forward CV)
+python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
+  --model ensemble --model-params '{"methods":["theta","naive","fourier_ols"],"mode":"bma","cv_points":12}'
 ```
 
 ---

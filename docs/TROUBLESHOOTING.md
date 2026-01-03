@@ -104,6 +104,12 @@ Look for `available: false` and the `requires` field. Install missing packages:
 pip install chronos-forecasting torch  # For Chronos
 pip install statsforecast              # For StatsForecast models
 pip install arch                       # For GARCH
+pip install statsmodels                # For ARIMA/ETS + causal_discover_signals
+pip install PyWavelets                 # For wavelet denoising
+pip install umap-learn                 # For UMAP dimred (Web UI / analysis)
+pip install gluonts[torch]             # For Lag-Llama (pretrained)
+# TimesFM is installed from Git (pinned in `requirements.txt`); re-run `pip install -r requirements.txt`.
+# Lag-Llama may require a separate Python env due to upstream pins (see `requirements.txt`).
 ```
 
 ### "Import error" or "Module not found"
@@ -193,6 +199,8 @@ To estimate an offset quickly (run during active market hours so ticks are curre
 ```bash
 python scripts/detect_mt5_time_offset.py --symbol EURUSD
 ```
+
+Tip: if you're launching the Web UI via `python webui.py`, mtdata will attempt to auto-detect and apply `MT5_TIME_OFFSET_MINUTES` when neither `MT5_SERVER_TZ` nor `MT5_TIME_OFFSET_MINUTES` is set. This is best-effort and may return 0 when the market is closed.
 
 ### Volume is Always Zero
 

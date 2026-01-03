@@ -32,8 +32,11 @@ Safety note: `trading_*` commands can place/modify/close real orders on the acco
 | [forecast/UNCERTAINTY.md](forecast/UNCERTAINTY.md) | Confidence and conformal intervals |
 | [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) | TP/SL hit probability and optimization |
 | [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md) | Available indicators and how to use them |
-| [DENOISING.md](DENOISING.md) | Smoothing filters and noise reduction |
+| [DENOISING.md](DENOISING.md) | Smoothing filters and noise reduction |        
+| [SIMPLIFICATION.md](SIMPLIFICATION.md) | Downsampling and output reduction (`--simplify`) |
+| [CAUSAL_DISCOVERY.md](CAUSAL_DISCOVERY.md) | Granger-style causal signal discovery |
 | [forecast/PATTERN_SEARCH.md](forecast/PATTERN_SEARCH.md) | Pattern detection and similarity search |
+| [WEB_API.md](WEB_API.md) | FastAPI endpoints powering the Web UI |
 
 ## Tutorials
 

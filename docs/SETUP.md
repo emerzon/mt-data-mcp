@@ -39,24 +39,19 @@ pip install -e .
 
 ### 3. Optional Dependencies
 
-For additional forecasting methods:
+`requirements.txt` installs a broad set of optional capabilities. If you are installing selectively, these features require extra packages:
 
-```bash
-# Foundation models (Chronos)
-pip install chronos-forecasting torch
+- Causal discovery (`causal_discover_signals`) and classical ARIMA/ETS: `statsmodels`
+- Wavelet denoising: `PyWavelets`
+- Dimred UMAP (Web UI / analysis): `umap-learn`
+- Foundation models:
+  - Chronos (`chronos2`, `chronos_bolt`): `chronos-forecasting`, `torch`
+  - TimesFM (`timesfm`): `timesfm`, `torch` (installed from Git in `requirements.txt`)
+  - Lag-Llama (`lag_llama`): `lag-llama`, `gluonts[torch]`, `torch` (may not be installable on all Python versions due to upstream pins)
+- Forecasting libraries: `statsforecast`, `sktime`, `mlforecast` (plus `lightgbm` for GBMs)
+- Volatility (GARCH/ARCH): `arch`
 
-# Fast statistical models
-pip install statsforecast
-
-# scikit-learn style forecasters
-pip install sktime
-
-# ML models with lag features
-pip install mlforecast lightgbm
-
-# GARCH volatility models
-pip install arch
-```
+Tip: `python cli.py forecast_list_methods --format json` shows `available` and `requires` per method.
 
 ---
 
@@ -143,6 +138,8 @@ MT5_SERVER_TZ=America/New_York
    ```
    Then set `MT5_TIME_OFFSET_MINUTES` to the recommended value.
 
+Tip: `python webui.py` will attempt to auto-detect and apply `MT5_TIME_OFFSET_MINUTES` at startup if neither `MT5_SERVER_TZ` nor `MT5_TIME_OFFSET_MINUTES` is set. This is best-effort and may return 0 when the market is closed.
+
 What happens if it's wrong?
 - Candle timestamps may be shifted, which can affect **daily pivots**, **session filters**, and **backtests**.
 
@@ -177,6 +174,13 @@ python webui.py
 ```
 
 Starts a FastAPI server with a React UI at `http://localhost:8000`.
+
+Web UI / API configuration:
+- `MTDATA_WEBUI_HOST` (default `127.0.0.1`)
+- `MTDATA_WEBUI_PORT` (default `8000`)
+- `MTDATA_WEBUI_RELOAD=1` for auto-reload (dev only)
+
+See [WEB_API.md](WEB_API.md) for endpoint details.
 
 ---
 

@@ -40,6 +40,16 @@ python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 200 \
   --denoise median --denoise-params "window=5"
 ```
 
+## Dependencies
+
+Some denoising methods require optional packages:
+
+- `statsmodels`: used by several statistical filters (for example HP/STL)
+- `PyWavelets`: required for wavelet denoising (`wavelet`)
+- `vmdpy`, `EMD-signal`: required for some decomposition-based methods
+
+Tip: `GET /api/denoise/methods` (see [WEB_API.md](WEB_API.md)) reports availability and required packages for the current environment.
+
 ---
 
 ## When to Apply: Pre vs Post Indicators

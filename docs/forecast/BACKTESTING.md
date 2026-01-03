@@ -104,10 +104,14 @@ python cli.py forecast_backtest_run EURUSD --horizon 12 \
 | `--quantity` | `price`, `return`, `volatility` | What to forecast |
 | `--target` | `price`, `return` | Target series for comparison |
 
+Notes:
+- `return` uses **log returns** (`ln(close_t / close_{t-1})`), which is often more stationary than prices.
+- `volatility` backtests compare predicted volatility vs realized volatility; use volatility methods like `ewma`, `garch`, `har_rv`.
+
 **Examples:**
 ```bash
 # Forecast returns instead of prices
-python cli.py forecast_backtest_run EURUSD --quantity return --target return
+python cli.py forecast_backtest_run EURUSD --quantity return --target return    
 
 # Backtest volatility methods
 python cli.py forecast_backtest_run EURUSD --quantity volatility --methods "ewma garch"
@@ -137,9 +141,18 @@ python cli.py forecast_backtest_run EURUSD --horizon 12 --methods theta \
 | `--dimred-method` | Dimensionality reduction (e.g., `pca`) |
 | `--dimred-params` | Dim reduction parameters |
 
+Dimred methods supported by the forecasting pipeline: `pca`, `tsne`, `selectkbest` (requires `scikit-learn`).
+
+Tip: for `forecast_backtest_run`, pass dimred params as JSON (or use `--dimred-params-params`):
+```bash
+python cli.py forecast_backtest_run EURUSD --horizon 12 --methods mlf_lightgbm \
+  --features '{"include":["close","volume"]}' \
+  --dimred-method pca --dimred-params '{"n_components":5}'
+```
+
 **Example with denoising:**
 ```bash
-python cli.py forecast_backtest_run EURUSD --horizon 12 --methods theta \
+python cli.py forecast_backtest_run EURUSD --horizon 12 --methods theta \       
   --denoise ema --denoise-params "alpha=0.2"
 ```
 

@@ -98,6 +98,24 @@ python cli.py regime_detect EURUSD --method hmm --params "n_states=3"
 
 Format: `key=value,key2=value2` or JSON `{"key": value}`
 
+### Reduce Large Outputs (Simplify)
+Use `--simplify` to downsample returned rows for charting or large exports.
+
+```bash
+# Default simplification (targets ~10% of --limit)
+python cli.py data_fetch_candles EURUSD --timeframe M1 --limit 5000 --simplify
+
+# Choose an algorithm + target points
+python cli.py data_fetch_candles EURUSD --timeframe M1 --limit 5000 \
+  --simplify lttb --simplify-params "points=500"
+
+# Raw ticks (rows output) can also be simplified
+python cli.py data_fetch_ticks EURUSD --output rows --limit 20000 \
+  --simplify rdp --simplify-params "points=2000"
+```
+
+See [SIMPLIFICATION.md](SIMPLIFICATION.md) for algorithms and parameters.
+
 ### Model Parameters
 For forecast models, use `--model-params`:
 ```bash
@@ -158,6 +176,7 @@ python cli.py data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `indicators_describe` | Get indicator details |
 | `patterns_detect` | Detect candlestick/chart patterns |
 | `pivot_compute_points` | Calculate pivot levels |
+| `causal_discover_signals` | Granger-style causal discovery between symbols |
 
 ### Trading
 | Command | Description |
@@ -239,6 +258,18 @@ python cli.py regime_detect EURUSD --method hmm --params "n_states=2"
 # Change-point detection
 python cli.py regime_detect EURUSD --method bocpd --threshold 0.5
 ```
+
+### Discover Causal Links (Exploratory)
+```bash
+# Compare a few symbols directly
+python cli.py causal_discover_signals "EURUSD,GBPUSD,USDJPY" --timeframe H1 \
+  --limit 800 --max-lag 5 --transform log_return --significance 0.05
+
+# Pass a single symbol to auto-expand its visible MT5 group (e.g., Forex\\Majors)
+python cli.py causal_discover_signals EURUSD --timeframe H1 --limit 800
+```
+
+See [CAUSAL_DISCOVERY.md](CAUSAL_DISCOVERY.md) for interpretation and caveats.
 
 ---
 
