@@ -152,7 +152,7 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
                                 {"type": "number"},
                                 {"type": "null"}
                             ],
-                            "description": "Dateparser input, epoch seconds, or GTC token."
+                            "description": "Dateparser input, UTC epoch seconds, or GTC token."
                         }
             except Exception:
                 pass

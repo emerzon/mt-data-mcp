@@ -72,12 +72,33 @@ def _to_server_time_naive(dt: datetime) -> datetime:
     return server_dt.replace(tzinfo=None)
 
 
+def _server_time_naive_to_mt5_timestamp(dt: datetime) -> int:
+    """Convert a server-local naive datetime into an MT5-compatible timestamp.
 
-def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tuple[Optional[datetime], bool]:
-    """Convert user-supplied expiration data into MetaTrader-friendly datetime objects.
+    MetaTrader5's Python bindings expect pending-order ``expiration`` as an
+    integer timestamp (seconds) in the same "server time epoch" convention used
+    by MT5 ticks/bars.
 
-    Returns a tuple ``(normalized_expiration, was_explicitly_provided)``. When
-    ``was_explicitly_provided`` is False, callers should preserve the broker's existing
+    This is the inverse of the candle/time normalization in
+    ``mtdata.utils.mt5._mt5_epoch_to_utc``:
+    - MT5 -> UTC: ``dt_local_naive = epoch_base + seconds``
+    - Here (UTC -> MT5): ``seconds = (dt_local_naive - epoch_base)``
+    """
+    if dt.tzinfo is not None:
+        dt = dt.replace(tzinfo=None)
+    dt = dt.replace(microsecond=0)
+    return int((dt - datetime(1970, 1, 1)).total_seconds())
+
+
+
+def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tuple[Optional[int], bool]:
+    """Convert user-supplied expiration data into an MT5-compatible timestamp.
+
+    Returns a tuple ``(normalized_expiration, was_explicitly_provided)``. The
+    normalized expiration is an integer timestamp (seconds) suitable for the MT5
+    ``order_send`` request field ``expiration``.
+
+    When ``was_explicitly_provided`` is False, callers should preserve the broker's existing
     order setting. When it is True and the normalized expiration is None, callers
     should submit a Good-Till-Cancelled order to clear any previous expiration.
     """
@@ -85,14 +106,16 @@ def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tupl
         return None, False
 
     if isinstance(expiration, datetime):
-        return _to_server_time_naive(expiration), True
+        server_dt = _to_server_time_naive(expiration)
+        return _server_time_naive_to_mt5_timestamp(server_dt), True
 
     if isinstance(expiration, (int, float)):
         if not math.isfinite(expiration) or expiration <= 0:
             return None, True
         try:
-            # Treat numeric as epoch seconds in UTC, then convert to server time
-            return _to_server_time_naive(datetime.fromtimestamp(expiration, tz=timezone.utc)), True
+            # Treat numeric as UTC epoch seconds, convert to MT5 server timestamp.
+            server_dt = _to_server_time_naive(datetime.fromtimestamp(expiration, tz=timezone.utc))
+            return _server_time_naive_to_mt5_timestamp(server_dt), True
         except (OverflowError, OSError) as exc:
             raise ValueError(f"Expiration timestamp out of range: {expiration}") from exc
 
@@ -128,7 +151,8 @@ def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tupl
             
             if delta is not None:
                 # Relative to now (UTC) then converted to server time
-                return _to_server_time_naive(datetime.now(timezone.utc) + delta), True
+                server_dt = _to_server_time_naive(datetime.now(timezone.utc) + delta)
+                return _server_time_naive_to_mt5_timestamp(server_dt), True
 
         # Try flexible date parsing first (e.g., 'tomorrow 14:00', 'in 2 hours')
         try:
@@ -139,7 +163,8 @@ def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tupl
                 'RELATIVE_BASE': datetime.now(), # explicit base
             })
             if dt is not None:
-                return _to_server_time_naive(dt), True
+                server_dt = _to_server_time_naive(dt)
+                return _server_time_naive_to_mt5_timestamp(server_dt), True
         except Exception:
             pass
 
@@ -149,12 +174,14 @@ def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tupl
             if not math.isfinite(numeric) or numeric <= 0:
                 return None, True
             try:
-                return _to_server_time_naive(datetime.fromtimestamp(numeric, tz=timezone.utc)), True
+                server_dt = _to_server_time_naive(datetime.fromtimestamp(numeric, tz=timezone.utc))
+                return _server_time_naive_to_mt5_timestamp(server_dt), True
             except (OverflowError, OSError) as exc:
                 raise ValueError(f"Expiration timestamp out of range: {expiration}") from exc
         except ValueError:
             try:
-                return _to_server_time_naive(datetime.fromisoformat(cleaned)), True
+                server_dt = _to_server_time_naive(datetime.fromisoformat(cleaned))
+                return _server_time_naive_to_mt5_timestamp(server_dt), True
             except ValueError as exc:
                 raise ValueError(f"Unsupported expiration format: {expiration}") from exc
 
@@ -973,7 +1000,12 @@ def _modify_pending_order(
                 if current_type_time is not None:
                     request["type_time"] = current_type_time
                     if current_type_time == mt5.ORDER_TIME_SPECIFIED and current_expiration:
-                        request["expiration"] = current_expiration
+                        try:
+                            request["expiration"] = int(current_expiration)
+                        except Exception:
+                            if isinstance(current_expiration, datetime):
+                                server_dt = _to_server_time_naive(current_expiration)
+                                request["expiration"] = _server_time_naive_to_mt5_timestamp(server_dt)
 
             result = mt5.order_send(request)
             if result is None:
@@ -1011,36 +1043,59 @@ def _modify_pending_order(
 @mcp.tool()
 def trading_modify(
     ticket: Union[int, str],
-    modify_kind: Literal["position", "pending"] = "position",  # type: ignore
     price: Optional[Union[int, float]] = None,
     stop_loss: Optional[Union[int, float]] = None,
     take_profit: Optional[Union[int, float]] = None,
     expiration: Optional[ExpirationValue] = None,
     comment: Optional[str] = None,
 ) -> dict:
-    """Modify an open position or pending order by ticket."""
-    kind = str(modify_kind or "position").strip().lower()
-    if kind not in ("position", "pending"):
-        return {"error": "modify_kind must be 'position' or 'pending'."}
-    if kind == "position":
-        if price is not None:
-            return {"error": "price is only used for pending orders."}
-        if expiration is not None:
-            return {"error": "expiration is only used for pending orders."}
-        return _modify_position(
+    """Modify an open position or pending order by ticket.
+
+    Inference rules:
+    - If ``price`` or ``expiration`` is provided, treat the ticket as a pending order.
+    - Otherwise, try a position modify first; if not found, fall back to pending order.
+    """
+    price_val = None if price in (None, 0) else price
+
+    if price_val is not None or expiration is not None:
+        result = _modify_pending_order(
             ticket=ticket,
+            price=price_val,
             stop_loss=stop_loss,
             take_profit=take_profit,
+            expiration=expiration,
             comment=comment,
         )
-    return _modify_pending_order(
+        if result.get("error") == f"Pending order {ticket} not found":
+            return {
+                "error": (
+                    f"Pending order {ticket} not found. "
+                    "Note: price/expiration only apply to pending orders."
+                )
+            }
+        return result
+
+    position_result = _modify_position(
         ticket=ticket,
-        price=price,
         stop_loss=stop_loss,
         take_profit=take_profit,
-        expiration=expiration,
         comment=comment,
     )
+    if position_result.get("success"):
+        return position_result
+    if position_result.get("error") == f"Position {ticket} not found":
+        pending_result = _modify_pending_order(
+            ticket=ticket,
+            price=None,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            expiration=None,
+            comment=comment,
+        )
+        if pending_result.get("error") == f"Pending order {ticket} not found":
+            return {"error": f"Ticket {ticket} not found as position or pending order."}
+        return pending_result
+    return position_result
 
 
 def _close_positions(
