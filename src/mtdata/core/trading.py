@@ -399,6 +399,34 @@ def trading_open_get(
     @_auto_connect_wrapper
     def _get_open():
         try:
+            def _mt5_int_const(name: str, fallback: int) -> int:
+                val = getattr(mt5, name, None)
+                return val if isinstance(val, int) else fallback
+
+            position_type_text_map = {
+                _mt5_int_const("POSITION_TYPE_BUY", 0): "BUY",
+                _mt5_int_const("POSITION_TYPE_SELL", 1): "SELL",
+            }
+            order_type_map = {
+                _mt5_int_const("ORDER_TYPE_BUY", 0): "BUY",
+                _mt5_int_const("ORDER_TYPE_SELL", 1): "SELL",
+                _mt5_int_const("ORDER_TYPE_BUY_LIMIT", 2): "BUY_LIMIT",
+                _mt5_int_const("ORDER_TYPE_SELL_LIMIT", 3): "SELL_LIMIT",
+                _mt5_int_const("ORDER_TYPE_BUY_STOP", 4): "BUY_STOP",
+                _mt5_int_const("ORDER_TYPE_SELL_STOP", 5): "SELL_STOP",
+                _mt5_int_const("ORDER_TYPE_BUY_STOP_LIMIT", 6): "BUY_STOP_LIMIT",
+                _mt5_int_const("ORDER_TYPE_SELL_STOP_LIMIT", 7): "SELL_STOP_LIMIT",
+            }
+
+            def _pick_series(df: "pd.DataFrame", *names: str) -> "pd.Series":
+                out = None
+                for name in names:
+                    if name in df.columns:
+                        out = df[name] if out is None else out.combine_first(df[name])
+                if out is None:
+                    return pd.Series([None] * len(df))
+                return out
+
             kind = str(open_kind or "positions").strip().lower()
             if kind not in ("positions", "pending"):
                 return {"error": "open_kind must be 'positions' or 'pending'."}
@@ -418,9 +446,41 @@ def trading_open_get(
                     if rows is None or len(rows) == 0:
                         return [{"message": "No open positions"}]
                 df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
-                if 'time' in df.columns:
-                    df['time'] = pd.to_datetime(df['time'], unit='s')
-                sort_col = 'time' if 'time' in df.columns else None
+
+                time_sec_source = None
+                if 'time_update' in df.columns:
+                    time_sec_source = 'time_update'
+                elif 'time' in df.columns:
+                    time_sec_source = 'time'
+                if time_sec_source is not None:
+                    df['time'] = pd.to_datetime(df[time_sec_source], unit='s')
+
+                for col in ('time_msc', 'time_update', 'time_update_msc'):
+                    if col in df.columns:
+                        df = df.drop(columns=[col])
+
+                if 'type' in df.columns:
+                    mapped = df['type'].map(position_type_text_map)
+                    df['type'] = mapped.fillna(df['type'].astype(str))
+
+                out_df = pd.DataFrame(
+                    {
+                        "Symbol": _pick_series(df, "symbol"),
+                        "Ticket": _pick_series(df, "ticket"),
+                        "Time": _pick_series(df, "time"),
+                        "Type": _pick_series(df, "type"),
+                        "Volume": _pick_series(df, "volume"),
+                        "Open Price": _pick_series(df, "price_open"),
+                        "SL": _pick_series(df, "sl"),
+                        "TP": _pick_series(df, "tp"),
+                        "Current Price": _pick_series(df, "price_current"),
+                        "Swap": pd.to_numeric(_pick_series(df, "swap"), errors="coerce").fillna(0.0),
+                        "Profit": pd.to_numeric(_pick_series(df, "profit"), errors="coerce").fillna(0.0),
+                        "Comments": _pick_series(df, "comment"),
+                        "Magic": _pick_series(df, "magic"),
+                    }
+                )
+                sort_col = "Time"
             else:
                 if ticket is not None:
                     t_int = int(ticket)
@@ -436,17 +496,54 @@ def trading_open_get(
                     if rows is None or len(rows) == 0:
                         return [{"message": "No pending orders"}]
                 df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
+
+                time_sec_source = None
                 if 'time_setup' in df.columns:
-                    df['time_setup'] = pd.to_datetime(df['time_setup'], unit='s')
-                sort_col = 'time_setup' if 'time_setup' in df.columns else None
+                    time_sec_source = 'time_setup'
+                elif 'time' in df.columns:
+                    time_sec_source = 'time'
+                if time_sec_source is not None:
+                    df['time'] = pd.to_datetime(df[time_sec_source], unit='s')
+
+                for col in (
+                    'time_setup', 'time_setup_msc',
+                    'time_done', 'time_done_msc',
+                    'time_expiration',
+                    'time_msc',
+                ):
+                    if col in df.columns:
+                        df = df.drop(columns=[col])
+
+                if 'type' in df.columns:
+                    mapped = df['type'].map(order_type_map)
+                    df['type'] = mapped.fillna(df['type'].astype(str))
+
+                out_df = pd.DataFrame(
+                    {
+                        "Symbol": _pick_series(df, "symbol"),
+                        "Ticket": _pick_series(df, "ticket"),
+                        "Time": _pick_series(df, "time"),
+                        "Type": _pick_series(df, "type"),
+                        "Volume": _pick_series(df, "volume", "volume_current", "volume_initial"),
+                        "Open Price": _pick_series(df, "price_open"),
+                        "SL": _pick_series(df, "sl"),
+                        "TP": _pick_series(df, "tp"),
+                        "Current Price": _pick_series(df, "price_current"),
+                        "Swap": pd.to_numeric(_pick_series(df, "swap"), errors="coerce").fillna(0.0),
+                        "Profit": pd.to_numeric(_pick_series(df, "profit"), errors="coerce").fillna(0.0),
+                        "Comments": _pick_series(df, "comment"),
+                        "Magic": _pick_series(df, "magic"),
+                    }
+                )
+                sort_col = "Time"
 
             limit_value = _normalize_limit(limit)
-            if limit_value and len(df) > limit_value:
+            if limit_value and len(out_df) > limit_value:
                 if sort_col:
-                    df = df.sort_values(sort_col).tail(limit_value)
+                    out_df = out_df.sort_values(sort_col).tail(limit_value)
                 else:
-                    df = df.head(limit_value)
-            return df.to_dict(orient='records')
+                    out_df = out_df.head(limit_value)
+            return out_df.to_dict(orient='records')
 
         except Exception as e:
             return [{"error": str(e)}]

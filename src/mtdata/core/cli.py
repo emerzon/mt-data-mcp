@@ -1012,6 +1012,9 @@ def main():
         exclude_globals = list(existing_param_names)
         if cmd_name == 'report_generate':
             exclude_globals.append('timeframe')
+        # Finviz tools don't use MT5 timeframe
+        if cmd_name.startswith('finviz_'):
+            exclude_globals.append('timeframe')
         add_global_args_to_parser(cmd_parser, exclude_params=exclude_globals)
         
         # Add dynamic arguments

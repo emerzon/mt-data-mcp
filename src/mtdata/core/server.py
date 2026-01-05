@@ -350,6 +350,7 @@ from .labels import *
 from .report import *
 from .trading import *
 from .temporal import *
+from .finviz import *
 
 try:
     attach_schemas_to_tools(mcp, get_shared_enum_lists())

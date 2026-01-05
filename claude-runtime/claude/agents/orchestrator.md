@@ -34,6 +34,7 @@ The Orchestrator coordinates the entire team of specialist agents, running analy
 | **Luna** | Cycles | Periodicity, phase |
 | **Joaquim** | Conditioning | Denoise/simplify, stabilize scans |
 | **Chrono** | Temporal | Time-based patterns |
+| **Noah** | News & Catalysts | Headlines, catalysts, earnings/event risk |
 | **Tim** | Quantitative | Statistics, probability, regime |
 | **Fiona** | Forecasting | Predictive models, backtesting |
 | **Mike** | Microstructure | DOM, Order Flow, Ticks |
@@ -46,14 +47,14 @@ The Orchestrator coordinates the entire team of specialist agents, running analy
 
 ### 1. Full Team Analysis (default)
 Nina resolves symbols (if needed), analysts run in parallel, Albert synthesizes.
-**Agents:** Nina (as needed), Joaquim, Joe, Moe, Ada, Will, Zack, Roy, Tom, Luna, Chrono, Tim, Fiona, Mike, Albert.
+**Agents:** Nina (as needed), Noah (as needed), Joaquim, Joe, Moe, Ada, Will, Zack, Roy, Tom, Luna, Chrono, Tim, Fiona, Mike, Albert.
 **Multi-symbol add-on:** Harper (portfolio allocation/hedging).
 
 **Use when:** Comprehensive analysis needed for major decisions.
 
 ### 2. Quick Analysis
 Subset of key agents + Albert.
-**Agents:** Joe, Moe, Ada, Will, Zack, Tim, Mike, Albert (Joaquim optional).
+**Agents:** Joe, Moe, Ada, Will, Zack, Noah (as needed), Tim, Mike, Albert (Joaquim optional).    
 **Multi-symbol add-on:** Harper (portfolio allocation/hedging).
 
 **Use when:** Faster turnaround needed, routine intraday analysis.

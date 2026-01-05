@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 import sys
 import pandas as pd
+from collections import namedtuple
 
 # Mock mt5 before importing the module
 sys.modules['MetaTrader5'] = MagicMock()
@@ -36,6 +37,33 @@ class TestMergedTools(unittest.TestCase):
         trading_open_get(ticket=123, __cli_raw=True)
         mt5.positions_get.assert_called_with(ticket=123)
 
+    def test_trading_open_get_positions_type_translation(self):
+        Pos = namedtuple("Pos", ["ticket", "time", "time_msc", "time_update", "time_update_msc", "type", "symbol"])
+        mt5.positions_get.return_value = [
+            Pos(
+                ticket=1,
+                time=1700000000,
+                time_msc=1700000000000,
+                time_update=1700000001,
+                time_update_msc=1700000001000,
+                type=0,
+                symbol="EURUSD",
+            )
+        ]
+
+        res = trading_open_get(__cli_raw=True)
+        self.assertIsInstance(res, list)
+        self.assertGreaterEqual(len(res), 1)
+        self.assertEqual(res[0].get("Type"), "BUY")
+        self.assertEqual(res[0].get("Symbol"), "EURUSD")
+        self.assertEqual(res[0].get("Ticket"), 1)
+        self.assertIsNotNone(res[0].get("Time"))
+        self.assertIsNone(res[0].get("time_msc"))
+        self.assertIsNone(res[0].get("time_update"))
+        self.assertIsNone(res[0].get("time_update_msc"))
+        self.assertIsNone(res[0].get("direction"))
+        self.assertIsNone(res[0].get("type_code"))
+
     def test_trading_open_get_pending(self):
         mt5.orders_get.return_value = None
 
@@ -46,6 +74,24 @@ class TestMergedTools(unittest.TestCase):
 
         trading_open_get(open_kind="pending", ticket=123, __cli_raw=True)
         mt5.orders_get.assert_called_with(ticket=123)
+
+    def test_trading_open_get_pending_type_translation(self):
+        Order = namedtuple("Order", ["ticket", "time_setup", "time_setup_msc", "type", "symbol"])
+        mt5.orders_get.return_value = [
+            Order(ticket=1, time_setup=1700000000, time_setup_msc=1700000000000, type=3, symbol="EURUSD")
+        ]
+
+        res = trading_open_get(open_kind="pending", __cli_raw=True)
+        self.assertIsInstance(res, list)
+        self.assertGreaterEqual(len(res), 1)
+        self.assertEqual(res[0].get("Type"), "SELL_LIMIT")
+        self.assertEqual(res[0].get("Symbol"), "EURUSD")
+        self.assertEqual(res[0].get("Ticket"), 1)
+        self.assertIsNotNone(res[0].get("Time"))
+        self.assertIsNone(res[0].get("time_setup"))
+        self.assertIsNone(res[0].get("time_setup_msc"))
+        self.assertIsNone(res[0].get("direction"))
+        self.assertIsNone(res[0].get("type_code"))
 
     def test_patterns_detect(self):
         # Mock symbol info

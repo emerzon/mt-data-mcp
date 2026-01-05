@@ -134,6 +134,14 @@ PARAM_HINTS = {
     "refine": "Run a second-stage refinement around best grid point.",
     "refine_radius": "Refinement radius around best grid point.",
     "refine_steps": "Number of refinement steps per axis.",
+    # Finviz parameters
+    "news_type": "News type: 'news' or 'blogs'.",
+    "filters": "JSON filter dict for stock screener.",
+    "view": "Screener view: overview, valuation, financial, ownership, performance, technical.",
+    "option": "Insider activity type: latest, top week, top owner trade, insider buy, insider sale.",
+    "period": "Finviz earnings period: This Week, Next Week, Previous Week, This Month.",
+    "impact": "Economic calendar impact filter: low, medium, high.",
+    "page": "Page number for pagination (default 1).",
 }
 
 

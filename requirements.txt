@@ -111,3 +111,6 @@ matplotlib>=3.10.8
 
 # Feature extraction
 tsfresh>=0.20.3
+
+# Finviz stock screener and fundamentals
+finvizfinance>=0.15.0
