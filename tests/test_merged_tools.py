@@ -4,6 +4,9 @@ import sys
 import pandas as pd
 from collections import namedtuple
 
+from src.mtdata.utils.mt5 import _mt5_epoch_to_utc
+from src.mtdata.utils.utils import _format_time_minimal, _format_time_minimal_local, _use_client_tz
+
 # Mock mt5 before importing the module
 sys.modules['MetaTrader5'] = MagicMock()
 import MetaTrader5 as mt5
@@ -16,7 +19,8 @@ pd.DataFrame.ta = MagicMock()
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.mtdata.core.trading import trading_open_get
+from src.mtdata.core.trading import trade_get_open
+from src.mtdata.core.trading import trade_get_pending
 from src.mtdata.core.patterns import patterns_detect
 from src.mtdata.core.forecast import forecast_barrier_prob
 
@@ -26,15 +30,15 @@ class TestMergedTools(unittest.TestCase):
         mt5.positions_get.return_value = None # Simulate empty
 
         # Test default
-        res = trading_open_get(__cli_raw=True)
+        res = trade_get_open(__cli_raw=True)
         self.assertIsInstance(res, list)
 
         # Test with symbol
-        trading_open_get(symbol="EURUSD", __cli_raw=True)
+        trade_get_open(symbol="EURUSD", __cli_raw=True)
         mt5.positions_get.assert_called_with(symbol="EURUSD")
 
         # Test with ticket
-        trading_open_get(ticket=123, __cli_raw=True)
+        trade_get_open(ticket=123, __cli_raw=True)
         mt5.positions_get.assert_called_with(ticket=123)
 
     def test_trading_open_get_positions_type_translation(self):
@@ -51,13 +55,15 @@ class TestMergedTools(unittest.TestCase):
             )
         ]
 
-        res = trading_open_get(__cli_raw=True)
+        res = trade_get_open(__cli_raw=True)
         self.assertIsInstance(res, list)
         self.assertGreaterEqual(len(res), 1)
         self.assertEqual(res[0].get("Type"), "BUY")
         self.assertEqual(res[0].get("Symbol"), "EURUSD")
         self.assertEqual(res[0].get("Ticket"), 1)
-        self.assertIsNotNone(res[0].get("Time"))
+        fmt_time = _format_time_minimal_local if _use_client_tz() else _format_time_minimal
+        expected_time = fmt_time(_mt5_epoch_to_utc(1700000001))
+        self.assertEqual(res[0].get("Time"), expected_time)
         self.assertIsNone(res[0].get("time_msc"))
         self.assertIsNone(res[0].get("time_update"))
         self.assertIsNone(res[0].get("time_update_msc"))
@@ -67,27 +73,41 @@ class TestMergedTools(unittest.TestCase):
     def test_trading_open_get_pending(self):
         mt5.orders_get.return_value = None
 
-        trading_open_get(open_kind="pending", __cli_raw=True)
+        trade_get_pending(__cli_raw=True)
 
-        trading_open_get(open_kind="pending", symbol="EURUSD", __cli_raw=True)
+        trade_get_pending(symbol="EURUSD", __cli_raw=True)
         mt5.orders_get.assert_called_with(symbol="EURUSD")
 
-        trading_open_get(open_kind="pending", ticket=123, __cli_raw=True)
+        trade_get_pending(ticket=123, __cli_raw=True)
         mt5.orders_get.assert_called_with(ticket=123)
 
     def test_trading_open_get_pending_type_translation(self):
-        Order = namedtuple("Order", ["ticket", "time_setup", "time_setup_msc", "type", "symbol"])
+        Order = namedtuple("Order", ["ticket", "time_setup", "time_setup_msc", "time_expiration", "type", "symbol"])
         mt5.orders_get.return_value = [
-            Order(ticket=1, time_setup=1700000000, time_setup_msc=1700000000000, type=3, symbol="EURUSD")
+            Order(
+                ticket=1,
+                time_setup=1700000000,
+                time_setup_msc=1700000000000,
+                time_expiration=1700003600,
+                type=3,
+                symbol="EURUSD",
+            )
         ]
 
-        res = trading_open_get(open_kind="pending", __cli_raw=True)
+        res = trade_get_pending(__cli_raw=True)
         self.assertIsInstance(res, list)
         self.assertGreaterEqual(len(res), 1)
         self.assertEqual(res[0].get("Type"), "SELL_LIMIT")
         self.assertEqual(res[0].get("Symbol"), "EURUSD")
         self.assertEqual(res[0].get("Ticket"), 1)
-        self.assertIsNotNone(res[0].get("Time"))
+        fmt_time = _format_time_minimal_local if _use_client_tz() else _format_time_minimal
+        expected_time = fmt_time(_mt5_epoch_to_utc(1700000000))
+        expected_exp = fmt_time(_mt5_epoch_to_utc(1700003600))
+        self.assertEqual(res[0].get("Time"), expected_time)
+        self.assertIn("Expiration", res[0])
+        self.assertEqual(res[0].get("Expiration"), expected_exp)
+        self.assertNotIn("Profit", res[0])
+        self.assertNotIn("Swap", res[0])
         self.assertIsNone(res[0].get("time_setup"))
         self.assertIsNone(res[0].get("time_setup_msc"))
         self.assertIsNone(res[0].get("direction"))
@@ -143,18 +163,18 @@ class TestMergedTools(unittest.TestCase):
         mt5.symbol_info_tick.return_value = MagicMock(bid=1.0, ask=1.0)
         mt5.order_send.return_value = MagicMock(retcode=mt5.TRADE_RETCODE_DONE)
         
-        from src.mtdata.core.trading import trading_close
+        from src.mtdata.core.trading import trade_close
 
         # Test close by ticket
-        trading_close(ticket=123, __cli_raw=True)
+        trade_close(ticket=123, __cli_raw=True)
         mt5.positions_get.assert_called_with(ticket=123)
 
         # Test close by symbol
-        trading_close(symbol="EURUSD", __cli_raw=True)
+        trade_close(symbol="EURUSD", __cli_raw=True)
         mt5.positions_get.assert_called_with(symbol="EURUSD")
 
         # Test close all
-        trading_close(__cli_raw=True)
+        trade_close(__cli_raw=True)
         mt5.positions_get.assert_called_with()
 
     def test_trading_close_pending(self):
@@ -165,18 +185,18 @@ class TestMergedTools(unittest.TestCase):
         mt5.orders_get.return_value = [mock_order]
         mt5.order_send.return_value = MagicMock(retcode=mt5.TRADE_RETCODE_DONE) 
 
-        from src.mtdata.core.trading import trading_close
+        from src.mtdata.core.trading import trade_close
 
         # Test cancel by ticket
-        trading_close(close_kind="pending", ticket=456, __cli_raw=True)
+        trade_close(close_kind="pending", ticket=456, __cli_raw=True)
         mt5.orders_get.assert_called_with(ticket=456)
 
         # Test cancel by symbol
-        trading_close(close_kind="pending", symbol="EURUSD", __cli_raw=True)
+        trade_close(close_kind="pending", symbol="EURUSD", __cli_raw=True)
         mt5.orders_get.assert_called_with(symbol="EURUSD")
 
         # Test cancel all
-        trading_close(close_kind="pending", __cli_raw=True)
+        trade_close(close_kind="pending", __cli_raw=True)
         mt5.orders_get.assert_called_with()
 
 if __name__ == '__main__':

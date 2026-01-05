@@ -85,11 +85,15 @@ def _json_default(value: Any) -> Any:
     return str(value)
 
 
-def _format_result_for_cli(result: Any, *, fmt: str, verbose: bool) -> str:     
+def _format_result_for_cli(result: Any, *, fmt: str, verbose: bool, cmd_name: str) -> str:
     fmt_s = str(fmt or "text").strip().lower()
     if fmt_s == "json":
         return json.dumps(result, ensure_ascii=False, indent=2, default=_json_default)
-    return _format_result_minimal(result, verbose=verbose)
+    simplify_numbers = not str(cmd_name or "").startswith("trade_")
+    try:
+        return _shared_minimal(result, verbose=verbose, simplify_numbers=simplify_numbers)
+    except TypeError:
+        return _format_result_minimal(result, verbose=verbose)
 
 
 def _safe_tz_name(value: Any) -> Optional[str]:
@@ -730,7 +734,7 @@ def create_command_function(func_info, cmd_name: str = "", cmd_parser: Optional[
         verbose = getattr(args, 'verbose', False)
         result = _attach_cli_meta(result, cmd_name=cmd_name, verbose=verbose)
         fmt = getattr(args, 'format', 'text')
-        output = _format_result_for_cli(result, fmt=fmt, verbose=verbose)
+        output = _format_result_for_cli(result, fmt=fmt, verbose=verbose, cmd_name=cmd_name)
         if output:
             print(output)
         return
@@ -1100,7 +1104,12 @@ def main():
                 return
 
             fmt = getattr(args, "format", "text")
-            output = _format_result_for_cli(out, fmt=fmt, verbose=getattr(args, "verbose", False))
+            output = _format_result_for_cli(
+                out,
+                fmt=fmt,
+                verbose=getattr(args, "verbose", False),
+                cmd_name="forecast_generate",
+            )
             if output:
                 print(output)
 

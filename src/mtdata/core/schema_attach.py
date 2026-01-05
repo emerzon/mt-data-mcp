@@ -129,7 +129,7 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
                             "description": "Barrier simulation method for optimization.",
                         }
                 # Trading schemas: add enums and param docs where helpful
-                if name == "trading_place":
+                if name == "trade_place":
                     # Clarify acceptable order type values for orders
                     if "order_type" in params:
                         params["order_type"] = {

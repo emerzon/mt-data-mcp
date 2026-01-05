@@ -6,10 +6,16 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple, Union, List, Dict, Any, Literal
 
 from .server import mcp
-from ..utils.mt5 import _auto_connect_wrapper
+from ..utils.mt5 import _auto_connect_wrapper, _mt5_epoch_to_utc
 from .config import mt5_config
 from .constants import DEFAULT_ROW_LIMIT
-from ..utils.utils import _normalize_limit, _parse_start_datetime
+from ..utils.utils import (
+    _format_time_minimal,
+    _format_time_minimal_local,
+    _normalize_limit,
+    _parse_start_datetime,
+    _use_client_tz,
+)
 
 
 ExpirationValue = Union[int, float, str, datetime]
@@ -285,7 +291,7 @@ def _normalize_trade_comment(comment: Optional[str], *, default: str, suffix: st
 
 
 @mcp.tool()
-def trading_account_info() -> dict:
+def trade_account_info() -> dict:
     """Get account information (balance, equity, profit, margin level, free margin, account type, leverage, currency)."""
     import MetaTrader5 as mt5
 
@@ -312,7 +318,7 @@ def trading_account_info() -> dict:
 
 
 @mcp.tool()
-def trading_history(
+def trade_history(
     history_kind: Literal["deals", "orders"] = "deals",  # type: ignore
     start: Optional[str] = None,
     end: Optional[str] = None,
@@ -386,19 +392,21 @@ def trading_history(
 
 
 @mcp.tool()
-def trading_open_get(
-    open_kind: Literal["positions", "pending"] = "positions",  # type: ignore
+def trade_get_open(
     symbol: Optional[str] = None,
     ticket: Optional[Union[int, str]] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
 ) -> List[Dict[str, Any]]:
-    """Get open positions or pending orders."""
+    """Get open positions."""
     import MetaTrader5 as mt5
     import pandas as pd
 
     @_auto_connect_wrapper
     def _get_open():
         try:
+            use_client_tz = _use_client_tz()
+            fmt_time = _format_time_minimal_local if use_client_tz else _format_time_minimal
+
             def _mt5_int_const(name: str, fallback: int) -> int:
                 val = getattr(mt5, name, None)
                 return val if isinstance(val, int) else fallback
@@ -407,6 +415,107 @@ def trading_open_get(
                 _mt5_int_const("POSITION_TYPE_BUY", 0): "BUY",
                 _mt5_int_const("POSITION_TYPE_SELL", 1): "SELL",
             }
+
+            def _pick_series(df: "pd.DataFrame", *names: str) -> "pd.Series":
+                out = None
+                for name in names:
+                    if name in df.columns:
+                        out = df[name] if out is None else out.combine_first(df[name])
+                if out is None:
+                    return pd.Series([None] * len(df))
+                return out
+
+            if ticket is not None:
+                t_int = int(ticket)
+                rows = mt5.positions_get(ticket=t_int)
+                if rows is None or len(rows) == 0:
+                    return [{"message": f"No position found with ID {ticket}"}]
+            elif symbol is not None:
+                rows = mt5.positions_get(symbol=symbol)
+                if rows is None or len(rows) == 0:
+                    return [{"message": f"No open positions for {symbol}"}]
+            else:
+                rows = mt5.positions_get()
+                if rows is None or len(rows) == 0:
+                    return [{"message": "No open positions"}]
+            df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
+
+            time_src = None
+            if 'time_update' in df.columns:
+                time_src = pd.to_numeric(df['time_update'], errors='coerce')
+            elif 'time' in df.columns:
+                time_src = pd.to_numeric(df['time'], errors='coerce')
+            if time_src is None:
+                time_utc = pd.Series([float("nan")] * len(df))
+                time_txt = pd.Series([None] * len(df))
+            else:
+                time_utc = time_src.apply(lambda x: _mt5_epoch_to_utc(float(x)) if pd.notna(x) else float("nan"))
+                time_txt = time_utc.apply(lambda x: fmt_time(float(x)) if pd.notna(x) else None)
+
+            for col in ('time_msc', 'time_update', 'time_update_msc'):
+                if col in df.columns:
+                    df = df.drop(columns=[col])
+
+            if 'type' in df.columns:
+                mapped = df['type'].map(position_type_text_map)
+                df['type'] = mapped.fillna(df['type'].astype(str))
+
+            out_df = pd.DataFrame(
+                {
+                    "Symbol": _pick_series(df, "symbol"),
+                    "Ticket": _pick_series(df, "ticket"),
+                    "Time": time_txt,
+                    "Type": _pick_series(df, "type"),
+                    "Volume": _pick_series(df, "volume"),
+                    "Open Price": _pick_series(df, "price_open"),
+                    "SL": _pick_series(df, "sl"),
+                    "TP": _pick_series(df, "tp"),
+                    "Current Price": _pick_series(df, "price_current"),
+                    "Swap": pd.to_numeric(_pick_series(df, "swap"), errors="coerce").fillna(0.0),
+                    "Profit": pd.to_numeric(_pick_series(df, "profit"), errors="coerce").fillna(0.0),
+                    "Comments": _pick_series(df, "comment"),
+                    "Magic": _pick_series(df, "magic"),
+                }
+            )
+            out_df["__time_utc"] = time_utc
+            sort_col = "__time_utc"
+
+            limit_value = _normalize_limit(limit)
+            if limit_value and len(out_df) > limit_value:
+                if sort_col:
+                    out_df = out_df.sort_values(sort_col).tail(limit_value)
+                else:
+                    out_df = out_df.head(limit_value)
+            if "__time_utc" in out_df.columns:
+                out_df = out_df.drop(columns=["__time_utc"])
+            return out_df.to_dict(orient='records')
+
+        except Exception as e:
+            return [{"error": str(e)}]
+
+    return _get_open()
+
+
+@mcp.tool()
+def trade_get_pending(
+    symbol: Optional[str] = None,
+    ticket: Optional[Union[int, str]] = None,
+    limit: Optional[int] = DEFAULT_ROW_LIMIT,
+) -> List[Dict[str, Any]]:
+    """Get pending orders (open orders)."""
+    import MetaTrader5 as mt5
+    import pandas as pd
+
+    @_auto_connect_wrapper
+    def _get_pending():
+        try:
+            use_client_tz = _use_client_tz()
+            fmt_time = _format_time_minimal_local if use_client_tz else _format_time_minimal
+
+            def _mt5_int_const(name: str, fallback: int) -> int:
+                val = getattr(mt5, name, None)
+                return val if isinstance(val, int) else fallback
+
             order_type_map = {
                 _mt5_int_const("ORDER_TYPE_BUY", 0): "BUY",
                 _mt5_int_const("ORDER_TYPE_SELL", 1): "SELL",
@@ -427,128 +536,88 @@ def trading_open_get(
                     return pd.Series([None] * len(df))
                 return out
 
-            kind = str(open_kind or "positions").strip().lower()
-            if kind not in ("positions", "pending"):
-                return {"error": "open_kind must be 'positions' or 'pending'."}
-
-            if kind == "positions":
-                if ticket is not None:
-                    t_int = int(ticket)
-                    rows = mt5.positions_get(ticket=t_int)
-                    if rows is None or len(rows) == 0:
-                        return [{"message": f"No position found with ID {ticket}"}]
-                elif symbol is not None:
-                    rows = mt5.positions_get(symbol=symbol)
-                    if rows is None or len(rows) == 0:
-                        return [{"message": f"No open positions for {symbol}"}]
-                else:
-                    rows = mt5.positions_get()
-                    if rows is None or len(rows) == 0:
-                        return [{"message": "No open positions"}]
-                df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
-
-                time_sec_source = None
-                if 'time_update' in df.columns:
-                    time_sec_source = 'time_update'
-                elif 'time' in df.columns:
-                    time_sec_source = 'time'
-                if time_sec_source is not None:
-                    df['time'] = pd.to_datetime(df[time_sec_source], unit='s')
-
-                for col in ('time_msc', 'time_update', 'time_update_msc'):
-                    if col in df.columns:
-                        df = df.drop(columns=[col])
-
-                if 'type' in df.columns:
-                    mapped = df['type'].map(position_type_text_map)
-                    df['type'] = mapped.fillna(df['type'].astype(str))
-
-                out_df = pd.DataFrame(
-                    {
-                        "Symbol": _pick_series(df, "symbol"),
-                        "Ticket": _pick_series(df, "ticket"),
-                        "Time": _pick_series(df, "time"),
-                        "Type": _pick_series(df, "type"),
-                        "Volume": _pick_series(df, "volume"),
-                        "Open Price": _pick_series(df, "price_open"),
-                        "SL": _pick_series(df, "sl"),
-                        "TP": _pick_series(df, "tp"),
-                        "Current Price": _pick_series(df, "price_current"),
-                        "Swap": pd.to_numeric(_pick_series(df, "swap"), errors="coerce").fillna(0.0),
-                        "Profit": pd.to_numeric(_pick_series(df, "profit"), errors="coerce").fillna(0.0),
-                        "Comments": _pick_series(df, "comment"),
-                        "Magic": _pick_series(df, "magic"),
-                    }
-                )
-                sort_col = "Time"
+            if ticket is not None:
+                t_int = int(ticket)
+                rows = mt5.orders_get(ticket=t_int)
+                if rows is None or len(rows) == 0:
+                    return [{"message": f"No pending order found with ID {ticket}"}]
+            elif symbol is not None:
+                rows = mt5.orders_get(symbol=symbol)
+                if rows is None or len(rows) == 0:
+                    return [{"message": f"No pending orders for {symbol}"}]
             else:
-                if ticket is not None:
-                    t_int = int(ticket)
-                    rows = mt5.orders_get(ticket=t_int)
-                    if rows is None or len(rows) == 0:
-                        return [{"message": f"No pending order found with ID {ticket}"}]
-                elif symbol is not None:
-                    rows = mt5.orders_get(symbol=symbol)
-                    if rows is None or len(rows) == 0:
-                        return [{"message": f"No pending orders for {symbol}"}]
-                else:
-                    rows = mt5.orders_get()
-                    if rows is None or len(rows) == 0:
-                        return [{"message": "No pending orders"}]
-                df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
+                rows = mt5.orders_get()
+                if rows is None or len(rows) == 0:
+                    return [{"message": "No pending orders"}]
 
-                time_sec_source = None
-                if 'time_setup' in df.columns:
-                    time_sec_source = 'time_setup'
-                elif 'time' in df.columns:
-                    time_sec_source = 'time'
-                if time_sec_source is not None:
-                    df['time'] = pd.to_datetime(df[time_sec_source], unit='s')
+            df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
 
-                for col in (
-                    'time_setup', 'time_setup_msc',
-                    'time_done', 'time_done_msc',
-                    'time_expiration',
-                    'time_msc',
-                ):
-                    if col in df.columns:
-                        df = df.drop(columns=[col])
+            time_src = None
+            if 'time_setup' in df.columns:
+                time_src = pd.to_numeric(df['time_setup'], errors='coerce')
+            elif 'time' in df.columns:
+                time_src = pd.to_numeric(df['time'], errors='coerce')
+            if time_src is None:
+                time_utc = pd.Series([float("nan")] * len(df))
+                time_txt = pd.Series([None] * len(df))
+            else:
+                time_utc = time_src.apply(lambda x: _mt5_epoch_to_utc(float(x)) if pd.notna(x) else float("nan"))
+                time_txt = time_utc.apply(lambda x: fmt_time(float(x)) if pd.notna(x) else None)
 
-                if 'type' in df.columns:
-                    mapped = df['type'].map(order_type_map)
-                    df['type'] = mapped.fillna(df['type'].astype(str))
-
-                out_df = pd.DataFrame(
-                    {
-                        "Symbol": _pick_series(df, "symbol"),
-                        "Ticket": _pick_series(df, "ticket"),
-                        "Time": _pick_series(df, "time"),
-                        "Type": _pick_series(df, "type"),
-                        "Volume": _pick_series(df, "volume", "volume_current", "volume_initial"),
-                        "Open Price": _pick_series(df, "price_open"),
-                        "SL": _pick_series(df, "sl"),
-                        "TP": _pick_series(df, "tp"),
-                        "Current Price": _pick_series(df, "price_current"),
-                        "Swap": pd.to_numeric(_pick_series(df, "swap"), errors="coerce").fillna(0.0),
-                        "Profit": pd.to_numeric(_pick_series(df, "profit"), errors="coerce").fillna(0.0),
-                        "Comments": _pick_series(df, "comment"),
-                        "Magic": _pick_series(df, "magic"),
-                    }
+            expiration: "pd.Series"
+            if 'time_expiration' in df.columns:
+                exp_raw = pd.to_numeric(df['time_expiration'], errors='coerce')
+                exp_utc = exp_raw.apply(lambda x: _mt5_epoch_to_utc(float(x)) if pd.notna(x) and float(x) > 0 else float("nan"))
+                expiration = exp_raw.apply(lambda x: "GTC" if pd.notna(x) and float(x) <= 0 else None)
+                expiration = expiration.where(
+                    exp_raw.isna() | (exp_raw <= 0),
+                    other=exp_utc.apply(lambda x: fmt_time(float(x)) if pd.notna(x) else None),
                 )
-                sort_col = "Time"
+            else:
+                expiration = pd.Series([None] * len(df))
+
+            for col in (
+                'time_setup', 'time_setup_msc',
+                'time_done', 'time_done_msc',
+                'time_expiration',
+                'time_msc',
+            ):
+                if col in df.columns:
+                    df = df.drop(columns=[col])
+
+            if 'type' in df.columns:
+                mapped = df['type'].map(order_type_map)
+                df['type'] = mapped.fillna(df['type'].astype(str))
+
+            out_df = pd.DataFrame(
+                {
+                    "Symbol": _pick_series(df, "symbol"),
+                    "Ticket": _pick_series(df, "ticket"),
+                    "Time": time_txt,
+                    "Expiration": expiration,
+                    "Type": _pick_series(df, "type"),
+                    "Volume": _pick_series(df, "volume", "volume_current", "volume_initial"),
+                    "Open Price": _pick_series(df, "price_open"),
+                    "SL": _pick_series(df, "sl"),
+                    "TP": _pick_series(df, "tp"),
+                    "Current Price": _pick_series(df, "price_current"),
+                    "Comments": _pick_series(df, "comment"),
+                    "Magic": _pick_series(df, "magic"),
+                }
+            )
+            out_df["__time_utc"] = time_utc
 
             limit_value = _normalize_limit(limit)
             if limit_value and len(out_df) > limit_value:
-                if sort_col:
-                    out_df = out_df.sort_values(sort_col).tail(limit_value)
-                else:
-                    out_df = out_df.head(limit_value)
+                out_df = out_df.sort_values("__time_utc").tail(limit_value) if "__time_utc" in out_df.columns else out_df.head(limit_value)
+            if "__time_utc" in out_df.columns:
+                out_df = out_df.drop(columns=["__time_utc"])
             return out_df.to_dict(orient='records')
 
         except Exception as e:
             return [{"error": str(e)}]
 
-    return _get_open()
+    return _get_pending()
 
 
 def _place_market_order(
@@ -893,7 +962,7 @@ def _place_pending_order(
 
 
 @mcp.tool()
-def trading_place(
+def trade_place(
     symbol: str,
     volume: float,
     order_type: OrderTypeLiteral,
@@ -1138,7 +1207,7 @@ def _modify_pending_order(
 
 
 @mcp.tool()
-def trading_modify(
+def trade_modify(
     ticket: Union[int, str],
     price: Optional[Union[int, float]] = None,
     stop_loss: Optional[Union[int, float]] = None,
@@ -1353,7 +1422,7 @@ def _cancel_pending(
 
 
 @mcp.tool()
-def trading_close(
+def trade_close(
     close_kind: Literal["positions", "pending"] = "positions",  # type: ignore
     ticket: Optional[Union[int, str]] = None,
     symbol: Optional[str] = None,
@@ -1381,7 +1450,7 @@ def trading_close(
 
 
 @mcp.tool()
-def trading_risk_analyze(
+def trade_risk_analyze(
     symbol: Optional[str] = None,
     desired_risk_pct: Optional[float] = None,
     proposed_entry: Optional[float] = None,
@@ -1426,13 +1495,13 @@ def trading_risk_analyze(
     Examples:
     ---------
     # Analyze current portfolio risk
-    trading_risk_analyze()
+    trade_risk_analyze()
     
     # Analyze risk for specific symbol
-    trading_risk_analyze(symbol="EURUSD")
+    trade_risk_analyze(symbol="EURUSD")
     
     # Calculate position size for 2% risk
-    trading_risk_analyze(
+    trade_risk_analyze(
         symbol="EURUSD",
         desired_risk_pct=2.0,
         proposed_entry=1.1000,

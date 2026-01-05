@@ -17,7 +17,7 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 
 ## Safety First
 
-- `mtdata` includes `trading_*` commands that can **place/modify/close real orders** on the account currently logged into MT5.
+- `mtdata` includes `trade_*` commands that can **place/modify/close real orders** on the account currently logged into MT5.
 - Use a **demo account** until you understand the tools and your broker setup.
 - There is no built-in “paper trading” mode in mtdata; use an MT5 demo account for simulated execution.
 - If you only want research, stick to `data_*`, `forecast_*`, `regime_*`, `patterns_*`, and `report_*` commands.
@@ -34,7 +34,7 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 | **Patterns** | Identify candlestick and chart patterns | `patterns_detect` |
 | **Indicators** | Compute 100+ technical indicators | `data_fetch_candles --indicators` |
 | **Denoising** | Smooth price data to reveal trends | `--denoise` option |
-| **Trading** | Place orders, manage positions | `trading_place`, `trading_close` |
+| **Trading** | Place orders, manage positions | `trade_place`, `trade_close` |
 
 ## Quick Start
 

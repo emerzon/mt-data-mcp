@@ -79,7 +79,7 @@ python cli.py symbols_list --limit 10
 
 Optional deeper check:
 ```bash
-python cli.py trading_account_info --format json
+python cli.py trade_account_info --format json
 ```
 
 Expected output:

@@ -243,7 +243,7 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
         try:
             from ..utils.minimal_output import format_result_minimal as _fmt_min, to_methods_availability_toon as _fmt_methods
         except Exception:
-            _fmt_min = lambda x: str(x) if x is not None else ""  # fallback
+            _fmt_min = lambda x, **_: str(x) if x is not None else ""  # fallback
             _fmt_methods = None
 
         @_wraps(func)
@@ -282,7 +282,8 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
                         s = _fmt_methods(cast(List[Dict[str, Any]], methods_list))
                         if s:
                             return s
-                return _fmt_min(out)
+                simplify_numbers = not str(fname).startswith("trade_")
+                return _fmt_min(out, simplify_numbers=simplify_numbers)
             except Exception:
                 return str(out) if out is not None else ""
 

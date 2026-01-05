@@ -29,13 +29,14 @@
       "mcp__mtdata__symbols_describe",
       "mcp__mtdata__symbols_list",
       "mcp__mtdata__temporal_analyze",
-      "mcp__mtdata__trading_account_info",
-      "mcp__mtdata__trading_close",
-      "mcp__mtdata__trading_history",
-      "mcp__mtdata__trading_modify",
-      "mcp__mtdata__trading_open_get",
-      "mcp__mtdata__trading_place",
-      "mcp__mtdata__trading_risk_analyze"
+      "mcp__mtdata__trade_account_info",
+      "mcp__mtdata__trade_close",
+      "mcp__mtdata__trade_history",
+      "mcp__mtdata__trade_modify",
+      "mcp__mtdata__trade_get_open",
+      "mcp__mtdata__trade_get_pending",
+      "mcp__mtdata__trade_place",
+      "mcp__mtdata__trade_risk_analyze"
     ]
   }
 }

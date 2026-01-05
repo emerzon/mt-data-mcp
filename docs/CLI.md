@@ -11,9 +11,9 @@ The CLI is the quickest way to explore mtdata capabilities. All tools are access
 
 ## Safety (Trading Commands)
 
-`trading_*` commands can place/modify/close real orders on the account currently logged into MT5 (demo or live). Use a demo account until you're confident in your setup.
+`trade_*` commands can place/modify/close real orders on the account currently logged into MT5 (demo or live). Use a demo account until you're confident in your setup.
 
-There is no built-in “paper trading” mode in mtdata; for simulated execution use an MT5 demo account and double-check which account is logged in before running any `trading_*` commands.
+There is no built-in “paper trading” mode in mtdata; for simulated execution use an MT5 demo account and double-check which account is logged in before running any `trade_*` commands.
 
 ## Getting Help
 
@@ -181,13 +181,14 @@ python cli.py data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 ### Trading
 | Command | Description |
 |---------|-------------|
-| `trading_account_info` | Get account info |
-| `trading_place` | Place orders |
-| `trading_close` | Close positions |
-| `trading_modify` | Modify orders |
-| `trading_open_get` | Get open positions |
-| `trading_history` | Get trading history |
-| `trading_risk_analyze` | Analyze position risk |
+| `trade_account_info` | Get account info |
+| `trade_place` | Place orders |
+| `trade_close` | Close positions |
+| `trade_modify` | Modify orders |
+| `trade_get_open` | Get open positions |
+| `trade_get_pending` | Get pending orders |
+| `trade_history` | Get trading history |
+| `trade_risk_analyze` | Analyze position risk |
 
 ### Reports
 | Command | Description |

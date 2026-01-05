@@ -10,6 +10,7 @@ import math
 from numbers import Number
 from typing import Any, Dict, Iterable, List, Optional
 
+from .constants import DISPLAY_MAX_DECIMALS
 from .formatting import format_number
 from .utils import _optimal_decimals, _format_float
 
@@ -36,6 +37,10 @@ def _is_empty_value(value: Any) -> bool:
 
 def _minify_number(num: float) -> str:
     return format_number(num)
+
+
+def _format_number_fixed(num: float) -> str:
+    return _format_float(num, DISPLAY_MAX_DECIMALS)
 
 
 def _stringify_scalar(value: Any) -> str:
@@ -94,19 +99,6 @@ def _quote_key(key: Any, delimiter: str = _DEFAULT_DELIMITER) -> str:
     if key is None:
         return ""
     return _quote_if_needed(str(key), delimiter)
-
-
-def _stringify_for_toon(value: Any, delimiter: str = _DEFAULT_DELIMITER) -> str:
-    """Canonical scalar rendering for TOON."""
-    if value is None:
-        return "null"
-    if isinstance(value, bool):
-        return format_number(value)
-    if isinstance(value, int):
-        return format_number(value)
-    if isinstance(value, float):
-        return format_number(value)
-    return _quote_if_needed(str(value), delimiter)
 
 
 def _format_complex_value(value: Any) -> str:
@@ -176,7 +168,33 @@ def _column_decimals(headers: List[str], rows: List[Dict[str, Any]]) -> Dict[str
     return col_decimals
 
 
-def _stringify_for_toon_value(value: Any, decimals: Optional[int], delimiter: str) -> str:
+def _stringify_for_toon(
+    value: Any,
+    delimiter: str = _DEFAULT_DELIMITER,
+    *,
+    simplify_numbers: bool = True,
+) -> str:
+    """Canonical scalar rendering for TOON with optional numeric simplification."""
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return format_number(value)
+    if isinstance(value, int):
+        return format_number(value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return format_number(value)
+        return format_number(value) if simplify_numbers else _format_number_fixed(value)
+    return _quote_if_needed(str(value), delimiter)
+
+
+def _stringify_for_toon_value(
+    value: Any,
+    decimals: Optional[int],
+    delimiter: str,
+    *,
+    simplify_numbers: bool = True,
+) -> str:
     if value is None:
         return "null"
     if isinstance(value, bool):
@@ -188,31 +206,51 @@ def _stringify_for_toon_value(value: Any, decimals: Optional[int], delimiter: st
             return _quote_if_needed(str(value), delimiter)
         if not math.isfinite(num):
             return format_number(num)
+        if not simplify_numbers:
+            return _format_number_fixed(num)
         if decimals is None:
             return format_number(num)
         return _format_float(num, int(decimals))
     return _quote_if_needed(str(value), delimiter)
 
 
-def _encode_tabular(key: str, headers: List[str], rows: List[Dict[str, Any]], indent: int = 0,
-                    delimiter: str = _DEFAULT_DELIMITER) -> str:
+def _encode_tabular(
+    key: str,
+    headers: List[str],
+    rows: List[Dict[str, Any]],
+    indent: int = 0,
+    delimiter: str = _DEFAULT_DELIMITER,
+    *,
+    simplify_numbers: bool = True,
+) -> str:
     """Render a uniform list of dicts as a TOON tabular array."""
     ind = _INDENT * indent
     name = _quote_key(key, delimiter) or "items"
     header_line = delimiter.join(_quote_key(h, delimiter) for h in headers)
-    col_decimals = _column_decimals(headers, rows)
+    col_decimals = _column_decimals(headers, rows) if simplify_numbers else {}
     lines = [f"{ind}{name}[{len(rows)}]{{{header_line}}}:"]
     row_indent = ind + _INDENT
     for row in rows:
         vals = [
-            _stringify_for_toon_value(row.get(h), col_decimals.get(h), delimiter)
+            _stringify_for_toon_value(
+                row.get(h),
+                col_decimals.get(h),
+                delimiter,
+                simplify_numbers=simplify_numbers,
+            )
             for h in headers
         ]
         lines.append(f"{row_indent}{delimiter.join(vals)}")
     return "\n".join(lines)
 
 
-def format_table_toon(headers: List[str], rows: List[List[Optional[Any]]], name: str = "data") -> List[str]:
+def format_table_toon(
+    headers: List[str],
+    rows: List[List[Optional[Any]]],
+    name: str = "data",
+    *,
+    simplify_numbers: bool = True,
+) -> List[str]:
     """Render a TOON table from headers and row values."""
     if not headers or not rows:
         return []
@@ -223,38 +261,62 @@ def format_table_toon(headers: List[str], rows: List[List[Optional[Any]]], name:
         for idx, col in enumerate(cols):
             item[col] = row[idx] if idx < len(row) else None
         items.append(item)
-    return _encode_tabular(name, cols, items, indent=0).splitlines()
+    return _encode_tabular(name, cols, items, indent=0, simplify_numbers=simplify_numbers).splitlines()
 
 
-def _encode_inline_array(key: str, items: List[Any], indent: int = 0, delimiter: str = _DEFAULT_DELIMITER) -> str:
+def _encode_inline_array(
+    key: str,
+    items: List[Any],
+    indent: int = 0,
+    delimiter: str = _DEFAULT_DELIMITER,
+    *,
+    simplify_numbers: bool = True,
+) -> str:
     ind = _INDENT * indent
     name = _quote_key(key, delimiter) or "items"
     dec = None
+    if not simplify_numbers:
+        dec = DISPLAY_MAX_DECIMALS
     values: List[float] = []
-    for item in items:
-        if item is None or isinstance(item, bool):
-            continue
-        if isinstance(item, Number):
-            try:
-                num = float(item)
-            except Exception:
+    if simplify_numbers:
+        for item in items:
+            if item is None or isinstance(item, bool):
                 continue
-            if math.isfinite(num):
-                values.append(num)
-    if values:
-        dec = _optimal_decimals(values)
-    vals = delimiter.join(_stringify_for_toon_value(v, dec, delimiter) for v in items)
+            if isinstance(item, Number):
+                try:
+                    num = float(item)
+                except Exception:
+                    continue
+                if math.isfinite(num):
+                    values.append(num)
+        if values:
+            dec = _optimal_decimals(values)
+    vals = delimiter.join(
+        _stringify_for_toon_value(v, dec, delimiter, simplify_numbers=simplify_numbers) for v in items
+    )
     return f"{ind}{name}[{len(items)}]: {vals}"
 
 
-def _encode_expanded_array(key: str, items: List[Any], indent: int = 0,
-                           delimiter: str = _DEFAULT_DELIMITER) -> str:
+def _encode_expanded_array(
+    key: str,
+    items: List[Any],
+    indent: int = 0,
+    delimiter: str = _DEFAULT_DELIMITER,
+    *,
+    simplify_numbers: bool = True,
+) -> str:
     ind = _INDENT * indent
     name = _quote_key(key, delimiter) or "items"
     lines = [f"{ind}{name}[{len(items)}]:"]
     item_indent = _INDENT * (indent + 1)
     for item in items:
-        rendered = _format_to_toon(item, key=None, indent=indent + 1, delimiter=delimiter)
+        rendered = _format_to_toon(
+            item,
+            key=None,
+            indent=indent + 1,
+            delimiter=delimiter,
+            simplify_numbers=simplify_numbers,
+        )
         if not rendered:
             continue
         sub_lines = rendered.splitlines()
@@ -407,11 +469,17 @@ def _normalize_forecast_payload(payload: Dict[str, Any], verbose: bool = True) -
         return None
 
 
-def _format_to_toon(value: Any, key: Optional[str] = None, indent: int = 0,
-                    delimiter: str = _DEFAULT_DELIMITER) -> str:
+def _format_to_toon(
+    value: Any,
+    key: Optional[str] = None,
+    indent: int = 0,
+    delimiter: str = _DEFAULT_DELIMITER,
+    *,
+    simplify_numbers: bool = True,
+) -> str:
     ind = _INDENT * indent
     if _is_scalar_value(value):
-        rendered = _stringify_for_toon(value, delimiter)
+        rendered = _stringify_for_toon(value, delimiter, simplify_numbers=simplify_numbers)
         if key is None:
             return f"{ind}{rendered}".rstrip()
         return f"{ind}{_quote_key(key, delimiter)}: {rendered}".rstrip()
@@ -423,10 +491,17 @@ def _format_to_toon(value: Any, key: Optional[str] = None, indent: int = 0,
         if all(isinstance(item, dict) for item in value):
             headers = _headers_from_dicts(value)  # type: ignore[arg-type]
             if headers:
-                return _encode_tabular(name, headers, value, indent, delimiter)  # type: ignore[arg-type]
+                return _encode_tabular(
+                    name,
+                    headers,
+                    value,  # type: ignore[arg-type]
+                    indent,
+                    delimiter,
+                    simplify_numbers=simplify_numbers,
+                )
         if all(_is_scalar_value(item) for item in value):
-            return _encode_inline_array(name, value, indent, delimiter)
-        return _encode_expanded_array(name, value, indent, delimiter)
+            return _encode_inline_array(name, value, indent, delimiter, simplify_numbers=simplify_numbers)
+        return _encode_expanded_array(name, value, indent, delimiter, simplify_numbers=simplify_numbers)
 
     if isinstance(value, dict):
         if key is None and not value:
@@ -437,7 +512,13 @@ def _format_to_toon(value: Any, key: Optional[str] = None, indent: int = 0,
         for subkey, subval in value.items():
             if _is_empty_value(subval):
                 continue
-            chunk = _format_to_toon(subval, key=subkey, indent=indent + 1, delimiter=delimiter)
+            chunk = _format_to_toon(
+                subval,
+                key=subkey,
+                indent=indent + 1,
+                delimiter=delimiter,
+                simplify_numbers=simplify_numbers,
+            )
             if chunk:
                 lines.append(chunk)
         if key is None:
@@ -450,7 +531,7 @@ def _format_to_toon(value: Any, key: Optional[str] = None, indent: int = 0,
     return f"{ind}{_stringify_for_toon(value, delimiter)}".rstrip()
 
 
-def format_result_minimal(result: Any, verbose: bool = True) -> str:
+def format_result_minimal(result: Any, verbose: bool = True, *, simplify_numbers: bool = True) -> str:
     """Render tool outputs as TOON text."""
     if result is None:
         return ""
@@ -462,7 +543,7 @@ def format_result_minimal(result: Any, verbose: bool = True) -> str:
                 normalized = forecast_norm
         if isinstance(normalized, str):
             return normalized.strip()
-        toon_text = _format_to_toon(normalized)
+        toon_text = _format_to_toon(normalized, simplify_numbers=simplify_numbers)
         return toon_text.strip()
     except Exception:
         try:

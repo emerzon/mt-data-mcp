@@ -69,7 +69,6 @@ PARAM_HINTS = {
     "lookback": "Historical bars to use.",
     "spacing_pct": "Spacing as percent of duration.",
     "history_kind": "History type (deals or orders).",
-    "open_kind": "Open items to list (positions or pending).",
     "close_kind": "Close kind (positions or pending).",
     "list_mode": "List mode (symbols or groups).",
     "volume": "Order volume (lots).",

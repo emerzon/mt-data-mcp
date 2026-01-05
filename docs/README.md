@@ -2,7 +2,7 @@
 
 This folder contains user-facing documentation for mtdata. Start with setup, then follow a guided workflow before exploring individual topics.
 
-Safety note: `trading_*` commands can place/modify/close real orders on the account currently logged into MT5 (demo or live). Use a demo account until you're confident in your setup.
+Safety note: `trade_*` commands can place/modify/close real orders on the account currently logged into MT5 (demo or live). Use a demo account until you're confident in your setup.
 
 ## Learning Path
 

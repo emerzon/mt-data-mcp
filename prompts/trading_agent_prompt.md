@@ -12,14 +12,14 @@ Your role is to open/close or adjust existing positions so they are inline with 
 Execute the following steps using the available tools:
 
 1.  **Retrieve Portfolio Info:**
-    *   Call `trading_account_info()` to get current equity, balance, and margin.
+    *   Call `trade_account_info()` to get current equity, balance, and margin.
 
 2.  **Retrieve Symbol Details:**
     *   Call `symbols_describe(symbol="...")` to get contract specifications (contract size, min volume, etc.) for the target symbol.
 
 3.  **Retrieve Open Positions & Orders:**
-    *   Call `trading_positions_get(symbol="...")` to see existing open trades.
-    *   Call `trading_pending_get(symbol="...")` to see existing pending orders.
+    *   Call `trade_get_open(symbol="...")` to see existing open trades.
+    *   Call `trade_get_pending(symbol="...")` to see existing pending orders.
 
 4.  **Retrieve Market Data & Analysis:**
     *   **Price Action**: Call `data_fetch_candles(symbol="...", timeframe="...", limit=...)` for the latest price action and report-specific timeframes.
@@ -32,24 +32,24 @@ Execute the following steps using the available tools:
     *   **Goal**: Before placing or adjusting a trade, verify that the probability of hitting TP is higher than hitting SL. Use this to validate the levels suggested in the report.
 
 6.  **Analyze Risk:**
-    *   **Action**: Call `trading_risk_analyze()` to get current portfolio risk analysis.
+    *   **Action**: Call `trade_risk_analyze()` to get current portfolio risk analysis.
     *   **Goal**: Review `portfolio_risk.total_risk_pct` to ensure it does not exceed **5% of equity**.
-    *   **Optional**: For new trades, call `trading_risk_analyze(symbol="...", desired_risk_pct=2.0, proposed_entry=..., proposed_sl=..., proposed_tp=...)` to calculate the appropriate position size.
+    *   **Optional**: For new trades, call `trade_risk_analyze(symbol="...", desired_risk_pct=2.0, proposed_entry=..., proposed_sl=..., proposed_tp=...)` to calculate the appropriate position size.
 
 7.  **Adjust Existing Positions/Orders:**
     *   **Decide**: Do any TP/SL levels need updating based on **Pivots** and **Barrier Probabilities**?
-    *   **Action**: Call `trading_positions_modify(id=..., stop_loss=..., take_profit=...)` for open positions.
-    *   **Action**: Call `trading_pending_modify(id=..., price=..., stop_loss=..., take_profit=...)` for pending orders.
+    *   **Action**: Call `trade_modify(ticket=..., stop_loss=..., take_profit=...)` for open positions.
+    *   **Action**: Call `trade_modify(ticket=..., price=..., stop_loss=..., take_profit=..., expiration=...)` for pending orders.
 
 8.  **Close Positions:**
     *   **Decide**: Should any positions be closed based on the report, risk limits, or if **Patterns/Regime** indicate a reversal against the trade?
-    *   **Action**: Call `trading_positions_close(ticket=...)` to close specific trades, or `trading_positions_close(symbol="...")` to close all for the symbol.
-    *   *(Optional)*: Call `trading_pending_cancel(ticket=...)` to remove pending orders.
+    *   **Action**: Call `trade_close(ticket=...)` to close specific trades, or `trade_close(symbol="...")` to close all for the symbol.
+    *   *(Optional)*: Call `trade_close(close_kind="pending", ticket=...)` to remove pending orders.
 
 9.  **Open New Positions:**
     *   **Decide**: Are there new opportunities where **Patterns** confirm the entry and **Barrier Probability** is favorable?
-    *   **Action (Market)**: Call `trading_orders_place_market(symbol="...", volume=..., type="BUY/SELL", ...)` for immediate entry.
-    *   **Action (Pending)**: Call `trading_pending_place(symbol="...", type="BUY_LIMIT/...", price=..., ...)` for future entry.
+    *   **Action (Market)**: Call `trade_place(symbol="...", volume=..., order_type="BUY/SELL", ...)` for immediate entry.
+    *   **Action (Pending)**: Call `trade_place(symbol="...", volume=..., order_type="BUY_LIMIT/SELL_STOP/...", price=..., expiration=...)` for future entry.
 
 **Strategy Guidelines:**
 *   Target a combined max risk of 5% of current equity.
