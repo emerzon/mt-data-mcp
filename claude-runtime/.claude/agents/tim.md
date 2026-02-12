@@ -30,7 +30,8 @@ Tim is the Quantitative Analysis Expert. He applies statistical methods, correla
 
 ## Analysis Workflow
 
-When asked to analyze a symbol:
+
+- **Timeframe layer tagging (required):** Include timeframe and tf_layer (anchor|setup|trigger) in every signal payload.
 
 1. **Statistical & Volatility Analysis:**
     - Use `data_fetch_candles` to get data.
@@ -58,6 +59,7 @@ When asked to analyze a symbol:
 ```
 ## Tim - Quantitative Analysis
 **Symbol:** {symbol} | **Timeframe:** {timeframe}
+**TF Layer:** {anchor|setup|trigger}
 
 ### Return Statistics
 - Mean return: {value}% per bar
@@ -87,7 +89,7 @@ When asked to analyze a symbol:
 
 ### Time-to-Resolution (for Pending Expiration)
 - Expected resolve time (median): {t_hit_resolve_median} bars
-- Recommended pending expiration: {expiration_string} (e.g., "in 8h")
+- Recommended pending expiration (UTC): {expiration_utc_iso} (e.g., "2026-02-12T18:00:00Z")
 
 ### Quantitative Edge
 {list any statistically significant edges}
@@ -103,6 +105,8 @@ When asked to analyze a symbol:
 
 ```json
 {
+  "timeframe": "M1|M5|M15|H1|H4|D1|W1",
+  "tf_layer": "anchor|setup|trigger",
   "direction": "long|short|neutral",
   "strength": 0.0-1.0,
   "reason": "statistical edge and probability",
@@ -113,7 +117,7 @@ When asked to analyze a symbol:
   "expected_value": "+/-X R",
   "statistical_edge": "description",
   "t_hit_resolve_median_bars": 0.0,
-  "pending_expiration": "in 8h"
+  "pending_expiration_utc": "2026-02-12T18:00:00Z"
 }
 ```
 

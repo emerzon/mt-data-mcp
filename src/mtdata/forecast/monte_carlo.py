@@ -566,15 +566,45 @@ def gbm_single_barrier_upcross_prob(
     where x0 = ln S0, a = ln B, Phi is the standard normal CDF.
     """
     import math
-    from math import log, sqrt
-    from scipy.stats import norm
-    if T <= 0 or sigma <= 0 or barrier <= 0 or s0 <= 0:
+
+    try:
+        s0_f = float(s0)
+        barrier_f = float(barrier)
+        mu_f = float(mu)
+        sigma_f = float(sigma)
+        T_f = float(T)
+    except Exception:
         return 0.0
-    x0 = math.log(float(s0))
-    a = math.log(float(barrier))
-    m = float(mu) - 0.5 * float(sigma) * float(sigma)
-    srt = float(sigma) * math.sqrt(float(T))
-    z1 = (x0 - a + m * T) / srt
-    z2 = (x0 - a - m * T) / srt
-    term = math.exp(2.0 * m * (a - x0) / (sigma * sigma))
-    return float(norm.cdf(z1) + term * norm.cdf(z2))
+
+    if not all(map(math.isfinite, (s0_f, barrier_f, mu_f, sigma_f, T_f))):
+        return 0.0
+
+    if s0_f <= 0.0 or barrier_f <= 0.0:
+        return 0.0
+
+    # Already at/above the upper barrier at t=0.
+    if barrier_f <= s0_f:
+        return 1.0
+
+    if T_f <= 0.0:
+        return 0.0
+
+    # Deterministic limiting case.
+    if sigma_f <= 0.0:
+        if mu_f <= 0.0:
+            return 0.0
+        return 1.0 if (s0_f * math.exp(mu_f * T_f) >= barrier_f) else 0.0
+
+    from scipy.stats import norm
+
+    x0 = math.log(s0_f)
+    a = math.log(barrier_f)
+    m = mu_f - 0.5 * sigma_f * sigma_f
+    srt = sigma_f * math.sqrt(T_f)
+    z1 = (x0 - a + m * T_f) / srt
+    z2 = (x0 - a - m * T_f) / srt
+    term = math.exp(2.0 * m * (a - x0) / (sigma_f * sigma_f))
+    p = float(norm.cdf(z1) + term * norm.cdf(z2))
+    if not math.isfinite(p):
+        return 0.0
+    return float(min(1.0, max(0.0, p)))

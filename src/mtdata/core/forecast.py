@@ -552,7 +552,7 @@ def forecast_barrier_prob(
     method: Literal['mc', 'closed_form', 'auto'] = 'mc',
     # MC params
     mc_method: Literal['mc_gbm','mc_gbm_bb','hmm_mc','garch','bootstrap','heston','jump_diffusion','auto'] = 'hmm_mc',  # type: ignore
-    direction: Literal['long','short', 'up', 'down'] = 'long',  # type: ignore
+    direction: Literal['long','short'] = 'long',  # trade direction context
     tp_abs: Optional[float] = None,
     sl_abs: Optional[float] = None,
     tp_pct: Optional[float] = None,
@@ -604,9 +604,9 @@ def forecast_barrier_prob(
         - "garch": GARCH(1,1) volatility model (requires 'arch' package)
         - "bootstrap": Circular block bootstrap (historical simulation)
         - "auto": auto-select based on symbol/timeframe + recent returns
-    
+
     direction : str, optional (default="long")
-        Trade direction: "long" / "short" (or "up" / "down" for closed_form)
+        Trade direction: "long" / "short"
     
     tp_abs : float, optional
         Absolute take profit price level
@@ -669,7 +669,7 @@ def forecast_barrier_prob(
     forecast_barrier_prob(
         symbol="GBPUSD",
         method="closed_form",
-        direction="up",
+        direction="long",
         barrier=1.2700
     )
     """
@@ -680,10 +680,13 @@ def forecast_barrier_prob(
     if method_val == 'mc':
         from ..forecast.barriers import forecast_barrier_hit_probabilities as _impl
         # Ensure direction is valid for MC
-        d = str(direction).lower()
-        if d not in ('long', 'short'):
-             # fallback mapping
-             d = 'long' if d == 'up' else 'short'
+        d_raw = str(direction).lower().strip()
+        if d_raw in ('up', 'long'):
+            d = 'long'
+        elif d_raw in ('down', 'short'):
+            d = 'short'
+        else:
+            d = 'long'
 
         barrier_kwargs = _build_barrier_kwargs_from(locals())
         return _impl(
@@ -698,11 +701,15 @@ def forecast_barrier_prob(
         )
     elif method_val == 'closed_form':
         from ..forecast.barriers import forecast_barrier_closed_form as _impl
-        # Map direction: long->up, short->down if user passed long/short
-        d = str(direction).lower()
-        if d == 'long': d = 'up'
-        elif d == 'short': d = 'down'
-        
+        # Direction semantics match MC: long=upper barrier, short=lower barrier.
+        d_raw = str(direction).lower().strip()
+        if d_raw in ('up', 'long'):
+            d = 'long'
+        elif d_raw in ('down', 'short'):
+            d = 'short'
+        else:
+            d = 'long'
+
         return _impl(
             symbol=symbol,
             timeframe=timeframe,

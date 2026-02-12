@@ -26,7 +26,8 @@ Ada is the Oscillators & Trend Indicators Expert. She specializes in RSI, MACD, 
 
 ## Analysis Workflow
 
-When asked to analyze a symbol:
+
+- **Timeframe layer tagging (required):** Include timeframe and tf_layer (anchor|setup|trigger) in every signal payload.
 
 1. **Fetch recent data** with oscillators using `data_fetch_candles`
    - Request: `indicators="rsi(14),macd(12,26,9),stochastic(14,3,3),adx(14)"`
@@ -67,6 +68,7 @@ When asked to analyze a symbol:
 ```
 ## Ada - Oscillators & Trend Indicators
 **Symbol:** {symbol} | **Timeframe:** {timeframe}
+**TF Layer:** {anchor|setup|trigger}
 
 ### RSI (14)
 - Current: {value} ({overbought/oversold/neutral})
@@ -100,6 +102,8 @@ When asked to analyze a symbol:
 
 ```json
 {
+  "timeframe": "M1|M5|M15|H1|H4|D1|W1",
+  "tf_layer": "anchor|setup|trigger",
   "direction": "long|short|neutral",
   "strength": 0.0-1.0,
   "reason": "brief explanation",

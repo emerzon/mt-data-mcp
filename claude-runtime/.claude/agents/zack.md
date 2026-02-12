@@ -25,7 +25,8 @@ Zack is the Candlestick Patterns Expert. He identifies Japanese candlestick form
 
 ## Analysis Workflow
 
-When asked to analyze a symbol:
+
+- **Timeframe layer tagging (required):** Include timeframe and tf_layer (anchor|setup|trigger) in every signal payload.
 
 1. **Fetch recent data** using `data_fetch_candles`
    - Request `ohlcv="ohlc"` for candlestick data
@@ -62,6 +63,7 @@ When asked to analyze a symbol:
 ```
 ## Zack - Candlestick Patterns Analysis
 **Symbol:** {symbol} | **Timeframe:** {timeframe}
+**TF Layer:** {anchor|setup|trigger}
 
 ### Recent Patterns (Last 20 bars)
 {list patterns with age and location}
@@ -88,6 +90,8 @@ When asked to analyze a symbol:
 
 ```json
 {
+  "timeframe": "M1|M5|M15|H1|H4|D1|W1",
+  "tf_layer": "anchor|setup|trigger",
   "direction": "long|short|neutral",
   "strength": 0.0-1.0,
   "reason": "pattern name and context",

@@ -147,8 +147,8 @@ class TestMergedTools(unittest.TestCase):
 
         with patch('src.mtdata.forecast.barriers.forecast_barrier_closed_form') as mock_cf:
             mock_cf.return_value = {"success": True}
-            forecast_barrier_prob(symbol="EURUSD", method="closed_form", direction="UP", __cli_raw=True)
-            self.assertEqual(mock_cf.call_args.kwargs.get("direction"), "up")
+            forecast_barrier_prob(symbol="EURUSD", method="closed_form", direction="SHORT", __cli_raw=True)
+            self.assertEqual(mock_cf.call_args.kwargs.get("direction"), "short")
 
     def test_trading_close_positions(self):
         # Mock positions

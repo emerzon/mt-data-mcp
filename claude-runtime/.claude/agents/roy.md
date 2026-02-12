@@ -25,7 +25,8 @@ Roy is the Classical Chart Patterns Specialist. He identifies formations like he
 
 ## Analysis Workflow
 
-When asked to analyze a symbol:
+
+- **Timeframe layer tagging (required):** Include timeframe and tf_layer (anchor|setup|trigger) in every signal payload.
 
 1. **Fetch historical data** using `data_fetch_candles`
    - Request 500-1000 bars for pattern context
@@ -81,6 +82,7 @@ When asked to analyze a symbol:
 ```
 ## Roy - Classical Chart Patterns Analysis
 **Symbol:** {symbol} | **Timeframe:** {timeframe}
+**TF Layer:** {anchor|setup|trigger}
 
 ### Active Patterns
 {list patterns with status and location}
@@ -109,6 +111,8 @@ When asked to analyze a symbol:
 
 ```json
 {
+  "timeframe": "M1|M5|M15|H1|H4|D1|W1",
+  "tf_layer": "anchor|setup|trigger",
   "direction": "long|short|neutral",
   "strength": 0.0-1.0,
   "reason": "pattern name and status",

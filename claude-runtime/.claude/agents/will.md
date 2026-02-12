@@ -26,7 +26,8 @@ Will is the Support & Resistance Expert. He validates horizontal price levels wh
 
 ## Analysis Workflow
 
-When asked to analyze a symbol:
+
+- **Timeframe layer tagging (required):** Include timeframe and tf_layer (anchor|setup|trigger) in every signal payload.
 
 1. **Fetch historical data** using `data_fetch_candles`
    - Request 200-500 bars for S/R context
@@ -68,6 +69,7 @@ When asked to analyze a symbol:
 ```
 ## Will - Support & Resistance Analysis
 **Symbol:** {symbol} | **Timeframe:** {timeframe}
+**TF Layer:** {anchor|setup|trigger}
 
 ### Key Support Levels
 - S1: {price} ({touches} touches, {strength})
@@ -104,6 +106,8 @@ When asked to analyze a symbol:
 
 ```json
 {
+  "timeframe": "M1|M5|M15|H1|H4|D1|W1",
+  "tf_layer": "anchor|setup|trigger",
   "direction": "long|short|neutral",
   "strength": 0.0-1.0,
   "reason": "S/R level interaction",

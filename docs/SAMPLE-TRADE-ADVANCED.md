@@ -120,8 +120,8 @@ python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
 5.3 Closed‑form GBM sanity check (fast)
 
 ```bash
-python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
-  --method closed_form --direction up --barrier 1.1795 --format json
+python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \  
+  --method closed_form --direction long --barrier 1.1795 --format json      
 ```
 
 - Flag discrepancies (e.g., MC>>GBM) to reduce size or re‑check calibration.

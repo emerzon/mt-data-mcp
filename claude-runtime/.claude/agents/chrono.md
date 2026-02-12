@@ -26,7 +26,8 @@ Chrono is the Temporal Pattern Expert. He studies time-of-day, day-of-week, and 
 
 ## Analysis Workflow
 
-When asked to analyze a symbol:
+
+- **Timeframe layer tagging (required):** Include timeframe and tf_layer (anchor|setup|trigger) in every signal payload.
 
 1. **Fetch historical data** using `data_fetch_candles`
    - Request 1000+ bars for statistical significance
@@ -73,6 +74,7 @@ When asked to analyze a symbol:
 ```
 ## Chrono - Temporal Pattern Analysis
 **Symbol:** {symbol} | **Timeframe:** {timeframe}
+**TF Layer:** {anchor|setup|trigger}
 
 ### Time-of-Day Patterns
 - Best session to trade: {session name}
@@ -113,6 +115,8 @@ When asked to analyze a symbol:
 
 ```json
 {
+  "timeframe": "M1|M5|M15|H1|H4|D1|W1",
+  "tf_layer": "anchor|setup|trigger",
   "direction": "long|short|neutral",
   "strength": 0.0-1.0,
   "reason": "temporal pattern and current timing",

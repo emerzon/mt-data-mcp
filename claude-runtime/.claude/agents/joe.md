@@ -27,7 +27,8 @@ Joe is the Momentum & Volume Expert. He analyzes volume patterns, On-Balance Vol
 
 ## Analysis Workflow
 
-When asked to analyze a symbol:
+
+- **Timeframe layer tagging (required):** Include timeframe and tf_layer (anchor|setup|trigger) in every signal payload.
 
 1. **Fetch recent data** with volume using `data_fetch_candles`
    - Request `ohlcv="all"` to get volume data
@@ -61,6 +62,7 @@ When asked to analyze a symbol:
 ```
 ## Joe - Momentum & Volume Analysis
 **Symbol:** {symbol} | **Timeframe:** {timeframe}
+**TF Layer:** {anchor|setup|trigger}
 
 ### Volume Profile
 - Average volume: {value}
@@ -84,6 +86,8 @@ When asked to analyze a symbol:
 
 ```json
 {
+  "timeframe": "M1|M5|M15|H1|H4|D1|W1",
+  "tf_layer": "anchor|setup|trigger",
   "direction": "long|short|neutral",
   "strength": 0.0-1.0,
   "reason": "brief explanation",

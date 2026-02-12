@@ -27,7 +27,8 @@ Moe is the Price Patterns & Moving Averages Expert. He identifies key moving ave
 
 ## Analysis Workflow
 
-When asked to analyze a symbol:
+
+- **Timeframe layer tagging (required):** Include timeframe and tf_layer (anchor|setup|trigger) in every signal payload.
 
 1. **Fetch recent data** with MAs using `data_fetch_candles`
    - Request MAs: `indicators="sma(20),sma(50),sma(200),ema(9),ema(21)"`
@@ -63,6 +64,7 @@ When asked to analyze a symbol:
 ```
 ## Moe - Price Patterns & Moving Averages
 **Symbol:** {symbol} | **Timeframe:** {timeframe}
+**TF Layer:** {anchor|setup|trigger}
 
 ### Moving Average Setup
 - Price vs MAs: {above/below/mixed}
@@ -89,6 +91,8 @@ When asked to analyze a symbol:
 
 ```json
 {
+  "timeframe": "M1|M5|M15|H1|H4|D1|W1",
+  "tf_layer": "anchor|setup|trigger",
   "direction": "long|short|neutral",
   "strength": 0.0-1.0,
   "reason": "brief explanation",

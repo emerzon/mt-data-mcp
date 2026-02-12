@@ -1125,7 +1125,7 @@ python cli.py forecast_barrier_optimize \
 ```bash
 python cli.py forecast_barrier_prob \
   EURUSD --timeframe H1 --horizon 12 \
-  --method closed_form --direction up --barrier 1.1000
+  --method closed_form --direction long --barrier 1.1000
 ```
 
 ---

@@ -51,6 +51,12 @@ def _auto_barrier_method(
     prices: np.ndarray,
     horizon: Optional[int] = None,
 ) -> Tuple[str, str]:
+    """Heuristically choose a barrier simulation method.
+
+    The thresholds in this selector are pragmatic heuristics (history length,
+    volatility clustering, tails/jumps) intended for robust defaults, not a
+    universal optimum.
+    """
     tf_secs = TIMEFRAME_SECONDS.get(timeframe, 0) or 0
     prices = np.asarray(prices, dtype=float)
     prices = prices[np.isfinite(prices)]
@@ -145,7 +151,7 @@ def _brownian_bridge_hits(
     direction: Literal["up", "down"],
     uniform: np.ndarray,
 ) -> np.ndarray:
-    if sigma <= 0:
+    if not np.isfinite(sigma) or sigma <= 0:
         return np.zeros((log_paths.shape[0], log_paths.shape[1] - 1), dtype=bool)
     x0 = log_paths[:, :-1]
     x1 = log_paths[:, 1:]
@@ -178,7 +184,14 @@ def forecast_barrier_hit_probabilities(
     params: Optional[Dict[str, Any]] = None,
     denoise: Optional[DenoiseSpec] = None,
 ) -> Dict[str, Any]:
-    """Monte Carlo barrier analysis: probability of reaching TP/SL within horizon."""
+    """Monte Carlo barrier analysis: TP/SL hit probabilities within `horizon` bars.
+
+    Notes:
+    - Barriers are provided via absolute prices (tp_abs/sl_abs), percentages
+      (tp_pct/sl_pct), or ticks (tp_pips/sl_pips; uses `trade_tick_size`).
+    - In discrete time, TP and SL can be hit in the same bar. Those ties are
+      split 50/50 into `prob_tp_first` and `prob_sl_first`.
+    """
     try:
         if timeframe not in TIMEFRAME_SECONDS:
             return {"error": f"Invalid timeframe: {timeframe}"}
@@ -284,7 +297,7 @@ def forecast_barrier_hit_probabilities(
             rets = np.diff(np.log(np.clip(prices, 1e-12, None)))
             rets = rets[np.isfinite(rets)]
             bb_sigma = float(np.std(rets, ddof=1)) if rets.size else 0.0
-            if bb_sigma <= 0:
+            if not np.isfinite(bb_sigma) or bb_sigma <= 0:
                 bb_enabled = False
             else:
                 log_paths = np.log(np.clip(price_paths, 1e-12, None))
@@ -420,13 +433,18 @@ def forecast_barrier_closed_form(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
-    direction: Literal['up','down'] = 'up',
+    direction: Literal['long','short'] = 'long',
     barrier: float = 0.0,
     mu: Optional[float] = None,
     sigma: Optional[float] = None,
     denoise: Optional[DenoiseSpec] = None,
 ) -> Dict[str, Any]:
-    """Closed-form single-barrier hit probability for GBM within horizon."""
+    """Closed-form single-barrier hit probability for GBM within horizon.
+
+    Direction semantics:
+    - "long": probability of reaching an upper barrier (price >= barrier).
+    - "short": probability of reaching a lower barrier (price <= barrier).
+    """
     try:
         need = int(max(400, horizon + 100))
         df = _fetch_history(symbol, timeframe, need, as_of=None)
@@ -471,7 +489,8 @@ def forecast_barrier_closed_form(
         sigma_sq = sigma_val * sigma_val
         gbm_drift = log_drift + 0.5 * sigma_sq
         dir_lower = str(direction).lower()
-        if dir_lower == 'down':
+        direction_norm = 'short' if dir_lower in {'short', 'down'} else 'long'
+        if direction_norm == 'short':
             s0_inv = 1.0 / s0
             b_inv = 1.0 / float(barrier)
             inv_drift = sigma_sq - gbm_drift
@@ -483,7 +502,7 @@ def forecast_barrier_closed_form(
             "symbol": symbol,
             "timeframe": timeframe,
             "horizon": int(horizon),
-            "direction": direction,
+            "direction": direction_norm,
             "last_price": s0,
             "barrier": float(barrier),
             "mu_annual": float(gbm_drift),
@@ -544,7 +563,21 @@ def forecast_barrier_optimize(
     max_prob_no_hit: Optional[float] = None,
     max_median_time: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """Optimize TP/SL barriers with support for presets, volatility scaling, ratios, and two-stage refinement."""
+    """Optimize TP/SL barriers over a grid of candidate levels.
+
+    Unit conventions:
+    - mode="pct": tp/sl are percentage *points* (e.g., tp=0.5 means +0.5%).
+    - mode="pips": tp/sl are ticks (trade_tick_size units).
+
+    Grid styles:
+    - fixed/preset/volatility generate tp/sl directly in the selected `mode`.
+    - ratio treats `ratio_min/max` as reward/risk = tp/sl (TP distance divided
+      by SL distance), with SL sampled from `sl_min/max`.
+
+    Metrics:
+    - ev/ev_cond/ev_per_bar are reported in the same units as tp/sl (pct points
+      or ticks). `ev_per_bar` divides by mean resolution time (bars).
+    """
     try:
         if timeframe not in TIMEFRAME_SECONDS:
             return {"error": f"Invalid timeframe: {timeframe}"}
@@ -743,7 +776,7 @@ def forecast_barrier_optimize(
             rets = np.diff(np.log(np.clip(prices, 1e-12, None)))
             rets = rets[np.isfinite(rets)]
             bb_sigma = float(np.std(rets, ddof=1)) if rets.size else 0.0
-            if bb_sigma <= 0:
+            if not np.isfinite(bb_sigma) or bb_sigma <= 0:
                 bb_enabled = False
             else:
                 log_paths = np.log(np.clip(paths, 1e-12, None))
@@ -797,10 +830,11 @@ def forecast_barrier_optimize(
         
         elif grid_style_val == 'volatility':
             # Calculate simple volatility over window
-            rets = np.diff(np.log(prices))
-            if len(rets) > vol_window_val:
+            rets = np.diff(np.log(np.clip(prices, 1e-12, None)))
+            rets = rets[np.isfinite(rets)]
+            if rets.size > vol_window_val:
                 rets = rets[-vol_window_val:]
-            vol_per_bar = np.std(rets)
+            vol_per_bar = float(np.std(rets)) if rets.size else 0.0
             vol_horizon = vol_per_bar * np.sqrt(horizon)
 
             # Convert to percentage space for baseline

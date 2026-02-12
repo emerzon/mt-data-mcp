@@ -26,7 +26,8 @@ Tom is the Elliott Wave Theory Expert. He applies wave counting and Fibonacci re
 
 ## Analysis Workflow
 
-When asked to analyze a symbol:
+
+- **Timeframe layer tagging (required):** Include timeframe and tf_layer (anchor|setup|trigger) in every signal payload.
 
 1. **Fetch historical data** using `data_fetch_candles`
    - Request 500-1000+ bars for wave context
@@ -75,6 +76,7 @@ When asked to analyze a symbol:
 ```
 ## Tom - Elliott Wave Analysis
 **Symbol:** {symbol} | **Timeframe:** {timeframe}
+**TF Layer:** {anchor|setup|trigger}
 
 ### Primary Wave Count
 {wave structure diagram/text}
@@ -109,6 +111,8 @@ When asked to analyze a symbol:
 
 ```json
 {
+  "timeframe": "M1|M5|M15|H1|H4|D1|W1",
+  "tf_layer": "anchor|setup|trigger",
   "direction": "long|short|neutral",
   "strength": 0.0-1.0,
   "reason": "wave position and implications",

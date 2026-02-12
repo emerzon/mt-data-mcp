@@ -9,6 +9,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from mtdata.forecast.barriers import forecast_barrier_hit_probabilities, forecast_barrier_closed_form, forecast_barrier_optimize
+from mtdata.forecast.monte_carlo import gbm_single_barrier_upcross_prob
 
 class TestForecastBarriers(unittest.TestCase):
 
@@ -97,12 +98,46 @@ class TestForecastBarriers(unittest.TestCase):
             symbol="EURUSD",
             timeframe="H1",
             horizon=10,
-            direction="up",
+            direction="long",
             barrier=1.2
         )
         self.assertIn("success", result)
         self.assertTrue(result["success"])
         self.assertIn("prob_hit", result)
+
+    def test_gbm_single_barrier_upcross_prob_returns_one_when_barrier_below_start(self):
+        self.assertAlmostEqual(
+            gbm_single_barrier_upcross_prob(
+                s0=1.0,
+                barrier=0.5,
+                mu=0.0,
+                sigma=0.2,
+                T=1.0,
+            ),
+            1.0,
+            places=12,
+        )
+
+    def test_forecast_barrier_closed_form_returns_one_when_barrier_already_hit(self):
+        up = forecast_barrier_closed_form(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=10,
+            direction="long",
+            barrier=0.5,
+        )
+        self.assertTrue(up["success"])
+        self.assertAlmostEqual(up["prob_hit"], 1.0, places=12)
+
+        down = forecast_barrier_closed_form(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=10,
+            direction="short",
+            barrier=10.0,
+        )
+        self.assertTrue(down["success"])
+        self.assertAlmostEqual(down["prob_hit"], 1.0, places=12)
 
     def test_forecast_barrier_optimize(self):
         result = forecast_barrier_optimize(

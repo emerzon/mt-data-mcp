@@ -1,5 +1,7 @@
 from typing import Any, Optional, Tuple, Literal, Dict
 
+import math
+
 from .mt5 import get_symbol_info_cached
 
 
@@ -71,16 +73,29 @@ def resolve_barrier_prices(
         return None, None
 
     if adjust_inverted:
+        step: float
+        try:
+            step = float(pip_size) if pip_size is not None else float("nan")
+        except Exception:
+            step = float("nan")
+        if not math.isfinite(step) or step <= 0:
+            # Fallback: tiny relative nudge if tick size is unknown.
+            try:
+                step = abs(float(price)) * 1e-6
+            except Exception:
+                step = 1e-6
+            if not math.isfinite(step) or step <= 0:
+                step = 1e-6
         if dir_long:
             if tp_price <= price:
-                tp_price = price * 1.000001
+                tp_price = price + step
             if sl_price >= price:
-                sl_price = price * 0.999999
+                sl_price = price - step
         else:
             if tp_price >= price:
-                tp_price = price * 0.999999
+                tp_price = price - step
             if sl_price <= price:
-                sl_price = price * 1.000001
+                sl_price = price + step
 
     return float(tp_price), float(sl_price)
 
