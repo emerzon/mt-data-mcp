@@ -154,5 +154,5 @@ If you need another specialist’s input, don’t guess—request a consult.
 
 ### HELP_REQUEST
 - agents: [will]  # 1-2 agents max
-- question: "What do you need from them?"
-- context: "symbol=..., timeframe=..., detected candles and the nearby levels you need"
+- question: "Need nearby S/R levels to assess whether detected candlestick patterns are at structurally significant prices (support/resistance/pivot zones)."
+- context: "symbol=..., timeframe=..., detected candlestick patterns (type, location, strength), and which price levels need S/R validation"

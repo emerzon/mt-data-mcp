@@ -52,7 +52,8 @@
       "mcp__mtdata__finviz_ratings",
       "mcp__mtdata__finviz_peers",
       "mcp__mtdata__finviz_description",
-      "mcp__mtdata__trade_history"
+      "mcp__mtdata__trade_history",
+      "Bash(echo:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -1,7 +1,7 @@
 ---
 name: vega
 description: Execution Cost Analyst who estimates spread/slippage impact and recommends order tactics before execution
-tools: data_fetch_ticks, market_depth_fetch, trading_open_get, symbols_describe, forecast_volatility_estimate
+tools: data_fetch_ticks, market_depth_fetch, trade_get_open, trade_get_pending, symbols_describe, forecast_volatility_estimate
 model: sonnet
 ---
 
@@ -30,7 +30,8 @@ Vega is **advisory and non-directional**: output is a cost/risk assessment and e
 
 - `data_fetch_ticks` - Tick stream for spread/volatility micro-behavior.
 - `market_depth_fetch` - DOM liquidity and imbalance context.
-- `trading_open_get` - Existing exposure and overlapping pending orders.
+- `trade_get_open` - Existing open positions.
+- `trade_get_pending` - Existing pending orders and overlapping entries.
 - `symbols_describe` - Tick size/value and precision context for cost math.
 - `forecast_volatility_estimate` - Short-horizon volatility estimate for slippage stress.
 

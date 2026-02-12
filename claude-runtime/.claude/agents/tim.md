@@ -155,5 +155,6 @@ If you need another specialist’s input, don’t guess—request a consult.
 
 ### HELP_REQUEST
 - agents: [fiona]  # 1-2 agents max
-- question: "What do you need from them?"
-- context: "symbol=..., timeframe=..., regime/probability findings and what needs validation"
+- question: "Need forecast backtest validation and/or conformal intervals to confirm whether the identified statistical edge holds out-of-sample."
+- context: "symbol=..., timeframe=..., regime/probability findings, proposed barriers, and what needs forecast-based validation"
+- **circularity note:** Fiona may request Tim back. Do NOT re-request Fiona if she has already been consulted in this orchestrator round — return findings as-is and let Albert resolve ambiguity.

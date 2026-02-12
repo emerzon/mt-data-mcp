@@ -142,5 +142,5 @@ If you need another specialist’s input, don’t guess—request a consult.
 
 ### HELP_REQUEST
 - agents: [joaquim]  # 1-2 agents max
-- question: "What do you need from them?"
-- context: "symbol=..., timeframe=..., why noise/false patterns are suspected"
+- question: "Suspected false pattern signals due to noisy data — need a denoise spec recommendation to re-run pattern detection with cleaner input."
+- context: "symbol=..., timeframe=..., detected patterns that look unreliable, why noise/false patterns are suspected"

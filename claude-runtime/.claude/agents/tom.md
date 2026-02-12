@@ -192,5 +192,5 @@ If you need another specialist’s input, don’t guess—request a consult.
 
 ### HELP_REQUEST
 - agents: [will]  # 1-2 agents max
-- question: "What do you need from them?"
-- context: "symbol=..., timeframe=..., wave count and the key invalidation levels"
+- question: "Need historical S/R level validation to confirm or refute wave invalidation levels and Fibonacci projection targets."
+- context: "symbol=..., timeframe=..., current wave count, invalidation price, projected targets, and which levels need S/R cross-check"

@@ -152,5 +152,5 @@ If you need another specialist’s input, don’t guess—request a consult.
 
 ### HELP_REQUEST
 - agents: [tim]  # 1-2 agents max
-- question: "What do you need from them?"
-- context: "symbol=..., timeframe=..., what you already checked"
+- question: "Need regime classification and/or volatility forecast to determine if oscillator extremes reflect trending persistence or mean-reversion opportunity."
+- context: "symbol=..., timeframe=..., oscillator readings (RSI/MACD/ADX values), detected divergences, and the ambiguity that requires statistical validation"

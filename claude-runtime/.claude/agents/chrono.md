@@ -209,5 +209,5 @@ If you need another specialist’s input, don’t guess—request a consult.
 
 ### HELP_REQUEST
 - agents: [tim]  # 1-2 agents max
-- question: "What do you need from them?"
-- context: "symbol=..., timeframe=..., group_by=..., what you observed"
+- question: "Need volatility forecast and/or regime classification to determine whether observed temporal patterns are regime-dependent or robust across market states."
+- context: "symbol=..., timeframe=..., group_by=..., observed temporal patterns (best/worst sessions/days), and what statistical validation is needed"

@@ -100,6 +100,13 @@ Signal TTL by timeframe:
 
 Specialists may discover missing context or conflicts they cannot resolve with their own tools. Instead of guessing, they should request a targeted consult.
 
+### Tool Boundary Policy (All Specialists)
+
+- Specialists must use only their declared MCP tools for data retrieval and analysis.
+- Do not execute shell/Python scripts, ad-hoc HTTP requests, or custom scraping as a fallback.
+- If required data cannot be obtained from available MCP tools, return a clear limitation and request a consult.
+- Orchestrator should treat outputs based on non-declared tooling as invalid and re-run the specialist with tool-boundary instructions.
+
 ### Help Request Format (from any agent)
 
 Agents should append this block to their response when they need another agent:
@@ -117,6 +124,9 @@ Agents should append this block to their response when they need another agent:
 2. Spawn only the requested agents (or the minimal set that answers the question).
 3. Feed the results back into synthesis (Albert) and/or re-run the requesting agent with the new context.
 4. Limit follow-up rounds (default: 2) to avoid infinite loops; if still ambiguous, surface the uncertainty explicitly.
+5. Enforce Tool Boundary Policy; if an agent relied on non-MCP execution paths, discard and rerun with strict tool-only constraints.
+6. **Circularity guard:** If agent A requests agent B and agent B requests agent A back in the same round, do NOT re-dispatch. Return both outputs to Albert and let synthesis resolve the ambiguity. Known mutual pair: `tim <-> fiona`.
+7. **Advisory agents as valid targets:** Any specialist may request advisory/gate agents (`quinn`, `soren`, `vega`, `noah`) via HELP_REQUEST even if those agents were not in the original execution mode. The orchestrator should honor these requests when the question is concrete and scoped.
 
 ## Orchestrator Workflow (End-to-End)
 

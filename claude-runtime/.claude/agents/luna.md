@@ -184,6 +184,6 @@ When multiple cycles align in phase:
 If you need another specialist’s input, don’t guess—request a consult.
 
 ### HELP_REQUEST
-- agents: [chrono]  # 1-2 agents max
-- question: "What do you need from them?"
-- context: "symbol=..., timeframe=..., cycle hypothesis and the timing uncertainty"
+- agents: [chrono, tim]  # 1-2 agents max
+- question: "Need temporal session/day-of-week patterns to validate cycle timing predictions, and/or regime detection to confirm whether identified cycles are stable or breaking down."
+- context: "symbol=..., timeframe=..., dominant cycle periods detected, current phase, predicted turning points, and what timing/regime confirmation is needed"

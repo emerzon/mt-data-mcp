@@ -118,6 +118,6 @@ Joe is the Momentum & Volume Expert. He analyzes volume patterns, On-Balance Vol
 If you need another specialist’s input, don’t guess—request a consult.
 
 ### HELP_REQUEST
-- agents: [will]  # 1-2 agents max
-- question: "What do you need from them?"
-- context: "symbol=..., timeframe=..., key volume findings and the conflict"
+- agents: [will, mike]  # 1-2 agents max
+- question: "Need S/R level context to interpret volume spikes/divergences at key prices, and/or tick-level microstructure confirmation for volume signals."
+- context: "symbol=..., timeframe=..., key volume findings (spikes, divergences, OBV trend), price levels where volume events occurred, and what confirmation is missing"

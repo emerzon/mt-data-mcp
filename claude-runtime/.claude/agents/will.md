@@ -174,5 +174,5 @@ If you need another specialist’s input, don’t guess—request a consult.
 
 ### HELP_REQUEST
 - agents: [mike]  # 1-2 agents max
-- question: "What do you need from them?"
-- context: "symbol=..., key S/R levels, and what confirmation is missing"
+- question: "Need DOM/tick-level confirmation of buy/sell pressure at identified S/R levels to assess whether a level is likely to hold or break."
+- context: "symbol=..., key S/R levels identified, current price proximity, and what microstructure confirmation is needed (order flow, liquidity walls)"

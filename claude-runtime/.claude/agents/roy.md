@@ -169,5 +169,5 @@ If you need another specialist’s input, don’t guess—request a consult.
 
 ### HELP_REQUEST
 - agents: [joaquim]  # 1-2 agents max
-- question: "What do you need from them?"
-- context: "symbol=..., timeframe=..., pattern candidates and why noise may be inflating signals"
+- question: "Suspected noise-inflated chart pattern detection — need a denoise spec to re-run classic pattern scan with cleaner data."
+- context: "symbol=..., timeframe=..., detected pattern candidates, why noise may be inflating false positives"

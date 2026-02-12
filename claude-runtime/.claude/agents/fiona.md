@@ -117,5 +117,6 @@ If you need another specialist’s input, don’t guess—request a consult.
 
 ### HELP_REQUEST
 - agents: [tim]  # 1-2 agents max
-- question: "What do you need from them?"
+- question: "Need regime classification and/or barrier probability analysis to determine if forecast model performance is regime-dependent or if proposed targets are statistically viable."
 - context: "symbol=..., timeframe=..., model/backtest summary, what is uncertain"
+- **circularity note:** Tim may request Fiona back. Do NOT re-request Tim if he has already been consulted in this orchestrator round — return findings as-is and let Albert resolve ambiguity.

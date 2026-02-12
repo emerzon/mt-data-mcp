@@ -101,5 +101,5 @@ If you need another specialist’s input, don’t guess—request a consult.
 
 ### HELP_REQUEST
 - agents: [moe]  # 1-2 agents max
-- question: "What do you need from them?"
-- context: "symbol=..., timeframe=..., current denoise/simplify recommendation and why"
+- question: "Need feedback on whether the recommended denoise spec preserves or distorts key MA levels and chart pattern structure."
+- context: "symbol=..., timeframe=..., current denoise/simplify recommendation, raw vs denoised comparison notes, and what pattern/MA impact needs validation"
