@@ -373,6 +373,110 @@ class TestForecastBarriers(unittest.TestCase):
             self.assertAlmostEqual(total, 1.0, places=7)
             self.assertAlmostEqual(entry["prob_tie"], 1.0, places=7)
             self.assertAlmostEqual(entry["prob_no_hit"], 0.0, places=7)
+            self.assertAlmostEqual(entry["prob_tp_first"], 0.5, places=7)
+            self.assertAlmostEqual(entry["prob_sl_first"], 0.5, places=7)
+
+    def test_forecast_barrier_hit_probabilities_rejects_non_positive_horizon(self):
+        result = forecast_barrier_hit_probabilities(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=0,
+            method="mc_gbm",
+            direction="long",
+            tp_pct=0.5,
+            sl_pct=0.5,
+        )
+        self.assertIn("error", result)
+        self.assertIn("Invalid horizon", result["error"])
+
+    def test_forecast_barrier_hit_probabilities_normalizes_direction_aliases(self):
+        result = forecast_barrier_hit_probabilities(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=5,
+            method="mc_gbm",
+            direction="up",
+            tp_pct=0.5,
+            sl_pct=0.5,
+        )
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("direction"), "long")
+
+    def test_forecast_barrier_hit_probabilities_rejects_invalid_direction(self):
+        result = forecast_barrier_hit_probabilities(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=5,
+            method="mc_gbm",
+            direction="sideways",
+            tp_pct=0.5,
+            sl_pct=0.5,
+        )
+        self.assertIn("error", result)
+        self.assertIn("Invalid direction", result["error"])
+
+    def test_forecast_barrier_optimize_rejects_invalid_mode(self):
+        result = forecast_barrier_optimize(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=4,
+            method="mc_gbm",
+            direction="long",
+            mode="invalid",
+        )
+        self.assertIn("error", result)
+        self.assertIn("Invalid mode", result["error"])
+
+    def test_forecast_barrier_optimize_rejects_invalid_top_k(self):
+        result = forecast_barrier_optimize(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=4,
+            method="mc_gbm",
+            direction="long",
+            mode="pct",
+            top_k=0,
+        )
+        self.assertIn("error", result)
+        self.assertIn("Invalid top_k", result["error"])
+
+    def test_forecast_barrier_optimize_reports_objective_fallback(self):
+        result = forecast_barrier_optimize(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=4,
+            method="mc_gbm",
+            direction="long",
+            mode="pct",
+            objective="not_a_real_objective",
+        )
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("objective"), "edge")
+        self.assertEqual(result.get("objective_requested"), "not_a_real_objective")
+        self.assertEqual(result.get("objective_used"), "edge")
+
+    def test_forecast_barrier_optimize_flags_no_candidates(self):
+        result = forecast_barrier_optimize(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=4,
+            method="mc_gbm",
+            direction="long",
+            mode="pct",
+            tp_min=0.1,
+            tp_max=0.2,
+            tp_steps=2,
+            sl_min=0.1,
+            sl_max=0.2,
+            sl_steps=2,
+            params={"rr_min": 1000},
+            return_grid=True,
+        )
+        self.assertTrue(result.get("success"))
+        self.assertTrue(result.get("no_candidates"))
+        self.assertEqual(result.get("results"), [])
+        self.assertEqual(result.get("grid"), [])
+        self.assertIn("warning", result)
 
 if __name__ == '__main__':
     unittest.main()

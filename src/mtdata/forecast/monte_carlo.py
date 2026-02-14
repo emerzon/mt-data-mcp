@@ -21,6 +21,40 @@ import numpy as np
 import warnings
 
 
+def _normalize_probability_vector(
+    probs: np.ndarray,
+    *,
+    fallback_index: Optional[int] = None,
+) -> np.ndarray:
+    """Normalize a probability vector with robust fallbacks."""
+    vec = np.asarray(probs, dtype=float).copy()
+    vec = np.where(np.isfinite(vec) & (vec >= 0.0), vec, 0.0)
+    total = float(np.sum(vec))
+    if total > 0.0:
+        return vec / total
+    n = int(vec.size)
+    if n <= 0:
+        return vec
+    out = np.zeros(n, dtype=float)
+    if fallback_index is not None and 0 <= int(fallback_index) < n:
+        out[int(fallback_index)] = 1.0
+        return out
+    out[:] = 1.0 / float(n)
+    return out
+
+
+def _normalize_transition_matrix(matrix: np.ndarray) -> np.ndarray:
+    """Normalize transition matrix rows; fallback to self-loops on degenerate rows."""
+    A = np.asarray(matrix, dtype=float)
+    if A.ndim != 2 or A.shape[0] != A.shape[1]:
+        return np.eye(max(1, int(A.shape[0] if A.ndim > 0 else 1)), dtype=float)
+    K = int(A.shape[0])
+    out = np.zeros_like(A, dtype=float)
+    for i in range(K):
+        out[i] = _normalize_probability_vector(A[i], fallback_index=i)
+    return out
+
+
 def _safe_log(x: np.ndarray, eps: float = 1e-12) -> np.ndarray:
     return np.log(np.clip(x, eps, None))
 
@@ -51,7 +85,6 @@ def fit_gaussian_mixture_1d(
         gamma: responsibilities, shape (N, K)
         ll: final log-likelihood
     """
-    rng = np.random.RandomState(seed)
     x = np.asarray(x, dtype=float)
     x = x[np.isfinite(x)]
     N = x.size
@@ -119,14 +152,7 @@ def estimate_transition_matrix_from_gamma(gamma: np.ndarray) -> np.ndarray:
         gi = gamma[t].reshape(-1, 1)
         gj = gamma[t + 1].reshape(1, -1)
         counts += gi @ gj
-    row_sum = counts.sum(axis=1, keepdims=True)
-    row_sum[row_sum <= 0.0] = 1.0
-    A = counts / row_sum
-    # Guard against numerical issues
-    A = np.where(np.isfinite(A), A, 0.0)
-    # Ensure rows sum to 1
-    A /= np.sum(A, axis=1, keepdims=True)
-    return A
+    return _normalize_transition_matrix(counts)
 
 
 def simulate_markov_chain(A: np.ndarray, init: np.ndarray, steps: int, sims: int, rng: Optional[np.random.RandomState] = None) -> np.ndarray:
@@ -136,13 +162,13 @@ def simulate_markov_chain(A: np.ndarray, init: np.ndarray, steps: int, sims: int
     """
     if rng is None:
         rng = np.random.RandomState(123)
-    A = np.asarray(A, dtype=float)
-    init = np.asarray(init, dtype=float)
+    A = _normalize_transition_matrix(np.asarray(A, dtype=float))
+    init = _normalize_probability_vector(np.asarray(init, dtype=float))
     K = A.shape[0]
     out = np.zeros((int(sims), int(steps)), dtype=int)
     for s in range(int(sims)):
         # initial state by init distribution
-        st = int(rng.choice(K, p=init / np.sum(init)))
+        st = int(rng.choice(K, p=init))
         for t in range(int(steps)):
             out[s, t] = st
             st = int(rng.choice(K, p=A[st]))
@@ -180,7 +206,7 @@ def simulate_hmm_mc(
     # Fit mixture and derive transition matrix
     w, mu, sigma, gamma, _ = fit_gaussian_mixture_1d(rets, n_states=n_states, max_iter=80, tol=1e-6, seed=seed)
     A = estimate_transition_matrix_from_gamma(gamma)
-    init = gamma[-1] / float(np.sum(gamma[-1]))
+    init = _normalize_probability_vector(gamma[-1])
     K = mu.shape[0]
 
     # Simulate state paths
@@ -221,7 +247,7 @@ def simulate_gbm_mc(
 ) -> Dict[str, np.ndarray]:
     """Calibrate GBM from historical log-returns and simulate forward paths.
 
-    Returns dict with keys 'price_paths' and 'return_paths'.
+    Returns dict with keys 'price_paths', 'return_paths', 'mu', and 'sigma'.
     """
     rng = np.random.RandomState(seed)
     prices = np.asarray(prices, dtype=float)
@@ -242,7 +268,12 @@ def simulate_gbm_mc(
     for t in range(int(horizon)):
         cur = cur * np.exp(ret_paths[:, t])
         price_paths[:, t] = cur
-    return {'price_paths': price_paths, 'return_paths': ret_paths}
+    return {
+        'price_paths': price_paths,
+        'return_paths': ret_paths,
+        'mu': float(mu),
+        'sigma': float(sigma),
+    }
 
 
 def simulate_heston_mc(
@@ -407,7 +438,6 @@ def simulate_garch_mc(
     except ImportError:
         raise ImportError("The 'arch' library is required for GARCH simulations.")
 
-    rng = np.random.RandomState(seed)
     prices = np.asarray(prices, dtype=float)
     prices = prices[np.isfinite(prices)]
     if prices.size < 50:  # GARCH needs decent history
@@ -432,7 +462,15 @@ def simulate_garch_mc(
     
     # Forecast via simulation
     # 'simulations' arg is number of paths
-    forecasts = res.forecast(horizon=horizon, method='simulation', simulations=n_sims, reindex=False)
+    sim_rng = np.random.RandomState(int(seed) if seed is not None else 42)
+    forecasts = res.forecast(
+        horizon=horizon,
+        method='simulation',
+        simulations=n_sims,
+        rng=sim_rng.standard_normal,
+        random_state=sim_rng,
+        reindex=False,
+    )
     
     # Get simulated paths (1, n_sims, horizon) -> (n_sims, horizon)
     # forecasts.simulations.values contains the simulated returns

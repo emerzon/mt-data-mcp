@@ -248,6 +248,26 @@ python cli.py forecast_barrier_optimize EURUSD --horizon 12 \
   --grid-style volatility --objective edge
 ```
 
+### Place Orders
+`trade_place` requires `symbol`, `volume`, and `order_type`.
+
+Accepted `order_type` forms:
+- Canonical: `BUY`, `SELL`, `BUY_LIMIT`, `BUY_STOP`, `SELL_LIMIT`, `SELL_STOP`
+- MT5 aliases: `ORDER_TYPE_BUY`, `ORDER_TYPE_BUY_LIMIT`, etc.
+- MT5 numeric constants: `0..5`
+
+```bash
+# Pending order with canonical order_type
+python cli.py trade_place BTCUSD --volume 0.03 --order-type BUY_LIMIT --price 68750 \
+  --stop-loss 67500 --take-profit 72000
+
+# Same order_type using MT5 alias
+python cli.py trade_place BTCUSD --volume 0.03 --order-type ORDER_TYPE_BUY_LIMIT --price 68750
+
+# Same order_type using MT5 numeric constant
+python cli.py trade_place BTCUSD --volume 0.03 --order-type 2 --price 68750
+```
+
 ### Detect Patterns and Regimes
 ```bash
 # Candlestick patterns

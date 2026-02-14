@@ -10,6 +10,7 @@ from ..utils.mt5 import _auto_connect_wrapper, _mt5_epoch_to_utc
 from .config import mt5_config
 from .constants import DEFAULT_ROW_LIMIT
 from ..utils.utils import (
+    _coerce_scalar,
     _format_time_minimal,
     _format_time_minimal_local,
     _normalize_limit,
@@ -30,6 +31,87 @@ OrderTypeLiteral = Literal[
     "SELL_LIMIT",
     "SELL_STOP",
 ]
+
+MarketOrderTypeInput = Union[MarketOrderTypeLiteral, int, float, str]
+OrderTypeInput = Union[OrderTypeLiteral, int, float, str]
+
+_SUPPORTED_ORDER_TYPES = {
+    "BUY",
+    "SELL",
+    "BUY_LIMIT",
+    "BUY_STOP",
+    "SELL_LIMIT",
+    "SELL_STOP",
+}
+_ORDER_TYPE_NUMERIC_MAP = {
+    0: "BUY",
+    1: "SELL",
+    2: "BUY_LIMIT",
+    3: "SELL_LIMIT",
+    4: "BUY_STOP",
+    5: "SELL_STOP",
+}
+_ORDER_TYPE_ALIASES = {
+    "LONG": "BUY",
+    "SHORT": "SELL",
+}
+
+
+def _normalize_order_type_input(order_type: Any) -> Tuple[Optional[str], Optional[str]]:
+    """Normalize order_type inputs from MCP clients into canonical MT5 order names."""
+    if order_type is None:
+        return None, "order_type is required."
+
+    value = order_type
+    if isinstance(value, bool):
+        return None, f"Unsupported order_type '{order_type}'."
+
+    if isinstance(value, (int, float)):
+        if not math.isfinite(float(value)):
+            return None, f"Unsupported order_type '{order_type}'."
+        if float(value).is_integer():
+            mapped = _ORDER_TYPE_NUMERIC_MAP.get(int(value))
+            if mapped:
+                return mapped, None
+            return (
+                None,
+                (
+                    f"Unsupported order_type '{order_type}'. "
+                    "Numeric values must match MT5 constants 0..5."
+                ),
+            )
+        return None, f"Unsupported order_type '{order_type}'."
+
+    text = str(value).strip()
+    if not text:
+        return None, "order_type is required."
+
+    scalar = _coerce_scalar(text)
+    if isinstance(scalar, (int, float)) and not isinstance(scalar, bool):
+        if isinstance(scalar, float) and (not math.isfinite(scalar) or not scalar.is_integer()):
+            return None, f"Unsupported order_type '{order_type}'."
+        mapped = _ORDER_TYPE_NUMERIC_MAP.get(int(scalar))
+        if mapped:
+            return mapped, None
+
+    normalized = text.upper().replace("-", "_").replace(" ", "_")
+    while "__" in normalized:
+        normalized = normalized.replace("__", "_")
+    if normalized.startswith("MT5."):
+        normalized = normalized[4:]
+    if normalized.startswith("ORDER_TYPE_"):
+        normalized = normalized[len("ORDER_TYPE_") :]
+    normalized = _ORDER_TYPE_ALIASES.get(normalized, normalized)
+    if normalized in _SUPPORTED_ORDER_TYPES:
+        return normalized, None
+
+    return (
+        None,
+        (
+            f"Unsupported order_type '{order_type}'. "
+            "Use BUY/SELL or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
+        ),
+    )
 
 
 def _to_server_time_naive(dt: datetime) -> datetime:
@@ -623,7 +705,7 @@ def trade_get_pending(
 def _place_market_order(
     symbol: str,
     volume: float,
-    order_type: MarketOrderTypeLiteral,
+    order_type: MarketOrderTypeInput,
     stop_loss: Optional[Union[int, float]] = None,
     take_profit: Optional[Union[int, float]] = None,
     comment: Optional[str] = None,
@@ -652,13 +734,12 @@ def _place_market_order(
                 return {"error": f"Failed to get current price for {symbol}"}
 
             # Normalize and validate requested order type
-            t = (order_type or "").strip().upper()
-            if t == "BUY":
-                side = "BUY"
-            elif t == "SELL":
-                side = "SELL"
-            else:
-                return {"error": f"Unsupported order_type '{order_type}'. Use BUY or SELL."}
+            t, order_type_error = _normalize_order_type_input(order_type)
+            if order_type_error:
+                return {"error": order_type_error}
+            if t not in {"BUY", "SELL"}:
+                return {"error": f"Unsupported order_type '{order_type}'. Use BUY or SELL for market orders."}
+            side = t
 
             deviation_validated, deviation_error = _validate_deviation(deviation)
             if deviation_error:
@@ -792,7 +873,7 @@ def _place_market_order(
 def _place_pending_order(
     symbol: str,
     volume: float,
-    order_type: OrderTypeLiteral,
+    order_type: OrderTypeInput,
     price: Union[int, float],
     stop_loss: Optional[Union[int, float]] = None,
     take_profit: Optional[Union[int, float]] = None,
@@ -827,7 +908,9 @@ def _place_pending_order(
                 return {"error": deviation_error}
 
             # Normalize and validate requested order type
-            t = (order_type or "").strip().upper()
+            t, order_type_error = _normalize_order_type_input(order_type)
+            if order_type_error:
+                return {"error": order_type_error}
             explicit_map = {
                 "BUY_LIMIT": mt5.ORDER_TYPE_BUY_LIMIT,
                 "BUY_STOP": mt5.ORDER_TYPE_BUY_STOP,
@@ -963,9 +1046,9 @@ def _place_pending_order(
 
 @mcp.tool()
 def trade_place(
-    symbol: str,
-    volume: float,
-    order_type: OrderTypeLiteral,
+    symbol: Optional[str] = None,
+    volume: Optional[float] = None,
+    order_type: Optional[OrderTypeInput] = None,
     price: Optional[Union[int, float]] = None,
     stop_loss: Optional[Union[int, float]] = None,
     take_profit: Optional[Union[int, float]] = None,
@@ -975,11 +1058,36 @@ def trade_place(
 ) -> dict:
     """Place a market or pending order.
 
+    Required inputs: symbol, volume, order_type.
     - BUY/SELL: market by default; treated as pending when `price`/`expiration` is provided.
     - BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP: pending (requires `price`).
+    - Also accepts ORDER_TYPE_* aliases and MT5 numeric constants 0..5 for order_type.
     """
 
-    t = (order_type or "").strip().upper()
+    missing: List[str] = []
+    symbol_norm = str(symbol).strip() if symbol is not None else ""
+    if not symbol_norm:
+        missing.append("symbol")
+    if volume is None:
+        missing.append("volume")
+    if order_type is None or (isinstance(order_type, str) and not order_type.strip()):
+        missing.append("order_type")
+    if missing:
+        return {
+            "error": (
+                f"Missing required field(s): {', '.join(missing)}. "
+                "Required: symbol, volume, order_type."
+            ),
+            "required": ["symbol", "volume", "order_type"],
+            "hint": (
+                "Example: symbol='BTCUSD', volume=0.03, "
+                "order_type='BUY_LIMIT' (or ORDER_TYPE_BUY_LIMIT or 2)."
+            ),
+        }
+
+    t, order_type_error = _normalize_order_type_input(order_type)
+    if order_type_error:
+        return {"error": order_type_error}
     explicit_pending_types = {
         "BUY_LIMIT",
         "BUY_STOP",
@@ -1002,8 +1110,8 @@ def trade_place(
     is_pending = (t in explicit_pending_types) or price_provided or expiration_provided
     if not is_pending:
         return _place_market_order(
-            symbol=symbol,
-            volume=volume,
+            symbol=symbol_norm,
+            volume=float(volume),
             order_type=t,
             stop_loss=stop_loss,
             take_profit=take_profit,
@@ -1013,8 +1121,8 @@ def trade_place(
     if price is None:
         return {"error": "price is required for pending orders."}
     return _place_pending_order(
-        symbol=symbol,
-        volume=volume,
+        symbol=symbol_norm,
+        volume=float(volume),
         order_type=t,
         price=price,
         stop_loss=stop_loss,

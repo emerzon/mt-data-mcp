@@ -169,6 +169,16 @@ def _brownian_bridge_hits(
     hits = (uniform < p) & valid
     return hits
 
+
+def _normalize_trade_direction(direction: Any) -> Tuple[Optional[str], Optional[str]]:
+    text = str(direction or "").strip().lower()
+    if text in {"long", "up", "buy"}:
+        return "long", None
+    if text in {"short", "down", "sell"}:
+        return "short", None
+    return None, "Invalid direction. Use long/short (or up/down, buy/sell)."
+
+
 def forecast_barrier_hit_probabilities(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
@@ -195,9 +205,18 @@ def forecast_barrier_hit_probabilities(
     try:
         if timeframe not in TIMEFRAME_SECONDS:
             return {"error": f"Invalid timeframe: {timeframe}"}
+        try:
+            horizon_val = int(horizon)
+        except Exception:
+            return {"error": f"Invalid horizon: {horizon}. Must be a positive integer."}
+        if horizon_val <= 0:
+            return {"error": f"Invalid horizon: {horizon_val}. Must be >= 1."}
+        direction_norm, direction_error = _normalize_trade_direction(direction)
+        if direction_error:
+            return {"error": direction_error}
         p = _parse_kv_or_json(params)
         # Fetch enough history for calibration
-        need = int(max(300, horizon + 100))
+        need = int(max(300, horizon_val + 100))
         df = _fetch_history(symbol, timeframe, need, as_of=None)
         if len(df) < 10:
             return {"error": "Insufficient history for simulation"}
@@ -206,10 +225,10 @@ def forecast_barrier_hit_probabilities(
         pip_size = _get_pip_size(symbol)
 
         # Compute absolute TP/SL prices with explicit trade direction
-        dir_long = str(direction).lower() == 'long'
+        dir_long = direction_norm == 'long'
         tp_price, sl_price = _resolve_barrier_prices(
             price=last_price,
-            direction=direction,
+            direction=direction_norm,
             tp_abs=tp_abs,
             sl_abs=sl_abs,
             tp_pct=tp_pct,
@@ -237,33 +256,35 @@ def forecast_barrier_hit_probabilities(
 
         # Simulate paths
         sims = int(p.get('n_sims', p.get('sims', 2000)) or 2000)
+        if sims <= 0:
+            return {"error": f"Invalid n_sims: {sims}. Must be >= 1."}
         seed = int(p.get('seed', 42) or 42)
         method_key = str(method).lower().strip()
         method_requested = method_key
         auto_reason = None
         if method_key == 'auto':
             method_key, auto_reason = _auto_barrier_method(
-                symbol, timeframe, prices, horizon=int(horizon)
+                symbol, timeframe, prices, horizon=horizon_val
             )
         bb_enabled = method_key == 'mc_gbm_bb'
         
         if method_key in ('mc_gbm', 'mc_gbm_bb'):
-            sim = _simulate_gbm_mc(prices, horizon=int(horizon), n_sims=int(sims), seed=int(seed))
+            sim = _simulate_gbm_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed))
         elif method_key == 'hmm_mc':
             n_states = int(p.get('n_states', 2) or 2)
-            sim = _simulate_hmm_mc(prices, horizon=int(horizon), n_states=int(n_states), n_sims=int(sims), seed=int(seed))
+            sim = _simulate_hmm_mc(prices, horizon=horizon_val, n_states=int(n_states), n_sims=int(sims), seed=int(seed))
         elif method_key == 'garch':
             p_order = int(p.get('p', 1))
             q_order = int(p.get('q', 1))
-            sim = _simulate_garch_mc(prices, horizon=int(horizon), n_sims=int(sims), seed=int(seed), p_order=p_order, q_order=q_order)
+            sim = _simulate_garch_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed), p_order=p_order, q_order=q_order)
         elif method_key == 'bootstrap':
             bs = p.get('block_size')
             if bs: bs = int(bs)
-            sim = _simulate_bootstrap_mc(prices, horizon=int(horizon), n_sims=int(sims), seed=int(seed), block_size=bs)
+            sim = _simulate_bootstrap_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed), block_size=bs)
         elif method_key == 'heston':
             sim = _simulate_heston_mc(
                 prices,
-                horizon=int(horizon),
+                horizon=horizon_val,
                 n_sims=int(sims),
                 seed=int(seed),
                 kappa=p.get('kappa'),
@@ -275,7 +296,7 @@ def forecast_barrier_hit_probabilities(
         elif method_key == 'jump_diffusion':
             sim = _simulate_jump_diffusion_mc(
                 prices,
-                horizon=int(horizon),
+                horizon=horizon_val,
                 n_sims=int(sims),
                 seed=int(seed),
                 jump_lambda=p.get('jump_lambda', p.get('lambda')),
@@ -398,8 +419,8 @@ def forecast_barrier_hit_probabilities(
             "symbol": symbol,
             "timeframe": timeframe,
             "method": method_key,
-            "horizon": int(horizon),
-            "direction": direction,
+            "horizon": horizon_val,
+            "direction": direction_norm,
             "last_price": last_price,
             "tp_price": float(tp_price),
             "sl_price": float(sl_price),
@@ -581,10 +602,22 @@ def forecast_barrier_optimize(
     try:
         if timeframe not in TIMEFRAME_SECONDS:
             return {"error": f"Invalid timeframe: {timeframe}"}
+        try:
+            horizon_val = int(horizon)
+        except Exception:
+            return {"error": f"Invalid horizon: {horizon}. Must be a positive integer."}
+        if horizon_val <= 0:
+            return {"error": f"Invalid horizon: {horizon_val}. Must be >= 1."}
+        direction_norm, direction_error = _normalize_trade_direction(direction)
+        if direction_error:
+            return {"error": direction_error}
 
         params_dict = _parse_kv_or_json(params)
         mode_val = str(mode).lower()
+        if mode_val not in {'pct', 'pips'}:
+            return {"error": f"Invalid mode: {mode}. Use 'pct' or 'pips'."}
         objective_val = str(objective).lower()
+        objective_requested = objective_val
         valid_objectives = {
             'edge',
             'prob_tp_first',
@@ -600,6 +633,17 @@ def forecast_barrier_optimize(
         }
         if objective_val not in valid_objectives:
             objective_val = 'edge'
+        objective_changed = objective_val != objective_requested
+
+        if top_k is not None:
+            try:
+                top_k_val = int(top_k)
+            except Exception:
+                return {"error": f"Invalid top_k: {top_k}. Must be a positive integer."}
+            if top_k_val <= 0:
+                return {"error": f"Invalid top_k: {top_k_val}. Must be >= 1."}
+        else:
+            top_k_val = None
 
         grid_style_val = str(params_dict.get('grid_style', grid_style)).lower()
         if grid_style_val not in {'fixed', 'volatility', 'ratio', 'preset'}:
@@ -681,7 +725,7 @@ def forecast_barrier_optimize(
         sl_max_val = float(params_dict.get('sl_max', sl_max))
         sl_steps_val = max(1, int(params_dict.get('sl_steps', sl_steps)))
 
-        need = int(max(300, horizon + 100))
+        need = int(max(300, horizon_val + 100))
         df = _fetch_history(symbol, timeframe, need, as_of=None)
         if len(df) < 10:
             return {"error": "Insufficient history for simulation"}
@@ -703,44 +747,48 @@ def forecast_barrier_optimize(
         prices = df[base_col].astype(float).to_numpy()
 
         sims = int(params_dict.get('n_sims', params_dict.get('sims', 4000)) or 4000)
+        if sims <= 0:
+            return {"error": f"Invalid n_sims: {sims}. Must be >= 1."}
         seed = int(params_dict.get('seed', 42) or 42)
         n_seeds = int(params_dict.get('n_seeds', 1) or 1)
+        if n_seeds <= 0:
+            return {"error": f"Invalid n_seeds: {n_seeds}. Must be >= 1."}
         paths_list: List[np.ndarray] = []
         method_name = str(method).lower().strip()
         method_requested = method_name
         auto_reason = None
         if method_name == 'auto':
             method_name, auto_reason = _auto_barrier_method(
-                symbol, timeframe, prices, horizon=int(horizon)
+                symbol, timeframe, prices, horizon=horizon_val
             )
         bb_enabled = method_name == 'mc_gbm_bb'
         
         if method_name in ('mc_gbm', 'mc_gbm_bb'):
             for offset in range(max(1, n_seeds)):
-                sim = _simulate_gbm_mc(prices, horizon=int(horizon), n_sims=int(sims), seed=int(seed + offset))
+                sim = _simulate_gbm_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed + offset))
                 paths_list.append(np.asarray(sim['price_paths'], dtype=float))
         elif method_name == 'hmm_mc':
             n_states = int(params_dict.get('n_states', 2) or 2)
             for offset in range(max(1, n_seeds)):
-                sim = _simulate_hmm_mc(prices, horizon=int(horizon), n_states=int(n_states), n_sims=int(sims), seed=int(seed + offset))
+                sim = _simulate_hmm_mc(prices, horizon=horizon_val, n_states=int(n_states), n_sims=int(sims), seed=int(seed + offset))
                 paths_list.append(np.asarray(sim['price_paths'], dtype=float))
         elif method_name == 'garch':
             p_order = int(params_dict.get('p', 1))
             q_order = int(params_dict.get('q', 1))
             for offset in range(max(1, n_seeds)):
-                sim = _simulate_garch_mc(prices, horizon=int(horizon), n_sims=int(sims), seed=int(seed + offset), p_order=p_order, q_order=q_order)
+                sim = _simulate_garch_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed + offset), p_order=p_order, q_order=q_order)
                 paths_list.append(np.asarray(sim['price_paths'], dtype=float))
         elif method_name == 'bootstrap':
             bs = params_dict.get('block_size')
             if bs: bs = int(bs)
             for offset in range(max(1, n_seeds)):
-                sim = _simulate_bootstrap_mc(prices, horizon=int(horizon), n_sims=int(sims), seed=int(seed + offset), block_size=bs)
+                sim = _simulate_bootstrap_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed + offset), block_size=bs)
                 paths_list.append(np.asarray(sim['price_paths'], dtype=float))
         elif method_name == 'heston':
             for offset in range(max(1, n_seeds)):
                 sim = _simulate_heston_mc(
                     prices,
-                    horizon=int(horizon),
+                    horizon=horizon_val,
                     n_sims=int(sims),
                     seed=int(seed + offset),
                     kappa=params_dict.get('kappa'),
@@ -754,7 +802,7 @@ def forecast_barrier_optimize(
             for offset in range(max(1, n_seeds)):
                 sim = _simulate_jump_diffusion_mc(
                     prices,
-                    horizon=int(horizon),
+                    horizon=horizon_val,
                     n_sims=int(sims),
                     seed=int(seed + offset),
                     jump_lambda=params_dict.get('jump_lambda', params_dict.get('lambda')),
@@ -835,7 +883,7 @@ def forecast_barrier_optimize(
             if rets.size > vol_window_val:
                 rets = rets[-vol_window_val:]
             vol_per_bar = float(np.std(rets)) if rets.size else 0.0
-            vol_horizon = vol_per_bar * np.sqrt(horizon)
+            vol_horizon = vol_per_bar * np.sqrt(horizon_val)
 
             # Convert to percentage space for baseline
             vol_pct = vol_horizon * 100.0
@@ -866,7 +914,7 @@ def forecast_barrier_optimize(
 
         # Evaluate candidates
         results: List[Dict[str, Any]] = []
-        dir_long = str(direction).lower() == 'long'
+        dir_long = direction_norm == 'long'
 
         def _evaluate(bucket: List[Tuple[float, float]]) -> List[Dict[str, Any]]:
             out: List[Dict[str, Any]] = []
@@ -917,12 +965,17 @@ def forecast_barrier_optimize(
 
                 n_wins = wins.sum()
                 n_losses = losses.sum()
+                n_ties = ties.sum()
 
                 prob_win = n_wins / S
                 prob_loss = n_losses / S
-                prob_tie = ties.sum() / S
+                prob_tie = n_ties / S
                 prob_neutral = max(0.0, 1.0 - prob_win - prob_loss - prob_tie)
                 prob_resolve = 1.0 - prob_neutral
+                # Keep strict win/loss metrics and add first-hit probabilities with
+                # 50/50 tie splitting to match forecast_barrier_hit_probabilities.
+                prob_tp_first = (n_wins + 0.5 * n_ties) / S
+                prob_sl_first = (n_losses + 0.5 * n_ties) / S
 
                 risk = sl_unit
                 reward = tp_unit
@@ -1002,8 +1055,8 @@ def forecast_barrier_optimize(
                     'sl_price': float(sl_p),
                     'prob_win': prob_win,
                     'prob_loss': prob_loss,
-                    'prob_tp_first': prob_win,
-                    'prob_sl_first': prob_loss,
+                    'prob_tp_first': prob_tp_first,
+                    'prob_sl_first': prob_sl_first,
                     'prob_no_hit': prob_neutral,
                     'prob_tie': prob_tie,
                     'prob_resolve': prob_resolve,
@@ -1039,7 +1092,7 @@ def forecast_barrier_optimize(
             elif objective_val == 'kelly_cond':
                 res_list.sort(key=lambda x: x['kelly_cond'], reverse=True)
             elif objective_val == 'prob_tp_first':
-                res_list.sort(key=lambda x: x['prob_win'], reverse=True)
+                res_list.sort(key=lambda x: x['prob_tp_first'], reverse=True)
             elif objective_val == 'prob_resolve':
                 res_list.sort(key=lambda x: x['prob_resolve'], reverse=True)
             elif objective_val == 'profit_factor':
@@ -1064,27 +1117,38 @@ def forecast_barrier_optimize(
             results.extend(_evaluate(refine_candidates))
             _sort(results)
 
-        if top_k:
-            results = results[:top_k]
+        if top_k_val is not None:
+            results = results[:top_k_val]
 
         grid_out = results if return_grid else None
         if output == 'summary' and grid_out is not None:
-            limit = top_k or min(10, len(grid_out))
+            limit = top_k_val or min(10, len(grid_out))
             grid_out = grid_out[:limit]
+
+        no_candidates = len(results) == 0
+        warning = None
+        if no_candidates:
+            warning = "No valid TP/SL candidates after applying grid generation and constraints."
             
         out = {
             "success": True,
             "symbol": symbol,
             "timeframe": timeframe,
             "method": method_name,
-            "horizon": horizon,
-            "direction": direction,
-            "mode": mode,
-            "objective": objective,
+            "horizon": horizon_val,
+            "direction": direction_norm,
+            "mode": mode_val,
+            "objective": objective_val,
             "results": results,
             "best": results[0] if results else None,
-            "grid": grid_out
+            "grid": grid_out,
+            "no_candidates": no_candidates,
         }
+        if warning is not None:
+            out["warning"] = warning
+        if objective_changed:
+            out["objective_requested"] = objective_requested
+            out["objective_used"] = objective_val
         if method_requested != method_name:
             out["method_requested"] = method_requested
             out["method_used"] = method_name

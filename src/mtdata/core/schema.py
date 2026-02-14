@@ -74,7 +74,7 @@ PARAM_HINTS = {
     "volume": "Order volume (lots).",
     "comment": "Order comment tag.",
     "deviation": "Max slippage (points).",
-    "order_type": "Order type: BUY/SELL (market by default; pending if price is provided) or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP.",
+    "order_type": "Required order type: BUY/SELL (market by default; pending if price is provided), BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP, ORDER_TYPE_* aliases, or MT5 numeric constants 0..5.",
     "price": "Entry price (required for pending).",
     "stop_loss": "Stop-loss price.",
     "take_profit": "Take-profit price.",

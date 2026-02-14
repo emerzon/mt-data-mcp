@@ -164,15 +164,25 @@ class MonteCarloMethodAdapter(ForecastMethodAdapter):
         if self.method == 'mc_gbm':
             n_sims = int(params.get('n_sims', 500))
             seed = int(params.get('seed', 42))
-            paths, mu, sigma = _simulate_gbm_mc(series, fh, n_sims, seed)
+            sim = _simulate_gbm_mc(series, fh, n_sims, seed)
+            paths = np.asarray(sim.get('price_paths'), dtype=float)
             f_vals = np.mean(paths, axis=0)
+            mu = float(sim.get('mu', 0.0))
+            sigma = float(sim.get('sigma', 0.0))
             return f_vals, {"mu": mu, "sigma": sigma, "n_sims": n_sims}
             
         elif self.method == 'hmm_mc':
             n_states = int(params.get('n_states', 2))
             n_sims = int(params.get('n_sims', 500))
             seed = int(params.get('seed', 42))
-            paths, model_params = _simulate_hmm_mc(series, fh, n_states, n_sims, seed)
+            sim = _simulate_hmm_mc(series, fh, n_states, n_sims, seed)
+            paths = np.asarray(sim.get('price_paths'), dtype=float)
+            model_params = {
+                "mu": np.asarray(sim.get("mu", []), dtype=float).tolist(),
+                "sigma": np.asarray(sim.get("sigma", []), dtype=float).tolist(),
+                "trans": np.asarray(sim.get("trans", []), dtype=float).tolist(),
+                "init": np.asarray(sim.get("init", []), dtype=float).tolist(),
+            }
             f_vals = np.mean(paths, axis=0)
             return f_vals, {"n_states": n_states, "n_sims": n_sims, **model_params}
             

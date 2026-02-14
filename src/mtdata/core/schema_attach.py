@@ -130,19 +130,36 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
                         }
                 # Trading schemas: add enums and param docs where helpful
                 if name == "trade_place":
+                    params_obj = schema.get("parameters", {})
+                    if isinstance(params_obj, dict):
+                        params_obj["required"] = ["symbol", "volume", "order_type"]
                     # Clarify acceptable order type values for orders
                     if "order_type" in params:
                         params["order_type"] = {
-                            "type": "string",
-                            "enum": [
-                                "BUY",
-                                "SELL",
-                                "BUY_LIMIT",
-                                "BUY_STOP",
-                                "SELL_LIMIT",
-                                "SELL_STOP",
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "enum": [
+                                        "BUY",
+                                        "SELL",
+                                        "BUY_LIMIT",
+                                        "BUY_STOP",
+                                        "SELL_LIMIT",
+                                        "SELL_STOP",
+                                        "ORDER_TYPE_BUY",
+                                        "ORDER_TYPE_SELL",
+                                        "ORDER_TYPE_BUY_LIMIT",
+                                        "ORDER_TYPE_BUY_STOP",
+                                        "ORDER_TYPE_SELL_LIMIT",
+                                        "ORDER_TYPE_SELL_STOP",
+                                    ],
+                                },
+                                {
+                                    "type": "integer",
+                                    "enum": [0, 1, 2, 3, 4, 5],
+                                },
                             ],
-                            "description": "BUY/SELL (market by default; pending if price is provided) or explicit pending type."
+                            "description": "Required. BUY/SELL (market by default; pending if price is provided), pending aliases, or MT5 numeric constants (0..5)."
                         }
                     # Document expiration flexibility
                     if "expiration" in params:
