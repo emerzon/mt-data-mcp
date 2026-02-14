@@ -5,11 +5,13 @@ import sys
 import unittest
 
 import numpy as np
+import pandas as pd
 
 # Add src to path to ensure local package is found
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
-from mtdata.forecast.method_adapters import MonteCarloMethodAdapter
+from mtdata.forecast.registry import ForecastRegistry
+import mtdata.forecast.methods.monte_carlo  # noqa: F401
 from mtdata.forecast.monte_carlo import (
     estimate_transition_matrix_from_gamma,
     simulate_garch_mc,
@@ -41,13 +43,13 @@ class TestMonteCarloSimulationCoherence(unittest.TestCase):
         self.assertTrue(np.isfinite(float(sim["mu"])))
         self.assertTrue(np.isfinite(float(sim["sigma"])))
 
-    def test_monte_carlo_method_adapter_matches_dict_simulator_contract(self) -> None:
+    def test_monte_carlo_registry_method_exposes_calibration_metadata(self) -> None:
         series = np.linspace(100.0, 120.0, 200)
-        adapter = MonteCarloMethodAdapter("mc_gbm")
-        forecast, meta = adapter.execute(series=series, fh=6, params={"n_sims": 25, "seed": 3})
-        self.assertEqual(forecast.shape[0], 6)
-        self.assertIn("mu", meta)
-        self.assertIn("sigma", meta)
+        method = ForecastRegistry.get("mc_gbm")
+        result = method.forecast(series=pd.Series(series), horizon=6, seasonality=1, params={"n_sims": 25, "seed": 3})
+        self.assertEqual(result.forecast.shape[0], 6)
+        self.assertIn("mu", result.params_used)
+        self.assertIn("sigma", result.params_used)
 
     def test_simulate_garch_mc_is_reproducible_with_seed(self) -> None:
         try:

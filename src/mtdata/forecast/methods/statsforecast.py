@@ -93,14 +93,18 @@ class StatsForecastMethod(ForecastMethod):
         from ..common import _create_training_dataframes, _extract_forecast_values
         
         exog_used = kwargs.get('exog_used')
+        if exog_used is None:
+            exog_used = params.get('exog_used')
         exog_future_arr = kwargs.get('exog_future')
+        if exog_future_arr is None:
+            exog_future_arr = exog_future if exog_future is not None else params.get('exog_future')
         
         Y_df, X_df, Xf_df = _create_training_dataframes(series.values, horizon, exog_used, exog_future_arr)
 
         clean_params = _coerce_params(params)
         model = self._get_model(seasonality, clean_params)
         
-        ci_alpha = kwargs.get('ci_alpha')
+        ci_alpha = kwargs.get('ci_alpha', params.get('ci_alpha'))
         level = None
         if ci_alpha is not None:
             level = [int((1 - float(ci_alpha)) * 100)]
@@ -153,10 +157,7 @@ class StatsForecastMethod(ForecastMethod):
                         lo_vals = np.pad(lo_vals, (0, pad_width), mode='edge')
                         hi_vals = np.pad(hi_vals, (0, pad_width), mode='edge')
                         
-                    ci_values = np.vstack([
-                        lo_vals.astype(float),
-                        hi_vals.astype(float),
-                    ])
+                    ci_values = (lo_vals.astype(float), hi_vals.astype(float))
 
             # Filter out internal context params and build clean params_used
             internal_keys = {'symbol', 'timeframe', 'as_of', 'exog_used', 'exog_future', 'seasonality'}

@@ -72,7 +72,11 @@ class SktimeMethod(ForecastMethod):
         
         # Exogenous variables
         X = kwargs.get('exog_used')
+        if X is None:
+            X = params.get('exog_used')
         X_future = kwargs.get('exog_future')
+        if X_future is None:
+            X_future = exog_future if exog_future is not None else params.get('exog_future')
         
         # Convert numpy exog to pandas if needed
         if isinstance(X, np.ndarray):
@@ -134,7 +138,7 @@ class SktimeMethod(ForecastMethod):
                 
             # CI extraction
             ci_values = None
-            ci_alpha = kwargs.get('ci_alpha')
+            ci_alpha = kwargs.get('ci_alpha', params.get('ci_alpha'))
             if ci_alpha is not None:
                 try:
                     # sktime predict_interval returns DataFrame with MultiIndex columns (coverage, lower/upper)

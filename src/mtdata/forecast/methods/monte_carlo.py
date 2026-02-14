@@ -72,7 +72,7 @@ class MonteCarloGBMMethod(ForecastMethod):
         if x.size < 5:
             raise ValueError("Not enough history for Monte Carlo simulation")
 
-        quantity = kwargs.get("quantity")
+        quantity = kwargs.get("quantity", params.get("quantity"))
         treat_as_price = None
         if isinstance(quantity, str):
             ql = quantity.strip().lower()
@@ -185,7 +185,7 @@ class MonteCarloHMMMethod(ForecastMethod):
         if x.size < 5:
             raise ValueError("Not enough history for Monte Carlo simulation")
 
-        quantity = kwargs.get("quantity")
+        quantity = kwargs.get("quantity", params.get("quantity"))
         treat_as_price = None
         if isinstance(quantity, str):
             ql = quantity.strip().lower()

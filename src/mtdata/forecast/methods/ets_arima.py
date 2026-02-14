@@ -386,10 +386,14 @@ class ARIMAMethod(ETSArimaMethod):
              seasonal_order = (0, 1, 1, seasonality)
              
         trend = params.get('trend', 'c')
-        ci_alpha = params.get('alpha', 0.05)
+        ci_alpha = kwargs.get('ci_alpha', params.get('alpha', 0.05))
         
         exog_used = kwargs.get('exog_used')
-        exog_future_arr = kwargs.get('exog_future') # This might come from kwargs or explicit arg
+        if exog_used is None:
+            exog_used = params.get('exog_used')
+        exog_future_arr = kwargs.get('exog_future')  # This might come from kwargs or explicit arg
+        if exog_future_arr is None:
+            exog_future_arr = params.get('exog_future')
         
         # If exog_future was passed as explicit arg, use it (it might be DataFrame)
         # The interface defines exog_future as Optional[pd.DataFrame]
@@ -399,6 +403,8 @@ class ARIMAMethod(ETSArimaMethod):
         exog_u = exog_used
         exog_f = exog_future_arr if exog_future_arr is not None else exog_future
         
+        if isinstance(exog_u, pd.DataFrame):
+            exog_u = exog_u.values
         if isinstance(exog_f, pd.DataFrame):
             exog_f = exog_f.values
             

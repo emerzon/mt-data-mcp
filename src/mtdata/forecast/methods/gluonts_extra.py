@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
+import pandas as pd
+
+from ..interface import ForecastMethod, ForecastResult
+from ..registry import ForecastRegistry
 
 
 def _build_list_dataset(series: np.ndarray, freq: str):
@@ -534,3 +538,132 @@ def forecast_gt_npts(
     if fq:
         params_used['quantiles'] = sorted(fq.keys(), key=lambda x: float(x))
     return (f_vals, fq, params_used, None)
+
+
+class GluonTSExtraMethod(ForecastMethod):
+    REQUIRED_PACKAGES: List[str] = ["gluonts"]
+
+    @property
+    def category(self) -> str:
+        return "gluonts_extra"
+
+    @property
+    def required_packages(self) -> List[str]:
+        return list(self.REQUIRED_PACKAGES)
+
+    @property
+    def supports_features(self) -> Dict[str, bool]:
+        return {"price": True, "return": True, "volatility": False, "ci": False}
+
+    def forecast(
+        self,
+        series: pd.Series,
+        horizon: int,
+        seasonality: int,
+        params: Dict[str, Any],
+        exog_future: Optional[pd.DataFrame] = None,
+        **kwargs,
+    ) -> ForecastResult:
+        impl_map: Dict[str, Callable[..., Tuple[Optional[np.ndarray], Optional[Dict[str, List[float]]], Dict[str, Any], Optional[str]]]] = {
+            "gt_deepar": forecast_gt_deepar,
+            "gt_sfeedforward": forecast_gt_sfeedforward,
+            "gt_prophet": forecast_gt_prophet,
+            "gt_tft": forecast_gt_tft,
+            "gt_wavenet": forecast_gt_wavenet,
+            "gt_deepnpts": forecast_gt_deepnpts,
+            "gt_mqf2": forecast_gt_mqf2,
+            "gt_npts": forecast_gt_npts,
+        }
+        impl = impl_map.get(self.name)
+        if impl is None:
+            raise RuntimeError(f"Unsupported GluonTS method: {self.name}")
+
+        s = np.asarray(series.values, dtype=float)
+        f_vals, fq, params_used, error = impl(
+            series=s,
+            fh=int(horizon),
+            params=dict(params or {}),
+            n=int(s.size),
+        )
+        if error is not None:
+            raise RuntimeError(error)
+        if f_vals is None:
+            raise RuntimeError(f"{self.name} produced no forecast values")
+        metadata = {"quantiles": fq} if fq else None
+        return ForecastResult(
+            forecast=np.asarray(f_vals, dtype=float),
+            params_used=params_used,
+            metadata=metadata,
+        )
+
+
+@ForecastRegistry.register("gt_deepar")
+class GTDeepARMethod(GluonTSExtraMethod):
+    REQUIRED_PACKAGES = ["gluonts", "torch"]
+
+    @property
+    def name(self) -> str:
+        return "gt_deepar"
+
+
+@ForecastRegistry.register("gt_sfeedforward")
+class GTSimpleFeedForwardMethod(GluonTSExtraMethod):
+    REQUIRED_PACKAGES = ["gluonts", "torch"]
+
+    @property
+    def name(self) -> str:
+        return "gt_sfeedforward"
+
+
+@ForecastRegistry.register("gt_prophet")
+class GTProphetMethod(GluonTSExtraMethod):
+    REQUIRED_PACKAGES = ["gluonts", "prophet"]
+
+    @property
+    def name(self) -> str:
+        return "gt_prophet"
+
+
+@ForecastRegistry.register("gt_tft")
+class GTTFTMethod(GluonTSExtraMethod):
+    REQUIRED_PACKAGES = ["gluonts", "torch"]
+
+    @property
+    def name(self) -> str:
+        return "gt_tft"
+
+
+@ForecastRegistry.register("gt_wavenet")
+class GTWaveNetMethod(GluonTSExtraMethod):
+    REQUIRED_PACKAGES = ["gluonts", "torch"]
+
+    @property
+    def name(self) -> str:
+        return "gt_wavenet"
+
+
+@ForecastRegistry.register("gt_deepnpts")
+class GTDeepNPTSMethod(GluonTSExtraMethod):
+    REQUIRED_PACKAGES = ["gluonts", "torch"]
+
+    @property
+    def name(self) -> str:
+        return "gt_deepnpts"
+
+
+@ForecastRegistry.register("gt_mqf2")
+class GTMQF2Method(GluonTSExtraMethod):
+    REQUIRED_PACKAGES = ["gluonts", "torch", "cpflows"]
+
+    @property
+    def name(self) -> str:
+        return "gt_mqf2"
+
+
+@ForecastRegistry.register("gt_npts")
+class GTNPTSMethod(GluonTSExtraMethod):
+    REQUIRED_PACKAGES = ["gluonts"]
+
+    @property
+    def name(self) -> str:
+        return "gt_npts"

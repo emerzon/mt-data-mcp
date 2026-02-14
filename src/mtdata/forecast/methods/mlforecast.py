@@ -45,7 +45,11 @@ class MLForecastMethod(ForecastMethod):
         from ..common import _create_training_dataframes, _extract_forecast_values
         
         exog_used = kwargs.get('exog_used')
+        if exog_used is None:
+            exog_used = params.get('exog_used')
         exog_future_arr = kwargs.get('exog_future')
+        if exog_future_arr is None:
+            exog_future_arr = exog_future if exog_future is not None else params.get('exog_future')
         
         Y_df, X_df, Xf_df = _create_training_dataframes(series.values, horizon, exog_used, exog_future_arr)
 

@@ -36,6 +36,7 @@ import mtdata.forecast.methods.mlforecast
 import mtdata.forecast.methods.pretrained
 import mtdata.forecast.methods.neural
 import mtdata.forecast.methods.sktime
+import mtdata.forecast.methods.gluonts_extra
 import mtdata.forecast.methods.analog
 import mtdata.forecast.methods.monte_carlo
 
@@ -92,10 +93,10 @@ def _ensemble_dispatch_method(
     # Allow any registered method in ensemble if it supports what we need
     # But for safety/speed, we might restrict to fast methods or check registry
     
-    kwargs = dict(params or {})
+    method_params = dict(params or {})
     try:
         forecaster = ForecastRegistry.get(m)
-        res = forecaster.forecast(series, horizon, seasonality or 1, kwargs)
+        res = forecaster.forecast(series, horizon, seasonality or 1, method_params)
         return res.forecast
     except Exception:
         return None
@@ -629,19 +630,25 @@ def forecast_engine(
                 # unless provided in params or features.
                 # But some methods (like ML) might use X (training exog) during training.
                 
-                # Pass X as exog_used if available
-                kwargs = dict(p)
-                kwargs['ci_alpha'] = ci_alpha
-                kwargs['as_of'] = as_of
-                kwargs['quantity'] = quantity_l
-                kwargs['target'] = target
-                if X is not None:
-                    kwargs['exog_used'] = X
-                if exog_future is not None:
-                    kwargs['exog_future'] = exog_future
-                    
                 # Call forecast
-                res = forecaster.forecast(target_series, horizon, seasonality, kwargs)
+                method_params = dict(p)
+                call_kwargs: Dict[str, Any] = {
+                    'ci_alpha': ci_alpha,
+                    'as_of': as_of,
+                    'quantity': quantity_l,
+                    'target': target,
+                }
+                if X is not None:
+                    call_kwargs['exog_used'] = X
+
+                res = forecaster.forecast(
+                    target_series,
+                    horizon,
+                    seasonality,
+                    method_params,
+                    exog_future=exog_future,
+                    **call_kwargs,
+                )
                 forecast_values = res.forecast
                 ci_values = res.ci_values
                 metadata = res.metadata or {}

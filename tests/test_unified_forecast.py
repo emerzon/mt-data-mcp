@@ -77,7 +77,9 @@ class TestUnifiedForecast(unittest.TestCase):
         self.assertIsInstance(res, ForecastResult)
         self.assertEqual(len(res.forecast), 10)
         self.assertIsNotNone(res.ci_values)
-        self.assertEqual(res.ci_values.shape, (2, 10))
+        self.assertEqual(len(res.ci_values), 2)
+        self.assertEqual(len(res.ci_values[0]), 10)
+        self.assertEqual(len(res.ci_values[1]), 10)
 
     def test_generic_statsforecast(self):
         """Test generic StatsForecast method."""

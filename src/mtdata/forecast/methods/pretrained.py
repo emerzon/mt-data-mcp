@@ -107,8 +107,14 @@ class ChronosBoltMethod(PretrainedMethod):
 
             # Prepare covariates if available
             # Check params first as forecast_engine passes them there
-            exog_hist = kwargs.get('exog_used') or p.get('exog_used')
-            exog_fut = kwargs.get('exog_future') or exog_future or p.get('exog_future')
+            exog_hist = kwargs.get('exog_used', None)
+            if exog_hist is None:
+                exog_hist = p.get('exog_used')
+            exog_fut = kwargs.get('exog_future', None)
+            if exog_fut is None and exog_future is not None:
+                exog_fut = exog_future
+            if exog_fut is None:
+                exog_fut = p.get('exog_future')
             
             known_covariates = None
             
@@ -328,8 +334,14 @@ class TimesFMMethod(PretrainedMethod):
                     if isinstance(res, tuple) and len(res) >= 2:
                         return res[0], res[1]
                     if isinstance(res, dict):
-                        pf = res.get("point_forecast") or res.get("mean") or res.get("forecast")
-                        qf = res.get("quantiles") or res.get("quantile_forecast")
+                        pf = res.get("point_forecast", None)
+                        if pf is None:
+                            pf = res.get("mean", None)
+                        if pf is None:
+                            pf = res.get("forecast", None)
+                        qf = res.get("quantiles", None)
+                        if qf is None:
+                            qf = res.get("quantile_forecast", None)
                         return pf, qf
                     return res, None
                 except TypeError:

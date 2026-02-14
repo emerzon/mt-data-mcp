@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import pandas as pd
 
 from ..common import nf_setup_and_predict as _nf_setup_and_predict  # type: ignore
+from ..interface import ForecastMethod, ForecastResult
+from ..registry import ForecastRegistry
 
 
 def forecast_neural(
@@ -83,3 +86,92 @@ def forecast_neural(
     params_used = {'max_epochs': int(steps), 'input_size': int(input_size), 'batch_size': int(batch_size)}
     return f_vals.astype(float, copy=False), params_used
 
+
+class NeuralForecastMethod(ForecastMethod):
+    PARAMS: List[Dict[str, Any]] = [
+        {"name": "input_size", "type": "int|null", "description": "Lookback context for the model (auto if omitted)."},
+        {"name": "max_steps", "type": "int|null", "description": "Training steps (fallback to max_epochs, default: 50)."},
+        {"name": "max_epochs", "type": "int|null", "description": "Alias for max_steps."},
+        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)."},
+        {"name": "learning_rate", "type": "float|null", "description": "Learning rate (model default if omitted)."},
+    ]
+
+    @property
+    def category(self) -> str:
+        return "neural"
+
+    @property
+    def required_packages(self) -> List[str]:
+        return ["neuralforecast"]
+
+    @property
+    def supports_features(self) -> Dict[str, bool]:
+        return {"price": True, "return": True, "volatility": False, "ci": False}
+
+    def forecast(
+        self,
+        series: pd.Series,
+        horizon: int,
+        seasonality: int,
+        params: Dict[str, Any],
+        exog_future: Optional[pd.DataFrame] = None,
+        **kwargs,
+    ) -> ForecastResult:
+        from ..common import _create_training_dataframes
+
+        p = dict(params or {})
+        x = np.asarray(series.values, dtype=float)
+        n = int(x.size)
+        if n < 5:
+            raise ValueError(f"{self.name} requires at least 5 observations")
+
+        exog_used = kwargs.get("exog_used")
+        if exog_used is None:
+            exog_used = p.get("exog_used")
+        exog_future_arr = kwargs.get("exog_future")
+        if exog_future_arr is None:
+            exog_future_arr = exog_future if exog_future is not None else p.get("exog_future")
+
+        Y_df, _, _ = _create_training_dataframes(x, int(horizon), exog_used, exog_future_arr)
+        f_vals, params_used = forecast_neural(
+            method=self.name,
+            series=x,
+            fh=int(horizon),
+            timeframe=str(p.get("timeframe") or kwargs.get("timeframe") or "H1"),
+            n=n,
+            m=int(seasonality or 0),
+            params=p,
+            Y_df=Y_df,
+            exog_used=exog_used,
+            exog_future=exog_future_arr,
+            future_times=kwargs.get("future_times"),
+        )
+        return ForecastResult(forecast=f_vals, params_used=params_used)
+
+
+@ForecastRegistry.register("nhits")
+class NHITSMethod(NeuralForecastMethod):
+    @property
+    def name(self) -> str:
+        return "nhits"
+
+
+@ForecastRegistry.register("nbeatsx")
+class NBEATSXMethod(NeuralForecastMethod):
+    @property
+    def name(self) -> str:
+        return "nbeatsx"
+
+
+@ForecastRegistry.register("tft")
+class TFTMethod(NeuralForecastMethod):
+    @property
+    def name(self) -> str:
+        return "tft"
+
+
+@ForecastRegistry.register("patchtst")
+class PatchTSTMethod(NeuralForecastMethod):
+    @property
+    def name(self) -> str:
+        return "patchtst"
