@@ -17,6 +17,21 @@ from ..utils.utils import (
 )
 
 
+def _is_candlestick_allowed(
+    pattern_name: str,
+    *,
+    robust_only: bool,
+    robust_set: set[str],
+    whitelist_set: Optional[set[str]],
+) -> bool:
+    nm = str(pattern_name).replace('_', '').replace(' ', '').lower()
+    if whitelist_set is not None and nm not in whitelist_set:
+        return False
+    if robust_only and nm not in robust_set:
+        return False
+    return True
+
+
 def detect_candlestick_patterns(
     *,
     symbol: str,
@@ -111,16 +126,14 @@ def detect_candlestick_patterns(
             'engulfing', 'harami', '3inside', '3outside', 'eveningstar', 'morningstar',
             'darkcloudcover', 'piercing', 'inside', 'outside', 'hikkake'
         }
+        parsed_whitelist: Optional[set[str]] = None
         if whitelist and isinstance(whitelist, str):
             try:
                 parts = [p.strip() for p in whitelist.split(',') if p.strip()]
                 if parts:
-                    _robust_whitelist = {p.replace('_', '').replace(' ', '').lower() for p in parts}
+                    parsed_whitelist = {p.replace('_', '').replace(' ', '').lower() for p in parts}
             except Exception:
                 pass
-
-        def _norm_name(n: str) -> str:
-            return str(n).replace('_', '').replace(' ', '').lower()
 
         try:
             gap = max(0, int(min_gap))
@@ -146,7 +159,12 @@ def detect_candlestick_patterns(
                     name = col
                     if name.lower().startswith('cdl_'):
                         name = name[len('cdl_'):]
-                    if (not robust_only) or (_norm_name(name) in _robust_whitelist):
+                    if _is_candlestick_allowed(
+                        name,
+                        robust_only=bool(robust_only),
+                        robust_set=_robust_whitelist,
+                        whitelist_set=parsed_whitelist,
+                    ):
                         hits.append((name, val))
             if not hits:
                 continue

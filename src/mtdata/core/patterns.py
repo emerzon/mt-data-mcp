@@ -140,12 +140,40 @@ def _format_pattern_dates(start_time: Optional[float], end_time: Optional[float]
 
 def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> None:
     """Apply config dict values to a config object's attributes."""
+
+    def _coerce_bool(value: Any) -> Any:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            s = value.strip().lower()
+            if s in {"true", "1", "yes", "y", "on"}:
+                return True
+            if s in {"false", "0", "no", "n", "off"}:
+                return False
+        return value
+
     if not isinstance(config, dict):
         return
     for k, v in config.items():
         if hasattr(cfg, k):
+            current = getattr(cfg, k)
             try:
-                setattr(cfg, k, type(getattr(cfg, k))(v))
+                # Handle list-like attrs from common CLI forms, e.g. "impulse,correction".
+                if isinstance(current, list):
+                    if isinstance(v, str):
+                        parsed = [p.strip() for p in v.replace(";", ",").split(",") if p.strip()]
+                        setattr(cfg, k, parsed)
+                    elif isinstance(v, (list, tuple, set)):
+                        setattr(cfg, k, [x for x in v])
+                    else:
+                        setattr(cfg, k, [v])
+                elif isinstance(current, bool):
+                    coerced = _coerce_bool(v)
+                    setattr(cfg, k, bool(coerced) if isinstance(coerced, bool) else current)
+                else:
+                    setattr(cfg, k, type(current)(v))
             except Exception:
                 try:
                     setattr(cfg, k, v)
@@ -225,7 +253,7 @@ def patterns_detect(
         Time format for series data
     
     include_completed : bool, optional (default=False)
-        Include only completed patterns
+        Include completed patterns alongside forming results (when False, only forming patterns are returned)
     
     Returns:
     --------

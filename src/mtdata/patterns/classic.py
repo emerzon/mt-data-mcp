@@ -239,8 +239,13 @@ def _alias(base: ClassicPatternResult, name: str, conf_scale: float = 0.95) -> C
     )
 
 
-def _fit_lines_and_arrays(ih: np.ndarray, il: np.ndarray, c: np.ndarray, n: int):
-    # Capture cfg via closure in detect_classic_patterns
+def _fit_lines_and_arrays(
+    ih: np.ndarray,
+    il: np.ndarray,
+    c: np.ndarray,
+    n: int,
+    cfg: ClassicDetectorConfig,
+):
     try:
         sh, bh, r2h = _fit_line_robust(ih.astype(float), c[ih], cfg)
     except Exception:
@@ -345,7 +350,7 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         # Fit lines on last K highs and lows
         k = min(8, peaks.size, troughs.size)
         ih = peaks[-k:]; il = troughs[-k:]
-        sh, bh, r2h, sl, bl, r2l, upper, lower = _fit_lines_and_arrays(ih, il, c, n)
+        sh, bh, r2h, sl, bl, r2l, upper, lower = _fit_lines_and_arrays(ih, il, c, n, cfg)
         # Slopes near equal for channels; width relatively stable
         slope_diff = abs(sh - sl)
         approx_parallel = slope_diff <= max(1e-4, 0.15 * max(abs(sh), abs(sl), cfg.max_flat_slope))
@@ -429,7 +434,7 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         if k < 4:
             return out
         ih = peaks[-k:]; il = troughs[-k:]
-        sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(ih, il, c, n)
+        sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(ih, il, c, n, cfg)
         # Lines must converge: distance decreasing toward recent bars
         converging = _is_converging(top, bot, k, n)
         tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
@@ -468,7 +473,7 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         if k < 4:
             return out
         ih = peaks[-k:]; il = troughs[-k:]
-        sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(ih, il, c, n)
+        sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(ih, il, c, n, cfg)
         converging = _is_converging(top, bot, k, n)
         same_sign = (sh > 0 and sl > 0) or (sh < 0 and sl < 0)
         tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
@@ -651,7 +656,7 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         if peaks2.size < 2 or troughs2.size < 2:
             return out
         # build local arrays for consolidation region
-        sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(peaks2, troughs2, seg, seg.size)
+        sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(peaks2, troughs2, seg, seg.size, cfg)
         dist_recent = float(np.mean((top - bot)[-max(5, seg.size//4):]))
         dist_past = float(np.mean((top - bot)[:max(5, seg.size//4)]))
         converging = dist_recent < dist_past
