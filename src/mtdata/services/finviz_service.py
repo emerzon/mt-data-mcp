@@ -12,12 +12,77 @@ import datetime
 from typing import Any, Dict, List, Optional, Union, Literal
 from functools import lru_cache
 import time
+import os
 
 logger = logging.getLogger(__name__)
 
 # Cache TTL in seconds (5 minutes default)
 _CACHE_TTL = 300
 _cache_timestamps: Dict[str, float] = {}
+_FINVIZ_HTTP_TIMEOUT = float(os.getenv("FINVIZ_HTTP_TIMEOUT", "15"))
+_FINVIZ_SCREENER_MAX_ROWS = int(os.getenv("FINVIZ_SCREENER_MAX_ROWS", "5000"))
+_FINVIZ_PAGE_LIMIT_MAX = int(os.getenv("FINVIZ_PAGE_LIMIT_MAX", "500"))
+
+
+def _sanitize_pagination(limit: int, page: int) -> tuple[int, int]:
+    """Clamp pagination inputs to sane bounds."""
+    try:
+        safe_limit = int(limit)
+    except Exception:
+        safe_limit = 50
+    try:
+        safe_page = int(page)
+    except Exception:
+        safe_page = 1
+    safe_limit = max(1, min(_FINVIZ_PAGE_LIMIT_MAX, safe_limit))
+    safe_page = max(1, safe_page)
+    return safe_limit, safe_page
+
+
+def _compute_screener_fetch_limit(limit: int, page: int, max_rows: int) -> int:
+    """Rows to fetch from finvizfinance screener to satisfy current page safely."""
+    safe_limit, safe_page = _sanitize_pagination(limit, page)
+    needed = safe_limit * safe_page
+    return max(1, min(max_rows, needed))
+
+
+def _run_screener_view(
+    screener: Any,
+    *,
+    order: str = "Ticker",
+    limit: int = 50,
+    page: int = 1,
+) -> Any:
+    """Run screener_view with bounded rows and no inter-page sleep."""
+    fetch_limit = _compute_screener_fetch_limit(limit=limit, page=page, max_rows=_FINVIZ_SCREENER_MAX_ROWS)
+    return screener.screener_view(order=order, limit=fetch_limit, verbose=0, sleep_sec=0), fetch_limit
+
+
+def _finviz_http_get(url: str, *, headers: Dict[str, str], params: Dict[str, Any]) -> Any:
+    """HTTP GET helper with centralized timeout."""
+    import requests
+
+    return requests.get(url, headers=headers, params=params, timeout=_FINVIZ_HTTP_TIMEOUT)
+
+
+def _apply_finvizfinance_timeout_patch() -> None:
+    """Patch finvizfinance's internal bare requests.get call to include timeout."""
+    try:
+        import finvizfinance.quote as _fv_quote
+    except Exception:
+        return
+
+    if bool(getattr(_fv_quote, "_mtdata_timeout_patched", False)):
+        return
+
+    _orig_get = _fv_quote.requests.get
+
+    def _patched_get(*args: Any, **kwargs: Any) -> Any:
+        kwargs.setdefault("timeout", _FINVIZ_HTTP_TIMEOUT)
+        return _orig_get(*args, **kwargs)
+
+    _fv_quote.requests.get = _patched_get
+    _fv_quote._mtdata_timeout_patched = True
 
 
 def _is_cache_valid(key: str) -> bool:
@@ -40,6 +105,7 @@ def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
     Returns metrics like P/E, EPS, market cap, sector, industry, etc.
     """
     try:
+        _apply_finvizfinance_timeout_patch()
         from finvizfinance.quote import finvizfinance
         stock = finvizfinance(symbol.upper())
         fundament = stock.ticker_fundament()
@@ -58,6 +124,7 @@ def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
 def get_stock_description(symbol: str) -> Dict[str, Any]:
     """Get company description for a stock symbol."""
     try:
+        _apply_finvizfinance_timeout_patch()
         from finvizfinance.quote import finvizfinance
         stock = finvizfinance(symbol.upper())
         desc = stock.ticker_description()
@@ -80,6 +147,8 @@ def get_stock_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any
     Returns list of news items with title, link, date, source.
     """
     try:
+        safe_limit, safe_page = _sanitize_pagination(limit, page)
+        _apply_finvizfinance_timeout_patch()
         from finvizfinance.quote import finvizfinance
         stock = finvizfinance(symbol.upper())
         news_df = stock.ticker_news()
@@ -87,16 +156,16 @@ def get_stock_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any
             return {"error": f"No news found for {symbol}"}
         # Apply pagination
         total = len(news_df)
-        start_idx = (page - 1) * limit
-        end_idx = start_idx + limit
+        start_idx = (safe_page - 1) * safe_limit
+        end_idx = start_idx + safe_limit
         news_list = news_df.iloc[start_idx:end_idx].to_dict(orient="records")
         return {
             "success": True,
             "symbol": symbol.upper(),
             "count": len(news_list),
             "total": total,
-            "page": page,
-            "pages": (total + limit - 1) // limit,
+            "page": safe_page,
+            "pages": (total + safe_limit - 1) // safe_limit,
             "news": news_list,
         }
     except Exception as e:
@@ -111,6 +180,8 @@ def get_stock_insider_trades(symbol: str, limit: int = 20, page: int = 1) -> Dic
     Returns list of insider trades with owner, relationship, date, transaction, cost, shares, value.
     """
     try:
+        safe_limit, safe_page = _sanitize_pagination(limit, page)
+        _apply_finvizfinance_timeout_patch()
         from finvizfinance.quote import finvizfinance
         stock = finvizfinance(symbol.upper())
         insider_df = stock.ticker_inside_trader()
@@ -118,16 +189,16 @@ def get_stock_insider_trades(symbol: str, limit: int = 20, page: int = 1) -> Dic
             return {"error": f"No insider trades found for {symbol}"}
         # Apply pagination
         total = len(insider_df)
-        start_idx = (page - 1) * limit
-        end_idx = start_idx + limit
+        start_idx = (safe_page - 1) * safe_limit
+        end_idx = start_idx + safe_limit
         trades_list = insider_df.iloc[start_idx:end_idx].to_dict(orient="records")
         return {
             "success": True,
             "symbol": symbol.upper(),
             "count": len(trades_list),
             "total": total,
-            "page": page,
-            "pages": (total + limit - 1) // limit,
+            "page": safe_page,
+            "pages": (total + safe_limit - 1) // safe_limit,
             "insider_trades": trades_list,
         }
     except Exception as e:
@@ -142,6 +213,7 @@ def get_stock_ratings(symbol: str) -> Dict[str, Any]:
     Returns list of ratings with date, status, analyst, rating, price target.
     """
     try:
+        _apply_finvizfinance_timeout_patch()
         from finvizfinance.quote import finvizfinance
         stock = finvizfinance(symbol.upper())
         ratings_df = stock.ticker_outer_ratings()
@@ -162,6 +234,7 @@ def get_stock_ratings(symbol: str) -> Dict[str, Any]:
 def get_stock_peers(symbol: str) -> Dict[str, Any]:
     """Get peer companies for a stock symbol."""
     try:
+        _apply_finvizfinance_timeout_patch()
         from finvizfinance.quote import finvizfinance
         stock = finvizfinance(symbol.upper())
         peers = stock.ticker_peer()
@@ -221,6 +294,8 @@ def screen_stocks(
         Screener results with stock list
     """
     try:
+        safe_limit, safe_page = _sanitize_pagination(limit, page)
+        _apply_finvizfinance_timeout_patch()
         view_lower = view.lower().strip()
         if view_lower == "overview":
             from finvizfinance.screener.overview import Overview
@@ -246,16 +321,20 @@ def screen_stocks(
         
         if filters:
             screener.set_filter(filters_dict=filters)
-        if order:
-            screener.set_order(order=order)
-        
-        df = screener.screener_view()
+        order_name = str(order).strip() if isinstance(order, str) and str(order).strip() else "Ticker"
+
+        df, fetch_limit = _run_screener_view(
+            screener,
+            order=order_name,
+            limit=safe_limit,
+            page=safe_page,
+        )
         if df is None or df.empty:
             return {
                 "success": True,
                 "count": 0,
                 "total": 0,
-                "page": page,
+                "page": safe_page,
                 "pages": 0,
                 "stocks": [],
                 "message": "No stocks matched the filter criteria",
@@ -263,17 +342,19 @@ def screen_stocks(
         
         # Apply pagination
         total = len(df)
-        start_idx = (page - 1) * limit
-        end_idx = start_idx + limit
+        start_idx = (safe_page - 1) * safe_limit
+        end_idx = start_idx + safe_limit
         stocks_list = df.iloc[start_idx:end_idx].to_dict(orient="records")
+        truncated = bool(total >= fetch_limit and fetch_limit >= _FINVIZ_SCREENER_MAX_ROWS)
         return {
             "success": True,
             "view": view_lower,
             "filters": filters or {},
             "count": len(stocks_list),
             "total": total,
-            "page": page,
-            "pages": (total + limit - 1) // limit,
+            "page": safe_page,
+            "pages": (total + safe_limit - 1) // safe_limit,
+            "truncated": truncated,
             "stocks": stocks_list,
         }
     except Exception as e:
@@ -295,15 +376,18 @@ def get_general_news(news_type: str = "news", limit: int = 20, page: int = 1) ->
         Page number (default 1)
     """
     try:
+        safe_limit, safe_page = _sanitize_pagination(limit, page)
+        _apply_finvizfinance_timeout_patch()
         from finvizfinance.news import News
+
         fnews = News()
         all_news = fnews.get_news()
-        
+
         if news_type.lower() == "blogs":
             items = all_news.get("blogs", [])
         else:
             items = all_news.get("news", [])
-        
+
         # Check if items is empty (handle DataFrame or list)
         if hasattr(items, "empty"):
             if items.empty:
@@ -313,24 +397,24 @@ def get_general_news(news_type: str = "news", limit: int = 20, page: int = 1) ->
             return {"error": f"No {news_type} found"}
         else:
             total = len(items)
-        
+
         # Apply pagination
-        start_idx = (page - 1) * limit
-        end_idx = start_idx + limit
-        
+        start_idx = (safe_page - 1) * safe_limit
+        end_idx = start_idx + safe_limit
+
         # items is typically a DataFrame
         if hasattr(items, "iloc"):
             items_list = items.iloc[start_idx:end_idx].to_dict(orient="records")
         else:
             items_list = items[start_idx:end_idx] if isinstance(items, list) else []
-        
+
         return {
             "success": True,
             "type": news_type.lower(),
             "count": len(items_list),
             "total": total,
-            "page": page,
-            "pages": (total + limit - 1) // limit,
+            "page": safe_page,
+            "pages": (total + safe_limit - 1) // safe_limit,
             "items": items_list,
         }
     except Exception as e:
@@ -352,25 +436,28 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
         Page number (default 1)
     """
     try:
+        safe_limit, safe_page = _sanitize_pagination(limit, page)
+        _apply_finvizfinance_timeout_patch()
         from finvizfinance.insider import Insider
+
         finsider = Insider(option=option)
         df = finsider.get_insider()
-        
+
         if df is None or df.empty:
             return {"error": f"No insider activity found for option '{option}'"}
-        
+
         # Apply pagination
         total = len(df)
-        start_idx = (page - 1) * limit
-        end_idx = start_idx + limit
+        start_idx = (safe_page - 1) * safe_limit
+        end_idx = start_idx + safe_limit
         items_list = df.iloc[start_idx:end_idx].to_dict(orient="records")
         return {
             "success": True,
             "option": option,
             "count": len(items_list),
             "total": total,
-            "page": page,
-            "pages": (total + limit - 1) // limit,
+            "page": safe_page,
+            "pages": (total + safe_limit - 1) // safe_limit,
             "insider_trades": items_list,
         }
     except Exception as e:
@@ -381,6 +468,7 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
 def get_forex_performance() -> Dict[str, Any]:
     """Get forex currency pairs performance data."""
     try:
+        _apply_finvizfinance_timeout_patch()
         from finvizfinance.forex import Forex
         forex = Forex()
         df = forex.performance()
@@ -403,6 +491,7 @@ def get_forex_performance() -> Dict[str, Any]:
 def get_crypto_performance() -> Dict[str, Any]:
     """Get cryptocurrency performance data."""
     try:
+        _apply_finvizfinance_timeout_patch()
         from finvizfinance.crypto import Crypto
         crypto = Crypto()
         df = crypto.performance()
@@ -425,6 +514,7 @@ def get_crypto_performance() -> Dict[str, Any]:
 def get_futures_performance() -> Dict[str, Any]:
     """Get futures market performance data."""
     try:
+        _apply_finvizfinance_timeout_patch()
         from finvizfinance.future import Future
         future = Future()
         df = future.performance()
@@ -458,25 +548,45 @@ def get_earnings_calendar(
     "This Month".
     """
     try:
-        from finvizfinance.earnings import Earnings
+        safe_limit, safe_page = _sanitize_pagination(limit, page)
+        _apply_finvizfinance_timeout_patch()
+        from finvizfinance.screener.financial import Financial
 
-        earnings = Earnings(period=period)
-        df = getattr(earnings, "df", None)
+        allowed_periods = {"This Week", "Next Week", "Previous Week", "This Month"}
+        if period not in allowed_periods:
+            raise ValueError(
+                "Invalid period '{period}'. Available period: {periods}".format(
+                    period=period,
+                    periods=sorted(allowed_periods),
+                )
+            )
+
+        screener = Financial()
+        screener.set_filter(filters_dict={"Earnings Date": period})
+        df, fetch_limit = _run_screener_view(
+            screener,
+            order="Earnings Date",
+            limit=safe_limit,
+            page=safe_page,
+        )
+
         if df is None or df.empty:
             return {"error": "No earnings calendar data available"}
 
         # Apply pagination
         total = len(df)
-        start_idx = (page - 1) * limit
-        end_idx = start_idx + limit
+        start_idx = (safe_page - 1) * safe_limit
+        end_idx = start_idx + safe_limit
         items_list = df.iloc[start_idx:end_idx].to_dict(orient="records")
+        truncated = bool(total >= fetch_limit and fetch_limit >= _FINVIZ_SCREENER_MAX_ROWS)
         return {
             "success": True,
             "period": period,
             "count": len(items_list),
             "total": total,
-            "page": page,
-            "pages": (total + limit - 1) // limit,
+            "page": safe_page,
+            "pages": (total + safe_limit - 1) // safe_limit,
+            "truncated": truncated,
             "earnings": items_list,
         }
     except ValueError as e:
@@ -494,6 +604,7 @@ def get_economic_calendar(
     date_to: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Get Finviz economic calendar (macro releases)."""
+    safe_limit, safe_page = _sanitize_pagination(limit, page)
 
     impact_norm: Optional[Literal["low", "medium", "high"]] = None
     if impact is not None:
@@ -526,8 +637,8 @@ def get_economic_calendar(
         events.sort(key=lambda e: str(e.get("Datetime", "")))
 
         total = len(events)
-        start_idx = (page - 1) * limit
-        end_idx = start_idx + limit
+        start_idx = (safe_page - 1) * safe_limit
+        end_idx = start_idx + safe_limit
         items_list = events[start_idx:end_idx]
 
         message = None
@@ -542,8 +653,8 @@ def get_economic_calendar(
             "dateTo": date_to,
             "count": len(items_list),
             "total": total,
-            "page": page,
-            "pages": (total + limit - 1) // limit if total else 0,
+            "page": safe_page,
+            "pages": (total + safe_limit - 1) // safe_limit if total else 0,
             "items": items_list,
             "events": items_list,
             "message": message,
@@ -563,18 +674,19 @@ def get_earnings_calendar_api(
 ) -> Dict[str, Any]:
     """Get Finviz earnings calendar via the Finviz JSON API."""
     try:
+        safe_limit, safe_page = _sanitize_pagination(limit, page)
         default_days = 7 if (date_from is not None and date_to is None) else 30
         date_from, date_to = _resolve_date_range(date_from=date_from, date_to=date_to, default_days=default_days)
         payload = _fetch_finviz_calendar_paged(
             kind="earnings",
             date_from=date_from,
             date_to=date_to,
-            page=page,
-            page_size=limit,
+            page=safe_page,
+            page_size=safe_limit,
         )
         items = payload.get("items") or []
         total = int(payload.get("totalItemsCount") or len(items))
-        pages = int(payload.get("totalPages") or ((total + limit - 1) // limit if total else 0))
+        pages = int(payload.get("totalPages") or ((total + safe_limit - 1) // safe_limit if total else 0))
         return {
             "success": True,
             "source": "finviz_api",
@@ -583,7 +695,7 @@ def get_earnings_calendar_api(
             "dateTo": date_to,
             "count": len(items),
             "total": total,
-            "page": int(payload.get("page") or page),
+            "page": int(payload.get("page") or safe_page),
             "pages": pages,
             "items": items,
             "earnings": items,
@@ -603,18 +715,19 @@ def get_dividends_calendar_api(
 ) -> Dict[str, Any]:
     """Get Finviz dividends calendar via the Finviz JSON API."""
     try:
+        safe_limit, safe_page = _sanitize_pagination(limit, page)
         default_days = 7 if (date_from is not None and date_to is None) else 30
         date_from, date_to = _resolve_date_range(date_from=date_from, date_to=date_to, default_days=default_days)
         payload = _fetch_finviz_calendar_paged(
             kind="dividends",
             date_from=date_from,
             date_to=date_to,
-            page=page,
-            page_size=limit,
+            page=safe_page,
+            page_size=safe_limit,
         )
         items = payload.get("items") or []
         total = int(payload.get("totalItemsCount") or len(items))
-        pages = int(payload.get("totalPages") or ((total + limit - 1) // limit if total else 0))
+        pages = int(payload.get("totalPages") or ((total + safe_limit - 1) // safe_limit if total else 0))
         return {
             "success": True,
             "source": "finviz_api",
@@ -623,7 +736,7 @@ def get_dividends_calendar_api(
             "dateTo": date_to,
             "count": len(items),
             "total": total,
-            "page": int(payload.get("page") or page),
+            "page": int(payload.get("page") or safe_page),
             "pages": pages,
             "items": items,
             "dividends": items,
@@ -716,8 +829,6 @@ def _filter_calendar_events_by_date(
 
 def _fetch_finviz_economic_calendar_items(date_from: str, date_to: str) -> List[Dict[str, Any]]:
     """Fetch raw economic calendar items from Finviz's JSON API."""
-    import requests
-
     url = "https://finviz.com/api/calendar/economic"
     headers = {
         "User-Agent": "Mozilla/5.0",
@@ -726,7 +837,7 @@ def _fetch_finviz_economic_calendar_items(date_from: str, date_to: str) -> List[
     }
     params = {"dateFrom": date_from, "dateTo": date_to}
 
-    resp = requests.get(url, headers=headers, params=params, timeout=15)
+    resp = _finviz_http_get(url, headers=headers, params=params)
     resp.raise_for_status()
     data = resp.json()
     if not isinstance(data, list):
@@ -748,7 +859,6 @@ def _fetch_finviz_calendar_paged(
     page_size: int,
 ) -> Dict[str, Any]:
     """Fetch a paged calendar payload from Finviz's JSON API."""
-    import requests
 
     url = f"https://finviz.com/api/calendar/{kind}"
     headers = {
@@ -759,11 +869,11 @@ def _fetch_finviz_calendar_paged(
     params = {
         "dateFrom": date_from,
         "dateTo": date_to,
-        "page": page,
-        "pageSize": page_size,
+        "page": max(1, int(page)),
+        "pageSize": max(1, int(page_size)),
     }
 
-    resp = requests.get(url, headers=headers, params=params, timeout=15)
+    resp = _finviz_http_get(url, headers=headers, params=params)
     resp.raise_for_status()
     data = resp.json()
     if not isinstance(data, dict):
