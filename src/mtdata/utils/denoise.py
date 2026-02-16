@@ -242,6 +242,13 @@ def _wavelet_packet_denoise(
 ) -> np.ndarray:
     if _pywt is None:
         return x
+    # PyWavelets' WaveletPacket/DWT path can fail with read-only views
+    # (e.g. when upstream provides a Pandas-backed array). Always operate
+    # on a writable, contiguous copy for robustness.
+    try:
+        x = np.array(x, dtype=float, copy=True, order="C")
+    except Exception:
+        pass
     try:
         w = _pywt.Wavelet(wavelet)
     except Exception:
