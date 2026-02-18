@@ -35,7 +35,7 @@ from ..forecast.volatility import (
 )
 from ..forecast.backtest import forecast_backtest as _backtest_impl
 from ..forecast.common import fetch_history as _fetch_history_impl
-from .data import data_fetch_candles as _data_fetch_candles
+from ..services.data_service import fetch_candles as _fetch_candles_impl
 from .pivot import pivot_compute_points
 from importlib.util import find_spec as _find_spec
 
@@ -69,7 +69,7 @@ def _call_tool_raw(func):
 from ..utils.mt5 import mt5_connection, _ensure_symbol_ready
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from ..utils.denoise import get_denoise_methods_data as _get_denoise_methods
-from ..utils.denoise import _apply_denoise as _apply_dn, normalize_denoise_spec as _norm_dn
+from ..utils.denoise import normalize_denoise_spec as _norm_dn
 from ..utils.dimred import list_dimred_methods as _list_dimred_methods
 import MetaTrader5 as mt5
 from ..core.config import mt5_config
@@ -350,46 +350,41 @@ def get_history(
 ) -> Dict[str, Any]:
     if not mt5_connection._ensure_connection():
         raise HTTPException(status_code=500, detail="Failed to connect to MetaTrader5.")
-    # If denoise requested, use data_fetch_candles to include *_dn columns; else use fast fetch
-    if denoise_method:
+    denoise_method_val = denoise_method.strip() if isinstance(denoise_method, str) else None
+    denoise_params_val = denoise_params if isinstance(denoise_params, str) else None
+
+    denoise_spec: Optional[Dict[str, Any]] = None
+    if denoise_method_val:
         # Validate availability first
         try:
             dn_meta = _get_denoise_methods()
             if isinstance(dn_meta, dict):
                 methods = {m.get('method'): m for m in (dn_meta.get('methods') or [])}
-                m = methods.get(denoise_method)
+                m = methods.get(denoise_method_val)
                 if not m or not bool(m.get('available', True)):
                     req = m.get('requires') if m else ''
-                    raise HTTPException(status_code=400, detail=f"Denoise method '{denoise_method}' is not available. {('Requires ' + str(req)) if req else ''}")
+                    raise HTTPException(status_code=400, detail=f"Denoise method '{denoise_method_val}' is not available. {('Requires ' + str(req)) if req else ''}")
         except HTTPException:
             raise
         except Exception:
             pass
-        # Fetch bars first, then apply denoise locally to avoid text encoding/decoding
-        try:
-            need = int(limit)
-            df = _fetch_history_impl(symbol=symbol, timeframe=timeframe, need=need, as_of=end, drop_last_live=not include_incomplete)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"history fetch failed: {e}")
-        # Build denoise spec and apply
 
         spec_input: Dict[str, Any] = {
-            "method": denoise_method,
+            "method": denoise_method_val,
             "when": "post_ti",
             "columns": ["close"],
             "keep_original": True,
             "suffix": "_dn",
             "params": {},
         }
-        if denoise_params:
+        if denoise_params_val:
             try:
                 import json as _json
-                payload = _json.loads(denoise_params)
+                payload = _json.loads(denoise_params_val)
                 if isinstance(payload, dict):
                     if 'params' in payload:
                         spec_input['params'] = payload.pop('params') or {}
                     else:
-                        # treat remaining numeric pairs as params unless reserved keys used
                         reserved = {'columns', 'when', 'causality', 'keep_original'}
                         extra_params = {k: v for k, v in payload.items() if k not in reserved}
                         if extra_params:
@@ -412,51 +407,45 @@ def get_history(
                     raise ValueError('payload not dict')
             except Exception:
                 params_dict: Dict[str, Any] = {}
-                for part in str(denoise_params).split(','):
+                for part in denoise_params_val.split(','):
                     if '=' in part:
                         k, v = part.split('=', 1)
-                        k = k.strip(); v = v.strip()
+                        k = k.strip()
+                        v = v.strip()
                         try:
                             params_dict[k] = float(v) if v.replace('.', '', 1).lstrip('-').isdigit() else v
                         except Exception:
                             params_dict[k] = v
                 spec_input['params'] = params_dict
-        spec = _norm_dn(spec_input, default_when='post_ti')
-        try:
-            _apply_dn(df, spec, default_when='post_ti')
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"denoise failed: {e}")
-        cols_base = ['time', 'open', 'high', 'low', 'close', 'tick_volume']
-        cols_extra = []
-        if 'close_dn' in df.columns:
-            cols_extra.append('close_dn')
-        rows: List[Dict[str, Any]] = []
-        for _, r in df.iterrows():
-            rec: Dict[str, Any] = {}
-            for k in cols_base + cols_extra:
-                if k in df.columns:
-                    rec[k] = float(r[k])
-            rows.append(rec)
-        return {
-            "bars": rows,
-            "meta": {
-                "server_tz_offset": int(mt5_config.get_time_offset_seconds()),
-            }
-        }
-    # Fast path without denoise
+        denoise_spec = _norm_dn(spec_input, default_when='post_ti')
+
     try:
-        need = int(limit)
-        df = _fetch_history_impl(symbol=symbol, timeframe=timeframe, need=need, as_of=end, drop_last_live=not include_incomplete)
+        res = _fetch_candles_impl(
+            symbol=symbol,
+            timeframe=timeframe,  # type: ignore[arg-type]
+            limit=int(limit),
+            start=start,
+            end=end,
+            ohlcv=ohlcv,
+            indicators=None,
+            denoise=denoise_spec,
+            simplify=None,
+            time_as_epoch=True,
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"history fetch failed: {e}")
 
-    cols = ['time', 'open', 'high', 'low', 'close', 'tick_volume']
-    rows: List[Dict[str, Any]] = []
-    try:
-        for _, r in df.iterrows():
-            rows.append({k: float(r[k]) if k != 'time' else float(r[k]) for k in cols if k in df.columns})
-    except Exception:
-        pass
+    if not isinstance(res, dict):
+        raise HTTPException(status_code=500, detail="Unexpected history payload")
+    if res.get("error"):
+        raise HTTPException(status_code=400, detail=str(res["error"]))
+
+    rows_raw = res.get("data")
+    rows: List[Dict[str, Any]] = rows_raw if isinstance(rows_raw, list) else []
+
+    if not include_incomplete and bool(res.get("last_candle_open")) and rows:
+        rows = rows[:-1]
+
     return {
         "bars": rows,
         "meta": {

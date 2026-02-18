@@ -15,7 +15,7 @@ from ..core.schema import TimeframeLiteral, IndicatorSpec, DenoiseSpec, Simplify
 from ..core.constants import (
     TIMEFRAME_MAP, TIMEFRAME_SECONDS, FETCH_RETRY_ATTEMPTS, FETCH_RETRY_DELAY,
     SANITY_BARS_TOLERANCE, TI_NAN_WARMUP_FACTOR, TI_NAN_WARMUP_MIN_ADD,
-    SIMPLIFY_DEFAULT_MODE, SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT, TICKS_LOOKBACK_DAYS,
+    SIMPLIFY_DEFAULT_METHOD, SIMPLIFY_DEFAULT_MODE, SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT, TICKS_LOOKBACK_DAYS,
     DEFAULT_ROW_LIMIT
 )
 from ..core.config import mt5_config
@@ -30,7 +30,7 @@ from ..utils.utils import (
     _table_from_rows, _format_time_minimal, _format_time_minimal_local,
     _resolve_client_tz, _time_format_from_epochs, _maybe_strip_year,
     _style_time_format, _format_numeric_rows_from_df, _parse_start_datetime,    
-    _coerce_scalar, _normalize_ohlcv_arg
+    _coerce_scalar, _normalize_ohlcv_arg, _utc_epoch_seconds
 )
 from ..utils.indicators import _estimate_warmup_bars_util, _apply_ta_indicators_util
 from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
@@ -66,7 +66,7 @@ def _fetch_rates_with_warmup(
             return None, "start_datetime must be before end_datetime"
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
         from_date_internal = from_date - timedelta(seconds=seconds_per_bar * warmup_bars)
-        expected_end_ts = to_date.timestamp()
+        expected_end_ts = _utc_epoch_seconds(to_date)
 
         def _fetch():
             return _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date)
@@ -80,7 +80,7 @@ def _fetch_rates_with_warmup(
             return None, f"Unable to determine timeframe seconds for {timeframe}"
         to_date = from_date + timedelta(seconds=seconds_per_bar * (candles + 2))
         from_date_internal = from_date - timedelta(seconds=seconds_per_bar * warmup_bars)
-        expected_end_ts = to_date.timestamp()
+        expected_end_ts = _utc_epoch_seconds(to_date)
 
         def _fetch():
             return _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date)
@@ -90,7 +90,7 @@ def _fetch_rates_with_warmup(
         if not to_date:
             return None, "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
-        expected_end_ts = to_date.timestamp()
+        expected_end_ts = _utc_epoch_seconds(to_date)
 
         # We need to fetch 'candles' bars ending at 'to_date'.
         # Since we can't easily query by count backwards from a date in MT5 (without pos),
@@ -105,7 +105,7 @@ def _fetch_rates_with_warmup(
     else:
         utc_now = datetime.utcnow()
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
-        expected_end_ts = utc_now.timestamp()
+        expected_end_ts = _utc_epoch_seconds(utc_now)
 
         def _fetch():
             return _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, candles + warmup_bars)
@@ -148,11 +148,20 @@ def _trim_df_to_target(
     copy_rows: bool = True,
 ) -> pd.DataFrame:
     if start_datetime and end_datetime:
-        target_from = _parse_start_datetime(start_datetime).timestamp()
-        target_to = _parse_start_datetime(end_datetime).timestamp()
+        from_dt = _parse_start_datetime(start_datetime)
+        to_dt = _parse_start_datetime(end_datetime)
+        if not from_dt or not to_dt:
+            out = df.iloc[0:0]
+            return out.copy() if copy_rows else out
+        target_from = _utc_epoch_seconds(from_dt)
+        target_to = _utc_epoch_seconds(to_dt)
         out = df.loc[(df['__epoch'] >= target_from) & (df['__epoch'] <= target_to)]
     elif start_datetime:
-        target_from = _parse_start_datetime(start_datetime).timestamp()
+        from_dt = _parse_start_datetime(start_datetime)
+        if not from_dt:
+            out = df.iloc[0:0]
+            return out.copy() if copy_rows else out
+        target_from = _utc_epoch_seconds(from_dt)
         out = df.loc[df['__epoch'] >= target_from]
         if len(out) > candles:
             out = out.iloc[:candles]
@@ -173,6 +182,7 @@ def fetch_candles(
     indicators: Optional[List[IndicatorSpec]] = None,
     denoise: Optional[DenoiseSpec] = None,
     simplify: Optional[SimplifySpec] = None,
+    time_as_epoch: bool = False,
 ) -> Dict[str, Any]:
     """Return historical candles as tabular data."""
     try:
@@ -399,27 +409,32 @@ def fetch_candles(
         # Ensure headers are unique and exist in df
         headers = [h for h in headers if h in df.columns]
 
-        # Reformat time consistently across rows for display
+        # Reformat time consistently across rows for display, unless caller
+        # explicitly requests numeric UTC epoch seconds.
         if 'time' in headers and len(df) > 0:
             epochs_list = df['__epoch'].tolist()
-            fmt = _time_format_from_epochs(epochs_list)
-            fmt = _maybe_strip_year(fmt, epochs_list)
-            fmt = _style_time_format(fmt)
-            tz_used_name = 'UTC'
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                if _use_ctz:
-                    tz_used_name = getattr(client_tz, 'zone', None) or str(client_tz)
-                    df['time'] = [
-                        datetime.fromtimestamp(t, tz=dt_timezone.utc).astimezone(client_tz).strftime(fmt)
-                        for t in epochs_list
-                    ]
-                else:
-                    df['time'] = [
-                        datetime.utcfromtimestamp(t).strftime(fmt)
-                        for t in epochs_list
-                    ]
-            df.__dict__['_tz_used_name'] = tz_used_name
+            if time_as_epoch:
+                df['time'] = [float(t) for t in epochs_list]
+                df.__dict__['_tz_used_name'] = 'UTC'
+            else:
+                fmt = _time_format_from_epochs(epochs_list)
+                fmt = _maybe_strip_year(fmt, epochs_list)
+                fmt = _style_time_format(fmt)
+                tz_used_name = 'UTC'
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    if _use_ctz:
+                        tz_used_name = getattr(client_tz, 'zone', None) or str(client_tz)
+                        df['time'] = [
+                            datetime.fromtimestamp(t, tz=dt_timezone.utc).astimezone(client_tz).strftime(fmt)
+                            for t in epochs_list
+                        ]
+                    else:
+                        df['time'] = [
+                            datetime.utcfromtimestamp(t).strftime(fmt)
+                            for t in epochs_list
+                        ]
+                df.__dict__['_tz_used_name'] = tz_used_name
 
         # Optionally reduce number of rows for readability/output size
         original_rows = len(df)
@@ -446,13 +461,20 @@ def fetch_candles(
 
         # Build tabular payload
         payload = _table_from_rows(headers, rows)
+        if time_as_epoch:
+            for row in payload.get("data", []) or []:
+                if isinstance(row, dict) and "time" in row:
+                    try:
+                        row["time"] = float(row["time"])
+                    except Exception:
+                        pass
         
         # Determine if the last candle is open or closed
         last_candle_open = False
         if len(df) > 0 and '__epoch' in df.columns:
             last_epoch = float(df['__epoch'].iloc[-1])
             seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 3600)
-            current_time = datetime.utcnow().timestamp()
+            current_time = _utc_epoch_seconds(datetime.now(dt_timezone.utc))
             
             # A candle is "open" if current time is within its timeframe window
             time_since_candle_start = current_time - last_epoch
@@ -983,3 +1005,4 @@ def fetch_ticks(
         return payload
     except Exception as e:
         return {"error": f"Error getting ticks: {str(e)}"}
+

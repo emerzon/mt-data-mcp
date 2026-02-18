@@ -207,7 +207,13 @@ def forecast_backtest(
         for idx in anchor_indices:
             if idx + int(horizon) >= len(closes):
                 continue
-            actual = closes[idx + 1: idx + 1 + int(horizon)].tolist()
+            if target == 'return' and quantity != 'volatility':
+                prev = np.maximum(closes[idx: idx + int(horizon)], 1e-12)
+                nxt = np.maximum(closes[idx + 1: idx + 1 + int(horizon)], 1e-12)
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    actual = np.log(nxt / prev).tolist()
+            else:
+                actual = closes[idx + 1: idx + 1 + int(horizon)].tolist()
             ts = times[idx + 1: idx + 1 + int(horizon)].tolist()
             actual_windows[idx] = (actual, ts)
         if not actual_windows:
@@ -231,7 +237,8 @@ def forecast_backtest(
                 try:
                     if quantity == 'volatility':
                         # Volatility forecast: allow proxy in params map (params_map[method].get('proxy'))
-                        pm = params_map.get(method) or {}
+                        pm_raw = params_map.get(method) or {}
+                        pm = dict(pm_raw) if isinstance(pm_raw, dict) else {}
                         proxy = pm.pop('proxy', None) if isinstance(pm, dict) else None
                         r = forecast_volatility(  # type: ignore
                             symbol=symbol,
@@ -284,7 +291,10 @@ def forecast_backtest(
                         "realized_sigma": realized_sigma,
                     })
                 else:
-                    fc = r.get('forecast_price') if target == 'price' else r.get('forecast_return')
+                    if target == 'return':
+                        fc = r.get('forecast_return') or r.get('forecast_price')
+                    else:
+                        fc = r.get('forecast_price')
                     if not fc:
                         per_anchor.append({"anchor": anchor_time, "success": False, "error": "Empty forecast"})
                         continue
@@ -301,11 +311,15 @@ def forecast_backtest(
                     else:
                         da = float('nan')
                     entry_price = float(closes[idx]) if idx < len(closes) else float('nan')
-                    exit_price = float(act[m-1]) if m > 0 else float('nan')
+                    if target == 'return':
+                        exit_idx = idx + m
+                        exit_price = float(closes[exit_idx]) if exit_idx < len(closes) else float('nan')
+                    else:
+                        exit_price = float(act[m - 1]) if m > 0 else float('nan')
                     if target == 'return':
                         expected_move = float(np.nansum(fcv[:m]))
                     else:
-                        expected_move = float((float(fcv[m-1]) - entry_price)) if math.isfinite(entry_price) else float('nan')
+                        expected_move = float((float(fcv[m - 1]) - entry_price)) if math.isfinite(entry_price) else float('nan')
                     expected_return = float('nan')
                     if target == 'return':
                         expected_return = expected_move
@@ -325,12 +339,19 @@ def forecast_backtest(
                         position = 'short'
                     gross_return = float('nan')
                     net_return = float('nan')
-                    if direction != 0 and math.isfinite(entry_price) and entry_price != 0.0 and math.isfinite(exit_price):
-                        gross_return = direction * ((exit_price - entry_price) / entry_price)
-                        slip = float(abs(slippage_bps) or 0.0) / 10000.0
-                        net_return = gross_return - float(direction != 0) * 2.0 * slip
-                        if net_return <= -0.999:
-                            net_return = -0.999
+                    if direction != 0:
+                        if target == 'return':
+                            gross_return = direction * float(np.nansum(act[:m]))
+                            slip = float(abs(slippage_bps) or 0.0) / 10000.0
+                            net_return = gross_return - 2.0 * slip
+                            if net_return <= -0.999:
+                                net_return = -0.999
+                        elif math.isfinite(entry_price) and entry_price != 0.0 and math.isfinite(exit_price):
+                            gross_return = direction * ((exit_price - entry_price) / entry_price)
+                            slip = float(abs(slippage_bps) or 0.0) / 10000.0
+                            net_return = gross_return - 2.0 * slip
+                            if net_return <= -0.999:
+                                net_return = -0.999
                     elif direction == 0:
                         gross_return = 0.0
                         net_return = 0.0
