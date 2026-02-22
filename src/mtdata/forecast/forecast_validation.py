@@ -208,15 +208,19 @@ def validate_target_spec(target_spec: Optional[Dict[str, Any]]) -> List[str]:
         errors.append("target_spec must be a dictionary")
         return errors
 
-    # Validate column field
+    # Validate column/base field
     if 'column' in target_spec:
         column = target_spec['column']
         if not isinstance(column, str) or not column.strip():
             errors.append("target_spec.column must be a non-empty string")
+    if 'base' in target_spec:
+        base = target_spec['base']
+        if not isinstance(base, str) or not base.strip():
+            errors.append("target_spec.base must be a non-empty string")
 
     # Validate transform field
     if 'transform' in target_spec:
-        valid_transforms = ['log', 'diff', 'pct']
+        valid_transforms = ['none', 'return', 'log_return', 'diff', 'pct_change', 'log', 'pct']
         transform = str(target_spec['transform']).lower()
         if transform not in valid_transforms:
             errors.append(f"Invalid target_spec.transform: {transform}. Valid options: {valid_transforms}")

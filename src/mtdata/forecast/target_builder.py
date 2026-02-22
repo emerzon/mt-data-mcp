@@ -60,7 +60,7 @@ def build_target_series(
         except Exception:
             pass
     
-    base_name = str(ts.get('base', base_col))
+    base_name = str(ts.get('base', ts.get('column', base_col)))
     
     # Resolve base series
     if base_name in df.columns:
@@ -77,22 +77,39 @@ def build_target_series(
     # Apply transform
     transform = str(ts.get('transform', 'none')).lower()
     k = int(ts.get('k', 1))
+    if k < 1:
+        k = 1
     
     if transform == 'none':
         y = y_base
         target_info['transform'] = 'none'
-    elif transform == 'return':
-        y = np.diff(y_base, n=k, prepend=y_base[0])
+    elif transform in ('return',):
+        prev = np.roll(y_base, k)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            y = (y_base - prev) / np.where(np.abs(prev) > 1e-12, prev, 1.0)
+        y[:k] = 0.0
         target_info['transform'] = f'return(k={k})'
     elif transform == 'log_return':
-        y = np.log(y_base)
-        y = np.diff(y, n=k, prepend=y[0])
+        prev = np.roll(y_base, k)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            y = np.log(np.maximum(y_base, 1e-12)) - np.log(np.maximum(prev, 1e-12))
+        y[:k] = 0.0
         target_info['transform'] = f'log_return(k={k})'
+    elif transform == 'log':
+        y = np.log(np.maximum(y_base, 1e-12))
+        target_info['transform'] = 'log'
     elif transform == 'diff':
-        y = np.diff(y_base, n=k, prepend=y_base[0])
+        prev = np.roll(y_base, k)
+        y = y_base - prev
+        y[:k] = 0.0
         target_info['transform'] = f'diff(k={k})'
-    elif transform == 'pct_change':
-        y = np.diff(y_base, n=k, prepend=y_base[0]) / (y_base[:-k] + 1e-12)
+    elif transform in ('pct_change', 'pct'):
+        prev = np.roll(y_base, k)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            y = (y_base - prev) / np.where(np.abs(prev) > 1e-12, prev, 1.0)
+        if transform == 'pct':
+            y = 100.0 * y
+        y[:k] = 0.0
         target_info['transform'] = f'pct_change(k={k})'
     else:
         y = y_base

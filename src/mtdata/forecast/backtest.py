@@ -322,7 +322,10 @@ def forecast_backtest(
                         expected_move = float((float(fcv[m - 1]) - entry_price)) if math.isfinite(entry_price) else float('nan')
                     expected_return = float('nan')
                     if target == 'return':
-                        expected_return = expected_move
+                        try:
+                            expected_return = float(math.exp(expected_move) - 1.0)
+                        except Exception:
+                            expected_return = float('nan')
                     elif math.isfinite(entry_price) and entry_price != 0.0:
                         expected_return = expected_move / entry_price
                     direction = 0
@@ -341,7 +344,11 @@ def forecast_backtest(
                     net_return = float('nan')
                     if direction != 0:
                         if target == 'return':
-                            gross_return = direction * float(np.nansum(act[:m]))
+                            try:
+                                realized_log = float(np.nansum(act[:m]))
+                                gross_return = direction * float(math.exp(realized_log) - 1.0)
+                            except Exception:
+                                gross_return = float('nan')
                             slip = float(abs(slippage_bps) or 0.0) / 10000.0
                             net_return = gross_return - 2.0 * slip
                             if net_return <= -0.999:
