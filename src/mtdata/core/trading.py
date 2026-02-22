@@ -1672,8 +1672,12 @@ def trade_risk_analyze(
                     
                     # Contract specifications
                     contract_size = float(sym_info.trade_contract_size)
-                    point = float(sym_info.point)
-                    tick_value = float(sym_info.trade_tick_value)
+                    point = float(getattr(sym_info, "point", 0.0) or 0.0)
+                    tick_value = float(getattr(sym_info, "trade_tick_value", 0.0) or 0.0)
+                    tick_size = float(getattr(sym_info, "trade_tick_size", 0.0) or 0.0)
+                    if not math.isfinite(tick_size) or tick_size <= 0:
+                        tick_size = point if math.isfinite(point) and point > 0 else 0.0
+                    tick_value_valid = math.isfinite(tick_value) and tick_value > 0
                     if not math.isfinite(contract_size) or contract_size <= 0:
                         contract_size = 1.0
 
@@ -1687,15 +1691,15 @@ def trade_risk_analyze(
                     rr_ratio = None
                     risk_status = "undefined"
                     
-                    if sl_price:
+                    if sl_price and tick_size > 0 and tick_value_valid:
                         # Calculate risk in price distance
                         if pos.type == 0:  # BUY
-                            risk_points = (entry_price - sl_price) / point
+                            risk_ticks = (entry_price - sl_price) / tick_size
                         else:  # SELL
-                            risk_points = (sl_price - entry_price) / point
+                            risk_ticks = (sl_price - entry_price) / tick_size
                         
                         # Risk in account currency
-                        risk_currency = abs(risk_points * tick_value * volume)
+                        risk_currency = abs(risk_ticks * tick_value * volume)
                         risk_pct = (risk_currency / equity) * 100.0 if equity > 0 else 0.0
                         total_risk_currency += risk_currency
                         risk_status = "defined"
@@ -1703,14 +1707,16 @@ def trade_risk_analyze(
                         # Calculate reward if TP is set
                         if tp_price:
                             if pos.type == 0:  # BUY
-                                reward_points = (tp_price - entry_price) / point
+                                reward_ticks = (tp_price - entry_price) / tick_size
                             else:  # SELL
-                                reward_points = (entry_price - tp_price) / point
+                                reward_ticks = (entry_price - tp_price) / tick_size
                             
-                            reward_currency = abs(reward_points * tick_value * volume)
+                            reward_currency = abs(reward_ticks * tick_value * volume)
                             
                             if risk_currency > 0:
                                 rr_ratio = reward_currency / risk_currency
+                    elif sl_price:
+                        risk_status = "undefined"
                     else:
                         # No SL = unlimited risk
                         positions_without_sl += 1
@@ -1782,44 +1788,55 @@ def trade_risk_analyze(
                 
                 # Calculate position size
                 contract_size = float(sym_info.trade_contract_size)
-                point = float(sym_info.point)
-                tick_value = float(sym_info.trade_tick_value)
+                point = float(getattr(sym_info, "point", 0.0) or 0.0)
+                tick_value = float(getattr(sym_info, "trade_tick_value", 0.0) or 0.0)
+                tick_size = float(getattr(sym_info, "trade_tick_size", 0.0) or 0.0)
+                if not math.isfinite(tick_size) or tick_size <= 0:
+                    tick_size = point if math.isfinite(point) and point > 0 else 0.0
                 min_volume = float(sym_info.volume_min)
                 max_volume = float(sym_info.volume_max)
                 volume_step = float(sym_info.volume_step)
+                if not (math.isfinite(tick_value) and tick_value > 0 and math.isfinite(tick_size) and tick_size > 0):
+                    result["position_sizing_error"] = "Symbol tick configuration is invalid for risk sizing"
+                    return result
+                if not (math.isfinite(volume_step) and volume_step > 0):
+                    volume_step = max(min_volume, 0.01)
                 
                 # Risk amount in account currency
                 risk_amount = equity * (desired_risk_pct / 100.0)
                 
-                # SL distance in points
-                sl_distance_points = abs(proposed_entry - proposed_sl) / point
+                # SL distance in ticks
+                sl_distance_ticks = abs(proposed_entry - proposed_sl) / tick_size
                 
-                if sl_distance_points > 0:
+                if sl_distance_ticks > 0:
                     # Calculate volume
-                    suggested_volume = risk_amount / (sl_distance_points * tick_value)
+                    suggested_volume = risk_amount / (sl_distance_ticks * tick_value)
                     
                     # Round to volume step
                     suggested_volume = round(suggested_volume / volume_step) * volume_step
                     
                     # Clamp to min/max
                     suggested_volume = max(min_volume, min(suggested_volume, max_volume))
+                    step_txt = f"{volume_step:.10f}".rstrip("0")
+                    step_decimals = len(step_txt.split(".")[1]) if "." in step_txt else 0
+                    suggested_volume = float(f"{suggested_volume:.{step_decimals}f}") if step_decimals > 0 else float(round(suggested_volume))
                     
                     # Calculate actual risk with suggested volume
-                    actual_risk = sl_distance_points * tick_value * suggested_volume
+                    actual_risk = sl_distance_ticks * tick_value * suggested_volume
                     actual_risk_pct = (actual_risk / equity) * 100.0
                     
                     # Calculate R:R if TP is provided
                     rr_ratio = None
                     reward_currency = None
                     if proposed_tp is not None:
-                        tp_distance_points = abs(proposed_tp - proposed_entry) / point
-                        reward_currency = tp_distance_points * tick_value * suggested_volume
+                        tp_distance_ticks = abs(proposed_tp - proposed_entry) / tick_size
+                        reward_currency = tp_distance_ticks * tick_value * suggested_volume
                         if actual_risk > 0:
                             rr_ratio = reward_currency / actual_risk
                     
                     result["position_sizing"] = {
                         "symbol": symbol,
-                        "suggested_volume": round(suggested_volume, 2),
+                        "suggested_volume": suggested_volume,
                         "entry": proposed_entry,
                         "sl": proposed_sl,
                         "tp": proposed_tp,
