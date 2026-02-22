@@ -73,6 +73,15 @@ def test_build_target_series_custom_with_indicators_and_transforms(monkeypatch):
     assert y_log.shape[0] == len(df)
     assert info_log["transform"] == "log_return(k=1)"
 
+    y_pct, info_pct = tb.build_target_series(
+        df,
+        base_col="close",
+        target_spec={"base": "close", "transform": "pct_change", "k": 2},
+    )
+    assert y_pct.shape[0] == len(df)
+    assert np.isfinite(y_pct).all()
+    assert info_pct["transform"] == "pct_change(k=2)"
+
     y_alias, info_alias = tb.build_target_series(
         df,
         base_col="close",

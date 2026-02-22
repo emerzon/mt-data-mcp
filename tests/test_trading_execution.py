@@ -10,7 +10,9 @@ from src.mtdata.core.trading import _place_market_order, _place_pending_order
 
 @pytest.fixture
 def mock_mt5():
-    mock_mt5 = sys.modules["MetaTrader5"]
+    prev_mt5 = sys.modules.get("MetaTrader5")
+    mock_mt5 = MagicMock()
+    sys.modules["MetaTrader5"] = mock_mt5
     
     # Defaults
     mock_mt5.symbol_info.return_value = MagicMock(
@@ -56,6 +58,8 @@ def mock_mt5():
     # Guard
     with patch("src.mtdata.core.trading._auto_connect_wrapper", lambda f: f):
         yield mock_mt5
+    if prev_mt5 is not None:
+        sys.modules["MetaTrader5"] = prev_mt5
 
 
 def test_place_market_order_success(mock_mt5):

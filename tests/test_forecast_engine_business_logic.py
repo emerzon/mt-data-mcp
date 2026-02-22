@@ -234,6 +234,44 @@ def test_forecast_engine_target_spec_and_data_validity_errors(monkeypatch):
     assert "Not enough valid data points" in out["error"]
 
 
+def test_forecast_engine_target_spec_column_alias_is_applied(monkeypatch):
+    captured = {}
+
+    class CaptureForecaster:
+        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+            captured["last_value"] = float(series.iloc[-1])
+            return ForecastResult(
+                forecast=np.array([float(series.iloc[-1])], dtype=float),
+                params_used={},
+                metadata={},
+            )
+
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return CaptureForecaster()
+
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("naive",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+
+    df = _df(20)
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="naive",
+        horizon=1,
+        prefetched_df=df,
+        target_spec={"column": "open", "transform": "none"},
+    )
+
+    assert out["success"] is True
+    assert out["base_col"] == "open"
+    assert captured["last_value"] == float(df["open"].iloc[-1])
+
+
 def test_forecast_engine_ensemble_paths(monkeypatch):
     monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
