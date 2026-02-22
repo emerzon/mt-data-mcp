@@ -252,7 +252,6 @@ def _apply_dimensionality_reduction(X: pd.DataFrame, dimred_method: Optional[str
     try:
         from sklearn.decomposition import PCA
         from sklearn.manifold import TSNE
-        from sklearn.feature_selection import SelectKBest, f_regression
 
         params = dimred_params or {}
 
@@ -269,9 +268,18 @@ def _apply_dimensionality_reduction(X: pd.DataFrame, dimred_method: Optional[str
             return pd.DataFrame(X_reduced, columns=[f'tsne_{i}' for i in range(X_reduced.shape[1])])
 
         elif dimred_method.lower() == 'selectkbest':
-            k = params.get('k', min(5, X.shape[1]))
-            selector = SelectKBest(score_func=f_regression, k=k)
-            X_reduced = selector.fit_transform(X, y=None)  # unsupervised selection
+            try:
+                k = int(params.get('k', min(5, X.shape[1])))
+            except (TypeError, ValueError):
+                k = min(5, X.shape[1])
+            k = max(1, min(int(k), int(X.shape[1])))
+            X_num = X.apply(pd.to_numeric, errors='coerce')
+            variances = X_num.var(axis=0, skipna=True).astype(float)
+            variances = variances.fillna(float("-inf"))
+            selected_cols = variances.sort_values(ascending=False).index.tolist()[:k]
+            if not selected_cols:
+                selected_cols = list(X.columns[:k])
+            X_reduced = X_num[selected_cols].to_numpy()
             return pd.DataFrame(X_reduced, columns=[f'select_{i}' for i in range(X_reduced.shape[1])])
 
     except Exception:

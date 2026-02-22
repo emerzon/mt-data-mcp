@@ -36,24 +36,46 @@ from .forecast_methods import get_forecast_methods_data
 logger = logging.getLogger(__name__)
 # Simple dimred factory used by the wrapper when building exogenous features.
 def _create_dimred_reducer(method: Any, params: Optional[Dict[str, Any]]) -> Any:
-    try:
-        from sklearn.decomposition import PCA
-        from sklearn.manifold import TSNE
-        from sklearn.feature_selection import SelectKBest, f_regression
-    except Exception as ex:
-        raise RuntimeError(f"dimred dependencies missing: {ex}")
     m = str(method).lower().strip()
     p = params or {}
     if m == 'pca':
+        try:
+            from sklearn.decomposition import PCA
+        except Exception as ex:
+            raise RuntimeError(f"dimred dependencies missing: {ex}")
         n_components = p.get('n_components', None)
         return PCA(n_components=n_components), {"n_components": n_components}
     if m == 'tsne':
+        try:
+            from sklearn.manifold import TSNE
+        except Exception as ex:
+            raise RuntimeError(f"dimred dependencies missing: {ex}")
         n_components = p.get('n_components', 2)
         return TSNE(n_components=n_components, random_state=42), {"n_components": n_components}
     if m == 'selectkbest':
-        k = p.get('k', 5)
-        selector = SelectKBest(score_func=f_regression, k=k)
-        return selector, {"k": k}
+        try:
+            k = int(p.get('k', 5))
+        except (TypeError, ValueError):
+            k = 5
+
+        class _TopKVarianceReducer:
+            def __init__(self, k_value: int):
+                self.k = max(1, int(k_value))
+
+            def fit_transform(self, X):
+                arr = np.asarray(X, dtype=float)
+                if arr.ndim == 1:
+                    arr = arr.reshape(-1, 1)
+                n_features = int(arr.shape[1]) if arr.ndim == 2 else 1
+                k_eff = max(1, min(self.k, n_features))
+                var = np.nanvar(arr, axis=0)
+                var = np.where(np.isfinite(var), var, -np.inf)
+                idx = np.argsort(-var)[:k_eff]
+                if idx.size == 0:
+                    idx = np.arange(k_eff, dtype=int)
+                return arr[:, idx]
+
+        return _TopKVarianceReducer(k), {"k": k, "score_func": "variance"}
     # Identity fallback to avoid crashes; caller already wraps in try/except.
     class _Identity:
         def fit_transform(self, X):

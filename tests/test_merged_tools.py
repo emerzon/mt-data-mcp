@@ -11,8 +11,6 @@ from src.mtdata.utils.utils import _format_time_minimal, _format_time_minimal_lo
 sys.modules['MetaTrader5'] = MagicMock()
 import MetaTrader5 as mt5
 
-# Mock pandas_ta
-pd.DataFrame.ta = MagicMock()
 
 # Now import the tools
 # We need to make sure the path is in sys.path

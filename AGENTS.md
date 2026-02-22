@@ -1,38 +1,40 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `src/mtdata/`: Python package (MCP server, CLI, forecasting, reporting).
-  - `core/`: tool registry + schemas, `server.py`, `cli.py`, FastAPI app (`web_api.py`).
-  - `services/`: MetaTrader5 data access and service wrappers.
-  - `utils/`, `forecast/`, `patterns/`: shared algorithms and helpers.
-- `tests/`: unit/smoke tests (`test_*.py`).
-- `docs/`: user guides and troubleshooting.
-- `webui/`: Vite + React + Tailwind UI (build output: `webui/dist/`).
-- `scripts/`: one-off utilities (e.g., plotting/backtest helpers).
+Primary Python code lives in `src/mtdata/`:
+- `core/`: CLI/MCP server wiring, schemas, API-facing tools.
+- `forecast/`: forecasting engines, backtests, and method registries.
+- `services/`: MT5/Finviz data access.
+- `patterns/` and `utils/`: detection logic and shared helpers.
+
+Entry scripts at repo root (`cli.py`, `server.py`, `webui.py`) are thin wrappers. Tests are under `tests/` (mostly `test_*.py`). Frontend assets live in `webui/` (`src/`, `index.html`, Vite config). Documentation is in `docs/`, and utility scripts are in `scripts/`.
 
 ## Build, Test, and Development Commands
-- Install Python deps: `python -m pip install -r requirements.txt`
-- Editable install (enables entry points): `python -m pip install -e .`
-- Run MCP server: `python server.py` (or `mtdata-server` after install)
-- Use CLI: `python cli.py symbols_list` (or `mtdata-cli symbols_list`)
-- Run Web API: `python webui.py` (FastAPI via Uvicorn)
-- WebUI dev: `cd webui && npm install && npm run dev`
-- WebUI build/preview: `cd webui && npm run build && npm run preview`
+- `pip install -r requirements.txt`: install Python dependencies.
+- `pip install -e .`: editable install with console entry points (`mtdata-cli`, `mtdata-sse`, `mtdata-stdio`, `mtdata-webapi`).
+- `python cli.py --help`: inspect available CLI commands.
+- `python server.py`: start the MCP server.
+- `python webui.py`: start FastAPI + bundled UI backend on `127.0.0.1:8000`.
+- `python -m pytest tests/`: run full test suite.
+- `python -m pytest tests/test_data_service.py`: run a focused test file.
+- `cd webui && npm install && npm run dev`: run frontend dev server.
+- `cd webui && npm run build`: produce production frontend bundle.
 
 ## Coding Style & Naming Conventions
-- Python: 4-space indentation, type hints for new/changed code, keep imports package-relative inside `src/mtdata/`.
-- Naming: `snake_case` modules/functions, `PascalCase` classes, `UPPER_SNAKE_CASE` constants.
-- Keep changes focused; update `docs/` when behavior or CLI output changes.
+Use 4-space indentation in Python and follow PEP 8 with type hints on new/changed public functions. Use `snake_case` for modules/functions, `PascalCase` for classes, and `UPPER_SNAKE_CASE` for constants. Keep domain logic in `src/mtdata/*` modules, not wrapper scripts. In React/TypeScript, keep components in `webui/src/components` with `PascalCase` filenames and hooks prefixed with `use`.
 
 ## Testing Guidelines
-- Primary runner: `python -m pytest` (install if needed: `python -m pip install pytest`).
-- Prefer deterministic unit tests; mock MetaTrader5/network access unless explicitly writing an integration test.
+Pytest is the runner; both `pytest`-style and `unittest.TestCase` tests are present. Name new tests `test_*.py` and test functions `test_*`. Prefer deterministic tests with MT5 interactions mocked/stubbed unless explicitly validating integration behavior. No strict coverage gate is defined; maintain or improve coverage in touched areas.
 
 ## Commit & Pull Request Guidelines
-- Commit history favors short, scoped messages (e.g., `core: ...`, `forecast: ...`, `utils: ...`); use `scope: imperative summary` when possible.
-- PRs: include what/why, how to test (commands + expected result), and screenshots for `webui/` changes.
+Recent history favors short, imperative subjects, often scoped (for example, `core: ...`, `forecast: ...`, `docs: ...`). Prefer: `<area>: <imperative summary>`. Keep commits focused and avoid placeholder messages (for example, `ckpt`).
+
+PRs should include:
+- concise problem/solution summary,
+- linked issue (if applicable),
+- exact test commands run and results,
+- screenshots or recordings for `webui/` changes,
+- environment notes for MT5-dependent behavior.
 
 ## Security & Configuration Tips
-- Do not commit secrets. Copy `.env.example` → `.env` for `MT5_LOGIN`, `MT5_PASSWORD`, `MT5_SERVER`, and timezone settings (`MT5_SERVER_TZ` or `MT5_TIME_OFFSET_MINUTES`).
-- Use a demo account for any trading-related development.
-
+Keep credentials in `.env` and never commit secrets. MT5 actions can place real orders; validate account context and use a demo account for development and testing.

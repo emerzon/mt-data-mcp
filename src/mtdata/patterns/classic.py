@@ -482,7 +482,8 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
             name = "Rising Wedge" if sh > 0 and sl > 0 else "Falling Wedge"
             conf = _conf(touches, min(r2h, r2l), 1.0)
             base = _result(name, "forming", conf, int(min(ih[0], il[0])), int(max(ih[-1], il[-1])), t,
-                           {"top_slope": float(sh), "bottom_slope": float(sl)})
+                           {"top_slope": float(sh), "bottom_slope": float(sl),
+                            "top_intercept": float(bh), "bottom_intercept": float(bl)})
             out.append(base)
             out.append(_alias(base, "Wedge", 0.95))
         return out
@@ -743,7 +744,8 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
                 int(min(ih[0], il[0])),
                 int(max(ih[-1], il[-1])),
                 t,
-                {"top_slope": float(sh), "bottom_slope": float(sl)},
+                {"top_slope": float(sh), "bottom_slope": float(sl),
+                 "top_intercept": float(bh), "bottom_intercept": float(bl)},
             ))
         return out
 

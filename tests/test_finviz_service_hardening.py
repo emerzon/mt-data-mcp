@@ -72,30 +72,23 @@ def test_screen_stocks_uses_bounded_screener_view(monkeypatch):
     assert int(FakeOverview.last_kwargs.get("verbose")) == 0
 
 
-def test_get_earnings_calendar_uses_bounded_screener_view(monkeypatch):
-    class FakeFinancial:
-        last_kwargs = None
+def test_get_earnings_calendar_uses_earnings_contract_with_pagination(monkeypatch):
+    class FakeEarnings:
+        last_period = None
 
-        def __init__(self):
-            self.filter_args = None
-
-        def set_filter(self, filters_dict):
-            self.filter_args = filters_dict
-
-        def screener_view(self, **kwargs):
-            FakeFinancial.last_kwargs = kwargs
-            return pd.DataFrame(
+        def __init__(self, period):
+            FakeEarnings.last_period = period
+            self.df = pd.DataFrame(
                 {
                     "Ticker": [f"E{i}" for i in range(120)],
                     "Earnings": ["Mon"] * 120,
                 }
             )
 
-    financial_mod = types.ModuleType("finvizfinance.screener.financial")
-    financial_mod.Financial = FakeFinancial
-    monkeypatch.setitem(sys.modules, "finvizfinance.screener.financial", financial_mod)
+    earnings_mod = types.ModuleType("finvizfinance.earnings")
+    earnings_mod.Earnings = FakeEarnings
+    monkeypatch.setitem(sys.modules, "finvizfinance.earnings", earnings_mod)
     monkeypatch.setattr(svc, "_apply_finvizfinance_timeout_patch", lambda: None)
-    monkeypatch.setattr(svc, "_FINVIZ_SCREENER_MAX_ROWS", 120)
     monkeypatch.setattr(svc, "_FINVIZ_PAGE_LIMIT_MAX", 500)
 
     result = svc.get_earnings_calendar(period="This Week", limit=50, page=3)
@@ -103,8 +96,6 @@ def test_get_earnings_calendar_uses_bounded_screener_view(monkeypatch):
     assert result.get("success") is True
     assert result.get("count") == 20
     assert result.get("page") == 3
-    assert result.get("truncated") is True
-    assert FakeFinancial.last_kwargs is not None
-    assert int(FakeFinancial.last_kwargs.get("limit")) == 120
-    assert int(FakeFinancial.last_kwargs.get("sleep_sec")) == 0
-    assert int(FakeFinancial.last_kwargs.get("verbose")) == 0
+    assert result.get("pages") == 3
+    assert result.get("truncated") is False
+    assert FakeEarnings.last_period == "This Week"

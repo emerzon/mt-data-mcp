@@ -550,7 +550,7 @@ def get_earnings_calendar(
     try:
         safe_limit, safe_page = _sanitize_pagination(limit, page)
         _apply_finvizfinance_timeout_patch()
-        from finvizfinance.screener.financial import Financial
+        from finvizfinance.earnings import Earnings
 
         allowed_periods = {"This Week", "Next Week", "Previous Week", "This Month"}
         if period not in allowed_periods:
@@ -561,14 +561,13 @@ def get_earnings_calendar(
                 )
             )
 
-        screener = Financial()
-        screener.set_filter(filters_dict={"Earnings Date": period})
-        df, fetch_limit = _run_screener_view(
-            screener,
-            order="Earnings Date",
-            limit=safe_limit,
-            page=safe_page,
-        )
+        cal = Earnings(period=period)
+        df = getattr(cal, "df", None)
+        if df is None:
+            # Fallback for finvizfinance variants exposing a method instead of .df
+            getter = getattr(cal, "earnings", None)
+            if callable(getter):
+                df = getter()
 
         if df is None or df.empty:
             return {"error": "No earnings calendar data available"}
@@ -578,7 +577,6 @@ def get_earnings_calendar(
         start_idx = (safe_page - 1) * safe_limit
         end_idx = start_idx + safe_limit
         items_list = df.iloc[start_idx:end_idx].to_dict(orient="records")
-        truncated = bool(total >= fetch_limit and fetch_limit >= _FINVIZ_SCREENER_MAX_ROWS)
         return {
             "success": True,
             "period": period,
@@ -586,7 +584,7 @@ def get_earnings_calendar(
             "total": total,
             "page": safe_page,
             "pages": (total + safe_limit - 1) // safe_limit,
-            "truncated": truncated,
+            "truncated": False,
             "earnings": items_list,
         }
     except ValueError as e:

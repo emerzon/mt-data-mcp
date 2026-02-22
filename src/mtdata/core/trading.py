@@ -1460,8 +1460,14 @@ def _close_positions(
             # If only one position was targeted by ticket, return single result
             if ticket is not None and len(results) == 1:
                 return results[0]
-
-            return {"closed_count": len(results), "results": results}
+            success_count = 0
+            for item in results:
+                try:
+                    if int(item.get("retcode")) == int(mt5.TRADE_RETCODE_DONE):
+                        success_count += 1
+                except Exception:
+                    continue
+            return {"closed_count": success_count, "attempted_count": len(results), "results": results}
 
         except Exception as e:
             return {"error": str(e)}
@@ -1520,8 +1526,14 @@ def _cancel_pending(
             # If only one order was targeted by ticket, return single result
             if ticket is not None and len(results) == 1:
                 return results[0]
-
-            return {"cancelled_count": len(results), "results": results}
+            success_count = 0
+            for item in results:
+                try:
+                    if int(item.get("retcode")) == int(mt5.TRADE_RETCODE_DONE):
+                        success_count += 1
+                except Exception:
+                    continue
+            return {"cancelled_count": success_count, "attempted_count": len(results), "results": results}
 
         except Exception as e:
             return {"error": str(e)}
@@ -1662,9 +1674,11 @@ def trade_risk_analyze(
                     contract_size = float(sym_info.trade_contract_size)
                     point = float(sym_info.point)
                     tick_value = float(sym_info.trade_tick_value)
-                    
-                    # Calculate notional exposure (position value)
-                    notional_value = volume * contract_size * entry_price / (contract_size if contract_size > 1 else 1)
+                    if not math.isfinite(contract_size) or contract_size <= 0:
+                        contract_size = 1.0
+
+                    # Calculate notional exposure in quote currency
+                    notional_value = abs(volume) * contract_size * entry_price
                     total_notional_exposure += notional_value
                     
                     risk_currency = None

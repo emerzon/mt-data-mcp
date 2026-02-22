@@ -3,6 +3,15 @@ from typing import Any, Dict, List, Optional, Tuple
 import warnings
 
 import pandas as pd
+try:
+    import pandas_ta as ta  # type: ignore
+except ModuleNotFoundError:
+    try:
+        import pandas_ta_classic as ta  # type: ignore
+    except ModuleNotFoundError as e:
+        raise ModuleNotFoundError(
+            "pandas_ta not found. Install 'pandas-ta-classic' (or 'pandas-ta')."
+        ) from e
 import MetaTrader5 as mt5
 
 from ..core.constants import TIMEFRAME_MAP
