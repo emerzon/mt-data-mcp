@@ -53,6 +53,10 @@ def _bars_per_year(timeframe: str) -> float:
         return float('nan')
 
 
+_MIN_ANNUALIZATION_TRADES = 30
+_MIN_ANNUALIZATION_YEARS = 0.25
+
+
 def _compute_performance_metrics(
     returns: List[float],
     timeframe: str,
@@ -88,7 +92,13 @@ def _compute_performance_metrics(
     cumulative_return = float(equity[-1] - 1.0) if equity.size > 0 else float('nan')
     years = float(arr.size / trades_per_year) if math.isfinite(trades_per_year) and trades_per_year > 0 else float('nan')
     annual_return = float('nan')
-    if math.isfinite(years) and years > 0 and equity.size > 0 and equity[-1] > 0:
+    if (
+        arr.size >= _MIN_ANNUALIZATION_TRADES
+        and math.isfinite(years)
+        and years >= _MIN_ANNUALIZATION_YEARS
+        and equity.size > 0
+        and equity[-1] > 0
+    ):
         try:
             annual_return = float(equity[-1] ** (1.0 / years) - 1.0)
         except Exception:

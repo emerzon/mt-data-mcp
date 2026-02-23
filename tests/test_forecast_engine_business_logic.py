@@ -90,6 +90,10 @@ def test_prepare_base_data_features_target_spec_and_output_format(monkeypatch):
     assert res["forecast_return"] == [0.01, 0.02, -0.01]
     assert res["forecast_price"] == [101.0, 103.0, 102.0]
     assert res["ci_alpha"] == 0.1
+    assert res["lower_return"] == [0.0, 0.01, -0.02]
+    assert res["upper_return"] == [0.02, 0.03, 0.0]
+    assert "lower_price" not in res
+    assert "upper_price" not in res
     assert res["digits"] == 5
     assert res["meta"] == 1
 
@@ -205,6 +209,46 @@ def test_forecast_engine_prefetched_non_ensemble_success_and_failures(monkeypatc
     FakeRegistry.current = ErrorForecaster
     out = fe.forecast_engine(symbol="EURUSD", timeframe="H1", method="naive", prefetched_df=_df(20))
     assert out["error"].startswith("Forecast method 'naive' failed: method exploded")
+
+
+def test_forecast_engine_forwards_ci_alpha_in_params_and_kwargs(monkeypatch):
+    captured = {}
+
+    class CaptureForecaster:
+        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+            captured["params"] = dict(params)
+            captured["kwargs"] = dict(kwargs)
+            return ForecastResult(
+                forecast=np.array([1.0], dtype=float),
+                ci_values=(np.array([0.9], dtype=float), np.array([1.1], dtype=float)),
+                params_used={},
+                metadata={},
+            )
+
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return CaptureForecaster()
+
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("naive",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: SimpleNamespace(digits=5))
+
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="naive",
+        horizon=1,
+        ci_alpha=0.1,
+        prefetched_df=_df(20),
+    )
+
+    assert out["success"] is True
+    assert captured["params"]["ci_alpha"] == 0.1
+    assert captured["kwargs"]["ci_alpha"] == 0.1
 
 
 def test_forecast_engine_target_spec_and_data_validity_errors(monkeypatch):

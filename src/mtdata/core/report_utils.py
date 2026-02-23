@@ -881,15 +881,21 @@ def _render_forecast_section(data: Any) -> List[str]:
             lines.append(f"- Forecast price: {series_preview}")
         else:
             lines.append(f"- Forecast price: {format_number(data['forecast_price'])}")
-    lower = data.get('lower_price')
-    upper = data.get('upper_price')
+    is_return = str(data.get('quantity', '')).lower() == 'return' or isinstance(data.get('forecast_return'), list)
+    if is_return:
+        lower = data.get('lower_return', data.get('lower'))
+        upper = data.get('upper_return', data.get('upper'))
+    else:
+        lower = data.get('lower_price')
+        upper = data.get('upper_price')
+    interval_label = "Return interval" if is_return else "Interval"
     if lower is not None or upper is not None:
         if isinstance(lower, list) or isinstance(upper, list):
             low_preview = _format_series_preview(lower, decimals=6) if isinstance(lower, list) else format_number(lower)
             up_preview = _format_series_preview(upper, decimals=6) if isinstance(upper, list) else format_number(upper)
-            lines.append(f"- Interval: {low_preview} to {up_preview}")
+            lines.append(f"- {interval_label}: {low_preview} to {up_preview}")
         else:
-            lines.append(f"- Interval: {format_number(lower)} to {format_number(upper)}")
+            lines.append(f"- {interval_label}: {format_number(lower)} to {format_number(upper)}")
     if data.get('trend'):
         lines.append(f"- Trend: {data['trend']}")
     if data.get('ci_alpha') is not None:
@@ -1151,15 +1157,21 @@ def _render_forecast_conformal_section(data: Any) -> List[str]:
     lines = ['## Conformal Intervals']
     if data.get('method'):
         lines.append(f"- Method: {data['method']}")
-    lower = data.get('lower_price')
-    upper = data.get('upper_price')
+    is_return = str(data.get('quantity', '')).lower() == 'return' or isinstance(data.get('forecast_return'), list)
+    if is_return:
+        lower = data.get('lower_return', data.get('lower'))
+        upper = data.get('upper_return', data.get('upper'))
+    else:
+        lower = data.get('lower_price')
+        upper = data.get('upper_price')
+    interval_label = "Return interval" if is_return else "Interval"
     if lower is not None or upper is not None:
         if isinstance(lower, list) or isinstance(upper, list):
             low_preview = _format_series_preview(lower, decimals=6) if isinstance(lower, list) else format_number(lower)
             up_preview = _format_series_preview(upper, decimals=6) if isinstance(upper, list) else format_number(upper)
-            lines.append(f"- Interval: {low_preview} to {up_preview}")
+            lines.append(f"- {interval_label}: {low_preview} to {up_preview}")
         else:
-            lines.append(f"- Interval: {format_number(lower)} to {format_number(upper)}")
+            lines.append(f"- {interval_label}: {format_number(lower)} to {format_number(upper)}")
     per_step = data.get('per_step_q')
     if isinstance(per_step, list) and per_step:
         sliced = per_step[:min(5, len(per_step))]

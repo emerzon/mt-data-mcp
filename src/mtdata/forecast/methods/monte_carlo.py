@@ -66,7 +66,7 @@ class MonteCarloGBMMethod(ForecastMethod):
         fh = int(horizon)
         n_sims = int(params.get("n_sims", 500))
         seed = int(params.get("seed", 42))
-        ci_alpha = params.get("ci_alpha", None)
+        ci_alpha = kwargs.get("ci_alpha", params.get("ci_alpha", None))
 
         x = np.asarray(series.values, dtype=float)
         x = x[np.isfinite(x)]
@@ -179,7 +179,7 @@ class MonteCarloHMMMethod(ForecastMethod):
         n_sims = int(params.get("n_sims", 500))
         seed = int(params.get("seed", 42))
         n_states = int(params.get("n_states", 2))
-        ci_alpha = params.get("ci_alpha", None)
+        ci_alpha = kwargs.get("ci_alpha", params.get("ci_alpha", None))
 
         x = np.asarray(series.values, dtype=float)
         x = x[np.isfinite(x)]

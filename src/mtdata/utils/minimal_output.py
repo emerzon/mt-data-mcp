@@ -366,8 +366,13 @@ def _normalize_forecast_payload(payload: Dict[str, Any], verbose: bool = True) -
             except Exception:
                 digits = None
         
-        lower_key = 'lower_price' if 'price' in main_key else 'lower'
-        upper_key = 'upper_price' if 'price' in main_key else 'upper'
+        if 'price' in main_key:
+            lower_key, upper_key = 'lower_price', 'upper_price'
+        elif 'return' in main_key:
+            lower_key = 'lower_return' if isinstance(payload.get('lower_return'), list) else 'lower'
+            upper_key = 'upper_return' if isinstance(payload.get('upper_return'), list) else 'upper'
+        else:
+            lower_key, upper_key = 'lower', 'upper'
         lower = list(payload.get(lower_key) or []) if isinstance(payload.get(lower_key), list) else []
         upper = list(payload.get(upper_key) or []) if isinstance(payload.get(upper_key), list) else []
         

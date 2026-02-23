@@ -227,9 +227,24 @@ def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
                     s = s.strip().strip('{}').strip()
                 else:
                     return {}
-        # Parse simple k=v tokens separated by whitespace/commas
+        # Parse k=v / k:v assignments. Commas split assignments only when a new key follows.
+        import re
         out: Dict[str, Any] = {}
-        toks = [tok for tok in s.replace(',', ' ').split() if tok]
+        pair_pattern = re.compile(
+            r'(?:^|[\s,])([A-Za-z_][\w.\-]*)\s*([=:])\s*(.*?)\s*(?=(?:[\s,]+[A-Za-z_][\w.\-]*\s*[=:])|$)'
+        )
+        for m in pair_pattern.finditer(s):
+            k = str(m.group(1) or '').strip()
+            v = str(m.group(3) or '').strip().strip(',')
+            # Avoid Windows drive paths like "C:\foo".
+            if len(k) == 1 and v.startswith(("\\", "/")):
+                continue
+            out[k] = v
+        if out:
+            return out
+
+        # Legacy token parser fallback for partially malformed inputs.
+        toks = [tok for tok in s.split() if tok]
         i = 0
         while i < len(toks):
             tok = toks[i].strip().strip(',')

@@ -240,6 +240,7 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
     raw_barrier = _unwrap(cf.forecast_barrier_prob)
 
     captured = {}
+    ss_calls = {}
 
     def fake_genetic(**kwargs):
         captured.update(kwargs)
@@ -250,10 +251,17 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
 
     import mtdata.forecast.tune as tune_mod
 
-    monkeypatch.setattr(tune_mod, "default_search_space", lambda method=None, methods=None: {"theta": {"window": {"min": 1, "max": 3}}})
+    def fake_default_search_space(method=None, methods=None):
+        ss_calls["method"] = method
+        ss_calls["methods"] = methods
+        return {"theta": {"window": {"min": 1, "max": 3}}}
+
+    monkeypatch.setattr(tune_mod, "default_search_space", fake_default_search_space)
     out = raw_tune(symbol="EURUSD", method="theta", search_space=None)
     assert out == {"ok": True}
-    assert captured["method"] is None
+    assert captured["method"] == "theta"
+    assert ss_calls["method"] == "theta"
+    assert ss_calls["methods"] is None
     assert "theta" in captured["search_space"]
 
     out = raw_tune(symbol="EURUSD", method="theta", methods=["theta", "naive"], search_space={"x": {"type": "int"}})

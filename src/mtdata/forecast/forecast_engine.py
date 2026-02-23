@@ -344,8 +344,17 @@ def _format_forecast_output(
     if ci_alpha is not None and ci_values is not None:
         result["ci_alpha"] = float(ci_alpha)
         if len(ci_values) == 2:  # [lower, upper]
-            result["lower_price"] = [float(v) for v in ci_values[0]]
-            result["upper_price"] = [float(v) for v in ci_values[1]]
+            lower_vals = [float(v) for v in ci_values[0]]
+            upper_vals = [float(v) for v in ci_values[1]]
+            if quantity == 'return':
+                result["lower_return"] = lower_vals
+                result["upper_return"] = upper_vals
+                # Keep generic keys for lightweight renderers expecting non-price intervals.
+                result["lower"] = lower_vals
+                result["upper"] = upper_vals
+            else:
+                result["lower_price"] = lower_vals
+                result["upper_price"] = upper_vals
 
     # Add metadata
     result.update({
@@ -640,6 +649,8 @@ def forecast_engine(
                 
                 # Call forecast
                 method_params = dict(p)
+                if ci_alpha is not None and 'ci_alpha' not in method_params:
+                    method_params['ci_alpha'] = ci_alpha
                 call_kwargs: Dict[str, Any] = {
                     'ci_alpha': ci_alpha,
                     'as_of': as_of,

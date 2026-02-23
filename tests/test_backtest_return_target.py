@@ -14,7 +14,7 @@ for _p in (_SRC, _ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from mtdata.forecast.backtest import forecast_backtest
+from mtdata.forecast.backtest import _compute_performance_metrics, forecast_backtest
 from mtdata.utils.utils import _format_time_minimal
 
 
@@ -104,3 +104,14 @@ def test_backtest_return_target_converts_log_returns_to_simple_trade_returns() -
     detail = res["results"]["naive"]["details"][0]
     assert detail["success"] is True
     assert abs(float(detail["trade_return"]) - expected_simple) < 1e-12
+
+
+def test_performance_metrics_skip_annualization_for_short_samples() -> None:
+    metrics = _compute_performance_metrics(
+        returns=[0.01, -0.02, 0.015, -0.005, 0.01, 0.0],
+        timeframe="M15",
+        horizon=12,
+        slippage_bps=0.0,
+    )
+    assert np.isnan(float(metrics["annual_return"]))
+    assert np.isnan(float(metrics["calmar_ratio"]))

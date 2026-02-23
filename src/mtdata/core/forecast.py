@@ -507,13 +507,15 @@ def forecast_tune_genetic(
     """
     try:
         ss = _parse_kv_or_json(search_space)
-        # Prefer multi-method search unless user pins a single method AND provides a flat space
         method_for_search: Optional[str] = method
         from ..forecast.tune import default_search_space as _default_ss
         if not isinstance(ss, dict) or not ss:
-            # No space provided: default to a small multi-method space
-            ss = _default_ss(method=None, methods=methods)
-            method_for_search = None
+            # No space provided: keep a pinned single-method search when requested.
+            if isinstance(methods, (list, tuple)) and len(methods) > 0:
+                ss = _default_ss(method=None, methods=methods)
+                method_for_search = None
+            else:
+                ss = _default_ss(method=method_for_search, methods=None)
         elif isinstance(methods, (list, tuple)) and len(methods) > 0:
             # Explicit methods list present: treat as multi-method search
             method_for_search = None

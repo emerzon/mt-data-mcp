@@ -28,6 +28,14 @@ class TestParseKvOrJson(unittest.TestCase):
         out = parse_kv_or_json("a=1 b=x")
         self.assertEqual(out, {"a": "1", "b": "x"})
 
+    def test_kv_string_comma_separated_assignments(self):
+        out = parse_kv_or_json("a=1,b=2 c=3")
+        self.assertEqual(out, {"a": "1", "b": "2", "c": "3"})
+
+    def test_kv_string_preserves_commas_inside_value(self):
+        out = parse_kv_or_json("methods=theta,naive,drift aggregation=mean")
+        self.assertEqual(out, {"methods": "theta,naive,drift", "aggregation": "mean"})
+
     def test_kv_string_colon_token(self):
         out = parse_kv_or_json("a:1 b:x")
         self.assertEqual(out, {"a": "1", "b": "x"})
