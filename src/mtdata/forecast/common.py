@@ -353,18 +353,10 @@ def fetch_history(
             to_dt = _parse_start_datetime(as_of)
             if not to_dt:
                 raise RuntimeError("Invalid as_of time.")
-            
-            # SAFE MODE: Fetch from latest and filter in Python to avoid Server TZ mismatch in copy_rates_from
-            # Fetch 'need' + buffer to ensure we cover the history
-            # Estimate how far back we need to go? No, just fetch latest N bars
-            # If 'as_of' is far in the past, we might need more bars.
-            # But usually 'as_of' is recent (anchor).
-            # Let's try fetching a large chunk if as_of is provided
-            
-            # Heuristic: Fetch 'need' + 2000 bars from latest
-            # If as_of is older than that, we might miss it, but for UI anchor it's usually visible.
-            safe_limit = int(need) + 5000 
-            rates = _mt5_copy_rates_from_pos(symbol, mt5_tf, 0, safe_limit)
+
+            # Anchor directly at as_of to avoid missing older historical windows.
+            fetch_count = max(int(need), 1) + 2
+            rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, fetch_count)
         else:
             # Use position-based fetch for "latest" to avoid TZ issues and ensure open candle
             # start_pos=0 includes the current forming bar
