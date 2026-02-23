@@ -1,14 +1,9 @@
 from typing import Any, Dict, List, Optional, Tuple, Literal
 import numpy as np
-import pandas as pd
-from datetime import datetime as _dt
-import json
 import math
-import MetaTrader5 as mt5
 
 from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..core.schema import TimeframeLiteral, DenoiseSpec
-from ..utils.mt5 import _mt5_epoch_to_utc, _mt5_copy_rates_from, _ensure_symbol_ready
 from ..utils.utils import _format_time_minimal
 from .volatility import forecast_volatility
 from .forecast import forecast
@@ -153,7 +148,6 @@ def forecast_backtest(
         __stage = 'start'
         if timeframe not in TIMEFRAME_MAP:
             return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
-        mt5_tf = TIMEFRAME_MAP[timeframe]
 
         # Fetch sufficient history via shared helper; ensure enough bars for anchors
         if anchors and isinstance(anchors, (list, tuple)) and len(anchors) > 0:

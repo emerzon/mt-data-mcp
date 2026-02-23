@@ -20,10 +20,10 @@ except Exception:
 from .dimred import create_reducer as _create_reducer, DimReducer as _DimReducer
 
 # Reuse existing MT5 helpers and denoise utilities
-from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..core.constants import TIMEFRAME_MAP
 from .mt5 import _mt5_copy_rates_from, _rates_to_df
 from .denoise import _apply_denoise as _apply_denoise_util
-from .utils import to_float_np, align_finite
+from .utils import align_finite
 
 
 def _minmax_scale_row(x: np.ndarray) -> np.ndarray:

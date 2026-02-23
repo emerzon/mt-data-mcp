@@ -1755,7 +1755,7 @@ def trade_risk_analyze(
                         "reward_currency": round(reward_currency, 2) if reward_currency else None,
                         "rr_ratio": round(rr_ratio, 2) if rr_ratio else None,
                     })
-                except Exception as e:
+                except Exception:
                     continue
             
             # Calculate total portfolio risk

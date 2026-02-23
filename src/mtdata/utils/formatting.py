@@ -3,7 +3,6 @@ from typing import Any, List, Optional
 import math
 
 from .constants import (
-    DISPLAY_MAX_DECIMALS,
     PRECISION_ABS_TOL,
     PRECISION_MAX_DECIMALS,
     PRECISION_MAX_LOSS_PCT,

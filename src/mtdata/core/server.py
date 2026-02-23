@@ -6,7 +6,7 @@ import atexit
 import inspect
 import math
 import types
-from typing import Any, Dict, List, Literal, Optional, TYPE_CHECKING, Union, cast, get_args, get_origin
+from typing import Any, Dict, List, Literal, Optional, Union, cast, get_args, get_origin
 
 from mcp.server.fastmcp import FastMCP
 from functools import wraps as _wraps
@@ -43,6 +43,14 @@ mcp = FastMCP(SERVICE_NAME)
 
 # Lightweight helpers used by tool modules
 from ..utils.utils import _coerce_scalar, _normalize_ohlcv_arg
+_REEXPORTED_SYMBOLS = (
+    mt5_config,
+    TIMEFRAME_MAP,
+    TIMEFRAME_SECONDS,
+    _auto_connect_wrapper,
+    _ensure_symbol_ready,
+    _normalize_ohlcv_arg,
+)
 
 
 # Import all tools so they are registered with the MCP server
@@ -338,7 +346,7 @@ def get_tool_functions() -> Dict[str, Any]:
     return dict(_TOOL_REGISTRY)
 
 from .data import *
-from ..utils.denoise import denoise_list_methods
+from ..utils.denoise import denoise_list_methods  # noqa: F401 (tool registration side effects)
 from .forecast import *
 from .causal import *
 from .indicators import *

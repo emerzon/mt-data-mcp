@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 try:
     from mtdata.utils.denoise import _denoise_series
     print("Import successful")

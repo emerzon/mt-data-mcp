@@ -11,14 +11,12 @@ from .registry import ForecastRegistry
 
 # Import availability checkers
 try:
-    from statsmodels.tsa.holtwinters import ExponentialSmoothing as _ETS  # type: ignore
-    _SM_ETS_AVAILABLE = True
+    _SM_ETS_AVAILABLE = _importlib_util.find_spec("statsmodels.tsa.holtwinters") is not None
 except Exception:
     _SM_ETS_AVAILABLE = False
 
 try:
-    from statsmodels.tsa.statespace.sarimax import SARIMAX as _SARIMAX  # type: ignore
-    _SM_SARIMAX_AVAILABLE = True
+    _SM_SARIMAX_AVAILABLE = _importlib_util.find_spec("statsmodels.tsa.statespace.sarimax") is not None
 except Exception:
     _SM_SARIMAX_AVAILABLE = False
 

@@ -3,13 +3,11 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 import os
-import math
 import numpy as np
 import pandas as pd
 
 from ..core.constants import TIMEFRAME_SECONDS, TIMEFRAME_MAP
 from ..utils.mt5 import (
-    _mt5_epoch_to_utc,
     _ensure_symbol_ready,
     _mt5_copy_rates_from,
     _mt5_copy_rates_from_pos,

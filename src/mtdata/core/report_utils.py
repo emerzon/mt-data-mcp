@@ -1,7 +1,6 @@
 from typing import Any, Dict, Optional, List, Tuple, Callable
 from datetime import datetime
 import math
-import copy
 
 from ..utils.constants import TIME_DISPLAY_FORMAT
 from ..utils.formatting import format_number as _format_number
@@ -250,7 +249,6 @@ def merge_params(base: Optional[Dict[str, Any]], extra: Dict[str, Any], override
 def market_snapshot(symbol: str, timezone: str = 'UTC') -> Dict[str, Any]:
     try:
         from .market_depth import market_depth_fetch as _fetch_market_depth
-        import MetaTrader5 as _mt5
         try:
             dom = _fetch_market_depth(symbol=symbol, __cli_raw=True)
         except TypeError:

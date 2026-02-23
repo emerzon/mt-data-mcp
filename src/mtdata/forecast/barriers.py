@@ -833,7 +833,6 @@ def forecast_barrier_optimize(
                 rng_bb = np.random.RandomState(int(seed) + 7)
                 bb_uniform_tp = rng_bb.rand(S, H)
                 bb_uniform_sl = rng_bb.rand(S, H)
-        last_idx = H - 1
 
         def _linspace(a: float, b: float, n: int) -> np.ndarray:
             try:
@@ -864,8 +863,6 @@ def forecast_barrier_optimize(
             for tp_val in _linspace(tp_a, tp_b, tp_n):
                 for sl_val in _linspace(sl_a, sl_b, sl_n):
                     _push(tp_val, sl_val, bucket)
-
-        vol_context: Optional[Dict[str, Any]] = None
 
         if grid_style_val == 'preset':
             preset_key = preset_val or 'intraday'

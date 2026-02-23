@@ -3,16 +3,13 @@ Forecast engine core logic and orchestration.
 """
 
 from typing import Any, Dict, Optional, List, Literal, Tuple
-from datetime import datetime
 import numpy as np
 import pandas as pd
 import math
-import warnings
 
 from mtdata.core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from mtdata.utils.mt5 import _mt5_epoch_to_utc, _mt5_copy_rates_from, _ensure_symbol_ready, get_symbol_info_cached
+from mtdata.utils.mt5 import get_symbol_info_cached
 from mtdata.utils.utils import (
-    _parse_start_datetime,
     _format_time_minimal,
     _format_time_minimal_local,
     _use_client_tz,
@@ -24,7 +21,6 @@ from mtdata.forecast.common import (
     fetch_history as _fetch_history,
     default_seasonality as _default_seasonality_period,
     next_times_from_last as _next_times_from_last,
-    pd_freq_from_timeframe as _pd_freq_from_timeframe,
 )
 from mtdata.forecast.target_builder import build_target_series
 from mtdata.forecast.registry import ForecastRegistry
@@ -38,9 +34,11 @@ import mtdata.forecast.methods.neural
 import mtdata.forecast.methods.sktime
 import mtdata.forecast.methods.gluonts_extra
 import mtdata.forecast.methods.analog
-import mtdata.forecast.methods.monte_carlo
-
+import mtdata.forecast.methods.monte_carlo  # noqa: F401 (method registration side effects)
 import MetaTrader5 as mt5
+
+# Backward-compatibility surface for tests/monkeypatching.
+_PATCHABLE_GLOBALS = (mt5,)
 
 _ENSEMBLE_BASE_METHODS = (
     'naive',
@@ -411,7 +409,6 @@ def forecast_engine(
         # Validation
         if timeframe not in TIMEFRAME_MAP:
             return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
-        mt5_tf = TIMEFRAME_MAP[timeframe]
         tf_secs = TIMEFRAME_SECONDS.get(timeframe)
         if not tf_secs:
             return {"error": f"Unsupported timeframe seconds for {timeframe}"}
@@ -515,7 +512,6 @@ def forecast_engine(
 
         # Get last timestamp and values
         last_epoch = float(df['time'].iloc[-1])
-        last_value = float(target_series.iloc[-1])
         
         # Get symbol info for digits
         digits = None

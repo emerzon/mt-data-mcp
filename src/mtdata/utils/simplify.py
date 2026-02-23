@@ -4,7 +4,6 @@ Simplification helpers extracted for reuse across server tools.
 Contains target-point selection utilities and core selection algorithms.
 """
 from typing import Any, Dict, List, Optional, Tuple
-import math
 
 import pandas as pd
 import numpy as np

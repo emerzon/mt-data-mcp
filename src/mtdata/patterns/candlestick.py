@@ -7,7 +7,7 @@ try:
     import pandas_ta as ta  # type: ignore
 except ModuleNotFoundError:
     try:
-        import pandas_ta_classic as ta  # type: ignore
+        import pandas_ta_classic as ta  # type: ignore  # noqa: F401
     except ModuleNotFoundError as e:
         raise ModuleNotFoundError(
             "pandas_ta not found. Install 'pandas-ta-classic' (or 'pandas-ta')."

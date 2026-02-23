@@ -1,5 +1,6 @@
 
 import unittest
+import importlib.util
 import pandas as pd
 import numpy as np
 import sys
@@ -17,7 +18,6 @@ from mtdata.forecast.forecast_engine import forecast_engine
 from mtdata.forecast.forecast import forecast
 from mtdata.forecast.interface import ForecastResult
 # Ensure engine is imported to register methods
-import mtdata.forecast.forecast_engine
 
 class TestUnifiedForecast(unittest.TestCase):
     def setUp(self):
@@ -53,10 +53,7 @@ class TestUnifiedForecast(unittest.TestCase):
         
     def test_statsforecast_method_direct(self):
         """Test calling a statsforecast method directly."""
-        # Ensure statsforecast is installed or skip
-        try:
-            import statsforecast
-        except ImportError:
+        if importlib.util.find_spec("statsforecast") is None:
             self.skipTest("statsforecast not installed")
             
         forecaster = ForecastRegistry.get('sf_seasonalnaive')
@@ -66,9 +63,7 @@ class TestUnifiedForecast(unittest.TestCase):
 
     def test_statsforecast_ci(self):
         """Test StatsForecast CI extraction."""
-        try:
-            import statsforecast
-        except ImportError:
+        if importlib.util.find_spec("statsforecast") is None:
             self.skipTest("statsforecast not installed")
             
         forecaster = ForecastRegistry.get('sf_seasonalnaive')
@@ -83,9 +78,7 @@ class TestUnifiedForecast(unittest.TestCase):
 
     def test_generic_statsforecast(self):
         """Test generic StatsForecast method."""
-        try:
-            import statsforecast
-        except ImportError:
+        if importlib.util.find_spec("statsforecast") is None:
             self.skipTest("statsforecast not installed")
             
         # Test using the generic 'statsforecast' method with model_name param
@@ -102,9 +95,7 @@ class TestUnifiedForecast(unittest.TestCase):
 
     def test_sktime_method(self):
         """Test Sktime method."""
-        try:
-            import sktime
-        except ImportError:
+        if importlib.util.find_spec("sktime") is None:
             self.skipTest("sktime not installed")
             
         # Test using generic 'sktime' method
@@ -123,9 +114,7 @@ class TestUnifiedForecast(unittest.TestCase):
 
     def test_mlforecast_method_direct(self):
         """Test calling an mlforecast method directly."""
-        try:
-            import mlforecast
-        except ImportError:
+        if importlib.util.find_spec("mlforecast") is None:
             self.skipTest("mlforecast not installed")
             
         forecaster = ForecastRegistry.get('mlf_rf')
@@ -135,10 +124,7 @@ class TestUnifiedForecast(unittest.TestCase):
 
     def test_generic_mlforecast(self):
         """Test generic MLForecast method."""
-        try:
-            import mlforecast
-            import sklearn
-        except ImportError:
+        if importlib.util.find_spec("mlforecast") is None or importlib.util.find_spec("sklearn") is None:
             self.skipTest("mlforecast or sklearn not installed")
             
         # Test using generic 'mlforecast' method with LinearRegression

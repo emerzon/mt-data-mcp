@@ -8,7 +8,6 @@ as the original code while being more maintainable.
 
 import os
 import sys
-import importlib
 import numpy as np
 import inspect
 
@@ -58,10 +57,8 @@ def test_helper_functions():
     from mtdata.forecast.methods.pretrained_helpers import (
         extract_context_window,
         validate_and_clean_data,
-        extract_forecast_values,
         adjust_forecast_length,
-        process_quantile_levels,
-        build_params_used
+        process_quantile_levels
     )
     
     # Test extract_context_window

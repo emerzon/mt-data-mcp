@@ -1,3 +1,4 @@
+import importlib.util
 import unittest
 from unittest.mock import patch
 import pandas as pd
@@ -75,9 +76,7 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertEqual(result["method"], "bootstrap")
 
     def test_forecast_barrier_garch(self):
-        try:
-            import arch
-        except ImportError:
+        if importlib.util.find_spec("arch") is None:
             self.skipTest("arch package not installed")
             
         result = forecast_barrier_hit_probabilities(

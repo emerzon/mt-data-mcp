@@ -5,7 +5,7 @@ Exposes finvizfinance library functionality as MCP tools.
 Note: Data is delayed 15-20 minutes; US stocks only.
 """
 
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, Optional, Literal
 import json
 import logging
 from urllib.parse import parse_qs

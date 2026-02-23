@@ -45,11 +45,6 @@ class SktimeMethod(ForecastMethod):
     ) -> ForecastResult:
         if not _HAS_SKTIME:
             raise RuntimeError(_SKTIME_IMPORT_ERROR)
-        try:
-            import sktime
-            from sktime.forecasting.base import BaseForecaster
-        except ImportError as ex:
-            raise RuntimeError(f"Failed to import sktime: {ex}")
 
         # Prepare data
         # Sktime expects pandas Series/DataFrame with PeriodIndex or DatetimeIndex

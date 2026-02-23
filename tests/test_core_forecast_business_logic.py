@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from types import ModuleType, SimpleNamespace
 import importlib
 import pkgutil

@@ -9,14 +9,10 @@ from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 from .pretrained_helpers import (
     extract_context_window,
-    validate_and_clean_data,
-    extract_forecast_values,
     adjust_forecast_length,
-    extract_quantiles_from_forecast,
     process_quantile_levels,
     build_params_used,
     safe_import_modules,
-    create_return_tuple
 )
 
 class PretrainedMethod(ForecastMethod):
@@ -104,7 +100,6 @@ class ChronosBoltMethod(PretrainedMethod):
         model_name = str(p.get('model_name') or 'amazon/chronos-bolt-base')
         ctx_len = int(p.get('context_length', 0) or 0)
         device_map = p.get('device_map', None)
-        series_id = str(p.get('series_id', 'series'))
         quantiles = process_quantile_levels(p.get('quantiles'))
         
         vals = series.values
@@ -114,11 +109,10 @@ class ChronosBoltMethod(PretrainedMethod):
         context = extract_context_window(vals, ctx_len, n, dtype=float)
         
         # Import required modules using DRY helper
-        modules, import_error = safe_import_modules(['pandas', 'chronos', 'torch'], 'chronos2')
+        modules, import_error = safe_import_modules(['chronos', 'torch'], 'chronos2')
         if import_error:
             raise RuntimeError(import_error)
         
-        _pd = modules['pandas']
         _torch = modules['torch']
         _chronos = modules['chronos']
         effective_device_map = _resolve_chronos_device_map(device_map, _torch)
@@ -135,12 +129,6 @@ class ChronosBoltMethod(PretrainedMethod):
         
         try:
             q_levels = quantiles or [0.5]
-            context_df = _pd.DataFrame({
-                "id": series_id,
-                "timestamp": _pd.RangeIndex(len(context)),
-                "target": _pd.Series(context, dtype=float),
-            })
-
             # Prepare covariates if available
             # Check params first as forecast_engine passes them there
             exog_hist = kwargs.get('exog_used', None)

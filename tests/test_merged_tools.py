@@ -1,7 +1,6 @@
 import unittest
 from unittest.mock import MagicMock, patch
 import sys
-import pandas as pd
 from collections import namedtuple
 
 from src.mtdata.utils.mt5 import _mt5_epoch_to_utc

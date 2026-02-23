@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ...utils.patterns import build_index, PatternIndex
+from ...utils.patterns import build_index
 from ...utils.mt5 import _mt5_epoch_to_utc
 from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry

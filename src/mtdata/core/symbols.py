@@ -24,7 +24,6 @@ def symbols_list(
         if mode == "groups":
             return _list_symbol_groups(search_term=search_term, limit=limit)
 
-        search_strategy = "none"
         matched_symbols = []
         
         if search_term:
@@ -55,7 +54,6 @@ def symbols_list(
             # If we find many groups with the search term, it's probably a symbol search (like EUR, USD)
             # If we find few groups, it's probably a real group search (like Majors, Forex)
             if matching_groups and len(matching_groups) <= group_search_threshold:
-                search_strategy = "group_match"
                 # Use symbols from matching groups
                 for group_name in matching_groups:
                     matched_symbols.extend(groups[group_name])
@@ -67,10 +65,8 @@ def symbols_list(
                         symbol_name_matches.append(symbol)
                 
                 if symbol_name_matches:
-                    search_strategy = "symbol_name_match"
                     matched_symbols = symbol_name_matches
                 elif matching_groups:  # Fall back to group matches if we had many
-                    search_strategy = "group_match"
                     for group_name in matching_groups:
                         matched_symbols.extend(groups[group_name])
                 else:
@@ -89,14 +85,11 @@ def symbols_list(
                             description_matches.append(symbol)
                     
                     if description_matches:
-                        search_strategy = "description_match"
                         matched_symbols = description_matches
                     else:
-                        search_strategy = "no_match"
                         matched_symbols = []
         else:
             # No search term - return all symbols
-            search_strategy = "all"
             matched_symbols = list(mt5.symbols_get() or [])
         
         # Build symbol list with visibility rule
@@ -198,7 +191,6 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
                 continue
             symbol_data[attr] = value
         
-        from ..utils.utils import to_float_np as __to_float_np
         return {
             "success": True,
             "symbol": symbol_data

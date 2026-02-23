@@ -310,7 +310,7 @@ def discover_tools():
             if callable(obj) and getattr(obj, '__module__', None) == server.__name__:
                 # Heuristic: prefer functions with a docstring and at least 0-5 params
                 try:
-                    sig = inspect.signature(obj)
+                    inspect.signature(obj)
                 except (TypeError, ValueError):
                     continue
                 if isinstance(obj, type):

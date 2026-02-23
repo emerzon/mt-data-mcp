@@ -86,7 +86,6 @@ def forecast_gt_deepar(
             from gluonts.torch import DeepAREstimator  # type: ignore
         except Exception:
             from gluonts.torch.model.deepar import DeepAREstimator  # type: ignore
-        from gluonts.evaluation import make_evaluation_predictions  # type: ignore
     except Exception as ex:
         return (None, None, {}, f"deepar requires gluonts[torch]. Install/upgrade: pip install 'gluonts[torch]' torch ({ex})")
 

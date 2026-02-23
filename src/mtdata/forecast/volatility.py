@@ -1136,7 +1136,6 @@ def forecast_volatility(
                 if len(daily_rv) < max(30, m + 5):
                     return {"error": "Not enough daily RV observations for HAR-RV"}
                 RV = daily_rv.to_numpy(dtype=float)
-                N = RV.size
                 # Lagged features
                 Dlag = RV[:-1]
                 def rmean(arr, k):

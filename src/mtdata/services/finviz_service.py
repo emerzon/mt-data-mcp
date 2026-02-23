@@ -9,8 +9,7 @@ Note: Finviz data is delayed 15-20 minutes; not suitable for real-time trading.
 
 import logging
 import datetime
-from typing import Any, Dict, List, Optional, Union, Literal
-from functools import lru_cache
+from typing import Any, Dict, List, Optional, Literal
 import time
 import os
 

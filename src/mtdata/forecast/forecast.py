@@ -1,24 +1,16 @@
 from typing import Any, Dict, Optional, Literal
-from datetime import datetime
 import logging
 import os
-import json
 import math
 import numpy as np
 import pandas as pd
-import MetaTrader5 as mt5
-import warnings
 
 # Adopt upcoming StatsForecast DataFrame format to avoid repeated warnings
 os.environ.setdefault("NIXTLA_ID_AS_COL", "1")
 
 from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..utils.mt5 import _mt5_epoch_to_utc, _mt5_copy_rates_from, _ensure_symbol_ready, get_symbol_info_cached
+from ..utils.mt5 import get_symbol_info_cached
 from ..utils.utils import (
-    _parse_start_datetime,
-    _format_time_minimal,
-    _format_time_minimal_local,
-    _use_client_tz,
     parse_kv_or_json as _parse_kv_or_json,
 )
 from ..utils.indicators import _parse_ti_specs as _parse_ti_specs_util, _apply_ta_indicators as _apply_ta_indicators_util
@@ -28,10 +20,10 @@ from .common import fetch_history as _fetch_history, log_returns_from_prices as 
 from .helpers import (
     default_seasonality_period as _default_seasonality_period,
     next_times_from_last as _next_times_from_last,
-    pd_freq_from_timeframe as _pd_freq_from_timeframe,
 )
-from .target_builder import build_target_series, aggregate_horizon_target
-from .forecast_methods import get_forecast_methods_data
+from .forecast_methods import get_forecast_methods_data  # re-exported for core/web API imports
+
+_FORECAST_METHODS_EXPORT = get_forecast_methods_data
 
 logger = logging.getLogger(__name__)
 # Simple dimred factory used by the wrapper when building exogenous features.
@@ -143,7 +135,6 @@ def forecast(
     try:
         if timeframe not in TIMEFRAME_MAP:
             return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
-        mt5_tf = TIMEFRAME_MAP[timeframe]
         tf_secs = TIMEFRAME_SECONDS.get(timeframe)
         if not tf_secs:
             return {"error": f"Unsupported timeframe seconds for {timeframe}"}
@@ -211,12 +202,10 @@ def forecast(
                 base_col = f"{base_col}_dn"
 
         # Build target series: support custom target_spec or legacy target/quantity
-        t = np.arange(1, len(df) + 1, dtype=float)
         last_time = float(df['time'].iloc[-1])
         future_times = _next_times_from_last(last_time, int(tf_secs), int(horizon))
 
         __stage = 'target_build'
-        custom_target_mode = False
         target_info: Dict[str, Any] = {}
         # Helper to resolve alias base columns
         def _alias_base(arrs: Dict[str, np.ndarray], name: str) -> Optional[np.ndarray]:
@@ -237,7 +226,6 @@ def forecast(
 
         # Resolve base and transform from target_spec when provided
         if target_spec and isinstance(target_spec, dict):
-            custom_target_mode = True
             ts = dict(target_spec)
             # Compute indicators if requested so 'base' can reference them
             ts_inds = ts.get('indicators')
@@ -296,7 +284,6 @@ def forecast(
                 target_info['transform'] = 'none'
             # Since custom target can be any series, skip legacy price/return mapping
             use_returns = False
-            origin_price = float('nan')
         else:
             # Legacy target behavior: price vs return on close
             y = df[base_col].astype(float).to_numpy()
@@ -308,10 +295,8 @@ def forecast(
                 if x.size < 5:
                     return {"error": "Not enough data to compute return-based forecast"}
                 series = x
-                origin_price = float(y[-1])
             else:
                 series = y
-                origin_price = float(y[-1])
 
         # Ensure finite numeric series for modeling
         series = np.asarray(series, dtype=float)

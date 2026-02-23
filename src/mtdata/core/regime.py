@@ -1,6 +1,5 @@
 from typing import Any, Dict, Optional, List, Literal
 import numpy as np
-import pandas as pd
 
 from .server import mcp, _auto_connect_wrapper
 from .schema import TimeframeLiteral, DenoiseSpec
@@ -22,7 +21,6 @@ def _consolidate_payload(payload: Dict[str, Any], method: str, output_mode: str,
         # Extract states/regimes
         states = []
         probs = []
-        is_change_point = []
         
         if method == "bocpd":
             # For BOCPD, we define regimes by change points

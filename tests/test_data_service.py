@@ -4,8 +4,6 @@ import unittest
 from unittest.mock import patch, MagicMock
 from contextlib import contextmanager
 from typing import Any, Iterator, Tuple
-import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta
 import sys
 import os
@@ -15,7 +13,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 
 # Mock mt5 before importing data_service because it imports mt5 at top level
 sys.modules['MetaTrader5'] = MagicMock()
-import MetaTrader5 as mt5
 
 from mtdata.services.data_service import fetch_candles, fetch_ticks
 

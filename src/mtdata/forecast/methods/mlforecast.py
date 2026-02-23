@@ -37,7 +37,6 @@ class MLForecastMethod(ForecastMethod):
     ) -> ForecastResult:
         try:
             from mlforecast import MLForecast
-            import pandas as pd
         except ImportError as ex:
             raise RuntimeError(f"Failed to import mlforecast: {ex}")
 
@@ -62,7 +61,6 @@ class MLForecastMethod(ForecastMethod):
             lags = list(range(1, max_lag + 1))
             params = dict(params or {})
             params["lags"] = lags
-        rolling_agg = params.get('rolling_agg')
         
         try:
             # Pass lags to constructor

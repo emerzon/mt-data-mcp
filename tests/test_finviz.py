@@ -2,7 +2,6 @@
 Tests for finviz service and tools.
 """
 
-import pytest
 from unittest.mock import patch, MagicMock
 import pandas as pd
 
@@ -370,7 +369,6 @@ class TestFinvizTools:
     def test_finviz_fundamentals_tool(self, mock_get_fundamentals):
         """Test finviz_fundamentals tool."""
         # Import the service function directly to test logic without MCP server init
-        from mtdata.services.finviz_service import get_stock_fundamentals as fn
         
         mock_get_fundamentals.return_value = {
             "success": True,
