@@ -11,7 +11,11 @@ from ..core.schema import TimeframeLiteral, DenoiseSpec
 from ..utils.mt5 import _mt5_epoch_to_utc, _mt5_copy_rates_from, _ensure_symbol_ready
 from ..utils.utils import _parse_start_datetime
 from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
-from .common import default_seasonality as _default_seasonality_period, pd_freq_from_timeframe as _pd_freq_from_timeframe
+from .common import (
+    default_seasonality as _default_seasonality_period,
+    log_returns_from_prices as _log_returns_from_prices,
+    pd_freq_from_timeframe as _pd_freq_from_timeframe,
+)
 
 # Optional availability flags (match server discovery)
 try:
@@ -424,8 +428,7 @@ def forecast_volatility(
                 return {"error": "Not enough closed bars"}
             if denoise:
                 _apply_denoise(df, denoise, default_when='pre_ti')
-            with np.errstate(divide='ignore', invalid='ignore'):
-                r = np.diff(np.log(np.maximum(df['close'].astype(float).to_numpy(), 1e-12)))
+            r = _log_returns_from_prices(df['close'].astype(float).to_numpy())
             r = r[np.isfinite(r)]
             if r.size < 10:
                 return {"error": "Insufficient returns to estimate volatility proxy"}
@@ -626,8 +629,7 @@ def forecast_volatility(
                 _apply_denoise(df, dn_spec_used, default_when='pre_ti')
 
         # Compute returns and helpers
-        with np.errstate(divide='ignore', invalid='ignore'):
-            r = np.diff(np.log(np.maximum(df['close'].astype(float).to_numpy(), 1e-12)))
+        r = _log_returns_from_prices(df['close'].astype(float).to_numpy())
         r = r[np.isfinite(r)]
         if r.size < 5:
             return {"error": "Insufficient returns to estimate volatility"}
@@ -1029,7 +1031,7 @@ def forecast_volatility(
         params_used: Dict[str, Any] = {}
 
         if method_l == 'ewma':
-            r = _log_returns_from_closes(closes)
+            r = _log_returns_from_prices(closes)
             if r.size < 5:
                 return {"error": "Not enough return observations for EWMA"}
             lam = p.get('lambda_')
@@ -1125,8 +1127,7 @@ def forecast_volatility(
                 c = dfrv['close'].astype(float).to_numpy()
                 if c.size < 10:
                     return {"error": "Insufficient intraday bars for RV"}
-                with np.errstate(divide='ignore', invalid='ignore'):
-                    rr = np.diff(np.log(np.maximum(c, 1e-12)))
+                rr = _log_returns_from_prices(c)
                 rr = rr[np.isfinite(rr)]
                 dt = pd.to_datetime(dfrv['time'].iloc[1:].astype(float), unit='s', utc=True)
                 days_idx = pd.DatetimeIndex(dt).floor('D')
@@ -1179,7 +1180,7 @@ def forecast_volatility(
             except Exception as ex:
                 return {"error": f"HAR-RV error: {ex}"}
         else:  # garch
-            r = _log_returns_from_closes(closes)
+            r = _log_returns_from_prices(closes)
             if r.size < 100:
                 return {"error": "Not enough return observations for GARCH (need >=100)"}
             fit_bars = int(p.get('fit_bars', min(2000, r.size)))

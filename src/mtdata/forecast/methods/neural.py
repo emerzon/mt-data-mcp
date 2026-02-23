@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ..common import nf_setup_and_predict as _nf_setup_and_predict  # type: ignore
+from ..common import edge_pad_to_length as _edge_pad_to_length, nf_setup_and_predict as _nf_setup_and_predict  # type: ignore
 from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 
@@ -82,7 +82,7 @@ def forecast_neural(
     if pred_col is None:
         raise RuntimeError(f"{method_l.upper()} prediction columns not found")
     vals = np.asarray(Yf[pred_col].to_numpy(), dtype=float)
-    f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
+    f_vals = _edge_pad_to_length(vals, int(fh))
     params_used = {'max_epochs': int(steps), 'input_size': int(input_size), 'batch_size': int(batch_size)}
     return f_vals.astype(float, copy=False), params_used
 

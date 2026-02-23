@@ -13,7 +13,7 @@ from ..utils.utils import _format_time_minimal
 from .volatility import forecast_volatility
 from .forecast import forecast
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
-from .common import fetch_history as _fetch_history
+from .common import fetch_history as _fetch_history, log_returns_from_prices as _log_returns_from_prices
 
 
 
@@ -277,7 +277,7 @@ def forecast_backtest(
                 if quantity == 'volatility':
                     # Compute realized horizon sigma from ground truth prices
                     act = np.array(truth, dtype=float)
-                    r_act = np.diff(np.log(np.maximum(act, 1e-12))) if act.size >= 2 else np.array([], dtype=float)
+                    r_act = _log_returns_from_prices(act) if act.size >= 2 else np.array([], dtype=float)
                     realized_sigma = float(np.sqrt(np.sum(np.clip(r_act, -1e6, 1e6)**2))) if r_act.size > 0 else float('nan')
                     pred_sigma = float(r.get('horizon_sigma_return', float('nan')))
                     mae = float(abs(pred_sigma - realized_sigma)) if np.isfinite(pred_sigma) and np.isfinite(realized_sigma) else float('nan')

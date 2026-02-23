@@ -3,7 +3,7 @@ import math
 import numpy as np
 from ..core.schema import TimeframeLiteral, DenoiseSpec
 from ..core.constants import TIMEFRAME_SECONDS
-from .common import fetch_history as _fetch_history
+from .common import fetch_history as _fetch_history, log_returns_from_prices as _log_returns_from_prices
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import get_pip_size as _get_pip_size, resolve_barrier_prices as _resolve_barrier_prices
 from .monte_carlo import (
@@ -71,7 +71,7 @@ def _auto_barrier_method(
             return "mc_gbm_bb", "auto: insufficient history; gbm_bb (short horizon)"
         return "mc_gbm", "auto: insufficient history; gbm baseline"
 
-    rets = np.diff(np.log(np.clip(prices, 1e-12, None)))
+    rets = _log_returns_from_prices(prices)
     rets = rets[np.isfinite(rets)]
     if rets.size < 5:
         if prefer_bridge:
@@ -315,7 +315,7 @@ def forecast_barrier_hit_probabilities(
         bb_uniform_sl = None
         bb_log_paths = None
         if bb_enabled:
-            rets = np.diff(np.log(np.clip(prices, 1e-12, None)))
+            rets = _log_returns_from_prices(prices)
             rets = rets[np.isfinite(rets)]
             bb_sigma = float(np.std(rets, ddof=1)) if rets.size else 0.0
             if not np.isfinite(bb_sigma) or bb_sigma <= 0:
@@ -493,7 +493,7 @@ def forecast_barrier_closed_form(
         T = float(tf_secs * int(horizon)) / (365.0 * 24.0 * 3600.0)
         if mu is None or sigma is None:
             with np.errstate(divide='ignore', invalid='ignore'):
-                r = np.diff(np.log(np.maximum(prices, 1e-12)))
+                r = _log_returns_from_prices(prices)
             r = r[np.isfinite(r)]
             if r.size < 5:
                 return {"error": "Insufficient returns for calibration"}
@@ -821,7 +821,7 @@ def forecast_barrier_optimize(
         bb_uniform_sl = None
         bb_log_paths = None
         if bb_enabled:
-            rets = np.diff(np.log(np.clip(prices, 1e-12, None)))
+            rets = _log_returns_from_prices(prices)
             rets = rets[np.isfinite(rets)]
             bb_sigma = float(np.std(rets, ddof=1)) if rets.size else 0.0
             if not np.isfinite(bb_sigma) or bb_sigma <= 0:
@@ -878,7 +878,7 @@ def forecast_barrier_optimize(
         
         elif grid_style_val == 'volatility':
             # Calculate simple volatility over window
-            rets = np.diff(np.log(np.clip(prices, 1e-12, None)))
+            rets = _log_returns_from_prices(prices)
             rets = rets[np.isfinite(rets)]
             if rets.size > vol_window_val:
                 rets = rets[-vol_window_val:]

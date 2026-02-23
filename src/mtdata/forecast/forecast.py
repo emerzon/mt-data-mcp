@@ -23,7 +23,7 @@ from ..utils.utils import (
 )
 from ..utils.indicators import _parse_ti_specs as _parse_ti_specs_util, _apply_ta_indicators as _apply_ta_indicators_util
 from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
-from .common import fetch_history as _fetch_history
+from .common import fetch_history as _fetch_history, log_returns_from_prices as _log_returns_from_prices
 # Removed invalid import: from .registry import get_forecast_methods_data
 from .helpers import (
     default_seasonality_period as _default_seasonality_period,
@@ -303,8 +303,7 @@ def forecast(
             # Decide modeling scale for price/return
             use_returns = (quantity_l == 'return') or (str(target).lower() == 'return')
             if use_returns:
-                with np.errstate(divide='ignore', invalid='ignore'):
-                    x = np.diff(np.log(np.maximum(y, 1e-12)))
+                x = _log_returns_from_prices(y)
                 x = x[np.isfinite(x)]
                 if x.size < 5:
                     return {"error": "Not enough data to compute return-based forecast"}

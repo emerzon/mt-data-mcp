@@ -21,7 +21,7 @@ DEFAULT_TIMEFRAME = "H1"     # default timeframe parameter
 DEFAULT_ROW_LIMIT = 25       # default row limit for large/tabular outputs
 # Simplification defaults
 SIMPLIFY_DEFAULT_METHOD = "lttb"  # default simplify method when not specified
-SIMPLIFY_DEFAULT_MODE = "approximate"  # default simplify mode when not specified
+SIMPLIFY_DEFAULT_MODE = "select"  # default simplify mode when not specified
 SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT = 0.10  # default points as a fraction of --limit/--count when unspecified
 SIMPLIFY_DEFAULT_RATIO = 0.25     # default ratio if no points/ratio provided
 SIMPLIFY_DEFAULT_MIN_POINTS = 100 # minimum target points for default simplify

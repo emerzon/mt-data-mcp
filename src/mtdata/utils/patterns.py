@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Tuple, Any
 
 import numpy as np
 import pandas as pd
+from scipy.signal import correlate
 from scipy.spatial.ckdtree import cKDTree
 import stumpy as _stumpy
 from tslearn.metrics import dtw as _ts_dtw
@@ -246,25 +247,29 @@ class PatternIndex:
         b = znorm(b)
         L = int(max(0, max_lag))
         best = -1.0
+        numerators = correlate(a, b, mode='full', method='auto')
+        prefix_a = np.concatenate(([0.0], np.cumsum(a * a)))
+        prefix_b = np.concatenate(([0.0], np.cumsum(b * b)))
+
         for lag in range(-L, L + 1):
-            if lag == 0:
-                aa, bb = a, b
-            elif lag > 0:
-                aa = a[lag:]
-                bb = b[: n - lag]
-            else:  # lag < 0
-                aa = a[: n + lag]
-                bb = b[-lag:]
-            m = int(min(aa.size, bb.size))
-            if m <= 2:
+            overlap = n - abs(lag)
+            if overlap <= 2:
                 continue
-            # Cosine similarity == correlation since both z-normalized
-            num = float(np.dot(aa, bb))
-            den = float(np.linalg.norm(aa) * np.linalg.norm(bb))
+
+            if lag >= 0:
+                sumsq_a = float(prefix_a[n] - prefix_a[lag])
+                sumsq_b = float(prefix_b[overlap] - prefix_b[0])
+            else:
+                shift = -lag
+                sumsq_a = float(prefix_a[overlap] - prefix_a[0])
+                sumsq_b = float(prefix_b[n] - prefix_b[shift])
+
+            den = float(np.sqrt(max(sumsq_a, 0.0) * max(sumsq_b, 0.0)))
             if not np.isfinite(den) or den <= 1e-12:
                 corr = 0.0
             else:
-                corr = num / den
+                idx = lag + (n - 1)
+                corr = float(numerators[idx] / den)
             if corr > best:
                 best = corr
         if not np.isfinite(best):

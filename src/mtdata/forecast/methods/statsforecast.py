@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import inspect
 
+from ..common import edge_pad_to_length as _edge_pad_to_length
 from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 
@@ -148,14 +149,8 @@ class StatsForecastMethod(ForecastMethod):
                     lo_vals = Yf[lo_col].values
                     hi_vals = Yf[hi_col].values
                     # Ensure length matches horizon
-                    if len(lo_vals) >= horizon:
-                        lo_vals = lo_vals[:horizon]
-                        hi_vals = hi_vals[:horizon]
-                    else:
-                        # Pad if needed (unlikely for forecast)
-                        pad_width = horizon - len(lo_vals)
-                        lo_vals = np.pad(lo_vals, (0, pad_width), mode='edge')
-                        hi_vals = np.pad(hi_vals, (0, pad_width), mode='edge')
+                    lo_vals = _edge_pad_to_length(lo_vals, int(horizon))
+                    hi_vals = _edge_pad_to_length(hi_vals, int(horizon))
                         
                     ci_values = (lo_vals.astype(float), hi_vals.astype(float))
 

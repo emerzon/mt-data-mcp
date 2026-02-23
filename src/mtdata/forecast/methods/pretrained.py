@@ -646,7 +646,7 @@ class LagLlamaMethod(PretrainedMethod):
                     pass
             if vals is None:
                 raise RuntimeError("lag_llama could not extract forecast values")
-            f_vals = vals[:horizon] if vals.size >= horizon else np.pad(vals, (0, horizon - vals.size), mode='edge')
+            f_vals = adjust_forecast_length(vals, int(horizon), "lag_llama")
 
             fq: Dict[str, List[float]] = {}
             if quantiles:

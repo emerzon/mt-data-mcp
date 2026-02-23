@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from ..common import log_returns_from_prices as _log_returns_from_prices
 from ..interface import ForecastMethod, ForecastResult
 from ..monte_carlo import simulate_gbm_mc, simulate_hmm_mc
 from ..registry import ForecastRegistry
@@ -105,7 +106,7 @@ class MonteCarloGBMMethod(ForecastMethod):
                     params_used["ci_alpha"] = float(ci_alpha)
                 return ForecastResult(forecast=point, ci_values=ci, params_used=params_used)
 
-            rets = np.diff(np.log(np.clip(prices, 1e-12, None)))
+            rets = _log_returns_from_prices(prices)
             mu = float(mu_override) if mu_override is not None else float(np.mean(rets))
             sigma = float(sigma_override) if sigma_override is not None else float(np.std(rets) + 1e-12)
             rng = np.random.RandomState(seed)

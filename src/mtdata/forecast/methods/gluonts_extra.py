@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from ..common import edge_pad_to_length as _edge_pad_to_length
 from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 
@@ -44,7 +45,7 @@ def _extract_forecast_arrays(forecast_obj, fh: int, quantiles: Optional[List[flo
             pass
     if vals is None:
         return None, None
-    f_vals = vals[:fh] if vals.size >= fh else _np.pad(vals, (0, fh - vals.size), mode='edge')
+    f_vals = _edge_pad_to_length(vals, int(fh))
 
     fq: Dict[str, List[float]] = {}
     if quantiles:

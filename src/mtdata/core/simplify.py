@@ -1,12 +1,10 @@
 
 from typing import Any, Dict, Optional, List, Tuple
 import pandas as pd
-import numpy as np
 
 from .schema import SimplifySpec
-from .constants import SIMPLIFY_DEFAULT_METHOD, SIMPLIFY_DEFAULT_MODE, SIMPLIFY_DEFAULT_MIN_POINTS, SIMPLIFY_DEFAULT_MAX_POINTS, SIMPLIFY_DEFAULT_RATIO
-from ..services.simplification import _simplify_dataframe_rows_ext as _simplify_impl
 from ..utils.simplify import (
+    _simplify_dataframe_rows_ext as _simplify_impl,
     _choose_simplify_points as _choose_simplify_points_impl,
     _select_indices_for_timeseries as _select_indices_for_timeseries_impl,
     _lttb_select_indices,
@@ -34,7 +32,7 @@ __all__ = [
 
 def _simplify_dataframe_rows_ext(df: pd.DataFrame, headers: List[str], simplify: SimplifySpec) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
     """
-    Delegate to services.simplification._simplify_dataframe_rows_ext
+    Delegate to utils.simplify._simplify_dataframe_rows_ext
     """
     return _simplify_impl(df, headers, simplify)
 

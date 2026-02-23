@@ -376,6 +376,278 @@ def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optiona
     return idxs, "lttb", meta
 
 
+def _handle_select_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+    original_count = len(df)
+    if original_count <= 2:
+        return df, None
+
+    n_out = _choose_simplify_points(original_count, spec)
+    if n_out >= original_count:
+        return df, None
+
+    series = None
+    if 'close' in df.columns:
+        series = df['close'].values
+    elif len(headers) > 1:
+        for h in headers:
+            if h != 'time' and h in df.columns:
+                try:
+                    series = df[h].astype(float).values
+                    break
+                except Exception:
+                    pass
+    if series is None:
+        return df, None
+
+    epochs = df['__epoch'].values if '__epoch' in df.columns else np.arange(original_count)
+    idxs, method, params = _select_indices_for_timeseries(epochs, series, spec)
+    simplified_df = df.iloc[idxs].copy()
+    meta: Dict[str, Any] = {
+        'mode': 'select',
+        'method': method,
+        'original_rows': int(original_count),
+        'returned_rows': int(len(simplified_df)),
+        'points': int(len(simplified_df)),
+    }
+    if params:
+        meta.update(params)
+    return simplified_df, meta
+
+
+def _handle_resample_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+    rule = spec.get('rule') or spec.get('interval')
+    if not rule:
+        return df, {'error': 'Missing rule for resample'}
+    try:
+        if 'time' in df.columns:
+            if '__epoch' in df.columns:
+                df = df.set_index(pd.to_datetime(df['__epoch'], unit='s'))
+            else:
+                df = df.set_index(pd.to_datetime(df['time']))
+
+        agg_map: Dict[str, str] = {}
+        for h in headers:
+            if h in ['open']:
+                agg_map[h] = 'first'
+            elif h in ['high']:
+                agg_map[h] = 'max'
+            elif h in ['low']:
+                agg_map[h] = 'min'
+            elif h in ['close']:
+                agg_map[h] = 'last'
+            elif h in ['tick_volume', 'real_volume', 'volume']:
+                agg_map[h] = 'sum'
+            else:
+                agg_map[h] = 'last'
+
+        resampled = df.resample(rule).agg(agg_map).dropna()
+        return resampled, {'mode': 'resample', 'rule': rule, 'rows': int(len(resampled))}
+    except Exception as exc:
+        return df, {'error': f'Resample failed: {exc}'}
+
+
+def _handle_encode_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+    value_col = str(spec.get('value_col') or '').strip()
+    if not value_col or value_col not in df.columns:
+        if 'close' in df.columns:
+            value_col = 'close'
+        else:
+            value_col = next(
+                (
+                    h for h in headers
+                    if h in df.columns and h != 'time' and pd.api.types.is_numeric_dtype(df[h])
+                ),
+                '',
+            )
+    if not value_col:
+        return df, {'mode': 'encode', 'error': 'No numeric column available for encoding'}
+
+    vals = pd.to_numeric(df[value_col], errors='coerce').to_numpy(dtype=float)
+    vals = vals[np.isfinite(vals)]
+    if vals.size <= 0:
+        return df, {'mode': 'encode', 'error': 'No finite values to encode'}
+
+    schema = str(spec.get('schema', 'delta')).lower().strip()
+    if schema not in ('delta', 'envelope'):
+        schema = 'delta'
+
+    if schema == 'envelope':
+        encoded = (
+            f"start={float(vals[0]):.6g}|end={float(vals[-1]):.6g}|"
+            f"min={float(np.min(vals)):.6g}|max={float(np.max(vals)):.6g}"
+        )
+    else:
+        scale = spec.get('scale', 1.0)
+        try:
+            scale_f = float(scale)
+        except Exception:
+            scale_f = 1.0
+        scale_f = scale_f if abs(scale_f) > 1e-12 else 1.0
+        diffs = np.diff(vals, prepend=vals[0])
+        q = np.round(diffs / scale_f).astype(int)
+        if bool(spec.get('as_chars', False)):
+            zero_char = str(spec.get('zero_char', '0'))[:1] or '0'
+            encoded = ''.join('+' if d > 0 else '-' if d < 0 else zero_char for d in q.tolist())
+        else:
+            encoded = ','.join(str(int(v)) for v in q.tolist())
+
+    out_df = pd.DataFrame([{'encoding': encoded}])
+    meta = {
+        'mode': 'encode',
+        'schema': schema,
+        'value_col': value_col,
+        'headers': ['encoding'],
+        'original_rows': int(len(df)),
+        'returned_rows': 1,
+        'points': 1,
+    }
+    return out_df, meta
+
+
+def _handle_segment_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+    value_col = str(spec.get('value_col') or '').strip()
+    if not value_col or value_col not in df.columns:
+        value_col = 'close' if 'close' in df.columns else ''
+    if not value_col:
+        return _handle_select_mode(df, headers, spec)
+
+    vals = pd.to_numeric(df[value_col], errors='coerce').to_numpy(dtype=float)
+    if vals.size <= 2:
+        return df, {'mode': 'segment', 'algo': 'zigzag', 'points': int(len(df))}
+
+    try:
+        threshold_pct = float(spec.get('threshold_pct', 0.005))
+    except Exception:
+        threshold_pct = 0.005
+    threshold_pct = max(0.0, threshold_pct)
+    if threshold_pct <= 0.0:
+        return _handle_select_mode(df, headers, spec)
+
+    idxs: List[int] = [0]
+    anchor_val = float(vals[0])
+    trend = 0
+    for i in range(1, len(vals)):
+        cur = float(vals[i])
+        denom = max(abs(anchor_val), 1e-12)
+        move = (cur - anchor_val) / denom
+        if trend >= 0 and cur >= anchor_val:
+            anchor_val = cur
+            if idxs:
+                idxs[-1] = i
+            continue
+        if trend <= 0 and cur <= anchor_val:
+            anchor_val = cur
+            if idxs:
+                idxs[-1] = i
+            continue
+        if abs(move) >= threshold_pct:
+            trend = 1 if move > 0 else -1
+            idxs.append(i)
+            anchor_val = cur
+
+    if idxs[-1] != len(vals) - 1:
+        idxs.append(len(vals) - 1)
+    idxs = sorted(set(int(i) for i in idxs if 0 <= int(i) < len(df)))
+    if len(idxs) < 2:
+        idxs = [0, len(df) - 1]
+
+    out_df = df.iloc[idxs].copy()
+    meta = {
+        'mode': 'segment',
+        'algo': 'zigzag',
+        'threshold_pct': float(threshold_pct),
+        'value_col': value_col,
+        'original_rows': int(len(df)),
+        'returned_rows': int(len(out_df)),
+        'points': int(len(out_df)),
+    }
+    return out_df, meta
+
+
+def _handle_symbolic_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+    value_col = str(spec.get('value_col') or '').strip()
+    if not value_col or value_col not in df.columns:
+        value_col = 'close' if 'close' in df.columns else ''
+    if not value_col:
+        return df, {'mode': 'symbolic', 'error': 'No numeric column available for symbolic mode'}
+
+    vals = pd.to_numeric(df[value_col], errors='coerce').to_numpy(dtype=float)
+    vals = vals[np.isfinite(vals)]
+    if vals.size <= 0:
+        return df, {'mode': 'symbolic', 'error': 'No finite values to symbolize'}
+
+    try:
+        paa = int(spec.get('paa', 8))
+    except Exception:
+        paa = 8
+    paa = max(1, min(paa, int(vals.size)))
+
+    alphabet = str(spec.get('alphabet') or 'abcdefghijklmnopqrstuvwxyz')
+    alphabet = ''.join(dict.fromkeys(ch for ch in alphabet if ch.strip()))
+    if len(alphabet) < 2:
+        alphabet = 'abcdefghijklmnopqrstuvwxyz'
+    bins_n = min(26, len(alphabet))
+    alphabet = alphabet[:bins_n]
+
+    x = vals.copy()
+    if bool(spec.get('znorm', True)):
+        mu = float(np.mean(x))
+        sigma = float(np.std(x))
+        if sigma > 1e-12:
+            x = (x - mu) / sigma
+        else:
+            x = x - mu
+
+    chunks = np.array_split(x, paa)
+    paa_vals = np.array([float(np.mean(c)) if len(c) else 0.0 for c in chunks], dtype=float)
+    quantiles = np.linspace(0.0, 1.0, bins_n + 1)
+    edges = np.quantile(paa_vals, quantiles)
+    for i in range(1, len(edges)):
+        if edges[i] <= edges[i - 1]:
+            edges[i] = edges[i - 1] + 1e-12
+    ids = np.searchsorted(edges[1:-1], paa_vals, side='right')
+    symbols = ''.join(alphabet[int(i)] for i in ids.tolist())
+
+    out_df = pd.DataFrame([{'symbolic': symbols}])
+    meta = {
+        'mode': 'symbolic',
+        'schema': 'sax',
+        'value_col': value_col,
+        'paa': int(paa),
+        'alphabet': alphabet,
+        'headers': ['symbolic'],
+        'original_rows': int(len(df)),
+        'returned_rows': 1,
+        'points': 1,
+    }
+    return out_df, meta
+
+
+def _simplify_dataframe_rows_ext(
+    df: pd.DataFrame,
+    headers: List[str],
+    simplify: Optional[Dict[str, Any]],
+) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+    """Extended simplify dispatcher shared by core and service adapters."""
+    if df.empty:
+        return df, None
+
+    from ..core.constants import SIMPLIFY_DEFAULT_MODE
+
+    spec = dict(simplify) if simplify else {}
+    mode = str(spec.get('mode', SIMPLIFY_DEFAULT_MODE)).lower().strip() or SIMPLIFY_DEFAULT_MODE
+
+    if mode == 'resample':
+        return _handle_resample_mode(df, headers, spec)
+    if mode == 'encode':
+        return _handle_encode_mode(df, headers, spec)
+    if mode == 'segment':
+        return _handle_segment_mode(df, headers, spec)
+    if mode == 'symbolic':
+        return _handle_symbolic_mode(df, headers, spec)
+    return _handle_select_mode(df, headers, spec)
+
+
 def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Optional[Dict[str, Any]]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
     """Reduce or transform rows across numeric columns.
 
@@ -400,12 +672,14 @@ def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Opt
         
         method = str(simplify.get("method", SIMPLIFY_DEFAULT_METHOD)).lower().strip()
         mode = str(simplify.get("mode", SIMPLIFY_DEFAULT_MODE)).lower().strip() or SIMPLIFY_DEFAULT_MODE
-        
+
         # If users passed a high-level mode via --simplify (CLI maps to 'method'), map it to mode
         if method in ("encode", "symbolic", "segment"):
             explicit_mode = str(simplify.get("mode", "")).lower().strip()
             if explicit_mode in ("", SIMPLIFY_DEFAULT_MODE, "select"):
                 mode = method
+        spec_eff = dict(simplify)
+        spec_eff["mode"] = mode
 
         # Helper: numeric columns in requested headers order, then any others
         def _numeric_columns_from_headers() -> List[str]:
@@ -448,10 +722,10 @@ def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Opt
             return row
 
         # Determine target number of points early (used for select and to infer resample/encode)
-        n_out = _choose_simplify_points(total, simplify)
+        n_out = _choose_simplify_points(total, spec_eff)
         
         if mode == "resample" and "__epoch" in df.columns:
-            bs = simplify.get("bucket_seconds")
+            bs = spec_eff.get("bucket_seconds")
             if bs is None or (isinstance(bs, (int, float)) and bs <= 0):
                 try:
                     # Infer bucket by total time span / target buckets
@@ -483,10 +757,7 @@ def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Opt
             }
             return out_df.reset_index(drop=True), meta
 
-        # For other modes, delegate to services/simplification for now
-        # This maintains compatibility while allowing future consolidation
-        from ..services.simplification import _simplify_dataframe_rows_ext as _simplify_ext
-        return _simplify_ext(df, headers, simplify)
+        return _simplify_dataframe_rows_ext(df, headers, spec_eff)
         
     except Exception:
         return df, None

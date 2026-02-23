@@ -12,6 +12,7 @@ offline runs over a few thousand observations.
 
 from typing import Dict
 import numpy as np
+from scipy.stats import t as _student_t
 
 
 def _student_t_logpdf(x: np.ndarray, mu: np.ndarray, lam: np.ndarray, alpha: np.ndarray, beta: np.ndarray) -> np.ndarray:
@@ -37,14 +38,9 @@ def _student_t_logpdf(x: np.ndarray, mu: np.ndarray, lam: np.ndarray, alpha: np.
     nu = 2.0 * alpha
     # scale^2
     s2 = beta * (lam + 1.0) / (alpha * lam)
-    z = (x - mu)
-    # Student-t logpdf up to constants
-    # log t_nu(x | mu, s2) = log Gamma((nu+1)/2) - log Gamma(nu/2) - 0.5*log(nu*pi*s2) - (nu+1)/2*log(1 + (z^2)/(nu*s2))
-    from scipy.special import gammaln  # optional, only a few calls
-    term1 = gammaln((nu + 1.0) / 2.0) - gammaln(nu / 2.0)
-    term2 = -0.5 * (np.log(nu * np.pi) + np.log(s2))
-    term3 = -((nu + 1.0) / 2.0) * np.log(1.0 + (z * z) / (nu * s2))
-    return term1 + term2 + term3
+    scale = np.sqrt(np.clip(s2, 1e-12, None))
+    dof = np.clip(nu, 1e-12, None)
+    return np.asarray(_student_t.logpdf(x, df=dof, loc=mu, scale=scale), dtype=float)
 
 
 def bocpd_gaussian(
@@ -66,7 +62,7 @@ def bocpd_gaussian(
     Notes:
       - Complexity is O(T * R) where R = max_run_length.
       - Uses a constant hazard H = 1 / hazard_lambda.
-      - Requires scipy for gammaln (used only inside logpdf).
+      - Requires scipy for Student-t logpdf.
     """
     x = np.asarray(x, dtype=float)
     x = x[np.isfinite(x)]

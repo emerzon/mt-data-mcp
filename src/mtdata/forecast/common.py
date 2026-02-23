@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import os
 import math
@@ -18,6 +18,29 @@ from ..utils.mt5 import (
 import MetaTrader5 as mt5
 from ..utils.utils import _parse_start_datetime, _utc_epoch_seconds
 
+
+
+def edge_pad_to_length(values: np.ndarray, length: int) -> np.ndarray:
+    """Trim or edge-pad a 1D array to exactly `length` elements."""
+    target = max(0, int(length))
+    vals = np.asarray(values, dtype=float).ravel()
+    if target == 0:
+        return np.array([], dtype=float)
+    if vals.size >= target:
+        return vals[:target].astype(float, copy=False)
+    if vals.size == 0:
+        return np.full(target, np.nan, dtype=float)
+    return np.pad(vals, (0, target - vals.size), mode='edge').astype(float, copy=False)
+
+
+def log_returns_from_prices(prices: np.ndarray, eps: float = 1e-12) -> np.ndarray:
+    """Compute consecutive log-returns from a price array."""
+    arr = np.asarray(prices, dtype=float).ravel()
+    if arr.size < 2:
+        return np.array([], dtype=float)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        rets = np.diff(np.log(np.clip(arr, float(eps), None)))
+    return np.asarray(rets, dtype=float)
 
 
 def _extract_forecast_values(Yf: Any, fh: int, method_name: str = "forecast") -> "np.ndarray":
@@ -46,8 +69,7 @@ def _extract_forecast_values(Yf: Any, fh: int, method_name: str = "forecast") ->
         raise RuntimeError(f"{method_name} prediction columns not found")
     
     vals = np.asarray(Yf[pred_col].to_numpy(), dtype=float)
-    f_vals = vals[:fh] if vals.size >= fh else np.pad(vals, (0, fh - vals.size), mode='edge')
-    return f_vals.astype(float, copy=False)
+    return edge_pad_to_length(vals, int(fh))
 
 
 def _create_training_dataframes(series: np.ndarray, fh: int, exog_used: Optional[np.ndarray] = None, exog_future: Optional[np.ndarray] = None) -> Tuple[Any, Optional[Any], Optional[Any]]:

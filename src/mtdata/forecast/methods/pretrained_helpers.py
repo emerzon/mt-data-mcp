@@ -10,6 +10,8 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
+from ..common import edge_pad_to_length as _edge_pad_to_length
+
 
 def extract_context_window(
     series: np.ndarray,
@@ -137,13 +139,7 @@ def adjust_forecast_length(
     Returns:
         Adjusted forecast values array
     """
-    if len(values) < fh:
-        # Pad with last value if forecast is shorter than requested
-        return np.pad(values, (0, fh - len(values)), mode='edge')
-    elif len(values) > fh:
-        # Truncate if forecast is longer than requested
-        return values[:fh]
-    return values
+    return _edge_pad_to_length(values, int(fh))
 
 
 def extract_quantiles_from_forecast(
@@ -174,10 +170,7 @@ def extract_quantiles_from_forecast(
                 if q_value is not None:
                     q_array = np.asarray(q_value, dtype=float)
                     # Adjust length to match forecast horizon
-                    if len(q_array) < fh:
-                        q_array = np.pad(q_array, (0, fh - len(q_array)), mode='edge')
-                    elif len(q_array) > fh:
-                        q_array = q_array[:fh]
+                    q_array = _edge_pad_to_length(q_array, int(fh))
                     fq[str(qf)] = q_array.tolist()
             except Exception:
                 continue
