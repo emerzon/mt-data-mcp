@@ -35,6 +35,41 @@ _HAS_TIMESFM = _importlib_util.find_spec('timesfm') is not None
 _HAS_LAG_LLAMA = _importlib_util.find_spec('lag_llama') is not None
 
 
+def _resolve_chronos_device_map(requested: Any, torch_module: Any) -> str:
+    """Resolve a stable device map for Chronos pipelines.
+
+    - If not specified, prefer a single explicit GPU when available, else CPU.
+    - If explicitly set to `auto` on multi-GPU, pin to `cuda:0` to avoid
+      split-device runtime mismatches in some Chronos/accelerate combinations.
+    - Explicit non-auto values are preserved.
+    """
+    req = str(requested).strip() if requested is not None else ""
+    if not req:
+        try:
+            cuda = getattr(torch_module, "cuda", None)
+            if cuda is not None and callable(getattr(cuda, "is_available", None)) and bool(cuda.is_available()):
+                return "cuda:0"
+        except Exception:
+            pass
+        return "cpu"
+
+    req_l = req.lower()
+    if req_l != "auto":
+        return req
+
+    try:
+        cuda = getattr(torch_module, "cuda", None)
+        if cuda is not None and callable(getattr(cuda, "is_available", None)) and bool(cuda.is_available()):
+            count_fn = getattr(cuda, "device_count", None)
+            if callable(count_fn):
+                n = int(count_fn())
+                if n > 1:
+                    return "cuda:0"
+    except Exception:
+        pass
+    return "auto"
+
+
 @ForecastRegistry.register("chronos_bolt")
 @ForecastRegistry.register("chronos2")
 class ChronosBoltMethod(PretrainedMethod):
@@ -42,7 +77,7 @@ class ChronosBoltMethod(PretrainedMethod):
         {"name": "model_name", "type": "str", "description": "Hugging Face model id."},
         {"name": "context_length", "type": "int|null", "description": "Context window length."},
         {"name": "quantiles", "type": "list|null", "description": "Quantile levels to return."},
-        {"name": "device_map", "type": "str|null", "description": "Device map (default: auto)."},
+        {"name": "device_map", "type": "str|null", "description": "Device map (default: cuda:0 when available, else cpu)."},
     ]
 
     @property
@@ -68,7 +103,7 @@ class ChronosBoltMethod(PretrainedMethod):
         # Bolt checkpoint unless the caller explicitly overrides it.
         model_name = str(p.get('model_name') or 'amazon/chronos-bolt-base')
         ctx_len = int(p.get('context_length', 0) or 0)
-        device_map = p.get('device_map', 'auto')
+        device_map = p.get('device_map', None)
         series_id = str(p.get('series_id', 'series'))
         quantiles = process_quantile_levels(p.get('quantiles'))
         
@@ -86,6 +121,7 @@ class ChronosBoltMethod(PretrainedMethod):
         _pd = modules['pandas']
         _torch = modules['torch']
         _chronos = modules['chronos']
+        effective_device_map = _resolve_chronos_device_map(device_map, _torch)
         _Pipeline = None
         for attr in ("Chronos2Pipeline", "ChronosBoltPipeline", "ChronosPipeline"):
             if hasattr(_chronos, attr):
@@ -136,9 +172,9 @@ class ChronosBoltMethod(PretrainedMethod):
                             known_covariates = _torch.tensor(full_exog, dtype=_torch.float32).unsqueeze(0)
                             
                             # Handle device placement if explicit
-                            if device_map and device_map not in ('auto', 'cpu'):
+                            if effective_device_map and effective_device_map not in ('auto', 'cpu'):
                                 try:
-                                    known_covariates = known_covariates.to(device_map)
+                                    known_covariates = known_covariates.to(effective_device_map)
                                 except Exception:
                                     pass
                 except Exception:
@@ -146,15 +182,15 @@ class ChronosBoltMethod(PretrainedMethod):
                     pass
 
             try:
-                pipe = _Pipeline.from_pretrained(model_name, device_map=device_map)
+                pipe = _Pipeline.from_pretrained(model_name, device_map=effective_device_map)
             except TypeError:
                 pipe = _Pipeline.from_pretrained(model_name)
             
             # Convert context to tensor. Chronos pipelines expect (batch, time) -> (1, L).
             ctx_tensor = _torch.tensor(context, dtype=_torch.float32).unsqueeze(0)
-            if device_map and device_map not in ('auto', 'cpu'):
+            if effective_device_map and effective_device_map not in ('auto', 'cpu'):
                 try:
-                    ctx_tensor = ctx_tensor.to(device_map)
+                    ctx_tensor = ctx_tensor.to(effective_device_map)
                 except Exception:
                     pass
 
@@ -226,7 +262,7 @@ class ChronosBoltMethod(PretrainedMethod):
                 f_vals = f_np
 
             params_used = build_params_used(
-                {'model_name': model_name, 'device_map': device_map},
+                {'model_name': model_name, 'device_map': effective_device_map},
                 quantiles_dict=fq,
                 context_length=ctx_len if ctx_len else n
             )
