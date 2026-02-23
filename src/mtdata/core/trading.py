@@ -414,6 +414,17 @@ def trade_history(
     @_auto_connect_wrapper
     def _get_history():
         try:
+            use_client_tz = _use_client_tz()
+            fmt_time = _format_time_minimal_local if use_client_tz else _format_time_minimal
+
+            def _normalize_time_col(df: "pd.DataFrame", col: str) -> Optional["pd.Series"]:
+                if col not in df.columns:
+                    return None
+                raw = pd.to_numeric(df[col], errors="coerce")
+                utc = raw.apply(lambda x: _mt5_epoch_to_utc(float(x)) if pd.notna(x) else float("nan"))
+                df[col] = utc.apply(lambda x: fmt_time(float(x)) if pd.notna(x) else None)
+                return utc
+
             if start:
                 from_dt = _parse_start_datetime(start)
                 if not from_dt:
@@ -443,9 +454,7 @@ def trade_history(
                 if rows is None or len(rows) == 0:
                     return {"message": "No deals found"}
                 df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
-                if 'time' in df.columns:
-                    df['time'] = pd.to_datetime(df['time'], unit='s')
-                sort_col = 'time' if 'time' in df.columns else None
+                sort_src = _normalize_time_col(df, "time")
             else:
                 if symbol:
                     rows = mt5.history_orders_get(from_dt, to_dt, symbol=symbol)
@@ -454,18 +463,20 @@ def trade_history(
                 if rows is None or len(rows) == 0:
                     return {"message": "No orders found"}
                 df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
-                if 'time_setup' in df.columns:
-                    df['time_setup'] = pd.to_datetime(df['time_setup'], unit='s')
-                if 'time_done' in df.columns:
-                    df['time_done'] = pd.to_datetime(df['time_done'], unit='s')
-                sort_col = 'time_setup' if 'time_setup' in df.columns else None
+                sort_src = _normalize_time_col(df, "time_setup")
+                if sort_src is None:
+                    sort_src = _normalize_time_col(df, "time")
+                _normalize_time_col(df, "time_done")
+            df["__sort_utc"] = sort_src if sort_src is not None else pd.Series([float("nan")] * len(df))
 
             limit_value = _normalize_limit(limit)
             if limit_value and len(df) > limit_value:
-                if sort_col:
-                    df = df.sort_values(sort_col).tail(limit_value)
+                if "__sort_utc" in df.columns:
+                    df = df.sort_values("__sort_utc").tail(limit_value)
                 else:
                     df = df.tail(limit_value)
+            if "__sort_utc" in df.columns:
+                df = df.drop(columns=["__sort_utc"])
             return df.to_dict(orient='records')
         except Exception as e:
             return {"error": str(e)}
@@ -1105,7 +1116,10 @@ def trade_place(
         }
 
     price_provided = price not in (None, 0)
-    expiration_provided = expiration is not None
+    try:
+        _, expiration_provided = _normalize_pending_expiration(expiration)
+    except (TypeError, ValueError) as ex:
+        return {"error": str(ex)}
 
     is_pending = (t in explicit_pending_types) or price_provided or expiration_provided
     if not is_pending:
@@ -1330,8 +1344,12 @@ def trade_modify(
     - Otherwise, try a position modify first; if not found, fall back to pending order.
     """
     price_val = None if price in (None, 0) else price
+    try:
+        _, expiration_specified = _normalize_pending_expiration(expiration)
+    except (TypeError, ValueError) as ex:
+        return {"error": str(ex)}
 
-    if price_val is not None or expiration is not None:
+    if price_val is not None or expiration_specified:
         result = _modify_pending_order(
             ticket=ticket,
             price=price_val,

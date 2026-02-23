@@ -78,8 +78,8 @@ def _parse_weekday(value: Optional[str]) -> Optional[int]:
         num = int(text)
         if 0 <= num <= 6:
             return num
-        if 1 <= num <= 7:
-            return num - 1
+        if num == 7:
+            return 6
     mapping = {
         "mon": 0, "monday": 0,
         "tue": 1, "tues": 1, "tuesday": 1,
