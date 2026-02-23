@@ -23,6 +23,7 @@ dependencies = [
     "pandas-ta-classic==0.3.59",
     "scipy>=1.15.3,<1.16.0",
     "scikit-learn>=1.7.2",
+    "scikit-image>=0.24.0",
     "statsmodels>=0.14.5",
     "statsforecast>=2.0.2",
     "sktime>=0.40.1",

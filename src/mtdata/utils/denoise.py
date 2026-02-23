@@ -3,6 +3,7 @@ import math
 
 import numpy as np
 import pandas as pd
+from skimage.restoration import denoise_tv_chambolle as _denoise_tv_chambolle
 
 try:
     import pywt as _pywt  # type: ignore
@@ -43,8 +44,6 @@ try:
     from vmdpy import VMD as _VMD  # type: ignore
 except Exception:
     _VMD = None  # optional
-
-
 def _hp_filter(x: np.ndarray, lamb: float) -> np.ndarray:
     if _sps is None or _sps_linalg is None:
         return x
@@ -86,22 +85,24 @@ def _tv_denoise_1d(
     n = len(x)
     if n < 3:
         return x
-    p = np.zeros(n - 1, dtype=float)
-    u = x.copy()
-    for _ in range(max(1, int(n_iter))):
-        u_prev = u
-        div_p = np.empty_like(x)
-        div_p[0] = p[0]
-        div_p[1:-1] = p[1:] - p[:-1]
-        div_p[-1] = -p[-1]
-        u = x - weight * div_p
-        grad = np.diff(u)
-        denom = 1.0 + (np.abs(grad) / max(weight, 1e-12))
-        p = (p + (grad / max(weight, 1e-12))) / denom
-        if tol and tol > 0:
-            if np.linalg.norm(u - u_prev) / (np.linalg.norm(u_prev) + 1e-12) < tol:
-                break
-    return u
+
+    try:
+        y = _denoise_tv_chambolle(
+            x,
+            weight=float(weight),
+            eps=float(max(tol, 1e-12)),
+            max_num_iter=max(1, int(n_iter)),
+            channel_axis=None,
+        )
+    except TypeError:
+        # Older scikit-image versions use n_iter_max naming.
+        y = _denoise_tv_chambolle(
+            x,
+            weight=float(weight),
+            eps=float(max(tol, 1e-12)),
+            n_iter_max=max(1, int(n_iter)),
+        )
+    return np.asarray(y, dtype=float)
 
 
 def _kalman_filter_1d(

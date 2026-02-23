@@ -11,14 +11,15 @@ This module provides two primary helpers:
 - simulate_heston_mc: Heston stochastic volatility simulation (Euler).
 - simulate_jump_diffusion_mc: Merton-style jump diffusion simulation.
 
-No external dependencies beyond numpy/pandas are required (except for GARCH). The HMM fitting is a
-minimal, robust EM tailored for 1D Gaussian emissions and a small number of
-states, with sensible initialization and numerical stability.
+This module relies on numpy/pandas plus sklearn (GaussianMixture) and arch
+(bootstrap/GARCH).
 """
 
 from typing import Dict, Tuple, Optional
 import numpy as np
 import warnings
+from sklearn.mixture import GaussianMixture
+from arch.bootstrap import CircularBlockBootstrap
 
 
 def _normalize_probability_vector(
@@ -59,22 +60,10 @@ def _safe_log(x: np.ndarray, eps: float = 1e-12) -> np.ndarray:
     return np.log(np.clip(x, eps, None))
 
 
-def _normal_pdf(x: np.ndarray, mu: float, sigma: float) -> np.ndarray:
-    sigma = float(max(sigma, 1e-12))
-    z = (x - mu) / sigma
-    return (1.0 / (np.sqrt(2.0 * np.pi) * sigma)) * np.exp(-0.5 * z * z)
-
-
-def _normal_logpdf(x: np.ndarray, mu: float, sigma: float) -> np.ndarray:
-    sigma = float(max(sigma, 1e-12))
-    z = (x - mu) / sigma
-    return -0.5 * (np.log(2.0 * np.pi) + 2.0 * np.log(sigma) + z * z)
-
-
 def fit_gaussian_mixture_1d(
     x: np.ndarray, n_states: int = 2, max_iter: int = 50, tol: float = 1e-6, seed: Optional[int] = 42
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
-    """Fit a 1D Gaussian mixture via EM and return (weights, means, sigmas, gamma, ll).
+    """Fit a 1D Gaussian mixture and return (weights, means, sigmas, gamma, ll).
 
     - x: 1D array of observations (e.g., log-returns)
     - n_states: number of Gaussian components
@@ -95,46 +84,28 @@ def fit_gaussian_mixture_1d(
         sigma = np.array([float(np.std(x)) + 1e-6])
         w = np.array([1.0])
         gamma = np.ones((N, 1), dtype=float)
-        return w, mu, sigma, gamma, float(np.sum(_normal_logpdf(x, mu[0], sigma[0])))
+        ll = float(-0.5 * N * (np.log(2.0 * np.pi) + 2.0 * np.log(max(sigma[0], 1e-12))))
+        return w, mu, sigma, gamma, ll
 
-    # Initialization: split by quantiles for stability
-    qs = np.linspace(0.1, 0.9, K)
-    mu = np.array([np.quantile(x, q) for q in qs], dtype=float)
-    sigma = np.full(K, float(np.std(x) + 1e-6), dtype=float)
-    w = np.full(K, 1.0 / K, dtype=float)
+    model = GaussianMixture(
+        n_components=K,
+        covariance_type='diag',
+        reg_covar=1e-12,
+        max_iter=int(max_iter),
+        tol=float(tol),
+        n_init=1,
+        random_state=seed,
+    )
+    x2 = x.reshape(-1, 1)
+    model.fit(x2)
+    gamma = np.asarray(model.predict_proba(x2), dtype=float)
+    w = np.asarray(model.weights_, dtype=float).reshape(-1)
+    mu = np.asarray(model.means_, dtype=float).reshape(-1)
+    sigma = np.sqrt(np.clip(np.asarray(model.covariances_, dtype=float).reshape(-1), 1e-12, None))
+    ll = float(model.score(x2) * N)
 
-    prev_ll = -np.inf
-    gamma = np.zeros((N, K), dtype=float)
-    for _ in range(int(max_iter)):
-        # E-step: responsibilities
-        for k in range(K):
-            gamma[:, k] = w[k] * _normal_pdf(x, mu[k], sigma[k])
-        total = np.sum(gamma, axis=1, keepdims=True)
-        total[total <= 0.0] = 1e-18
-        gamma /= total
-
-        # M-step
-        Nk = np.sum(gamma, axis=0) + 1e-18
-        w = Nk / float(N)
-        mu = (gamma.T @ x) / Nk
-        # unbiased variance estimate guarded from below
-        var = np.zeros(K, dtype=float)
-        for k in range(K):
-            diff = x - mu[k]
-            var[k] = np.sum(gamma[:, k] * diff * diff) / Nk[k]
-        sigma = np.sqrt(np.clip(var, 1e-12, None))
-
-        # Compute log-likelihood
-        log_probs = np.zeros((N, K), dtype=float)
-        for k in range(K):
-            log_probs[:, k] = np.log(max(w[k], 1e-18)) + _normal_logpdf(x, mu[k], sigma[k])
-        ll = float(np.sum(np.log(np.sum(np.exp(log_probs - log_probs.max(axis=1, keepdims=True)), axis=1) + 1e-18) + log_probs.max(axis=1)))
-        if ll - prev_ll < tol:
-            prev_ll = ll
-            break
-        prev_ll = ll
-
-    return w, mu, sigma, gamma, prev_ll
+    order = np.argsort(mu)
+    return w[order], mu[order], sigma[order], gamma[:, order], ll
 
 
 def estimate_transition_matrix_from_gamma(gamma: np.ndarray) -> np.ndarray:
@@ -500,7 +471,6 @@ def simulate_bootstrap_mc(
     block_size: Optional[int] = None
 ) -> Dict[str, np.ndarray]:
     """Circular Block Bootstrap simulation."""
-    rng = np.random.RandomState(seed)
     prices = np.asarray(prices, dtype=float)
     prices = prices[np.isfinite(prices)]
     rets = np.diff(_safe_log(prices))
@@ -515,30 +485,14 @@ def simulate_bootstrap_mc(
         block_size = int(max(1, n ** (1.0/3.0)))
     
     block_size = max(1, int(block_size))
-    
-    # Number of blocks needed to cover horizon
-    n_blocks = int(np.ceil(horizon / block_size))
-    
-    # Random starting indices for blocks (n_sims, n_blocks)
-    start_indices = rng.randint(0, n, size=(n_sims, n_blocks))
-    
-    # Create full index grid
-    # Offsets: (1, 1, block_size)
-    offsets = np.arange(block_size)[None, None, :]
-    # Bases: (n_sims, n_blocks, 1)
-    bases = start_indices[..., None]
-    
-    # Full indices: (n_sims, n_blocks, block_size)
-    indices = (bases + offsets) % n
-    
-    # Flatten to (n_sims, total_len)
-    indices_flat = indices.reshape(n_sims, -1)
-    
-    # Trim to horizon
-    indices_final = indices_flat[:, :horizon]
-    
-    # Gather returns
-    sim_rets = rets[indices_final]
+    bs = CircularBlockBootstrap(block_size, rets, seed=seed)
+    sim_rets = np.zeros((int(n_sims), int(horizon)), dtype=float)
+    for s_idx, boot in enumerate(bs.bootstrap(int(n_sims))):
+        sample = np.asarray(boot[0][0], dtype=float).reshape(-1)
+        if sample.size < int(horizon):
+            reps = int(np.ceil(int(horizon) / max(1, sample.size)))
+            sample = np.tile(sample, reps)
+        sim_rets[s_idx] = sample[: int(horizon)]
     
     # Reconstruct prices
     last_price = float(prices[-1])

@@ -72,7 +72,6 @@ def labels_triple_barrier(
             if tp is None or sl is None:
                 return {"error": "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or tp_pips/sl_pips"}
 
-            l = 0
             hit_tp = -1
             hit_sl = -1
             for k in range(1, int(horizon) + 1):

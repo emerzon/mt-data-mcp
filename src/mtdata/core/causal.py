@@ -10,6 +10,7 @@ from typing import Dict, List, Tuple
 import pandas as pd
 import numpy as np
 import MetaTrader5 as mt5
+from sklearn.preprocessing import StandardScaler
 
 from .constants import TIMEFRAME_MAP
 from .server import mcp, _auto_connect_wrapper, _ensure_symbol_ready
@@ -97,14 +98,19 @@ def _transform_frame(frame: pd.DataFrame, transform: str) -> pd.DataFrame:
 
 
 def _standardize_frame(frame: pd.DataFrame) -> pd.DataFrame:
-    standardized = frame.copy()
-    for col in frame.columns:
-        series = standardized[col]
+    if frame.empty:
+        return frame
+
+    cols = list(frame.columns)
+    scaled = StandardScaler(with_mean=True, with_std=True).fit_transform(frame.astype(float))
+    standardized = pd.DataFrame(scaled, index=frame.index, columns=cols)
+
+    # Preserve prior semantics for constant columns.
+    for col in cols:
+        series = frame[col]
         std = float(series.std(ddof=0))
-        mean = float(series.mean())
         if not math.isfinite(std) or std == 0.0:
-            continue
-        standardized[col] = (series - mean) / std
+            standardized[col] = series
     return standardized
 
 
