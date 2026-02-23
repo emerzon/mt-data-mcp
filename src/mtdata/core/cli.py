@@ -416,15 +416,8 @@ def _resolve_param_kwargs(
         # Handle other types
         try:
             ptype = param.get('type')
-            origin = get_origin(ptype)
-            
             # Optional[T] -> T Unwrap first
-            base_type = ptype
-            if origin is not None and str(origin).endswith('Union'):
-                args = [a for a in get_args(ptype) if a is not type(None)]
-                if len(args) == 1:
-                    base_type = args[0]
-                    origin = get_origin(base_type)
+            base_type, origin = _unwrap_optional_type(ptype)
 
             # Check for mapping type on the unwrapped base type
             is_typed_dict = hasattr(base_type, '__annotations__') and isinstance(getattr(base_type, '__annotations__', {}), dict)
@@ -452,6 +445,7 @@ def _resolve_param_kwargs(
                     kwargs['nargs'] = '+'
                 else:
                     kwargs['type'] = str
+                    kwargs['nargs'] = '+'
             elif origin and str(origin).endswith('Literal'):
                 choices = [str(v) for v in get_args(base_type)]
                 if choices:
@@ -518,6 +512,60 @@ def _parse_kv_string(s: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         _debug(f"Failed to parse kv string '{s}': {e}")
         return None
+
+
+def _unwrap_optional_type(ptype: Any) -> Tuple[Any, Any]:
+    """Unwrap Optional[T] to (T, origin(T))."""
+    origin = get_origin(ptype)
+    if origin is not None and str(origin).endswith('Union'):
+        args_t = [a for a in get_args(ptype) if a is not type(None)]
+        if len(args_t) == 1:
+            ptype = args_t[0]
+            origin = get_origin(ptype)
+    return ptype, origin
+
+
+def _normalize_cli_list_value(value: Any) -> Any:
+    """Normalize CLI list values from comma/space/JSON forms into a flat list."""
+    if value is None:
+        return None
+
+    out: List[Any] = []
+
+    def _add_text_tokens(text: str) -> None:
+        s = str(text or "").strip()
+        if not s:
+            return
+        if s.startswith("[") and s.endswith("]"):
+            try:
+                parsed = json.loads(s)
+                if isinstance(parsed, list):
+                    for item in parsed:
+                        if isinstance(item, str):
+                            tok = item.strip()
+                            if tok:
+                                out.append(tok)
+                        elif item is not None:
+                            out.append(item)
+                    return
+            except Exception:
+                pass
+        for tok in s.replace(",", " ").split():
+            t = tok.strip()
+            if t:
+                out.append(t)
+
+    if isinstance(value, str):
+        _add_text_tokens(value)
+        return out
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            if isinstance(item, str):
+                _add_text_tokens(item)
+            elif item is not None:
+                out.append(item)
+        return out
+    return value
 
 
 def _coerce_cli_scalar(v: str) -> Any:
@@ -666,23 +714,20 @@ def create_command_function(func_info, cmd_name: str = "", cmd_parser: Optional[
             # Handle mapping-like params for CLI convenience
             try:
                 ptype = param.get('type')
-                origin = get_origin(ptype)
-                
                 # Unwrap Optional
-                base_type = ptype
-                if origin is not None and str(origin).endswith('Union'):
-                    args_t = [a for a in get_args(ptype) if a is not type(None)]
-                    if len(args_t) == 1:
-                        base_type = args_t[0]
-                        origin = get_origin(base_type)
+                base_type, origin = _unwrap_optional_type(ptype)
 
                 is_typed_dict = hasattr(base_type, '__annotations__') and isinstance(getattr(base_type, '__annotations__', {}), dict)
                 is_mapping = (base_type in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
+                is_list_like = origin in (list, tuple)
             except Exception:
                 is_mapping = False
+                is_list_like = False
             # Bare flag sentinel: treat as empty mapping to trigger defaults
             if is_mapping and arg_value == '__PRESENT__':
                 arg_value = {}
+            if is_list_like:
+                arg_value = _normalize_cli_list_value(arg_value)
             # For mapping-like params, support shorthand and companion '<name>_params'
             if is_mapping:
                 # Try to parse JSON/KV string if it looks like one
