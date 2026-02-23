@@ -8,6 +8,7 @@ import pandas as pd
 from ..utils.utils import to_float_np
 from .common import PatternResultBase
 from scipy.signal import find_peaks
+from tslearn.metrics import dtw as _ts_dtw
 
 
 @dataclass
@@ -132,24 +133,9 @@ def _paa(a: np.ndarray, m: int) -> np.ndarray:
 
 def _dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
     try:
-        from tslearn.metrics import dtw as _ts_dtw  # type: ignore
         return float(_ts_dtw(a.astype(float), b.astype(float)))
     except Exception:
-        try:
-            from dtaidistance import dtw as _dd_dtw  # type: ignore
-            return float(_dd_dtw.distance_fast(a.astype(float), b.astype(float)))
-        except Exception:
-            # Simple DP fallback
-            n, m = len(a), len(b)
-            if n == 0 or m == 0:
-                return float('inf')
-            dp = np.full((n + 1, m + 1), np.inf, dtype=float)
-            dp[0, 0] = 0.0
-            for i in range(1, n + 1):
-                for j in range(1, m + 1):
-                    cost = abs(a[i - 1] - b[j - 1])
-                    dp[i, j] = cost + min(dp[i - 1, j], dp[i, j - 1], dp[i - 1, j - 1])
-            return float(dp[n, m])
+        return float('inf')
 
 
 def _template_hs(L: int, inverse: bool = False) -> np.ndarray:

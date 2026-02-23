@@ -3,11 +3,14 @@ Simplification helpers extracted for reuse across server tools.
 
 Contains target-point selection utilities and core selection algorithms.
 """
-from typing import Any, Dict, List, Optional, Tuple, Callable
+from typing import Any, Dict, List, Optional, Tuple
 import math
 
 import pandas as pd
 import numpy as np
+import ruptures as rpt
+from rdp import rdp as _rdp
+from tsdownsample import MinMaxLTTBDownsampler
 
 # Import defaults from core.constants to avoid duplication.
 # Use a lazy import to prevent circular imports during initialization.
@@ -74,191 +77,81 @@ def _choose_simplify_points(total: int, spec: Dict[str, Any]) -> int:
         return total
 
 
-# ---- Core selection algorithms ----
+_LTTB_DOWNSAMPLER = MinMaxLTTBDownsampler()
+
+
+def _finalize_indices(n: int, idxs: List[int]) -> List[int]:
+    """Ensure first/last indices exist and output is unique/increasing."""
+    if n <= 0:
+        return []
+    if not idxs:
+        return list(range(n))
+    out = sorted(set(int(i) for i in idxs if 0 <= int(i) < n))
+    if not out:
+        return [0, n - 1] if n > 1 else [0]
+    if out[0] != 0:
+        out.insert(0, 0)
+    if out[-1] != n - 1:
+        out.append(n - 1)
+    return out
+
+
+def _segment_endpoints_to_indices(n: int, bkps: List[int]) -> List[int]:
+    """Convert ruptures breakpoints (segment end positions) into row indices."""
+    idxs = [0]
+    for b in bkps:
+        bi = int(b)
+        if 0 < bi < n:
+            idxs.append(bi - 1)
+    idxs.append(n - 1)
+    return _finalize_indices(n, idxs)
+
+
+def _n_bkps_from_segments_points(n: int, segments: Optional[int], points: Optional[int]) -> Optional[int]:
+    seg = segments
+    if seg is None and points is not None:
+        try:
+            seg = max(1, int(points) - 1)
+        except Exception:
+            seg = None
+    if seg is None:
+        return None
+    seg_i = max(1, min(int(seg), n - 1))
+    return max(0, seg_i - 1)
+
+
 def _lttb_select_indices(x: List[float], y: List[float], n_out: int) -> List[int]:
-    """Largest-Triangle-Three-Buckets (LTTB) downsampling.
-
-    Returns the indices of selected points (monotonic, includes first/last).
-    """
-    try:
-        m = len(x)
-        if n_out >= m:
-            return list(range(m))
-        if n_out <= 2 or m <= 2:
-            return [0, max(0, m - 1)]
-        idxs: List[int] = [0]
-        bucket_size = (m - 2) / float(n_out - 2)
-        a = 0
-        for i in range(0, n_out - 2):
-            start = int(math.floor(1 + i * bucket_size))
-            end = int(math.floor(1 + (i + 1) * bucket_size))
-            end = min(end, m - 1)
-            if start >= end:
-                start = max(min(start, m - 2), 1)
-                end = start + 1
-
-            next_start = int(math.floor(1 + (i + 1) * bucket_size))
-            next_end = int(math.floor(1 + (i + 2) * bucket_size))
-            next_end = min(next_end, m - 1)
-            if next_start >= next_end:
-                next_start = max(min(next_start, m - 1), 1)
-                next_end = next_start
-            avg_x = 0.0
-            avg_y = 0.0
-            cnt = max(1, next_end - next_start)
-            for j in range(next_start, next_end):
-                avg_x += x[j]
-                avg_y += y[j]
-            avg_x /= float(cnt)
-            avg_y /= float(cnt)
-
-            ax = x[a]
-            ay = y[a]
-            max_area = -1.0
-            max_idx = start
-            for j in range(start, end):
-                area = abs((ax - avg_x) * (y[j] - ay) - (ax - x[j]) * (avg_y - ay))
-                if area > max_area:
-                    max_area = area
-                    max_idx = j
-            idxs.append(max_idx)
-            a = max_idx
-
-        idxs.append(m - 1)
-        out = []
-        last = -1
-        for ix in sorted(set(idxs)):
-            if ix > last:
-                out.append(ix)
-                last = ix
-        return out
-    except Exception:
-        return list(range(len(x)))
+    """Library-backed LTTB downsampling using tsdownsample."""
+    m = len(x)
+    if n_out >= m:
+        return list(range(m))
+    if n_out <= 2 or m <= 2:
+        return [0, max(0, m - 1)]
+    xx = np.asarray(x, dtype=float)
+    yy = np.asarray(y, dtype=float)
+    idxs = _LTTB_DOWNSAMPLER.downsample(xx, yy, n_out=int(n_out))
+    return _finalize_indices(m, np.asarray(idxs, dtype=int).tolist())
 
 
 def _point_line_distance(px: float, py: float, x1: float, y1: float, x2: float, y2: float) -> float:
     """Vertical distance from P to line y(x) through (x1,y1)-(x2,y2)."""
-    try:
-        dx = x2 - x1
-        if dx == 0.0:
-            return abs(py - (y1 + y2) / 2.0)
-        m = (y2 - y1) / dx
-        y_on_line = y1 + m * (px - x1)
-        return abs(py - y_on_line)
-    except Exception:
-        return 0.0
-
-
-def _uniform_segment_indices(n: int, segments: int) -> List[int]:
-    """Return indices that split a sequence of length n into `segments` segments."""
-    if n <= 2 or segments <= 1:
-        return list(range(n))
-    segments = max(1, min(int(segments), n - 1))
-    idxs = [0]
-    for k in range(1, segments):
-        idxs.append(int(round(k * (n - 1) / segments)))
-    idxs.append(n - 1)
-    return sorted(set(idxs))
-
-
-def _line_deviation_hi(x: List[float], y: List[float]) -> float:
-    """Compute a robust upper bound for line-based deviation in [x,y]."""
-    n = len(x)
-    if n == 0:
-        return 1.0
-    x0, y0 = x[0], y[0]
-    x1, y1 = x[-1], y[-1]
-    dx = x1 - x0
-    if dx == 0:
-        base = sum(y) / float(n)
-        return max(abs(v - base) for v in y) if n > 0 else 1.0
-    m = (y1 - y0) / dx
-    hi = 0.0
-    for i in range(n):
-        yline = y0 + m * (x[i] - x0)
-        hi = max(hi, abs(y[i] - yline))
-    if hi <= 0:
-        rng = (max(y) - min(y)) if n > 1 else 1.0
-        hi = max(1e-12, rng)
-    return float(hi)
-
-
-def _abs_deviation_hi(y: List[float]) -> float:
-    """Upper bound for absolute deviation from the mean for APCA."""
-    n = len(y)
-    if n == 0:
-        return 1.0
-    base = sum(y) / float(n)
-    hi = max(abs(v - base) for v in y) if n > 0 else 1.0
-    if hi <= 0:
-        rng = (max(y) - min(y)) if n > 1 else 1.0
-        hi = max(1e-12, rng)
-    return float(hi)
-
-
-def _binary_search_param(
-    target_points: int,
-    lo: float,
-    hi: float,
-    iter_limit: int,
-    compute_indices: Callable[[float], List[int]],
-) -> Tuple[List[int], float]:
-    """Generic binary search to find a parameter so that indices length ~ target_points.
-
-    Returns (best_indices, best_param). On ties, prefers smaller parameter value.
-    """
-    target = max(3, int(target_points))
-    best_idxs = compute_indices(lo)
-    best_p = lo
-    best_diff = abs(len(best_idxs) - target)
-    for _ in range(max(1, int(iter_limit))):
-        mid = (lo + hi) / 2.0
-        idxs = compute_indices(mid)
-        cnt = len(idxs)
-        diff = abs(cnt - target)
-        if diff < best_diff or (diff == best_diff and mid < best_p):
-            best_idxs = idxs
-            best_p = mid
-            best_diff = diff
-        if cnt > target:
-            lo = mid if mid > lo else lo + (hi - lo) * 0.5
-        elif cnt < target:
-            hi = mid
-        else:
-            break
-        if hi - lo <= 1e-12:
-            break
-    return best_idxs, float(best_p)
+    dx = x2 - x1
+    if dx == 0.0:
+        return abs(py - (y1 + y2) / 2.0)
+    m = (y2 - y1) / dx
+    y_on_line = y1 + m * (px - x1)
+    return abs(py - y_on_line)
 
 
 def _rdp_select_indices(x: List[float], y: List[float], epsilon: float) -> List[int]:
-    """Douglas–Peucker simplification returning kept indices."""
-    try:
-        n = len(x)
-        if n <= 2 or epsilon <= 0:
-            return list(range(n))
-        stack: List[Tuple[int, int]] = [(0, n - 1)]
-        keep = [False] * n
-        keep[0] = True
-        keep[n - 1] = True
-        while stack:
-            i0, i1 = stack.pop()
-            x0, y0 = x[i0], y[i0]
-            x1, y1 = x[i1], y[i1]
-            idx = -1
-            dmax = 0.0
-            for i in range(i0 + 1, i1):
-                d = _point_line_distance(x[i], y[i], x0, y0, x1, y1)
-                if d > dmax:
-                    idx = i
-                    dmax = d
-            if idx != -1 and dmax > epsilon:
-                keep[idx] = True
-                stack.append((i0, idx))
-                stack.append((idx, i1))
-        return [i for i, k in enumerate(keep) if k]
-    except Exception:
-        return list(range(len(x)))
+    """Douglas-Peucker simplification returning kept indices via rdp package."""
+    n = len(x)
+    if n <= 2 or epsilon <= 0:
+        return list(range(n))
+    pts = np.column_stack([np.asarray(x, dtype=float), np.asarray(y, dtype=float)])
+    mask = _rdp(pts, epsilon=float(epsilon), algo="iter", return_mask=True)
+    idxs = np.flatnonzero(np.asarray(mask, dtype=bool)).astype(int).tolist()
+    return _finalize_indices(n, idxs)
 
 
 def _max_line_error(x: List[float], y: List[float], i0: int, i1: int) -> float:
@@ -274,43 +167,6 @@ def _max_line_error(x: List[float], y: List[float], i0: int, i1: int) -> float:
     return m
 
 
-def _finalize_indices(n: int, idxs: List[int]) -> List[int]:
-    """Ensure last index included and indices are strictly increasing unique."""
-    if not idxs:
-        return list(range(n))
-    if idxs[-1] != n - 1:
-        idxs.append(n - 1)
-    out: List[int] = []
-    for i in idxs:
-        ii = int(i)
-        if not out or ii > out[-1]:
-            out.append(ii)
-    return out
-
-
-def _greedy_segment_indices(n: int, check_ok: Callable[[int, int], bool]) -> List[int]:
-    """Generic greedy grow-and-split segment index selector using a monotone check.
-
-    Expands [start:end] while check_ok(start,end) holds, then commits the last good end.
-    """
-    idxs: List[int] = [0]
-    start = 0
-    while start < n - 1:
-        end = start + 1
-        last_good = end
-        while end < n:
-            if check_ok(start, end):
-                last_good = end
-                end += 1
-            else:
-                break
-        if last_good == start:
-            last_good = start + 1
-        idxs.append(last_good)
-        start = last_good
-    return idxs
-
-
 def _pla_select_indices(
     x: List[float],
     y: List[float],
@@ -318,18 +174,20 @@ def _pla_select_indices(
     segments: Optional[int] = None,
     points: Optional[int] = None,
 ) -> List[int]:
-    """Piecewise Linear Approximation; greedy by max perpendicular error or uniform segments."""
+    """Piecewise-linear selection using ruptures."""
     n = len(x)
     if n <= 2:
         return list(range(n))
-    if (max_error is None or max_error <= 0) and (segments or points):
-        if points and (segments is None):
-            segments = max(1, int(points) - 1)
-        return _uniform_segment_indices(n, int(segments or 1))
-    if max_error is None or max_error <= 0:
+    signal = np.column_stack([np.asarray(y, dtype=float), np.asarray(x, dtype=float)])
+    algo = rpt.BottomUp(model="linear", min_size=2, jump=1).fit(signal)
+    n_bkps = _n_bkps_from_segments_points(n, segments, points)
+    if max_error is not None and float(max_error) > 0:
+        bkps = algo.predict(epsilon=float(max_error))
+    elif n_bkps is not None:
+        bkps = algo.predict(n_bkps=int(n_bkps))
+    else:
         return list(range(n))
-    idxs = _greedy_segment_indices(n, lambda s, e: _max_line_error(x, y, s, e) <= float(max_error))
-    return _finalize_indices(n, idxs)
+    return _segment_endpoints_to_indices(n, [int(b) for b in bkps])
 
 
 def _apca_select_indices(
@@ -338,56 +196,72 @@ def _apca_select_indices(
     segments: Optional[int] = None,
     points: Optional[int] = None,
 ) -> List[int]:
-    """Adaptive Piecewise Constant Approximation; greedy by max absolute deviation or uniform."""
+    """Piecewise-constant selection using ruptures."""
     n = len(y)
     if n <= 2:
         return list(range(n))
-    if (max_error is None or max_error <= 0) and (segments or points):
-        if points and (segments is None):
-            segments = max(1, int(points) - 1)
-        return _uniform_segment_indices(n, int(segments or 1))
-    if max_error is None or max_error <= 0:
+    signal = np.asarray(y, dtype=float).reshape(-1, 1)
+    algo = rpt.BottomUp(model="l2", min_size=2, jump=1).fit(signal)
+    n_bkps = _n_bkps_from_segments_points(n, segments, points)
+    if max_error is not None and float(max_error) > 0:
+        bkps = algo.predict(epsilon=float(max_error))
+    elif n_bkps is not None:
+        bkps = algo.predict(n_bkps=int(n_bkps))
+    else:
         return list(range(n))
-    def _ok(s: int, e: int) -> bool:
-        seg = y[s:e + 1]
-        mean = sum(seg) / float(len(seg))
-        err = max(abs(v - mean) for v in seg)
-        return err <= float(max_error)
-    idxs = _greedy_segment_indices(n, _ok)
-    return _finalize_indices(n, idxs)
+    return _segment_endpoints_to_indices(n, [int(b) for b in bkps])
 
 
 def _rdp_autotune_epsilon(x: List[float], y: List[float], target_points: int, max_iter: int = 24) -> Tuple[List[int], float]:
-    """Binary search epsilon so RDP keeps ~target_points. Returns (indices, epsilon)."""
+    """Binary-search epsilon for rdp to keep ~target_points."""
     n = len(x)
     target = max(3, min(int(target_points), n))
     if target >= n:
         return list(range(n)), 0.0
+    y_arr = np.asarray(y, dtype=float)
+    hi = float(np.ptp(y_arr)) if y_arr.size else 1.0
+    if not np.isfinite(hi) or hi <= 0:
+        hi = 1.0
     lo = 0.0
-    hi = _line_deviation_hi(x, y)
-    return _binary_search_param(target, lo, hi, max_iter, lambda mid: _rdp_select_indices(x, y, mid))
+    best = _rdp_select_indices(x, y, lo)
+    best_eps = lo
+    best_diff = abs(len(best) - target)
+    for _ in range(max(1, int(max_iter))):
+        mid = (lo + hi) / 2.0
+        idxs = _rdp_select_indices(x, y, mid)
+        diff = abs(len(idxs) - target)
+        if diff < best_diff:
+            best, best_eps, best_diff = idxs, mid, diff
+        if len(idxs) > target:
+            lo = mid
+        elif len(idxs) < target:
+            hi = mid
+        else:
+            best, best_eps = idxs, mid
+            break
+        if abs(hi - lo) <= 1e-12:
+            break
+    return best, float(best_eps)
 
 
 def _pla_autotune_max_error(x: List[float], y: List[float], target_points: int, max_iter: int = 24) -> Tuple[List[int], float]:
-    """Binary search max_error so PLA keeps ~target_points. Returns (indices, max_error)."""
+    """Approximate target points for PLA via segment count."""
     n = len(x)
     target = max(3, min(int(target_points), n))
     if target >= n:
         return list(range(n)), 0.0
-    lo = 0.0
-    hi = _line_deviation_hi(x, y)
-    return _binary_search_param(target, lo, hi, max_iter, lambda mid: _pla_select_indices(x, y, mid, None, None))
+    idxs = _pla_select_indices(x, y, max_error=None, segments=max(1, target - 1), points=None)
+    return idxs, 0.0
 
 
 def _apca_autotune_max_error(y: List[float], target_points: int, max_iter: int = 24) -> Tuple[List[int], float]:
-    """Binary search max_error so APCA keeps ~target_points. Returns (indices, max_error)."""
+    """Approximate target points for APCA via segment count."""
     n = len(y)
     target = max(3, min(int(target_points), n))
     if target >= n:
         return list(range(n)), 0.0
-    lo = 0.0
-    hi = _abs_deviation_hi(y)
-    return _binary_search_param(target, lo, hi, max_iter, lambda mid: _apca_select_indices(y, mid, None, None))
+    idxs = _apca_select_indices(y, max_error=None, segments=max(1, target - 1), points=None)
+    return idxs, 0.0
 
 
 def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optional[Dict[str, Any]]) -> Tuple[List[int], str, Dict[str, Any]]:

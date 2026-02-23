@@ -6,30 +6,14 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 import pandas as pd
 from scipy.spatial.ckdtree import cKDTree
+import stumpy as _stumpy
+from tslearn.metrics import dtw as _ts_dtw
+from tslearn.metrics import soft_dtw as _ts_soft_dtw
 
 try:
     import hnswlib as _HNSW  # type: ignore
 except Exception:
     _HNSW = None  # optional ANN backend
-# Optional matrix profile backend
-try:
-    import stumpy as _stumpy  # type: ignore
-except Exception:
-    _stumpy = None
-
-# Optional DTW/Soft-DTW backends
-try:
-    from tslearn.metrics import dtw as _ts_dtw  # type: ignore
-except Exception:
-    _ts_dtw = None
-try:
-    from tslearn.metrics import soft_dtw as _ts_soft_dtw  # type: ignore
-except Exception:
-    _ts_soft_dtw = None
-try:
-    from dtaidistance import dtw as _dd_dtw  # type: ignore
-except Exception:
-    _dd_dtw = None
 
 # Dimensionality reduction abstraction
 from .dimred import create_reducer as _create_reducer, DimReducer as _DimReducer
@@ -55,7 +39,7 @@ def _minmax_scale_row(x: np.ndarray) -> np.ndarray:
 
 
 def _mass_distance_profile(query: np.ndarray, series: np.ndarray, *, eps: float = 1e-12) -> np.ndarray:
-    """Compute z-normalized sliding distances between query and all subsequences in series using FFT.
+    """Compute z-normalized sliding distances using stumpy MASS.
 
     Returns an array of length len(series) - len(query) + 1. Non-finite windows are mapped to inf.
     """
@@ -66,36 +50,14 @@ def _mass_distance_profile(query: np.ndarray, series: np.ndarray, *, eps: float 
     if m == 0 or n < m:
         return np.array([], dtype=float)
 
-    q_std = float(np.nanstd(q))
-    if not np.isfinite(q_std) or q_std <= eps:
+    if not np.isfinite(q).all() or not np.isfinite(s).all():
         return np.full(max(n - m + 1, 0), np.inf, dtype=float)
-    q_norm = (q - float(np.nanmean(q))) / q_std
-
-    # Fast convolution via FFT to get dot products
-    k = int(1 << (n + m - 1).bit_length())  # next power of two for speed
-    q_rev = np.flip(q_norm)
-    q_rev = np.pad(q_rev, (0, k - m))
-    s_pad = np.pad(s, (0, k - n))
-    fft_q = np.fft.fft(q_rev)
-    fft_s = np.fft.fft(s_pad)
-    conv = np.fft.ifft(fft_q * fft_s).real
-    cross = conv[m - 1 : m - 1 + (n - m + 1)]
-
-    # Rolling mean/std for series windows
-    cumsum = np.cumsum(s, dtype=float)
-    cumsum2 = np.cumsum(s * s, dtype=float)
-    window_sum = cumsum[m - 1 :] - np.concatenate(([0.0], cumsum[:-m]))
-    window_sum2 = cumsum2[m - 1 :] - np.concatenate(([0.0], cumsum2[:-m]))
-    means = window_sum / m
-    stds = np.sqrt(np.maximum(window_sum2 / m - means * means, 0.0))
-    stds[stds <= eps] = np.nan
-
-    denom = m * stds
-    with np.errstate(invalid="ignore", divide="ignore"):
-        dist2 = 2.0 * m * (1.0 - (cross / denom))
-    dist2[~np.isfinite(dist2)] = np.inf
-    dist2 = np.maximum(dist2, 0.0)
-    return np.sqrt(dist2)
+    q_std = float(np.std(q))
+    if q_std <= eps:
+        return np.full(max(n - m + 1, 0), np.inf, dtype=float)
+    profile = np.asarray(_stumpy.mass(q, s), dtype=float)
+    profile[~np.isfinite(profile)] = np.inf
+    return profile
 
 
 @dataclass
@@ -367,69 +329,19 @@ class PatternIndex:
                 if dtw_band_frac is not None and dtw_band_frac > 0:
                     band = max(1, int(round(float(dtw_band_frac) * n)))
                 if sm == 'dtw':
-                    dist = None
-                    if _ts_dtw is not None:
-                        try:
-                            if band:
-                                dist = float(_ts_dtw(a, w, global_constraint="sakoe_chiba", sakoe_chiba_radius=int(band)))
-                            else:
-                                dist = float(_ts_dtw(a, w))
-                        except Exception:
-                            dist = None
-                    if dist is None and _dd_dtw is not None:
-                        try:
-                            if band:
-                                dist = float(_dd_dtw.distance_fast(a, w, window=band))
-                            else:
-                                dist = float(_dd_dtw.distance_fast(a, w))
-                        except Exception:
-                            dist = None
-                    if dist is None:
-                        # Simple O(n^2) DTW DP fallback (no band)
-                        ca = np.full((n + 1, n + 1), np.inf, dtype=float)
-                        ca[0, 0] = 0.0
-                        for i in range(1, n + 1):
-                            for j in range(1, n + 1):
-                                cost = abs(a[i - 1] - w[j - 1])
-                                ca[i, j] = cost + min(ca[i - 1, j], ca[i, j - 1], ca[i - 1, j - 1])
-                        dist = float(ca[n, n])
-                    score = dist
+                    try:
+                        if band:
+                            score = float(_ts_dtw(a, w, global_constraint="sakoe_chiba", sakoe_chiba_radius=int(band)))
+                        else:
+                            score = float(_ts_dtw(a, w))
+                    except Exception:
+                        score = float("inf")
                 else:  # softdtw
-                    dist = None
-                    if _ts_soft_dtw is not None:
-                        try:
-                            gamma = float(soft_dtw_gamma) if (soft_dtw_gamma is not None and soft_dtw_gamma > 0) else 1.0
-                            dist = float(_ts_soft_dtw(a.reshape(1, -1), w.reshape(1, -1), gamma=gamma))
-                        except Exception:
-                            dist = None
-                    if dist is None:
-                        # Fallback to DTW if soft-DTW unavailable
-                        if _ts_dtw is not None:
-                            try:
-                                if band:
-                                    dist = float(_ts_dtw(a, w, global_constraint="sakoe_chiba", sakoe_chiba_radius=int(band)))
-                                else:
-                                    dist = float(_ts_dtw(a, w))
-                            except Exception:
-                                dist = None
-                        if dist is None and _dd_dtw is not None:
-                            try:
-                                if band:
-                                    dist = float(_dd_dtw.distance_fast(a, w, window=band))
-                                else:
-                                    dist = float(_dd_dtw.distance_fast(a, w))
-                            except Exception:
-                                dist = None
-                        if dist is None:
-                            # Final fallback to simple DTW
-                            ca = np.full((n + 1, n + 1), np.inf, dtype=float)
-                            ca[0, 0] = 0.0
-                            for i in range(1, n + 1):
-                                for j in range(1, n + 1):
-                                    cost = abs(a[i - 1] - w[j - 1])
-                                    ca[i, j] = cost + min(ca[i - 1, j], ca[i, j - 1], ca[i - 1, j - 1])
-                            dist = float(ca[n, n])
-                    score = dist
+                    try:
+                        gamma = float(soft_dtw_gamma) if (soft_dtw_gamma is not None and soft_dtw_gamma > 0) else 1.0
+                        score = float(_ts_soft_dtw(a.reshape(1, -1), w.reshape(1, -1), gamma=gamma))
+                    except Exception:
+                        score = float("inf")
             else:
                 # Fallback to euclidean on scaled windows
                 diff = a - w
