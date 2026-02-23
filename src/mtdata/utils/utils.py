@@ -13,7 +13,11 @@ from .constants import (
     PRECISION_REL_TOL,
     TIME_DISPLAY_FORMAT,
 )
-from .formatting import format_number
+from .formatting import (
+    format_number,
+    optimal_decimals as _optimal_decimals_shared,
+    format_float as _format_float_shared,
+)
 
 
 def _coerce_scalar(s: str):
@@ -172,36 +176,13 @@ def _optimal_decimals(
     max_decimals: int = PRECISION_MAX_DECIMALS,
     max_loss_pct: float = PRECISION_MAX_LOSS_PCT,
 ) -> int:
-    if not values:
-        return 0
-    nums = [
-        float(v)
-        for v in values
-        if v is not None and not pd.isna(v) and math.isfinite(float(v))
-    ]
-    if not nums:
-        return 0
-    vmin = min(nums)
-    vmax = max(nums)
-    value_range = vmax - vmin
-    if value_range <= 0:
-        scale = max(1.0, max(abs(v) for v in nums))
-        tol = max(abs_tol, rel_tol * scale)
-    else:
-        tol = max(abs_tol, value_range * max_loss_pct)
-    for d in range(0, max_decimals + 1):
-        factor = 10.0 ** d
-        max_diff = 0.0
-        for v in nums:
-            rv = round(v * factor) / factor
-            diff = abs(rv - v)
-            if diff > max_diff:
-                max_diff = diff
-            if max_diff > tol:
-                break
-        if max_diff <= tol:
-            return d
-    return max_decimals
+    return _optimal_decimals_shared(
+        values,
+        rel_tol=rel_tol,
+        abs_tol=abs_tol,
+        max_decimals=max_decimals,
+        max_loss_pct=max_loss_pct,
+    )
 
 
 def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
@@ -285,12 +266,7 @@ def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
 
 
 def _format_float(v: float, d: int) -> str:
-    s = f"{v:.{d}f}"
-    if '.' in s:
-        s = s.rstrip('0').rstrip('.')
-    if s in ("", "-0"):
-        s = "0"
-    return s
+    return _format_float_shared(v, d)
 
 
 

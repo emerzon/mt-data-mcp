@@ -9,56 +9,29 @@ import math
 import numpy as np
 import pandas as pd
 
-from ..core.constants import TIMEFRAME_SECONDS
 from ..utils.indicators import _parse_ti_specs as _parse_ti_specs_util, _apply_ta_indicators as _apply_ta_indicators_util
 from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
+from .common import (
+    default_seasonality as _default_seasonality_common,
+    next_times_from_last as _next_times_from_last_common,
+    pd_freq_from_timeframe as _pd_freq_from_timeframe_common,
+)
 
 
 def _default_seasonality_period(timeframe: str) -> int:
     """Infer a default seasonality for forecasting based on timeframe."""
-    try:
-        sec = TIMEFRAME_SECONDS.get(timeframe)
-        if not sec or sec <= 0:
-            return 0
-        if sec < 86400:
-            return int(round(86400.0 / float(sec)))
-        if timeframe == 'D1':
-            return 5
-        if timeframe == 'W1':
-            return 52
-        if timeframe == 'MN1':
-            return 12
-        return 0
-    except Exception:
-        return 0
+    return _default_seasonality_common(timeframe)
 
 
 def _next_times_from_last(last_epoch: float, tf_secs: int, horizon: int) -> List[float]:
     """Generate future timestamps for forecasting."""
-    base = float(last_epoch)
-    step = float(tf_secs)
-    return [base + step * (i + 1) for i in range(int(horizon))]
+    return _next_times_from_last_common(last_epoch, tf_secs, horizon)
 
 
 def _pd_freq_from_timeframe(tf: str) -> str:
     """Convert MT5 timeframe to pandas frequency string."""
-    tf = str(tf).upper().strip()
-    if tf == 'M1':
-        return '1min'
-    if tf in ('M2', 'M3', 'M4', 'M5', 'M6', 'M10', 'M12', 'M15', 'M20', 'M30'):
-        return f"{tf[1:]}min"
-    if tf == 'H1':
-        return '1H'
-    if tf in ('H2', 'H3', 'H4', 'H6', 'H8', 'H12'):
-        return f"{tf[1:]}H"
-    if tf == 'D1':
-        return '1D'
-    if tf == 'W1':
-        return '1W'
-    if tf == 'MN1':
-        return '1M'
-    return '1H'  # fallback
+    return _pd_freq_from_timeframe_common(tf)
 
 
 def prepare_features(

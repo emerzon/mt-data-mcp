@@ -100,3 +100,22 @@ def test_handle_select_returns_original_when_series_unavailable(monkeypatch):
 
     assert result_df.equals(df)
     assert meta is None
+
+
+def test_simplify_modes_no_recursive_delegation():
+    df = _sample_ohlc_df()
+
+    enc_df, enc_meta = simp._simplify_dataframe_rows_ext(df, list(df.columns), {"mode": "encode", "schema": "delta"})
+    assert enc_meta is not None
+    assert enc_meta.get("mode") == "encode"
+    assert "encoding" in enc_df.columns
+
+    seg_df, seg_meta = simp._simplify_dataframe_rows_ext(df, list(df.columns), {"mode": "segment", "threshold_pct": 0.01})
+    assert seg_meta is not None
+    assert seg_meta.get("mode") == "segment"
+    assert len(seg_df) >= 2
+
+    sym_df, sym_meta = simp._simplify_dataframe_rows_ext(df, list(df.columns), {"mode": "symbolic", "paa": 3})
+    assert sym_meta is not None
+    assert sym_meta.get("mode") == "symbolic"
+    assert "symbolic" in sym_df.columns

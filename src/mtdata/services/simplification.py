@@ -94,28 +94,182 @@ def _handle_resample(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any])
         return df, {'error': f'Resample failed: {e}'}
 
 def _handle_encode(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
-    """Delegate to utils.simplify implementation for encoding modes."""
-    from ..utils.simplify import _simplify_dataframe_rows as _impl
-    # Set mode to encode for delegation
-    encode_spec = dict(spec)
-    encode_spec['mode'] = 'encode'
-    return _impl(df, headers, encode_spec)
+    """Encode a numeric series into a compact representation without recursion."""
+    value_col = str(spec.get('value_col') or '').strip()
+    if not value_col or value_col not in df.columns:
+        if 'close' in df.columns:
+            value_col = 'close'
+        else:
+            value_col = next(
+                (
+                    h for h in headers
+                    if h in df.columns and h != 'time' and pd.api.types.is_numeric_dtype(df[h])
+                ),
+                '',
+            )
+    if not value_col:
+        return df, {'mode': 'encode', 'error': 'No numeric column available for encoding'}
+
+    vals = pd.to_numeric(df[value_col], errors='coerce').to_numpy(dtype=float)
+    vals = vals[np.isfinite(vals)]
+    if vals.size <= 0:
+        return df, {'mode': 'encode', 'error': 'No finite values to encode'}
+
+    schema = str(spec.get('schema', 'delta')).lower().strip()
+    if schema not in ('delta', 'envelope'):
+        schema = 'delta'
+
+    if schema == 'envelope':
+        encoded = (
+            f"start={float(vals[0]):.6g}|end={float(vals[-1]):.6g}|"
+            f"min={float(np.min(vals)):.6g}|max={float(np.max(vals)):.6g}"
+        )
+    else:
+        scale = spec.get('scale', 1.0)
+        try:
+            scale_f = float(scale)
+        except Exception:
+            scale_f = 1.0
+        scale_f = scale_f if abs(scale_f) > 1e-12 else 1.0
+        diffs = np.diff(vals, prepend=vals[0])
+        q = np.round(diffs / scale_f).astype(int)
+        if bool(spec.get('as_chars', False)):
+            zero_char = str(spec.get('zero_char', '0'))[:1] or '0'
+            encoded = ''.join('+' if d > 0 else '-' if d < 0 else zero_char for d in q.tolist())
+        else:
+            encoded = ','.join(str(int(v)) for v in q.tolist())
+
+    out_df = pd.DataFrame([{'encoding': encoded}])
+    meta = {
+        'mode': 'encode',
+        'schema': schema,
+        'value_col': value_col,
+        'headers': ['encoding'],
+        'original_rows': int(len(df)),
+        'returned_rows': 1,
+        'points': 1,
+    }
+    return out_df, meta
 
 def _handle_segment(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
-    """Delegate to utils.simplify implementation for segmentation modes."""
-    from ..utils.simplify import _simplify_dataframe_rows as _impl
-    # Set mode to segment for delegation
-    segment_spec = dict(spec)
-    segment_spec['mode'] = 'segment'
-    return _impl(df, headers, segment_spec)
+    """Return turning points using a simple threshold-based zigzag segmentation."""
+    value_col = str(spec.get('value_col') or '').strip()
+    if not value_col or value_col not in df.columns:
+        value_col = 'close' if 'close' in df.columns else ''
+    if not value_col:
+        return _handle_select(df, headers, spec)
+
+    vals = pd.to_numeric(df[value_col], errors='coerce').to_numpy(dtype=float)
+    if vals.size <= 2:
+        return df, {'mode': 'segment', 'algo': 'zigzag', 'points': int(len(df))}
+
+    try:
+        threshold_pct = float(spec.get('threshold_pct', 0.005))
+    except Exception:
+        threshold_pct = 0.005
+    threshold_pct = max(0.0, threshold_pct)
+    if threshold_pct <= 0.0:
+        return _handle_select(df, headers, spec)
+
+    idxs: List[int] = [0]
+    anchor_val = float(vals[0])
+    trend = 0
+    for i in range(1, len(vals)):
+        cur = float(vals[i])
+        denom = max(abs(anchor_val), 1e-12)
+        move = (cur - anchor_val) / denom
+        if trend >= 0 and cur >= anchor_val:
+            anchor_val = cur
+            if idxs:
+                idxs[-1] = i
+            continue
+        if trend <= 0 and cur <= anchor_val:
+            anchor_val = cur
+            if idxs:
+                idxs[-1] = i
+            continue
+        if abs(move) >= threshold_pct:
+            trend = 1 if move > 0 else -1
+            idxs.append(i)
+            anchor_val = cur
+
+    if idxs[-1] != len(vals) - 1:
+        idxs.append(len(vals) - 1)
+    idxs = sorted(set(int(i) for i in idxs if 0 <= int(i) < len(df)))
+    if len(idxs) < 2:
+        idxs = [0, len(df) - 1]
+
+    out_df = df.iloc[idxs].copy()
+    meta = {
+        'mode': 'segment',
+        'algo': 'zigzag',
+        'threshold_pct': float(threshold_pct),
+        'value_col': value_col,
+        'original_rows': int(len(df)),
+        'returned_rows': int(len(out_df)),
+        'points': int(len(out_df)),
+    }
+    return out_df, meta
 
 def _handle_symbolic(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
-    """Delegate to utils.simplify implementation for symbolic modes."""
-    from ..utils.simplify import _simplify_dataframe_rows as _impl
-    # Set mode to symbolic for delegation
-    symbolic_spec = dict(spec)
-    symbolic_spec['mode'] = 'symbolic'
-    return _impl(df, headers, symbolic_spec)
+    """Generate a SAX-like symbolic string from a numeric series."""
+    value_col = str(spec.get('value_col') or '').strip()
+    if not value_col or value_col not in df.columns:
+        value_col = 'close' if 'close' in df.columns else ''
+    if not value_col:
+        return df, {'mode': 'symbolic', 'error': 'No numeric column available for symbolic mode'}
+
+    vals = pd.to_numeric(df[value_col], errors='coerce').to_numpy(dtype=float)
+    vals = vals[np.isfinite(vals)]
+    if vals.size <= 0:
+        return df, {'mode': 'symbolic', 'error': 'No finite values to symbolize'}
+
+    try:
+        paa = int(spec.get('paa', 8))
+    except Exception:
+        paa = 8
+    paa = max(1, min(paa, int(vals.size)))
+
+    alphabet = str(spec.get('alphabet') or 'abcdefghijklmnopqrstuvwxyz')
+    alphabet = ''.join(dict.fromkeys(ch for ch in alphabet if ch.strip()))
+    if len(alphabet) < 2:
+        alphabet = 'abcdefghijklmnopqrstuvwxyz'
+    bins_n = min(26, len(alphabet))
+    alphabet = alphabet[:bins_n]
+
+    x = vals.copy()
+    if bool(spec.get('znorm', True)):
+        mu = float(np.mean(x))
+        sigma = float(np.std(x))
+        if sigma > 1e-12:
+            x = (x - mu) / sigma
+        else:
+            x = x - mu
+
+    chunks = np.array_split(x, paa)
+    paa_vals = np.array([float(np.mean(c)) if len(c) else 0.0 for c in chunks], dtype=float)
+    quantiles = np.linspace(0.0, 1.0, bins_n + 1)
+    edges = np.quantile(paa_vals, quantiles)
+    # Ensure strictly increasing edges to keep searchsorted stable
+    for i in range(1, len(edges)):
+        if edges[i] <= edges[i - 1]:
+            edges[i] = edges[i - 1] + 1e-12
+    ids = np.searchsorted(edges[1:-1], paa_vals, side='right')
+    symbols = ''.join(alphabet[int(i)] for i in ids.tolist())
+
+    out_df = pd.DataFrame([{'symbolic': symbols}])
+    meta = {
+        'mode': 'symbolic',
+        'schema': 'sax',
+        'value_col': value_col,
+        'paa': int(paa),
+        'alphabet': alphabet,
+        'headers': ['symbolic'],
+        'original_rows': int(len(df)),
+        'returned_rows': 1,
+        'points': 1,
+    }
+    return out_df, meta
 
 def _handle_select(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
     # Implementation of point selection (LTTB, etc.)

@@ -11,8 +11,11 @@ from numbers import Number
 from typing import Any, Dict, Iterable, List, Optional
 
 from .constants import DISPLAY_MAX_DECIMALS
-from .formatting import format_number
-from .utils import _optimal_decimals, _format_float
+from .formatting import (
+    format_number,
+    optimal_decimals as _optimal_decimals,
+    format_float as _format_float,
+)
 
 
 _INDENT = "  "

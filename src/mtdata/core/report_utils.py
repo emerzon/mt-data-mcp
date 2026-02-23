@@ -1229,12 +1229,12 @@ def _format_signed(value: Optional[float]) -> str:
 
 
 def _format_decimal(value: Any, decimals: int = 4) -> Optional[str]:
-    """Delegate to utils._format_float to avoid duplication."""
-    from ..utils.utils import _format_float
+    """Delegate to shared formatting helper to avoid duplication."""
+    from ..utils.formatting import format_float
     val = _as_float(value)
     if val is None:
         return None
-    return _format_float(val, decimals)
+    return format_float(val, decimals)
 
 
 def _format_probability(value: Optional[Any]) -> str:
