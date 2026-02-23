@@ -81,6 +81,7 @@ def test_fetch_history_as_of_and_drop_last_live_paths(monkeypatch):
         {"time": 400.0, "open": 4.0},
     ]
 
+    monkeypatch.setattr(fc, "_mt5_copy_rates_from", lambda symbol, tf, to_dt, count: rates)
     monkeypatch.setattr(fc, "_mt5_copy_rates_from_pos", lambda symbol, tf, start, count: rates)
     monkeypatch.setattr(fc, "_parse_start_datetime", lambda _as_of: datetime(2024, 1, 1))
     monkeypatch.setattr(fc, "_utc_epoch_seconds", lambda _dt: 300.0)
@@ -91,6 +92,25 @@ def test_fetch_history_as_of_and_drop_last_live_paths(monkeypatch):
 
     out = fc.fetch_history("EURUSD", "H1", need=4, as_of=None, drop_last_live=True)
     assert out["time"].tolist() == [100.0, 200.0, 300.0]
+
+
+def test_fetch_history_as_of_anchors_directly_not_latest_window(monkeypatch):
+    monkeypatch.setattr(fc, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fc, "_ensure_symbol_ready", lambda _symbol: None)
+    monkeypatch.setattr(fc, "get_symbol_info_cached", lambda _symbol: SimpleNamespace(visible=True))
+    monkeypatch.setattr(fc.mt5, "last_error", lambda: (1, "err"))
+
+    # Would be returned by a latest-window fetch, but should not be used for old as_of.
+    newest_rates = [{"time": 9000.0, "open": 9.0}, {"time": 9100.0, "open": 9.1}]
+    asof_rates = [{"time": 100.0, "open": 1.0}, {"time": 200.0, "open": 2.0}]
+
+    monkeypatch.setattr(fc, "_mt5_copy_rates_from_pos", lambda symbol, tf, start, count: newest_rates)
+    monkeypatch.setattr(fc, "_mt5_copy_rates_from", lambda symbol, tf, to_dt, count: asof_rates)
+    monkeypatch.setattr(fc, "_parse_start_datetime", lambda _as_of: datetime(2020, 1, 1))
+    monkeypatch.setattr(fc, "_utc_epoch_seconds", lambda _dt: 250.0)
+
+    out = fc.fetch_history("EURUSD", "H1", need=2, as_of="2020-01-01")
+    assert out["time"].tolist() == [100.0, 200.0]
 
 
 def test_fetch_history_handles_invalid_as_of_and_empty_rates(monkeypatch):

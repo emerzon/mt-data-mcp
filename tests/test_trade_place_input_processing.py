@@ -7,7 +7,7 @@ from unittest.mock import patch
 # Add src to path to ensure local package is found
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
-from mtdata.core.trading import _normalize_order_type_input, trade_place
+from mtdata.core.trading import _normalize_order_type_input, trade_place, trade_modify
 
 
 def test_normalize_order_type_accepts_mt5_integer() -> None:
@@ -62,3 +62,23 @@ def test_trade_place_missing_required_fields_returns_friendly_error() -> None:
     assert "error" in out
     assert "Missing required field(s): symbol, volume, order_type" in str(out["error"])
     assert out.get("required") == ["symbol", "volume", "order_type"]
+
+
+def test_trade_place_blank_expiration_keeps_market_routing() -> None:
+    with patch("mtdata.core.trading._place_market_order", return_value={"ok": True}) as mock_market, patch(
+        "mtdata.core.trading._place_pending_order", return_value={"pending": True}
+    ) as mock_pending:
+        out = trade_place(symbol="BTCUSD", volume=0.03, order_type="BUY", expiration="", __cli_raw=True)
+        assert out == {"ok": True}
+        mock_market.assert_called_once()
+        mock_pending.assert_not_called()
+
+
+def test_trade_modify_blank_expiration_keeps_position_path() -> None:
+    with patch("mtdata.core.trading._modify_position", return_value={"success": True}) as mock_pos, patch(
+        "mtdata.core.trading._modify_pending_order", return_value={"success": True}
+    ) as mock_pending:
+        out = trade_modify(ticket=123, stop_loss=1.0, expiration="", __cli_raw=True)
+        assert out.get("success") is True
+        mock_pos.assert_called_once()
+        mock_pending.assert_not_called()
