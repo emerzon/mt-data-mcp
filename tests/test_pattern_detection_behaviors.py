@@ -323,3 +323,130 @@ def test_patterns_detect_classic_invalid_engine_returns_error(monkeypatch):
 
     assert "error" in res
     assert "Invalid classic engine" in str(res["error"])
+
+
+def test_detect_pivots_close_prefers_high_low_when_enabled():
+    n = 160
+    close = np.full(n, 100.0, dtype=float)
+    high = close.copy()
+    low = close.copy()
+    high[[30, 75, 120]] = [106.0, 107.0, 106.5]
+    low[[45, 95, 140]] = [94.0, 93.5, 94.2]
+
+    cfg_hl = ClassicDetectorConfig(
+        pivot_use_hl=True,
+        pivot_use_atr_adaptive_prominence=False,
+        pivot_use_atr_adaptive_distance=False,
+        min_prominence_pct=1.0,
+        min_distance=5,
+    )
+    cfg_close = ClassicDetectorConfig(
+        pivot_use_hl=False,
+        pivot_use_atr_adaptive_prominence=False,
+        pivot_use_atr_adaptive_distance=False,
+        min_prominence_pct=1.0,
+        min_distance=5,
+    )
+
+    peaks_hl, troughs_hl = classic_mod._detect_pivots_close(close, cfg_hl, high, low)
+    peaks_close, troughs_close = classic_mod._detect_pivots_close(close, cfg_close, high, low)
+
+    assert peaks_hl.size >= 2
+    assert troughs_hl.size >= 2
+    assert peaks_close.size == 0
+    assert troughs_close.size == 0
+
+
+def test_detect_classic_triangle_marks_completed_on_breakout(monkeypatch):
+    n = 170
+    close = np.full(n, 100.0, dtype=float)
+    top_line = np.linspace(106.0, 100.0, n)
+    bot_line = np.linspace(94.0, 99.0, n)
+    close[:-3] = (top_line[:-3] + bot_line[:-3]) / 2.0
+    close[-3:] = top_line[-3:] + 1.0
+
+    peaks = np.array([30, 60, 90, 120, 150], dtype=int)
+    troughs = np.array([20, 50, 80, 110, 140], dtype=int)
+    close[peaks] = top_line[peaks]
+    close[troughs] = bot_line[troughs]
+    close[-3:] = top_line[-3:] + 1.0
+    df = pd.DataFrame({"time": np.arange(n, dtype=float), "close": close, "high": close + 0.2, "low": close - 0.2})
+    monkeypatch.setattr(classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (peaks, troughs))
+
+    def _fake_fit_lines(ih, il, c, n, cfg):
+        return -0.03, 106.0, 0.9, 0.03, 94.0, 0.9, top_line.copy(), bot_line.copy()
+
+    monkeypatch.setattr(classic_mod, "_fit_lines_and_arrays", _fake_fit_lines)
+
+    out = detect_classic_patterns(
+        df,
+        ClassicDetectorConfig(
+            min_channel_touches=2,
+            breakout_lookahead=6,
+            completion_lookback_bars=6,
+            completion_confirm_bars=1,
+            max_consolidation_bars=5,
+        ),
+    )
+    tri = [p for p in out if "Triangle" in p.name]
+    assert tri
+    assert any(p.status == "completed" for p in tri)
+
+
+def test_detect_classic_confidence_calibration_and_lifecycle(monkeypatch):
+    n = 150
+    x = np.linspace(0, 4 * np.pi, n)
+    close = 100 + 0.25 * np.arange(n) + 3.0 * np.sin(x)
+    df = pd.DataFrame({"time": np.arange(n, dtype=float), "close": close, "high": close + 0.3, "low": close - 0.3})
+
+    peaks = np.array([20, 45, 70, 95, 120, 145], dtype=int)
+    troughs = np.array([10, 35, 60, 85, 110, 135], dtype=int)
+    monkeypatch.setattr(classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (peaks, troughs))
+
+    cfg = ClassicDetectorConfig(
+        calibrate_confidence=True,
+        confidence_calibration_map={"default": {"0.0": 0.0, "1.0": 0.5}},
+        confidence_calibration_blend=1.0,
+        max_consolidation_bars=5,
+    )
+    out = detect_classic_patterns(df, cfg)
+    assert out
+    sample = out[0]
+    assert isinstance(sample.details, dict)
+    assert "raw_confidence" in sample.details
+    assert "calibrated_confidence" in sample.details
+    assert sample.confidence <= float(sample.details["raw_confidence"])
+    assert sample.details.get("lifecycle_state") in {"forming", "confirmed"}
+
+
+def test_run_classic_engine_native_multiscale_merges(monkeypatch):
+    cfg = ClassicDetectorConfig(min_distance=6, min_prominence_pct=0.6)
+    df = pd.DataFrame({"close": np.linspace(100.0, 120.0, 200), "time": np.arange(200, dtype=float)})
+
+    def _fake_format(_df, cfg_in):
+        md = int(cfg_in.min_distance)
+        return [
+            {
+                "name": "Double Top",
+                "status": "forming",
+                "confidence": 0.4 + 0.03 * md,
+                "start_index": 40 + (md % 2),
+                "end_index": 90 + (md % 3),
+                "start_date": None,
+                "end_date": None,
+                "details": {"min_distance": md},
+            }
+        ]
+
+    monkeypatch.setattr(core_patterns, "_format_classic_native_patterns", _fake_format)
+
+    out, err = core_patterns._run_classic_engine_native(
+        symbol="EURUSD",
+        df=df,
+        cfg=cfg,
+        config={"native_multiscale": True, "native_scale_factors": [0.8, 1.0, 1.25]},
+    )
+    assert err is None
+    assert out
+    assert out[0]["details"].get("native_multiscale") is True
+    assert int(out[0].get("support_count", 1)) >= 2

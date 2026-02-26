@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -18,6 +18,13 @@ class ClassicDetectorConfig:
     # Pivot/zigzag parameters
     min_prominence_pct: float = 0.5  # peak/trough prominence in percent of price
     min_distance: int = 5            # minimum distance between pivots (bars)
+    pivot_use_hl: bool = True        # use high/low (when available) for pivot extraction
+    pivot_use_atr_adaptive_prominence: bool = True
+    pivot_use_atr_adaptive_distance: bool = True
+    pivot_atr_period: int = 14
+    pivot_atr_prominence_mult: float = 1.0
+    pivot_atr_distance_mult: float = 0.2
+    pivot_max_distance_scale: float = 3.0
     # Trendline/line-fit
     max_flat_slope: float = 1e-4     # absolute slope to consider line flat (price units per bar)
     min_r2: float = 0.6              # minimum R^2 for line fit confidence
@@ -46,6 +53,13 @@ class ClassicDetectorConfig:
     completion_confirm_bars: int = 2 # touches needed near the right edge to mark completed
     completion_lookback_bars: int = 5  # lookback window for completion confirmation
     auto_complete_stale_forming: bool = False  # backward-compat aging of old forming patterns
+    include_lifecycle_metadata: bool = True
+    # Optional confidence calibration map:
+    # { "default": {"0.40": 0.35, "0.70": 0.62, "0.90": 0.82},
+    #   "head and shoulders": {"0.50": 0.45, "0.80": 0.76} }
+    calibrate_confidence: bool = False
+    confidence_calibration_map: Dict[str, Any] = field(default_factory=dict)
+    confidence_calibration_blend: float = 1.0
 
 
 @dataclass
@@ -157,17 +171,80 @@ def _template_hs(L: int, inverse: bool = False) -> np.ndarray:
     return _znorm(y)
 
 
-def _detect_pivots_close(close: np.ndarray, cfg: ClassicDetectorConfig) -> Tuple[np.ndarray, np.ndarray]:
-    """Return arrays of peak and trough indices based on prominence in percent of price."""
+def _compute_atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int) -> np.ndarray:
+    h = np.asarray(high, dtype=float)
+    l = np.asarray(low, dtype=float)
+    c = np.asarray(close, dtype=float)
+    n = min(h.size, l.size, c.size)
+    if n <= 0:
+        return np.asarray([], dtype=float)
+    h = h[:n]
+    l = l[:n]
+    c = c[:n]
+    prev_c = np.concatenate(([c[0]], c[:-1]))
+    tr = np.maximum(h - l, np.maximum(np.abs(h - prev_c), np.abs(l - prev_c)))
+    win = max(2, int(period))
+    try:
+        atr = pd.Series(tr).rolling(win, min_periods=max(2, win // 2)).mean().to_numpy(dtype=float)
+    except Exception:
+        atr = tr.astype(float)
+    return atr
+
+
+def _pivot_thresholds(
+    close: np.ndarray,
+    high: np.ndarray,
+    low: np.ndarray,
+    cfg: ClassicDetectorConfig,
+) -> Tuple[float, int]:
+    x = np.asarray(close, dtype=float)
+    base = float(np.median(x)) if np.isfinite(np.median(x)) and np.median(x) > 1e-9 else float(np.mean(x))
+    prom_abs = abs(base) * (cfg.min_prominence_pct / 100.0)
+    min_dist = max(2, int(cfg.min_distance))
+
+    if bool(cfg.pivot_use_atr_adaptive_prominence) or bool(cfg.pivot_use_atr_adaptive_distance):
+        atr = _compute_atr(high, low, x, int(cfg.pivot_atr_period))
+        finite = atr[np.isfinite(atr)]
+        if finite.size > 0:
+            atr_med = float(np.median(finite))
+            if bool(cfg.pivot_use_atr_adaptive_prominence):
+                prom_abs = max(prom_abs, float(cfg.pivot_atr_prominence_mult) * atr_med)
+            if bool(cfg.pivot_use_atr_adaptive_distance) and base > 1e-12:
+                atr_pct = abs(atr_med / base) * 100.0
+                scale = 1.0 + max(0.0, float(cfg.pivot_atr_distance_mult)) * atr_pct
+                scale = min(float(max(1.0, cfg.pivot_max_distance_scale)), max(1.0, scale))
+                min_dist = max(2, int(round(float(cfg.min_distance) * scale)))
+    return float(max(1e-12, prom_abs)), int(min_dist)
+
+
+def _detect_pivots_close(
+    close: np.ndarray,
+    cfg: ClassicDetectorConfig,
+    high: Optional[np.ndarray] = None,
+    low: Optional[np.ndarray] = None,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Return arrays of peak and trough indices using close or optional high/low arrays."""
     x = np.asarray(close, dtype=float)
     if x.size < max(50, cfg.min_distance * 3):
         return np.array([], dtype=int), np.array([], dtype=int)
-    # Use percent of median price as absolute prominence threshold
-    base = float(np.median(x)) if np.isfinite(np.median(x)) and np.median(x) > 1e-9 else float(np.mean(x))
-    prom_abs = abs(base) * (cfg.min_prominence_pct / 100.0)
+
+    hi = np.asarray(high, dtype=float) if high is not None else x
+    lo = np.asarray(low, dtype=float) if low is not None else x
+    if hi.size != x.size:
+        hi = x
+    if lo.size != x.size:
+        lo = x
+    if not np.isfinite(hi).all():
+        hi = x
+    if not np.isfinite(lo).all():
+        lo = x
+
+    prom_abs, min_dist = _pivot_thresholds(x, hi, lo, cfg)
+    src_hi = hi if bool(cfg.pivot_use_hl) else x
+    src_lo = lo if bool(cfg.pivot_use_hl) else x
     try:
-        peaks, _ = find_peaks(x, prominence=prom_abs, distance=cfg.min_distance)
-        troughs, _ = find_peaks(-x, prominence=prom_abs, distance=cfg.min_distance)
+        peaks, _ = find_peaks(src_hi, prominence=prom_abs, distance=min_dist)
+        troughs, _ = find_peaks(-src_lo, prominence=prom_abs, distance=min_dist)
     except Exception:
         return np.array([], dtype=int), np.array([], dtype=int)
     return peaks.astype(int), troughs.astype(int)
@@ -289,6 +366,113 @@ def _is_converging(upper: np.ndarray, lower: np.ndarray, k: int, n: int) -> bool
     return bool(recent < past)
 
 
+def _find_recent_breakout(
+    close: np.ndarray,
+    *,
+    upper: Optional[np.ndarray] = None,
+    lower: Optional[np.ndarray] = None,
+    tol_abs: float = 0.0,
+    lookback_bars: int = 8,
+) -> Tuple[Optional[str], Optional[int]]:
+    n = int(close.size)
+    if n <= 0:
+        return None, None
+    lb = max(1, int(lookback_bars))
+    start = max(0, n - lb)
+    for i in range(start, n):
+        px = float(close[i])
+        if upper is not None and i < int(upper.size):
+            up = float(upper[i])
+            if np.isfinite(up) and px > (up + tol_abs):
+                return "up", int(i)
+        if lower is not None and i < int(lower.size):
+            lo = float(lower[i])
+            if np.isfinite(lo) and px < (lo - tol_abs):
+                return "down", int(i)
+    return None, None
+
+
+def _find_forward_level_breakout(
+    close: np.ndarray,
+    start_idx: int,
+    level: float,
+    direction: str,
+    lookahead: int,
+    tol_abs: float,
+) -> Optional[int]:
+    n = int(close.size)
+    if n <= 0:
+        return None
+    lo = max(0, int(start_idx) + 1)
+    hi = min(n, lo + max(1, int(lookahead)))
+    for i in range(lo, hi):
+        px = float(close[i])
+        if direction == "up" and px > (float(level) + tol_abs):
+            return int(i)
+        if direction == "down" and px < (float(level) - tol_abs):
+            return int(i)
+    return None
+
+
+def _collect_calibration_points(cal_map: Any, name: str) -> List[Tuple[float, float]]:
+    points_src: Any = cal_map
+    if isinstance(cal_map, dict):
+        key = str(name or "").strip().lower()
+        if key in cal_map and isinstance(cal_map.get(key), dict):
+            points_src = cal_map.get(key)
+        elif "default" in cal_map and isinstance(cal_map.get("default"), dict):
+            points_src = cal_map.get("default")
+    points: List[Tuple[float, float]] = []
+    if isinstance(points_src, dict):
+        for k, v in points_src.items():
+            try:
+                x = float(k)
+                y = float(v)
+            except Exception:
+                continue
+            if np.isfinite(x) and np.isfinite(y):
+                points.append((max(0.0, min(1.0, x)), max(0.0, min(1.0, y))))
+    elif isinstance(points_src, list):
+        for item in points_src:
+            if not isinstance(item, (list, tuple)) or len(item) < 2:
+                continue
+            try:
+                x = float(item[0])
+                y = float(item[1])
+            except Exception:
+                continue
+            if np.isfinite(x) and np.isfinite(y):
+                points.append((max(0.0, min(1.0, x)), max(0.0, min(1.0, y))))
+    points.sort(key=lambda p: p[0])
+    return points
+
+
+def _calibrate_confidence(raw: float, name: str, cfg: ClassicDetectorConfig) -> float:
+    conf = float(max(0.0, min(1.0, raw)))
+    if not bool(getattr(cfg, "calibrate_confidence", False)):
+        return conf
+    points = _collect_calibration_points(getattr(cfg, "confidence_calibration_map", {}), name)
+    if len(points) < 2:
+        return conf
+
+    if conf <= points[0][0]:
+        cal = points[0][1]
+    elif conf >= points[-1][0]:
+        cal = points[-1][1]
+    else:
+        cal = conf
+        for i in range(1, len(points)):
+            x0, y0 = points[i - 1]
+            x1, y1 = points[i]
+            if x0 <= conf <= x1:
+                frac = 0.0 if abs(x1 - x0) <= 1e-12 else (conf - x0) / (x1 - x0)
+                cal = y0 + frac * (y1 - y0)
+                break
+    blend = float(max(0.0, min(1.0, getattr(cfg, "confidence_calibration_blend", 1.0))))
+    out = (1.0 - blend) * conf + blend * float(cal)
+    return float(max(0.0, min(1.0, out)))
+
+
 def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfig] = None) -> List[ClassicPatternResult]:
     """Detect classic chart patterns on OHLCV DataFrame with 'time' and 'close' columns.
 
@@ -302,13 +486,24 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         df = df.iloc[-cfg.max_bars:].copy()
     t = _build_time_array(df)
     c = to_float_np(df['close'])
+    h = to_float_np(df['high']) if 'high' in df.columns else c
+    l = to_float_np(df['low']) if 'low' in df.columns else c
+    if h.size != c.size:
+        h = c
+    if l.size != c.size:
+        l = c
     n = c.size
     if n < 100:
         return []
-    peaks, troughs = _detect_pivots_close(c, cfg)
+    try:
+        peaks, troughs = _detect_pivots_close(c, cfg, h, l)
+    except TypeError:
+        # Keep compatibility with monkeypatched tests that still use the old 2-arg signature.
+        peaks, troughs = _detect_pivots_close(c, cfg)
     results: List[ClassicPatternResult] = []
     confirm_needed = max(1, int(cfg.completion_confirm_bars))
     confirm_lookback = max(confirm_needed, int(cfg.completion_lookback_bars))
+    breakout_look = max(confirm_lookback, int(max(1, cfg.breakout_lookahead)))
 
     # Helper for confidence calculation
     def _conf(touches: int, r2: float, geom_ok: float) -> float:
@@ -466,18 +661,24 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
                 name = "Symmetrical Triangle"
             conf = _conf(touches, min(r2h, r2l), 1.0)
             status = "forming"
+            bdir, bidx = _find_recent_breakout(c, upper=top, lower=bot, tol_abs=tol_abs, lookback_bars=breakout_look)
+            if bdir is not None and bidx is not None:
+                status = "completed"
+                conf = min(1.0, conf + 0.08)
             out.append(_result(
                 name,
                 status,
                 conf,
                 int(min(ih[0], il[0])),
-                int(max(ih[-1], il[-1])),
+                int(max(int(max(ih[-1], il[-1])), int(bidx) if bidx is not None else int(max(ih[-1], il[-1])))),
                 t,
                 {
                     "top_slope": float(sh),
                     "top_intercept": float(bh),
                     "bottom_slope": float(sl),
                     "bottom_intercept": float(bl),
+                    "breakout_direction": bdir,
+                    "breakout_index": int(bidx) if bidx is not None else None,
                 },
             ))
         return out
@@ -499,9 +700,27 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         if converging and same_sign and touches >= cfg.min_channel_touches - 1:
             name = "Rising Wedge" if sh > 0 and sl > 0 else "Falling Wedge"
             conf = _conf(touches, min(r2h, r2l), 1.0)
-            base = _result(name, "forming", conf, int(min(ih[0], il[0])), int(max(ih[-1], il[-1])), t,
-                           {"top_slope": float(sh), "bottom_slope": float(sl),
-                            "top_intercept": float(bh), "bottom_intercept": float(bl)})
+            status = "forming"
+            bdir, bidx = _find_recent_breakout(c, upper=top, lower=bot, tol_abs=tol_abs, lookback_bars=breakout_look)
+            if bdir is not None and bidx is not None:
+                status = "completed"
+                conf = min(1.0, conf + 0.08)
+            base = _result(
+                name,
+                status,
+                conf,
+                int(min(ih[0], il[0])),
+                int(max(int(max(ih[-1], il[-1])), int(bidx) if bidx is not None else int(max(ih[-1], il[-1])))),
+                t,
+                {
+                    "top_slope": float(sh),
+                    "bottom_slope": float(sl),
+                    "top_intercept": float(bh),
+                    "bottom_intercept": float(bl),
+                    "breakout_direction": bdir,
+                    "breakout_index": int(bidx) if bidx is not None else None,
+                },
+            )
             out.append(base)
             out.append(_alias(base, "Wedge", 0.95))
         return out
@@ -511,10 +730,11 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
     # Double/Triple Tops & Bottoms
     def _tops_bottoms():
         out: List[ClassicPatternResult] = []
-        def group_levels(idxs: np.ndarray, name_top: str, name_triple: str):
+        def group_levels(idxs: np.ndarray, name_top: str, name_triple: str, kind: str):
             if idxs.size < 2:
                 return
             vals = c[idxs]
+            tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
             # cluster by approximate equal level
             used = np.zeros(idxs.size, dtype=bool)
             for i in range(idxs.size):
@@ -533,18 +753,30 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
                     ii = idxs[cluster]
                     start_i, end_i = int(ii[0]), int(ii[-1])
                     status = "forming"
+                    level = float(np.median(vals[cluster]))
+                    neckline = float(np.min(c[start_i:end_i + 1])) if kind == "top" else float(np.max(c[start_i:end_i + 1]))
+                    direction = "down" if kind == "top" else "up"
+                    break_i = _find_forward_level_breakout(c, end_i, neckline, direction, breakout_look, tol_abs)
+                    if break_i is not None:
+                        status = "completed"
                     out.append(ClassicPatternResult(
                         name=name,
                         status=status,
-                        confidence=min(1.0, 0.5 + 0.1 * (len(cluster) - 2 + 2)),
+                        confidence=min(1.0, (0.5 + 0.1 * (len(cluster) - 2 + 2)) + (0.08 if break_i is not None else 0.0)),
                         start_index=start_i,
-                        end_index=end_i,
+                        end_index=int(break_i if break_i is not None else end_i),
                         start_time=float(t[start_i]) if t.size else None,
-                        end_time=float(t[end_i]) if t.size else None,
-                        details={"level": float(np.median(vals[cluster])), "touches": int(len(cluster))},
+                        end_time=float(t[int(break_i if break_i is not None else end_i)]) if t.size else None,
+                        details={
+                            "level": level,
+                            "touches": int(len(cluster)),
+                            "neckline": neckline,
+                            "breakout_direction": direction if break_i is not None else None,
+                            "breakout_index": int(break_i) if break_i is not None else None,
+                        },
                     ))
-        group_levels(peaks[-10:], "Double Top", "Triple Top")
-        group_levels(troughs[-10:], "Double Bottom", "Triple Bottom")
+        group_levels(peaks[-10:], "Double Top", "Triple Top", "top")
+        group_levels(troughs[-10:], "Double Bottom", "Triple Bottom", "bottom")
         return out
 
     results.extend(_tops_bottoms())
@@ -670,8 +902,13 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
             return out
         window = cfg.max_consolidation_bars
         seg = c[-window:]
+        seg_h = h[-window:] if h.size >= window else seg
+        seg_l = l[-window:] if l.size >= window else seg
         idx0 = n - window
-        peaks2, troughs2 = _detect_pivots_close(seg, cfg)
+        try:
+            peaks2, troughs2 = _detect_pivots_close(seg, cfg, seg_h, seg_l)
+        except TypeError:
+            peaks2, troughs2 = _detect_pivots_close(seg, cfg)
         if peaks2.size < 2 or troughs2.size < 2:
             return out
         # build local arrays for consolidation region
@@ -688,14 +925,28 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         if name:
             conf = _conf(4, min(r2h, r2l), 1.0)
             titled = ("Bull " + name) if ret > 0 else ("Bear " + name)
+            status = "forming"
+            tol_abs = _tol_abs_from_close(seg, cfg.same_level_tol_pct)
+            bdir, bidx_local = _find_recent_breakout(seg, upper=top, lower=bot, tol_abs=tol_abs, lookback_bars=breakout_look)
+            expected = "up" if ret > 0 else "down"
+            if bdir == expected and bidx_local is not None:
+                status = "completed"
+                conf = min(1.0, conf + 0.08)
             base = _result(
                 titled,
-                "forming",
+                status,
                 conf,
                 int(idx0 + (peaks2[0] if peaks2.size else 0)),
-                n - 1,
+                int(idx0 + bidx_local) if bidx_local is not None else n - 1,
                 t,
-                {"pole_return_pct": float(ret), "top_slope": float(sh), "bottom_slope": float(sl)},
+                {
+                    "pole_return_pct": float(ret),
+                    "top_slope": float(sh),
+                    "bottom_slope": float(sl),
+                    "breakout_direction": bdir,
+                    "breakout_index": int(idx0 + bidx_local) if bidx_local is not None else None,
+                    "breakout_expected": expected,
+                },
             )
             out.append(base)
             # Optional generic aliases for compatibility.
@@ -726,23 +977,94 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         handle_pullback = float(np.max(tail) - tail[-1]) / max(1e-9, np.max(tail)) * 100.0 if tail.size > 2 else 0.0
         if near_equal_rim and depth_pct > 2.0:
             conf = min(1.0, 0.6 + 0.4 * (depth_pct / 20.0))
+            status = "forming"
+            rim = float(max(left, right))
+            tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
+            break_i = _find_forward_level_breakout(c, int(n - W + i_max_right), rim, "up", breakout_look, tol_abs)
+            if break_i is not None:
+                status = "completed"
+                conf = min(1.0, conf + 0.08)
             out.append(_result(
                 "Cup and Handle",
-                "forming",
+                status,
                 conf,
                 int(n - W + i_max_left),
-                int(n - W + i_max_right),
+                int(break_i if break_i is not None else (n - W + i_max_right)),
                 t,
                 {
                     "left_rim": float(left),
                     "bottom": float(bottom),
                     "right_rim": float(right),
                     "handle_pullback_pct": float(handle_pullback),
+                    "breakout_level": rim,
+                    "breakout_index": int(break_i) if break_i is not None else None,
                 },
             ))
         return out
 
     results.extend(_cup_handle())
+
+    # Rounding Bottom/Top (saucer-like)
+    def _rounding():
+        out: List[ClassicPatternResult] = []
+        W = min(220, n)
+        if W < 100:
+            return out
+        seg = c[-W:]
+        x = np.linspace(-1.0, 1.0, W)
+        try:
+            qa, qb, qc = np.polyfit(x, seg.astype(float), 2)
+        except Exception:
+            return out
+        if not (np.isfinite(qa) and np.isfinite(qb) and np.isfinite(qc)):
+            return out
+        # Vertex in central region.
+        if abs(float(qa)) <= 1e-12:
+            return out
+        xv = -float(qb) / (2.0 * float(qa))
+        if not (-0.55 <= xv <= 0.55):
+            return out
+        edge_n = max(6, W // 10)
+        left_edge = float(np.mean(seg[:edge_n]))
+        right_edge = float(np.mean(seg[-edge_n:]))
+        if not _level_close(left_edge, right_edge, cfg.same_level_tol_pct * 2.0):
+            return out
+
+        peak = float(np.max(seg))
+        trough = float(np.min(seg))
+        amp_pct = abs(peak - trough) / max(1e-9, abs((peak + trough) / 2.0)) * 100.0
+        if amp_pct < 2.0:
+            return out
+
+        tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
+        if qa > 0:
+            name = "Rounding Bottom"
+            status = "completed" if float(c[-1]) > (max(left_edge, right_edge) + tol_abs) else "forming"
+        else:
+            name = "Rounding Top"
+            status = "completed" if float(c[-1]) < (min(left_edge, right_edge) - tol_abs) else "forming"
+        conf = min(1.0, 0.5 + 0.3 * min(1.0, amp_pct / 12.0))
+        out.append(
+            _result(
+                name,
+                status,
+                conf,
+                int(n - W),
+                int(n - 1),
+                t,
+                {
+                    "quad_a": float(qa),
+                    "quad_b": float(qb),
+                    "vertex_x_norm": float(xv),
+                    "left_edge": left_edge,
+                    "right_edge": right_edge,
+                    "amplitude_pct": float(amp_pct),
+                },
+            )
+        )
+        return out
+
+    results.extend(_rounding())
 
     # Broadening Formation: diverging highs and lows
     def _broadening():
@@ -756,15 +1078,26 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         diverging = (sh > cfg.max_flat_slope and sl < -cfg.max_flat_slope)
         if diverging:
             conf = _conf(4, min(r2h, r2l), 1.0)
+            x = np.arange(n, dtype=float)
+            top = sh * x + bh
+            bot = sl * x + bl
+            tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
+            status = "forming"
+            bdir, bidx = _find_recent_breakout(c, upper=top, lower=bot, tol_abs=tol_abs, lookback_bars=breakout_look)
+            if bdir is not None and bidx is not None:
+                status = "completed"
+                conf = min(1.0, conf + 0.08)
             out.append(_result(
                 "Broadening Formation",
-                "forming",
+                status,
                 conf,
                 int(min(ih[0], il[0])),
-                int(max(ih[-1], il[-1])),
+                int(max(int(max(ih[-1], il[-1])), int(bidx) if bidx is not None else int(max(ih[-1], il[-1])))),
                 t,
                 {"top_slope": float(sh), "bottom_slope": float(sl),
-                 "top_intercept": float(bh), "bottom_intercept": float(bl)},
+                 "top_intercept": float(bh), "bottom_intercept": float(bl),
+                 "breakout_direction": bdir,
+                 "breakout_index": int(bidx) if bidx is not None else None},
             ))
         return out
 
@@ -792,14 +1125,36 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
             else:
                 ret = 0.0
             name = "Continuation Diamond" if abs(ret) >= 2.0 else "Diamond"
+            status = "forming"
+            conf = 0.6
+            right_hi = float(np.max(right)) if right.size else float(np.max(seg))
+            right_lo = float(np.min(right)) if right.size else float(np.min(seg))
+            tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
+            break_up = _find_forward_level_breakout(c, int(n - W + half), right_hi, "up", breakout_look, tol_abs)
+            break_dn = _find_forward_level_breakout(c, int(n - W + half), right_lo, "down", breakout_look, tol_abs)
+            break_i: Optional[int] = None
+            break_dir: Optional[str] = None
+            if break_up is not None and (break_dn is None or break_up <= break_dn):
+                break_i = int(break_up)
+                break_dir = "up"
+            elif break_dn is not None:
+                break_i = int(break_dn)
+                break_dir = "down"
+            if break_i is not None:
+                status = "completed"
+                conf = min(1.0, conf + 0.08)
             out.append(_result(
                 name,
-                "forming",
-                0.6,
+                status,
+                conf,
                 int(n - W),
-                int(n - 1),
+                int(break_i if break_i is not None else (n - 1)),
                 t,
-                {"prior_pole_return_pct": float(ret)},
+                {
+                    "prior_pole_return_pct": float(ret),
+                    "breakout_direction": break_dir,
+                    "breakout_index": int(break_i) if break_i is not None else None,
+                },
             ))
         return out
 
@@ -831,6 +1186,33 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
                     continue
         except Exception:
             pass
+
+    # Optional confidence calibration map from raw->empirical likelihood.
+    for r in results:
+        try:
+            raw_conf = float(r.confidence)
+            cal_conf = _calibrate_confidence(raw_conf, r.name, cfg)
+            if bool(getattr(cfg, "calibrate_confidence", False)):
+                if not isinstance(r.details, dict):
+                    r.details = {}
+                r.details["raw_confidence"] = float(raw_conf)
+                r.details["calibrated_confidence"] = float(cal_conf)
+            r.confidence = float(cal_conf)
+        except Exception:
+            continue
+
+    # Lifecycle metadata used by downstream consumers.
+    if bool(getattr(cfg, "include_lifecycle_metadata", True)):
+        for r in results:
+            try:
+                if not isinstance(r.details, dict):
+                    r.details = {}
+                if r.status == "completed":
+                    r.details.setdefault("lifecycle_state", "confirmed")
+                else:
+                    r.details.setdefault("lifecycle_state", "forming")
+            except Exception:
+                continue
 
     # Sort results by end_index (recency) then confidence
     results.sort(key=lambda r: (r.end_index, r.confidence), reverse=True)

@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional, List, Tuple, Literal
 import importlib
 import importlib.util
 import os
+import copy
 from pathlib import Path
 import pandas as pd
 import warnings
@@ -424,6 +425,41 @@ def _infer_stock_pattern_confidence(row: Dict[str, Any]) -> float:
     return 0.6
 
 
+def _parse_native_scale_factors(config: Optional[Dict[str, Any]]) -> List[float]:
+    cfg_map = config if isinstance(config, dict) else {}
+    raw = cfg_map.get("native_scale_factors", cfg_map.get("native_scales"))
+    vals: List[float] = []
+    if isinstance(raw, str):
+        parts = [p.strip() for p in raw.replace(";", ",").split(",") if p.strip()]
+        for p in parts:
+            try:
+                vals.append(float(p))
+            except Exception:
+                continue
+    elif isinstance(raw, (list, tuple, set)):
+        for item in raw:
+            try:
+                vals.append(float(item))
+            except Exception:
+                continue
+    if not vals:
+        vals = [0.8, 1.0, 1.25]
+    out: List[float] = []
+    seen = set()
+    for v in vals:
+        if not np.isfinite(v) or v <= 0:
+            continue
+        clamped = float(max(0.3, min(3.0, v)))
+        key = round(clamped, 4)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(clamped)
+    if 1.0 not in [round(v, 4) for v in out]:
+        out.insert(0, 1.0)
+    return out
+
+
 def _run_classic_engine_native(
     symbol: str,
     df: pd.DataFrame,
@@ -431,8 +467,66 @@ def _run_classic_engine_native(
     config: Optional[Dict[str, Any]],
 ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
     _ = symbol
-    _ = config
-    return _format_classic_native_patterns(df, cfg), None
+    cfg_map = config if isinstance(config, dict) else {}
+    if not bool(cfg_map.get("native_multiscale", False)):
+        return _format_classic_native_patterns(df, cfg), None
+
+    scales = _parse_native_scale_factors(config)
+    if len(scales) <= 1:
+        return _format_classic_native_patterns(df, cfg), None
+
+    per_scale: Dict[str, List[Dict[str, Any]]] = {}
+    scale_by_key: Dict[str, float] = {}
+    base_min_dist = int(max(2, getattr(cfg, "min_distance", 5)))
+    base_prom = float(max(1e-6, getattr(cfg, "min_prominence_pct", 0.5)))
+    for scale in scales:
+        key = f"native_scale_{scale:.2f}"
+        cfg_i = copy.deepcopy(cfg)
+        try:
+            cfg_i.min_distance = max(2, int(round(base_min_dist * float(scale))))
+        except Exception:
+            cfg_i.min_distance = base_min_dist
+        try:
+            cfg_i.min_prominence_pct = max(0.05, float(base_prom * float(scale)))
+        except Exception:
+            cfg_i.min_prominence_pct = base_prom
+        rows = _format_classic_native_patterns(df, cfg_i)
+        for row in rows:
+            d = row.get("details")
+            if not isinstance(d, dict):
+                d = {}
+            d = dict(d)
+            d["native_scale_factor"] = float(scale)
+            row["details"] = d
+        per_scale[key] = rows
+        scale_by_key[key] = float(scale)
+
+    non_empty = {k: v for k, v in per_scale.items() if v}
+    if not non_empty:
+        return [], None
+    if len(non_empty) == 1:
+        return list(next(iter(non_empty.values()))), None
+
+    overlap = 0.45
+    try:
+        overlap = float(cfg_map.get("native_multiscale_overlap", overlap))
+    except Exception:
+        overlap = 0.45
+    overlap = float(max(0.2, min(0.9, overlap)))
+
+    merged = _merge_classic_ensemble(non_empty, {k: 1.0 for k in non_empty.keys()}, overlap_threshold=overlap)
+    for row in merged:
+        details = row.get("details")
+        if not isinstance(details, dict):
+            details = {}
+        details = dict(details)
+        src = [str(x) for x in row.get("source_engines", [])]
+        details["native_multiscale"] = True
+        details["native_multiscale_overlap"] = float(overlap)
+        details["native_scale_support"] = int(len(src))
+        details["native_scale_factors"] = [float(scale_by_key[s]) for s in src if s in scale_by_key]
+        row["details"] = details
+    return merged, None
 
 
 def _run_classic_engine_stock_pattern(
@@ -826,7 +920,12 @@ def patterns_detect(
         Denoising configuration to smooth price data
     
     config : dict, optional
-        Pattern-specific configuration parameters
+        Pattern-specific configuration parameters.
+        Useful classic options include:
+        - native_multiscale: bool
+        - native_scale_factors: list[float] (e.g. [0.8, 1.0, 1.25])
+        - pivot_use_hl, pivot_use_atr_adaptive_prominence, pivot_use_atr_adaptive_distance
+        - calibrate_confidence, confidence_calibration_map, confidence_calibration_blend
 
     engine : str, optional (default="native")
         Classic engine selection: "native", "stock_pattern", "precise_patterns",
