@@ -1,0 +1,175 @@
+"""Tests for src/mtdata/forecast/forecast_preprocessing.py — pure preprocessing helpers."""
+import math
+import numpy as np
+import pandas as pd
+import pytest
+
+from mtdata.forecast.forecast_preprocessing import (
+    _process_include_specification,
+    _create_fourier_features,
+    _create_hour_features,
+    _create_dow_features,
+    _build_feature_arrays,
+    apply_preprocessing,
+)
+
+
+def _make_ohlcv_df(n: int = 10) -> pd.DataFrame:
+    """Create a minimal OHLCV DataFrame for testing."""
+    return pd.DataFrame({
+        "time": np.arange(n, dtype=float) * 3600,
+        "open": np.random.default_rng(0).uniform(1.0, 2.0, n),
+        "high": np.random.default_rng(1).uniform(1.0, 2.0, n),
+        "low": np.random.default_rng(2).uniform(1.0, 2.0, n),
+        "close": np.random.default_rng(3).uniform(1.0, 2.0, n),
+        "volume": np.random.default_rng(4).integers(100, 1000, n),
+    })
+
+
+class TestProcessIncludeSpecification:
+    def test_ohlcv_default(self):
+        df = _make_ohlcv_df()
+        cols = _process_include_specification(df, {"include": "ohlcv"})
+        assert "open" in cols
+        assert "high" in cols
+        assert "low" in cols
+        assert "volume" in cols
+        assert "close" not in cols  # close excluded (it's the target)
+
+    def test_comma_separated(self):
+        df = _make_ohlcv_df()
+        cols = _process_include_specification(df, {"include": "open,volume"})
+        assert cols == ["open", "volume"]
+
+    def test_list_input(self):
+        df = _make_ohlcv_df()
+        cols = _process_include_specification(df, {"include": ["open", "high"]})
+        assert cols == ["open", "high"]
+
+    def test_excludes_time_and_close(self):
+        df = _make_ohlcv_df()
+        cols = _process_include_specification(df, {"include": ["time", "close", "open"]})
+        assert "time" not in cols
+        assert "close" not in cols
+        assert "open" in cols
+
+    def test_nonexistent_columns_ignored(self):
+        df = _make_ohlcv_df()
+        cols = _process_include_specification(df, {"include": "nonexistent"})
+        assert cols == []
+
+    def test_default_empty_config(self):
+        df = _make_ohlcv_df()
+        cols = _process_include_specification(df, {})
+        # Default is 'ohlcv'
+        assert "open" in cols
+
+
+class TestCreateFourierFeatures:
+    def test_basic(self):
+        t_train = np.arange(24, dtype=float)
+        t_future = np.arange(24, 30, dtype=float)
+        tr_feats, tf_feats, col_names = _create_fourier_features("fourier:24", t_train, t_future)
+        assert len(tr_feats) == 2  # sin and cos
+        assert len(tf_feats) == 2
+        assert len(col_names) == 2
+        assert tr_feats[0].shape == (24,)
+        assert tf_feats[0].shape == (6,)
+        assert "fx_sin_24" in col_names
+        assert "fx_cos_24" in col_names
+
+    def test_default_period_on_bad_spec(self):
+        t_train = np.arange(10, dtype=float)
+        t_future = np.arange(5, dtype=float)
+        tr_feats, tf_feats, col_names = _create_fourier_features("fourier:abc", t_train, t_future)
+        assert "fx_sin_24" in col_names  # defaults to period 24
+
+
+class TestCreateHourFeatures:
+    def test_basic(self):
+        # Epoch timestamps for hours 0-23 on a known day
+        base = 1704067200  # 2024-01-01 00:00 UTC
+        t_train = np.array([base + i * 3600 for i in range(24)])
+        t_future = np.array([base + 24 * 3600])
+        hrs_tr, hrs_tf = _create_hour_features(t_train, t_future)
+        assert hrs_tr is not None
+        assert hrs_tr[0] == 0.0
+        assert hrs_tr[12] == 12.0
+        assert hrs_tf[0] == 0.0  # next day hour 0
+
+
+class TestCreateDowFeatures:
+    def test_basic(self):
+        # 2024-01-01 is Monday (dow=0)
+        base = 1704067200
+        t_train = np.array([base + i * 86400 for i in range(7)])
+        t_future = np.array([base + 7 * 86400])
+        dow_tr, dow_tf = _create_dow_features(t_train, t_future)
+        assert dow_tr is not None
+        assert dow_tr[0] == 0.0  # Monday
+        assert dow_tr[6] == 6.0  # Sunday
+
+
+class TestBuildFeatureArrays:
+    def test_with_columns(self):
+        df = _make_ohlcv_df(20)
+        exog_used, exog_future = _build_feature_arrays(
+            df, include_cols=["open", "high"], ti_cols=[], 
+            cal_train=None, cal_future=None, cal_cols=[], n=5
+        )
+        assert exog_used is not None
+        assert exog_used.shape == (20, 2)
+        assert exog_future.shape == (5, 2)
+
+    def test_no_features(self):
+        df = _make_ohlcv_df(10)
+        exog_used, exog_future = _build_feature_arrays(
+            df, include_cols=[], ti_cols=[], 
+            cal_train=None, cal_future=None, cal_cols=[], n=5
+        )
+        assert exog_used is None
+        assert exog_future is None
+
+    def test_with_calendar_features(self):
+        df = _make_ohlcv_df(10)
+        cal_train = np.random.default_rng(0).random((10, 2))
+        cal_future = np.random.default_rng(1).random((5, 2))
+        exog_used, exog_future = _build_feature_arrays(
+            df, include_cols=[], ti_cols=[],
+            cal_train=cal_train, cal_future=cal_future, cal_cols=["a", "b"], n=5
+        )
+        assert exog_used is not None
+        assert exog_used.shape == (10, 2)
+
+    def test_combined_features(self):
+        df = _make_ohlcv_df(10)
+        cal_train = np.ones((10, 1))
+        cal_future = np.ones((5, 1))
+        exog_used, exog_future = _build_feature_arrays(
+            df, include_cols=["open"], ti_cols=[],
+            cal_train=cal_train, cal_future=cal_future, cal_cols=["cal1"], n=5
+        )
+        assert exog_used.shape == (10, 2)  # open + cal1
+        assert exog_future.shape == (5, 2)
+
+
+class TestApplyPreprocessing:
+    def test_price_target(self):
+        df = _make_ohlcv_df()
+        col = apply_preprocessing(df, "price", "price", None)
+        assert col == "close"
+
+    def test_return_quantity(self):
+        df = _make_ohlcv_df()
+        col = apply_preprocessing(df, "return", "price", None)
+        assert col == "close"
+
+    def test_volatility_quantity(self):
+        df = _make_ohlcv_df()
+        col = apply_preprocessing(df, "volatility", "price", None)
+        assert col == "close"
+
+    def test_with_denoise_does_not_crash(self):
+        df = _make_ohlcv_df(50)
+        col = apply_preprocessing(df, "price", "price", {"method": "ema"})
+        assert col == "close"
