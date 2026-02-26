@@ -20,6 +20,8 @@ pandas>=2.3.3
 
 # pandas-ta classic fork (PyPI) - pin to current latest
 pandas-ta-classic==0.3.59
+# Required for full candlestick pattern coverage (pandas-ta cdl_* backends).
+TA-Lib>=0.6.5
 
 # GluonTS (gt_* methods)
 gluonts[torch]>=0.16.2

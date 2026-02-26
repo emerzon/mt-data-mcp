@@ -21,6 +21,7 @@ dependencies = [
     "pandas>=2.3.3",
     "numpy>=2.0.0,<2.2.0",
     "pandas-ta-classic==0.3.59",
+    "TA-Lib>=0.6.5",
     "scipy>=1.15.3,<1.16.0",
     "scikit-learn>=1.7.2",
     "scikit-image>=0.24.0",
