@@ -97,6 +97,10 @@ class TestUnifiedForecast(unittest.TestCase):
         """Test Sktime method."""
         if importlib.util.find_spec("sktime") is None:
             self.skipTest("sktime not installed")
+        try:
+            import sktime  # noqa: F401
+        except Exception:
+            self.skipTest("sktime is installed but fails to import")
             
         # Test using generic 'sktime' method
         forecaster = ForecastRegistry.get('sktime')
