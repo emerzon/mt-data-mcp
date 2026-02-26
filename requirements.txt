@@ -95,9 +95,8 @@ h5py>=3.15.1
 stumpy>=1.13.0            # matrix_profile search engine for analog
 
 # Optional: external classic-pattern engines
-# stock-pattern is a repo utility (not pip-installable). To enable the engine:
-# - clone https://github.com/BennyThadikaran/stock-pattern
-# - set MTDATA_STOCK_PATTERN_PATH to that repo path (or pass config.stock_pattern_path)
+# stock-pattern is expected to be available/importable in the active environment.
+# The engine loads `stock_pattern.utils` when present.
 precise-patterns @ git+https://github.com/BennyThadikaran/precise-patterns.git@e92e10cbb1b6e414c89ad287be32ddae4214b353
 
 # Optional: dimensionality reduction methods / ML utilities

@@ -1,10 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, Optional, List, Tuple, Literal
 import importlib
-import importlib.util
-import os
 import copy
-from pathlib import Path
 import pandas as pd
 import warnings
 import numpy as np
@@ -307,49 +304,33 @@ def _timestamp_to_label(ts: Any) -> Optional[str]:
 
 
 def _load_stock_pattern_utils(config: Optional[Dict[str, Any]]) -> Tuple[Optional[Any], Optional[str]]:
-    cfg = config or {}
-    candidate = str(cfg.get("stock_pattern_path") or os.getenv("MTDATA_STOCK_PATTERN_PATH") or "").strip()
-    if candidate:
-        root = Path(candidate).expanduser()
-        probes = [
-            root,
-            root / "src" / "utils.py",
-            root / "utils.py",
-        ]
-        util_file: Optional[Path] = None
-        for p in probes:
-            if p.is_file() and p.name.lower() == "utils.py":
-                util_file = p
-                break
-            if p.is_dir():
-                trial = p / "src" / "utils.py"
-                if trial.is_file():
-                    util_file = trial
-                    break
-        if util_file is None:
-            return None, f"stock_pattern_path is set but utils.py was not found at {root}"
-        cache_key = str(util_file.resolve())
-        if cache_key in _STOCK_PATTERN_UTILS_CACHE:
-            return _STOCK_PATTERN_UTILS_CACHE[cache_key], None
+    _ = config
+    # Resolve from currently active Python environment only.
+    candidate_modules = (
+        "stock_pattern.utils",
+        "stockpattern.utils",
+    )
+    required = ("get_max_min", "find_double_top", "find_double_bottom")
+    last_err: Optional[str] = None
+    for mod_name in candidate_modules:
+        if mod_name in _STOCK_PATTERN_UTILS_CACHE:
+            return _STOCK_PATTERN_UTILS_CACHE[mod_name], None
         try:
-            spec = importlib.util.spec_from_file_location("mtdata_stock_pattern_utils", str(util_file))
-            if spec is None or spec.loader is None:
-                return None, f"Failed to load stock-pattern module spec from {util_file}"
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            _STOCK_PATTERN_UTILS_CACHE[cache_key] = mod
-            return mod, None
+            mod = importlib.import_module(mod_name)
         except Exception as ex:
-            return None, f"Failed to import stock-pattern utils.py from {util_file}: {ex}"
-
-    try:
-        mod = importlib.import_module("stock_pattern.utils")
+            last_err = str(ex)
+            continue
+        if not all(callable(getattr(mod, fn, None)) for fn in required):
+            last_err = f"module '{mod_name}' missing required stock-pattern functions"
+            continue
+        _STOCK_PATTERN_UTILS_CACHE[mod_name] = mod
         return mod, None
-    except Exception:
-        return None, (
-            "stock-pattern engine unavailable. Set config.stock_pattern_path or "
-            "MTDATA_STOCK_PATTERN_PATH to a stock-pattern repo path."
-        )
+
+    tail = f" Last import error: {last_err}" if last_err else ""
+    return None, (
+        "stock-pattern engine unavailable in current environment; "
+        "install an importable stock-pattern module exposing stock_pattern.utils." + tail
+    )
 
 
 def _index_pos_for_timestamp(index: pd.Index, ts: Any) -> Optional[int]:
