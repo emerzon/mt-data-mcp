@@ -40,6 +40,7 @@ dependencies = [
     "gluonts[torch]>=0.16.2",
     "hnswlib>=0.8.0",
     "stumpy>=1.13.0",
+    "precise-patterns @ git+https://github.com/BennyThadikaran/precise-patterns.git@e92e10cbb1b6e414c89ad287be32ddae4214b353",
     "matplotlib>=3.10.8",
     "fastapi>=0.124.4",
     "uvicorn[standard]>=0.38.0",

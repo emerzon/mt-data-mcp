@@ -94,6 +94,12 @@ tslearn>=0.7.0
 h5py>=3.15.1
 stumpy>=1.13.0            # matrix_profile search engine for analog
 
+# Optional: external classic-pattern engines
+# stock-pattern is a repo utility (not pip-installable). To enable the engine:
+# - clone https://github.com/BennyThadikaran/stock-pattern
+# - set MTDATA_STOCK_PATTERN_PATH to that repo path (or pass config.stock_pattern_path)
+precise-patterns @ git+https://github.com/BennyThadikaran/precise-patterns.git@e92e10cbb1b6e414c89ad287be32ddae4214b353
+
 # Optional: dimensionality reduction methods / ML utilities
 scikit-learn>=1.7.2; python_version >= "3.10"
 scikit-learn>=1.4.2; python_version >= "3.9" and python_version < "3.10"
