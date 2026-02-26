@@ -41,6 +41,11 @@ class ClassicDetectorConfig:
     use_dtw_check: bool = True      # optional DTW shape confirmation for select patterns
     dtw_paa_len: int = 80            # PAA downsampling length for DTW
     dtw_max_dist: float = 0.6        # acceptance threshold after z-norm
+    # Output/completion controls
+    include_aliases: bool = False    # include generic aliases like "Trend Line"/"Trend Channel"
+    completion_confirm_bars: int = 2 # touches needed near the right edge to mark completed
+    completion_lookback_bars: int = 5  # lookback window for completion confirmation
+    auto_complete_stale_forming: bool = False  # backward-compat aging of old forming patterns
 
 
 @dataclass
@@ -255,6 +260,24 @@ def _count_touches(upper: np.ndarray, lower: np.ndarray,
     return touches
 
 
+def _count_recent_touches(
+    series: np.ndarray,
+    close: np.ndarray,
+    tol_abs: float,
+    lookback_bars: int,
+) -> int:
+    if series.size == 0 or close.size == 0:
+        return 0
+    n = min(series.size, close.size)
+    lb = max(1, int(lookback_bars))
+    start = max(0, n - lb)
+    recent_s = series[start:n]
+    recent_c = close[start:n]
+    if recent_s.size == 0 or recent_c.size == 0:
+        return 0
+    return int(np.sum(np.abs(recent_s - recent_c) <= tol_abs))
+
+
 def _is_converging(upper: np.ndarray, lower: np.ndarray, k: int, n: int) -> bool:
     """Heuristic to detect converging lines over recent window vs past window."""
     span = upper - lower
@@ -284,6 +307,8 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         return []
     peaks, troughs = _detect_pivots_close(c, cfg)
     results: List[ClassicPatternResult] = []
+    confirm_needed = max(1, int(cfg.completion_confirm_bars))
+    confirm_lookback = max(confirm_needed, int(cfg.completion_lookback_bars))
 
     # Helper for confidence calculation
     def _conf(touches: int, r2: float, geom_ok: float) -> float:
@@ -310,9 +335,10 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
             status = "forming"
             tl_dir = 'Ascending' if slope > cfg.max_flat_slope else ('Descending' if slope < -cfg.max_flat_slope else 'Horizontal')
             name = f"{tl_dir} Trend Line"
-            # Completion heuristic: recent close touched line within tolerance
+            # Completion heuristic: require repeated recent touches near the fitted line.
             recent_i = n - 1
-            if abs(line_vals[recent_i] - c[recent_i]) <= tol_abs:
+            recent_touches = _count_recent_touches(line_vals, c, tol_abs, confirm_lookback)
+            if recent_touches >= confirm_needed:
                 status = "completed"
             details = {
                 "side": side,
@@ -321,11 +347,12 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
                 "r2": float(r2),
                 "touches": int(touches),
                 "line_level_recent": float(line_vals[recent_i]),
+                "completion_touches_recent": int(recent_touches),
             }
             base_item = _result(name, status, conf, int(idxs[0]), int(idxs[-1]), t, details)
             results.append(base_item)
-            # Also add a generic Trend Line alias (except perfectly horizontal)
-            if tl_dir != 'Horizontal':
+            # Optional generic alias for compatibility.
+            if tl_dir != 'Horizontal' and bool(cfg.include_aliases):
                 results.append(_alias(base_item, "Trend Line", 0.95))
 
     # Channels: parallel lines from highs and lows
@@ -357,9 +384,8 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
             conf = _conf(touches, min(r2h, r2l), geom_ok)
             status = "forming"
             recent_i = n - 1
-            hit_upper = abs(upper[recent_i] - c[recent_i]) <= tol_abs
-            hit_lower = abs(lower[recent_i] - c[recent_i]) <= tol_abs
-            if hit_upper or hit_lower:
+            recent_hits = _count_recent_touches(upper, c, tol_abs, confirm_lookback) + _count_recent_touches(lower, c, tol_abs, confirm_lookback)
+            if recent_hits >= confirm_needed:
                 status = "completed"
             details = {
                 "upper_slope": float(sh),
@@ -369,11 +395,13 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
                 "r2_upper": float(r2h),
                 "r2_lower": float(r2l),
                 "channel_width_recent": float(width[recent_i]),
+                "completion_touches_recent": int(recent_hits),
             }
             base = _result(name, status, conf, int(min(ih[0], il[0])), int(max(ih[-1], il[-1])), t, details)
             ch_results.append(base)
-            # Generic channel alias
-            ch_results.append(_alias(base, "Trend Channel", 0.95))
+            # Optional generic alias for compatibility.
+            if bool(cfg.include_aliases):
+                ch_results.append(_alias(base, "Trend Channel", 0.95))
         return ch_results
 
     results.extend(_try_channel())
@@ -397,7 +425,11 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
             conf = _conf(touches, 1.0, geom_ok)
             status = "forming"
             recent_i = n - 1
-            if _level_close(c[recent_i], top, cfg.same_level_tol_pct) or _level_close(c[recent_i], bot, cfg.same_level_tol_pct):
+            top_line = np.full(n, top, dtype=float)
+            bot_line = np.full(n, bot, dtype=float)
+            recent_hits = _count_recent_touches(top_line, c, _tol_abs_from_close(c, cfg.same_level_tol_pct), confirm_lookback)
+            recent_hits += _count_recent_touches(bot_line, c, _tol_abs_from_close(c, cfg.same_level_tol_pct), confirm_lookback)
+            if recent_hits >= confirm_needed:
                 status = "completed"
             out.append(ClassicPatternResult(
                 name="Rectangle",
@@ -407,7 +439,7 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
                 end_index=int(max(peaks[-1], troughs[-1])),
                 start_time=float(t[int(min(peaks[-k], troughs[-k]))]) if t.size else None,
                 end_time=float(t[int(max(peaks[-1], troughs[-1]))]) if t.size else None,
-                details={"resistance": top, "support": bot, "touches": touches},
+                details={"resistance": top, "support": bot, "touches": touches, "completion_touches_recent": int(recent_hits)},
             ))
         return out
 
@@ -666,9 +698,10 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
                 {"pole_return_pct": float(ret), "top_slope": float(sh), "bottom_slope": float(sl)},
             )
             out.append(base)
-            # Generic names for matching
-            out.append(_alias(base, name, 0.95))
-            out.append(_alias(base, "Continuation Pattern", 0.9))
+            # Optional generic aliases for compatibility.
+            if bool(cfg.include_aliases):
+                out.append(_alias(base, name, 0.95))
+                out.append(_alias(base, "Continuation Pattern", 0.9))
         return out
 
     results.extend(_flags_pennants())
@@ -777,26 +810,27 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
     # Head and Shoulders, Rectangle, Double/Triple Tops/Bottoms, Cup and Handle, Broadening, Diamond.
     # Continuation Diamond/Continuation Pattern are subsumed by Diamond/Flags/Pennants contexts.
 
-    # Normalize statuses: mark older patterns as 'completed' unless very recent
-    try:
-        recent_bars = 3
-        for i, r in enumerate(results):
-            try:
-                if r.status == 'forming' and r.end_index < (n - recent_bars):
-                    results[i] = ClassicPatternResult(
-                        name=r.name,
-                        status='completed',
-                        confidence=r.confidence,
-                        start_index=r.start_index,
-                        end_index=r.end_index,
-                        start_time=r.start_time,
-                        end_time=r.end_time,
-                        details=r.details,
-                    )
-            except Exception:
-                continue
-    except Exception:
-        pass
+    # Optional backward-compatible status aging.
+    if bool(cfg.auto_complete_stale_forming):
+        try:
+            recent_bars = 3
+            for i, r in enumerate(results):
+                try:
+                    if r.status == 'forming' and r.end_index < (n - recent_bars):
+                        results[i] = ClassicPatternResult(
+                            name=r.name,
+                            status='completed',
+                            confidence=r.confidence,
+                            start_index=r.start_index,
+                            end_index=r.end_index,
+                            start_time=r.start_time,
+                            end_time=r.end_time,
+                            details=r.details,
+                        )
+                except Exception:
+                    continue
+        except Exception:
+            pass
 
     # Sort results by end_index (recency) then confidence
     results.sort(key=lambda r: (r.end_index, r.confidence), reverse=True)
