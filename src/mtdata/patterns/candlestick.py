@@ -26,6 +26,13 @@ from ..utils.utils import (
 )
 
 
+def _normalize_candlestick_name(pattern_name: str) -> str:
+    nm = str(pattern_name).strip()
+    if nm.lower().startswith('cdl_'):
+        nm = nm[len('cdl_'):]
+    return nm.replace('_', '').replace(' ', '').lower()
+
+
 def _is_candlestick_allowed(
     pattern_name: str,
     *,
@@ -33,7 +40,7 @@ def _is_candlestick_allowed(
     robust_set: set[str],
     whitelist_set: Optional[set[str]],
 ) -> bool:
-    nm = str(pattern_name).replace('_', '').replace(' ', '').lower()
+    nm = _normalize_candlestick_name(pattern_name)
     if whitelist_set is not None and nm not in whitelist_set:
         return False
     if robust_only and nm not in robust_set:
@@ -142,7 +149,7 @@ def detect_candlestick_patterns(
             try:
                 parts = [p.strip() for p in whitelist.split(',') if p.strip()]
                 if parts:
-                    parsed_whitelist = {p.replace('_', '').replace(' ', '').lower() for p in parts}
+                    parsed_whitelist = {_normalize_candlestick_name(p) for p in parts}
             except Exception:
                 pass
 
@@ -181,7 +188,7 @@ def detect_candlestick_patterns(
                 continue
             if i - last_pick_idx < gap:
                 continue
-            non_dep = [(n, v) for (n, v) in hits if n.split('_')[0].lower() not in _deprioritize]
+            non_dep = [(n, v) for (n, v) in hits if _normalize_candlestick_name(n) not in _deprioritize]
             pool = non_dep if non_dep else hits
             try:
                 k = max(1, int(top_k))

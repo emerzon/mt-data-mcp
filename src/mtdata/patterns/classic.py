@@ -562,6 +562,8 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         # Slopes near equal for channels; width relatively stable
         slope_diff = abs(sh - sl)
         approx_parallel = slope_diff <= max(1e-4, 0.15 * max(abs(sh), abs(sl), cfg.max_flat_slope))
+        # Avoid double-reporting mildly converging structures as both channels and triangles.
+        converging = _is_converging(upper, lower, k, n)
         width = upper - lower
         width_ok = float(np.std(width[-k:]) / (np.mean(width[-k:]) + 1e-9))
         geom_ok = 1.0 - min(1.0, max(0.0, width_ok))
@@ -575,7 +577,7 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
             name = "Descending Channel"
         elif abs(sh) <= cfg.max_flat_slope and abs(sl) <= cfg.max_flat_slope:
             name = "Horizontal Channel"
-        if approx_parallel and touches >= cfg.min_channel_touches:
+        if approx_parallel and not converging and touches >= cfg.min_channel_touches:
             conf = _conf(touches, min(r2h, r2l), geom_ok)
             status = "forming"
             recent_i = n - 1

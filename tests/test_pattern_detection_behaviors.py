@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from src.mtdata.core import patterns as core_patterns
 from src.mtdata.core.patterns import _apply_config_to_obj, _build_pattern_response
-from src.mtdata.patterns.candlestick import _is_candlestick_allowed
+from src.mtdata.patterns.candlestick import _is_candlestick_allowed, _normalize_candlestick_name
 from src.mtdata.patterns.classic import ClassicDetectorConfig, _fit_lines_and_arrays, _count_recent_touches, detect_classic_patterns
 import src.mtdata.patterns.classic as classic_mod
 
@@ -65,6 +65,16 @@ def test_candlestick_allowed_requires_robust_when_enabled():
         robust_only=True,
         robust_set=robust_set,
         whitelist_set=None,
+    )
+
+
+def test_candlestick_name_normalization_canonicalizes_common_variants():
+    assert _normalize_candlestick_name("cdl_closing_marubozu") == "closingmarubozu"
+    assert _is_candlestick_allowed(
+        "closing_marubozu",
+        robust_only=False,
+        robust_set=set(),
+        whitelist_set={"closingmarubozu"},
     )
 
 
@@ -391,6 +401,40 @@ def test_detect_classic_triangle_marks_completed_on_breakout(monkeypatch):
     tri = [p for p in out if "Triangle" in p.name]
     assert tri
     assert any(p.status == "completed" for p in tri)
+
+
+def test_detect_classic_converging_parallel_shape_excludes_channel(monkeypatch):
+    n = 170
+    x = np.arange(n, dtype=float)
+    top_line = 110.0 - 0.020 * x
+    bot_line = 100.0 - 0.019 * x
+    close = (top_line + bot_line) / 2.0
+
+    peaks = np.array([30, 60, 90, 120, 150], dtype=int)
+    troughs = np.array([20, 50, 80, 110, 140], dtype=int)
+    close[peaks] = top_line[peaks]
+    close[troughs] = bot_line[troughs]
+
+    df = pd.DataFrame(
+        {"time": np.arange(n, dtype=float), "close": close, "high": close + 0.2, "low": close - 0.2}
+    )
+    monkeypatch.setattr(classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (peaks, troughs))
+
+    def _fake_fit_lines(ih, il, c, n, cfg):
+        return -0.020, 110.0, 0.95, -0.019, 100.0, 0.95, top_line.copy(), bot_line.copy()
+
+    monkeypatch.setattr(classic_mod, "_fit_lines_and_arrays", _fake_fit_lines)
+
+    out = detect_classic_patterns(
+        df,
+        ClassicDetectorConfig(
+            min_channel_touches=2,
+            max_consolidation_bars=5,
+        ),
+    )
+    names = {p.name for p in out}
+    assert "Symmetrical Triangle" in names
+    assert not any("Channel" in name for name in names)
 
 
 def test_detect_classic_confidence_calibration_and_lifecycle(monkeypatch):

@@ -4,6 +4,7 @@ import pandas as pd
 from src.mtdata.patterns.eliott import (
     ElliottWaveConfig,
     _impulse_rules_and_score,
+    _zigzag_pivots_indices,
     detect_elliott_waves,
 )
 
@@ -32,6 +33,15 @@ def test_detect_elliott_waves_returns_candidate_for_fallback():
     assert results[0].wave_type == "Candidate"
     assert bool(results[0].details.get("fallback_candidate")) is True
     assert len(results[0].wave_sequence) < 6
+
+
+def test_zigzag_pretrend_uses_running_extrema_before_trend_is_set():
+    close = np.array([100.0, 102.0, 98.0, 97.0], dtype=float)
+
+    piv_idx, piv_dir = _zigzag_pivots_indices(close, 3.0)
+
+    assert piv_idx == [1, 3]
+    assert piv_dir == ["down", "down"]
 
 
 def test_wave_min_len_filters_short_leg_sequences():

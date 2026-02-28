@@ -97,6 +97,10 @@ def _zigzag_pivots_indices(close: np.ndarray, threshold_pct: float) -> Tuple[Lis
     trend: Optional[str] = None
     last_ext_i = 0
     last_ext_p = float(close[0])
+    pre_high_i = 0
+    pre_high_p = float(close[0])
+    pre_low_i = 0
+    pre_low_p = float(close[0])
 
     for i in range(1, n):
         p = float(close[i])
@@ -104,21 +108,49 @@ def _zigzag_pivots_indices(close: np.ndarray, threshold_pct: float) -> Tuple[Lis
             continue
 
         if trend is None:
-            change = (p - pivot_p) / pivot_p * 100.0 if pivot_p != 0 else 0.0
-            if abs(change) >= threshold_pct:
-                trend = "up" if change > 0 else "down"
-                last_ext_i = i
-                last_ext_p = p
-                piv_idx.append(pivot_i)
-                piv_dir.append(trend)
+            if p >= pre_high_p:
+                pre_high_p = p
+                pre_high_i = i
+            if p <= pre_low_p:
+                pre_low_p = p
+                pre_low_i = i
+
+            up_change = (p - pre_low_p) / abs(pre_low_p) * 100.0 if pre_low_p != 0 else 0.0
+            down_change = (pre_high_p - p) / abs(pre_high_p) * 100.0 if pre_high_p != 0 else 0.0
+            can_start_up = up_change >= threshold_pct and pre_low_i < i
+            can_start_down = down_change >= threshold_pct and pre_high_i < i
+
+            if can_start_up and can_start_down:
+                if pre_low_i > pre_high_i:
+                    trend = "up"
+                    pivot_i = pre_low_i
+                    pivot_p = pre_low_p
+                elif pre_high_i > pre_low_i:
+                    trend = "down"
+                    pivot_i = pre_high_i
+                    pivot_p = pre_high_p
+                elif up_change >= down_change:
+                    trend = "up"
+                    pivot_i = pre_low_i
+                    pivot_p = pre_low_p
+                else:
+                    trend = "down"
+                    pivot_i = pre_high_i
+                    pivot_p = pre_high_p
+            elif can_start_up:
+                trend = "up"
+                pivot_i = pre_low_i
+                pivot_p = pre_low_p
+            elif can_start_down:
+                trend = "down"
+                pivot_i = pre_high_i
+                pivot_p = pre_high_p
             else:
-                if p > last_ext_p:
-                    last_ext_p = p
-                    last_ext_i = i
-                if p < last_ext_p and trend is None:
-                    last_ext_p = p
-                    last_ext_i = i
                 continue
+            last_ext_i = i
+            last_ext_p = p
+            piv_idx.append(pivot_i)
+            piv_dir.append(trend)
 
         if trend == "up":
             if p > last_ext_p:
