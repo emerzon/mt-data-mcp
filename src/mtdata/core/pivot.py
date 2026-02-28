@@ -1,5 +1,5 @@
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 import math
 
@@ -36,10 +36,10 @@ def pivot_compute_points(
             _tick = mt5.symbol_info_tick(symbol)
             if _tick is not None and getattr(_tick, "time", None):
                 t_utc = _mt5_epoch_to_utc(float(_tick.time))
-                server_now_dt = datetime.utcfromtimestamp(t_utc)
+                server_now_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc)
                 server_now_ts = t_utc
             else:
-                server_now_dt = datetime.utcnow()
+                server_now_dt = datetime.now(timezone.utc)
                 server_now_ts = server_now_dt.timestamp()
             rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, 5)
 

@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 from contextlib import contextmanager
 from typing import Any, Iterator, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import sys
 import os
 
@@ -29,7 +29,7 @@ class TestDataService(unittest.TestCase):
     def test_fetch_candles_basic(self, mock_copy_rates):
         
         # Mock rates data
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         rates = []
         for i in range(10):
             t = now - timedelta(minutes=10-i)
@@ -59,7 +59,7 @@ class TestDataService(unittest.TestCase):
     @patch('mtdata.services.data_service._mt5_copy_rates_from')
     @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
     def test_fetch_candles_time_as_epoch(self, mock_copy_rates):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         rates = []
         for i in range(10):
             t = now - timedelta(minutes=10 - i)
@@ -82,7 +82,7 @@ class TestDataService(unittest.TestCase):
     def test_fetch_ticks_basic(self, mock_copy_ticks):
         
         # Mock ticks data
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         ticks = []
         for i in range(10):
             t = now - timedelta(seconds=10-i)

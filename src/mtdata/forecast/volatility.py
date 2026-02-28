@@ -1,5 +1,5 @@
 from typing import Any, Dict, Optional, List, Literal
-from datetime import datetime
+from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 import MetaTrader5 as mt5
@@ -409,9 +409,9 @@ def forecast_volatility(
                     _tick = mt5.symbol_info_tick(symbol)
                     if _tick is not None and getattr(_tick, 'time', None):
                         t_utc = _mt5_epoch_to_utc(float(_tick.time))
-                        server_now_dt = datetime.utcfromtimestamp(t_utc)
+                        server_now_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc)
                     else:
-                        server_now_dt = datetime.utcnow()
+                        server_now_dt = datetime.now(timezone.utc)
                     rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
             finally:
                 if _was_visible is False:
@@ -598,9 +598,9 @@ def forecast_volatility(
                 _tick = mt5.symbol_info_tick(symbol)
                 if _tick is not None and getattr(_tick, 'time', None):
                     t_utc = _mt5_epoch_to_utc(float(_tick.time))
-                    server_now_dt = datetime.utcfromtimestamp(t_utc)
+                    server_now_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc)
                 else:
-                    server_now_dt = datetime.utcnow()
+                    server_now_dt = datetime.now(timezone.utc)
                 rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
         finally:
             if _was_visible is False:
@@ -974,9 +974,9 @@ def forecast_volatility(
                 _tick = mt5.symbol_info_tick(symbol)
                 if _tick is not None and getattr(_tick, 'time', None):
                     t_utc = _mt5_epoch_to_utc(float(_tick.time))
-                    server_now_dt = datetime.utcfromtimestamp(t_utc)
+                    server_now_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc)
                 else:
-                    server_now_dt = datetime.utcnow()
+                    server_now_dt = datetime.now(timezone.utc)
                 rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
         finally:
             if _was_visible is False:
@@ -1109,9 +1109,9 @@ def forecast_volatility(
                         _tick = mt5.symbol_info_tick(symbol)
                         if _tick is not None and getattr(_tick, 'time', None):
                             t_utc = _mt5_epoch_to_utc(float(_tick.time))
-                            server_now_dt = datetime.utcfromtimestamp(t_utc)
+                            server_now_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc)
                         else:
-                            server_now_dt = datetime.utcnow()
+                            server_now_dt = datetime.now(timezone.utc)
                         rates_rv = _mt5_copy_rates_from(symbol, rv_mt5_tf, server_now_dt, bars_needed)
                 finally:
                     if _was_visible is False:

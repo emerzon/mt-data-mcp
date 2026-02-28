@@ -24,7 +24,7 @@ class TestForecastBarriers(unittest.TestCase):
         self.mock_fetch_history = self.fetch_history_patcher.start()
         
         # Create dummy dataframe
-        dates = pd.date_range(start='2023-01-01', periods=500, freq='H')
+        dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
         prices = np.linspace(1.0, 1.1, 500) + np.random.normal(0, 0.001, 500)
         self.df = pd.DataFrame({'time': dates, 'close': prices})
         self.mock_fetch_history.return_value = self.df

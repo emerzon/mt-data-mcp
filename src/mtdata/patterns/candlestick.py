@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 import warnings
 
@@ -60,7 +60,7 @@ def detect_candlestick_patterns(
         with _symbol_ready_guard(symbol) as (err, _info):
             if err:
                 return {"error": err}
-            utc_now = datetime.utcnow()
+            utc_now = datetime.now(timezone.utc)
             rates = _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, limit)
 
         if rates is None:
@@ -81,7 +81,9 @@ def detect_candlestick_patterns(
             time_fmt = _style_time_format(time_fmt)
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                df['time'] = df['time'].apply(lambda t: datetime.utcfromtimestamp(float(t)).strftime(time_fmt))
+                df['time'] = df['time'].apply(
+                    lambda t: datetime.fromtimestamp(float(t), tz=timezone.utc).strftime(time_fmt)
+                )
 
         for col in ['open', 'high', 'low', 'close']:
             if col not in df.columns:

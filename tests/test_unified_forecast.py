@@ -22,7 +22,7 @@ from mtdata.forecast.interface import ForecastResult
 class TestUnifiedForecast(unittest.TestCase):
     def setUp(self):
         # Create dummy data
-        dates = pd.date_range(start='2023-01-01', periods=100, freq='H')
+        dates = pd.date_range(start='2023-01-01', periods=100, freq='h')
         self.series = pd.Series(np.random.randn(100) + 100, index=dates)
         # Add epoch for engine
         self.df = pd.DataFrame({'close': self.series})

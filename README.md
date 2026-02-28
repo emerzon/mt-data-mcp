@@ -14,6 +14,7 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 
 - **Windows is required** to run MetaTrader 5 (and therefore to run `mtdata` against MT5).
 - If you're on macOS/Linux, run `mtdata` on a **Windows VM or Windows machine** and connect remotely (MCP/Web API).
+- **Python 3.14 is the supported runtime** for the packaged dependency set in this repo.
 
 ## Safety First
 
@@ -38,7 +39,7 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 
 ## Quick Start
 
-**Prerequisites:** Windows + MetaTrader 5 installed and running (demo account recommended).
+**Prerequisites:** Windows + Python 3.14 + MetaTrader 5 installed and running (demo account recommended).
 
 ```bash
 # Install dependencies
@@ -53,6 +54,10 @@ python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 50
 # Generate a baseline price forecast
 python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
 ```
+
+Notes:
+- The default Python 3.14 install includes the validated Chronos/TimesFM, StatsForecast, sktime, and mlforecast paths.
+- `gluonts`/Lag-Llama, `hnswlib`, and `tsdownsample` are intentionally excluded from the default 3.14 environment because current wheel support is incomplete or incompatible.
 
 ## Documentation
 

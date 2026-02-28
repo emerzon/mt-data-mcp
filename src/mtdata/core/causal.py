@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Tuple
 
 import pandas as pd
@@ -58,7 +58,7 @@ def _fetch_series(symbol: str, timeframe, count: int, retries: int = 3, pause: f
         return pd.Series(dtype=float), err
 
     for attempt in range(retries):
-        utc_now = datetime.utcnow()
+        utc_now = datetime.now(timezone.utc)
         data = _mt5_copy_rates_from(symbol, timeframe, utc_now, count)
         if data is None or len(data) == 0:
             time.sleep(pause)

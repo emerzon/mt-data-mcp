@@ -191,9 +191,7 @@ def test_end_to_end():
     
     # Step 2: Validate and clean
     cleaned, error = validate_and_clean_data(context)
-    if error:
-        print(f"  ✗ Validation error: {error}")
-        return False
+    assert error is None, f"Validation error: {error}"
     print("  ✓ Data validation passed")
     
     # Step 3: Process quantiles
@@ -210,8 +208,6 @@ def test_end_to_end():
     
     print("  End-to-end test passed!")
     print()
-    
-    return True
 
 def main():
     """Run all tests and analysis."""

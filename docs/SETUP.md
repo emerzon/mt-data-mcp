@@ -14,7 +14,7 @@ Installation and configuration guide for mtdata.
 ## Requirements
 
 - **Operating System:** Windows (required for MetaTrader 5)
-- **Python:** 3.10 or higher
+- **Python:** 3.14
 - **MetaTrader 5:** Installed and running
 
 ---
@@ -39,7 +39,7 @@ pip install -e .
 
 ### 3. Optional Dependencies
 
-`requirements.txt` installs a broad set of optional capabilities. If you are installing selectively, these features require extra packages:
+`requirements.txt` is the supported Python 3.14 dependency set. If you are installing selectively, these features require extra packages:
 
 - Causal discovery (`causal_discover_signals`) and classical ARIMA/ETS: `statsmodels`
 - Wavelet denoising: `PyWavelets`
@@ -47,9 +47,10 @@ pip install -e .
 - Foundation models:
   - Chronos (`chronos2`, `chronos_bolt`): `chronos-forecasting`, `torch`
   - TimesFM (`timesfm`): `timesfm`, `torch` (installed from Git in `requirements.txt`)
-  - Lag-Llama (`lag_llama`): `lag-llama`, `gluonts[torch]`, `torch` (may not be installable on all Python versions due to upstream pins)
+  - Lag-Llama (`lag_llama`): not included in the default Python 3.14 environment because `gluonts`/Lag-Llama are still constrained by upstream compatibility
 - Forecasting libraries: `statsforecast`, `sktime`, `mlforecast` (plus `lightgbm` for GBMs)
 - Volatility (GARCH/ARCH): `arch`
+- Optional pattern/simplification accelerators omitted from the default Python 3.14 install: `hnswlib`, `tsdownsample`
 
 Tip: `python cli.py forecast_list_methods --format json` shows `available` and `requires` per method.
 
@@ -263,7 +264,7 @@ npm run build   # Production build
 
 ### Import Errors
 
-1. Verify Python version: `python --version` (need 3.10+)
+1. Verify Python version: `python --version` (need 3.14)
 2. Reinstall dependencies: `pip install -r requirements.txt`
 3. Try editable install: `pip install -e .`
 

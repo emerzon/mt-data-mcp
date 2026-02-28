@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, List, Tuple, Literal
 import importlib
 import copy
@@ -74,7 +74,7 @@ def _fetch_pattern_data(
     except Exception:
         pass
     
-    utc_now = datetime.utcnow()
+    utc_now = datetime.now(timezone.utc)
     count = max(400, int(limit) + 2)
     rates = _mt5_copy_rates_from(symbol, mt5_tf, utc_now, count)
     

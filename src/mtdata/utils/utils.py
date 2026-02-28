@@ -116,7 +116,7 @@ def _format_time_minimal(epoch_seconds: float) -> str:
 
     Normalized format everywhere: YYYY-MM-DD HH:MM
     """
-    dt = datetime.utcfromtimestamp(epoch_seconds)
+    dt = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc)
     return dt.strftime(TIME_DISPLAY_FORMAT)
 
 def _format_time_minimal_local(epoch_seconds: float) -> str:

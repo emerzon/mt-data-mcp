@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Iterable, Optional, Tuple
 
 import MetaTrader5 as mt5
@@ -56,7 +56,7 @@ def _pick_symbol_with_data(
     for symbol in candidates:
         try:
             mt5.symbol_select(symbol, True)
-            rates = _mt5_copy_rates_from(symbol, tf, datetime.utcnow(), count)
+            rates = _mt5_copy_rates_from(symbol, tf, datetime.now(timezone.utc), count)
             if rates is not None and len(rates) >= 200:
                 return symbol, rates
         except Exception:
@@ -108,7 +108,7 @@ def test_candlestick_patterns_are_present_on_real_data(monkeypatch):
     l = df["low"].astype(float)
     c = df["close"].astype(float)
     idx_by_time = {
-        datetime.utcfromtimestamp(float(ts)).strftime("%Y-%m-%d %H:%M"): i
+        datetime.fromtimestamp(float(ts), tz=timezone.utc).strftime("%Y-%m-%d %H:%M"): i
         for i, ts in enumerate(df["time"].tolist())
     }
 

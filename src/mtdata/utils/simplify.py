@@ -8,8 +8,11 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 import numpy as np
 import ruptures as rpt
-from rdp import rdp as _rdp
-from tsdownsample import MinMaxLTTBDownsampler
+
+try:
+    from tsdownsample import MinMaxLTTBDownsampler
+except Exception:
+    MinMaxLTTBDownsampler = None
 
 # Import defaults from core.constants to avoid duplication.
 # Use a lazy import to prevent circular imports during initialization.
@@ -76,7 +79,56 @@ def _choose_simplify_points(total: int, spec: Dict[str, Any]) -> int:
         return total
 
 
-_LTTB_DOWNSAMPLER = MinMaxLTTBDownsampler()
+_LTTB_DOWNSAMPLER = MinMaxLTTBDownsampler() if MinMaxLTTBDownsampler is not None else None
+
+
+def _fallback_lttb_indices(y: np.ndarray, n_out: int) -> List[int]:
+    """Pure-Python min/max bucket fallback when tsdownsample is unavailable."""
+    m = int(len(y))
+    if n_out >= m:
+        return list(range(m))
+    if n_out <= 2 or m <= 2:
+        return [0, max(0, m - 1)]
+
+    interior_target = max(0, int(n_out) - 2)
+    if interior_target <= 0:
+        return [0, m - 1]
+
+    bucket_count = max(1, int(np.ceil(interior_target / 2.0)))
+    edges = np.linspace(1, m - 1, num=bucket_count + 1, dtype=int)
+    selected: List[int] = []
+
+    for i in range(bucket_count):
+        start = int(edges[i])
+        stop = int(edges[i + 1])
+        if stop <= start:
+            stop = min(start + 1, m - 1)
+        if start >= m - 1:
+            break
+
+        bucket = y[start:stop]
+        if bucket.size == 0:
+            continue
+
+        base = np.arange(start, stop, dtype=int)
+        lo = int(base[int(np.argmin(bucket))])
+        hi = int(base[int(np.argmax(bucket))])
+        if lo == hi:
+            selected.append(lo)
+        elif lo < hi:
+            selected.extend([lo, hi])
+        else:
+            selected.extend([hi, lo])
+
+    selected = sorted(set(i for i in selected if 0 < i < (m - 1)))
+    if len(selected) < interior_target:
+        fill = np.linspace(1, m - 2, num=interior_target, dtype=int).tolist()
+        selected = sorted(set(selected + fill))
+    if len(selected) > interior_target:
+        keep = np.linspace(0, len(selected) - 1, num=interior_target, dtype=int)
+        selected = [selected[int(i)] for i in keep]
+
+    return _finalize_indices(m, [0, *selected, m - 1])
 
 
 def _finalize_indices(n: int, idxs: List[int]) -> List[int]:
@@ -120,14 +172,16 @@ def _n_bkps_from_segments_points(n: int, segments: Optional[int], points: Option
 
 
 def _lttb_select_indices(x: List[float], y: List[float], n_out: int) -> List[int]:
-    """Library-backed LTTB downsampling using tsdownsample."""
+    """Downsampling using tsdownsample when available, else a Python fallback."""
     m = len(x)
     if n_out >= m:
         return list(range(m))
     if n_out <= 2 or m <= 2:
         return [0, max(0, m - 1)]
-    xx = np.asarray(x, dtype=float)
     yy = np.asarray(y, dtype=float)
+    if _LTTB_DOWNSAMPLER is None:
+        return _fallback_lttb_indices(yy, int(n_out))
+    xx = np.asarray(x, dtype=float)
     idxs = _LTTB_DOWNSAMPLER.downsample(xx, yy, n_out=int(n_out))
     return _finalize_indices(m, np.asarray(idxs, dtype=int).tolist())
 
@@ -142,13 +196,46 @@ def _point_line_distance(px: float, py: float, x1: float, y1: float, x2: float, 
     return abs(py - y_on_line)
 
 
+def _rdp_keep_mask(x: List[float], y: List[float], epsilon: float) -> np.ndarray:
+    """Iterative Douglas-Peucker mask to avoid an external rdp dependency."""
+    n = len(x)
+    keep = np.zeros(n, dtype=bool)
+    if n == 0:
+        return keep
+    keep[0] = True
+    keep[-1] = True
+
+    stack: List[Tuple[int, int]] = [(0, n - 1)]
+    while stack:
+        i0, i1 = stack.pop()
+        if i1 <= i0 + 1:
+            continue
+
+        x0, y0 = x[i0], y[i0]
+        x1, y1 = x[i1], y[i1]
+        split_idx = -1
+        split_dist = -1.0
+
+        for i in range(i0 + 1, i1):
+            dist = _point_line_distance(x[i], y[i], x0, y0, x1, y1)
+            if dist > split_dist:
+                split_idx = i
+                split_dist = dist
+
+        if split_idx >= 0 and split_dist > float(epsilon):
+            keep[split_idx] = True
+            stack.append((i0, split_idx))
+            stack.append((split_idx, i1))
+
+    return keep
+
+
 def _rdp_select_indices(x: List[float], y: List[float], epsilon: float) -> List[int]:
-    """Douglas-Peucker simplification returning kept indices via rdp package."""
+    """Douglas-Peucker simplification returning kept indices."""
     n = len(x)
     if n <= 2 or epsilon <= 0:
         return list(range(n))
-    pts = np.column_stack([np.asarray(x, dtype=float), np.asarray(y, dtype=float)])
-    mask = _rdp(pts, epsilon=float(epsilon), algo="iter", return_mask=True)
+    mask = _rdp_keep_mask(list(map(float, x)), list(map(float, y)), float(epsilon))
     idxs = np.flatnonzero(np.asarray(mask, dtype=bool)).astype(int).tolist()
     return _finalize_indices(n, idxs)
 
@@ -276,6 +363,8 @@ def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optiona
         n_out = _choose_simplify_points(len(x), spec)
         idxs = _lttb_select_indices(x, y, n_out)
         meta.update({"points": n_out})
+        if _LTTB_DOWNSAMPLER is None:
+            meta["implementation"] = "python-fallback"
         return idxs, "lttb", meta
     if method == "rdp":
         eps = spec.get("epsilon", None) or spec.get("tolerance", None) or spec.get("eps", None)
@@ -308,6 +397,8 @@ def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optiona
         n_out = _choose_simplify_points(len(x), spec)
         idxs = _lttb_select_indices(x, y, n_out)
         meta.update({"points": n_out, "fallback": "rdp->lttb"})
+        if _LTTB_DOWNSAMPLER is None:
+            meta["implementation"] = "python-fallback"
         return idxs, "lttb", meta
     if method == "pla":
         max_error = spec.get("max_error", None)
@@ -338,6 +429,8 @@ def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optiona
         n_out = _choose_simplify_points(len(x), spec)
         idxs = _lttb_select_indices(x, y, n_out)
         meta.update({"points": n_out, "fallback": "pla->lttb"})
+        if _LTTB_DOWNSAMPLER is None:
+            meta["implementation"] = "python-fallback"
         return idxs, "lttb", meta
     if method == "apca":
         max_error = spec.get("max_error", None)
@@ -368,10 +461,14 @@ def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optiona
         n_out = _choose_simplify_points(len(x), spec)
         idxs = _lttb_select_indices(x, y, n_out)
         meta.update({"points": n_out, "fallback": "apca->lttb"})
+        if _LTTB_DOWNSAMPLER is None:
+            meta["implementation"] = "python-fallback"
         return idxs, "lttb", meta
     n_out = _choose_simplify_points(len(x), spec)
     idxs = _lttb_select_indices(x, y, n_out)
     meta.update({"points": n_out, "fallback": f"{method}->lttb"})
+    if _LTTB_DOWNSAMPLER is None:
+        meta["implementation"] = "python-fallback"
     return idxs, "lttb", meta
 
 

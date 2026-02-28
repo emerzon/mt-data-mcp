@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import sys
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator, Tuple
 from unittest.mock import MagicMock, patch
 
@@ -81,7 +81,7 @@ def test_backtest_vol_proxy_not_mutated_across_anchors() -> None:
 @patch("mtdata.services.data_service._symbol_ready_guard", _mock_symbol_ready_guard)
 @patch("mtdata.services.data_service._mt5_copy_ticks_range")
 def test_fetch_ticks_select_simplify_mode_no_nameerror(mock_copy_ticks: MagicMock) -> None:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     ticks = []
     for i in range(12):
         t = now - timedelta(seconds=12 - i)

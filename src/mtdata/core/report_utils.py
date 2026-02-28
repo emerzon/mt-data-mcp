@@ -1,5 +1,5 @@
 from typing import Any, Dict, Optional, List, Tuple, Callable
-from datetime import datetime
+from datetime import datetime, timezone
 import math
 
 from ..utils.constants import TIME_DISPLAY_FORMAT
@@ -12,9 +12,9 @@ from ..utils.barriers import get_pip_size as _get_pip_size
 
 def now_utc_iso() -> str:
     try:
-        return datetime.utcnow().strftime(TIME_DISPLAY_FORMAT)
+        return datetime.now(timezone.utc).strftime(TIME_DISPLAY_FORMAT)
     except Exception:
-        return datetime.utcnow().strftime(TIME_DISPLAY_FORMAT)
+        return datetime.now(timezone.utc).strftime(TIME_DISPLAY_FORMAT)
 
 
 def parse_table_tail(data: Any, tail: int = 1) -> List[Dict[str, Any]]:

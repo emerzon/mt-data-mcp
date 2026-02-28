@@ -17,7 +17,7 @@ surfaces close to the underlying tools. Advanced params are accepted as dicts.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -559,7 +559,7 @@ def get_support_resistance(
         if ts is None:
             return None
         try:
-            return datetime.utcfromtimestamp(float(ts)).strftime("%Y-%m-%d %H:%M")
+            return datetime.fromtimestamp(float(ts), tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
         except Exception:
             return None
 

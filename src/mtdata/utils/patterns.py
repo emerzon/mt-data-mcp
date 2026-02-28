@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 import pandas as pd
 from scipy.signal import correlate
-from scipy.spatial.ckdtree import cKDTree
+from scipy.spatial import cKDTree
 import stumpy as _stumpy
 from tslearn.metrics import dtw as _ts_dtw
 from tslearn.metrics import soft_dtw as _ts_soft_dtw

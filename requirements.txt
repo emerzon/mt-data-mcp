@@ -1,126 +1,57 @@
-# Core MetaTrader5 and MCP dependencies
-# Requires Python >=3.10
-MetaTrader5>=5.0.5430
-mcp>=1.24.0
-fastmcp>=2.14.0
+# Python 3.14-only dependency set
+# Install with: pip install -r requirements.txt
 
-# Python standard library backports
+MetaTrader5>=5.0.5640
+mcp>=1.26.0
+fastmcp>=3.0.2
 typing-extensions>=4.15.0
-
-# Additional useful packages for development
 python-dotenv>=1.2.1
-dateparser>=1.2.2
+dateparser>=1.3.0
 
-# NumPy 2.x required by pandas-ta-classic (latest)
-# Keep <2.2 to satisfy GluonTS (numpy<2.2) if installed.
-numpy>=2.0.0,<2.2.0
-
-# pandas (must support NumPy 2.x; pandas>=2.3 supports numpy>=2 on py>=3.12)
-pandas>=2.3.3
-
-# pandas-ta classic fork (PyPI) - pin to current latest
-pandas-ta-classic==0.3.59
-# Required for full candlestick pattern coverage (pandas-ta cdl_* backends).
-TA-Lib>=0.6.5
-
-# GluonTS (gt_* methods)
-gluonts[torch]>=0.16.2
-
-# Lag-Llama currently pins `gluonts<=0.14.4`, which has no wheels for Python 3.13.
-# Keep it optional for now.
-# lag-llama @ git+https://github.com/time-series-foundation-models/lag-llama.git
-
-# ARCH (heteroskedasticity models)
-arch>=7.2.0; python_version >= "3.9"
-arch>=6.3.0; python_version < "3.9"
-
-python-dateutil>=2.9.0.post0
-pytz>=2025.2
-holidays>=0.40
-
-# SciPy (bounded to <1.16.0 to satisfy statsforecast<->scipy compatibility)
-scipy>=1.15.3,<1.16.0; python_version >= "3.10"
-scipy>=1.10.1,<1.16.0; python_version < "3.10"
-
-# Optional: denoising backends
-PyWavelets>=1.6.0
+numpy>=2.3.5,<2.4
+pandas>=2.3.3,<3
+pandas-ta-classic>=0.3.78
+TA-Lib>=0.6.8
+holidays>=0.91
+arch>=8.0.0
+scipy>=1.17.1
+scikit-learn>=1.7.2,<1.8
+scikit-image>=0.26.0
+PyWavelets>=1.9.0
 EMD-signal>=1.6.4
 vmdpy>=0.2
+ruptures>=1.0.6,<1.1.0
+statsmodels>=0.14.6
 
-# statsmodels
-statsmodels>=0.14.5; python_version >= "3.9"
-statsmodels>=0.14.0; python_version < "3.9"
-
-# API server
-fastapi>=0.124.4
-uvicorn[standard]>=0.38.0
-
-# Optional: classical/ML/DL forecasting frameworks (enabled to support all methods)
-# statsforecast (classical, numba-accelerated)
-statsforecast>=2.0.2
-# sktime unified forecasting API
-sktime>=0.40.1
-# mlforecast (tree/GBM over lags); LightGBM optional
-mlforecast>=1.0.2
+statsforecast==1.7.6
+sktime==0.40.1
+mlforecast==1.0.3
 lightgbm>=4.6.0
-# neuralforecast (deep learning; include torch extras). Not available on Python 3.12 due to ray wheels.
-neuralforecast[torch]>=3.0.2; python_version < "3.12"
-# Ensure torch/torchvision available (CPU wheels by default)
-# For Python <3.12: constrained to satisfy neuralforecast (<=2.6.0)
-torch>=2.0,<2.7; python_version < "3.12"
-torchvision>=0.21.0,<0.22; python_version < "3.12"
-# For Python >=3.12: neuralforecast is skipped; keep torch for Chronos/Accelerate
-torch>=2.3.0; python_version >= "3.12"
-torchvision>=0.17.0; python_version >= "3.12"
+coreforecast>=0.0.17
+fugue>=0.9.7
+numba>=0.64.0
 
-# Pillow (torchvision dependency; 10.3.0 avoids DLL issues on Win)
-pillow>=10.3.0,<11.1
-
-# Optional: GluonTS + Prophet (gt_* methods)
-# NOTE: Current GluonTS releases pin NumPy~=1.16 and conflict with NumPy 2.x.
-# gluonts[torch]>=0.14.3  # required for gluonts.torch.* estimators
-# cpflows>=0.1.2          # required by MQF2
-# prophet>=1.1            # required by gt_prophet
-
-# Optional: foundation models (native packages)
-chronos-forecasting>=2.0.0   # Chronos-2 foundation model
+torch>=2.10.0
+torchvision>=0.25.0
+pillow>=12.1.1
+accelerate>=1.12.0
+chronos-forecasting>=2.2.2
+transformers>=4.57.6,<5
+huggingface-hub>=0.36.2,<1
 timesfm @ git+https://github.com/google-research/timesfm.git@6bd8044275f8b76cdc9554f2fecccac5f31a156c
 
-# uni2ts (Moirai) is currently incompatible with Python 3.13 due to upstream pins.
-# Use a separate Python 3.11/3.12 env if you need `--method moirai`.
-# uni2ts==2.0.0
-
-# Optional: pattern search ANN and DTW backends
-hnswlib>=0.8.0
-tslearn>=0.7.0
+tslearn>=0.8.0
 h5py>=3.15.1
-stumpy>=1.13.0            # matrix_profile search engine for analog
-
-# Optional: external classic-pattern engines
-# stock-pattern is expected to be available/importable in the active environment.
-# The engine loads `stock_pattern.utils` when present.
+stumpy>=1.14.1
 precise-patterns @ git+https://github.com/BennyThadikaran/precise-patterns.git@e92e10cbb1b6e414c89ad287be32ddae4214b353
 
-# Optional: dimensionality reduction methods / ML utilities
-scikit-learn>=1.7.2; python_version >= "3.10"
-scikit-learn>=1.4.2; python_version >= "3.9" and python_version < "3.10"
-scikit-learn>=1.3.2; python_version < "3.9"
-scikit-image>=0.24.0
-tsdownsample>=0.1.4.1
-rdp>=0.8
-ruptures>=1.1.9
-# umap-learn>=0.5.5
-# pydiffmap>=0.2.0
-# pykeops>=2.2.3   # optional acceleration for CNE graph (GPU)
-
-# Plotting for helper scripts
 matplotlib>=3.10.8
+fastapi>=0.134.0
+uvicorn[standard]>=0.41.0
+tsfresh>=0.21.1
+finvizfinance>=1.3.0
 
-# Optional: DREAMS-CNE (install from source)
-# git+https://github.com/berenslab/DREAMS-CNE@tp
-
-# Feature extraction
-tsfresh>=0.20.3
-
-# Finviz stock screener and fundamentals
-finvizfinance>=0.15.0
+# Intentionally excluded on Python 3.14 due to missing or incompatible wheel support:
+# - gluonts / lag-llama
+# - hnswlib
+# - tsdownsample

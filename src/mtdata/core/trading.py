@@ -437,7 +437,7 @@ def trade_history(
                 if not to_dt:
                     return {"error": "Invalid end time."}
             else:
-                to_dt = datetime.utcnow()
+                to_dt = datetime.now(timezone.utc).replace(tzinfo=None)
 
             if from_dt > to_dt:
                 return {"error": "start must be before end."}

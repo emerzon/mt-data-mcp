@@ -103,7 +103,7 @@ def _fetch_rates_with_warmup(
             return _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_est, to_date)
 
     else:
-        utc_now = datetime.utcnow()
+        utc_now = datetime.now(dt_timezone.utc)
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
         expected_end_ts = _utc_epoch_seconds(utc_now)
 
@@ -431,7 +431,7 @@ def fetch_candles(
                         ]
                     else:
                         df['time'] = [
-                            datetime.utcfromtimestamp(t).strftime(fmt)
+                            datetime.fromtimestamp(t, tz=dt_timezone.utc).strftime(fmt)
                             for t in epochs_list
                         ]
                 df.__dict__['_tz_used_name'] = tz_used_name
@@ -562,7 +562,7 @@ def fetch_ticks(
                         time.sleep(FETCH_RETRY_DELAY)
             else:
                 # Get recent ticks from current time (now)
-                to_date = datetime.utcnow()
+                to_date = datetime.now(dt_timezone.utc)
                 from_date = to_date - timedelta(days=TICKS_LOOKBACK_DAYS)  # look back a configurable window
                 ticks = None
                 for _ in range(FETCH_RETRY_ATTEMPTS):
@@ -661,7 +661,7 @@ def fetch_ticks(
             ]
         else:
             df_ticks["time"] = [
-                datetime.utcfromtimestamp(e).strftime(fmt) for e in _epochs     
+                datetime.fromtimestamp(e, tz=dt_timezone.utc).strftime(fmt) for e in _epochs
             ]
 
         if output_mode in ("summary", "stats"):
@@ -962,7 +962,7 @@ def fetch_ticks(
             if _use_ctz:
                 time_str = _format_time_minimal_local(_epochs[i])
             else:
-                time_str = datetime.utcfromtimestamp(_epochs[i]).strftime(fmt)
+                time_str = datetime.fromtimestamp(_epochs[i], tz=dt_timezone.utc).strftime(fmt)
             values = [time_str, str(tick['bid']), str(tick['ask'])]
             if has_last:
                 values.append(str(tick['last']))

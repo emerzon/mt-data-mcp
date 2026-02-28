@@ -8,8 +8,9 @@ import argparse
 import sys
 import inspect
 import os
+import types
 from datetime import datetime
-from typing import get_origin, get_args, Optional, Dict, Any, List, Tuple, Literal
+from typing import get_origin, get_args, Optional, Dict, Any, List, Tuple, Literal, Union
 import json
 from ..utils.minimal_output import format_result_minimal as _shared_minimal
 
@@ -267,6 +268,14 @@ def _extract_metadata_from_tool_obj(tool_obj) -> Dict[str, Any]:
 
     return meta
 
+
+def _is_union_origin(origin: Any) -> bool:
+    return origin in (Union, types.UnionType) or str(origin) in {"typing.Union", "<class 'typing.Union'>"}
+
+
+def _is_literal_origin(origin: Any) -> bool:
+    return origin is Literal or str(origin) in {"typing.Literal", "<class 'typing.Literal'>"}
+
 def discover_tools():
     """Discover MCP tools from the server.
 
@@ -338,7 +347,7 @@ def _resolve_param_kwargs(
     def _looks_like_forecast_method_literal(ptype: Any) -> bool:
         try:
             origin = get_origin(ptype)
-            if origin is not Literal:
+            if not _is_literal_origin(origin):
                 return False
             args = set(str(v) for v in get_args(ptype) if v is not None)
             # Avoid misclassifying volatility method enums (e.g. ewma/parkinson)
@@ -410,7 +419,7 @@ def _resolve_param_kwargs(
                 # Fallback to static type choices if dynamic loading fails
                 ptype = param.get('type')
                 origin = get_origin(ptype)
-                if origin is Literal:
+                if _is_literal_origin(origin):
                     kwargs['choices'] = [str(v) for v in get_args(ptype) if v is not None]
     else:
         # Handle other types
@@ -437,7 +446,7 @@ def _resolve_param_kwargs(
             if origin in (list, tuple):
                 inner = get_args(ptype)[0] if get_args(ptype) else None
                 inner_origin = get_origin(inner)
-                if inner_origin and str(inner_origin).endswith('Literal'):
+                if _is_literal_origin(inner_origin):
                     choices = [str(v) for v in get_args(inner)]
                     if choices:
                         kwargs['choices'] = choices
@@ -446,7 +455,7 @@ def _resolve_param_kwargs(
                 else:
                     kwargs['type'] = str
                     kwargs['nargs'] = '+'
-            elif origin and str(origin).endswith('Literal'):
+            elif _is_literal_origin(origin):
                 choices = [str(v) for v in get_args(base_type)]
                 if choices:
                     kwargs['choices'] = choices
@@ -517,7 +526,7 @@ def _parse_kv_string(s: str) -> Optional[Dict[str, Any]]:
 def _unwrap_optional_type(ptype: Any) -> Tuple[Any, Any]:
     """Unwrap Optional[T] to (T, origin(T))."""
     origin = get_origin(ptype)
-    if origin is not None and str(origin).endswith('Union'):
+    if _is_union_origin(origin):
         args_t = [a for a in get_args(ptype) if a is not type(None)]
         if len(args_t) == 1:
             ptype = args_t[0]
