@@ -10,7 +10,7 @@ import inspect
 import os
 import types
 from datetime import datetime
-from typing import get_origin, get_args, Optional, Dict, Any, List, Tuple, Literal, Union
+from typing import get_origin, get_args, Optional, Dict, Any, List, Tuple, Literal, Union, is_typeddict
 import json
 from ..utils.minimal_output import format_result_minimal as _shared_minimal
 
@@ -29,6 +29,28 @@ def _debug(msg: str) -> None:
             print(f"[cli-debug] {msg}", file=sys.stderr)
         except Exception:
             pass
+
+
+def _argparse_color_enabled() -> bool:
+    if os.environ.get("NO_COLOR") is not None:
+        return False
+    try:
+        return bool(sys.stderr.isatty())
+    except Exception:
+        return False
+
+
+def _is_typed_dict_type(value: Any) -> bool:
+    try:
+        if is_typeddict(value):
+            return True
+    except Exception:
+        pass
+    annotations = getattr(value, "__annotations__", None)
+    return isinstance(annotations, dict) and (
+        getattr(value, "__required_keys__", None) is not None
+        or getattr(value, "__optional_keys__", None) is not None
+    )
 
 
 # Import server module and attempt to discover tools dynamically
@@ -429,7 +451,7 @@ def _resolve_param_kwargs(
             base_type, origin = _unwrap_optional_type(ptype)
 
             # Check for mapping type on the unwrapped base type
-            is_typed_dict = hasattr(base_type, '__annotations__') and isinstance(getattr(base_type, '__annotations__', {}), dict)
+            is_typed_dict = _is_typed_dict_type(base_type)
             is_mapping_type = (base_type in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
 
             # Default to string parsing unless we can provide a better type.
@@ -726,7 +748,7 @@ def create_command_function(func_info, cmd_name: str = "", cmd_parser: Optional[
                 # Unwrap Optional
                 base_type, origin = _unwrap_optional_type(ptype)
 
-                is_typed_dict = hasattr(base_type, '__annotations__') and isinstance(getattr(base_type, '__annotations__', {}), dict)
+                is_typed_dict = _is_typed_dict_type(base_type)
                 is_mapping = (base_type in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
                 is_list_like = origin in (list, tuple)
             except Exception:
@@ -1039,6 +1061,8 @@ def main():
         description="Dynamic CLI for MetaTrader5 MCP tools (compact text output)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=_build_epilog(functions),
+        suggest_on_error=True,
+        color=_argparse_color_enabled(),
     )
     # Add unified global parameters
     add_global_args_to_parser(parser)
@@ -1062,7 +1086,9 @@ def main():
         cmd_parser = subparsers.add_parser(
             cmd_name, 
             help=((meta.get('description') or func_info['doc'].split('\n')[0] if func_info['doc'] else f"Execute {cmd_name}").replace('%', '%%')),
-            formatter_class=argparse.RawDescriptionHelpFormatter
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            suggest_on_error=True,
+            color=_argparse_color_enabled(),
         )
         
         # Add global parameters to each subparser, excluding any that conflict with function params
@@ -1091,6 +1117,8 @@ def main():
             cmd_name,
             help=((meta.get('description') or func_info['doc'].split('\n')[0] if func_info['doc'] else f"Execute {cmd_name}").replace('%', '%%')),
             formatter_class=argparse.RawDescriptionHelpFormatter,
+            suggest_on_error=True,
+            color=_argparse_color_enabled(),
         )
         # Add global parameters to each subparser, excluding any that conflict
         exclude_globals = ["symbol", "timeframe", "verbose"]  # handled manually

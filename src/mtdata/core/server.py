@@ -17,6 +17,11 @@ from .schema_attach import attach_schemas_to_tools
 from .schema import get_shared_enum_lists
 from ..utils.mt5 import mt5_connection, _auto_connect_wrapper, _ensure_symbol_ready
 
+try:
+    import annotationlib
+except Exception:  # pragma: no cover - Python 3.14+ should provide this
+    annotationlib = None
+
 
 def _apply_fastmcp_env_overrides() -> None:
     """Bridge legacy MCP_* env vars to FastMCP's FASTMCP_* settings."""
@@ -61,6 +66,30 @@ except Exception:
     _ORIG_TOOL_DECORATOR = None
 _TOOL_REGISTRY: Dict[str, Any] = {}
 _TOOL_OBJECT_REGISTRY: Dict[str, Any] = {}
+_ANNOTATION_VALUE_FORMAT = getattr(getattr(annotationlib, "Format", None), "VALUE", None)
+
+
+def _get_runtime_signature(obj: Any) -> inspect.Signature:
+    """Resolve a signature with evaluated annotations when available."""
+    if _ANNOTATION_VALUE_FORMAT is not None:
+        try:
+            return inspect.signature(obj, eval_str=True, annotation_format=_ANNOTATION_VALUE_FORMAT)
+        except Exception:
+            pass
+    return inspect.signature(obj)
+
+
+def _get_runtime_annotations(obj: Any) -> Dict[str, Any]:
+    """Resolve runtime annotations using the 3.14 annotation API when available."""
+    if annotationlib is not None and _ANNOTATION_VALUE_FORMAT is not None:
+        try:
+            resolved = annotationlib.get_annotations(obj, eval_str=True, format=_ANNOTATION_VALUE_FORMAT)
+            if isinstance(resolved, dict):
+                return resolved
+        except Exception:
+            pass
+    raw = getattr(obj, "__annotations__", None)
+    return raw if isinstance(raw, dict) else {}
 
 
 def _unwrap_optional_annotation(annotation: Any) -> tuple[Any, bool]:
@@ -200,7 +229,7 @@ def _coerce_float(value: Any, *, allow_none: bool, name: str) -> Any:
 def _coerce_kwargs_for_callable(func: Any, kwargs: Dict[str, Any]) -> Dict[str, Any]:
     """Coerce common scalar string inputs (from MCP clients) based on annotations."""
     try:
-        sig = inspect.signature(func)
+        sig = _get_runtime_signature(func)
     except Exception:
         return kwargs
     for param_name, param in sig.parameters.items():
@@ -235,11 +264,10 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
 
     def _sanitize_annotations(func):
         """Ensure annotations are classes to satisfy FastMCP's issubclass checks."""
-        import inspect
-
         cleaned = {}
-        ann = getattr(func, "__annotations__", {}) or {}
-        for name, param in inspect.signature(func).parameters.items():
+        ann = _get_runtime_annotations(func)
+        sig = _get_runtime_signature(func)
+        for name, param in sig.parameters.items():
             value = ann.get(name, param.annotation)
             cleaned[name] = value if isinstance(value, type) else object
         if "return" in ann:
@@ -296,13 +324,12 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
                 return str(out) if out is not None else ""
 
         try:
-            import inspect
-
             cleaned = _sanitize_annotations(func)
             _wrapped.__annotations__ = cleaned
             # Override __signature__ so FastMCP sees sanitized annotations
             params = []
-            for name, param in inspect.signature(func).parameters.items():
+            sig = _get_runtime_signature(func)
+            for name, param in sig.parameters.items():
                 params.append(
                     param.replace(annotation=cleaned.get(name))
                 )

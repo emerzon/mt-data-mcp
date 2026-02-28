@@ -4,10 +4,15 @@ Shared JSON schema helpers for CLI/server tool inputs.
 Provides reusable $defs such as TimeframeSpec and helpers to apply them
 to per-tool parameter schemas.
 """
-from typing import Dict, Any, Optional, List, Tuple, Literal, Union
-from typing_extensions import TypedDict
 import inspect
-from typing import get_type_hints, get_origin, get_args
+import types
+from typing import Dict, Any, Optional, List, Tuple, Literal, Union, get_type_hints, get_origin, get_args, is_typeddict
+from typing_extensions import TypedDict
+
+try:
+    import annotationlib
+except Exception:  # pragma: no cover - Python 3.14+ should provide this
+    annotationlib = None
 
 from .constants import TIMEFRAME_MAP
 try:
@@ -542,6 +547,50 @@ _TYPED_DICT_REFS = {
     "VolatilityParams": "#/$defs/VolatilityParams",
 }
 
+_ANNOTATION_VALUE_FORMAT = getattr(getattr(annotationlib, "Format", None), "VALUE", None)
+
+
+def _get_runtime_signature(obj: Any) -> inspect.Signature:
+    """Resolve a signature with evaluated annotations when available."""
+    if _ANNOTATION_VALUE_FORMAT is not None:
+        try:
+            return inspect.signature(obj, eval_str=True, annotation_format=_ANNOTATION_VALUE_FORMAT)
+        except Exception:
+            pass
+    return inspect.signature(obj)
+
+
+def _get_runtime_annotations(obj: Any) -> Dict[str, Any]:
+    """Resolve runtime annotations using the 3.14 annotation API when available."""
+    if annotationlib is not None and _ANNOTATION_VALUE_FORMAT is not None:
+        try:
+            resolved = annotationlib.get_annotations(obj, eval_str=True, format=_ANNOTATION_VALUE_FORMAT)
+            if isinstance(resolved, dict):
+                return resolved
+        except Exception:
+            pass
+    try:
+        resolved = get_type_hints(obj)
+        if isinstance(resolved, dict):
+            return resolved
+    except Exception:
+        pass
+    raw = getattr(obj, "__annotations__", None)
+    return raw if isinstance(raw, dict) else {}
+
+
+def _is_typed_dict_type(type_hint: Any) -> bool:
+    try:
+        if is_typeddict(type_hint):
+            return True
+    except Exception:
+        pass
+    annotations = getattr(type_hint, "__annotations__", None)
+    return isinstance(annotations, dict) and (
+        getattr(type_hint, "__required_keys__", None) is not None
+        or getattr(type_hint, "__optional_keys__", None) is not None
+    )
+
 
 def _type_hint_to_schema(type_hint: Any) -> Dict[str, Any]:
     """Convert a Python type hint to a minimal JSON Schema fragment."""
@@ -562,7 +611,7 @@ def _type_hint_to_schema(type_hint: Any) -> Dict[str, Any]:
         if literal_types == {float}:
             return {"type": "number", "enum": literals}
         return {"type": "string", "enum": [str(lit) for lit in literals]}
-    if origin is Union:
+    if origin in (Union, types.UnionType):
         args = list(get_args(type_hint))
         allow_null = False
         non_null_args = []
@@ -611,8 +660,7 @@ def _type_hint_to_schema(type_hint: Any) -> Dict[str, Any]:
     ref_name = getattr(type_hint, "__name__", "")
     if ref_name in _TYPED_DICT_REFS:
         return {"$ref": _TYPED_DICT_REFS[ref_name]}
-    annotations = getattr(type_hint, "__annotations__", None)
-    if annotations and ref_name:
+    if _is_typed_dict_type(type_hint) and ref_name:
         ref = _TYPED_DICT_REFS.get(ref_name)
         if ref:
             return {"$ref": ref}
@@ -686,21 +734,21 @@ def get_function_info(func: Any) -> Dict[str, Any]:
         target = inspect.unwrap(func)
     except Exception:
         target = func
-    sig = inspect.signature(target)
-    try:
-        type_hints = get_type_hints(target)
-    except Exception:
-        type_hints = {}
+    sig = _get_runtime_signature(target)
+    type_hints = _get_runtime_annotations(target)
 
     params = []
     for name, param in sig.parameters.items():
         if name in ("self", "cls"):
             continue
+        annotation = type_hints.get(name, param.annotation)
+        if annotation is inspect._empty:
+            annotation = None
         params.append({
             "name": name,
             "required": param.default == inspect._empty,  # type: ignore[attr-defined]
             "default": None if param.default == inspect._empty else param.default,  # type: ignore[attr-defined]
-            "type": type_hints.get(name)
+            "type": annotation,
         })
 
     return {
