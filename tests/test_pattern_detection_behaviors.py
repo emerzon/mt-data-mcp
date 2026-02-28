@@ -105,6 +105,7 @@ def test_detect_candlestick_patterns_does_not_flatten_unexpected_errors(monkeypa
     monkeypatch.setattr(candlestick_mod, "_symbol_ready_guard", _always_ready_guard)
     monkeypatch.setattr(candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object()])
     monkeypatch.setattr(candlestick_mod, "_rates_to_df", lambda _rates: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(candlestick_mod, "TIMEFRAME_MAP", {"H1": 1})
 
     with pytest.raises(RuntimeError, match="boom"):
         candlestick_mod.detect_candlestick_patterns(
@@ -117,6 +118,46 @@ def test_detect_candlestick_patterns_does_not_flatten_unexpected_errors(monkeypa
             whitelist=None,
             top_k=1,
         )
+
+
+def test_detect_classic_uses_singular_pennant_name(monkeypatch):
+    n = 110
+    close = np.linspace(100.0, 130.0, n)
+    window = 30
+    seg = close[-window:].copy()
+    seg_peaks = np.array([6, 13, 20, 27], dtype=int)
+    seg_troughs = np.array([4, 11, 18, 25], dtype=int)
+
+    top = np.linspace(148.0, 150.0, window)
+    bot = np.linspace(144.0, 149.0, window)
+    seg[:] = (top + bot) / 2.0
+    seg[seg_peaks] = top[seg_peaks]
+    seg[seg_troughs] = bot[seg_troughs]
+    close[-window:] = seg
+
+    df = pd.DataFrame(
+        {"time": np.arange(n, dtype=float), "close": close, "high": close + 0.2, "low": close - 0.2}
+    )
+
+    def _fake_pivots(c, cfg, *args):
+        if len(c) == window:
+            return seg_peaks, seg_troughs
+        return np.array([], dtype=int), np.array([], dtype=int)
+
+    monkeypatch.setattr(classic_mod, "_detect_pivots_close", _fake_pivots)
+
+    def _fake_fit_lines(ih, il, c, n, cfg):
+        if n == window:
+            return 0.07, 148.0, 0.9, 0.17, 144.0, 0.9, top.copy(), bot.copy()
+        x = np.arange(n, dtype=float)
+        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, x.copy(), x.copy()
+
+    monkeypatch.setattr(classic_mod, "_fit_lines_and_arrays", _fake_fit_lines)
+
+    out = detect_classic_patterns(df, ClassicDetectorConfig(min_pole_return_pct=1.0, max_consolidation_bars=window))
+    names = {p.name for p in out}
+    assert "Bull Pennant" in names
+    assert "Bull Pennants" not in names
 
 
 def test_apply_config_to_obj_coerces_bool_strings():

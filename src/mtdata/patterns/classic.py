@@ -921,7 +921,7 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         parallel = abs(sh - sl) <= max(1e-4, 0.2 * max(abs(sh), abs(sl), cfg.max_flat_slope))
         name = None
         if converging:
-            name = "Pennants"
+            name = "Pennant"
         elif parallel:
             name = "Flag"
         if name:

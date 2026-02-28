@@ -12,7 +12,7 @@ from ..utils.mt5 import _mt5_copy_rates_from
 from ..utils.utils import _format_time_minimal, to_float_np as __to_float_np
 from ..patterns.candlestick import detect_candlestick_patterns as _detect_candlestick_patterns
 from ..patterns.classic import detect_classic_patterns as _detect_classic_patterns, ClassicDetectorConfig as _ClassicCfg
-from ..patterns.eliott import detect_elliott_waves as _detect_elliott_waves, ElliottWaveConfig as _ElliottCfg
+from ..patterns.elliott import detect_elliott_waves as _detect_elliott_waves, ElliottWaveConfig as _ElliottCfg
 from .server import mcp, _auto_connect_wrapper
 from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
 import MetaTrader5 as mt5

@@ -4,19 +4,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import warnings
 
 import pandas as pd
-try:
-    import pandas_ta as ta  # type: ignore
-except ModuleNotFoundError:
-    try:
-        import pandas_ta_classic as ta  # type: ignore  # noqa: F401
-    except ModuleNotFoundError as e:
-        raise ModuleNotFoundError(
-            "pandas_ta not found. Install 'pandas-ta-classic' (or 'pandas-ta')."
-        ) from e
-import MetaTrader5 as mt5
-
-from ..core.constants import TIMEFRAME_MAP
-from ..utils.mt5 import _mt5_copy_rates_from, _rates_to_df, _symbol_ready_guard
 from ..utils.utils import (
     _table_from_rows,
     _format_time_minimal_local,
@@ -27,6 +14,12 @@ from ..utils.utils import (
 )
 
 logger = logging.getLogger(__name__)
+ta: Any = None
+mt5: Any = None
+TIMEFRAME_MAP: Optional[Dict[str, Any]] = None
+_mt5_copy_rates_from: Any = None
+_rates_to_df: Any = None
+_symbol_ready_guard: Any = None
 
 
 def _normalize_candlestick_name(pattern_name: str) -> str:
@@ -44,6 +37,47 @@ def _parse_min_strength(min_strength: float) -> float:
     if not (0.0 <= thr <= 1.0):
         raise ValueError("min_strength must be between 0.0 and 1.0.")
     return thr
+
+
+def _ensure_candlestick_runtime() -> None:
+    global ta, mt5, TIMEFRAME_MAP, _mt5_copy_rates_from, _rates_to_df, _symbol_ready_guard
+
+    if ta is None:
+        try:
+            import pandas_ta as ta_mod  # type: ignore
+        except ModuleNotFoundError:
+            try:
+                import pandas_ta_classic as ta_mod  # type: ignore
+            except ModuleNotFoundError as e:
+                raise ModuleNotFoundError(
+                    "pandas_ta not found. Install 'pandas-ta-classic' (or 'pandas-ta')."
+                ) from e
+        ta = ta_mod
+
+    if mt5 is None:
+        try:
+            import MetaTrader5 as mt5_mod  # type: ignore
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError(
+                "MetaTrader5 not found. Install 'MetaTrader5' to use candlestick detection."
+            ) from e
+        mt5 = mt5_mod
+
+    if TIMEFRAME_MAP is None:
+        from ..core.constants import TIMEFRAME_MAP as timeframe_map
+
+        TIMEFRAME_MAP = timeframe_map
+
+    if _mt5_copy_rates_from is None or _rates_to_df is None or _symbol_ready_guard is None:
+        from ..utils.mt5 import (
+            _mt5_copy_rates_from as copy_rates_from,
+            _rates_to_df as rates_to_df,
+            _symbol_ready_guard as symbol_ready_guard,
+        )
+
+        _mt5_copy_rates_from = copy_rates_from
+        _rates_to_df = rates_to_df
+        _symbol_ready_guard = symbol_ready_guard
 
 
 def _is_candlestick_allowed(
@@ -72,6 +106,10 @@ def detect_candlestick_patterns(
     whitelist: Optional[str],
     top_k: int,
 ) -> Dict[str, Any]:
+    try:
+        _ensure_candlestick_runtime()
+    except ModuleNotFoundError as exc:
+        return {"error": str(exc)}
     if timeframe not in TIMEFRAME_MAP:
         return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
     try:

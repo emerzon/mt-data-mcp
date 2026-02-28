@@ -1,12 +1,13 @@
 import numpy as np
 import pandas as pd
 
-from src.mtdata.patterns.eliott import (
+from src.mtdata.patterns.elliott import (
     ElliottWaveConfig,
     _impulse_rules_and_score,
     _zigzag_pivots_indices,
     detect_elliott_waves,
 )
+from src.mtdata.patterns.eliott import detect_elliott_waves as detect_elliott_waves_compat
 
 
 def test_impulse_rule_rejects_wave3_shortest():
@@ -33,6 +34,10 @@ def test_detect_elliott_waves_returns_candidate_for_fallback():
     assert results[0].wave_type == "Candidate"
     assert bool(results[0].details.get("fallback_candidate")) is True
     assert len(results[0].wave_sequence) < 6
+
+
+def test_legacy_eliott_module_reexports_new_api():
+    assert detect_elliott_waves_compat is detect_elliott_waves
 
 
 def test_zigzag_pretrend_uses_running_extrema_before_trend_is_set():

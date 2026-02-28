@@ -1,5 +1,5 @@
 from .classic import detect_classic_patterns, ClassicPatternResult, ClassicDetectorConfig
-from .eliott import detect_elliott_waves, ElliottWaveResult, ElliottWaveConfig
+from .elliott import detect_elliott_waves, ElliottWaveResult, ElliottWaveConfig
 
 __all__ = [
     "detect_classic_patterns",
@@ -9,4 +9,3 @@ __all__ = [
     "ElliottWaveResult",
     "ElliottWaveConfig",
 ]
-
