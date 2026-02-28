@@ -1,11 +1,14 @@
+from contextlib import contextmanager
 import numpy as np
 import pandas as pd
+import pytest
 from types import SimpleNamespace
 
 from src.mtdata.core import patterns as core_patterns
 from src.mtdata.core.patterns import _apply_config_to_obj, _build_pattern_response
 from src.mtdata.patterns.candlestick import _is_candlestick_allowed, _normalize_candlestick_name
 from src.mtdata.patterns.classic import ClassicDetectorConfig, _fit_lines_and_arrays, _count_recent_touches, detect_classic_patterns
+import src.mtdata.patterns.candlestick as candlestick_mod
 import src.mtdata.patterns.classic as classic_mod
 
 
@@ -76,6 +79,44 @@ def test_candlestick_name_normalization_canonicalizes_common_variants():
         robust_set=set(),
         whitelist_set={"closingmarubozu"},
     )
+
+
+@contextmanager
+def _always_ready_guard(*_args, **_kwargs):
+    yield None, None
+
+
+def test_detect_candlestick_patterns_rejects_out_of_range_min_strength():
+    res = candlestick_mod.detect_candlestick_patterns(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=10,
+        min_strength=1.5,
+        min_gap=0,
+        robust_only=False,
+        whitelist=None,
+        top_k=1,
+    )
+
+    assert res == {"error": "min_strength must be between 0.0 and 1.0."}
+
+
+def test_detect_candlestick_patterns_does_not_flatten_unexpected_errors(monkeypatch):
+    monkeypatch.setattr(candlestick_mod, "_symbol_ready_guard", _always_ready_guard)
+    monkeypatch.setattr(candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object()])
+    monkeypatch.setattr(candlestick_mod, "_rates_to_df", lambda _rates: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    with pytest.raises(RuntimeError, match="boom"):
+        candlestick_mod.detect_candlestick_patterns(
+            symbol="EURUSD",
+            timeframe="H1",
+            limit=10,
+            min_strength=0.95,
+            min_gap=0,
+            robust_only=False,
+            whitelist=None,
+            top_k=1,
+        )
 
 
 def test_apply_config_to_obj_coerces_bool_strings():

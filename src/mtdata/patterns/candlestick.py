@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 from typing import Any, Dict, List, Optional, Tuple
 import warnings
 
@@ -25,12 +26,24 @@ from ..utils.utils import (
     _style_time_format,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def _normalize_candlestick_name(pattern_name: str) -> str:
     nm = str(pattern_name).strip()
     if nm.lower().startswith('cdl_'):
         nm = nm[len('cdl_'):]
     return nm.replace('_', '').replace(' ', '').lower()
+
+
+def _parse_min_strength(min_strength: float) -> float:
+    try:
+        thr = float(min_strength)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("min_strength must be a float between 0.0 and 1.0.") from exc
+    if not (0.0 <= thr <= 1.0):
+        raise ValueError("min_strength must be between 0.0 and 1.0.")
+    return thr
 
 
 def _is_candlestick_allowed(
@@ -59,160 +72,155 @@ def detect_candlestick_patterns(
     whitelist: Optional[str],
     top_k: int,
 ) -> Dict[str, Any]:
+    if timeframe not in TIMEFRAME_MAP:
+        return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
     try:
-        if timeframe not in TIMEFRAME_MAP:
-            return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
-        mt5_timeframe = TIMEFRAME_MAP[timeframe]
+        thr = _parse_min_strength(min_strength)
+    except ValueError as exc:
+        return {"error": str(exc)}
 
-        with _symbol_ready_guard(symbol) as (err, _info):
-            if err:
-                return {"error": err}
-            utc_now = datetime.now(timezone.utc)
-            rates = _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, limit)
+    mt5_timeframe = TIMEFRAME_MAP[timeframe]
 
-        if rates is None:
-            return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}
-        if len(rates) == 0:
-            return {"error": "No candle data available"}
+    with _symbol_ready_guard(symbol) as (err, _info):
+        if err:
+            return {"error": err}
+        utc_now = datetime.now(timezone.utc)
+        rates = _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, limit)
 
-        df = _rates_to_df(rates)
-        epochs = [float(t) for t in df['time'].tolist()] if 'time' in df.columns else []
-        _use_ctz = _use_client_tz()
-        if _use_ctz:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                df['time'] = df['time'].apply(_format_time_minimal_local)
-        else:
-            time_fmt = _time_format_from_epochs(epochs) if epochs else "%Y-%m-%d %H:%M"
-            time_fmt = _maybe_strip_year(time_fmt, epochs)
-            time_fmt = _style_time_format(time_fmt)
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                df['time'] = df['time'].apply(
-                    lambda t: datetime.fromtimestamp(float(t), tz=timezone.utc).strftime(time_fmt)
-                )
+    if rates is None:
+        return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}
+    if len(rates) == 0:
+        return {"error": "No candle data available"}
 
-        for col in ['open', 'high', 'low', 'close']:
-            if col not in df.columns:
-                return {"error": f"Missing '{col}' data from rates"}
+    df = _rates_to_df(rates)
+    epochs = [float(t) for t in df['time'].tolist()] if 'time' in df.columns else []
+    _use_ctz = _use_client_tz()
+    if _use_ctz:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            df['time'] = df['time'].apply(_format_time_minimal_local)
+    else:
+        time_fmt = _time_format_from_epochs(epochs) if epochs else "%Y-%m-%d %H:%M"
+        time_fmt = _maybe_strip_year(time_fmt, epochs)
+        time_fmt = _style_time_format(time_fmt)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            df['time'] = df['time'].apply(
+                lambda t: datetime.fromtimestamp(float(t), tz=timezone.utc).strftime(time_fmt)
+            )
 
+    for col in ['open', 'high', 'low', 'close']:
+        if col not in df.columns:
+            return {"error": f"Missing '{col}' data from rates"}
+
+    try:
+        temp = df.copy()
+        temp['__epoch'] = [float(e) for e in epochs]
+        temp.index = pd.to_datetime(temp['__epoch'], unit='s')
+    except Exception:
+        temp = df.copy()
+
+    pattern_methods: List[str] = []
+    try:
+        for attr in dir(temp.ta):
+            if not attr.startswith('cdl_'):
+                continue
+            func = getattr(temp.ta, attr, None)
+            if callable(func):
+                pattern_methods.append(attr)
+    except Exception:
+        logger.warning("Failed to enumerate candlestick pattern detectors from pandas_ta.", exc_info=True)
+
+    if not pattern_methods:
+        return {"error": "No candlestick pattern detectors (cdl_*) found in pandas_ta."}
+
+    before_cols = set(temp.columns)
+    for name in sorted(pattern_methods):
         try:
-            temp = df.copy()
-            temp['__epoch'] = [float(e) for e in epochs]
-            temp.index = pd.to_datetime(temp['__epoch'], unit='s')
+            method = getattr(temp.ta, name)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                method(append=True)
         except Exception:
-            temp = df.copy()
+            logger.warning("Candlestick pattern detector '%s' failed.", name, exc_info=True)
+            continue
 
-        pattern_methods: List[str] = []
+    pattern_cols = [c for c in temp.columns if c not in before_cols and c.lower().startswith('cdl_')]
+    if not pattern_cols:
+        return {"error": "No candle patterns produced any outputs."}
+
+    rows: List[List[Any]] = []
+    _robust_whitelist = {
+        'engulfing', 'harami', '3inside', '3outside', 'eveningstar', 'morningstar',
+        'darkcloudcover', 'piercing', 'inside', 'outside', 'hikkake'
+    }
+    parsed_whitelist: Optional[set[str]] = None
+    if whitelist and isinstance(whitelist, str):
         try:
-            for attr in dir(temp.ta):
-                if not attr.startswith('cdl_'):
-                    continue
-                func = getattr(temp.ta, attr, None)
-                if callable(func):
-                    pattern_methods.append(attr)
+            parts = [p.strip() for p in whitelist.split(',') if p.strip()]
+            if parts:
+                parsed_whitelist = {_normalize_candlestick_name(p) for p in parts}
         except Exception:
             pass
 
-        if not pattern_methods:
-            return {"error": "No candlestick pattern detectors (cdl_*) found in pandas_ta."}
+    try:
+        gap = max(0, int(min_gap))
+    except Exception:
+        gap = 3
+    last_pick_idx = -10**9
+    _deprioritize = {
+        'shortline', 'longline', 'spinningtop', 'highwave',
+        'marubozu', 'closingmarubozu', 'doji', 'gravestonedoji', 'longleggeddoji', 'rickshawman'
+    }
 
-        before_cols = set(temp.columns)
-        for name in sorted(pattern_methods):
+    df_tail = df
+    temp_tail = temp
+
+    for i in range(len(temp_tail)):
+        hits: List[Tuple[str, float]] = []
+        for col in pattern_cols:
             try:
-                method = getattr(temp.ta, name)
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    method(append=True)
+                val = float(temp_tail.iloc[i][col])
             except Exception:
                 continue
-
-        pattern_cols = [c for c in temp.columns if c not in before_cols and c.lower().startswith('cdl_')]
-        if not pattern_cols:
-            return {"error": "No candle patterns produced any outputs."}
-
-        rows: List[List[Any]] = []
+            if abs(val) >= (thr * 100.0):
+                name = col
+                if name.lower().startswith('cdl_'):
+                    name = name[len('cdl_'):]
+                if _is_candlestick_allowed(
+                    name,
+                    robust_only=bool(robust_only),
+                    robust_set=_robust_whitelist,
+                    whitelist_set=parsed_whitelist,
+                ):
+                    hits.append((name, val))
+        if not hits:
+            continue
+        if i - last_pick_idx < gap:
+            continue
+        non_dep = [(n, v) for (n, v) in hits if _normalize_candlestick_name(n) not in _deprioritize]
+        pool = non_dep if non_dep else hits
         try:
-            thr = float(min_strength)
+            k = max(1, int(top_k))
         except Exception:
-            thr = 0.95
-        if thr > 1.0:
-            thr = thr / 100.0
-        thr = max(0.0, min(1.0, thr))
+            k = 1
+        picks = sorted(pool, key=lambda x: abs(x[1]), reverse=True)[:k]
+        t_val = str(df_tail.iloc[i].get('time')) if 'time' in df_tail.columns else ''
+        for name, value in picks:
+            label_core = name.replace('_', ' ').strip().upper()
+            dir_title = 'Bullish' if value > 0 else 'Bearish'
+            rows.append([t_val, f"{dir_title} {label_core}" if label_core else dir_title])
+        last_pick_idx = i
 
-        _robust_whitelist = {
-            'engulfing', 'harami', '3inside', '3outside', 'eveningstar', 'morningstar',
-            'darkcloudcover', 'piercing', 'inside', 'outside', 'hikkake'
-        }
-        parsed_whitelist: Optional[set[str]] = None
-        if whitelist and isinstance(whitelist, str):
-            try:
-                parts = [p.strip() for p in whitelist.split(',') if p.strip()]
-                if parts:
-                    parsed_whitelist = {_normalize_candlestick_name(p) for p in parts}
-            except Exception:
-                pass
-
-        try:
-            gap = max(0, int(min_gap))
-        except Exception:
-            gap = 3
-        last_pick_idx = -10**9
-        _deprioritize = {
-            'shortline', 'longline', 'spinningtop', 'highwave',
-            'marubozu', 'closingmarubozu', 'doji', 'gravestonedoji', 'longleggeddoji', 'rickshawman'
-        }
-
-        df_tail = df
-        temp_tail = temp
-
-        for i in range(len(temp_tail)):
-            hits: List[Tuple[str, float]] = []
-            for col in pattern_cols:
-                try:
-                    val = float(temp_tail.iloc[i][col])
-                except Exception:
-                    continue
-                if abs(val) >= (thr * 100.0):
-                    name = col
-                    if name.lower().startswith('cdl_'):
-                        name = name[len('cdl_'):]
-                    if _is_candlestick_allowed(
-                        name,
-                        robust_only=bool(robust_only),
-                        robust_set=_robust_whitelist,
-                        whitelist_set=parsed_whitelist,
-                    ):
-                        hits.append((name, val))
-            if not hits:
-                continue
-            if i - last_pick_idx < gap:
-                continue
-            non_dep = [(n, v) for (n, v) in hits if _normalize_candlestick_name(n) not in _deprioritize]
-            pool = non_dep if non_dep else hits
-            try:
-                k = max(1, int(top_k))
-            except Exception:
-                k = 1
-            picks = sorted(pool, key=lambda x: abs(x[1]), reverse=True)[:k]
-            t_val = str(df_tail.iloc[i].get('time')) if 'time' in df_tail.columns else ''
-            for name, value in picks:
-                label_core = name.replace('_', ' ').strip().upper()
-                dir_title = 'Bullish' if value > 0 else 'Bearish'
-                rows.append([t_val, f"{dir_title} {label_core}" if label_core else dir_title])
-            last_pick_idx = i
-
-        headers = ["time", "pattern"]
-        payload = _table_from_rows(headers, rows)
-        payload.update({
-            "success": True,
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "candles": int(limit),
-            "mode": "candlestick",
-        })
-        if not _use_ctz:
-            payload["timezone"] = "UTC"
-        return payload
-    except Exception as exc:
-        return {"error": f"Error detecting candlestick patterns: {exc}"}
+    headers = ["time", "pattern"]
+    payload = _table_from_rows(headers, rows)
+    payload.update({
+        "success": True,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "candles": int(limit),
+        "mode": "candlestick",
+    })
+    if not _use_ctz:
+        payload["timezone"] = "UTC"
+    return payload
