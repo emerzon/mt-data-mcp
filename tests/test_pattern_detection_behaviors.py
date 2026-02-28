@@ -6,7 +6,12 @@ from types import SimpleNamespace
 
 from src.mtdata.core import patterns as core_patterns
 from src.mtdata.core.patterns import _apply_config_to_obj, _build_pattern_response
-from src.mtdata.patterns.candlestick import _is_candlestick_allowed, _normalize_candlestick_name
+from src.mtdata.patterns.candlestick import (
+    _extract_candlestick_rows,
+    _get_candlestick_pattern_methods,
+    _is_candlestick_allowed,
+    _normalize_candlestick_name,
+)
 from src.mtdata.patterns.classic import ClassicDetectorConfig, _fit_lines_and_arrays, _count_recent_touches, detect_classic_patterns
 import src.mtdata.patterns.candlestick as candlestick_mod
 import src.mtdata.patterns.classic as classic_mod
@@ -79,6 +84,57 @@ def test_candlestick_name_normalization_canonicalizes_common_variants():
         robust_set=set(),
         whitelist_set={"closingmarubozu"},
     )
+
+
+def test_get_candlestick_pattern_methods_caches_discovery(monkeypatch):
+    class _FakeTA:
+        def __init__(self):
+            self.dir_calls = 0
+
+        def __dir__(self):
+            self.dir_calls += 1
+            return ["cdl_alpha", "not_a_pattern"]
+
+        def __getattr__(self, name):
+            if name == "cdl_alpha":
+                return lambda *args, **kwargs: None
+            raise AttributeError(name)
+
+    fake_temp = SimpleNamespace(ta=_FakeTA())
+    monkeypatch.setattr(candlestick_mod, "_CANDLESTICK_PATTERN_METHOD_CACHE", None)
+
+    out_first = _get_candlestick_pattern_methods(fake_temp)
+    out_second = _get_candlestick_pattern_methods(fake_temp)
+
+    assert out_first == ["cdl_alpha"]
+    assert out_second == ["cdl_alpha"]
+    assert fake_temp.ta.dir_calls == 1
+
+
+def test_extract_candlestick_rows_prefers_non_deprioritized_hits():
+    df_tail = pd.DataFrame({"time": ["T0", "T1"]})
+    temp_tail = pd.DataFrame(
+        {
+            "cdl_doji": [0.0, 100.0],
+            "cdl_engulfing": [0.0, 100.0],
+            "cdl_longline": [0.0, 80.0],
+        }
+    )
+
+    rows = _extract_candlestick_rows(
+        df_tail,
+        temp_tail,
+        ["cdl_doji", "cdl_engulfing", "cdl_longline"],
+        threshold=0.95,
+        robust_only=False,
+        robust_set={"engulfing"},
+        whitelist_set=None,
+        min_gap=0,
+        top_k=1,
+        deprioritize={"doji", "longline"},
+    )
+
+    assert rows == [["T1", "Bullish ENGULFING"]]
 
 
 @contextmanager
@@ -158,6 +214,48 @@ def test_detect_classic_uses_singular_pennant_name(monkeypatch):
     names = {p.name for p in out}
     assert "Bull Pennant" in names
     assert "Bull Pennants" not in names
+
+
+def test_detect_classic_channel_parallel_ratio_uses_config(monkeypatch):
+    n = 150
+    close = np.linspace(100.0, 120.0, n)
+    peaks = np.array([20, 45, 70, 95, 120, 145], dtype=int)
+    troughs = np.array([10, 35, 60, 85, 110, 135], dtype=int)
+    upper = 1.18 * np.arange(n, dtype=float) + 150.0
+    lower = 1.00 * np.arange(n, dtype=float) + 120.0
+    close[peaks] = upper[peaks]
+    close[troughs] = lower[troughs]
+    df = pd.DataFrame({"time": np.arange(n, dtype=float), "close": close, "high": close + 0.2, "low": close - 0.2})
+
+    monkeypatch.setattr(classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (peaks, troughs))
+    monkeypatch.setattr(classic_mod, "_is_converging", lambda *args, **kwargs: False)
+
+    def _fake_fit_lines(ih, il, c, n, cfg):
+        return 1.18, 150.0, 0.95, 1.00, 120.0, 0.95, upper, lower
+
+    monkeypatch.setattr(classic_mod, "_fit_lines_and_arrays", _fake_fit_lines)
+
+    out_default = detect_classic_patterns(df, ClassicDetectorConfig(min_channel_touches=2, max_consolidation_bars=5))
+    out_relaxed = detect_classic_patterns(
+        df,
+        ClassicDetectorConfig(min_channel_touches=2, max_consolidation_bars=5, channel_parallel_slope_ratio=0.2),
+    )
+
+    assert not any("Channel" in p.name for p in out_default)
+    assert any("Channel" in p.name for p in out_relaxed)
+
+
+def test_select_classic_engines_uses_registry(monkeypatch):
+    monkeypatch.setitem(
+        core_patterns._CLASSIC_ENGINE_REGISTRY,
+        "unit_test",
+        lambda symbol, df, cfg, config: ([{"name": "Unit Test"}], None),
+    )
+
+    engines, invalid = core_patterns._select_classic_engines("unit_test", ensemble=False)
+
+    assert engines == ["unit_test"]
+    assert invalid == []
 
 
 def test_apply_config_to_obj_coerces_bool_strings():

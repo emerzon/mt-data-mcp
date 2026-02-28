@@ -36,6 +36,9 @@ class ClassicDetectorConfig:
     max_consolidation_bars: int = 60 # for flags/pennants after pole
     min_pole_return_pct: float = 2.0 # minimum pole size (percent) before a flag/pennant
     breakout_lookahead: int = 8      # bars to consider breakout confirmation
+    convergence_fallback_scale: float = 1.2  # fallback widening factor when no past window exists
+    channel_parallel_slope_ratio: float = 0.15  # relative slope spread tolerated for channels
+    pennant_parallel_slope_ratio: float = 0.2  # relative slope spread tolerated for flags/pennants
     # Confidence blending
     touch_weight: float = 0.35
     r2_weight: float = 0.35
@@ -355,14 +358,20 @@ def _count_recent_touches(
     return int(np.sum(np.abs(recent_s - recent_c) <= tol_abs))
 
 
-def _is_converging(upper: np.ndarray, lower: np.ndarray, k: int, n: int) -> bool:
+def _is_converging(
+    upper: np.ndarray,
+    lower: np.ndarray,
+    k: int,
+    n: int,
+    cfg: ClassicDetectorConfig,
+) -> bool:
     """Heuristic to detect converging lines over recent window vs past window."""
     span = upper - lower
     last = max(5, int(k))
     recent = float(np.mean(span[-last:])) if span.size >= last else float(np.mean(span))
     past_win = max(20, 2 * int(k))
     prev_win = span[-past_win:-last] if n > past_win else span[:max(1, span.size // 2)]
-    past = float(np.mean(prev_win)) if prev_win.size > 0 else recent * 1.2
+    past = float(np.mean(prev_win)) if prev_win.size > 0 else recent * float(cfg.convergence_fallback_scale)
     return bool(recent < past)
 
 
@@ -561,9 +570,12 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         sh, bh, r2h, sl, bl, r2l, upper, lower = _fit_lines_and_arrays(ih, il, c, n, cfg)
         # Slopes near equal for channels; width relatively stable
         slope_diff = abs(sh - sl)
-        approx_parallel = slope_diff <= max(1e-4, 0.15 * max(abs(sh), abs(sl), cfg.max_flat_slope))
+        approx_parallel = slope_diff <= max(
+            1e-4,
+            float(cfg.channel_parallel_slope_ratio) * max(abs(sh), abs(sl), cfg.max_flat_slope),
+        )
         # Avoid double-reporting mildly converging structures as both channels and triangles.
-        converging = _is_converging(upper, lower, k, n)
+        converging = _is_converging(upper, lower, k, n, cfg)
         width = upper - lower
         width_ok = float(np.std(width[-k:]) / (np.mean(width[-k:]) + 1e-9))
         geom_ok = 1.0 - min(1.0, max(0.0, width_ok))
@@ -651,7 +663,7 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         ih = peaks[-k:]; il = troughs[-k:]
         sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(ih, il, c, n, cfg)
         # Lines must converge: distance decreasing toward recent bars
-        converging = _is_converging(top, bot, k, n)
+        converging = _is_converging(top, bot, k, n, cfg)
         tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
         touches = _count_touches(top, bot, ih, il, c, tol_abs)
         if converging and touches >= cfg.min_channel_touches - 1:
@@ -695,7 +707,7 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
             return out
         ih = peaks[-k:]; il = troughs[-k:]
         sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(ih, il, c, n, cfg)
-        converging = _is_converging(top, bot, k, n)
+        converging = _is_converging(top, bot, k, n, cfg)
         same_sign = (sh > 0 and sl > 0) or (sh < 0 and sl < 0)
         tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
         touches = _count_touches(top, bot, ih, il, c, tol_abs)
@@ -918,7 +930,10 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         dist_recent = float(np.mean((top - bot)[-max(5, seg.size//4):]))
         dist_past = float(np.mean((top - bot)[:max(5, seg.size//4)]))
         converging = dist_recent < dist_past
-        parallel = abs(sh - sl) <= max(1e-4, 0.2 * max(abs(sh), abs(sl), cfg.max_flat_slope))
+        parallel = abs(sh - sl) <= max(
+            1e-4,
+            float(cfg.pennant_parallel_slope_ratio) * max(abs(sh), abs(sl), cfg.max_flat_slope),
+        )
         name = None
         if converging:
             name = "Pennant"

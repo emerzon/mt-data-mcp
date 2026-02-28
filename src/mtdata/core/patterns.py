@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, List, Tuple, Literal
+from typing import Any, Callable, Dict, Optional, List, Tuple, Literal
 import importlib
 import copy
 import pandas as pd
@@ -18,6 +18,11 @@ from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_den
 import MetaTrader5 as mt5
 
 _CLASSIC_ENGINE_ORDER = ("native", "stock_pattern", "precise_patterns")
+ClassicEngineRunner = Callable[
+    [str, pd.DataFrame, _ClassicCfg, Optional[Dict[str, Any]]],
+    Tuple[List[Dict[str, Any]], Optional[str]],
+]
+_CLASSIC_ENGINE_REGISTRY: Dict[str, ClassicEngineRunner] = {}
 _STOCK_PATTERN_CODE_TO_NAME = {
     "TRNG": "Triangle",
     "DTOP": "Double Top",
@@ -249,6 +254,22 @@ def _normalize_engine_name(value: Any) -> str:
     return str(value or "").strip().lower().replace("-", "_")
 
 
+def _register_classic_engine(name: str) -> Callable[[ClassicEngineRunner], ClassicEngineRunner]:
+    norm_name = _normalize_engine_name(name)
+
+    def _decorator(func: ClassicEngineRunner) -> ClassicEngineRunner:
+        _CLASSIC_ENGINE_REGISTRY[norm_name] = func
+        return func
+
+    return _decorator
+
+
+def _available_classic_engines() -> Tuple[str, ...]:
+    ordered = [name for name in _CLASSIC_ENGINE_ORDER if name in _CLASSIC_ENGINE_REGISTRY]
+    ordered.extend(name for name in _CLASSIC_ENGINE_REGISTRY.keys() if name not in ordered)
+    return tuple(ordered)
+
+
 def _parse_engine_list(value: Any) -> List[str]:
     if value is None:
         return []
@@ -261,11 +282,12 @@ def _parse_engine_list(value: Any) -> List[str]:
 
 
 def _select_classic_engines(engine: str, ensemble: bool) -> Tuple[List[str], List[str]]:
+    available = _available_classic_engines()
     requested = _parse_engine_list(engine)
     if not requested:
         requested = ["native"]
     if ensemble and requested == ["native"]:
-        requested = list(_CLASSIC_ENGINE_ORDER)
+        requested = list(available)
     if ensemble and "native" not in requested:
         requested = ["native"] + requested
     unique: List[str] = []
@@ -273,7 +295,7 @@ def _select_classic_engines(engine: str, ensemble: bool) -> Tuple[List[str], Lis
     for e in requested:
         if e in unique:
             continue
-        if e in _CLASSIC_ENGINE_ORDER:
+        if e in available:
             unique.append(e)
         else:
             invalid.append(e)
@@ -441,6 +463,7 @@ def _parse_native_scale_factors(config: Optional[Dict[str, Any]]) -> List[float]
     return out
 
 
+@_register_classic_engine("native")
 def _run_classic_engine_native(
     symbol: str,
     df: pd.DataFrame,
@@ -510,6 +533,7 @@ def _run_classic_engine_native(
     return merged, None
 
 
+@_register_classic_engine("stock_pattern")
 def _run_classic_engine_stock_pattern(
     symbol: str,
     df: pd.DataFrame,
@@ -620,6 +644,7 @@ def _run_classic_engine_stock_pattern(
     return out_list, None
 
 
+@_register_classic_engine("precise_patterns")
 def _run_classic_engine_precise_patterns(
     symbol: str,
     df: pd.DataFrame,
@@ -654,13 +679,10 @@ def _run_classic_engine(
     cfg: _ClassicCfg,
     config: Optional[Dict[str, Any]],
 ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
-    if engine == "native":
-        return _run_classic_engine_native(symbol, df, cfg, config)
-    if engine == "stock_pattern":
-        return _run_classic_engine_stock_pattern(symbol, df, cfg, config)
-    if engine == "precise_patterns":
-        return _run_classic_engine_precise_patterns(symbol, df, cfg, config)
-    return [], f"Unsupported classic engine: {engine}"
+    runner = _CLASSIC_ENGINE_REGISTRY.get(_normalize_engine_name(engine))
+    if runner is None:
+        return [], f"Unsupported classic engine: {engine}"
+    return runner(symbol, df, cfg, config)
 
 
 def _interval_overlap_ratio(a_start: int, a_end: int, b_start: int, b_end: int) -> float:
@@ -699,6 +721,7 @@ def _merge_classic_ensemble(
     overlap_threshold: float = 0.5,
 ) -> List[Dict[str, Any]]:
     groups: List[Dict[str, Any]] = []
+    groups_by_name: Dict[str, List[Dict[str, Any]]] = {}
     for engine, pats in engine_patterns.items():
         for p in pats:
             try:
@@ -708,9 +731,8 @@ def _merge_classic_ensemble(
             except Exception:
                 continue
             target: Optional[Dict[str, Any]] = None
-            for g in groups:
-                if g["name_norm"] != nm:
-                    continue
+            same_name_groups = groups_by_name.setdefault(nm, [])
+            for g in same_name_groups:
                 if _interval_overlap_ratio(s_idx, e_idx, int(g["start_index"]), int(g["end_index"])) >= float(overlap_threshold):
                     target = g
                     break
@@ -722,6 +744,7 @@ def _merge_classic_ensemble(
                     "items": [],
                 }
                 groups.append(target)
+                same_name_groups.append(target)
             target["start_index"] = min(int(target["start_index"]), s_idx)
             target["end_index"] = max(int(target["end_index"]), e_idx)
             target["items"].append((engine, p))
@@ -983,7 +1006,7 @@ def patterns_detect(
                 return {
                     "error": (
                         f"Invalid classic engine(s): {invalid_engines}. "
-                        f"Valid options: {list(_CLASSIC_ENGINE_ORDER)}"
+                        f"Valid options: {list(_available_classic_engines())}"
                     )
                 }
 

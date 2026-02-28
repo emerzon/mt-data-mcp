@@ -3,6 +3,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 import warnings
 
+import numpy as np
 import pandas as pd
 from ..utils.utils import (
     _table_from_rows,
@@ -20,6 +21,7 @@ TIMEFRAME_MAP: Optional[Dict[str, Any]] = None
 _mt5_copy_rates_from: Any = None
 _rates_to_df: Any = None
 _symbol_ready_guard: Any = None
+_CANDLESTICK_PATTERN_METHOD_CACHE: Optional[Tuple[str, ...]] = None
 
 
 def _normalize_candlestick_name(pattern_name: str) -> str:
@@ -78,6 +80,113 @@ def _ensure_candlestick_runtime() -> None:
         _mt5_copy_rates_from = copy_rates_from
         _rates_to_df = rates_to_df
         _symbol_ready_guard = symbol_ready_guard
+
+
+def _discover_candlestick_pattern_methods(ta_accessor: Any) -> Tuple[str, ...]:
+    methods: List[str] = []
+    for attr in dir(ta_accessor):
+        if not attr.startswith('cdl_'):
+            continue
+        func = getattr(ta_accessor, attr, None)
+        if callable(func):
+            methods.append(attr)
+    return tuple(sorted(methods))
+
+
+def _get_candlestick_pattern_methods(temp: pd.DataFrame) -> List[str]:
+    global _CANDLESTICK_PATTERN_METHOD_CACHE
+
+    if _CANDLESTICK_PATTERN_METHOD_CACHE is None:
+        try:
+            _CANDLESTICK_PATTERN_METHOD_CACHE = _discover_candlestick_pattern_methods(temp.ta)
+        except Exception:
+            logger.warning("Failed to enumerate candlestick pattern detectors from pandas_ta.", exc_info=True)
+            return []
+    return list(_CANDLESTICK_PATTERN_METHOD_CACHE)
+
+
+def _extract_candlestick_rows(
+    df_tail: pd.DataFrame,
+    temp_tail: pd.DataFrame,
+    pattern_cols: List[str],
+    *,
+    threshold: float,
+    robust_only: bool,
+    robust_set: set[str],
+    whitelist_set: Optional[set[str]],
+    min_gap: int,
+    top_k: int,
+    deprioritize: set[str],
+) -> List[List[Any]]:
+    if not pattern_cols:
+        return []
+
+    base_names = np.asarray(
+        [col[len('cdl_'):] if col.lower().startswith('cdl_') else col for col in pattern_cols],
+        dtype=object,
+    )
+    normalized_names = np.asarray([_normalize_candlestick_name(name) for name in base_names], dtype=object)
+    allowed_mask = np.asarray(
+        [
+            _is_candlestick_allowed(
+                str(name),
+                robust_only=bool(robust_only),
+                robust_set=robust_set,
+                whitelist_set=whitelist_set,
+            )
+            for name in base_names
+        ],
+        dtype=bool,
+    )
+    if not bool(np.any(allowed_mask)):
+        return []
+
+    try:
+        values = (
+            temp_tail.loc[:, pattern_cols]
+            .apply(pd.to_numeric, errors="coerce")
+            .to_numpy(dtype=float, copy=False)
+        )
+    except Exception:
+        values = temp_tail.loc[:, pattern_cols].to_numpy(dtype=float, copy=True)
+
+    active_mask = np.isfinite(values) & (np.abs(values) >= float(threshold) * 100.0)
+    active_mask &= allowed_mask[np.newaxis, :]
+    if not bool(np.any(active_mask)):
+        return []
+
+    rows: List[List[Any]] = []
+    gap = max(0, int(min_gap))
+    k = max(1, int(top_k))
+    last_pick_idx = -10**9
+    non_dep_mask = np.asarray([str(name) not in deprioritize for name in normalized_names], dtype=bool)
+
+    if 'time' in df_tail.columns:
+        time_vals = df_tail['time'].astype(str).to_numpy(dtype=object, copy=False)
+    else:
+        time_vals = np.full(len(df_tail), "", dtype=object)
+
+    candidate_rows = np.flatnonzero(np.any(active_mask, axis=1))
+    for i in candidate_rows.tolist():
+        if i - last_pick_idx < gap:
+            continue
+        hit_idx = np.flatnonzero(active_mask[i])
+        if hit_idx.size == 0:
+            continue
+        pool_idx = hit_idx[non_dep_mask[hit_idx]]
+        if pool_idx.size == 0:
+            pool_idx = hit_idx
+        order = np.argsort(-np.abs(values[i, pool_idx]), kind="mergesort")[:k]
+        chosen_idx = pool_idx[order]
+        t_val = str(time_vals[i])
+        for col_idx in chosen_idx.tolist():
+            name = str(base_names[col_idx])
+            value = float(values[i, col_idx])
+            label_core = name.replace('_', ' ').strip().upper()
+            dir_title = 'Bullish' if value > 0 else 'Bearish'
+            rows.append([t_val, f"{dir_title} {label_core}" if label_core else dir_title])
+        last_pick_idx = i
+    return rows
 
 
 def _is_candlestick_allowed(
@@ -158,17 +267,7 @@ def detect_candlestick_patterns(
     except Exception:
         temp = df.copy()
 
-    pattern_methods: List[str] = []
-    try:
-        for attr in dir(temp.ta):
-            if not attr.startswith('cdl_'):
-                continue
-            func = getattr(temp.ta, attr, None)
-            if callable(func):
-                pattern_methods.append(attr)
-    except Exception:
-        logger.warning("Failed to enumerate candlestick pattern detectors from pandas_ta.", exc_info=True)
-
+    pattern_methods = _get_candlestick_pattern_methods(temp)
     if not pattern_methods:
         return {"error": "No candlestick pattern detectors (cdl_*) found in pandas_ta."}
 
@@ -187,7 +286,6 @@ def detect_candlestick_patterns(
     if not pattern_cols:
         return {"error": "No candle patterns produced any outputs."}
 
-    rows: List[List[Any]] = []
     _robust_whitelist = {
         'engulfing', 'harami', '3inside', '3outside', 'eveningstar', 'morningstar',
         'darkcloudcover', 'piercing', 'inside', 'outside', 'hikkake'
@@ -205,50 +303,27 @@ def detect_candlestick_patterns(
         gap = max(0, int(min_gap))
     except Exception:
         gap = 3
-    last_pick_idx = -10**9
+    try:
+        k = max(1, int(top_k))
+    except Exception:
+        k = 1
     _deprioritize = {
         'shortline', 'longline', 'spinningtop', 'highwave',
         'marubozu', 'closingmarubozu', 'doji', 'gravestonedoji', 'longleggeddoji', 'rickshawman'
     }
 
-    df_tail = df
-    temp_tail = temp
-
-    for i in range(len(temp_tail)):
-        hits: List[Tuple[str, float]] = []
-        for col in pattern_cols:
-            try:
-                val = float(temp_tail.iloc[i][col])
-            except Exception:
-                continue
-            if abs(val) >= (thr * 100.0):
-                name = col
-                if name.lower().startswith('cdl_'):
-                    name = name[len('cdl_'):]
-                if _is_candlestick_allowed(
-                    name,
-                    robust_only=bool(robust_only),
-                    robust_set=_robust_whitelist,
-                    whitelist_set=parsed_whitelist,
-                ):
-                    hits.append((name, val))
-        if not hits:
-            continue
-        if i - last_pick_idx < gap:
-            continue
-        non_dep = [(n, v) for (n, v) in hits if _normalize_candlestick_name(n) not in _deprioritize]
-        pool = non_dep if non_dep else hits
-        try:
-            k = max(1, int(top_k))
-        except Exception:
-            k = 1
-        picks = sorted(pool, key=lambda x: abs(x[1]), reverse=True)[:k]
-        t_val = str(df_tail.iloc[i].get('time')) if 'time' in df_tail.columns else ''
-        for name, value in picks:
-            label_core = name.replace('_', ' ').strip().upper()
-            dir_title = 'Bullish' if value > 0 else 'Bearish'
-            rows.append([t_val, f"{dir_title} {label_core}" if label_core else dir_title])
-        last_pick_idx = i
+    rows = _extract_candlestick_rows(
+        df,
+        temp,
+        pattern_cols,
+        threshold=thr,
+        robust_only=bool(robust_only),
+        robust_set=_robust_whitelist,
+        whitelist_set=parsed_whitelist,
+        min_gap=gap,
+        top_k=k,
+        deprioritize=_deprioritize,
+    )
 
     headers = ["time", "pattern"]
     payload = _table_from_rows(headers, rows)
