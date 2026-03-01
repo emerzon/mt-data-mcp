@@ -969,10 +969,6 @@ def _normalize_finviz_economic_calendar_items(items: List[Dict[str, Any]]) -> Li
                 "Category": item.get("category") or "",
                 "Reference": item.get("reference") or "",
                 "ReferenceDate": item.get("referenceDate") or "",
-                "CalendarId": item.get("calendarId"),
-                "AllDay": item.get("allDay"),
-                "Alert": item.get("alert"),
-                "HasNoDetail": item.get("hasNoDetail"),
             }
         )
 

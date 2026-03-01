@@ -525,6 +525,25 @@ class TestNormalizeFinvizEconomicCalendarItems:
         assert result[0]["Release"] == ""
         assert result[0]["Datetime"] == ""
 
+    def test_internal_calendar_fields_are_omitted(self):
+        result = svc._normalize_finviz_economic_calendar_items(
+            [
+                {
+                    "calendarId": 123,
+                    "allDay": True,
+                    "alert": False,
+                    "hasNoDetail": True,
+                    "event": "GDP",
+                    "date": "2024-06-01T10:00",
+                }
+            ]
+        )
+        row = result[0]
+        assert "CalendarId" not in row
+        assert "AllDay" not in row
+        assert "Alert" not in row
+        assert "HasNoDetail" not in row
+
 
 # ---------------------------------------------------------------------------
 # get_economic_calendar (lines 659-663)
