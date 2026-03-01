@@ -23,6 +23,13 @@ from mtdata.forecast.common import (
     default_seasonality as _default_seasonality_period,
     next_times_from_last as _next_times_from_last,
 )
+from mtdata.forecast.forecast_preprocessing import (
+    _apply_dimensionality_reduction as _apply_dimensionality_reduction_impl,
+    _apply_features_and_target_spec as _apply_features_and_target_spec_impl,
+    _create_dimred_reducer as _create_dimred_reducer_impl,
+    _prepare_base_data as _prepare_base_data_impl,
+    prepare_features as _prepare_features_impl,
+)
 from mtdata.forecast.target_builder import build_target_series
 from mtdata.forecast.registry import ForecastRegistry
 # Import all method modules to ensure registration
@@ -59,52 +66,7 @@ logger = logging.getLogger(__name__)
 
 
 def _create_dimred_reducer(method: Any, params: Optional[Dict[str, Any]]) -> Any:
-    m = str(method).lower().strip()
-    p = params or {}
-    if m == 'pca':
-        try:
-            from sklearn.decomposition import PCA
-        except Exception as ex:
-            raise RuntimeError(f"dimred dependencies missing: {ex}")
-        n_components = p.get('n_components', None)
-        return PCA(n_components=n_components), {"n_components": n_components}
-    if m == 'tsne':
-        try:
-            from sklearn.manifold import TSNE
-        except Exception as ex:
-            raise RuntimeError(f"dimred dependencies missing: {ex}")
-        n_components = p.get('n_components', 2)
-        return TSNE(n_components=n_components, random_state=42), {"n_components": n_components}
-    if m == 'selectkbest':
-        try:
-            k = int(p.get('k', 5))
-        except (TypeError, ValueError):
-            k = 5
-
-        class _TopKVarianceReducer:
-            def __init__(self, k_value: int):
-                self.k = max(1, int(k_value))
-
-            def fit_transform(self, X):
-                arr = np.asarray(X, dtype=float)
-                if arr.ndim == 1:
-                    arr = arr.reshape(-1, 1)
-                n_features = int(arr.shape[1]) if arr.ndim == 2 else 1
-                k_eff = max(1, min(self.k, n_features))
-                var = np.nanvar(arr, axis=0)
-                var = np.where(np.isfinite(var), var, -np.inf)
-                idx = np.argsort(-var)[:k_eff]
-                if idx.size == 0:
-                    idx = np.arange(k_eff, dtype=int)
-                return arr[:, idx]
-
-        return _TopKVarianceReducer(k), {"k": k, "score_func": "variance"}
-
-    class _Identity:
-        def fit_transform(self, X):
-            return X
-
-    return _Identity(), {"method": "identity"}
+    return _create_dimred_reducer_impl(method, params)
 
 
 def _normalize_weights(weights: Any, size: int) -> Optional[np.ndarray]:
@@ -241,101 +203,30 @@ def _calculate_lookback_bars(method_l: str, horizon: int, lookback: Optional[int
 
 
 def _prepare_base_data(df: pd.DataFrame, quantity: str, target: str, base_col: str = 'close') -> str:
-    """Prepare base data column for forecasting."""
-    source_col = base_col if base_col in df.columns else 'close'
-
-    if quantity == 'return':
-        df['__log_return'] = np.log(df[source_col] / df[source_col].shift(1))
-        base_col = '__log_return'
-    elif quantity == 'volatility':
-        if '__log_return' not in df.columns:
-            df['__log_return'] = np.log(df[source_col] / df[source_col].shift(1))
-        df['__squared_return'] = df['__log_return'] ** 2
-        base_col = '__squared_return'
-    else:
-        base_col = source_col
-
-    return base_col
+    return _prepare_base_data_impl(df, quantity, target, base_col)
 
 
 def _apply_features_and_target_spec(df: pd.DataFrame, features: Optional[Dict[str, Any]],
                                    target_spec: Optional[Dict[str, Any]], base_col: str) -> str:
-    """Apply features and target specification to the dataframe."""
-    # Apply technical indicators if specified in features
-    if features and isinstance(features, dict):
-        ti_spec = features.get('ti')
-        if ti_spec:
-            ti_list = _parse_ti_specs_util(ti_spec)
-            if ti_list:
-                ti_cols = _apply_ta_indicators_util(df, ti_spec)
-                # Update base_col if TI column is specified as target
-                if target_spec and target_spec.get('column') in ti_cols:
-                    base_col = target_spec.get('column')
-
-    # Apply target column transformations
-    if target_spec:
-        target_col = target_spec.get('column', base_col)
-        transform = target_spec.get('transform')
-
-        if transform == 'log':
-            df[f'__target_{target_col}'] = np.log(df[target_col])
-            base_col = f'__target_{target_col}'
-        elif transform == 'diff':
-            df[f'__target_{target_col}'] = df[target_col].diff()
-            base_col = f'__target_{target_col}'
-        elif transform == 'pct':
-            df[f'__target_{target_col}'] = df[target_col].pct_change()
-            base_col = f'__target_{target_col}'
-        elif target_col != base_col:
-            base_col = target_col
-
-    return base_col
+    return _apply_features_and_target_spec_impl(
+        df,
+        features,
+        target_spec,
+        base_col,
+        parse_kv_or_json=_parse_kv_or_json,
+        parse_ti_specs=_parse_ti_specs_util,
+        apply_ta_indicators=_apply_ta_indicators_util,
+    )
 
 
 def _apply_dimensionality_reduction(X: pd.DataFrame, dimred_method: Optional[str],
                                     dimred_params: Optional[Dict[str, Any]]) -> pd.DataFrame:
-    """Apply dimensionality reduction to feature matrix."""
-    if not dimred_method or len(X.columns) <= 1:
-        return X
-
-    try:
-        from sklearn.decomposition import PCA
-        from sklearn.manifold import TSNE
-
-        params = dimred_params or {}
-
-        if dimred_method.lower() == 'pca':
-            n_components = params.get('n_components', min(5, X.shape[1]))
-            reducer = PCA(n_components=n_components)
-            X_reduced = reducer.fit_transform(X)
-            return pd.DataFrame(X_reduced, columns=[f'pca_{i}' for i in range(X_reduced.shape[1])])
-
-        elif dimred_method.lower() == 'tsne':
-            n_components = params.get('n_components', 2)
-            reducer = TSNE(n_components=n_components, random_state=42)
-            X_reduced = reducer.fit_transform(X)
-            return pd.DataFrame(X_reduced, columns=[f'tsne_{i}' for i in range(X_reduced.shape[1])])
-
-        elif dimred_method.lower() == 'selectkbest':
-            try:
-                k = int(params.get('k', min(5, X.shape[1])))
-            except (TypeError, ValueError):
-                k = min(5, X.shape[1])
-            k = max(1, min(int(k), int(X.shape[1])))
-            X_num = X.apply(pd.to_numeric, errors='coerce')
-            variances = X_num.var(axis=0, skipna=True).astype(float)
-            variances = variances.fillna(float("-inf"))
-            selected_cols = variances.sort_values(ascending=False).index.tolist()[:k]
-            if not selected_cols:
-                selected_cols = list(X.columns[:k])
-            X_reduced = X_num[selected_cols].to_numpy()
-            return pd.DataFrame(X_reduced, columns=[f'select_{i}' for i in range(X_reduced.shape[1])])
-
-    except Exception:
-        # Fall back to original features if dimensionality reduction fails
-        pass
-
-    return X
+    return _apply_dimensionality_reduction_impl(
+        X,
+        dimred_method,
+        dimred_params,
+        reducer_factory=_create_dimred_reducer,
+    )
 
 
 def _prepare_feature_matrices(
@@ -347,255 +238,22 @@ def _prepare_feature_matrices(
     dimred_method: Optional[str],
     dimred_params: Optional[Dict[str, Any]],
 ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Dict[str, Any]]:
-    feat_info: Dict[str, Any] = {}
-    if not features:
-        return None, None, feat_info
-
     try:
-        fcfg = _parse_kv_or_json(features)
-        if not isinstance(fcfg, dict):
-            fcfg = {}
-
-        include = fcfg.get('include', fcfg.get('exog', 'ohlcv'))
-        include_cols: List[str] = []
-        if isinstance(include, str):
-            inc = include.strip().lower()
-            if inc == 'ohlcv':
-                for col in ('open', 'high', 'low', 'volume', 'tick_volume', 'real_volume'):
-                    if col in df.columns:
-                        include_cols.append(col)
-            else:
-                toks = [tok.strip() for tok in include.replace(',', ' ').split() if tok.strip()]
-                for tok in toks:
-                    if tok in df.columns and tok not in ('time', 'close'):
-                        include_cols.append(tok)
-        elif isinstance(include, (list, tuple)):
-            for tok in include:
-                s = str(tok).strip()
-                if s in df.columns and s not in ('time', 'close'):
-                    include_cols.append(s)
-
-        ind_specs = fcfg.get('indicators')
-        if ind_specs is None:
-            ind_specs = fcfg.get('ti')
-        if ind_specs:
-            try:
-                specs = _parse_ti_specs_util(str(ind_specs)) if isinstance(ind_specs, str) else ind_specs
-                _apply_ta_indicators_util(df, specs, default_when='pre_ti')
-            except Exception as exc:
-                logger.debug("Failed to apply indicators: %s", exc)
-
-        ti_cols: List[str] = []
-        for c in df.columns:
-            if c.startswith('__'):
-                continue
-            if c in ('time', 'open', 'high', 'low', 'close', 'volume', 'tick_volume', 'real_volume'):
-                continue
-            if df[c].dtype.kind in ('f', 'i'):
-                ti_cols.append(c)
-
-        cal_cols: List[str] = []
-        cal_train_df: Optional[pd.DataFrame] = None
-        cal_future: Optional[np.ndarray] = None
-        fut_cov = fcfg.get('future_covariates')
-        if fut_cov:
-            tokens: List[str] = []
-            if isinstance(fut_cov, str):
-                tokens = [tok.strip() for tok in fut_cov.replace(',', ' ').split() if tok.strip()]
-            elif isinstance(fut_cov, (list, tuple)):
-                tokens = [str(tok).strip() for tok in fut_cov]
-
-            dt_train = None
-            dt_future = None
-
-            def _ensure_dt():
-                nonlocal dt_train, dt_future
-                if dt_train is None:
-                    try:
-                        dt_train = pd.to_datetime(df['time'].astype(float).to_numpy(), unit='s', utc=True)
-                    except Exception:
-                        dt_train = pd.Index([])
-                if dt_future is None:
-                    try:
-                        dt_future = pd.to_datetime(np.asarray(future_times, dtype=float), unit='s', utc=True)
-                    except Exception:
-                        dt_future = pd.Index([])
-
-            tr_list: List[np.ndarray] = []
-            tf_list: List[np.ndarray] = []
-            for tok in tokens:
-                tl = tok.lower()
-                if tl.startswith('fourier:'):
-                    try:
-                        per = int(tl.split(':', 1)[1])
-                    except Exception:
-                        per = 24
-                    w = 2.0 * math.pi / float(max(1, per))
-                    idx_tr = np.arange(len(df), dtype=float)
-                    idx_tf = np.arange(len(future_times), dtype=float)
-                    tr_list.append(np.sin(w * idx_tr))
-                    cal_cols.append(f'fx_sin_{per}')
-                    tr_list.append(np.cos(w * idx_tr))
-                    cal_cols.append(f'fx_cos_{per}')
-                    tf_list.append(np.sin(w * idx_tf))
-                    tf_list.append(np.cos(w * idx_tf))
-                    continue
-
-                _ensure_dt()
-                if dt_train is None or dt_future is None:
-                    continue
-
-                if tl in ('hour', 'hr'):
-                    vals_tr = dt_train.hour.to_numpy()
-                    vals_tf = dt_future.hour.to_numpy()
-                    w = 2.0 * math.pi / 24.0
-                    tr_list.append(np.sin(w * vals_tr))
-                    cal_cols.append('hr_sin')
-                    tr_list.append(np.cos(w * vals_tr))
-                    cal_cols.append('hr_cos')
-                    tf_list.append(np.sin(w * vals_tf))
-                    tf_list.append(np.cos(w * vals_tf))
-                elif tl in ('dow', 'wday', 'weekday', 'dayofweek'):
-                    vals_tr = dt_train.weekday.to_numpy()
-                    vals_tf = dt_future.weekday.to_numpy()
-                    w = 2.0 * math.pi / 7.0
-                    tr_list.append(np.sin(w * vals_tr))
-                    cal_cols.append('dow_sin')
-                    tr_list.append(np.cos(w * vals_tr))
-                    cal_cols.append('dow_cos')
-                    tf_list.append(np.sin(w * vals_tf))
-                    tf_list.append(np.cos(w * vals_tf))
-                elif tl in ('month', 'mo'):
-                    vals_tr = dt_train.month.to_numpy() - 1
-                    vals_tf = dt_future.month.to_numpy() - 1
-                    w = 2.0 * math.pi / 12.0
-                    tr_list.append(np.sin(w * vals_tr))
-                    cal_cols.append('mo_sin')
-                    tr_list.append(np.cos(w * vals_tr))
-                    cal_cols.append('mo_cos')
-                    tf_list.append(np.sin(w * vals_tf))
-                    tf_list.append(np.cos(w * vals_tf))
-                elif tl in ('day', 'dom'):
-                    vals_tr = dt_train.day.to_numpy() - 1
-                    vals_tf = dt_future.day.to_numpy() - 1
-                    w = 2.0 * math.pi / 31.0
-                    tr_list.append(np.sin(w * vals_tr))
-                    cal_cols.append('dom_sin')
-                    tr_list.append(np.cos(w * vals_tr))
-                    cal_cols.append('dom_cos')
-                    tf_list.append(np.sin(w * vals_tf))
-                    tf_list.append(np.cos(w * vals_tf))
-                elif tl in ('doy', 'dayofyear'):
-                    vals_tr = dt_train.dayofyear.to_numpy() - 1
-                    vals_tf = dt_future.dayofyear.to_numpy() - 1
-                    w = 2.0 * math.pi / 365.25
-                    tr_list.append(np.sin(w * vals_tr))
-                    cal_cols.append('doy_sin')
-                    tr_list.append(np.cos(w * vals_tr))
-                    cal_cols.append('doy_cos')
-                    tf_list.append(np.sin(w * vals_tf))
-                    tf_list.append(np.cos(w * vals_tf))
-                elif tl in ('week', 'woy'):
-                    vals_tr = dt_train.isocalendar().week.to_numpy().astype(float) - 1
-                    vals_tf = dt_future.isocalendar().week.to_numpy().astype(float) - 1
-                    w = 2.0 * math.pi / 52.143
-                    tr_list.append(np.sin(w * vals_tr))
-                    cal_cols.append('woy_sin')
-                    tr_list.append(np.cos(w * vals_tr))
-                    cal_cols.append('woy_cos')
-                    tf_list.append(np.sin(w * vals_tf))
-                    tf_list.append(np.cos(w * vals_tf))
-                elif tl in ('minute', 'min'):
-                    vals_tr = dt_train.minute.to_numpy()
-                    vals_tf = dt_future.minute.to_numpy()
-                    w = 2.0 * math.pi / 60.0
-                    tr_list.append(np.sin(w * vals_tr))
-                    cal_cols.append('min_sin')
-                    tr_list.append(np.cos(w * vals_tr))
-                    cal_cols.append('min_cos')
-                    tf_list.append(np.sin(w * vals_tf))
-                    tf_list.append(np.cos(w * vals_tf))
-                elif tl in ('mod', 'minute_of_day'):
-                    vals_tr = dt_train.hour.to_numpy() * 60 + dt_train.minute.to_numpy()
-                    vals_tf = dt_future.hour.to_numpy() * 60 + dt_future.minute.to_numpy()
-                    w = 2.0 * math.pi / 1440.0
-                    tr_list.append(np.sin(w * vals_tr))
-                    cal_cols.append('mod_sin')
-                    tr_list.append(np.cos(w * vals_tr))
-                    cal_cols.append('mod_cos')
-                    tf_list.append(np.sin(w * vals_tf))
-                    tf_list.append(np.cos(w * vals_tf))
-                elif tl in ('is_weekend', 'weekend'):
-                    tr_list.append((dt_train.weekday >= 5).astype(float))
-                    cal_cols.append('is_weekend')
-                    tf_list.append((dt_future.weekday >= 5).astype(float))
-                elif tl in ('is_holiday', 'holiday'):
-                    try:
-                        import holidays
-                        country = fcfg.get('country', 'US')
-                        years_tr = dt_train.year.unique()
-                        years_tf = dt_future.year.unique()
-                        all_years = np.unique(np.concatenate([years_tr, years_tf]))
-                        hol_cal = holidays.CountryHoliday(country, years=all_years)
-                        tr_list.append(np.array([1.0 if d in hol_cal else 0.0 for d in dt_train], dtype=float))
-                        cal_cols.append('is_holiday')
-                        tf_list.append(np.array([1.0 if d in hol_cal else 0.0 for d in dt_future], dtype=float))
-                    except Exception:
-                        pass
-
-            if tr_list:
-                cal_train_df = pd.DataFrame(np.vstack(tr_list).T.astype(float), index=df.index)
-                cal_future = np.vstack(tf_list).T.astype(float)
-
-        exog_train_arr: Optional[np.ndarray] = None
-        exog_future_arr: Optional[np.ndarray] = None
-        sel_cols = sorted(set(include_cols + ti_cols))
-        if sel_cols:
-            X_df = df[sel_cols].astype(float).copy()
-            X_df = X_df.replace([np.inf, -np.inf], np.nan)
-            X_df = X_df.ffill().bfill()
-            X_arr = X_df.to_numpy(dtype=float)
-            dr_method = fcfg.get('dimred_method') or dimred_method
-            dr_params = fcfg.get('dimred_params') or dimred_params
-            if dr_method and str(dr_method).lower() not in ('', 'none'):
-                try:
-                    reducer, _ = _create_dimred_reducer(dr_method, dr_params)
-                    X_arr = np.asarray(reducer.fit_transform(X_arr), dtype=float)
-                    feat_info['dimred_method'] = str(dr_method)
-                    if isinstance(dr_params, dict):
-                        feat_info['dimred_params'] = dr_params
-                    elif dr_params is None:
-                        feat_info['dimred_params'] = {}
-                    else:
-                        feat_info['dimred_params'] = {"raw": str(dr_params)}
-                    feat_info['dimred_n_features'] = int(X_arr.shape[1]) if X_arr.ndim == 2 else 1
-                except Exception as exc:
-                    feat_info['dimred_error'] = str(exc)
-            exog_df = pd.DataFrame(X_arr, index=X_df.index)
-            exog_train_arr = exog_df.loc[training_index].to_numpy(dtype=float)
-            if exog_train_arr.ndim == 1:
-                exog_train_arr = exog_train_arr.reshape(-1, 1)
-            if exog_train_arr.size > 0:
-                last_row = exog_train_arr[-1]
-                exog_future_arr = np.tile(last_row.reshape(1, -1), (int(horizon), 1))
-
-        if cal_train_df is not None:
-            cal_train_arr = cal_train_df.loc[training_index].to_numpy(dtype=float)
-            if exog_train_arr is not None and exog_train_arr.size > 0:
-                exog_train_arr = np.hstack([exog_train_arr, cal_train_arr])
-            else:
-                exog_train_arr = cal_train_arr
-
-            if cal_future is not None:
-                if exog_future_arr is not None and exog_future_arr.size > 0:
-                    exog_future_arr = np.hstack([exog_future_arr, cal_future])
-                else:
-                    exog_future_arr = cal_future
-
-        feat_info['selected_columns'] = sel_cols + cal_cols
-        feat_info['n_features'] = int(exog_train_arr.shape[1]) if exog_train_arr is not None else 0
-        return exog_train_arr, exog_future_arr, feat_info
+        return _prepare_features_impl(
+            df,
+            features,
+            future_times,
+            horizon,
+            training_index=training_index,
+            dimred_method=dimred_method,
+            dimred_params=dimred_params,
+            parse_kv_or_json=_parse_kv_or_json,
+            parse_ti_specs=_parse_ti_specs_util,
+            apply_ta_indicators=_apply_ta_indicators_util,
+            reducer_factory=_create_dimred_reducer,
+        )
     except Exception as exc:
+        logger.debug("Feature preparation failed: %s", exc)
         return None, None, {'error': f"feature_build_error: {str(exc)}"}
 
 

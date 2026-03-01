@@ -7,7 +7,7 @@ os.environ.setdefault("NIXTLA_ID_AS_COL", "1")
 from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .common import fetch_history as _fetch_history
 from .forecast_methods import get_forecast_methods_data
-from .forecast_engine import _create_dimred_reducer
+from .forecast_preprocessing import _create_dimred_reducer
 
 _FORECAST_METHODS_EXPORT = get_forecast_methods_data
 
