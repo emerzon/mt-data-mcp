@@ -1114,15 +1114,21 @@ def forecast_barrier_optimize(
             results.extend(_evaluate(refine_candidates))
             _sort(results)
 
+        candidates = results
         if top_k_val is not None:
-            results = results[:top_k_val]
+            candidates = candidates[:top_k_val]
 
-        grid_out = results if return_grid else None
+        grid_out = candidates if return_grid else None
         if output == 'summary' and grid_out is not None:
             limit = top_k_val or min(10, len(grid_out))
             grid_out = grid_out[:limit]
 
-        no_candidates = len(results) == 0
+        results_limit = min(10, len(candidates))
+        if output == 'summary':
+            results_limit = top_k_val or min(10, len(candidates))
+        summary_results = candidates[:results_limit]
+
+        no_candidates = len(candidates) == 0
         warning = None
         if no_candidates:
             warning = "No valid TP/SL candidates after applying grid generation and constraints."
@@ -1136,12 +1142,13 @@ def forecast_barrier_optimize(
             "direction": direction_norm,
             "mode": mode_val,
             "objective": objective_val,
-            "results": results,
-            "best": results[0] if results else None,
+            "results": summary_results,
+            "results_total": len(candidates),
+            "best": candidates[0] if candidates else None,
             "grid": grid_out,
             "no_candidates": no_candidates,
         }
-        best = results[0] if results else None
+        best = candidates[0] if candidates else None
         if isinstance(best, dict):
             warnings_out: List[str] = []
             best_ev = best.get("ev")

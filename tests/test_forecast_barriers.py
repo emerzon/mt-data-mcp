@@ -227,6 +227,34 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertEqual(len(grid), 2)
         self.assertEqual(result["best"], grid[0])
 
+    def test_forecast_barrier_optimize_keeps_compact_results_with_full_grid(self):
+        self._set_flat_history(1.0)
+        paths = np.array([
+            [1.0, 1.01, 1.02, 1.03],
+            [1.0, 0.99, 0.98, 0.97],
+            [1.0, 1.002, 0.998, 1.006],
+        ])
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.2, tp_max=1.4, tp_steps=4,
+                sl_min=0.2, sl_max=1.4, sl_steps=4,
+                objective="edge",
+                output="full",
+                return_grid=True,
+            )
+        self.assertTrue(result["success"])
+        self.assertIn("results_total", result)
+        self.assertEqual(result["results_total"], len(result["grid"]))
+        self.assertLessEqual(len(result["results"]), 10)
+        self.assertGreaterEqual(len(result["grid"]), len(result["results"]))
+
     def test_forecast_barrier_optimize_volatility_grid(self):
         self._set_flat_history(1.0)
         paths = self._sample_paths()
