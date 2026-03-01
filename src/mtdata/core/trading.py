@@ -992,6 +992,12 @@ def _place_market_order(
             position_ticket = result.order
             sl_tp_modified = False
             sl_tp_error = None
+            sl_tp_requested = bool(norm_sl is not None or norm_tp is not None)
+            sl_tp_apply_status = "not_requested"
+            sl_applied = None
+            tp_applied = None
+            sl_tp_broker_adjusted = False
+            sl_tp_adjustment: Dict[str, Any] = {}
 
             if norm_sl is not None or norm_tp is not None:
                 try:
@@ -1014,12 +1020,42 @@ def _place_market_order(
                         modify_result = mt5.order_send(modify_request)
                         if modify_result and getattr(modify_result, "retcode", None) == mt5.TRADE_RETCODE_DONE:
                             sl_tp_modified = True
+                            sl_tp_apply_status = "applied"
+                            try:
+                                positions_after = mt5.positions_get(ticket=position_ticket)
+                                if positions_after and len(positions_after) > 0:
+                                    pos_after = positions_after[0]
+                                    sl_applied = float(getattr(pos_after, "sl", 0.0) or 0.0) or None
+                                    tp_applied = float(getattr(pos_after, "tp", 0.0) or 0.0) or None
+                            except Exception:
+                                pass
+
+                            price_tol = float(getattr(symbol_info, "point", 0.0) or 0.0)
+                            if not math.isfinite(price_tol) or price_tol <= 0:
+                                price_tol = 1e-9
+                            if norm_sl is not None and sl_applied is not None:
+                                if abs(float(sl_applied) - float(norm_sl)) > price_tol:
+                                    sl_tp_broker_adjusted = True
+                                    sl_tp_adjustment["sl"] = {
+                                        "requested": float(norm_sl),
+                                        "applied": float(sl_applied),
+                                    }
+                            if norm_tp is not None and tp_applied is not None:
+                                if abs(float(tp_applied) - float(norm_tp)) > price_tol:
+                                    sl_tp_broker_adjusted = True
+                                    sl_tp_adjustment["tp"] = {
+                                        "requested": float(norm_tp),
+                                        "applied": float(tp_applied),
+                                    }
                         else:
                             sl_tp_error = "Failed to set TP/SL"
+                            sl_tp_apply_status = "failed"
                     else:
                         sl_tp_error = "Position not found for TP/SL modification"
+                        sl_tp_apply_status = "failed"
                 except Exception as e:
                     sl_tp_error = f"Error setting TP/SL: {str(e)}"
+                    sl_tp_apply_status = "failed"
 
             return {
                 "retcode": result.retcode,
@@ -1034,7 +1070,13 @@ def _place_market_order(
                 "request_id": result.request_id,
                 "sl": norm_sl,
                 "tp": norm_tp,
+                "sl_tp_requested": sl_tp_requested,
+                "sl_tp_apply_status": sl_tp_apply_status,
                 "sl_tp_modified": sl_tp_modified,
+                "sl_applied": sl_applied,
+                "tp_applied": tp_applied,
+                "sl_tp_broker_adjusted": sl_tp_broker_adjusted,
+                "sl_tp_adjustment": sl_tp_adjustment or None,
                 "sl_tp_error": sl_tp_error,
             }
 

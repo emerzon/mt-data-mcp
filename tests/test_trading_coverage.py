@@ -873,6 +873,13 @@ class TestPlaceMarketOrder:
         from mtdata.core.trading import _place_market_order
         result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.09, take_profit=1.12)
         assert result.get("sl_tp_modified") is True
+        assert result.get("sl_tp_requested") is True
+        assert result.get("sl_tp_apply_status") == "applied"
+        assert result.get("sl_applied") == pytest.approx(1.09)
+        assert result.get("tp_applied") == pytest.approx(1.12)
+        assert result.get("sl_tp_broker_adjusted") is False
+        assert result.get("sl_tp_adjustment") is None
+        assert result.get("sl_tp_error") is None
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_sl_tp_modification_fails_gracefully(self):
@@ -883,6 +890,12 @@ class TestPlaceMarketOrder:
         from mtdata.core.trading import _place_market_order
         result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.09, take_profit=1.12)
         assert result.get("sl_tp_error") is not None
+        assert result.get("sl_tp_requested") is True
+        assert result.get("sl_tp_apply_status") == "failed"
+        assert result.get("sl_tp_modified") is False
+        assert result.get("sl_applied") is None
+        assert result.get("tp_applied") is None
+        assert result.get("sl_tp_broker_adjusted") is False
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_sl_tp_position_not_found(self):
@@ -893,6 +906,45 @@ class TestPlaceMarketOrder:
         from mtdata.core.trading import _place_market_order
         result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.09)
         assert "Position not found" in (result.get("sl_tp_error") or "")
+        assert result.get("sl_tp_requested") is True
+        assert result.get("sl_tp_apply_status") == "failed"
+        assert result.get("sl_tp_modified") is False
+        assert result.get("sl_applied") is None
+        assert result.get("tp_applied") is None
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_sl_tp_not_requested_state_is_explicit(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _place_market_order
+        result = _place_market_order("EURUSD", 0.01, "BUY")
+        assert result.get("sl_tp_requested") is False
+        assert result.get("sl_tp_apply_status") == "not_requested"
+        assert result.get("sl_tp_modified") is False
+        assert result.get("sl_applied") is None
+        assert result.get("tp_applied") is None
+        assert result.get("sl_tp_broker_adjusted") is False
+        assert result.get("sl_tp_adjustment") is None
+        assert result.get("sl_tp_error") is None
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_sl_tp_broker_adjustment_is_reported(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.side_effect = [_order_result(), _order_result()]
+        mt5.positions_get.side_effect = [
+            [_position(sl=1.09, tp=1.12)],
+            [_position(sl=1.0895, tp=1.1203)],
+        ]
+        from mtdata.core.trading import _place_market_order
+        result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.09, take_profit=1.12)
+        assert result.get("sl_tp_apply_status") == "applied"
+        assert result.get("sl_tp_broker_adjusted") is True
+        assert result.get("sl_tp_adjustment") == {
+            "sl": {"requested": pytest.approx(1.09), "applied": pytest.approx(1.0895)},
+            "tp": {"requested": pytest.approx(1.12), "applied": pytest.approx(1.1203)},
+        }
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_pending_type_rejected_for_market(self):
