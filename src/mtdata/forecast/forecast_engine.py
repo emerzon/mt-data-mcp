@@ -240,10 +240,11 @@ def _format_forecast_output(
     if digits is not None:
         result["digits"] = int(digits)
 
-    # Add confidence intervals if available
-    if ci_alpha is not None and ci_values is not None:
-        result["ci_alpha"] = float(ci_alpha)
-        if len(ci_values) == 2:  # [lower, upper]
+    # Add confidence intervals if available. If they are requested but missing,
+    # surface an explicit warning to avoid misleading point-only interpretation.
+    if ci_alpha is not None:
+        if ci_values is not None and len(ci_values) == 2:  # [lower, upper]
+            result["ci_alpha"] = float(ci_alpha)
             lower_vals = [float(v) for v in ci_values[0]]
             upper_vals = [float(v) for v in ci_values[1]]
             if quantity == 'return':
@@ -255,6 +256,17 @@ def _format_forecast_output(
             else:
                 result["lower_price"] = lower_vals
                 result["upper_price"] = upper_vals
+        else:
+            warning_text = (
+                f"Point forecast only for method '{method}'; confidence intervals are unavailable. "
+                "Use forecast_conformal_intervals for uncertainty bands."
+            )
+            warnings = result.get("warnings")
+            if not isinstance(warnings, list):
+                warnings = []
+            warnings.append(warning_text)
+            result["warnings"] = warnings
+            result["ci_unavailable"] = True
 
     # Add metadata
     result.update({

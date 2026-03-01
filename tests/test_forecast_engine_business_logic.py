@@ -94,6 +94,27 @@ def test_preprocessing_helpers_and_output_format():
     assert res["digits"] == 5
     assert res["meta"] == 1
 
+    no_ci = fe._format_forecast_output(
+        forecast_values=np.array([101.0, 102.0], dtype=float),
+        last_epoch=float(df["time"].iloc[-1]),
+        tf_secs=3600,
+        horizon=2,
+        base_col="close",
+        df=df,
+        ci_alpha=0.05,
+        ci_values=None,
+        method="theta",
+        quantity="price",
+        denoise_used=False,
+    )
+    assert no_ci["ci_unavailable"] is True
+    assert "warnings" in no_ci
+    assert "Point forecast only" in no_ci["warnings"][0]
+    assert "forecast_conformal_intervals" in no_ci["warnings"][0]
+    assert "ci_alpha" not in no_ci
+    assert "lower_price" not in no_ci
+    assert "upper_price" not in no_ci
+
 
 def test_prepare_ensemble_cv_uses_valid_rows_only(monkeypatch):
     series = pd.Series(np.arange(1.0, 21.0))
@@ -376,6 +397,46 @@ def test_forecast_engine_forwards_ci_alpha_in_params_and_kwargs(monkeypatch):
     assert out["success"] is True
     assert captured["params"]["ci_alpha"] == 0.1
     assert captured["kwargs"]["ci_alpha"] == 0.1
+
+
+def test_forecast_engine_warns_when_ci_requested_but_method_has_no_intervals(monkeypatch):
+    class NoCIForecaster:
+        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+            return ForecastResult(
+                forecast=np.array([1.0], dtype=float),
+                ci_values=None,
+                params_used={},
+                metadata={},
+            )
+
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return NoCIForecaster()
+
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("naive",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
+
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="naive",
+        horizon=1,
+        ci_alpha=0.1,
+        prefetched_df=_df(20),
+    )
+
+    assert out["success"] is True
+    assert out["ci_unavailable"] is True
+    assert "warnings" in out
+    assert "Point forecast only" in out["warnings"][0]
+    assert "ci_alpha" not in out
+    assert "lower_price" not in out
+    assert "upper_price" not in out
 
 
 def test_forecast_engine_injects_context_for_analog(monkeypatch):
