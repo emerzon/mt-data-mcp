@@ -1,0 +1,596 @@
+"""Tests for core/report.py — report_generate tool.
+
+Covers lines 45-245 by mocking template functions and external data fetching.
+"""
+import pytest
+from unittest.mock import patch, MagicMock
+from typing import Any, Dict, List
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _unwrap(fn):
+    while hasattr(fn, "__wrapped__"):
+        fn = fn.__wrapped__
+    return fn
+
+
+def _get_report_generate():
+    from mtdata.core.report import report_generate
+    return _unwrap(report_generate)
+
+
+def _make_report(sections=None, error=None):
+    """Build a minimal report dict."""
+    rep: Dict[str, Any] = {}
+    if error:
+        rep["error"] = error
+    if sections is not None:
+        rep["sections"] = sections
+    return rep
+
+
+def _make_full_sections():
+    """Create a rich sections dict to exercise summary extraction."""
+    return {
+        "context": {
+            "last_snapshot": {
+                "close": 1.1020,
+                "EMA_20": 1.1010,
+                "EMA_50": 1.1000,
+                "RSI_14": 55.5,
+            },
+        },
+        "pivot": {
+            "levels": [
+                {"level": "R1", "classic": 1.1060},
+                {"level": "PP", "classic": 1.1020},
+                {"level": "S1", "classic": 1.0980},
+            ],
+            "methods": [{"method": "classic"}],
+        },
+        "volatility": {
+            "horizon_sigma_price": 0.0045,
+        },
+        "forecast": {
+            "method": "EMA",
+        },
+        "barriers": {
+            "long": {
+                "best": {"tp": 1.5, "sl": 0.8, "edge": 0.3},
+            },
+            "short": {
+                "best": {"tp": 1.2, "sl": 0.7, "edge": 0.2},
+            },
+        },
+    }
+
+
+_TEMPLATES_PATH = "mtdata.core.report"
+_RENDER = "mtdata.core.report.render_enhanced_report"
+_FMT_NUM = "mtdata.core.report.format_number"
+_GET_IND = "mtdata.core.report._get_indicator_value"
+
+
+# Template mock shortcuts
+def _patch_templates():
+    """Return a patch context for the template imports block."""
+    return patch(f"{_TEMPLATES_PATH}.template_basic", create=True), \
+           patch(f"{_TEMPLATES_PATH}.template_advanced", create=True), \
+           patch(f"{_TEMPLATES_PATH}.template_scalping", create=True), \
+           patch(f"{_TEMPLATES_PATH}.template_intraday", create=True), \
+           patch(f"{_TEMPLATES_PATH}.template_swing", create=True), \
+           patch(f"{_TEMPLATES_PATH}.template_position", create=True)
+
+
+# ---------------------------------------------------------------------------
+# Error helpers
+# ---------------------------------------------------------------------------
+
+from mtdata.core.report import _report_error_text, _report_error_payload
+
+
+class TestReportErrorHelpers:
+
+    def test_error_text_normal(self):
+        assert _report_error_text("bad thing") == "error: bad thing\n"
+
+    def test_error_text_empty(self):
+        assert _report_error_text("") == "error: Unknown error.\n"
+
+    def test_error_text_whitespace(self):
+        assert _report_error_text("   ") == "error: Unknown error.\n"
+
+    def test_error_payload_normal(self):
+        assert _report_error_payload("oops") == {"error": "oops"}
+
+    def test_error_payload_empty(self):
+        assert _report_error_payload("") == {"error": "Unknown error."}
+
+
+# ---------------------------------------------------------------------------
+# report_generate — template dispatch
+# ---------------------------------------------------------------------------
+
+
+class TestReportTemplateDispatch:
+
+    def _run(self, template, output="toon", horizon=None, methods=None, timeframe=None):
+        fn = _get_report_generate()
+        rep = _make_report(sections=_make_full_sections())
+
+        mock_templates = {
+            "basic": MagicMock(return_value=rep),
+            "advanced": MagicMock(return_value=rep),
+            "scalping": MagicMock(return_value=rep),
+            "intraday": MagicMock(return_value=rep),
+            "swing": MagicMock(return_value=rep),
+            "position": MagicMock(return_value=rep),
+        }
+
+        with patch(f"{_TEMPLATES_PATH}._t_basic", mock_templates["basic"], create=True), \
+             patch(f"{_TEMPLATES_PATH}._t_advanced", mock_templates["advanced"], create=True), \
+             patch(f"{_TEMPLATES_PATH}._t_scalping", mock_templates["scalping"], create=True), \
+             patch(f"{_TEMPLATES_PATH}._t_intraday", mock_templates["intraday"], create=True), \
+             patch(f"{_TEMPLATES_PATH}._t_swing", mock_templates["swing"], create=True), \
+             patch(f"{_TEMPLATES_PATH}._t_position", mock_templates["position"], create=True), \
+             patch(_FMT_NUM, side_effect=str), \
+             patch(_RENDER, return_value="# Report"):
+            # Patch the import block inside the function
+            mock_mod = MagicMock()
+            mock_mod.template_basic = mock_templates["basic"]
+            mock_mod.template_advanced = mock_templates["advanced"]
+            mock_mod.template_scalping = mock_templates["scalping"]
+            mock_mod.template_intraday = mock_templates["intraday"]
+            mock_mod.template_swing = mock_templates["swing"]
+            mock_mod.template_position = mock_templates["position"]
+
+            with patch(f"{_TEMPLATES_PATH}.report_generate") as mock_rg:
+                # Call the real unwrapped function
+                pass
+
+            # Actually run the function with template import patched
+            with patch("mtdata.core.report_templates.template_basic", mock_templates["basic"], create=True), \
+                 patch("mtdata.core.report_templates.template_advanced", mock_templates["advanced"], create=True), \
+                 patch("mtdata.core.report_templates.template_scalping", mock_templates["scalping"], create=True), \
+                 patch("mtdata.core.report_templates.template_intraday", mock_templates["intraday"], create=True), \
+                 patch("mtdata.core.report_templates.template_swing", mock_templates["swing"], create=True), \
+                 patch("mtdata.core.report_templates.template_position", mock_templates["position"], create=True):
+                res = fn("EURUSD", template=template, output=output,
+                         horizon=horizon, methods=methods, timeframe=timeframe)
+        return res
+
+    def test_basic_template_toon(self):
+        res = self._run("basic")
+        assert isinstance(res, dict)
+
+    def test_advanced_template(self):
+        res = self._run("advanced")
+        assert isinstance(res, dict)
+
+    def test_scalping_template(self):
+        res = self._run("scalping")
+        assert isinstance(res, dict)
+
+    def test_intraday_template(self):
+        res = self._run("intraday")
+        assert isinstance(res, dict)
+
+    def test_swing_template(self):
+        res = self._run("swing")
+        assert isinstance(res, dict)
+
+    def test_position_template(self):
+        res = self._run("position")
+        assert isinstance(res, dict)
+
+
+class TestReportUnknownTemplate:
+
+    def test_unknown_toon(self):
+        fn = _get_report_generate()
+        # Patch the import block to succeed
+        mock_basic = MagicMock()
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
+            res = fn("EURUSD", template="unknown_xyz", output="toon")
+        assert "error" in res
+
+    def test_unknown_markdown(self):
+        fn = _get_report_generate()
+        mock_basic = MagicMock()
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
+            res = fn("EURUSD", template="unknown_xyz", output="markdown")
+        assert isinstance(res, str)
+        assert "error:" in res
+
+
+# ---------------------------------------------------------------------------
+# Template import failure
+# ---------------------------------------------------------------------------
+
+
+class TestReportTemplateImportError:
+
+    def test_import_error_toon(self):
+        fn = _get_report_generate()
+        with patch.dict("sys.modules", {"mtdata.core.report_templates": None}):
+            res = fn("EURUSD", template="basic", output="toon")
+        assert "error" in res
+
+    def test_import_error_markdown(self):
+        fn = _get_report_generate()
+        with patch.dict("sys.modules", {"mtdata.core.report_templates": None}):
+            res = fn("EURUSD", template="basic", output="markdown")
+        assert isinstance(res, str)
+        assert "error:" in res
+
+
+# ---------------------------------------------------------------------------
+# Template returns non-dict / error
+# ---------------------------------------------------------------------------
+
+
+class TestReportBadTemplateReturn:
+
+    def test_non_dict_toon(self):
+        fn = _get_report_generate()
+        mock_basic = MagicMock(return_value="not a dict")
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
+            res = fn("EURUSD", template="basic", output="toon")
+        assert "error" in res
+
+    def test_non_dict_markdown(self):
+        fn = _get_report_generate()
+        mock_basic = MagicMock(return_value="not a dict")
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
+            res = fn("EURUSD", template="basic", output="markdown")
+        assert isinstance(res, str)
+        assert "error:" in res
+
+    def test_error_in_report_toon(self):
+        fn = _get_report_generate()
+        mock_basic = MagicMock(return_value={"error": "data fetch failed"})
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
+            res = fn("EURUSD", template="basic", output="toon")
+        assert "error" in res
+
+    def test_error_in_report_markdown(self):
+        fn = _get_report_generate()
+        mock_basic = MagicMock(return_value={"error": "data fetch failed"})
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
+            res = fn("EURUSD", template="basic", output="markdown")
+        assert isinstance(res, str)
+        assert "error:" in res
+
+
+# ---------------------------------------------------------------------------
+# Horizon selection
+# ---------------------------------------------------------------------------
+
+
+class TestReportHorizon:
+
+    def _run_with_horizon(self, horizon=None, params=None, template="basic"):
+        fn = _get_report_generate()
+        rep = _make_report(sections={})
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            fn("EURUSD", template=template, horizon=horizon, params=params)
+        return mock_basic
+
+    def test_default_horizon_basic(self):
+        mock = self._run_with_horizon(template="basic")
+        args = mock.call_args
+        # Second positional arg is horizon
+        assert args[0][1] == 12
+
+    def test_explicit_horizon(self):
+        mock = self._run_with_horizon(horizon=20, template="basic")
+        assert mock.call_args[0][1] == 20
+
+    def test_horizon_from_params(self):
+        mock = self._run_with_horizon(params={"horizon": 30}, template="basic")
+        assert mock.call_args[0][1] == 30
+
+    def test_scalping_default_horizon(self):
+        mock = self._run_with_horizon(template="scalping")
+        assert mock.call_args[0][1] == 8
+
+    def test_swing_default_horizon(self):
+        mock = self._run_with_horizon(template="swing")
+        assert mock.call_args[0][1] == 24
+
+    def test_position_default_horizon(self):
+        mock = self._run_with_horizon(template="position")
+        assert mock.call_args[0][1] == 30
+
+
+# ---------------------------------------------------------------------------
+# Summary extraction — context
+# ---------------------------------------------------------------------------
+
+
+class TestReportSummaryContext:
+
+    def _run_report(self, sections):
+        fn = _get_report_generate()
+        rep = _make_report(sections=sections)
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            res = fn("EURUSD", template="basic", output="toon")
+        return res
+
+    def test_close_in_summary(self):
+        sec = _make_full_sections()
+        res = self._run_report(sec)
+        assert any("close=" in s for s in res.get("summary", []))
+
+    def test_trend_above_emas(self):
+        sec = _make_full_sections()
+        res = self._run_report(sec)
+        assert any("above EMAs" in s for s in res.get("summary", []))
+
+    def test_trend_mixed(self):
+        sec = _make_full_sections()
+        sec["context"]["last_snapshot"]["close"] = 1.0990  # below EMA_50
+        res = self._run_report(sec)
+        assert any("mixed" in s for s in res.get("summary", []))
+
+    def test_rsi_in_summary(self):
+        sec = _make_full_sections()
+        res = self._run_report(sec)
+        assert any("RSI=" in s for s in res.get("summary", []))
+
+    def test_no_context(self):
+        res = self._run_report({})
+        assert "summary" in res
+
+
+# ---------------------------------------------------------------------------
+# Summary extraction — pivot
+# ---------------------------------------------------------------------------
+
+
+class TestReportSummaryPivot:
+
+    def _run_report(self, sections):
+        fn = _get_report_generate()
+        rep = _make_report(sections=sections)
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            return fn("EURUSD", template="basic", output="toon")
+
+    def test_pivot_in_summary(self):
+        sec = _make_full_sections()
+        res = self._run_report(sec)
+        assert any("pivot" in s for s in res.get("summary", []))
+
+    def test_pivot_method_fallback(self):
+        """When chosen method not in available methods, fallback to first available."""
+        sec = _make_full_sections()
+        sec["pivot"]["methods"] = [{"method": "fibonacci"}]
+        sec["pivot"]["levels"] = [
+            {"level": "R1", "woodie": 1.106},
+            {"level": "PP", "woodie": 1.102},
+            {"level": "S1", "woodie": 1.098},
+        ]
+        res = self._run_report(sec)
+        # Should fallback to 'woodie' since 'fibonacci' not in level columns
+        assert isinstance(res, dict)
+
+
+# ---------------------------------------------------------------------------
+# Summary extraction — volatility & forecast
+# ---------------------------------------------------------------------------
+
+
+class TestReportSummaryVolForecast:
+
+    def _run_report(self, sections):
+        fn = _get_report_generate()
+        rep = _make_report(sections=sections)
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            return fn("EURUSD", template="basic", output="toon")
+
+    def test_vol_sigma(self):
+        sec = _make_full_sections()
+        res = self._run_report(sec)
+        assert any("sigma=" in s for s in res.get("summary", []))
+
+    def test_vol_return_sigma_fallback(self):
+        sec = _make_full_sections()
+        sec["volatility"] = {"horizon_sigma_return": 0.003}
+        res = self._run_report(sec)
+        assert any("sigma=" in s for s in res.get("summary", []))
+
+    def test_forecast_in_summary(self):
+        sec = _make_full_sections()
+        res = self._run_report(sec)
+        assert any("forecast=" in s for s in res.get("summary", []))
+
+
+# ---------------------------------------------------------------------------
+# Summary extraction — barriers
+# ---------------------------------------------------------------------------
+
+
+class TestReportSummaryBarriers:
+
+    def _run_report(self, sections):
+        fn = _get_report_generate()
+        rep = _make_report(sections=sections)
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            return fn("EURUSD", template="basic", output="toon")
+
+    def test_long_short_barriers(self):
+        sec = _make_full_sections()
+        res = self._run_report(sec)
+        summ = res.get("summary", [])
+        assert any("dir=long" in s for s in summ)
+        assert any("dir=short" in s for s in summ)
+
+    def test_single_best_barrier(self):
+        """Old-style barriers with single best/direction (lines 217-233)."""
+        sec = _make_full_sections()
+        sec["barriers"] = {
+            "best": {"tp": 2.0, "sl": 1.0, "edge": 0.5},
+            "direction": "long",
+        }
+        res = self._run_report(sec)
+        assert any("barrier best" in s for s in res.get("summary", []))
+
+    def test_no_barriers_section(self):
+        sec = _make_full_sections()
+        del sec["barriers"]
+        res = self._run_report(sec)
+        assert "summary" in res
+
+
+# ---------------------------------------------------------------------------
+# Markdown output
+# ---------------------------------------------------------------------------
+
+
+class TestReportMarkdownOutput:
+
+    def test_markdown_renders(self):
+        fn = _get_report_generate()
+        rep = _make_report(sections=_make_full_sections())
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str), \
+             patch(_RENDER, return_value="# Report\nContent"):
+            res = fn("EURUSD", template="basic", output="markdown")
+        assert isinstance(res, str)
+        assert "Report" in res
+
+
+# ---------------------------------------------------------------------------
+# Top-level exception
+# ---------------------------------------------------------------------------
+
+
+class TestReportTopLevelException:
+
+    def test_exception_toon(self):
+        fn = _get_report_generate()
+        with patch.dict("sys.modules", {"mtdata.core.report_templates": None}):
+            # Force a deeper exception
+            res = fn("EURUSD", template="basic", output="toon")
+        assert isinstance(res, dict)
+
+    def test_exception_markdown(self):
+        fn = _get_report_generate()
+        with patch.dict("sys.modules", {"mtdata.core.report_templates": None}):
+            res = fn("EURUSD", template="basic", output="markdown")
+        assert isinstance(res, str)
+
+
+# ---------------------------------------------------------------------------
+# Params passthrough
+# ---------------------------------------------------------------------------
+
+
+class TestReportParams:
+
+    def test_timeframe_in_params(self):
+        fn = _get_report_generate()
+        rep = _make_report(sections={})
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            fn("EURUSD", template="basic", timeframe="M15")
+        # The params dict passed to template should contain 'timeframe'
+        call_args = mock_basic.call_args
+        p = call_args[0][3]  # 4th positional arg = params
+        assert p.get("timeframe") == "M15"
+
+    def test_methods_in_params(self):
+        fn = _get_report_generate()
+        rep = _make_report(sections={})
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            fn("EURUSD", template="basic", methods=["EMA", "ARIMA"])
+        call_args = mock_basic.call_args
+        p = call_args[0][3]
+        assert p.get("methods") == ["EMA", "ARIMA"]

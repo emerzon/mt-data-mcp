@@ -1,0 +1,1281 @@
+"""Comprehensive tests for mtdata.services.data_service.
+
+Targets ~294 uncovered lines with 50+ tests covering public methods,
+private helpers, data transformation, validation, and error handling.
+"""
+
+import unittest
+from unittest.mock import patch, MagicMock, PropertyMock
+from contextlib import contextmanager
+from typing import Any, Iterator, Tuple, Optional
+from datetime import datetime, timedelta, timezone
+import sys
+import os
+import math
+
+# Ensure src is importable
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+
+# Mock mt5 module before importing data_service
+_mt5_mock = MagicMock()
+sys.modules['MetaTrader5'] = _mt5_mock
+
+import numpy as np
+import pandas as pd
+
+from mtdata.services.data_service import (
+    _fetch_rates_with_warmup,
+    _build_rates_df,
+    _trim_df_to_target,
+    fetch_candles,
+    fetch_ticks,
+)
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_UTC = timezone.utc
+_NOW = datetime(2025, 6, 15, 12, 0, 0, tzinfo=_UTC)
+_NOW_TS = _NOW.timestamp()
+
+
+@contextmanager
+def _mock_symbol_guard(*args: Any, **kwargs: Any) -> Iterator[Tuple[None, MagicMock]]:
+    """Context manager stub that always succeeds."""
+    yield None, MagicMock()
+
+
+@contextmanager
+def _mock_symbol_guard_error(*args: Any, **kwargs: Any) -> Iterator[Tuple[str, None]]:
+    """Context manager stub that returns an error."""
+    yield "Symbol INVALID not found", None
+
+
+def _make_rates(n: int, *, base_ts: float = _NOW_TS, step: int = 60,
+                tick_vol: int = 100, real_vol: int = 0) -> list:
+    """Generate a list of rate dicts mimicking MT5 structured array rows."""
+    rates = []
+    for i in range(n):
+        rates.append({
+            'time': base_ts - (n - 1 - i) * step,
+            'open': 1.1000 + i * 0.001,
+            'high': 1.2000 + i * 0.001,
+            'low': 1.0000 + i * 0.001,
+            'close': 1.1500 + i * 0.001,
+            'tick_volume': tick_vol,
+            'real_volume': real_vol,
+            'spread': 1,
+        })
+    return rates
+
+
+def _make_ticks(n: int, *, base_ts: float = _NOW_TS, step: float = 1.0) -> list:
+    """Generate a list of tick dicts."""
+    ticks = []
+    for i in range(n):
+        ticks.append({
+            'time': base_ts - (n - 1 - i) * step,
+            'bid': 1.1000 + i * 0.0001,
+            'ask': 1.1002 + i * 0.0001,
+            'last': 1.1001 + i * 0.0001,
+            'volume': 1.0,
+            'time_msc': (base_ts - (n - 1 - i) * step) * 1000,
+            'flags': 0,
+            'volume_real': 0.0,
+        })
+    return ticks
+
+
+# Patch targets (module-level strings)
+_DS = 'mtdata.services.data_service'
+_GUARD = f'{_DS}._symbol_ready_guard'
+_RATES_FROM = f'{_DS}._mt5_copy_rates_from'
+_RATES_RANGE = f'{_DS}._mt5_copy_rates_range'
+_TICKS_FROM = f'{_DS}._mt5_copy_ticks_from'
+_TICKS_RANGE = f'{_DS}._mt5_copy_ticks_range'
+_CACHED_INFO = f'{_DS}.get_symbol_info_cached'
+_RESOLVE_CTZ = f'{_DS}._resolve_client_tz'
+_PARSE_START = f'{_DS}._parse_start_datetime'
+_ESTIMATE_WARMUP = f'{_DS}._estimate_warmup_bars_util'
+_APPLY_TI = f'{_DS}._apply_ta_indicators_util'
+_SIMPLIFY_EXT = f'{_DS}._simplify_dataframe_rows_ext'
+_MT5_CONFIG = f'{_DS}.mt5_config'
+
+
+# ============================================================================
+# _fetch_rates_with_warmup
+# ============================================================================
+
+class TestFetchRatesWithWarmup(unittest.TestCase):
+    """Tests for the _fetch_rates_with_warmup helper."""
+
+    @patch(_RATES_FROM)
+    def test_no_datetime_uses_copy_rates_from(self, mock_from):
+        """Default path: no start/end datetime."""
+        rates = _make_rates(10)
+        mock_from.return_value = rates
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'H1', 5, 0, None, None, retry=False, sanity_check=False,
+        )
+        self.assertIsNone(err)
+        self.assertEqual(result, rates)
+        mock_from.assert_called_once()
+
+    @patch(_RATES_RANGE)
+    @patch(_PARSE_START)
+    def test_start_and_end_datetime(self, mock_parse, mock_range):
+        """Both start and end provided — uses copy_rates_range."""
+        t1 = datetime(2025, 1, 1, tzinfo=_UTC)
+        t2 = datetime(2025, 1, 2, tzinfo=_UTC)
+        mock_parse.side_effect = [t1, t2]
+        rates = _make_rates(5, base_ts=t2.timestamp())
+        mock_range.return_value = rates
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'H1', 5, 0, '2025-01-01', '2025-01-02',
+            retry=False, sanity_check=False,
+        )
+        self.assertIsNone(err)
+        self.assertIsNotNone(result)
+
+    @patch(_RATES_RANGE)
+    @patch(_PARSE_START)
+    def test_start_and_end_invalid_from(self, mock_parse, mock_range):
+        """start_datetime fails to parse."""
+        mock_parse.side_effect = [None, datetime(2025, 1, 2, tzinfo=_UTC)]
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'H1', 5, 0, 'bad', '2025-01-02',
+            retry=False, sanity_check=False,
+        )
+        self.assertIsNone(result)
+        self.assertIn('Invalid date', err)
+
+    @patch(_RATES_RANGE)
+    @patch(_PARSE_START)
+    def test_start_and_end_invalid_to(self, mock_parse, mock_range):
+        """end_datetime fails to parse."""
+        mock_parse.side_effect = [datetime(2025, 1, 1, tzinfo=_UTC), None]
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'H1', 5, 0, '2025-01-01', 'bad',
+            retry=False, sanity_check=False,
+        )
+        self.assertIsNone(result)
+        self.assertIn('Invalid date', err)
+
+    @patch(_RATES_RANGE)
+    @patch(_PARSE_START)
+    def test_start_after_end_returns_error(self, mock_parse, mock_range):
+        """start > end should error."""
+        mock_parse.side_effect = [
+            datetime(2025, 2, 1, tzinfo=_UTC),
+            datetime(2025, 1, 1, tzinfo=_UTC),
+        ]
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'H1', 5, 0, '2025-02-01', '2025-01-01',
+            retry=False, sanity_check=False,
+        )
+        self.assertIsNone(result)
+        self.assertIn('before', err)
+
+    @patch(_RATES_RANGE)
+    @patch(_PARSE_START)
+    def test_start_only(self, mock_parse, mock_range):
+        """Only start_datetime provided."""
+        t1 = datetime(2025, 1, 1, tzinfo=_UTC)
+        mock_parse.return_value = t1
+        rates = _make_rates(5, base_ts=t1.timestamp() + 600)
+        mock_range.return_value = rates
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'H1', 5, 0, '2025-01-01', None,
+            retry=False, sanity_check=False,
+        )
+        self.assertIsNone(err)
+        self.assertEqual(result, rates)
+
+    @patch(_PARSE_START)
+    def test_start_only_invalid(self, mock_parse):
+        """start_datetime fails to parse (no end)."""
+        mock_parse.return_value = None
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'H1', 5, 0, 'bad', None,
+            retry=False, sanity_check=False,
+        )
+        self.assertIsNone(result)
+        self.assertIn('Invalid date', err)
+
+    @patch(_RATES_RANGE)
+    @patch(_PARSE_START)
+    def test_start_only_unknown_timeframe_seconds(self, mock_parse, mock_range):
+        """start only with a timeframe whose seconds can't be resolved."""
+        mock_parse.return_value = datetime(2025, 1, 1, tzinfo=_UTC)
+        with patch(f'{_DS}.TIMEFRAME_SECONDS', {}):
+            result, err = _fetch_rates_with_warmup(
+                'EURUSD', 16385, 'H1', 5, 0, '2025-01-01', None,
+                retry=False, sanity_check=False,
+            )
+        self.assertIsNone(result)
+        self.assertIn('Unable to determine', err)
+
+    @patch(_RATES_RANGE)
+    @patch(_PARSE_START)
+    def test_end_only(self, mock_parse, mock_range):
+        """Only end_datetime provided."""
+        t2 = datetime(2025, 1, 2, tzinfo=_UTC)
+        mock_parse.return_value = t2
+        rates = _make_rates(5, base_ts=t2.timestamp())
+        mock_range.return_value = rates
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'H1', 5, 0, None, '2025-01-02',
+            retry=False, sanity_check=False,
+        )
+        self.assertIsNone(err)
+        self.assertIsNotNone(result)
+
+    @patch(_PARSE_START)
+    def test_end_only_invalid(self, mock_parse):
+        """end_datetime fails to parse (no start)."""
+        mock_parse.return_value = None
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'H1', 5, 0, None, 'bad',
+            retry=False, sanity_check=False,
+        )
+        self.assertIsNone(result)
+        self.assertIn('Invalid date', err)
+
+    @patch(_RATES_FROM)
+    def test_retry_logic(self, mock_from):
+        """Retry returns data on second attempt."""
+        mock_from.side_effect = [None, _make_rates(5)]
+        with patch(f'{_DS}.FETCH_RETRY_DELAY', 0):
+            result, err = _fetch_rates_with_warmup(
+                'EURUSD', 16385, 'H1', 5, 0, None, None,
+                retry=True, sanity_check=False,
+            )
+        self.assertIsNone(err)
+        self.assertIsNotNone(result)
+        self.assertEqual(mock_from.call_count, 2)
+
+    @patch(_RATES_FROM)
+    def test_sanity_check_pass(self, mock_from):
+        """Sanity check passes when last bar is recent."""
+        rates = _make_rates(5)
+        mock_from.return_value = rates
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'H1', 5, 0, None, None,
+            retry=False, sanity_check=True,
+        )
+        self.assertIsNone(err)
+        self.assertIsNotNone(result)
+
+
+# ============================================================================
+# _build_rates_df
+# ============================================================================
+
+class TestBuildRatesDf(unittest.TestCase):
+    """Tests for _build_rates_df."""
+
+    @patch(f'{_DS}._rates_to_df')
+    def test_basic_utc(self, mock_to_df):
+        """UTC mode: stores __epoch and formats time column."""
+        raw_df = pd.DataFrame({
+            'time': [1000.0, 2000.0],
+            'open': [1.1, 1.2],
+            'tick_volume': [50, 60],
+        })
+        mock_to_df.return_value = raw_df
+        df = _build_rates_df([{}, {}], use_client_tz=False)
+        self.assertIn('__epoch', df.columns)
+        self.assertEqual(list(df['__epoch']), [1000.0, 2000.0])
+        # time column should be string-formatted (not raw float)
+        self.assertIsInstance(df['time'].iloc[0], str)
+
+    @patch(f'{_DS}._rates_to_df')
+    def test_client_tz(self, mock_to_df):
+        """Client-tz mode: applies local time formatting."""
+        raw_df = pd.DataFrame({
+            'time': [1000.0, 2000.0],
+            'open': [1.1, 1.2],
+            'tick_volume': [50, 60],
+        })
+        mock_to_df.return_value = raw_df
+        df = _build_rates_df([{}, {}], use_client_tz=True)
+        self.assertIn('__epoch', df.columns)
+        self.assertIsInstance(df['time'].iloc[0], str)
+
+    @patch(f'{_DS}._rates_to_df')
+    def test_volume_alias(self, mock_to_df):
+        """If 'volume' is absent but 'tick_volume' exists, it gets aliased."""
+        raw_df = pd.DataFrame({
+            'time': [1000.0],
+            'tick_volume': [123],
+        })
+        mock_to_df.return_value = raw_df
+        df = _build_rates_df([{}], use_client_tz=False)
+        self.assertIn('volume', df.columns)
+        self.assertEqual(df['volume'].iloc[0], 123)
+
+    @patch(f'{_DS}._rates_to_df')
+    def test_volume_already_present(self, mock_to_df):
+        """If 'volume' already exists, tick_volume is not aliased."""
+        raw_df = pd.DataFrame({
+            'time': [1000.0],
+            'volume': [999],
+            'tick_volume': [123],
+        })
+        mock_to_df.return_value = raw_df
+        df = _build_rates_df([{}], use_client_tz=False)
+        self.assertEqual(df['volume'].iloc[0], 999)
+
+
+# ============================================================================
+# _trim_df_to_target
+# ============================================================================
+
+class TestTrimDfToTarget(unittest.TestCase):
+    """Tests for _trim_df_to_target."""
+
+    def _make_df(self, n: int = 20) -> pd.DataFrame:
+        base = 1_000_000.0
+        return pd.DataFrame({
+            '__epoch': [base + i * 60 for i in range(n)],
+            'time': [f"t{i}" for i in range(n)],
+            'close': [1.1 + i * 0.01 for i in range(n)],
+        })
+
+    def test_no_datetime_trims_to_candles(self):
+        df = self._make_df(20)
+        out = _trim_df_to_target(df, None, None, 5)
+        self.assertEqual(len(out), 5)
+        # Should be the last 5 rows
+        self.assertEqual(list(out['time']), [f"t{i}" for i in range(15, 20)])
+
+    def test_no_datetime_no_trim_needed(self):
+        df = self._make_df(3)
+        out = _trim_df_to_target(df, None, None, 10)
+        self.assertEqual(len(out), 3)
+
+    @patch(_PARSE_START)
+    def test_start_and_end(self, mock_parse):
+        df = self._make_df(20)
+        epoch_5 = df['__epoch'].iloc[5]
+        epoch_14 = df['__epoch'].iloc[14]
+        mock_parse.side_effect = [
+            datetime.fromtimestamp(epoch_5, tz=_UTC),
+            datetime.fromtimestamp(epoch_14, tz=_UTC),
+        ]
+        with patch(f'{_DS}._utc_epoch_seconds', side_effect=lambda d: d.timestamp()):
+            out = _trim_df_to_target(df, '2025-01-01', '2025-01-02', 100)
+        self.assertEqual(len(out), 10)  # rows 5..14 inclusive
+
+    @patch(_PARSE_START)
+    def test_start_and_end_invalid_parse(self, mock_parse):
+        df = self._make_df(10)
+        mock_parse.side_effect = [None, None]
+        out = _trim_df_to_target(df, 'bad', 'bad', 5)
+        self.assertEqual(len(out), 0)
+
+    @patch(_PARSE_START)
+    def test_start_only_trims_from_start(self, mock_parse):
+        df = self._make_df(20)
+        epoch_10 = df['__epoch'].iloc[10]
+        mock_parse.return_value = datetime.fromtimestamp(epoch_10, tz=_UTC)
+        with patch(f'{_DS}._utc_epoch_seconds', side_effect=lambda d: d.timestamp()):
+            out = _trim_df_to_target(df, '2025-01-01', None, 5)
+        # 10 rows from index 10 onward, but capped at candles=5
+        self.assertEqual(len(out), 5)
+
+    @patch(_PARSE_START)
+    def test_start_only_invalid(self, mock_parse):
+        df = self._make_df(10)
+        mock_parse.return_value = None
+        out = _trim_df_to_target(df, 'bad', None, 5)
+        self.assertEqual(len(out), 0)
+
+    def test_end_only_trims_tail(self):
+        df = self._make_df(20)
+        out = _trim_df_to_target(df, None, '2025-01-02', 5)
+        self.assertEqual(len(out), 5)
+
+    def test_copy_rows_false(self):
+        df = self._make_df(10)
+        out = _trim_df_to_target(df, None, None, 5, copy_rows=False)
+        self.assertEqual(len(out), 5)
+
+
+# ============================================================================
+# fetch_candles — integration-level tests
+# ============================================================================
+
+class TestFetchCandles(unittest.TestCase):
+    """Tests for the public fetch_candles function."""
+
+    def _default_patches(self):
+        """Return a dict of common patches for fetch_candles tests."""
+        return {
+            _GUARD: _mock_symbol_guard,
+            _CACHED_INFO: MagicMock(return_value=MagicMock()),
+            _RESOLVE_CTZ: MagicMock(return_value=None),
+            _ESTIMATE_WARMUP: MagicMock(return_value=0),
+        }
+
+    # -- Success paths -------------------------------------------------------
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_basic_success(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10)
+        result = fetch_candles('EURUSD', limit=5)
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['candles'], 5)
+        self.assertEqual(result['symbol'], 'EURUSD')
+        self.assertEqual(result['timeframe'], 'H1')
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_time_as_epoch(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10)
+        result = fetch_candles('EURUSD', limit=5, time_as_epoch=True)
+        self.assertTrue(result.get('success'))
+        for row in result.get('data', []):
+            self.assertIsInstance(row.get('time'), (int, float))
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_ohlcv_filter_close_only(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10)
+        result = fetch_candles('EURUSD', limit=5, ohlcv='C')
+        self.assertTrue(result.get('success'))
+        row_keys = set(result['data'][0].keys())
+        self.assertIn('close', row_keys)
+        self.assertNotIn('open', row_keys)
+        self.assertNotIn('high', row_keys)
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_ohlcv_filter_oh(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10)
+        result = fetch_candles('EURUSD', limit=5, ohlcv='OH')
+        self.assertTrue(result.get('success'))
+        row_keys = set(result['data'][0].keys())
+        self.assertIn('open', row_keys)
+        self.assertIn('high', row_keys)
+        self.assertNotIn('low', row_keys)
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_real_volume_included(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10, real_vol=500)
+        result = fetch_candles('EURUSD', limit=5)
+        self.assertTrue(result.get('success'))
+        row_keys = set(result['data'][0].keys())
+        self.assertIn('real_volume', row_keys)
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_zero_tick_volume_excluded(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10, tick_vol=0)
+        result = fetch_candles('EURUSD', limit=5)
+        self.assertTrue(result.get('success'))
+        row_keys = set(result['data'][0].keys())
+        self.assertNotIn('tick_volume', row_keys)
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_last_candle_open_flag(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        # Make the last bar's epoch == now so it should be "open"
+        mock_from.return_value = _make_rates(10, step=3600)
+        result = fetch_candles('EURUSD', timeframe='H1', limit=5)
+        self.assertTrue(result.get('success'))
+        self.assertIn('last_candle_open', result)
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_meta_server_tz_offset(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 7200
+        mock_from.return_value = _make_rates(10)
+        result = fetch_candles('EURUSD', limit=5)
+        self.assertEqual(result['meta']['server_tz_offset'], 7200)
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_timezone_utc_in_payload(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10)
+        result = fetch_candles('EURUSD', limit=5)
+        self.assertEqual(result.get('timezone'), 'UTC')
+
+    # -- Error paths ---------------------------------------------------------
+
+    def test_invalid_timeframe(self):
+        result = fetch_candles('EURUSD', timeframe='INVALID')
+        self.assertIn('error', result)
+        self.assertIn('Invalid timeframe', result['error'])
+
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_GUARD, _mock_symbol_guard_error)
+    def test_symbol_guard_error(self, mock_info):
+        result = fetch_candles('INVALID')
+        self.assertIn('error', result)
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM, return_value=None)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_rates_none(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        _mt5_mock.last_error.return_value = (-1, 'No data')
+        result = fetch_candles('EURUSD', limit=5)
+        self.assertIn('error', result)
+        self.assertIn('Failed to get rates', result['error'])
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM, return_value=[])
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_rates_empty(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        result = fetch_candles('EURUSD', limit=5)
+        self.assertIn('error', result)
+        self.assertIn('No data', result['error'])
+
+    # -- Indicators ----------------------------------------------------------
+
+    @patch(_MT5_CONFIG)
+    @patch(_APPLY_TI, return_value=['rsi_14'])
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=14)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_indicators_list_of_dicts(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_ti, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        rates = _make_rates(30)
+        mock_from.return_value = rates
+        # _apply_ta_indicators_util is called; it adds column to df in-place
+        def add_col(df, spec):
+            df['rsi_14'] = 50.0
+            return ['rsi_14']
+        mock_ti.side_effect = add_col
+        result = fetch_candles(
+            'EURUSD', limit=10,
+            indicators=[{'name': 'rsi', 'params': [14]}],
+        )
+        self.assertTrue(result.get('success'))
+
+    @patch(_MT5_CONFIG)
+    @patch(_APPLY_TI, return_value=['ema_20'])
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=20)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_indicators_string_spec(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_ti, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(30)
+        def add_col(df, spec):
+            df['ema_20'] = 1.1
+            return ['ema_20']
+        mock_ti.side_effect = add_col
+        result = fetch_candles('EURUSD', limit=10, indicators='ema(20)')
+        self.assertTrue(result.get('success'))
+
+    @patch(_MT5_CONFIG)
+    @patch(_APPLY_TI, return_value=['rsi_14'])
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=14)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_indicators_json_string(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_ti, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(30)
+        def add_col(df, spec):
+            df['rsi_14'] = 50.0
+            return ['rsi_14']
+        mock_ti.side_effect = add_col
+        result = fetch_candles(
+            'EURUSD', limit=10,
+            indicators='[{"name":"rsi","params":[14]}]',
+        )
+        self.assertTrue(result.get('success'))
+
+    @patch(_MT5_CONFIG)
+    @patch(_APPLY_TI)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=14)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_nan_warmup_retry(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_ti, mock_cfg):
+        """When TI columns have NaN, fetch_candles retries with more warmup."""
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        rates = _make_rates(30)
+        mock_from.return_value = rates
+
+        call_count = [0]
+        def add_col(df, spec):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                df['rsi_14'] = float('nan')
+            else:
+                df['rsi_14'] = 50.0
+            return ['rsi_14']
+        mock_ti.side_effect = add_col
+
+        result = fetch_candles('EURUSD', limit=5, indicators=[{'name': 'rsi', 'params': [14]}])
+        self.assertTrue(result.get('success'))
+        # _apply_ta_indicators_util should have been called twice (original + retry)
+        self.assertGreaterEqual(mock_ti.call_count, 2)
+
+    # -- Simplify ------------------------------------------------------------
+
+    @patch(_MT5_CONFIG)
+    @patch(_SIMPLIFY_EXT)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_simplify_basic(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_simp, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        rates = _make_rates(20)
+        mock_from.return_value = rates
+
+        # simplify returns the df unchanged with metadata
+        def passthrough(df, hdrs, spec):
+            meta = {'method': 'lttb', 'original_rows': len(df), 'returned_rows': len(df), 'headers': hdrs}
+            return df, meta
+        mock_simp.side_effect = passthrough
+
+        result = fetch_candles('EURUSD', limit=10, simplify={'mode': 'select', 'points': 5})
+        self.assertTrue(result.get('success'))
+
+    @patch(_MT5_CONFIG)
+    @patch(_SIMPLIFY_EXT)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_simplify_reduced_rows(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_simp, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        rates = _make_rates(20)
+        mock_from.return_value = rates
+
+        def reduce_rows(df, hdrs, spec):
+            reduced = df.iloc[:3].copy()
+            meta = {'method': 'lttb', 'original_rows': len(df), 'returned_rows': 3}
+            return reduced, meta
+        mock_simp.side_effect = reduce_rows
+
+        result = fetch_candles('EURUSD', limit=10, simplify={'mode': 'select', 'points': 3})
+        self.assertTrue(result.get('success'))
+        self.assertTrue(result.get('simplified'))
+
+    @patch(_MT5_CONFIG)
+    @patch(_SIMPLIFY_EXT)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_simplify_no_explicit_points(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_simp, mock_cfg):
+        """When no points/ratio specified, default ratio is used."""
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(20)
+        mock_simp.side_effect = lambda df, h, s: (df, None)
+        result = fetch_candles('EURUSD', limit=10, simplify={'mode': 'select'})
+        self.assertTrue(result.get('success'))
+
+    # -- Denoise -------------------------------------------------------------
+
+    @patch(_MT5_CONFIG)
+    @patch(f'{_DS}._normalize_denoise_spec')
+    @patch(f'{_DS}._apply_denoise_util', return_value=[])
+    @patch(_SIMPLIFY_EXT, side_effect=lambda df, h, s: (df, None))
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_denoise_pre_ti(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_simp,
+                            mock_apply_dn, mock_norm_dn, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10)
+        mock_norm_dn.return_value = {'method': 'ema', 'when': 'pre_ti', 'params': {}}
+        result = fetch_candles('EURUSD', limit=5, denoise={'method': 'ema', 'when': 'pre_ti'})
+        self.assertTrue(result.get('success'))
+
+    @patch(_MT5_CONFIG)
+    @patch(f'{_DS}._normalize_denoise_spec')
+    @patch(f'{_DS}._apply_denoise_util', return_value=['close_dn'])
+    @patch(_SIMPLIFY_EXT, side_effect=lambda df, h, s: (df, None))
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_denoise_post_ti(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_simp,
+                             mock_apply_dn, mock_norm_dn, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10)
+        mock_norm_dn.return_value = {'method': 'ema', 'when': 'post_ti', 'params': {}}
+        mock_apply_dn.side_effect = lambda df, spec, **kw: (
+            df.__setitem__('close_dn', 1.0) or ['close_dn']
+        )
+        result = fetch_candles('EURUSD', limit=5, denoise={'method': 'ema', 'when': 'post_ti'})
+        self.assertTrue(result.get('success'))
+        if result.get('denoise'):
+            self.assertTrue(result['denoise']['applied'])
+
+    # -- Start / End datetime ------------------------------------------------
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_start_and_end_datetime(self, mock_warmup, mock_ctz, mock_info, mock_range, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        base = datetime(2025, 1, 1, tzinfo=_UTC).timestamp()
+        mock_range.return_value = _make_rates(20, base_ts=base + 20 * 60, step=60)
+        result = fetch_candles('EURUSD', limit=100, start='2025-01-01', end='2025-01-01 00:20')
+        self.assertTrue(result.get('success'))
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_start_only(self, mock_warmup, mock_ctz, mock_info, mock_range, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_range.return_value = _make_rates(20)
+        result = fetch_candles('EURUSD', limit=5, start='2025-01-01')
+        self.assertTrue(result.get('success'))
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_end_only(self, mock_warmup, mock_ctz, mock_info, mock_range, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_range.return_value = _make_rates(20)
+        result = fetch_candles('EURUSD', limit=5, end='2025-01-02')
+        self.assertTrue(result.get('success'))
+
+    # -- Exception handling --------------------------------------------------
+
+    @patch(_CACHED_INFO, side_effect=RuntimeError("boom"))
+    def test_exception_returns_error(self, mock_info):
+        result = fetch_candles('EURUSD')
+        self.assertIn('error', result)
+        self.assertIn('Error getting rates', result['error'])
+
+
+# ============================================================================
+# fetch_ticks
+# ============================================================================
+
+class TestFetchTicks(unittest.TestCase):
+    """Tests for the public fetch_ticks function."""
+
+    # -- Success paths -------------------------------------------------------
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_basic_rows(self, mock_ctz, mock_info, mock_ticks):
+        mock_ticks.return_value = _make_ticks(10)
+        result = fetch_ticks('EURUSD', limit=5, output='rows')
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['count'], 5)
+        self.assertEqual(result.get('timezone'), 'UTC')
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_summary_output(self, mock_ctz, mock_info, mock_ticks):
+        mock_ticks.return_value = _make_ticks(20)
+        result = fetch_ticks('EURUSD', limit=10, output='summary')
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['output'], 'summary')
+        self.assertIn('stats', result)
+        stats = result['stats']
+        self.assertIn('bid', stats)
+        self.assertIn('ask', stats)
+        self.assertIn('mid', stats)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_stats_output(self, mock_ctz, mock_info, mock_ticks):
+        mock_ticks.return_value = _make_ticks(20)
+        result = fetch_ticks('EURUSD', limit=10, output='stats')
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['output'], 'stats')
+        bid_stats = result['stats']['bid']
+        # detailed_stats should include median, skew, quantiles
+        self.assertIn('median', bid_stats)
+        self.assertIn('skew', bid_stats)
+        self.assertIn('q25', bid_stats)
+        self.assertIn('q75', bid_stats)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_summary_stats_structure(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(10)
+        mock_ticks.return_value = ticks
+        result = fetch_ticks('EURUSD', limit=10, output='summary')
+        bid = result['stats']['bid']
+        for key in ('first', 'last', 'low', 'high', 'mean', 'std', 'stderr', 'change', 'change_pct'):
+            self.assertIn(key, bid)
+            self.assertIsInstance(bid[key], float)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_summary_duration_and_tick_rate(self, mock_ctz, mock_info, mock_ticks):
+        mock_ticks.return_value = _make_ticks(10, step=2.0)
+        result = fetch_ticks('EURUSD', limit=10, output='summary')
+        self.assertGreater(result['duration_seconds'], 0)
+        self.assertIsInstance(result['tick_rate_per_second'], float)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_last_column_included(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(5)
+        # Ensure 'last' values are non-zero/distinct
+        for i, t in enumerate(ticks):
+            t['last'] = 1.1 + i * 0.01
+        mock_ticks.return_value = ticks
+        result = fetch_ticks('EURUSD', limit=5, output='rows')
+        self.assertTrue(result.get('success'))
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_zero_last_excluded(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(5)
+        for t in ticks:
+            t['last'] = 0.0
+        mock_ticks.return_value = ticks
+        result = fetch_ticks('EURUSD', limit=5, output='rows')
+        self.assertTrue(result.get('success'))
+
+    # -- With start/end dates ------------------------------------------------
+
+    @patch(_TICKS_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_start_only(self, mock_ctz, mock_info, mock_from):
+        mock_from.return_value = _make_ticks(10)
+        result = fetch_ticks('EURUSD', limit=5, start='2025-01-01', output='rows')
+        self.assertTrue(result.get('success'))
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_start_and_end(self, mock_ctz, mock_info, mock_range):
+        mock_range.return_value = _make_ticks(10)
+        result = fetch_ticks('EURUSD', limit=5, start='2025-01-01', end='2025-01-02', output='rows')
+        self.assertTrue(result.get('success'))
+
+    # -- Error paths ---------------------------------------------------------
+
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_GUARD, _mock_symbol_guard_error)
+    def test_symbol_guard_error(self, mock_info):
+        result = fetch_ticks('INVALID')
+        self.assertIn('error', result)
+
+    @patch(_TICKS_RANGE, return_value=None)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_ticks_none(self, mock_ctz, mock_info, mock_ticks):
+        _mt5_mock.last_error.return_value = (-1, 'No ticks')
+        result = fetch_ticks('EURUSD', limit=5)
+        self.assertIn('error', result)
+        self.assertIn('Failed to get ticks', result['error'])
+
+    @patch(_TICKS_RANGE, return_value=[])
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_ticks_empty(self, mock_ctz, mock_info, mock_ticks):
+        result = fetch_ticks('EURUSD', limit=5)
+        self.assertIn('error', result)
+        self.assertIn('No tick data', result['error'])
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_invalid_output_mode(self, mock_ctz, mock_info, mock_ticks):
+        mock_ticks.return_value = _make_ticks(5)
+        result = fetch_ticks('EURUSD', limit=5, output='BADMODE')
+        self.assertIn('error', result)
+        self.assertIn('Invalid output mode', result['error'])
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_invalid_start_date(self, mock_ctz, mock_info, mock_ticks):
+        result = fetch_ticks('EURUSD', limit=5, start='not-a-date')
+        self.assertIn('error', result)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_invalid_end_date(self, mock_ctz, mock_info, mock_ticks):
+        result = fetch_ticks('EURUSD', limit=5, start='2025-01-01', end='not-a-date')
+        self.assertIn('error', result)
+
+    @patch(_CACHED_INFO, side_effect=RuntimeError("boom"))
+    def test_exception_returns_error(self, mock_info):
+        result = fetch_ticks('EURUSD')
+        self.assertIn('error', result)
+        self.assertIn('Error getting ticks', result['error'])
+
+    # -- Volume stats --------------------------------------------------------
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_summary_with_real_volume(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(20)
+        for i, t in enumerate(ticks):
+            t['volume_real'] = float(100 + i * 10)
+        mock_ticks.return_value = ticks
+        result = fetch_ticks('EURUSD', limit=20, output='summary')
+        self.assertTrue(result.get('success'))
+        vol = result['stats']['volume']
+        self.assertEqual(vol['kind'], 'real_volume')
+        self.assertIn('sum', vol)
+        self.assertIn('per_second', vol)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_stats_with_real_volume_detail(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(20)
+        for i, t in enumerate(ticks):
+            t['volume_real'] = float(100 + i * 10)
+        mock_ticks.return_value = ticks
+        result = fetch_ticks('EURUSD', limit=20, output='stats')
+        vol = result['stats']['volume']
+        self.assertIn('dist', vol)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_summary_tick_volume_fallback(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(10)
+        # All volume_real == 0 → fallback to tick_volume
+        mock_ticks.return_value = ticks
+        result = fetch_ticks('EURUSD', limit=10, output='summary')
+        vol = result['stats']['volume']
+        self.assertEqual(vol['kind'], 'tick_volume')
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_detailed_tick_volume_stats(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(10)
+        mock_ticks.return_value = ticks
+        result = fetch_ticks('EURUSD', limit=10, output='stats')
+        vol = result['stats']['volume']
+        self.assertEqual(vol['kind'], 'tick_volume')
+        self.assertIn('sum', vol)
+
+    # -- Simplify for ticks --------------------------------------------------
+
+    @patch(_SIMPLIFY_EXT)
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_simplify_approximate_mode(self, mock_ctz, mock_info, mock_ticks, mock_simp):
+        ticks = _make_ticks(20)
+        mock_ticks.return_value = ticks
+        # The approximate mode uses _simplify_dataframe_rows_ext
+        def passthrough(df, hdrs, spec):
+            return df.iloc[:5].copy(), {'method': 'approximate', 'returned_rows': 5}
+        mock_simp.side_effect = passthrough
+        result = fetch_ticks('EURUSD', limit=20, output='rows',
+                             simplify={'mode': 'approximate', 'points': 5})
+        self.assertTrue(result.get('success'))
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_simplify_select_mode(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(20)
+        mock_ticks.return_value = ticks
+        result = fetch_ticks('EURUSD', limit=20, output='rows',
+                             simplify={'mode': 'select', 'points': 5})
+        self.assertTrue(result.get('success'))
+        # Should have fewer rows than original
+        self.assertLessEqual(result['count'], 20)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_simplify_no_points_uses_default(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(20)
+        mock_ticks.return_value = ticks
+        result = fetch_ticks('EURUSD', limit=20, output='rows',
+                             simplify={'mode': 'select'})
+        self.assertTrue(result.get('success'))
+
+
+# ============================================================================
+# Edge cases and integration
+# ============================================================================
+
+class TestEdgeCases(unittest.TestCase):
+    """Edge cases and misc coverage."""
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_single_candle(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(1)
+        result = fetch_candles('EURUSD', limit=1)
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['candles'], 1)
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_limit_larger_than_data(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(3)
+        result = fetch_candles('EURUSD', limit=100)
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['candles'], 3)
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_ohlcv_v_includes_tick_volume(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10)
+        result = fetch_candles('EURUSD', limit=5, ohlcv='V')
+        self.assertTrue(result.get('success'))
+        row_keys = set(result['data'][0].keys())
+        self.assertIn('tick_volume', row_keys)
+        self.assertNotIn('open', row_keys)
+
+    def test_build_rates_df_no_tick_volume(self):
+        """DataFrame without tick_volume column doesn't crash."""
+        raw_df = pd.DataFrame({
+            'time': [1000.0],
+            'open': [1.1],
+            'volume': [10],
+        })
+        with patch(f'{_DS}._rates_to_df', return_value=raw_df):
+            df = _build_rates_df([{}], use_client_tz=False)
+        self.assertIn('volume', df.columns)
+        self.assertEqual(df['volume'].iloc[0], 10)
+
+    def test_trim_df_start_only_fewer_than_candles(self):
+        """start_only with fewer matching rows than candles requested."""
+        base = 1_000_000.0
+        df = pd.DataFrame({
+            '__epoch': [base + i * 60 for i in range(5)],
+            'time': [f"t{i}" for i in range(5)],
+        })
+        with patch(_PARSE_START, return_value=datetime.fromtimestamp(base, tz=_UTC)), \
+             patch(f'{_DS}._utc_epoch_seconds', side_effect=lambda d: d.timestamp()):
+            out = _trim_df_to_target(df, '2025-01-01', None, 100)
+        self.assertEqual(len(out), 5)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_single_tick_summary(self, mock_ctz, mock_info, mock_ticks):
+        mock_ticks.return_value = _make_ticks(1)
+        result = fetch_ticks('EURUSD', limit=1, output='summary')
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['count'], 1)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_ticks_flags_included(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(5)
+        for i, t in enumerate(ticks):
+            t['flags'] = i + 1  # nonzero flags
+        mock_ticks.return_value = ticks
+        result = fetch_ticks('EURUSD', limit=5, output='rows')
+        self.assertTrue(result.get('success'))
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_ticks_volume_real_cv_computed(self, mock_ctz, mock_info, mock_ticks):
+        """Real volume stats include coefficient of variation."""
+        ticks = _make_ticks(20)
+        for i, t in enumerate(ticks):
+            t['volume_real'] = float(50 + i * 5)
+        mock_ticks.return_value = ticks
+        result = fetch_ticks('EURUSD', limit=20, output='summary')
+        vol = result['stats']['volume']
+        self.assertIn('cv', vol)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_ticks_volume_top10_share(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(20)
+        for i, t in enumerate(ticks):
+            t['volume_real'] = float(100 + i * 10)
+        mock_ticks.return_value = ticks
+        result = fetch_ticks('EURUSD', limit=20, output='summary')
+        vol = result['stats']['volume']
+        self.assertIn('top10_share', vol)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_ticks_volume_half_ratio(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(20)
+        for i, t in enumerate(ticks):
+            t['volume_real'] = float(100 + i * 10)
+        mock_ticks.return_value = ticks
+        result = fetch_ticks('EURUSD', limit=20, output='summary')
+        vol = result['stats']['volume']
+        self.assertIn('half_ratio', vol)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_ticks_vwap_mid(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(20)
+        for i, t in enumerate(ticks):
+            t['volume_real'] = float(100 + i * 10)
+        mock_ticks.return_value = ticks
+        result = fetch_ticks('EURUSD', limit=20, output='summary')
+        vol = result['stats']['volume']
+        self.assertIn('vwap_mid', vol)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_ticks_spike95(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(20)
+        for i, t in enumerate(ticks):
+            t['volume_real'] = float(100 + i * 10)
+        mock_ticks.return_value = ticks
+        result = fetch_ticks('EURUSD', limit=20, output='summary')
+        vol = result['stats']['volume']
+        self.assertIn('spike95_count', vol)
+        self.assertIn('spike95_share', vol)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_ticks_corr_abs_mid_change(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(20, step=2.0)
+        for i, t in enumerate(ticks):
+            t['volume_real'] = float(100 + i * 10)
+            t['bid'] = 1.1 + i * 0.001
+            t['ask'] = 1.1002 + i * 0.001
+        mock_ticks.return_value = ticks
+        result = fetch_ticks('EURUSD', limit=20, output='summary')
+        vol = result['stats']['volume']
+        self.assertIn('corr_abs_mid_change', vol)
+
+
+if __name__ == '__main__':
+    unittest.main()

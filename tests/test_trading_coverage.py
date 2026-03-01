@@ -1,0 +1,1597 @@
+"""Comprehensive tests for mtdata.core.trading – targeting ~418 uncovered lines.
+
+Covers:
+- _normalize_order_type_input (pure)
+- _to_server_time_naive (config-dependent)
+- _server_time_naive_to_mt5_timestamp (pure)
+- _normalize_pending_expiration (mixed)
+- _validate_volume (pure with symbol_info)
+- _validate_deviation (pure)
+- _normalize_trade_comment (pure)
+- trade_place (dispatch logic)
+- trade_modify (dispatch logic)
+- trade_close (dispatch logic)
+- trade_account_info / trade_history / trade_get_open / trade_get_pending (MT5)
+- _place_market_order / _place_pending_order (MT5)
+- _modify_position / _modify_pending_order (MT5)
+- _close_positions / _cancel_pending (MT5)
+- trade_risk_analyze (MT5)
+"""
+
+import math
+import sys
+import os
+from datetime import datetime, timezone, timedelta
+from types import SimpleNamespace
+from collections import namedtuple
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+# ---------------------------------------------------------------------------
+# Ensure src/ is importable and stub MetaTrader5 before importing the module
+# ---------------------------------------------------------------------------
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+_mt5_stub = MagicMock()
+_mt5_stub.ORDER_TYPE_BUY = 0
+_mt5_stub.ORDER_TYPE_SELL = 1
+_mt5_stub.ORDER_TYPE_BUY_LIMIT = 2
+_mt5_stub.ORDER_TYPE_SELL_LIMIT = 3
+_mt5_stub.ORDER_TYPE_BUY_STOP = 4
+_mt5_stub.ORDER_TYPE_SELL_STOP = 5
+_mt5_stub.TRADE_ACTION_DEAL = 1
+_mt5_stub.TRADE_ACTION_PENDING = 5
+_mt5_stub.TRADE_ACTION_SLTP = 6
+_mt5_stub.TRADE_ACTION_MODIFY = 7
+_mt5_stub.TRADE_ACTION_REMOVE = 8
+_mt5_stub.TRADE_RETCODE_DONE = 10009
+_mt5_stub.ORDER_TIME_GTC = 0
+_mt5_stub.ORDER_TIME_SPECIFIED = 2
+_mt5_stub.ORDER_FILLING_IOC = 1
+_mt5_stub.POSITION_TYPE_BUY = 0
+_mt5_stub.POSITION_TYPE_SELL = 1
+sys.modules["MetaTrader5"] = _mt5_stub
+
+from mtdata.core.trading import (
+    _normalize_order_type_input,
+    _to_server_time_naive,
+    _server_time_naive_to_mt5_timestamp,
+    _normalize_pending_expiration,
+    _validate_volume,
+    _validate_deviation,
+    _normalize_trade_comment,
+    _GTC_EXPIRATION_TOKENS,
+    _ORDER_TYPE_NUMERIC_MAP,
+    _SUPPORTED_ORDER_TYPES,
+    trade_place,
+    trade_modify,
+    trade_close,
+    trade_account_info,
+    trade_risk_analyze,
+)
+
+
+def _unwrap_mcp(result):
+    """MCP tool decorator serialises dicts to strings; return the raw dict
+    when the underlying function is patched to return one, otherwise return
+    the string for assertion with ``in``."""
+    if isinstance(result, dict):
+        return result
+    return str(result)
+
+
+# ===================================================================
+# Helpers
+# ===================================================================
+
+def _sym(
+    volume_min=0.01,
+    volume_max=100.0,
+    volume_step=0.01,
+    point=0.00001,
+    digits=5,
+    visible=True,
+    trade_contract_size=100000,
+    trade_tick_value=1.0,
+    trade_tick_size=0.00001,
+):
+    """Create a mock symbol_info object."""
+    return SimpleNamespace(
+        volume_min=volume_min,
+        volume_max=volume_max,
+        volume_step=volume_step,
+        point=point,
+        digits=digits,
+        visible=visible,
+        trade_contract_size=trade_contract_size,
+        trade_tick_value=trade_tick_value,
+        trade_tick_size=trade_tick_size,
+        symbol="EURUSD",
+    )
+
+
+def _tick(bid=1.10000, ask=1.10020):
+    return SimpleNamespace(bid=bid, ask=ask)
+
+
+def _order_result(retcode=10009, deal=1, order=1, volume=0.01, price=1.1,
+                  bid=1.1, ask=1.1002, comment="done", request_id=1):
+    return SimpleNamespace(
+        retcode=retcode, deal=deal, order=order, volume=volume,
+        price=price, bid=bid, ask=ask, comment=comment, request_id=request_id,
+    )
+
+
+def _position(ticket=1, symbol="EURUSD", type_=0, volume=0.01,
+              price_open=1.1, sl=1.09, tp=1.12, profit=50.0,
+              price_current=1.105, comment="", magic=234000,
+              time=1700000000, time_update=1700000000, swap=0.0):
+    return SimpleNamespace(
+        ticket=ticket, symbol=symbol, type=type_, volume=volume,
+        price_open=price_open, sl=sl, tp=tp, profit=profit,
+        price_current=price_current, comment=comment, magic=magic,
+        time=time, time_update=time_update, swap=swap,
+        _asdict=lambda: {
+            "ticket": ticket, "symbol": symbol, "type": type_, "volume": volume,
+            "price_open": price_open, "sl": sl, "tp": tp, "profit": profit,
+            "price_current": price_current, "comment": comment, "magic": magic,
+            "time": time, "time_update": time_update, "swap": swap,
+        },
+    )
+
+
+def _pending_order(ticket=100, symbol="EURUSD", type_=2, volume=0.01,
+                   price_open=1.09, sl=1.08, tp=1.11, time_setup=1700000000,
+                   time_expiration=0, type_time=0, comment="", magic=234000):
+    return SimpleNamespace(
+        ticket=ticket, symbol=symbol, type=type_, volume=volume,
+        price_open=price_open, sl=sl, tp=tp, time_setup=time_setup,
+        time_expiration=time_expiration, type_time=type_time,
+        comment=comment, magic=magic,
+        _asdict=lambda: {
+            "ticket": ticket, "symbol": symbol, "type": type_, "volume": volume,
+            "price_open": price_open, "sl": sl, "tp": tp,
+            "time_setup": time_setup, "time_expiration": time_expiration,
+            "comment": comment, "magic": magic,
+        },
+    )
+
+
+# Patch _auto_connect_wrapper to just call the function directly
+@pytest.fixture(autouse=True)
+def _bypass_auto_connect(monkeypatch):
+    """Make _auto_connect_wrapper a passthrough so no real MT5 connection is needed."""
+    monkeypatch.setattr(
+        "mtdata.core.trading._auto_connect_wrapper",
+        lambda fn=None, **kw: fn if fn else (lambda f: f),
+    )
+
+
+# ===================================================================
+#  _normalize_order_type_input  (pure)
+# ===================================================================
+
+class TestNormalizeOrderTypeInput:
+    """Exhaustive tests for _normalize_order_type_input."""
+
+    def test_none_returns_error(self):
+        t, err = _normalize_order_type_input(None)
+        assert t is None and "required" in err
+
+    @pytest.mark.parametrize("val,expected", [
+        (0, "BUY"), (1, "SELL"), (2, "BUY_LIMIT"),
+        (3, "SELL_LIMIT"), (4, "BUY_STOP"), (5, "SELL_STOP"),
+    ])
+    def test_numeric_ints(self, val, expected):
+        t, err = _normalize_order_type_input(val)
+        assert t == expected and err is None
+
+    @pytest.mark.parametrize("val,expected", [
+        (0.0, "BUY"), (1.0, "SELL"), (5.0, "SELL_STOP"),
+    ])
+    def test_numeric_floats_whole(self, val, expected):
+        t, err = _normalize_order_type_input(val)
+        assert t == expected and err is None
+
+    def test_numeric_float_non_integer_rejected(self):
+        t, err = _normalize_order_type_input(1.5)
+        assert t is None and "Unsupported" in err
+
+    def test_numeric_out_of_range(self):
+        t, err = _normalize_order_type_input(99)
+        assert t is None and "0..5" in err
+
+    def test_numeric_negative(self):
+        t, err = _normalize_order_type_input(-1)
+        assert t is None
+
+    def test_inf_rejected(self):
+        t, err = _normalize_order_type_input(float("inf"))
+        assert t is None
+
+    def test_nan_rejected(self):
+        t, err = _normalize_order_type_input(float("nan"))
+        assert t is None
+
+    def test_bool_rejected(self):
+        t, err = _normalize_order_type_input(True)
+        assert t is None and "Unsupported" in err
+
+    @pytest.mark.parametrize("text,expected", [
+        ("BUY", "BUY"),
+        ("sell", "SELL"),
+        ("Buy_Limit", "BUY_LIMIT"),
+        ("SELL-STOP", "SELL_STOP"),
+        ("buy limit", "BUY_LIMIT"),
+        ("sell  stop", "SELL_STOP"),
+    ])
+    def test_text_canonical_and_variations(self, text, expected):
+        t, err = _normalize_order_type_input(text)
+        assert t == expected and err is None
+
+    def test_text_alias_long(self):
+        t, err = _normalize_order_type_input("LONG")
+        assert t == "BUY"
+
+    def test_text_alias_short(self):
+        t, err = _normalize_order_type_input("SHORT")
+        assert t == "SELL"
+
+    def test_text_mt5_prefix(self):
+        t, err = _normalize_order_type_input("MT5.ORDER_TYPE_BUY_LIMIT")
+        assert t == "BUY_LIMIT"
+
+    def test_text_order_type_prefix(self):
+        t, err = _normalize_order_type_input("ORDER_TYPE_SELL_STOP")
+        assert t == "SELL_STOP"
+
+    def test_empty_string(self):
+        t, err = _normalize_order_type_input("")
+        assert t is None and "required" in err
+
+    def test_whitespace_only(self):
+        t, err = _normalize_order_type_input("   ")
+        assert t is None and "required" in err
+
+    def test_unsupported_text(self):
+        t, err = _normalize_order_type_input("MARKET_BUY")
+        assert t is None and "Unsupported" in err
+
+    def test_string_numeric_coerced(self):
+        t, err = _normalize_order_type_input("0")
+        assert t == "BUY"
+
+    def test_string_numeric_float(self):
+        t, err = _normalize_order_type_input("3.0")
+        assert t == "SELL_LIMIT"
+
+    def test_string_numeric_out_of_range(self):
+        t, err = _normalize_order_type_input("99")
+        assert t is None
+
+    def test_string_inf_rejected(self):
+        t, err = _normalize_order_type_input("inf")
+        assert t is None
+
+    def test_negative_float(self):
+        t, err = _normalize_order_type_input(-0.5)
+        assert t is None
+
+
+# ===================================================================
+#  _server_time_naive_to_mt5_timestamp (pure)
+# ===================================================================
+
+class TestServerTimeNaiveToMT5Timestamp:
+
+    def test_epoch_zero(self):
+        assert _server_time_naive_to_mt5_timestamp(datetime(1970, 1, 1)) == 0
+
+    def test_known_timestamp(self):
+        dt = datetime(2024, 1, 1, 0, 0, 0)
+        expected = int((dt - datetime(1970, 1, 1)).total_seconds())
+        assert _server_time_naive_to_mt5_timestamp(dt) == expected
+
+    def test_strips_tzinfo(self):
+        dt = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        result = _server_time_naive_to_mt5_timestamp(dt)
+        expected = int((datetime(2024, 6, 15, 12, 0, 0) - datetime(1970, 1, 1)).total_seconds())
+        assert result == expected
+
+    def test_truncates_microseconds(self):
+        dt = datetime(2024, 1, 1, 0, 0, 0, 500000)
+        result = _server_time_naive_to_mt5_timestamp(dt)
+        assert result == int((datetime(2024, 1, 1) - datetime(1970, 1, 1)).total_seconds())
+
+
+# ===================================================================
+#  _to_server_time_naive (config-dependent)
+# ===================================================================
+
+class TestToServerTimeNaive:
+
+    @patch("mtdata.core.trading.mt5_config")
+    def test_naive_utc_no_tz_config(self, mock_config):
+        mock_config.get_server_tz.side_effect = Exception("no tz")
+        mock_config.get_client_tz.side_effect = Exception("no tz")
+        mock_config.get_time_offset_seconds.return_value = 0
+        dt = datetime(2024, 1, 1, 12, 0, 0)
+        result = _to_server_time_naive(dt)
+        assert result.tzinfo is None
+        assert result == datetime(2024, 1, 1, 12, 0, 0)
+
+    @patch("mtdata.core.trading.mt5_config")
+    def test_applies_offset_seconds(self, mock_config):
+        mock_config.get_server_tz.return_value = None
+        mock_config.get_client_tz.return_value = None
+        mock_config.get_time_offset_seconds.return_value = 3600  # +1h
+        dt = datetime(2024, 1, 1, 12, 0, 0)
+        result = _to_server_time_naive(dt)
+        assert result.tzinfo is None
+        assert result == datetime(2024, 1, 1, 13, 0, 0)
+
+    @patch("mtdata.core.trading.mt5_config")
+    def test_aware_input_without_tz_config(self, mock_config):
+        mock_config.get_server_tz.return_value = None
+        mock_config.get_client_tz.return_value = None
+        mock_config.get_time_offset_seconds.return_value = 0
+        dt = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone(timedelta(hours=5)))
+        result = _to_server_time_naive(dt)
+        assert result.tzinfo is None
+        # Should convert to UTC first (12:00 +5 = 07:00 UTC), then add offset 0
+        assert result == datetime(2024, 1, 1, 7, 0, 0)
+
+
+# ===================================================================
+#  _validate_volume (pure with symbol_info mock)
+# ===================================================================
+
+class TestValidateVolume:
+
+    def test_valid_volume(self):
+        vol, err = _validate_volume(0.05, _sym())
+        assert err is None and vol == 0.05
+
+    def test_non_numeric(self):
+        vol, err = _validate_volume("abc", _sym())
+        assert vol is None and "numeric" in err
+
+    def test_zero_volume(self):
+        vol, err = _validate_volume(0, _sym())
+        assert vol is None and "positive" in err
+
+    def test_negative_volume(self):
+        vol, err = _validate_volume(-1, _sym())
+        assert vol is None and "positive" in err
+
+    def test_inf_volume(self):
+        vol, err = _validate_volume(float("inf"), _sym())
+        assert vol is None and "positive" in err or "finite" in err
+
+    def test_nan_volume(self):
+        vol, err = _validate_volume(float("nan"), _sym())
+        assert vol is None
+
+    def test_below_min(self):
+        vol, err = _validate_volume(0.001, _sym(volume_min=0.01))
+        assert vol is None and ">= 0.01" in err
+
+    def test_above_max(self):
+        vol, err = _validate_volume(200, _sym(volume_max=100))
+        assert vol is None and "<= 100" in err
+
+    def test_misaligned_step(self):
+        vol, err = _validate_volume(0.015, _sym(volume_step=0.01))
+        assert vol is None and "step" in err
+
+    def test_step_rounding_accepted(self):
+        vol, err = _validate_volume(0.10, _sym(volume_step=0.01))
+        assert err is None
+
+    def test_none_constraints_accepted(self):
+        si = SimpleNamespace(volume_min=None, volume_max=None, volume_step=None)
+        vol, err = _validate_volume(5.0, si)
+        assert err is None and vol == 5.0
+
+    def test_zero_min_ignored(self):
+        si = _sym(volume_min=0)
+        vol, err = _validate_volume(0.01, si)
+        assert err is None
+
+    def test_zero_max_ignored(self):
+        si = _sym(volume_max=0)
+        vol, err = _validate_volume(0.01, si)
+        assert err is None
+
+    def test_zero_step_ignored(self):
+        si = _sym(volume_step=0)
+        vol, err = _validate_volume(0.05, si)
+        assert err is None
+
+    def test_non_numeric_constraints_handled(self):
+        si = SimpleNamespace(volume_min="bad", volume_max="bad", volume_step="bad")
+        vol, err = _validate_volume(1.0, si)
+        assert err is None and vol == 1.0
+
+
+# ===================================================================
+#  _validate_deviation (pure)
+# ===================================================================
+
+class TestValidateDeviation:
+
+    def test_valid(self):
+        dev, err = _validate_deviation(20)
+        assert dev == 20 and err is None
+
+    def test_zero(self):
+        dev, err = _validate_deviation(0)
+        assert dev == 0 and err is None
+
+    def test_negative(self):
+        dev, err = _validate_deviation(-5)
+        assert dev is None and ">= 0" in err
+
+    def test_float_truncated(self):
+        dev, err = _validate_deviation(10.9)
+        assert dev == 10 and err is None
+
+    def test_non_numeric(self):
+        dev, err = _validate_deviation("abc")
+        assert dev is None and "numeric" in err
+
+    def test_none(self):
+        dev, err = _validate_deviation(None)
+        assert dev is None
+
+
+# ===================================================================
+#  _normalize_trade_comment (pure)
+# ===================================================================
+
+class TestNormalizeTradeComment:
+
+    def test_default_used_when_empty(self):
+        assert _normalize_trade_comment("", default="MyDef") == "MyDef"
+
+    def test_none_uses_default(self):
+        assert _normalize_trade_comment(None, default="MyDef") == "MyDef"
+
+    def test_custom_comment(self):
+        assert _normalize_trade_comment("hello", default="x") == "hello"
+
+    def test_suffix_appended(self):
+        assert _normalize_trade_comment("base", default="x", suffix="!") == "base!"
+
+    def test_truncation_at_31(self):
+        long = "a" * 50
+        result = _normalize_trade_comment(long, default="x")
+        assert len(result) == 31
+
+    def test_suffix_truncation(self):
+        base = "a" * 30
+        result = _normalize_trade_comment(base, default="x", suffix="XX")
+        assert len(result) <= 31
+
+    def test_empty_default_falls_back_to_mcp(self):
+        result = _normalize_trade_comment(None, default="")
+        assert result == "MCP"
+
+    def test_very_long_suffix(self):
+        result = _normalize_trade_comment("b", default="x", suffix="S" * 40)
+        assert len(result) <= 31
+
+
+# ===================================================================
+#  _normalize_pending_expiration (mixed: some paths need config mock)
+# ===================================================================
+
+class TestNormalizePendingExpiration:
+
+    def test_none_not_explicit(self):
+        val, explicit = _normalize_pending_expiration(None)
+        assert val is None and explicit is False
+
+    def test_empty_string_not_explicit(self):
+        val, explicit = _normalize_pending_expiration("")
+        assert val is None and explicit is False
+
+    def test_whitespace_string_not_explicit(self):
+        val, explicit = _normalize_pending_expiration("   ")
+        assert val is None and explicit is False
+
+    @pytest.mark.parametrize("token", list(_GTC_EXPIRATION_TOKENS))
+    def test_gtc_tokens(self, token):
+        val, explicit = _normalize_pending_expiration(token)
+        assert val is None and explicit is True
+
+    def test_gtc_case_insensitive(self):
+        val, explicit = _normalize_pending_expiration("gtc")
+        assert val is None and explicit is True
+
+    def test_negative_number_clears(self):
+        val, explicit = _normalize_pending_expiration(-1)
+        assert val is None and explicit is True
+
+    def test_zero_clears(self):
+        val, explicit = _normalize_pending_expiration(0)
+        assert val is None and explicit is True
+
+    def test_inf_clears(self):
+        val, explicit = _normalize_pending_expiration(float("inf"))
+        assert val is None and explicit is True
+
+    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    def test_datetime_returns_timestamp(self, _mock):
+        dt = datetime(2025, 6, 1, 12, 0, 0)
+        val, explicit = _normalize_pending_expiration(dt)
+        assert isinstance(val, int) and explicit is True
+
+    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    def test_positive_numeric_epoch(self, _mock):
+        ts = 1717200000.0  # some future epoch
+        val, explicit = _normalize_pending_expiration(ts)
+        assert isinstance(val, int) and explicit is True
+
+    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    def test_string_numeric_epoch(self, _mock):
+        val, explicit = _normalize_pending_expiration("1717200000")
+        assert isinstance(val, int) and explicit is True
+
+    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    def test_iso8601_string(self, _mock):
+        val, explicit = _normalize_pending_expiration("2025-06-01T12:00:00")
+        assert isinstance(val, int) and explicit is True
+
+    def test_string_negative_numeric(self):
+        # "-1" may be parsed by dateparser as a relative date; the key point
+        # is that a negative numeric string is handled without raising.
+        val, explicit = _normalize_pending_expiration("-1")
+        assert explicit is True
+
+    def test_unsupported_type_raises(self):
+        with pytest.raises(TypeError, match="Unsupported expiration type"):
+            _normalize_pending_expiration([1, 2, 3])
+
+    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    def test_relative_time_30m(self, _mock):
+        val, explicit = _normalize_pending_expiration("30m")
+        assert isinstance(val, int) and explicit is True
+
+    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    def test_relative_time_in_2_hours(self, _mock):
+        val, explicit = _normalize_pending_expiration("in 2 hours")
+        assert isinstance(val, int) and explicit is True
+
+    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    def test_relative_time_1d(self, _mock):
+        val, explicit = _normalize_pending_expiration("1d")
+        assert isinstance(val, int) and explicit is True
+
+    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    def test_relative_time_seconds(self, _mock):
+        val, explicit = _normalize_pending_expiration("60s")
+        assert isinstance(val, int) and explicit is True
+
+    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    def test_relative_time_weeks(self, _mock):
+        val, explicit = _normalize_pending_expiration("2w")
+        assert isinstance(val, int) and explicit is True
+
+    def test_string_inf_clears(self):
+        val, explicit = _normalize_pending_expiration("inf")
+        assert val is None and explicit is True
+
+    def test_quoted_gtc(self):
+        val, explicit = _normalize_pending_expiration('"GTC"')
+        assert val is None and explicit is True
+
+
+# ===================================================================
+#  trade_place  (dispatch / validation – no MT5 calls for validation errors)
+# ===================================================================
+
+class TestTradePlace:
+
+    def test_missing_symbol(self):
+        result = _unwrap_mcp(trade_place(symbol=None, volume=0.01, order_type="BUY"))
+        assert "symbol" in result
+
+    def test_missing_volume(self):
+        result = _unwrap_mcp(trade_place(symbol="EURUSD", volume=None, order_type="BUY"))
+        assert "volume" in result
+
+    def test_missing_order_type(self):
+        result = _unwrap_mcp(trade_place(symbol="EURUSD", volume=0.01, order_type=None))
+        assert "order_type" in result
+
+    def test_all_missing(self):
+        result = _unwrap_mcp(trade_place())
+        for field in ("symbol", "volume", "order_type"):
+            assert field in result
+
+    def test_empty_order_type_string(self):
+        result = _unwrap_mcp(trade_place(symbol="EURUSD", volume=0.01, order_type="  "))
+        assert "order_type" in result
+
+    def test_invalid_order_type(self):
+        result = _unwrap_mcp(trade_place(symbol="EURUSD", volume=0.01, order_type="GARBAGE"))
+        assert "Unsupported" in result
+
+    def test_pending_without_price_returns_error(self):
+        result = _unwrap_mcp(trade_place(symbol="EURUSD", volume=0.01, order_type="BUY_LIMIT", price=None))
+        assert "price" in result.lower()
+
+    def test_invalid_expiration_returns_error(self):
+        result = _unwrap_mcp(trade_place(
+            symbol="EURUSD", volume=0.01, order_type="BUY_LIMIT",
+            price=1.09, expiration="not-a-date-at-all-xyz",
+        ))
+        assert "error" in result.lower() or "unsupported" in result.lower()
+
+    @patch("mtdata.core.trading._place_market_order")
+    def test_dispatches_to_market(self, mock_market):
+        mock_market.return_value = {"retcode": 10009}
+        trade_place(symbol="EURUSD", volume=0.01, order_type="BUY")
+        mock_market.assert_called_once()
+
+    @patch("mtdata.core.trading._place_pending_order")
+    def test_dispatches_to_pending_explicit_type(self, mock_pending):
+        mock_pending.return_value = {"success": True}
+        trade_place(symbol="EURUSD", volume=0.01, order_type="BUY_LIMIT", price=1.09)
+        mock_pending.assert_called_once()
+
+    @patch("mtdata.core.trading._place_pending_order")
+    def test_dispatches_to_pending_with_price(self, mock_pending):
+        mock_pending.return_value = {"success": True}
+        trade_place(symbol="EURUSD", volume=0.01, order_type="BUY", price=1.09)
+        mock_pending.assert_called_once()
+
+    @patch("mtdata.core.trading._place_pending_order")
+    def test_dispatches_to_pending_with_expiration(self, mock_pending):
+        mock_pending.return_value = {"success": True}
+        trade_place(
+            symbol="EURUSD", volume=0.01, order_type="BUY",
+            price=1.09, expiration="GTC",
+        )
+        mock_pending.assert_called_once()
+
+
+# ===================================================================
+#  trade_close (dispatch)
+# ===================================================================
+
+class TestTradeClose:
+
+    def test_invalid_kind(self):
+        result = _unwrap_mcp(trade_close(close_kind="invalid"))
+        assert "error" in result.lower()
+
+    def test_profit_only_on_pending_rejected(self):
+        result = _unwrap_mcp(trade_close(close_kind="pending", profit_only=True))
+        assert "profit_only" in result
+
+    def test_loss_only_on_pending_rejected(self):
+        result = _unwrap_mcp(trade_close(close_kind="pending", loss_only=True))
+        assert "error" in result.lower() or "only" in result.lower()
+
+    @patch("mtdata.core.trading._cancel_pending")
+    def test_dispatches_to_cancel_pending(self, mock_cancel):
+        mock_cancel.return_value = {"cancelled_count": 1}
+        trade_close(close_kind="pending", ticket=123)
+        mock_cancel.assert_called_once()
+
+    @patch("mtdata.core.trading._close_positions")
+    def test_dispatches_to_close_positions(self, mock_close):
+        mock_close.return_value = {"closed_count": 1}
+        trade_close(close_kind="positions", ticket=123)
+        mock_close.assert_called_once()
+
+
+# ===================================================================
+#  trade_modify (dispatch)
+# ===================================================================
+
+class TestTradeModify:
+
+    @patch("mtdata.core.trading._modify_pending_order")
+    def test_price_routes_to_pending(self, mock_pending):
+        mock_pending.return_value = {"success": True}
+        trade_modify(ticket=100, price=1.09)
+        mock_pending.assert_called_once()
+
+    @patch("mtdata.core.trading._modify_pending_order")
+    def test_expiration_routes_to_pending(self, mock_pending):
+        mock_pending.return_value = {"success": True}
+        trade_modify(ticket=100, expiration="GTC")
+        mock_pending.assert_called_once()
+
+    @patch("mtdata.core.trading._modify_position")
+    def test_sl_tp_only_tries_position_first(self, mock_pos):
+        mock_pos.return_value = {"success": True}
+        trade_modify(ticket=100, stop_loss=1.08)
+        mock_pos.assert_called_once()
+
+    @patch("mtdata.core.trading._modify_pending_order")
+    @patch("mtdata.core.trading._modify_position")
+    def test_position_not_found_falls_back_to_pending(self, mock_pos, mock_pend):
+        mock_pos.return_value = {"error": "Position 100 not found"}
+        mock_pend.return_value = {"success": True}
+        result = _unwrap_mcp(trade_modify(ticket=100, stop_loss=1.08))
+        assert "success" in result or "True" in result
+
+    @patch("mtdata.core.trading._modify_pending_order")
+    @patch("mtdata.core.trading._modify_position")
+    def test_both_not_found(self, mock_pos, mock_pend):
+        mock_pos.return_value = {"error": "Position 100 not found"}
+        mock_pend.return_value = {"error": "Pending order 100 not found"}
+        result = _unwrap_mcp(trade_modify(ticket=100, stop_loss=1.08))
+        assert "not found" in result
+
+    @patch("mtdata.core.trading._modify_pending_order")
+    def test_pending_not_found_with_price(self, mock_pend):
+        mock_pend.return_value = {"error": "Pending order 100 not found"}
+        result = _unwrap_mcp(trade_modify(ticket=100, price=1.09))
+        assert "Pending order 100 not found" in result
+
+    def test_bad_expiration_returns_error(self):
+        result = _unwrap_mcp(trade_modify(ticket=100, expiration="not-a-date-xyz-abc"))
+        assert "error" in result.lower() or "unsupported" in result.lower()
+
+
+# ===================================================================
+#  trade_account_info (MT5 mocked)
+# ===================================================================
+
+class TestTradeAccountInfo:
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_account_info_success(self):
+        mt5 = sys.modules["MetaTrader5"]
+        mt5.account_info.return_value = SimpleNamespace(
+            balance=10000, equity=10000, profit=0, margin=100,
+            margin_free=9900, margin_level=10000, currency="USD",
+            leverage=100, trade_allowed=True, trade_expert=True,
+        )
+        result = _unwrap_mcp(trade_account_info())
+        assert "10000" in result or "balance" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_account_info_none(self):
+        mt5 = sys.modules["MetaTrader5"]
+        mt5.account_info.return_value = None
+        result = _unwrap_mcp(trade_account_info())
+        assert "error" in result.lower()
+
+
+# ===================================================================
+#  _place_market_order (MT5 mocked)
+# ===================================================================
+
+class TestPlaceMarketOrder:
+
+    def _setup_mt5(self, mock_mt5):
+        mock_mt5.symbol_info.return_value = _sym()
+        mock_mt5.symbol_info_tick.return_value = _tick()
+        mock_mt5.symbol_select.return_value = True
+        mock_mt5.ORDER_TYPE_BUY = 0
+        mock_mt5.ORDER_TYPE_SELL = 1
+        mock_mt5.TRADE_ACTION_DEAL = 1
+        mock_mt5.TRADE_ACTION_SLTP = 6
+        mock_mt5.TRADE_RETCODE_DONE = 10009
+        mock_mt5.ORDER_TIME_GTC = 0
+        mock_mt5.ORDER_FILLING_IOC = 1
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_symbol_not_found(self):
+        import sys
+        mt5 = sys.modules["MetaTrader5"]
+        mt5.symbol_info.return_value = None
+        from mtdata.core.trading import _place_market_order
+        result = _place_market_order("INVALID", 0.01, "BUY")
+        assert "error" in result and "not found" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_order_send_returns_none(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.return_value = None
+        mt5.last_error.return_value = (10006, "No connection")
+        from mtdata.core.trading import _place_market_order
+        result = _place_market_order("EURUSD", 0.01, "BUY")
+        assert "error" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_order_send_retcode_fail(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.return_value = _order_result(retcode=10004)
+        from mtdata.core.trading import _place_market_order
+        result = _place_market_order("EURUSD", 0.01, "BUY")
+        assert "error" in result and result["retcode"] == 10004
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_invisible_symbol_selected(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.symbol_info.return_value = _sym(visible=False)
+        mt5.symbol_select.return_value = True
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _place_market_order
+        result = _place_market_order("EURUSD", 0.01, "BUY")
+        mt5.symbol_select.assert_called_with("EURUSD", True)
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_invisible_symbol_select_fails(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.symbol_info.return_value = _sym(visible=False)
+        mt5.symbol_select.return_value = False
+        from mtdata.core.trading import _place_market_order
+        result = _place_market_order("EURUSD", 0.01, "BUY")
+        assert "error" in result and "Failed to select" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_buy_sl_above_price_rejected(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        from mtdata.core.trading import _place_market_order
+        result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.2)
+        assert "error" in result and "below" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_sell_sl_below_price_rejected(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        from mtdata.core.trading import _place_market_order
+        result = _place_market_order("EURUSD", 0.01, "SELL", stop_loss=1.0)
+        assert "error" in result and "above" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_buy_tp_below_price_rejected(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        from mtdata.core.trading import _place_market_order
+        result = _place_market_order("EURUSD", 0.01, "BUY", take_profit=1.0)
+        assert "error" in result and "above" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_sell_tp_above_price_rejected(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        from mtdata.core.trading import _place_market_order
+        result = _place_market_order("EURUSD", 0.01, "SELL", take_profit=1.2)
+        assert "error" in result and "below" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_success_with_sl_tp_modification(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.side_effect = [_order_result(), _order_result()]
+        mt5.positions_get.return_value = [_position()]
+        from mtdata.core.trading import _place_market_order
+        result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.09, take_profit=1.12)
+        assert result.get("sl_tp_modified") is True
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_sl_tp_modification_fails_gracefully(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.side_effect = [_order_result(), _order_result(retcode=10004)]
+        mt5.positions_get.return_value = [_position()]
+        from mtdata.core.trading import _place_market_order
+        result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.09, take_profit=1.12)
+        assert result.get("sl_tp_error") is not None
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_sl_tp_position_not_found(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.return_value = _order_result()
+        mt5.positions_get.return_value = []
+        from mtdata.core.trading import _place_market_order
+        result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.09)
+        assert "Position not found" in (result.get("sl_tp_error") or "")
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_pending_type_rejected_for_market(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        from mtdata.core.trading import _place_market_order
+        result = _place_market_order("EURUSD", 0.01, "BUY_LIMIT")
+        assert "error" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_tick_none_returns_error(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.symbol_info_tick.return_value = None
+        from mtdata.core.trading import _place_market_order
+        result = _place_market_order("EURUSD", 0.01, "BUY")
+        assert "error" in result and "current price" in result["error"]
+
+
+# ===================================================================
+#  _place_pending_order (MT5 mocked)
+# ===================================================================
+
+class TestPlacePendingOrder:
+
+    def _setup_mt5(self, mock_mt5):
+        mock_mt5.symbol_info.return_value = _sym()
+        mock_mt5.symbol_info_tick.return_value = _tick(bid=1.10000, ask=1.10020)
+        mock_mt5.symbol_select.return_value = True
+        mock_mt5.ORDER_TYPE_BUY = 0
+        mock_mt5.ORDER_TYPE_SELL = 1
+        mock_mt5.ORDER_TYPE_BUY_LIMIT = 2
+        mock_mt5.ORDER_TYPE_SELL_LIMIT = 3
+        mock_mt5.ORDER_TYPE_BUY_STOP = 4
+        mock_mt5.ORDER_TYPE_SELL_STOP = 5
+        mock_mt5.TRADE_ACTION_PENDING = 5
+        mock_mt5.TRADE_RETCODE_DONE = 10009
+        mock_mt5.ORDER_TIME_GTC = 0
+        mock_mt5.ORDER_TIME_SPECIFIED = 2
+        mock_mt5.ORDER_FILLING_IOC = 1
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_buy_limit_success(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _place_pending_order
+        result = _place_pending_order("EURUSD", 0.01, "BUY_LIMIT", price=1.09)
+        assert result.get("success") is True
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_sell_stop_success(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _place_pending_order
+        result = _place_pending_order("EURUSD", 0.01, "SELL_STOP", price=1.09)
+        assert result.get("success") is True
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_buy_limit_price_above_ask_rejected(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        from mtdata.core.trading import _place_pending_order
+        result = _place_pending_order("EURUSD", 0.01, "BUY_LIMIT", price=1.20)
+        assert "error" in result and "below ask" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_sell_limit_price_below_bid_rejected(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        from mtdata.core.trading import _place_pending_order
+        result = _place_pending_order("EURUSD", 0.01, "SELL_LIMIT", price=1.05)
+        assert "error" in result and "above bid" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_buy_stop_price_below_ask_rejected(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        from mtdata.core.trading import _place_pending_order
+        result = _place_pending_order("EURUSD", 0.01, "BUY_STOP", price=1.05)
+        assert "error" in result and "above ask" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_sell_stop_price_above_bid_rejected(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        from mtdata.core.trading import _place_pending_order
+        result = _place_pending_order("EURUSD", 0.01, "SELL_STOP", price=1.20)
+        assert "error" in result and "below bid" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_pending_sl_tp_buy_validation(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        from mtdata.core.trading import _place_pending_order
+        # SL above entry for BUY_LIMIT should fail
+        result = _place_pending_order("EURUSD", 0.01, "BUY_LIMIT", price=1.09, stop_loss=1.10)
+        assert "error" in result and "below entry" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_pending_tp_buy_validation(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        from mtdata.core.trading import _place_pending_order
+        # TP below entry for BUY_LIMIT should fail
+        result = _place_pending_order("EURUSD", 0.01, "BUY_LIMIT", price=1.09, take_profit=1.05)
+        assert "error" in result and "above entry" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_pending_sl_sell_validation(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        from mtdata.core.trading import _place_pending_order
+        # SL below entry for SELL_LIMIT should fail
+        result = _place_pending_order("EURUSD", 0.01, "SELL_LIMIT", price=1.12, stop_loss=1.10)
+        assert "error" in result and "above entry" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_pending_tp_sell_validation(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        from mtdata.core.trading import _place_pending_order
+        # TP above entry for SELL_LIMIT should fail
+        result = _place_pending_order("EURUSD", 0.01, "SELL_LIMIT", price=1.12, take_profit=1.15)
+        assert "error" in result and "below entry" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_implicit_buy_below_ask_becomes_buy_limit(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _place_pending_order
+        result = _place_pending_order("EURUSD", 0.01, "BUY", price=1.09)
+        # Verify the request used BUY_LIMIT (type=2)
+        call_args = mt5.order_send.call_args[0][0]
+        assert call_args["type"] == mt5.ORDER_TYPE_BUY_LIMIT
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_implicit_sell_above_bid_becomes_sell_limit(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _place_pending_order
+        result = _place_pending_order("EURUSD", 0.01, "SELL", price=1.12)
+        call_args = mt5.order_send.call_args[0][0]
+        assert call_args["type"] == mt5.ORDER_TYPE_SELL_LIMIT
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_order_send_none_returns_error(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.return_value = None
+        mt5.last_error.return_value = (10006, "err")
+        from mtdata.core.trading import _place_pending_order
+        result = _place_pending_order("EURUSD", 0.01, "BUY_LIMIT", price=1.09)
+        assert "error" in result and "Failed" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_order_send_retcode_fail(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.return_value = _order_result(retcode=10004)
+        from mtdata.core.trading import _place_pending_order
+        result = _place_pending_order("EURUSD", 0.01, "BUY_LIMIT", price=1.09)
+        assert "error" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_non_finite_price_rejected(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        from mtdata.core.trading import _place_pending_order
+        result = _place_pending_order("EURUSD", 0.01, "BUY_LIMIT", price=float("inf"))
+        assert "error" in result and "finite" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_with_expiration_sets_type_time_specified(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _place_pending_order
+        # Use a numeric expiration (epoch seconds)
+        with patch("mtdata.core.trading._normalize_pending_expiration", return_value=(1717200000, True)):
+            result = _place_pending_order("EURUSD", 0.01, "BUY_LIMIT", price=1.09, expiration=1717200000)
+        call_args = mt5.order_send.call_args[0][0]
+        assert call_args["type_time"] == 2  # ORDER_TIME_SPECIFIED
+        assert call_args["expiration"] == 1717200000
+
+
+# ===================================================================
+#  _close_positions (MT5 mocked)
+# ===================================================================
+
+class TestClosePositions:
+
+    def _setup_mt5(self, mt5):
+        mt5.ORDER_TYPE_BUY = 0
+        mt5.ORDER_TYPE_SELL = 1
+        mt5.TRADE_ACTION_DEAL = 1
+        mt5.TRADE_RETCODE_DONE = 10009
+        mt5.ORDER_TIME_GTC = 0
+        mt5.ORDER_FILLING_IOC = 1
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_ticket_not_found(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = None
+        from mtdata.core.trading import _close_positions
+        result = _close_positions(ticket=999)
+        assert "error" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_no_open_positions(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = []
+        from mtdata.core.trading import _close_positions
+        result = _close_positions()
+        assert "message" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_profit_only_filter(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        pos_profit = _position(ticket=1, profit=50)
+        pos_loss = _position(ticket=2, profit=-30)
+        mt5.positions_get.return_value = [pos_profit, pos_loss]
+        mt5.symbol_info_tick.return_value = _tick()
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _close_positions
+        result = _close_positions(profit_only=True)
+        assert result["attempted_count"] == 1
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_loss_only_filter(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        pos_profit = _position(ticket=1, profit=50)
+        pos_loss = _position(ticket=2, profit=-30)
+        mt5.positions_get.return_value = [pos_profit, pos_loss]
+        mt5.symbol_info_tick.return_value = _tick()
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _close_positions
+        result = _close_positions(loss_only=True)
+        assert result["attempted_count"] == 1
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_tick_failure_for_position(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position()]
+        mt5.symbol_info_tick.return_value = None
+        from mtdata.core.trading import _close_positions
+        result = _close_positions(ticket=1)
+        assert "error" in result and "tick" in result["error"].lower()
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_order_send_none(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position()]
+        mt5.symbol_info_tick.return_value = _tick()
+        mt5.order_send.return_value = None
+        from mtdata.core.trading import _close_positions
+        result = _close_positions(ticket=1)
+        assert "error" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_no_positions_matched_criteria(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        # All profitable, but loss_only filter
+        mt5.positions_get.return_value = [_position(profit=50)]
+        from mtdata.core.trading import _close_positions
+        result = _close_positions(loss_only=True)
+        assert "message" in result and "No positions matched" in result["message"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_single_ticket_returns_single_result(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position(ticket=42)]
+        mt5.symbol_info_tick.return_value = _tick()
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _close_positions
+        result = _close_positions(ticket=42)
+        assert result["ticket"] == 42
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_symbol_no_positions(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = []
+        from mtdata.core.trading import _close_positions
+        result = _close_positions(symbol="GBPUSD")
+        assert "message" in result
+
+
+# ===================================================================
+#  _cancel_pending (MT5 mocked)
+# ===================================================================
+
+class TestCancelPending:
+
+    def _setup_mt5(self, mt5):
+        mt5.TRADE_ACTION_REMOVE = 8
+        mt5.TRADE_RETCODE_DONE = 10009
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_ticket_not_found(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = None
+        from mtdata.core.trading import _cancel_pending
+        result = _cancel_pending(ticket=999)
+        assert "error" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_no_pending_orders(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = []
+        from mtdata.core.trading import _cancel_pending
+        result = _cancel_pending()
+        assert "message" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_single_cancel_success(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = [_pending_order(ticket=100)]
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _cancel_pending
+        result = _cancel_pending(ticket=100)
+        assert result["ticket"] == 100
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_cancel_order_send_none(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = [_pending_order(ticket=100)]
+        mt5.order_send.return_value = None
+        from mtdata.core.trading import _cancel_pending
+        result = _cancel_pending(ticket=100)
+        assert "error" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_bulk_cancel(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = [
+            _pending_order(ticket=100),
+            _pending_order(ticket=101),
+        ]
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _cancel_pending
+        result = _cancel_pending()
+        assert result["attempted_count"] == 2
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_symbol_no_pending_orders(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = []
+        from mtdata.core.trading import _cancel_pending
+        result = _cancel_pending(symbol="GBPUSD")
+        assert "message" in result
+
+
+# ===================================================================
+#  _modify_position (MT5 mocked)
+# ===================================================================
+
+class TestModifyPosition:
+
+    def _setup_mt5(self, mt5):
+        mt5.TRADE_ACTION_SLTP = 6
+        mt5.TRADE_RETCODE_DONE = 10009
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_position_not_found(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = []
+        from mtdata.core.trading import _modify_position
+        result = _modify_position(ticket=999)
+        assert "error" in result and "not found" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_success(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position()]
+        mt5.symbol_info.return_value = _sym()
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _modify_position
+        result = _modify_position(ticket=1, stop_loss=1.08, take_profit=1.13)
+        assert result.get("success") is True
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_order_send_none(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position()]
+        mt5.symbol_info.return_value = _sym()
+        mt5.order_send.return_value = None
+        mt5.last_error.return_value = (10006, "err")
+        from mtdata.core.trading import _modify_position
+        result = _modify_position(ticket=1, stop_loss=1.08)
+        assert "error" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_order_send_retcode_fail(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position()]
+        mt5.symbol_info.return_value = _sym()
+        mt5.order_send.return_value = _order_result(retcode=10004)
+        from mtdata.core.trading import _modify_position
+        result = _modify_position(ticket=1, stop_loss=1.08)
+        assert "error" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_symbol_info_none(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position()]
+        mt5.symbol_info.return_value = None
+        from mtdata.core.trading import _modify_position
+        result = _modify_position(ticket=1, stop_loss=1.08)
+        assert "error" in result
+
+
+# ===================================================================
+#  _modify_pending_order (MT5 mocked)
+# ===================================================================
+
+class TestModifyPendingOrder:
+
+    def _setup_mt5(self, mt5):
+        mt5.TRADE_ACTION_MODIFY = 7
+        mt5.TRADE_RETCODE_DONE = 10009
+        mt5.ORDER_TIME_GTC = 0
+        mt5.ORDER_TIME_SPECIFIED = 2
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_order_not_found(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = []
+        from mtdata.core.trading import _modify_pending_order
+        result = _modify_pending_order(ticket=999)
+        assert "error" in result and "not found" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_success(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = [_pending_order()]
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _modify_pending_order
+        result = _modify_pending_order(ticket=100, price=1.095)
+        assert result.get("success") is True
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_gtc_expiration_sets_type_time(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = [_pending_order()]
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _modify_pending_order
+        result = _modify_pending_order(ticket=100, expiration="GTC")
+        call_args = mt5.order_send.call_args[0][0]
+        assert call_args["type_time"] == 0  # GTC
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_order_send_none(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = [_pending_order()]
+        mt5.order_send.return_value = None
+        mt5.last_error.return_value = (10006, "err")
+        from mtdata.core.trading import _modify_pending_order
+        result = _modify_pending_order(ticket=100)
+        assert "error" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_preserves_existing_expiration(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        order = _pending_order(type_time=2, time_expiration=1717200000)
+        mt5.orders_get.return_value = [order]
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _modify_pending_order
+        _modify_pending_order(ticket=100, price=1.095)
+        call_args = mt5.order_send.call_args[0][0]
+        assert call_args.get("expiration") == 1717200000
+
+
+# ===================================================================
+#  trade_risk_analyze (MT5 mocked)
+# ===================================================================
+
+class TestTradeRiskAnalyze:
+
+    def _setup_mt5(self, mt5):
+        mt5.TRADE_RETCODE_DONE = 10009
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_account_info_none(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.account_info.return_value = None
+        result = _unwrap_mcp(trade_risk_analyze())
+        assert "error" in result.lower()
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_no_positions(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.account_info.return_value = SimpleNamespace(equity=10000, currency="USD")
+        mt5.positions_get.return_value = None
+        result = _unwrap_mcp(trade_risk_analyze())
+        assert "success" in result and "positions_count" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_positions_with_sl(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.account_info.return_value = SimpleNamespace(equity=10000, currency="USD")
+        pos = SimpleNamespace(
+            ticket=1, symbol="EURUSD", type=0, volume=0.1,
+            price_open=1.1, sl=1.09, tp=1.12, profit=50,
+        )
+        mt5.positions_get.return_value = [pos]
+        mt5.symbol_info.return_value = _sym()
+        result = _unwrap_mcp(trade_risk_analyze())
+        assert "defined" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_positions_without_sl(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.account_info.return_value = SimpleNamespace(equity=10000, currency="USD")
+        pos = SimpleNamespace(
+            ticket=1, symbol="EURUSD", type=0, volume=0.1,
+            price_open=1.1, sl=0, tp=0, profit=50,
+        )
+        mt5.positions_get.return_value = [pos]
+        mt5.symbol_info.return_value = _sym()
+        result = _unwrap_mcp(trade_risk_analyze())
+        assert "unlimited" in result.lower()
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_position_sizing(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.account_info.return_value = SimpleNamespace(equity=10000, currency="USD")
+        mt5.positions_get.return_value = []
+        mt5.symbol_info.return_value = _sym()
+        result = _unwrap_mcp(trade_risk_analyze(
+            symbol="EURUSD",
+            desired_risk_pct=2.0,
+            proposed_entry=1.1000,
+            proposed_sl=1.0950,
+            proposed_tp=1.1100,
+        ))
+        assert "position_sizing" in result or "suggested_volume" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_position_sizing_no_symbol(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.account_info.return_value = SimpleNamespace(equity=10000, currency="USD")
+        mt5.positions_get.return_value = []
+        result = _unwrap_mcp(trade_risk_analyze(
+            desired_risk_pct=2.0, proposed_entry=1.1, proposed_sl=1.09,
+        ))
+        assert "error" in result.lower()
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_position_sizing_symbol_not_found(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.account_info.return_value = SimpleNamespace(equity=10000, currency="USD")
+        mt5.positions_get.return_value = []
+        mt5.symbol_info.return_value = None
+        result = _unwrap_mcp(trade_risk_analyze(
+            symbol="INVALID", desired_risk_pct=2.0,
+            proposed_entry=1.1, proposed_sl=1.09,
+        ))
+        assert "error" in result.lower() or "not found" in result.lower()
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_risk_level_high(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.account_info.return_value = SimpleNamespace(equity=1000, currency="USD")
+        pos = SimpleNamespace(
+            ticket=1, symbol="EURUSD", type=0, volume=10.0,
+            price_open=1.1, sl=1.0, tp=1.2, profit=0,
+        )
+        mt5.positions_get.return_value = [pos]
+        mt5.symbol_info.return_value = _sym()
+        result = _unwrap_mcp(trade_risk_analyze())
+        assert "high" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_position_sizing_zero_sl_distance(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.account_info.return_value = SimpleNamespace(equity=10000, currency="USD")
+        mt5.positions_get.return_value = []
+        mt5.symbol_info.return_value = _sym()
+        result = _unwrap_mcp(trade_risk_analyze(
+            symbol="EURUSD", desired_risk_pct=2.0,
+            proposed_entry=1.1, proposed_sl=1.1,
+        ))
+        assert "position_sizing_error" in result or "SL distance" in result
+
+
+# ===================================================================
+#  Edge cases / integration
+# ===================================================================
+
+class TestEdgeCases:
+
+    def test_order_type_numeric_map_completeness(self):
+        """All values 0-5 should be in the numeric map."""
+        for i in range(6):
+            assert i in _ORDER_TYPE_NUMERIC_MAP
+
+    def test_supported_order_types_match_map(self):
+        """All mapped names should be in SUPPORTED_ORDER_TYPES."""
+        for name in _ORDER_TYPE_NUMERIC_MAP.values():
+            assert name in _SUPPORTED_ORDER_TYPES
+
+    def test_gtc_tokens_all_uppercase(self):
+        for token in _GTC_EXPIRATION_TOKENS:
+            assert token == token.upper()
+
+    def test_normalize_order_type_with_double_underscores(self):
+        t, err = _normalize_order_type_input("BUY__LIMIT")
+        assert t == "BUY_LIMIT"
+
+    def test_normalize_order_type_with_dashes(self):
+        t, err = _normalize_order_type_input("sell-limit")
+        assert t == "SELL_LIMIT"
+
+    def test_validate_volume_exactly_at_min(self):
+        vol, err = _validate_volume(0.01, _sym(volume_min=0.01))
+        assert err is None and vol == 0.01
+
+    def test_validate_volume_exactly_at_max(self):
+        vol, err = _validate_volume(100.0, _sym(volume_max=100.0))
+        assert err is None
+
+    def test_trade_comment_with_non_string_input(self):
+        result = _normalize_trade_comment(123, default="x")
+        assert result == "123"
+
+    def test_server_time_naive_large_timestamp(self):
+        dt = datetime(2099, 12, 31, 23, 59, 59)
+        result = _server_time_naive_to_mt5_timestamp(dt)
+        assert result > 0
+
+    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    def test_expiration_relative_minutes_variants(self, _mock):
+        for variant in ("30min", "30 mins", "30 minute", "30 minutes"):
+            val, explicit = _normalize_pending_expiration(variant)
+            assert isinstance(val, int) and explicit is True, f"Failed for: {variant}"
+
+    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    def test_expiration_relative_hours_variants(self, _mock):
+        for variant in ("2h", "2 hr", "2 hrs", "2 hour", "2 hours"):
+            val, explicit = _normalize_pending_expiration(variant)
+            assert isinstance(val, int) and explicit is True, f"Failed for: {variant}"
+
+    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    def test_expiration_relative_seconds_variants(self, _mock):
+        for variant in ("60s", "60 sec", "60 secs", "60 second", "60 seconds"):
+            val, explicit = _normalize_pending_expiration(variant)
+            assert isinstance(val, int) and explicit is True, f"Failed for: {variant}"
+
+    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    def test_expiration_relative_days_variants(self, _mock):
+        for variant in ("1d", "1 day", "1 days"):
+            val, explicit = _normalize_pending_expiration(variant)
+            assert isinstance(val, int) and explicit is True, f"Failed for: {variant}"
+
+    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    def test_expiration_relative_weeks_variants(self, _mock):
+        for variant in ("1w", "1 wk", "1 weeks"):
+            val, explicit = _normalize_pending_expiration(variant)
+            assert isinstance(val, int) and explicit is True, f"Failed for: {variant}"
+
+    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    def test_expiration_in_prefix(self, _mock):
+        val, explicit = _normalize_pending_expiration("in 5 minutes")
+        assert isinstance(val, int) and explicit is True
+

@@ -1,0 +1,344 @@
+"""Tests for mtdata.forecast.methods.analog – coverage for lines 67-192 (analog matching logic)."""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch, PropertyMock
+import numpy as np
+import pandas as pd
+import pytest
+
+from mtdata.forecast.methods.analog import AnalogMethod
+from mtdata.forecast.interface import ForecastResult
+
+
+# ===========================================================================
+# Helpers
+# ===========================================================================
+
+def _price_series(n=200, name="close"):
+    vals = np.cumsum(np.random.randn(n)) + 100
+    return pd.Series(vals, name=name)
+
+
+def _make_mock_index(n_windows=50, window_size=64, horizon=10):
+    """Build a mock Index object returned by build_index."""
+    idx = MagicMock()
+    idx.X = MagicMock()
+    idx.X.shape = (n_windows,)
+    idx.X.__len__ = lambda self: n_windows
+
+    full_len = window_size + horizon
+    base = np.cumsum(np.random.randn(full_len)) + 100
+
+    idx.get_symbol_series = MagicMock(return_value=np.cumsum(np.random.randn(200)) + 100)
+    idx.search = MagicMock(return_value=(
+        np.arange(min(25, n_windows)),
+        np.random.rand(min(25, n_windows)),
+    ))
+    idx.refine_matches = MagicMock(return_value=(
+        np.arange(min(10, n_windows)),
+        np.random.rand(min(10, n_windows)),
+    ))
+    idx.get_match_values = MagicMock(return_value=base.copy())
+    idx.get_match_times = MagicMock(return_value=np.arange(window_size, dtype=float))
+    return idx
+
+
+# ===========================================================================
+# AnalogMethod properties
+# ===========================================================================
+
+class TestAnalogMethodProperties:
+    def test_name(self):
+        assert AnalogMethod().name == "analog"
+
+    def test_category(self):
+        assert AnalogMethod().category == "analog"
+
+    def test_required_packages(self):
+        pkgs = AnalogMethod().required_packages
+        assert "scipy" in pkgs
+        assert "numpy" in pkgs
+
+    def test_supports_features(self):
+        feats = AnalogMethod().supports_features
+        assert feats["price"] is True
+        assert feats["return"] is False
+        assert feats["ci"] is True
+
+
+# ===========================================================================
+# _run_single_timeframe (lines 67-192)
+# ===========================================================================
+
+class TestRunSingleTimeframe:
+    def setup_method(self):
+        self.m = AnalogMethod()
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_basic(self, mock_bi):
+        mock_bi.return_value = _make_mock_index()
+        futures, meta = self.m._run_single_timeframe(
+            "EURUSD", "H1", 10, {"window_size": 64, "top_k": 5},
+            query_vector=np.random.rand(64),
+        )
+        assert len(futures) > 0
+        assert len(meta) == len(futures)
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_build_index_exception(self, mock_bi):
+        mock_bi.side_effect = RuntimeError("no data")
+        futures, meta = self.m._run_single_timeframe("EURUSD", "H1", 10, {})
+        assert futures == []
+        assert meta == []
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_empty_index(self, mock_bi):
+        idx = _make_mock_index(n_windows=0)
+        idx.X.shape = (0,)
+        mock_bi.return_value = idx
+        futures, meta = self.m._run_single_timeframe("EURUSD", "H1", 10, {})
+        assert futures == []
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_query_vector_shorter_than_window(self, mock_bi):
+        mock_bi.return_value = _make_mock_index()
+        futures, meta = self.m._run_single_timeframe(
+            "EURUSD", "H1", 10, {"window_size": 64},
+            query_vector=np.random.rand(30),
+        )
+        assert len(futures) > 0
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_query_vector_empty(self, mock_bi):
+        mock_bi.return_value = _make_mock_index()
+        futures, meta = self.m._run_single_timeframe(
+            "EURUSD", "H1", 10, {"window_size": 64},
+            query_vector=np.array([]),
+        )
+        assert futures == []
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_query_vector_longer_than_window(self, mock_bi):
+        mock_bi.return_value = _make_mock_index()
+        futures, meta = self.m._run_single_timeframe(
+            "EURUSD", "H1", 10, {"window_size": 64},
+            query_vector=np.random.rand(200),
+        )
+        assert len(futures) > 0
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_no_query_vector_uses_internal(self, mock_bi):
+        mock_bi.return_value = _make_mock_index()
+        futures, meta = self.m._run_single_timeframe("EURUSD", "H1", 10, {"window_size": 64})
+        assert len(futures) > 0
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_no_query_short_internal_series(self, mock_bi):
+        idx = _make_mock_index()
+        idx.get_symbol_series.return_value = np.ones(5)
+        mock_bi.return_value = idx
+        futures, meta = self.m._run_single_timeframe(
+            "EURUSD", "H1", 10, {"window_size": 64},
+        )
+        assert futures == []
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_search_exception(self, mock_bi):
+        idx = _make_mock_index()
+        idx.search.side_effect = RuntimeError("search fail")
+        mock_bi.return_value = idx
+        futures, meta = self.m._run_single_timeframe(
+            "EURUSD", "H1", 10, {},
+            query_vector=np.random.rand(64),
+        )
+        assert futures == []
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_all_candidates_filtered(self, mock_bi):
+        """All candidates are at the end of index => filtered out."""
+        idx = _make_mock_index(n_windows=10)
+        idx.search.return_value = (np.array([8, 9, 7, 6, 5]), np.ones(5))
+        mock_bi.return_value = idx
+        futures, meta = self.m._run_single_timeframe(
+            "EURUSD", "H1", 10, {"window_size": 64, "top_k": 5},
+            query_vector=np.random.rand(64),
+        )
+        # i >= n_windows - 5 => 5,6,7,8,9 all filtered
+        assert futures == []
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_refine_exception(self, mock_bi):
+        idx = _make_mock_index()
+        idx.search.return_value = (np.array([0, 1, 2]), np.array([0.1, 0.2, 0.3]))
+        idx.refine_matches.side_effect = RuntimeError("refine fail")
+        mock_bi.return_value = idx
+        futures, meta = self.m._run_single_timeframe(
+            "EURUSD", "H1", 10, {},
+            query_vector=np.random.rand(64),
+        )
+        assert futures == []
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_short_match_values_skipped(self, mock_bi):
+        """When get_match_values returns too short, candidate is skipped."""
+        idx = _make_mock_index(window_size=64, horizon=10)
+        idx.get_match_values.return_value = np.ones(50)  # shorter than window_size
+        mock_bi.return_value = idx
+        futures, meta = self.m._run_single_timeframe(
+            "EURUSD", "H1", 10, {"window_size": 64, "top_k": 5},
+            query_vector=np.random.rand(64),
+        )
+        assert futures == []
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_scale_factor_near_zero(self, mock_bi):
+        """analog_end_price near zero => scale_factor = 1.0."""
+        idx = _make_mock_index(window_size=64, horizon=10)
+        vals = np.zeros(74)
+        vals[63] = 1e-15  # near zero
+        vals[64:] = 1.0
+        idx.get_match_values.return_value = vals
+        mock_bi.return_value = idx
+        futures, meta = self.m._run_single_timeframe(
+            "EURUSD", "H1", 10, {"window_size": 64, "top_k": 5},
+            query_vector=np.random.rand(64),
+        )
+        for f in futures:
+            assert not np.any(np.isinf(f))
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_future_shorter_than_horizon_pads(self, mock_bi):
+        """When future part is shorter than horizon, remaining values padded."""
+        idx = _make_mock_index(window_size=64, horizon=10)
+        vals = np.ones(68)  # only 4 future values for horizon=10
+        idx.get_match_values.return_value = vals
+        mock_bi.return_value = idx
+        futures, meta = self.m._run_single_timeframe(
+            "EURUSD", "H1", 10, {"window_size": 64, "top_k": 5},
+            query_vector=np.random.rand(64),
+        )
+        for f in futures:
+            assert len(f) == 10
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_matrix_profile_engine(self, mock_bi):
+        mock_bi.return_value = _make_mock_index()
+        futures, meta = self.m._run_single_timeframe(
+            "EURUSD", "H1", 10,
+            {"window_size": 64, "search_engine": "matrix_profile", "metric": "cosine"},
+            query_vector=np.random.rand(64),
+        )
+        # metric gets overridden to euclidean for matrix_profile
+        assert len(futures) > 0
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_mass_engine(self, mock_bi):
+        mock_bi.return_value = _make_mock_index()
+        futures, meta = self.m._run_single_timeframe(
+            "EURUSD", "H1", 10,
+            {"window_size": 64, "search_engine": "mass"},
+            query_vector=np.random.rand(64),
+        )
+        assert len(futures) > 0
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_meta_contains_expected_keys(self, mock_bi):
+        mock_bi.return_value = _make_mock_index()
+        futures, meta = self.m._run_single_timeframe(
+            "EURUSD", "H1", 10, {"window_size": 64, "top_k": 3},
+            query_vector=np.random.rand(64),
+        )
+        for m_obj in meta:
+            assert "score" in m_obj
+            assert "date" in m_obj
+            assert "index" in m_obj
+            assert "scale_factor" in m_obj
+
+
+# ===========================================================================
+# AnalogMethod.forecast (lines 194-361)
+# ===========================================================================
+
+class TestAnalogMethodForecast:
+    def setup_method(self):
+        self.m = AnalogMethod()
+
+    def test_raises_on_empty_series(self):
+        with pytest.raises(ValueError, match="price series only"):
+            self.m.forecast(pd.Series([], dtype=float, name="close"), horizon=10, seasonality=1, params={"symbol": "X", "timeframe": "H1"})
+
+    def test_raises_on_return_series(self):
+        with pytest.raises(ValueError, match="price series only"):
+            self.m.forecast(_price_series(name="__return"), horizon=10, seasonality=1, params={"symbol": "X", "timeframe": "H1"})
+
+    def test_raises_on_vol_series(self):
+        with pytest.raises(ValueError, match="price series only"):
+            self.m.forecast(_price_series(name="vol_series"), horizon=10, seasonality=1, params={"symbol": "X", "timeframe": "H1"})
+
+    def test_raises_missing_symbol(self):
+        with pytest.raises(ValueError, match="symbol"):
+            self.m.forecast(_price_series(), horizon=10, seasonality=1, params={"timeframe": "H1"})
+
+    def test_raises_missing_timeframe(self):
+        with pytest.raises(ValueError, match="timeframe"):
+            self.m.forecast(_price_series(), horizon=10, seasonality=1, params={"symbol": "EURUSD"})
+
+    @patch.object(AnalogMethod, "_run_single_timeframe")
+    def test_primary_failure_raises(self, mock_run):
+        mock_run.return_value = ([], [])
+        with pytest.raises(RuntimeError, match="Primary analog search failed"):
+            self.m.forecast(
+                _price_series(), horizon=10, seasonality=1,
+                params={"symbol": "EURUSD", "timeframe": "H1"},
+            )
+
+    @patch("mtdata.core.constants.TIMEFRAME_SECONDS", {"H1": 3600, "D1": 86400})
+    @patch.object(AnalogMethod, "_run_single_timeframe")
+    def test_successful_forecast(self, mock_run):
+        futures = [np.random.rand(10) * 100 + 50 for _ in range(5)]
+        meta = [{"score": 0.1, "date": "2020-01-01", "index": i, "scale_factor": 1.0} for i in range(5)]
+        mock_run.return_value = (futures, meta)
+        res = self.m.forecast(
+            _price_series(), horizon=10, seasonality=1,
+            params={"symbol": "EURUSD", "timeframe": "H1"},
+        )
+        assert isinstance(res, ForecastResult)
+        assert len(res.forecast) == 10
+        assert res.ci_values is not None
+
+    @patch("mtdata.core.constants.TIMEFRAME_SECONDS", {"H1": 3600, "D1": 86400})
+    @patch.object(AnalogMethod, "_run_single_timeframe")
+    def test_ci_alpha_default(self, mock_run):
+        futures = [np.random.rand(10) * 100 + 50 for _ in range(5)]
+        meta = [{"score": 0.1, "date": "2020-01-01", "index": i, "scale_factor": 1.0} for i in range(5)]
+        mock_run.return_value = (futures, meta)
+        res = self.m.forecast(
+            _price_series(), horizon=10, seasonality=1,
+            params={"symbol": "EURUSD", "timeframe": "H1"},
+        )
+        assert res.params_used["ci_alpha"] == 0.05
+
+    @patch("mtdata.core.constants.TIMEFRAME_SECONDS", {"H1": 3600, "D1": 86400})
+    @patch.object(AnalogMethod, "_run_single_timeframe")
+    def test_ci_alpha_invalid(self, mock_run):
+        futures = [np.random.rand(10) * 100 + 50 for _ in range(5)]
+        meta = [{"score": 0.1, "date": "2020-01-01", "index": i, "scale_factor": 1.0} for i in range(5)]
+        mock_run.return_value = (futures, meta)
+        res = self.m.forecast(
+            _price_series(), horizon=10, seasonality=1,
+            params={"symbol": "EURUSD", "timeframe": "H1", "ci_alpha": 2.0},
+        )
+        assert res.params_used["ci_alpha"] == 0.05
+
+    @patch("mtdata.core.constants.TIMEFRAME_SECONDS", {"H1": 3600, "H4": 14400})
+    @patch.object(AnalogMethod, "_run_single_timeframe")
+    def test_secondary_timeframes(self, mock_run):
+        futures = [np.random.rand(10) * 100 + 50 for _ in range(5)]
+        meta = [{"score": 0.1, "date": "2020-01-01", "index": i, "scale_factor": 1.0} for i in range(5)]
+        mock_run.return_value = (futures, meta)
+        res = self.m.forecast(
+            _price_series(), horizon=10, seasonality=1,
+            params={"symbol": "EURUSD", "timeframe": "H1", "secondary_timeframes": "H4"},
+        )
+        assert res.forecast is not None
