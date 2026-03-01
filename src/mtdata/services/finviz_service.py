@@ -93,6 +93,49 @@ def _apply_finvizfinance_timeout_patch() -> None:
     _fv_quote._mtdata_timeout_patched = True
 
 
+def _to_float_or_none(value: Any) -> Optional[float]:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            out = float(value)
+            return out if out == out else None
+        except Exception:
+            return None
+    text = str(value).strip().replace(",", "")
+    if not text:
+        return None
+    if text.endswith("%"):
+        text = text[:-1].strip()
+    try:
+        out = float(text)
+        return out if out == out else None
+    except Exception:
+        return None
+
+
+def _values_equivalent(lhs: Any, rhs: Any) -> bool:
+    left_num = _to_float_or_none(lhs)
+    right_num = _to_float_or_none(rhs)
+    if left_num is not None and right_num is not None:
+        scale = max(1.0, abs(left_num), abs(right_num))
+        return abs(left_num - right_num) <= (1e-9 * scale)
+    return lhs == rhs
+
+
+def _crypto_day_week_identical(rows: List[Dict[str, Any]]) -> bool:
+    matched = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if "Perf Day" not in row or "Perf Week" not in row:
+            continue
+        matched += 1
+        if not _values_equivalent(row.get("Perf Day"), row.get("Perf Week")):
+            return False
+    return matched > 0
+
+
 def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
     """
     Get fundamental data for a stock symbol.
@@ -504,12 +547,25 @@ def get_crypto_performance() -> Dict[str, Any]:
             return {"error": "No crypto performance data available"}
         
         items_list = df.to_dict(orient="records")
-        return {
+        warnings_out: List[str] = []
+        if _crypto_day_week_identical(items_list):
+            for row in items_list:
+                if isinstance(row, dict) and "Perf Week" in row and "Perf WTD" not in row:
+                    row["Perf WTD"] = row.get("Perf Week")
+            warnings_out.append(
+                "Finviz returned identical 'Perf Day' and 'Perf Week' values across all rows; "
+                "added 'Perf WTD' alias to clarify likely week-to-date semantics."
+            )
+
+        out = {
             "success": True,
             "market": "crypto",
             "count": len(items_list),
             "coins": items_list,
         }
+        if warnings_out:
+            out["warnings"] = warnings_out
+        return out
     except Exception as e:
         logger.exception("Error fetching crypto performance")
         return {"error": f"Failed to fetch crypto performance: {str(e)}"}

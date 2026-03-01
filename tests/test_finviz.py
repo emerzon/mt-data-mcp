@@ -163,6 +163,47 @@ class TestFinvizService:
         assert result["success"] is True
         assert result["market"] == "crypto"
 
+    @patch('finvizfinance.crypto.Crypto')
+    def test_get_crypto_performance_adds_wtd_alias_when_day_week_identical(self, mock_crypto_class):
+        """When day/week values are identical for all rows, add WTD alias and warning."""
+        from mtdata.services.finviz_service import get_crypto_performance
+
+        mock_crypto = MagicMock()
+        mock_df = pd.DataFrame([
+            {"Ticker": "BTCUSD", "Perf Day": -0.0242, "Perf Week": -0.0242},
+            {"Ticker": "ETHUSD", "Perf Day": -0.0310, "Perf Week": -0.0310},
+        ])
+        mock_crypto.performance.return_value = mock_df
+        mock_crypto_class.return_value = mock_crypto
+
+        result = get_crypto_performance()
+
+        assert result["success"] is True
+        assert "warnings" in result
+        assert "Perf WTD" in result["coins"][0]
+        assert result["coins"][0]["Perf WTD"] == result["coins"][0]["Perf Week"]
+        assert result["coins"][1]["Perf WTD"] == result["coins"][1]["Perf Week"]
+
+    @patch('finvizfinance.crypto.Crypto')
+    def test_get_crypto_performance_no_wtd_alias_when_values_differ(self, mock_crypto_class):
+        """Do not add WTD alias when day/week values differ."""
+        from mtdata.services.finviz_service import get_crypto_performance
+
+        mock_crypto = MagicMock()
+        mock_df = pd.DataFrame([
+            {"Ticker": "BTCUSD", "Perf Day": -0.0242, "Perf Week": -0.0500},
+            {"Ticker": "ETHUSD", "Perf Day": -0.0310, "Perf Week": -0.0600},
+        ])
+        mock_crypto.performance.return_value = mock_df
+        mock_crypto_class.return_value = mock_crypto
+
+        result = get_crypto_performance()
+
+        assert result["success"] is True
+        assert "warnings" not in result
+        assert "Perf WTD" not in result["coins"][0]
+        assert "Perf WTD" not in result["coins"][1]
+
     @patch("finvizfinance.earnings.Earnings")
     def test_get_earnings_calendar_success(self, mock_earnings_class):
         """Test earnings calendar fetch."""
