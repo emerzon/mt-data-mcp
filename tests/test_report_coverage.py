@@ -535,6 +535,7 @@ class TestReportSummaryBarriers:
         assert "ev=" in long_line
         assert "edge=" in long_line
         assert "ev_edge_conflict=true" in long_line
+        assert "ev_edge_conflict_reason=" in long_line
 
     def test_no_barriers_section(self):
         sec = _make_full_sections()

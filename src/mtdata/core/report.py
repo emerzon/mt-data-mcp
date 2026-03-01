@@ -314,6 +314,7 @@ def report_generate(
                             edge_num = float(edge)
                             if (ev_num > 0 and edge_num < 0) or (ev_num < 0 and edge_num > 0):
                                 details.append("ev_edge_conflict=true")
+                                details.append("ev_edge_conflict_reason=ev and edge have opposite signs")
                     except Exception:
                         pass
                     if details:
@@ -343,6 +344,7 @@ def report_generate(
                             edge_num = float(edge)
                             if (ev_num > 0 and edge_num < 0) or (ev_num < 0 and edge_num > 0):
                                 details.append("ev_edge_conflict=true")
+                                details.append("ev_edge_conflict_reason=ev and edge have opposite signs")
                     except Exception:
                         pass
                     if details:
