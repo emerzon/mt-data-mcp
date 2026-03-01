@@ -353,6 +353,51 @@ class TestSymbolsDescribe:
         res = fn("X")
         assert "trade_mode" not in res["symbol"]
 
+    @patch(f"{_MT5}.symbol_info")
+    def test_decodes_enum_fields_with_labels(self, mock_info):
+        info = MagicMock()
+        info.__dir__ = lambda self: [
+            "name",
+            "trade_exemode",
+            "trade_calc_mode",
+            "order_mode",
+            "expiration_mode",
+            "filling_mode",
+            "swap_mode",
+        ]
+        info.name = "EURUSD"
+        info.trade_exemode = 2
+        info.trade_calc_mode = 3
+        info.order_mode = 3
+        info.expiration_mode = 5
+        info.filling_mode = 2
+        info.swap_mode = 1
+        mock_info.return_value = info
+
+        import mtdata.core.symbols as symbols_mod
+
+        symbols_mod.mt5.SYMBOL_TRADE_EXECUTION_INSTANT = 2
+        symbols_mod.mt5.SYMBOL_CALC_MODE_CFD = 3
+        symbols_mod.mt5.SYMBOL_ORDER_MARKET = 1
+        symbols_mod.mt5.SYMBOL_ORDER_LIMIT = 2
+        symbols_mod.mt5.SYMBOL_EXPIRATION_GTC = 1
+        symbols_mod.mt5.SYMBOL_EXPIRATION_SPECIFIED = 4
+        symbols_mod.mt5.ORDER_FILLING_IOC = 2
+        symbols_mod.mt5.SYMBOL_SWAP_MODE_POINTS = 1
+
+        fn = _get_symbols_describe()
+        res = fn("EURUSD")
+        sd = res["symbol"]
+
+        assert sd.get("trade_exemode_label") == "Market"
+        assert "Cfd" in str(sd.get("trade_calc_mode_label"))
+        assert "Market" in (sd.get("order_mode_labels") or [])
+        assert "Limit" in (sd.get("order_mode_labels") or [])
+        assert "GTC" in (sd.get("expiration_mode_labels") or [])
+        assert "Specified" in (sd.get("expiration_mode_labels") or [])
+        assert any(v in (sd.get("filling_mode_labels") or []) for v in ("IOC", "Return"))
+        assert sd.get("swap_mode_label") == "Points"
+
     @patch(f"{_MT5}.symbol_info", side_effect=RuntimeError("fail"))
     def test_exception(self, mock_info):
         fn = _get_symbols_describe()

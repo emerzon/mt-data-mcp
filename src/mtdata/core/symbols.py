@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional, Literal
 
 from ..utils.utils import _table_from_rows, _normalize_limit
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
+from ..utils.mt5_enums import decode_mt5_enum_label, decode_mt5_bitmask_labels
 from .server import mcp, _auto_connect_wrapper
 from .constants import GROUP_SEARCH_THRESHOLD, DEFAULT_ROW_LIMIT
 import MetaTrader5 as mt5
@@ -165,6 +166,16 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:
             return {"error": f"Symbol {symbol} not found"}
+
+        enum_specs = {
+            "trade_mode": {"prefixes": ("SYMBOL_TRADE_MODE_",), "bitmask": False},
+            "trade_exemode": {"prefixes": ("SYMBOL_TRADE_EXECUTION_",), "bitmask": False},
+            "trade_calc_mode": {"prefixes": ("SYMBOL_CALC_MODE_",), "bitmask": False},
+            "swap_mode": {"prefixes": ("SYMBOL_SWAP_MODE_",), "bitmask": False},
+            "filling_mode": {"prefixes": ("ORDER_FILLING_", "SYMBOL_FILLING_"), "bitmask": True},
+            "expiration_mode": {"prefixes": ("SYMBOL_EXPIRATION_",), "bitmask": True},
+            "order_mode": {"prefixes": ("SYMBOL_ORDER_",), "bitmask": True},
+        }
         
         # Build symbol info dynamically: include all available attributes
         # except excluded ones; skip empty/default values when possible.
@@ -190,6 +201,29 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
             if isinstance(value, (int, float)) and value == 0:
                 continue
             symbol_data[attr] = value
+
+            spec = enum_specs.get(attr)
+            if not spec:
+                continue
+            prefixes = spec.get("prefixes", ())
+            is_bitmask = bool(spec.get("bitmask"))
+            if is_bitmask:
+                labels = []
+                for prefix in prefixes:
+                    labels = decode_mt5_bitmask_labels(mt5, value, prefix=prefix)
+                    if labels:
+                        break
+                if labels:
+                    symbol_data[f"{attr}_labels"] = labels
+                    symbol_data[f"{attr}_label"] = ", ".join(labels)
+            else:
+                label = None
+                for prefix in prefixes:
+                    label = decode_mt5_enum_label(mt5, value, prefix=prefix)
+                    if label:
+                        break
+                if label:
+                    symbol_data[f"{attr}_label"] = label
         
         return {
             "success": True,

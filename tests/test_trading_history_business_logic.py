@@ -71,3 +71,29 @@ def test_trade_history_filters_rows_by_symbol_even_if_mt5_returns_mixed_rows() -
     assert isinstance(out, list)
     assert len(out) == 1
     assert out[0]["symbol"] == "BTCUSD"
+
+
+def test_trade_history_deals_decodes_enum_codes_to_labels() -> None:
+    mt5, prev = _install_mock_mt5()
+    mt5.DEAL_TYPE_BUY = 0
+    mt5.DEAL_ENTRY_IN = 0
+    mt5.DEAL_REASON_CLIENT = 0
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol", "type", "entry", "reason"])
+    mt5.history_deals_get.return_value = [
+        Deal(ticket=1, time=1700000000, symbol="EURUSD", type=0, entry=0, reason=0)
+    ]
+
+    with patch("mtdata.core.trading._auto_connect_wrapper", lambda f: f), patch(
+        "mtdata.core.trading._use_client_tz", lambda: False
+    ):
+        out = trade_history(history_kind="deals", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert isinstance(out, list)
+    assert out[0]["type"] == "Buy"
+    assert out[0]["entry"] == "In"
+    assert out[0]["reason"] == "Client"
+    assert out[0]["type_code"] == 0
+    assert out[0]["entry_code"] == 0
+    assert out[0]["reason_code"] == 0

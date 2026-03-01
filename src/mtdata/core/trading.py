@@ -7,6 +7,7 @@ from typing import Optional, Tuple, Union, List, Dict, Any, Literal
 
 from .server import mcp
 from ..utils.mt5 import _auto_connect_wrapper, _mt5_epoch_to_utc
+from ..utils.mt5_enums import decode_mt5_enum_label
 from .config import mt5_config
 from .constants import DEFAULT_ROW_LIMIT
 from ..utils.utils import (
@@ -561,6 +562,15 @@ def trade_history(
             if kind not in ("deals", "orders"):
                 return {"error": "history_kind must be 'deals' or 'orders'."}
 
+            def _decode_enum_column(col: str, prefix: str) -> None:
+                if col not in df.columns:
+                    return
+                raw = df[col]
+                numeric = pd.to_numeric(raw, errors="coerce")
+                if numeric.notna().any():
+                    df[f"{col}_code"] = numeric.astype("Int64")
+                df[col] = raw.apply(lambda v: decode_mt5_enum_label(mt5, v, prefix=prefix) or v)
+
             if kind == "deals":
                 if symbol:
                     rows = mt5.history_deals_get(from_dt, to_dt, symbol=symbol)
@@ -574,6 +584,9 @@ def trade_history(
                 if len(df) == 0:
                     return {"message": f"No deals found for {symbol}" if symbol else "No deals found"}
                 sort_src = _normalize_time_col(df, "time")
+                _decode_enum_column("type", "DEAL_TYPE_")
+                _decode_enum_column("entry", "DEAL_ENTRY_")
+                _decode_enum_column("reason", "DEAL_REASON_")
             else:
                 if symbol:
                     rows = mt5.history_orders_get(from_dt, to_dt, symbol=symbol)
@@ -590,6 +603,11 @@ def trade_history(
                 if sort_src is None:
                     sort_src = _normalize_time_col(df, "time")
                 _normalize_time_col(df, "time_done")
+                _decode_enum_column("type", "ORDER_TYPE_")
+                _decode_enum_column("state", "ORDER_STATE_")
+                _decode_enum_column("type_time", "ORDER_TIME_")
+                _decode_enum_column("type_filling", "ORDER_FILLING_")
+                _decode_enum_column("reason", "ORDER_REASON_")
             df["__sort_utc"] = sort_src if sort_src is not None else pd.Series([float("nan")] * len(df))
 
             limit_value = _normalize_limit(limit)
