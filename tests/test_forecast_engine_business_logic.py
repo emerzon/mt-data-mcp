@@ -7,6 +7,7 @@ import pandas as pd
 
 from mtdata.forecast.interface import ForecastResult
 from mtdata.forecast import forecast_engine as fe
+from mtdata.forecast import forecast_preprocessing as fp
 
 
 def _df(n: int = 20) -> pd.DataFrame:
@@ -38,29 +39,25 @@ def test_normalize_weights_and_lookback_helpers():
     assert fe._calculate_lookback_bars("fourier_ols", horizon=4, lookback=None, seasonality=24, timeframe="H1") >= 300
 
 
-def test_prepare_base_data_features_target_spec_and_output_format(monkeypatch):
+def test_preprocessing_helpers_and_output_format():
     df = _df(6)
-    base_col = fe._prepare_base_data(df, quantity="return", target="price")
+    base_col = fp._prepare_base_data(df, quantity="return", target="price")
     assert base_col == "__log_return"
     assert "__log_return" in df.columns
 
-    base_col = fe._prepare_base_data(df, quantity="volatility", target="price")
+    base_col = fp._prepare_base_data(df, quantity="volatility", target="price")
     assert base_col == "__squared_return"
     assert "__squared_return" in df.columns
 
     calls = {"parse": 0, "apply": 0}
-    monkeypatch.setattr(fe, "_parse_ti_specs_util", lambda spec: calls.__setitem__("parse", calls["parse"] + 1) or [{"s": spec}])
-    monkeypatch.setattr(
-        fe,
-        "_apply_ta_indicators_util",
-        lambda data, spec: calls.__setitem__("apply", calls["apply"] + 1) or ["ema_10"],
-    )
     df["ema_10"] = np.linspace(1.0, 2.0, len(df))
-    out_col = fe._apply_features_and_target_spec(
+    out_col = fp._apply_features_and_target_spec(
         df,
         features={"ti": "ema:10"},
         target_spec={"column": "ema_10", "transform": "log"},
         base_col="close",
+        parse_ti_specs=lambda spec: calls.__setitem__("parse", calls["parse"] + 1) or [{"s": spec}],
+        apply_ta_indicators=lambda data, spec: calls.__setitem__("apply", calls["apply"] + 1) or ["ema_10"],
     )
     assert out_col == "__target_ema_10"
     assert calls["parse"] == 1
@@ -324,7 +321,7 @@ def test_forecast_engine_dimred_failure_falls_back_to_raw_features(monkeypatch):
     monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
     monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
     monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
-    monkeypatch.setattr(fe, "_create_dimred_reducer", lambda method, params: (_ for _ in ()).throw(RuntimeError("dimred failed")))
+    monkeypatch.setattr(fp, "_create_dimred_reducer", lambda method, params: (_ for _ in ()).throw(RuntimeError("dimred failed")))
 
     out = fe.forecast_engine(
         symbol="EURUSD",

@@ -16,19 +16,12 @@ from mtdata.utils.utils import (
     _use_client_tz,
     parse_kv_or_json as _parse_kv_or_json,
 )
-from mtdata.utils.indicators import _parse_ti_specs as _parse_ti_specs_util, _apply_ta_indicators as _apply_ta_indicators_util
 from mtdata.utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
+from mtdata.forecast import forecast_preprocessing as _forecast_preprocessing
 from mtdata.forecast.common import (
     fetch_history as _fetch_history,
     default_seasonality as _default_seasonality_period,
     next_times_from_last as _next_times_from_last,
-)
-from mtdata.forecast.forecast_preprocessing import (
-    _apply_dimensionality_reduction as _apply_dimensionality_reduction_impl,
-    _apply_features_and_target_spec as _apply_features_and_target_spec_impl,
-    _create_dimred_reducer as _create_dimred_reducer_impl,
-    _prepare_base_data as _prepare_base_data_impl,
-    prepare_features as _prepare_features_impl,
 )
 from mtdata.forecast.target_builder import build_target_series
 from mtdata.forecast.registry import ForecastRegistry
@@ -63,10 +56,6 @@ _ENSEMBLE_BASE_METHODS = (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _create_dimred_reducer(method: Any, params: Optional[Dict[str, Any]]) -> Any:
-    return _create_dimred_reducer_impl(method, params)
 
 
 def _normalize_weights(weights: Any, size: int) -> Optional[np.ndarray]:
@@ -200,63 +189,6 @@ def _calculate_lookback_bars(method_l: str, horizon: int, lookback: Optional[int
         return max(300, int(horizon) + (2 * seasonality if seasonality else 50))
     else:  # naive, drift and others
         return max(100, int(horizon) + 10)
-
-
-def _prepare_base_data(df: pd.DataFrame, quantity: str, target: str, base_col: str = 'close') -> str:
-    return _prepare_base_data_impl(df, quantity, target, base_col)
-
-
-def _apply_features_and_target_spec(df: pd.DataFrame, features: Optional[Dict[str, Any]],
-                                   target_spec: Optional[Dict[str, Any]], base_col: str) -> str:
-    return _apply_features_and_target_spec_impl(
-        df,
-        features,
-        target_spec,
-        base_col,
-        parse_kv_or_json=_parse_kv_or_json,
-        parse_ti_specs=_parse_ti_specs_util,
-        apply_ta_indicators=_apply_ta_indicators_util,
-    )
-
-
-def _apply_dimensionality_reduction(X: pd.DataFrame, dimred_method: Optional[str],
-                                    dimred_params: Optional[Dict[str, Any]]) -> pd.DataFrame:
-    return _apply_dimensionality_reduction_impl(
-        X,
-        dimred_method,
-        dimred_params,
-        reducer_factory=_create_dimred_reducer,
-    )
-
-
-def _prepare_feature_matrices(
-    df: pd.DataFrame,
-    features: Optional[Dict[str, Any]],
-    training_index: pd.Index,
-    future_times: List[float],
-    horizon: int,
-    dimred_method: Optional[str],
-    dimred_params: Optional[Dict[str, Any]],
-) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Dict[str, Any]]:
-    try:
-        return _prepare_features_impl(
-            df,
-            features,
-            future_times,
-            horizon,
-            training_index=training_index,
-            dimred_method=dimred_method,
-            dimred_params=dimred_params,
-            parse_kv_or_json=_parse_kv_or_json,
-            parse_ti_specs=_parse_ti_specs_util,
-            apply_ta_indicators=_apply_ta_indicators_util,
-            reducer_factory=_create_dimred_reducer,
-        )
-    except Exception as exc:
-        logger.debug("Feature preparation failed: %s", exc)
-        return None, None, {'error': f"feature_build_error: {str(exc)}"}
-
-
 def _format_forecast_output(
     forecast_values: np.ndarray,
     last_epoch: float,
@@ -439,10 +371,16 @@ def forecast_engine(
 
         # Prepare base data
         base_col_initial = base_col
-        base_col_prepared = _prepare_base_data(df, quantity_l, target, base_col)
+        base_col_prepared = _forecast_preprocessing._prepare_base_data(df, quantity_l, target, base_col)
 
         # Apply features and target specification
-        base_col_prepared = _apply_features_and_target_spec(df, features, target_spec, base_col_prepared)
+        base_col_prepared = _forecast_preprocessing._apply_features_and_target_spec(
+            df,
+            features,
+            target_spec,
+            base_col_prepared,
+            parse_kv_or_json=_parse_kv_or_json,
+        )
 
         # Prepare target series, honoring target_spec if provided
         target_series = df[base_col_prepared].dropna()
@@ -470,15 +408,21 @@ def forecast_engine(
         future_exog = exog_future
         if X is None and features:
             future_times = _next_times_from_last(float(df['time'].iloc[-1]), int(tf_secs), int(horizon))
-            X, built_future_exog, _feat_info = _prepare_feature_matrices(
-                df=df,
-                features=features,
-                training_index=target_series.index,
-                future_times=future_times,
-                horizon=horizon,
-                dimred_method=dimred_method,
-                dimred_params=dimred_params,
-            )
+            try:
+                X, built_future_exog, _feat_info = _forecast_preprocessing.prepare_features(
+                    df,
+                    features,
+                    future_times,
+                    horizon,
+                    training_index=target_series.index,
+                    dimred_method=dimred_method,
+                    dimred_params=dimred_params,
+                    parse_kv_or_json=_parse_kv_or_json,
+                    reducer_factory=_forecast_preprocessing._create_dimred_reducer,
+                )
+            except Exception as exc:
+                logger.debug("Feature preparation failed: %s", exc)
+                X, built_future_exog, _feat_info = None, None, {'error': f"feature_build_error: {str(exc)}"}
             if future_exog is None:
                 future_exog = built_future_exog
 
