@@ -1181,6 +1181,10 @@ class TestClosePositions:
         from mtdata.core.trading import _close_positions
         result = _close_positions(ticket=42)
         assert result["ticket"] == 42
+        assert result["open_price"] == 1.1
+        assert result["close_price"] == 1.1
+        assert "pnl" in result
+        assert "duration_seconds" in result
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_symbol_no_positions(self):

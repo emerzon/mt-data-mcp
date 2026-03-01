@@ -1649,6 +1649,51 @@ def _close_positions(
                 if result is None:
                     results.append({"ticket": position.ticket, "error": "Failed to send close order"})
                 else:
+                    open_price = getattr(position, "price_open", None)
+                    try:
+                        open_price = float(open_price) if open_price is not None else None
+                    except Exception:
+                        open_price = None
+                    close_exec_price = getattr(result, "price", close_price)
+                    try:
+                        close_exec_price = float(close_exec_price) if close_exec_price is not None else None
+                    except Exception:
+                        close_exec_price = None
+                    open_epoch = getattr(position, "time", None)
+                    try:
+                        open_epoch_utc = _mt5_epoch_to_utc(float(open_epoch)) if open_epoch is not None else None
+                    except Exception:
+                        open_epoch_utc = None
+                    duration_seconds = None
+                    if open_epoch_utc is not None:
+                        try:
+                            duration_seconds = int(
+                                max(0.0, datetime.now(timezone.utc).timestamp() - float(open_epoch_utc))
+                            )
+                        except Exception:
+                            duration_seconds = None
+
+                    realized_pnl = getattr(result, "profit", None)
+                    try:
+                        realized_pnl = float(realized_pnl) if realized_pnl is not None else None
+                    except Exception:
+                        realized_pnl = None
+                    if realized_pnl is None:
+                        try:
+                            realized_pnl = float(getattr(position, "profit", None))
+                        except Exception:
+                            realized_pnl = None
+
+                    pnl_price_delta = None
+                    if open_price is not None and close_exec_price is not None:
+                        try:
+                            if int(position.type) == int(mt5.ORDER_TYPE_BUY):
+                                pnl_price_delta = close_exec_price - open_price
+                            else:
+                                pnl_price_delta = open_price - close_exec_price
+                        except Exception:
+                            pnl_price_delta = None
+
                     res_dict = {
                         "ticket": position.ticket,
                         "retcode": result.retcode,
@@ -1658,6 +1703,11 @@ def _close_positions(
                         "volume": result.volume,
                         "price": result.price,
                         "comment": result.comment,
+                        "open_price": open_price,
+                        "close_price": close_exec_price,
+                        "pnl": realized_pnl,
+                        "pnl_price_delta": pnl_price_delta,
+                        "duration_seconds": duration_seconds,
                     }
                     results.append(res_dict)
 
