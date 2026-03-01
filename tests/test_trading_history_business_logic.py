@@ -155,3 +155,95 @@ def test_trade_history_deals_extracts_exit_trigger_from_reason_when_comment_miss
     assert out[0]["exit_trigger"] == "TP"
     assert out[0]["exit_trigger_price"] is None
     assert out[0]["exit_trigger_source"] == "reason"
+
+
+def test_trade_history_deals_drops_non_informative_noise_columns() -> None:
+    mt5, prev = _install_mock_mt5()
+    mt5.DEAL_TYPE_BUY = 0
+    mt5.DEAL_ENTRY_IN = 0
+    mt5.DEAL_REASON_CLIENT = 0
+    Deal = namedtuple(
+        "Deal",
+        [
+            "ticket",
+            "time",
+            "symbol",
+            "type",
+            "entry",
+            "reason",
+            "time_msc",
+            "external_id",
+            "fee",
+        ],
+    )
+    mt5.history_deals_get.return_value = [
+        Deal(
+            ticket=1,
+            time=1700000000,
+            symbol="EURUSD",
+            type=0,
+            entry=0,
+            reason=0,
+            time_msc=0,
+            external_id="",
+            fee=0.0,
+        )
+    ]
+
+    with patch("mtdata.core.trading._auto_connect_wrapper", lambda f: f), patch(
+        "mtdata.core.trading._use_client_tz", lambda: False
+    ):
+        out = trade_history(history_kind="deals", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert isinstance(out, list)
+    row = out[0]
+    assert "time_msc" not in row
+    assert "external_id" not in row
+    assert "fee" not in row
+
+
+def test_trade_history_deals_keeps_fee_when_non_zero() -> None:
+    mt5, prev = _install_mock_mt5()
+    mt5.DEAL_TYPE_BUY = 0
+    mt5.DEAL_ENTRY_IN = 0
+    mt5.DEAL_REASON_CLIENT = 0
+    Deal = namedtuple(
+        "Deal",
+        [
+            "ticket",
+            "time",
+            "symbol",
+            "type",
+            "entry",
+            "reason",
+            "time_msc",
+            "external_id",
+            "fee",
+        ],
+    )
+    mt5.history_deals_get.return_value = [
+        Deal(
+            ticket=1,
+            time=1700000000,
+            symbol="EURUSD",
+            type=0,
+            entry=0,
+            reason=0,
+            time_msc=0,
+            external_id="",
+            fee=1.25,
+        )
+    ]
+
+    with patch("mtdata.core.trading._auto_connect_wrapper", lambda f: f), patch(
+        "mtdata.core.trading._use_client_tz", lambda: False
+    ):
+        out = trade_history(history_kind="deals", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert isinstance(out, list)
+    row = out[0]
+    assert row["fee"] == 1.25

@@ -623,6 +623,26 @@ def trade_history(
                     return reason_trigger, None, "reason"
                 return None, None, None
 
+            def _is_non_informative_series(series: "pd.Series") -> bool:
+                vals = pd.Series(series)
+                if vals.dropna().empty:
+                    return True
+                for v in vals:
+                    if v is None:
+                        continue
+                    if isinstance(v, str):
+                        if not v.strip():
+                            continue
+                        return False
+                    try:
+                        fv = float(v)
+                        if math.isfinite(fv) and fv == 0.0:
+                            continue
+                        return False
+                    except Exception:
+                        return False
+                return True
+
             if kind == "deals":
                 if symbol:
                     rows = mt5.history_deals_get(from_dt, to_dt, symbol=symbol)
@@ -657,6 +677,9 @@ def trade_history(
                         ]
                         for col in triggers.columns:
                             df[col] = triggers[col]
+                for noise_col in ("time_msc", "external_id", "fee"):
+                    if noise_col in df.columns and _is_non_informative_series(df[noise_col]):
+                        df = df.drop(columns=[noise_col])
             else:
                 if symbol:
                     rows = mt5.history_orders_get(from_dt, to_dt, symbol=symbol)
