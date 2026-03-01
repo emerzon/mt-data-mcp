@@ -60,6 +60,48 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertIn("prob_tp_first", result)
         self.assertIn("prob_sl_first", result)
 
+    def test_forecast_barrier_hit_probabilities_prefers_live_tick_price(self):
+        self._set_flat_history(1.0, bars=200)
+        paths = self._sample_paths()
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim, \
+             patch('mtdata.forecast.barriers._get_live_reference_price', return_value=(1.2345, "live_tick_ask")):
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_hit_probabilities(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                tp_pct=0.5,
+                sl_pct=0.5,
+            )
+        self.assertTrue(result["success"])
+        self.assertAlmostEqual(result["last_price"], 1.2345, places=8)
+        self.assertAlmostEqual(result["last_price_close"], 1.0, places=8)
+        self.assertEqual(result["last_price_source"], "live_tick_ask")
+        self.assertAlmostEqual(result["tp_price"], 1.2345 * 1.005, places=8)
+        self.assertAlmostEqual(result["sl_price"], 1.2345 * 0.995, places=8)
+
+    def test_forecast_barrier_hit_probabilities_falls_back_to_close_price(self):
+        self._set_flat_history(1.0, bars=200)
+        paths = self._sample_paths()
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim, \
+             patch('mtdata.forecast.barriers._get_live_reference_price', return_value=(None, None)):
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_hit_probabilities(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                tp_pct=0.5,
+                sl_pct=0.5,
+            )
+        self.assertTrue(result["success"])
+        self.assertAlmostEqual(result["last_price"], 1.0, places=8)
+        self.assertAlmostEqual(result["last_price_close"], 1.0, places=8)
+        self.assertEqual(result["last_price_source"], "close")
+
     def test_forecast_barrier_bootstrap(self):
         result = forecast_barrier_hit_probabilities(
             symbol="EURUSD",

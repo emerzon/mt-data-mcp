@@ -179,6 +179,56 @@ def _normalize_trade_direction(direction: Any) -> Tuple[Optional[str], Optional[
     return None, "Invalid direction. Use long/short (or up/down, buy/sell)."
 
 
+def _get_live_reference_price(symbol: str, direction: str) -> Tuple[Optional[float], Optional[str]]:
+    """Best-effort live tick reference price; returns (price, source) or (None, None)."""
+    try:
+        import MetaTrader5 as _mt5  # type: ignore
+    except Exception:
+        return None, None
+
+    try:
+        tick = _mt5.symbol_info_tick(symbol)
+    except Exception:
+        tick = None
+    if tick is None:
+        return None, None
+
+    def _valid_price(value: Any) -> Optional[float]:
+        try:
+            out = float(value)
+        except Exception:
+            return None
+        if not np.isfinite(out) or out <= 0.0:
+            return None
+        return out
+
+    bid = _valid_price(getattr(tick, "bid", None))
+    ask = _valid_price(getattr(tick, "ask", None))
+    last = _valid_price(getattr(tick, "last", None))
+
+    direction_norm, _ = _normalize_trade_direction(direction)
+    if direction_norm == "long":
+        if ask is not None:
+            return ask, "live_tick_ask"
+        if bid is not None:
+            return bid, "live_tick_bid_fallback"
+    else:
+        if bid is not None:
+            return bid, "live_tick_bid"
+        if ask is not None:
+            return ask, "live_tick_ask_fallback"
+
+    if bid is not None and ask is not None:
+        return 0.5 * (bid + ask), "live_tick_mid"
+    if last is not None:
+        return last, "live_tick_last"
+    if bid is not None:
+        return bid, "live_tick_bid_only"
+    if ask is not None:
+        return ask, "live_tick_ask_only"
+    return None, None
+
+
 def forecast_barrier_hit_probabilities(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
@@ -221,7 +271,13 @@ def forecast_barrier_hit_probabilities(
         if len(df) < 10:
             return {"error": "Insufficient history for simulation"}
         # Current price baseline
-        last_price = float(df['close'].astype(float).iloc[-1])
+        last_price_close = float(df['close'].astype(float).iloc[-1])
+        last_price = float(last_price_close)
+        last_price_source = "close"
+        live_price, live_source = _get_live_reference_price(symbol, direction_norm)
+        if live_price is not None and np.isfinite(live_price) and float(live_price) > 0.0:
+            last_price = float(live_price)
+            last_price_source = str(live_source or "live_tick")
         pip_size = _get_pip_size(symbol)
 
         # Compute absolute TP/SL prices with explicit trade direction
@@ -309,6 +365,14 @@ def forecast_barrier_hit_probabilities(
 
         price_paths = np.asarray(sim['price_paths'], dtype=float)
         S, H = price_paths.shape
+        try:
+            sim_anchor_price = float(prices[-1])
+        except Exception:
+            sim_anchor_price = float(last_price_close)
+        if np.isfinite(sim_anchor_price) and sim_anchor_price > 0.0 and np.isfinite(last_price) and last_price > 0.0:
+            scale = float(last_price / sim_anchor_price)
+            if np.isfinite(scale) and scale > 0.0 and abs(scale - 1.0) > 1e-12:
+                price_paths = price_paths * scale
 
         bb_sigma = 0.0
         bb_uniform_tp = None
@@ -422,6 +486,8 @@ def forecast_barrier_hit_probabilities(
             "horizon": horizon_val,
             "direction": direction_norm,
             "last_price": last_price,
+            "last_price_close": float(last_price_close),
+            "last_price_source": last_price_source,
             "tp_price": float(tp_price),
             "sl_price": float(sl_price),
             "prob_tp_first": float(prob_tp_first),
