@@ -211,6 +211,43 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     out_bad = raw_list_models("other")
     assert "Unsupported library" in out_bad["error"]
 
+    monkeypatch.setattr(
+        cf,
+        "_get_forecast_methods_data",
+        lambda: {
+            "total": 2,
+            "categories": {"classical": ["theta"], "ml": ["mlf_rf"]},
+            "methods": [
+                {
+                    "method": "theta",
+                    "available": True,
+                    "description": "Theta model.",
+                    "params": [{"name": "window"}],
+                    "requires": [],
+                },
+                {
+                    "method": "mlf_rf",
+                    "available": False,
+                    "description": "RF model.",
+                    "params": [{"name": "n_estimators"}, {"name": "max_depth"}],
+                    "requires": ["mlforecast", "sklearn"],
+                },
+            ],
+        },
+    )
+    compact = _unwrap(cf.forecast_list_methods)()
+    assert compact["detail"] == "compact"
+    assert compact["total"] == 2
+    assert compact["available"] == 1
+    assert compact["unavailable"] == 1
+    assert compact["methods"][0]["method"] == "theta"
+    assert "params_count" in compact["methods"][0]
+    assert "params" not in compact["methods"][0]
+
+    full = _unwrap(cf.forecast_list_methods)(detail="full")
+    assert isinstance(full.get("methods"), list)
+    assert "params" in full["methods"][0]
+
     monkeypatch.setattr(cf, "_get_forecast_methods_data", lambda: {"methods": [1]})
     assert _unwrap(cf.forecast_list_methods)() == {"methods": [1]}
     monkeypatch.setattr(cf, "_get_forecast_methods_data", lambda: (_ for _ in ()).throw(RuntimeError("boom")))

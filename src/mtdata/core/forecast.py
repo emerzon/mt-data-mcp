@@ -378,10 +378,79 @@ def forecast_volatility_estimate(
 
 @mcp.tool()
 @_auto_connect_wrapper
-def forecast_list_methods() -> Dict[str, Any]:
-    """List forecast methods, availability, and parameter docs."""
+def forecast_list_methods(
+    detail: Literal["compact", "full"] = "compact",  # type: ignore
+) -> Dict[str, Any]:
+    """List forecast methods and availability.
+
+    - detail='compact' (default): concise list suitable for terminal usage.
+    - detail='full': include full parameter docs and supports metadata.
+    """
     try:
-        return _get_forecast_methods_data()
+        data = _get_forecast_methods_data()
+        detail_value = str(detail or "compact").strip().lower()
+        if detail_value == "full":
+            return data
+        methods = data.get("methods")
+        if not isinstance(methods, list):
+            return data
+
+        if any(not isinstance(item, dict) for item in methods):
+            return data
+
+        categories_raw = data.get("categories") if isinstance(data.get("categories"), dict) else {}
+        method_to_category: Dict[str, str] = {}
+        if isinstance(categories_raw, dict):
+            for cat_name, names in categories_raw.items():
+                if not isinstance(names, list):
+                    continue
+                for name in names:
+                    if name is None:
+                        continue
+                    method_to_category[str(name)] = str(cat_name)
+
+        compact_methods: List[Dict[str, Any]] = []
+        available_count = 0
+        unavailable_count = 0
+        for item in methods:
+            name = item.get("method")
+            if name in (None, ""):
+                continue
+            method_name = str(name)
+            available = bool(item.get("available"))
+            if available:
+                available_count += 1
+            else:
+                unavailable_count += 1
+
+            row: Dict[str, Any] = {
+                "method": method_name,
+                "available": available,
+            }
+            desc = str(item.get("description") or "").strip()
+            if desc:
+                row["description"] = desc.splitlines()[0].strip()
+            reqs = item.get("requires")
+            if isinstance(reqs, list) and reqs:
+                row["requires"] = [str(v) for v in reqs if v not in (None, "")]
+            cat = method_to_category.get(method_name)
+            if cat:
+                row["category"] = cat
+            params = item.get("params")
+            if isinstance(params, list):
+                row["params_count"] = len(params)
+            compact_methods.append(row)
+
+        compact_methods.sort(key=lambda row: (not bool(row.get("available")), str(row.get("method"))))
+        return {
+            "detail": "compact",
+            "total": int(data.get("total") or len(compact_methods)),
+            "available": available_count,
+            "unavailable": unavailable_count,
+            "categories": categories_raw,
+            "methods": compact_methods,
+            "note": "Pass detail='full' to include full parameter docs.",
+        }
     except Exception as e:
         return {"error": f"Error listing forecast methods: {e}"}
 
