@@ -10,17 +10,17 @@ Note: Finviz data is delayed 15-20 minutes; not suitable for real-time trading.
 import logging
 import datetime
 from typing import Any, Dict, List, Optional, Literal
-import time
 import os
+import threading
+import requests
 
 logger = logging.getLogger(__name__)
 
-# Cache TTL in seconds (5 minutes default)
-_CACHE_TTL = 300
-_cache_timestamps: Dict[str, float] = {}
 _FINVIZ_HTTP_TIMEOUT = float(os.getenv("FINVIZ_HTTP_TIMEOUT", "15"))
 _FINVIZ_SCREENER_MAX_ROWS = int(os.getenv("FINVIZ_SCREENER_MAX_ROWS", "5000"))
 _FINVIZ_PAGE_LIMIT_MAX = int(os.getenv("FINVIZ_PAGE_LIMIT_MAX", "500"))
+_FINVIZ_HTTP_SESSION: Optional[requests.Session] = None
+_FINVIZ_HTTP_SESSION_LOCK = threading.Lock()
 
 
 def _sanitize_pagination(limit: int, page: int) -> tuple[int, int]:
@@ -58,10 +58,19 @@ def _run_screener_view(
 
 
 def _finviz_http_get(url: str, *, headers: Dict[str, str], params: Dict[str, Any]) -> Any:
-    """HTTP GET helper with centralized timeout."""
-    import requests
+    """HTTP GET helper with centralized timeout and pooled connections."""
+    # Testability: when requests.get is monkeypatched, honor that hook.
+    if requests.get is not requests.api.get:
+        return requests.get(url, headers=headers, params=params, timeout=_FINVIZ_HTTP_TIMEOUT)
 
-    return requests.get(url, headers=headers, params=params, timeout=_FINVIZ_HTTP_TIMEOUT)
+    global _FINVIZ_HTTP_SESSION
+    if _FINVIZ_HTTP_SESSION is None:
+        with _FINVIZ_HTTP_SESSION_LOCK:
+            if _FINVIZ_HTTP_SESSION is None:
+                session = requests.Session()
+                session.headers.update({"User-Agent": "Mozilla/5.0"})
+                _FINVIZ_HTTP_SESSION = session
+    return _FINVIZ_HTTP_SESSION.get(url, headers=headers, params=params, timeout=_FINVIZ_HTTP_TIMEOUT)
 
 
 def _apply_finvizfinance_timeout_patch() -> None:
@@ -82,19 +91,6 @@ def _apply_finvizfinance_timeout_patch() -> None:
 
     _fv_quote.requests.get = _patched_get
     _fv_quote._mtdata_timeout_patched = True
-
-
-def _is_cache_valid(key: str) -> bool:
-    """Check if cached data is still valid."""
-    ts = _cache_timestamps.get(key)
-    if ts is None:
-        return False
-    return (time.time() - ts) < _CACHE_TTL
-
-
-def _update_cache_ts(key: str) -> None:
-    """Update cache timestamp."""
-    _cache_timestamps[key] = time.time()
 
 
 def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
@@ -835,8 +831,11 @@ def _fetch_finviz_economic_calendar_items(date_from: str, date_to: str) -> List[
     params = {"dateFrom": date_from, "dateTo": date_to}
 
     resp = _finviz_http_get(url, headers=headers, params=params)
-    resp.raise_for_status()
-    data = resp.json()
+    try:
+        resp.raise_for_status()
+        data = resp.json()
+    finally:
+        resp.close()
     if not isinstance(data, list):
         raise TypeError("Unexpected response type from Finviz API: {t}".format(t=type(data).__name__))
 
@@ -871,8 +870,11 @@ def _fetch_finviz_calendar_paged(
     }
 
     resp = _finviz_http_get(url, headers=headers, params=params)
-    resp.raise_for_status()
-    data = resp.json()
+    try:
+        resp.raise_for_status()
+        data = resp.json()
+    finally:
+        resp.close()
     if not isinstance(data, dict):
         raise TypeError("Unexpected response type from Finviz API: {t}".format(t=type(data).__name__))
     if "items" not in data or not isinstance(data.get("items"), list):

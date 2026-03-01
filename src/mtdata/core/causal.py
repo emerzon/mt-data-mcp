@@ -10,7 +10,6 @@ from typing import Dict, List, Tuple
 import pandas as pd
 import numpy as np
 import MetaTrader5 as mt5
-from sklearn.preprocessing import StandardScaler
 
 from .constants import TIMEFRAME_MAP
 from .server import mcp, _auto_connect_wrapper, _ensure_symbol_ready
@@ -94,7 +93,8 @@ def _transform_frame(frame: pd.DataFrame, transform: str) -> pd.DataFrame:
     else:
         # default no transform
         return frame
-    return frame.dropna(how="any")
+    # Keep pairwise-complete rows for each tested symbol pair later.
+    return frame.dropna(how="all")
 
 
 def _standardize_frame(frame: pd.DataFrame) -> pd.DataFrame:
@@ -102,8 +102,11 @@ def _standardize_frame(frame: pd.DataFrame) -> pd.DataFrame:
         return frame
 
     cols = list(frame.columns)
-    scaled = StandardScaler(with_mean=True, with_std=True).fit_transform(frame.astype(float))
-    standardized = pd.DataFrame(scaled, index=frame.index, columns=cols)
+    numeric = frame.astype(float)
+    means = numeric.mean(axis=0, skipna=True)
+    stds = numeric.std(axis=0, ddof=0, skipna=True)
+    standardized = (numeric - means) / stds.replace(0.0, np.nan)
+    standardized = standardized.reindex(columns=cols)
 
     # Preserve prior semantics for constant columns.
     for col in cols:

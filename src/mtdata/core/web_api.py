@@ -17,6 +17,8 @@ surfaces close to the underlying tools. Advanced params are accepted as dicts.
 
 from __future__ import annotations
 
+import json
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, Query, HTTPException
@@ -125,10 +127,17 @@ class BacktestBody(BaseModel):
 
 app = FastAPI(title="mtdata-webui", version="0.1.0")
 
-# Permissive CORS by default (customize via reverse proxy in production)
+# Restrictive localhost-first CORS defaults; override via CORS_ORIGINS.
+_cors_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "http://127.0.0.1:5173,http://localhost:5173").split(",")
+    if origin.strip()
+]
+if not _cors_origins:
+    _cors_origins = ["http://127.0.0.1:5173", "http://localhost:5173"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -785,4 +794,6 @@ except Exception:
 def main_webapi():
     """Entry point to run the FastAPI web server."""
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    host = os.getenv("WEBAPI_HOST", "127.0.0.1")
+    port = int(os.getenv("WEBAPI_PORT", "8000"))
+    uvicorn.run(app, host=host, port=port)

@@ -38,9 +38,9 @@ def _apply_fastmcp_env_overrides() -> None:
         if val and not os.getenv(target):
             os.environ[target] = val
 
-    # Default to listen on all interfaces if no host is specified
+    # Default to localhost unless explicitly configured otherwise.
     if not os.getenv("FASTMCP_HOST"):
-        os.environ["FASTMCP_HOST"] = "0.0.0.0"
+        os.environ["FASTMCP_HOST"] = "127.0.0.1"
 
 # Create MCP instance early to avoid circular imports when tools import `mcp`.
 _apply_fastmcp_env_overrides()
@@ -411,10 +411,10 @@ def _resolve_transport(default: str = "sse") -> tuple[str, Optional[str]]:
 
 def main():
     """Main entry point for the MCP server"""
-    # Force listen on all interfaces
     settings = getattr(mcp, 'settings', None)
     if settings is not None:
-        settings.host = "0.0.0.0"
+        if not getattr(settings, "host", None):
+            settings.host = os.getenv("FASTMCP_HOST", "127.0.0.1")
         log_level = getattr(logging, str(getattr(settings, 'log_level', 'INFO')).upper(), logging.INFO)
     else:
         log_level = logging.INFO
@@ -428,7 +428,7 @@ def main():
         base_path = str(getattr(settings, 'mount_path', '') or '').rstrip("/") or "/"
         logger.info(
             "SSE listening at http://%s:%s%s (event path %s, message path %s)",
-            getattr(settings, 'host', '0.0.0.0'),
+            getattr(settings, 'host', '127.0.0.1'),
             getattr(settings, 'port', 8000),
             base_path,
             getattr(settings, 'sse_path', '/sse'),

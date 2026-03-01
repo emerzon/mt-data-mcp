@@ -399,8 +399,7 @@ def fetch_history(
         if to_dt:
             cutoff = _utc_epoch_seconds(to_dt)
             # Filter: include the bar exactly AT the cutoff if it exists
-            # We use a small epsilon for float comparison safety
-            df = df[df['time'] <= cutoff + 1.0]
+            df = df[df['time'] <= cutoff]
             # Take last 'need'
             if len(df) > need:
                 df = df.iloc[-int(need):]

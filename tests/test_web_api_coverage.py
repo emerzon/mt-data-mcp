@@ -860,7 +860,7 @@ class TestMainWebapi:
         mock_uvicorn = MagicMock()
         with patch.dict(sys.modules, {"uvicorn": mock_uvicorn}):
             web_api.main_webapi()
-        mock_uvicorn.run.assert_called_once_with(app, host="0.0.0.0", port=8000)
+        mock_uvicorn.run.assert_called_once_with(app, host="127.0.0.1", port=8000)
 
 
 # ===========================================================================

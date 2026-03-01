@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 from typing import Any, Dict, List, Optional, Tuple
 import importlib.util as _importlib_util
 import numpy as np
@@ -126,7 +127,12 @@ class ChronosBoltMethod(PretrainedMethod):
                 "chronos installed but no supported pipeline found "
                 "(expected one of Chronos2Pipeline/ChronosBoltPipeline/ChronosPipeline)."
             )
-        
+
+        pipe = None
+        known_covariates = None
+        ctx_tensor = None
+        quantiles_tensor = None
+        mean_tensor = None
         try:
             q_levels = quantiles or [0.5]
             # Prepare covariates if available
@@ -139,9 +145,7 @@ class ChronosBoltMethod(PretrainedMethod):
                 exog_fut = exog_future
             if exog_fut is None:
                 exog_fut = p.get('exog_future')
-            
-            known_covariates = None
-            
+
             if exog_hist is not None and exog_fut is not None:
                 try:
                     # Ensure arrays
@@ -189,8 +193,6 @@ class ChronosBoltMethod(PretrainedMethod):
             if known_covariates is not None:
                 predict_kwargs["known_covariates"] = known_covariates
 
-            quantiles_tensor = None
-            mean_tensor = None
             if hasattr(pipe, "predict_quantiles"):
                 try:
                     quantiles_tensor, mean_tensor = pipe.predict_quantiles(
@@ -266,6 +268,30 @@ class ChronosBoltMethod(PretrainedMethod):
             
         except Exception as ex:
             raise RuntimeError(f"chronos2 error ({type(ex).__name__}): {ex!r}") from ex
+        finally:
+            # Best-effort cleanup for long-running servers using large pretrained models.
+            try:
+                if pipe is not None and hasattr(pipe, "to"):
+                    pipe.to("cpu")
+            except Exception:
+                pass
+            pipe = None
+            known_covariates = None
+            ctx_tensor = None
+            quantiles_tensor = None
+            mean_tensor = None
+            try:
+                gc.collect()
+            except Exception:
+                pass
+            try:
+                cuda = getattr(_torch, "cuda", None)
+                if cuda is not None and callable(getattr(cuda, "is_available", None)) and bool(cuda.is_available()):
+                    empty_cache = getattr(cuda, "empty_cache", None)
+                    if callable(empty_cache):
+                        empty_cache()
+            except Exception:
+                pass
 
 @ForecastRegistry.register("timesfm")
 class TimesFMMethod(PretrainedMethod):
@@ -389,7 +415,7 @@ class TimesFMMethod(PretrainedMethod):
         modules, import_error = safe_import_modules(['timesfm', 'torch'], 'timesfm')
         if import_error:
             raise RuntimeError(import_error)
-        
+        _torch = modules['torch']
         _timesfm_root = modules['timesfm']
         _ForecastConfig = _resolve_forecast_config(_timesfm_root)
         if _ForecastConfig is None:
@@ -409,7 +435,9 @@ class TimesFMMethod(PretrainedMethod):
                 "timesfm installed but no torch pipeline class was found. "
                 "Install the GitHub version (timesfm==2.x) and ensure torch is installed."
             )
-        
+
+        _mdl = None
+        _cfg = None
         try:
             try:
                 _mdl = _Cls()
@@ -490,6 +518,21 @@ class TimesFMMethod(PretrainedMethod):
             return ForecastResult(forecast=f_vals, params_used=params_used, metadata={"quantiles": fq})
         except Exception as ex:
             raise RuntimeError(f"timesfm error: {ex}")
+        finally:
+            _mdl = None
+            _cfg = None
+            try:
+                gc.collect()
+            except Exception:
+                pass
+            try:
+                cuda = getattr(_torch, "cuda", None)
+                if cuda is not None and callable(getattr(cuda, "is_available", None)) and bool(cuda.is_available()):
+                    empty_cache = getattr(cuda, "empty_cache", None)
+                    if callable(empty_cache):
+                        empty_cache()
+            except Exception:
+                pass
 
 @ForecastRegistry.register("lag_llama")
 class LagLlamaMethod(PretrainedMethod):

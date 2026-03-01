@@ -166,7 +166,14 @@ def _trim_df_to_target(
         if len(out) > candles:
             out = out.iloc[:candles]
     elif end_datetime:
-        out = df.iloc[-candles:] if len(df) > candles else df
+        to_dt = _parse_start_datetime(end_datetime)
+        if not to_dt:
+            out = df.iloc[0:0]
+            return out.copy() if copy_rows else out
+        target_to = _utc_epoch_seconds(to_dt)
+        out = df.loc[df['__epoch'] <= target_to]
+        if len(out) > candles:
+            out = out.iloc[-candles:]
     else:
         out = df.iloc[-candles:] if len(df) > candles else df
     return out.copy() if copy_rows else out

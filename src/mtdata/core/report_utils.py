@@ -315,13 +315,13 @@ def apply_market_gates(section: Dict[str, Any], params: Dict[str, Any]) -> Dict[
         max_ticks = params.get('spread_max_ticks')
         max_pips = params.get('spread_max_pips')
         if max_ticks is not None and isinstance(section, dict):
-            sp = section.get('spread_ticks') if section.get('spread_ticks') is not None else section.get('spread_pips')
+            sp = section.get('spread_ticks')
             if sp is not None:
                 gate['spread_ok'] = bool(float(sp) <= float(max_ticks))
                 gate['spread_ticks'] = float(sp)
                 gate['spread_max_ticks'] = float(max_ticks)
         elif max_pips is not None and isinstance(section, dict):
-            sp = section.get('spread_pips') if section.get('spread_pips') is not None else section.get('spread_ticks')
+            sp = section.get('spread_pips')
             if sp is not None:
                 gate['spread_ok'] = bool(float(sp) <= float(max_pips))
                 gate['spread_pips'] = float(sp)

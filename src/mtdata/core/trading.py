@@ -841,10 +841,6 @@ def _place_market_order(
             if volume_error:
                 return {"error": volume_error}
 
-            current_tick = mt5.symbol_info_tick(symbol)
-            if current_tick is None:
-                return {"error": f"Failed to get current price for {symbol}"}
-
             # Normalize and validate requested order type
             t, order_type_error = _normalize_order_type_input(order_type)
             if order_type_error:
@@ -856,8 +852,6 @@ def _place_market_order(
             deviation_validated, deviation_error = _validate_deviation(deviation)
             if deviation_error:
                 return {"error": deviation_error}
-
-            price = current_tick.ask if side == "BUY" else current_tick.bid
 
             # Price normalization helper
             point = float(symbol_info.point or 0.0) if hasattr(symbol_info, "point") else 0.0
@@ -882,20 +876,40 @@ def _place_market_order(
             norm_sl = _normalize_price(stop_loss) if stop_loss not in (None, 0) else None
             norm_tp = _normalize_price(take_profit) if take_profit not in (None, 0) else None
 
+            # Validate against a recent quote, then refresh again right before send.
+            validate_tick = mt5.symbol_info_tick(symbol)
+            if validate_tick is None:
+                return {"error": f"Failed to get current price for {symbol}"}
+            validate_price = validate_tick.ask if side == "BUY" else validate_tick.bid
+
             # SL/TP validation for market orders
             if norm_sl is not None:
-                if side == "BUY" and norm_sl >= price:
-                    return {"error": f"stop_loss must be below entry for BUY orders. sl={norm_sl}, price={price}"}
-                if side == "SELL" and norm_sl <= price:
-                    return {"error": f"stop_loss must be above entry for SELL orders. sl={norm_sl}, price={price}"}
+                if side == "BUY" and norm_sl >= validate_price:
+                    return {"error": f"stop_loss must be below entry for BUY orders. sl={norm_sl}, price={validate_price}"}
+                if side == "SELL" and norm_sl <= validate_price:
+                    return {"error": f"stop_loss must be above entry for SELL orders. sl={norm_sl}, price={validate_price}"}
             if norm_tp is not None:
-                if side == "BUY" and norm_tp <= price:
-                    return {"error": f"take_profit must be above entry for BUY orders. tp={norm_tp}, price={price}"}
-                if side == "SELL" and norm_tp >= price:
-                    return {"error": f"take_profit must be below entry for SELL orders. tp={norm_tp}, price={price}"}
+                if side == "BUY" and norm_tp <= validate_price:
+                    return {"error": f"take_profit must be above entry for BUY orders. tp={norm_tp}, price={validate_price}"}
+                if side == "SELL" and norm_tp >= validate_price:
+                    return {"error": f"take_profit must be below entry for SELL orders. tp={norm_tp}, price={validate_price}"}
 
             # Place market order without TP/SL first (TRADE_ACTION_DEAL doesn't
             # reliably support them)
+            send_tick = mt5.symbol_info_tick(symbol)
+            if send_tick is None:
+                return {"error": f"Failed to get fresh price for {symbol}"}
+            price = send_tick.ask if side == "BUY" else send_tick.bid
+            if norm_sl is not None:
+                if side == "BUY" and norm_sl >= price:
+                    return {"error": f"stop_loss must be below entry for BUY orders at send time. sl={norm_sl}, price={price}"}
+                if side == "SELL" and norm_sl <= price:
+                    return {"error": f"stop_loss must be above entry for SELL orders at send time. sl={norm_sl}, price={price}"}
+            if norm_tp is not None:
+                if side == "BUY" and norm_tp <= price:
+                    return {"error": f"take_profit must be above entry for BUY orders at send time. tp={norm_tp}, price={price}"}
+                if side == "SELL" and norm_tp >= price:
+                    return {"error": f"take_profit must be below entry for SELL orders at send time. tp={norm_tp}, price={price}"}
             request_comment = _normalize_trade_comment(comment, default="MCP order")
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,

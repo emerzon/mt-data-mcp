@@ -431,8 +431,9 @@ def temporal_analyze(
             high = pd.to_numeric(df["high"], errors="coerce").astype(float)
             low = pd.to_numeric(df["low"], errors="coerce").astype(float)
             df["__range"] = high - low
+            close_safe = close.where(close > 0)
             with np.errstate(divide="ignore", invalid="ignore"):
-                df["__range_pct"] = (df["__range"] / close) * 100.0
+                df["__range_pct"] = (df["__range"] / close_safe) * 100.0
 
         volume_col = None
         if "real_volume" in df.columns:

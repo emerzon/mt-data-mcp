@@ -683,11 +683,12 @@ def _denoise_series(
             initial_cov=init_cov,
         )
         if causality == 'zero_phase':
+            bwd_initial_state = float(y_fwd[-1]) if y_fwd.size > 0 else init_state
             y_bwd = _kalman_filter_1d(
                 x[::-1],
                 process_var=process_val,
                 measurement_var=measurement_val,
-                initial_state=init_state,
+                initial_state=bwd_initial_state,
                 initial_cov=init_cov,
             )[::-1]
             y = 0.5 * (y_fwd + y_bwd)

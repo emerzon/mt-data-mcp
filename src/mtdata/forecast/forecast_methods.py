@@ -94,7 +94,18 @@ def validate_method_params(method: str, params: Dict[str, Any]) -> List[str]:
             elif param_type == "tuple":
                 if not isinstance(param_value, (list, tuple)):
                     errors.append(f"Parameter '{param_name}' should be a tuple or list")
-                elif len(param_value) != 3:  # Assuming (p,d,q) order
-                    errors.append(f"Parameter '{param_name}' should have 3 elements")
+                else:
+                    expected_len = None
+                    try:
+                        if "tuple_length" in param_def:
+                            expected_len = int(param_def["tuple_length"])
+                        elif "length" in param_def:
+                            expected_len = int(param_def["length"])
+                    except Exception:
+                        expected_len = None
+                    if expected_len is None:
+                        expected_len = 4 if param_name == "seasonal_order" else 3
+                    if len(param_value) != expected_len:
+                        errors.append(f"Parameter '{param_name}' should have {expected_len} elements")
 
     return errors

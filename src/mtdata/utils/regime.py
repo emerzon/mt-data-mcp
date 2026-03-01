@@ -105,9 +105,10 @@ def bocpd_gaussian(
         # Normalize to avoid under/overflow
         m = np.max(new_log_r)
         new_log_r = new_log_r - m
-        log_r = new_log_r + np.log(np.sum(np.exp(new_log_r))) - np.log(np.sum(np.exp(new_log_r)))  # keep normalized
+        log_norm = np.logaddexp.reduce(new_log_r)
+        log_r = new_log_r - log_norm
         # cp probability is P(r=0 | x_1:t)
-        probs = np.exp(new_log_r - np.log(np.sum(np.exp(new_log_r))))
+        probs = np.exp(log_r)
         cp_prob[t] = float(probs[0])
         rl_map[t] = float(np.argmax(probs))
 
