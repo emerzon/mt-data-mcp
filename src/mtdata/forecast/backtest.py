@@ -316,11 +316,6 @@ def forecast_backtest(
                         da = float('nan')
                     entry_price = float(closes[idx]) if idx < len(closes) else float('nan')
                     if target == 'return':
-                        exit_idx = idx + m
-                        exit_price = float(closes[exit_idx]) if exit_idx < len(closes) else float('nan')
-                    else:
-                        exit_price = float(act[m - 1]) if m > 0 else float('nan')
-                    if target == 'return':
                         expected_move = float(np.nansum(fcv[:m]))
                     else:
                         expected_move = float((float(fcv[m - 1]) - entry_price)) if math.isfinite(entry_price) else float('nan')
@@ -346,23 +341,53 @@ def forecast_backtest(
                         position = 'short'
                     gross_return = float('nan')
                     net_return = float('nan')
+                    exit_price = float('nan')
+                    exit_step = m - 1
                     if direction != 0:
                         if target == 'return':
                             try:
-                                realized_log = float(np.nansum(act[:m]))
+                                realized_path = np.array(act[:m], dtype=float)
+                                if not np.all(np.isfinite(realized_path)):
+                                    realized_path = np.nan_to_num(realized_path, nan=0.0, posinf=0.0, neginf=0.0)
+                                cum_log = np.cumsum(realized_path)
+                                forecast_target_log = float(np.nansum(fcv[:m]))
+                                if math.isfinite(forecast_target_log) and abs(forecast_target_log) > 0:
+                                    if direction > 0:
+                                        hit_idx = np.where(cum_log >= forecast_target_log)[0]
+                                    else:
+                                        hit_idx = np.where(cum_log <= forecast_target_log)[0]
+                                    if hit_idx.size > 0:
+                                        exit_step = int(hit_idx[0])
+                                realized_log = float(cum_log[exit_step]) if cum_log.size else 0.0
                                 gross_return = direction * float(math.exp(realized_log) - 1.0)
+                                exit_idx = idx + exit_step + 1
+                                exit_price = float(closes[exit_idx]) if exit_idx < len(closes) else float('nan')
                             except Exception:
                                 gross_return = float('nan')
                             slip = float(abs(slippage_bps) or 0.0) / 10000.0
                             net_return = gross_return - 2.0 * slip
                             if net_return <= -0.999:
                                 net_return = -0.999
-                        elif math.isfinite(entry_price) and entry_price != 0.0 and math.isfinite(exit_price):
-                            gross_return = direction * ((exit_price - entry_price) / entry_price)
-                            slip = float(abs(slippage_bps) or 0.0) / 10000.0
-                            net_return = gross_return - 2.0 * slip
-                            if net_return <= -0.999:
-                                net_return = -0.999
+                        elif math.isfinite(entry_price) and entry_price != 0.0:
+                            try:
+                                forecast_target_price = float(fcv[m - 1])
+                                realized_prices = np.array(act[:m], dtype=float)
+                                if math.isfinite(forecast_target_price):
+                                    if direction > 0:
+                                        hit_idx = np.where(realized_prices >= forecast_target_price)[0]
+                                    else:
+                                        hit_idx = np.where(realized_prices <= forecast_target_price)[0]
+                                    if hit_idx.size > 0:
+                                        exit_step = int(hit_idx[0])
+                                exit_price = float(realized_prices[exit_step]) if realized_prices.size else float('nan')
+                            except Exception:
+                                exit_price = float('nan')
+                            if math.isfinite(exit_price):
+                                gross_return = direction * ((exit_price - entry_price) / entry_price)
+                                slip = float(abs(slippage_bps) or 0.0) / 10000.0
+                                net_return = gross_return - 2.0 * slip
+                                if net_return <= -0.999:
+                                    net_return = -0.999
                     elif direction == 0:
                         gross_return = 0.0
                         net_return = 0.0
@@ -376,6 +401,7 @@ def forecast_backtest(
                         "actual": [float(v) for v in act[:m].tolist()],
                         "entry_price": entry_price,
                         "exit_price": exit_price,
+                        "exit_step": int(exit_step) + 1 if m > 0 else 0,
                         "expected_return": expected_return,
                         "position": position,
                         "trade_return_gross": gross_return,

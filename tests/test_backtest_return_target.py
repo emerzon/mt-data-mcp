@@ -115,3 +115,42 @@ def test_performance_metrics_skip_annualization_for_short_samples() -> None:
     )
     assert np.isnan(float(metrics["annual_return"]))
     assert np.isnan(float(metrics["calmar_ratio"]))
+
+
+def test_backtest_price_target_trade_returns_vary_by_forecast_implied_exit() -> None:
+    times = np.arange(1700000000, 1700000000 + 90 * 3600, 3600, dtype=float)
+    close = np.linspace(100.0, 145.0, 90, dtype=float)
+    df = pd.DataFrame({"time": times, "close": close})
+
+    idx = 80
+    horizon = 3
+    anchor = _format_time_minimal(float(times[idx]))
+
+    def _fake_forecast(**kwargs):
+        method = str(kwargs.get("method", ""))
+        if method == "slow":
+            return {"forecast_price": [140.8, 141.0, 141.2]}
+        return {"forecast_price": [143.5, 144.0, 144.5]}
+
+    with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
+        "mtdata.forecast.backtest.forecast",
+        side_effect=_fake_forecast,
+    ):
+        res = forecast_backtest(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=horizon,
+            methods=["slow", "aggressive"],
+            anchors=[anchor],
+            target="price",
+        )
+
+    slow_detail = res["results"]["slow"]["details"][0]
+    aggressive_detail = res["results"]["aggressive"]["details"][0]
+
+    assert slow_detail["success"] is True
+    assert aggressive_detail["success"] is True
+    assert slow_detail["position"] == "long"
+    assert aggressive_detail["position"] == "long"
+    assert float(slow_detail["trade_return"]) != float(aggressive_detail["trade_return"])
+    assert int(slow_detail["exit_step"]) < int(aggressive_detail["exit_step"])
