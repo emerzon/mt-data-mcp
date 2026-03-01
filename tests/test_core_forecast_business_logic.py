@@ -150,6 +150,23 @@ def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):
     assert out["error"] == "Unsupported library: unsupported"
 
 
+def test_forecast_generate_accepts_legacy_method_for_internal_callers(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+    captured = {}
+
+    def fake_forecast_impl(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True, "method": kwargs["method"]}
+
+    monkeypatch.setattr(cf, "_forecast_impl", fake_forecast_impl)
+    monkeypatch.setattr(cf, "_parse_kv_or_json", lambda v: dict(v or {}))
+
+    out = raw(symbol="EURUSD", method="sf_theta", model="theta", library="native")
+
+    assert out["ok"] is True
+    assert captured["method"] == "sf_theta"
+
+
 def test_forecast_list_library_models_and_list_methods(monkeypatch):
     stats_mod = ModuleType("statsforecast")
     models_mod = ModuleType("statsforecast.models")

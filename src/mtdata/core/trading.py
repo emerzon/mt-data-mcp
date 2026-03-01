@@ -372,6 +372,83 @@ def _normalize_trade_comment(comment: Optional[str], *, default: str, suffix: st
     return full
 
 
+def _coerce_optional_bool(value: Any) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if not math.isfinite(float(value)):
+            return None
+        return bool(value)
+    return None
+
+
+def _trade_mode_text(mt5: Any, account_info: Any) -> Optional[str]:
+    trade_mode = getattr(account_info, "trade_mode", None)
+    if trade_mode is None:
+        return None
+    mapping = {
+        getattr(mt5, "ACCOUNT_TRADE_MODE_DEMO", 0): "demo",
+        getattr(mt5, "ACCOUNT_TRADE_MODE_CONTEST", 1): "contest",
+        getattr(mt5, "ACCOUNT_TRADE_MODE_REAL", 2): "real",
+    }
+    return mapping.get(trade_mode, str(trade_mode))
+
+
+def _build_trade_preflight(mt5: Any, account_info: Any = None, terminal_info: Any = None) -> Dict[str, Any]:
+    """Summarize account and terminal execution readiness."""
+    info = account_info if account_info is not None else None
+    term = terminal_info if terminal_info is not None else None
+    if info is None:
+        try:
+            info = mt5.account_info()
+        except Exception:
+            info = None
+    if term is None:
+        try:
+            term = mt5.terminal_info()
+        except Exception:
+            term = None
+
+    account_trade_allowed = _coerce_optional_bool(getattr(info, "trade_allowed", None)) if info is not None else None
+    account_trade_expert = _coerce_optional_bool(getattr(info, "trade_expert", None)) if info is not None else None
+    terminal_trade_allowed = _coerce_optional_bool(getattr(term, "trade_allowed", None)) if term is not None else None
+    terminal_tradeapi_disabled = _coerce_optional_bool(getattr(term, "tradeapi_disabled", None)) if term is not None else None
+    terminal_connected = _coerce_optional_bool(getattr(term, "connected", None)) if term is not None else None
+
+    blockers: List[str] = []
+    if account_trade_allowed is False:
+        blockers.append("Account trading is disabled.")
+    if account_trade_expert is False:
+        blockers.append("Expert trading is disabled for the account.")
+    if terminal_trade_allowed is False:
+        blockers.append("Terminal AutoTrading is disabled.")
+    if terminal_tradeapi_disabled is True:
+        blockers.append("Terminal API trading is disabled.")
+    if terminal_connected is False:
+        blockers.append("Terminal is not connected.")
+
+    auto_trading_enabled = False
+    if terminal_trade_allowed is True and terminal_tradeapi_disabled is not True:
+        auto_trading_enabled = True
+
+    return {
+        "server": getattr(info, "server", None) if info is not None else None,
+        "company": getattr(info, "company", None) if info is not None else None,
+        "trade_mode": _trade_mode_text(mt5, info) if info is not None else None,
+        "trade_mode_raw": getattr(info, "trade_mode", None) if info is not None else None,
+        "login": getattr(info, "login", None) if info is not None else None,
+        "account_trade_allowed": account_trade_allowed,
+        "account_trade_expert": account_trade_expert,
+        "terminal_trade_allowed": terminal_trade_allowed,
+        "terminal_tradeapi_disabled": terminal_tradeapi_disabled,
+        "terminal_connected": terminal_connected,
+        "community_account": _coerce_optional_bool(getattr(term, "community_account", None)) if term is not None else None,
+        "auto_trading_enabled": auto_trading_enabled,
+        "execution_ready": len(blockers) == 0,
+        "execution_blockers": blockers,
+    }
+
+
 @mcp.tool()
 def trade_account_info() -> dict:
     """Get account information (balance, equity, profit, margin level, free margin, account type, leverage, currency)."""
@@ -382,6 +459,7 @@ def trade_account_info() -> dict:
         info = mt5.account_info()
         if info is None:
             return {"error": "Failed to get account info"}
+        preflight = _build_trade_preflight(mt5, account_info=info)
 
         return {
             "balance": info.balance,
@@ -394,6 +472,15 @@ def trade_account_info() -> dict:
             "leverage": info.leverage,
             "trade_allowed": info.trade_allowed,
             "trade_expert": info.trade_expert,
+            "server": preflight.get("server"),
+            "company": preflight.get("company"),
+            "trade_mode": preflight.get("trade_mode"),
+            "terminal_trade_allowed": preflight.get("terminal_trade_allowed"),
+            "terminal_tradeapi_disabled": preflight.get("terminal_tradeapi_disabled"),
+            "terminal_connected": preflight.get("terminal_connected"),
+            "auto_trading_enabled": preflight.get("auto_trading_enabled"),
+            "execution_ready": preflight.get("execution_ready"),
+            "execution_blockers": preflight.get("execution_blockers"),
         }
 
     return _get_account_info()
@@ -454,6 +541,10 @@ def trade_history(
                 if rows is None or len(rows) == 0:
                     return {"message": "No deals found"}
                 df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
+                if symbol and "symbol" in df.columns:
+                    df = df.loc[df["symbol"].astype(str).str.upper() == str(symbol).upper()]
+                if len(df) == 0:
+                    return {"message": f"No deals found for {symbol}" if symbol else "No deals found"}
                 sort_src = _normalize_time_col(df, "time")
             else:
                 if symbol:
@@ -463,6 +554,10 @@ def trade_history(
                 if rows is None or len(rows) == 0:
                     return {"message": "No orders found"}
                 df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
+                if symbol and "symbol" in df.columns:
+                    df = df.loc[df["symbol"].astype(str).str.upper() == str(symbol).upper()]
+                if len(df) == 0:
+                    return {"message": f"No orders found for {symbol}" if symbol else "No orders found"}
                 sort_src = _normalize_time_col(df, "time_setup")
                 if sort_src is None:
                     sort_src = _normalize_time_col(df, "time")
@@ -728,6 +823,12 @@ def _place_market_order(
     @_auto_connect_wrapper
     def _place_market_order():
         try:
+            preflight = _build_trade_preflight(mt5)
+            if not preflight.get("execution_ready", True):
+                return {
+                    "error": "Trading not ready in MT5 terminal/account preflight.",
+                    "preflight": preflight,
+                }
             symbol_info = mt5.symbol_info(symbol)
             if symbol_info is None:
                 return {"error": f"Symbol {symbol} not found"}
@@ -898,6 +999,12 @@ def _place_pending_order(
     @_auto_connect_wrapper
     def _place_pending_order():
         try:
+            preflight = _build_trade_preflight(mt5)
+            if not preflight.get("execution_ready", True):
+                return {
+                    "error": "Trading not ready in MT5 terminal/account preflight.",
+                    "preflight": preflight,
+                }
             symbol_info = mt5.symbol_info(symbol)
             if symbol_info is None:
                 return {"error": f"Symbol {symbol} not found"}

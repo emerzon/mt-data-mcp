@@ -286,7 +286,12 @@ def _format_float(v: float, d: int) -> str:
 
 
 
-def _format_numeric_rows_from_df(df: pd.DataFrame, headers: List[str]) -> List[List[str]]:
+def _format_numeric_rows_from_df(
+    df: pd.DataFrame,
+    headers: List[str],
+    *,
+    stringify: bool = True,
+) -> List[List[Any]]:
     # Precompute per-column decimals to trim numeric noise without losing precision.
     col_decimals: Dict[str, int] = {}
     for col in headers:
@@ -304,31 +309,39 @@ def _format_numeric_rows_from_df(df: pd.DataFrame, headers: List[str]) -> List[L
         if values:
             col_decimals[col] = _optimal_decimals(values)
 
-    out_rows: List[List[str]] = []
+    out_rows: List[List[Any]] = []
     for _, row in df[headers].iterrows():
-        out_row: List[str] = []
+        out_row: List[Any] = []
         for col in headers:
             val = row[col]
             if col == 'time':
-                out_row.append(str(val))
+                out_row.append(str(val) if stringify else val)
             elif val is None or isinstance(val, bool):
-                out_row.append(format_number(val))
+                out_row.append(format_number(val) if stringify else val)
             elif isinstance(val, Number):
                 try:
                     num = float(val)
                 except Exception:
-                    out_row.append(str(val))
+                    out_row.append(str(val) if stringify else val)
                     continue
                 if not math.isfinite(num):
-                    out_row.append(format_number(num))
+                    out_row.append(format_number(num) if stringify else num)
                     continue
-                decimals = col_decimals.get(col)
-                if decimals is None:
-                    out_row.append(format_number(num))
+                if not stringify:
+                    if isinstance(val, int) and not isinstance(val, bool):
+                        out_row.append(int(val))
+                    elif float(num).is_integer() and not isinstance(val, float):
+                        out_row.append(int(num))
+                    else:
+                        out_row.append(num)
                 else:
-                    out_row.append(_format_float(num, decimals))
+                    decimals = col_decimals.get(col)
+                    if decimals is None:
+                        out_row.append(format_number(num))
+                    else:
+                        out_row.append(_format_float(num, decimals))
             else:
-                out_row.append(str(val))
+                out_row.append(str(val) if stringify else val)
         out_rows.append(out_row)
     return out_rows
 

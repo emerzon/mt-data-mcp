@@ -1,4 +1,5 @@
 from typing import Any, Dict, Optional, List, Literal, Union
+import warnings
 
 from .server import mcp, _auto_connect_wrapper
 from .schema import DenoiseSpec
@@ -80,23 +81,33 @@ def report_generate(
         else:
             eff_horizon = default_horizon.get(name, 12)
 
-        if name == 'basic':
-            rep = _t_basic(symbol, eff_horizon, denoise, p)
-        elif name == 'advanced':
-            rep = _t_advanced(symbol, eff_horizon, denoise, p)
-        elif name == 'scalping':
-            rep = _t_scalping(symbol, eff_horizon, denoise, p)
-        elif name == 'intraday':
-            rep = _t_intraday(symbol, eff_horizon, denoise, p)
-        elif name == 'swing':
-            rep = _t_swing(symbol, eff_horizon, denoise, p)
-        elif name == 'position':
-            rep = _t_position(symbol, eff_horizon, denoise, p)
-        else:
-            msg = f"Unknown template: {template}. Use one of basic, advanced, scalping, intraday, swing, position."
-            if output_mode == 'markdown':
-                return _report_error_text(msg)
-            return _report_error_payload(msg)
+        captured_warnings: List[str] = []
+        with warnings.catch_warnings(record=True) as warning_records:
+            warnings.simplefilter("always")
+            if name == 'basic':
+                rep = _t_basic(symbol, eff_horizon, denoise, p)
+            elif name == 'advanced':
+                rep = _t_advanced(symbol, eff_horizon, denoise, p)
+            elif name == 'scalping':
+                rep = _t_scalping(symbol, eff_horizon, denoise, p)
+            elif name == 'intraday':
+                rep = _t_intraday(symbol, eff_horizon, denoise, p)
+            elif name == 'swing':
+                rep = _t_swing(symbol, eff_horizon, denoise, p)
+            elif name == 'position':
+                rep = _t_position(symbol, eff_horizon, denoise, p)
+            else:
+                msg = f"Unknown template: {template}. Use one of basic, advanced, scalping, intraday, swing, position."
+                if output_mode == 'markdown':
+                    return _report_error_text(msg)
+                return _report_error_payload(msg)
+        for warning_obj in warning_records:
+            try:
+                warning_text = str(warning_obj.message).strip()
+            except Exception:
+                warning_text = ""
+            if warning_text:
+                captured_warnings.append(warning_text)
 
         if not isinstance(rep, dict):
             msg = 'Report template returned an unexpected payload.'
@@ -108,6 +119,12 @@ def report_generate(
             if output_mode == 'markdown':
                 return _report_error_text(msg)
             return _report_error_payload(msg)
+        if captured_warnings:
+            diagnostics = rep.get('diagnostics')
+            if not isinstance(diagnostics, dict):
+                diagnostics = {}
+            diagnostics['warnings'] = captured_warnings
+            rep['diagnostics'] = diagnostics
 
         summ: List[str] = []
         try:

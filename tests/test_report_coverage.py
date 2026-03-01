@@ -3,6 +3,7 @@
 Covers lines 45-245 by mocking template functions and external data fetching.
 """
 import pytest
+import warnings
 from unittest.mock import patch, MagicMock
 from typing import Any, Dict, List
 
@@ -532,6 +533,30 @@ class TestReportMarkdownOutput:
             res = fn("EURUSD", template="basic", output="markdown")
         assert isinstance(res, str)
         assert "Report" in res
+
+
+class TestReportWarnings:
+
+    def test_template_warnings_are_captured_in_diagnostics(self):
+        fn = _get_report_generate()
+
+        def _warn_template(*args, **kwargs):
+            warnings.warn("model convergence warning", RuntimeWarning)
+            return _make_report(sections=_make_full_sections())
+
+        with patch("mtdata.core.report_templates.template_basic", _warn_template, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", _warn_template, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", _warn_template, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", _warn_template, create=True), \
+             patch("mtdata.core.report_templates.template_swing", _warn_template, create=True), \
+             patch("mtdata.core.report_templates.template_position", _warn_template, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            res = fn("EURUSD", template="basic", output="toon")
+
+        assert isinstance(res, dict)
+        assert "diagnostics" in res
+        assert "warnings" in res["diagnostics"]
+        assert "model convergence warning" in res["diagnostics"]["warnings"][0]
 
 
 # ---------------------------------------------------------------------------

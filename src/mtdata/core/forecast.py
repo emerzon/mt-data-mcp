@@ -126,6 +126,7 @@ def forecast_generate(
     dimred_method: Optional[str] = None,
     dimred_params: Optional[Dict[str, Any]] = None,
     target_spec: Optional[Dict[str, Any]] = None,
+    method: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Generate forecasts for the next `horizon` bars using a selected model.
 
@@ -140,8 +141,13 @@ def forecast_generate(
     lib = str(library or "native").strip().lower()
     mdl = str(model or "").strip()
     p = _parse_kv_or_json(model_params)
+    legacy_method = str(method or "").strip()
 
-    if lib in ("", "native"):
+    # Backward compatibility for internal callers that still pass `method=...`
+    # instead of the newer `library`/`model` split.
+    if legacy_method:
+        resolved_method = legacy_method
+    elif lib in ("", "native"):
         resolved_method = mdl or "theta"
     elif lib == "statsforecast":
         if not mdl:

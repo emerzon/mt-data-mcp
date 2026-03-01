@@ -457,7 +457,7 @@ def fetch_candles(
             headers = [h for h in simplify_meta['headers'] if isinstance(h, str)]
 
         # Assemble rows from (possibly reduced) DataFrame for selected headers
-        rows = _format_numeric_rows_from_df(df, headers)
+        rows = _format_numeric_rows_from_df(df, headers, stringify=False)
 
         # Build tabular payload
         payload = _table_from_rows(headers, rows)
@@ -850,7 +850,7 @@ def fetch_ticks(
         _mode = str((simplify_used or {}).get('mode', SIMPLIFY_DEFAULT_MODE)).lower().strip() if simplify_present else SIMPLIFY_DEFAULT_MODE
         if simplify_present and _mode in ('approximate', 'resample'):
             df_out, simplify_meta = _simplify_dataframe_rows_ext(df_ticks, headers, simplify_used)
-            rows = _format_numeric_rows_from_df(df_out, headers)
+            rows = _format_numeric_rows_from_df(df_out, headers, stringify=False)
             payload = _table_from_rows(headers, rows)
             payload.update({
                 "success": True,
@@ -963,13 +963,13 @@ def fetch_ticks(
                 time_str = _format_time_minimal_local(_epochs[i])
             else:
                 time_str = datetime.fromtimestamp(_epochs[i], tz=dt_timezone.utc).strftime(fmt)
-            values = [time_str, str(tick['bid']), str(tick['ask'])]
+            values = [time_str, float(tick['bid']), float(tick['ask'])]
             if has_last:
-                values.append(str(tick['last']))
+                values.append(float(tick['last']))
             if has_volume:
-                values.append(str(tick['volume']))
+                values.append(float(tick['volume']))
             if has_flags:
-                values.append(str(tick['flags']))
+                values.append(int(tick['flags']))
             rows.append(values)
 
         payload = _table_from_rows(headers, rows)

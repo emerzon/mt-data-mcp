@@ -261,3 +261,60 @@ def test_place_pending_order_implicit_types(mock_mt5):
     assert "error" not in res
     req = mock_mt5.order_send.call_args[0][0]
     assert req["type"] == mock_mt5.ORDER_TYPE_SELL_STOP
+
+
+def test_place_pending_order_blocks_on_trade_preflight(mock_mt5):
+    mock_mt5.account_info.return_value = MagicMock(
+        trade_allowed=True,
+        trade_expert=True,
+        server="Demo",
+        company="Broker",
+        trade_mode=0,
+    )
+    mock_mt5.terminal_info.return_value = MagicMock(
+        trade_allowed=False,
+        tradeapi_disabled=False,
+        connected=True,
+        community_account=True,
+    )
+
+    res = _place_pending_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY_LIMIT",
+        price=1.04000,
+    )
+
+    assert "error" in res
+    assert "Trading not ready" in res["error"]
+    assert res["preflight"]["execution_ready"] is False
+    assert "Terminal AutoTrading is disabled." in res["preflight"]["execution_blockers"]
+    mock_mt5.order_send.assert_not_called()
+
+
+def test_place_market_order_blocks_on_trade_preflight(mock_mt5):
+    mock_mt5.account_info.return_value = MagicMock(
+        trade_allowed=True,
+        trade_expert=True,
+        server="Demo",
+        company="Broker",
+        trade_mode=0,
+    )
+    mock_mt5.terminal_info.return_value = MagicMock(
+        trade_allowed=False,
+        tradeapi_disabled=False,
+        connected=True,
+        community_account=True,
+    )
+
+    res = _place_market_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+    )
+
+    assert "error" in res
+    assert "Trading not ready" in res["error"]
+    assert res["preflight"]["execution_ready"] is False
+    assert "Terminal AutoTrading is disabled." in res["preflight"]["execution_blockers"]
+    mock_mt5.order_send.assert_not_called()

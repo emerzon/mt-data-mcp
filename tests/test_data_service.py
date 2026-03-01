@@ -55,6 +55,8 @@ class TestDataService(unittest.TestCase):
         self.assertEqual(len(data), 5)
         self.assertTrue(all(isinstance(row, dict) for row in data))
         self.assertTrue({'time', 'open', 'high', 'low', 'close'}.issubset(set(data[0].keys())))
+        self.assertIsInstance(data[0]['open'], (int, float))
+        self.assertIsInstance(data[0]['close'], (int, float))
 
     @patch('mtdata.services.data_service._mt5_copy_rates_from')
     @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
