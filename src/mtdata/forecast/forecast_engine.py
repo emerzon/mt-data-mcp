@@ -243,8 +243,20 @@ def _format_forecast_output(
     # Add confidence intervals if available. If they are requested but missing,
     # surface an explicit warning to avoid misleading point-only interpretation.
     if ci_alpha is not None:
+        ci_alpha_value: Optional[float] = None
+        try:
+            ci_alpha_value = float(ci_alpha)
+        except Exception:
+            ci_alpha_value = None
+        result["ci_requested"] = True
+        if ci_alpha_value is not None:
+            result["ci_alpha_requested"] = ci_alpha_value
+
         if ci_values is not None and len(ci_values) == 2:  # [lower, upper]
-            result["ci_alpha"] = float(ci_alpha)
+            result["ci_available"] = True
+            result["ci_status"] = "available"
+            if ci_alpha_value is not None:
+                result["ci_alpha"] = ci_alpha_value
             lower_vals = [float(v) for v in ci_values[0]]
             upper_vals = [float(v) for v in ci_values[1]]
             if quantity == 'return':
@@ -266,6 +278,8 @@ def _format_forecast_output(
                 warnings = []
             warnings.append(warning_text)
             result["warnings"] = warnings
+            result["ci_available"] = False
+            result["ci_status"] = "unavailable"
             result["ci_unavailable"] = True
 
     # Add metadata
