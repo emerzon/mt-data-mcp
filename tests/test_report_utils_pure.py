@@ -39,6 +39,7 @@ from mtdata.core.report_utils import (
     _render_regime_section,
     _render_volatility_har_section,
     _render_volatility_section,
+    attach_multi_timeframes,
     apply_market_gates,
     format_number,
     merge_params,
@@ -915,6 +916,59 @@ class TestRenderContextsMultiSection:
         lines = _render_contexts_multi_section(data)
         text = "\n".join(lines)
         assert "D1" in text
+
+
+class TestAttachMultiTimeframes:
+    def test_contexts_multi_omits_trend_compact_payload(self, monkeypatch):
+        snap = {
+            "close": 100.0,
+            "ema20": 99.5,
+            "trend_compact": {"s": [10], "v": 120, "q": 5},
+            "trend_compact_legend": {"s": "slope"},
+            "trend_compact_explained": {"slope_5": 0.1},
+        }
+
+        monkeypatch.setattr(
+            "mtdata.core.report_utils.context_for_tf",
+            lambda *args, **kwargs: dict(snap),
+        )
+        monkeypatch.setattr(
+            "mtdata.core.report_utils._extract_base_timeframe",
+            lambda report: None,
+        )
+
+        report = {"sections": {"context": {}}}
+        attach_multi_timeframes(report, "EURUSD", None, extra_timeframes=["H1"], pivot_timeframes=None)
+
+        contexts = report["sections"]["contexts_multi"]["H1"]
+        assert "trend_compact" not in contexts
+        assert "trend_compact_legend" not in contexts
+        assert "trend_compact_explained" not in contexts
+        assert contexts["close"] == 100.0
+        assert contexts["ema20"] == 99.5
+
+    def test_trend_mtf_keeps_compact_only(self, monkeypatch):
+        snap = {
+            "close": 100.0,
+            "ema20": 99.5,
+            "rsi": 55.0,
+            "trend_compact": {"s": [10], "v": 120, "q": 5},
+        }
+
+        monkeypatch.setattr(
+            "mtdata.core.report_utils.context_for_tf",
+            lambda *args, **kwargs: dict(snap),
+        )
+        monkeypatch.setattr(
+            "mtdata.core.report_utils._extract_base_timeframe",
+            lambda report: None,
+        )
+
+        report = {"sections": {"context": {}}}
+        attach_multi_timeframes(report, "EURUSD", None, extra_timeframes=["H1"], pivot_timeframes=None)
+
+        trend_mtf = report["sections"]["context"]["trend_mtf"]["H1"]
+        assert trend_mtf == {"s": [10], "v": 120, "q": 5}
 
 
 # ---------------------------------------------------------------------------

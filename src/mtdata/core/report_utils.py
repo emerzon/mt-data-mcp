@@ -409,24 +409,22 @@ def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Option
             continue
         snap = context_for_tf(symbol, tf, denoise, limit=200, tail=30)
         if snap:
-            contexts[str(tf)] = snap
+            snap_for_contexts = snap
+            if isinstance(snap, dict):
+                # Keep contexts_multi focused on indicator/price snapshots; trend_compact
+                # is represented in context.trend_mtf to avoid duplicating the same blob.
+                snap_for_contexts = dict(snap)
+                snap_for_contexts.pop('trend_compact', None)
+                snap_for_contexts.pop('trend_compact_legend', None)
+                snap_for_contexts.pop('trend_compact_explained', None)
+            if not isinstance(snap_for_contexts, dict) or any(v is not None for v in snap_for_contexts.values()):
+                contexts[str(tf)] = snap_for_contexts
 
             # Extract trend compact data for MTF matrix
             if isinstance(snap, dict):
                 trend_compact = snap.get('trend_compact')
                 if isinstance(trend_compact, dict):
-                    # Add individual indicator values to trend_mtf structure
-                    trend_mtf_data = trend_compact.copy()
-                    trend_mtf_data.update({
-                        'rsi': snap.get('rsi'),
-                        'macd': snap.get('macd'),
-                        'macd_signal': snap.get('macd_signal'),
-                        'ema20': snap.get('ema20'),
-                        'ema50': snap.get('ema50'),
-                        'ema200': snap.get('ema200'),
-                        'price': snap.get('price')
-                    })
-                    trend_mtf[str(tf)] = trend_mtf_data
+                    trend_mtf[str(tf)] = trend_compact.copy()
 
     if contexts:
         report.setdefault('sections', {})['contexts_multi'] = contexts
