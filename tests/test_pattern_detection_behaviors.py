@@ -25,7 +25,9 @@ def test_fit_lines_and_arrays_uses_cfg_for_robust_fit(monkeypatch):
         # slope, intercept, r2
         return 1.0, 2.0, 0.9
 
-    monkeypatch.setattr(classic_mod, "_fit_line_robust", _fake_robust)
+    # Patch the implementation module since we refactored logic into classic_impl
+    from src.mtdata.patterns.classic_impl import utils as impl_utils
+    monkeypatch.setattr(impl_utils, "_fit_line_robust", _fake_robust)
 
     ih = np.array([1, 5, 9], dtype=int)
     il = np.array([2, 6, 10], dtype=int)
@@ -200,7 +202,8 @@ def test_detect_classic_uses_singular_pennant_name(monkeypatch):
             return seg_peaks, seg_troughs
         return np.array([], dtype=int), np.array([], dtype=int)
 
-    monkeypatch.setattr(classic_mod, "_detect_pivots_close", _fake_pivots)
+    from src.mtdata.patterns.classic_impl import continuation
+    monkeypatch.setattr(continuation, "_detect_pivots_close", _fake_pivots)
 
     def _fake_fit_lines(ih, il, c, n, cfg):
         if n == window:
@@ -208,7 +211,7 @@ def test_detect_classic_uses_singular_pennant_name(monkeypatch):
         x = np.arange(n, dtype=float)
         return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, x.copy(), x.copy()
 
-    monkeypatch.setattr(classic_mod, "_fit_lines_and_arrays", _fake_fit_lines)
+    monkeypatch.setattr(continuation, "_fit_lines_and_arrays", _fake_fit_lines)
 
     out = detect_classic_patterns(df, ClassicDetectorConfig(min_pole_return_pct=1.0, max_consolidation_bars=window))
     names = {p.name for p in out}

@@ -211,6 +211,136 @@ def test_forecast_engine_prefetched_non_ensemble_success_and_failures(monkeypatc
     assert out["error"].startswith("Forecast method 'naive' failed: method exploded")
 
 
+def test_forecast_engine_preserves_prefetched_denoised_base_column(monkeypatch):
+    captured = {}
+
+    class CaptureForecaster:
+        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+            captured["series_name"] = series.name
+            captured["last_value"] = float(series.iloc[-1])
+            return ForecastResult(
+                forecast=np.array([float(series.iloc[-1])], dtype=float),
+                params_used={},
+                metadata={},
+            )
+
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return CaptureForecaster()
+
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("naive",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
+
+    df = _df(20)
+    df["close_dn"] = df["close"] * 10.0
+
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="naive",
+        horizon=1,
+        prefetched_df=df,
+        prefetched_base_col="close_dn",
+        prefetched_denoise_spec={"method": "ema"},
+    )
+
+    assert out["success"] is True
+    assert out["base_col"] == "close_dn"
+    assert out["forecast_price"] == [float(df["close_dn"].iloc[-1])]
+    assert out["denoise_applied"] is True
+    assert captured["series_name"] == "close_dn"
+    assert captured["last_value"] == float(df["close_dn"].iloc[-1])
+
+
+def test_forecast_engine_builds_exog_and_aligns_for_returns(monkeypatch):
+    captured = {}
+
+    class CaptureForecaster:
+        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+            captured["series_len"] = len(series)
+            captured["exog_used"] = kwargs.get("exog_used")
+            captured["exog_future"] = exog_future
+            return ForecastResult(
+                forecast=np.ones(int(horizon), dtype=float),
+                params_used={},
+                metadata={},
+            )
+
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return CaptureForecaster()
+
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("theta",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
+
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="theta",
+        horizon=5,
+        quantity="return",
+        params={"alpha": 1},
+        features={"include": "open,high low", "future_covariates": "hour,dow,fourier:24,is_weekend"},
+        prefetched_df=_df(30),
+    )
+
+    assert out["success"] is True
+    assert captured["series_len"] == 29
+    assert captured["exog_used"].shape == (29, 10)
+    assert captured["exog_future"].shape == (5, 10)
+
+
+def test_forecast_engine_dimred_failure_falls_back_to_raw_features(monkeypatch):
+    captured = {}
+
+    class CaptureForecaster:
+        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+            captured["exog_used"] = kwargs.get("exog_used")
+            captured["exog_future"] = exog_future
+            return ForecastResult(
+                forecast=np.ones(int(horizon), dtype=float),
+                params_used={},
+                metadata={},
+            )
+
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return CaptureForecaster()
+
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("theta",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
+    monkeypatch.setattr(fe, "_create_dimred_reducer", lambda method, params: (_ for _ in ()).throw(RuntimeError("dimred failed")))
+
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="theta",
+        horizon=4,
+        features={"include": "open,high"},
+        dimred_method="pca",
+        prefetched_df=_df(20),
+    )
+
+    assert out["success"] is True
+    assert captured["exog_used"].shape == (20, 2)
+    assert captured["exog_future"].shape == (4, 2)
+
+
 def test_forecast_engine_forwards_ci_alpha_in_params_and_kwargs(monkeypatch):
     captured = {}
 
@@ -249,6 +379,49 @@ def test_forecast_engine_forwards_ci_alpha_in_params_and_kwargs(monkeypatch):
     assert out["success"] is True
     assert captured["params"]["ci_alpha"] == 0.1
     assert captured["kwargs"]["ci_alpha"] == 0.1
+
+
+def test_forecast_engine_injects_context_for_analog(monkeypatch):
+    captured = {}
+
+    class CaptureForecaster:
+        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+            captured["params"] = dict(params)
+            captured["kwargs"] = dict(kwargs)
+            return ForecastResult(
+                forecast=np.array([float(series.iloc[-1])], dtype=float),
+                params_used={},
+                metadata={},
+            )
+
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return CaptureForecaster()
+
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("analog",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
+
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="analog",
+        horizon=1,
+        as_of="2024-01-01",
+        params={"window_size": 32},
+        prefetched_df=_df(20),
+    )
+
+    assert out["success"] is True
+    assert captured["params"]["window_size"] == 32
+    assert captured["params"]["symbol"] == "EURUSD"
+    assert captured["params"]["timeframe"] == "H1"
+    assert captured["params"]["as_of"] == "2024-01-01"
+    assert captured["kwargs"]["as_of"] == "2024-01-01"
 
 
 def test_forecast_engine_target_spec_and_data_validity_errors(monkeypatch):
