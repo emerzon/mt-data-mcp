@@ -416,6 +416,43 @@ def fetch_candles(
         # Ensure headers are unique and exist in df
         headers = [h for h in headers if h in df.columns]
 
+        # Detect large time discontinuities (e.g., closed session windows) and
+        # surface them explicitly so users can interpret forecast/analysis gaps.
+        session_gaps: List[Dict[str, Any]] = []
+        expected_bar_seconds = float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
+        if expected_bar_seconds > 0 and '__epoch' in df.columns and len(df) > 1:
+            try:
+                epochs = pd.to_numeric(df['__epoch'], errors='coerce').to_numpy(dtype=float)
+                threshold = expected_bar_seconds * 1.5
+                for i in range(1, len(epochs)):
+                    prev_t = float(epochs[i - 1])
+                    curr_t = float(epochs[i])
+                    if not (math.isfinite(prev_t) and math.isfinite(curr_t)):
+                        continue
+                    gap_seconds = float(curr_t - prev_t)
+                    if gap_seconds <= threshold:
+                        continue
+                    if _use_ctz:
+                        from_disp = _format_time_minimal_local(prev_t)
+                        to_disp = _format_time_minimal_local(curr_t)
+                    else:
+                        from_disp = _format_time_minimal(prev_t)
+                        to_disp = _format_time_minimal(curr_t)
+                    missing_bars_est = max(1, int(round(gap_seconds / expected_bar_seconds)) - 1)
+                    session_gaps.append(
+                        {
+                            "from": from_disp,
+                            "to": to_disp,
+                            "from_epoch": prev_t,
+                            "to_epoch": curr_t,
+                            "gap_seconds": gap_seconds,
+                            "expected_bar_seconds": expected_bar_seconds,
+                            "missing_bars_est": int(missing_bars_est),
+                        }
+                    )
+            except Exception:
+                session_gaps = []
+
         # Reformat time consistently across rows for display, unless caller
         # explicitly requests numeric UTC epoch seconds.
         if 'time' in headers and len(df) > 0:
@@ -510,6 +547,18 @@ def fetch_candles(
                 'applied': True,
                 'applications': denoise_apps,
             }
+        if session_gaps:
+            payload['session_gaps'] = session_gaps
+            warns = payload.get('warnings')
+            if not isinstance(warns, list):
+                warns = []
+            warns.append(
+                "Detected {n} session gap(s) larger than expected bar spacing ({secs:.0f}s).".format(
+                    n=len(session_gaps),
+                    secs=expected_bar_seconds,
+                )
+            )
+            payload['warnings'] = warns
         return payload
     except Exception as e:
         return {"error": f"Error getting rates: {str(e)}"}

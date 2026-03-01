@@ -548,6 +548,81 @@ class TestFetchCandles(unittest.TestCase):
         result = fetch_candles('EURUSD', limit=5)
         self.assertEqual(result.get('timezone'), 'UTC')
 
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_session_gap_annotation(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        t0 = _NOW_TS
+        rates = [
+            {
+                'time': t0,
+                'open': 1.1000,
+                'high': 1.2000,
+                'low': 1.0000,
+                'close': 1.1500,
+                'tick_volume': 100,
+                'real_volume': 0,
+                'spread': 1,
+            },
+            {
+                'time': t0 + 3600,
+                'open': 1.1001,
+                'high': 1.2001,
+                'low': 1.0001,
+                'close': 1.1501,
+                'tick_volume': 101,
+                'real_volume': 0,
+                'spread': 1,
+            },
+            {
+                'time': t0 + 7200,
+                'open': 1.1002,
+                'high': 1.2002,
+                'low': 1.0002,
+                'close': 1.1502,
+                'tick_volume': 102,
+                'real_volume': 0,
+                'spread': 1,
+            },
+            {
+                # 9-hour session jump from prior bar (missing 8 H1 bars)
+                'time': t0 + 39600,
+                'open': 1.1003,
+                'high': 1.2003,
+                'low': 1.0003,
+                'close': 1.1503,
+                'tick_volume': 103,
+                'real_volume': 0,
+                'spread': 1,
+            },
+            {
+                'time': t0 + 43200,
+                'open': 1.1004,
+                'high': 1.2004,
+                'low': 1.0004,
+                'close': 1.1504,
+                'tick_volume': 104,
+                'real_volume': 0,
+                'spread': 1,
+            },
+        ]
+        mock_from.return_value = rates
+
+        result = fetch_candles('EURUSD', timeframe='H1', limit=5)
+        self.assertTrue(result.get('success'))
+        self.assertIn('session_gaps', result)
+        self.assertEqual(len(result['session_gaps']), 1)
+        gap = result['session_gaps'][0]
+        self.assertEqual(gap['gap_seconds'], 32400.0)
+        self.assertEqual(gap['expected_bar_seconds'], 3600.0)
+        self.assertEqual(gap['missing_bars_est'], 8)
+        self.assertIn('warnings', result)
+        self.assertTrue(any('session gap' in w.lower() for w in result['warnings']))
+
     # -- Error paths ---------------------------------------------------------
 
     def test_invalid_timeframe(self):
