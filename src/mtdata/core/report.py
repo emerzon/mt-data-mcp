@@ -206,6 +206,16 @@ def report_generate(
             s1 = _pivot_lookup('S1')
             if pp is not None and r1 is not None and s1 is not None:
                 summ.append(f"pivot {chosen_method} PP={format_number(pp)} (R1={format_number(r1)}, S1={format_number(s1)})")
+            calc_basis = piv.get("calculation_basis") if isinstance(piv.get("calculation_basis"), dict) else {}
+            session_boundary = calc_basis.get("session_boundary")
+            display_tz = calc_basis.get("display_timezone") or piv.get("timezone")
+            context_parts: List[str] = []
+            if session_boundary:
+                context_parts.append(f"session={session_boundary}")
+            if display_tz:
+                context_parts.append(f"display_tz={display_tz}")
+            if context_parts:
+                summ.append("pivot context " + " ".join(context_parts))
         except Exception:
             pass
         try:

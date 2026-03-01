@@ -472,6 +472,8 @@ def template_basic(
             'source': piv.get('source'),
             'period': piv.get('period'),
             'timeframe': 'D1',
+            'calculation_basis': piv.get('calculation_basis'),
+            'timezone': piv.get('timezone'),
         }
         # Attach multi-timeframe context and pivots for MTF alignment (lightweight)
         try:
@@ -509,7 +511,14 @@ def template_basic(
                     continue
                 res = _get_raw_result(_compute_pivot_points, symbol=symbol, timeframe=tfp)
                 if isinstance(res, dict) and not res.get('error'):
-                    pivs[tfp] = {'levels': res.get('levels'), 'methods': res.get('methods'), 'period': res.get('period'), 'timeframe': tfp}
+                    pivs[tfp] = {
+                        'levels': res.get('levels'),
+                        'methods': res.get('methods'),
+                        'period': res.get('period'),
+                        'timeframe': tfp,
+                        'calculation_basis': res.get('calculation_basis'),
+                        'timezone': res.get('timezone'),
+                    }
             if pivs:
                 if base_tf:
                     pivs['__base_timeframe__'] = base_tf

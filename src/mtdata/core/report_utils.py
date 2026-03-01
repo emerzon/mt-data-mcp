@@ -466,6 +466,8 @@ def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Option
                             'methods': res.get('methods'),
                             'period': res.get('period'),
                             'timeframe': tfp,
+                            'calculation_basis': res.get('calculation_basis'),
+                            'timezone': res.get('timezone'),
                         }
             except Exception:
                 pivs = {}
@@ -802,7 +804,31 @@ def _render_pivot_section(data: Any) -> List[str]:
             row_vals.append(format_number(value) if value is not None else None)
         table_rows.append(row_vals)
     lines.extend(_format_table(headers, table_rows, name='levels'))
+    context_line = _build_pivot_context_line(data)
+    if context_line:
+        lines.append(context_line)
     return lines
+
+
+def _build_pivot_context_line(data: Dict[str, Any]) -> Optional[str]:
+    parts: List[str] = []
+    calc = data.get('calculation_basis')
+    if isinstance(calc, dict):
+        source_bar = calc.get('source_bar')
+        if source_bar:
+            parts.append(f"source={source_bar}")
+        session_boundary = calc.get('session_boundary')
+        if session_boundary:
+            parts.append(f"session={session_boundary}")
+        display_tz = calc.get('display_timezone')
+        if display_tz:
+            parts.append(f"display_tz={display_tz}")
+    timezone_hint = data.get('timezone')
+    if timezone_hint and not any(part.startswith("display_tz=") for part in parts):
+        parts.append(f"timezone={timezone_hint}")
+    if not parts:
+        return None
+    return "- Context: " + "; ".join(str(p) for p in parts if p)
 
 
 def _render_pivot_multi_section(data: Any) -> List[str]:
@@ -830,6 +856,9 @@ def _render_pivot_multi_section(data: Any) -> List[str]:
             rows.append([level, format_number(piv_val)])
         if rows:
             lines.append(f"### {tf}")
+            context_line = _build_pivot_context_line(piv)
+            if context_line:
+                lines.append(context_line)
             lines.extend(_format_table(['Level', 'Classic'], rows, name='levels'))
             lines.append('')
     return [line for line in lines if line != '']

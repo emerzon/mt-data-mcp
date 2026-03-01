@@ -931,6 +931,11 @@ class TestRenderPivotSection:
         data = {
             "timeframe": "D1",
             "period": {"start": "2024-01-01", "end": "2024-01-02"},
+            "calculation_basis": {
+                "source_bar": "last completed D1 bar",
+                "session_boundary": "MT5 broker/session calendar",
+                "display_timezone": "UTC",
+            },
             "methods": [{"method": "classic"}],
             "levels": [
                 {"level": "R1", "classic": 1.25},
@@ -942,6 +947,9 @@ class TestRenderPivotSection:
         assert "Pivot Levels" in text
         assert "D1" in text
         assert "R1" in text
+        assert "Context:" in text
+        assert "session=MT5 broker/session calendar" in text
+        assert "display_tz=UTC" in text
 
     def test_infers_methods_from_keys(self):
         data = {
@@ -962,6 +970,10 @@ class TestRenderPivotMultiSection:
     def test_basic(self):
         data = {
             "H4": {
+                "calculation_basis": {
+                    "session_boundary": "MT5 broker/session calendar",
+                    "display_timezone": "UTC",
+                },
                 "levels": [{"level": "R1", "classic": 1.25}],
             },
         }
@@ -969,6 +981,7 @@ class TestRenderPivotMultiSection:
         text = "\n".join(lines)
         assert "Multi-Timeframe Pivots" in text
         assert "H4" in text
+        assert "Context:" in text
 
     def test_skips_base_timeframe(self):
         data = {

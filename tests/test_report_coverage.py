@@ -429,6 +429,15 @@ class TestReportSummaryPivot:
         # Should fallback to 'woodie' since 'fibonacci' not in level columns
         assert isinstance(res, dict)
 
+    def test_pivot_context_in_summary(self):
+        sec = _make_full_sections()
+        sec["pivot"]["calculation_basis"] = {
+            "session_boundary": "MT5 broker/session calendar",
+            "display_timezone": "UTC",
+        }
+        res = self._run_report(sec)
+        assert any("pivot context" in s for s in res.get("summary", []))
+
 
 # ---------------------------------------------------------------------------
 # Summary extraction — volatility & forecast
