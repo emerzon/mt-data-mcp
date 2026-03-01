@@ -2,6 +2,7 @@
 from typing import Any, Dict, Optional, Literal
 
 from ..utils.utils import _table_from_rows, _normalize_limit
+from ..utils.utils import _format_time_minimal
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from ..utils.mt5_enums import decode_mt5_enum_label, decode_mt5_bitmask_labels
 from .server import mcp, _auto_connect_wrapper
@@ -180,7 +181,7 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
         # Build symbol info dynamically: include all available attributes
         # except excluded ones; skip empty/default values when possible.
         symbol_data = {}
-        excluded = {"spread", "ask", "bid", "visible", "custom"}
+        excluded = {"spread", "ask", "bid", "visible", "custom", "n_fields", "n_sequence_fields"}
         for attr in dir(symbol_info):
             if attr.startswith('_'):
                 continue
@@ -200,7 +201,15 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
                 continue
             if isinstance(value, (int, float)) and value == 0:
                 continue
-            symbol_data[attr] = value
+            if attr == "time":
+                try:
+                    epoch = float(value)
+                    symbol_data["time_epoch"] = epoch
+                    symbol_data["time"] = _format_time_minimal(epoch)
+                except Exception:
+                    symbol_data[attr] = value
+            else:
+                symbol_data[attr] = value
 
             spec = enum_specs.get(attr)
             if not spec:

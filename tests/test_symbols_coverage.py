@@ -398,6 +398,26 @@ class TestSymbolsDescribe:
         assert any(v in (sd.get("filling_mode_labels") or []) for v in ("IOC", "Return"))
         assert sd.get("swap_mode_label") == "Points"
 
+    @patch(f"{_MT5}.symbol_info")
+    def test_formats_time_and_excludes_internal_count_fields(self, mock_info):
+        info = MagicMock()
+        info.__dir__ = lambda self: ["name", "time", "n_fields", "n_sequence_fields"]
+        info.name = "EURUSD"
+        info.time = 1700000000
+        info.n_fields = 96
+        info.n_sequence_fields = 96
+        mock_info.return_value = info
+
+        fn = _get_symbols_describe()
+        res = fn("EURUSD")
+        sd = res["symbol"]
+
+        assert sd.get("time_epoch") == 1700000000.0
+        assert isinstance(sd.get("time"), str)
+        assert ":" in sd.get("time")
+        assert "n_fields" not in sd
+        assert "n_sequence_fields" not in sd
+
     @patch(f"{_MT5}.symbol_info", side_effect=RuntimeError("fail"))
     def test_exception(self, mock_info):
         fn = _get_symbols_describe()
