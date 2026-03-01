@@ -204,26 +204,66 @@ class TestCausalDiscoverSignals:
 
     def test_empty_symbols(self):
         result = self._unwrapped()("")
-        assert "Provide at least one symbol" in result
+        assert result["success"] is False
+        assert "Provide at least one symbol" in result["error"]
+        assert result["error_code"] == "invalid_input"
 
     @patch("mtdata.core.causal._expand_symbols_for_group", return_value=([], "Symbol X not found", None))
     def test_single_symbol_expand_error(self, mock_expand):
         result = self._unwrapped()("X")
-        assert "not found" in result
+        assert result["success"] is False
+        assert "not found" in result["error"]
+        assert result["error_code"] == "symbol_group_error"
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")
     def test_insufficient_data(self, mock_fetch):
         mock_fetch.return_value = (pd.Series(dtype=float), "No data")
         result = self._unwrapped()("A,B")
-        assert "No data" in result or "Not enough" in result
+        assert result["success"] is False
+        assert ("No data" in result["error"]) or ("Not enough" in result["error"])
+        assert result["error_code"] in {"data_fetch_failed", "insufficient_symbols"}
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {})
     def test_invalid_timeframe(self):
         result = self._unwrapped()("A,B", timeframe="BAD")
-        assert "Invalid timeframe" in result
+        assert result["success"] is False
+        assert "Invalid timeframe" in result["error"]
+        assert result["error_code"] == "invalid_timeframe"
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     def test_max_lag_zero(self):
         result = self._unwrapped()("A,B", max_lag=0)
-        assert "max_lag must be at least 1" in result
+        assert result["success"] is False
+        assert "max_lag must be at least 1" in result["error"]
+        assert result["error_code"] == "invalid_input"
+
+    @patch("statsmodels.tsa.stattools.grangercausalitytests")
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_success_returns_structured_payload(self, mock_fetch, mock_granger):
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        base = np.linspace(1.0, 2.0, 80)
+        series_map = {
+            "A": pd.Series(base, index=idx),
+            "B": pd.Series(base * 1.01 + 0.001, index=idx),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_granger.return_value = {
+            1: ({"ssr_ftest": (1.0, 0.02, 10, 1)}, None),
+            2: ({"ssr_ftest": (1.0, 0.03, 10, 1)}, None),
+        }
+
+        result = self._unwrapped()("A,B", max_lag=2, transform="diff", normalize=False)
+
+        assert result["success"] is True
+        assert "data" in result
+        assert "meta" in result
+        assert result["data"]["count_links"] >= 1
+        assert isinstance(result["data"]["links"], list)
+        assert "summary_text" in result["data"]
+        assert result["meta"]["pairs_tested"] >= 1
