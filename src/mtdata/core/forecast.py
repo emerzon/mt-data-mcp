@@ -414,6 +414,7 @@ def forecast_list_methods(
         compact_methods: List[Dict[str, Any]] = []
         available_count = 0
         unavailable_count = 0
+        by_category: Dict[str, List[Dict[str, Any]]] = {}
         for item in methods:
             name = item.get("method")
             if name in (None, ""):
@@ -436,22 +437,53 @@ def forecast_list_methods(
             if isinstance(reqs, list) and reqs:
                 row["requires"] = [str(v) for v in reqs if v not in (None, "")]
             cat = method_to_category.get(method_name)
-            if cat:
-                row["category"] = cat
+            row["category"] = cat or "other"
             params = item.get("params")
             if isinstance(params, list):
                 row["params_count"] = len(params)
             compact_methods.append(row)
+            by_category.setdefault(str(row["category"]), []).append(row)
 
-        compact_methods.sort(key=lambda row: (not bool(row.get("available")), str(row.get("method"))))
+        category_summary: List[Dict[str, Any]] = []
+        selected_methods: List[Dict[str, Any]] = []
+        for category in sorted(by_category.keys()):
+            rows = list(by_category.get(category, []))
+            rows.sort(key=lambda row: (not bool(row.get("available")), str(row.get("method"))))
+            n_total = len(rows)
+            n_available = int(sum(1 for row in rows if bool(row.get("available"))))
+            per_category_cap = 3 if category == "statsforecast" else (8 if category == "other" else 2)
+            picks = rows[:per_category_cap]
+            selected_methods.extend(picks)
+            category_summary.append(
+                {
+                    "category": category,
+                    "total": n_total,
+                    "available": n_available,
+                    "unavailable": int(n_total - n_available),
+                    "examples": [str(row.get("method")) for row in picks],
+                    "hidden": int(max(0, n_total - len(picks))),
+                }
+            )
+
+        selected_methods.sort(
+            key=lambda row: (
+                str(row.get("category")) == "other",
+                str(row.get("category")),
+                not bool(row.get("available")),
+                str(row.get("method")),
+            )
+        )
         return {
             "detail": "compact",
             "total": int(data.get("total") or len(compact_methods)),
             "available": available_count,
             "unavailable": unavailable_count,
             "categories": categories_raw,
-            "methods": compact_methods,
-            "note": "Pass detail='full' to include full parameter docs.",
+            "category_summary": category_summary,
+            "methods": selected_methods,
+            "methods_shown": int(len(selected_methods)),
+            "methods_hidden": int(max(0, len(compact_methods) - len(selected_methods))),
+            "note": "Compact view groups methods by category and shows a small representative subset. Pass detail='full' for exhaustive docs.",
         }
     except Exception as e:
         return {"error": f"Error listing forecast methods: {e}"}

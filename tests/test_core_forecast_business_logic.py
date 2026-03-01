@@ -241,12 +241,38 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert compact["available"] == 1
     assert compact["unavailable"] == 1
     assert compact["methods"][0]["method"] == "theta"
+    assert "category_summary" in compact
     assert "params_count" in compact["methods"][0]
     assert "params" not in compact["methods"][0]
+    assert compact["methods_shown"] == 2
+    assert compact["methods_hidden"] == 0
 
     full = _unwrap(cf.forecast_list_methods)(detail="full")
     assert isinstance(full.get("methods"), list)
     assert "params" in full["methods"][0]
+
+    monkeypatch.setattr(
+        cf,
+        "_get_forecast_methods_data",
+        lambda: {
+            "total": 5,
+            "categories": {
+                "classical": ["theta"],
+                "statsforecast": ["sf_autoarima", "sf_theta", "sf_ets", "sf_naive"],
+            },
+            "methods": [
+                {"method": "theta", "available": True, "description": "Theta.", "params": [], "requires": []},
+                {"method": "sf_autoarima", "available": True, "description": "A", "params": [], "requires": []},
+                {"method": "sf_theta", "available": True, "description": "B", "params": [], "requires": []},
+                {"method": "sf_ets", "available": False, "description": "C", "params": [], "requires": []},
+                {"method": "sf_naive", "available": True, "description": "D", "params": [], "requires": []},
+            ],
+        },
+    )
+    grouped = _unwrap(cf.forecast_list_methods)()
+    sf_rows = [r for r in grouped["methods"] if r.get("category") == "statsforecast"]
+    assert len(sf_rows) <= 3
+    assert grouped["methods_hidden"] >= 1
 
     monkeypatch.setattr(cf, "_get_forecast_methods_data", lambda: {"methods": [1]})
     assert _unwrap(cf.forecast_list_methods)() == {"methods": [1]}
