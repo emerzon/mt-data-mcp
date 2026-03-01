@@ -756,7 +756,14 @@ def template_basic(
 
     # Patterns
     from ..patterns import patterns_detect
-    pats = _get_raw_result(patterns_detect, symbol=symbol, timeframe=tf, mode='candlestick', limit=int(p.get('patterns_limit', 120)))
+    pats = _get_raw_result(
+        patterns_detect,
+        symbol=symbol,
+        timeframe=tf,
+        mode='candlestick',
+        detail='full',
+        limit=int(p.get('patterns_limit', 120)),
+    )
     if 'error' in pats:
         report['sections']['patterns'] = {'error': pats['error']}
     else:

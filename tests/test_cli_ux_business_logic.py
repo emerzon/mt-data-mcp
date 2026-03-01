@@ -21,7 +21,7 @@ def test_build_usage_examples_trade_modify_keeps_ticket_positional() -> None:
     assert "--stop-loss 60500" in advanced
 
 
-def test_patterns_detect_text_output_is_compact_by_default() -> None:
+def test_patterns_detect_text_output_has_no_cli_specific_compaction() -> None:
     payload = {
         "success": True,
         "symbol": "BTCUSD",
@@ -36,9 +36,8 @@ def test_patterns_detect_text_output_is_compact_by_default() -> None:
 
     out = _format_result_for_cli(payload, fmt="text", verbose=False, cmd_name="patterns_detect")
 
-    assert "recent_patterns[8]" in out
-    assert "pattern_mix[2]" in out
-    assert "data[12]" not in out
+    assert "data[12]" in out
+    assert "recent_patterns[8]" not in out
 
 
 def test_patterns_detect_verbose_output_keeps_full_rows() -> None:
@@ -56,7 +55,7 @@ def test_patterns_detect_verbose_output_keeps_full_rows() -> None:
     assert "data[12]" in out
 
 
-def test_regime_detect_text_output_is_compact_by_default() -> None:
+def test_regime_detect_text_output_has_no_cli_specific_compaction() -> None:
     payload = {
         "success": True,
         "symbol": "BTCUSD",
@@ -76,6 +75,5 @@ def test_regime_detect_text_output_is_compact_by_default() -> None:
 
     out = _format_result_for_cli(payload, fmt="text", verbose=False, cmd_name="regime_detect")
 
-    assert "recent_regimes[5]" in out
-    assert "current_regime:" in out
-    assert "regimes[7]" not in out
+    assert "regimes[7]" in out
+    assert "recent_regimes[5]" not in out

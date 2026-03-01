@@ -122,6 +122,7 @@ def _build_pattern_response(
     include_series: bool,
     series_time: str,
     df: pd.DataFrame,
+    detail: Literal["compact", "full"] = "full",  # type: ignore
 ) -> Dict[str, Any]:
     """Build the response dict for pattern detection results."""
     # Filter patterns based on include_completed
@@ -149,8 +150,167 @@ def _build_pattern_response(
                 resp["series_time"] = [
                     _format_time_minimal(float(v)) for v in __to_float_np(df.get('time')).tolist()
                 ]
-    
+
+    if str(detail).lower().strip() == "compact":
+        return _compact_patterns_payload(resp)
     return resp
+
+
+def _safe_float(value: Any) -> Optional[float]:
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _pattern_label(row: Dict[str, Any]) -> Optional[str]:
+    for key in ("pattern", "name", "wave_type"):
+        value = row.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return None
+
+
+def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict) or payload.get("error"):
+        return payload
+
+    rows: List[Dict[str, Any]] = []
+    if isinstance(payload.get("patterns"), list):
+        rows = [row for row in payload.get("patterns", []) if isinstance(row, dict)]
+    elif isinstance(payload.get("data"), list):
+        rows = [row for row in payload.get("data", []) if isinstance(row, dict)]
+    if not rows:
+        return payload
+
+    counts: Dict[str, int] = {}
+    status_counts: Dict[str, int] = {}
+    tf_counts: Dict[str, int] = {}
+    indexed_rows: List[Tuple[int, Dict[str, Any]]] = []
+    for idx, row in enumerate(rows):
+        indexed_rows.append((idx, row))
+        label = _pattern_label(row)
+        if label:
+            counts[label] = counts.get(label, 0) + 1
+        status = row.get("status")
+        if status not in (None, ""):
+            status_key = str(status)
+            status_counts[status_key] = status_counts.get(status_key, 0) + 1
+        tf = row.get("timeframe")
+        if tf not in (None, ""):
+            tf_key = str(tf)
+            tf_counts[tf_key] = tf_counts.get(tf_key, 0) + 1
+
+    def _sort_key(item: Tuple[int, Dict[str, Any]]) -> Tuple[float, float, int]:
+        idx, row = item
+        end_idx = _safe_float(row.get("end_index"))
+        conf = _safe_float(row.get("confidence")) or 0.0
+        return (end_idx if end_idx is not None else float(idx), conf, idx)
+
+    preview_limit = 8
+    preview_rows = [row for _, row in sorted(indexed_rows, key=_sort_key, reverse=True)[:preview_limit]]
+    recent_rows: List[Dict[str, Any]] = []
+    for row in preview_rows:
+        item: Dict[str, Any] = {}
+        if row.get("timeframe") not in (None, ""):
+            item["timeframe"] = row.get("timeframe")
+        label = _pattern_label(row)
+        if label:
+            item["pattern"] = label
+        for key in ("time", "start_date", "end_date", "status", "confidence"):
+            value = row.get(key)
+            if value not in (None, ""):
+                item[key] = value
+        if not item:
+            item = dict(row)
+        recent_rows.append(item)
+
+    strongest_pattern: Optional[Dict[str, Any]] = None
+    if preview_rows:
+        best = max(preview_rows, key=lambda row: (_safe_float(row.get("confidence")) or 0.0))
+        best_label = _pattern_label(best)
+        strongest_pattern = {}
+        if best_label:
+            strongest_pattern["pattern"] = best_label
+        for key in ("timeframe", "time", "end_date", "status", "confidence"):
+            value = best.get(key)
+            if value not in (None, ""):
+                strongest_pattern[key] = value
+        if not strongest_pattern:
+            strongest_pattern = None
+
+    total = payload.get("n_patterns")
+    if total in (None, ""):
+        total = payload.get("count")
+    try:
+        total_i = int(total)
+    except Exception:
+        total_i = len(rows)
+
+    summary: Dict[str, Any] = {
+        "unique_patterns": len(counts),
+        "showing_recent": len(recent_rows),
+        "more_patterns": max(0, total_i - len(recent_rows)),
+    }
+    if counts:
+        summary["pattern_mix"] = [
+            {"pattern": name, "count": count}
+            for name, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:5]
+        ]
+    if status_counts:
+        summary["status_counts"] = status_counts
+    if tf_counts:
+        summary["timeframe_mix"] = [
+            {"timeframe": tf, "count": count}
+            for tf, count in sorted(tf_counts.items(), key=lambda item: (-item[1], item[0]))
+        ]
+    if strongest_pattern:
+        summary["strongest_pattern"] = strongest_pattern
+
+    compact: Dict[str, Any] = {
+        "success": bool(payload.get("success", True)),
+        "symbol": payload.get("symbol"),
+        "timeframe": payload.get("timeframe"),
+        "lookback": payload.get("lookback"),
+        "mode": payload.get("mode"),
+        "n_patterns": total_i,
+        "summary": summary,
+        "recent_patterns": recent_rows,
+    }
+
+    for key in ("engine", "engines_run", "engine_findings", "engine_errors", "scanned_timeframes"):
+        value = payload.get(key)
+        if value not in (None, "", [], {}):
+            compact[key] = value
+
+    findings = payload.get("findings")
+    if isinstance(findings, list):
+        tf_summary: List[Dict[str, Any]] = []
+        for item in findings:
+            if not isinstance(item, dict):
+                continue
+            tf_summary.append(
+                {
+                    "timeframe": item.get("timeframe"),
+                    "n_patterns": item.get("n_patterns"),
+                }
+            )
+        if tf_summary:
+            compact["timeframe_findings"] = tf_summary
+
+    if isinstance(payload.get("failed_timeframes"), dict) and payload.get("failed_timeframes"):
+        compact["failed_timeframes"] = payload.get("failed_timeframes")
+
+    if "series_close" in payload:
+        compact["series_close"] = payload.get("series_close")
+    if "series_time" in payload:
+        compact["series_time"] = payload.get("series_time")
+    if "series_epoch" in payload:
+        compact["series_epoch"] = payload.get("series_epoch")
+    if "series_by_timeframe" in payload:
+        compact["series_by_timeframe"] = payload.get("series_by_timeframe")
+
+    return compact
 
 
 def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[str, Any]]:
@@ -861,6 +1021,7 @@ def patterns_detect(
     symbol: str,
     timeframe: Optional[TimeframeLiteral] = None,
     mode: Literal['candlestick', 'classic', 'chart', 'elliott'] = 'candlestick',  # type: ignore
+    detail: Literal['compact', 'full'] = 'compact',  # type: ignore
     limit: int = 1000,
     # Candlestick specific
     min_strength: float = 0.95,
@@ -898,6 +1059,11 @@ def patterns_detect(
         - "classic": Chart patterns (Head & Shoulders, Triangles, Flags, etc.)
         - "chart": Alias for classic chart patterns
         - "elliott": Elliott Wave patterns
+
+    detail : str, optional (default="compact")
+        Output verbosity:
+        - "compact": trader-focused summary with recent patterns and pattern mix.
+        - "full": complete pattern rows suitable for research/debugging.
     
     limit : int, optional (default=1000)
         Number of historical bars to analyze
@@ -973,7 +1139,7 @@ def patterns_detect(
     patterns_detect(symbol="GBPUSD", mode="classic", limit=500)
     
     # Detect Elliott Wave patterns
-    patterns_detect(symbol="BTCUSD", mode="elliott", timeframe="H4")
+    patterns_detect(symbol="BTCUSD", mode="elliott", timeframe="H4", detail="full")
     """
     try:
         tf_norm: Optional[str] = str(timeframe).strip().upper() if timeframe is not None else None
@@ -983,10 +1149,13 @@ def patterns_detect(
         mode_value = str(mode).strip().lower()
         if mode_value == 'chart':
             mode_value = 'classic'
+        detail_value = str(detail).strip().lower()
+        if detail_value not in ('compact', 'full'):
+            return {"error": "Invalid detail. Use 'compact' or 'full'."}
 
         if mode_value == 'candlestick':
             tf_single = tf_norm or "H1"
-            return _detect_candlestick_patterns(
+            out = _detect_candlestick_patterns(
                 symbol=symbol,
                 timeframe=tf_single,
                 limit=limit,
@@ -996,6 +1165,9 @@ def patterns_detect(
                 whitelist=whitelist,
                 top_k=top_k,
             )
+            if detail_value == 'compact':
+                return _compact_patterns_payload(out if isinstance(out, dict) else {"data": out})
+            return out
 
         elif mode_value == 'classic':
             tf_single = tf_norm or "H1"
@@ -1033,7 +1205,7 @@ def patterns_detect(
                     }
                 resp = _build_pattern_response(
                     symbol, tf_single, limit, mode_value, [],
-                    include_completed, include_series, series_time, df
+                    include_completed, include_series, series_time, df, detail=detail_value
                 )
                 resp["engine"] = "ensemble" if (bool(ensemble) or len(engines) > 1) else engines[0]
                 resp["engines_run"] = engines
@@ -1066,7 +1238,7 @@ def patterns_detect(
 
             resp = _build_pattern_response(
                 symbol, tf_single, limit, mode_value, out_list,
-                include_completed, include_series, series_time, df
+                include_completed, include_series, series_time, df, detail=detail_value
             )
             resp["engine"] = "ensemble" if run_ensemble else next(iter(non_empty.keys()))
             resp["engines_run"] = engines
@@ -1096,7 +1268,7 @@ def patterns_detect(
                 out_list = _format_elliott_patterns(df, cfg)
                 return _build_pattern_response(
                     symbol, tf_norm, limit, mode_value, out_list,
-                    include_completed, include_series, series_time, df
+                    include_completed, include_series, series_time, df, detail=detail_value
                 )
 
             # If timeframe is omitted for Elliott mode, scan all available timeframes.
@@ -1161,6 +1333,8 @@ def patterns_detect(
                 resp["failed_timeframes"] = failed_timeframes
             if include_series:
                 resp["series_by_timeframe"] = series_by_timeframe
+            if detail_value == "compact":
+                return _compact_patterns_payload(resp)
             return resp
         
         else:

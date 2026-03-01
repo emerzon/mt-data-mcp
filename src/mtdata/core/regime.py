@@ -207,7 +207,7 @@ def regime_detect(
     params: Optional[Dict[str, Any]] = None,
     denoise: Optional[DenoiseSpec] = None,
     threshold: float = 0.5,
-    output: Literal['full','summary','compact'] = 'full',  # type: ignore
+    output: Literal['full','summary','compact'] = 'compact',  # type: ignore
     lookback: int = 300,
     include_series: bool = False,
 ) -> Dict[str, Any]:
@@ -216,9 +216,9 @@ def regime_detect(
     - method: 'bocpd' (Bayesian online change-point; Gaussian), 'hmm' (Gaussian mixture/HMM-lite), or 'ms_ar' (Markov-switching AR).
     - include_series: If True, include raw time series data (probs, states) in output even if output='full'. Default False.
     - output:
-        - 'full': Returns consolidated 'regimes' table. Raw 'series' included only if include_series=True.
+        - 'compact' (default): Returns recent consolidated 'regimes' and method summary.
+        - 'full': Returns full consolidated 'regimes'. Raw 'series' included only if include_series=True.
         - 'summary': Returns stats only.
-        - 'compact': Returns 'regimes' and tail of 'series'.
     """
     try:
         p = dict(params or {})

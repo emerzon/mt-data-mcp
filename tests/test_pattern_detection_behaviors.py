@@ -309,6 +309,32 @@ def test_build_pattern_response_include_completed_filter_behavior():
     assert with_completed["n_patterns"] == 2
 
 
+def test_build_pattern_response_compact_detail_returns_summary():
+    df = pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 11.0, 12.0]})
+    patterns = [
+        {"name": "A", "status": "forming", "confidence": 0.5, "end_index": 1},
+        {"name": "B", "status": "forming", "confidence": 0.7, "end_index": 2},
+    ]
+
+    compact = _build_pattern_response(
+        "EURUSD",
+        "H1",
+        100,
+        "classic",
+        patterns,
+        include_completed=False,
+        include_series=False,
+        series_time="string",
+        df=df,
+        detail="compact",
+    )
+
+    assert compact["n_patterns"] == 2
+    assert "recent_patterns" in compact
+    assert "summary" in compact
+    assert "patterns" not in compact
+
+
 def test_patterns_detect_elliott_without_timeframe_scans_all(monkeypatch):
     monkeypatch.setattr(core_patterns, "TIMEFRAME_MAP", {"M1": 1, "H1": 2})
 
@@ -343,6 +369,7 @@ def test_patterns_detect_elliott_without_timeframe_scans_all(monkeypatch):
     res = core_patterns.patterns_detect(
         symbol="EURUSD",
         mode="elliott",
+        detail="full",
         timeframe=None,
         include_completed=True,
         __cli_raw=True,
@@ -388,6 +415,7 @@ def test_patterns_detect_elliott_with_explicit_timeframe_uses_single_output(monk
     res = core_patterns.patterns_detect(
         symbol="EURUSD",
         mode="elliott",
+        detail="full",
         timeframe="H1",
         include_completed=True,
         __cli_raw=True,
@@ -480,6 +508,7 @@ def test_patterns_detect_classic_ensemble_merges_engine_outputs(monkeypatch):
     res = core_patterns.patterns_detect(
         symbol="EURUSD",
         mode="classic",
+        detail="full",
         timeframe="H1",
         engine="native,stock_pattern,precise_patterns",
         ensemble=True,
