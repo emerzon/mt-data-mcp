@@ -151,13 +151,13 @@ class MT5Connection:
                         logger.error(f"Failed to initialize MT5: {mt5.last_error()}")
                         return False
                 else:
-                    logger.info(f"Connected to MT5 with account {login}")
+                    logger.debug(f"Connected to MT5 with account {login}")
             else:
                 if not mt5.initialize():
                     logger.error(f"Failed to initialize MT5: {mt5.last_error()}")
                     return False
                 else:
-                    logger.info("Connected to MT5 using terminal's current login")
+                    logger.debug("Connected to MT5 using terminal's current login")
             self.connected = True
             return True
         except Exception as e:
@@ -168,7 +168,7 @@ class MT5Connection:
         if self.connected:
             mt5.shutdown()
             self.connected = False
-            logger.info("Disconnected from MetaTrader5")
+            logger.debug("Disconnected from MetaTrader5")
 
     def is_connected(self) -> bool:
         if not self.connected:
