@@ -1935,13 +1935,29 @@ def trade_risk_analyze(
                 
                 if sl_distance_ticks > 0:
                     # Calculate volume
-                    suggested_volume = risk_amount / (sl_distance_ticks * tick_value)
-                    
-                    # Round to volume step
-                    suggested_volume = round(suggested_volume / volume_step) * volume_step
-                    
-                    # Clamp to min/max
-                    suggested_volume = max(min_volume, min(suggested_volume, max_volume))
+                    raw_volume = risk_amount / (sl_distance_ticks * tick_value)
+                    if not math.isfinite(raw_volume) or raw_volume <= 0:
+                        result["position_sizing_error"] = "Calculated volume is invalid"
+                        return result
+
+                    # Round down to the broker volume step so sizing stays at or below
+                    # the requested risk when broker constraints allow it.
+                    volume_steps = math.floor((raw_volume / volume_step) + 1e-12)
+                    suggested_volume = volume_steps * volume_step
+                    rounding_mode = "rounded_down_to_step"
+                    sizing_notes: List[str] = []
+
+                    if suggested_volume < min_volume:
+                        suggested_volume = min_volume
+                        rounding_mode = "clamped_to_min_volume"
+                        sizing_notes.append("Minimum trade volume forces the size up to the broker minimum.")
+                    elif suggested_volume > max_volume:
+                        suggested_volume = max_volume
+                        rounding_mode = "clamped_to_max_volume"
+                        sizing_notes.append("Maximum trade volume caps the size below the unconstrained target.")
+                    elif suggested_volume < raw_volume:
+                        sizing_notes.append("Volume was rounded down to the nearest broker step to avoid exceeding requested risk.")
+
                     step_txt = f"{volume_step:.10f}".rstrip("0")
                     step_decimals = len(step_txt.split(".")[1]) if "." in step_txt else 0
                     suggested_volume = float(f"{suggested_volume:.{step_decimals}f}") if step_decimals > 0 else float(round(suggested_volume))
@@ -1949,6 +1965,10 @@ def trade_risk_analyze(
                     # Calculate actual risk with suggested volume
                     actual_risk = sl_distance_ticks * tick_value * suggested_volume
                     actual_risk_pct = (actual_risk / equity) * 100.0
+                    risk_pct_diff = actual_risk_pct - float(desired_risk_pct)
+                    risk_over_target = actual_risk_pct > (float(desired_risk_pct) + 1e-9)
+                    if risk_over_target:
+                        sizing_notes.append("Actual risk still exceeds the requested level after broker volume constraints.")
                     
                     # Calculate R:R if TP is provided
                     rr_ratio = None
@@ -1962,14 +1982,28 @@ def trade_risk_analyze(
                     result["position_sizing"] = {
                         "symbol": symbol,
                         "suggested_volume": suggested_volume,
+                        "requested_risk_currency": round(risk_amount, 2),
+                        "requested_risk_pct": float(desired_risk_pct),
                         "entry": proposed_entry,
                         "sl": proposed_sl,
                         "tp": proposed_tp,
                         "risk_currency": round(actual_risk, 2),
                         "risk_pct": round(actual_risk_pct, 2),
+                        "risk_pct_diff": round(risk_pct_diff, 2),
+                        "risk_over_target": risk_over_target,
+                        "raw_volume": round(raw_volume, 8),
+                        "volume_step": volume_step,
+                        "volume_min": min_volume,
+                        "volume_max": max_volume,
+                        "volume_rounding": rounding_mode,
                         "reward_currency": round(reward_currency, 2) if reward_currency else None,
                         "rr_ratio": round(rr_ratio, 2) if rr_ratio else None,
+                        "sizing_notes": sizing_notes,
                     }
+                    if risk_over_target:
+                        result["position_sizing_warning"] = (
+                            "Actual risk exceeds the requested level after applying broker volume constraints."
+                        )
                 else:
                     result["position_sizing_error"] = "SL distance must be greater than 0"
             

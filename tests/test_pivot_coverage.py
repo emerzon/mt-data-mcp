@@ -237,6 +237,13 @@ class TestPivotHappyPath:
         assert "start" in res["period"]
         assert "end" in res["period"]
 
+    def test_calculation_basis_context(self):
+        r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
+        res = self._run(r, use_ctz=False)
+        assert res["calculation_basis"]["source_bar"] == "last completed D1 bar"
+        assert res["calculation_basis"]["session_boundary"] == "MT5 broker/session calendar"
+        assert res["calculation_basis"]["display_timezone"] == "UTC"
+
     def test_symbol_timeframe_in_response(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
         res = self._run(r)

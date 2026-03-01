@@ -264,6 +264,11 @@ def pivot_compute_points(
                 "start": start_str,
                 "end": end_str,
             },
+            "calculation_basis": {
+                "source_bar": f"last completed {timeframe} bar",
+                "session_boundary": "MT5 broker/session calendar",
+                "display_timezone": "client_local" if _use_ctz else "UTC",
+            },
             "levels": levels_table,
         }
         if not _use_ctz:
