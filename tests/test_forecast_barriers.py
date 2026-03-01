@@ -94,6 +94,8 @@ class TestForecastBarriers(unittest.TestCase):
             result["sl_hit_prob_by_t"][0],
             places=8,
         )
+        self.assertTrue(result["time_to_hit_seconds_derived"])
+        self.assertEqual(result["time_to_hit_seconds_formula"], "bars * 3600")
 
     def test_forecast_barrier_hit_probabilities_falls_back_to_close_price(self):
         self._set_flat_history(1.0, bars=200)

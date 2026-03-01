@@ -509,6 +509,8 @@ def forecast_barrier_hit_probabilities(
             "time_to_sl_bars": sl_stats,
             "time_to_tp_seconds": {k: _finite_or_none(v * tf_secs) for k, v in tp_stats.items()},
             "time_to_sl_seconds": {k: _finite_or_none(v * tf_secs) for k, v in sl_stats.items()},
+            "time_to_hit_seconds_derived": True,
+            "time_to_hit_seconds_formula": f"bars * {int(tf_secs)}" if tf_secs > 0 else "bars * timeframe_seconds",
             "params_used": {k: p[k] for k in p if k in {"n_sims", "seed", "n_states", "p", "q", "block_size", "kappa", "theta", "xi", "rho", "v0", "jump_lambda", "jump_mu", "jump_sigma", "jump_threshold", "lambda"}},
         }
         if method_requested != method_key:
