@@ -82,3 +82,26 @@ def test_trade_modify_blank_expiration_keeps_position_path() -> None:
         assert out.get("success") is True
         mock_pos.assert_called_once()
         mock_pending.assert_not_called()
+
+
+def test_trade_modify_pending_not_found_reports_checked_scope() -> None:
+    with patch(
+        "mtdata.core.trading._modify_pending_order",
+        return_value={"error": "Pending order 123 not found"},
+    ):
+        out = trade_modify(ticket=123, price=1.2, __cli_raw=True)
+    assert "error" in out
+    assert out.get("checked_scopes") == ["pending_orders"]
+
+
+def test_trade_modify_missing_ticket_reports_both_checked_scopes() -> None:
+    with patch(
+        "mtdata.core.trading._modify_position",
+        return_value={"error": "Position 123 not found"},
+    ), patch(
+        "mtdata.core.trading._modify_pending_order",
+        return_value={"error": "Pending order 123 not found"},
+    ):
+        out = trade_modify(ticket=123, stop_loss=1.0, __cli_raw=True)
+    assert "error" in out
+    assert out.get("checked_scopes") == ["positions", "pending_orders"]

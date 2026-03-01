@@ -394,6 +394,25 @@ def _trade_mode_text(mt5: Any, account_info: Any) -> Optional[str]:
     return mapping.get(trade_mode, str(trade_mode))
 
 
+def _retcode_name(mt5: Any, retcode: Any) -> Optional[str]:
+    try:
+        ret = int(retcode)
+    except Exception:
+        return None
+    try:
+        for attr in dir(mt5):
+            if not attr.startswith("TRADE_RETCODE_"):
+                continue
+            try:
+                if int(getattr(mt5, attr)) == ret:
+                    return attr
+            except Exception:
+                continue
+    except Exception:
+        return None
+    return None
+
+
 def _build_trade_preflight(mt5: Any, account_info: Any = None, terminal_info: Any = None) -> Dict[str, Any]:
     """Summarize account and terminal execution readiness."""
     info = account_info if account_info is not None else None
@@ -944,6 +963,7 @@ def _place_market_order(
                 return {
                     "error": "Failed to send order",
                     "retcode": result.retcode,
+                    "retcode_name": _retcode_name(mt5, result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
                     "request": request,
@@ -985,6 +1005,7 @@ def _place_market_order(
 
             return {
                 "retcode": result.retcode,
+                "retcode_name": _retcode_name(mt5, result.retcode),
                 "deal": result.deal,
                 "order": result.order,
                 "volume": result.volume,
@@ -1160,6 +1181,7 @@ def _place_pending_order(
                 return {
                     "error": "Failed to send pending order",
                     "retcode": result.retcode,
+                    "retcode_name": _retcode_name(mt5, result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
                     "request": request,
@@ -1169,6 +1191,7 @@ def _place_pending_order(
             return {
                 "success": True,
                 "retcode": result.retcode,
+                "retcode_name": _retcode_name(mt5, result.retcode),
                 "deal": result.deal,
                 "order": result.order,
                 "volume": result.volume,
@@ -1292,7 +1315,7 @@ def _modify_position(
             ticket_id = int(ticket)
             positions = mt5.positions_get(ticket=ticket_id)
             if positions is None or len(positions) == 0:
-                return {"error": f"Position {ticket} not found"}
+                return {"error": f"Position {ticket} not found", "checked_scopes": ["positions"]}
 
             position = positions[0]
 
@@ -1353,6 +1376,7 @@ def _modify_position(
                 return {
                     "error": "Failed to modify position",
                     "retcode": result.retcode,
+                    "retcode_name": _retcode_name(mt5, result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
                     "request": request,
@@ -1362,10 +1386,13 @@ def _modify_position(
             return {
                 "success": True,
                 "retcode": result.retcode,
+                "retcode_name": _retcode_name(mt5, result.retcode),
                 "deal": result.deal,
                 "order": result.order,
                 "comment": result.comment,
                 "request_id": result.request_id,
+                "applied_sl": None if float(norm_sl) == 0.0 else float(norm_sl),
+                "applied_tp": None if float(norm_tp) == 0.0 else float(norm_tp),
             }
 
         except Exception as e:
@@ -1391,7 +1418,7 @@ def _modify_pending_order(
             ticket_id = int(ticket)
             orders = mt5.orders_get(ticket=ticket_id)
             if orders is None or len(orders) == 0:
-                return {"error": f"Pending order {ticket} not found"}
+                return {"error": f"Pending order {ticket} not found", "checked_scopes": ["pending_orders"]}
 
             order = orders[0]
             normalized_expiration, expiration_specified = _normalize_pending_expiration(expiration)
@@ -1437,6 +1464,7 @@ def _modify_pending_order(
                 return {
                     "error": "Failed to modify pending order",
                     "retcode": result.retcode,
+                    "retcode_name": _retcode_name(mt5, result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
                     "request": request,
@@ -1446,10 +1474,15 @@ def _modify_pending_order(
             return {
                 "success": True,
                 "retcode": result.retcode,
+                "retcode_name": _retcode_name(mt5, result.retcode),
                 "deal": result.deal,
                 "order": result.order,
                 "comment": result.comment,
                 "request_id": result.request_id,
+                "applied_price": request.get("price"),
+                "applied_sl": request.get("sl"),
+                "applied_tp": request.get("tp"),
+                "applied_expiration": request.get("expiration"),
             }
 
         except Exception as e:
@@ -1493,7 +1526,8 @@ def trade_modify(
                 "error": (
                     f"Pending order {ticket} not found. "
                     "Note: price/expiration only apply to pending orders."
-                )
+                ),
+                "checked_scopes": ["pending_orders"],
             }
         return result
 
@@ -1515,7 +1549,10 @@ def trade_modify(
             comment=comment,
         )
         if pending_result.get("error") == f"Pending order {ticket} not found":
-            return {"error": f"Ticket {ticket} not found as position or pending order."}
+            return {
+                "error": f"Ticket {ticket} not found as position or pending order.",
+                "checked_scopes": ["positions", "pending_orders"],
+            }
         return pending_result
     return position_result
 
@@ -1539,7 +1576,7 @@ def _close_positions(
                 t_int = int(ticket)
                 positions = mt5.positions_get(ticket=t_int)
                 if positions is None or len(positions) == 0:
-                    return {"error": f"Position {ticket} not found"}
+                    return {"error": f"Position {ticket} not found", "checked_scopes": ["positions"]}
             elif symbol is not None:
                 positions = mt5.positions_get(symbol=symbol)
                 if positions is None or len(positions) == 0:
@@ -1597,6 +1634,7 @@ def _close_positions(
                     res_dict = {
                         "ticket": position.ticket,
                         "retcode": result.retcode,
+                        "retcode_name": _retcode_name(mt5, result.retcode),
                         "deal": result.deal,
                         "order": result.order,
                         "volume": result.volume,
@@ -1639,7 +1677,7 @@ def _cancel_pending(
                 t_int = int(ticket)
                 orders = mt5.orders_get(ticket=t_int)
                 if orders is None or len(orders) == 0:
-                    return {"error": f"Pending order {ticket} not found"}
+                    return {"error": f"Pending order {ticket} not found", "checked_scopes": ["pending_orders"]}
             elif symbol is not None:
                 orders = mt5.orders_get(symbol=symbol)
                 if orders is None or len(orders) == 0:
@@ -1666,6 +1704,7 @@ def _cancel_pending(
                     results.append({
                         "ticket": order.ticket,
                         "retcode": result.retcode,
+                        "retcode_name": _retcode_name(mt5, result.retcode),
                         "deal": result.deal,
                         "order": result.order,
                         "comment": result.comment,
