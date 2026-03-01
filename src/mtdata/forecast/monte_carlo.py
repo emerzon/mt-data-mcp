@@ -19,6 +19,10 @@ from typing import Dict, Tuple, Optional
 import numpy as np
 import warnings
 from sklearn.mixture import GaussianMixture
+try:
+    from sklearn.exceptions import ConvergenceWarning as _SklearnConvergenceWarning
+except Exception:  # pragma: no cover - defensive fallback
+    _SklearnConvergenceWarning = Warning
 from arch.bootstrap import CircularBlockBootstrap
 
 
@@ -97,7 +101,9 @@ def fit_gaussian_mixture_1d(
         random_state=seed,
     )
     x2 = x.reshape(-1, 1)
-    model.fit(x2)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=_SklearnConvergenceWarning)
+        model.fit(x2)
     gamma = np.asarray(model.predict_proba(x2), dtype=float)
     w = np.asarray(model.weights_, dtype=float).reshape(-1)
     mu = np.asarray(model.means_, dtype=float).reshape(-1)

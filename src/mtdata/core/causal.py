@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import time
+import warnings
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
@@ -329,7 +330,9 @@ def causal_discover_signals(
                 continue
             pair_attempts += 1
             try:
-                tests = grangercausalitytests(subset[[effect, cause]], maxlag=max_lag, verbose=False)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", category=FutureWarning)
+                    tests = grangercausalitytests(subset[[effect, cause]], maxlag=max_lag, verbose=False)
             except Exception:
                 continue
             pair_success += 1

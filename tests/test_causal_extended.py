@@ -2,6 +2,7 @@
 
 import math
 import time
+import warnings
 from unittest.mock import patch, MagicMock, PropertyMock
 
 import numpy as np
@@ -253,12 +254,18 @@ class TestCausalDiscoverSignals:
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
-        mock_granger.return_value = {
-            1: ({"ssr_ftest": (1.0, 0.02, 10, 1)}, None),
-            2: ({"ssr_ftest": (1.0, 0.03, 10, 1)}, None),
-        }
+        def _granger_side_effect(*args, **kwargs):
+            warnings.warn("'verbose' is deprecated", FutureWarning)
+            return {
+                1: ({"ssr_ftest": (1.0, 0.02, 10, 1)}, None),
+                2: ({"ssr_ftest": (1.0, 0.03, 10, 1)}, None),
+            }
 
-        result = self._unwrapped()("A,B", max_lag=2, transform="diff", normalize=False)
+        mock_granger.side_effect = _granger_side_effect
+
+        with warnings.catch_warnings(record=True) as records:
+            warnings.simplefilter("always")
+            result = self._unwrapped()("A,B", max_lag=2, transform="diff", normalize=False)
 
         assert result["success"] is True
         assert "data" in result
@@ -267,3 +274,4 @@ class TestCausalDiscoverSignals:
         assert isinstance(result["data"]["links"], list)
         assert "summary_text" in result["data"]
         assert result["meta"]["pairs_tested"] >= 1
+        assert not any("verbose" in str(w.message).lower() for w in records)

@@ -1,6 +1,7 @@
 """Tests for forecast/monte_carlo.py — pure NumPy simulation functions."""
 import numpy as np
 import pytest
+import warnings
 
 from mtdata.forecast.monte_carlo import (
     _normalize_probability_vector,
@@ -102,6 +103,48 @@ class TestFitGaussianMixture1d:
         w, mu, sigma, gamma, ll = fit_gaussian_mixture_1d(x, n_states=2)
         assert len(w) == 1
         assert mu[0] == 0.0
+
+    def test_convergence_warning_is_suppressed(self, monkeypatch):
+        from sklearn.exceptions import ConvergenceWarning
+
+        class DummyGaussianMixture:
+            def __init__(self, n_components, covariance_type, reg_covar, max_iter, tol, n_init, random_state):
+                self.n_components = int(n_components)
+
+            def fit(self, x):
+                warnings.warn("Best performing initialization did not converge.", ConvergenceWarning)
+                return self
+
+            def predict_proba(self, x):
+                n = int(x.shape[0])
+                out = np.zeros((n, self.n_components), dtype=float)
+                out[:, 0] = 1.0
+                return out
+
+            @property
+            def weights_(self):
+                out = np.zeros(self.n_components, dtype=float)
+                out[0] = 1.0
+                return out
+
+            @property
+            def means_(self):
+                return np.arange(self.n_components, dtype=float).reshape(-1, 1)
+
+            @property
+            def covariances_(self):
+                return np.ones(self.n_components, dtype=float)
+
+            def score(self, x):
+                return -0.5
+
+        monkeypatch.setattr("mtdata.forecast.monte_carlo.GaussianMixture", DummyGaussianMixture)
+
+        with warnings.catch_warnings(record=True) as records:
+            warnings.simplefilter("always")
+            _ = fit_gaussian_mixture_1d(np.linspace(-1.0, 1.0, 50), n_states=2, seed=1)
+
+        assert not any(isinstance(w.message, ConvergenceWarning) for w in records)
 
 
 class TestEstimateTransitionMatrix:
