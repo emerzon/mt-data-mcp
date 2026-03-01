@@ -3,9 +3,56 @@ import numpy as np
 
 from .server import mcp, _auto_connect_wrapper
 from .schema import TimeframeLiteral, DenoiseSpec
+from .constants import TIMEFRAME_SECONDS
 from ..forecast.common import fetch_history as _fetch_history
 from ..utils.utils import _format_time_minimal
 from ..utils.denoise import _resolve_denoise_base_col
+
+
+_CRYPTO_SYMBOL_HINTS = (
+    "BTC",
+    "ETH",
+    "XRP",
+    "LTC",
+    "BCH",
+    "DOGE",
+    "SOL",
+    "ADA",
+    "DOT",
+    "AVAX",
+    "BNB",
+    "TRX",
+    "LINK",
+    "MATIC",
+)
+
+
+def _is_probably_crypto_symbol(symbol: Any) -> bool:
+    s = str(symbol or "").upper().strip()
+    if not s:
+        return False
+    normalized = "".join(ch for ch in s if ch.isalnum())
+    if not normalized:
+        return False
+    return any(token in normalized for token in _CRYPTO_SYMBOL_HINTS)
+
+
+def _default_bocpd_hazard_lambda(symbol: Any, timeframe: Any) -> int:
+    tf = str(timeframe or "H1").upper().strip() or "H1"
+    tf_seconds = int(TIMEFRAME_SECONDS.get(tf, 3600))
+
+    if _is_probably_crypto_symbol(symbol):
+        if tf_seconds <= 900:   # <= M15
+            return 72
+        if tf_seconds <= 3600:  # <= H1
+            return 96
+        if tf_seconds <= 14400:  # <= H4
+            return 128
+        if tf_seconds <= 86400:  # <= D1
+            return 160
+        return 220
+
+    return 250
 
 
 def _consolidate_payload(payload: Dict[str, Any], method: str, output_mode: str, include_series: bool = False) -> Dict[str, Any]:
@@ -242,7 +289,12 @@ def regime_detect(
 
         if method == 'bocpd':
             from ..utils.regime import bocpd_gaussian
-            hazard_lambda = int(p.get('hazard_lambda', 250))
+            hazard_src = "params"
+            if "hazard_lambda" in p and p.get("hazard_lambda") is not None:
+                hazard_lambda = int(p.get("hazard_lambda"))
+            else:
+                hazard_lambda = _default_bocpd_hazard_lambda(symbol, timeframe)
+                hazard_src = "auto_default"
             max_rl = int(p.get('max_run_length', min(1000, x.size)))
             res = bocpd_gaussian(x, hazard_lambda=hazard_lambda, max_run_length=max_rl)
             cp_prob = res.get('cp_prob', np.zeros_like(x, dtype=float))
@@ -258,7 +310,11 @@ def regime_detect(
                 "cp_prob": [float(v) for v in np.asarray(cp_prob, dtype=float).tolist()],
                 "change_points": cps,
                 "threshold": float(threshold),
-                "params_used": {"hazard_lambda": hazard_lambda, "max_run_length": max_rl},
+                "params_used": {
+                    "hazard_lambda": hazard_lambda,
+                    "hazard_lambda_source": hazard_src,
+                    "max_run_length": max_rl,
+                },
             }
             if output in ('summary','compact'):
                 n = min(int(lookback), len(cp_prob))
