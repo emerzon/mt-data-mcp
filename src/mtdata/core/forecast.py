@@ -329,6 +329,7 @@ def forecast_backtest_run(
     dimred_params: Optional[Dict[str, Any]] = None,
     slippage_bps: float = 0.0,
     trade_threshold: float = 0.0,
+    detail: Literal['compact', 'full'] = 'compact',  # type: ignore
 ) -> Dict[str, Any]:
     """Rolling-origin backtest over historical anchors using the forecast tool."""
     return _forecast_backtest_impl(
@@ -348,6 +349,7 @@ def forecast_backtest_run(
         dimred_params=dimred_params,
         slippage_bps=slippage_bps,
         trade_threshold=trade_threshold,
+        detail=detail,
     )
 
 
@@ -484,6 +486,7 @@ def forecast_conformal_intervals(
             methods=[str(method)],
             denoise=denoise,
             params={str(method): dict(params or {})},
+            detail='full',
         )
         if 'error' in bt:
             return bt

@@ -154,3 +154,58 @@ def test_backtest_price_target_trade_returns_vary_by_forecast_implied_exit() -> 
     assert aggressive_detail["position"] == "long"
     assert float(slow_detail["trade_return"]) != float(aggressive_detail["trade_return"])
     assert int(slow_detail["exit_step"]) < int(aggressive_detail["exit_step"])
+
+
+def test_backtest_default_detail_is_compact_without_full_series_arrays() -> None:
+    times = np.arange(1700000000, 1700000000 + 70 * 3600, 3600, dtype=float)
+    close = np.linspace(100.0, 120.0, 70, dtype=float)
+    df = pd.DataFrame({"time": times, "close": close})
+
+    idx = 60
+    anchor = _format_time_minimal(float(times[idx]))
+    with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
+        "mtdata.forecast.backtest.forecast",
+        return_value={"forecast_price": [110.0, 111.0, 112.0]},
+    ):
+        res = forecast_backtest(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=3,
+            methods=["naive"],
+            anchors=[anchor],
+            target="price",
+        )
+
+    detail = res["results"]["naive"]["details"][0]
+    assert res["detail"] == "compact"
+    assert "forecast" not in detail
+    assert "actual" not in detail
+    assert "forecast_end" in detail
+    assert "actual_end" in detail
+
+
+def test_backtest_full_detail_includes_series_arrays() -> None:
+    times = np.arange(1700000000, 1700000000 + 70 * 3600, 3600, dtype=float)
+    close = np.linspace(100.0, 120.0, 70, dtype=float)
+    df = pd.DataFrame({"time": times, "close": close})
+
+    idx = 60
+    anchor = _format_time_minimal(float(times[idx]))
+    with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
+        "mtdata.forecast.backtest.forecast",
+        return_value={"forecast_price": [110.0, 111.0, 112.0]},
+    ):
+        res = forecast_backtest(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=3,
+            methods=["naive"],
+            anchors=[anchor],
+            target="price",
+            detail="full",
+        )
+
+    detail = res["results"]["naive"]["details"][0]
+    assert res["detail"] == "full"
+    assert isinstance(detail["forecast"], list)
+    assert isinstance(detail["actual"], list)

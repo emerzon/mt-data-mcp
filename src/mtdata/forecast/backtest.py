@@ -137,6 +137,7 @@ def forecast_backtest(
     dimred_params: Optional[Dict[str, Any]] = None,
     slippage_bps: float = 0.0,
     trade_threshold: float = 0.0,
+    detail: Literal['compact', 'full'] = 'compact',  # type: ignore
 ) -> Dict[str, Any]:
     """Rolling-origin backtest over historical anchors using the forecast tool.
 
@@ -146,6 +147,10 @@ def forecast_backtest(
     """
     try:
         __stage = 'start'
+        detail_mode = str(detail or "compact").strip().lower()
+        if detail_mode not in ("compact", "full"):
+            detail_mode = "compact"
+        include_paths = detail_mode == "full"
         if timeframe not in TIMEFRAME_MAP:
             return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
 
@@ -391,14 +396,12 @@ def forecast_backtest(
                     elif direction == 0:
                         gross_return = 0.0
                         net_return = 0.0
-                    per_anchor.append({
+                    detail_row = {
                         "anchor": anchor_time,
                         "success": True,
                         "mae": mae,
                         "rmse": rmse,
                         "directional_accuracy": da,
-                        "forecast": [float(v) for v in fcv[:m].tolist()],
-                        "actual": [float(v) for v in act[:m].tolist()],
                         "entry_price": entry_price,
                         "exit_price": exit_price,
                         "exit_step": int(exit_step) + 1 if m > 0 else 0,
@@ -406,7 +409,15 @@ def forecast_backtest(
                         "position": position,
                         "trade_return_gross": gross_return,
                         "trade_return": net_return,
-                    })
+                    }
+                    if include_paths:
+                        detail_row["forecast"] = [float(v) for v in fcv[:m].tolist()]
+                        detail_row["actual"] = [float(v) for v in act[:m].tolist()]
+                    else:
+                        detail_row["horizon_used"] = int(m)
+                        detail_row["forecast_end"] = float(fcv[m - 1]) if m > 0 else None
+                        detail_row["actual_end"] = float(act[m - 1]) if m > 0 else None
+                    per_anchor.append(detail_row)
             # Aggregate
             ok = [x for x in per_anchor if x.get('success')]
             if ok:
@@ -455,6 +466,7 @@ def forecast_backtest(
             "denoise_used": _dn_used,
             "slippage_bps": float(slippage_bps),
             "trade_threshold": float(trade_threshold or 0.0),
+            "detail": detail_mode,
             "results": results,
         }
     except Exception as e:
