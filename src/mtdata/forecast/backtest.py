@@ -57,10 +57,10 @@ def _compute_performance_metrics(
     timeframe: str,
     horizon: int,
     slippage_bps: float,
-) -> Dict[str, float]:
+) -> Dict[str, Any]:
     """Compute portfolio-level performance statistics from per-trade returns."""
 
-    metrics: Dict[str, float] = {}
+    metrics: Dict[str, Any] = {}
     if not returns:
         return metrics
 
@@ -103,14 +103,23 @@ def _compute_performance_metrics(
     if max_drawdown > 0 and math.isfinite(max_drawdown) and math.isfinite(annual_return):
         calmar = float(annual_return / max_drawdown)
 
+    def _finite_or_none(value: float) -> Optional[float]:
+        try:
+            value_f = float(value)
+        except Exception:
+            return None
+        if not math.isfinite(value_f):
+            return None
+        return value_f
+
     metrics.update({
         "avg_return_per_trade": avg_return,
         "win_rate": win_rate,
-        "sharpe_ratio": sharpe,
+        "sharpe_ratio": _finite_or_none(sharpe),
         "max_drawdown": max_drawdown,
-        "calmar_ratio": calmar,
+        "calmar_ratio": _finite_or_none(calmar),
         "cumulative_return": cumulative_return,
-        "annual_return": annual_return,
+        "annual_return": _finite_or_none(annual_return),
         "num_trades": float(arr.size),
         "trades_per_year": trades_per_year,
         "slippage_bps": float(slippage_bps),

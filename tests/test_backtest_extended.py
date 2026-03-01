@@ -98,9 +98,8 @@ class TestComputePerformanceMetrics:
     def test_single_return(self):
         m = _compute_performance_metrics([0.05], "H1", 12, 0.0)
         assert m["num_trades"] == 1.0
-        # std with ddof=1 is 0 for single value
-        assert m.get("sharpe_ratio") is not None
-        assert math.isnan(float(m.get("sharpe_ratio", 0.0)))
+        # Annualized risk metrics are intentionally suppressed on tiny samples.
+        assert m.get("sharpe_ratio") is None
         assert "sample_warning" in m
 
     def test_large_dataset_annualization(self):
@@ -112,7 +111,7 @@ class TestComputePerformanceMetrics:
 
     def test_invalid_timeframe(self):
         m = _compute_performance_metrics([0.01, 0.02], "INVALID", 12, 0.0)
-        assert math.isnan(m.get("sharpe_ratio", 0))
+        assert m.get("sharpe_ratio") is None
 
     def test_with_slippage(self):
         m = _compute_performance_metrics([0.01, 0.02], "H1", 12, 5.0)

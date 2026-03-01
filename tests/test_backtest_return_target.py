@@ -113,9 +113,9 @@ def test_performance_metrics_skip_annualization_for_short_samples() -> None:
         horizon=12,
         slippage_bps=0.0,
     )
-    assert np.isnan(float(metrics["sharpe_ratio"]))
-    assert np.isnan(float(metrics["annual_return"]))
-    assert np.isnan(float(metrics["calmar_ratio"]))
+    assert metrics["sharpe_ratio"] is None
+    assert metrics["annual_return"] is None
+    assert metrics["calmar_ratio"] is None
     assert "sample_warning" in metrics
     assert int(metrics["min_trades_for_annualization"]) == 30
 
