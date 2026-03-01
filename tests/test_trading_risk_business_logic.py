@@ -51,6 +51,8 @@ def test_trade_risk_analyze_rounds_down_to_step_to_avoid_overshoot() -> None:
     assert sizing["suggested_volume"] == 1.2
     assert sizing["volume_rounding"] == "rounded_down_to_step"
     assert sizing["risk_over_target"] is False
+    assert sizing["risk_compliance"] == "within_requested_risk"
+    assert sizing["risk_overshoot_pct"] == 0.0
     assert sizing["risk_pct"] <= 1.0
     assert any("rounded down" in note.lower() for note in sizing["sizing_notes"])
 
@@ -79,5 +81,10 @@ def test_trade_risk_analyze_warns_when_min_volume_forces_overshoot() -> None:
     assert sizing["suggested_volume"] == 0.1
     assert sizing["volume_rounding"] == "clamped_to_min_volume"
     assert sizing["risk_over_target"] is True
+    assert sizing["risk_compliance"] == "exceeds_requested_risk"
+    assert sizing["risk_overshoot_pct"] > 0.0
+    assert sizing["risk_over_target_reason"] == "min_volume_constraint"
     assert "position_sizing_warning" in out
+    assert "risk_alert" in out
+    assert out["risk_alert"]["code"] == "risk_overshoot_after_volume_constraints"
     assert any("minimum trade volume" in note.lower() for note in sizing["sizing_notes"])

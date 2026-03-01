@@ -2029,6 +2029,18 @@ def trade_risk_analyze(
                     actual_risk_pct = (actual_risk / equity) * 100.0
                     risk_pct_diff = actual_risk_pct - float(desired_risk_pct)
                     risk_over_target = actual_risk_pct > (float(desired_risk_pct) + 1e-9)
+                    overshoot_pct = max(0.0, float(actual_risk_pct) - float(desired_risk_pct))
+                    overshoot_currency = max(0.0, float(actual_risk) - float(risk_amount))
+                    overshoot_reason = None
+                    if risk_over_target:
+                        if rounding_mode == "clamped_to_min_volume":
+                            overshoot_reason = "min_volume_constraint"
+                        elif rounding_mode == "clamped_to_max_volume":
+                            overshoot_reason = "max_volume_constraint"
+                        elif rounding_mode == "rounded_down_to_step":
+                            overshoot_reason = "step_rounding_precision"
+                        else:
+                            overshoot_reason = "broker_volume_constraints"
                     if risk_over_target:
                         sizing_notes.append("Actual risk still exceeds the requested level after broker volume constraints.")
                     
@@ -2053,6 +2065,10 @@ def trade_risk_analyze(
                         "risk_pct": round(actual_risk_pct, 2),
                         "risk_pct_diff": round(risk_pct_diff, 2),
                         "risk_over_target": risk_over_target,
+                        "risk_compliance": "exceeds_requested_risk" if risk_over_target else "within_requested_risk",
+                        "risk_overshoot_pct": round(overshoot_pct, 2),
+                        "risk_overshoot_currency": round(overshoot_currency, 2),
+                        "risk_over_target_reason": overshoot_reason,
                         "raw_volume": round(raw_volume, 8),
                         "volume_step": volume_step,
                         "volume_min": min_volume,
@@ -2064,8 +2080,20 @@ def trade_risk_analyze(
                     }
                     if risk_over_target:
                         result["position_sizing_warning"] = (
-                            "Actual risk exceeds the requested level after applying broker volume constraints."
+                            f"Requested risk {float(desired_risk_pct):.2f}% but actual risk is "
+                            f"{float(actual_risk_pct):.2f}% (+{overshoot_pct:.2f}%) after broker volume constraints."
                         )
+                        result["risk_alert"] = {
+                            "severity": "warning",
+                            "code": "risk_overshoot_after_volume_constraints",
+                            "reason": overshoot_reason,
+                            "requested_risk_pct": float(desired_risk_pct),
+                            "actual_risk_pct": round(actual_risk_pct, 2),
+                            "overshoot_pct": round(overshoot_pct, 2),
+                            "requested_risk_currency": round(risk_amount, 2),
+                            "actual_risk_currency": round(actual_risk, 2),
+                            "overshoot_currency": round(overshoot_currency, 2),
+                        }
                 else:
                     result["position_sizing_error"] = "SL distance must be greater than 0"
             
