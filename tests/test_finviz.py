@@ -246,8 +246,8 @@ class TestFinvizService:
         assert result["source"] == "finviz_api"
         assert result["count"] == 2
         assert result["total"] == 2
-        assert len(result["events"]) == 2
         assert len(result["items"]) == 2
+        assert "events" not in result
 
         result_high = get_economic_calendar(
             impact="high",
@@ -259,7 +259,7 @@ class TestFinvizService:
         assert result_high["success"] is True
         assert result_high["impact"] == "high"
         assert result_high["total"] == 1
-        assert len(result_high["events"]) == 1
+        assert len(result_high["items"]) == 1
 
     @patch("mtdata.services.finviz_service._fetch_finviz_economic_calendar_items")
     def test_get_economic_calendar_invalid_impact(self, mock_fetch_items):
@@ -335,7 +335,7 @@ class TestFinvizService:
         assert result["count"] == 1
         assert result["total"] == 1
         assert len(result["items"]) == 1
-        assert len(result["earnings"]) == 1
+        assert "earnings" not in result
 
     @patch("mtdata.services.finviz_service._fetch_finviz_calendar_paged")
     def test_get_dividends_calendar_api_success(self, mock_fetch_paged):
@@ -359,7 +359,7 @@ class TestFinvizService:
         assert result["count"] == 1
         assert result["total"] == 1
         assert len(result["items"]) == 1
-        assert len(result["dividends"]) == 1
+        assert "dividends" not in result
 
 
 class TestFinvizTools:

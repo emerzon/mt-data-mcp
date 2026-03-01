@@ -658,7 +658,6 @@ def get_economic_calendar(
             "page": safe_page,
             "pages": (total + safe_limit - 1) // safe_limit if total else 0,
             "items": items_list,
-            "events": items_list,
             "message": message,
         }
     except ValueError as e:
@@ -700,7 +699,6 @@ def get_earnings_calendar_api(
             "page": int(payload.get("page") or safe_page),
             "pages": pages,
             "items": items,
-            "earnings": items,
         }
     except ValueError as e:
         return {"error": str(e)}
@@ -741,7 +739,6 @@ def get_dividends_calendar_api(
             "page": int(payload.get("page") or safe_page),
             "pages": pages,
             "items": items,
-            "dividends": items,
         }
     except ValueError as e:
         return {"error": str(e)}
