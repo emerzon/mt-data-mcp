@@ -1032,10 +1032,13 @@ def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
         func_info = tool.setdefault('_cli_func_info', get_function_info(func))
         _apply_schema_overrides(tool, func_info)
         arg_strs = []
-        for param in func_info['params']:
+        for index, param in enumerate(func_info['params']):
             tname = _type_name(param['type']) if param['type'] else 'str'
             if param['required']:
-                arg_strs.append(f"{param['name']}<{tname}>")
+                if index == 0:
+                    arg_strs.append(f"{param['name']}<{tname}>")
+                else:
+                    arg_strs.append(f"--{param['name'].replace('_','-')}<{tname}>")
             else:
                 default = param.get('default')
                 arg_strs.append(
