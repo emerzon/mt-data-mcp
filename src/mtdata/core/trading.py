@@ -486,14 +486,27 @@ def trade_account_info() -> dict:
         if info is None:
             return {"error": "Failed to get account info"}
         preflight = _build_trade_preflight(mt5, account_info=info)
+        margin_level: Optional[float] = getattr(info, "margin_level", None)
+        margin_level_note: Optional[str] = None
+        try:
+            margin_val = float(getattr(info, "margin", 0.0) or 0.0)
+            ml_val = float(getattr(info, "margin_level", 0.0) or 0.0)
+            # MT5 commonly reports margin_level=0 when no positions are open.
+            if margin_val <= 0.0 and ml_val <= 0.0:
+                margin_level = None
+                margin_level_note = "N/A (no open margin/positions)"
+            elif not math.isfinite(ml_val):
+                margin_level = None
+        except Exception:
+            pass
 
-        return {
+        payload = {
             "balance": info.balance,
             "equity": info.equity,
             "profit": info.profit,
             "margin": info.margin,
             "margin_free": info.margin_free,
-            "margin_level": info.margin_level,
+            "margin_level": margin_level,
             "currency": info.currency,
             "leverage": info.leverage,
             "trade_allowed": info.trade_allowed,
@@ -511,6 +524,9 @@ def trade_account_info() -> dict:
             "execution_soft_blockers": preflight.get("execution_soft_blockers"),
             "execution_blockers": preflight.get("execution_blockers"),
         }
+        if margin_level_note:
+            payload["margin_level_note"] = margin_level_note
+        return payload
 
     return _get_account_info()
 

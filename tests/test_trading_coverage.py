@@ -764,6 +764,19 @@ class TestTradeAccountInfo:
         result = _unwrap_mcp(trade_account_info())
         assert "error" in result.lower()
 
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_margin_level_is_null_when_no_open_margin(self):
+        mt5 = sys.modules["MetaTrader5"]
+        mt5.account_info.return_value = SimpleNamespace(
+            balance=10000, equity=10000, profit=0, margin=0,
+            margin_free=10000, margin_level=0, currency="USD",
+            leverage=100, trade_allowed=True, trade_expert=True,
+        )
+        # Call the raw wrapped function so assertions are not formatter-dependent.
+        result = trade_account_info.__wrapped__()
+        assert result.get("margin_level") is None
+        assert "N/A" in str(result.get("margin_level_note", ""))
+
 
 # ===================================================================
 #  _place_market_order (MT5 mocked)
