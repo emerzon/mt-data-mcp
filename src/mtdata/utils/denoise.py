@@ -1,8 +1,11 @@
 from typing import Any, Dict, List, Optional, Tuple
+import logging
 import math
 
 import numpy as np
 import pandas as pd
+
+_logger = logging.getLogger(__name__)
 from skimage.restoration import denoise_tv_chambolle as _denoise_tv_chambolle
 
 try:
@@ -643,7 +646,8 @@ def _denoise_series(
         mode = str(params.get('mode', 'interp'))
         try:
             y = _savgol_filter(x, window_length=window, polyorder=polyorder, mode=mode)
-        except Exception:
+        except Exception as exc:
+            _logger.warning("savgol_filter failed (window=%d, polyorder=%d): %s", window, polyorder, exc)
             return s
         return pd.Series(y, index=s.index)
     if method == 'tv':

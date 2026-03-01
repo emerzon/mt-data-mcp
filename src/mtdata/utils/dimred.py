@@ -287,7 +287,10 @@ class TSNEReducer(DimReducer):
         self.perplexity = float(perplexity)
         self.learning_rate = float(learning_rate)
         self.n_iter = int(max(250, n_iter))
-        self._model = _SKTSNE(n_components=self.n_components, perplexity=self.perplexity, learning_rate=self.learning_rate, n_iter=self.n_iter, init="pca")
+        import inspect
+        _tsne_params = inspect.signature(_SKTSNE).parameters
+        iter_kwarg = "max_iter" if "max_iter" in _tsne_params else "n_iter"
+        self._model = _SKTSNE(n_components=self.n_components, perplexity=self.perplexity, learning_rate=self.learning_rate, init="pca", **{iter_kwarg: self.n_iter})
 
     def supports_transform(self) -> bool:
         # sklearn TSNE does not support transforming new samples

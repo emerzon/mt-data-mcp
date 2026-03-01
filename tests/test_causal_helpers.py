@@ -112,7 +112,7 @@ class TestFormatSummary:
         ]
         result = _format_summary(rows, ["A", "B", "C", "D"], "pct", 0.05)
         lines = result.strip().split("\n")
-        # Skip the header line that contains "Effect <- Cause"
-        data_lines = [l for l in lines if "<-" in l and "Effect" not in l]
+        # Header now uses "←" so "<-" only appears in data lines
+        data_lines = [l for l in lines if "<-" in l]
         # First data line should be the one with lower p-value
         assert "C <- D" in data_lines[0]

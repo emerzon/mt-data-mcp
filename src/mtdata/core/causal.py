@@ -122,7 +122,7 @@ def _format_summary(rows: List[Dict[str, object]], symbols: List[str], transform
         f"Causal signal discovery (transform={transform}, alpha={alpha:.4f})",
         f"Symbols analysed: {', '.join(symbols)}",
         "",
-        "Effect <- Cause | Lag | p-value | Samples | Conclusion",
+        "Effect ← Cause | Lag | p-value | Samples | Conclusion",
         "-----------------------------------------------",
     ]
     if group_hint:

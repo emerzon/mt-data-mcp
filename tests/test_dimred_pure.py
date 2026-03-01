@@ -118,21 +118,18 @@ class TestIsomapReducer:
 
 
 class TestTSNEReducer:
-    @pytest.mark.xfail(reason="TSNEReducer uses deprecated n_iter param; pre-existing issue")
     def test_fit_transform(self):
         X = _synthetic_data()
         r = TSNEReducer(n_components=2, perplexity=10.0, n_iter=300)
         out = r.fit_transform(X)
         assert out.shape == (50, 2)
 
-    @pytest.mark.xfail(reason="TSNEReducer uses deprecated n_iter param; pre-existing issue")
     def test_no_transform(self):
         r = TSNEReducer(n_components=2, perplexity=10.0, n_iter=300)
         assert not r.supports_transform()
         with pytest.raises(RuntimeError):
             r.transform(_synthetic_data())
 
-    @pytest.mark.xfail(reason="TSNEReducer uses deprecated n_iter param; pre-existing issue")
     def test_info(self):
         info = TSNEReducer(n_components=2, perplexity=15.0, learning_rate=100.0, n_iter=500).info()
         assert info["perplexity"] == 15.0
@@ -187,7 +184,6 @@ class TestCreateReducer:
         r, p = create_reducer("laplacian", {"n_components": 2, "n_neighbors": 8})
         assert isinstance(r, LaplacianReducer)
 
-    @pytest.mark.xfail(reason="TSNEReducer uses deprecated n_iter param; pre-existing issue")
     def test_tsne(self):
         r, p = create_reducer("tsne", {"n_components": 2, "perplexity": 10, "n_iter": 300})
         assert isinstance(r, TSNEReducer)
