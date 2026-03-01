@@ -59,5 +59,8 @@ def test_trade_account_info_includes_execution_preflight_fields() -> None:
     assert out["terminal_tradeapi_disabled"] is False
     assert out["terminal_connected"] is True
     assert out["auto_trading_enabled"] is False
-    assert out["execution_ready"] is False
+    assert out["execution_ready"] is True
+    assert out["execution_ready_strict"] is False
+    assert out["execution_hard_blockers"] == []
+    assert "Terminal AutoTrading is disabled." in out["execution_soft_blockers"]
     assert "Terminal AutoTrading is disabled." in out["execution_blockers"]

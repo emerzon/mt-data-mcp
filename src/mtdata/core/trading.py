@@ -415,21 +415,24 @@ def _build_trade_preflight(mt5: Any, account_info: Any = None, terminal_info: An
     terminal_tradeapi_disabled = _coerce_optional_bool(getattr(term, "tradeapi_disabled", None)) if term is not None else None
     terminal_connected = _coerce_optional_bool(getattr(term, "connected", None)) if term is not None else None
 
-    blockers: List[str] = []
+    hard_blockers: List[str] = []
+    soft_blockers: List[str] = []
     if account_trade_allowed is False:
-        blockers.append("Account trading is disabled.")
+        hard_blockers.append("Account trading is disabled.")
     if account_trade_expert is False:
-        blockers.append("Expert trading is disabled for the account.")
+        hard_blockers.append("Expert trading is disabled for the account.")
     if terminal_trade_allowed is False:
-        blockers.append("Terminal AutoTrading is disabled.")
+        soft_blockers.append("Terminal AutoTrading is disabled.")
     if terminal_tradeapi_disabled is True:
-        blockers.append("Terminal API trading is disabled.")
+        hard_blockers.append("Terminal API trading is disabled.")
     if terminal_connected is False:
-        blockers.append("Terminal is not connected.")
+        hard_blockers.append("Terminal is not connected.")
 
     auto_trading_enabled = False
     if terminal_trade_allowed is True and terminal_tradeapi_disabled is not True:
         auto_trading_enabled = True
+
+    all_blockers = hard_blockers + soft_blockers
 
     return {
         "server": getattr(info, "server", None) if info is not None else None,
@@ -444,8 +447,11 @@ def _build_trade_preflight(mt5: Any, account_info: Any = None, terminal_info: An
         "terminal_connected": terminal_connected,
         "community_account": _coerce_optional_bool(getattr(term, "community_account", None)) if term is not None else None,
         "auto_trading_enabled": auto_trading_enabled,
-        "execution_ready": len(blockers) == 0,
-        "execution_blockers": blockers,
+        "execution_ready": len(hard_blockers) == 0,
+        "execution_ready_strict": len(all_blockers) == 0,
+        "execution_hard_blockers": hard_blockers,
+        "execution_soft_blockers": soft_blockers,
+        "execution_blockers": all_blockers,
     }
 
 
@@ -480,6 +486,9 @@ def trade_account_info() -> dict:
             "terminal_connected": preflight.get("terminal_connected"),
             "auto_trading_enabled": preflight.get("auto_trading_enabled"),
             "execution_ready": preflight.get("execution_ready"),
+            "execution_ready_strict": preflight.get("execution_ready_strict"),
+            "execution_hard_blockers": preflight.get("execution_hard_blockers"),
+            "execution_soft_blockers": preflight.get("execution_soft_blockers"),
             "execution_blockers": preflight.get("execution_blockers"),
         }
 
@@ -824,7 +833,7 @@ def _place_market_order(
     def _place_market_order():
         try:
             preflight = _build_trade_preflight(mt5)
-            if not preflight.get("execution_ready", True):
+            if not preflight.get("execution_ready_strict", preflight.get("execution_ready", True)):
                 return {
                     "error": "Trading not ready in MT5 terminal/account preflight.",
                     "preflight": preflight,
@@ -1014,7 +1023,7 @@ def _place_pending_order(
     def _place_pending_order():
         try:
             preflight = _build_trade_preflight(mt5)
-            if not preflight.get("execution_ready", True):
+            if not preflight.get("execution_ready_strict", preflight.get("execution_ready", True)):
                 return {
                     "error": "Trading not ready in MT5 terminal/account preflight.",
                     "preflight": preflight,
