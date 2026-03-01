@@ -136,6 +136,22 @@ def _crypto_day_week_identical(rows: List[Dict[str, Any]]) -> bool:
     return matched > 0
 
 
+def _crypto_price_display(value: Any) -> Optional[str]:
+    num = _to_float_or_none(value)
+    if num is None:
+        return None
+    abs_num = abs(num)
+    if abs_num >= 1.0:
+        decimals = 2
+    elif abs_num >= 0.01:
+        decimals = 4
+    elif abs_num >= 0.0001:
+        decimals = 6
+    else:
+        decimals = 8
+    return f"{num:.{decimals}f}"
+
+
 def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
     """
     Get fundamental data for a stock symbol.
@@ -548,6 +564,12 @@ def get_crypto_performance() -> Dict[str, Any]:
         
         items_list = df.to_dict(orient="records")
         warnings_out: List[str] = []
+        for row in items_list:
+            if not isinstance(row, dict) or "Price" not in row:
+                continue
+            price_display = _crypto_price_display(row.get("Price"))
+            if price_display is not None:
+                row["Price_display"] = price_display
         if _crypto_day_week_identical(items_list):
             for row in items_list:
                 if isinstance(row, dict) and "Perf Week" in row and "Perf WTD" not in row:

@@ -162,6 +162,24 @@ class TestFinvizService:
         
         assert result["success"] is True
         assert result["market"] == "crypto"
+        assert result["coins"][0]["Price_display"] == "45000.00"
+
+    @patch('finvizfinance.crypto.Crypto')
+    def test_get_crypto_performance_preserves_subcent_price_display(self, mock_crypto_class):
+        """Sub-cent tokens should include a non-truncated display price."""
+        from mtdata.services.finviz_service import get_crypto_performance
+
+        mock_crypto = MagicMock()
+        mock_df = pd.DataFrame([
+            {"Ticker": "SHIBUSD", "Price": "0.00001234", "Change": "2.5%"},
+        ])
+        mock_crypto.performance.return_value = mock_df
+        mock_crypto_class.return_value = mock_crypto
+
+        result = get_crypto_performance()
+
+        assert result["success"] is True
+        assert result["coins"][0]["Price_display"] == "0.00001234"
 
     @patch('finvizfinance.crypto.Crypto')
     def test_get_crypto_performance_adds_wtd_alias_when_day_week_identical(self, mock_crypto_class):
