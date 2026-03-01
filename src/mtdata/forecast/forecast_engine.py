@@ -478,6 +478,37 @@ def forecast_engine(
 
         # Get last timestamp and values
         last_epoch = float(df['time'].iloc[-1])
+
+        # Core run diagnostics to make model context explicit for users.
+        history_start_epoch: Optional[float]
+        history_end_epoch: Optional[float]
+        try:
+            history_start_epoch = float(df['time'].iloc[0])
+        except Exception:
+            history_start_epoch = None
+        try:
+            history_end_epoch = float(df['time'].iloc[-1])
+        except Exception:
+            history_end_epoch = None
+        if _use_client_tz():
+            fmt_time = _format_time_minimal_local
+        else:
+            fmt_time = _format_time_minimal
+        engine_diagnostics: Dict[str, Any] = {
+            "lookback_bars_requested": int(lookback) if lookback is not None else None,
+            "lookback_bars_fetched": int(need),
+            "history_bars_used": int(len(df)),
+            "target_points_used": int(len(target_series)),
+            "seasonality_used": int(seasonality),
+            "quantity": quantity_l,
+            "base_col_used": str(base_col),
+        }
+        if history_start_epoch is not None:
+            engine_diagnostics["history_start_epoch"] = history_start_epoch
+            engine_diagnostics["history_start_time"] = fmt_time(history_start_epoch)
+        if history_end_epoch is not None:
+            engine_diagnostics["history_end_epoch"] = history_end_epoch
+            engine_diagnostics["history_end_time"] = fmt_time(history_end_epoch)
         
         # Get symbol info for digits
         digits = None
@@ -647,6 +678,17 @@ def forecast_engine(
 
         if forecast_values is None:
             return {"error": f"Method '{method}' returned no forecast values"}
+
+        if not isinstance(metadata, dict):
+            metadata = {}
+        existing_diagnostics = metadata.get("diagnostics")
+        if not isinstance(existing_diagnostics, dict):
+            existing_diagnostics = {}
+        merged_diagnostics = dict(existing_diagnostics)
+        for k, v in engine_diagnostics.items():
+            if k not in merged_diagnostics:
+                merged_diagnostics[k] = v
+        metadata["diagnostics"] = merged_diagnostics
 
         # Prepare output arrays
         forecast_return_vals = None

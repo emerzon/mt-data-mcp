@@ -227,6 +227,15 @@ def test_forecast_engine_prefetched_non_ensemble_success_and_failures(monkeypatc
     assert len(out["forecast_price"]) == 2
     assert out["digits"] == 5
     assert out["params_used"] == {"used": True}
+    assert "diagnostics" in out
+    assert out["diagnostics"]["history_bars_used"] == 20
+    assert out["diagnostics"]["target_points_used"] >= 1
+    assert out["diagnostics"]["target_points_used"] <= 20
+    assert out["diagnostics"]["seasonality_used"] == 24
+    assert out["diagnostics"]["quantity"] == "return"
+    assert out["diagnostics"]["base_col_used"] == "__log_return"
+    assert out["diagnostics"]["lookback_bars_requested"] is None
+    assert out["diagnostics"]["lookback_bars_fetched"] >= 20
 
     FakeRegistry.current = NoneForecaster
     out = fe.forecast_engine(symbol="EURUSD", timeframe="H1", method="naive", prefetched_df=_df(20))
