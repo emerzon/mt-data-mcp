@@ -540,6 +540,13 @@ def fetch_ticks(
         with _symbol_ready_guard(symbol, info_before=_info_before) as (err, _info):
             if err:
                 return {"error": err}
+            price_digits = 0
+            try:
+                digits_raw = getattr(_info, "digits", None)
+                if isinstance(digits_raw, (int, float)):
+                    price_digits = max(0, int(digits_raw))
+            except Exception:
+                price_digits = 0
 
             # Normalized params only
             effective_limit = int(limit)
@@ -746,6 +753,8 @@ def fetch_ticks(
                     "mid": _series_stats(df_stats["mid"], total_count=len(df_stats)),
                 },
             }
+            if price_digits > 0:
+                out["price_precision"] = int(price_digits)
             if has_last:
                 out["stats"]["last"] = _series_stats(df_stats["last"], total_count=len(df_stats))
 
@@ -837,6 +846,21 @@ def fetch_ticks(
                     if detailed_stats
                     else {"kind": volume_kind}
                 )
+
+            if price_digits > 0:
+                stats_display: Dict[str, Dict[str, str]] = {}
+                for field in ("bid", "ask", "mid", "last"):
+                    section = out.get("stats", {}).get(field)
+                    if not isinstance(section, dict):
+                        continue
+                    display_section: Dict[str, str] = {}
+                    for metric, value in section.items():
+                        if isinstance(value, (int, float)) and math.isfinite(float(value)):
+                            display_section[metric] = f"{float(value):.{price_digits}f}"
+                    if display_section:
+                        stats_display[field] = display_section
+                if stats_display:
+                    out["stats_display"] = stats_display
             return out
 
         # If simplify mode requests approximation or resampling, use shared path

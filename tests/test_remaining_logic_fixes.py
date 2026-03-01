@@ -31,6 +31,13 @@ def _mock_symbol_ready_guard(*args: Any, **kwargs: Any) -> Iterator[Tuple[None, 
     yield None, MagicMock()
 
 
+@contextmanager
+def _mock_symbol_ready_guard_digits(*args: Any, **kwargs: Any) -> Iterator[Tuple[None, MagicMock]]:
+    info = MagicMock()
+    info.digits = 2
+    yield None, info
+
+
 def test_selectkbest_dimred_reduces_without_target_y() -> None:
     X = pd.DataFrame(
         {
@@ -107,3 +114,31 @@ def test_fetch_ticks_select_simplify_mode_no_nameerror(mock_copy_ticks: MagicMoc
 
     assert res.get("success") is True
     assert "error" not in res
+
+
+@patch("mtdata.services.data_service._symbol_ready_guard", _mock_symbol_ready_guard_digits)
+@patch("mtdata.services.data_service._mt5_copy_ticks_range")
+def test_fetch_ticks_summary_adds_precision_display_stats(mock_copy_ticks: MagicMock) -> None:
+    now = datetime.now(timezone.utc)
+    ticks = []
+    for i in range(5):
+        t = now - timedelta(seconds=5 - i)
+        ticks.append(
+            {
+                "time": t.timestamp(),
+                "bid": 65601.0 + i,
+                "ask": 65601.5 + i,
+                "last": 65601.0 + i,
+                "volume": 1.0,
+                "flags": 1,
+                "volume_real": 0.0,
+            }
+        )
+    mock_copy_ticks.return_value = ticks
+
+    res = fetch_ticks(symbol="BTCUSD", limit=5, output="summary")
+
+    assert res.get("success") is True
+    assert res.get("price_precision") == 2
+    assert res["stats_display"]["bid"]["first"] == "65601.00"
+    assert res["stats_display"]["ask"]["first"] == "65601.50"
