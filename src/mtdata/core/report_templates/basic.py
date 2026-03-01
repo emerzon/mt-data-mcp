@@ -387,6 +387,34 @@ def _compute_compact_trend(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any
     }
 
 
+def _extract_forecast_values(payload: Dict[str, Any]) -> Optional[List[float]]:
+    if not isinstance(payload, dict):
+        return None
+    for key in ('forecast_price', 'forecast_return', 'forecast_series', 'forecast'):
+        vals = payload.get(key)
+        if isinstance(vals, list) and vals:
+            parsed: List[float] = []
+            for value in vals:
+                try:
+                    parsed.append(float(value))
+                except Exception:
+                    parsed = []
+                    break
+            if parsed:
+                return parsed
+    return None
+
+
+def _is_degenerate_forecast_payload(payload: Dict[str, Any]) -> bool:
+    vals = _extract_forecast_values(payload)
+    if not isinstance(vals, list) or len(vals) < 3:
+        return False
+    first = vals[0]
+    span = max(vals) - min(vals)
+    tol = max(1e-9, abs(first) * 1e-6)
+    return span <= tol
+
+
 def template_basic(
     symbol: str,
     horizon: int,
@@ -655,24 +683,101 @@ def template_basic(
     if best is not None:
         best_name, best_stats = best
         from ..forecast import forecast_generate
-        fc = _get_raw_result(forecast_generate, symbol=symbol, timeframe=tf, method=best_name, horizon=int(horizon))
-        if 'error' in fc:
-            report['sections']['forecast'] = {'error': fc['error'], 'method': best_name}
+        bt_results = bt.get('results') if isinstance(bt, dict) else {}
+        stats_by_method: Dict[str, Dict[str, Any]] = {}
+        if isinstance(bt_results, dict):
+            for method_name, method_stats in bt_results.items():
+                if isinstance(method_stats, dict):
+                    stats_by_method[str(method_name)] = method_stats
+
+        ranked_methods: List[str] = []
+        for row in ranking:
+            if not isinstance(row, dict):
+                continue
+            method_name = str(row.get('method') or '').strip()
+            if method_name and method_name not in ranked_methods:
+                ranked_methods.append(method_name)
+
+        candidate_methods: List[str] = [best_name]
+        for method_name in ranked_methods:
+            if method_name not in candidate_methods:
+                candidate_methods.append(method_name)
+        for method_name in stats_by_method.keys():
+            if method_name not in candidate_methods:
+                candidate_methods.append(method_name)
+
+        selected_method = best_name
+        selected_stats: Dict[str, Any] = dict(best_stats or {})
+        selected_forecast: Optional[Dict[str, Any]] = None
+        fallback_notes: List[str] = []
+        first_error: Optional[str] = None
+        first_degenerate: Optional[Dict[str, Any]] = None
+        first_degenerate_method: Optional[str] = None
+
+        for method_name in candidate_methods:
+            fc = _get_raw_result(
+                forecast_generate,
+                symbol=symbol,
+                timeframe=tf,
+                method=method_name,
+                horizon=int(horizon),
+            )
+            if 'error' in fc:
+                if first_error is None:
+                    first_error = str(fc.get('error') or '')
+                fallback_notes.append(f"{method_name}: forecast error ({fc.get('error')})")
+                continue
+            if _is_degenerate_forecast_payload(fc):
+                if first_degenerate is None:
+                    first_degenerate = fc
+                    first_degenerate_method = method_name
+                fallback_notes.append(f"{method_name}: degenerate forecast")
+                continue
+            selected_method = method_name
+            selected_stats = dict(stats_by_method.get(method_name) or best_stats or {})
+            selected_forecast = fc
+            break
+
+        if selected_forecast is None and first_degenerate is not None:
+            selected_method = first_degenerate_method or best_name
+            selected_stats = dict(stats_by_method.get(selected_method) or best_stats or {})
+            selected_forecast = first_degenerate
+
+        if selected_forecast is None:
+            report['sections']['forecast'] = {
+                'error': first_error or 'No usable forecast generated.',
+                'method': best_name,
+            }
         else:
             report['sections']['forecast'] = {
-                'method': best_name,
-                'forecast_price': fc.get('forecast_price'),
-                'lower_price': fc.get('lower_price'),
-                'upper_price': fc.get('upper_price'),
-                'trend': fc.get('trend'),
-                'ci_alpha': fc.get('ci_alpha'),
+                'method': selected_method,
+                'forecast_price': selected_forecast.get('forecast_price'),
+                'lower_price': selected_forecast.get('lower_price'),
+                'upper_price': selected_forecast.get('upper_price'),
+                'trend': selected_forecast.get('trend'),
+                'ci_alpha': selected_forecast.get('ci_alpha'),
             }
-        report['sections']['backtest']['best_method'] = {'method': best_name, 'stats': {
-            'avg_rmse': best_stats.get('avg_rmse'),
-            'avg_mae': best_stats.get('avg_mae'),
-            'avg_directional_accuracy': best_stats.get('avg_directional_accuracy'),
-            'successful_tests': best_stats.get('successful_tests'),
-        }}
+            if selected_method != best_name:
+                report['sections']['forecast']['fallback_from'] = best_name
+                report['sections']['forecast']['fallback_reason'] = 'initial best method produced a degenerate forecast'
+            if fallback_notes:
+                report['sections']['forecast']['selection_warnings'] = fallback_notes
+
+        best_method_payload: Dict[str, Any] = {
+            'method': selected_method if selected_forecast is not None else best_name,
+            'stats': {
+                'avg_rmse': selected_stats.get('avg_rmse'),
+                'avg_mae': selected_stats.get('avg_mae'),
+                'avg_directional_accuracy': selected_stats.get('avg_directional_accuracy'),
+                'successful_tests': selected_stats.get('successful_tests'),
+            },
+        }
+        if selected_forecast is not None and selected_method != best_name:
+            best_method_payload['initial_method'] = best_name
+            best_method_payload['selection_warning'] = 'Initial best method forecast was degenerate; fallback applied.'
+        if fallback_notes:
+            best_method_payload['selection_warnings'] = fallback_notes
+        report['sections']['backtest']['best_method'] = best_method_payload
 
     # Barriers (grid)
     from ..forecast import forecast_barrier_optimize

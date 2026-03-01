@@ -876,6 +876,76 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
     @patch(f"{_BASIC_MODULE}.parse_table_tail")
+    @patch(f"{_BASIC_MODULE}.pick_best_forecast_method")
+    @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
+    @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
+    def test_basic_falls_back_when_best_forecast_is_degenerate(
+        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
+        mock_now, mock_raw,
+    ):
+        candle_rows = _mock_candle_data()["rows"]
+        mock_tail.return_value = candle_rows
+        mock_pick.return_value = (
+            "sf_autoarima",
+            {"avg_rmse": 0.9, "avg_mae": 0.7, "avg_directional_accuracy": 0.2, "successful_tests": 20},
+        )
+        mock_sum_bar.return_value = {"best": {"tp": 1, "sl": 0.5, "edge": 0.3}}
+
+        def raw_side_effect(func, *args, **kwargs):
+            name = func.__name__ if hasattr(func, '__name__') else str(func)
+            if "candle" in name.lower() or "data_fetch" in name.lower():
+                return _mock_candle_data()
+            if "pivot" in name.lower():
+                return _mock_pivot_data()
+            if "volatility" in name.lower():
+                return _mock_vol_data()
+            if "backtest" in name.lower():
+                return {
+                    "results": {
+                        "sf_autoarima": {
+                            "avg_rmse": 0.9,
+                            "avg_mae": 0.7,
+                            "avg_directional_accuracy": 0.2,
+                            "successful_tests": 20,
+                        },
+                        "naive": {
+                            "avg_rmse": 0.95,
+                            "avg_mae": 0.8,
+                            "avg_directional_accuracy": 0.1,
+                            "successful_tests": 20,
+                        },
+                    }
+                }
+            if "forecast_generate" in name.lower() or "generate" in name.lower():
+                method = kwargs.get("method")
+                if method == "sf_autoarima":
+                    return {"forecast_price": [65290.6] * 12}
+                if method == "naive":
+                    return {"forecast_price": [65290.6, 65320.0, 65380.0, 65440.0]}
+                return {"error": f"unexpected method: {method}"}
+            if "barrier" in name.lower():
+                return _mock_barrier_data()
+            if "pattern" in name.lower():
+                return _mock_patterns_data()
+            return {"data": "fallback"}
+
+        mock_raw.side_effect = raw_side_effect
+
+        from mtdata.core.report_templates.basic import template_basic
+        report = template_basic("EURUSD", 12, None, {})
+
+        forecast = report["sections"].get("forecast", {})
+        assert forecast.get("method") == "naive"
+        assert forecast.get("fallback_from") == "sf_autoarima"
+        assert any("degenerate" in str(v).lower() for v in forecast.get("selection_warnings", []))
+
+        best_method = report["sections"].get("backtest", {}).get("best_method", {})
+        assert best_method.get("method") == "naive"
+        assert best_method.get("initial_method") == "sf_autoarima"
+
+    @patch(f"{_BASIC_MODULE}._get_raw_result")
+    @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
+    @patch(f"{_BASIC_MODULE}.parse_table_tail")
     @patch(f"{_BASIC_MODULE}.pick_best_forecast_method", return_value=None)
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
