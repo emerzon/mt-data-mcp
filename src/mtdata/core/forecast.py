@@ -433,9 +433,6 @@ def forecast_list_methods(
             desc = str(item.get("description") or "").strip()
             if desc:
                 row["description"] = desc.splitlines()[0].strip()
-            reqs = item.get("requires")
-            if isinstance(reqs, list) and reqs:
-                row["requires"] = [str(v) for v in reqs if v not in (None, "")]
             cat = method_to_category.get(method_name)
             row["category"] = cat or "other"
             params = item.get("params")

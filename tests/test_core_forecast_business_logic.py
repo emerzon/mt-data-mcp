@@ -244,6 +244,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "category_summary" in compact
     assert "params_count" in compact["methods"][0]
     assert "params" not in compact["methods"][0]
+    assert all("requires" not in row for row in compact["methods"])
     assert compact["methods_shown"] == 2
     assert compact["methods_hidden"] == 0
 
