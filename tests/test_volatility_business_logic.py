@@ -124,6 +124,9 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     assert out["success"] is True
     assert out["method"] == "ewma"
     assert out["params_used"]["lookback"] == 80
+    assert out["params_used"]["lambda_source"] == "lambda_"
+    assert "params_explained" in out
+    assert "lambda_" in out["params_explained"]
 
     out = vol.forecast_volatility(
         symbol="EURUSD",

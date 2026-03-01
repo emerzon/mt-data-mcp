@@ -312,6 +312,22 @@ def _realized_kernel_variance(
     return float(rk / max(1, n))
 
 
+def _ewma_param_explanations(lambda_source: str) -> Dict[str, str]:
+    """Human-readable explanations for EWMA parameters in API output."""
+    out = {
+        "lambda_": (
+            "EWMA decay factor for volatility weights. "
+            "Higher values retain older bars longer; lower values react faster to recent moves."
+        ),
+    }
+    if lambda_source == "halflife":
+        out["halflife"] = (
+            "Half-life in bars used to derive lambda_ "
+            "(lambda_ = 1 - ln(2) / halflife in this implementation)."
+        )
+    return out
+
+
 def forecast_volatility(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
@@ -636,20 +652,32 @@ def forecast_volatility(
         bpy = float(365.0*24.0*3600.0/float(tf_secs))
 
         if method_l == 'ewma':
-            lb = int(p.get('lookback', 1500)); halflife = p.get('halflife'); lam = p.get('lambda_', 0.94)
+            lb = int(p.get('lookback', 1500))
+            halflife = p.get('halflife')
+            lam = p.get('lambda_', 0.94)
+            lambda_source = "lambda_"
+            halflife_used = None
             tail = r[-lb:] if r.size >= lb else r
             if halflife is not None:
-                try: lam = 1.0 - math.log(2.0) / float(halflife)
-                except Exception: lam = 0.94
+                try:
+                    halflife_used = float(halflife)
+                    lam = 1.0 - math.log(2.0) / halflife_used
+                    lambda_source = "halflife"
+                except Exception:
+                    lam = 0.94
             lam = float(lam)
             w = np.power(lam, np.arange(len(tail)-1, -1, -1, dtype=float)); w /= float(np.sum(w))
             sigma2 = float(np.sum(w * (tail * tail)))
             sbar = math.sqrt(max(0.0, sigma2))
             hsig = float(sbar * math.sqrt(max(1, int(horizon))))
+            params_used = {"lookback": lb, "lambda_": lam, "lambda_source": lambda_source}
+            if halflife_used is not None:
+                params_used["halflife"] = halflife_used
             return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
                     "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
                     "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
-                    "params_used": {"lookback": lb, "lambda_": lam},
+                    "params_used": params_used,
+                    "params_explained": _ewma_param_explanations(lambda_source),
                     "denoise_used": dn_spec_used}
 
         if method_l in {'parkinson','gk','rs','yang_zhang','rolling_std'}:
@@ -1049,7 +1077,8 @@ def forecast_volatility(
             if lam is not None and (hl is None):
                 alpha = 1.0 - float(lam)
                 var_series = pd.Series(r).ewm(alpha=alpha, adjust=False).var(bias=False)
-                params_used['lambda'] = float(lam)
+                params_used['lambda_'] = float(lam)
+                params_used['lambda_source'] = 'lambda_'
             else:
                 # default halflife if not provided
                 if hl is None:
@@ -1058,6 +1087,7 @@ def forecast_volatility(
                     hl = float(p.get('halflife', default_hl))
                 var_series = pd.Series(r).ewm(halflife=float(hl), adjust=False).var(bias=False)
                 params_used['halflife'] = float(hl)
+                params_used['lambda_source'] = 'halflife'
             v = float(var_series.iloc[-1])
             v = v if math.isfinite(v) and v >= 0 else float('nan')
             sigma_bar = math.sqrt(v) if math.isfinite(v) and v >= 0 else float('nan')
@@ -1204,7 +1234,7 @@ def forecast_volatility(
         sigma_ann = sigma_bar * ann_factor if math.isfinite(sigma_bar) and math.isfinite(ann_factor) else float('nan')
         sigma_h_ann = sigma_h_bar * ann_factor if math.isfinite(sigma_h_bar) and math.isfinite(ann_factor) else float('nan')
 
-        return {
+        out = {
             "success": True,
             "symbol": symbol,
             "timeframe": timeframe,
@@ -1220,6 +1250,10 @@ def forecast_volatility(
             "as_of": as_of or None,
             "denoise_used": dn_spec_used,
         }
+        if method_l == 'ewma':
+            lam_src = str(params_used.get('lambda_source', 'lambda_'))
+            out["params_explained"] = _ewma_param_explanations(lam_src)
+        return out
     except Exception as e:
         return {"error": f"Error computing volatility forecast: {str(e)}"}
 

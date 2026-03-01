@@ -517,6 +517,9 @@ class TestForecastVolatilityEWMA:
                 params={"lambda_": 0.97})
             assert result.get("success") is True
             assert result["params_used"]["lambda_"] == pytest.approx(0.97)
+            assert result["params_used"]["lambda_source"] == "lambda_"
+            assert "params_explained" in result
+            assert "decay factor" in result["params_explained"]["lambda_"].lower()
 
     def test_ewma_custom_halflife(self):
         with _mock_vol_env():
@@ -524,6 +527,9 @@ class TestForecastVolatilityEWMA:
                 "EURUSD", "H1", 1, method="ewma",
                 params={"halflife": 30})
             assert result.get("success") is True
+            assert result["params_used"]["lambda_source"] == "halflife"
+            assert result["params_used"]["halflife"] == pytest.approx(30.0)
+            assert "halflife" in result["params_explained"]
 
     def test_ewma_horizon_gt1(self):
         with _mock_vol_env():
