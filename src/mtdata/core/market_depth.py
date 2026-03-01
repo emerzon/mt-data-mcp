@@ -17,6 +17,23 @@ def market_depth_fetch(symbol: str) -> Dict[str, Any]:
         # Ensure symbol is selected
         if not mt5.symbol_select(symbol, True):
             return {"error": f"Failed to select symbol {symbol}: {mt5.last_error()}"}
+
+        symbol_info = mt5.symbol_info(symbol)
+        if symbol_info is None:
+            return {"error": f"Symbol {symbol} not found"}
+
+        digits = max(0, int(getattr(symbol_info, "digits", 0) or 0))
+
+        def _price_display(value: Any) -> Any:
+            if value is None:
+                return None
+            try:
+                val = float(value)
+                if digits > 0:
+                    return f"{val:.{digits}f}"
+                return str(val)
+            except Exception:
+                return None
         
         # Try to get market depth first
         depth = mt5.market_book_get(symbol)
@@ -29,6 +46,7 @@ def market_depth_fetch(symbol: str) -> Dict[str, Any]:
             for level in depth:
                 order_data = {
                     "price": float(level["price"]),
+                    "price_display": _price_display(level["price"]),
                     "volume": float(level["volume"]),
                     "volume_real": float(level["volume_real"])
                 }
@@ -42,17 +60,13 @@ def market_depth_fetch(symbol: str) -> Dict[str, Any]:
                 "success": True,
                 "symbol": symbol,
                 "type": "full_depth",
+                "price_precision": digits,
                 "data": {
                     "buy_orders": buy_orders,
                     "sell_orders": sell_orders
                 }
             }
         else:
-            # DOM not available, fall back to symbol tick info
-            symbol_info = mt5.symbol_info(symbol)
-            if symbol_info is None:
-                return {"error": f"Symbol {symbol} not found"}
-            
             # Get current tick
             tick = mt5.symbol_info_tick(symbol)
             if tick is None:
@@ -62,10 +76,14 @@ def market_depth_fetch(symbol: str) -> Dict[str, Any]:
                 "success": True,
                 "symbol": symbol,
                 "type": "tick_data",
+                "price_precision": digits,
                 "data": {
                     "bid": float(tick.bid) if tick.bid else None,
                     "ask": float(tick.ask) if tick.ask else None,
                     "last": float(tick.last) if tick.last else None,
+                    "bid_display": _price_display(tick.bid),
+                    "ask_display": _price_display(tick.ask),
+                    "last_display": _price_display(tick.last),
                     "volume": int(tick.volume) if tick.volume else None,
                     "time": int(_mt5_epoch_to_utc(float(tick.time))) if tick.time else None,
                     # spread removed from outputs by request
