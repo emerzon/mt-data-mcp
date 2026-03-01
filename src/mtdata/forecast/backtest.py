@@ -75,8 +75,9 @@ def _compute_performance_metrics(
     avg_return = float(np.mean(arr))
     win_rate = float(np.mean(arr > 0.0)) if arr.size > 0 else float('nan')
     std_ret = float(np.std(arr, ddof=1)) if arr.size > 1 else 0.0
+    enough_trades = int(arr.size) >= int(_MIN_ANNUALIZATION_TRADES)
     sharpe = float('nan')
-    if std_ret > 1e-12 and math.isfinite(trades_per_year) and trades_per_year > 0:
+    if enough_trades and std_ret > 1e-12 and math.isfinite(trades_per_year) and trades_per_year > 0:
         sharpe = float((avg_return / std_ret) * math.sqrt(trades_per_year))
 
     equity = np.cumprod(1.0 + arr)
@@ -88,7 +89,7 @@ def _compute_performance_metrics(
     years = float(arr.size / trades_per_year) if math.isfinite(trades_per_year) and trades_per_year > 0 else float('nan')
     annual_return = float('nan')
     if (
-        arr.size >= _MIN_ANNUALIZATION_TRADES
+        enough_trades
         and math.isfinite(years)
         and years >= _MIN_ANNUALIZATION_YEARS
         and equity.size > 0
@@ -114,6 +115,12 @@ def _compute_performance_metrics(
         "trades_per_year": trades_per_year,
         "slippage_bps": float(slippage_bps),
     })
+    if not enough_trades:
+        metrics["sample_warning"] = (
+            f"Only {int(arr.size)} trades. Annualized risk metrics "
+            f"(Sharpe/Calmar/annual_return) are suppressed below {_MIN_ANNUALIZATION_TRADES} trades."
+        )
+        metrics["min_trades_for_annualization"] = float(_MIN_ANNUALIZATION_TRADES)
     return metrics
 
 

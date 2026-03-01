@@ -100,6 +100,8 @@ class TestComputePerformanceMetrics:
         assert m["num_trades"] == 1.0
         # std with ddof=1 is 0 for single value
         assert m.get("sharpe_ratio") is not None
+        assert math.isnan(float(m.get("sharpe_ratio", 0.0)))
+        assert "sample_warning" in m
 
     def test_large_dataset_annualization(self):
         np.random.seed(42)

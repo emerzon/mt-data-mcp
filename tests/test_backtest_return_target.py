@@ -113,8 +113,11 @@ def test_performance_metrics_skip_annualization_for_short_samples() -> None:
         horizon=12,
         slippage_bps=0.0,
     )
+    assert np.isnan(float(metrics["sharpe_ratio"]))
     assert np.isnan(float(metrics["annual_return"]))
     assert np.isnan(float(metrics["calmar_ratio"]))
+    assert "sample_warning" in metrics
+    assert int(metrics["min_trades_for_annualization"]) == 30
 
 
 def test_backtest_price_target_trade_returns_vary_by_forecast_implied_exit() -> None:
