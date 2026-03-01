@@ -860,7 +860,7 @@ def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> None:
 def patterns_detect(
     symbol: str,
     timeframe: Optional[TimeframeLiteral] = None,
-    mode: Literal['candlestick', 'classic', 'elliott'] = 'candlestick',  # type: ignore
+    mode: Literal['candlestick', 'classic', 'chart', 'elliott'] = 'candlestick',  # type: ignore
     limit: int = 1000,
     # Candlestick specific
     min_strength: float = 0.95,
@@ -896,6 +896,7 @@ def patterns_detect(
         Pattern detection method:
         - "candlestick": Japanese candlestick patterns (Doji, Hammer, Engulfing, etc.)
         - "classic": Chart patterns (Head & Shoulders, Triangles, Flags, etc.)
+        - "chart": Alias for classic chart patterns
         - "elliott": Elliott Wave patterns
     
     limit : int, optional (default=1000)
@@ -979,7 +980,11 @@ def patterns_detect(
         if not tf_norm:
             tf_norm = None
 
-        if mode == 'candlestick':
+        mode_value = str(mode).strip().lower()
+        if mode_value == 'chart':
+            mode_value = 'classic'
+
+        if mode_value == 'candlestick':
             tf_single = tf_norm or "H1"
             return _detect_candlestick_patterns(
                 symbol=symbol,
@@ -992,7 +997,7 @@ def patterns_detect(
                 top_k=top_k,
             )
 
-        elif mode == 'classic':
+        elif mode_value == 'classic':
             tf_single = tf_norm or "H1"
             # Fetch and prepare data using shared helper
             df, err = _fetch_pattern_data(symbol, tf_single, limit, denoise)
@@ -1027,7 +1032,7 @@ def patterns_detect(
                         "engine_errors": engine_errors,
                     }
                 resp = _build_pattern_response(
-                    symbol, tf_single, limit, mode, [],
+                    symbol, tf_single, limit, mode_value, [],
                     include_completed, include_series, series_time, df
                 )
                 resp["engine"] = "ensemble" if (bool(ensemble) or len(engines) > 1) else engines[0]
@@ -1060,7 +1065,7 @@ def patterns_detect(
                 out_list = list(non_empty.get(only_engine, []))
 
             resp = _build_pattern_response(
-                symbol, tf_single, limit, mode, out_list,
+                symbol, tf_single, limit, mode_value, out_list,
                 include_completed, include_series, series_time, df
             )
             resp["engine"] = "ensemble" if run_ensemble else next(iter(non_empty.keys()))
@@ -1078,7 +1083,7 @@ def patterns_detect(
                 resp["engine_errors"] = engine_errors
             return resp
 
-        elif mode == 'elliott':
+        elif mode_value == 'elliott':
             cfg = _ElliottCfg()
             _apply_config_to_obj(cfg, config)
 
@@ -1090,7 +1095,7 @@ def patterns_detect(
 
                 out_list = _format_elliott_patterns(df, cfg)
                 return _build_pattern_response(
-                    symbol, tf_norm, limit, mode, out_list,
+                    symbol, tf_norm, limit, mode_value, out_list,
                     include_completed, include_series, series_time, df
                 )
 
@@ -1146,7 +1151,7 @@ def patterns_detect(
                 "symbol": symbol,
                 "timeframe": "ALL",
                 "lookback": int(limit),
-                "mode": mode,
+                "mode": mode_value,
                 "scanned_timeframes": scanned_timeframes,
                 "findings": findings,
                 "patterns": combined_patterns,
@@ -1159,7 +1164,7 @@ def patterns_detect(
             return resp
         
         else:
-            return {"error": f"Unknown mode: {mode}"}
+            return {"error": f"Unknown mode: {mode}. Use candlestick, classic/chart, or elliott."}
 
     except Exception as e:
         return {"error": f"Error detecting patterns: {str(e)}"}
