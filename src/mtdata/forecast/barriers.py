@@ -561,7 +561,7 @@ def forecast_barrier_optimize(
         'profit_factor',
         'min_loss_prob',
         'utility',
-    ] = 'edge',
+    ] = 'ev',
     return_grid: bool = True,
     top_k: Optional[int] = None,
     output: Literal['full','summary'] = 'full',
@@ -632,7 +632,7 @@ def forecast_barrier_optimize(
             'utility',
         }
         if objective_val not in valid_objectives:
-            objective_val = 'edge'
+            objective_val = 'ev'
         objective_changed = objective_val != objective_requested
 
         if top_k is not None:
@@ -1141,6 +1141,27 @@ def forecast_barrier_optimize(
             "grid": grid_out,
             "no_candidates": no_candidates,
         }
+        best = results[0] if results else None
+        if isinstance(best, dict):
+            warnings_out: List[str] = []
+            best_ev = best.get("ev")
+            try:
+                if best_ev is not None and float(best_ev) < 0:
+                    warnings_out.append(
+                        "Best candidate has negative EV; objective preference may not align with profitability."
+                    )
+            except Exception:
+                pass
+            best_kelly = best.get("kelly")
+            try:
+                if best_kelly is not None and float(best_kelly) < 0:
+                    warnings_out.append(
+                        "Best candidate has negative Kelly fraction; sizing should be zero or very conservative."
+                    )
+            except Exception:
+                pass
+            if warnings_out:
+                out["selection_warnings"] = warnings_out
         if warning is not None:
             out["warning"] = warning
         if objective_changed:

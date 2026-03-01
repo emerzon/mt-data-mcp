@@ -450,9 +450,40 @@ class TestForecastBarriers(unittest.TestCase):
             objective="not_a_real_objective",
         )
         self.assertTrue(result.get("success"))
-        self.assertEqual(result.get("objective"), "edge")
+        self.assertEqual(result.get("objective"), "ev")
         self.assertEqual(result.get("objective_requested"), "not_a_real_objective")
-        self.assertEqual(result.get("objective_used"), "edge")
+        self.assertEqual(result.get("objective_used"), "ev")
+
+    def test_forecast_barrier_optimize_warns_on_negative_ev_best(self):
+        self._set_flat_history(1.0)
+        paths = np.array([
+            [1.0030, 1.0040, 1.0050],
+            [1.0030, 1.0020, 1.0010],
+            [1.0040, 1.0060, 1.0070],
+            [1.0030, 0.9900, 0.9800],
+            [0.9740, 0.9730, 0.9720],
+        ])
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=3,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.25,
+                tp_max=0.25,
+                tp_steps=1,
+                sl_min=2.5,
+                sl_max=2.5,
+                sl_steps=1,
+                objective="edge",
+                return_grid=True,
+            )
+        self.assertTrue(result.get("success"))
+        self.assertLess(float(result["best"]["ev"]), 0.0)
+        self.assertIn("selection_warnings", result)
 
     def test_forecast_barrier_optimize_flags_no_candidates(self):
         result = forecast_barrier_optimize(

@@ -755,7 +755,7 @@ def forecast_barrier_optimize(
         'profit_factor',
         'min_loss_prob',
         'utility',
-    ] = 'edge',  # type: ignore
+    ] = 'ev',  # type: ignore
     return_grid: bool = True,
     top_k: Optional[int] = None,
     output: Literal['full','summary'] = 'full',  # type: ignore
