@@ -496,6 +496,15 @@ def forecast_barrier_hit_probabilities(
             "edge": float(edge),
             "tp_hit_prob_by_t": [float(v) for v in tp_any_curve],
             "sl_hit_prob_by_t": [float(v) for v in sl_any_curve],
+            "hit_prob_by_t": [
+                {
+                    "bar": int(i + 1),
+                    "tp_hit_prob": float(tp_any_curve[i]),
+                    "sl_hit_prob": float(sl_any_curve[i]),
+                    "t_seconds": int((i + 1) * tf_secs) if tf_secs > 0 else None,
+                }
+                for i in range(H)
+            ],
             "time_to_tp_bars": tp_stats,
             "time_to_sl_bars": sl_stats,
             "time_to_tp_seconds": {k: _finite_or_none(v * tf_secs) for k, v in tp_stats.items()},
