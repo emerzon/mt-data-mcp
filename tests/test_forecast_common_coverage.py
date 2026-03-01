@@ -561,6 +561,21 @@ class TestFormatForecastOutput:
         )
         assert result["forecast_epoch"] == [1060.0, 1120.0, 1180.0]
 
+    def test_forecast_time_anchor_metadata_is_explicit(self):
+        vals = np.array([1.0, 2.0])
+        result = _format_forecast_output(
+            forecast_values=vals, last_epoch=1000.0, tf_secs=300,
+            horizon=2, base_col="close", df=self._make_df(),
+            ci_alpha=None, ci_values=None, method="naive",
+            quantity="price", denoise_used=False,
+        )
+        assert result["last_observation_epoch"] == 1000.0
+        assert result["forecast_start_epoch"] == 1300.0
+        assert result["forecast_start_gap_seconds"] == 300.0
+        assert result["forecast_start_gap_bars"] == 1.0
+        assert result["forecast_step_seconds"] == 300
+        assert result["forecast_anchor"] == "next_timeframe_bar_after_last_observation"
+
 
 # ===================================================================
 # 12. _bars_per_year

@@ -218,11 +218,35 @@ def _format_forecast_output(
         future_times = [_format_time_minimal(e) for e in future_epochs]
 
     # Build base result
+    if _use_ctz:
+        last_observation_time = _format_time_minimal_local(float(last_epoch))
+    else:
+        last_observation_time = _format_time_minimal(float(last_epoch))
+    forecast_start_epoch = float(future_epochs[0]) if future_epochs else None
+    forecast_start_time = future_times[0] if future_times else None
+    forecast_start_gap_seconds = (
+        float(forecast_start_epoch - float(last_epoch))
+        if forecast_start_epoch is not None
+        else None
+    )
+    forecast_start_gap_bars = (
+        float(forecast_start_gap_seconds) / float(tf_secs)
+        if forecast_start_gap_seconds is not None and tf_secs
+        else None
+    )
     result: Dict[str, Any] = {
         "success": True,
         "method": method,
         "horizon": horizon,
         "base_col": base_col,
+        "last_observation_time": last_observation_time,
+        "last_observation_epoch": float(last_epoch),
+        "forecast_start_time": forecast_start_time,
+        "forecast_start_epoch": forecast_start_epoch,
+        "forecast_start_gap_seconds": forecast_start_gap_seconds,
+        "forecast_start_gap_bars": forecast_start_gap_bars,
+        "forecast_anchor": "next_timeframe_bar_after_last_observation",
+        "forecast_step_seconds": int(tf_secs),
         "forecast_time": future_times,
         "forecast_epoch": future_epochs,
     }
