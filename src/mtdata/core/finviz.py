@@ -32,6 +32,19 @@ from ..services.finviz_service import (
 
 logger = logging.getLogger(__name__)
 
+_PAIR_SUFFIXES = {"USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"}
+
+
+def _looks_like_non_equity_symbol(symbol: str) -> bool:
+    s = str(symbol or "").strip().upper()
+    if not s:
+        return False
+    if "/" in s or ":" in s:
+        return True
+    if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha() and s[3:] in _PAIR_SUFFIXES:
+        return True
+    return False
+
 
 @mcp.tool()
 def finviz_fundamentals(symbol: str) -> Dict[str, Any]:
@@ -98,7 +111,15 @@ def finviz_news(symbol: Optional[str] = None, limit: int = 20, page: int = 1) ->
         List of news items with title, link, date, source
     """
     if symbol:
-        return get_stock_news(symbol, limit=limit, page=page)
+        symbol_norm = str(symbol).strip().upper()
+        if _looks_like_non_equity_symbol(symbol_norm):
+            return {
+                "error": (
+                    f"{symbol_norm} is not a Finviz-supported equity ticker. "
+                    "finviz_news only covers US equities."
+                )
+            }
+        return get_stock_news(symbol_norm, limit=limit, page=page)
     else:
         return get_general_news(news_type="news", limit=limit, page=page)
 

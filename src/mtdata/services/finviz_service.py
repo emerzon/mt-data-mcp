@@ -145,7 +145,8 @@ def get_stock_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any
         safe_limit, safe_page = _sanitize_pagination(limit, page)
         _apply_finvizfinance_timeout_patch()
         from finvizfinance.quote import finvizfinance
-        stock = finvizfinance(symbol.upper())
+        symbol_norm = str(symbol).upper()
+        stock = finvizfinance(symbol_norm)
         news_df = stock.ticker_news()
         if news_df is None or news_df.empty:
             return {"error": f"No news found for {symbol}"}
@@ -156,7 +157,7 @@ def get_stock_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any
         news_list = news_df.iloc[start_idx:end_idx].to_dict(orient="records")
         return {
             "success": True,
-            "symbol": symbol.upper(),
+            "symbol": symbol_norm,
             "count": len(news_list),
             "total": total,
             "page": safe_page,
@@ -164,8 +165,16 @@ def get_stock_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any
             "news": news_list,
         }
     except Exception as e:
-        logger.exception(f"Error fetching news for {symbol}")
-        return {"error": f"Failed to fetch news: {str(e)}"}
+        message = str(e)
+        if "404" in message or "quote.ashx?t=" in message:
+            return {
+                "error": (
+                    f"{str(symbol).upper()} is not a Finviz-supported symbol. "
+                    "finviz_news only covers US equities."
+                )
+            }
+        logger.warning("Error fetching news for %s: %s", symbol, message)
+        return {"error": f"Failed to fetch news: {message}"}
 
 
 def get_stock_insider_trades(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any]:
