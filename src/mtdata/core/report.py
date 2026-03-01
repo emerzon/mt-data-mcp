@@ -22,6 +22,22 @@ def _report_error_payload(message: Any) -> Dict[str, Any]:
     return {"error": text}
 
 
+def _append_diagnostic_warning(report: Dict[str, Any], message: str) -> None:
+    text = str(message or "").strip()
+    if not text:
+        return
+    diagnostics = report.get("diagnostics")
+    if not isinstance(diagnostics, dict):
+        diagnostics = {}
+    warnings_list = diagnostics.get("warnings")
+    if not isinstance(warnings_list, list):
+        warnings_list = []
+    if text not in warnings_list:
+        warnings_list.append(text)
+    diagnostics["warnings"] = warnings_list
+    report["diagnostics"] = diagnostics
+
+
 @mcp.tool()
 @_auto_connect_wrapper
 def report_generate(
@@ -120,11 +136,8 @@ def report_generate(
                 return _report_error_text(msg)
             return _report_error_payload(msg)
         if captured_warnings:
-            diagnostics = rep.get('diagnostics')
-            if not isinstance(diagnostics, dict):
-                diagnostics = {}
-            diagnostics['warnings'] = captured_warnings
-            rep['diagnostics'] = diagnostics
+            for warning_text in captured_warnings:
+                _append_diagnostic_warning(rep, warning_text)
 
         summ: List[str] = []
         try:
@@ -206,7 +219,33 @@ def report_generate(
         try:
             fc = rep.get('sections', {}).get('forecast', {})
             if isinstance(fc, dict) and 'method' in fc:
-                summ.append(f"forecast={fc.get('method')}")
+                method_name = str(fc.get('method'))
+                forecast_line = f"forecast={method_name}"
+                values = None
+                for key in ('forecast_price', 'forecast_return', 'forecast_series', 'forecast'):
+                    candidate = fc.get(key)
+                    if isinstance(candidate, list) and candidate:
+                        values = candidate
+                        break
+                if isinstance(values, list) and len(values) >= 3:
+                    nums: List[float] = []
+                    for v in values:
+                        try:
+                            nums.append(float(v))
+                        except Exception:
+                            nums = []
+                            break
+                    if nums and len(nums) >= 3:
+                        first = nums[0]
+                        span = max(nums) - min(nums)
+                        tol = max(1e-9, abs(first) * 1e-6)
+                        if span <= tol:
+                            forecast_line += " (flat)"
+                            _append_diagnostic_warning(
+                                rep,
+                                "Selected forecast appears degenerate (near-constant values across horizon).",
+                            )
+                summ.append(forecast_line)
         except Exception:
             pass
         try:
@@ -219,15 +258,28 @@ def report_generate(
                     best = sub.get('best') if isinstance(sub, dict) else None
                     if not best:
                         continue
-                    tp = best.get('tp'); sl = best.get('sl'); edge = best.get('edge')
+                    tp = best.get('tp')
+                    sl = best.get('sl')
+                    ev = best.get('ev')
+                    edge = best.get('edge')
                     details: List[str] = []
                     details.append(f"dir={dname}")
                     if tp is not None:
                         details.append(f"tp={format_number(tp)}%")
                     if sl is not None:
                         details.append(f"sl={format_number(sl)}%")
+                    if ev is not None:
+                        details.append(f"ev={format_number(ev)}")
                     if edge is not None:
                         details.append(f"edge={format_number(edge)}")
+                    try:
+                        if ev is not None and edge is not None:
+                            ev_num = float(ev)
+                            edge_num = float(edge)
+                            if (ev_num > 0 and edge_num < 0) or (ev_num < 0 and edge_num > 0):
+                                details.append("ev_edge_conflict=true")
+                    except Exception:
+                        pass
                     if details:
                         summ.append("barrier best " + ' '.join(details))
             else:
@@ -236,6 +288,7 @@ def report_generate(
                 if best:
                     tp = best.get('tp')
                     sl = best.get('sl')
+                    ev = best.get('ev')
                     edge = best.get('edge')
                     details: List[str] = []
                     if direction:
@@ -244,8 +297,18 @@ def report_generate(
                         details.append(f"tp={format_number(tp)}%")
                     if sl is not None:
                         details.append(f"sl={format_number(sl)}%")
+                    if ev is not None:
+                        details.append(f"ev={format_number(ev)}")
                     if edge is not None:
                         details.append(f"edge={format_number(edge)}")
+                    try:
+                        if ev is not None and edge is not None:
+                            ev_num = float(ev)
+                            edge_num = float(edge)
+                            if (ev_num > 0 and edge_num < 0) or (ev_num < 0 and edge_num > 0):
+                                details.append("ev_edge_conflict=true")
+                    except Exception:
+                        pass
                     if details:
                         summ.append("barrier best " + ' '.join(details))
         except Exception:

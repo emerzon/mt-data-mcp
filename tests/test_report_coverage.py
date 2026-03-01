@@ -504,6 +504,16 @@ class TestReportSummaryBarriers:
         res = self._run_report(sec)
         assert any("barrier best" in s for s in res.get("summary", []))
 
+    def test_barrier_summary_includes_ev_and_conflict_hint(self):
+        sec = _make_full_sections()
+        sec["barriers"]["long"]["best"]["ev"] = 0.03
+        sec["barriers"]["long"]["best"]["edge"] = -0.1
+        res = self._run_report(sec)
+        long_line = [s for s in res.get("summary", []) if "barrier best" in s and "dir=long" in s][0]
+        assert "ev=" in long_line
+        assert "edge=" in long_line
+        assert "ev_edge_conflict=true" in long_line
+
     def test_no_barriers_section(self):
         sec = _make_full_sections()
         del sec["barriers"]
@@ -557,6 +567,29 @@ class TestReportWarnings:
         assert "diagnostics" in res
         assert "warnings" in res["diagnostics"]
         assert "model convergence warning" in res["diagnostics"]["warnings"][0]
+
+    def test_flat_forecast_is_flagged_in_summary_and_diagnostics(self):
+        fn = _get_report_generate()
+        sec = _make_full_sections()
+        sec["forecast"] = {
+            "method": "sf_autoarima",
+            "forecast_price": [65955.1] * 12,
+        }
+        rep = _make_report(sections=sec)
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            res = fn("EURUSD", template="basic", output="toon")
+
+        assert any("forecast=sf_autoarima (flat)" in s for s in res.get("summary", []))
+        assert "diagnostics" in res
+        assert "warnings" in res["diagnostics"]
+        assert any("degenerate" in str(w).lower() for w in res["diagnostics"]["warnings"])
 
 
 # ---------------------------------------------------------------------------
