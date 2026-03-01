@@ -697,6 +697,48 @@ class TestTemplateBasic:
 
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
+    @patch(f"{_BASIC_MODULE}.parse_table_tail")
+    @patch(f"{_BASIC_MODULE}.pick_best_forecast_method", return_value=None)
+    @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
+    @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
+    def test_basic_context_includes_trend_compact_legend(
+        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
+        mock_now, mock_raw,
+    ):
+        candle_rows = _mock_candle_data()["rows"]
+        mock_tail.return_value = candle_rows[-40:]
+        mock_sum_bar.return_value = {"best": {}}
+
+        def raw_side_effect(func, *args, **kwargs):
+            name = func.__name__ if hasattr(func, "__name__") else str(func)
+            if "candle" in name.lower() or "data_fetch" in name.lower():
+                return _mock_candle_data()
+            if "pivot" in name.lower():
+                return _mock_pivot_data()
+            if "volatility" in name.lower():
+                return _mock_vol_data()
+            if "backtest" in name.lower():
+                return {"results": {}}
+            if "barrier" in name.lower():
+                return {"error": "barrier failed"}
+            if "pattern" in name.lower():
+                return {"error": "patterns failed"}
+            return {"data": "ok"}
+
+        mock_raw.side_effect = raw_side_effect
+
+        from mtdata.core.report_templates.basic import template_basic
+        report = template_basic("EURUSD", 12, None, None)
+
+        ctx = report["sections"].get("context", {})
+        assert isinstance(ctx.get("trend_compact"), dict)
+        assert isinstance(ctx.get("trend_compact_legend"), dict)
+        assert "s" in ctx["trend_compact_legend"]
+        assert isinstance(ctx.get("trend_compact_explained"), dict)
+        assert "regime_label" in ctx["trend_compact_explained"]
+
+    @patch(f"{_BASIC_MODULE}._get_raw_result")
+    @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
     @patch(f"{_BASIC_MODULE}.parse_table_tail", return_value=[])
     @patch(f"{_BASIC_MODULE}.pick_best_forecast_method", return_value=None)
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
@@ -942,6 +984,12 @@ class TestTemplateBasic:
         best_method = report["sections"].get("backtest", {}).get("best_method", {})
         assert best_method.get("method") == "naive"
         assert best_method.get("initial_method") == "sf_autoarima"
+        selection_basis = best_method.get("selection_basis", {})
+        assert selection_basis.get("primary_metric") == "avg_rmse"
+        assert selection_basis.get("tie_breaker") == "avg_directional_accuracy"
+        assert selection_basis.get("fallback_applied") is True
+        criteria = report["sections"].get("backtest", {}).get("selection_criteria", {})
+        assert criteria.get("primary_metric") == "avg_rmse"
 
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")

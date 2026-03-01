@@ -259,6 +259,32 @@ def report_generate(
         except Exception:
             pass
         try:
+            backtest_sec = rep.get('sections', {}).get('backtest', {})
+            criteria = backtest_sec.get('selection_criteria') if isinstance(backtest_sec, dict) else None
+            best_payload = backtest_sec.get('best_method') if isinstance(backtest_sec, dict) else None
+            if isinstance(criteria, dict):
+                primary = str(criteria.get('primary_metric') or 'avg_rmse')
+                tie_breaker = str(criteria.get('tie_breaker') or 'avg_directional_accuracy')
+                tol_pct = criteria.get('rmse_tolerance_pct')
+                if tol_pct is None:
+                    tol_raw = criteria.get('rmse_tolerance')
+                    try:
+                        tol_pct = float(tol_raw) * 100.0 if tol_raw is not None else None
+                    except Exception:
+                        tol_pct = None
+                line = f"forecast selection: min {primary}"
+                if tol_pct is not None:
+                    line += f", tie-window={format_number(tol_pct)}%"
+                line += f", tie-break={tie_breaker}"
+                if isinstance(best_payload, dict):
+                    initial = best_payload.get('initial_method')
+                    chosen = best_payload.get('method')
+                    if initial and chosen and str(initial) != str(chosen):
+                        line += ", fallback=degenerate-initial-forecast"
+                summ.append(line)
+        except Exception:
+            pass
+        try:
             bar = rep.get('sections', {}).get('barriers', {})
             if isinstance(bar, dict) and any(k in bar for k in ('long','short')):
                 for dname in ('long','short'):

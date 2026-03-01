@@ -475,6 +475,19 @@ class TestReportSummaryVolForecast:
         res = self._run_report(sec)
         assert any("forecast=" in s for s in res.get("summary", []))
 
+    def test_forecast_selection_criteria_in_summary(self):
+        sec = _make_full_sections()
+        sec["backtest"] = {
+            "selection_criteria": {
+                "primary_metric": "avg_rmse",
+                "rmse_tolerance_pct": 5.0,
+                "tie_breaker": "avg_directional_accuracy",
+            },
+            "best_method": {"method": "naive"},
+        }
+        res = self._run_report(sec)
+        assert any("forecast selection:" in s for s in res.get("summary", []))
+
 
 # ---------------------------------------------------------------------------
 # Summary extraction — barriers

@@ -5,6 +5,24 @@ from ..schema import DenoiseSpec
 from ..report_utils import now_utc_iso, parse_table_tail, pick_best_forecast_method, summarize_barrier_grid, attach_multi_timeframes
 
 
+_TREND_COMPACT_LEGEND: Dict[str, str] = {
+    "s": "ATR-adjusted slope score (x100) for windows [5, 20, 60] bars.",
+    "r": "Linear fit quality (R^2 percent) for windows [5, 20, 60] bars.",
+    "v": "ATR as basis points of price (volatility proxy).",
+    "q": "Bollinger bandwidth percentile (squeeze percentile).",
+    "g": "Regime code: 0=neutral, 1=uptrend, 2=downtrend, 3=breakout_up, 4=breakout_down.",
+    "h": "Bars since most recent swing high (within lookback window).",
+    "l": "Bars since most recent swing low (within lookback window).",
+}
+_TREND_REGIME_LABELS = {
+    0: "neutral",
+    1: "uptrend",
+    2: "downtrend",
+    3: "breakout_up",
+    4: "breakout_down",
+}
+
+
 def _get_raw_result(func, *args, **kwargs):
     """Call function and return raw dict, handling both wrapped and unwrapped cases."""
     try:
@@ -387,6 +405,28 @@ def _compute_compact_trend(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any
     }
 
 
+def _explain_compact_trend(compact: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(compact, dict):
+        return {}
+    out: Dict[str, Any] = {}
+    s = compact.get("s")
+    r = compact.get("r")
+    if isinstance(s, list):
+        out["slope_atr_score_5_20_60"] = [int(v) for v in s[:3] if isinstance(v, (int, float))]
+    if isinstance(r, list):
+        out["fit_r2_pct_5_20_60"] = [int(v) for v in r[:3] if isinstance(v, (int, float))]
+    for key in ("v", "q", "h", "l"):
+        val = compact.get(key)
+        if isinstance(val, (int, float)):
+            out[key] = int(val)
+    g_val = compact.get("g")
+    if isinstance(g_val, (int, float)):
+        g_i = int(g_val)
+        out["g"] = g_i
+        out["regime_label"] = _TREND_REGIME_LABELS.get(g_i, "neutral")
+    return out
+
+
 def _extract_forecast_values(payload: Dict[str, Any]) -> Optional[List[float]]:
     if not isinstance(payload, dict):
         return None
@@ -484,6 +524,10 @@ def template_basic(
             }
             if compact:
                 ctx_obj['trend_compact'] = compact
+                ctx_obj['trend_compact_legend'] = dict(_TREND_COMPACT_LEGEND)
+                explained = _explain_compact_trend(compact)
+                if explained:
+                    ctx_obj['trend_compact_explained'] = explained
             report['sections']['context'] = ctx_obj
 
     # Pivots (D1)
@@ -677,6 +721,14 @@ def template_basic(
             pass
         topk = int(p.get('backtest_top_k', 3))
         sec_bt = {'ranking': ranking[:max(1, topk)], 'horizon': int(horizon), 'steps': steps, 'spacing': spacing}
+        sec_bt['selection_criteria'] = {
+            'primary_metric': 'avg_rmse',
+            'rmse_tolerance': float(rmse_tol),
+            'rmse_tolerance_pct': float(rmse_tol * 100.0),
+            'tie_breaker': 'avg_directional_accuracy',
+            'secondary_tie_breaker': 'successful_tests',
+            'notes': 'Choose lowest RMSE; when methods are within tolerance of best RMSE, prefer higher directional accuracy.',
+        }
         best = pick_best_forecast_method(bt, rmse_tolerance=rmse_tol)
     report['sections']['backtest'] = sec_bt
 
@@ -772,6 +824,36 @@ def template_basic(
                 'successful_tests': selected_stats.get('successful_tests'),
             },
         }
+        selection_basis: Dict[str, Any] = {
+            'primary_metric': 'avg_rmse',
+            'rmse_tolerance': float(rmse_tol),
+            'rmse_tolerance_pct': float(rmse_tol * 100.0),
+            'tie_breaker': 'avg_directional_accuracy',
+            'secondary_tie_breaker': 'successful_tests',
+            'initial_method': best_name,
+            'selected_method': selected_method if selected_forecast is not None else best_name,
+        }
+        if ranking:
+            try:
+                best_rmse = float(ranking[0].get('avg_rmse'))
+                if isfinite(best_rmse):
+                    selection_basis['best_rmse'] = best_rmse
+            except Exception:
+                pass
+        try:
+            sel_rmse = float(selected_stats.get('avg_rmse'))
+            if isfinite(sel_rmse):
+                selection_basis['selected_rmse'] = sel_rmse
+                if selection_basis.get('best_rmse') is not None:
+                    tol_limit = float(selection_basis['best_rmse']) * (1.0 + float(rmse_tol))
+                    selection_basis['rmse_tolerance_limit'] = tol_limit
+                    selection_basis['within_rmse_tolerance'] = bool(sel_rmse <= tol_limit)
+        except Exception:
+            pass
+        if selected_forecast is not None and selected_method != best_name:
+            selection_basis['fallback_applied'] = True
+            selection_basis['fallback_reason'] = 'initial best method produced a degenerate forecast'
+        best_method_payload['selection_basis'] = selection_basis
         if selected_forecast is not None and selected_method != best_name:
             best_method_payload['initial_method'] = best_name
             best_method_payload['selection_warning'] = 'Initial best method forecast was degenerate; fallback applied.'
