@@ -139,6 +139,27 @@ def test_extract_candlestick_rows_prefers_non_deprioritized_hits():
     assert rows == [["T1", "Bullish ENGULFING"]]
 
 
+def test_extract_candlestick_rows_includes_metrics_when_enabled():
+    df_tail = pd.DataFrame({"time": ["T0", "T1"], "close": [100.0, 101.5]})
+    temp_tail = pd.DataFrame({"cdl_engulfing": [0.0, 100.0]})
+
+    rows = _extract_candlestick_rows(
+        df_tail,
+        temp_tail,
+        ["cdl_engulfing"],
+        threshold=0.95,
+        robust_only=False,
+        robust_set={"engulfing"},
+        whitelist_set=None,
+        min_gap=0,
+        top_k=1,
+        deprioritize=set(),
+        include_metrics=True,
+    )
+
+    assert rows == [["T1", "Bullish ENGULFING", "bullish", 1.0, 101.5]]
+
+
 @contextmanager
 def _always_ready_guard(*_args, **_kwargs):
     yield None, None
@@ -335,6 +356,42 @@ def test_build_pattern_response_compact_detail_returns_summary():
     assert "patterns" not in compact
 
 
+def test_build_pattern_response_compact_keeps_actionable_fields():
+    df = pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 11.0, 12.0]})
+    patterns = [
+        {
+            "name": "Double Bottom",
+            "status": "forming",
+            "confidence": 0.85,
+            "end_index": 2,
+            "bias": "bullish",
+            "reference_price": 12.0,
+            "target_price": 13.2,
+            "invalidation_price": 11.4,
+            "price": 12.0,
+        }
+    ]
+
+    compact = _build_pattern_response(
+        "EURUSD",
+        "H1",
+        100,
+        "classic",
+        patterns,
+        include_completed=False,
+        include_series=False,
+        series_time="string",
+        df=df,
+        detail="compact",
+    )
+
+    recent = compact["recent_patterns"][0]
+    assert recent["bias"] == "bullish"
+    assert "target_price" in recent
+    assert "invalidation_price" in recent
+    assert compact["summary"]["signal_bias"]["net_bias"] == "bullish"
+
+
 def test_patterns_detect_elliott_without_timeframe_scans_all(monkeypatch):
     monkeypatch.setattr(core_patterns, "TIMEFRAME_MAP", {"M1": 1, "H1": 2})
 
@@ -523,6 +580,101 @@ def test_patterns_detect_classic_ensemble_merges_engine_outputs(monkeypatch):
     assert set(res["patterns"][0]["source_engines"]) == {"native", "stock_pattern"}
     assert "engine_errors" in res
     assert "precise_patterns" in res["engine_errors"]
+
+
+def test_patterns_detect_classic_adds_signal_summary_and_levels(monkeypatch):
+    df = pd.DataFrame(
+        {
+            "time": [1, 2, 3, 4, 5, 6],
+            "close": [100.0, 101.0, 102.0, 101.0, 100.5, 100.0],
+            "tick_volume": [100, 100, 100, 100, 100, 100],
+        }
+    )
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda symbol, timeframe, limit, denoise: (df.copy(), None))
+
+    def _fake_engine(engine, symbol, df_in, cfg, config):
+        _ = engine
+        _ = symbol
+        _ = df_in
+        _ = cfg
+        _ = config
+        return [
+            {
+                "name": "Double Top",
+                "status": "forming",
+                "confidence": 0.9,
+                "start_index": 1,
+                "end_index": 5,
+                "details": {"support": 98.5, "resistance": 102.5},
+            },
+            {
+                "name": "Bull Pennant",
+                "status": "forming",
+                "confidence": 0.7,
+                "start_index": 1,
+                "end_index": 5,
+                "details": {"support": 98.8, "resistance": 102.2},
+            },
+        ], None
+
+    monkeypatch.setattr(core_patterns, "_run_classic_engine", _fake_engine)
+
+    res = core_patterns.patterns_detect(
+        symbol="EURUSD",
+        mode="classic",
+        detail="full",
+        timeframe="H1",
+        include_completed=True,
+        __cli_raw=True,
+    )
+
+    assert res["success"] is True
+    assert "signal_summary" in res
+    assert res["signal_summary"]["conflict"] is True
+    assert res["signal_summary"]["net_bias"] == "mixed"
+    rows = res["patterns"]
+    assert all("bias" in row for row in rows)
+    assert all("reference_price" in row for row in rows)
+    assert all("target_price" in row for row in rows)
+    assert all("invalidation_price" in row for row in rows)
+
+
+def test_patterns_detect_engine_findings_report_hidden_completed(monkeypatch):
+    df = pd.DataFrame(
+        {
+            "time": [1, 2, 3, 4, 5, 6],
+            "close": [10.0, 11.0, 12.0, 13.0, 14.0, 15.0],
+            "tick_volume": [100, 100, 100, 100, 100, 100],
+        }
+    )
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda symbol, timeframe, limit, denoise: (df.copy(), None))
+    monkeypatch.setattr(
+        core_patterns,
+        "_run_classic_engine",
+        lambda engine, symbol, df_in, cfg, config: (
+            [
+                {"name": "Triangle", "status": "forming", "confidence": 0.8, "start_index": 1, "end_index": 4},
+                {"name": "Triangle", "status": "completed", "confidence": 0.7, "start_index": 0, "end_index": 3},
+            ],
+            None,
+        ),
+    )
+
+    res = core_patterns.patterns_detect(
+        symbol="EURUSD",
+        mode="classic",
+        detail="full",
+        timeframe="H1",
+        include_completed=False,
+        __cli_raw=True,
+    )
+
+    assert res["success"] is True
+    finding = res["engine_findings"][0]
+    assert finding["n_patterns"] == 1
+    assert finding["n_completed"] == 0
+    assert finding["n_completed_hidden"] == 1
+    assert finding["n_patterns_total"] == 2
 
 
 def test_patterns_detect_classic_invalid_engine_returns_error(monkeypatch):

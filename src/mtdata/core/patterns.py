@@ -171,6 +171,106 @@ def _pattern_label(row: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _normalize_pattern_bias(value: Any) -> Optional[str]:
+    s = str(value or "").strip().lower()
+    if not s:
+        return None
+    if s in {"bull", "bullish", "buy", "long", "up", "positive"}:
+        return "bullish"
+    if s in {"bear", "bearish", "sell", "short", "down", "negative"}:
+        return "bearish"
+    if s in {"neutral", "mixed", "flat", "sideways"}:
+        return "neutral"
+    return None
+
+
+def _row_pattern_bias(row: Dict[str, Any]) -> Optional[str]:
+    bias = _normalize_pattern_bias(row.get("bias"))
+    if bias:
+        return bias
+    direction = _normalize_pattern_bias(row.get("direction"))
+    if direction:
+        return direction
+    details = row.get("details")
+    if isinstance(details, dict):
+        for key in ("breakout_direction", "breakout_expected"):
+            b = _normalize_pattern_bias(details.get(key))
+            if b:
+                return b
+    return None
+
+
+def _row_confidence_weight(row: Dict[str, Any]) -> float:
+    conf = _safe_float(row.get("confidence"))
+    if conf is None:
+        conf = _safe_float(row.get("strength"))
+    if conf is None or not np.isfinite(conf):
+        conf = 0.5
+    return float(max(0.0, min(1.0, conf)))
+
+
+def _summarize_pattern_bias(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    bullish_score = 0.0
+    bearish_score = 0.0
+    bullish_count = 0
+    bearish_count = 0
+    neutral_count = 0
+    strongest_bullish: Optional[Dict[str, Any]] = None
+    strongest_bearish: Optional[Dict[str, Any]] = None
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        bias = _row_pattern_bias(row)
+        if bias is None:
+            continue
+        w = _row_confidence_weight(row)
+        label = _pattern_label(row)
+        if bias == "bullish":
+            bullish_count += 1
+            bullish_score += w
+            if strongest_bullish is None or w > float(strongest_bullish.get("confidence", 0.0)):
+                strongest_bullish = {"pattern": label, "confidence": float(w)}
+        elif bias == "bearish":
+            bearish_count += 1
+            bearish_score += w
+            if strongest_bearish is None or w > float(strongest_bearish.get("confidence", 0.0)):
+                strongest_bearish = {"pattern": label, "confidence": float(w)}
+        else:
+            neutral_count += 1
+
+    if bullish_count == 0 and bearish_count == 0 and neutral_count == 0:
+        return None
+
+    directional_total = bullish_score + bearish_score
+    net_score = bullish_score - bearish_score
+    net_conf = float(abs(net_score) / directional_total) if directional_total > 1e-9 else 0.0
+    conflict = bool(bullish_count > 0 and bearish_count > 0)
+    if directional_total <= 1e-9:
+        net_bias = "neutral"
+    elif conflict and net_conf < 0.2:
+        net_bias = "mixed"
+    else:
+        net_bias = "bullish" if net_score > 0 else "bearish"
+
+    out: Dict[str, Any] = {
+        "net_bias": net_bias,
+        "net_confidence": float(max(0.0, min(1.0, net_conf))),
+        "net_score": _round_value(net_score),
+        "bullish_score": _round_value(bullish_score),
+        "bearish_score": _round_value(bearish_score),
+        "bullish_patterns": int(bullish_count),
+        "bearish_patterns": int(bearish_count),
+        "neutral_patterns": int(neutral_count),
+        "conflict": conflict,
+    }
+    if strongest_bullish:
+        out["strongest_bullish"] = strongest_bullish
+    if strongest_bearish:
+        out["strongest_bearish"] = strongest_bearish
+    return out
+
+
 def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict) or payload.get("error"):
         return payload
@@ -217,7 +317,21 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         label = _pattern_label(row)
         if label:
             item["pattern"] = label
-        for key in ("time", "start_date", "end_date", "status", "confidence"):
+        for key in (
+            "time",
+            "start_date",
+            "end_date",
+            "status",
+            "confidence",
+            "strength",
+            "direction",
+            "bias",
+            "price",
+            "reference_price",
+            "target_price",
+            "invalidation_price",
+            "bars_to_completion",
+        ):
             value = row.get(key)
             if value not in (None, ""):
                 item[key] = value
@@ -232,7 +346,20 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         strongest_pattern = {}
         if best_label:
             strongest_pattern["pattern"] = best_label
-        for key in ("timeframe", "time", "end_date", "status", "confidence"):
+        for key in (
+            "timeframe",
+            "time",
+            "end_date",
+            "status",
+            "confidence",
+            "strength",
+            "direction",
+            "bias",
+            "price",
+            "reference_price",
+            "target_price",
+            "invalidation_price",
+        ):
             value = best.get(key)
             if value not in (None, ""):
                 strongest_pattern[key] = value
@@ -264,6 +391,9 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             {"timeframe": tf, "count": count}
             for tf, count in sorted(tf_counts.items(), key=lambda item: (-item[1], item[0]))
         ]
+    signal_bias = _summarize_pattern_bias(rows)
+    if signal_bias:
+        summary["signal_bias"] = signal_bias
     if strongest_pattern:
         summary["strongest_pattern"] = strongest_pattern
 
@@ -285,6 +415,7 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     findings = payload.get("findings")
     if isinstance(findings, list):
+        compact["findings"] = findings
         tf_summary: List[Dict[str, Any]] = []
         for item in findings:
             if not isinstance(item, dict):
@@ -311,6 +442,229 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         compact["series_by_timeframe"] = payload.get("series_by_timeframe")
 
     return compact
+
+
+def _detail_float(details: Dict[str, Any], key: str) -> Optional[float]:
+    try:
+        v = float(details.get(key))
+        if np.isfinite(v):
+            return v
+    except Exception:
+        return None
+    return None
+
+
+def _close_price_at_index(df: pd.DataFrame, end_index: Any) -> Optional[float]:
+    close = __to_float_np(df.get("close"))
+    if close.size <= 0:
+        return None
+    try:
+        idx = int(end_index)
+    except Exception:
+        idx = int(close.size - 1)
+    idx = max(0, min(idx, int(close.size - 1)))
+    px = _safe_float(close[idx])
+    if px is not None and np.isfinite(px):
+        return float(px)
+    last = _safe_float(close[-1])
+    return float(last) if last is not None and np.isfinite(last) else None
+
+
+def _infer_classic_bias(name: Any, details: Dict[str, Any]) -> str:
+    for key in ("breakout_direction", "breakout_expected"):
+        b = _normalize_pattern_bias(details.get(key))
+        if b in ("bullish", "bearish"):
+            return b
+
+    nm = str(name or "").strip().lower()
+    if not nm:
+        return "neutral"
+    if "inverse head and shoulders" in nm:
+        return "bullish"
+    if "head and shoulders" in nm:
+        return "bearish"
+    if "falling wedge" in nm:
+        return "bullish"
+    if "rising wedge" in nm:
+        return "bearish"
+    if "double bottom" in nm or "triple bottom" in nm:
+        return "bullish"
+    if "double top" in nm or "triple top" in nm:
+        return "bearish"
+    if "rounding bottom" in nm:
+        return "bullish"
+    if "rounding top" in nm:
+        return "bearish"
+    if "cup and handle" in nm:
+        return "bullish"
+    if "ascending triangle" in nm:
+        return "bullish"
+    if "descending triangle" in nm:
+        return "bearish"
+    if "bull" in nm or "ascending" in nm or "uptrend" in nm:
+        return "bullish"
+    if "bear" in nm or "descending" in nm or "downtrend" in nm:
+        return "bearish"
+    return "neutral"
+
+
+def _classic_price_levels(details: Dict[str, Any], end_index: Any) -> Dict[str, float]:
+    levels: Dict[str, float] = {}
+    for key in (
+        "support",
+        "resistance",
+        "level",
+        "neckline",
+        "breakout_level",
+        "left_rim",
+        "right_rim",
+        "bottom",
+        "line_level_recent",
+    ):
+        v = _detail_float(details, key)
+        if v is not None:
+            levels[key] = v
+
+    try:
+        idx_f = float(end_index)
+    except Exception:
+        idx_f = 0.0
+
+    ts = _detail_float(details, "top_slope")
+    ti = _detail_float(details, "top_intercept")
+    bs = _detail_float(details, "bottom_slope")
+    bi = _detail_float(details, "bottom_intercept")
+    if ts is not None and ti is not None:
+        levels.setdefault("resistance", float(ts * idx_f + ti))
+    if bs is not None and bi is not None:
+        levels.setdefault("support", float(bs * idx_f + bi))
+
+    us = _detail_float(details, "upper_slope")
+    ui = _detail_float(details, "upper_intercept")
+    ls = _detail_float(details, "lower_slope")
+    li = _detail_float(details, "lower_intercept")
+    if us is not None and ui is not None:
+        levels.setdefault("resistance", float(us * idx_f + ui))
+    if ls is not None and li is not None:
+        levels.setdefault("support", float(ls * idx_f + li))
+
+    return {k: float(v) for k, v in levels.items() if np.isfinite(v)}
+
+
+def _classic_pattern_height(
+    levels: Dict[str, float],
+    details: Dict[str, Any],
+    reference_price: Optional[float],
+) -> Optional[float]:
+    support = levels.get("support")
+    resistance = levels.get("resistance")
+    if support is not None and resistance is not None and resistance > support:
+        return float(resistance - support)
+
+    head = _detail_float(details, "head")
+    neckline = levels.get("neckline")
+    if head is not None and neckline is not None:
+        return float(abs(head - neckline))
+
+    left_rim = levels.get("left_rim")
+    bottom = levels.get("bottom")
+    if left_rim is not None and bottom is not None and left_rim > bottom:
+        return float(left_rim - bottom)
+
+    pole_return_pct = _detail_float(details, "pole_return_pct")
+    if pole_return_pct is not None and reference_price is not None:
+        return float(abs(reference_price * pole_return_pct / 100.0))
+
+    amplitude_pct = _detail_float(details, "amplitude_pct")
+    if amplitude_pct is not None and reference_price is not None:
+        return float(abs(reference_price * amplitude_pct / 100.0))
+    return None
+
+
+def _enrich_classic_pattern_row(row: Dict[str, Any], df: pd.DataFrame) -> Dict[str, Any]:
+    out = dict(row)
+    details = out.get("details")
+    if not isinstance(details, dict):
+        details = {}
+    name = out.get("name") or out.get("pattern")
+    bias = _infer_classic_bias(name, details)
+    reference_price = _close_price_at_index(df, out.get("end_index"))
+    levels = _classic_price_levels(details, out.get("end_index"))
+    height = _classic_pattern_height(levels, details, reference_price)
+
+    support = levels.get("support")
+    resistance = levels.get("resistance")
+    neckline = levels.get("neckline")
+    target: Optional[float] = None
+    invalidation: Optional[float] = None
+    if reference_price is not None:
+        if bias == "bullish":
+            if resistance is not None and resistance > reference_price:
+                target = resistance
+            elif height is not None and height > 0:
+                target = reference_price + height
+            if support is not None and support < reference_price:
+                invalidation = support
+            elif neckline is not None and neckline < reference_price:
+                invalidation = neckline
+            elif height is not None and height > 0:
+                invalidation = reference_price - 0.5 * height
+        elif bias == "bearish":
+            if support is not None and support < reference_price:
+                target = support
+            elif height is not None and height > 0:
+                target = reference_price - height
+            if resistance is not None and resistance > reference_price:
+                invalidation = resistance
+            elif neckline is not None and neckline > reference_price:
+                invalidation = neckline
+            elif height is not None and height > 0:
+                invalidation = reference_price + 0.5 * height
+
+    out["bias"] = bias
+    if reference_price is not None:
+        out["reference_price"] = _round_value(reference_price)
+    if target is not None:
+        out["target_price"] = _round_value(target)
+    if invalidation is not None:
+        out["invalidation_price"] = _round_value(invalidation)
+    if levels:
+        out["price_levels"] = {k: _round_value(v) for k, v in levels.items()}
+    return out
+
+
+def _enrich_classic_patterns(rows: List[Dict[str, Any]], df: pd.DataFrame) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        out.append(_enrich_classic_pattern_row(row, df))
+    return out
+
+
+def _summarize_engine_findings(
+    per_engine: Dict[str, List[Dict[str, Any]]],
+    engines: List[str],
+    include_completed: bool,
+) -> List[Dict[str, Any]]:
+    findings: List[Dict[str, Any]] = []
+    for e in engines:
+        rows = [row for row in per_engine.get(e, []) if isinstance(row, dict)]
+        n_total = int(len(rows))
+        n_forming = int(sum(1 for p in rows if str(p.get("status", "")).lower() == "forming"))
+        n_completed = int(sum(1 for p in rows if str(p.get("status", "")).lower() == "completed"))
+        n_shown = n_total if include_completed else n_forming
+        item: Dict[str, Any] = {
+            "engine": e,
+            "n_patterns": n_shown,
+            "n_forming": n_forming,
+            "n_completed": n_completed if include_completed else 0,
+            "n_patterns_total": n_total,
+        }
+        if not include_completed and n_completed > 0:
+            item["n_completed_hidden"] = n_completed
+        findings.append(item)
+    return findings
 
 
 def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[str, Any]]:
@@ -1209,15 +1563,7 @@ def patterns_detect(
                 )
                 resp["engine"] = "ensemble" if (bool(ensemble) or len(engines) > 1) else engines[0]
                 resp["engines_run"] = engines
-                resp["engine_findings"] = [
-                    {
-                        "engine": e,
-                        "n_patterns": int(len(per_engine.get(e, []))),
-                        "n_forming": int(sum(1 for p in per_engine.get(e, []) if str(p.get("status", "")).lower() == "forming")),
-                        "n_completed": int(sum(1 for p in per_engine.get(e, []) if str(p.get("status", "")).lower() == "completed")),
-                    }
-                    for e in engines
-                ]
+                resp["engine_findings"] = _summarize_engine_findings(per_engine, engines, include_completed)
                 if engine_errors:
                     resp["engine_errors"] = engine_errors
                 return resp
@@ -1236,21 +1582,21 @@ def patterns_detect(
                 only_engine = next(iter(non_empty.keys()))
                 out_list = list(non_empty.get(only_engine, []))
 
+            out_list = _enrich_classic_patterns(out_list, df)
+            visible_rows = out_list if include_completed else [
+                row for row in out_list if str(row.get("status", "")).lower() == "forming"
+            ]
+
             resp = _build_pattern_response(
                 symbol, tf_single, limit, mode_value, out_list,
                 include_completed, include_series, series_time, df, detail=detail_value
             )
             resp["engine"] = "ensemble" if run_ensemble else next(iter(non_empty.keys()))
             resp["engines_run"] = engines
-            resp["engine_findings"] = [
-                {
-                    "engine": e,
-                    "n_patterns": int(len(per_engine.get(e, []))),
-                    "n_forming": int(sum(1 for p in per_engine.get(e, []) if str(p.get("status", "")).lower() == "forming")),
-                    "n_completed": int(sum(1 for p in per_engine.get(e, []) if str(p.get("status", "")).lower() == "completed")),
-                }
-                for e in engines
-            ]
+            resp["engine_findings"] = _summarize_engine_findings(per_engine, engines, include_completed)
+            signal_summary = _summarize_pattern_bias(visible_rows)
+            if signal_summary:
+                resp["signal_summary"] = signal_summary
             if engine_errors:
                 resp["engine_errors"] = engine_errors
             return resp

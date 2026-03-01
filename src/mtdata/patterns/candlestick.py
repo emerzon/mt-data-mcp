@@ -117,6 +117,7 @@ def _extract_candlestick_rows(
     min_gap: int,
     top_k: int,
     deprioritize: set[str],
+    include_metrics: bool = False,
 ) -> List[List[Any]]:
     if not pattern_cols:
         return []
@@ -165,6 +166,12 @@ def _extract_candlestick_rows(
         time_vals = df_tail['time'].astype(str).to_numpy(dtype=object, copy=False)
     else:
         time_vals = np.full(len(df_tail), "", dtype=object)
+    close_vals: Optional[np.ndarray] = None
+    if include_metrics and 'close' in df_tail.columns:
+        try:
+            close_vals = pd.to_numeric(df_tail['close'], errors="coerce").to_numpy(dtype=float, copy=False)
+        except Exception:
+            close_vals = None
 
     candidate_rows = np.flatnonzero(np.any(active_mask, axis=1))
     for i in candidate_rows.tolist():
@@ -184,7 +191,21 @@ def _extract_candlestick_rows(
             value = float(values[i, col_idx])
             label_core = name.replace('_', ' ').strip().upper()
             dir_title = 'Bullish' if value > 0 else 'Bearish'
-            rows.append([t_val, f"{dir_title} {label_core}" if label_core else dir_title])
+            if include_metrics:
+                direction = "bullish" if value > 0 else "bearish"
+                strength = float(max(0.0, min(1.0, abs(value) / 100.0)))
+                price = float(close_vals[i]) if close_vals is not None and np.isfinite(close_vals[i]) else None
+                rows.append(
+                    [
+                        t_val,
+                        f"{dir_title} {label_core}" if label_core else dir_title,
+                        direction,
+                        strength,
+                        price,
+                    ]
+                )
+            else:
+                rows.append([t_val, f"{dir_title} {label_core}" if label_core else dir_title])
         last_pick_idx = i
     return rows
 
@@ -323,9 +344,10 @@ def detect_candlestick_patterns(
         min_gap=gap,
         top_k=k,
         deprioritize=_deprioritize,
+        include_metrics=True,
     )
 
-    headers = ["time", "pattern"]
+    headers = ["time", "pattern", "direction", "confidence", "price"]
     payload = _table_from_rows(headers, rows)
     payload.update({
         "success": True,
