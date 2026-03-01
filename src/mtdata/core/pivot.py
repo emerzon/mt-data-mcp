@@ -221,19 +221,24 @@ def pivot_compute_points(
             row: Dict[str, Any] = {"level": lvl}
             for name in method_names:
                 level_map = levels_by_method.get(name, {})
-                row[name] = level_map.get(lvl)
+                val = level_map.get(lvl)
+                if val is not None:
+                    row[name] = val
             levels_table.append(row)
         # Central pivot between R and S
         if include_pivot_row:
             pivot_row: Dict[str, Any] = {"level": "PP"}
             for name in method_names:
-                pivot_row[name] = pivot_values.get(name)
+                if name in pivot_values:
+                    pivot_row[name] = pivot_values.get(name)
             levels_table.append(pivot_row)
         elif 'PP' in level_sequence:
             row: Dict[str, Any] = {"level": 'PP'}
             for name in method_names:
                 level_map = levels_by_method.get(name, {})
-                row[name] = level_map.get('PP')
+                val = level_map.get('PP')
+                if val is not None:
+                    row[name] = val
             levels_table.append(row)
         # Supports top→bottom after pivot
         for lvl in level_sequence:
@@ -242,14 +247,18 @@ def pivot_compute_points(
             row: Dict[str, Any] = {"level": lvl}
             for name in method_names:
                 level_map = levels_by_method.get(name, {})
-                row[name] = level_map.get(lvl)
+                val = level_map.get(lvl)
+                if val is not None:
+                    row[name] = val
             levels_table.append(row)
         # Any leftover non-standard levels
         for lvl in leftovers:
             row: Dict[str, Any] = {"level": lvl}
             for name in method_names:
                 level_map = levels_by_method.get(name, {})
-                row[name] = level_map.get(lvl)
+                val = level_map.get(lvl)
+                if val is not None:
+                    row[name] = val
             levels_table.append(row)
 
         _use_ctz = _use_client_tz()

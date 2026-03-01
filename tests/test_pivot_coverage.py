@@ -220,6 +220,15 @@ class TestPivotHappyPath:
                     # Should be rounded to 2 decimals
                     assert round(val, 2) == val
 
+    def test_level_rows_omit_null_method_cells(self):
+        r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
+        res = self._run(r)
+        for lv in res["levels"]:
+            for key, val in lv.items():
+                if key == "level":
+                    continue
+                assert val is not None
+
     def test_utc_timezone_label(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
         res = self._run(r, use_ctz=False)
