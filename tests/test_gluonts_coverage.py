@@ -118,6 +118,16 @@ from mtdata.forecast.methods.gluonts_extra import (
     GTMQF2Method,
     GTNPTSMethod,
 )
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _restore_sys_modules():
+    yield
+    for name, orig in _originals.items():
+        if orig is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = orig
 from mtdata.forecast.interface import ForecastResult
 
 # ===========================================================================

@@ -18,6 +18,10 @@ _nf_models.PatchTST = MagicMock(name="PatchTST")
 _nf_pkg = types.ModuleType("neuralforecast")
 _nf_pkg.models = _nf_models
 
+_orig_mt5 = sys.modules.get("MetaTrader5")
+_orig_nf = sys.modules.get("neuralforecast")
+_orig_nf_models = sys.modules.get("neuralforecast.models")
+
 sys.modules.setdefault("neuralforecast", _nf_pkg)
 sys.modules.setdefault("neuralforecast.models", _nf_models)
 
@@ -42,6 +46,16 @@ from mtdata.forecast.methods.neural import (
     PatchTSTMethod,
 )
 from mtdata.forecast.interface import ForecastResult
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _restore_sys_modules():
+    yield
+    for name, orig in [("MetaTrader5", _orig_mt5), ("neuralforecast", _orig_nf), ("neuralforecast.models", _orig_nf_models)]:
+        if orig is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = orig
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

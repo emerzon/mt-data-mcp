@@ -81,6 +81,7 @@ for name, mod in _STUBS.items():
 
 # Patch _HAS_SKTIME before importing sktime module
 import mtdata.forecast.methods.sktime as _sktime_mod
+_orig_has_sktime = _sktime_mod._HAS_SKTIME
 _sktime_mod._HAS_SKTIME = True
 
 from mtdata.forecast.methods.sktime import (
@@ -91,6 +92,17 @@ from mtdata.forecast.methods.sktime import (
     SktAutoETSMethod,
 )
 from mtdata.forecast.interface import ForecastResult
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _restore_sys_modules():
+    yield
+    for name, orig in _originals.items():
+        if orig is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = orig
+    _sktime_mod._HAS_SKTIME = _orig_has_sktime
 
 
 # ===========================================================================

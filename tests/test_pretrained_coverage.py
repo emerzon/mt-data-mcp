@@ -142,10 +142,15 @@ _gluonts_dataset_common = _make_module("gluonts.dataset.common")
 _gluonts_dataset_common.ListDataset = MagicMock(return_value=[{"target": np.ones(50), "start": pd.Timestamp("2000-01-01")}])
 
 # --- Register all stubs in sys.modules ------------------------------------
-_STUBS = {
+# Stubs are installed at module level for the initial import, then
+# re-installed before each test (via autouse fixture) to survive cleanup
+# by other test modules that share stub keys (e.g., test_gluonts_coverage).
+_TORCH_STUBS = {
     "torch": _torch,
     "torch.cuda": _torch_cuda,
     "torch.serialization": _torch_serial,
+}
+_NON_TORCH_STUBS = {
     "chronos": _chronos,
     "timesfm": _timesfm,
     "timesfm.torch": _timesfm_torch,
@@ -162,8 +167,9 @@ _STUBS = {
     "gluonts.dataset.common": _gluonts_dataset_common,
 }
 
+# Install stubs for the module-level import of pretrained
 _originals = {}
-for name, mod in _STUBS.items():
+for name, mod in _NON_TORCH_STUBS.items():
     _originals[name] = sys.modules.get(name)
     sys.modules[name] = mod
 
@@ -179,6 +185,46 @@ from mtdata.forecast.methods.pretrained import (
     PretrainedMethod,
 )
 from mtdata.forecast.interface import ForecastResult
+
+
+# ---------------------------------------------------------------------------
+# Per-test fixtures to ensure stubs are present even if other modules
+# cleaned them up between tests.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _ensure_stubs():
+    """Re-install non-torch stubs before every test & clean up after."""
+    saved = {}
+    for name, mod in _NON_TORCH_STUBS.items():
+        saved[name] = sys.modules.get(name)
+        sys.modules[name] = mod
+    yield
+    for name, orig in saved.items():
+        if orig is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = orig
+
+
+@pytest.fixture()
+def _with_torch_stubs():
+    """Temporarily inject torch stubs for a single test, then clean up."""
+    saved = {}
+    for name, mod in _TORCH_STUBS.items():
+        saved[name] = sys.modules.get(name)
+        sys.modules[name] = mod
+    yield
+    for name, orig in saved.items():
+        if orig is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = orig
+    try:
+        from scipy._lib.array_api_compat.common._helpers import _issubclass_fast
+        _issubclass_fast.cache_clear()
+    except Exception:
+        pass
 
 
 # ===========================================================================
@@ -258,6 +304,7 @@ class TestPretrainedMethodBase:
 # ChronosBoltMethod (lines 96-268)
 # ===========================================================================
 
+@pytest.mark.usefixtures("_with_torch_stubs")
 class TestChronosBoltMethod:
     def setup_method(self):
         self.method = ChronosBoltMethod()
@@ -416,6 +463,7 @@ class TestChronosBoltMethod:
 # TimesFMMethod (lines 296-492)
 # ===========================================================================
 
+@pytest.mark.usefixtures("_with_torch_stubs")
 class TestTimesFMMethod:
     def setup_method(self):
         self.method = TimesFMMethod()
@@ -568,6 +616,7 @@ class TestTimesFMMethod:
 # LagLlamaMethod (lines 525-702)
 # ===========================================================================
 
+@pytest.mark.usefixtures("_with_torch_stubs")
 class TestLagLlamaMethod:
     def setup_method(self):
         self.method = LagLlamaMethod()
@@ -682,6 +731,7 @@ class TestLagLlamaMethod:
 # Backward-compatibility wrapper functions
 # ===========================================================================
 
+@pytest.mark.usefixtures("_with_torch_stubs")
 class TestBackwardCompatWrappers:
     def test_forecast_chronos_bolt_success(self):
         f_vals, fq, pu, err = forecast_chronos_bolt(series=np.random.rand(100), fh=10, params={}, n=100)
