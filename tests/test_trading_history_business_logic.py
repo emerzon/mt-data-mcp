@@ -97,3 +97,61 @@ def test_trade_history_deals_decodes_enum_codes_to_labels() -> None:
     assert out[0]["type_code"] == 0
     assert out[0]["entry_code"] == 0
     assert out[0]["reason_code"] == 0
+
+
+def test_trade_history_deals_extracts_exit_trigger_from_comment() -> None:
+    mt5, prev = _install_mock_mt5()
+    mt5.DEAL_ENTRY_OUT = 1
+    mt5.DEAL_REASON_SL = 4
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol", "entry", "reason", "comment"])
+    mt5.history_deals_get.return_value = [
+        Deal(
+            ticket=1,
+            time=1700000000,
+            symbol="EURUSD",
+            entry=1,
+            reason=4,
+            comment="[sl 64654.92]",
+        )
+    ]
+
+    with patch("mtdata.core.trading._auto_connect_wrapper", lambda f: f), patch(
+        "mtdata.core.trading._use_client_tz", lambda: False
+    ):
+        out = trade_history(history_kind="deals", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert isinstance(out, list)
+    assert out[0]["exit_trigger"] == "SL"
+    assert out[0]["exit_trigger_price"] == 64654.92
+    assert out[0]["exit_trigger_source"] == "comment"
+
+
+def test_trade_history_deals_extracts_exit_trigger_from_reason_when_comment_missing() -> None:
+    mt5, prev = _install_mock_mt5()
+    mt5.DEAL_ENTRY_OUT = 1
+    mt5.DEAL_REASON_TP = 5
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol", "entry", "reason", "comment"])
+    mt5.history_deals_get.return_value = [
+        Deal(
+            ticket=1,
+            time=1700000000,
+            symbol="EURUSD",
+            entry=1,
+            reason=5,
+            comment="manual close",
+        )
+    ]
+
+    with patch("mtdata.core.trading._auto_connect_wrapper", lambda f: f), patch(
+        "mtdata.core.trading._use_client_tz", lambda: False
+    ):
+        out = trade_history(history_kind="deals", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert isinstance(out, list)
+    assert out[0]["exit_trigger"] == "TP"
+    assert out[0]["exit_trigger_price"] is None
+    assert out[0]["exit_trigger_source"] == "reason"

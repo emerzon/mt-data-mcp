@@ -2,6 +2,7 @@
 
 
 import math
+import re
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple, Union, List, Dict, Any, Literal
 
@@ -548,6 +549,7 @@ def trade_history(
         try:
             use_client_tz = _use_client_tz()
             fmt_time = _format_time_minimal_local if use_client_tz else _format_time_minimal
+            trigger_pattern = re.compile(r"\[(sl|tp)\s+([+-]?\d+(?:\.\d+)?)\]", re.IGNORECASE)
 
             def _normalize_time_col(df: "pd.DataFrame", col: str) -> Optional["pd.Series"]:
                 if col not in df.columns:
@@ -587,6 +589,40 @@ def trade_history(
                     df[f"{col}_code"] = numeric.astype("Int64")
                 df[col] = raw.apply(lambda v: decode_mt5_enum_label(mt5, v, prefix=prefix) or v)
 
+            def _reason_to_exit_trigger(reason: Any) -> Optional[str]:
+                txt = str(reason or "").strip().lower()
+                if not txt:
+                    return None
+                if re.search(r"\bsl\b|stop\s*loss", txt):
+                    return "SL"
+                if re.search(r"\btp\b|take\s*profit", txt):
+                    return "TP"
+                return None
+
+            def _extract_exit_trigger(
+                comment: Any,
+                reason: Any,
+                entry: Any,
+            ) -> Tuple[Optional[str], Optional[float], Optional[str]]:
+                entry_txt = str(entry or "").strip().lower()
+                if entry_txt and "out" not in entry_txt:
+                    return None, None, None
+
+                if isinstance(comment, str) and comment:
+                    m = trigger_pattern.search(comment)
+                    if m:
+                        trigger = str(m.group(1)).upper()
+                        try:
+                            price = float(m.group(2))
+                        except Exception:
+                            price = None
+                        return trigger, price, "comment"
+
+                reason_trigger = _reason_to_exit_trigger(reason)
+                if reason_trigger:
+                    return reason_trigger, None, "reason"
+                return None, None, None
+
             if kind == "deals":
                 if symbol:
                     rows = mt5.history_deals_get(from_dt, to_dt, symbol=symbol)
@@ -603,6 +639,24 @@ def trade_history(
                 _decode_enum_column("type", "DEAL_TYPE_")
                 _decode_enum_column("entry", "DEAL_ENTRY_")
                 _decode_enum_column("reason", "DEAL_REASON_")
+                if len(df) > 0:
+                    triggers = df.apply(
+                        lambda row: _extract_exit_trigger(
+                            row.get("comment"),
+                            row.get("reason"),
+                            row.get("entry"),
+                        ),
+                        axis=1,
+                        result_type="expand",
+                    )
+                    if isinstance(triggers, pd.DataFrame) and triggers.shape[1] == 3:
+                        triggers.columns = [
+                            "exit_trigger",
+                            "exit_trigger_price",
+                            "exit_trigger_source",
+                        ]
+                        for col in triggers.columns:
+                            df[col] = triggers[col]
             else:
                 if symbol:
                     rows = mt5.history_orders_get(from_dt, to_dt, symbol=symbol)
