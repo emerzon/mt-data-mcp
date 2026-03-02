@@ -1,4 +1,5 @@
 from typing import Any, Dict, Optional, List, Literal, Tuple
+import os
 
 from .schema import TimeframeLiteral, DenoiseSpec, ForecastLibraryLiteral, ForecastMethodLiteral
 from .server import mcp, _auto_connect_wrapper
@@ -1032,7 +1033,7 @@ def forecast_barrier_optimize(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
-    method: Literal['mc_gbm','mc_gbm_bb','hmm_mc','garch','bootstrap','heston','jump_diffusion','auto'] = 'hmm_mc',  # type: ignore
+    method: Literal['mc_gbm','mc_gbm_bb','hmm_mc','garch','bootstrap','heston','jump_diffusion','auto','ensemble'] = 'auto',  # type: ignore
     direction: Literal['long','short'] = 'long',  # trade direction context for TP/SL
     mode: Literal['pct','pips'] = 'pct',  # type: ignore
     tp_min: float = 0.25,
@@ -1079,9 +1080,24 @@ def forecast_barrier_optimize(
     min_prob_win: Optional[float] = None,
     max_prob_no_hit: Optional[float] = None,
     max_median_time: Optional[float] = None,
+    fast_defaults: bool = False,
+    search_profile: Literal['fast','medium','long'] = 'long',  # type: ignore
 ) -> Dict[str, Any]:
     """Optimize TP/SL barriers with support for presets, volatility scaling, ratios, and two-stage refinement."""
     from ..forecast.barriers import forecast_barrier_optimize as _impl
+    params_norm = _parse_kv_or_json(params)
+    if not isinstance(params_norm, dict):
+        params_norm = {}
+    defaults = {
+        "optimizer": "optuna",
+        "sampler": "tpe",
+        "pruner": "median",
+        "n_jobs": int(os.cpu_count() or 1),
+        "seed": 42,
+    }
+    for key, value in defaults.items():
+        if key not in params_norm:
+            params_norm[key] = value
     return _impl(
         symbol=symbol,
         timeframe=timeframe,
@@ -1095,7 +1111,7 @@ def forecast_barrier_optimize(
         sl_min=sl_min,
         sl_max=sl_max,
         sl_steps=sl_steps,
-        params=params,
+        params=params_norm,
         denoise=denoise,
         objective=objective,
         return_grid=return_grid,
@@ -1121,4 +1137,6 @@ def forecast_barrier_optimize(
         min_prob_win=min_prob_win,
         max_prob_no_hit=max_prob_no_hit,
         max_median_time=max_median_time,
+        fast_defaults=fast_defaults,
+        search_profile=search_profile,
     )

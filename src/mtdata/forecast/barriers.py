@@ -700,6 +700,8 @@ def forecast_barrier_optimize(
     min_prob_win: Optional[float] = None,
     max_prob_no_hit: Optional[float] = None,
     max_median_time: Optional[float] = None,
+    fast_defaults: bool = False,
+    search_profile: Literal['fast', 'medium', 'long'] = 'medium',
 ) -> Dict[str, Any]:
     """Optimize TP/SL barriers over a grid of candidate levels.
 
@@ -750,6 +752,54 @@ def forecast_barrier_optimize(
                     return False
             return bool(default)
 
+        search_profile_requested = str(
+            params_dict.get('search_profile', params_dict.get('profile', search_profile))
+        ).strip().lower()
+        if search_profile_requested not in {'fast', 'medium', 'long'}:
+            search_profile_requested = 'medium'
+        fast_defaults_requested = _coerce_bool_flag(
+            params_dict.get('fast_defaults', fast_defaults),
+            default=bool(fast_defaults),
+        )
+        search_profile_val = 'fast' if fast_defaults_requested else search_profile_requested
+        profile_defaults: Dict[str, Dict[str, Any]] = {
+            'fast': {
+                'n_sims': 1200,
+                'n_trials': 24,
+                'tp_steps': 4,
+                'sl_steps': 4,
+                'ratio_steps': 4,
+                'vol_steps': 4,
+                'refine': False,
+            },
+            'medium': {
+                'n_sims': 4000,
+                'n_trials': 63,
+                'tp_steps': 7,
+                'sl_steps': 9,
+                'ratio_steps': 8,
+                'vol_steps': 7,
+                'refine': False,
+            },
+            'long': {
+                'n_sims': 10000,
+                'n_trials': 600,
+                'tp_steps': 41,
+                'sl_steps': 51,
+                'ratio_steps': 24,
+                'vol_steps': 18,
+                'refine': True,
+            },
+        }
+        profile_cfg = profile_defaults[search_profile_val]
+
+        def _profile_default(param_key: str, arg_value: Any, medium_default: Any, profile_key: str) -> Any:
+            if param_key in params_dict:
+                return params_dict[param_key]
+            if arg_value != medium_default:
+                return arg_value
+            return profile_cfg[profile_key]
+
         viable_only_val = _coerce_bool_flag(params_dict.get('viable_only', viable_only), default=bool(viable_only))
         concise_val = _coerce_bool_flag(params_dict.get('concise', concise), default=bool(concise))
         if concise_val:
@@ -776,7 +826,8 @@ def forecast_barrier_optimize(
         optimizer_val = str(params_dict.get('optimizer', 'grid')).strip().lower()
         if optimizer_val not in {'grid', 'optuna'}:
             optimizer_val = 'grid'
-        optuna_trials_val = max(1, int(params_dict.get('n_trials', 63)))
+        optuna_default_trials = int(profile_cfg['n_trials'])
+        optuna_trials_val = max(1, int(params_dict.get('n_trials', optuna_default_trials)))
         optuna_timeout_raw = params_dict.get('timeout')
         try:
             optuna_timeout_val = float(optuna_timeout_raw) if optuna_timeout_raw is not None else None
@@ -791,6 +842,37 @@ def forecast_barrier_optimize(
         optuna_pruner_val = str(params_dict.get('pruner', 'median')).strip().lower()
         if optuna_pruner_val not in {'median', 'none', 'hyperband', 'percentile'}:
             optuna_pruner_val = 'median'
+        optuna_pareto_val = _coerce_bool_flag(params_dict.get('optuna_pareto', False), default=False)
+        try:
+            pareto_limit_val = int(params_dict.get('pareto_limit', 20))
+        except Exception:
+            pareto_limit_val = 20
+        if pareto_limit_val <= 0:
+            pareto_limit_val = 20
+        optuna_pareto_objectives_raw = params_dict.get('optuna_pareto_objectives')
+
+        def _normalize_optuna_direction(value: Any, default: str = 'maximize') -> str:
+            v = str(value or default).strip().lower()
+            if v in {'max', 'maximize', 'maximise'}:
+                return 'maximize'
+            if v in {'min', 'minimize', 'minimise'}:
+                return 'minimize'
+            return str(default)
+
+        pareto_objectives: List[Tuple[str, str]] = [
+            ('ev', 'maximize'),
+            ('prob_loss', 'minimize'),
+            ('t_hit_resolve_median', 'minimize'),
+        ]
+        if isinstance(optuna_pareto_objectives_raw, dict) and optuna_pareto_objectives_raw:
+            tmp: List[Tuple[str, str]] = []
+            for mk, mv in optuna_pareto_objectives_raw.items():
+                metric_name = str(mk).strip()
+                if not metric_name:
+                    continue
+                tmp.append((metric_name, _normalize_optuna_direction(mv, default='maximize')))
+            if tmp:
+                pareto_objectives = tmp
 
         if top_k is not None:
             try:
@@ -808,13 +890,15 @@ def forecast_barrier_optimize(
         preset_candidate = params_dict.get('grid_preset', params_dict.get('preset', preset))
         preset_val = str(preset_candidate).lower() if isinstance(preset_candidate, str) and preset_candidate else None
 
-        refine_flag = bool(params_dict.get('refine', refine))
+        refine_default = _profile_default('refine', bool(refine), False, 'refine')
+        refine_flag = bool(params_dict.get('refine', refine_default))
         refine_radius_val = max(0.0, float(params_dict.get('refine_radius', refine_radius)))
         refine_steps_val = max(2, int(params_dict.get('refine_steps', refine_steps)))
 
         ratio_min_val = float(params_dict.get('ratio_min', ratio_min))
         ratio_max_val = float(params_dict.get('ratio_max', ratio_max))
-        ratio_steps_val = max(2, int(params_dict.get('ratio_steps', ratio_steps)))
+        ratio_steps_default = int(_profile_default('ratio_steps', int(ratio_steps), 8, 'ratio_steps'))
+        ratio_steps_val = max(2, int(params_dict.get('ratio_steps', ratio_steps_default)))
         if ratio_min_val <= 0:
             ratio_min_val = ratio_min
         if ratio_max_val < ratio_min_val:
@@ -823,7 +907,8 @@ def forecast_barrier_optimize(
         vol_window_val = int(params_dict.get('vol_window', vol_window))
         vol_min_mult_val = float(params_dict.get('vol_min_mult', vol_min_mult))
         vol_max_mult_val = float(params_dict.get('vol_max_mult', vol_max_mult))
-        vol_steps_val = max(2, int(params_dict.get('vol_steps', vol_steps)))
+        vol_steps_default = int(_profile_default('vol_steps', int(vol_steps), 7, 'vol_steps'))
+        vol_steps_val = max(2, int(params_dict.get('vol_steps', vol_steps_default)))
         vol_sl_extra_val = float(params_dict.get('vol_sl_extra', vol_sl_extra))
         vol_sl_multiplier_val = float(params_dict.get('vol_sl_multiplier', vol_sl_extra_val))
         vol_sl_steps_val = max(vol_steps_val, int(params_dict.get('vol_sl_steps', vol_steps_val + 2)))
@@ -877,10 +962,12 @@ def forecast_barrier_optimize(
 
         tp_min_val = float(params_dict.get('tp_min', tp_min))
         tp_max_val = float(params_dict.get('tp_max', tp_max))
-        tp_steps_val = max(1, int(params_dict.get('tp_steps', tp_steps)))
+        tp_steps_default = int(_profile_default('tp_steps', int(tp_steps), 7, 'tp_steps'))
+        tp_steps_val = max(1, int(params_dict.get('tp_steps', tp_steps_default)))
         sl_min_val = float(params_dict.get('sl_min', sl_min))
         sl_max_val = float(params_dict.get('sl_max', sl_max))
-        sl_steps_val = max(1, int(params_dict.get('sl_steps', sl_steps)))
+        sl_steps_default = int(_profile_default('sl_steps', int(sl_steps), 9, 'sl_steps'))
+        sl_steps_val = max(1, int(params_dict.get('sl_steps', sl_steps_default)))
 
         need = int(max(300, horizon_val + 100))
         df = _fetch_history(symbol, timeframe, need, as_of=None)
@@ -915,7 +1002,8 @@ def forecast_barrier_optimize(
                 pass
         prices = df[base_col].astype(float).to_numpy()
 
-        sims = int(params_dict.get('n_sims', params_dict.get('sims', 4000)) or 4000)
+        sims_default = int(profile_cfg['n_sims'])
+        sims = int(params_dict.get('n_sims', params_dict.get('sims', sims_default)) or sims_default)
         if sims <= 0:
             return {"error": f"Invalid n_sims: {sims}. Must be >= 1."}
         seed = int(params_dict.get('seed', 42) or 42)
@@ -926,6 +1014,280 @@ def forecast_barrier_optimize(
         method_name = str(method).lower().strip()
         method_requested = method_name
         auto_reason = None
+        supported_member_methods = ['mc_gbm', 'mc_gbm_bb', 'hmm_mc', 'garch', 'bootstrap', 'heston', 'jump_diffusion', 'auto']
+
+        if method_name == 'ensemble':
+            ensemble_methods_raw = params_dict.get('ensemble_methods', ['hmm_mc', 'garch', 'heston', 'jump_diffusion'])
+            ensemble_methods: List[str] = []
+            if isinstance(ensemble_methods_raw, str):
+                ensemble_methods = [p.strip().lower() for p in ensemble_methods_raw.split(',') if p.strip()]
+            elif isinstance(ensemble_methods_raw, (list, tuple)):
+                for item in ensemble_methods_raw:
+                    if isinstance(item, str) and item.strip():
+                        ensemble_methods.append(item.strip().lower())
+            if not ensemble_methods:
+                ensemble_methods = ['hmm_mc', 'garch', 'heston', 'jump_diffusion']
+            dedup_members: List[str] = []
+            seen_members: Set[str] = set()
+            for member_name in ensemble_methods:
+                if member_name == 'ensemble':
+                    continue
+                if member_name not in supported_member_methods:
+                    continue
+                if member_name in seen_members:
+                    continue
+                seen_members.add(member_name)
+                dedup_members.append(member_name)
+            ensemble_methods = dedup_members
+            if not ensemble_methods:
+                return {"error": "Ensemble requires at least one valid member method."}
+
+            ensemble_agg = str(params_dict.get('ensemble_agg', 'median')).strip().lower()
+            if ensemble_agg not in {'median', 'weighted_mean'}:
+                ensemble_agg = 'median'
+
+            weight_map_raw = params_dict.get('ensemble_weights')
+            ensemble_weight_map: Dict[str, float] = {}
+            if isinstance(weight_map_raw, dict):
+                for mk, mv in weight_map_raw.items():
+                    try:
+                        w = float(mv)
+                    except Exception:
+                        continue
+                    if not np.isfinite(w) or w <= 0:
+                        continue
+                    ensemble_weight_map[str(mk).strip().lower()] = float(w)
+
+            member_params = dict(params_dict)
+            for extra_key in (
+                'ensemble_methods',
+                'ensemble_agg',
+                'ensemble_weights',
+                'ensemble_top_k',
+                'ensemble_vote_metric',
+            ):
+                member_params.pop(extra_key, None)
+
+            member_runs: List[Dict[str, Any]] = []
+            member_errors: List[Dict[str, Any]] = []
+            for member_method in ensemble_methods:
+                member_out = forecast_barrier_optimize(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    horizon=horizon_val,
+                    method=member_method,
+                    direction=direction_norm,  # type: ignore[arg-type]
+                    mode=mode_val,  # type: ignore[arg-type]
+                    tp_min=tp_min_val,
+                    tp_max=tp_max_val,
+                    tp_steps=tp_steps_val,
+                    sl_min=sl_min_val,
+                    sl_max=sl_max_val,
+                    sl_steps=sl_steps_val,
+                    params=member_params,
+                    denoise=denoise,
+                    objective=objective_val,  # type: ignore[arg-type]
+                    return_grid=False,
+                    top_k=1,
+                    output='summary',  # type: ignore[arg-type]
+                    viable_only=viable_only_val,
+                    concise=concise_val,
+                    grid_style=grid_style_val,  # type: ignore[arg-type]
+                    preset=preset_val,
+                    vol_window=vol_window_val,
+                    vol_min_mult=vol_min_mult_val,
+                    vol_max_mult=vol_max_mult_val,
+                    vol_steps=vol_steps_val,
+                    vol_sl_extra=vol_sl_extra_val,
+                    vol_floor_pct=vol_floor_pct_val,
+                    vol_floor_pips=vol_floor_pips_val,
+                    ratio_min=ratio_min_val,
+                    ratio_max=ratio_max_val,
+                    ratio_steps=ratio_steps_val,
+                    refine=refine_flag,
+                    refine_radius=refine_radius_val,
+                    refine_steps=refine_steps_val,
+                    min_prob_win=min_prob_win_val,
+                    max_prob_no_hit=max_prob_no_hit_val,
+                    max_median_time=max_median_time_val,
+                    fast_defaults=bool(search_profile_val == 'fast'),
+                    search_profile=search_profile_val,  # type: ignore[arg-type]
+                )
+                if not isinstance(member_out, dict) or not member_out.get('success'):
+                    err_msg = None
+                    if isinstance(member_out, dict):
+                        err_msg = member_out.get('error')
+                    if err_msg is None:
+                        err_msg = f"Member method {member_method} failed"
+                    member_errors.append({"method": member_method, "error": str(err_msg)})
+                    continue
+                best_row = member_out.get('best')
+                if not isinstance(best_row, dict):
+                    member_errors.append({"method": member_method, "error": "No best candidate returned"})
+                    continue
+                member_runs.append({
+                    "method": member_method,
+                    "method_used": member_out.get('method', member_method),
+                    "best": best_row,
+                    "output": member_out,
+                })
+
+            if not member_runs:
+                return {"error": "Ensemble failed: no successful member methods.", "member_errors": member_errors}
+
+            metric_keys = [
+                'tp', 'sl', 'rr', 'tp_price', 'sl_price',
+                'prob_win', 'prob_loss', 'prob_tp_first', 'prob_sl_first',
+                'prob_no_hit', 'prob_tie', 'prob_resolve',
+                'ev', 'ev_cond', 'edge', 'kelly', 'kelly_cond',
+                'ev_per_bar', 'profit_factor', 'utility',
+                't_hit_tp_median', 't_hit_sl_median',
+                't_hit_resolve_mean', 't_hit_resolve_median',
+            ]
+
+            def _member_weight(row: Dict[str, Any]) -> float:
+                member_key = str(row.get('method', '')).strip().lower()
+                if member_key in ensemble_weight_map:
+                    return float(ensemble_weight_map[member_key])
+                ev_raw = row.get('best', {}).get('ev') if isinstance(row.get('best'), dict) else None
+                try:
+                    ev_f = float(ev_raw)
+                except Exception:
+                    return 1.0
+                if not np.isfinite(ev_f):
+                    return 1.0
+                return float(max(0.0, ev_f))
+
+            def _agg_metric(metric_name: str) -> Optional[float]:
+                vals: List[float] = []
+                wts: List[float] = []
+                for row in member_runs:
+                    best_row = row.get('best', {})
+                    if not isinstance(best_row, dict):
+                        continue
+                    raw = best_row.get(metric_name)
+                    try:
+                        val = float(raw)
+                    except Exception:
+                        continue
+                    if not np.isfinite(val):
+                        continue
+                    vals.append(float(val))
+                    wts.append(_member_weight(row))
+                if not vals:
+                    return None
+                if ensemble_agg == 'weighted_mean':
+                    sw = float(sum(wts))
+                    if sw > 0:
+                        return float(sum(v * w for v, w in zip(vals, wts)) / sw)
+                    return float(np.mean(np.asarray(vals, dtype=float)))
+                return float(np.median(np.asarray(vals, dtype=float)))
+
+            ensemble_best: Dict[str, Any] = {}
+            for metric_name in metric_keys:
+                val = _agg_metric(metric_name)
+                if val is not None:
+                    ensemble_best[metric_name] = val
+            if 'rr' not in ensemble_best and ensemble_best.get('tp') and ensemble_best.get('sl'):
+                try:
+                    tp_val = float(ensemble_best['tp'])
+                    sl_val = float(ensemble_best['sl'])
+                    if sl_val > 0:
+                        ensemble_best['rr'] = float(tp_val / sl_val)
+                except Exception:
+                    pass
+            if 'prob_resolve' not in ensemble_best and ensemble_best.get('prob_no_hit') is not None:
+                try:
+                    ensemble_best['prob_resolve'] = float(1.0 - float(ensemble_best['prob_no_hit']))
+                except Exception:
+                    pass
+
+            member_prices = [
+                float(r.get('output', {}).get('last_price'))
+                for r in member_runs
+                if isinstance(r.get('output', {}).get('last_price'), (int, float))
+            ]
+            member_close_prices = [
+                float(r.get('output', {}).get('last_price_close'))
+                for r in member_runs
+                if isinstance(r.get('output', {}).get('last_price_close'), (int, float))
+            ]
+            out_last_price = float(np.median(np.asarray(member_prices, dtype=float))) if member_prices else float(last_price)
+            out_last_price_close = (
+                float(np.median(np.asarray(member_close_prices, dtype=float)))
+                if member_close_prices else float(last_price_close)
+            )
+
+            viable = False
+            try:
+                ev_best = ensemble_best.get('ev')
+                if ev_best is not None and np.isfinite(float(ev_best)) and float(ev_best) >= 0.0:
+                    viable = True
+            except Exception:
+                viable = False
+
+            member_summaries: List[Dict[str, Any]] = []
+            for row in member_runs:
+                best_row = row.get('best', {})
+                member_summaries.append({
+                    "method": row.get('method'),
+                    "method_used": row.get('method_used'),
+                    "ev": best_row.get('ev') if isinstance(best_row, dict) else None,
+                    "ev_per_bar": best_row.get('ev_per_bar') if isinstance(best_row, dict) else None,
+                    "prob_win": best_row.get('prob_win') if isinstance(best_row, dict) else None,
+                    "prob_loss": best_row.get('prob_loss') if isinstance(best_row, dict) else None,
+                    "rr": best_row.get('rr') if isinstance(best_row, dict) else None,
+                    "tp": best_row.get('tp') if isinstance(best_row, dict) else None,
+                    "sl": best_row.get('sl') if isinstance(best_row, dict) else None,
+                })
+
+            out = {
+                "success": True,
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "method": "ensemble",
+                "horizon": horizon_val,
+                "direction": direction_norm,
+                "mode": mode_val,
+                "optimizer": optimizer_val,
+                "last_price": out_last_price,
+                "last_price_close": out_last_price_close,
+                "last_price_source": "ensemble_members_median",
+                "objective": objective_val,
+                "search_profile": search_profile_val,
+                "fast_defaults": bool(search_profile_val == 'fast'),
+                "compute_profile": {
+                    "profile": search_profile_val,
+                    "n_sims": int(sims),
+                    "n_trials": int(optuna_trials_val) if optimizer_val == 'optuna' else None,
+                    "tp_steps": int(tp_steps_val),
+                    "sl_steps": int(sl_steps_val),
+                    "ratio_steps": int(ratio_steps_val),
+                    "vol_steps": int(vol_steps_val),
+                    "refine": bool(refine_flag),
+                },
+                "results": [ensemble_best] if ensemble_best else [],
+                "results_total": 1 if ensemble_best else 0,
+                "best": ensemble_best if ensemble_best else None,
+                "viable": bool(viable),
+                "least_negative": ensemble_best if (ensemble_best and not viable) else None,
+                "grid": [ensemble_best] if (return_grid and not concise_val and ensemble_best) else None,
+                "no_candidates": not bool(ensemble_best),
+                "ensemble": {
+                    "methods": ensemble_methods,
+                    "agg": ensemble_agg,
+                    "weights": ensemble_weight_map if ensemble_weight_map else None,
+                    "members": member_summaries,
+                    "member_errors": member_errors,
+                },
+            }
+            if objective_changed:
+                out["objective_requested"] = objective_requested
+                out["objective_used"] = objective_val
+            if member_errors:
+                out["warning"] = f"{len(member_errors)} ensemble member(s) failed."
+            return out
+
         if method_name == 'auto':
             method_name, auto_reason = _auto_barrier_method(
                 symbol, timeframe, prices, horizon=horizon_val
@@ -981,7 +1343,7 @@ def forecast_barrier_optimize(
                 )
                 paths_list.append(np.asarray(sim['price_paths'], dtype=float))
         else:
-            return {"error": f"Unsupported method: {method}. Use 'mc_gbm', 'mc_gbm_bb', 'hmm_mc', 'garch', 'bootstrap', 'heston', 'jump_diffusion', or 'auto'"}
+            return {"error": f"Unsupported method: {method}. Use 'mc_gbm', 'mc_gbm_bb', 'hmm_mc', 'garch', 'bootstrap', 'heston', 'jump_diffusion', 'auto', or 'ensemble'."}
 
         paths = np.vstack(paths_list) if len(paths_list) > 1 else paths_list[0]
         S, H = paths.shape
@@ -1275,6 +1637,7 @@ def forecast_barrier_optimize(
                 out.append(res)
             return out
 
+        pareto_front: Optional[List[Dict[str, Any]]] = None
         if optimizer_val == 'optuna':
             try:
                 import optuna
@@ -1310,38 +1673,117 @@ def forecast_barrier_optimize(
                 pruner_name = 'median'
                 pruner_obj = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=0)
 
-            maximize = objective_val != 'min_loss_prob'
-            direction = 'maximize' if maximize else 'minimize'
             optuna.logging.set_verbosity(optuna.logging.WARNING)
-            study = optuna.create_study(direction=direction, sampler=sampler_obj, pruner=pruner_obj)
             sampled_rows: List[Dict[str, Any]] = []
+            trial_rows: Dict[int, Dict[str, Any]] = {}
 
-            def _objective_trial(trial: Any) -> float:
-                if grid_style_val == 'ratio':
-                    sl_unit = float(trial.suggest_float('sl', sl_lo, sl_hi))
-                    rr_unit = float(trial.suggest_float('rr', rr_lo, rr_hi))
-                    tp_unit = sl_unit * rr_unit
-                else:
-                    tp_unit = float(trial.suggest_float('tp', tp_lo, tp_hi))
-                    sl_unit = float(trial.suggest_float('sl', sl_lo, sl_hi))
+            if optuna_pareto_val:
+                directions = [d for _, d in pareto_objectives]
+                study = optuna.create_study(directions=directions, sampler=sampler_obj, pruner=pruner_obj)
 
-                rows = _evaluate([(tp_unit, sl_unit)])
-                if not rows:
-                    return -1e18 if maximize else 1e18
-                row = rows[0]
-                sampled_rows.append(row)
-                trial.set_user_attr('tp', float(row.get('tp', tp_unit)))
-                trial.set_user_attr('sl', float(row.get('sl', sl_unit)))
-                if objective_val == 'min_loss_prob':
-                    return float(row.get('prob_loss', 1.0))
-                return float(row.get(objective_val, row.get('ev', -1e18)))
+                def _bad_values() -> Tuple[float, ...]:
+                    vals: List[float] = []
+                    for _, d in pareto_objectives:
+                        vals.append(-1e18 if d == 'maximize' else 1e18)
+                    return tuple(vals)
 
-            study.optimize(
-                _objective_trial,
-                n_trials=int(optuna_trials_val),
-                timeout=float(optuna_timeout_val) if optuna_timeout_val is not None else None,
-                n_jobs=int(optuna_n_jobs_val),
-            )
+                def _metric_value(row: Dict[str, Any], metric: str, direction_name: str) -> float:
+                    raw = row.get(metric)
+                    try:
+                        value = float(raw)
+                    except Exception:
+                        return -1e18 if direction_name == 'maximize' else 1e18
+                    if not np.isfinite(value):
+                        return -1e18 if direction_name == 'maximize' else 1e18
+                    return float(value)
+
+                def _objective_trial(trial: Any) -> Tuple[float, ...]:
+                    if grid_style_val == 'ratio':
+                        sl_unit = float(trial.suggest_float('sl', sl_lo, sl_hi))
+                        rr_unit = float(trial.suggest_float('rr', rr_lo, rr_hi))
+                        tp_unit = sl_unit * rr_unit
+                    else:
+                        tp_unit = float(trial.suggest_float('tp', tp_lo, tp_hi))
+                        sl_unit = float(trial.suggest_float('sl', sl_lo, sl_hi))
+
+                    rows = _evaluate([(tp_unit, sl_unit)])
+                    if not rows:
+                        return _bad_values()
+                    row = rows[0]
+                    sampled_rows.append(row)
+                    trial_rows[int(trial.number)] = row
+                    trial.set_user_attr('tp', float(row.get('tp', tp_unit)))
+                    trial.set_user_attr('sl', float(row.get('sl', sl_unit)))
+                    values = tuple(
+                        _metric_value(row, metric_name, direction_name)
+                        for metric_name, direction_name in pareto_objectives
+                    )
+                    trial.set_user_attr('objective_values', {
+                        metric_name: float(values[idx]) for idx, (metric_name, _) in enumerate(pareto_objectives)
+                    })
+                    return values
+
+                study.optimize(
+                    _objective_trial,
+                    n_trials=int(optuna_trials_val),
+                    timeout=float(optuna_timeout_val) if optuna_timeout_val is not None else None,
+                    n_jobs=int(optuna_n_jobs_val),
+                )
+                front: List[Dict[str, Any]] = []
+                for trial in study.best_trials:
+                    row = trial_rows.get(int(trial.number))
+                    if not isinstance(row, dict):
+                        continue
+                    entry = dict(row)
+                    values = list(trial.values) if isinstance(trial.values, (list, tuple)) else []
+                    entry['trial'] = int(trial.number)
+                    entry['objective_values'] = {
+                        metric_name: float(values[idx]) if idx < len(values) else None
+                        for idx, (metric_name, _) in enumerate(pareto_objectives)
+                    }
+                    front.append(entry)
+
+                if front:
+                    front.sort(
+                        key=lambda x: (
+                            -float(x.get('ev', -1e18)) if x.get('ev') is not None else 1e18,
+                            float(x.get('prob_loss', 1e18)) if x.get('prob_loss') is not None else 1e18,
+                            float(x.get('t_hit_resolve_median', 1e18)) if x.get('t_hit_resolve_median') is not None else 1e18,
+                        )
+                    )
+                pareto_front = front[:int(pareto_limit_val)]
+            else:
+                maximize = objective_val != 'min_loss_prob'
+                direction = 'maximize' if maximize else 'minimize'
+                study = optuna.create_study(direction=direction, sampler=sampler_obj, pruner=pruner_obj)
+
+                def _objective_trial(trial: Any) -> float:
+                    if grid_style_val == 'ratio':
+                        sl_unit = float(trial.suggest_float('sl', sl_lo, sl_hi))
+                        rr_unit = float(trial.suggest_float('rr', rr_lo, rr_hi))
+                        tp_unit = sl_unit * rr_unit
+                    else:
+                        tp_unit = float(trial.suggest_float('tp', tp_lo, tp_hi))
+                        sl_unit = float(trial.suggest_float('sl', sl_lo, sl_hi))
+
+                    rows = _evaluate([(tp_unit, sl_unit)])
+                    if not rows:
+                        return -1e18 if maximize else 1e18
+                    row = rows[0]
+                    sampled_rows.append(row)
+                    trial_rows[int(trial.number)] = row
+                    trial.set_user_attr('tp', float(row.get('tp', tp_unit)))
+                    trial.set_user_attr('sl', float(row.get('sl', sl_unit)))
+                    if objective_val == 'min_loss_prob':
+                        return float(row.get('prob_loss', 1.0))
+                    return float(row.get(objective_val, row.get('ev', -1e18)))
+
+                study.optimize(
+                    _objective_trial,
+                    n_trials=int(optuna_trials_val),
+                    timeout=float(optuna_timeout_val) if optuna_timeout_val is not None else None,
+                    n_jobs=int(optuna_n_jobs_val),
+                )
 
             dedup: Dict[Tuple[int, int], Dict[str, Any]] = {}
             for row in sampled_rows:
@@ -1368,7 +1810,13 @@ def forecast_barrier_optimize(
                 "pruner": pruner_name,
                 "timeout": float(optuna_timeout_val) if optuna_timeout_val is not None else None,
                 "n_jobs": int(optuna_n_jobs_val),
+                "pareto": bool(optuna_pareto_val),
             }
+            if optuna_pareto_val:
+                optuna_meta["pareto_objectives"] = [
+                    {"metric": metric_name, "direction": direction_name}
+                    for metric_name, direction_name in pareto_objectives
+                ]
         else:
             results.extend(_evaluate(base_candidates))
 
@@ -1475,6 +1923,18 @@ def forecast_barrier_optimize(
             "last_price_close": float(last_price_close),
             "last_price_source": last_price_source,
             "objective": objective_val,
+            "search_profile": search_profile_val,
+            "fast_defaults": bool(search_profile_val == 'fast'),
+            "compute_profile": {
+                "profile": search_profile_val,
+                "n_sims": int(sims),
+                "n_trials": int(optuna_trials_val) if optimizer_val == 'optuna' else None,
+                "tp_steps": int(tp_steps_val),
+                "sl_steps": int(sl_steps_val),
+                "ratio_steps": int(ratio_steps_val),
+                "vol_steps": int(vol_steps_val),
+                "refine": bool(refine_flag),
+            },
             "results": summary_results,
             "results_total": len(candidates),
             "best": best,
@@ -1485,6 +1945,9 @@ def forecast_barrier_optimize(
         }
         if optuna_meta is not None:
             out["optuna"] = optuna_meta
+        if pareto_front is not None:
+            out["pareto_front"] = pareto_front
+            out["pareto_count"] = int(len(pareto_front))
         if isinstance(best, dict):
             warnings_out: List[str] = []
             best_ev = best.get("ev")

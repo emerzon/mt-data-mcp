@@ -253,6 +253,136 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertTrue(result.get("grid"))
         self.assertIsInstance(result.get("best"), dict)
 
+    def test_forecast_barrier_optimize_optuna_pareto_front(self):
+        if importlib.util.find_spec("optuna") is None:
+            self.skipTest("optuna package not installed")
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.2, tp_max=1.0, tp_steps=3,
+                sl_min=0.2, sl_max=1.0, sl_steps=3,
+                objective="ev",
+                params={
+                    "optimizer": "optuna",
+                    "optuna_pareto": True,
+                    "n_trials": 12,
+                    "n_jobs": 1,
+                    "sampler": "random",
+                    "pruner": "none",
+                    "seed": 13,
+                    "pareto_limit": 5,
+                },
+                return_grid=True,
+            )
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("optimizer"), "optuna")
+        self.assertIn("optuna", result)
+        self.assertTrue(result["optuna"].get("pareto"))
+        self.assertIn("pareto_front", result)
+        self.assertLessEqual(result.get("pareto_count", 0), 5)
+        self.assertGreaterEqual(result.get("pareto_count", 0), 1)
+        row = result["pareto_front"][0]
+        self.assertIn("objective_values", row)
+        self.assertIn("ev", row["objective_values"])
+        self.assertIn("prob_loss", row["objective_values"])
+        self.assertIn("t_hit_resolve_median", row["objective_values"])
+
+    def test_forecast_barrier_optimize_fast_defaults_switch(self):
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                fast_defaults=True,
+                return_grid=True,
+            )
+        self.assertTrue(result.get("success"))
+        self.assertTrue(result.get("fast_defaults"))
+        profile = result.get("compute_profile", {})
+        self.assertEqual(profile.get("n_sims"), 1200)
+        self.assertEqual(profile.get("tp_steps"), 4)
+        self.assertEqual(profile.get("sl_steps"), 4)
+        self.assertEqual(profile.get("ratio_steps"), 4)
+        self.assertEqual(profile.get("vol_steps"), 4)
+        self.assertFalse(profile.get("refine"))
+        self.assertEqual(result.get("results_total"), 16)
+
+    def test_forecast_barrier_optimize_search_profile_long(self):
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                search_profile="long",
+                return_grid=True,
+            )
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("search_profile"), "long")
+        profile = result.get("compute_profile", {})
+        self.assertEqual(profile.get("profile"), "long")
+        self.assertEqual(profile.get("n_sims"), 10000)
+        self.assertEqual(profile.get("tp_steps"), 41)
+        self.assertEqual(profile.get("sl_steps"), 51)
+        self.assertEqual(profile.get("ratio_steps"), 24)
+        self.assertEqual(profile.get("vol_steps"), 18)
+        self.assertTrue(profile.get("refine"))
+
+    def test_forecast_barrier_optimize_ensemble_method(self):
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_gbm, \
+             patch('mtdata.forecast.barriers._simulate_bootstrap_mc') as mock_bootstrap, \
+             patch('mtdata.forecast.barriers._get_live_reference_price', return_value=(None, None)):
+            mock_gbm.return_value = {"price_paths": paths}
+            mock_bootstrap.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="ensemble",
+                direction="long",
+                mode="pct",
+                tp_min=0.5, tp_max=0.5, tp_steps=1,
+                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                params={
+                    "ensemble_methods": ["mc_gbm", "bootstrap"],
+                    "ensemble_agg": "median",
+                    "optimizer": "grid",
+                    "n_sims": 50,
+                    "n_seeds": 1,
+                },
+                return_grid=False,
+                output="summary",
+            )
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("method"), "ensemble")
+        self.assertIn("ensemble", result)
+        self.assertEqual(result["ensemble"]["agg"], "median")
+        self.assertEqual(len(result["ensemble"]["members"]), 2)
+        self.assertIn("best", result)
+        self.assertIsInstance(result["best"], dict)
+        self.assertIn("ev", result["best"])
+
     def test_forecast_barrier_optimize_prefers_live_reference_price(self):
         self._set_flat_history(1.0, bars=200)
         paths = self._sample_paths()

@@ -473,3 +473,44 @@ def test_forecast_options_and_quantlib_tool_routing(monkeypatch):
     assert out["kind"] == "cal"
     assert out["symbol"] == "AAPL"
     assert out["option_type"] == "put"
+
+
+def test_forecast_barrier_optimize_routes_profile_args(monkeypatch):
+    raw_opt = _unwrap(cf.forecast_barrier_optimize)
+    called = {}
+
+    import mtdata.forecast.barriers as barriers_mod
+
+    def fake_optimize(**kwargs):
+        called.update(kwargs)
+        return {"ok": True, "search_profile": kwargs.get("search_profile"), "fast_defaults": kwargs.get("fast_defaults")}
+
+    monkeypatch.setattr(barriers_mod, "forecast_barrier_optimize", fake_optimize)
+    out = raw_opt(symbol="EURUSD", fast_defaults=True, search_profile="long")
+    assert out["ok"] is True
+    assert out["fast_defaults"] is True
+    assert out["search_profile"] == "long"
+    assert called["fast_defaults"] is True
+    assert called["search_profile"] == "long"
+
+
+def test_forecast_barrier_optimize_applies_default_optuna_config(monkeypatch):
+    raw_opt = _unwrap(cf.forecast_barrier_optimize)
+    called = {}
+
+    import mtdata.forecast.barriers as barriers_mod
+
+    def fake_optimize(**kwargs):
+        called.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(barriers_mod, "forecast_barrier_optimize", fake_optimize)
+    out = raw_opt(symbol="BTCUSD")
+    assert out["ok"] is True
+    assert called["method"] == "auto"
+    assert called["search_profile"] == "long"
+    assert called["params"]["optimizer"] == "optuna"
+    assert called["params"]["sampler"] == "tpe"
+    assert called["params"]["pruner"] == "median"
+    assert int(called["params"]["n_jobs"]) >= 1
+    assert called["params"]["seed"] == 42
