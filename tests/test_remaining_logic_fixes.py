@@ -142,3 +142,6 @@ def test_fetch_ticks_summary_adds_precision_display_stats(mock_copy_ticks: Magic
     assert res.get("price_precision") == 2
     assert res["stats_display"]["bid"]["first"] == "65601.00"
     assert res["stats_display"]["ask"]["first"] == "65601.50"
+    assert "spread" in res["stats"]
+    assert res["stats"]["spread"]["mean"] == 0.5
+    assert res["stats_display"]["spread"]["first"] == "0.50"

@@ -620,8 +620,10 @@ class TestFetchCandles(unittest.TestCase):
         self.assertEqual(gap['gap_seconds'], 32400.0)
         self.assertEqual(gap['expected_bar_seconds'], 3600.0)
         self.assertEqual(gap['missing_bars_est'], 8)
+        self.assertIn('context', gap)
         self.assertIn('warnings', result)
         self.assertTrue(any('session gap' in w.lower() for w in result['warnings']))
+        self.assertTrue(any('example gap' in w.lower() for w in result['warnings']))
 
     # -- Error paths ---------------------------------------------------------
 

@@ -1,5 +1,6 @@
 
 from typing import Any, Dict
+import math
 
 from ..utils.mt5 import _mt5_epoch_to_utc
 from ..utils.utils import _format_time_minimal, _format_time_minimal_local, _use_client_tz
@@ -8,7 +9,7 @@ import MetaTrader5 as mt5
 
 @mcp.tool()
 @_auto_connect_wrapper
-def market_depth_fetch(symbol: str) -> Dict[str, Any]:
+def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
     """Return DOM if available; otherwise current bid/ask snapshot for `symbol`.
 
     Parameters: symbol
@@ -23,6 +24,35 @@ def market_depth_fetch(symbol: str) -> Dict[str, Any]:
             return {"error": f"Symbol {symbol} not found"}
 
         digits = max(0, int(getattr(symbol_info, "digits", 0) or 0))
+        point = float(getattr(symbol_info, "point", 0.0) or 0.0)
+        tick_size = float(getattr(symbol_info, "trade_tick_size", 0.0) or 0.0)
+        tick_value = float(getattr(symbol_info, "trade_tick_value", 0.0) or 0.0)
+
+        def _compute_spread_metrics(bid: Any, ask: Any) -> Dict[str, Any] | None:
+            try:
+                bid_f = float(bid)
+                ask_f = float(ask)
+            except Exception:
+                return None
+            if not (math.isfinite(bid_f) and math.isfinite(ask_f)):
+                return None
+            spread_abs = float(ask_f - bid_f)
+            if spread_abs < 0:
+                return None
+            mid = (ask_f + bid_f) / 2.0
+            spread_points = (spread_abs / point) if point > 0 else None
+            spread_pct = ((spread_abs / mid) * 100.0) if mid > 0 else None
+            spread_usd = None
+            if tick_size > 0 and tick_value > 0:
+                spread_usd = (spread_abs / tick_size) * tick_value
+            return {
+                "spread": spread_abs,
+                "spread_display": _price_display(spread_abs),
+                "spread_points": spread_points,
+                "spread_pct": spread_pct,
+                "spread_usd": spread_usd,
+                "pricing_basis": "per_1_lot_estimate" if spread_usd is not None else "quote_only",
+            }
 
         def _price_display(value: Any) -> Any:
             if value is None:
@@ -56,7 +86,7 @@ def market_depth_fetch(symbol: str) -> Dict[str, Any]:
                 else:  # Sell order
                     sell_orders.append(order_data)
             
-            return {
+            out = {
                 "success": True,
                 "symbol": symbol,
                 "type": "full_depth",
@@ -66,6 +96,15 @@ def market_depth_fetch(symbol: str) -> Dict[str, Any]:
                     "sell_orders": sell_orders
                 }
             }
+            if spread and buy_orders and sell_orders:
+                best_bid = max(float(row.get("price")) for row in buy_orders if row.get("price") is not None)
+                best_ask = min(float(row.get("price")) for row in sell_orders if row.get("price") is not None)
+                spread_metrics = _compute_spread_metrics(best_bid, best_ask)
+                if spread_metrics is not None:
+                    out["data"]["best_bid"] = best_bid
+                    out["data"]["best_ask"] = best_ask
+                    out["data"].update(spread_metrics)
+            return out
         else:
             # Get current tick
             tick = mt5.symbol_info_tick(symbol)
@@ -86,10 +125,16 @@ def market_depth_fetch(symbol: str) -> Dict[str, Any]:
                     "last_display": _price_display(tick.last),
                     "volume": int(tick.volume) if tick.volume else None,
                     "time": int(_mt5_epoch_to_utc(float(tick.time))) if tick.time else None,
-                    # spread removed from outputs by request
                     "note": "Full market depth not available, showing current bid/ask"
                 }
             }
+            if spread:
+                spread_metrics = _compute_spread_metrics(
+                    out["data"].get("bid"),
+                    out["data"].get("ask"),
+                )
+                if spread_metrics is not None:
+                    out["data"].update(spread_metrics)
             _use_ctz = _use_client_tz()
             if tick.time and _use_ctz:
                 out["data"]["time_display"] = _format_time_minimal_local(_mt5_epoch_to_utc(float(tick.time)))

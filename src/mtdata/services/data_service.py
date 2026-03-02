@@ -452,6 +452,14 @@ def fetch_candles(
                         from_disp = _format_time_minimal(prev_t)
                         to_disp = _format_time_minimal(curr_t)
                     missing_bars_est = max(1, int(round(gap_seconds / expected_bar_seconds)) - 1)
+                    prev_dt = datetime.fromtimestamp(prev_t, tz=dt_timezone.utc)
+                    curr_dt = datetime.fromtimestamp(curr_t, tz=dt_timezone.utc)
+                    crosses_weekend = (
+                        prev_dt.weekday() >= 5
+                        or curr_dt.weekday() >= 5
+                        or ((curr_t - prev_t) >= (36.0 * 3600.0))
+                    )
+                    gap_context = "weekend/session break" if crosses_weekend else "session break"
                     session_gaps.append(
                         {
                             "from": from_disp,
@@ -461,6 +469,7 @@ def fetch_candles(
                             "gap_seconds": gap_seconds,
                             "expected_bar_seconds": expected_bar_seconds,
                             "missing_bars_est": int(missing_bars_est),
+                            "context": gap_context,
                         }
                     )
             except Exception:
@@ -571,6 +580,18 @@ def fetch_candles(
                     secs=expected_bar_seconds,
                 )
             )
+            try:
+                first_gap = session_gaps[0]
+                warns.append(
+                    "Example gap: {from_} -> {to} ({missing} missing bars, likely {context}).".format(
+                        from_=str(first_gap.get("from")),
+                        to=str(first_gap.get("to")),
+                        missing=int(first_gap.get("missing_bars_est") or 0),
+                        context=str(first_gap.get("context") or "session break"),
+                    )
+                )
+            except Exception:
+                pass
             payload['warnings'] = warns
         return payload
     except Exception as e:
@@ -590,7 +611,7 @@ def fetch_ticks(
     ----------
     output : {"summary","stats","rows"}
         - "summary" (default): compact descriptive statistics over the fetched
-          ticks (bid/ask/mid, plus last and volume; volume uses real volume when
+          ticks (bid/ask/mid/spread, plus last and volume; volume uses real volume when
           available, otherwise tick_volume).
         - "stats": more detailed stats (includes extra distribution moments and
           quantiles).
@@ -782,6 +803,7 @@ def fetch_ticks(
 
             df_stats = df_ticks.copy()
             df_stats["mid"] = (df_stats["bid"] + df_stats["ask"]) / 2.0
+            df_stats["spread"] = (df_stats["ask"] - df_stats["bid"])
 
             start_epoch = float(df_stats["__epoch"].iloc[0])
             end_epoch = float(df_stats["__epoch"].iloc[-1])
@@ -813,6 +835,7 @@ def fetch_ticks(
                     "bid": _series_stats(df_stats["bid"], total_count=len(df_stats)),
                     "ask": _series_stats(df_stats["ask"], total_count=len(df_stats)),
                     "mid": _series_stats(df_stats["mid"], total_count=len(df_stats)),
+                    "spread": _series_stats(df_stats["spread"], total_count=len(df_stats)),
                 },
             }
             if price_digits > 0:
@@ -911,7 +934,7 @@ def fetch_ticks(
 
             if price_digits > 0:
                 stats_display: Dict[str, Dict[str, str]] = {}
-                for field in ("bid", "ask", "mid", "last"):
+                for field in ("bid", "ask", "mid", "spread", "last"):
                     section = out.get("stats", {}).get(field)
                     if not isinstance(section, dict):
                         continue

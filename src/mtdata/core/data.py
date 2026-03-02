@@ -120,7 +120,7 @@ def data_fetch_ticks(
     """Fetch tick data for a symbol.
 
     By default (`output="summary"`), returns a compact set of descriptive stats
-    over the fetched ticks (bid/ask/mid, plus last and volume; volume uses real
+    over the fetched ticks (bid/ask/mid/spread, plus last and volume; volume uses real
     volume when available, otherwise tick_volume).
 
     Use `output="stats"` for a more detailed stats payload.
