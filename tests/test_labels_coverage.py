@@ -139,6 +139,27 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_summary_only_flag(self, mock_hist, mock_den, mock_pip):
+        mock_hist.return_value = _make_df(60)
+        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, output="compact", summary_only=True)
+        assert result["success"] is True
+        assert "summary" in result
+        assert "entries" not in result
+        assert "labels" not in result
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_output_summary_only_alias(self, mock_hist, mock_den, mock_pip):
+        mock_hist.return_value = _make_df(60)
+        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, output="summary_only")
+        assert result["success"] is True
+        assert "summary" in result
+        assert "entries" not in result
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
     def test_flat_price_neutral_labels(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_flat_df(60)
         result = _get_raw_fn()("FLAT", tp_pct=5.0, sl_pct=5.0, horizon=5)

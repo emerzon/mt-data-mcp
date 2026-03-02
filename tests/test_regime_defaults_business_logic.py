@@ -119,3 +119,26 @@ def test_regime_detect_default_min_regime_bars_is_5() -> None:
     raw = _unwrap(regime_detect)
     default_val = inspect.signature(raw).parameters["min_regime_bars"].default
     assert int(default_val) == 5
+
+
+def test_bocpd_zero_change_points_includes_tuning_hint() -> None:
+    raw = _unwrap(regime_detect)
+    cp = np.zeros(79, dtype=float)
+
+    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)), patch(
+        "mtdata.core.regime._resolve_denoise_base_col",
+        return_value="close",
+    ), patch(
+        "mtdata.core.regime._format_time_minimal",
+        side_effect=lambda x: f"T{x}",
+    ), patch(
+        "mtdata.utils.regime.bocpd_gaussian",
+        return_value={"cp_prob": cp},
+    ):
+        out = raw(symbol="BTCUSD", timeframe="H1", limit=80, method="bocpd", threshold=0.6, output="summary")
+
+    summary = out.get("summary", {})
+    assert summary.get("change_points_count") == 0
+    hint = str(summary.get("tuning_hint", ""))
+    assert "hazard_lambda" in hint
+    assert "threshold" in hint

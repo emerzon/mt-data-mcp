@@ -437,6 +437,12 @@ def regime_detect(
             cp_prob = res.get('cp_prob', np.zeros_like(x, dtype=float))
             cp_idx = [int(i) for i, v in enumerate(cp_prob) if float(v) >= float(threshold)]
             cps = [{"idx": i, "time": t_fmt[i], "prob": float(cp_prob[i])} for i in cp_idx]
+            tuning_hint: Optional[str] = None
+            if len(cps) == 0:
+                tuning_hint = (
+                    "No change points detected. Try lowering threshold or reducing "
+                    f"hazard_lambda (currently {hazard_lambda}) to increase sensitivity."
+                )
             payload = {
                 "success": True,
                 "symbol": symbol,
@@ -453,6 +459,8 @@ def regime_detect(
                     "max_run_length": max_rl,
                 },
             }
+            if tuning_hint is not None:
+                payload["tuning_hint"] = tuning_hint
             if output in ('summary','compact'):
                 n = min(int(lookback), len(cp_prob))
                 tail = np.asarray(cp_prob[-n:], dtype=float) if n > 0 else np.asarray(cp_prob, dtype=float)
@@ -465,6 +473,8 @@ def regime_detect(
                     "change_points_count": int(len(recent_cps)),
                     "recent_change_points": recent_cps[-5:],
                 }
+                if tuning_hint is not None:
+                    summary["tuning_hint"] = tuning_hint
                 payload["summary"] = summary
                 if output == "summary":
                     return _summary_only_payload(payload)

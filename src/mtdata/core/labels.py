@@ -27,7 +27,8 @@ def labels_triple_barrier(
     sl_pips: Optional[float] = None,
     denoise: Optional[DenoiseSpec] = None,
     label_on: Literal['close','high_low'] = 'high_low',  # type: ignore
-    output: Literal['full','summary','compact'] = 'full',  # type: ignore
+    output: Literal['full','summary','compact','summary_only'] = 'full',  # type: ignore
+    summary_only: bool = False,
     lookback: int = 300,
 ) -> Dict[str, Any]:
     """Label each bar with triple-barrier outcomes using future path up to `horizon` bars.
@@ -41,6 +42,17 @@ def labels_triple_barrier(
     Outputs label: +1 (TP first), -1 (SL first), 0 (neither by horizon), and holding_bars until decision.
     """
     try:
+        output_mode = str(output).strip().lower()
+        if output_mode == 'summary_only':
+            output_mode = 'summary'
+        if isinstance(summary_only, str):
+            summary_only_flag = summary_only.strip().lower() in {"1", "true", "yes", "y", "on"}
+        else:
+            summary_only_flag = bool(summary_only)
+        if summary_only_flag:
+            output_mode = 'summary'
+        if output_mode not in {'full', 'summary', 'compact'}:
+            return {"error": "Invalid output mode. Use 'full', 'summary', 'compact', or summary_only=True."}
         df = _fetch_history(symbol, timeframe, int(max(limit, horizon + 50)), as_of=None)
         if len(df) < horizon + 2:
             return {"error": "Insufficient history for labeling"}
@@ -120,7 +132,7 @@ def labels_triple_barrier(
                 "label_on": label_on,
             }
         }
-        if output in ('summary','compact'):
+        if output_mode in ('summary','compact'):
             import numpy as _np
             n = min(int(lookback), len(labels))
             lab_tail = labels[-n:] if n > 0 else labels
@@ -131,7 +143,7 @@ def labels_triple_barrier(
                       "neut": int(sum(1 for v in lab_tail if v == 0))}
             med_hold = float(_np.median(_np.array(hold_tail, dtype=float))) if hold_tail else float('nan')
             summary = {"lookback": int(n), "counts": counts, "median_holding_bars": med_hold}
-            if output == 'summary':
+            if output_mode == 'summary':
                 return {"success": True, "symbol": symbol, "timeframe": timeframe, "horizon": int(horizon), "summary": summary}
             # compact: include tail only
             payload["summary"] = summary

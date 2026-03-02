@@ -1388,6 +1388,7 @@ def patterns_detect(
     robust_only: bool = True,
     whitelist: Optional[str] = None,
     top_k: int = 1,
+    last_n_bars: Optional[int] = None,
     # Classic/Elliott specific
     denoise: Optional[Dict[str, Any]] = None,
     config: Optional[Dict[str, Any]] = None,
@@ -1443,6 +1444,10 @@ def patterns_detect(
     
     top_k : int, optional (default=1)
         Return only the top K strongest patterns
+
+    last_n_bars : int, optional
+        Candlestick mode only. Restrict detections to patterns that occur in the
+        most recent N bars.
     
     Classic/Elliott Mode Parameters:
     ---------------------------------
@@ -1514,6 +1519,14 @@ def patterns_detect(
 
         if mode_value == 'candlestick':
             tf_single = tf_norm or "H1"
+            last_n_bars_val: Optional[int] = None
+            if last_n_bars is not None:
+                try:
+                    last_n_bars_val = int(last_n_bars)
+                except Exception:
+                    return {"error": "last_n_bars must be a positive integer."}
+                if last_n_bars_val <= 0:
+                    return {"error": "last_n_bars must be >= 1."}
             out = _detect_candlestick_patterns(
                 symbol=symbol,
                 timeframe=tf_single,
@@ -1523,6 +1536,7 @@ def patterns_detect(
                 robust_only=robust_only,
                 whitelist=whitelist,
                 top_k=top_k,
+                last_n_bars=last_n_bars_val,
             )
             if detail_value == 'compact':
                 return _compact_patterns_payload(out if isinstance(out, dict) else {"data": out})

@@ -199,6 +199,68 @@ def test_detect_candlestick_patterns_does_not_flatten_unexpected_errors(monkeypa
         )
 
 
+def test_extract_candlestick_rows_respects_start_index():
+    df = pd.DataFrame({"time": ["T0", "T1", "T2"], "close": [100.0, 101.0, 102.0]})
+    temp = pd.DataFrame({"cdl_engulfing": [100.0, 100.0, 100.0]})
+    rows = _extract_candlestick_rows(
+        df,
+        temp,
+        ["cdl_engulfing"],
+        threshold=0.95,
+        robust_only=True,
+        robust_set={"engulfing"},
+        whitelist_set=None,
+        min_gap=0,
+        top_k=1,
+        deprioritize=set(),
+        include_metrics=True,
+        start_index=2,
+    )
+    assert len(rows) == 1
+    assert rows[0][0] == "T2"
+
+
+def test_patterns_detect_candlestick_passes_last_n_bars(monkeypatch):
+    captured = {}
+
+    def _fake_detect(**kwargs):
+        captured.update(kwargs)
+        return {"success": True, "patterns": []}
+
+    monkeypatch.setattr(core_patterns, "_detect_candlestick_patterns", _fake_detect)
+
+    raw = core_patterns.patterns_detect
+    while hasattr(raw, "__wrapped__"):
+        raw = raw.__wrapped__
+
+    res = raw(
+        symbol="EURUSD",
+        timeframe="H1",
+        mode="candlestick",
+        detail="full",
+        last_n_bars=8,
+    )
+
+    assert res.get("success") is True
+    assert captured.get("last_n_bars") == 8
+
+
+def test_patterns_detect_candlestick_rejects_non_positive_last_n_bars():
+    raw = core_patterns.patterns_detect
+    while hasattr(raw, "__wrapped__"):
+        raw = raw.__wrapped__
+
+    res = raw(
+        symbol="EURUSD",
+        timeframe="H1",
+        mode="candlestick",
+        detail="full",
+        last_n_bars=0,
+    )
+    assert "error" in res
+    assert "last_n_bars" in str(res["error"])
+
+
 def test_detect_classic_uses_singular_pennant_name(monkeypatch):
     n = 110
     close = np.linspace(100.0, 130.0, n)

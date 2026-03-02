@@ -655,5 +655,44 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertIsNone(result.get("least_negative"))
         self.assertIn("warning", result)
 
+    def test_forecast_barrier_optimize_viable_only_concise_limits_non_viable_output(self):
+        self._set_flat_history(1.0)
+        paths = np.array([
+            [1.0030, 1.0040, 1.0050],
+            [1.0030, 1.0020, 1.0010],
+            [1.0040, 1.0060, 1.0070],
+            [1.0030, 0.9900, 0.9800],
+            [0.9740, 0.9730, 0.9720],
+        ])
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=3,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.25,
+                tp_max=0.25,
+                tp_steps=1,
+                sl_min=2.5,
+                sl_max=2.5,
+                sl_steps=1,
+                objective="edge",
+                viable_only=True,
+                concise=True,
+                top_k=2,
+                return_grid=True,
+                output="full",
+            )
+        self.assertTrue(result.get("success"))
+        self.assertFalse(result.get("viable"))
+        self.assertTrue(result.get("viable_only"))
+        self.assertTrue(result.get("concise"))
+        self.assertEqual(result.get("results_total"), 1)
+        self.assertEqual(len(result.get("results", [])), 1)
+        self.assertIsNone(result.get("grid"))
+
 if __name__ == '__main__':
     unittest.main()

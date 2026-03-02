@@ -905,6 +905,8 @@ def forecast_barrier_optimize(
     return_grid: bool = True,
     top_k: Optional[int] = None,
     output: Literal['full','summary'] = 'full',  # type: ignore
+    viable_only: bool = False,
+    concise: bool = False,
     grid_style: Literal['fixed','volatility','ratio','preset'] = 'fixed',  # type: ignore
     preset: Optional[str] = None,
     vol_window: int = 250,
@@ -945,6 +947,8 @@ def forecast_barrier_optimize(
         return_grid=return_grid,
         top_k=top_k,
         output=output,
+        viable_only=viable_only,
+        concise=concise,
         grid_style=grid_style,
         preset=preset,
         vol_window=vol_window,

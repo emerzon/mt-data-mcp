@@ -642,6 +642,8 @@ def forecast_barrier_optimize(
     return_grid: bool = True,
     top_k: Optional[int] = None,
     output: Literal['full','summary'] = 'full',
+    viable_only: bool = False,
+    concise: bool = False,
     grid_style: Literal['fixed','volatility','ratio','preset'] = 'fixed',
     preset: Optional[str] = None,
     vol_window: int = 250,
@@ -693,6 +695,27 @@ def forecast_barrier_optimize(
         mode_val = str(mode).lower()
         if mode_val not in {'pct', 'pips'}:
             return {"error": f"Invalid mode: {mode}. Use 'pct' or 'pips'."}
+        output_mode = str(output).strip().lower()
+        if output_mode not in {'full', 'summary'}:
+            output_mode = 'full'
+
+        def _coerce_bool_flag(value: Any, default: bool = False) -> bool:
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)):
+                return bool(value)
+            if isinstance(value, str):
+                v = value.strip().lower()
+                if v in {"1", "true", "yes", "y", "on"}:
+                    return True
+                if v in {"0", "false", "no", "n", "off"}:
+                    return False
+            return bool(default)
+
+        viable_only_val = _coerce_bool_flag(params_dict.get('viable_only', viable_only), default=bool(viable_only))
+        concise_val = _coerce_bool_flag(params_dict.get('concise', concise), default=bool(concise))
+        if concise_val:
+            output_mode = 'summary'
         objective_val = str(objective).lower()
         objective_requested = objective_val
         valid_objectives = {
@@ -1222,18 +1245,39 @@ def forecast_barrier_optimize(
             results.extend(_evaluate(refine_candidates))
             _sort(results)
 
-        candidates = results
+        ranked_candidates = list(results)
+        viable_candidates: List[Dict[str, Any]] = []
+        for row in ranked_candidates:
+            try:
+                ev_candidate = row.get('ev')
+                if ev_candidate is not None and np.isfinite(float(ev_candidate)) and float(ev_candidate) >= 0.0:
+                    viable_candidates.append(row)
+            except Exception:
+                continue
+
+        if viable_only_val:
+            candidates = viable_candidates if viable_candidates else ranked_candidates
+        else:
+            candidates = ranked_candidates
+
         if top_k_val is not None:
             candidates = candidates[:top_k_val]
+        elif (concise_val or viable_only_val) and not viable_candidates and len(candidates) > 5:
+            candidates = candidates[:5]
 
-        grid_out = candidates if return_grid else None
-        if output == 'summary' and grid_out is not None:
+        grid_out = candidates if (return_grid and not concise_val) else None
+        if output_mode == 'summary' and grid_out is not None:
             limit = top_k_val or min(10, len(grid_out))
             grid_out = grid_out[:limit]
 
         results_limit = min(10, len(candidates))
-        if output == 'summary':
-            results_limit = top_k_val or min(10, len(candidates))
+        if output_mode == 'summary':
+            if top_k_val is not None:
+                results_limit = top_k_val
+            elif concise_val:
+                results_limit = min(5, len(candidates))
+            else:
+                results_limit = min(10, len(candidates))
         summary_results = candidates[:results_limit]
 
         no_candidates = len(candidates) == 0
@@ -1323,6 +1367,10 @@ def forecast_barrier_optimize(
                 out["auto_reason"] = auto_reason
         if bb_enabled:
             out["bridge_correction"] = True
+        if viable_only_val:
+            out["viable_only"] = True
+        if concise_val:
+            out["concise"] = True
         return out
 
     except Exception as e:

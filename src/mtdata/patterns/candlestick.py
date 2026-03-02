@@ -118,6 +118,7 @@ def _extract_candlestick_rows(
     top_k: int,
     deprioritize: set[str],
     include_metrics: bool = False,
+    start_index: int = 0,
 ) -> List[List[Any]]:
     if not pattern_cols:
         return []
@@ -173,7 +174,10 @@ def _extract_candlestick_rows(
         except Exception:
             close_vals = None
 
+    start_idx = max(0, int(start_index))
     candidate_rows = np.flatnonzero(np.any(active_mask, axis=1))
+    if start_idx > 0:
+        candidate_rows = candidate_rows[candidate_rows >= start_idx]
     for i in candidate_rows.tolist():
         if i - last_pick_idx < gap:
             continue
@@ -235,6 +239,7 @@ def detect_candlestick_patterns(
     robust_only: bool,
     whitelist: Optional[str],
     top_k: int,
+    last_n_bars: Optional[int] = None,
 ) -> Dict[str, Any]:
     try:
         _ensure_candlestick_runtime()
@@ -328,6 +333,17 @@ def detect_candlestick_patterns(
         k = max(1, int(top_k))
     except Exception:
         k = 1
+    last_n_val: Optional[int] = None
+    if last_n_bars is not None:
+        try:
+            last_n_val = int(last_n_bars)
+        except Exception:
+            return {"error": "last_n_bars must be a positive integer."}
+        if last_n_val <= 0:
+            return {"error": "last_n_bars must be >= 1."}
+    start_index = 0
+    if last_n_val is not None and len(df) > last_n_val:
+        start_index = int(len(df) - last_n_val)
     _deprioritize = {
         'shortline', 'longline', 'spinningtop', 'highwave',
         'marubozu', 'closingmarubozu', 'doji', 'gravestonedoji', 'longleggeddoji', 'rickshawman'
@@ -345,6 +361,7 @@ def detect_candlestick_patterns(
         top_k=k,
         deprioritize=_deprioritize,
         include_metrics=True,
+        start_index=start_index,
     )
 
     headers = ["time", "pattern", "direction", "confidence", "price"]
@@ -356,6 +373,8 @@ def detect_candlestick_patterns(
         "candles": int(limit),
         "mode": "candlestick",
     })
+    if last_n_val is not None:
+        payload["last_n_bars"] = int(last_n_val)
     if not _use_ctz:
         payload["timezone"] = "UTC"
     return payload
