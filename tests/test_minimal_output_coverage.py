@@ -236,6 +236,23 @@ class TestNormalizeForecastPayload:
         result = _normalize_forecast_payload(payload, verbose=True)
         assert result["meta"]["denoise"] == "applied"
 
+    def test_ci_warnings_preserved_in_non_verbose_output(self):
+        payload = {
+            "times": ["t1"],
+            "forecast_price": [100.0],
+            "ci_requested": True,
+            "ci_alpha_requested": 0.05,
+            "ci_available": False,
+            "ci_status": "unavailable",
+            "warnings": [
+                "Point forecast only for method 'theta'; confidence intervals are unavailable."
+            ],
+        }
+        result = _normalize_forecast_payload(payload, verbose=False)
+        assert "meta" not in result
+        assert result["ci"]["ci_status"] == "unavailable"
+        assert result["warnings"][0].startswith("Point forecast only")
+
 
 class TestFormatTableToon:
     def test_basic(self):

@@ -1037,6 +1037,9 @@ class TestTemplateBasic:
         assert forecast.get("method") == "naive"
         assert forecast.get("fallback_from") == "sf_autoarima"
         assert any("degenerate" in str(v).lower() for v in forecast.get("selection_warnings", []))
+        assert report.get("fallback_applied") is True
+        assert report.get("original_method") == "sf_autoarima"
+        assert report.get("fallback_method") == "naive"
 
         best_method = report["sections"].get("backtest", {}).get("best_method", {})
         assert best_method.get("method") == "naive"

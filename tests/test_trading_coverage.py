@@ -636,7 +636,7 @@ class TestTradePlace:
     @patch("mtdata.core.trading._place_market_order")
     def test_dispatches_to_market(self, mock_market):
         mock_market.return_value = {"retcode": 10009}
-        trade_place(symbol="EURUSD", volume=0.01, order_type="BUY")
+        trade_place(symbol="EURUSD", volume=0.01, order_type="BUY", require_sl_tp=False)
         mock_market.assert_called_once()
 
     @patch("mtdata.core.trading._place_pending_order")

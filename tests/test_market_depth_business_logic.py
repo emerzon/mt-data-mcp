@@ -3,12 +3,16 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from mtdata.core.market_depth import market_depth_fetch
+from mtdata.core.market_depth import market_depth_fetch, market_ticker
 
 
 def _raw_market_depth_fetch(symbol: str, spread: bool = False):
     # Bypass @mcp.tool and @_auto_connect_wrapper wrappers.
     return market_depth_fetch.__wrapped__.__wrapped__(symbol, spread=spread)
+
+
+def _raw_market_ticker(symbol: str):
+    return market_ticker.__wrapped__.__wrapped__(symbol)
 
 
 def test_market_depth_tick_fallback_includes_price_display() -> None:
@@ -105,3 +109,33 @@ def test_market_depth_full_depth_includes_spread_metrics_when_requested() -> Non
     assert out["data"]["best_bid"] == 100.0
     assert out["data"]["best_ask"] == 101.0
     assert out["data"]["spread"] == 1.0
+
+
+def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
+    tick = SimpleNamespace(
+        bid=200.0,
+        ask=201.0,
+        last=200.5,
+        volume=5,
+        time=1700000000,
+    )
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth._use_client_tz", return_value=False
+    ):
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=2,
+            point=0.01,
+            trade_tick_size=0.01,
+            trade_tick_value=1.0,
+        )
+        mt5.symbol_info_tick.return_value = tick
+        out = _raw_market_ticker("BTCUSD")
+
+    assert out["success"] is True
+    assert out["type"] == "ticker"
+    assert out["bid"] == 200.0
+    assert out["ask"] == 201.0
+    assert out["spread"] == 1.0
+    assert out["spread_points"] == 100.0
+    assert out["spread_display"] == "1.00"

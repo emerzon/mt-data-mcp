@@ -470,7 +470,29 @@ def _normalize_forecast_payload(payload: Dict[str, Any], verbose: bool = True) -
             cli_meta = payload.get('cli_meta')
             if isinstance(cli_meta, dict) and cli_meta:
                 out['cli_meta'] = cli_meta
-                
+
+        # Preserve forecast CI diagnostics/warnings in compact output so
+        # non-verbose CLI users still see when intervals are unavailable.
+        ci_diag: Dict[str, Any] = {}
+        for key in (
+            'ci_requested',
+            'ci_alpha_requested',
+            'ci_available',
+            'ci_status',
+            'ci_unavailable',
+            'ci_alpha',
+        ):
+            if key in payload and not _is_empty_value(payload.get(key)):
+                ci_diag[key] = payload.get(key)
+        if ci_diag:
+            out['ci'] = ci_diag
+
+        warnings_in = payload.get('warnings')
+        if isinstance(warnings_in, list) and warnings_in:
+            warnings_clean = [str(w).strip() for w in warnings_in if str(w).strip()]
+            if warnings_clean:
+                out['warnings'] = warnings_clean
+                 
         out['forecast'] = rows
         return out
     except Exception:

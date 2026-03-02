@@ -1732,7 +1732,8 @@ def trade_place(
     - BUY/SELL: market by default; treated as pending when `price`/`expiration` is provided.
     - BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP: pending (requires `price`).
     - Also accepts ORDER_TYPE_* aliases and MT5 numeric constants 0..5 for order_type.
-    - require_sl_tp: fail the command when a filled market order cannot apply TP/SL.
+    - require_sl_tp: for market orders, require both SL and TP inputs before order
+      submission, and fail when a filled order cannot apply TP/SL.
       Defaults to True for safer automation behavior.
     - auto_close_on_sl_tp_fail: if TP/SL application fails on a filled market order,
       attempt to immediately close the unprotected position.
@@ -1785,6 +1786,26 @@ def trade_place(
         return {"error": str(ex)}
 
     is_pending = (t in explicit_pending_types) or price_provided or expiration_provided
+    if bool(require_sl_tp) and not is_pending:
+        missing_protection: List[str] = []
+        if stop_loss in (None, 0):
+            missing_protection.append("stop_loss")
+        if take_profit in (None, 0):
+            missing_protection.append("take_profit")
+        if missing_protection:
+            return {
+                "error": (
+                    "require_sl_tp=True requires both stop_loss and take_profit for market orders. "
+                    "Refusing to place an unprotected position."
+                ),
+                "require_sl_tp": True,
+                "missing": missing_protection,
+                "hint": (
+                    "Provide both --stop-loss and --take-profit, "
+                    "or explicitly set --require-sl-tp false."
+                ),
+            }
+
     if not is_pending:
         result = _place_market_order(
             symbol=symbol_norm,

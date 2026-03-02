@@ -842,6 +842,9 @@ def template_basic(
             if selected_method != best_name:
                 report['sections']['forecast']['fallback_from'] = best_name
                 report['sections']['forecast']['fallback_reason'] = 'initial best method produced a degenerate forecast'
+                report['fallback_applied'] = True
+                report['original_method'] = best_name
+                report['fallback_method'] = selected_method
             if fallback_notes:
                 report['sections']['forecast']['selection_warnings'] = fallback_notes
 

@@ -145,3 +145,87 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
             return out
     except Exception as e:
         return {"error": f"Error getting market depth: {str(e)}"}
+
+
+@mcp.tool()
+@_auto_connect_wrapper
+def market_ticker(symbol: str) -> Dict[str, Any]:
+    """Return a lightweight ticker snapshot with bid/ask/spread for `symbol`.
+
+    Parameters: symbol
+    """
+    try:
+        if not mt5.symbol_select(symbol, True):
+            return {"error": f"Failed to select symbol {symbol}: {mt5.last_error()}"}
+
+        symbol_info = mt5.symbol_info(symbol)
+        if symbol_info is None:
+            return {"error": f"Symbol {symbol} not found"}
+
+        tick = mt5.symbol_info_tick(symbol)
+        if tick is None:
+            return {"error": f"Failed to get tick data for {symbol}"}
+
+        digits = max(0, int(getattr(symbol_info, "digits", 0) or 0))
+        point = float(getattr(symbol_info, "point", 0.0) or 0.0)
+        tick_size = float(getattr(symbol_info, "trade_tick_size", 0.0) or 0.0)
+        tick_value = float(getattr(symbol_info, "trade_tick_value", 0.0) or 0.0)
+
+        bid = float(tick.bid) if tick.bid else None
+        ask = float(tick.ask) if tick.ask else None
+        last = float(tick.last) if tick.last else None
+
+        def _fmt_price(value: Any) -> Any:
+            if value is None:
+                return None
+            try:
+                v = float(value)
+                if digits > 0:
+                    return f"{v:.{digits}f}"
+                return str(v)
+            except Exception:
+                return None
+
+        spread_abs = None
+        spread_points = None
+        spread_pct = None
+        spread_usd = None
+        if bid is not None and ask is not None and ask >= bid:
+            spread_abs = float(ask - bid)
+            mid = (ask + bid) / 2.0
+            spread_points = (spread_abs / point) if point > 0 else None
+            spread_pct = ((spread_abs / mid) * 100.0) if mid > 0 else None
+            if tick_size > 0 and tick_value > 0:
+                spread_usd = (spread_abs / tick_size) * tick_value
+
+        tick_time = int(_mt5_epoch_to_utc(float(tick.time))) if tick.time else None
+        _use_ctz = _use_client_tz()
+
+        out: Dict[str, Any] = {
+            "success": True,
+            "symbol": symbol,
+            "type": "ticker",
+            "price_precision": digits,
+            "bid": bid,
+            "ask": ask,
+            "last": last,
+            "bid_display": _fmt_price(bid),
+            "ask_display": _fmt_price(ask),
+            "last_display": _fmt_price(last),
+            "spread": spread_abs,
+            "spread_display": _fmt_price(spread_abs),
+            "spread_points": spread_points,
+            "spread_pct": spread_pct,
+            "spread_usd": spread_usd,
+            "time": tick_time,
+        }
+        if tick_time is not None:
+            if _use_ctz:
+                out["time_display"] = _format_time_minimal_local(float(tick_time))
+            else:
+                out["time_display"] = _format_time_minimal(float(tick_time))
+        if not _use_ctz:
+            out["timezone"] = "UTC"
+        return out
+    except Exception as e:
+        return {"error": f"Error getting ticker snapshot: {str(e)}"}
