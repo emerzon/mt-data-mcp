@@ -139,6 +139,11 @@ def _build_pattern_response(
         "patterns": filtered,
         "n_patterns": int(len(filtered)),
     }
+    if str(mode).lower() == "elliott" and int(len(filtered)) == 0:
+        resp["diagnostic"] = (
+            f"No valid Elliott Wave structures detected in {int(limit)} {timeframe} bars. "
+            "Try a higher timeframe, more lookback, or a clearer trending segment."
+        )
     
     # Include series data if requested
     if include_series:
@@ -1634,11 +1639,16 @@ def patterns_detect(
                 filtered = tf_patterns if include_completed else [
                     d for d in tf_patterns if str(d.get('status', '')).lower() == 'forming'
                 ]
-                findings.append({
+                finding_row: Dict[str, Any] = {
                     "timeframe": tf,
                     "n_patterns": int(len(filtered)),
                     "patterns": filtered,
-                })
+                }
+                if int(len(filtered)) == 0:
+                    finding_row["diagnostic"] = (
+                        f"No valid Elliott Wave structures detected in {int(limit)} {tf} bars."
+                    )
+                findings.append(finding_row)
 
                 for row in filtered:
                     merged = dict(row)
@@ -1675,6 +1685,11 @@ def patterns_detect(
                 "patterns": combined_patterns,
                 "n_patterns": int(len(combined_patterns)),
             }
+            if int(len(combined_patterns)) == 0:
+                resp["diagnostic"] = (
+                    "No valid Elliott Wave structures were detected across scanned timeframes. "
+                    "Try increasing lookback or using a stronger trend regime."
+                )
             if failed_timeframes:
                 resp["failed_timeframes"] = failed_timeframes
             if include_series:

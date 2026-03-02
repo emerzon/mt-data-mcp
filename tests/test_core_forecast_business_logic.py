@@ -274,6 +274,11 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     sf_rows = [r for r in grouped["methods"] if r.get("category") == "statsforecast"]
     assert len(sf_rows) <= 3
     assert grouped["methods_hidden"] >= 1
+    filtered = _unwrap(cf.forecast_list_methods)(search="theta", limit=1)
+    assert filtered["filters"]["search"] == "theta"
+    assert filtered["filters"]["limit"] == 1
+    assert len(filtered["methods"]) == 1
+    assert "theta" in str(filtered["methods"][0]["method"]).lower()
 
     monkeypatch.setattr(cf, "_get_forecast_methods_data", lambda: {"methods": [1]})
     assert _unwrap(cf.forecast_list_methods)() == {"methods": [1]}

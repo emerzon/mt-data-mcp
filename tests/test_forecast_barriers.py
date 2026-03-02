@@ -492,7 +492,8 @@ class TestForecastBarriers(unittest.TestCase):
         # Force TP and SL to coincide at zero so every path ties.
         self._set_flat_history(0.0)
         paths = np.zeros((3, 4))
-        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim:
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim, \
+             patch('mtdata.forecast.barriers._get_live_reference_price', return_value=(None, None)):
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",

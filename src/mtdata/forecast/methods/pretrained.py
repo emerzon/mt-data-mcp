@@ -117,18 +117,24 @@ class ChronosBoltMethod(PretrainedMethod):
         _torch = modules['torch']
         _chronos = modules['chronos']
         effective_device_map = _resolve_chronos_device_map(device_map, _torch)
-        _Pipeline = None
-        for attr in ("Chronos2Pipeline", "ChronosBoltPipeline", "ChronosPipeline"):
+        model_name_l = model_name.lower()
+        pipeline_order = (
+            ("Chronos2Pipeline", "ChronosBoltPipeline", "ChronosPipeline")
+            if "chronos-2" in model_name_l
+            else ("ChronosBoltPipeline", "ChronosPipeline", "Chronos2Pipeline")
+        )
+        pipeline_candidates: List[Tuple[str, Any]] = []
+        for attr in pipeline_order:
             if hasattr(_chronos, attr):
-                _Pipeline = getattr(_chronos, attr)
-                break
-        if _Pipeline is None:
+                pipeline_candidates.append((attr, getattr(_chronos, attr)))
+        if not pipeline_candidates:
             raise RuntimeError(
                 "chronos installed but no supported pipeline found "
                 "(expected one of Chronos2Pipeline/ChronosBoltPipeline/ChronosPipeline)."
             )
 
         pipe = None
+        pipe_name = None
         known_covariates = None
         ctx_tensor = None
         quantiles_tensor = None
@@ -173,10 +179,29 @@ class ChronosBoltMethod(PretrainedMethod):
                     # Fallback: ignore covariates on error
                     pass
 
-            try:
-                pipe = _Pipeline.from_pretrained(model_name, device_map=effective_device_map)
-            except TypeError:
-                pipe = _Pipeline.from_pretrained(model_name)
+            init_err: Optional[Exception] = None
+            for candidate_name, pipeline_cls in pipeline_candidates:
+                try:
+                    try:
+                        pipe = pipeline_cls.from_pretrained(model_name, device_map=effective_device_map)
+                    except TypeError:
+                        pipe = pipeline_cls.from_pretrained(model_name)
+                    pipe_name = candidate_name
+                    break
+                except AttributeError as ex:
+                    # Some chronos builds expose Chronos2Pipeline but fail due missing internal classes.
+                    init_err = ex
+                    continue
+                except Exception as ex:
+                    init_err = ex
+                    break
+            if pipe is None:
+                if init_err is not None:
+                    raise RuntimeError(
+                        "chronos2 error: failed to initialize any compatible Chronos pipeline. "
+                        f"Last error: {init_err!r}"
+                    ) from init_err
+                raise RuntimeError("chronos2 error: failed to initialize a supported Chronos pipeline.")
             
             # Convert context to tensor. Chronos pipelines expect (batch, time) -> (1, L).
             ctx_tensor = _torch.tensor(context, dtype=_torch.float32).unsqueeze(0)
@@ -252,7 +277,7 @@ class ChronosBoltMethod(PretrainedMethod):
                 f_vals = f_np
 
             params_used = build_params_used(
-                {'model_name': model_name, 'device_map': effective_device_map},
+                {'model_name': model_name, 'device_map': effective_device_map, 'pipeline': pipe_name},
                 quantiles_dict=fq,
                 context_length=ctx_len if ctx_len else n
             )

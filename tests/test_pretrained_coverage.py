@@ -371,6 +371,25 @@ class TestChronosBoltMethod:
     def test_default_model_name(self):
         res = self.method.forecast(_series(), horizon=5, seasonality=1, params={})
         assert "chronos-bolt-base" in res.params_used["model_name"]
+        assert res.params_used.get("pipeline") in {"ChronosBoltPipeline", "ChronosPipeline", "Chronos2Pipeline"}
+
+    def test_falls_back_when_chronos2_pipeline_init_fails(self):
+        class _BrokenChronos2Pipeline:
+            @classmethod
+            def from_pretrained(cls, model_name, device_map=None):
+                raise AttributeError("module 'chronos.chronos2' has no attribute 'ChronosBoltModelForForecasting'")
+
+        saved = getattr(_chronos, "Chronos2Pipeline", None)
+        _chronos.Chronos2Pipeline = _BrokenChronos2Pipeline
+        try:
+            res = self.method.forecast(_series(), horizon=5, seasonality=1, params={"model_name": "amazon/chronos-2"})
+            assert res.forecast is not None
+            assert res.params_used.get("pipeline") in {"ChronosBoltPipeline", "ChronosPipeline"}
+        finally:
+            if saved is None:
+                delattr(_chronos, "Chronos2Pipeline")
+            else:
+                _chronos.Chronos2Pipeline = saved
 
     def test_predict_quantiles_fallback_to_predict(self):
         """When predict_quantiles returns None, falls back to predict."""

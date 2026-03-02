@@ -74,6 +74,30 @@ def test_trade_place_blank_expiration_keeps_market_routing() -> None:
         mock_pending.assert_not_called()
 
 
+def test_trade_place_require_sl_tp_flags_unprotected_market_fill() -> None:
+    with patch(
+        "mtdata.core.trading._place_market_order",
+        return_value={
+            "retcode": 10009,
+            "sl_tp_requested": True,
+            "sl_tp_apply_status": "failed",
+        },
+    ):
+        out = trade_place(
+            symbol="BTCUSD",
+            volume=0.03,
+            order_type="BUY",
+            stop_loss=64000,
+            take_profit=68000,
+            require_sl_tp=True,
+            __cli_raw=True,
+        )
+    assert "error" in out
+    assert out.get("require_sl_tp") is True
+    assert out.get("protection_status") == "unprotected_position"
+    assert any("CRITICAL" in str(w) for w in out.get("warnings", []))
+
+
 def test_trade_modify_blank_expiration_keeps_position_path() -> None:
     with patch("mtdata.core.trading._modify_position", return_value={"success": True}) as mock_pos, patch(
         "mtdata.core.trading._modify_pending_order", return_value={"success": True}

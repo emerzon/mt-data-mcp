@@ -382,6 +382,8 @@ def forecast_volatility_estimate(
 @_auto_connect_wrapper
 def forecast_list_methods(
     detail: Literal["compact", "full"] = "compact",  # type: ignore
+    limit: Optional[int] = None,
+    search: Optional[str] = None,
 ) -> Dict[str, Any]:
     """List forecast methods and availability.
 
@@ -391,14 +393,15 @@ def forecast_list_methods(
     try:
         data = _get_forecast_methods_data()
         detail_value = str(detail or "compact").strip().lower()
-        if detail_value == "full":
-            return data
-        methods = data.get("methods")
-        if not isinstance(methods, list):
-            return data
-
-        if any(not isinstance(item, dict) for item in methods):
-            return data
+        search_value = str(search or "").strip().lower()
+        limit_value: Optional[int] = None
+        if limit is not None:
+            try:
+                limit_value = int(limit)
+            except Exception:
+                return {"error": f"Invalid limit: {limit}. Must be a positive integer."}
+            if limit_value <= 0:
+                return {"error": f"Invalid limit: {limit_value}. Must be >= 1."}
 
         categories_raw = data.get("categories") if isinstance(data.get("categories"), dict) else {}
         method_to_category: Dict[str, str] = {}
@@ -411,11 +414,46 @@ def forecast_list_methods(
                         continue
                     method_to_category[str(name)] = str(cat_name)
 
+        def _method_matches(item: Dict[str, Any]) -> bool:
+            if not search_value:
+                return True
+            method_name = str(item.get("method") or "")
+            desc = str(item.get("description") or "")
+            cat = method_to_category.get(method_name, "")
+            haystack = " ".join((method_name, desc, cat)).lower()
+            return search_value in haystack
+
+        if detail_value == "full":
+            methods_full = data.get("methods")
+            if not isinstance(methods_full, list):
+                return data
+            filtered_full = [row for row in methods_full if isinstance(row, dict) and _method_matches(row)]
+            if limit_value is not None:
+                filtered_full = filtered_full[:limit_value]
+            if not search_value and limit_value is None:
+                return data
+            out_full = dict(data)
+            out_full["methods"] = filtered_full
+            out_full["total"] = len(filtered_full)
+            out_full["filters"] = {
+                "search": search_value or None,
+                "limit": limit_value,
+            }
+            return out_full
+        methods = data.get("methods")
+        if not isinstance(methods, list):
+            return data
+
+        if any(not isinstance(item, dict) for item in methods):
+            return data
+
         compact_methods: List[Dict[str, Any]] = []
         available_count = 0
         unavailable_count = 0
         by_category: Dict[str, List[Dict[str, Any]]] = {}
         for item in methods:
+            if not _method_matches(item):
+                continue
             name = item.get("method")
             if name in (None, ""):
                 continue
@@ -470,9 +508,12 @@ def forecast_list_methods(
                 str(row.get("method")),
             )
         )
+        if limit_value is not None:
+            selected_methods = selected_methods[:limit_value]
         return {
             "detail": "compact",
             "total": int(data.get("total") or len(compact_methods)),
+            "total_filtered": int(len(compact_methods)),
             "available": available_count,
             "unavailable": unavailable_count,
             "categories": categories_raw,
@@ -481,6 +522,10 @@ def forecast_list_methods(
             "methods_shown": int(len(selected_methods)),
             "methods_hidden": int(max(0, len(compact_methods) - len(selected_methods))),
             "note": "Compact view groups methods by category and shows a small representative subset. Pass detail='full' for exhaustive docs.",
+            "filters": {
+                "search": search_value or None,
+                "limit": limit_value,
+            },
         }
     except Exception as e:
         return {"error": f"Error listing forecast methods: {e}"}

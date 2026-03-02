@@ -940,6 +940,19 @@ class TestPatternsDetect:
 
     @patch("mtdata.core.patterns._format_elliott_patterns")
     @patch("mtdata.core.patterns._fetch_pattern_data")
+    def test_elliott_mode_single_tf_zero_patterns_includes_diagnostic(self, mock_fetch, mock_format):
+        df = _make_ohlcv_df(200)
+        mock_fetch.return_value = (df, None)
+        mock_format.return_value = []
+        from mtdata.core.patterns import patterns_detect
+        inner = _fully_unwrap(patterns_detect)
+        result = inner(symbol="EURUSD", mode="elliott", timeframe="H1")
+        assert result.get("success") is True
+        assert "diagnostic" in result
+        assert "No valid Elliott Wave structures detected" in str(result.get("diagnostic"))
+
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
     def test_elliott_mode_all_tf(self, mock_fetch, mock_format):
         df = _make_ohlcv_df(200)
         mock_fetch.return_value = (df, None)
@@ -949,6 +962,19 @@ class TestPatternsDetect:
         result = inner(symbol="EURUSD", mode="elliott", timeframe=None)
         assert result.get("success") is True
         assert "findings" in result
+
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    def test_elliott_mode_all_tf_zero_patterns_includes_diagnostic(self, mock_fetch, mock_format):
+        df = _make_ohlcv_df(200)
+        mock_fetch.return_value = (df, None)
+        mock_format.return_value = []
+        from mtdata.core.patterns import patterns_detect
+        inner = _fully_unwrap(patterns_detect)
+        result = inner(symbol="EURUSD", mode="elliott", timeframe=None)
+        assert result.get("success") is True
+        assert result.get("n_patterns") == 0
+        assert "diagnostic" in result
 
     @patch("mtdata.core.patterns._fetch_pattern_data")
     def test_elliott_all_tf_all_fail(self, mock_fetch):

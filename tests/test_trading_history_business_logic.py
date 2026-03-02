@@ -247,3 +247,21 @@ def test_trade_history_deals_keeps_fee_when_non_zero() -> None:
     assert isinstance(out, list)
     row = out[0]
     assert row["fee"] == 1.25
+
+
+def test_trade_history_replaces_non_finite_values_with_none() -> None:
+    mt5, prev = _install_mock_mt5()
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol", "profit"])
+    mt5.history_deals_get.return_value = [
+        Deal(ticket=1, time=1700000000, symbol="EURUSD", profit=float("nan"))
+    ]
+
+    with patch("mtdata.core.trading._auto_connect_wrapper", lambda f: f), patch(
+        "mtdata.core.trading._use_client_tz", lambda: False
+    ):
+        out = trade_history(history_kind="deals", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert isinstance(out, list)
+    assert out[0]["profit"] is None

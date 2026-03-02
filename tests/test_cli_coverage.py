@@ -281,6 +281,18 @@ class TestFormatResultForCli:
         parsed = json.loads(result)
         assert parsed["price"] == 1.23456
 
+    def test_json_format_replaces_non_finite_with_null(self):
+        result = _format_result_for_cli(
+            {"nan": float("nan"), "pos_inf": float("inf"), "neg_inf": float("-inf")},
+            fmt="json",
+            verbose=False,
+            cmd_name="test",
+        )
+        parsed = json.loads(result)
+        assert parsed["nan"] is None
+        assert parsed["pos_inf"] is None
+        assert parsed["neg_inf"] is None
+
     def test_none_fmt_defaults_to_toon(self):
         result = _format_result_for_cli("hello", fmt=None, verbose=False, cmd_name="test")
         assert isinstance(result, str)

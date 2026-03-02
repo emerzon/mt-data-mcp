@@ -1278,6 +1278,23 @@ def forecast_barrier_optimize(
                     )
             except Exception:
                 pass
+            best_edge = best.get("edge")
+            try:
+                if best_edge is not None and float(best_edge) < 0:
+                    win_rate = best.get("prob_win")
+                    if win_rate is not None:
+                        warnings_out.append(
+                            "Best candidate has negative edge "
+                            f"({float(best_edge):.3f}) with win rate {float(win_rate):.1%}; "
+                            "positive EV depends on reward/risk skew."
+                        )
+                    else:
+                        warnings_out.append(
+                            f"Best candidate has negative edge ({float(best_edge):.3f}); "
+                            "positive EV may depend on reward/risk skew."
+                        )
+            except Exception:
+                pass
             if warnings_out:
                 out["selection_warnings"] = warnings_out
         if warning is not None:

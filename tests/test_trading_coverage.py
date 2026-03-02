@@ -965,6 +965,21 @@ class TestPlaceMarketOrder:
         assert result.get("sl_tp_error") is None
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_comment_truncation_is_reported(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _place_market_order
+        long_comment = "X" * 60
+        result = _place_market_order("EURUSD", 0.01, "BUY", comment=long_comment)
+        trunc = result.get("comment_truncation")
+        assert isinstance(trunc, dict)
+        assert trunc.get("requested") == long_comment
+        assert trunc.get("max_length") == 31
+        assert len(str(trunc.get("applied") or "")) <= 31
+        assert any("Comment truncated" in str(w) for w in result.get("warnings", []))
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_sl_tp_broker_adjustment_is_reported(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)

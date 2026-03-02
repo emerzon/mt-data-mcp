@@ -374,6 +374,25 @@ def _normalize_trade_comment(comment: Optional[str], *, default: str, suffix: st
     return full
 
 
+def _comment_truncation_info(comment: Optional[str], applied_comment: str) -> Optional[Dict[str, Any]]:
+    """Return metadata when a user-supplied comment is truncated by MT5 length limits."""
+    if comment is None:
+        return None
+    try:
+        requested = str(comment).strip()
+    except Exception:
+        requested = ""
+    if not requested:
+        return None
+    if requested == applied_comment:
+        return None
+    return {
+        "requested": requested,
+        "applied": applied_comment,
+        "max_length": 31,
+    }
+
+
 def _coerce_optional_bool(value: Any) -> Optional[bool]:
     if isinstance(value, bool):
         return value
@@ -711,7 +730,10 @@ def trade_history(
                     df = df.tail(limit_value)
             if "__sort_utc" in df.columns:
                 df = df.drop(columns=["__sort_utc"])
-            return df.to_dict(orient='records')
+            # Keep CLI/API JSON RFC-compliant: replace NaN/Inf with null.
+            df = df.replace([float("inf"), float("-inf")], pd.NA)
+            records = df.astype(object).where(df.notna(), None).to_dict(orient='records')
+            return records
         except Exception as e:
             return {"error": str(e)}
 
@@ -1050,6 +1072,7 @@ def _place_market_order(
                 if side == "SELL" and norm_tp >= price:
                     return {"error": f"take_profit must be below entry for SELL orders at send time. tp={norm_tp}, price={price}"}
             request_comment = _normalize_trade_comment(comment, default="MCP order")
+            comment_truncation = _comment_truncation_info(comment, request_comment)
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,
                 "symbol": symbol,
@@ -1150,7 +1173,17 @@ def _place_market_order(
                     sl_tp_error = f"Error setting TP/SL: {str(e)}"
                     sl_tp_apply_status = "failed"
 
-            return {
+            warnings_out: List[str] = []
+            if comment_truncation:
+                warnings_out.append(
+                    f"Comment truncated to {comment_truncation['max_length']} characters: '{comment_truncation['applied']}'"
+                )
+            if sl_tp_requested and sl_tp_apply_status == "failed":
+                warnings_out.append(
+                    "CRITICAL: Order filled but TP/SL could not be applied. Use trade_modify immediately or close the position."
+                )
+
+            out: Dict[str, Any] = {
                 "retcode": result.retcode,
                 "retcode_name": _retcode_name(mt5, result.retcode),
                 "deal": result.deal,
@@ -1172,6 +1205,11 @@ def _place_market_order(
                 "sl_tp_adjustment": sl_tp_adjustment or None,
                 "sl_tp_error": sl_tp_error,
             }
+            if comment_truncation:
+                out["comment_truncation"] = comment_truncation
+            if warnings_out:
+                out["warnings"] = warnings_out
+            return out
 
         except Exception as e:
             return {"error": str(e)}
@@ -1299,6 +1337,8 @@ def _place_pending_order(
                 if order_type_value in (mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP) and norm_tp >= norm_price:
                     return {"error": f"take_profit must be below entry for SELL orders. tp={norm_tp}, price={norm_price}"}
 
+            request_comment = _normalize_trade_comment(comment, default="MCP pending order")
+            comment_truncation = _comment_truncation_info(comment, request_comment)
             request = {
                 "action": mt5.TRADE_ACTION_PENDING,
                 "symbol": symbol,
@@ -1309,7 +1349,7 @@ def _place_pending_order(
                 "tp": norm_tp or 0.0,
                 "deviation": deviation_validated,
                 "magic": 234000,
-                "comment": _normalize_trade_comment(comment, default="MCP pending order"),
+                "comment": request_comment,
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": mt5.ORDER_FILLING_IOC,
             }
@@ -1341,7 +1381,7 @@ def _place_pending_order(
                     "last_error": mt5.last_error() if hasattr(mt5, "last_error") else None,
                 }
 
-            return {
+            out: Dict[str, Any] = {
                 "success": True,
                 "retcode": result.retcode,
                 "retcode_name": _retcode_name(mt5, result.retcode),
@@ -1354,6 +1394,12 @@ def _place_pending_order(
                 "comment": result.comment,
                 "request_id": result.request_id,
             }
+            if comment_truncation:
+                out["comment_truncation"] = comment_truncation
+                out["warnings"] = [
+                    f"Comment truncated to {comment_truncation['max_length']} characters: '{comment_truncation['applied']}'"
+                ]
+            return out
 
         except Exception as e:
             return {"error": str(e)}
@@ -1372,6 +1418,7 @@ def trade_place(
     expiration: Optional[ExpirationValue] = None,
     comment: Optional[str] = None,
     deviation: int = 20,
+    require_sl_tp: bool = False,
 ) -> dict:
     """Place a market or pending order.
 
@@ -1379,6 +1426,7 @@ def trade_place(
     - BUY/SELL: market by default; treated as pending when `price`/`expiration` is provided.
     - BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP: pending (requires `price`).
     - Also accepts ORDER_TYPE_* aliases and MT5 numeric constants 0..5 for order_type.
+    - require_sl_tp=True marks the command as failed when a filled market order could not apply TP/SL.
     """
 
     missing: List[str] = []
@@ -1429,7 +1477,7 @@ def trade_place(
 
     is_pending = (t in explicit_pending_types) or price_provided or expiration_provided
     if not is_pending:
-        return _place_market_order(
+        result = _place_market_order(
             symbol=symbol_norm,
             volume=float(volume),
             order_type=t,
@@ -1438,6 +1486,26 @@ def trade_place(
             comment=comment,
             deviation=deviation,
         )
+        if isinstance(result, dict):
+            sl_tp_requested = bool(result.get("sl_tp_requested"))
+            sl_tp_failed = str(result.get("sl_tp_apply_status") or "").lower() == "failed"
+            if sl_tp_requested and sl_tp_failed:
+                warnings_out: List[str] = list(result.get("warnings") or [])
+                critical = (
+                    "CRITICAL: Order executed without applied TP/SL protection. "
+                    "Run trade_modify now, or close the position."
+                )
+                if critical not in warnings_out:
+                    warnings_out.append(critical)
+                if warnings_out:
+                    result["warnings"] = warnings_out
+            if bool(require_sl_tp) and sl_tp_requested and sl_tp_failed and "error" not in result:
+                result["error"] = (
+                    "Order was executed, but TP/SL protection could not be applied while require_sl_tp=true."
+                )
+                result["require_sl_tp"] = True
+                result["protection_status"] = "unprotected_position"
+        return result
     if price is None:
         return {"error": "price is required for pending orders."}
     return _place_pending_order(
