@@ -216,7 +216,7 @@ When `slippage-bps` or `trade-threshold` is set:
 
 ### Per-Anchor Details
 
-Add `--format json` to see individual test results:
+Add `--json` to see individual test results:
 
 ```json
 {
@@ -498,7 +498,7 @@ python cli.py forecast_backtest_run GBPUSD --methods theta --steps 30
 | Volatility backtest | `--quantity volatility --methods "ewma garch"` |
 | With denoising | `--denoise ema --denoise-params "alpha=0.2"` |
 | Optimize params | `python cli.py forecast_tune_genetic EURUSD --method theta --metric avg_rmse` |
-| JSON output | `--format json` |
+| JSON output | `--json` |
 
 ---
 
@@ -508,3 +508,4 @@ python cli.py forecast_backtest_run GBPUSD --methods theta --steps 30
 - [FORECAST.md](../FORECAST.md) — Forecasting methods overview
 - [FORECAST_GENERATE.md](FORECAST_GENERATE.md) — Forecast generation options
 - [DENOISING.md](../DENOISING.md) — Preprocessing options
+

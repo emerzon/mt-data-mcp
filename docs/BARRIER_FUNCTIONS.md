@@ -20,7 +20,7 @@ This document provides a deep dive into the barrier analytics available in mtdat
 Percent barriers are expressed in percent (e.g., `--tp-pct 0.40` means **0.40%**, not 40%):
 ```bash
 python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
-  --method mc --mc-method mc_gbm --direction long --tp-pct 0.40 --sl-pct 0.60 --format json
+  --method mc --mc-method mc_gbm --direction long --tp-pct 0.40 --sl-pct 0.60 --json
 ```
 
 Look for `prob_tp_first`, `prob_sl_first`, `prob_no_hit`, and `edge` in the output.
@@ -29,7 +29,7 @@ Look for `prob_tp_first`, `prob_sl_first`, `prob_no_hit`, and `edge` in the outp
 
 ```bash
 python cli.py forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
-  --method hmm_mc --mode pct --grid-style volatility --objective edge --format json
+  --method hmm_mc --mode pct --grid-style volatility --objective edge --json
 ```
 
 ---
@@ -981,7 +981,7 @@ for H in 6 12 24 48; do
   python cli.py forecast_barrier_prob \
     EURUSD --timeframe H1 --horizon $H \
     --method mc --mc-method hmm_mc --tp-pct 0.5 --sl-pct 0.3 \
-    --format json | jq '{horizon: .horizon, edge: .edge, prob_resolve: (.prob_tp_first + .prob_sl_first)}'
+    --json | jq '{horizon: .horizon, edge: .edge, prob_resolve: (.prob_tp_first + .prob_sl_first)}'
 done
 ```
 
@@ -1021,7 +1021,7 @@ Test stability of results:
 for N in 1000 2000 5000 10000; do
   python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
     --method mc --mc-method hmm_mc --tp-pct 0.5 --sl-pct 0.3 --params "n_sims=$N" \
-    --format json | jq '.prob_tp_first'
+    --json | jq '.prob_tp_first'
 done
 ```
 
@@ -1036,7 +1036,7 @@ for METHOD in mc_gbm hmm_mc bootstrap; do
   echo "Method: $METHOD"
   python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
     --method mc --mc-method $METHOD --tp-pct 0.5 --sl-pct 0.3 \
-    --format json | jq '{method: .method, edge: .edge, prob_resolve: (.prob_tp_first + .prob_sl_first)}'
+    --json | jq '{method: .method, edge: .edge, prob_resolve: (.prob_tp_first + .prob_sl_first)}'
 done
 ```
 
@@ -1139,3 +1139,4 @@ python cli.py forecast_barrier_prob \
 ---
 
 *Last updated: 2026-01-01*
+

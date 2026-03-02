@@ -179,7 +179,7 @@ Use analog forecasts to set price targets:
 ```bash
 # Find similar historical patterns
 python cli.py forecast_generate EURUSD --model analog \
-  --model-params "window_size=64 top_k=20" --format json
+  --model-params "window_size=64 top_k=20" --json
 
 # Use forecast percentiles for TP levels
 ```
@@ -249,3 +249,4 @@ data[5]{time,pattern}:
 - [../FORECAST.md](../FORECAST.md) — Price forecasting overview
 - [../TECHNICAL_INDICATORS.md](../TECHNICAL_INDICATORS.md) — Technical indicators
 - [../GLOSSARY.md](../GLOSSARY.md) — Term definitions
+

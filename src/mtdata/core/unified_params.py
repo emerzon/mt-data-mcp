@@ -9,33 +9,53 @@ from typing import Optional
 import argparse
 from .constants import DEFAULT_TIMEFRAME
 
-def add_global_args_to_parser(parser: argparse.ArgumentParser, exclude_params: Optional[list] = None) -> None:
+def add_global_args_to_parser(
+    parser: argparse.ArgumentParser,
+    exclude_params: Optional[list] = None,
+    *,
+    suppress_defaults: bool = False,
+) -> None:
     """Add all global parameters to an argument parser"""
     
     exclude_params = exclude_params or []
     
     # Timeframe
     if 'timeframe' not in exclude_params:
+        timeframe_kwargs = {
+            "help": "Timeframe for market data (H1, M30, D1, etc.)",
+        }
+        if suppress_defaults:
+            timeframe_kwargs["default"] = argparse.SUPPRESS
+        else:
+            timeframe_kwargs["default"] = DEFAULT_TIMEFRAME
         parser.add_argument(
             '--timeframe',
-            default=DEFAULT_TIMEFRAME,
-            help='Timeframe for market data (H1, M30, D1, etc.)'
+            **timeframe_kwargs,
         )
     
     # Verbose flag
     if 'verbose' not in exclude_params:
+        verbose_kwargs = {
+            "action": "store_true",
+            "help": "Show detailed metadata in output",
+        }
+        if suppress_defaults:
+            verbose_kwargs["default"] = argparse.SUPPRESS
         parser.add_argument(
             '--verbose',
-            action='store_true',
-            help='Show detailed metadata in output'
+            **verbose_kwargs,
         )
 
-    # Output format
-    if 'format' not in exclude_params:
+    # Output format: TOON by default, JSON when explicitly requested.
+    if 'json' not in exclude_params:
+        json_kwargs = {
+            "action": "store_true",
+            "dest": "json",
+            "help": "Output raw JSON (default output is TOON text).",
+        }
+        if suppress_defaults:
+            json_kwargs["default"] = argparse.SUPPRESS
         parser.add_argument(
-            '--format',
-            type=lambda s: str(s).strip().lower(),
-            choices=['text', 'json'],
-            default='text',
-            help="Output format: 'text' (default) or 'json' (raw tool output).",
+            '--json',
+            **json_kwargs,
         )

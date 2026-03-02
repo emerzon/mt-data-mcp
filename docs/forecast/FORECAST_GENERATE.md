@@ -238,7 +238,7 @@ python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
 ### With Confidence Intervals
 ```bash
 python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
-  --model arima --ci-alpha 0.1 --format json
+  --model arima --ci-alpha 0.1 --json
 ```
 
 ### Monte Carlo Simulation
@@ -309,7 +309,7 @@ python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
 | Basic forecast | `python cli.py forecast_generate EURUSD --model theta --horizon 12` |
 | With CI | `python cli.py forecast_generate EURUSD --model theta --ci-alpha 0.1` |
 | Foundation model | `python cli.py forecast_generate EURUSD --library pretrained --model chronos2` |
-| JSON output | `python cli.py forecast_generate EURUSD --model theta --format json` |
+| JSON output | `python cli.py forecast_generate EURUSD --model theta --json` |
 
 ---
 
@@ -319,3 +319,4 @@ python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
 - [../DENOISING.md](../DENOISING.md) — Preprocessing
 - [VOLATILITY.md](VOLATILITY.md) — Volatility forecasting
 - [UNCERTAINTY.md](UNCERTAINTY.md) — Confidence intervals
+

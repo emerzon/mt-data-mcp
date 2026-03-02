@@ -34,7 +34,7 @@ def test_patterns_detect_text_output_has_no_cli_specific_compaction() -> None:
         ],
     }
 
-    out = _format_result_for_cli(payload, fmt="text", verbose=False, cmd_name="patterns_detect")
+    out = _format_result_for_cli(payload, fmt="toon", verbose=False, cmd_name="patterns_detect")
 
     assert "data[12]" in out
     assert "recent_patterns[8]" not in out
@@ -50,7 +50,7 @@ def test_patterns_detect_verbose_output_keeps_full_rows() -> None:
         "data": [{"time": f"T{i}", "pattern": "hammer"} for i in range(12)],
     }
 
-    out = _format_result_for_cli(payload, fmt="text", verbose=True, cmd_name="patterns_detect")
+    out = _format_result_for_cli(payload, fmt="toon", verbose=True, cmd_name="patterns_detect")
 
     assert "data[12]" in out
 
@@ -73,7 +73,7 @@ def test_regime_detect_text_output_has_no_cli_specific_compaction() -> None:
         ],
     }
 
-    out = _format_result_for_cli(payload, fmt="text", verbose=False, cmd_name="regime_detect")
+    out = _format_result_for_cli(payload, fmt="toon", verbose=False, cmd_name="regime_detect")
 
     assert "regimes[7]" in out
     assert "recent_regimes[5]" not in out

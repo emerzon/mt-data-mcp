@@ -26,8 +26,8 @@ python cli.py indicators_list --category volatility
 
 **Get indicator details:**
 ```bash
-python cli.py indicators_describe rsi --format json
-python cli.py indicators_describe macd --format json
+python cli.py indicators_describe rsi --json
+python cli.py indicators_describe macd --json
 ```
 
 ---
@@ -207,3 +207,4 @@ See [DENOISING.md](DENOISING.md) for more options.
 - [GLOSSARY.md](GLOSSARY.md) — Term definitions
 - [DENOISING.md](DENOISING.md) — Smoothing techniques
 - [FORECAST.md](FORECAST.md) — Using indicators in forecasts
+

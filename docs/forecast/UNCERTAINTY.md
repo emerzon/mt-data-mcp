@@ -29,7 +29,7 @@ Request intervals with `--ci-alpha`:
 
 ```bash
 python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
-  --model theta --ci-alpha 0.1 --format json
+  --model theta --ci-alpha 0.1 --json
 ```
 
 **Parameters:**
@@ -65,7 +65,7 @@ Conformal prediction calibrates intervals from rolling backtest residuals, makin
 
 ```bash
 python cli.py forecast_conformal_intervals EURUSD --timeframe H1 \
-  --method theta --horizon 12 --steps 25 --spacing 10 --alpha 0.1 --format json
+  --method theta --horizon 12 --steps 25 --spacing 10 --alpha 0.1 --json
 ```
 
 **Parameters:**
@@ -116,7 +116,7 @@ For each historical bar, ask: "Within the next N bars, did price hit the take-pr
 
 ```bash
 python cli.py labels_triple_barrier EURUSD --timeframe H1 --horizon 12 \
-  --tp-pct 0.5 --sl-pct 0.3 --output compact --format json
+  --tp-pct 0.5 --sl-pct 0.3 --output compact --json
 ```
 
 **Parameters:**
@@ -203,3 +203,4 @@ python cli.py forecast_conformal_intervals EURUSD --method sf_autoarima --horizo
 - [FORECAST.md](../FORECAST.md) — Price forecasting
 - [BARRIER_FUNCTIONS.md](../BARRIER_FUNCTIONS.md) — TP/SL probability analysis
 - [GLOSSARY.md](../GLOSSARY.md) — Term definitions
+

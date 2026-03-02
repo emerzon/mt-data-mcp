@@ -12,7 +12,7 @@ Assumptions:
 - You call tools via `python cli.py <command> ...`.
 - Replace `EURUSD` and `H1` with your symbol/timeframe.
 
-Tip: add `--format json` for structured output.
+Tip: add `--json` for structured output.
 
 ---
 
@@ -21,23 +21,23 @@ Tip: add `--format json` for structured output.
 Forecast methods + availability (optional libraries show up here):
 
 ```bash
-python cli.py forecast_list_methods --format json
+python cli.py forecast_list_methods --json
 ```
 
 Forecast model spaces:
 
 ```bash
-python cli.py forecast_list_library_models native --format json
-python cli.py forecast_list_library_models statsforecast --format json
-python cli.py forecast_list_library_models sktime --format json
-python cli.py forecast_list_library_models pretrained --format json
+python cli.py forecast_list_library_models native --json
+python cli.py forecast_list_library_models statsforecast --json
+python cli.py forecast_list_library_models sktime --json
+python cli.py forecast_list_library_models pretrained --json
 ```
 
 Indicators:
 
 ```bash
 python cli.py indicators_list --limit 50
-python cli.py indicators_describe rsi --format json
+python cli.py indicators_describe rsi --json
 ```
 
 ---
@@ -46,14 +46,14 @@ python cli.py indicators_describe rsi --format json
 
 ```bash
 python cli.py symbols_list --limit 20
-python cli.py symbols_describe EURUSD --format json
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 300 --format json
+python cli.py symbols_describe EURUSD --json
+python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 300 --json
 ```
 
 Optional (liquidity snapshot):
 
 ```bash
-python cli.py market_depth_fetch EURUSD --format json
+python cli.py market_depth_fetch EURUSD --json
 ```
 
 ---
@@ -65,7 +65,7 @@ Compute a few indicators:
 ```bash
 python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 1500 \
   --indicators "ema(20),ema(50),rsi(14),macd(12,26,9)" \
-  --format json
+  --json
 ```
 
 Denoise before indicators (smoother inputs):
@@ -74,7 +74,7 @@ Denoise before indicators (smoother inputs):
 python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 1500 \
   --indicators "rsi(14),ema(50)" \
   --denoise ema --denoise-params "columns=close,when=pre_ti,alpha=0.2,keep_original=true" \
-  --format json
+  --json
 ```
 
 Denoise after indicators (smoother signals):
@@ -83,7 +83,7 @@ Denoise after indicators (smoother signals):
 python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 1500 \
   --indicators "rsi(14)" \
   --denoise ema --denoise-params "columns=RSI_14,when=post_ti,alpha=0.3,keep_original=true" \
-  --format json
+  --json
 ```
 
 ---
@@ -94,7 +94,7 @@ Simple baseline (Theta):
 
 ```bash
 python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
-  --library native --model theta --format json
+  --library native --model theta --json
 ```
 
 Pattern-based “analog” forecast (nearest-neighbor style):
@@ -102,7 +102,7 @@ Pattern-based “analog” forecast (nearest-neighbor style):
 ```bash
 python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
   --library native --model analog --model-params "window_size=64 search_depth=5000 top_k=20 scale=zscore" \
-  --format json
+  --json
 ```
 
 Optional: foundation model (if available):
@@ -110,7 +110,7 @@ Optional: foundation model (if available):
 ```bash
 python cli.py forecast_generate EURUSD --timeframe H1 --horizon 24 \
   --library pretrained --model chronos2 --model-params "context_length=512" \
-  --format json
+  --json
 ```
 
 Optional: Monte Carlo simulation forecast (range of outcomes):
@@ -118,7 +118,7 @@ Optional: Monte Carlo simulation forecast (range of outcomes):
 ```bash
 python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
   --library native --model mc_gbm --model-params "n_sims=3000 seed=7" \
-  --format json
+  --json
 ```
 
 ---
@@ -129,14 +129,14 @@ EWMA (fast default):
 
 ```bash
 python cli.py forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
-  --method ewma --params "lambda=0.94" --format json
+  --method ewma --params "lambda=0.94" --json
 ```
 
 HAR-RV (uses intraday realized volatility):
 
 ```bash
 python cli.py forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
-  --method har_rv --params "rv_timeframe=M5,days=150,window_w=5,window_m=22" --format json
+  --method har_rv --params "rv_timeframe=M5,days=150,window_w=5,window_m=22" --json
 ```
 
 ---
@@ -148,7 +148,7 @@ Barrier probabilities (TP/SL odds within the horizon):
 ```bash
 python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
   --method mc --mc-method hmm_mc --tp-pct 0.5 --sl-pct 0.3 --params "n_sims=5000 seed=7" \
-  --format json
+  --json
 ```
 
 Barrier optimization (search a TP/SL grid):
@@ -158,7 +158,7 @@ python cli.py forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --grid-style volatility --refine true \
   --tp-min 0.25 --tp-max 1.5 --tp-steps 7 \
   --sl-min 0.25 --sl-max 2.5 --sl-steps 9 \
-  --params "n_sims=5000 seed=7" --format json
+  --params "n_sims=5000 seed=7" --json
 ```
 
 Interpretation shortcuts:
@@ -175,14 +175,14 @@ Change-points (BOCPD):
 
 ```bash
 python cli.py regime_detect EURUSD --timeframe H1 --limit 1500 \
-  --method bocpd --threshold 0.6 --output summary --lookback 300 --format json
+  --method bocpd --threshold 0.6 --output summary --lookback 300 --json
 ```
 
 Regime labels (HMM):
 
 ```bash
 python cli.py regime_detect EURUSD --timeframe H1 --limit 1500 \
-  --method hmm --params "n_states=3" --output compact --lookback 300 --format json
+  --method hmm --params "n_states=3" --output compact --lookback 300 --json
 ```
 
 ---
@@ -193,7 +193,7 @@ Run a rolling-origin backtest to compare a few methods:
 
 ```bash
 python cli.py forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
-  --steps 50 --spacing 5 --methods "theta sf_autoarima analog" --format json
+  --steps 50 --spacing 5 --methods "theta sf_autoarima analog" --json
 ```
 
 ---
@@ -204,13 +204,13 @@ Candlestick patterns:
 
 ```bash
 python cli.py patterns_detect EURUSD --timeframe H1 --mode candlestick --limit 500 \
-  --robust-only true --format json
+  --robust-only true --json
 ```
 
 Classic chart patterns:
 
 ```bash
-python cli.py patterns_detect EURUSD --timeframe H1 --mode classic --limit 800 --format json
+python cli.py patterns_detect EURUSD --timeframe H1 --mode classic --limit 800 --json
 ```
 
 ---
@@ -230,3 +230,4 @@ A pragmatic decision checklist:
 ## Appendix: Troubleshooting
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+

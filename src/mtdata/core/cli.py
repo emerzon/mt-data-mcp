@@ -108,15 +108,68 @@ def _json_default(value: Any) -> Any:
     return str(value)
 
 
+CLI_FORMAT_TOON = "toon"
+CLI_FORMAT_JSON = "json"
+
+
+def _normalize_cli_formatter(fmt: Any) -> str:
+    raw = str(fmt or CLI_FORMAT_TOON).strip().lower()
+    if raw == CLI_FORMAT_JSON:
+        return CLI_FORMAT_JSON
+    return CLI_FORMAT_TOON
+
+
+def _resolve_cli_formatter(args: Any) -> str:
+    if bool(getattr(args, "json", False)):
+        return CLI_FORMAT_JSON
+    return CLI_FORMAT_TOON
+
+
 def _format_result_for_cli(result: Any, *, fmt: str, verbose: bool, cmd_name: str) -> str:
-    fmt_s = str(fmt or "text").strip().lower()
-    if fmt_s == "json":
-        return json.dumps(result, ensure_ascii=False, indent=2, default=_json_default)
+    fmt_s = _normalize_cli_formatter(fmt)
+    if fmt_s == CLI_FORMAT_JSON:
+        payload = {"text": result} if isinstance(result, str) else result
+        return json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default)
+    if isinstance(result, str):
+        return result
     simplify_numbers = not str(cmd_name or "").startswith("trade_")
     try:
         return _shared_minimal(result, verbose=verbose, simplify_numbers=simplify_numbers)
     except TypeError:
         return _format_result_minimal(result, verbose=verbose)
+
+
+def _render_cli_result(result: Any, *, args: Any, cmd_name: str) -> None:
+    verbose = bool(getattr(args, "verbose", False))
+    result = _attach_cli_meta(result, cmd_name=cmd_name, verbose=verbose)
+    output = _format_result_for_cli(
+        result,
+        fmt=_resolve_cli_formatter(args),
+        verbose=verbose,
+        cmd_name=cmd_name,
+    )
+    if output:
+        print(output)
+
+
+def _safe_argument_parser(*args: Any, **kwargs: Any) -> argparse.ArgumentParser:
+    try:
+        return argparse.ArgumentParser(*args, **kwargs)
+    except TypeError:
+        fallback = dict(kwargs)
+        fallback.pop("suggest_on_error", None)
+        fallback.pop("color", None)
+        return argparse.ArgumentParser(*args, **fallback)
+
+
+def _safe_add_subparser(subparsers: Any, name: str, **kwargs: Any) -> argparse.ArgumentParser:
+    try:
+        return subparsers.add_parser(name, **kwargs)
+    except TypeError:
+        fallback = dict(kwargs)
+        fallback.pop("suggest_on_error", None)
+        fallback.pop("color", None)
+        return subparsers.add_parser(name, **fallback)
 
 
 def _safe_tz_name(value: Any) -> Optional[str]:
@@ -795,24 +848,7 @@ def create_command_function(func_info, cmd_name: str = "", cmd_parser: Optional[
         # Request raw output so we can control formatting in CLI (e.g. verbose flag)
         kwargs['__cli_raw'] = True
         result = func_info['func'](**kwargs)
-
-        # If the tool already returned text, print it exactly (no stripping)
-        if isinstance(result, str):
-            fmt = getattr(args, 'format', 'text')
-            if str(fmt or '').strip().lower() == 'json':
-                print(json.dumps({"text": result}, ensure_ascii=False, indent=2))
-            else:
-                print(result)
-            return
-
-        # Otherwise, use the same shared minimal formatter as the server        
-        # Pass verbose flag if available (default to False for cleaner output)
-        verbose = getattr(args, 'verbose', False)
-        result = _attach_cli_meta(result, cmd_name=cmd_name, verbose=verbose)
-        fmt = getattr(args, 'format', 'text')
-        output = _format_result_for_cli(result, fmt=fmt, verbose=verbose, cmd_name=cmd_name)
-        if output:
-            print(output)
+        _render_cli_result(result, args=args, cmd_name=cmd_name)
         return
 
     return command_func
@@ -1090,8 +1126,8 @@ def main():
         return 0
 
     
-    parser = argparse.ArgumentParser(
-        description="Dynamic CLI for MetaTrader5 MCP tools (compact text output)",
+    parser = _safe_argument_parser(
+        description="Dynamic CLI for MetaTrader5 MCP tools (TOON output by default)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=_build_epilog(functions),
         suggest_on_error=True,
@@ -1116,7 +1152,8 @@ def main():
             continue
 
         # Create subparser
-        cmd_parser = subparsers.add_parser(
+        cmd_parser = _safe_add_subparser(
+            subparsers,
             cmd_name, 
             help=((meta.get('description') or func_info['doc'].split('\n')[0] if func_info['doc'] else f"Execute {cmd_name}").replace('%', '%%')),
             formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1132,7 +1169,7 @@ def main():
         # Finviz tools don't use MT5 timeframe
         if cmd_name.startswith('finviz_'):
             exclude_globals.append('timeframe')
-        add_global_args_to_parser(cmd_parser, exclude_params=exclude_globals)
+        add_global_args_to_parser(cmd_parser, exclude_params=exclude_globals, suppress_defaults=True)
         
         # Add dynamic arguments
         add_dynamic_arguments(cmd_parser, func_info, meta.get('param_docs'), cmd_name=cmd_name)
@@ -1146,7 +1183,8 @@ def main():
         func = forecast_tool["func"]
         func_info = forecast_tool_info or get_function_info(func)
         meta = forecast_tool.get("meta") or {}
-        cmd_parser = subparsers.add_parser(
+        cmd_parser = _safe_add_subparser(
+            subparsers,
             cmd_name,
             help=((meta.get('description') or func_info['doc'].split('\n')[0] if func_info['doc'] else f"Execute {cmd_name}").replace('%', '%%')),
             formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1155,7 +1193,7 @@ def main():
         )
         # Add global parameters to each subparser, excluding any that conflict
         exclude_globals = ["symbol", "timeframe", "verbose"]  # handled manually
-        add_global_args_to_parser(cmd_parser, exclude_params=exclude_globals)
+        add_global_args_to_parser(cmd_parser, exclude_params=exclude_globals, suppress_defaults=True)
         _add_forecast_generate_args(cmd_parser)
 
         def _forecast_generate_cmd(args):
@@ -1210,23 +1248,7 @@ def main():
 
             kwargs["__cli_raw"] = True
             out = func(**kwargs)
-            if isinstance(out, str):
-                fmt = getattr(args, "format", "text")
-                if str(fmt or "").strip().lower() == "json":
-                    print(json.dumps({"text": out}, ensure_ascii=False, indent=2))
-                else:
-                    print(out)
-                return
-
-            fmt = getattr(args, "format", "text")
-            output = _format_result_for_cli(
-                out,
-                fmt=fmt,
-                verbose=getattr(args, "verbose", False),
-                cmd_name="forecast_generate",
-            )
-            if output:
-                print(output)
+            _render_cli_result(out, args=args, cmd_name="forecast_generate")
 
         cmd_parser.set_defaults(func=_forecast_generate_cmd)
     

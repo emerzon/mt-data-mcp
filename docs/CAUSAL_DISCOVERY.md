@@ -58,7 +58,7 @@ Effect <- Cause | Lag | p-value | Samples | Conclusion
 - **Conclusion** is `causal` when `p-value < significance`, otherwise `no-link`.
 - **Lag** is the best-performing lag for the pair under the selected test statistic.
 
-Tip: `--format json` wraps the text as `{"text": "..."}`.
+Tip: `--json` wraps the text as `{"text": "..."}`.
 
 ---
 
@@ -74,4 +74,5 @@ Tip: `--format json` wraps the text as `{"text": "..."}`.
 ## Dependencies
 
 `causal_discover_signals` requires `statsmodels`. If it is not installed, the tool returns a readable error message.
+
 

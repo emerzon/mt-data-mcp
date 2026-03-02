@@ -52,7 +52,7 @@ pip install -e .
 - Volatility (GARCH/ARCH): `arch`
 - Optional pattern/simplification accelerators omitted from the default Python 3.14 install: `hnswlib`, `tsdownsample`
 
-Tip: `python cli.py forecast_list_methods --format json` shows `available` and `requires` per method.
+Tip: `python cli.py forecast_list_methods --json` shows `available` and `requires` per method.
 
 ---
 
@@ -80,7 +80,7 @@ python cli.py symbols_list --limit 10
 
 Optional deeper check:
 ```bash
-python cli.py trade_account_info --format json
+python cli.py trade_account_info --json
 ```
 
 Expected output:
@@ -194,7 +194,7 @@ Run these commands to verify everything works:
 python cli.py symbols_list --limit 5
 
 # Get symbol details
-python cli.py symbols_describe EURUSD --format json
+python cli.py symbols_describe EURUSD --json
 
 # Fetch candles
 python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 100
@@ -272,7 +272,7 @@ npm run build   # Production build
 
 1. Check server time in MT5: Tools → Options → Server
 2. Set `MT5_TIME_OFFSET_MINUTES` in `.env`
-3. Verify with: `python cli.py data_fetch_candles EURUSD --limit 1 --format json`
+3. Verify with: `python cli.py data_fetch_candles EURUSD --limit 1 --json`
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more issues.
 
@@ -283,3 +283,4 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more issues.
 - [CLI.md](CLI.md) — Learn command usage
 - [EXAMPLE.md](EXAMPLE.md) — Follow an end-to-end workflow
 - [GLOSSARY.md](GLOSSARY.md) — Understand terminology
+

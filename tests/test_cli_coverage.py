@@ -266,13 +266,13 @@ class TestFormatResultForCli:
         assert "2025" in parsed["dt"]
 
     @patch("mtdata.core.cli._shared_minimal", return_value="minimal output")
-    def test_text_format(self, mock_shared):
-        result = _format_result_for_cli({"a": 1}, fmt="text", verbose=False, cmd_name="test")
+    def test_toon_format(self, mock_shared):
+        result = _format_result_for_cli({"a": 1}, fmt="toon", verbose=False, cmd_name="test")
         assert result == "minimal output"
 
     @patch("mtdata.core.cli._shared_minimal", side_effect=TypeError("bad"))
-    def test_text_format_fallback(self, mock_shared):
-        result = _format_result_for_cli({"a": 1}, fmt="text", verbose=False, cmd_name="test_cmd")
+    def test_toon_format_fallback(self, mock_shared):
+        result = _format_result_for_cli({"a": 1}, fmt="toon", verbose=False, cmd_name="test_cmd")
         assert isinstance(result, str)
 
     def test_trade_command_no_simplify_numbers(self):
@@ -281,7 +281,7 @@ class TestFormatResultForCli:
         parsed = json.loads(result)
         assert parsed["price"] == 1.23456
 
-    def test_none_fmt_defaults_to_text(self):
+    def test_none_fmt_defaults_to_toon(self):
         result = _format_result_for_cli("hello", fmt=None, verbose=False, cmd_name="test")
         assert isinstance(result, str)
 
@@ -1215,7 +1215,7 @@ class TestCreateCommandFunction:
             ]
         }
         cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
-        args = argparse.Namespace(symbol="EURUSD", format="text", verbose=False)
+        args = argparse.Namespace(symbol="EURUSD", json=False, verbose=False)
         cmd_fn(args)
         mock_fn.assert_called_once()
         call_kwargs = mock_fn.call_args[1]
@@ -1229,7 +1229,7 @@ class TestCreateCommandFunction:
             "params": [{"name": "symbol", "type": str, "required": True, "default": None}],
         }
         cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
-        args = argparse.Namespace(symbol="EURUSD", format="text", verbose=False)
+        args = argparse.Namespace(symbol="EURUSD", json=False, verbose=False)
         cmd_fn(args)
         assert "plain text result" in capsys.readouterr().out
 
@@ -1240,7 +1240,7 @@ class TestCreateCommandFunction:
             "params": [{"name": "symbol", "type": str, "required": True, "default": None}],
         }
         cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
-        args = argparse.Namespace(symbol="EURUSD", format="json", verbose=False)
+        args = argparse.Namespace(symbol="EURUSD", json=True, verbose=False)
         cmd_fn(args)
         out = capsys.readouterr().out
         parsed = json.loads(out)
@@ -1253,7 +1253,7 @@ class TestCreateCommandFunction:
             "params": [{"name": "symbol", "type": str, "required": True, "default": None}],
         }
         cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
-        args = argparse.Namespace(symbol="EURUSD", format="json", verbose=False)
+        args = argparse.Namespace(symbol="EURUSD", json=True, verbose=False)
         cmd_fn(args)
         out = capsys.readouterr().out
         parsed = json.loads(out)
@@ -1268,7 +1268,7 @@ class TestCreateCommandFunction:
             ],
         }
         cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
-        args = argparse.Namespace(verbose="true", format="text")
+        args = argparse.Namespace(verbose="true", json=False)
         cmd_fn(args)
         call_kwargs = mock_fn.call_args[1]
         assert call_kwargs["verbose"] is True
@@ -1282,7 +1282,7 @@ class TestCreateCommandFunction:
             ],
         }
         cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
-        args = argparse.Namespace(verbose="false", format="text")
+        args = argparse.Namespace(verbose="false", json=False)
         cmd_fn(args)
         call_kwargs = mock_fn.call_args[1]
         assert call_kwargs["verbose"] is False
@@ -1297,7 +1297,7 @@ class TestCreateCommandFunction:
             ],
         }
         cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
-        args = argparse.Namespace(symbol="EURUSD", extra=None, format="text", verbose=False)
+        args = argparse.Namespace(symbol="EURUSD", extra=None, json=False, verbose=False)
         cmd_fn(args)
         call_kwargs = mock_fn.call_args[1]
         assert "extra" not in call_kwargs
@@ -1311,7 +1311,7 @@ class TestCreateCommandFunction:
             ],
         }
         cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
-        args = argparse.Namespace(simplify="__PRESENT__", simplify_params=None, format="text", verbose=False)
+        args = argparse.Namespace(simplify="__PRESENT__", simplify_params=None, json=False, verbose=False)
         cmd_fn(args)
         call_kwargs = mock_fn.call_args[1]
         assert call_kwargs["simplify"] == {}
@@ -1325,7 +1325,7 @@ class TestCreateCommandFunction:
             ],
         }
         cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
-        args = argparse.Namespace(simplify='{"method":"lttb"}', simplify_params=None, format="text", verbose=False)
+        args = argparse.Namespace(simplify='{"method":"lttb"}', simplify_params=None, json=False, verbose=False)
         cmd_fn(args)
         call_kwargs = mock_fn.call_args[1]
         assert isinstance(call_kwargs["simplify"], dict)
@@ -1339,7 +1339,7 @@ class TestCreateCommandFunction:
             ],
         }
         cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
-        args = argparse.Namespace(simplify="lttb", simplify_params=None, format="text", verbose=False)
+        args = argparse.Namespace(simplify="lttb", simplify_params=None, json=False, verbose=False)
         cmd_fn(args)
         call_kwargs = mock_fn.call_args[1]
         assert call_kwargs["simplify"] == {"method": "lttb"}
@@ -1353,7 +1353,7 @@ class TestCreateCommandFunction:
             ],
         }
         cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
-        args = argparse.Namespace(simplify="lttb", simplify_params="points=100", format="text", verbose=False)
+        args = argparse.Namespace(simplify="lttb", simplify_params="points=100", json=False, verbose=False)
         cmd_fn(args)
         call_kwargs = mock_fn.call_args[1]
         assert isinstance(call_kwargs["simplify"], dict)
@@ -1368,7 +1368,7 @@ class TestCreateCommandFunction:
             ],
         }
         cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
-        args = argparse.Namespace(methods="a,b,c", format="text", verbose=False)
+        args = argparse.Namespace(methods="a,b,c", json=False, verbose=False)
         cmd_fn(args)
         call_kwargs = mock_fn.call_args[1]
         assert call_kwargs["methods"] == ["a", "b", "c"]
@@ -1380,7 +1380,7 @@ class TestCreateCommandFunction:
             "params": [{"name": "symbol", "type": str, "required": True, "default": None}],
         }
         cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
-        args = argparse.Namespace(symbol="EURUSD", format="json", verbose=True)
+        args = argparse.Namespace(symbol="EURUSD", json=True, verbose=True)
         cmd_fn(args)
         out = capsys.readouterr().out
         parsed = json.loads(out)
@@ -1393,7 +1393,7 @@ class TestCreateCommandFunction:
             "params": [{"name": "symbol", "type": str, "required": True, "default": None}],
         }
         cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
-        args = argparse.Namespace(symbol="EURUSD", format="text", verbose=False)
+        args = argparse.Namespace(symbol="EURUSD", json=False, verbose=False)
         cmd_fn(args)
         # Should still produce output (even if empty dict formatted)
         # Just verifying no crash
@@ -1624,7 +1624,7 @@ class TestForecastGenerateIntegration:
         mock_discover.return_value = {
             "forecast_generate": {"func": mock_fn, "meta": {"description": "Generate forecasts"}},
         }
-        with patch("sys.argv", ["cli.py", "forecast_generate", "EURUSD", "--format", "json"]):
+        with patch("sys.argv", ["cli.py", "forecast_generate", "EURUSD", "--json"]):
             result = main()
         assert result == 0
         out = capsys.readouterr().out
@@ -1755,7 +1755,7 @@ class TestEdgeCases:
         }
         cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
         # simplify_params present but simplify is None
-        args = argparse.Namespace(simplify=None, simplify_params="points=100", format="text", verbose=False)
+        args = argparse.Namespace(simplify=None, simplify_params="points=100", json=False, verbose=False)
         cmd_fn(args)
         call_kwargs = mock_fn.call_args[1]
         # companion params should create the dict
@@ -1773,7 +1773,7 @@ class TestEdgeCases:
         args = argparse.Namespace(
             simplify='{"method":"lttb"}',
             simplify_params="points=100",
-            format="text",
+            json=False,
             verbose=False,
         )
         cmd_fn(args)

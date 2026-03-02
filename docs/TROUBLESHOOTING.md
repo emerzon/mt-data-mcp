@@ -82,8 +82,8 @@ python cli.py patterns_detect --help
 
 **Solution:** Check method documentation:
 ```bash
-python cli.py forecast_list_methods --format json
-python cli.py indicators_describe rsi --format json
+python cli.py forecast_list_methods --json
+python cli.py indicators_describe rsi --json
 ```
 
 ---
@@ -96,7 +96,7 @@ python cli.py indicators_describe rsi --format json
 
 **Solution:** Check availability:
 ```bash
-python cli.py forecast_list_methods --format json
+python cli.py forecast_list_methods --json
 ```
 
 Look for `available: false` and the `requires` field. Install missing packages:
@@ -132,13 +132,13 @@ python cli.py forecast_list_library_models native  # Native methods have minimal
 
 **Solution:** Use JSON format:
 ```bash
-python cli.py symbols_describe EURUSD --format json
-python cli.py forecast_generate EURUSD --horizon 12 --format json
+python cli.py symbols_describe EURUSD --json
+python cli.py forecast_generate EURUSD --horizon 12 --json
 ```
 
 Pipe to `jq` for processing:
 ```bash
-python cli.py forecast_generate EURUSD --format json | jq '.forecast'
+python cli.py forecast_generate EURUSD --json | jq '.forecast'
 ```
 
 ### Output is Too Verbose
@@ -265,7 +265,7 @@ MTDATA_CLI_DEBUG=1 python cli.py forecast_generate EURUSD --horizon 12
 | Missing parameter | Check `--help` for required arguments |
 | Invalid timeframe | Use: M1, M5, M15, M30, H1, H4, D1, W1, MN1 |
 | Method not available | Check `forecast_list_methods` and install deps |
-| Output hard to read | Add `--format json` |
+| Output hard to read | Add `--json` |
 | Wrong timestamps | Set `MT5_TIME_OFFSET_MINUTES` in `.env` |
 | Command slow | Reduce `--limit`, use faster method |
 
@@ -276,3 +276,4 @@ MTDATA_CLI_DEBUG=1 python cli.py forecast_generate EURUSD --horizon 12
 - [SETUP.md](SETUP.md) — Installation guide
 - [CLI.md](CLI.md) — Command usage
 - [GLOSSARY.md](GLOSSARY.md) — Term definitions
+

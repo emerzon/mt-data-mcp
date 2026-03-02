@@ -18,11 +18,17 @@ class TestAddGlobalArgsToParser:
         args = parser.parse_args([])
         assert args.verbose is False
 
-    def test_adds_format(self):
+    def test_adds_json(self):
         parser = argparse.ArgumentParser()
         add_global_args_to_parser(parser)
-        args = parser.parse_args(['--format', 'json'])
-        assert args.format == 'json'
+        args = parser.parse_args(['--json'])
+        assert args.json is True
+
+    def test_json_default_false(self):
+        parser = argparse.ArgumentParser()
+        add_global_args_to_parser(parser)
+        args = parser.parse_args([])
+        assert args.json is False
 
     def test_exclude_timeframe(self):
         parser = argparse.ArgumentParser()
@@ -36,14 +42,16 @@ class TestAddGlobalArgsToParser:
         args = parser.parse_args([])
         assert not hasattr(args, 'verbose')
 
-    def test_exclude_format(self):
+    def test_exclude_json(self):
         parser = argparse.ArgumentParser()
-        add_global_args_to_parser(parser, exclude_params=['format'])
+        add_global_args_to_parser(parser, exclude_params=['json'])
         args = parser.parse_args([])
-        assert not hasattr(args, 'format')
+        assert not hasattr(args, 'json')
 
-    def test_format_normalized_to_lowercase(self):
+    def test_suppress_defaults_hides_absent_global_flags(self):
         parser = argparse.ArgumentParser()
-        add_global_args_to_parser(parser)
-        args = parser.parse_args(['--format', 'JSON'])
-        assert args.format == 'json'
+        add_global_args_to_parser(parser, suppress_defaults=True)
+        args = parser.parse_args([])
+        assert not hasattr(args, 'timeframe')
+        assert not hasattr(args, 'verbose')
+        assert not hasattr(args, 'json')

@@ -57,7 +57,7 @@ data[5]{name,group,description}:
 ### JSON
 Structured output for programmatic use:
 ```bash
-python cli.py symbols_list --limit 5 --format json
+python cli.py symbols_list --limit 5 --json
 ```
 
 ### Verbose
@@ -66,7 +66,7 @@ Include additional metadata:
 python cli.py forecast_generate EURUSD --horizon 12 --verbose
 ```
 
-Tip: with `--format json`, `--verbose` also adds `cli_meta` (including timezone hints) to many tool results.
+Tip: with `--json`, `--verbose` also adds `cli_meta` (including timezone hints) to many tool results.
 
 ---
 
@@ -205,7 +205,7 @@ python cli.py data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 python cli.py symbols_list --limit 20
 
 # Get details for a symbol
-python cli.py symbols_describe EURUSD --format json
+python cli.py symbols_describe EURUSD --json
 ```
 
 ### Fetch Market Data
@@ -298,12 +298,12 @@ See [CAUSAL_DISCOVERY.md](CAUSAL_DISCOVERY.md) for interpretation and caveats.
 
 ### Pipe Output to jq for JSON Processing
 ```bash
-python cli.py forecast_generate EURUSD --format json | jq '.forecast'
+python cli.py forecast_generate EURUSD --json | jq '.forecast'
 ```
 
 ### Save Output to File
 ```bash
-python cli.py data_fetch_candles EURUSD --limit 1000 --format json > eurusd_data.json
+python cli.py data_fetch_candles EURUSD --limit 1000 --json > eurusd_data.json
 ```
 
 ### Debug Mode
@@ -319,3 +319,4 @@ MTDATA_CLI_DEBUG=1 python cli.py forecast_generate EURUSD
 - [SETUP.md](SETUP.md) — Installation guide
 - [EXAMPLE.md](EXAMPLE.md) — Complete workflow example
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues
+

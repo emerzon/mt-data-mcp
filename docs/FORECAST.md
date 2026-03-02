@@ -36,7 +36,7 @@ Forecasts are estimates, not guarantees. Always:
 python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
 
 # With JSON output for programmatic use
-python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta --format json
+python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta --json
 ```
 
 ### Choosing a Model
@@ -229,3 +229,4 @@ See [DENOISING.md](DENOISING.md) for available filters.
 | Monte Carlo | `python cli.py forecast_generate EURUSD --model mc_gbm --model-params "n_sims=2000"` |
 | Backtest | `python cli.py forecast_backtest_run EURUSD --methods "theta analog" --steps 20` |
 | Conformal intervals | `python cli.py forecast_conformal_intervals EURUSD --method theta --horizon 12` |
+
