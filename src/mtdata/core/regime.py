@@ -386,7 +386,7 @@ def regime_detect(
     output: Literal['full','summary','compact'] = 'compact',  # type: ignore
     lookback: int = 300,
     include_series: bool = False,
-    min_regime_bars: int = 1,
+    min_regime_bars: int = 5,
 ) -> Dict[str, Any]:
     """Detect regimes and/or change-points over the last `limit` bars.
 

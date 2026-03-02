@@ -98,6 +98,58 @@ def test_trade_place_require_sl_tp_flags_unprotected_market_fill() -> None:
     assert any("CRITICAL" in str(w) for w in out.get("warnings", []))
 
 
+def test_trade_place_defaults_to_failing_unprotected_market_fill() -> None:
+    with patch(
+        "mtdata.core.trading._place_market_order",
+        return_value={
+            "retcode": 10009,
+            "sl_tp_requested": True,
+            "sl_tp_apply_status": "failed",
+            "position_ticket": 456,
+        },
+    ):
+        out = trade_place(
+            symbol="BTCUSD",
+            volume=0.03,
+            order_type="BUY",
+            stop_loss=64000,
+            take_profit=68000,
+            __cli_raw=True,
+        )
+    assert "error" in out
+    assert out.get("require_sl_tp") is True
+    assert "TP/SL protection could not be applied" in str(out.get("error"))
+    assert any("trade_modify 456" in str(w) for w in out.get("warnings", []))
+
+
+def test_trade_place_auto_close_attempts_recovery_on_sl_tp_fail() -> None:
+    with patch(
+        "mtdata.core.trading._place_market_order",
+        return_value={
+            "retcode": 10009,
+            "sl_tp_requested": True,
+            "sl_tp_apply_status": "failed",
+            "position_ticket": 789,
+        },
+    ), patch(
+        "mtdata.core.trading._close_positions",
+        return_value={"retcode": 10009, "ticket": 789},
+    ) as mock_close:
+        out = trade_place(
+            symbol="BTCUSD",
+            volume=0.03,
+            order_type="BUY",
+            stop_loss=64000,
+            take_profit=68000,
+            auto_close_on_sl_tp_fail=True,
+            __cli_raw=True,
+        )
+    mock_close.assert_called_once()
+    assert out.get("auto_close_on_sl_tp_fail") is True
+    assert out.get("protection_status") == "auto_closed_after_sl_tp_fail"
+    assert out.get("auto_close_result", {}).get("retcode") == 10009
+
+
 def test_trade_modify_blank_expiration_keeps_position_path() -> None:
     with patch("mtdata.core.trading._modify_position", return_value={"success": True}) as mock_pos, patch(
         "mtdata.core.trading._modify_pending_order", return_value={"success": True}

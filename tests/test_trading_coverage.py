@@ -126,17 +126,20 @@ def _order_result(retcode=10009, deal=1, order=1, volume=0.01, price=1.1,
 def _position(ticket=1, symbol="EURUSD", type_=0, volume=0.01,
               price_open=1.1, sl=1.09, tp=1.12, profit=50.0,
               price_current=1.105, comment="", magic=234000,
-              time=1700000000, time_update=1700000000, swap=0.0):
+              time=1700000000, time_update=1700000000, swap=0.0,
+              identifier=None, position_id=None, order=None, deal=None):
     return SimpleNamespace(
         ticket=ticket, symbol=symbol, type=type_, volume=volume,
         price_open=price_open, sl=sl, tp=tp, profit=profit,
         price_current=price_current, comment=comment, magic=magic,
         time=time, time_update=time_update, swap=swap,
+        identifier=identifier, position_id=position_id, order=order, deal=deal,
         _asdict=lambda: {
             "ticket": ticket, "symbol": symbol, "type": type_, "volume": volume,
             "price_open": price_open, "sl": sl, "tp": tp, "profit": profit,
             "price_current": price_current, "comment": comment, "magic": magic,
             "time": time, "time_update": time_update, "swap": swap,
+            "identifier": identifier, "position_id": position_id, "order": order, "deal": deal,
         },
     )
 
@@ -918,6 +921,26 @@ class TestPlaceMarketOrder:
         assert result.get("sl_tp_error") is None
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_sl_tp_uses_resolved_position_ticket_from_deal_fallback(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.side_effect = [
+            _order_result(order=1001, deal=2002),
+            _order_result(),
+        ]
+        mt5.positions_get.side_effect = [
+            [],  # candidate order ticket lookup
+            [_position(ticket=3003, deal=2002, sl=1.09, tp=1.12)],  # candidate deal ticket lookup
+            [_position(ticket=3003, deal=2002, sl=1.09, tp=1.12)],  # post-modify verification
+        ]
+        from mtdata.core.trading import _place_market_order
+        result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.09, take_profit=1.12)
+        assert result.get("sl_tp_apply_status") == "applied"
+        assert result.get("position_ticket") == 3003
+        modify_req = mt5.order_send.call_args_list[1].args[0]
+        assert modify_req.get("position") == 3003
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_sl_tp_modification_fails_gracefully(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
@@ -1399,6 +1422,23 @@ class TestModifyPosition:
         from mtdata.core.trading import _modify_position
         result = _modify_position(ticket=1, stop_loss=1.08, take_profit=1.13)
         assert result.get("success") is True
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_resolves_position_by_identifier_when_ticket_lookup_misses(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.side_effect = [
+            [],
+            [_position(ticket=777, identifier=123)],
+        ]
+        mt5.symbol_info.return_value = _sym()
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _modify_position
+        result = _modify_position(ticket=123, stop_loss=1.08)
+        assert result.get("success") is True
+        req = mt5.order_send.call_args.args[0]
+        assert req.get("position") == 777
+        assert result.get("position_ticket") == 777
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_order_send_none(self):

@@ -1241,6 +1241,17 @@ def forecast_barrier_optimize(
         if no_candidates:
             warning = "No valid TP/SL candidates after applying grid generation and constraints."
             
+        best = candidates[0] if candidates else None
+        best_ev_value: Optional[float] = None
+        if isinstance(best, dict):
+            try:
+                ev_raw = best.get("ev")
+                if ev_raw is not None and np.isfinite(float(ev_raw)):
+                    best_ev_value = float(ev_raw)
+            except Exception:
+                best_ev_value = None
+        viable = bool(best_ev_value is not None and best_ev_value >= 0.0)
+
         out = {
             "success": True,
             "symbol": symbol,
@@ -1255,11 +1266,12 @@ def forecast_barrier_optimize(
             "objective": objective_val,
             "results": summary_results,
             "results_total": len(candidates),
-            "best": candidates[0] if candidates else None,
+            "best": best,
+            "viable": viable,
+            "least_negative": best if (best is not None and not viable) else None,
             "grid": grid_out,
             "no_candidates": no_candidates,
         }
-        best = candidates[0] if candidates else None
         if isinstance(best, dict):
             warnings_out: List[str] = []
             best_ev = best.get("ev")

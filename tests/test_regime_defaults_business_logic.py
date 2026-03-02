@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from unittest.mock import patch
 
 import numpy as np
@@ -112,3 +113,9 @@ def test_regime_detect_rejects_invalid_min_regime_bars() -> None:
         out = raw(symbol="EURUSD", timeframe="H1", limit=80, method="hmm", min_regime_bars=0)
     assert "error" in out
     assert "min_regime_bars" in str(out["error"])
+
+
+def test_regime_detect_default_min_regime_bars_is_5() -> None:
+    raw = _unwrap(regime_detect)
+    default_val = inspect.signature(raw).parameters["min_regime_bars"].default
+    assert int(default_val) == 5

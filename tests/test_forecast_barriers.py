@@ -626,6 +626,8 @@ class TestForecastBarriers(unittest.TestCase):
             )
         self.assertTrue(result.get("success"))
         self.assertLess(float(result["best"]["ev"]), 0.0)
+        self.assertFalse(result.get("viable"))
+        self.assertEqual(result.get("least_negative"), result.get("best"))
         self.assertIn("selection_warnings", result)
 
     def test_forecast_barrier_optimize_flags_no_candidates(self):
@@ -649,6 +651,8 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertTrue(result.get("no_candidates"))
         self.assertEqual(result.get("results"), [])
         self.assertEqual(result.get("grid"), [])
+        self.assertFalse(result.get("viable"))
+        self.assertIsNone(result.get("least_negative"))
         self.assertIn("warning", result)
 
 if __name__ == '__main__':
