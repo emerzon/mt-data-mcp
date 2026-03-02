@@ -218,6 +218,41 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertIn("best", result)
         self.assertIn("grid", result)
 
+    def test_forecast_barrier_optimize_optuna_backend(self):
+        if importlib.util.find_spec("optuna") is None:
+            self.skipTest("optuna package not installed")
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.2, tp_max=1.0, tp_steps=3,
+                sl_min=0.2, sl_max=1.0, sl_steps=3,
+                objective="ev",
+                params={
+                    "optimizer": "optuna",
+                    "n_trials": 12,
+                    "n_jobs": 1,
+                    "sampler": "random",
+                    "pruner": "none",
+                    "seed": 9,
+                },
+                return_grid=True,
+            )
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("optimizer"), "optuna")
+        self.assertIn("optuna", result)
+        self.assertGreaterEqual(result["optuna"].get("completed_trials", 0), 1)
+        self.assertGreater(result.get("results_total", 0), 0)
+        self.assertTrue(result.get("grid"))
+        self.assertIsInstance(result.get("best"), dict)
+
     def test_forecast_barrier_optimize_prefers_live_reference_price(self):
         self._set_flat_history(1.0, bars=200)
         paths = self._sample_paths()

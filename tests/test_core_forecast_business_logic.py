@@ -384,3 +384,92 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
 
     out = raw_barrier(symbol="EURUSD", method="mystery")
     assert out["error"] == "Unknown method: mystery"
+
+
+def test_forecast_tune_optuna_routing(monkeypatch):
+    raw_tune = _unwrap(cf.forecast_tune_optuna)
+    captured = {}
+    ss_calls = {}
+
+    def fake_optuna(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(cf, "_optuna_search_impl", fake_optuna)
+    monkeypatch.setattr(cf, "_parse_kv_or_json", lambda v: dict(v or {}))
+
+    import mtdata.forecast.tune as tune_mod
+
+    def fake_default_search_space(method=None, methods=None):
+        ss_calls["method"] = method
+        ss_calls["methods"] = methods
+        return {"theta": {"window": {"min": 1, "max": 3}}}
+
+    monkeypatch.setattr(tune_mod, "default_search_space", fake_default_search_space)
+    out = raw_tune(symbol="EURUSD", method="theta", search_space=None)
+    assert out == {"ok": True}
+    assert captured["method"] == "theta"
+    assert ss_calls["method"] == "theta"
+    assert ss_calls["methods"] is None
+    assert "theta" in captured["search_space"]
+
+    out = raw_tune(symbol="EURUSD", method="theta", methods=["theta", "naive"], search_space={"x": {"type": "int"}})
+    assert out == {"ok": True}
+    assert captured["method"] is None
+
+    monkeypatch.setattr(cf, "_optuna_search_impl", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("fail")))
+    assert "Error in optuna tuning" in raw_tune(symbol="EURUSD")["error"]
+
+
+def test_forecast_options_and_quantlib_tool_routing(monkeypatch):
+    raw_exp = _unwrap(cf.forecast_options_expirations)
+    raw_chain = _unwrap(cf.forecast_options_chain)
+    raw_price = _unwrap(cf.forecast_quantlib_barrier_price)
+    raw_cal = _unwrap(cf.forecast_quantlib_heston_calibrate)
+
+    import mtdata.services.options_service as options_service
+    import mtdata.forecast.quantlib_tools as quantlib_tools
+
+    monkeypatch.setattr(options_service, "get_options_expirations", lambda **kwargs: {"kind": "exp", **kwargs})
+    monkeypatch.setattr(options_service, "get_options_chain", lambda **kwargs: {"kind": "chain", **kwargs})
+    monkeypatch.setattr(quantlib_tools, "price_barrier_option_quantlib", lambda **kwargs: {"kind": "price", **kwargs})
+    monkeypatch.setattr(quantlib_tools, "calibrate_heston_quantlib_from_options", lambda **kwargs: {"kind": "cal", **kwargs})
+
+    out = raw_exp(symbol="AAPL")
+    assert out["kind"] == "exp"
+    assert out["symbol"] == "AAPL"
+
+    out = raw_chain(symbol="AAPL", expiration="2026-06-19", option_type="call", min_open_interest=10, min_volume=5, limit=20)
+    assert out["kind"] == "chain"
+    assert out["symbol"] == "AAPL"
+    assert out["option_type"] == "call"
+    assert out["limit"] == 20
+
+    out = raw_price(
+        spot=100.0,
+        strike=105.0,
+        barrier=120.0,
+        maturity_days=30,
+        option_type="call",
+        barrier_type="up_out",
+        risk_free_rate=0.03,
+        dividend_yield=0.01,
+        volatility=0.25,
+        rebate=0.0,
+    )
+    assert out["kind"] == "price"
+    assert out["spot"] == 100.0
+
+    out = raw_cal(
+        symbol="AAPL",
+        expiration="2026-06-19",
+        option_type="put",
+        risk_free_rate=0.03,
+        dividend_yield=0.01,
+        min_open_interest=10,
+        min_volume=2,
+        max_contracts=15,
+    )
+    assert out["kind"] == "cal"
+    assert out["symbol"] == "AAPL"
+    assert out["option_type"] == "put"

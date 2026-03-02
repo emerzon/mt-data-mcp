@@ -7,6 +7,7 @@ from ..forecast.backtest import forecast_backtest as _forecast_backtest_impl
 from ..forecast.volatility import forecast_volatility as _forecast_volatility_impl
 from ..forecast.forecast import get_forecast_methods_data as _get_forecast_methods_data
 from ..forecast.tune import genetic_search_forecast_params as _genetic_search_impl
+from ..forecast.tune import optuna_search_forecast_params as _optuna_search_impl
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import build_barrier_kwargs_from as _build_barrier_kwargs_from
 
@@ -689,6 +690,159 @@ def forecast_tune_genetic(
         )
     except Exception as e:
         return {"error": f"Error in genetic tuning: {e}"}
+
+
+@mcp.tool()
+@_auto_connect_wrapper
+def forecast_tune_optuna(
+    symbol: str,
+    timeframe: TimeframeLiteral = "H1",
+    method: Optional[str] = "theta",
+    methods: Optional[List[str]] = None,
+    horizon: int = 12,
+    steps: int = 5,
+    spacing: int = 20,
+    search_space: Optional[Dict[str, Any]] = None,
+    metric: str = "avg_rmse",
+    mode: str = "min",
+    n_trials: int = 40,
+    timeout: Optional[float] = None,
+    n_jobs: int = 1,
+    sampler: Literal["tpe", "random", "cmaes"] = "tpe",  # type: ignore
+    pruner: Literal["median", "none", "hyperband", "percentile"] = "median",  # type: ignore
+    study_name: Optional[str] = None,
+    storage: Optional[str] = None,
+    seed: int = 42,
+    trade_threshold: float = 0.0,
+    denoise: Optional[DenoiseSpec] = None,
+    features: Optional[Dict[str, Any]] = None,
+    dimred_method: Optional[str] = None,
+    dimred_params: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Optuna search over method params to optimize a backtest metric."""
+    try:
+        ss = _parse_kv_or_json(search_space)
+        method_for_search: Optional[str] = method
+        from ..forecast.tune import default_search_space as _default_ss
+        if not isinstance(ss, dict) or not ss:
+            if isinstance(methods, (list, tuple)) and len(methods) > 0:
+                ss = _default_ss(method=None, methods=methods)
+                method_for_search = None
+            else:
+                ss = _default_ss(method=method_for_search, methods=None)
+        elif isinstance(methods, (list, tuple)) and len(methods) > 0:
+            method_for_search = None
+        return _optuna_search_impl(
+            symbol=symbol,
+            timeframe=timeframe,  # type: ignore[arg-type]
+            method=str(method_for_search) if method_for_search is not None else None,
+            methods=methods,
+            horizon=int(horizon),
+            steps=int(steps),
+            spacing=int(spacing),
+            search_space=ss,
+            metric=str(metric),
+            mode=str(mode),
+            n_trials=int(n_trials),
+            timeout=float(timeout) if timeout is not None else None,
+            n_jobs=int(n_jobs),
+            sampler=str(sampler),
+            pruner=str(pruner),
+            study_name=str(study_name) if study_name is not None else None,
+            storage=str(storage) if storage is not None else None,
+            seed=int(seed),
+            trade_threshold=float(trade_threshold),
+            denoise=denoise,
+            features=features,
+            dimred_method=dimred_method,
+            dimred_params=dimred_params,
+        )
+    except Exception as e:
+        return {"error": f"Error in optuna tuning: {e}"}
+
+
+@mcp.tool()
+def forecast_options_expirations(
+    symbol: str,
+) -> Dict[str, Any]:
+    """Fetch available option expirations for a symbol."""
+    from ..services.options_service import get_options_expirations as _impl
+    return _impl(symbol=symbol)
+
+
+@mcp.tool()
+def forecast_options_chain(
+    symbol: str,
+    expiration: Optional[str] = None,
+    option_type: Literal["call", "put", "both"] = "both",  # type: ignore
+    min_open_interest: int = 0,
+    min_volume: int = 0,
+    limit: int = 200,
+) -> Dict[str, Any]:
+    """Fetch options chain snapshots for a symbol."""
+    from ..services.options_service import get_options_chain as _impl
+    return _impl(
+        symbol=symbol,
+        expiration=expiration,
+        option_type=option_type,
+        min_open_interest=int(min_open_interest),
+        min_volume=int(min_volume),
+        limit=int(limit),
+    )
+
+
+@mcp.tool()
+def forecast_quantlib_barrier_price(
+    spot: float,
+    strike: float,
+    barrier: float,
+    maturity_days: int,
+    option_type: Literal["call", "put"] = "call",  # type: ignore
+    barrier_type: Literal["up_in", "up_out", "down_in", "down_out"] = "up_out",  # type: ignore
+    risk_free_rate: float = 0.02,
+    dividend_yield: float = 0.0,
+    volatility: float = 0.2,
+    rebate: float = 0.0,
+) -> Dict[str, Any]:
+    """Price a barrier option using QuantLib."""
+    from ..forecast.quantlib_tools import price_barrier_option_quantlib as _impl
+    return _impl(
+        spot=float(spot),
+        strike=float(strike),
+        barrier=float(barrier),
+        maturity_days=int(maturity_days),
+        option_type=option_type,
+        barrier_type=barrier_type,
+        risk_free_rate=float(risk_free_rate),
+        dividend_yield=float(dividend_yield),
+        volatility=float(volatility),
+        rebate=float(rebate),
+    )
+
+
+@mcp.tool()
+def forecast_quantlib_heston_calibrate(
+    symbol: str,
+    expiration: Optional[str] = None,
+    option_type: Literal["call", "put", "both"] = "call",  # type: ignore
+    risk_free_rate: float = 0.02,
+    dividend_yield: float = 0.0,
+    min_open_interest: int = 0,
+    min_volume: int = 0,
+    max_contracts: int = 25,
+) -> Dict[str, Any]:
+    """Calibrate Heston parameters from an option chain using QuantLib."""
+    from ..forecast.quantlib_tools import calibrate_heston_quantlib_from_options as _impl
+    return _impl(
+        symbol=symbol,
+        expiration=expiration,
+        option_type=option_type,
+        risk_free_rate=float(risk_free_rate),
+        dividend_yield=float(dividend_yield),
+        min_open_interest=int(min_open_interest),
+        min_volume=int(min_volume),
+        max_contracts=int(max_contracts),
+    )
 
 
 @mcp.tool()

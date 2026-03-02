@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import math
 import random
+import threading
 
 from .backtest import forecast_backtest as _forecast_backtest
 
@@ -173,6 +174,53 @@ def default_search_space(method: Optional[str] = None, methods: Optional[List[st
 
 
 Metric = str
+
+
+def _is_flat_search_space(sp: Dict[str, Any]) -> bool:
+    return any(
+        isinstance(v, dict) and ('type' in v or 'min' in v or 'max' in v or 'choices' in v)
+        for v in sp.values()
+    )
+
+
+def _suggest_optuna_param(trial: Any, name: str, space: Dict[str, Any]) -> Any:
+    t = str(space.get('type', 'float')).lower()
+    if t == 'categorical':
+        choices = list(space.get('choices') or [])
+        if not choices:
+            return None
+        return trial.suggest_categorical(name, choices)
+    if t == 'int':
+        lo_raw = space.get('min', 0)
+        hi_raw = space.get('max', lo_raw)
+        try:
+            lo = int(lo_raw)
+        except Exception:
+            lo = 0
+        try:
+            hi = int(hi_raw)
+        except Exception:
+            hi = lo
+        if lo > hi:
+            lo, hi = hi, lo
+        return int(trial.suggest_int(name, lo, hi))
+    lo_raw = space.get('min', 0.0)
+    hi_raw = space.get('max', None)
+    try:
+        lo = float(lo_raw)
+    except Exception:
+        lo = 0.0
+    if hi_raw is None:
+        hi_raw = max(lo, 1.0)
+    try:
+        hi = float(hi_raw)
+    except Exception:
+        hi = max(lo, 1.0)
+    if lo > hi:
+        lo, hi = hi, lo
+    if bool(space.get('log', False)) and lo > 0.0 and hi > 0.0:
+        return float(trial.suggest_float(name, lo, hi, log=True))
+    return float(trial.suggest_float(name, lo, hi))
 
 
 def _eval_candidate(
@@ -346,6 +394,248 @@ def _crossover_for_method(
             except Exception:
                 pass
     return child
+
+
+def optuna_search_forecast_params(
+    *,
+    symbol: str,
+    timeframe: str,
+    method: Optional[str],
+    methods: Optional[List[str]] = None,
+    horizon: int = 12,
+    steps: int = 5,
+    spacing: int = 20,
+    search_space: Dict[str, Any] = {},
+    metric: Metric = 'avg_rmse',
+    mode: str = 'min',
+    n_trials: int = 40,
+    timeout: Optional[float] = None,
+    n_jobs: int = 1,
+    sampler: str = 'tpe',
+    pruner: str = 'median',
+    seed: int = 42,
+    study_name: Optional[str] = None,
+    storage: Optional[str] = None,
+    denoise: Optional[Dict[str, Any]] = None,
+    features: Optional[Dict[str, Any]] = None,
+    dimred_method: Optional[str] = None,
+    dimred_params: Optional[Dict[str, Any]] = None,
+    trade_threshold: float = 0.0,
+) -> Dict[str, Any]:
+    """Optuna search for best params for a forecast method under backtest."""
+    import optuna
+
+    mode_val = str(mode or 'min').strip().lower()
+    if mode_val not in {'min', 'max'}:
+        mode_val = 'min'
+
+    raw = dict(search_space or {})
+    method_scoped = not _is_flat_search_space(raw)
+    shared_key = '_shared'
+    method_names_from_space: List[str] = []
+    if method_scoped:
+        method_names_from_space = [k for k in raw.keys() if k != shared_key]
+
+    def _spaces_for(mname: Optional[str]) -> Dict[str, Any]:
+        if not method_scoped:
+            sp = dict(raw)
+            sp.pop('method', None)
+            return sp
+        out: Dict[str, Any] = {}
+        shared = raw.get(shared_key) if isinstance(raw.get(shared_key), dict) else {}
+        if isinstance(shared, dict):
+            out.update(shared)
+        if mname and isinstance(raw.get(mname), dict):
+            out.update(raw.get(mname))
+        return out
+
+    method_choices: List[str] = []
+    if isinstance(methods, (list, tuple)) and methods:
+        method_choices = list(methods)
+    elif method_scoped and method_names_from_space:
+        method_choices = list(method_names_from_space)
+
+    has_method_gene = (
+        (not method_scoped)
+        and ('method' in raw)
+        and isinstance(raw.get('method'), dict)
+        and str(raw['method'].get('type', 'categorical')).lower() == 'categorical'
+    )
+
+    sampler_name = str(sampler or 'tpe').strip().lower()
+    if sampler_name == 'random':
+        sampler_obj = optuna.samplers.RandomSampler(seed=int(seed))
+    elif sampler_name == 'cmaes':
+        sampler_obj = optuna.samplers.CmaEsSampler(seed=int(seed))
+    else:
+        sampler_name = 'tpe'
+        sampler_obj = optuna.samplers.TPESampler(seed=int(seed), multivariate=True)
+
+    pruner_name = str(pruner or 'median').strip().lower()
+    if pruner_name in {'none', 'off', 'disabled'}:
+        pruner_obj = optuna.pruners.NopPruner()
+    elif pruner_name == 'hyperband':
+        pruner_obj = optuna.pruners.HyperbandPruner()
+    elif pruner_name == 'percentile':
+        pruner_obj = optuna.pruners.PercentilePruner(50.0)
+    else:
+        pruner_name = 'median'
+        pruner_obj = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=0)
+
+    storage_val: Optional[str]
+    if storage is None:
+        storage_val = None
+    else:
+        storage_str = str(storage).strip()
+        storage_val = storage_str or None
+    study_name_val: Optional[str]
+    if study_name is None:
+        study_name_val = None
+    else:
+        name_str = str(study_name).strip()
+        study_name_val = name_str or None
+    load_if_exists = bool(storage_val and study_name_val)
+
+    direction = 'minimize' if mode_val == 'min' else 'maximize'
+    study = optuna.create_study(
+        direction=direction,
+        sampler=sampler_obj,
+        pruner=pruner_obj,
+        study_name=study_name_val,
+        storage=storage_val,
+        load_if_exists=load_if_exists,
+    )
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+    history: List[Dict[str, Any]] = []
+    trial_results: Dict[int, Dict[str, Any]] = {}
+    trial_candidates: Dict[int, Dict[str, Any]] = {}
+    lock = threading.Lock()
+
+    best_score = math.inf if mode_val == 'min' else -math.inf
+    best_params: Dict[str, Any] = {}
+    best_result: Optional[Dict[str, Any]] = None
+
+    def _objective(trial: Any) -> float:
+        nonlocal best_score, best_params, best_result
+        cand: Dict[str, Any] = {}
+
+        sel_method = None
+        if has_method_gene:
+            try:
+                sel_method = _suggest_optuna_param(trial, 'method', raw['method'])
+                cand['method'] = sel_method
+            except Exception:
+                sel_method = None
+        elif method_choices:
+            sel_method = trial.suggest_categorical('method', list(method_choices))
+            cand['method'] = sel_method
+        else:
+            sel_method = method
+            if sel_method is not None:
+                cand['method'] = sel_method
+
+        pspaces = _spaces_for(str(sel_method) if sel_method else None)
+        for k, spec in pspaces.items():
+            cand[k] = _suggest_optuna_param(trial, k, spec or {})
+
+        score, res = _eval_candidate(
+            symbol=symbol,
+            timeframe=timeframe,
+            method=method,
+            horizon=horizon,
+            steps=steps,
+            spacing=spacing,
+            candidate_params=cand,
+            metric=metric,
+            mode=mode_val,
+            denoise=denoise,
+            features=features,
+            dimred_method=dimred_method,
+            dimred_params=dimred_params,
+            trade_threshold=float(trade_threshold),
+        )
+
+        true_score = score if mode_val == 'min' else -score
+        finite_score = float(true_score) if math.isfinite(true_score) else None
+        objective_score = float(true_score)
+        if not math.isfinite(objective_score):
+            objective_score = 1e18 if mode_val == 'min' else -1e18
+
+        with lock:
+            hist_row: Dict[str, Any] = {"trial": int(trial.number), "score": float(objective_score), "params": dict(cand)}
+            if isinstance(res, dict) and res.get('_sel_method'):
+                hist_row['method'] = res.get('_sel_method')
+            history.append(hist_row)
+            if isinstance(res, dict):
+                trial_results[int(trial.number)] = res
+            trial_candidates[int(trial.number)] = dict(cand)
+
+            if finite_score is not None:
+                better = (
+                    (mode_val == 'min' and finite_score < best_score)
+                    or (mode_val != 'min' and finite_score > best_score)
+                )
+                if better:
+                    best_score = finite_score
+                    best_params = dict(cand)
+                    best_result = res if isinstance(res, dict) else None
+
+        return float(objective_score)
+
+    timeout_val = None
+    if timeout is not None:
+        try:
+            timeout_float = float(timeout)
+            timeout_val = timeout_float if timeout_float > 0 else None
+        except Exception:
+            timeout_val = None
+    n_jobs_val = max(1, int(n_jobs))
+    n_trials_val = max(1, int(n_trials))
+    study.optimize(_objective, n_trials=n_trials_val, timeout=timeout_val, n_jobs=n_jobs_val)
+
+    if not best_params and len(study.trials) > 0:
+        try:
+            bt = study.best_trial
+            best_params = dict(trial_candidates.get(int(bt.number), bt.params))
+            best_score = float(bt.value)
+            br = trial_results.get(int(bt.number))
+            best_result = br if isinstance(br, dict) else None
+        except Exception:
+            pass
+
+    payload: Dict[str, Any] = {
+        "success": True,
+        "best_score": float(best_score),
+        "best_params": best_params,
+        "metric": metric,
+        "mode": mode_val,
+        "optimizer": "optuna",
+        "n_trials": int(n_trials_val),
+        "timeout": float(timeout_val) if timeout_val is not None else None,
+        "n_jobs": int(n_jobs_val),
+        "sampler": sampler_name,
+        "pruner": pruner_name,
+        "seed": int(seed),
+        "history_count": len(history),
+    }
+    if storage_val:
+        payload["storage"] = storage_val
+    if study_name_val:
+        payload["study_name"] = study_name_val
+    if best_result is not None:
+        sel = best_result.get('_sel_method') if isinstance(best_result, dict) else None
+        agg = None
+        try:
+            agg = best_result.get('results', {}).get(sel) if isinstance(best_result, dict) else None
+        except Exception:
+            agg = None
+        payload["best_method"] = sel
+        if isinstance(agg, dict):
+            payload["best_result_summary"] = {"horizon": agg.get('horizon'), "result": agg}
+    if history:
+        payload["history_tail"] = history[-50:]
+    return payload
 
 
 def genetic_search_forecast_params(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import pytest
 
 from mtdata.forecast import tune
 
@@ -173,6 +174,70 @@ def test_genetic_search_method_scoped_and_flat_spaces(monkeypatch):
         mode="max",
         population=3,
         generations=2,
+        seed=17,
+    )
+    assert out["success"] is True
+    assert out["mode"] == "max"
+    assert out["history_count"] == 6
+
+
+def test_optuna_search_method_scoped_and_flat_spaces(monkeypatch):
+    pytest.importorskip("optuna")
+
+    def fake_eval_candidate(**kwargs):
+        cand = kwargs["candidate_params"]
+        m = cand.get("method") or kwargs.get("method") or "theta"
+        x = float(cand.get("x", 1.0))
+        base = x if m == "theta" else (x + 0.4)
+        return (
+            base if kwargs["mode"] == "min" else -base,
+            {"_sel_method": m, "results": {m: {"horizon": kwargs["horizon"], "success": True}}},
+        )
+
+    monkeypatch.setattr(tune, "_eval_candidate", fake_eval_candidate)
+
+    method_scoped_space = {
+        "_shared": {"x": {"type": "float", "min": 0.1, "max": 1.0}},
+        "theta": {"k": {"type": "int", "min": 1, "max": 3}},
+        "naive": {"k": {"type": "int", "min": 4, "max": 6}},
+    }
+    out = tune.optuna_search_forecast_params(
+        symbol="EURUSD",
+        timeframe="H1",
+        method=None,
+        methods=["theta", "naive"],
+        horizon=3,
+        steps=2,
+        spacing=1,
+        search_space=method_scoped_space,
+        n_trials=8,
+        sampler="tpe",
+        pruner="none",
+        seed=11,
+    )
+    assert out["success"] is True
+    assert out["optimizer"] == "optuna"
+    assert out["history_count"] == 8
+    assert out["best_method"] in {"theta", "naive"}
+    assert len(out["history_tail"]) <= 50
+
+    flat_space = {
+        "method": {"type": "categorical", "choices": ["theta", "naive"]},
+        "x": {"type": "float", "min": 0.2, "max": 0.9},
+    }
+    out = tune.optuna_search_forecast_params(
+        symbol="EURUSD",
+        timeframe="H1",
+        method=None,
+        methods=None,
+        horizon=2,
+        steps=2,
+        spacing=1,
+        search_space=flat_space,
+        mode="max",
+        n_trials=6,
+        sampler="random",
+        pruner="none",
         seed=17,
     )
     assert out["success"] is True

@@ -557,7 +557,7 @@ def _resolve_param_kwargs(
 
     # Dynamically populate choices for 'method' parameter
     if param['name'] == 'method' and (
-        (cmd_name in {'forecast_generate', 'forecast_conformal_intervals', 'forecast_tune_genetic'})
+        (cmd_name in {'forecast_generate', 'forecast_conformal_intervals', 'forecast_tune_genetic', 'forecast_tune_optuna'})
         or _looks_like_forecast_method_literal(param.get('type'))
     ):
         # If the tool exposes the newer (library, model) selection, don't explode

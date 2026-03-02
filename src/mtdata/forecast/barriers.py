@@ -773,6 +773,25 @@ def forecast_barrier_optimize(
             objective_val = 'ev'
         objective_changed = objective_val != objective_requested
 
+        optimizer_val = str(params_dict.get('optimizer', 'grid')).strip().lower()
+        if optimizer_val not in {'grid', 'optuna'}:
+            optimizer_val = 'grid'
+        optuna_trials_val = max(1, int(params_dict.get('n_trials', 63)))
+        optuna_timeout_raw = params_dict.get('timeout')
+        try:
+            optuna_timeout_val = float(optuna_timeout_raw) if optuna_timeout_raw is not None else None
+            if optuna_timeout_val is not None and optuna_timeout_val <= 0:
+                optuna_timeout_val = None
+        except Exception:
+            optuna_timeout_val = None
+        optuna_n_jobs_val = max(1, int(params_dict.get('n_jobs', 1)))
+        optuna_sampler_val = str(params_dict.get('sampler', 'tpe')).strip().lower()
+        if optuna_sampler_val not in {'tpe', 'random', 'cmaes'}:
+            optuna_sampler_val = 'tpe'
+        optuna_pruner_val = str(params_dict.get('pruner', 'median')).strip().lower()
+        if optuna_pruner_val not in {'median', 'none', 'hyperband', 'percentile'}:
+            optuna_pruner_val = 'median'
+
         if top_k is not None:
             try:
                 top_k_val = int(top_k)
@@ -1061,6 +1080,7 @@ def forecast_barrier_optimize(
 
         # Evaluate candidates
         results: List[Dict[str, Any]] = []
+        optuna_meta: Optional[Dict[str, Any]] = None
         dir_long = direction_norm == 'long'
         invalid_barrier_candidates = 0
 
@@ -1255,7 +1275,102 @@ def forecast_barrier_optimize(
                 out.append(res)
             return out
 
-        results.extend(_evaluate(base_candidates))
+        if optimizer_val == 'optuna':
+            try:
+                import optuna
+            except Exception as ex:
+                return {"error": f"Optuna optimizer requested but unavailable: {ex}"}
+
+            tp_vals = [float(tp) for tp, _ in base_candidates] if base_candidates else [float(tp_min_val), float(tp_max_val)]
+            sl_vals = [float(sl) for _, sl in base_candidates] if base_candidates else [float(sl_min_val), float(sl_max_val)]
+            tp_lo = max(1e-9, float(min(tp_vals)))
+            tp_hi = max(tp_lo, float(max(tp_vals)))
+            sl_lo = max(1e-9, float(min(sl_vals)))
+            sl_hi = max(sl_lo, float(max(sl_vals)))
+            rr_lo = max(1e-9, float(min(ratio_min_val, ratio_max_val)))
+            rr_hi = max(rr_lo, float(max(ratio_min_val, ratio_max_val)))
+
+            sampler_name = optuna_sampler_val
+            if sampler_name == 'random':
+                sampler_obj = optuna.samplers.RandomSampler(seed=int(seed))
+            elif sampler_name == 'cmaes':
+                sampler_obj = optuna.samplers.CmaEsSampler(seed=int(seed))
+            else:
+                sampler_name = 'tpe'
+                sampler_obj = optuna.samplers.TPESampler(seed=int(seed), multivariate=True)
+
+            pruner_name = optuna_pruner_val
+            if pruner_name in {'none'}:
+                pruner_obj = optuna.pruners.NopPruner()
+            elif pruner_name == 'hyperband':
+                pruner_obj = optuna.pruners.HyperbandPruner()
+            elif pruner_name == 'percentile':
+                pruner_obj = optuna.pruners.PercentilePruner(50.0)
+            else:
+                pruner_name = 'median'
+                pruner_obj = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=0)
+
+            maximize = objective_val != 'min_loss_prob'
+            direction = 'maximize' if maximize else 'minimize'
+            optuna.logging.set_verbosity(optuna.logging.WARNING)
+            study = optuna.create_study(direction=direction, sampler=sampler_obj, pruner=pruner_obj)
+            sampled_rows: List[Dict[str, Any]] = []
+
+            def _objective_trial(trial: Any) -> float:
+                if grid_style_val == 'ratio':
+                    sl_unit = float(trial.suggest_float('sl', sl_lo, sl_hi))
+                    rr_unit = float(trial.suggest_float('rr', rr_lo, rr_hi))
+                    tp_unit = sl_unit * rr_unit
+                else:
+                    tp_unit = float(trial.suggest_float('tp', tp_lo, tp_hi))
+                    sl_unit = float(trial.suggest_float('sl', sl_lo, sl_hi))
+
+                rows = _evaluate([(tp_unit, sl_unit)])
+                if not rows:
+                    return -1e18 if maximize else 1e18
+                row = rows[0]
+                sampled_rows.append(row)
+                trial.set_user_attr('tp', float(row.get('tp', tp_unit)))
+                trial.set_user_attr('sl', float(row.get('sl', sl_unit)))
+                if objective_val == 'min_loss_prob':
+                    return float(row.get('prob_loss', 1.0))
+                return float(row.get(objective_val, row.get('ev', -1e18)))
+
+            study.optimize(
+                _objective_trial,
+                n_trials=int(optuna_trials_val),
+                timeout=float(optuna_timeout_val) if optuna_timeout_val is not None else None,
+                n_jobs=int(optuna_n_jobs_val),
+            )
+
+            dedup: Dict[Tuple[int, int], Dict[str, Any]] = {}
+            for row in sampled_rows:
+                try:
+                    key = (int(round(float(row.get('tp', 0.0)) * 1e6)), int(round(float(row.get('sl', 0.0)) * 1e6)))
+                except Exception:
+                    continue
+                cur = dedup.get(key)
+                if cur is None:
+                    dedup[key] = row
+                    continue
+                if objective_val == 'min_loss_prob':
+                    if float(row.get('prob_loss', 1.0)) < float(cur.get('prob_loss', 1.0)):
+                        dedup[key] = row
+                else:
+                    if float(row.get(objective_val, -1e18)) > float(cur.get(objective_val, -1e18)):
+                        dedup[key] = row
+
+            results.extend(dedup.values())
+            optuna_meta = {
+                "n_trials": int(optuna_trials_val),
+                "completed_trials": int(len(study.trials)),
+                "sampler": sampler_name,
+                "pruner": pruner_name,
+                "timeout": float(optuna_timeout_val) if optuna_timeout_val is not None else None,
+                "n_jobs": int(optuna_n_jobs_val),
+            }
+        else:
+            results.extend(_evaluate(base_candidates))
 
         def _sort(res_list: List[Dict[str, Any]]) -> None:
             if objective_val == 'edge':
@@ -1355,6 +1470,7 @@ def forecast_barrier_optimize(
             "horizon": horizon_val,
             "direction": direction_norm,
             "mode": mode_val,
+            "optimizer": optimizer_val,
             "last_price": float(last_price),
             "last_price_close": float(last_price_close),
             "last_price_source": last_price_source,
@@ -1367,6 +1483,8 @@ def forecast_barrier_optimize(
             "grid": grid_out,
             "no_candidates": no_candidates,
         }
+        if optuna_meta is not None:
+            out["optuna"] = optuna_meta
         if isinstance(best, dict):
             warnings_out: List[str] = []
             best_ev = best.get("ev")
