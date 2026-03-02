@@ -59,6 +59,12 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertIn("prob_tp_first", result)
         self.assertIn("prob_sl_first", result)
+        self.assertIn("prob_tie", result)
+        self.assertIn("prob_tp_first_ci95", result)
+        self.assertIn("prob_sl_first_ci95", result)
+        self.assertIn("prob_no_hit_ci95", result)
+        self.assertIn("prob_tp_first_se", result)
+        self.assertIn("prob_sl_first_se", result)
 
     def test_forecast_barrier_hit_probabilities_prefers_live_tick_price(self):
         self._set_flat_history(1.0, bars=200)
@@ -517,6 +523,8 @@ class TestForecastBarriers(unittest.TestCase):
             self.assertAlmostEqual(entry["prob_no_hit"], 0.0, places=7)
             self.assertAlmostEqual(entry["prob_tp_first"], 0.5, places=7)
             self.assertAlmostEqual(entry["prob_sl_first"], 0.5, places=7)
+            expected_ev = 0.5 * entry["tp"] - 0.5 * entry["sl"]
+            self.assertAlmostEqual(entry["ev"], expected_ev, places=7)
 
     def test_forecast_barrier_hit_probabilities_rejects_non_positive_horizon(self):
         result = forecast_barrier_hit_probabilities(

@@ -209,6 +209,7 @@ class TestSimulateHmmMc:
         assert "price_paths" in result
         assert "state_paths" in result
         assert "trans" in result
+        assert result["model_type"] == "gaussian_hmm_baum_welch"
         assert result["price_paths"].shape == (30, 10)
 
     def test_too_few(self):

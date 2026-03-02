@@ -36,6 +36,30 @@ BARRIER_GRID_PRESETS = {
 }
 
 
+def _binomial_wilson_95(p_hat: float, n: int) -> Tuple[float, float]:
+    """Wilson 95% interval for a Bernoulli proportion."""
+    n_i = int(n)
+    if n_i <= 0:
+        return float("nan"), float("nan")
+    p = float(np.clip(float(p_hat), 0.0, 1.0))
+    z = 1.959963984540054
+    z2 = z * z
+    denom = 1.0 + z2 / n_i
+    center = (p + z2 / (2.0 * n_i)) / denom
+    margin = (z / denom) * math.sqrt((p * (1.0 - p) / n_i) + (z2 / (4.0 * n_i * n_i)))
+    lo = max(0.0, center - margin)
+    hi = min(1.0, center + margin)
+    return float(lo), float(hi)
+
+
+def _binomial_se(p_hat: float, n: int) -> float:
+    n_i = int(n)
+    if n_i <= 0:
+        return float("nan")
+    p = float(np.clip(float(p_hat), 0.0, 1.0))
+    return float(math.sqrt(max(0.0, p * (1.0 - p) / n_i)))
+
+
 def _is_crypto_symbol(symbol: str) -> bool:
     sym = str(symbol or "").upper()
     crypto_tokens = {
@@ -456,9 +480,14 @@ def forecast_barrier_hit_probabilities(
         S_f = float(S)
         prob_tp_first = (tp_first + 0.5 * both_tie) / S_f
         prob_sl_first = (sl_first + 0.5 * both_tie) / S_f
+        prob_tie = both_tie / S_f
         prob_no_hit = no_hit / S_f
         tp_any_curve = (tp_any_by_t / S_f).tolist()
         sl_any_curve = (sl_any_by_t / S_f).tolist()
+        tp_lo, tp_hi = _binomial_wilson_95(prob_tp_first, int(S))
+        sl_lo, sl_hi = _binomial_wilson_95(prob_sl_first, int(S))
+        tie_lo, tie_hi = _binomial_wilson_95(prob_tie, int(S))
+        no_hit_lo, no_hit_hi = _binomial_wilson_95(prob_no_hit, int(S))
 
         def _stats(arr: list[int]) -> Dict[str, float]:
             if not arr:
@@ -492,7 +521,16 @@ def forecast_barrier_hit_probabilities(
             "sl_price": float(sl_price),
             "prob_tp_first": float(prob_tp_first),
             "prob_sl_first": float(prob_sl_first),
+            "prob_tie": float(prob_tie),
             "prob_no_hit": float(prob_no_hit),
+            "prob_tp_first_se": _binomial_se(prob_tp_first, int(S)),
+            "prob_sl_first_se": _binomial_se(prob_sl_first, int(S)),
+            "prob_tie_se": _binomial_se(prob_tie, int(S)),
+            "prob_no_hit_se": _binomial_se(prob_no_hit, int(S)),
+            "prob_tp_first_ci95": {"low": float(tp_lo), "high": float(tp_hi)},
+            "prob_sl_first_ci95": {"low": float(sl_lo), "high": float(sl_hi)},
+            "prob_tie_ci95": {"low": float(tie_lo), "high": float(tie_hi)},
+            "prob_no_hit_ci95": {"low": float(no_hit_lo), "high": float(no_hit_hi)},
             "edge": float(edge),
             "tp_hit_prob_by_t": [float(v) for v in tp_any_curve],
             "sl_hit_prob_by_t": [float(v) for v in sl_any_curve],
@@ -1114,8 +1152,13 @@ def forecast_barrier_optimize(
                 if rr_max_val and rr > rr_max_val:
                     continue
 
-                ev_val = prob_win * reward - prob_loss * risk
+                # Resolve tie paths by splitting expected outcome 50/50.
+                ev_val = (prob_win + 0.5 * prob_tie) * reward - (prob_loss + 0.5 * prob_tie) * risk
                 edge = prob_win - prob_loss
+                win_lo, win_hi = _binomial_wilson_95(prob_win, int(S))
+                loss_lo, loss_hi = _binomial_wilson_95(prob_loss, int(S))
+                tie_lo, tie_hi = _binomial_wilson_95(prob_tie, int(S))
+                no_hit_lo, no_hit_hi = _binomial_wilson_95(prob_neutral, int(S))
 
                 kelly_val = 0.0
                 if rr > 0:
@@ -1187,6 +1230,14 @@ def forecast_barrier_optimize(
                     'prob_sl_first': prob_sl_first,
                     'prob_no_hit': prob_neutral,
                     'prob_tie': prob_tie,
+                    'prob_win_se': _binomial_se(prob_win, int(S)),
+                    'prob_loss_se': _binomial_se(prob_loss, int(S)),
+                    'prob_tie_se': _binomial_se(prob_tie, int(S)),
+                    'prob_no_hit_se': _binomial_se(prob_neutral, int(S)),
+                    'prob_win_ci95': {'low': float(win_lo), 'high': float(win_hi)},
+                    'prob_loss_ci95': {'low': float(loss_lo), 'high': float(loss_hi)},
+                    'prob_tie_ci95': {'low': float(tie_lo), 'high': float(tie_hi)},
+                    'prob_no_hit_ci95': {'low': float(no_hit_lo), 'high': float(no_hit_hi)},
                     'prob_resolve': prob_resolve,
                     'ev': ev_val,
                     'ev_cond': ev_cond,

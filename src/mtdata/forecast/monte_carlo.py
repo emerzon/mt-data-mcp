@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-"""Monte Carlo simulation utilities, including a simple HMM-based regime model.
+"""Monte Carlo simulation utilities, including a Gaussian-HMM regime model.
 
 This module provides two primary helpers:
 - simulate_gbm_mc: Calibrate GBM from recent log-returns and simulate paths
-- simulate_hmm_mc: Fit a light-weight Gaussian HMM (2–3 states) to log-returns
-  using an EM-like procedure and simulate regime-switching returns forward.
+- simulate_hmm_mc: Fit a Gaussian HMM (Baum-Welch via hmmlearn) to log-returns
+  and simulate regime-switching returns forward.
 - simulate_garch_mc: Fit a GARCH(1,1) model (requires 'arch' package) and simulate.
 - simulate_bootstrap_mc: Circular block bootstrap from historical returns.
 - simulate_heston_mc: Heston stochastic volatility simulation (Euler).
 - simulate_jump_diffusion_mc: Merton-style jump diffusion simulation.
 
-This module relies on numpy/pandas plus sklearn (GaussianMixture) and arch
-(bootstrap/GARCH).
+This module relies on numpy/pandas plus sklearn (GaussianMixture), hmmlearn
+(Gaussian HMM), and arch (bootstrap/GARCH).
 """
 
 from typing import Dict, Tuple, Optional
@@ -114,6 +114,54 @@ def fit_gaussian_mixture_1d(
     return w[order], mu[order], sigma[order], gamma[:, order], ll
 
 
+def _fit_hmmlearn_gaussian_hmm_1d(
+    x: np.ndarray,
+    n_states: int = 2,
+    max_iter: int = 80,
+    tol: float = 1e-6,
+    seed: Optional[int] = 42,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Fit a 1D GaussianHMM via hmmlearn.
+
+    Returns (mu, sigma, A, init).
+    """
+    from hmmlearn.hmm import GaussianHMM
+
+    x = np.asarray(x, dtype=float)
+    x = x[np.isfinite(x)]
+    N = int(x.size)
+    K = max(1, int(n_states))
+    if N < max(4, K + 1):
+        raise ValueError("Not enough returns for GaussianHMM calibration")
+
+    model = GaussianHMM(
+        n_components=K,
+        covariance_type='diag',
+        n_iter=int(max_iter),
+        tol=float(tol),
+        random_state=seed,
+    )
+    x2 = x.reshape(-1, 1)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        model.fit(x2)
+    gamma = np.asarray(model.predict_proba(x2), dtype=float)
+    mu = np.asarray(model.means_, dtype=float).reshape(-1)
+    covars = np.asarray(model.covars_, dtype=float)
+    sigma = np.sqrt(np.clip(covars.reshape(K, -1)[:, 0], 1e-12, None))
+    A = _normalize_transition_matrix(np.asarray(model.transmat_, dtype=float))
+    init = _normalize_probability_vector(gamma[-1])
+
+    # Keep stable state ordering (ascending mean) and reorder transition
+    # matrix/initial distribution accordingly.
+    order = np.argsort(mu)
+    mu = mu[order]
+    sigma = sigma[order]
+    A = A[np.ix_(order, order)]
+    init = _normalize_probability_vector(init[order])
+    return mu, sigma, A, init
+
+
 def estimate_transition_matrix_from_gamma(gamma: np.ndarray) -> np.ndarray:
     """Estimate a Markov transition matrix from soft assignments gamma.
 
@@ -124,11 +172,7 @@ def estimate_transition_matrix_from_gamma(gamma: np.ndarray) -> np.ndarray:
     N, K = gamma.shape
     if N <= 1 or K <= 0:
         return np.eye(max(1, K), dtype=float)
-    counts = np.zeros((K, K), dtype=float)
-    for t in range(N - 1):
-        gi = gamma[t].reshape(-1, 1)
-        gj = gamma[t + 1].reshape(1, -1)
-        counts += gi @ gj
+    counts = gamma[:-1].T @ gamma[1:]
     return _normalize_transition_matrix(counts)
 
 
@@ -142,13 +186,21 @@ def simulate_markov_chain(A: np.ndarray, init: np.ndarray, steps: int, sims: int
     A = _normalize_transition_matrix(np.asarray(A, dtype=float))
     init = _normalize_probability_vector(np.asarray(init, dtype=float))
     K = A.shape[0]
-    out = np.zeros((int(sims), int(steps)), dtype=int)
-    for s in range(int(sims)):
-        # initial state by init distribution
-        st = int(rng.choice(K, p=init))
-        for t in range(int(steps)):
-            out[s, t] = st
-            st = int(rng.choice(K, p=A[st]))
+    sims_i = max(0, int(sims))
+    steps_i = max(0, int(steps))
+    out = np.zeros((sims_i, steps_i), dtype=int)
+    if sims_i == 0 or steps_i == 0:
+        return out
+
+    # Vectorize across all simulation paths; only iterate across timesteps.
+    states = rng.choice(K, p=init, size=sims_i).astype(int)
+    cdf = np.cumsum(A, axis=1)
+    cdf[:, -1] = 1.0
+    for t in range(steps_i):
+        out[:, t] = states
+        u = rng.rand(sims_i)
+        next_states = np.sum(u[:, None] > cdf[states], axis=1)
+        states = np.clip(next_states, 0, K - 1).astype(int)
     return out
 
 
@@ -159,7 +211,10 @@ def simulate_hmm_mc(
     n_sims: int = 500,
     seed: Optional[int] = 42,
 ) -> Dict[str, np.ndarray]:
-    """Fit a simple Gaussian HMM to log-returns and simulate future price paths.
+    """Fit a regime model to log-returns and simulate future price paths.
+
+    Calibration backend:
+    - `hmmlearn` GaussianHMM (Baum-Welch)
 
     Returns a dict with keys:
     - price_paths: (sims, horizon)
@@ -180,10 +235,13 @@ def simulate_hmm_mc(
     if rets.size < 4:
         raise ValueError("Not enough returns for HMM calibration")
 
-    # Fit mixture and derive transition matrix
-    w, mu, sigma, gamma, _ = fit_gaussian_mixture_1d(rets, n_states=n_states, max_iter=80, tol=1e-6, seed=seed)
-    A = estimate_transition_matrix_from_gamma(gamma)
-    init = _normalize_probability_vector(gamma[-1])
+    mu, sigma, A, init = _fit_hmmlearn_gaussian_hmm_1d(
+        rets,
+        n_states=n_states,
+        max_iter=80,
+        tol=1e-6,
+        seed=seed,
+    )
     K = mu.shape[0]
 
     # Simulate state paths
@@ -213,6 +271,7 @@ def simulate_hmm_mc(
         'sigma': sigma,
         'trans': A,
         'init': init,
+        'model_type': "gaussian_hmm_baum_welch",
     }
 
 
@@ -221,6 +280,7 @@ def simulate_gbm_mc(
     horizon: int,
     n_sims: int = 500,
     seed: Optional[int] = 42,
+    antithetic: bool = True,
 ) -> Dict[str, np.ndarray]:
     """Calibrate GBM from historical log-returns and simulate forward paths.
 
@@ -238,11 +298,19 @@ def simulate_gbm_mc(
     mu = float(np.mean(rets))
     sigma = float(np.std(rets) + 1e-12)
     last_price = float(prices[-1])
+    sims_i = int(n_sims)
+    horizon_i = int(horizon)
 
-    ret_paths = rng.normal(loc=mu, scale=sigma, size=(int(n_sims), int(horizon)))
+    if bool(antithetic) and sims_i > 1 and horizon_i > 0:
+        half = (sims_i + 1) // 2
+        z = rng.normal(size=(half, horizon_i))
+        z = np.vstack([z, -z])[:sims_i]
+        ret_paths = mu + sigma * z
+    else:
+        ret_paths = rng.normal(loc=mu, scale=sigma, size=(sims_i, horizon_i))
     price_paths = np.zeros_like(ret_paths)
-    cur = np.full(int(n_sims), last_price, dtype=float)
-    for t in range(int(horizon)):
+    cur = np.full(sims_i, last_price, dtype=float)
+    for t in range(horizon_i):
         cur = cur * np.exp(ret_paths[:, t])
         price_paths[:, t] = cur
     return {
@@ -283,9 +351,45 @@ def simulate_heston_mc(
 
     theta_val = float(theta) if theta is not None else ret_var
     v0_val = float(v0) if v0 is not None else float(np.var(rets[-50:], ddof=1) if rets.size >= 50 else ret_var)
-    kappa_val = float(kappa) if kappa is not None else 2.0
-    xi_val = float(xi) if xi is not None else max(1e-6, 0.5 * np.sqrt(theta_val))
-    rho_val = float(rho) if rho is not None else -0.3
+    rv = np.clip(rets * rets, 1e-12, None)
+    kappa_emp = 2.0
+    if rv.size >= 3:
+        x_prev = rv[:-1]
+        x_next = rv[1:]
+        sx = float(np.std(x_prev))
+        sy = float(np.std(x_next))
+        if sx > 0.0 and sy > 0.0:
+            phi = float(np.corrcoef(x_prev, x_next)[0, 1])
+            if np.isfinite(phi):
+                phi = float(np.clip(phi, 1e-4, 0.9999))
+                kappa_emp = float(max(1e-6, -np.log(phi) / max(float(dt), 1e-12)))
+
+    xi_emp = max(1e-6, 0.5 * np.sqrt(theta_val))
+    if rv.size >= 4:
+        d_rv = np.diff(rv)
+        if d_rv.size >= 2:
+            d_std = float(np.std(d_rv, ddof=1))
+        else:
+            d_std = float(np.std(d_rv))
+        if np.isfinite(d_std):
+            xi_emp = float(np.clip(d_std / max(np.sqrt(theta_val), 1e-8), 1e-6, 3.0))
+
+    rho_emp = -0.3
+    if rets.size >= 20:
+        r_prev = rets[:-1]
+        rv_next = rv[1:]
+        sr = float(np.std(r_prev))
+        sv = float(np.std(rv_next))
+        if sr > 0.0 and sv > 0.0:
+            rho_guess = float(np.corrcoef(r_prev, rv_next)[0, 1])
+            if np.isfinite(rho_guess):
+                rho_emp = float(np.clip(rho_guess, -0.99, 0.99))
+
+    kappa_val = float(kappa) if kappa is not None else kappa_emp
+    xi_val = float(xi) if xi is not None else xi_emp
+    rho_val = float(rho) if rho is not None else rho_emp
+    kappa_val = float(max(1e-6, kappa_val))
+    xi_val = float(max(1e-6, xi_val))
     rho_val = float(np.clip(rho_val, -0.99, 0.99))
 
     last_price = float(prices[-1])

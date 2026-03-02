@@ -26,6 +26,7 @@ dependencies = [
     "arch>=8.0.0",
     "scipy>=1.17.1",
     "scikit-learn>=1.7.2,<1.8",
+    "hmmlearn>=0.3.3",
     "scikit-image>=0.26.0",
     "PyWavelets>=1.9.0",
     "EMD-signal>=1.6.4",
