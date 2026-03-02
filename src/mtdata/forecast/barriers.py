@@ -806,7 +806,19 @@ def forecast_barrier_optimize(
         df = _fetch_history(symbol, timeframe, need, as_of=None)
         if len(df) < 10:
             return {"error": "Insufficient history for simulation"}
-        last_price = float(df['close'].astype(float).iloc[-1])
+        last_price_close = float(df['close'].astype(float).iloc[-1])
+        last_price = float(last_price_close)
+        last_price_source = "close"
+        use_live_price_raw = params_dict.get('use_live_price', params_dict.get('live_price', True))
+        if isinstance(use_live_price_raw, str):
+            use_live_price = use_live_price_raw.strip().lower() not in {"0", "false", "no", "off"}
+        else:
+            use_live_price = bool(use_live_price_raw)
+        if use_live_price:
+            live_price, live_source = _get_live_reference_price(symbol, direction_norm)
+            if live_price is not None and np.isfinite(live_price) and float(live_price) > 0.0:
+                last_price = float(live_price)
+                last_price_source = str(live_source or "live_tick")
 
         pip_size = _get_pip_size(symbol)
         if mode_val == 'pips' and (pip_size is None or pip_size <= 0):
@@ -989,9 +1001,11 @@ def forecast_barrier_optimize(
         # Evaluate candidates
         results: List[Dict[str, Any]] = []
         dir_long = direction_norm == 'long'
+        invalid_barrier_candidates = 0
 
         def _evaluate(bucket: List[Tuple[float, float]]) -> List[Dict[str, Any]]:
             out: List[Dict[str, Any]] = []
+            nonlocal invalid_barrier_candidates
             for tp_unit, sl_unit in bucket:
                 # Convert to price levels
                 if mode_val == 'pct':
@@ -1008,6 +1022,23 @@ def forecast_barrier_optimize(
                     else:
                         tp_p = last_price - tp_unit * pip_size
                         sl_p = last_price + sl_unit * pip_size
+
+                # Hard sanity check for trade geometry and price validity.
+                if not np.isfinite(tp_p) or not np.isfinite(sl_p):
+                    invalid_barrier_candidates += 1
+                    continue
+                if np.isfinite(last_price) and last_price > 0.0:
+                    if tp_p <= 0.0 or sl_p <= 0.0:
+                        invalid_barrier_candidates += 1
+                        continue
+                    if dir_long:
+                        if not (sl_p < last_price < tp_p):
+                            invalid_barrier_candidates += 1
+                            continue
+                    else:
+                        if not (tp_p < last_price < sl_p):
+                            invalid_barrier_candidates += 1
+                            continue
 
                 # Vectorized hit detection
                 if dir_long:
@@ -1218,6 +1249,9 @@ def forecast_barrier_optimize(
             "horizon": horizon_val,
             "direction": direction_norm,
             "mode": mode_val,
+            "last_price": float(last_price),
+            "last_price_close": float(last_price_close),
+            "last_price_source": last_price_source,
             "objective": objective_val,
             "results": summary_results,
             "results_total": len(candidates),
@@ -1248,6 +1282,8 @@ def forecast_barrier_optimize(
                 out["selection_warnings"] = warnings_out
         if warning is not None:
             out["warning"] = warning
+        if invalid_barrier_candidates > 0:
+            out["barrier_sanity_filtered"] = int(invalid_barrier_candidates)
         if objective_changed:
             out["objective_requested"] = objective_requested
             out["objective_used"] = objective_val

@@ -212,6 +212,63 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertIn("best", result)
         self.assertIn("grid", result)
 
+    def test_forecast_barrier_optimize_prefers_live_reference_price(self):
+        self._set_flat_history(1.0, bars=200)
+        paths = self._sample_paths()
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim, \
+             patch('mtdata.forecast.barriers._get_live_reference_price', return_value=(1.2345, "live_tick_bid")):
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="short",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
+                return_grid=True,
+            )
+        self.assertTrue(result["success"])
+        self.assertAlmostEqual(result["last_price"], 1.2345, places=8)
+        self.assertAlmostEqual(result["last_price_close"], 1.0, places=8)
+        self.assertEqual(result["last_price_source"], "live_tick_bid")
+        best = result.get("best")
+        self.assertIsInstance(best, dict)
+        self.assertAlmostEqual(best["tp_price"], 1.2345 * 0.995, places=8)
+        self.assertAlmostEqual(best["sl_price"], 1.2345 * 1.005, places=8)
+
+    def test_forecast_barrier_optimize_filters_invalid_barrier_geometry(self):
+        self._set_flat_history(1.0, bars=200)
+        paths = self._sample_paths()
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim, \
+             patch('mtdata.forecast.barriers._get_live_reference_price', return_value=(None, None)):
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="short",
+                mode="pct",
+                tp_min=150.0,
+                tp_max=150.0,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
+                return_grid=True,
+            )
+        self.assertTrue(result["success"])
+        self.assertTrue(result["no_candidates"])
+        self.assertIsNone(result["best"])
+        self.assertEqual(result["results_total"], 0)
+        self.assertEqual(result.get("barrier_sanity_filtered"), 1)
+
     def test_forecast_barrier_optimize_refine_and_metrics(self):
         # Deterministic paths to verify refine pass and ranking
         self._set_flat_history(1.0)
