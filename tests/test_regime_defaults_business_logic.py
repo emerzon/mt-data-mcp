@@ -101,3 +101,14 @@ def test_bocpd_hazard_lambda_param_override_is_preserved() -> None:
     assert capture["hazard_lambda"] == 140
     assert out["params_used"]["hazard_lambda"] == 140
     assert out["params_used"]["hazard_lambda_source"] == "params"
+
+
+def test_regime_detect_rejects_invalid_min_regime_bars() -> None:
+    raw = _unwrap(regime_detect)
+    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)), patch(
+        "mtdata.core.regime._resolve_denoise_base_col",
+        return_value="close",
+    ):
+        out = raw(symbol="EURUSD", timeframe="H1", limit=80, method="hmm", min_regime_bars=0)
+    assert "error" in out
+    assert "min_regime_bars" in str(out["error"])

@@ -27,6 +27,135 @@ _CRYPTO_SYMBOL_HINTS = (
 )
 
 
+def _count_state_transitions(state: np.ndarray) -> int:
+    if state.size <= 1:
+        return 0
+    return int(np.sum(state[1:] != state[:-1]))
+
+
+def _state_runs(state: np.ndarray) -> List[Dict[str, int]]:
+    runs: List[Dict[str, int]] = []
+    if state.size == 0:
+        return runs
+    start = 0
+    current = int(state[0])
+    for i in range(1, int(state.size)):
+        value = int(state[i])
+        if value == current:
+            continue
+        runs.append(
+            {
+                "start": int(start),
+                "end": int(i - 1),
+                "state": int(current),
+                "length": int(i - start),
+            }
+        )
+        start = i
+        current = value
+    runs.append(
+        {
+            "start": int(start),
+            "end": int(state.size - 1),
+            "state": int(current),
+            "length": int(state.size - start),
+        }
+    )
+    return runs
+
+
+def _smooth_short_state_runs(
+    state: np.ndarray,
+    probs: Optional[np.ndarray],
+    min_regime_bars: int,
+) -> tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
+    """Merge short state runs into neighboring regimes to reduce one-bar flicker."""
+    state_arr = np.asarray(state, dtype=int).copy()
+    probs_arr = np.asarray(probs, dtype=float).copy() if isinstance(probs, np.ndarray) else None
+    min_bars = max(1, int(min_regime_bars))
+    transitions_before = _count_state_transitions(state_arr)
+    if min_bars <= 1 or state_arr.size < 2:
+        return state_arr, probs_arr, {
+            "min_regime_bars": int(min_bars),
+            "smoothing_applied": False,
+            "transitions_before": int(transitions_before),
+            "transitions_after": int(transitions_before),
+        }
+
+    changed = False
+    max_iters = max(1, int(state_arr.size))
+    for _ in range(max_iters):
+        runs = _state_runs(state_arr)
+        short_runs = [idx for idx, run in enumerate(runs) if int(run["length"]) < min_bars]
+        if not short_runs:
+            break
+        pass_changed = False
+        for idx in short_runs:
+            run = runs[idx]
+            left = runs[idx - 1] if idx > 0 else None
+            right = runs[idx + 1] if idx + 1 < len(runs) else None
+            if left is None and right is None:
+                continue
+            replacement = None
+            if left is None:
+                replacement = int(right["state"]) if right is not None else None
+            elif right is None:
+                replacement = int(left["state"])
+            else:
+                left_state = int(left["state"])
+                right_state = int(right["state"])
+                if left_state == right_state:
+                    replacement = left_state
+                else:
+                    left_len = int(left["length"])
+                    right_len = int(right["length"])
+                    if left_len > right_len:
+                        replacement = left_state
+                    elif right_len > left_len:
+                        replacement = right_state
+                    else:
+                        left_score = 0.0
+                        right_score = 0.0
+                        if (
+                            probs_arr is not None
+                            and probs_arr.ndim == 2
+                            and probs_arr.shape[0] == state_arr.size
+                        ):
+                            start = int(run["start"])
+                            end = int(run["end"]) + 1
+                            if 0 <= left_state < probs_arr.shape[1]:
+                                left_score = float(np.nanmean(probs_arr[start:end, left_state]))
+                            if 0 <= right_state < probs_arr.shape[1]:
+                                right_score = float(np.nanmean(probs_arr[start:end, right_state]))
+                        replacement = left_state if left_score >= right_score else right_state
+
+            if replacement is None or int(replacement) == int(run["state"]):
+                continue
+            start = int(run["start"])
+            end = int(run["end"]) + 1
+            state_arr[start:end] = int(replacement)
+            if (
+                probs_arr is not None
+                and probs_arr.ndim == 2
+                and probs_arr.shape[0] == state_arr.size
+                and 0 <= int(replacement) < probs_arr.shape[1]
+            ):
+                probs_arr[start:end, :] = 0.0
+                probs_arr[start:end, int(replacement)] = 1.0
+            pass_changed = True
+            changed = True
+        if not pass_changed:
+            break
+
+    transitions_after = _count_state_transitions(state_arr)
+    return state_arr, probs_arr, {
+        "min_regime_bars": int(min_bars),
+        "smoothing_applied": bool(changed),
+        "transitions_before": int(transitions_before),
+        "transitions_after": int(transitions_after),
+    }
+
+
 def _is_probably_crypto_symbol(symbol: Any) -> bool:
     s = str(symbol or "").upper().strip()
     if not s:
@@ -257,11 +386,13 @@ def regime_detect(
     output: Literal['full','summary','compact'] = 'compact',  # type: ignore
     lookback: int = 300,
     include_series: bool = False,
+    min_regime_bars: int = 1,
 ) -> Dict[str, Any]:
     """Detect regimes and/or change-points over the last `limit` bars.
 
     - method: 'bocpd' (Bayesian online change-point; Gaussian), 'hmm' (Gaussian mixture/HMM-lite), or 'ms_ar' (Markov-switching AR).
     - include_series: If True, include raw time series data (probs, states) in output even if output='full'. Default False.
+    - min_regime_bars: Merge short state runs (< this many bars) for state-based methods to reduce flicker.
     - output:
         - 'compact' (default): Returns recent consolidated 'regimes' and method summary.
         - 'full': Returns full consolidated 'regimes'. Raw 'series' included only if include_series=True.
@@ -269,6 +400,12 @@ def regime_detect(
     """
     try:
         p = dict(params or {})
+        try:
+            min_regime_bars_val = int(p.get("min_regime_bars", min_regime_bars))
+        except Exception:
+            return {"error": "min_regime_bars must be an integer >= 1."}
+        if min_regime_bars_val < 1:
+            return {"error": "min_regime_bars must be >= 1."}
         df = _fetch_history(symbol, timeframe, int(max(limit, 50)), as_of=None)
         if len(df) < 10:
             return {"error": "Insufficient history"}
@@ -403,6 +540,17 @@ def regime_detect(
             n_states = int(p.get('n_states', 2))
             w, mu, sigma, gamma, _ = fit_gaussian_mixture_1d(x, n_states=max(2, n_states))
             state = np.argmax(gamma, axis=1) if gamma.ndim == 2 and gamma.shape[0] == x.size else np.zeros(x.size, dtype=int)
+            gamma_smoothed: Optional[np.ndarray] = gamma if isinstance(gamma, np.ndarray) else None
+            state, gamma_smoothed, smoothing_meta = _smooth_short_state_runs(
+                state=np.asarray(state, dtype=int),
+                probs=gamma_smoothed,
+                min_regime_bars=min_regime_bars_val,
+            )
+            gamma_for_payload = (
+                gamma_smoothed
+                if isinstance(gamma_smoothed, np.ndarray)
+                else (gamma if isinstance(gamma, np.ndarray) else None)
+            )
             payload = {
                 "success": True,
                 "symbol": symbol,
@@ -411,8 +559,22 @@ def regime_detect(
                 "target": target,
                 "times": t_fmt,
                 "state": [int(s) for s in state.tolist()],
-                "state_probabilities": [[float(v) for v in row] for row in (gamma.tolist() if gamma.ndim == 2 else np.zeros((x.size, n_states)).tolist())],
+                "state_probabilities": [
+                    [float(v) for v in row]
+                    for row in (
+                        gamma_for_payload.tolist()
+                        if isinstance(gamma_for_payload, np.ndarray) and gamma_for_payload.ndim == 2
+                        else np.zeros((x.size, n_states)).tolist()
+                    )
+                ],
                 "regime_params": {"weights": [float(v) for v in w.tolist()], "mu": [float(v) for v in mu.tolist()], "sigma": [float(v) for v in sigma.tolist()]},
+                "params_used": {
+                    "n_states": int(n_states),
+                    "min_regime_bars": int(min_regime_bars_val),
+                    "smoothing_applied": bool(smoothing_meta.get("smoothing_applied", False)),
+                    "transitions_before": int(smoothing_meta.get("transitions_before", 0)),
+                    "transitions_after": int(smoothing_meta.get("transitions_after", 0)),
+                },
             }
             if output in ('summary','compact'):
                 n = min(int(lookback), len(state))
@@ -428,6 +590,9 @@ def regime_detect(
                     "state_shares": shares,
                     "state_sigma": {int(i): float(sigma[i]) for i in range(len(sigma))},
                     "state_order_by_sigma": ranks,
+                    "transitions_before": int(smoothing_meta.get("transitions_before", 0)),
+                    "transitions_after": int(smoothing_meta.get("transitions_after", 0)),
+                    "smoothing_applied": bool(smoothing_meta.get("smoothing_applied", False)),
                 }
                 payload["summary"] = summary
                 if output == "summary":
@@ -435,7 +600,7 @@ def regime_detect(
                 if output == 'compact' and n > 0:
                     payload["times"] = t_fmt[-n:]
                     payload["state"] = payload["state"][-n:]
-                    if isinstance(gamma, np.ndarray) and len(gamma) >= n:
+                    if isinstance(gamma_for_payload, np.ndarray) and len(gamma_for_payload) >= n:
                          payload["state_probabilities"] = payload["state_probabilities"][-n:]
 
             return _consolidate_payload(payload, method, output, include_series=include_series)

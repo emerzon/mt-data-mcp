@@ -301,15 +301,29 @@ def _build_cli_timezone_meta(result: Any) -> Dict[str, Any]:
     }
 
 
+def _build_cli_timezone_meta_brief(result: Any) -> Dict[str, Any]:
+    full = _build_cli_timezone_meta(result)
+    return {
+        "output_timezone": full.get("output_timezone"),
+        "output_timezone_hint": full.get("output_timezone_hint"),
+        "server_tz": full.get("server_tz_resolved") or full.get("server_tz_config"),
+        "client_tz": full.get("client_tz_resolved") or full.get("client_tz_config"),
+    }
+
+
 def _attach_cli_meta(result: Any, *, cmd_name: str, verbose: bool) -> Any:
-    if not verbose or not isinstance(result, dict):
+    if not isinstance(result, dict):
         return result
     out = dict(result)
     meta = out.get("cli_meta")
     if not isinstance(meta, dict):
         meta = {}
     meta.setdefault("command", cmd_name or "")
-    meta["timezone"] = _build_cli_timezone_meta(result)
+    meta["timezone"] = (
+        _build_cli_timezone_meta(result)
+        if bool(verbose)
+        else _build_cli_timezone_meta_brief(result)
+    )
     out["cli_meta"] = meta
     return out
 

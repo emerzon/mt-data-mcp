@@ -371,9 +371,16 @@ class TestBuildCliTimezoneMeta:
 # ========================================================================
 
 class TestAttachCliMeta:
-    def test_non_verbose_returns_unchanged(self):
+    def test_non_verbose_adds_brief_meta(self):
         r = {"key": "val"}
-        assert _attach_cli_meta(r, cmd_name="test", verbose=False) is r
+        out = _attach_cli_meta(r, cmd_name="test", verbose=False)
+        assert out is not r
+        assert "cli_meta" in out
+        assert out["cli_meta"]["command"] == "test"
+        tz_meta = out["cli_meta"]["timezone"]
+        assert "server_tz" in tz_meta
+        assert "client_tz" in tz_meta
+        assert "local_tz" not in tz_meta
 
     def test_non_dict_returns_unchanged(self):
         assert _attach_cli_meta("string", cmd_name="test", verbose=True) == "string"
@@ -1270,6 +1277,7 @@ class TestCreateCommandFunction:
         out = capsys.readouterr().out
         parsed = json.loads(out)
         assert parsed["price"] == 1.23
+        assert "cli_meta" in parsed
 
     def test_bool_param_coercion(self, capsys):
         mock_fn = MagicMock(return_value="ok")

@@ -599,6 +599,30 @@ class TestRegimeDetectHMM:
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH)
+    def test_hmm_min_regime_bars_smoothing_reduces_transitions(self, mock_fetch, mock_denoise, mock_fmt):
+        df = _make_df(30)
+        mock_fetch.return_value = df
+        # Alternating high-confidence assignments create many one-bar flickers.
+        gamma = np.array(
+            [[0.99, 0.01] if i % 2 == 0 else [0.01, 0.99] for i in range(29)],
+            dtype=float,
+        )
+        w = np.array([0.5, 0.5])
+        mu = np.array([0.0, 0.001])
+        sigma = np.array([0.001, 0.003])
+        with patch("mtdata.core.regime.fit_gaussian_mixture_1d",
+                    return_value=(w, mu, sigma, gamma, None), create=True):
+            fn = _get_regime_detect()
+            res = fn("EURUSD", limit=30, method="hmm", output="summary", min_regime_bars=2)
+        assert isinstance(res, dict)
+        summary = res.get("summary", {})
+        assert res.get("params_used", {}).get("min_regime_bars") == 2
+        assert summary.get("transitions_before", 0) >= summary.get("transitions_after", 0)
+        assert bool(summary.get("smoothing_applied")) is True
+
+    @patch(_FMT, side_effect=_time_fmt_stub)
+    @patch(_DENOISE, return_value="close")
+    @patch(_FETCH)
     def test_hmm_import_error(self, mock_fetch, mock_denoise, mock_fmt):
         df = _make_df(50)
         mock_fetch.return_value = df
