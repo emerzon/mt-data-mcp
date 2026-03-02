@@ -398,6 +398,23 @@ class TestAttachCliMeta:
         assert out["cli_meta"]["existing"] is True
         assert out["cli_meta"]["command"] == "cmd"
 
+    def test_verbose_candles_adds_command_diagnostics(self):
+        r = {
+            "meta": {
+                "diagnostics": {
+                    "query": {"rows_returned": 5, "latency_ms": 12.3},
+                    "indicators": {"requested": False},
+                    "session_gaps": {"count": 0},
+                }
+            },
+            "warnings": ["sample warning"],
+        }
+        out = _attach_cli_meta(r, cmd_name="data_fetch_candles", verbose=True)
+        cmd_diag = out["cli_meta"]["command_diagnostics"]["data_fetch_candles"]
+        assert cmd_diag["query"]["rows_returned"] == 5
+        assert cmd_diag["indicators"]["requested"] is False
+        assert cmd_diag["warnings"] == ["sample warning"]
+
 
 # ========================================================================
 # get_function_info

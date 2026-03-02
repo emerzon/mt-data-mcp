@@ -281,6 +281,47 @@ class TestCoreIndicatorsWrappers:
         except ImportError:
             pytest.skip("core.indicators_docs not exposing clean_help_text")
 
+    def test_indicators_describe_returns_structured_documentation(self, monkeypatch):
+        from mtdata.core import indicators as core_indicators
+
+        sample_doc = """rsi(close, length=14) method of pandas_ta.momentum
+Relative Strength Index for momentum.
+Sources:
+https://example.com/rsi
+Calculation:
+1) Compute average gains and losses over length.
+Args:
+length (int): Window length.
+scalar (float): Optional scalar multiplier.
+Interpretation:
+Values above 70 often indicate overbought conditions.
+"""
+        monkeypatch.setattr(
+            core_indicators,
+            "_list_ta_indicators",
+            lambda detailed=True: [
+                {
+                    "name": "rsi",
+                    "category": "momentum",
+                    "params": [{"name": "length", "default": 14}, {"name": "scalar"}],
+                    "description": sample_doc,
+                }
+            ],
+        )
+
+        raw_describe = getattr(core_indicators.indicators_describe, "__wrapped__", core_indicators.indicators_describe)
+        out = raw_describe("rsi")
+        assert out["success"] is True
+        indicator = out["indicator"]
+        assert "method of" not in indicator["description"].lower()
+        docs = indicator["documentation"]
+        assert docs["calculation"]
+        assert docs["interpretation"]
+        assert docs["sources"] == ["https://example.com/rsi"]
+        params = {p["name"]: p for p in docs["parameters"]}
+        assert params["length"]["description"] == "Window length."
+        assert params["scalar"]["description"] == "Optional scalar multiplier."
+
 
 # ===================================================================
 # 3. mtdata.utils.utils

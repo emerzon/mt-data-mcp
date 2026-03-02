@@ -1,5 +1,6 @@
 
 from typing import Any, Dict, Optional, List
+import re
 
 from .schema import CategoryLiteral, IndicatorNameLiteral
 from .constants import DEFAULT_ROW_LIMIT
@@ -22,6 +23,118 @@ def _clean_help_text(text: str, func_name: Optional[str] = None, func: Optional[
     """Delegate to utils implementation."""
     from ..core.indicators_docs import clean_help_text as _impl
     return _impl(text, func_name=func_name)
+
+
+_DOC_SECTION_RE = re.compile(r"^([A-Za-z][A-Za-z0-9 _/\-]{1,48})\s*:\s*$")
+_DOC_PARAM_RE = re.compile(r"^[\-\*\u2022]?\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^)]*\))?\s*:\s*(.+)$")
+_DOC_SIG_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\s*\(.*\)\s*$")
+
+
+def _canonical_doc_section(name: str) -> str:
+    key = re.sub(r"[^a-z0-9]+", "_", str(name or "").strip().lower()).strip("_")
+    aliases = {
+        "arg": "parameters",
+        "args": "parameters",
+        "argument": "parameters",
+        "arguments": "parameters",
+        "param": "parameters",
+        "params": "parameters",
+        "kwargs": "parameters",
+        "keyword_arguments": "parameters",
+        "sources": "sources",
+        "source": "sources",
+        "references": "sources",
+        "reference": "sources",
+        "calculation": "calculation",
+        "calculations": "calculation",
+        "formula": "calculation",
+        "formulas": "calculation",
+        "interpretation": "interpretation",
+        "interpretations": "interpretation",
+        "notes": "interpretation",
+        "signals": "interpretation",
+    }
+    return aliases.get(key, key)
+
+
+def _parse_doc_sections(text: str) -> Dict[str, List[str]]:
+    sections: Dict[str, List[str]] = {"overview": []}
+    current = "overview"
+    for raw_line in str(text or "").splitlines():
+        line = str(raw_line or "").strip()
+        if not line:
+            continue
+        match = _DOC_SECTION_RE.match(line)
+        if match:
+            current = _canonical_doc_section(match.group(1))
+            sections.setdefault(current, [])
+            continue
+        sections.setdefault(current, []).append(line)
+    return sections
+
+
+def _parse_parameter_docs(lines: List[str]) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    for line in lines or []:
+        text = str(line or "").strip()
+        if not text:
+            continue
+        match = _DOC_PARAM_RE.match(text)
+        if not match:
+            continue
+        pname = str(match.group(1)).strip()
+        pdesc = str(match.group(2)).strip()
+        if pname and pdesc and pname not in out:
+            out[pname] = pdesc
+    return out
+
+
+def _join_doc_lines(lines: List[str]) -> str:
+    clean = [str(x).strip() for x in (lines or []) if str(x).strip()]
+    return "\n".join(clean).strip()
+
+
+def _extract_interpretation(sections: Dict[str, List[str]]) -> Optional[str]:
+    explicit = _join_doc_lines(sections.get("interpretation", []))
+    if explicit:
+        return explicit
+    overview = [ln for ln in sections.get("overview", []) if not _DOC_SIG_RE.match(str(ln or "").strip())]
+    # Keep the first concise paragraph from overview as interpretation fallback.
+    return _join_doc_lines(overview[:3]) or None
+
+
+def _build_indicator_documentation(target: Dict[str, Any]) -> Dict[str, Any]:
+    name = str(target.get("name") or "")
+    raw_desc = str(target.get("description") or "")
+    cleaned_desc = _clean_help_text(raw_desc, func_name=name) if raw_desc else ""
+    sections = _parse_doc_sections(cleaned_desc)
+    param_docs = _parse_parameter_docs(sections.get("parameters", []))
+
+    params_out: List[Dict[str, Any]] = []
+    for raw in (target.get("params") or []):
+        if not isinstance(raw, dict):
+            continue
+        p = dict(raw)
+        pname = str(p.get("name") or "").strip()
+        if pname and pname in param_docs:
+            p["description"] = param_docs[pname]
+        params_out.append(p)
+
+    calc_text = _join_doc_lines(sections.get("calculation", [])) or None
+    interp_text = _extract_interpretation(sections)
+    sources = []
+    for item in sections.get("sources", []):
+        src = re.sub(r"^[\-\*\u2022]\s*", "", str(item or "").strip())
+        if src:
+            sources.append(src)
+
+    return {
+        "description": cleaned_desc,
+        "calculation": calc_text,
+        "parameters": params_out,
+        "interpretation": interp_text,
+        "sources": sources,
+    }
 
 @mcp.tool()
 def indicators_list(
@@ -76,7 +189,16 @@ def indicators_describe(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: 
         target = next((it for it in items if it.get('name','').lower() == str(name).lower()), None)
         if not target:
             return {"error": f"Indicator '{name}' not found"}
-        return {"success": True, "indicator": target}
+        indicator = dict(target)
+        docs = _build_indicator_documentation(indicator)
+        indicator["description"] = docs.get("description") or indicator.get("description") or ""
+        indicator["documentation"] = {
+            "calculation": docs.get("calculation"),
+            "parameters": docs.get("parameters") or [],
+            "interpretation": docs.get("interpretation"),
+            "sources": docs.get("sources") or [],
+        }
+        return {"success": True, "indicator": indicator}
     except Exception as e:
         return {"error": f"Error getting indicator details: {e}"}
 

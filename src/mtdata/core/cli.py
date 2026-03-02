@@ -311,6 +311,26 @@ def _build_cli_timezone_meta_brief(result: Any) -> Dict[str, Any]:
     }
 
 
+def _build_candle_cli_verbose_meta(result: Any) -> Dict[str, Any]:
+    if not isinstance(result, dict):
+        return {}
+    out: Dict[str, Any] = {}
+    meta = result.get("meta")
+    diagnostics = meta.get("diagnostics") if isinstance(meta, dict) else None
+    if isinstance(diagnostics, dict):
+        for key in ("query", "indicators", "denoise", "session_gaps", "simplify"):
+            value = diagnostics.get(key)
+            if isinstance(value, dict):
+                out[key] = dict(value)
+    warnings = result.get("warnings")
+    if isinstance(warnings, list) and warnings:
+        out["warnings"] = [str(w) for w in warnings]
+    session_gaps = result.get("session_gaps")
+    if isinstance(session_gaps, list) and session_gaps:
+        out["session_gaps_preview"] = session_gaps[:3]
+    return out
+
+
 def _attach_cli_meta(result: Any, *, cmd_name: str, verbose: bool) -> Any:
     if not isinstance(result, dict):
         return result
@@ -324,6 +344,12 @@ def _attach_cli_meta(result: Any, *, cmd_name: str, verbose: bool) -> Any:
         if bool(verbose)
         else _build_cli_timezone_meta_brief(result)
     )
+    if bool(verbose) and str(cmd_name or "").strip() == "data_fetch_candles":
+        details = _build_candle_cli_verbose_meta(out)
+        if details:
+            meta["command_diagnostics"] = {
+                "data_fetch_candles": details,
+            }
     out["cli_meta"] = meta
     return out
 

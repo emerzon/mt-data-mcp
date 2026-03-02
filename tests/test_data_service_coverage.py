@@ -542,6 +542,27 @@ class TestFetchCandles(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
+    def test_meta_includes_query_diagnostics(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10)
+        result = fetch_candles('EURUSD', limit=5)
+        self.assertTrue(result.get('success'))
+        diagnostics = result['meta']['diagnostics']
+        query = diagnostics['query']
+        self.assertEqual(query['requested_bars'], 5)
+        self.assertEqual(query['raw_bars_fetched'], 10)
+        self.assertEqual(query['rows_returned'], 5)
+        self.assertIn('latency_ms', query)
+        self.assertIn('warmup_retry', query)
+        self.assertEqual(diagnostics['indicators']['requested'], False)
+        self.assertEqual(diagnostics['session_gaps']['count'], 0)
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
     def test_timezone_utc_in_payload(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
         mock_cfg.get_time_offset_seconds.return_value = 0
         mock_from.return_value = _make_rates(10)

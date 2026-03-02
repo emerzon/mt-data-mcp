@@ -197,6 +197,7 @@ def fetch_candles(
 ) -> Dict[str, Any]:
     """Return historical candles as tabular data."""
     try:
+        query_started_at = time.perf_counter()
         # Backward/compat mappings to internal variable names used in implementation
         candles = int(limit)
         start_datetime = start
@@ -275,6 +276,7 @@ def fetch_candles(
         # Generate tabular format with dynamic column filtering
         if len(rates) == 0:
             return {"error": "No data available"}
+        raw_bars_fetched = int(len(rates))
         
         # Check which optional columns have meaningful data (at least one non-zero/different value)
         tick_volumes = [int(rate["tick_volume"]) for rate in rates]
@@ -360,6 +362,11 @@ def fetch_candles(
 
         # Filter out warmup region to return the intended target window only
         df = _trim_df_to_target(df, start_datetime, end_datetime, candles, copy_rows=True)
+        rows_after_target_trim = int(len(df))
+        warmup_retry_meta: Dict[str, Any] = {
+            "applied": False,
+            "warmup_bars": int(warmup_bars),
+        }
 
         # If TI requested, check for NaNs and retry once with increased warmup
         if ti_spec and ti_cols:
@@ -378,6 +385,11 @@ def fetch_candles(
                         retry=False,
                         sanity_check=False,
                     )
+                    warmup_retry_meta = {
+                        "applied": True,
+                        "warmup_bars": int(warmup_bars_retry),
+                        "raw_bars_fetched": int(len(rates_retry)) if rates_retry is not None else 0,
+                    }
                     # Rebuild df and indicators with the larger window
                     if rates_retry is not None and len(rates_retry) > 0:
                         df = _build_rates_df(rates_retry, _use_ctz)
@@ -400,6 +412,7 @@ def fetch_candles(
                                 _apply_denoise_util(df, dn_ti2, default_when='post_ti')
                         # Re-trim to target window
                         df = _trim_df_to_target(df, start_datetime, end_datetime, candles, copy_rows=False)
+                        rows_after_target_trim = int(len(df))
             except Exception:
                 pass
 
@@ -524,6 +537,16 @@ def fetch_candles(
 
         # Assemble rows from (possibly reduced) DataFrame for selected headers
         rows = _format_numeric_rows_from_df(df, headers, stringify=False)
+        query_latency_ms = round((time.perf_counter() - query_started_at) * 1000.0, 3)
+        query_mode = "range" if (start_datetime or end_datetime) else "latest"
+        ti_added_cols = [str(c) for c in ti_cols if isinstance(c, str)]
+        denoise_added_cols = sorted({
+            str(col)
+            for app in denoise_apps
+            if isinstance(app, dict)
+            for col in (app.get("added_columns") or [])
+            if isinstance(col, str) and col
+        })
 
         # Build tabular payload
         payload = _table_from_rows(headers, rows)
@@ -554,6 +577,50 @@ def fetch_candles(
             "last_candle_open": last_candle_open,
             "meta": {
                 "server_tz_offset": int(mt5_config.get_time_offset_seconds()),
+                "diagnostics": {
+                    "query": {
+                        "mode": query_mode,
+                        "latency_ms": query_latency_ms,
+                        "requested_bars": int(candles),
+                        "warmup_bars": int(warmup_bars),
+                        "raw_bars_fetched": raw_bars_fetched,
+                        "rows_after_target_trim": rows_after_target_trim,
+                        "rows_after_simplify": int(len(df)),
+                        "rows_returned": int(len(rows)),
+                        "cache_status": "unknown",
+                        "warmup_retry": warmup_retry_meta,
+                    },
+                    "indicators": {
+                        "requested": bool(ti_spec),
+                        "spec": str(ti_spec or ""),
+                        "added_columns": ti_added_cols,
+                        "added_columns_count": int(len(ti_added_cols)),
+                    },
+                    "denoise": {
+                        "applied": bool(denoise_apps),
+                        "applications_count": int(len(denoise_apps)),
+                        "added_columns": denoise_added_cols,
+                    },
+                    "session_gaps": {
+                        "count": int(len(session_gaps)),
+                        "expected_bar_seconds": float(expected_bar_seconds) if expected_bar_seconds > 0 else None,
+                    },
+                    "simplify": {
+                        "applied": bool(simplify_meta is not None),
+                        "rows_before": int(original_rows),
+                        "rows_after": int(len(df)),
+                        "method": (
+                            str((simplify_meta or {}).get("method"))
+                            if isinstance(simplify_meta, dict) and simplify_meta.get("method") is not None
+                            else None
+                        ),
+                        "mode": (
+                            str((simplify_meta or {}).get("mode"))
+                            if isinstance(simplify_meta, dict) and simplify_meta.get("mode") is not None
+                            else None
+                        ),
+                    },
+                },
             },
         })
         if not _use_ctz:
@@ -593,6 +660,10 @@ def fetch_candles(
             except Exception:
                 pass
             payload['warnings'] = warns
+        try:
+            payload["meta"]["diagnostics"]["query"]["warnings_count"] = int(len(payload.get("warnings") or []))
+        except Exception:
+            pass
         return payload
     except Exception as e:
         return {"error": f"Error getting rates: {str(e)}"}
