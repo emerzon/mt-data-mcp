@@ -25,4 +25,4 @@ if __name__ == "__main__":
     if code != 0:
         raise SystemExit(code)
     from src.mtdata.core.cli import main
-    main()
+    raise SystemExit(main())

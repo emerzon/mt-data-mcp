@@ -152,6 +152,17 @@ def _render_cli_result(result: Any, *, args: Any, cmd_name: str) -> None:
         print(output)
 
 
+def _result_has_tool_error(result: Any) -> bool:
+    if isinstance(result, dict):
+        err = result.get("error")
+        if isinstance(err, str):
+            return bool(err.strip())
+        return err not in (None, False)
+    if isinstance(result, str):
+        return result.strip().lower().startswith("error:")
+    return False
+
+
 def _safe_argument_parser(*args: Any, **kwargs: Any) -> argparse.ArgumentParser:
     try:
         return argparse.ArgumentParser(*args, **kwargs)
@@ -849,7 +860,7 @@ def create_command_function(func_info, cmd_name: str = "", cmd_parser: Optional[
         kwargs['__cli_raw'] = True
         result = func_info['func'](**kwargs)
         _render_cli_result(result, args=args, cmd_name=cmd_name)
-        return
+        return 1 if _result_has_tool_error(result) else 0
 
     return command_func
 
@@ -961,8 +972,8 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
         "python cli.py trade_modify 123456789 --stop-loss 60500 --take-profit 62500",
     ),
     "trade_close": (
-        "python cli.py trade_close --close-kind pending --ticket 123456789",
-        "python cli.py trade_close --close-kind position --symbol BTCUSD --profit-only true",
+        "python cli.py trade_close --ticket 123456789",
+        "python cli.py trade_close --symbol BTCUSD --profit-only true",
     ),
 }
 
@@ -1244,11 +1255,12 @@ def main():
 
             if getattr(args, "print_config", False):
                 print(_format_result_minimal({"forecast_generate": kwargs}, verbose=True))
-                return
+                return 0
 
             kwargs["__cli_raw"] = True
             out = func(**kwargs)
             _render_cli_result(out, args=args, cmd_name="forecast_generate")
+            return 1 if _result_has_tool_error(out) else 0
 
         cmd_parser.set_defaults(func=_forecast_generate_cmd)
     
@@ -1260,7 +1272,9 @@ def main():
         return 1
     
     try:
-        args.func(args)
+        status = args.func(args)
+        if isinstance(status, int):
+            return int(status)
         return 0
     except KeyboardInterrupt:
         print("\nAborted by user", file=sys.stderr)

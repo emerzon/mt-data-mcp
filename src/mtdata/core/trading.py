@@ -1933,7 +1933,6 @@ def _cancel_pending(
 
 @mcp.tool()
 def trade_close(
-    close_kind: Literal["positions", "pending"] = "positions",  # type: ignore
     ticket: Optional[Union[int, str]] = None,
     symbol: Optional[str] = None,
     profit_only: bool = False,
@@ -1941,22 +1940,76 @@ def trade_close(
     comment: Optional[str] = None,
     deviation: int = 20,
 ) -> dict:
-    """Close positions or cancel pending orders."""
-    kind = str(close_kind or "positions").strip().lower()
-    if kind not in ("positions", "pending"):
-        return {"error": "close_kind must be 'positions' or 'pending'."}
-    if kind == "pending":
-        if profit_only or loss_only:
-            return {"error": "profit_only/loss_only only apply to positions."}
-        return _cancel_pending(ticket=ticket, symbol=symbol, comment=comment)
-    return _close_positions(
-        ticket=ticket,
-        symbol=symbol,
-        profit_only=profit_only,
-        loss_only=loss_only,
+    """Close positions or cancel pending orders.
+
+    Behavior:
+    - With `profit_only`/`loss_only`: closes positions only.
+    - With `ticket`: tries position close first, then pending cancellation for the same ticket.
+    - With `symbol`: closes matching positions; if none exist, cancels pending orders for that symbol.
+    - With no filters: closes open positions; if none exist, cancels all pending orders.
+    """
+    if profit_only or loss_only:
+        return _close_positions(
+            ticket=ticket,
+            symbol=symbol,
+            profit_only=profit_only,
+            loss_only=loss_only,
+            comment=comment,
+            deviation=deviation,
+        )
+
+    if ticket is not None:
+        position_result = _close_positions(
+            ticket=ticket,
+            symbol=symbol,
+            profit_only=False,
+            loss_only=False,
+            comment=comment,
+            deviation=deviation,
+        )
+        if isinstance(position_result, dict) and position_result.get("error") == f"Position {ticket} not found":
+            pending_result = _cancel_pending(ticket=ticket, symbol=symbol, comment=comment)
+            if isinstance(pending_result, dict) and pending_result.get("error") == f"Pending order {ticket} not found":
+                return {
+                    "error": f"Ticket {ticket} not found as position or pending order.",
+                    "checked_scopes": ["positions", "pending_orders"],
+                }
+            return pending_result
+        return position_result
+
+    if symbol is not None:
+        position_result = _close_positions(
+            symbol=symbol,
+            profit_only=False,
+            loss_only=False,
+            comment=comment,
+            deviation=deviation,
+        )
+        if isinstance(position_result, dict):
+            msg = str(position_result.get("message", "")).strip().lower()
+            if msg.startswith("no open positions for "):
+                pending_result = _cancel_pending(symbol=symbol, comment=comment)
+                if isinstance(pending_result, dict):
+                    pending_msg = str(pending_result.get("message", "")).strip().lower()
+                    if pending_msg.startswith("no pending orders for "):
+                        return {"message": f"No open positions or pending orders for {symbol}"}
+                return pending_result
+        return position_result
+
+    position_result = _close_positions(
+        profit_only=False,
+        loss_only=False,
         comment=comment,
         deviation=deviation,
     )
+    if isinstance(position_result, dict):
+        msg = str(position_result.get("message", "")).strip().lower()
+        if msg == "no open positions":
+            pending_result = _cancel_pending(comment=comment)
+            if isinstance(pending_result, dict) and str(pending_result.get("message", "")).strip().lower() == "no pending orders":
+                return {"message": "No open positions or pending orders"}
+            return pending_result
+    return position_result
 
 
 @mcp.tool()

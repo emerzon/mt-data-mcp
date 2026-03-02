@@ -38,6 +38,21 @@ def test_check_requirements_strips_versions_and_maps_python_dotenv(monkeypatch):
     assert "numpy" in checked_names
 
 
+def test_check_requirements_marks_chronos_unavailable_on_runtime_mismatch(monkeypatch):
+    monkeypatch.setattr(fr, "_CHRONOS_AVAILABLE", True)
+    monkeypatch.setattr(
+        fr,
+        "_check_chronos_runtime_support",
+        lambda: (False, ["chronos-forecasting>=2.0.0"]),
+    )
+    monkeypatch.setattr(fr._importlib_util, "find_spec", lambda _name: object())
+
+    available, reqs = fr._check_requirements("chronos2", ["chronos"])
+
+    assert available is False
+    assert "chronos-forecasting>=2.0.0" in reqs
+
+
 def test_get_forecast_methods_data_assembles_categories_and_skips_broken(monkeypatch):
     class GoodMethod:
         """Good method summary."""

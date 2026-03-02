@@ -182,21 +182,22 @@ class TestMergedTools(unittest.TestCase):
         mock_order = MagicMock()
         mock_order.ticket = 456
 
+        self.mt5.positions_get.return_value = []
         self.mt5.orders_get.return_value = [mock_order]
         self.mt5.order_send.return_value = MagicMock(retcode=self.mt5.TRADE_RETCODE_DONE) 
 
         from src.mtdata.core.trading import trade_close
 
         # Test cancel by ticket
-        trade_close(close_kind="pending", ticket=456, __cli_raw=True)
+        trade_close(ticket=456, __cli_raw=True)
         self.mt5.orders_get.assert_called_with(ticket=456)
 
         # Test cancel by symbol
-        trade_close(close_kind="pending", symbol="EURUSD", __cli_raw=True)
+        trade_close(symbol="EURUSD", __cli_raw=True)
         self.mt5.orders_get.assert_called_with(symbol="EURUSD")
 
         # Test cancel all
-        trade_close(close_kind="pending", __cli_raw=True)
+        trade_close(__cli_raw=True)
         self.mt5.orders_get.assert_called_with()
 
 if __name__ == '__main__':

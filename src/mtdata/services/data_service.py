@@ -32,7 +32,11 @@ from ..utils.utils import (
     _style_time_format, _format_numeric_rows_from_df, _parse_start_datetime,    
     _coerce_scalar, _normalize_ohlcv_arg, _utc_epoch_seconds
 )
-from ..utils.indicators import _estimate_warmup_bars_util, _apply_ta_indicators_util
+from ..utils.indicators import (
+    _estimate_warmup_bars_util,
+    _apply_ta_indicators_util,
+    _find_unknown_ta_indicators_util,
+)
 from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
 
 # Simplify entrypoint and helpers.
@@ -239,6 +243,15 @@ def fetch_candles(
                     # Already a compact indicator string like "rsi(14),ema(20)"
                     ti_spec = str(source)
             # Determine warmup bars if technical indicators requested
+            unknown_indicators = _find_unknown_ta_indicators_util(ti_spec or "")
+            if unknown_indicators:
+                return {
+                    "error": (
+                        "Unknown indicator(s): "
+                        + ", ".join(unknown_indicators)
+                        + ". Use indicators_list to view valid indicator names."
+                    )
+                }
             warmup_bars = _estimate_warmup_bars_util(ti_spec)
 
             rates, rates_error = _fetch_rates_with_warmup(

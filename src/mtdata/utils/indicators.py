@@ -239,6 +239,21 @@ def _parse_ti_specs(spec: str) -> List[Tuple[str, List[int | float], Dict[str, i
     return specs
 
 
+def _find_unknown_ta_indicators(spec: str) -> List[str]:
+    """Return normalized indicator names not available in pandas_ta."""
+    text = str(spec or "").strip()
+    if not text:
+        return []
+    unknown: List[str] = []
+    for name, _args, _kwargs in _parse_ti_specs(text):
+        lname = str(name or "").strip().lower()
+        if not lname:
+            continue
+        if not callable(getattr(pta, lname, None)):
+            unknown.append(lname)
+    return sorted(set(unknown))
+
+
 def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:
     """Apply indicators specified by ti_spec to df in-place, return list of added column names."""
     added_cols: List[str] = []
@@ -337,6 +352,7 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:
 
 # Backwards-compat alias
 _apply_ta_indicators_util = _apply_ta_indicators
+_find_unknown_ta_indicators_util = _find_unknown_ta_indicators
 
 
 def _estimate_warmup_bars(ti_spec: Optional[str]) -> int:

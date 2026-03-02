@@ -664,29 +664,52 @@ class TestTradePlace:
 
 class TestTradeClose:
 
-    def test_invalid_kind(self):
-        result = _unwrap_mcp(trade_close(close_kind="invalid"))
-        assert "error" in result.lower()
-
-    def test_profit_only_on_pending_rejected(self):
-        result = _unwrap_mcp(trade_close(close_kind="pending", profit_only=True))
-        assert "profit_only" in result
-
-    def test_loss_only_on_pending_rejected(self):
-        result = _unwrap_mcp(trade_close(close_kind="pending", loss_only=True))
-        assert "error" in result.lower() or "only" in result.lower()
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_profit_only_routes_to_positions_only(self, mock_close, mock_cancel):
+        mock_close.return_value = {"closed_count": 1}
+        trade_close(ticket=123, profit_only=True)
+        mock_close.assert_called_once()
+        mock_cancel.assert_not_called()
 
     @patch("mtdata.core.trading._cancel_pending")
-    def test_dispatches_to_cancel_pending(self, mock_cancel):
-        mock_cancel.return_value = {"cancelled_count": 1}
-        trade_close(close_kind="pending", ticket=123)
-        mock_cancel.assert_called_once()
-
     @patch("mtdata.core.trading._close_positions")
-    def test_dispatches_to_close_positions(self, mock_close):
+    def test_loss_only_routes_to_positions_only(self, mock_close, mock_cancel):
         mock_close.return_value = {"closed_count": 1}
-        trade_close(close_kind="positions", ticket=123)
+        trade_close(ticket=123, loss_only=True)
         mock_close.assert_called_once()
+        mock_cancel.assert_not_called()
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_ticket_falls_back_to_cancel_pending(self, mock_close, mock_cancel):
+        mock_close.return_value = {"error": "Position 123 not found"}
+        mock_cancel.return_value = {"cancelled_count": 1}
+        out = _unwrap_mcp(trade_close(ticket=123))
+        mock_close.assert_called_once()
+        mock_cancel.assert_called_once_with(ticket=123, symbol=None, comment=None)
+        assert "cancelled_count" in out or "1" in out
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_ticket_missing_reports_both_scopes(self, mock_close, mock_cancel):
+        mock_close.return_value = {"error": "Position 123 not found"}
+        mock_cancel.return_value = {"error": "Pending order 123 not found"}
+        result = _unwrap_mcp(trade_close(ticket=123))
+        if isinstance(result, dict):
+            assert "position or pending order" in str(result.get("error", "")).lower()
+            assert result.get("checked_scopes") == ["positions", "pending_orders"]
+        else:
+            assert "position or pending order" in result.lower()
+            assert "pending_orders" in result.lower()
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_dispatches_to_close_positions(self, mock_close, mock_cancel):
+        mock_close.return_value = {"closed_count": 1}
+        trade_close(ticket=123)
+        mock_close.assert_called_once()
+        mock_cancel.assert_not_called()
 
 
 # ===================================================================

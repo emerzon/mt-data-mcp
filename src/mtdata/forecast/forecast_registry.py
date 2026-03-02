@@ -5,6 +5,8 @@ Centralizes method definitions, requirements, and availability checking.
 """
 
 from typing import Any, Dict, List, Tuple
+from functools import lru_cache
+import importlib as _importlib
 import importlib.util as _importlib_util
 
 from .registry import ForecastRegistry
@@ -100,6 +102,29 @@ def _extract_description(cls: Any, fallback: str) -> str:
     return str(fallback)
 
 
+@lru_cache(maxsize=1)
+def _check_chronos_runtime_support() -> Tuple[bool, List[str]]:
+    """Verify Chronos exposes APIs required by our adapters."""
+    reqs: List[str] = []
+    try:
+        chronos_mod = _importlib.import_module("chronos")
+    except Exception:
+        return False, ["chronos-forecasting"]
+
+    if not any(hasattr(chronos_mod, attr) for attr in ("Chronos2Pipeline", "ChronosBoltPipeline", "ChronosPipeline")):
+        reqs.append("chronos pipeline API")
+
+    # Some incompatible chronos versions import but fail at runtime due missing internals.
+    try:
+        chronos2_mod = _importlib.import_module("chronos.chronos2")
+        if not hasattr(chronos2_mod, "ChronosBoltModelForForecasting"):
+            reqs.append("chronos-forecasting>=2.0.0")
+    except Exception:
+        reqs.append("chronos-forecasting>=2.0.0")
+
+    return len(reqs) == 0, reqs
+
+
 def _check_requirements(method: str, requires: List[str]) -> Tuple[bool, List[str]]:
     available = True
     reqs = list(requires or [])
@@ -117,8 +142,14 @@ def _check_requirements(method: str, requires: List[str]) -> Tuple[bool, List[st
         available = False; reqs.append("mlforecast, scikit-learn")
     if method == "mlf_lightgbm" and (not _MLF_AVAILABLE or not _LGB_AVAILABLE):
         available = False; reqs.append("mlforecast, lightgbm")
-    if method in ("chronos_bolt", "chronos2") and not _CHRONOS_AVAILABLE:
-        available = False; reqs.append("chronos-forecasting")
+    if method in ("chronos_bolt", "chronos2"):
+        if not _CHRONOS_AVAILABLE:
+            available = False; reqs.append("chronos-forecasting")
+        else:
+            chronos_ok, chronos_reqs = _check_chronos_runtime_support()
+            if not chronos_ok:
+                available = False
+                reqs.extend(chronos_reqs)
     if method == "timesfm" and not _TIMESFM_AVAILABLE:
         available = False; reqs.append("timesfm")
     if method == "lag_llama" and not _LAG_LLAMA_AVAILABLE:
