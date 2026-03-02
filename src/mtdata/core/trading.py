@@ -2179,32 +2179,188 @@ def _close_positions(
             # 3. Close positions
             results = []
             for position in to_close:
-                tick = mt5.symbol_info_tick(position.symbol)
-                if tick is None:
-                    results.append({"ticket": position.ticket, "error": f"Failed to get tick data for {position.symbol}"})
-                    continue
+                fill_modes: List[int] = []
+                for fill_attr in ("ORDER_FILLING_IOC", "ORDER_FILLING_FOK", "ORDER_FILLING_RETURN"):
+                    if hasattr(mt5, fill_attr):
+                        try:
+                            fill_val = int(getattr(mt5, fill_attr))
+                        except Exception:
+                            continue
+                        if fill_val not in fill_modes:
+                            fill_modes.append(fill_val)
+                if not fill_modes:
+                    fill_modes = [1, 0, 2]
 
-                close_price = tick.bid if position.type == mt5.ORDER_TYPE_BUY else tick.ask
-                close_type = mt5.ORDER_TYPE_SELL if position.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
-
-                request = {
-                    "action": mt5.TRADE_ACTION_DEAL,
-                    "position": position.ticket,
-                    "symbol": position.symbol,
-                    "volume": position.volume,
-                    "type": close_type,
-                    "price": close_price,
-                    "deviation": deviation_validated,
-                    "magic": 234000,
-                    "comment": _normalize_trade_comment(comment, default="MCP close position"),
-                    "type_time": mt5.ORDER_TIME_GTC,
-                    "type_filling": mt5.ORDER_FILLING_IOC,
+                result = None
+                request = None
+                attempts: List[Dict[str, Any]] = []
+                position_type_buy = getattr(mt5, "POSITION_TYPE_BUY", getattr(mt5, "ORDER_TYPE_BUY", 0))
+                close_type_buy = getattr(mt5, "ORDER_TYPE_BUY", 0)
+                close_type_sell = getattr(mt5, "ORDER_TYPE_SELL", 1)
+                done_codes = {
+                    int(getattr(mt5, "TRADE_RETCODE_DONE", 10009)),
+                    int(getattr(mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010)),
                 }
 
-                result = mt5.order_send(request)
-                if result is None:
-                    results.append({"ticket": position.ticket, "error": "Failed to send close order"})
-                else:
+                for fill_mode in fill_modes:
+                    tick = mt5.symbol_info_tick(position.symbol)
+                    if tick is None:
+                        tick_error = None
+                        try:
+                            tick_error = mt5.last_error() if hasattr(mt5, "last_error") else None
+                        except Exception:
+                            tick_error = None
+                        attempts.append(
+                            {
+                                "type_filling": int(fill_mode),
+                                "error": f"Failed to get tick data for {position.symbol}",
+                                "last_error": tick_error,
+                            }
+                        )
+                        continue
+
+                    try:
+                        is_buy_position = int(getattr(position, "type", position_type_buy)) == int(position_type_buy)
+                    except Exception:
+                        is_buy_position = True
+                    close_price = float(getattr(tick, "bid", 0.0) or 0.0) if is_buy_position else float(
+                        getattr(tick, "ask", 0.0) or 0.0
+                    )
+                    close_type = close_type_sell if is_buy_position else close_type_buy
+                    close_comment = _normalize_trade_comment(comment, default="MCP close")
+                    # Some brokers reject edge-length comments during close-deal requests.
+                    if len(close_comment) > 24:
+                        close_comment = close_comment[:24]
+
+                    request = {
+                        "action": mt5.TRADE_ACTION_DEAL,
+                        "position": position.ticket,
+                        "symbol": position.symbol,
+                        "volume": position.volume,
+                        "type": close_type,
+                        "price": close_price,
+                        "deviation": deviation_validated,
+                        "magic": 234000,
+                        "comment": close_comment,
+                        "type_time": mt5.ORDER_TIME_GTC,
+                        "type_filling": int(fill_mode),
+                    }
+
+                    result = mt5.order_send(request)
+                    if result is None:
+                        send_error = None
+                        try:
+                            send_error = mt5.last_error() if hasattr(mt5, "last_error") else None
+                        except Exception:
+                            send_error = None
+                        send_error_text = str(send_error).lower() if send_error is not None else ""
+                        # Retry with a minimal/no comment when broker rejects the comment field.
+                        if "invalid" in send_error_text and "comment" in send_error_text:
+                            alt_requests: List[Dict[str, Any]] = []
+                            req_short = dict(request)
+                            req_short["comment"] = "MCP"
+                            alt_requests.append(req_short)
+                            req_nocomment = dict(request)
+                            req_nocomment.pop("comment", None)
+                            alt_requests.append(req_nocomment)
+                            recovered = False
+                            for alt_req in alt_requests:
+                                alt_res = mt5.order_send(alt_req)
+                                if alt_res is None:
+                                    alt_err = None
+                                    try:
+                                        alt_err = mt5.last_error() if hasattr(mt5, "last_error") else None
+                                    except Exception:
+                                        alt_err = None
+                                    attempts.append(
+                                        {
+                                            "type_filling": int(fill_mode),
+                                            "error": "Failed to send close order",
+                                            "last_error": alt_err,
+                                            "comment_fallback": True,
+                                        }
+                                    )
+                                    continue
+                                attempts.append(
+                                    {
+                                        "type_filling": int(fill_mode),
+                                        "retcode": getattr(alt_res, "retcode", None),
+                                        "retcode_name": _retcode_name(mt5, getattr(alt_res, "retcode", None)),
+                                        "comment": getattr(alt_res, "comment", None),
+                                        "comment_fallback": True,
+                                    }
+                                )
+                                result = alt_res
+                                request = alt_req
+                                recovered = True
+                                break
+                            if recovered:
+                                retcode_val = getattr(result, "retcode", None)
+                                try:
+                                    if retcode_val is not None and int(retcode_val) in done_codes:
+                                        break
+                                except Exception:
+                                    pass
+                                time.sleep(0.15)
+                                continue
+                        attempts.append(
+                            {
+                                "type_filling": int(fill_mode),
+                                "error": "Failed to send close order",
+                                "last_error": send_error,
+                            }
+                        )
+                        time.sleep(0.15)
+                        continue
+
+                    retcode_val = getattr(result, "retcode", None)
+                    attempts.append(
+                        {
+                            "type_filling": int(fill_mode),
+                            "retcode": retcode_val,
+                            "retcode_name": _retcode_name(mt5, retcode_val),
+                            "comment": getattr(result, "comment", None),
+                        }
+                    )
+                    try:
+                        if retcode_val is not None and int(retcode_val) in done_codes:
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(0.15)
+
+                close_ok = False
+                if result is not None:
+                    try:
+                        close_ok = int(getattr(result, "retcode", -1)) in done_codes
+                    except Exception:
+                        close_ok = False
+
+                if not close_ok:
+                    last_error = None
+                    try:
+                        last_error = mt5.last_error() if hasattr(mt5, "last_error") else None
+                    except Exception:
+                        last_error = None
+                    tick_failures = [
+                        a for a in attempts if "tick data" in str(a.get("error", "")).lower()
+                    ]
+                    if attempts and len(tick_failures) == len(attempts):
+                        error_msg = f"Failed to get tick data for {position.symbol}"
+                    else:
+                        error_msg = "Failed to send close order"
+                    results.append(
+                        {
+                            "ticket": position.ticket,
+                            "error": error_msg,
+                            "attempts": attempts,
+                            "request": request,
+                            "last_error": last_error,
+                        }
+                    )
+                    continue
+
+                if result is not None:
                     open_price = getattr(position, "price_open", None)
                     try:
                         open_price = float(open_price) if open_price is not None else None
@@ -2264,6 +2420,7 @@ def _close_positions(
                         "pnl": realized_pnl,
                         "pnl_price_delta": pnl_price_delta,
                         "duration_seconds": duration_seconds,
+                        "attempts": attempts,
                     }
                     results.append(res_dict)
 

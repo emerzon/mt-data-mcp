@@ -1217,10 +1217,15 @@ class TestClosePositions:
     def _setup_mt5(self, mt5):
         mt5.ORDER_TYPE_BUY = 0
         mt5.ORDER_TYPE_SELL = 1
+        mt5.POSITION_TYPE_BUY = 0
+        mt5.POSITION_TYPE_SELL = 1
         mt5.TRADE_ACTION_DEAL = 1
         mt5.TRADE_RETCODE_DONE = 10009
+        mt5.TRADE_RETCODE_DONE_PARTIAL = 10010
         mt5.ORDER_TIME_GTC = 0
         mt5.ORDER_FILLING_IOC = 1
+        mt5.ORDER_FILLING_FOK = 0
+        mt5.ORDER_FILLING_RETURN = 2
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_ticket_not_found(self):
@@ -1283,9 +1288,26 @@ class TestClosePositions:
         mt5.positions_get.return_value = [_position()]
         mt5.symbol_info_tick.return_value = _tick()
         mt5.order_send.return_value = None
+        mt5.last_error.return_value = (10006, "No connection")
         from mtdata.core.trading import _close_positions
         result = _close_positions(ticket=1)
         assert "error" in result
+        assert "attempts" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_close_retries_fill_modes_when_first_attempt_fails(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position(ticket=77)]
+        mt5.symbol_info_tick.return_value = _tick()
+        mt5.order_send.side_effect = [None, _order_result()]
+        mt5.last_error.return_value = (10006, "No connection")
+        from mtdata.core.trading import _close_positions
+        result = _close_positions(ticket=77)
+        assert result["ticket"] == 77
+        assert int(result["retcode"]) == 10009
+        assert isinstance(result.get("attempts"), list)
+        assert len(result.get("attempts") or []) >= 2
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_no_positions_matched_criteria(self):
