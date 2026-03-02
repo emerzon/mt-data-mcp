@@ -147,11 +147,23 @@ def _format_state_shares(shares: Any) -> Optional[str]:
     return ", ".join(parts) if parts else None
 
 
-def pick_best_forecast_method(bt: Dict[str, Any], rmse_tolerance: float = 0.05) -> Optional[Tuple[str, Dict[str, Any]]]:
+def pick_best_forecast_method(
+    bt: Dict[str, Any],
+    rmse_tolerance: float = 0.05,
+    min_directional_accuracy: Optional[float] = None,
+) -> Optional[Tuple[str, Dict[str, Any]]]:
     try:
         results = bt.get('results') if isinstance(bt, dict) else None
         if not isinstance(results, dict) or not results:
             return None
+        min_da: Optional[float] = None
+        if min_directional_accuracy is not None:
+            try:
+                candidate = float(min_directional_accuracy)
+            except Exception:
+                candidate = float("nan")
+            if math.isfinite(candidate):
+                min_da = max(0.0, min(1.0, candidate))
         entries: List[Tuple[str, Dict[str, Any], float, Optional[float], int]] = []
         for m, res in results.items():
             if not isinstance(res, dict):
@@ -171,6 +183,8 @@ def pick_best_forecast_method(bt: Dict[str, Any], rmse_tolerance: float = 0.05) 
             if not (rmse == rmse):
                 continue
             entries.append((m, res, rmse, da if da == da else None, ok))
+        if min_da is not None:
+            entries = [e for e in entries if e[3] is not None and float(e[3]) >= float(min_da)]
         if not entries:
             return None
         entries.sort(key=lambda x: x[2])
@@ -900,6 +914,16 @@ def _render_forecast_section(data: Any) -> List[str]:
     method = data.get('method')
     if method:
         lines.append(f"- Method: {method}")
+    if data.get('last_observation_time') is not None:
+        lines.append(f"- Last observation: {data.get('last_observation_time')}")
+    if data.get('forecast_start_time') is not None:
+        lines.append(f"- Forecast start: {data.get('forecast_start_time')}")
+    if data.get('forecast_anchor') is not None:
+        lines.append(f"- Forecast anchor: {data.get('forecast_anchor')}")
+    if data.get('forecast_start_gap_bars') is not None:
+        lines.append(f"- Forecast start gap (bars): {format_number(data.get('forecast_start_gap_bars'))}")
+    if data.get('forecast_step_seconds') is not None:
+        lines.append(f"- Forecast step seconds: {format_number(data.get('forecast_step_seconds'))}")
     if data.get('forecast_price') is not None:
         series_preview = _format_series_preview(data.get('forecast_price'), decimals=6)
         if series_preview is not None:

@@ -695,6 +695,16 @@ def template_basic(
         rmse_tol = float(p.get('backtest_rmse_tolerance', 0.05))
     except Exception:
         rmse_tol = 0.05
+    min_dir_acc_raw = p.get('backtest_min_directional_accuracy', p.get('backtest_min_accuracy'))
+    try:
+        min_dir_acc = float(min_dir_acc_raw) if min_dir_acc_raw is not None else None
+    except Exception:
+        min_dir_acc = None
+    if min_dir_acc is not None:
+        if not isfinite(min_dir_acc):
+            min_dir_acc = None
+        else:
+            min_dir_acc = max(0.0, min(1.0, float(min_dir_acc)))
     from ..forecast import forecast_backtest_run
     methods = p.get('methods')
     bt = _get_raw_result(forecast_backtest_run, symbol=symbol, timeframe=tf, horizon=int(horizon), steps=steps, spacing=spacing, methods=methods)
@@ -721,15 +731,30 @@ def template_basic(
             pass
         topk = int(p.get('backtest_top_k', 3))
         sec_bt = {'ranking': ranking[:max(1, topk)], 'horizon': int(horizon), 'steps': steps, 'spacing': spacing}
+        criteria_notes = 'Choose lowest RMSE; when methods are within tolerance of best RMSE, prefer higher directional accuracy.'
+        if min_dir_acc is not None:
+            criteria_notes += f' Require directional accuracy >= {min_dir_acc:.2f}.'
         sec_bt['selection_criteria'] = {
             'primary_metric': 'avg_rmse',
             'rmse_tolerance': float(rmse_tol),
             'rmse_tolerance_pct': float(rmse_tol * 100.0),
             'tie_breaker': 'avg_directional_accuracy',
             'secondary_tie_breaker': 'successful_tests',
-            'notes': 'Choose lowest RMSE; when methods are within tolerance of best RMSE, prefer higher directional accuracy.',
+            'notes': criteria_notes,
         }
-        best = pick_best_forecast_method(bt, rmse_tolerance=rmse_tol)
+        if min_dir_acc is not None:
+            sec_bt['selection_criteria']['min_directional_accuracy'] = float(min_dir_acc)
+            sec_bt['selection_criteria']['min_directional_accuracy_pct'] = float(min_dir_acc * 100.0)
+        best = pick_best_forecast_method(
+            bt,
+            rmse_tolerance=rmse_tol,
+            min_directional_accuracy=min_dir_acc,
+        )
+        if best is None and min_dir_acc is not None:
+            sec_bt['selection_warning'] = (
+                "No method met the minimum directional accuracy threshold."
+            )
+            sec_bt['selection_filtered_by_min_directional_accuracy'] = True
     report['sections']['backtest'] = sec_bt
 
     if best is not None:
@@ -808,6 +833,11 @@ def template_basic(
                 'upper_price': selected_forecast.get('upper_price'),
                 'trend': selected_forecast.get('trend'),
                 'ci_alpha': selected_forecast.get('ci_alpha'),
+                'last_observation_time': selected_forecast.get('last_observation_time'),
+                'forecast_start_time': selected_forecast.get('forecast_start_time'),
+                'forecast_anchor': selected_forecast.get('forecast_anchor'),
+                'forecast_start_gap_bars': selected_forecast.get('forecast_start_gap_bars'),
+                'forecast_step_seconds': selected_forecast.get('forecast_step_seconds'),
             }
             if selected_method != best_name:
                 report['sections']['forecast']['fallback_from'] = best_name
@@ -833,6 +863,9 @@ def template_basic(
             'initial_method': best_name,
             'selected_method': selected_method if selected_forecast is not None else best_name,
         }
+        if min_dir_acc is not None:
+            selection_basis['min_directional_accuracy'] = float(min_dir_acc)
+            selection_basis['min_directional_accuracy_pct'] = float(min_dir_acc * 100.0)
         if ranking:
             try:
                 best_rmse = float(ranking[0].get('avg_rmse'))

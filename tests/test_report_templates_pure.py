@@ -626,6 +626,9 @@ def _mock_forecast_data():
         "upper_price": 104.0,
         "trend": "up",
         "ci_alpha": 0.05,
+        "last_observation_time": "2026-03-02 18:00 UTC",
+        "forecast_start_time": "2026-03-02 19:00 UTC",
+        "forecast_anchor": "next_timeframe_bar_after_last_observation",
     }
 
 
@@ -914,6 +917,60 @@ class TestTemplateBasic:
         forecast = report["sections"].get("forecast", {})
         # If best method was found, forecast section should be populated
         assert "method" in forecast or "error" in forecast
+        if "error" not in forecast:
+            assert forecast.get("last_observation_time")
+            assert forecast.get("forecast_start_time")
+            assert forecast.get("forecast_anchor")
+
+    @patch(f"{_BASIC_MODULE}._get_raw_result")
+    @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
+    @patch(f"{_BASIC_MODULE}.parse_table_tail")
+    @patch(f"{_BASIC_MODULE}.pick_best_forecast_method")
+    @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
+    @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
+    def test_basic_applies_min_directional_accuracy_threshold(
+        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
+        mock_now, mock_raw,
+    ):
+        mock_tail.return_value = _mock_candle_data()["rows"]
+        mock_pick.return_value = (
+            "ema",
+            {"avg_rmse": 0.01, "avg_mae": 0.008, "avg_directional_accuracy": 0.65, "successful_tests": 20},
+        )
+        mock_sum_bar.return_value = {"best": {"tp": 1, "sl": 0.5, "edge": 0.3}}
+
+        def raw_side_effect(func, *args, **kwargs):
+            name = func.__name__ if hasattr(func, '__name__') else str(func)
+            if "candle" in name.lower() or "data_fetch" in name.lower():
+                return _mock_candle_data()
+            if "pivot" in name.lower():
+                return _mock_pivot_data()
+            if "volatility" in name.lower():
+                return _mock_vol_data()
+            if "backtest" in name.lower():
+                return _mock_backtest_data()
+            if "generate" in name.lower() or "forecast_generate" in name.lower():
+                return _mock_forecast_data()
+            if "barrier" in name.lower():
+                return _mock_barrier_data()
+            if "pattern" in name.lower():
+                return _mock_patterns_data()
+            return {"data": "fallback"}
+
+        mock_raw.side_effect = raw_side_effect
+
+        from mtdata.core.report_templates.basic import template_basic
+        report = template_basic(
+            "EURUSD",
+            12,
+            None,
+            {"backtest_min_directional_accuracy": 0.55},
+        )
+
+        call_kwargs = mock_pick.call_args.kwargs
+        assert call_kwargs.get("min_directional_accuracy") == 0.55
+        criteria = report["sections"].get("backtest", {}).get("selection_criteria", {})
+        assert criteria.get("min_directional_accuracy") == 0.55
 
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")

@@ -351,6 +351,21 @@ class TestPickBestForecastMethod:
         name, _ = pick_best_forecast_method(bt, rmse_tolerance=0.0)
         assert name == "a"
 
+    def test_min_directional_accuracy_filters_candidates(self):
+        bt = self._bt({
+            "a": {"success": True, "avg_rmse": 0.9, "avg_directional_accuracy": 0.45, "successful_tests": 5},
+            "b": {"success": True, "avg_rmse": 1.4, "avg_directional_accuracy": 0.60, "successful_tests": 5},
+        })
+        name, _ = pick_best_forecast_method(bt, min_directional_accuracy=0.5)
+        assert name == "b"
+
+    def test_min_directional_accuracy_returns_none_when_no_qualifying_methods(self):
+        bt = self._bt({
+            "a": {"success": True, "avg_rmse": 0.9, "avg_directional_accuracy": 0.45, "successful_tests": 5},
+            "b": {"success": True, "avg_rmse": 1.1, "avg_directional_accuracy": 0.49, "successful_tests": 5},
+        })
+        assert pick_best_forecast_method(bt, min_directional_accuracy=0.5) is None
+
 
 # ---------------------------------------------------------------------------
 # 8. summarize_barrier_grid
@@ -1130,6 +1145,23 @@ class TestRenderForecastSection:
         lines = _render_forecast_section(data)
         text = "\n".join(lines)
         assert "Forecast price" in text
+
+    def test_with_forecast_timing_context(self):
+        data = {
+            "method": "theta",
+            "last_observation_time": "2026-03-02 18:00 UTC",
+            "forecast_start_time": "2026-03-02 19:00 UTC",
+            "forecast_anchor": "next_timeframe_bar_after_last_observation",
+            "forecast_start_gap_bars": 1.0,
+            "forecast_step_seconds": 3600,
+        }
+        lines = _render_forecast_section(data)
+        text = "\n".join(lines)
+        assert "Last observation" in text
+        assert "Forecast start" in text
+        assert "Forecast anchor" in text
+        assert "Forecast start gap (bars)" in text
+        assert "Forecast step seconds" in text
 
 
 # ---------------------------------------------------------------------------

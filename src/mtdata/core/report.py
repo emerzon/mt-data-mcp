@@ -256,6 +256,18 @@ def report_generate(
                                 "Selected forecast appears degenerate (near-constant values across horizon).",
                             )
                 summ.append(forecast_line)
+                timing_parts: List[str] = []
+                last_obs = fc.get('last_observation_time')
+                start_time = fc.get('forecast_start_time')
+                anchor = fc.get('forecast_anchor')
+                if last_obs:
+                    timing_parts.append(f"last_obs={last_obs}")
+                if start_time:
+                    timing_parts.append(f"start={start_time}")
+                if anchor:
+                    timing_parts.append(f"anchor={anchor}")
+                if timing_parts:
+                    summ.append("forecast timing: " + " ".join(timing_parts))
         except Exception:
             pass
         try:
@@ -276,6 +288,9 @@ def report_generate(
                 if tol_pct is not None:
                     line += f", tie-window={format_number(tol_pct)}%"
                 line += f", tie-break={tie_breaker}"
+                min_da = criteria.get('min_directional_accuracy')
+                if min_da is not None:
+                    line += f", min-dir-acc>={format_number(min_da)}"
                 if isinstance(best_payload, dict):
                     initial = best_payload.get('initial_method')
                     chosen = best_payload.get('method')

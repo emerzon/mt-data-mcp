@@ -475,6 +475,16 @@ class TestReportSummaryVolForecast:
         res = self._run_report(sec)
         assert any("forecast=" in s for s in res.get("summary", []))
 
+    def test_forecast_timing_in_summary(self):
+        sec = _make_full_sections()
+        sec["forecast"].update({
+            "last_observation_time": "2026-03-02 18:00 UTC",
+            "forecast_start_time": "2026-03-02 19:00 UTC",
+            "forecast_anchor": "next_timeframe_bar_after_last_observation",
+        })
+        res = self._run_report(sec)
+        assert any("forecast timing:" in s for s in res.get("summary", []))
+
     def test_forecast_selection_criteria_in_summary(self):
         sec = _make_full_sections()
         sec["backtest"] = {
@@ -487,6 +497,20 @@ class TestReportSummaryVolForecast:
         }
         res = self._run_report(sec)
         assert any("forecast selection:" in s for s in res.get("summary", []))
+
+    def test_forecast_selection_criteria_includes_min_directional_accuracy(self):
+        sec = _make_full_sections()
+        sec["backtest"] = {
+            "selection_criteria": {
+                "primary_metric": "avg_rmse",
+                "rmse_tolerance_pct": 5.0,
+                "tie_breaker": "avg_directional_accuracy",
+                "min_directional_accuracy": 0.55,
+            },
+            "best_method": {"method": "naive"},
+        }
+        res = self._run_report(sec)
+        assert any("min-dir-acc>=" in s for s in res.get("summary", []))
 
 
 # ---------------------------------------------------------------------------
