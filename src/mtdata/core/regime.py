@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, List, Literal
+from typing import Any, Dict, Optional, List, Literal, Tuple
 import numpy as np
 
 from .server import mcp, _auto_connect_wrapper
@@ -194,6 +194,83 @@ def _default_bocpd_cp_threshold(symbol: Any, timeframe: Any) -> float:
             return 0.40
         return 0.45
     return 0.50
+
+
+def _auto_calibrate_bocpd_params(
+    returns: np.ndarray,
+    symbol: Any,
+    timeframe: Any,
+) -> Tuple[int, float, Dict[str, Any]]:
+    """Auto-calibrate BOCPD hazard/threshold from recent return distribution."""
+    r = np.asarray(returns, dtype=float)
+    r = r[np.isfinite(r)]
+    base_lambda = int(_default_bocpd_hazard_lambda(symbol, timeframe))
+    base_threshold = float(_default_bocpd_cp_threshold(symbol, timeframe))
+    if r.size < 30:
+        return base_lambda, base_threshold, {
+            "calibrated": False,
+            "reason": "insufficient_points",
+            "points": int(r.size),
+            "base_hazard_lambda": int(base_lambda),
+            "base_cp_threshold": float(base_threshold),
+        }
+
+    mu = float(np.mean(r))
+    sigma = float(np.std(r, ddof=0))
+    sigma_safe = sigma if sigma > 1e-12 else 1e-12
+    centered = r - mu
+    z = centered / sigma_safe
+    kurt = float(np.mean(z ** 4) - 3.0) if z.size > 0 else 0.0
+    jump_share = float(np.mean(np.abs(z) >= 2.5)) if z.size > 0 else 0.0
+    trend_strength = float(abs(mu) / sigma_safe)
+
+    vol_norm = float(np.clip(sigma / 0.003, 0.0, 3.0))
+    kurt_norm = float(np.clip(max(0.0, kurt) / 6.0, 0.0, 2.0))
+    jump_norm = float(np.clip(jump_share / 0.08, 0.0, 2.0))
+    trend_norm = float(np.clip(trend_strength / 0.20, 0.0, 2.0))
+
+    sensitivity = float(
+        np.clip(
+            1.0 + 0.35 * vol_norm + 0.25 * kurt_norm + 0.25 * jump_norm - 0.20 * trend_norm,
+            0.5,
+            2.2,
+        )
+    )
+
+    hazard_floor = max(12, int(round(base_lambda * 0.25)))
+    hazard_cap = min(500, max(hazard_floor + 1, int(round(base_lambda * 1.80))))
+    hazard_lambda = int(np.clip(int(round(base_lambda / sensitivity)), hazard_floor, hazard_cap))
+
+    cp_threshold = float(
+        np.clip(
+            base_threshold
+            - 0.08 * (vol_norm / 3.0)
+            - 0.06 * (jump_norm / 2.0)
+            - 0.04 * (kurt_norm / 2.0)
+            + 0.04 * (trend_norm / 2.0),
+            0.15,
+            0.75,
+        )
+    )
+
+    diagnostics = {
+        "calibrated": True,
+        "points": int(r.size),
+        "base_hazard_lambda": int(base_lambda),
+        "base_cp_threshold": float(base_threshold),
+        "sigma": float(sigma),
+        "kurtosis_excess": float(kurt),
+        "jump_share_abs_z_ge_2_5": float(jump_share),
+        "trend_strength": float(trend_strength),
+        "vol_norm": float(vol_norm),
+        "kurt_norm": float(kurt_norm),
+        "jump_norm": float(jump_norm),
+        "trend_norm": float(trend_norm),
+        "sensitivity": float(sensitivity),
+        "hazard_floor": int(hazard_floor),
+        "hazard_cap": int(hazard_cap),
+    }
+    return int(hazard_lambda), float(cp_threshold), diagnostics
 
 
 def _consolidate_payload(payload: Dict[str, Any], method: str, output_mode: str, include_series: bool = False) -> Dict[str, Any]:
@@ -403,6 +480,8 @@ def regime_detect(
     """Detect regimes and/or change-points over the last `limit` bars.
 
     - method: 'bocpd' (Bayesian online change-point; Gaussian), 'hmm' (Gaussian mixture/HMM-lite), or 'ms_ar' (Markov-switching AR).
+    - params (bocpd): optional `hazard_mode` = auto_default|auto_calibrated (defaults to auto_calibrated).
+      Explicit `hazard_lambda` / `cp_threshold` always take precedence over auto selection.
     - include_series: If True, include raw time series data (probs, states) in output even if output='full'. Default False.
     - min_regime_bars: Merge short state runs (< this many bars) for state-based methods to reduce flicker.
     - output:
@@ -424,6 +503,9 @@ def regime_detect(
         base_col = _resolve_denoise_base_col(df, denoise, base_col='close', default_when='pre_ti')
         y = df[base_col].astype(float).to_numpy()
         times = df['time'].astype(float).to_numpy()
+        with np.errstate(divide='ignore', invalid='ignore'):
+            calibration_returns = np.diff(np.log(np.maximum(y, 1e-12)))
+        calibration_returns = calibration_returns[np.isfinite(calibration_returns)]
         if target == 'return':
             with np.errstate(divide='ignore', invalid='ignore'):
                 x = np.diff(np.log(np.maximum(y, 1e-12)))
@@ -438,13 +520,28 @@ def regime_detect(
 
         if method == 'bocpd':
             from ..utils.regime import bocpd_gaussian
+            hazard_mode = str(p.get("hazard_mode", "auto_calibrated") or "auto_calibrated").strip().lower()
+            if hazard_mode in {"auto", "calibrated"}:
+                hazard_mode = "auto_calibrated"
+            if hazard_mode not in {"auto_default", "auto_calibrated"}:
+                hazard_mode = "auto_calibrated"
+
             hazard_src = "params"
+            threshold_src = "arg"
+            calibration_info: Optional[Dict[str, Any]] = None
+
+            auto_hazard = _default_bocpd_hazard_lambda(symbol, timeframe)
+            auto_threshold = _default_bocpd_cp_threshold(symbol, timeframe)
+            if hazard_mode == "auto_calibrated":
+                auto_hazard, auto_threshold, calibration_info = _auto_calibrate_bocpd_params(
+                    returns=calibration_returns, symbol=symbol, timeframe=timeframe
+                )
+
             if "hazard_lambda" in p and p.get("hazard_lambda") is not None:
                 hazard_lambda = int(p.get("hazard_lambda"))
             else:
-                hazard_lambda = _default_bocpd_hazard_lambda(symbol, timeframe)
-                hazard_src = "auto_default"
-            threshold_src = "arg"
+                hazard_lambda = int(auto_hazard)
+                hazard_src = "auto_calibrated" if hazard_mode == "auto_calibrated" else "auto_default"
             if "cp_threshold" in p and p.get("cp_threshold") is not None:
                 threshold_used = float(p.get("cp_threshold"))
                 threshold_src = "params.cp_threshold"
@@ -452,13 +549,12 @@ def regime_detect(
                 threshold_used = float(p.get("threshold"))
                 threshold_src = "params.threshold"
             else:
-                threshold_used = float(threshold)
-                if (
-                    _is_probably_crypto_symbol(symbol)
-                    and abs(float(threshold) - 0.5) <= 1e-12
-                ):
-                    threshold_used = _default_bocpd_cp_threshold(symbol, timeframe)
-                    threshold_src = "auto_default"
+                if abs(float(threshold) - 0.5) <= 1e-12:
+                    threshold_used = float(auto_threshold)
+                    threshold_src = "auto_calibrated" if hazard_mode == "auto_calibrated" else "auto_default"
+                else:
+                    threshold_used = float(threshold)
+                    threshold_src = "arg"
             max_rl = int(p.get('max_run_length', min(1000, x.size)))
             res = bocpd_gaussian(x, hazard_lambda=hazard_lambda, max_run_length=max_rl)
             cp_prob = res.get('cp_prob', np.zeros_like(x, dtype=float))
@@ -485,9 +581,12 @@ def regime_detect(
                     "hazard_lambda_source": hazard_src,
                     "cp_threshold": float(threshold_used),
                     "cp_threshold_source": threshold_src,
+                    "hazard_mode": hazard_mode,
                     "max_run_length": max_rl,
                 },
             }
+            if isinstance(calibration_info, dict):
+                payload["params_used"]["auto_calibration"] = calibration_info
             if tuning_hint is not None:
                 payload["tuning_hint"] = tuning_hint
             if output in ('summary','compact'):
