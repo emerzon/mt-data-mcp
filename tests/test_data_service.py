@@ -102,6 +102,34 @@ class TestDataService(unittest.TestCase):
         self.assertTrue(result.get('success'))
         self.assertEqual(result.get('count'), 5)
 
+    @patch('mtdata.services.data_service._mt5_copy_ticks_range')
+    @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
+    def test_fetch_ticks_zero_duration_uses_note_instead_of_nan_rate(self, mock_copy_ticks):
+        base_ts = datetime.now(timezone.utc).timestamp()
+        ticks = []
+        for _ in range(5):
+            ticks.append(
+                {
+                    'time': base_ts,
+                    'bid': 1.1,
+                    'ask': 1.1001,
+                    'last': 1.1,
+                    'volume': 1.0,
+                    'time_msc': base_ts * 1000,
+                    'flags': 0,
+                    'volume_real': 0.0,
+                }
+            )
+        mock_copy_ticks.return_value = ticks
+
+        result = fetch_ticks(symbol="EURUSD", limit=5)
+
+        self.assertIsInstance(result, dict)
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result.get('duration_seconds'), 0.0)
+        self.assertIsNone(result.get('tick_rate_per_second'))
+        self.assertEqual(result.get('tick_rate_note'), "< 1s window")
+
 if __name__ == '__main__':
     try:
         unittest.main(exit=False)

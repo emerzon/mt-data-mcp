@@ -1068,6 +1068,9 @@ class TestPlacePendingOrder:
         from mtdata.core.trading import _place_pending_order
         result = _place_pending_order("EURUSD", 0.01, "BUY_LIMIT", price=1.09)
         assert result.get("success") is True
+        assert result.get("requested_price") == 1.09
+        assert result.get("requested_sl") is None
+        assert result.get("requested_tp") is None
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_sell_stop_success(self):

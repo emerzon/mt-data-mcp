@@ -218,7 +218,7 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
         out: Dict[str, Any] = {}
         direction = grid.get('direction') if isinstance(grid, dict) else None
         if isinstance(best, dict):
-            out['best'] = {
+            best_out = {
                 'tp': best.get('tp'),
                 'sl': best.get('sl'),
                 'objective': best.get('objective') or grid.get('objective'),
@@ -232,19 +232,63 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
                 'tp_price': best.get('tp_price'),
                 'sl_price': best.get('sl_price'),
             }
+            try:
+                ev_val = best_out.get('ev')
+                edge_val = best_out.get('edge')
+                if ev_val is not None and edge_val is not None:
+                    ev_f = float(ev_val)
+                    edge_f = float(edge_val)
+                    if (ev_f > 0.0 and edge_f < 0.0) or (ev_f < 0.0 and edge_f > 0.0):
+                        best_out['ev_edge_conflict'] = True
+                        best_out['ev_edge_conflict_reason'] = "ev and edge have opposite signs"
+            except Exception:
+                pass
+            out['best'] = best_out
             if direction:
                 out['direction'] = direction
         if isinstance(top, list):
+            def _round_metric(value: Any, decimals: int) -> Any:
+                try:
+                    if value is None:
+                        return None
+                    num = float(value)
+                    if not math.isfinite(num):
+                        return str(value)
+                    return round(num, decimals)
+                except Exception:
+                    return value
+
+            def _row_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
+                return (
+                    _round_metric(row.get('tp'), 4),
+                    _round_metric(row.get('sl'), 4),
+                    _round_metric(row.get('tp_price'), 6),
+                    _round_metric(row.get('sl_price'), 6),
+                    _round_metric(row.get('edge'), 4),
+                    _round_metric(row.get('kelly'), 4),
+                    _round_metric(row.get('ev'), 4),
+                    _round_metric(row.get('prob_tp_first'), 4),
+                    _round_metric(row.get('prob_sl_first'), 4),
+                    _round_metric(row.get('prob_no_hit'), 4),
+                )
+
             trimmed = []
-            for it in top[:top_k]:
+            seen_keys: set = set()
+            for it in top:
                 if not isinstance(it, dict):
                     continue
+                key = _row_key(it)
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
                 trimmed.append({
                     'tp': it.get('tp'), 'sl': it.get('sl'),
                     'tp_price': it.get('tp_price'), 'sl_price': it.get('sl_price'),
                     'edge': it.get('edge'), 'kelly': it.get('kelly'), 'ev': it.get('ev'),
                     'prob_tp_first': it.get('prob_tp_first'), 'prob_sl_first': it.get('prob_sl_first'), 'prob_no_hit': it.get('prob_no_hit'),
                 })
+                if len(trimmed) >= int(top_k):
+                    break
             if trimmed:
                 out['top'] = trimmed
         return out or {"note": "no grid summary"}
@@ -968,6 +1012,7 @@ def _render_barriers_section(data: Any) -> List[str]:
         headers = ['Direction', f'TP {unit_lbl}', f'SL {unit_lbl}', 'TP lvl', 'SL lvl', 'Edge', 'Kelly', 'EV', 'TP hit %', 'SL hit %', 'No-hit %']
         rows: List[List[str]] = []
         negative_edge = False
+        conflict_dirs: List[str] = []
         for dir_name in ('long','short'):
             sub = data.get(dir_name)
             if not isinstance(sub, dict):
@@ -981,6 +1026,20 @@ def _render_barriers_section(data: Any) -> List[str]:
                     negative_edge = True
             except (TypeError, ValueError):
                 pass
+            conflict_flag = bool(best.get('ev_edge_conflict'))
+            if not conflict_flag:
+                try:
+                    ev_val = float(best.get('ev'))
+                    edge_val = float(best.get('edge'))
+                    conflict_flag = (
+                        math.isfinite(ev_val)
+                        and math.isfinite(edge_val)
+                        and ((ev_val > 0.0 and edge_val < 0.0) or (ev_val < 0.0 and edge_val > 0.0))
+                    )
+                except (TypeError, ValueError):
+                    conflict_flag = False
+            if conflict_flag:
+                conflict_dirs.append(dir_name)
             rows.append([
                 dir_name,
                 _format_decimal(best.get('tp'), 3),
@@ -998,6 +1057,10 @@ def _render_barriers_section(data: Any) -> List[str]:
             lines.extend(_format_table(headers, rows, name='candidates'))
             if negative_edge:
                 lines.append("- Warning: best candidate has negative edge (expected value).")
+            for direction in conflict_dirs:
+                lines.append(
+                    f"- CAUTION ({direction}): EV and edge have opposite signs; reward/risk skew may mask low win probability."
+                )
             return lines
         return []
     # Fallback: single-direction shape
@@ -1008,12 +1071,24 @@ def _render_barriers_section(data: Any) -> List[str]:
     best = data.get('best') if isinstance(data.get('best'), dict) else None
     if best:
         negative_edge = False
+        ev_edge_conflict = bool(best.get('ev_edge_conflict'))
         try:
             edge_val = float(best.get('edge'))
             if math.isfinite(edge_val) and edge_val < 0:
                 negative_edge = True
         except (TypeError, ValueError):
             negative_edge = False
+        if not ev_edge_conflict:
+            try:
+                ev_val = float(best.get('ev'))
+                edge_val = float(best.get('edge'))
+                ev_edge_conflict = (
+                    math.isfinite(ev_val)
+                    and math.isfinite(edge_val)
+                    and ((ev_val > 0.0 and edge_val < 0.0) or (ev_val < 0.0 and edge_val > 0.0))
+                )
+            except (TypeError, ValueError):
+                ev_edge_conflict = False
         headers = ['TP %', 'SL %', 'TP lvl', 'SL lvl', 'Edge', 'Kelly', 'EV', 'TP hit %', 'SL hit %', 'No-hit %']
         row = [
             _format_decimal(best.get('tp'), 3),
@@ -1030,6 +1105,8 @@ def _render_barriers_section(data: Any) -> List[str]:
         lines.extend(_format_table(headers, [row], name='best'))
         if negative_edge:
             lines.append("- Warning: best candidate has negative edge (expected value).")
+        if ev_edge_conflict:
+            lines.append("- CAUTION: EV and edge have opposite signs; reward/risk skew may mask low win probability.")
     top = data.get('top')
     if isinstance(top, list) and top:
         headers = ['Rank', 'TP %', 'SL %', 'Edge', 'Kelly', 'EV']

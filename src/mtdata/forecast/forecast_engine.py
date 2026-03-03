@@ -293,9 +293,12 @@ def _format_forecast_output(
                 result["lower_price"] = lower_vals
                 result["upper_price"] = upper_vals
         else:
+            conformal_cmd = (
+                f"python cli.py forecast_conformal_intervals SYMBOL --method {method} --horizon {horizon}"
+            )
             warning_text = (
                 f"Point forecast only for method '{method}'; confidence intervals are unavailable. "
-                "Use forecast_conformal_intervals for uncertainty bands."
+                f"Use forecast_conformal_intervals for uncertainty bands. Example: {conformal_cmd}"
             )
             warnings = result.get("warnings")
             if not isinstance(warnings, list):

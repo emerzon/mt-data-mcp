@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional, List, Literal, Tuple, Set
 import math
+import warnings
 import numpy as np
 from ..core.schema import TimeframeLiteral, DenoiseSpec
 from ..core.constants import TIMEFRAME_SECONDS
@@ -1641,6 +1642,10 @@ def forecast_barrier_optimize(
         if optimizer_val == 'optuna':
             try:
                 import optuna
+                try:
+                    from optuna.exceptions import ExperimentalWarning as _OptunaExperimentalWarning
+                except Exception:
+                    _OptunaExperimentalWarning = Warning
             except Exception as ex:
                 return {"error": f"Optuna optimizer requested but unavailable: {ex}"}
 
@@ -1679,7 +1684,13 @@ def forecast_barrier_optimize(
 
             if optuna_pareto_val:
                 directions = [d for _, d in pareto_objectives]
-                study = optuna.create_study(directions=directions, sampler=sampler_obj, pruner=pruner_obj)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", _OptunaExperimentalWarning)
+                    warnings.filterwarnings(
+                        "ignore",
+                        message=r".*Argument \"multivariate\" is an experimental feature.*",
+                    )
+                    study = optuna.create_study(directions=directions, sampler=sampler_obj, pruner=pruner_obj)
 
                 def _bad_values() -> Tuple[float, ...]:
                     vals: List[float] = []
@@ -1723,12 +1734,18 @@ def forecast_barrier_optimize(
                     })
                     return values
 
-                study.optimize(
-                    _objective_trial,
-                    n_trials=int(optuna_trials_val),
-                    timeout=float(optuna_timeout_val) if optuna_timeout_val is not None else None,
-                    n_jobs=int(optuna_n_jobs_val),
-                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", _OptunaExperimentalWarning)
+                    warnings.filterwarnings(
+                        "ignore",
+                        message=r".*Argument \"multivariate\" is an experimental feature.*",
+                    )
+                    study.optimize(
+                        _objective_trial,
+                        n_trials=int(optuna_trials_val),
+                        timeout=float(optuna_timeout_val) if optuna_timeout_val is not None else None,
+                        n_jobs=int(optuna_n_jobs_val),
+                    )
                 front: List[Dict[str, Any]] = []
                 for trial in study.best_trials:
                     row = trial_rows.get(int(trial.number))
@@ -1755,7 +1772,13 @@ def forecast_barrier_optimize(
             else:
                 maximize = objective_val != 'min_loss_prob'
                 direction = 'maximize' if maximize else 'minimize'
-                study = optuna.create_study(direction=direction, sampler=sampler_obj, pruner=pruner_obj)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", _OptunaExperimentalWarning)
+                    warnings.filterwarnings(
+                        "ignore",
+                        message=r".*Argument \"multivariate\" is an experimental feature.*",
+                    )
+                    study = optuna.create_study(direction=direction, sampler=sampler_obj, pruner=pruner_obj)
 
                 def _objective_trial(trial: Any) -> float:
                     if grid_style_val == 'ratio':
@@ -1778,12 +1801,18 @@ def forecast_barrier_optimize(
                         return float(row.get('prob_loss', 1.0))
                     return float(row.get(objective_val, row.get('ev', -1e18)))
 
-                study.optimize(
-                    _objective_trial,
-                    n_trials=int(optuna_trials_val),
-                    timeout=float(optuna_timeout_val) if optuna_timeout_val is not None else None,
-                    n_jobs=int(optuna_n_jobs_val),
-                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", _OptunaExperimentalWarning)
+                    warnings.filterwarnings(
+                        "ignore",
+                        message=r".*Argument \"multivariate\" is an experimental feature.*",
+                    )
+                    study.optimize(
+                        _objective_trial,
+                        n_trials=int(optuna_trials_val),
+                        timeout=float(optuna_timeout_val) if optuna_timeout_val is not None else None,
+                        n_jobs=int(optuna_n_jobs_val),
+                    )
 
             dedup: Dict[Tuple[int, int], Dict[str, Any]] = {}
             for row in sampled_rows:
@@ -1950,6 +1979,7 @@ def forecast_barrier_optimize(
             out["pareto_count"] = int(len(pareto_front))
         if isinstance(best, dict):
             warnings_out: List[str] = []
+            ev_edge_conflict = False
             best_ev = best.get("ev")
             try:
                 if best_ev is not None and float(best_ev) < 0:
@@ -1981,10 +2011,24 @@ def forecast_barrier_optimize(
                             f"Best candidate has negative edge ({float(best_edge):.3f}); "
                             "positive EV may depend on reward/risk skew."
                         )
+                if best_ev is not None and best_edge is not None:
+                    ev_num = float(best_ev)
+                    edge_num = float(best_edge)
+                    if (ev_num > 0.0 and edge_num < 0.0) or (ev_num < 0.0 and edge_num > 0.0):
+                        ev_edge_conflict = True
+                        warnings_out.append(
+                            "CAUTION: EV and edge have opposite signs; positive EV may depend on reward/risk skew with a below break-even win rate."
+                        )
             except Exception:
                 pass
             if warnings_out:
                 out["selection_warnings"] = warnings_out
+            if ev_edge_conflict:
+                out["ev_edge_conflict"] = True
+                out["ev_edge_conflict_reason"] = "ev and edge have opposite signs"
+                out["caution"] = (
+                    "EV and edge signs conflict for the selected candidate; inspect win probability and break-even threshold before trading."
+                )
         if warning is not None:
             out["warning"] = warning
         if invalid_barrier_candidates > 0:

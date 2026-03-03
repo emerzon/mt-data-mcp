@@ -880,7 +880,7 @@ def fetch_ticks(
             end_epoch = float(df_stats["__epoch"].iloc[-1])
             duration_seconds = float(max(0.0, end_epoch - start_epoch))
             tick_rate_per_second = (
-                float(len(df_stats) / duration_seconds) if duration_seconds > 0 else float("nan")
+                float(len(df_stats) / duration_seconds) if duration_seconds > 0 else None
             )
 
             timezone = "UTC"
@@ -909,6 +909,8 @@ def fetch_ticks(
                     "spread": _series_stats(df_stats["spread"], total_count=len(df_stats)),
                 },
             }
+            if duration_seconds <= 0:
+                out["tick_rate_note"] = "< 1s window"
             if price_digits > 0:
                 out["price_precision"] = int(price_digits)
             if has_last:
@@ -928,7 +930,7 @@ def fetch_ticks(
                     "kind": volume_kind,
                     "sum": vol_sum,
                     "per_second": (
-                        float(vol_sum / duration_seconds) if duration_seconds > 0 else float("nan")
+                        float(vol_sum / duration_seconds) if duration_seconds > 0 else None
                     ),
                     "per_tick": float(vol_sum / float(len(df_stats) or 1)),
                     "nonzero_share": float(vol_nonzero_count) / float(len(df_stats) or 1),

@@ -32,6 +32,7 @@ def test_trade_history_deals_normalizes_time_to_utc_string() -> None:
 
     assert isinstance(out, list)
     assert out[0]["time"] == _format_time_minimal(_mt5_epoch_to_utc(1700000000))
+    assert out[0]["timestamp_timezone"] == "UTC"
 
 
 def test_trade_history_orders_normalizes_setup_and_done_times() -> None:
@@ -51,6 +52,7 @@ def test_trade_history_orders_normalizes_setup_and_done_times() -> None:
     assert isinstance(out, list)
     assert out[0]["time_setup"] == _format_time_minimal(_mt5_epoch_to_utc(1700000000))
     assert out[0]["time_done"] == _format_time_minimal(_mt5_epoch_to_utc(1700003600))
+    assert out[0]["timestamp_timezone"] == "UTC"
 
 
 def test_trade_history_filters_rows_by_symbol_even_if_mt5_returns_mixed_rows() -> None:

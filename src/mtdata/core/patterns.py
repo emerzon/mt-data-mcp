@@ -112,6 +112,17 @@ def _fetch_pattern_data(
     return df, None
 
 
+def _elliott_timeframe_suggestion(timeframe: Optional[str]) -> str:
+    tf = str(timeframe or "").upper()
+    if tf in {"M1", "M5", "M15"}:
+        return "Try --timeframe H1 or --timeframe H4."
+    if tf in {"M30", "H1"}:
+        return "Try --timeframe H4 or --timeframe D1."
+    if tf in {"H4"}:
+        return "Try --timeframe D1 or increase --limit."
+    return "Try --timeframe H4 or --timeframe D1."
+
+
 def _build_pattern_response(
     symbol: str,
     timeframe: str,
@@ -142,7 +153,8 @@ def _build_pattern_response(
     if str(mode).lower() == "elliott" and int(len(filtered)) == 0:
         resp["diagnostic"] = (
             f"No valid Elliott Wave structures detected in {int(limit)} {timeframe} bars. "
-            "Try a higher timeframe, more lookback, or a clearer trending segment."
+            f"{_elliott_timeframe_suggestion(timeframe)} "
+            "You can also increase lookback or focus on a clearer trending segment."
         )
     
     # Include series data if requested
@@ -1660,7 +1672,8 @@ def patterns_detect(
                 }
                 if int(len(filtered)) == 0:
                     finding_row["diagnostic"] = (
-                        f"No valid Elliott Wave structures detected in {int(limit)} {tf} bars."
+                        f"No valid Elliott Wave structures detected in {int(limit)} {tf} bars. "
+                        f"{_elliott_timeframe_suggestion(tf)}"
                     )
                 findings.append(finding_row)
 
@@ -1702,7 +1715,7 @@ def patterns_detect(
             if int(len(combined_patterns)) == 0:
                 resp["diagnostic"] = (
                     "No valid Elliott Wave structures were detected across scanned timeframes. "
-                    "Try increasing lookback or using a stronger trend regime."
+                    "Try increasing lookback or focusing on higher-structure windows like H4/D1."
                 )
             if failed_timeframes:
                 resp["failed_timeframes"] = failed_timeframes

@@ -180,7 +180,7 @@ def forecast_generate(
 
     features = features or {}
 
-    return _forecast_impl(
+    out = _forecast_impl(
         symbol=symbol,
         timeframe=timeframe,  # type: ignore[arg-type]
         method=str(resolved_method),  # type: ignore[arg-type]
@@ -197,6 +197,24 @@ def forecast_generate(
         dimred_params=dimred_params,
         target_spec=target_spec,
     )
+    if (
+        isinstance(out, dict)
+        and not legacy_method
+        and lib in ("", "native")
+        and str(resolved_method).strip().lower() == "theta"
+    ):
+        warning = (
+            "Using native theta. StatsForecast theta is available via "
+            f"`python cli.py forecast_generate {symbol} --timeframe {timeframe} --library statsforecast --model Theta --horizon {horizon}` "
+            "and may produce different forecasts/interval behavior."
+        )
+        warnings_out = out.get("warnings")
+        if not isinstance(warnings_out, list):
+            warnings_out = []
+        if warning not in warnings_out:
+            warnings_out.append(warning)
+        out["warnings"] = warnings_out
+    return out
 
 
 @mcp.tool()

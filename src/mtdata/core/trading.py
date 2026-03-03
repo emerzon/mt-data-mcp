@@ -900,6 +900,16 @@ def trade_history(
             # Keep CLI/API JSON RFC-compliant: replace NaN/Inf with null.
             df = df.replace([float("inf"), float("-inf")], pd.NA)
             records = df.astype(object).where(df.notna(), None).to_dict(orient='records')
+            timezone_label = "UTC"
+            if use_client_tz:
+                try:
+                    tz_obj = mt5_config.get_client_tz()
+                    timezone_label = str(getattr(tz_obj, "zone", None) or tz_obj or "client_local")
+                except Exception:
+                    timezone_label = "client_local"
+            for row in records:
+                if isinstance(row, dict):
+                    row["timestamp_timezone"] = timezone_label
             return records
         except Exception as e:
             return {"error": str(e)}
@@ -1696,9 +1706,14 @@ def _place_pending_order(
                 "price": result.price,
                 "bid": result.bid,
                 "ask": result.ask,
+                "requested_price": float(norm_price),
+                "requested_sl": float(norm_sl) if norm_sl is not None else None,
+                "requested_tp": float(norm_tp) if norm_tp is not None else None,
                 "comment": result.comment,
                 "request_id": result.request_id,
             }
+            if expiration_specified:
+                out["requested_expiration"] = normalized_expiration
             if comment_truncation:
                 out["comment_truncation"] = comment_truncation
                 out["warnings"] = [

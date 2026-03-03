@@ -418,6 +418,22 @@ class TestSummarizeBarrierGrid:
         result = summarize_barrier_grid(grid, top_k=2)
         assert len(result["top"]) == 2
 
+    def test_top_deduplicates_near_identical_rows(self):
+        grid = {
+            "top": [
+                {"tp": 1.0, "sl": 0.5, "ev": 0.12, "edge": -0.02},
+                {"tp": 1.000001, "sl": 0.5000004, "ev": 0.1200001, "edge": -0.0199999},
+                {"tp": 1.2, "sl": 0.6, "ev": 0.08, "edge": 0.01},
+            ]
+        }
+        result = summarize_barrier_grid(grid, top_k=5)
+        assert len(result["top"]) == 2
+
+    def test_best_flags_ev_edge_conflict(self):
+        grid = {"best": {"tp": 1.0, "sl": 0.5, "ev": 0.1, "edge": -0.2}}
+        result = summarize_barrier_grid(grid)
+        assert result["best"]["ev_edge_conflict"] is True
+
 
 # ---------------------------------------------------------------------------
 # 9. merge_params
@@ -1208,6 +1224,23 @@ class TestRenderBarriersSection:
         lines = _render_barriers_section(data)
         text = "\n".join(lines)
         assert "Warning" in text
+
+    def test_ev_edge_conflict_caution(self):
+        data = {
+            "best": {
+                "tp": 1.0,
+                "sl": 0.5,
+                "edge": -0.2,
+                "kelly": 0.05,
+                "ev": 0.1,
+                "prob_tp_first": 0.4,
+                "prob_sl_first": 0.5,
+                "prob_no_hit": 0.1,
+            },
+        }
+        lines = _render_barriers_section(data)
+        text = "\n".join(lines)
+        assert "CAUTION" in text
 
     def test_with_top_runners(self):
         data = {

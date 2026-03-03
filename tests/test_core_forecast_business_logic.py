@@ -167,6 +167,21 @@ def test_forecast_generate_accepts_legacy_method_for_internal_callers(monkeypatc
     assert captured["method"] == "sf_theta"
 
 
+def test_forecast_generate_native_theta_adds_disambiguation_warning(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+
+    def fake_forecast_impl(**kwargs):
+        return {"ok": True, "method": kwargs["method"]}
+
+    monkeypatch.setattr(cf, "_forecast_impl", fake_forecast_impl)
+    monkeypatch.setattr(cf, "_parse_kv_or_json", lambda v: dict(v or {}))
+
+    out = raw(symbol="BTCUSD", timeframe="H1", library="native", model="theta", horizon=12)
+
+    assert out["ok"] is True
+    assert any("StatsForecast theta is available" in str(w) for w in out.get("warnings", []))
+
+
 def test_forecast_list_library_models_and_list_methods(monkeypatch):
     stats_mod = ModuleType("statsforecast")
     models_mod = ModuleType("statsforecast.models")
