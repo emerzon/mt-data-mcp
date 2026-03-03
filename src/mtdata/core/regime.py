@@ -377,7 +377,7 @@ def _filter_bocpd_change_points(
     *,
     min_distance_bars: int = 5,
     min_regime_bars: int = 5,
-    confirm_bars: int = 2,
+    confirm_bars: int = 1,
     confirm_relaxed_mult: float = 0.90,
     edge_multiplier: float = 1.08,
 ) -> Tuple[List[int], Dict[str, Any]]:
@@ -723,7 +723,8 @@ def regime_detect(
       Optional robustness params:
         `cp_threshold_calibration_mode` (default `walkforward_quantile`),
         `threshold_target_false_alarm_rate`,
-        `cp_confirm_bars`, `min_cp_distance_bars`, `cp_edge_multiplier`.
+        `cp_confirm_bars` (default `1`, live-oriented),
+        `min_cp_distance_bars`, `cp_edge_multiplier`.
     - include_series: If True, include raw time series data (probs, states) in output even if output='full'. Default False.
     - min_regime_bars: Merge short state runs (< this many bars) for state-based methods to reduce flicker.
     - output:
@@ -840,9 +841,9 @@ def regime_detect(
             cp_prob = np.asarray(res.get('cp_prob', np.zeros_like(x, dtype=float)), dtype=float)
             raw_cp_idx = [int(i) for i, v in enumerate(cp_prob.tolist()) if np.isfinite(v) and float(v) >= float(threshold_used)]
             try:
-                cp_confirm_bars = int(p.get("cp_confirm_bars", 2))
+                cp_confirm_bars = int(p.get("cp_confirm_bars", 1))
             except Exception:
-                cp_confirm_bars = 2
+                cp_confirm_bars = 1
             try:
                 cp_confirm_relaxed_mult = float(p.get("cp_confirm_relaxed_mult", 0.90))
             except Exception:
