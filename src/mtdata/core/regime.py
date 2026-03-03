@@ -223,15 +223,22 @@ def _auto_calibrate_bocpd_params(
     kurt = float(np.mean(z ** 4) - 3.0) if z.size > 0 else 0.0
     jump_share = float(np.mean(np.abs(z) >= 2.5)) if z.size > 0 else 0.0
     trend_strength = float(abs(mu) / sigma_safe)
+    move_zscore = float(abs(np.sum(r)) / (sigma_safe * np.sqrt(max(1, int(r.size)))))
 
     vol_norm = float(np.clip(sigma / 0.003, 0.0, 3.0))
     kurt_norm = float(np.clip(max(0.0, kurt) / 6.0, 0.0, 2.0))
     jump_norm = float(np.clip(jump_share / 0.08, 0.0, 2.0))
     trend_norm = float(np.clip(trend_strength / 0.20, 0.0, 2.0))
+    move_sig_norm = float(np.clip(move_zscore / 3.0, 0.0, 2.5))
 
     sensitivity = float(
         np.clip(
-            1.0 + 0.35 * vol_norm + 0.25 * kurt_norm + 0.25 * jump_norm - 0.20 * trend_norm,
+            1.0
+            + 0.35 * vol_norm
+            + 0.25 * kurt_norm
+            + 0.25 * jump_norm
+            - 0.20 * trend_norm
+            + 0.60 * move_sig_norm,
             0.5,
             2.2,
         )
@@ -252,20 +259,25 @@ def _auto_calibrate_bocpd_params(
             0.75,
         )
     )
+    if move_sig_norm > 0.0:
+        cp_threshold = float(np.clip(cp_threshold - 0.08 * (move_sig_norm / 2.5), 0.15, 0.75))
 
     diagnostics = {
         "calibrated": True,
         "points": int(r.size),
         "base_hazard_lambda": int(base_lambda),
         "base_cp_threshold": float(base_threshold),
+        "asset_class_hint": "crypto" if _is_probably_crypto_symbol(symbol) else "other",
         "sigma": float(sigma),
         "kurtosis_excess": float(kurt),
         "jump_share_abs_z_ge_2_5": float(jump_share),
         "trend_strength": float(trend_strength),
+        "move_zscore": float(move_zscore),
         "vol_norm": float(vol_norm),
         "kurt_norm": float(kurt_norm),
         "jump_norm": float(jump_norm),
         "trend_norm": float(trend_norm),
+        "move_sig_norm": float(move_sig_norm),
         "sensitivity": float(sensitivity),
         "hazard_floor": int(hazard_floor),
         "hazard_cap": int(hazard_cap),

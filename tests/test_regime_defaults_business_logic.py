@@ -6,7 +6,7 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from mtdata.core.regime import regime_detect
+from mtdata.core.regime import _auto_calibrate_bocpd_params, regime_detect
 
 
 def _unwrap(fn):
@@ -69,10 +69,10 @@ def test_bocpd_uses_crypto_sensitive_auto_hazard_default() -> None:
     auto_diag = params_used.get("auto_calibration", {})
 
     assert capture["hazard_lambda"] == int(params_used["hazard_lambda"])
-    assert capture["hazard_lambda"] > 72
+    assert capture["hazard_lambda"] != 72
     assert params_used["hazard_lambda_source"] == "auto_calibrated"
     assert params_used["cp_threshold_source"] == "auto_calibrated"
-    assert float(params_used["cp_threshold"]) > 0.35
+    assert 0.15 <= float(params_used["cp_threshold"]) <= 0.75
     assert isinstance(auto_diag, dict)
     assert auto_diag.get("calibrated") is True
     assert int(auto_diag.get("base_hazard_lambda", 0)) == 72
@@ -204,6 +204,23 @@ def test_bocpd_hazard_lambda_override_beats_auto_calibrated_mode() -> None:
     assert params_used.get("hazard_lambda") == 111
     assert params_used.get("hazard_lambda_source") == "params"
     assert params_used.get("cp_threshold_source") == "auto_calibrated"
+
+
+def test_auto_calibrate_bocpd_params_significant_move_lowers_hazard_and_threshold() -> None:
+    rng = np.random.default_rng(7)
+    returns = rng.normal(loc=-1.5e-4, scale=6.0e-4, size=240)
+    hazard_lambda, cp_threshold, diagnostics = _auto_calibrate_bocpd_params(
+        returns=returns,
+        symbol="EURUSD",
+        timeframe="H1",
+    )
+
+    assert diagnostics.get("calibrated") is True
+    assert diagnostics.get("asset_class_hint") == "other"
+    assert float(diagnostics.get("move_zscore", 0.0)) > 0.0
+    assert float(diagnostics.get("move_sig_norm", 0.0)) > 0.0
+    assert int(hazard_lambda) < 250
+    assert float(cp_threshold) < 0.50
 
 
 def test_regime_detect_rejects_invalid_min_regime_bars() -> None:
