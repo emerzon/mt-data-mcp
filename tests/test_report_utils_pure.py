@@ -433,6 +433,18 @@ class TestSummarizeBarrierGrid:
         grid = {"best": {"tp": 1.0, "sl": 0.5, "ev": 0.1, "edge": -0.2}}
         result = summarize_barrier_grid(grid)
         assert result["best"]["ev_edge_conflict"] is True
+        assert result["ev_edge_conflict"] is True
+        assert "caution" in result
+
+    def test_copies_optimizer_level_caution_fields(self):
+        grid = {
+            "best": {"tp": 1.0, "sl": 0.5, "ev": 0.1, "edge": -0.2},
+            "caution": "conflict warning",
+            "selection_warnings": ["w1"],
+        }
+        result = summarize_barrier_grid(grid)
+        assert result.get("caution") == "conflict warning"
+        assert result.get("selection_warnings") == ["w1"]
 
 
 # ---------------------------------------------------------------------------

@@ -164,6 +164,18 @@ def _causal_error(
     return out
 
 
+def _format_overlap_details(
+    symbol_rows: Dict[str, int],
+    aligned_rows: int,
+    minimum_required: int,
+) -> str:
+    parts: List[str] = []
+    for symbol, count in symbol_rows.items():
+        parts.append(f"{symbol}: {int(count)} rows")
+    parts.append(f"aligned: {int(aligned_rows)} (minimum {int(minimum_required)} required)")
+    return ", ".join(parts)
+
+
 @mcp.tool()
 @_auto_connect_wrapper
 def causal_discover_signals(
@@ -279,23 +291,49 @@ def causal_discover_signals(
             warnings=warnings_out,
         )
 
+    symbol_rows: Dict[str, int] = {
+        str(sym): int(len(series_map.get(sym, pd.Series(dtype=float))))
+        for sym in symbol_list
+        if sym in series_map
+    }
+    if symbol_rows:
+        meta["symbol_rows"] = symbol_rows
+
     frame = pd.concat(series_map, axis=1, join="inner").tail(limit)
     meta["symbols_used"] = list(frame.columns) if isinstance(frame, pd.DataFrame) else list(series_map.keys())
+    min_required_samples = int(max_lag + 6)
+    meta["minimum_samples_required"] = int(min_required_samples)
+    meta["samples_aligned_raw"] = int(len(frame))
     if frame.empty or len(frame) <= max_lag + 5:
         return _causal_error(
             "Insufficient overlapping data between symbols to run tests.",
             code="insufficient_overlap",
             meta=meta,
             warnings=warnings_out,
+            details=[
+                _format_overlap_details(
+                    symbol_rows=symbol_rows,
+                    aligned_rows=int(len(frame)),
+                    minimum_required=min_required_samples,
+                )
+            ],
         )
 
     frame = frame.dropna(how="any")
+    meta["samples_aligned_clean"] = int(len(frame))
     if frame.empty or len(frame) <= max_lag + 5:
         return _causal_error(
             "Insufficient clean samples after alignment.",
             code="insufficient_samples",
             meta=meta,
             warnings=warnings_out,
+            details=[
+                _format_overlap_details(
+                    symbol_rows=symbol_rows,
+                    aligned_rows=int(len(frame)),
+                    minimum_required=min_required_samples,
+                )
+            ],
         )
 
     transformed = _transform_frame(frame, transform)

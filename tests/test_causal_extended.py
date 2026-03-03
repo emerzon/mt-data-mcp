@@ -225,6 +225,36 @@ class TestCausalDiscoverSignals:
         assert ("No data" in result["error"]) or ("Not enough" in result["error"])
         assert result["error_code"] in {"data_fetch_failed", "insufficient_symbols"}
 
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_insufficient_overlap_includes_per_symbol_diagnostics(self, mock_fetch):
+        idx_a = pd.date_range("2024-01-01", periods=50, freq="h")
+        idx_b = pd.date_range("2024-02-01", periods=50, freq="h")
+        series_map = {
+            "BTCUSD": pd.Series(np.linspace(1.0, 2.0, 50), index=idx_a),
+            "ETHUSD": pd.Series(np.linspace(2.0, 3.0, 50), index=idx_b),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+        result = self._unwrapped()("BTCUSD,ETHUSD", max_lag=5, transform="diff", normalize=False)
+
+        assert result["success"] is False
+        assert result["error_code"] == "insufficient_overlap"
+        details_text = " ".join(str(x) for x in result.get("details", []))
+        assert "BTCUSD: 50 rows" in details_text
+        assert "ETHUSD: 50 rows" in details_text
+        assert "aligned: 0" in details_text
+        assert "minimum 11 required" in details_text
+
+        meta = result.get("meta", {})
+        assert meta.get("symbol_rows", {}).get("BTCUSD") == 50
+        assert meta.get("symbol_rows", {}).get("ETHUSD") == 50
+        assert meta.get("samples_aligned_raw") == 0
+        assert meta.get("minimum_samples_required") == 11
+
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {})
     def test_invalid_timeframe(self):
         result = self._unwrapped()("A,B", timeframe="BAD")

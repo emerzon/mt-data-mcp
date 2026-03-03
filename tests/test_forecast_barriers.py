@@ -1,5 +1,6 @@
 import importlib.util
 import unittest
+import warnings
 from unittest.mock import patch
 import pandas as pd
 import numpy as np
@@ -294,6 +295,41 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertIn("ev", row["objective_values"])
         self.assertIn("prob_loss", row["objective_values"])
         self.assertIn("t_hit_resolve_median", row["objective_values"])
+
+    def test_forecast_barrier_optimize_optuna_tpe_suppresses_multivariate_warning(self):
+        if importlib.util.find_spec("optuna") is None:
+            self.skipTest("optuna package not installed")
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim, warnings.catch_warnings(record=True) as rec:
+            warnings.simplefilter("always")
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.2, tp_max=1.0, tp_steps=3,
+                sl_min=0.2, sl_max=1.0, sl_steps=3,
+                objective="ev",
+                params={
+                    "optimizer": "optuna",
+                    "n_trials": 8,
+                    "n_jobs": 1,
+                    "sampler": "tpe",
+                    "pruner": "none",
+                    "seed": 21,
+                },
+                return_grid=False,
+            )
+
+        self.assertTrue(result.get("success"))
+        self.assertFalse(any(
+            ("multivariate" in str(w.message).lower() and "experimental" in str(w.message).lower())
+            for w in rec
+        ))
 
     def test_forecast_barrier_optimize_fast_defaults_switch(self):
         self._set_flat_history(1.0)
@@ -800,8 +836,11 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertTrue(result.get("success"))
         self.assertLess(float(result["best"]["ev"]), 0.0)
         self.assertFalse(result.get("viable"))
-        self.assertEqual(result.get("least_negative"), result.get("best"))
+        self.assertIsInstance(result.get("least_negative"), dict)
+        self.assertEqual(result["least_negative"].get("ref"), "best")
+        self.assertEqual(result["least_negative"].get("ev"), result["best"].get("ev"))
         self.assertIn("selection_warnings", result)
+        self.assertIsInstance(result.get("advice"), list)
 
     def test_forecast_barrier_optimize_flags_no_candidates(self):
         result = forecast_barrier_optimize(

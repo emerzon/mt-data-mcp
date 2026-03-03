@@ -874,6 +874,52 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
     @patch(f"{_BASIC_MODULE}.parse_table_tail")
+    @patch(f"{_BASIC_MODULE}.pick_best_forecast_method", return_value=None)
+    @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
+    @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
+    def test_basic_barriers_elevates_conflict_caution_to_section_level(
+        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
+        mock_now, mock_raw,
+    ):
+        mock_tail.return_value = _mock_candle_data()["rows"]
+        mock_sum_bar.side_effect = [
+            {
+                "best": {"tp": 1.0, "sl": 0.5, "ev": 0.1, "edge": -0.2},
+                "ev_edge_conflict": True,
+                "caution": "long conflict",
+            },
+            {"best": {"tp": 1.1, "sl": 0.6, "ev": 0.05, "edge": 0.1}},
+        ]
+
+        def raw_side_effect(func, *args, **kwargs):
+            name = func.__name__ if hasattr(func, "__name__") else str(func)
+            if "barrier" in name.lower():
+                return {"success": True}
+            if "pattern" in name.lower():
+                return _mock_patterns_data()
+            if "candle" in name.lower() or "data_fetch" in name.lower():
+                return _mock_candle_data()
+            if "pivot" in name.lower():
+                return _mock_pivot_data()
+            if "volatility" in name.lower():
+                return _mock_vol_data()
+            if "backtest" in name.lower():
+                return {"results": {}}
+            return {"data": "ok"}
+
+        mock_raw.side_effect = raw_side_effect
+
+        from mtdata.core.report_templates.basic import template_basic
+        report = template_basic("EURUSD", 12, None, {})
+
+        barriers = report["sections"].get("barriers", {})
+        assert barriers.get("ev_edge_conflict") is True
+        assert barriers.get("ev_edge_conflict_directions") == ["long"]
+        assert "caution" in barriers
+
+    @patch(f"{_BASIC_MODULE}._get_raw_result")
+    @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
+    @patch(f"{_BASIC_MODULE}.parse_table_tail")
     @patch(f"{_BASIC_MODULE}.pick_best_forecast_method")
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")

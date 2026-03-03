@@ -61,6 +61,19 @@ def _binomial_se(p_hat: float, n: int) -> float:
     return float(math.sqrt(max(0.0, p * (1.0 - p) / n_i)))
 
 
+def _least_negative_ref(best_row: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Compact pointer payload for non-viable outputs to avoid duplicating `best`."""
+    if not isinstance(best_row, dict):
+        return None
+    return {
+        "ref": "best",
+        "ev": best_row.get("ev"),
+        "edge": best_row.get("edge"),
+        "kelly": best_row.get("kelly"),
+        "reason": "No non-negative EV candidate was found; see `best` for full details.",
+    }
+
+
 def _is_crypto_symbol(symbol: str) -> bool:
     sym = str(symbol or "").upper()
     crypto_tokens = {
@@ -1271,7 +1284,7 @@ def forecast_barrier_optimize(
                 "results_total": 1 if ensemble_best else 0,
                 "best": ensemble_best if ensemble_best else None,
                 "viable": bool(viable),
-                "least_negative": ensemble_best if (ensemble_best and not viable) else None,
+                "least_negative": _least_negative_ref(ensemble_best) if (ensemble_best and not viable) else None,
                 "grid": [ensemble_best] if (return_grid and not concise_val and ensemble_best) else None,
                 "no_candidates": not bool(ensemble_best),
                 "ensemble": {
@@ -1287,6 +1300,13 @@ def forecast_barrier_optimize(
                 out["objective_used"] = objective_val
             if member_errors:
                 out["warning"] = f"{len(member_errors)} ensemble member(s) failed."
+            if ensemble_best and not viable:
+                out["advice"] = [
+                    "Increase horizon to allow more time for barrier resolution.",
+                    "Try the opposite direction and compare objective metrics.",
+                    "Widen TP/SL search ranges or switch grid_style to volatility/ratio.",
+                    "Skip this setup if edge and EV remain unattractive.",
+                ]
             return out
 
         if method_name == 'auto':
@@ -1649,6 +1669,14 @@ def forecast_barrier_optimize(
             except Exception as ex:
                 return {"error": f"Optuna optimizer requested but unavailable: {ex}"}
 
+            def _suppress_optuna_experimental_warnings() -> None:
+                warnings.simplefilter("ignore", _OptunaExperimentalWarning)
+                warnings.filterwarnings("ignore", category=_OptunaExperimentalWarning)
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r".*multivariate.*experimental feature.*",
+                )
+
             tp_vals = [float(tp) for tp, _ in base_candidates] if base_candidates else [float(tp_min_val), float(tp_max_val)]
             sl_vals = [float(sl) for _, sl in base_candidates] if base_candidates else [float(sl_min_val), float(sl_max_val)]
             tp_lo = max(1e-9, float(min(tp_vals)))
@@ -1665,7 +1693,9 @@ def forecast_barrier_optimize(
                 sampler_obj = optuna.samplers.CmaEsSampler(seed=int(seed))
             else:
                 sampler_name = 'tpe'
-                sampler_obj = optuna.samplers.TPESampler(seed=int(seed), multivariate=True)
+                with warnings.catch_warnings():
+                    _suppress_optuna_experimental_warnings()
+                    sampler_obj = optuna.samplers.TPESampler(seed=int(seed), multivariate=True)
 
             pruner_name = optuna_pruner_val
             if pruner_name in {'none'}:
@@ -1685,11 +1715,7 @@ def forecast_barrier_optimize(
             if optuna_pareto_val:
                 directions = [d for _, d in pareto_objectives]
                 with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", _OptunaExperimentalWarning)
-                    warnings.filterwarnings(
-                        "ignore",
-                        message=r".*Argument \"multivariate\" is an experimental feature.*",
-                    )
+                    _suppress_optuna_experimental_warnings()
                     study = optuna.create_study(directions=directions, sampler=sampler_obj, pruner=pruner_obj)
 
                 def _bad_values() -> Tuple[float, ...]:
@@ -1735,11 +1761,7 @@ def forecast_barrier_optimize(
                     return values
 
                 with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", _OptunaExperimentalWarning)
-                    warnings.filterwarnings(
-                        "ignore",
-                        message=r".*Argument \"multivariate\" is an experimental feature.*",
-                    )
+                    _suppress_optuna_experimental_warnings()
                     study.optimize(
                         _objective_trial,
                         n_trials=int(optuna_trials_val),
@@ -1773,11 +1795,7 @@ def forecast_barrier_optimize(
                 maximize = objective_val != 'min_loss_prob'
                 direction = 'maximize' if maximize else 'minimize'
                 with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", _OptunaExperimentalWarning)
-                    warnings.filterwarnings(
-                        "ignore",
-                        message=r".*Argument \"multivariate\" is an experimental feature.*",
-                    )
+                    _suppress_optuna_experimental_warnings()
                     study = optuna.create_study(direction=direction, sampler=sampler_obj, pruner=pruner_obj)
 
                 def _objective_trial(trial: Any) -> float:
@@ -1802,11 +1820,7 @@ def forecast_barrier_optimize(
                     return float(row.get(objective_val, row.get('ev', -1e18)))
 
                 with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", _OptunaExperimentalWarning)
-                    warnings.filterwarnings(
-                        "ignore",
-                        message=r".*Argument \"multivariate\" is an experimental feature.*",
-                    )
+                    _suppress_optuna_experimental_warnings()
                     study.optimize(
                         _objective_trial,
                         n_trials=int(optuna_trials_val),
@@ -2000,7 +2014,7 @@ def forecast_barrier_optimize(
             "results_total": len(candidates),
             "best": best,
             "viable": viable,
-            "least_negative": best if (best is not None and not viable) else None,
+            "least_negative": _least_negative_ref(best) if (best is not None and not viable) else None,
             "grid": grid_out,
             "no_candidates": no_candidates,
         }
@@ -2063,6 +2077,13 @@ def forecast_barrier_optimize(
                 )
         if warning is not None:
             out["warning"] = warning
+        elif best is not None and not viable:
+            out["advice"] = [
+                "Increase horizon to allow more time for barrier resolution.",
+                "Try the opposite direction and compare objective metrics.",
+                "Widen TP/SL search ranges or switch grid_style to volatility/ratio.",
+                "Skip this setup if edge and EV remain unattractive.",
+            ]
         if invalid_barrier_candidates > 0:
             out["barrier_sanity_filtered"] = int(invalid_barrier_candidates)
         if objective_changed:

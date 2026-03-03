@@ -246,6 +246,13 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
             out['best'] = best_out
             if direction:
                 out['direction'] = direction
+            if bool(best_out.get('ev_edge_conflict')):
+                out['ev_edge_conflict'] = True
+                out['ev_edge_conflict_reason'] = "ev and edge have opposite signs"
+                out['caution'] = (
+                    "EV and edge signs conflict for the selected candidate; inspect win probability "
+                    "and break-even threshold before trading."
+                )
         if isinstance(top, list):
             def _round_metric(value: Any, decimals: int) -> Any:
                 try:
@@ -291,6 +298,11 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
                     break
             if trimmed:
                 out['top'] = trimmed
+        for key in ("caution", "ev_edge_conflict", "ev_edge_conflict_reason", "selection_warnings"):
+            value = grid.get(key)
+            if value in (None, [], {}):
+                continue
+            out[key] = value
         return out or {"note": "no grid summary"}
     except Exception:
         return {"note": "no grid summary"}
@@ -1061,6 +1073,9 @@ def _render_barriers_section(data: Any) -> List[str]:
                 lines.append(
                     f"- CAUTION ({direction}): EV and edge have opposite signs; reward/risk skew may mask low win probability."
                 )
+            section_caution = data.get('caution')
+            if isinstance(section_caution, str) and section_caution.strip():
+                lines.append(f"- CAUTION: {section_caution.strip()}")
             return lines
         return []
     # Fallback: single-direction shape

@@ -205,6 +205,8 @@ def _format_forecast_output(
     digits: Optional[int] = None,
     forecast_return_values: Optional[np.ndarray] = None,
     reconstructed_prices: Optional[np.ndarray] = None,
+    symbol: Optional[str] = None,
+    timeframe: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Format forecast output with proper structure."""
     # Generate future time indices
@@ -256,10 +258,12 @@ def _format_forecast_output(
         if forecast_return_values is None:
             forecast_return_values = forecast_values
         result["forecast_return"] = [float(v) for v in forecast_return_values]
+        result["forecast"] = [float(v) for v in forecast_return_values]
         if reconstructed_prices is not None:
             result["forecast_price"] = [float(v) for v in reconstructed_prices]
     else:
         result["forecast_price"] = [float(v) for v in forecast_values]
+        result["forecast"] = [float(v) for v in forecast_values]
     
     if digits is not None:
         result["digits"] = int(digits)
@@ -293,9 +297,18 @@ def _format_forecast_output(
                 result["lower_price"] = lower_vals
                 result["upper_price"] = upper_vals
         else:
-            conformal_cmd = (
-                f"python cli.py forecast_conformal_intervals SYMBOL --method {method} --horizon {horizon}"
-            )
+            symbol_arg = str(symbol).strip() if symbol is not None else ""
+            timeframe_arg = str(timeframe).strip() if timeframe is not None else ""
+            symbol_token = symbol_arg if symbol_arg else "SYMBOL"
+            timeframe_token = timeframe_arg if timeframe_arg else None
+            cmd_parts = [
+                "python cli.py forecast_conformal_intervals",
+                symbol_token,
+            ]
+            if timeframe_token:
+                cmd_parts.extend(["--timeframe", timeframe_token])
+            cmd_parts.extend(["--method", str(method), "--horizon", str(horizon)])
+            conformal_cmd = " ".join(cmd_parts)
             warning_text = (
                 f"Point forecast only for method '{method}'; confidence intervals are unavailable. "
                 f"Use forecast_conformal_intervals for uncertainty bands. Example: {conformal_cmd}"
@@ -719,6 +732,8 @@ def forecast_engine(
             digits=digits,
             forecast_return_values=forecast_return_vals,
             reconstructed_prices=reconstructed_prices,
+            symbol=symbol,
+            timeframe=timeframe,
         )
         if method_l == 'ensemble' and ensemble_meta:
             result['ensemble'] = ensemble_meta

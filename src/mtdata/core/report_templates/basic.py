@@ -983,6 +983,28 @@ def template_basic(
             sec_bar['short'] = summarize_barrier_grid(grid_short, top_k=int(p.get('top_k', 5)))
         else:
             sec_bar['short'] = {'error': grid_short.get('error')}
+        conflict_directions: List[str] = []
+        caution_parts: List[str] = []
+        for direction in ('long', 'short'):
+            sub = sec_bar.get(direction)
+            if not isinstance(sub, dict):
+                continue
+            if bool(sub.get('ev_edge_conflict')):
+                conflict_directions.append(direction)
+            caution_text = sub.get('caution')
+            if isinstance(caution_text, str) and caution_text.strip():
+                caution_parts.append(f"{direction}: {caution_text.strip()}")
+        if conflict_directions:
+            sec_bar['ev_edge_conflict'] = True
+            sec_bar['ev_edge_conflict_directions'] = conflict_directions
+            sec_bar['ev_edge_conflict_reason'] = "ev and edge have opposite signs"
+            if caution_parts:
+                sec_bar['caution'] = "; ".join(caution_parts)
+            else:
+                sec_bar['caution'] = (
+                    "EV and edge signs conflict in barrier recommendations; inspect win probability "
+                    "and break-even thresholds before trading."
+                )
     sec_bar['mode'] = mode_val
     report['sections']['barriers'] = sec_bar
 

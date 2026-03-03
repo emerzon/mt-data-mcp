@@ -85,6 +85,7 @@ def test_preprocessing_helpers_and_output_format():
     )
     assert res["success"] is True
     assert res["forecast_return"] == [0.01, 0.02, -0.01]
+    assert res["forecast"] == [0.01, 0.02, -0.01]
     assert res["forecast_price"] == [101.0, 103.0, 102.0]
     assert res["ci_alpha"] == 0.1
     assert res["ci_requested"] is True
@@ -119,6 +120,7 @@ def test_preprocessing_helpers_and_output_format():
     assert "warnings" in no_ci
     assert "Point forecast only" in no_ci["warnings"][0]
     assert "forecast_conformal_intervals" in no_ci["warnings"][0]
+    assert no_ci["forecast"] == [101.0, 102.0]
     assert "ci_alpha" not in no_ci
     assert "lower_price" not in no_ci
     assert "upper_price" not in no_ci
@@ -455,6 +457,9 @@ def test_forecast_engine_warns_when_ci_requested_but_method_has_no_intervals(mon
     assert out["ci_alpha_requested"] == 0.1
     assert "warnings" in out
     assert "Point forecast only" in out["warnings"][0]
+    assert "EURUSD" in out["warnings"][0]
+    assert "--timeframe H1" in out["warnings"][0]
+    assert " SYMBOL " not in out["warnings"][0]
     assert "ci_alpha" not in out
     assert "lower_price" not in out
     assert "upper_price" not in out
