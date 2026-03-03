@@ -1076,6 +1076,9 @@ def _render_barriers_section(data: Any) -> List[str]:
             section_caution = data.get('caution')
             if isinstance(section_caution, str) and section_caution.strip():
                 lines.append(f"- CAUTION: {section_caution.strip()}")
+            section_note = data.get('note')
+            if isinstance(section_note, str) and section_note.strip():
+                lines.append(f"- Note: {section_note.strip()}")
             return lines
         return []
     # Fallback: single-direction shape
@@ -1140,6 +1143,9 @@ def _render_barriers_section(data: Any) -> List[str]:
         if rows:
             lines.append('')
             lines.extend(_format_table(headers, rows, name='top'))
+    section_note = data.get('note')
+    if isinstance(section_note, str) and section_note.strip():
+        lines.append(f"- Note: {section_note.strip()}")
     return lines if len(lines) > 1 else []
 
 

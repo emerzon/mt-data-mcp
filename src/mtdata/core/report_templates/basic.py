@@ -1006,6 +1006,10 @@ def template_basic(
                     "and break-even thresholds before trading."
                 )
     sec_bar['mode'] = mode_val
+    sec_bar['note'] = (
+        "Report barriers are produced by an independent optimization run; "
+        "standalone forecast_barrier_optimize may yield different candidates."
+    )
     report['sections']['barriers'] = sec_bar
 
     # Patterns

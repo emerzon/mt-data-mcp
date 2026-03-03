@@ -1226,6 +1226,18 @@ class TestRenderBarriersSection:
         assert "long" in text
         assert "short" in text
 
+    def test_note_is_rendered(self):
+        data = {
+            "best": {
+                "tp": 1.0, "sl": 0.5, "edge": 0.1, "kelly": 0.2, "ev": 0.05,
+                "prob_tp_first": 0.6, "prob_sl_first": 0.3, "prob_no_hit": 0.1,
+            },
+            "note": "Independent run note",
+        }
+        lines = _render_barriers_section(data)
+        text = "\n".join(lines)
+        assert "Note: Independent run note" in text
+
     def test_negative_edge_warning(self):
         data = {
             "best": {

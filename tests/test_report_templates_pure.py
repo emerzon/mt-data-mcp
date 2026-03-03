@@ -916,6 +916,7 @@ class TestTemplateBasic:
         assert barriers.get("ev_edge_conflict") is True
         assert barriers.get("ev_edge_conflict_directions") == ["long"]
         assert "caution" in barriers
+        assert "note" in barriers
 
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
