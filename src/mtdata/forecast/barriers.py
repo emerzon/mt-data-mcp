@@ -1889,6 +1889,38 @@ def forecast_barrier_optimize(
             _sort(results)
 
         ranked_candidates = list(results)
+        deduped_ranked: List[Dict[str, Any]] = []
+        seen_ranked: Set[Tuple[Any, ...]] = set()
+        for row in ranked_candidates:
+            if not isinstance(row, dict):
+                continue
+            def _r(value: Any, decimals: int = 6) -> Any:
+                try:
+                    if value is None:
+                        return None
+                    num = float(value)
+                    if not np.isfinite(num):
+                        return str(value)
+                    return round(num, decimals)
+                except Exception:
+                    return value
+            row_key = (
+                _r(row.get('tp'), 6),
+                _r(row.get('sl'), 6),
+                _r(row.get('tp_price'), 6),
+                _r(row.get('sl_price'), 6),
+                _r(row.get('ev'), 6),
+                _r(row.get('edge'), 6),
+                _r(row.get('kelly'), 6),
+                _r(row.get('prob_tp_first'), 6),
+                _r(row.get('prob_sl_first'), 6),
+                _r(row.get('prob_no_hit'), 6),
+            )
+            if row_key in seen_ranked:
+                continue
+            seen_ranked.add(row_key)
+            deduped_ranked.append(row)
+        ranked_candidates = deduped_ranked
         viable_candidates: List[Dict[str, Any]] = []
         for row in ranked_candidates:
             try:

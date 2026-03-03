@@ -415,6 +415,28 @@ class TestAttachCliMeta:
         assert cmd_diag["indicators"]["requested"] is False
         assert cmd_diag["warnings"] == ["sample warning"]
 
+    def test_verbose_market_ticker_adds_command_diagnostics(self):
+        r = {
+            "time": 1700000000,
+            "bid": 200.0,
+            "ask": 201.0,
+            "spread": 1.0,
+            "spread_points": 100.0,
+            "spread_usd": 100.0,
+            "diagnostics": {
+                "source": "mt5.symbol_info_tick",
+                "cache_used": False,
+                "query_latency_ms": 7.5,
+                "data_freshness_seconds": 1.2,
+            },
+        }
+        out = _attach_cli_meta(r, cmd_name="market_ticker", verbose=True)
+        cmd_diag = out["cli_meta"]["command_diagnostics"]["market_ticker"]
+        assert cmd_diag["source"] == "mt5.symbol_info_tick"
+        assert cmd_diag["cache_used"] is False
+        assert cmd_diag["query_latency_ms"] == 7.5
+        assert cmd_diag["spread_points"] == 100.0
+
 
 # ========================================================================
 # get_function_info

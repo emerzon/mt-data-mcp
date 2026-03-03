@@ -172,16 +172,28 @@ def _default_bocpd_hazard_lambda(symbol: Any, timeframe: Any) -> int:
 
     if _is_probably_crypto_symbol(symbol):
         if tf_seconds <= 900:   # <= M15
-            return 72
+            return 48
         if tf_seconds <= 3600:  # <= H1
-            return 96
+            return 72
         if tf_seconds <= 14400:  # <= H4
-            return 128
+            return 96
         if tf_seconds <= 86400:  # <= D1
-            return 160
-        return 220
+            return 128
+        return 180
 
     return 250
+
+
+def _default_bocpd_cp_threshold(symbol: Any, timeframe: Any) -> float:
+    tf = str(timeframe or "H1").upper().strip() or "H1"
+    tf_seconds = int(TIMEFRAME_SECONDS.get(tf, 3600))
+    if _is_probably_crypto_symbol(symbol):
+        if tf_seconds <= 3600:  # <= H1
+            return 0.35
+        if tf_seconds <= 14400:  # <= H4
+            return 0.40
+        return 0.45
+    return 0.50
 
 
 def _consolidate_payload(payload: Dict[str, Any], method: str, output_mode: str, include_series: bool = False) -> Dict[str, Any]:
@@ -432,16 +444,31 @@ def regime_detect(
             else:
                 hazard_lambda = _default_bocpd_hazard_lambda(symbol, timeframe)
                 hazard_src = "auto_default"
+            threshold_src = "arg"
+            if "cp_threshold" in p and p.get("cp_threshold") is not None:
+                threshold_used = float(p.get("cp_threshold"))
+                threshold_src = "params.cp_threshold"
+            elif "threshold" in p and p.get("threshold") is not None:
+                threshold_used = float(p.get("threshold"))
+                threshold_src = "params.threshold"
+            else:
+                threshold_used = float(threshold)
+                if (
+                    _is_probably_crypto_symbol(symbol)
+                    and abs(float(threshold) - 0.5) <= 1e-12
+                ):
+                    threshold_used = _default_bocpd_cp_threshold(symbol, timeframe)
+                    threshold_src = "auto_default"
             max_rl = int(p.get('max_run_length', min(1000, x.size)))
             res = bocpd_gaussian(x, hazard_lambda=hazard_lambda, max_run_length=max_rl)
             cp_prob = res.get('cp_prob', np.zeros_like(x, dtype=float))
-            cp_idx = [int(i) for i, v in enumerate(cp_prob) if float(v) >= float(threshold)]
+            cp_idx = [int(i) for i, v in enumerate(cp_prob) if float(v) >= float(threshold_used)]
             cps = [{"idx": i, "time": t_fmt[i], "prob": float(cp_prob[i])} for i in cp_idx]
             tuning_hint: Optional[str] = None
             if len(cps) == 0:
                 tuning_hint = (
                     "No change points detected. Try lowering threshold or reducing "
-                    f"hazard_lambda (currently {hazard_lambda}) to increase sensitivity."
+                    f"hazard_lambda (currently {hazard_lambda}); active threshold={threshold_used:.2f}."
                 )
             payload = {
                 "success": True,
@@ -452,10 +479,12 @@ def regime_detect(
                 "times": t_fmt,
                 "cp_prob": [float(v) for v in np.asarray(cp_prob, dtype=float).tolist()],
                 "change_points": cps,
-                "threshold": float(threshold),
+                "threshold": float(threshold_used),
                 "params_used": {
                     "hazard_lambda": hazard_lambda,
                     "hazard_lambda_source": hazard_src,
+                    "cp_threshold": float(threshold_used),
+                    "cp_threshold_source": threshold_src,
                     "max_run_length": max_rl,
                 },
             }

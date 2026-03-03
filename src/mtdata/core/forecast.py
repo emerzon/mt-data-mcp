@@ -443,15 +443,42 @@ def forecast_list_methods(
             haystack = " ".join((method_name, desc, cat)).lower()
             return search_value in haystack
 
+        def _namespace_info(method_name: str, category: str) -> Tuple[str, str, str]:
+            method_norm = str(method_name or "").strip()
+            cat_norm = str(category or "").strip().lower()
+            if method_norm.startswith("sf_") or cat_norm == "statsforecast":
+                concept = method_norm[3:] if method_norm.startswith("sf_") else method_norm
+                return "statsforecast", concept, f"statsforecast:{concept}"
+            if method_norm.startswith("skt_") or cat_norm == "sktime":
+                concept = method_norm[4:] if method_norm.startswith("skt_") else method_norm
+                return "sktime", concept, f"sktime:{concept}"
+            pretrained_names = {"chronos2", "chronos_bolt", "timesfm", "lag_llama"}
+            if method_norm in pretrained_names or cat_norm == "pretrained":
+                return "pretrained", method_norm, f"pretrained:{method_norm}"
+            if method_norm.startswith("mlf_") or cat_norm in {"mlforecast", "ml"}:
+                return "mlforecast", method_norm, f"mlforecast:{method_norm}"
+            return "native", method_norm, f"native:{method_norm}"
+
         if detail_value == "full":
             methods_full = data.get("methods")
             if not isinstance(methods_full, list):
                 return data
-            filtered_full = [row for row in methods_full if isinstance(row, dict) and _method_matches(row)]
+            enriched_full: List[Dict[str, Any]] = []
+            for row in methods_full:
+                if not isinstance(row, dict):
+                    continue
+                method_name = str(row.get("method") or "")
+                category = method_to_category.get(method_name, "other")
+                namespace, concept, method_id = _namespace_info(method_name, category)
+                row_out = dict(row)
+                row_out["category"] = category
+                row_out["namespace"] = namespace
+                row_out["concept"] = concept
+                row_out["method_id"] = method_id
+                enriched_full.append(row_out)
+            filtered_full = [row for row in enriched_full if _method_matches(row)]
             if limit_value is not None:
                 filtered_full = filtered_full[:limit_value]
-            if not search_value and limit_value is None:
-                return data
             out_full = dict(data)
             out_full["methods"] = filtered_full
             out_full["total"] = len(filtered_full)
@@ -459,6 +486,10 @@ def forecast_list_methods(
                 "search": search_value or None,
                 "limit": limit_value,
             }
+            out_full["note"] = (
+                "Methods include namespace/concept/method_id fields to disambiguate similarly named implementations "
+                "(for example native:theta vs statsforecast:theta)."
+            )
             return out_full
         methods = data.get("methods")
         if not isinstance(methods, list):
@@ -493,6 +524,10 @@ def forecast_list_methods(
                 row["description"] = desc.splitlines()[0].strip()
             cat = method_to_category.get(method_name)
             row["category"] = cat or "other"
+            namespace, concept, method_id = _namespace_info(method_name, row["category"])
+            row["namespace"] = namespace
+            row["concept"] = concept
+            row["method_id"] = method_id
             params = item.get("params")
             if isinstance(params, list):
                 row["params_count"] = len(params)

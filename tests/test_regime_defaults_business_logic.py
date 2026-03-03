@@ -65,9 +65,11 @@ def test_bocpd_uses_crypto_sensitive_auto_hazard_default() -> None:
     ):
         out = raw(symbol="BTCUSD", timeframe="H1", limit=80, method="bocpd", threshold=0.5, lookback=20)
 
-    assert capture["hazard_lambda"] == 96
-    assert out["params_used"]["hazard_lambda"] == 96
+    assert capture["hazard_lambda"] == 72
+    assert out["params_used"]["hazard_lambda"] == 72
     assert out["params_used"]["hazard_lambda_source"] == "auto_default"
+    assert abs(float(out["params_used"]["cp_threshold"]) - 0.35) < 1e-12
+    assert out["params_used"]["cp_threshold_source"] == "auto_default"
 
 
 def test_bocpd_hazard_lambda_param_override_is_preserved() -> None:
@@ -102,6 +104,36 @@ def test_bocpd_hazard_lambda_param_override_is_preserved() -> None:
     assert capture["hazard_lambda"] == 140
     assert out["params_used"]["hazard_lambda"] == 140
     assert out["params_used"]["hazard_lambda_source"] == "params"
+    assert out["params_used"]["cp_threshold_source"] == "auto_default"
+
+
+def test_bocpd_cp_threshold_param_override_is_preserved() -> None:
+    raw = _unwrap(regime_detect)
+    cp = np.zeros(79, dtype=float)
+
+    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)), patch(
+        "mtdata.core.regime._resolve_denoise_base_col",
+        return_value="close",
+    ), patch(
+        "mtdata.core.regime._format_time_minimal",
+        side_effect=lambda x: f"T{x}",
+    ), patch(
+        "mtdata.utils.regime.bocpd_gaussian",
+        return_value={"cp_prob": cp},
+    ):
+        out = raw(
+            symbol="BTCUSD",
+            timeframe="H1",
+            limit=80,
+            method="bocpd",
+            params={"cp_threshold": 0.2},
+            threshold=0.5,
+            lookback=20,
+            output="full",
+        )
+
+    assert abs(float(out["params_used"]["cp_threshold"]) - 0.2) < 1e-12
+    assert out["params_used"]["cp_threshold_source"] == "params.cp_threshold"
 
 
 def test_regime_detect_rejects_invalid_min_regime_bars() -> None:

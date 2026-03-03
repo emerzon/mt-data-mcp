@@ -35,10 +35,14 @@ def test_market_depth_tick_fallback_includes_price_display() -> None:
 
     assert out["success"] is True
     assert out["type"] == "tick_data"
+    assert out["capabilities"]["dom_available"] is False
+    assert out["capabilities"]["depth_source"] == "symbol_info_tick"
+    assert out["data"]["recommended_alternative"] == "market_ticker"
     assert out["price_precision"] == 2
     assert out["data"]["bid_display"] == "65601.00"
     assert out["data"]["ask_display"] == "65601.50"
     assert out["data"]["last_display"] == "65601.00"
+    assert isinstance(out.get("query_latency_ms"), float)
 
 
 def test_market_depth_full_depth_includes_price_display() -> None:
@@ -55,6 +59,8 @@ def test_market_depth_full_depth_includes_price_display() -> None:
 
     assert out["success"] is True
     assert out["type"] == "full_depth"
+    assert out["capabilities"]["dom_available"] is True
+    assert out["data"]["depth_levels"]["total"] == 2
     assert out["price_precision"] == 2
     assert out["data"]["buy_orders"][0]["price_display"] == "65601.00"
     assert out["data"]["sell_orders"][0]["price_display"] == "65602.50"
@@ -87,6 +93,7 @@ def test_market_depth_tick_fallback_includes_spread_metrics_when_requested() -> 
     assert out["data"]["spread_points"] == 100.0
     assert abs(out["data"]["spread_pct"] - (100.0 / 100.5)) < 1e-12
     assert out["data"]["spread_usd"] == 100.0
+    assert out["capabilities"]["spread_overlay_applied"] is True
 
 
 def test_market_depth_full_depth_includes_spread_metrics_when_requested() -> None:
@@ -109,6 +116,7 @@ def test_market_depth_full_depth_includes_spread_metrics_when_requested() -> Non
     assert out["data"]["best_bid"] == 100.0
     assert out["data"]["best_ask"] == 101.0
     assert out["data"]["spread"] == 1.0
+    assert out["capabilities"]["spread_overlay_applied"] is True
 
 
 def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
@@ -139,3 +147,6 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["spread"] == 1.0
     assert out["spread_points"] == 100.0
     assert out["spread_display"] == "1.00"
+    assert out["diagnostics"]["cache_used"] is False
+    assert out["diagnostics"]["source"] == "mt5.symbol_info_tick"
+    assert isinstance(out["diagnostics"]["query_latency_ms"], float)

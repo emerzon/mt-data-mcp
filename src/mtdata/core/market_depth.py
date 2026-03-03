@@ -1,6 +1,7 @@
 
 from typing import Any, Dict
 import math
+import time
 
 from ..utils.mt5 import _mt5_epoch_to_utc
 from ..utils.utils import _format_time_minimal, _format_time_minimal_local, _use_client_tz
@@ -15,6 +16,7 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
     Parameters: symbol
     """
     try:
+        started = time.perf_counter()
         # Ensure symbol is selected
         if not mt5.symbol_select(symbol, True):
             return {"error": f"Failed to select symbol {symbol}: {mt5.last_error()}"}
@@ -91,9 +93,19 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
                 "symbol": symbol,
                 "type": "full_depth",
                 "price_precision": digits,
+                "capabilities": {
+                    "dom_available": True,
+                    "depth_source": "market_book_get",
+                    "spread_overlay_requested": bool(spread),
+                },
                 "data": {
                     "buy_orders": buy_orders,
-                    "sell_orders": sell_orders
+                    "sell_orders": sell_orders,
+                    "depth_levels": {
+                        "buy": int(len(buy_orders)),
+                        "sell": int(len(sell_orders)),
+                        "total": int(len(buy_orders) + len(sell_orders)),
+                    },
                 }
             }
             if spread and buy_orders and sell_orders:
@@ -104,6 +116,8 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
                     out["data"]["best_bid"] = best_bid
                     out["data"]["best_ask"] = best_ask
                     out["data"].update(spread_metrics)
+                    out["capabilities"]["spread_overlay_applied"] = True
+            out["query_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
             return out
         else:
             # Get current tick
@@ -116,6 +130,12 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
                 "symbol": symbol,
                 "type": "tick_data",
                 "price_precision": digits,
+                "capabilities": {
+                    "dom_available": False,
+                    "depth_source": "symbol_info_tick",
+                    "spread_overlay_requested": bool(spread),
+                    "fallback_reason": "market_book_get returned no levels",
+                },
                 "data": {
                     "bid": float(tick.bid) if tick.bid else None,
                     "ask": float(tick.ask) if tick.ask else None,
@@ -125,7 +145,8 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
                     "last_display": _price_display(tick.last),
                     "volume": int(tick.volume) if tick.volume else None,
                     "time": int(_mt5_epoch_to_utc(float(tick.time))) if tick.time else None,
-                    "note": "Full market depth not available, showing current bid/ask"
+                    "note": "Full market depth not available, showing current bid/ask snapshot.",
+                    "recommended_alternative": "market_ticker",
                 }
             }
             if spread:
@@ -135,6 +156,7 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
                 )
                 if spread_metrics is not None:
                     out["data"].update(spread_metrics)
+                    out["capabilities"]["spread_overlay_applied"] = True
             _use_ctz = _use_client_tz()
             if tick.time and _use_ctz:
                 out["data"]["time_display"] = _format_time_minimal_local(_mt5_epoch_to_utc(float(tick.time)))
@@ -142,6 +164,7 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
                 out["data"]["time_display"] = _format_time_minimal(_mt5_epoch_to_utc(float(tick.time)))
             if not _use_ctz:
                 out["timezone"] = "UTC"
+            out["query_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
             return out
     except Exception as e:
         return {"error": f"Error getting market depth: {str(e)}"}
@@ -155,6 +178,7 @@ def market_ticker(symbol: str) -> Dict[str, Any]:
     Parameters: symbol
     """
     try:
+        started = time.perf_counter()
         if not mt5.symbol_select(symbol, True):
             return {"error": f"Failed to select symbol {symbol}: {mt5.last_error()}"}
 
@@ -224,6 +248,18 @@ def market_ticker(symbol: str) -> Dict[str, Any]:
                 out["time_display"] = _format_time_minimal_local(float(tick_time))
             else:
                 out["time_display"] = _format_time_minimal(float(tick_time))
+        age_seconds = None
+        if tick_time is not None:
+            try:
+                age_seconds = max(0.0, float(time.time()) - float(tick_time))
+            except Exception:
+                age_seconds = None
+        out["diagnostics"] = {
+            "source": "mt5.symbol_info_tick",
+            "cache_used": False,
+            "data_freshness_seconds": age_seconds,
+            "query_latency_ms": round((time.perf_counter() - started) * 1000.0, 3),
+        }
         if not _use_ctz:
             out["timezone"] = "UTC"
         return out

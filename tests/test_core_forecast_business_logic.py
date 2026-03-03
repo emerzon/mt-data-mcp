@@ -258,6 +258,9 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert compact["methods"][0]["method"] == "theta"
     assert "category_summary" in compact
     assert "params_count" in compact["methods"][0]
+    assert compact["methods"][0]["namespace"] == "native"
+    assert compact["methods"][0]["method_id"] == "native:theta"
+    assert compact["methods"][0]["concept"] == "theta"
     assert "params" not in compact["methods"][0]
     assert all("requires" not in row for row in compact["methods"])
     assert compact["methods_shown"] == 2
@@ -266,6 +269,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     full = _unwrap(cf.forecast_list_methods)(detail="full")
     assert isinstance(full.get("methods"), list)
     assert "params" in full["methods"][0]
+    assert "method_id" in full["methods"][0]
 
     monkeypatch.setattr(
         cf,
@@ -288,6 +292,8 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     grouped = _unwrap(cf.forecast_list_methods)()
     sf_rows = [r for r in grouped["methods"] if r.get("category") == "statsforecast"]
     assert len(sf_rows) <= 3
+    if sf_rows:
+        assert all(str(r.get("namespace")) == "statsforecast" for r in sf_rows)
     assert grouped["methods_hidden"] >= 1
     filtered = _unwrap(cf.forecast_list_methods)(search="theta", limit=1)
     assert filtered["filters"]["search"] == "theta"

@@ -331,6 +331,40 @@ def _build_candle_cli_verbose_meta(result: Any) -> Dict[str, Any]:
     return out
 
 
+def _build_market_ticker_cli_verbose_meta(result: Any) -> Dict[str, Any]:
+    if not isinstance(result, dict):
+        return {}
+    out: Dict[str, Any] = {}
+    diagnostics = result.get("diagnostics")
+    if isinstance(diagnostics, dict):
+        for key in ("source", "cache_used", "query_latency_ms", "data_freshness_seconds"):
+            if key in diagnostics:
+                out[key] = diagnostics.get(key)
+    tick_epoch = result.get("time")
+    if isinstance(tick_epoch, (int, float)):
+        out["tick_time_epoch"] = float(tick_epoch)
+        if "data_freshness_seconds" not in out:
+            try:
+                out["data_freshness_seconds"] = max(0.0, datetime.now().timestamp() - float(tick_epoch))
+            except Exception:
+                pass
+    for field in ("bid", "ask", "spread", "spread_points", "spread_usd"):
+        if field in result:
+            out[field] = result.get(field)
+    try:
+        import MetaTrader5 as mt5  # type: ignore
+        terminal = mt5.terminal_info() if hasattr(mt5, "terminal_info") else None
+        if terminal is not None:
+            out["terminal"] = {
+                "connected": bool(getattr(terminal, "connected", False)),
+                "trade_allowed": bool(getattr(terminal, "trade_allowed", False)),
+                "ping_last": getattr(terminal, "ping_last", None),
+            }
+    except Exception:
+        pass
+    return out
+
+
 def _attach_cli_meta(result: Any, *, cmd_name: str, verbose: bool) -> Any:
     if not isinstance(result, dict):
         return result
@@ -344,12 +378,21 @@ def _attach_cli_meta(result: Any, *, cmd_name: str, verbose: bool) -> Any:
         if bool(verbose)
         else _build_cli_timezone_meta_brief(result)
     )
+    cmd_diag: Dict[str, Any] = {}
     if bool(verbose) and str(cmd_name or "").strip() == "data_fetch_candles":
         details = _build_candle_cli_verbose_meta(out)
         if details:
-            meta["command_diagnostics"] = {
-                "data_fetch_candles": details,
-            }
+            cmd_diag["data_fetch_candles"] = details
+    if bool(verbose) and str(cmd_name or "").strip() == "market_ticker":
+        details = _build_market_ticker_cli_verbose_meta(out)
+        if details:
+            cmd_diag["market_ticker"] = details
+    if cmd_diag:
+        existing = meta.get("command_diagnostics")
+        if not isinstance(existing, dict):
+            existing = {}
+        existing.update(cmd_diag)
+        meta["command_diagnostics"] = existing
     out["cli_meta"] = meta
     return out
 

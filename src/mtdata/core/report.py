@@ -1,4 +1,5 @@
 from typing import Any, Dict, Optional, List, Literal, Union
+import time
 import warnings
 
 from .server import mcp, _auto_connect_wrapper
@@ -60,6 +61,7 @@ def report_generate(
     - output: 'toon' (structured TOON) or 'markdown' (rendered report text).
     """
     try:
+        started = time.perf_counter()
         output_mode = str(output or 'toon').strip().lower()
         name = (template or 'basic').lower().strip()
         p = dict(params or {})
@@ -367,6 +369,11 @@ def report_generate(
         except Exception:
             pass
         rep['summary'] = summ
+        diagnostics = rep.get("diagnostics")
+        if not isinstance(diagnostics, dict):
+            diagnostics = {}
+        diagnostics["execution_time_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
+        rep["diagnostics"] = diagnostics
 
         if output_mode == 'markdown':
             return render_enhanced_report(rep)

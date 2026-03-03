@@ -638,6 +638,24 @@ class TestReportWarnings:
         assert "warnings" in res["diagnostics"]
         assert any("degenerate" in str(w).lower() for w in res["diagnostics"]["warnings"])
 
+    def test_execution_time_metric_is_added_to_diagnostics(self):
+        fn = _get_report_generate()
+        rep = _make_report(sections=_make_full_sections())
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            res = fn("EURUSD", template="basic", output="toon")
+
+        assert isinstance(res, dict)
+        assert "diagnostics" in res
+        assert "execution_time_ms" in res["diagnostics"]
+        assert float(res["diagnostics"]["execution_time_ms"]) >= 0.0
+
 
 # ---------------------------------------------------------------------------
 # Top-level exception
