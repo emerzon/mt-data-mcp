@@ -343,3 +343,43 @@ def test_bocpd_summary_contains_reliability_fields() -> None:
     assert "confidence" in rel
     assert "expected_false_alarm_rate" in rel
     assert "calibration_age_bars" in rel
+
+
+def test_bocpd_calibrated_threshold_does_not_overreject_at_edge_by_default() -> None:
+    raw = _unwrap(regime_detect)
+
+    def _fake_bocpd(x, hazard_lambda=0, max_run_length=0):
+        cp = np.zeros(len(x), dtype=float)
+        if cp.size >= 2:
+            cp[-2] = 0.44
+            cp[-1] = 0.44
+        return {"cp_prob": cp}
+
+    fake_auto = (168, 0.43, {"calibrated": True, "points": 219, "base_hazard_lambda": 250, "base_cp_threshold": 0.5})
+    fake_thr_cal = (0.43, {"mode": "walkforward_quantile", "calibrated": True, "points": 219, "target_false_alarm_rate": 0.02})
+
+    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)), patch(
+        "mtdata.core.regime._resolve_denoise_base_col",
+        return_value="close",
+    ), patch(
+        "mtdata.core.regime._format_time_minimal",
+        side_effect=lambda x: f"T{x}",
+    ), patch(
+        "mtdata.core.regime._auto_calibrate_bocpd_params",
+        return_value=fake_auto,
+    ), patch(
+        "mtdata.core.regime._walkforward_quantile_threshold_calibration",
+        return_value=fake_thr_cal,
+    ), patch(
+        "mtdata.utils.regime.bocpd_gaussian",
+        side_effect=_fake_bocpd,
+    ):
+        out = raw(symbol="EURUSD", timeframe="D1", limit=220, method="bocpd", output="summary")
+
+    params_used = out.get("params_used", {})
+    cp_filter = params_used.get("cp_filter", {})
+    assert abs(float(cp_filter.get("edge_multiplier", 0.0)) - 1.0) < 1e-12
+    assert int(cp_filter.get("raw_candidates_count", 0)) >= 2
+    assert int(cp_filter.get("accepted_count", 0)) >= 1
+    summary = out.get("summary", {})
+    assert int(summary.get("change_points_count", 0)) >= 1

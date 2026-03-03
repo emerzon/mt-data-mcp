@@ -847,10 +847,22 @@ def regime_detect(
                 cp_confirm_relaxed_mult = float(p.get("cp_confirm_relaxed_mult", 0.90))
             except Exception:
                 cp_confirm_relaxed_mult = 0.90
-            try:
-                cp_edge_multiplier = float(p.get("cp_edge_multiplier", 1.08))
-            except Exception:
-                cp_edge_multiplier = 1.08
+            if "cp_edge_multiplier" in p and p.get("cp_edge_multiplier") is not None:
+                try:
+                    cp_edge_multiplier = float(p.get("cp_edge_multiplier"))
+                except Exception:
+                    cp_edge_multiplier = 1.08
+            else:
+                # When threshold is already calibrated via walk-forward null quantiles,
+                # avoid double-tightening the edge gate.
+                if (
+                    threshold_src in {"auto_calibrated", "auto_default"}
+                    and isinstance(threshold_calibration_info, dict)
+                    and bool(threshold_calibration_info.get("calibrated", False))
+                ):
+                    cp_edge_multiplier = 1.0
+                else:
+                    cp_edge_multiplier = 1.08
             try:
                 min_cp_distance_bars = int(p.get("min_cp_distance_bars", max(2, min_regime_bars_val)))
             except Exception:
