@@ -254,6 +254,41 @@ class TestCausalDiscoverSignals:
         assert meta.get("symbol_rows", {}).get("ETHUSD") == 50
         assert meta.get("samples_aligned_raw") == 0
         assert meta.get("minimum_samples_required") == 11
+        assert meta.get("pair_overlaps", {}).get("BTCUSD-ETHUSD") == 0
+
+    @patch("statsmodels.tsa.stattools.grangercausalitytests")
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_alignment_detail_includes_pair_bottleneck_when_samples_shrink(self, mock_fetch, mock_granger):
+        idx_a = pd.date_range("2024-01-01", periods=100, freq="h")
+        idx_b = pd.date_range("2024-01-01", periods=100, freq="h")
+        idx_c = pd.date_range("2024-01-02", periods=100, freq="h")
+        series_map = {
+            "EURUSD": pd.Series(np.linspace(1.0, 2.0, 100), index=idx_a),
+            "GBPUSD": pd.Series(np.linspace(2.0, 3.0, 100), index=idx_b),
+            "USDJPY": pd.Series(np.linspace(3.0, 4.0, 100), index=idx_c),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_granger.return_value = {
+            1: ({"ssr_ftest": (1.0, 0.3, 10, 1)}, None),
+            2: ({"ssr_ftest": (1.0, 0.4, 10, 1)}, None),
+        }
+
+        result = self._unwrapped()("EURUSD,GBPUSD,USDJPY", max_lag=2, transform="diff", normalize=False)
+        assert result["success"] is True
+        meta = result.get("meta", {})
+        detail = meta.get("alignment_detail", {})
+        assert isinstance(detail, dict)
+        pair_overlaps = detail.get("pair_overlaps", {})
+        assert pair_overlaps.get("EURUSD-GBPUSD") == 100
+        assert pair_overlaps.get("EURUSD-USDJPY") == 76
+        assert pair_overlaps.get("GBPUSD-USDJPY") == 76
+        assert detail.get("bottleneck_pair") in {"EURUSD-USDJPY", "GBPUSD-USDJPY"}
+        assert int(detail.get("aligned_rows", 0)) == 76
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {})
     def test_invalid_timeframe(self):

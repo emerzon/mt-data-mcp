@@ -176,6 +176,61 @@ def _format_overlap_details(
     return ", ".join(parts)
 
 
+def _pair_overlap_counts(series_map: Dict[str, pd.Series], symbols: List[str]) -> Dict[str, int]:
+    overlaps: Dict[str, int] = {}
+    for i, left in enumerate(symbols):
+        left_series = series_map.get(left)
+        if not isinstance(left_series, pd.Series):
+            continue
+        left_idx = left_series.dropna().index
+        for right in symbols[i + 1:]:
+            right_series = series_map.get(right)
+            if not isinstance(right_series, pd.Series):
+                continue
+            right_idx = right_series.dropna().index
+            key = f"{left}-{right}"
+            overlaps[key] = int(len(left_idx.intersection(right_idx)))
+    return overlaps
+
+
+def _build_alignment_detail(
+    symbol_rows: Dict[str, int],
+    pair_overlaps: Dict[str, int],
+    aligned_rows: int,
+    minimum_required: int,
+) -> Optional[Dict[str, Any]]:
+    if not symbol_rows or not pair_overlaps:
+        return None
+    min_symbol_rows = int(min(symbol_rows.values()))
+    if min_symbol_rows <= 0:
+        return None
+    shrinkage_ratio = float(aligned_rows) / float(min_symbol_rows)
+    if aligned_rows >= minimum_required and shrinkage_ratio >= 0.90:
+        return None
+    bottleneck_pair = min(pair_overlaps.items(), key=lambda kv: kv[1])
+    return {
+        "pair_overlaps": pair_overlaps,
+        "bottleneck_pair": str(bottleneck_pair[0]),
+        "bottleneck_rows": int(bottleneck_pair[1]),
+        "aligned_rows": int(aligned_rows),
+        "min_symbol_rows": int(min_symbol_rows),
+        "shrinkage_ratio": float(shrinkage_ratio),
+    }
+
+
+def _format_alignment_detail_summary(detail: Dict[str, Any]) -> str:
+    pair_overlaps = detail.get("pair_overlaps")
+    if not isinstance(pair_overlaps, dict):
+        return ""
+    pair_str = ", ".join(f"{k}: {int(v)}" for k, v in pair_overlaps.items())
+    bottleneck_pair = str(detail.get("bottleneck_pair") or "")
+    bottleneck_rows = detail.get("bottleneck_rows")
+    suffix = ""
+    if bottleneck_pair and bottleneck_rows is not None:
+        suffix = f"; bottleneck={bottleneck_pair} ({int(bottleneck_rows)} rows)"
+    return f"pair_overlaps: {pair_str}{suffix}"
+
+
 @mcp.tool()
 @_auto_connect_wrapper
 def causal_discover_signals(
@@ -299,41 +354,63 @@ def causal_discover_signals(
     if symbol_rows:
         meta["symbol_rows"] = symbol_rows
 
+    pair_overlaps = _pair_overlap_counts(series_map, symbol_list)
+    if pair_overlaps:
+        meta["pair_overlaps"] = pair_overlaps
+
     frame = pd.concat(series_map, axis=1, join="inner").tail(limit)
     meta["symbols_used"] = list(frame.columns) if isinstance(frame, pd.DataFrame) else list(series_map.keys())
     min_required_samples = int(max_lag + 6)
     meta["minimum_samples_required"] = int(min_required_samples)
     meta["samples_aligned_raw"] = int(len(frame))
+    alignment_detail = _build_alignment_detail(
+        symbol_rows=symbol_rows,
+        pair_overlaps=pair_overlaps,
+        aligned_rows=int(len(frame)),
+        minimum_required=min_required_samples,
+    )
+    if alignment_detail is not None:
+        meta["alignment_detail"] = alignment_detail
     if frame.empty or len(frame) <= max_lag + 5:
+        details_out = [
+            _format_overlap_details(
+                symbol_rows=symbol_rows,
+                aligned_rows=int(len(frame)),
+                minimum_required=min_required_samples,
+            )
+        ]
+        if alignment_detail is not None:
+            align_summary = _format_alignment_detail_summary(alignment_detail)
+            if align_summary:
+                details_out.append(align_summary)
         return _causal_error(
             "Insufficient overlapping data between symbols to run tests.",
             code="insufficient_overlap",
             meta=meta,
             warnings=warnings_out,
-            details=[
-                _format_overlap_details(
-                    symbol_rows=symbol_rows,
-                    aligned_rows=int(len(frame)),
-                    minimum_required=min_required_samples,
-                )
-            ],
+            details=details_out,
         )
 
     frame = frame.dropna(how="any")
     meta["samples_aligned_clean"] = int(len(frame))
     if frame.empty or len(frame) <= max_lag + 5:
+        details_out = [
+            _format_overlap_details(
+                symbol_rows=symbol_rows,
+                aligned_rows=int(len(frame)),
+                minimum_required=min_required_samples,
+            )
+        ]
+        if alignment_detail is not None:
+            align_summary = _format_alignment_detail_summary(alignment_detail)
+            if align_summary:
+                details_out.append(align_summary)
         return _causal_error(
             "Insufficient clean samples after alignment.",
             code="insufficient_samples",
             meta=meta,
             warnings=warnings_out,
-            details=[
-                _format_overlap_details(
-                    symbol_rows=symbol_rows,
-                    aligned_rows=int(len(frame)),
-                    minimum_required=min_required_samples,
-                )
-            ],
+            details=details_out,
         )
 
     transformed = _transform_frame(frame, transform)
