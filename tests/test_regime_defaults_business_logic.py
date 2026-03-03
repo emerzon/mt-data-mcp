@@ -261,3 +261,85 @@ def test_bocpd_zero_change_points_includes_tuning_hint() -> None:
     hint = str(summary.get("tuning_hint", ""))
     assert "hazard_lambda" in hint
     assert "threshold" in hint
+
+
+def test_bocpd_filters_last_bar_spike_with_robustness_guards() -> None:
+    raw = _unwrap(regime_detect)
+
+    def _fake_bocpd(x, hazard_lambda=0, max_run_length=0):
+        cp = np.zeros(len(x), dtype=float)
+        if cp.size:
+            cp[-1] = 0.9
+        return {"cp_prob": cp}
+
+    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)), patch(
+        "mtdata.core.regime._resolve_denoise_base_col",
+        return_value="close",
+    ), patch(
+        "mtdata.core.regime._format_time_minimal",
+        side_effect=lambda x: f"T{x}",
+    ), patch(
+        "mtdata.utils.regime.bocpd_gaussian",
+        side_effect=_fake_bocpd,
+    ):
+        out = raw(symbol="EURUSD", timeframe="H1", limit=220, method="bocpd", output="summary")
+
+    summary = out.get("summary", {})
+    assert int(summary.get("raw_change_points_count", 0)) >= 1
+    assert int(summary.get("change_points_count", 0)) == 0
+    assert int(summary.get("filtered_change_points_count", 0)) >= 1
+    params_used = out.get("params_used", {})
+    cp_filter = params_used.get("cp_filter", {})
+    assert int(cp_filter.get("filtered_count", 0)) >= 1
+
+
+def test_bocpd_walkforward_threshold_calibration_metadata_is_exposed() -> None:
+    raw = _unwrap(regime_detect)
+
+    def _fake_bocpd(x, hazard_lambda=0, max_run_length=0):
+        cp = np.full(len(x), 0.01, dtype=float)
+        return {"cp_prob": cp}
+
+    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)), patch(
+        "mtdata.core.regime._resolve_denoise_base_col",
+        return_value="close",
+    ), patch(
+        "mtdata.core.regime._format_time_minimal",
+        side_effect=lambda x: f"T{x}",
+    ), patch(
+        "mtdata.utils.regime.bocpd_gaussian",
+        side_effect=_fake_bocpd,
+    ):
+        out = raw(symbol="BTCUSD", timeframe="H1", limit=220, method="bocpd", output="summary")
+
+    cal = out.get("params_used", {}).get("cp_threshold_calibration", {})
+    assert cal.get("mode") == "walkforward_quantile"
+    assert cal.get("calibrated") is True
+    assert int(cal.get("points", 0)) >= 200
+
+
+def test_bocpd_summary_contains_reliability_fields() -> None:
+    raw = _unwrap(regime_detect)
+    cp = np.zeros(219, dtype=float)
+    cp[150] = 0.9
+
+    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)), patch(
+        "mtdata.core.regime._resolve_denoise_base_col",
+        return_value="close",
+    ), patch(
+        "mtdata.core.regime._format_time_minimal",
+        side_effect=lambda x: f"T{x}",
+    ), patch(
+        "mtdata.utils.regime.bocpd_gaussian",
+        return_value={"cp_prob": cp},
+    ):
+        out = raw(symbol="EURUSD", timeframe="H1", limit=220, method="bocpd", output="summary")
+
+    summary = out.get("summary", {})
+    assert "confidence" in summary
+    assert "expected_false_alarm_rate" in summary
+    assert "calibration_age_bars" in summary
+    rel = summary.get("reliability", {})
+    assert "confidence" in rel
+    assert "expected_false_alarm_rate" in rel
+    assert "calibration_age_bars" in rel

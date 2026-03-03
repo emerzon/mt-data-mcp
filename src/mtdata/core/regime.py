@@ -285,6 +285,232 @@ def _auto_calibrate_bocpd_params(
     return int(hazard_lambda), float(cp_threshold), diagnostics
 
 
+def _walkforward_quantile_threshold_calibration(
+    series: np.ndarray,
+    hazard_lambda: int,
+    base_threshold: float,
+    *,
+    target_false_alarm_rate: float = 0.02,
+    window: Optional[int] = None,
+    step: Optional[int] = None,
+    max_windows: int = 6,
+    bootstrap_runs: int = 2,
+    seed: int = 42,
+) -> Tuple[float, Dict[str, Any]]:
+    """Calibrate CP threshold from null BOCPD maxima over walk-forward windows."""
+    x = np.asarray(series, dtype=float)
+    x = x[np.isfinite(x)]
+    diagnostics: Dict[str, Any] = {
+        "mode": "walkforward_quantile",
+        "calibrated": False,
+        "points": int(x.size),
+        "target_false_alarm_rate": float(np.clip(target_false_alarm_rate, 1e-4, 0.25)),
+        "base_threshold": float(base_threshold),
+    }
+    if x.size < 120:
+        diagnostics["reason"] = "insufficient_points"
+        return float(base_threshold), diagnostics
+
+    win = int(window) if window is not None else int(min(240, max(80, x.size // 3)))
+    win = int(np.clip(win, 60, max(60, x.size)))
+    stp = int(step) if step is not None else int(max(20, win // 3))
+    stp = int(max(10, stp))
+    max_w = int(max(1, max_windows))
+    n_boot = int(max(1, bootstrap_runs))
+    q = float(np.clip(1.0 - diagnostics["target_false_alarm_rate"], 0.50, 0.999))
+
+    starts = list(range(0, max(1, x.size - win + 1), stp))
+    if not starts:
+        starts = [max(0, x.size - win)]
+    starts = starts[-max_w:]
+
+    try:
+        from ..utils.regime import bocpd_gaussian
+
+        rng = np.random.default_rng(int(seed))
+        null_maxima: List[float] = []
+        for s in starts:
+            seg = x[int(s): int(s + win)]
+            if seg.size < 30:
+                continue
+            rl = int(min(1000, seg.size))
+            for _ in range(n_boot):
+                shuffled = rng.permutation(seg)
+                r = bocpd_gaussian(
+                    shuffled,
+                    hazard_lambda=int(max(1, hazard_lambda)),
+                    max_run_length=rl,
+                )
+                cp = np.asarray(r.get("cp_prob", []), dtype=float)
+                cp = cp[np.isfinite(cp)]
+                if cp.size:
+                    null_maxima.append(float(np.nanmax(cp)))
+        if not null_maxima:
+            diagnostics["reason"] = "no_null_scores"
+            return float(base_threshold), diagnostics
+
+        null_q = float(np.quantile(np.asarray(null_maxima, dtype=float), q))
+        calibrated = float(np.clip(max(float(base_threshold), null_q), 0.15, 0.90))
+        diagnostics.update(
+            {
+                "calibrated": True,
+                "window": int(win),
+                "step": int(stp),
+                "windows_used": int(len(starts)),
+                "bootstrap_runs": int(n_boot),
+                "null_scores_count": int(len(null_maxima)),
+                "null_max_quantile": float(null_q),
+                "quantile": float(q),
+                "threshold_delta": float(calibrated - float(base_threshold)),
+            }
+        )
+        return calibrated, diagnostics
+    except Exception as ex:
+        diagnostics["reason"] = "calibration_error"
+        diagnostics["error"] = str(ex)
+        return float(base_threshold), diagnostics
+
+
+def _filter_bocpd_change_points(
+    cp_prob: np.ndarray,
+    threshold: float,
+    *,
+    min_distance_bars: int = 5,
+    min_regime_bars: int = 5,
+    confirm_bars: int = 2,
+    confirm_relaxed_mult: float = 0.90,
+    edge_multiplier: float = 1.08,
+) -> Tuple[List[int], Dict[str, Any]]:
+    """Filter CP candidates with confirmation, cooldown, and edge guards."""
+    cp = np.asarray(cp_prob, dtype=float)
+    cp = np.where(np.isfinite(cp), cp, np.nan)
+    n = int(cp.size)
+    raw_idx = [int(i) for i, v in enumerate(cp.tolist()) if np.isfinite(v) and float(v) >= float(threshold)]
+    min_dist = int(max(1, min_distance_bars))
+    min_regime = int(max(1, min_regime_bars))
+    conf = int(max(1, confirm_bars))
+    relaxed = float(threshold) * float(np.clip(confirm_relaxed_mult, 0.5, 1.0))
+    edge_thr = float(threshold) * float(max(1.0, edge_multiplier))
+    accepted: List[int] = []
+
+    rejects = {
+        "cooldown": 0,
+        "left_boundary": 0,
+        "confirmation": 0,
+        "edge_threshold": 0,
+        "edge_support": 0,
+    }
+
+    for idx in raw_idx:
+        if idx < min_regime:
+            rejects["left_boundary"] += 1
+            continue
+        if accepted and (idx - accepted[-1]) < min_dist:
+            rejects["cooldown"] += 1
+            continue
+
+        bars_to_end = n - idx
+        in_edge_zone = bars_to_end < min_regime
+        if in_edge_zone:
+            if not np.isfinite(cp[idx]) or float(cp[idx]) < edge_thr:
+                rejects["edge_threshold"] += 1
+                continue
+            support_start = max(0, idx - conf + 1)
+            support_window = cp[support_start: idx + 1]
+            support_count = int(np.sum(np.asarray(support_window, dtype=float) >= relaxed))
+            need = int(min(conf, support_window.size))
+            if support_count < need:
+                rejects["edge_support"] += 1
+                continue
+        else:
+            fwd = cp[idx: min(n, idx + conf)]
+            support_count = int(np.sum(np.asarray(fwd, dtype=float) >= relaxed))
+            need = int(min(conf, fwd.size))
+            if support_count < need:
+                rejects["confirmation"] += 1
+                continue
+        accepted.append(int(idx))
+
+    diagnostics = {
+        "raw_candidates_count": int(len(raw_idx)),
+        "accepted_count": int(len(accepted)),
+        "filtered_count": int(len(raw_idx) - len(accepted)),
+        "min_distance_bars": int(min_dist),
+        "min_regime_bars": int(min_regime),
+        "confirm_bars": int(conf),
+        "confirm_relaxed_mult": float(np.clip(confirm_relaxed_mult, 0.5, 1.0)),
+        "edge_multiplier": float(max(1.0, edge_multiplier)),
+        "reject_reasons": rejects,
+    }
+    return accepted, diagnostics
+
+
+def _bocpd_reliability_score(
+    cp_prob: np.ndarray,
+    cp_indices: List[int],
+    *,
+    threshold: float,
+    lookback: int,
+    min_regime_bars: int,
+    expected_false_alarm_rate: float,
+    calibration_age_bars: int,
+    threshold_calibrated: bool,
+) -> Dict[str, Any]:
+    """Estimate BOCPD reliability from margins, edge concentration, and calibration."""
+    cp = np.asarray(cp_prob, dtype=float)
+    cp = cp[np.isfinite(cp)]
+    n = int(cp.size)
+    if n == 0:
+        return {
+            "confidence": 0.0,
+            "reliability_label": "low",
+            "expected_false_alarm_rate": float(np.clip(expected_false_alarm_rate, 1e-4, 0.25)),
+            "calibration_age_bars": int(max(0, calibration_age_bars)),
+            "threshold_margin": 0.0,
+            "recent_cp_density": 0.0,
+            "edge_cp_share": 0.0,
+            "threshold_calibrated": bool(threshold_calibrated),
+        }
+
+    lb = int(max(1, min(int(lookback), n)))
+    start = n - lb
+    tail = cp[-lb:]
+    cps_recent = [int(i) for i in cp_indices if int(i) >= start]
+    edge_zone = int(max(1, min_regime_bars))
+    edge_count = int(sum(1 for i in cps_recent if int(i) >= (n - edge_zone)))
+    edge_share = float(edge_count / max(1, len(cps_recent))) if cps_recent else 0.0
+    density = float(len(cps_recent) / float(lb))
+    peak = float(np.nanmax(tail)) if tail.size else 0.0
+    margin = float(max(0.0, peak - float(threshold)))
+
+    target_fa = float(np.clip(expected_false_alarm_rate, 1e-4, 0.25))
+    margin_factor = float(np.clip(margin / 0.15, 0.0, 1.0))
+    edge_factor = float(np.clip(1.0 - edge_share, 0.0, 1.0))
+    density_penalty = float(np.clip(abs(density - target_fa) / max(target_fa, 1e-6), 0.0, 1.0))
+    calibration_factor = 1.0 if bool(threshold_calibrated) else 0.6
+    score = float(
+        np.clip(
+            0.45 * margin_factor
+            + 0.30 * edge_factor
+            + 0.15 * (1.0 - density_penalty)
+            + 0.10 * calibration_factor,
+            0.0,
+            1.0,
+        )
+    )
+    label = "high" if score >= 0.75 else ("medium" if score >= 0.45 else "low")
+    return {
+        "confidence": float(score),
+        "reliability_label": label,
+        "expected_false_alarm_rate": float(target_fa),
+        "calibration_age_bars": int(max(0, calibration_age_bars)),
+        "threshold_margin": float(margin),
+        "recent_cp_density": float(density),
+        "edge_cp_share": float(edge_share),
+        "threshold_calibrated": bool(threshold_calibrated),
+    }
+
+
 def _consolidate_payload(payload: Dict[str, Any], method: str, output_mode: str, include_series: bool = False) -> Dict[str, Any]:
     """Consolidate time series into regime segments and restructure payload."""
     try:
@@ -494,6 +720,10 @@ def regime_detect(
     - method: 'bocpd' (Bayesian online change-point; Gaussian), 'hmm' (Gaussian mixture/HMM-lite), or 'ms_ar' (Markov-switching AR).
     - params (bocpd): optional `hazard_mode` = auto_default|auto_calibrated (defaults to auto_calibrated).
       Explicit `hazard_lambda` / `cp_threshold` always take precedence over auto selection.
+      Optional robustness params:
+        `cp_threshold_calibration_mode` (default `walkforward_quantile`),
+        `threshold_target_false_alarm_rate`,
+        `cp_confirm_bars`, `min_cp_distance_bars`, `cp_edge_multiplier`.
     - include_series: If True, include raw time series data (probs, states) in output even if output='full'. Default False.
     - min_regime_bars: Merge short state runs (< this many bars) for state-based methods to reduce flicker.
     - output:
@@ -541,6 +771,7 @@ def regime_detect(
             hazard_src = "params"
             threshold_src = "arg"
             calibration_info: Optional[Dict[str, Any]] = None
+            threshold_calibration_info: Optional[Dict[str, Any]] = None
 
             auto_hazard = _default_bocpd_hazard_lambda(symbol, timeframe)
             auto_threshold = _default_bocpd_cp_threshold(symbol, timeframe)
@@ -568,16 +799,112 @@ def regime_detect(
                     threshold_used = float(threshold)
                     threshold_src = "arg"
             max_rl = int(p.get('max_run_length', min(1000, x.size)))
+            threshold_cal_mode = str(
+                p.get("cp_threshold_calibration_mode", "walkforward_quantile")
+                or "walkforward_quantile"
+            ).strip().lower()
+            if threshold_cal_mode in {"auto", "walkforward", "quantile"}:
+                threshold_cal_mode = "walkforward_quantile"
+            if threshold_src in {"auto_calibrated", "auto_default"} and threshold_cal_mode == "walkforward_quantile":
+                try:
+                    target_fa = float(p.get("threshold_target_false_alarm_rate", 0.02))
+                except Exception:
+                    target_fa = 0.02
+                try:
+                    cal_window = int(p["threshold_calibration_window"]) if "threshold_calibration_window" in p and p.get("threshold_calibration_window") is not None else None
+                except Exception:
+                    cal_window = None
+                try:
+                    cal_step = int(p["threshold_calibration_step"]) if "threshold_calibration_step" in p and p.get("threshold_calibration_step") is not None else None
+                except Exception:
+                    cal_step = None
+                try:
+                    cal_max_windows = int(p.get("threshold_calibration_max_windows", 6))
+                except Exception:
+                    cal_max_windows = 6
+                try:
+                    cal_boot = int(p.get("threshold_calibration_bootstraps", 2))
+                except Exception:
+                    cal_boot = 2
+                threshold_used, threshold_calibration_info = _walkforward_quantile_threshold_calibration(
+                    series=x,
+                    hazard_lambda=hazard_lambda,
+                    base_threshold=threshold_used,
+                    target_false_alarm_rate=target_fa,
+                    window=cal_window,
+                    step=cal_step,
+                    max_windows=cal_max_windows,
+                    bootstrap_runs=cal_boot,
+                )
             res = bocpd_gaussian(x, hazard_lambda=hazard_lambda, max_run_length=max_rl)
-            cp_prob = res.get('cp_prob', np.zeros_like(x, dtype=float))
-            cp_idx = [int(i) for i, v in enumerate(cp_prob) if float(v) >= float(threshold_used)]
+            cp_prob = np.asarray(res.get('cp_prob', np.zeros_like(x, dtype=float)), dtype=float)
+            raw_cp_idx = [int(i) for i, v in enumerate(cp_prob.tolist()) if np.isfinite(v) and float(v) >= float(threshold_used)]
+            try:
+                cp_confirm_bars = int(p.get("cp_confirm_bars", 2))
+            except Exception:
+                cp_confirm_bars = 2
+            try:
+                cp_confirm_relaxed_mult = float(p.get("cp_confirm_relaxed_mult", 0.90))
+            except Exception:
+                cp_confirm_relaxed_mult = 0.90
+            try:
+                cp_edge_multiplier = float(p.get("cp_edge_multiplier", 1.08))
+            except Exception:
+                cp_edge_multiplier = 1.08
+            try:
+                min_cp_distance_bars = int(p.get("min_cp_distance_bars", max(2, min_regime_bars_val)))
+            except Exception:
+                min_cp_distance_bars = max(2, min_regime_bars_val)
+            cp_idx, cp_filter_meta = _filter_bocpd_change_points(
+                cp_prob=cp_prob,
+                threshold=float(threshold_used),
+                min_distance_bars=int(max(1, min_cp_distance_bars)),
+                min_regime_bars=int(max(1, min_regime_bars_val)),
+                confirm_bars=int(max(1, cp_confirm_bars)),
+                confirm_relaxed_mult=float(cp_confirm_relaxed_mult),
+                edge_multiplier=float(cp_edge_multiplier),
+            )
             cps = [{"idx": i, "time": t_fmt[i], "prob": float(cp_prob[i])} for i in cp_idx]
             tuning_hint: Optional[str] = None
             if len(cps) == 0:
-                tuning_hint = (
-                    "No change points detected. Try lowering threshold or reducing "
-                    f"hazard_lambda (currently {hazard_lambda}); active threshold={threshold_used:.2f}."
+                if len(raw_cp_idx) > 0 and int(cp_filter_meta.get("filtered_count", 0)) > 0:
+                    tuning_hint = (
+                        "Change-point candidates were filtered by robustness guards "
+                        "(confirmation/cooldown/edge checks). Tune cp_confirm_bars, "
+                        "min_cp_distance_bars, or cp_edge_multiplier if needed."
+                    )
+                else:
+                    tuning_hint = (
+                        "No change points detected. Try lowering threshold or reducing "
+                        f"hazard_lambda (currently {hazard_lambda}); active threshold={threshold_used:.2f}."
+                    )
+            if isinstance(threshold_calibration_info, dict):
+                expected_fa_rate = float(
+                    threshold_calibration_info.get("target_false_alarm_rate", 0.02)
                 )
+                calibration_age_bars = int(
+                    threshold_calibration_info.get(
+                        "points",
+                        calibration_info.get("points", 0) if isinstance(calibration_info, dict) else 0,
+                    )
+                )
+                threshold_calibrated = bool(threshold_calibration_info.get("calibrated", False))
+            else:
+                expected_fa_rate = 0.02
+                calibration_age_bars = int(
+                    calibration_info.get("points", 0) if isinstance(calibration_info, dict) else 0
+                )
+                threshold_calibrated = False
+            reliability = _bocpd_reliability_score(
+                cp_prob=cp_prob,
+                cp_indices=cp_idx,
+                threshold=float(threshold_used),
+                lookback=int(lookback),
+                min_regime_bars=int(max(1, min_regime_bars_val)),
+                expected_false_alarm_rate=float(expected_fa_rate),
+                calibration_age_bars=int(calibration_age_bars),
+                threshold_calibrated=bool(threshold_calibrated),
+            )
             payload = {
                 "success": True,
                 "symbol": symbol,
@@ -588,6 +915,7 @@ def regime_detect(
                 "cp_prob": [float(v) for v in np.asarray(cp_prob, dtype=float).tolist()],
                 "change_points": cps,
                 "threshold": float(threshold_used),
+                "reliability": reliability,
                 "params_used": {
                     "hazard_lambda": hazard_lambda,
                     "hazard_lambda_source": hazard_src,
@@ -595,10 +923,13 @@ def regime_detect(
                     "cp_threshold_source": threshold_src,
                     "hazard_mode": hazard_mode,
                     "max_run_length": max_rl,
+                    "cp_filter": cp_filter_meta,
                 },
             }
             if isinstance(calibration_info, dict):
                 payload["params_used"]["auto_calibration"] = calibration_info
+            if isinstance(threshold_calibration_info, dict):
+                payload["params_used"]["cp_threshold_calibration"] = threshold_calibration_info
             if tuning_hint is not None:
                 payload["tuning_hint"] = tuning_hint
             if output in ('summary','compact'):
@@ -611,7 +942,20 @@ def regime_detect(
                     "max_cp_prob": float(np.nanmax(tail)) if tail.size else float('nan'),
                     "mean_cp_prob": float(np.nanmean(tail)) if tail.size else float('nan'),
                     "change_points_count": int(len(recent_cps)),
+                    "raw_change_points_count": int(
+                        sum(1 for idx in raw_cp_idx if int(idx) >= (len(cp_prob) - n))
+                    ),
+                    "filtered_change_points_count": int(
+                        max(
+                            0,
+                            sum(1 for idx in raw_cp_idx if int(idx) >= (len(cp_prob) - n)) - int(len(recent_cps)),
+                        )
+                    ),
                     "recent_change_points": recent_cps[-5:],
+                    "confidence": float(reliability.get("confidence", 0.0)),
+                    "expected_false_alarm_rate": float(reliability.get("expected_false_alarm_rate", expected_fa_rate)),
+                    "calibration_age_bars": int(reliability.get("calibration_age_bars", calibration_age_bars)),
+                    "reliability": reliability,
                 }
                 if tuning_hint is not None:
                     summary["tuning_hint"] = tuning_hint
