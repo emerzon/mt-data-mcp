@@ -953,6 +953,20 @@ class TestPatternsDetect:
 
     @patch("mtdata.core.patterns._format_elliott_patterns")
     @patch("mtdata.core.patterns._fetch_pattern_data")
+    def test_elliott_mode_diagnostic_does_not_repeat_current_timeframe(self, mock_fetch, mock_format):
+        df = _make_ohlcv_df(200)
+        mock_fetch.return_value = (df, None)
+        mock_format.return_value = []
+        from mtdata.core.patterns import patterns_detect
+        inner = _fully_unwrap(patterns_detect)
+        result = inner(symbol="EURUSD", mode="elliott", timeframe="D1")
+        diagnostic = str(result.get("diagnostic") or "")
+        assert result.get("success") is True
+        assert "--timeframe D1 or --timeframe D1" not in diagnostic
+        assert "Try --timeframe H4 or --timeframe W1." in diagnostic
+
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
     def test_elliott_mode_all_tf(self, mock_fetch, mock_format):
         df = _make_ohlcv_df(200)
         mock_fetch.return_value = (df, None)

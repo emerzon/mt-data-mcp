@@ -114,13 +114,24 @@ def _fetch_pattern_data(
 
 def _elliott_timeframe_suggestion(timeframe: Optional[str]) -> str:
     tf = str(timeframe or "").upper()
-    if tf in {"M1", "M5", "M15"}:
-        return "Try --timeframe H1 or --timeframe H4."
-    if tf in {"M30", "H1"}:
-        return "Try --timeframe H4 or --timeframe D1."
-    if tf in {"H4"}:
-        return "Try --timeframe D1 or increase --limit."
-    return "Try --timeframe H4 or --timeframe D1."
+    suggestion_map: Dict[str, List[str]] = {
+        "M1": ["H1", "H4"],
+        "M5": ["H1", "H4"],
+        "M15": ["H1", "H4"],
+        "M30": ["H4", "D1"],
+        "H1": ["H4", "D1"],
+        "H4": ["D1", "W1"],
+        "D1": ["H4", "W1"],
+        "W1": ["D1", "MN1"],
+        "MN1": ["W1", "D1"],
+    }
+    raw_suggestions = suggestion_map.get(tf, ["H4", "D1"])
+    suggestions = [s for s in raw_suggestions if s != tf]
+    if not suggestions:
+        suggestions = ["H4"] if tf != "H4" else ["D1"]
+    if len(suggestions) == 1:
+        return f"Try --timeframe {suggestions[0]} or increase --limit."
+    return f"Try --timeframe {suggestions[0]} or --timeframe {suggestions[1]}."
 
 
 def _build_pattern_response(
