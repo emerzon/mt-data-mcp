@@ -911,6 +911,17 @@ def fetch_ticks(
             }
             if duration_seconds <= 0:
                 out["tick_rate_note"] = "< 1s window"
+            spread_stats = out.get("stats", {}).get("spread")
+            if isinstance(spread_stats, dict):
+                try:
+                    spread_first = float(spread_stats.get("first"))
+                    spread_change_pct = spread_stats.get("change_pct")
+                    spread_change_pct_f = float(spread_change_pct) if spread_change_pct is not None else float("nan")
+                    if spread_first == 0.0 and not math.isfinite(spread_change_pct_f):
+                        spread_stats["change_pct"] = None
+                        out["spread_change_pct_note"] = "first spread was zero"
+                except Exception:
+                    pass
             if price_digits > 0:
                 out["price_precision"] = int(price_digits)
             if has_last:

@@ -130,6 +130,50 @@ class TestDataService(unittest.TestCase):
         self.assertIsNone(result.get('tick_rate_per_second'))
         self.assertEqual(result.get('tick_rate_note'), "< 1s window")
 
+    @patch('mtdata.services.data_service._mt5_copy_ticks_range')
+    @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
+    def test_fetch_ticks_spread_change_pct_zero_first_uses_note(self, mock_copy_ticks):
+        now = datetime.now(timezone.utc).timestamp()
+        ticks = [
+            {
+                'time': now - 2,
+                'bid': 1.1000,
+                'ask': 1.1000,
+                'last': 1.1000,
+                'volume': 1.0,
+                'time_msc': (now - 2) * 1000,
+                'flags': 0,
+                'volume_real': 0.0,
+            },
+            {
+                'time': now - 1,
+                'bid': 1.1000,
+                'ask': 1.1001,
+                'last': 1.10005,
+                'volume': 1.0,
+                'time_msc': (now - 1) * 1000,
+                'flags': 0,
+                'volume_real': 0.0,
+            },
+            {
+                'time': now,
+                'bid': 1.1000,
+                'ask': 1.1002,
+                'last': 1.1001,
+                'volume': 1.0,
+                'time_msc': now * 1000,
+                'flags': 0,
+                'volume_real': 0.0,
+            },
+        ]
+        mock_copy_ticks.return_value = ticks
+
+        result = fetch_ticks(symbol="EURUSD", limit=3, output="summary")
+
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("spread_change_pct_note"), "first spread was zero")
+        self.assertIsNone(result.get("stats", {}).get("spread", {}).get("change_pct"))
+
 if __name__ == '__main__':
     try:
         unittest.main(exit=False)
