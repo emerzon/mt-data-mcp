@@ -714,6 +714,36 @@ class TestTradeClose:
         mock_close.assert_called_once()
         mock_cancel.assert_not_called()
 
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_symbol_no_open_or_pending_marks_no_action(self, mock_close, mock_cancel):
+        mock_close.return_value = {"message": "No open positions for EURUSD"}
+        mock_cancel.return_value = {"message": "No pending orders for EURUSD"}
+        out = _unwrap_mcp(trade_close(symbol="EURUSD"))
+        if isinstance(out, dict):
+            assert out.get("message") == "No open positions or pending orders for EURUSD"
+            assert out.get("no_action") is True
+        else:
+            assert "No open positions or pending orders for EURUSD" in out
+            assert "no_action" in out.lower()
+        mock_close.assert_called_once()
+        mock_cancel.assert_called_once_with(symbol="EURUSD", comment=None)
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_global_no_open_or_pending_marks_no_action(self, mock_close, mock_cancel):
+        mock_close.return_value = {"message": "No open positions"}
+        mock_cancel.return_value = {"message": "No pending orders"}
+        out = _unwrap_mcp(trade_close())
+        if isinstance(out, dict):
+            assert out.get("message") == "No open positions or pending orders"
+            assert out.get("no_action") is True
+        else:
+            assert "No open positions or pending orders" in out
+            assert "no_action" in out.lower()
+        mock_close.assert_called_once()
+        mock_cancel.assert_called_once_with(comment=None)
+
 
 # ===================================================================
 #  trade_modify (dispatch)

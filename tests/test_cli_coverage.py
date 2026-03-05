@@ -1613,6 +1613,20 @@ class TestMain:
         assert result == 1
 
     @patch("mtdata.core.cli.discover_tools")
+    def test_command_no_action_result_returns_nonzero(self, mock_discover, capsys):
+        mock_fn = MagicMock(return_value={"message": "No action taken", "no_action": True})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "noop_tool"
+        mock_fn.__doc__ = "No-op tool."
+
+        mock_discover.return_value = {
+            "noop_tool": {"func": mock_fn, "meta": {"description": "No-op tool"}},
+        }
+        with patch("sys.argv", ["cli.py", "noop_tool", "X"]):
+            result = main()
+        assert result == 1
+
+    @patch("mtdata.core.cli.discover_tools")
     def test_keyboard_interrupt(self, mock_discover, capsys):
         mock_fn = MagicMock(side_effect=KeyboardInterrupt)
         mock_fn.__module__ = "mtdata.core.server"

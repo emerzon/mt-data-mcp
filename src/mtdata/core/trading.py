@@ -345,6 +345,36 @@ def _validate_deviation(deviation: Union[int, float]) -> Tuple[Optional[int], Op
     return dev, None
 
 
+def _prevalidate_trade_place_market_input(symbol: str, volume: Any) -> Optional[Dict[str, Any]]:
+    """Validate symbol and volume before market-order SL/TP enforcement returns."""
+    import MetaTrader5 as mt5
+
+    @_auto_connect_wrapper
+    def _prevalidate():
+        symbol_info = mt5.symbol_info(symbol)
+        if symbol_info is None:
+            return {"error": f"Symbol {symbol} not found"}
+
+        if not getattr(symbol_info, "visible", True):
+            if not mt5.symbol_select(symbol, True):
+                return {"error": f"Failed to select symbol {symbol}"}
+
+        _, volume_error = _validate_volume(volume, symbol_info)
+        if volume_error:
+            return {"error": volume_error}
+        return {"ok": True}
+
+    result = _prevalidate()
+    if isinstance(result, dict):
+        err = result.get("error")
+        if isinstance(err, str):
+            if err.strip():
+                return result
+        elif err not in (None, False):
+            return result
+    return None
+
+
 def _normalize_trade_comment(comment: Optional[str], *, default: str, suffix: str = "") -> str:
     """Return an MT5-safe comment string.
 
@@ -1808,6 +1838,9 @@ def trade_place(
         if take_profit in (None, 0):
             missing_protection.append("take_profit")
         if missing_protection:
+            prevalidation_error = _prevalidate_trade_place_market_input(symbol_norm, volume)
+            if prevalidation_error is not None:
+                return prevalidation_error
             return {
                 "error": (
                     "require_sl_tp=True requires both stop_loss and take_profit for market orders. "
@@ -2562,8 +2595,15 @@ def trade_close(
     - With `symbol`: closes matching positions; if none exist, cancels pending orders for that symbol.
     - With no filters: closes open positions; if none exist, cancels all pending orders.
     """
+    def _with_no_action(payload: Optional[Dict[str, Any]] = None, *, message: Optional[str] = None) -> Dict[str, Any]:
+        out: Dict[str, Any] = dict(payload or {})
+        if message and not str(out.get("message", "")).strip():
+            out["message"] = message
+        out["no_action"] = True
+        return out
+
     if profit_only or loss_only:
-        return _close_positions(
+        result = _close_positions(
             ticket=ticket,
             symbol=symbol,
             profit_only=profit_only,
@@ -2571,6 +2611,11 @@ def trade_close(
             comment=comment,
             deviation=deviation,
         )
+        if isinstance(result, dict):
+            msg = str(result.get("message", "")).strip().lower()
+            if msg.startswith("no open positions") or msg == "no positions matched criteria":
+                return _with_no_action(result)
+        return result
 
     if ticket is not None:
         position_result = _close_positions(
@@ -2606,7 +2651,7 @@ def trade_close(
                 if isinstance(pending_result, dict):
                     pending_msg = str(pending_result.get("message", "")).strip().lower()
                     if pending_msg.startswith("no pending orders for "):
-                        return {"message": f"No open positions or pending orders for {symbol}"}
+                        return _with_no_action(message=f"No open positions or pending orders for {symbol}")
                 return pending_result
         return position_result
 
@@ -2621,7 +2666,7 @@ def trade_close(
         if msg == "no open positions":
             pending_result = _cancel_pending(comment=comment)
             if isinstance(pending_result, dict) and str(pending_result.get("message", "")).strip().lower() == "no pending orders":
-                return {"message": "No open positions or pending orders"}
+                return _with_no_action(message="No open positions or pending orders")
             return pending_result
     return position_result
 

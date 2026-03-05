@@ -202,6 +202,8 @@ def _render_cli_result(result: Any, *, args: Any, cmd_name: str) -> None:
 
 def _result_has_tool_error(result: Any) -> bool:
     if isinstance(result, dict):
+        if bool(result.get("no_action", False)):
+            return True
         err = result.get("error")
         if isinstance(err, str):
             return bool(err.strip())

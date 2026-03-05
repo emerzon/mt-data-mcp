@@ -88,7 +88,10 @@ def test_trade_place_blank_expiration_keeps_market_routing() -> None:
 
 
 def test_trade_place_require_sl_tp_needs_inputs_before_market_send() -> None:
-    with patch("mtdata.core.trading._place_market_order") as mock_market:
+    with patch(
+        "mtdata.core.trading._prevalidate_trade_place_market_input",
+        return_value=None,
+    ) as mock_prevalidate, patch("mtdata.core.trading._place_market_order") as mock_market:
         out = trade_place(
             symbol="BTCUSD",
             volume=0.03,
@@ -99,6 +102,24 @@ def test_trade_place_require_sl_tp_needs_inputs_before_market_send() -> None:
     assert "error" in out
     assert out.get("require_sl_tp") is True
     assert set(out.get("missing", [])) == {"stop_loss", "take_profit"}
+    mock_prevalidate.assert_called_once_with("BTCUSD", 0.03)
+    mock_market.assert_not_called()
+
+
+def test_trade_place_reports_symbol_error_before_sl_tp_requirement() -> None:
+    with patch(
+        "mtdata.core.trading._prevalidate_trade_place_market_input",
+        return_value={"error": "Symbol FAKESYM not found"},
+    ) as mock_prevalidate, patch("mtdata.core.trading._place_market_order") as mock_market:
+        out = trade_place(
+            symbol="FAKESYM",
+            volume=0.03,
+            order_type="BUY",
+            require_sl_tp=True,
+            __cli_raw=True,
+        )
+    assert out.get("error") == "Symbol FAKESYM not found"
+    mock_prevalidate.assert_called_once_with("FAKESYM", 0.03)
     mock_market.assert_not_called()
 
 
