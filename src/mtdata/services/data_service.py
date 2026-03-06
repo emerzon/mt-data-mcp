@@ -40,8 +40,12 @@ from ..utils.indicators import (
 from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
 
 # Simplify entrypoint and helpers.
-from ..services.simplification import _simplify_dataframe_rows_ext
-from ..utils.simplify import _choose_simplify_points, _select_indices_for_timeseries, _lttb_select_indices
+from ..utils.simplify import (
+    _choose_simplify_points,
+    _lttb_select_indices,
+    _select_indices_for_timeseries,
+    _simplify_dataframe_rows_ext,
+)
 
 import MetaTrader5 as mt5
 

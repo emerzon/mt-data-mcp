@@ -72,6 +72,38 @@ class TestMergedTools(unittest.TestCase):
         self.assertIsNone(res[0].get("direction"))
         self.assertIsNone(res[0].get("type_code"))
 
+    def test_trading_open_comment_metadata_is_exposed(self):
+        Pos = namedtuple(
+            "Pos",
+            [
+                "ticket",
+                "time",
+                "time_msc",
+                "time_update",
+                "time_update_msc",
+                "type",
+                "symbol",
+                "comment",
+            ],
+        )
+        self.mt5.positions_get.return_value = [
+            Pos(
+                ticket=1,
+                time=1700000000,
+                time_msc=1700000000000,
+                time_update=1700000001,
+                time_update_msc=1700000001000,
+                type=0,
+                symbol="EURUSD",
+                comment="audit short",
+            )
+        ]
+
+        res = trade_get_open(__cli_raw=True)
+        self.assertEqual(res[0].get("Comment Limit"), 31)
+        self.assertEqual(res[0].get("Comment Length"), len("audit short"))
+        self.assertTrue(res[0].get("Comment May Be Truncated"))
+
     def test_trading_open_get_pending(self):
         self.mt5.orders_get.return_value = None
 

@@ -267,3 +267,55 @@ def test_trade_history_replaces_non_finite_values_with_none() -> None:
 
     assert isinstance(out, list)
     assert out[0]["profit"] is None
+
+
+def test_trade_history_filters_deals_by_position_ticket() -> None:
+    mt5, prev = _install_mock_mt5()
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol", "position_id"])
+    mt5.history_deals_get.return_value = [
+        Deal(ticket=1, time=1700000000, symbol="BTCUSD", position_id=111),
+        Deal(ticket=2, time=1700003600, symbol="BTCUSD", position_id=222),
+    ]
+
+    with patch("mtdata.core.trading._auto_connect_wrapper", lambda f: f), patch(
+        "mtdata.core.trading._use_client_tz", lambda: False
+    ):
+        out = trade_history(history_kind="deals", symbol="BTCUSD", position_ticket=222, __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert isinstance(out, list)
+    assert len(out) == 1
+    assert out[0]["ticket"] == 2
+
+
+def test_trade_history_rejects_start_with_minutes_back() -> None:
+    with patch("mtdata.core.trading._auto_connect_wrapper", lambda f: f):
+        out = trade_history(
+            history_kind="deals",
+            start="2026-03-01",
+            minutes_back=30,
+            __cli_raw=True,
+        )
+
+    assert out == {"error": "Use either start or minutes_back, not both."}
+
+
+def test_trade_history_surfaces_comment_limit_metadata() -> None:
+    mt5, prev = _install_mock_mt5()
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol", "comment"])
+    mt5.history_deals_get.return_value = [
+        Deal(ticket=1, time=1700000000, symbol="BTCUSD", comment="audit short"),
+    ]
+
+    with patch("mtdata.core.trading._auto_connect_wrapper", lambda f: f), patch(
+        "mtdata.core.trading._use_client_tz", lambda: False
+    ):
+        out = trade_history(history_kind="deals", symbol="BTCUSD", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert isinstance(out, list)
+    assert out[0]["comment_max_length"] == 31
+    assert out[0]["comment_visible_length"] == len("audit short")
+    assert out[0]["comment_may_be_truncated"] is True

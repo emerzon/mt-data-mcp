@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from mtdata.core.forecast import forecast_generate
-from mtdata.forecast.helpers import default_seasonality_period
+from mtdata.forecast.common import default_seasonality
 
 
 def _usage() -> str:
@@ -45,7 +45,7 @@ def _run(symbol: str, timeframe: str, horizon: int, models: List[str]) -> Dict[s
         "models": {},
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
     }
-    m_eff = default_seasonality_period(timeframe)
+    m_eff = default_seasonality(timeframe)
     successes = 0
     for spec in models:
         library, model = _parse_model_spec(spec)

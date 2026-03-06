@@ -1,7 +1,7 @@
-"""Tests for core/simplify.py — wrapper functions delegating to utils.simplify."""
+"""Tests for canonical simplify helpers in utils.simplify."""
 import pytest
 
-from mtdata.core.simplify import (
+from mtdata.utils.simplify import (
     _point_line_distance,
     _max_line_error,
     _rdp_select_indices,

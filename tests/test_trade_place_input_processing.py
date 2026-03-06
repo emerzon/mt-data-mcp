@@ -212,6 +212,32 @@ def test_trade_place_auto_close_attempts_recovery_on_sl_tp_fail() -> None:
     assert out.get("auto_close_result", {}).get("retcode") == 10009
 
 
+def test_trade_place_preserves_fallback_protection_status_and_warning() -> None:
+    with patch(
+        "mtdata.core.trading._place_market_order",
+        return_value={
+            "retcode": 10009,
+            "sl_tp_requested": True,
+            "sl_tp_apply_status": "applied",
+            "sl_tp_fallback_used": True,
+            "protection_status": "protected_after_fallback",
+            "warnings": [
+                "TP/SL protection required a post-fill fallback modification. Verify the live position is protected."
+            ],
+        },
+    ):
+        out = trade_place(
+            symbol="BTCUSD",
+            volume=0.03,
+            order_type="BUY",
+            stop_loss=64000,
+            take_profit=68000,
+            __cli_raw=True,
+        )
+    assert out.get("protection_status") == "protected_after_fallback"
+    assert any("fallback modification" in str(w) for w in out.get("warnings", []))
+
+
 def test_trade_modify_blank_expiration_keeps_position_path() -> None:
     with patch("mtdata.core.trading._modify_position", return_value={"success": True}) as mock_pos, patch(
         "mtdata.core.trading._modify_pending_order", return_value={"success": True}

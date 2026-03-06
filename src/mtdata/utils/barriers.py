@@ -3,21 +3,7 @@ from typing import Any, Optional, Tuple, Literal, Dict
 import math
 
 from .mt5 import get_symbol_info_cached
-
-
-def _coerce_finite_float(value: Any) -> Optional[float]:
-    try:
-        if value is None:
-            return None
-        out = float(value)
-    except Exception:
-        try:
-            out = float(str(value))
-        except Exception:
-            return None
-    if not math.isfinite(out):
-        return None
-    return float(out)
+from .utils import _coerce_finite_float
 
 
 def normalize_trade_direction(direction: Any) -> Tuple[Optional[Literal["long", "short"]], Optional[str]]:

@@ -1104,6 +1104,10 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
         "python cli.py trade_modify 123456789 --price 61000",
         "python cli.py trade_modify 123456789 --stop-loss 60500 --take-profit 62500",
     ),
+    "trade_place": (
+        "python cli.py trade_place BTCUSD --volume 0.01 --order-type SELL --stop-loss 68521 --take-profit 67071",
+        "python cli.py trade_place BTCUSD --volume 0.01 --order-type BUY --stop-loss 64500 --take-profit 67200 --comment \"swing long\"",
+    ),
     "trade_close": (
         "python cli.py trade_close --ticket 123456789",
         "python cli.py trade_close --symbol BTCUSD --profit-only true",
@@ -1229,6 +1233,13 @@ def _extract_help_query(argv: List[str]) -> Optional[str]:
 
 
 def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
+    def _format_optional_param(param: Dict[str, Any]) -> str:
+        name = param["name"]
+        default_text = _format_cli_literal(param.get("default"))
+        if default_text is None:
+            return name
+        return f"{name}={default_text}"
+
     matches = _match_commands(functions, query)
     if not matches:
         print(f"No commands match '{query}'.")
@@ -1243,7 +1254,7 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
         meta = tool.get('meta') or {}
         summary = meta.get('description') or _first_line(func_info.get('doc'))
         required = [p['name'] for p in func_info['params'] if p['required']]
-        optional = [p['name'] for p in func_info['params'] if not p['required']]
+        optional = [_format_optional_param(p) for p in func_info['params'] if not p['required']]
         base_example, advanced_example = _build_usage_examples(name, func_info)
         print(name)
         if summary:
@@ -1251,7 +1262,10 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
         if required:
             print(f"  Required: {', '.join(required)}")
         if optional:
-            print(f"  Optional: {', '.join(optional[:6])}")
+            print(f"  Optional: {', '.join(optional)}")
+        if name == "trade_place":
+            print("  Safety: market orders default to require_sl_tp=true; add both stop_loss and take_profit or explicitly set --require-sl-tp false.")
+            print("  Recovery: set --auto-close-on-sl-tp-fail true to try to close a filled order if TP/SL attachment fails.")
         print(f"  Example: {base_example}")
         if advanced_example and advanced_example != base_example:
             print(f"  Example+: {advanced_example}")

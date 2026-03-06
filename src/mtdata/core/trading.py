@@ -13,6 +13,7 @@ from ..utils.mt5_enums import decode_mt5_enum_label
 from .config import mt5_config
 from .constants import DEFAULT_ROW_LIMIT
 from ..utils.utils import (
+    _coerce_finite_float,
     _coerce_scalar,
     _format_time_minimal,
     _format_time_minimal_local,
@@ -58,6 +59,7 @@ _ORDER_TYPE_ALIASES = {
     "LONG": "BUY",
     "SHORT": "SELL",
 }
+_MT5_COMMENT_MAX_LENGTH = 31
 
 
 def _normalize_order_type_input(order_type: Any) -> Tuple[Optional[str], Optional[str]]:
@@ -381,7 +383,6 @@ def _normalize_trade_comment(comment: Optional[str], *, default: str, suffix: st
     MT5 typically enforces a short comment length; we trim to a conservative
     limit to avoid hard-to-debug order_send failures.
     """
-    max_len = 31
     try:
         base = str(comment or "").strip()
     except Exception:
@@ -391,17 +392,17 @@ def _normalize_trade_comment(comment: Optional[str], *, default: str, suffix: st
 
     full = f"{base}{suffix}" if suffix else base
     try:
-        if len(full) > max_len:
+        if len(full) > _MT5_COMMENT_MAX_LENGTH:
             if suffix:
-                allowed_base = max_len - len(suffix)
+                allowed_base = _MT5_COMMENT_MAX_LENGTH - len(suffix)
                 if allowed_base > 0:
                     full = f"{base[:allowed_base]}{suffix}"
                 else:
-                    full = base[:max_len]
+                    full = base[:_MT5_COMMENT_MAX_LENGTH]
             else:
-                full = base[:max_len]
+                full = base[:_MT5_COMMENT_MAX_LENGTH]
     except Exception:
-        full = str(default or "MCP")[:max_len]
+        full = str(default or "MCP")[:_MT5_COMMENT_MAX_LENGTH]
     return full
 
 
@@ -420,8 +421,51 @@ def _comment_truncation_info(comment: Optional[str], applied_comment: str) -> Op
     return {
         "requested": requested,
         "applied": applied_comment,
-        "max_length": 31,
+        "max_length": _MT5_COMMENT_MAX_LENGTH,
     }
+
+
+def _comment_row_metadata(comment: Any) -> Dict[str, Any]:
+    """Surface broker comment limits in list views where original input is unavailable."""
+    if comment is None:
+        return {}
+    try:
+        if isinstance(comment, (int, float)) and not math.isfinite(float(comment)):
+            return {}
+    except Exception:
+        pass
+    try:
+        text = str(comment).strip()
+    except Exception:
+        text = ""
+    if not text or text.lower() == "nan":
+        return {}
+    return {
+        "comment_visible_length": len(text),
+        "comment_max_length": _MT5_COMMENT_MAX_LENGTH,
+        "comment_may_be_truncated": True,
+    }
+
+
+def _normalize_ticket_filter(ticket: Any, *, name: str) -> Tuple[Optional[int], Optional[str]]:
+    if ticket in (None, ""):
+        return None, None
+    value = _coerce_finite_float(ticket)
+    if value is None or not float(value).is_integer():
+        return None, f"{name} must be an integer ticket."
+    return int(value), None
+
+
+def _normalize_minutes_back(minutes_back: Any) -> Tuple[Optional[int], Optional[str]]:
+    if minutes_back in (None, ""):
+        return None, None
+    value = _coerce_finite_float(minutes_back)
+    if value is None or not float(value).is_integer():
+        return None, "minutes_back must be a positive integer."
+    minutes = int(value)
+    if minutes <= 0:
+        return None, "minutes_back must be a positive integer."
+    return minutes, None
 
 
 def _coerce_optional_bool(value: Any) -> Optional[bool]:
@@ -754,6 +798,10 @@ def trade_history(
     start: Optional[str] = None,
     end: Optional[str] = None,
     symbol: Optional[str] = None,
+    position_ticket: Optional[Union[int, str]] = None,
+    deal_ticket: Optional[Union[int, str]] = None,
+    order_ticket: Optional[Union[int, str]] = None,
+    minutes_back: Optional[int] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
 ) -> List[Dict[str, Any]]:
     """Get deal or order history as tabular data."""
@@ -775,12 +823,30 @@ def trade_history(
                 df[col] = utc.apply(lambda x: fmt_time(float(x)) if pd.notna(x) else None)
                 return utc
 
-            if start:
-                from_dt = _parse_start_datetime(start)
-                if not from_dt:
-                    return {"error": "Invalid start time."}
-            else:
-                from_dt = datetime(2020, 1, 1)
+            if start and minutes_back not in (None, ""):
+                return {"error": "Use either start or minutes_back, not both."}
+
+            position_ticket_value, position_ticket_error = _normalize_ticket_filter(
+                position_ticket,
+                name="position_ticket",
+            )
+            if position_ticket_error:
+                return {"error": position_ticket_error}
+            deal_ticket_value, deal_ticket_error = _normalize_ticket_filter(
+                deal_ticket,
+                name="deal_ticket",
+            )
+            if deal_ticket_error:
+                return {"error": deal_ticket_error}
+            order_ticket_value, order_ticket_error = _normalize_ticket_filter(
+                order_ticket,
+                name="order_ticket",
+            )
+            if order_ticket_error:
+                return {"error": order_ticket_error}
+            minutes_back_value, minutes_back_error = _normalize_minutes_back(minutes_back)
+            if minutes_back_error:
+                return {"error": minutes_back_error}
 
             if end:
                 to_dt = _parse_start_datetime(end)
@@ -789,12 +855,23 @@ def trade_history(
             else:
                 to_dt = datetime.now(timezone.utc).replace(tzinfo=None)
 
+            if minutes_back_value is not None:
+                from_dt = to_dt - timedelta(minutes=minutes_back_value)
+            elif start:
+                from_dt = _parse_start_datetime(start)
+                if not from_dt:
+                    return {"error": "Invalid start time."}
+            else:
+                from_dt = datetime(2020, 1, 1)
+
             if from_dt > to_dt:
                 return {"error": "start must be before end."}
 
             kind = str(history_kind or "deals").strip().lower()
             if kind not in ("deals", "orders"):
                 return {"error": "history_kind must be 'deals' or 'orders'."}
+            if kind == "orders" and deal_ticket_value is not None:
+                return {"error": "deal_ticket is only valid when history_kind='deals'."}
 
             def _decode_enum_column(col: str, prefix: str) -> None:
                 if col not in df.columns:
@@ -839,6 +916,26 @@ def trade_history(
                     return reason_trigger, None, "reason"
                 return None, None, None
 
+            def _filter_by_ticket_columns(
+                df_in: "pd.DataFrame",
+                ticket_value: Optional[int],
+                *,
+                columns: Tuple[str, ...],
+            ) -> "pd.DataFrame":
+                if ticket_value is None:
+                    return df_in
+                masks: List["pd.Series"] = []
+                for col in columns:
+                    if col not in df_in.columns:
+                        continue
+                    masks.append(pd.to_numeric(df_in[col], errors="coerce").eq(ticket_value))
+                if not masks:
+                    return df_in.iloc[0:0]
+                mask = masks[0]
+                for extra in masks[1:]:
+                    mask = mask | extra
+                return df_in.loc[mask]
+
             def _is_non_informative_series(series: "pd.Series") -> bool:
                 vals = pd.Series(series)
                 if vals.dropna().empty:
@@ -869,6 +966,9 @@ def trade_history(
                 df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
                 if symbol and "symbol" in df.columns:
                     df = df.loc[df["symbol"].astype(str).str.upper() == str(symbol).upper()]
+                df = _filter_by_ticket_columns(df, deal_ticket_value, columns=("ticket",))
+                df = _filter_by_ticket_columns(df, order_ticket_value, columns=("order",))
+                df = _filter_by_ticket_columns(df, position_ticket_value, columns=("position_id", "position_by_id"))
                 if len(df) == 0:
                     return {"message": f"No deals found for {symbol}" if symbol else "No deals found"}
                 sort_src = _normalize_time_col(df, "time")
@@ -906,6 +1006,8 @@ def trade_history(
                 df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
                 if symbol and "symbol" in df.columns:
                     df = df.loc[df["symbol"].astype(str).str.upper() == str(symbol).upper()]
+                df = _filter_by_ticket_columns(df, order_ticket_value, columns=("ticket",))
+                df = _filter_by_ticket_columns(df, position_ticket_value, columns=("position_id", "position_by_id"))
                 if len(df) == 0:
                     return {"message": f"No orders found for {symbol}" if symbol else "No orders found"}
                 sort_src = _normalize_time_col(df, "time_setup")
@@ -940,6 +1042,7 @@ def trade_history(
             for row in records:
                 if isinstance(row, dict):
                     row["timestamp_timezone"] = timezone_label
+                    row.update(_comment_row_metadata(row.get("comment")))
             return records
         except Exception as e:
             return {"error": str(e)}
@@ -1033,6 +1136,10 @@ def trade_get_open(
                     "Magic": _pick_series(df, "magic"),
                 }
             )
+            comment_meta = _pick_series(df, "comment").apply(_comment_row_metadata)
+            out_df["Comment Length"] = comment_meta.apply(lambda v: v.get("comment_visible_length"))
+            out_df["Comment Limit"] = comment_meta.apply(lambda v: v.get("comment_max_length"))
+            out_df["Comment May Be Truncated"] = comment_meta.apply(lambda v: v.get("comment_may_be_truncated"))
             out_df["__time_utc"] = time_utc
             sort_col = "__time_utc"
 
@@ -1161,6 +1268,10 @@ def trade_get_pending(
                     "Magic": _pick_series(df, "magic"),
                 }
             )
+            comment_meta = _pick_series(df, "comment").apply(_comment_row_metadata)
+            out_df["Comment Length"] = comment_meta.apply(lambda v: v.get("comment_visible_length"))
+            out_df["Comment Limit"] = comment_meta.apply(lambda v: v.get("comment_max_length"))
+            out_df["Comment May Be Truncated"] = comment_meta.apply(lambda v: v.get("comment_may_be_truncated"))
             out_df["__time_utc"] = time_utc
 
             limit_value = _normalize_limit(limit)
@@ -1519,6 +1630,10 @@ def _place_market_order(
                     "CRITICAL: Order filled but TP/SL could not be applied. "
                     f"Use {fix_hint} immediately or close the position."
                 )
+            if sl_tp_requested and sl_tp_fallback_used and sl_tp_apply_status == "applied":
+                warnings_out.append(
+                    "TP/SL protection required a post-fill fallback modification. Verify the live position is protected."
+                )
 
             out: Dict[str, Any] = {
                 "retcode": result.retcode,
@@ -1550,6 +1665,15 @@ def _place_market_order(
                 "sl_tp_fallback_used": sl_tp_fallback_used,
                 "sl_tp_fallback_result": sl_tp_fallback_result,
             }
+            if sl_tp_requested:
+                if sl_tp_apply_status == "applied":
+                    out["protection_status"] = (
+                        "protected_after_fallback"
+                        if sl_tp_fallback_used
+                        else "protected"
+                    )
+                elif sl_tp_apply_status == "failed":
+                    out["protection_status"] = "unprotected_position"
             if comment_truncation:
                 out["comment_truncation"] = comment_truncation
             if warnings_out:

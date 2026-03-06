@@ -1,6 +1,6 @@
-"""Tests for forecast/helpers.py — thin wrappers over common functions."""
-from mtdata.forecast.helpers import (
-    default_seasonality_period,
+"""Tests for common forecast helper utilities."""
+from mtdata.forecast.common import (
+    default_seasonality as default_seasonality_period,
     next_times_from_last,
     pd_freq_from_timeframe,
 )

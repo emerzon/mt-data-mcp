@@ -1048,6 +1048,38 @@ class TestPrintExtendedHelp:
         out = capsys.readouterr().out
         assert "No commands match" in out
 
+    def test_trade_place_help_surfaces_safety_flags(self, capsys):
+        def trade_place(
+            symbol: str,
+            volume: float,
+            order_type: str,
+            price: float | None = None,
+            stop_loss: float | None = None,
+            take_profit: float | None = None,
+            expiration: str | None = None,
+            comment: str | None = None,
+            deviation: int = 20,
+            require_sl_tp: bool = True,
+            auto_close_on_sl_tp_fail: bool = False,
+        ):
+            """Place a market or pending order."""
+            pass
+
+        info = get_function_info(trade_place)
+        fns = {
+            "trade_place": {
+                "func": trade_place,
+                "meta": {"description": "Place a market or pending order"},
+                "_cli_func_info": info,
+            },
+        }
+
+        _print_extended_help(fns, "trade_place")
+        out = capsys.readouterr().out
+        assert "require_sl_tp=true" in out
+        assert "auto_close_on_sl_tp_fail=false" in out
+        assert "market orders default to require_sl_tp=true" in out
+
 
 # ========================================================================
 # _build_epilog
