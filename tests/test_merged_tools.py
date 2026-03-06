@@ -150,6 +150,19 @@ class TestMergedTools(unittest.TestCase):
             forecast_barrier_prob(symbol="EURUSD", method="closed_form", direction="SHORT", __cli_raw=True)
             self.assertEqual(mock_cf.call_args.kwargs.get("direction"), "short")
 
+    def test_forecast_barrier_prob_rejects_invalid_direction(self):
+        with patch('src.mtdata.forecast.barriers.forecast_barrier_hit_probabilities') as mock_mc:
+            res = forecast_barrier_prob(symbol="EURUSD", method="mc", direction="SIDEWAYS", __cli_raw=True)
+            self.assertIn("error", res)
+            self.assertIn("Invalid direction", res["error"])
+            mock_mc.assert_not_called()
+
+        with patch('src.mtdata.forecast.barriers.forecast_barrier_closed_form') as mock_cf:
+            res = forecast_barrier_prob(symbol="EURUSD", method="closed_form", direction="SIDEWAYS", __cli_raw=True)
+            self.assertIn("error", res)
+            self.assertIn("Invalid direction", res["error"])
+            mock_cf.assert_not_called()
+
     def test_trading_close_positions(self):
         # Mock positions
         mock_pos = MagicMock()

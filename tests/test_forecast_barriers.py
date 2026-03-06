@@ -202,6 +202,17 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertTrue(down["success"])
         self.assertAlmostEqual(down["prob_hit"], 1.0, places=12)
 
+    def test_forecast_barrier_closed_form_rejects_invalid_direction(self):
+        result = forecast_barrier_closed_form(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=10,
+            direction="sideways",
+            barrier=1.2,
+        )
+        self.assertIn("error", result)
+        self.assertIn("Invalid direction", result["error"])
+
     def test_forecast_barrier_optimize(self):
         result = forecast_barrier_optimize(
             symbol="EURUSD",
@@ -419,6 +430,57 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertIsInstance(result["best"], dict)
         self.assertIn("ev", result["best"])
 
+    def test_forecast_barrier_optimize_ensemble_selects_real_member_candidate(self):
+        self._set_flat_history(1.0)
+        gbm_paths = np.array([
+            [1.0030, 1.0010, 1.0010, 1.0010],
+            [1.0030, 1.0010, 1.0010, 1.0010],
+            [0.9970, 0.9960, 0.9950, 0.9940],
+            [1.0010, 1.0010, 1.0010, 1.0010],
+        ])
+        bootstrap_paths = np.array([
+            [1.0070, 1.0070, 1.0070, 1.0070],
+            [1.0070, 1.0070, 1.0070, 1.0070],
+            [0.9930, 0.9930, 0.9930, 0.9930],
+            [1.0070, 1.0070, 1.0070, 1.0070],
+        ])
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_gbm, \
+             patch('mtdata.forecast.barriers._simulate_bootstrap_mc') as mock_bootstrap, \
+             patch('mtdata.forecast.barriers._get_live_reference_price', return_value=(None, None)):
+            mock_gbm.return_value = {"price_paths": gbm_paths}
+            mock_bootstrap.return_value = {"price_paths": bootstrap_paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="ensemble",
+                direction="long",
+                mode="pct",
+                tp_min=0.2, tp_max=0.6, tp_steps=2,
+                sl_min=0.2, sl_max=0.6, sl_steps=2,
+                objective="ev",
+                params={
+                    "ensemble_methods": ["mc_gbm", "bootstrap"],
+                    "ensemble_agg": "median",
+                    "optimizer": "grid",
+                    "n_sims": 50,
+                    "n_seeds": 1,
+                },
+                return_grid=True,
+                output="summary",
+            )
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("method"), "ensemble")
+        self.assertEqual(result["best"].get("member_method"), "bootstrap")
+        self.assertEqual(result["ensemble"]["selected_member"]["method"], "bootstrap")
+        aggregate = result["ensemble"].get("aggregate_metrics")
+        self.assertIsInstance(aggregate, dict)
+        self.assertNotAlmostEqual(float(result["best"]["tp"]), float(aggregate["tp"]), places=8)
+        selected_rows = [m for m in result["ensemble"]["members"] if m.get("selected")]
+        self.assertEqual(len(selected_rows), 1)
+        self.assertAlmostEqual(float(selected_rows[0]["tp"]), float(result["best"]["tp"]), places=8)
+        self.assertAlmostEqual(float(selected_rows[0]["sl"]), float(result["best"]["sl"]), places=8)
+
     def test_forecast_barrier_optimize_prefers_live_reference_price(self):
         self._set_flat_history(1.0, bars=200)
         paths = self._sample_paths()
@@ -448,6 +510,46 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertIsInstance(best, dict)
         self.assertAlmostEqual(best["tp_price"], 1.2345 * 0.995, places=8)
         self.assertAlmostEqual(best["sl_price"], 1.2345 * 1.005, places=8)
+
+    def test_forecast_barrier_optimize_reanchors_paths_to_live_reference_price(self):
+        self._set_flat_history(1.0, bars=200)
+        paths = self._sample_paths()
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim, \
+             patch('mtdata.forecast.barriers._get_live_reference_price', return_value=(1.2345, "live_tick_ask")):
+            mock_sim.return_value = {"price_paths": paths}
+            hit_probs = forecast_barrier_hit_probabilities(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                tp_pct=0.5,
+                sl_pct=0.5,
+            )
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim, \
+             patch('mtdata.forecast.barriers._get_live_reference_price', return_value=(1.2345, "live_tick_ask")):
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
+                return_grid=True,
+            )
+        self.assertTrue(hit_probs.get("success"))
+        self.assertTrue(result.get("success"))
+        best = result["best"]
+        self.assertAlmostEqual(best["prob_tp_first"], hit_probs["prob_tp_first"], places=8)
+        self.assertAlmostEqual(best["prob_sl_first"], hit_probs["prob_sl_first"], places=8)
+        self.assertAlmostEqual(best["prob_no_hit"], hit_probs["prob_no_hit"], places=8)
 
     def test_forecast_barrier_optimize_filters_invalid_barrier_geometry(self):
         self._set_flat_history(1.0, bars=200)
@@ -765,6 +867,24 @@ class TestForecastBarriers(unittest.TestCase):
         )
         self.assertIn("error", result)
         self.assertIn("Invalid direction", result["error"])
+
+    def test_forecast_barrier_hit_probabilities_rejects_non_finite_barrier_input(self):
+        self._set_flat_history(1.0, bars=200)
+        paths = self._sample_paths()
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim, \
+             patch('mtdata.forecast.barriers._get_live_reference_price', return_value=(None, None)):
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_hit_probabilities(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                tp_abs=float("nan"),
+                sl_abs=0.99,
+            )
+        self.assertIn("error", result)
+        self.assertIn("Provide barriers", result["error"])
 
     def test_forecast_barrier_optimize_rejects_invalid_mode(self):
         result = forecast_barrier_optimize(

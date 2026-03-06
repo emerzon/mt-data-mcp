@@ -6,7 +6,12 @@ from ..core.schema import TimeframeLiteral, DenoiseSpec
 from ..core.constants import TIMEFRAME_SECONDS
 from .common import fetch_history as _fetch_history, log_returns_from_prices as _log_returns_from_prices
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
-from ..utils.barriers import get_pip_size as _get_pip_size, resolve_barrier_prices as _resolve_barrier_prices
+from ..utils.barriers import (
+    get_pip_size as _get_pip_size,
+    resolve_barrier_prices as _resolve_barrier_prices,
+    normalize_trade_direction as _normalize_trade_direction,
+    barrier_prices_are_valid as _barrier_prices_are_valid,
+)
 from .monte_carlo import (
     simulate_gbm_mc as _simulate_gbm_mc, 
     simulate_hmm_mc as _simulate_hmm_mc, 
@@ -88,6 +93,51 @@ def _safe_float(value: Any) -> Optional[float]:
     if not np.isfinite(out):
         return None
     return float(out)
+
+
+def _scale_price_paths_to_reference(
+    price_paths: np.ndarray,
+    *,
+    simulated_anchor_price: Any,
+    reference_price: Any,
+) -> np.ndarray:
+    """Rescale simulated paths so barrier scoring uses the same entry anchor."""
+    paths = np.asarray(price_paths, dtype=float)
+    anchor = _safe_float(simulated_anchor_price)
+    ref = _safe_float(reference_price)
+    if anchor is None or anchor <= 0.0 or ref is None or ref <= 0.0:
+        return paths
+    scale = float(ref / anchor)
+    if not np.isfinite(scale) or scale <= 0.0 or abs(scale - 1.0) <= 1e-12:
+        return paths
+    return paths * scale
+
+
+def _sort_candidate_results(res_list: List[Dict[str, Any]], objective_val: str) -> None:
+    if objective_val == 'edge':
+        res_list.sort(key=lambda x: x['edge'], reverse=True)
+    elif objective_val == 'ev':
+        res_list.sort(key=lambda x: x['ev'], reverse=True)
+    elif objective_val == 'ev_cond':
+        res_list.sort(key=lambda x: x['ev_cond'], reverse=True)
+    elif objective_val == 'ev_per_bar':
+        res_list.sort(key=lambda x: x['ev_per_bar'], reverse=True)
+    elif objective_val == 'kelly':
+        res_list.sort(key=lambda x: x['kelly'], reverse=True)
+    elif objective_val == 'kelly_cond':
+        res_list.sort(key=lambda x: x['kelly_cond'], reverse=True)
+    elif objective_val == 'prob_tp_first':
+        res_list.sort(key=lambda x: x['prob_tp_first'], reverse=True)
+    elif objective_val == 'prob_resolve':
+        res_list.sort(key=lambda x: x['prob_resolve'], reverse=True)
+    elif objective_val == 'profit_factor':
+        res_list.sort(key=lambda x: x['profit_factor'], reverse=True)
+    elif objective_val == 'min_loss_prob':
+        res_list.sort(key=lambda x: x['prob_loss'])
+    elif objective_val == 'utility':
+        res_list.sort(key=lambda x: x['utility'], reverse=True)
+    else:
+        res_list.sort(key=lambda x: x['ev'], reverse=True)
 
 
 def _annotate_candidate_metrics(row: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -399,15 +449,6 @@ def _brownian_bridge_hits(
     return hits
 
 
-def _normalize_trade_direction(direction: Any) -> Tuple[Optional[str], Optional[str]]:
-    text = str(direction or "").strip().lower()
-    if text in {"long", "up", "buy"}:
-        return "long", None
-    if text in {"short", "down", "sell"}:
-        return "short", None
-    return None, "Invalid direction. Use long/short (or up/down, buy/sell)."
-
-
 def _get_live_reference_price(symbol: str, direction: str) -> Tuple[Optional[float], Optional[str]]:
     """Best-effort live tick reference price; returns (price, source) or (None, None)."""
     try:
@@ -526,6 +567,13 @@ def forecast_barrier_hit_probabilities(
 
         if tp_price is None or sl_price is None:
             return {"error": "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or tp_pips/sl_pips"}
+        if not _barrier_prices_are_valid(
+            price=last_price,
+            direction=direction_norm,
+            tp_price=tp_price,
+            sl_price=sl_price,
+        ):
+            return {"error": "Resolved TP/SL barriers are invalid for the current price."}
 
         # Build input series (denoise optional)
         base_col = 'close'
@@ -598,10 +646,11 @@ def forecast_barrier_hit_probabilities(
             sim_anchor_price = float(prices[-1])
         except Exception:
             sim_anchor_price = float(last_price_close)
-        if np.isfinite(sim_anchor_price) and sim_anchor_price > 0.0 and np.isfinite(last_price) and last_price > 0.0:
-            scale = float(last_price / sim_anchor_price)
-            if np.isfinite(scale) and scale > 0.0 and abs(scale - 1.0) > 1e-12:
-                price_paths = price_paths * scale
+        price_paths = _scale_price_paths_to_reference(
+            price_paths,
+            simulated_anchor_price=sim_anchor_price,
+            reference_price=last_price,
+        )
 
         bb_sigma = 0.0
         bb_uniform_tp = None
@@ -787,6 +836,9 @@ def forecast_barrier_closed_form(
     - "short": probability of reaching a lower barrier (price <= barrier).
     """
     try:
+        direction_norm, direction_error = _normalize_trade_direction(direction)
+        if direction_error:
+            return {"error": direction_error}
         need = int(max(400, horizon + 100))
         df = _fetch_history(symbol, timeframe, need, as_of=None)
         if len(df) < 10:
@@ -829,8 +881,6 @@ def forecast_barrier_closed_form(
             return {"error": "Sigma must be positive"}
         sigma_sq = sigma_val * sigma_val
         gbm_drift = log_drift + 0.5 * sigma_sq
-        dir_lower = str(direction).lower()
-        direction_norm = 'short' if dir_lower in {'short', 'down'} else 'long'
         if direction_norm == 'short':
             s0_inv = 1.0 / s0
             b_inv = 1.0 / float(barrier)
@@ -1342,10 +1392,14 @@ def forecast_barrier_optimize(
                 if not isinstance(best_row, dict):
                     member_errors.append({"method": member_method, "error": "No best candidate returned"})
                     continue
+                actual_best = dict(best_row)
+                actual_best["member_method"] = str(member_method)
+                actual_best["member_method_used"] = str(member_out.get('method', member_method))
+                _annotate_candidate_metrics(actual_best)
                 member_runs.append({
                     "method": member_method,
                     "method_used": member_out.get('method', member_method),
-                    "best": best_row,
+                    "best": actual_best,
                     "output": member_out,
                 })
 
@@ -1401,25 +1455,56 @@ def forecast_barrier_optimize(
                     return float(np.mean(np.asarray(vals, dtype=float)))
                 return float(np.median(np.asarray(vals, dtype=float)))
 
-            ensemble_best: Dict[str, Any] = {}
+            aggregate_metrics: Dict[str, Any] = {}
             for metric_name in metric_keys:
                 val = _agg_metric(metric_name)
                 if val is not None:
-                    ensemble_best[metric_name] = val
-            if 'rr' not in ensemble_best and ensemble_best.get('tp') and ensemble_best.get('sl'):
+                    aggregate_metrics[metric_name] = val
+            if 'rr' not in aggregate_metrics and aggregate_metrics.get('tp') and aggregate_metrics.get('sl'):
                 try:
-                    tp_val = float(ensemble_best['tp'])
-                    sl_val = float(ensemble_best['sl'])
+                    tp_val = float(aggregate_metrics['tp'])
+                    sl_val = float(aggregate_metrics['sl'])
                     if sl_val > 0:
-                        ensemble_best['rr'] = float(tp_val / sl_val)
+                        aggregate_metrics['rr'] = float(tp_val / sl_val)
                 except Exception:
                     pass
-            if 'prob_resolve' not in ensemble_best and ensemble_best.get('prob_no_hit') is not None:
+            if 'prob_resolve' not in aggregate_metrics and aggregate_metrics.get('prob_no_hit') is not None:
                 try:
-                    ensemble_best['prob_resolve'] = float(1.0 - float(ensemble_best['prob_no_hit']))
+                    aggregate_metrics['prob_resolve'] = float(1.0 - float(aggregate_metrics['prob_no_hit']))
                 except Exception:
                     pass
-            _annotate_candidate_metrics(ensemble_best)
+            _annotate_candidate_metrics(aggregate_metrics)
+
+            ranked_candidates = [
+                dict(row.get('best', {}))
+                for row in member_runs
+                if isinstance(row.get('best'), dict)
+            ]
+            _sort_candidate_results(ranked_candidates, objective_val)
+            viable_candidates = [row for row in ranked_candidates if _candidate_is_viable(row)]
+            if viable_only_val:
+                candidates = viable_candidates if viable_candidates else ranked_candidates
+            else:
+                candidates = ranked_candidates
+            if top_k_val is not None:
+                candidates = candidates[:top_k_val]
+            elif (concise_val or viable_only_val) and not viable_candidates and len(candidates) > 5:
+                candidates = candidates[:5]
+
+            grid_out = candidates if (return_grid and not concise_val) else None
+            if output_mode == 'summary' and grid_out is not None:
+                limit = top_k_val or min(10, len(grid_out))
+                grid_out = grid_out[:limit]
+
+            results_limit = min(10, len(candidates))
+            if output_mode == 'summary':
+                if top_k_val is not None:
+                    results_limit = top_k_val
+                elif concise_val:
+                    results_limit = min(5, len(candidates))
+                else:
+                    results_limit = min(10, len(candidates))
+            summary_results = candidates[:results_limit]
 
             member_prices = [
                 float(r.get('output', {}).get('last_price'))
@@ -1437,20 +1522,24 @@ def forecast_barrier_optimize(
                 if member_close_prices else float(last_price_close)
             )
 
-            viable = _candidate_is_viable(ensemble_best)
-            viable_results_total = 1 if ensemble_best and viable else 0
-            status = "ok" if viable else ("no_candidates" if not ensemble_best else "non_viable")
+            selected_best = candidates[0] if candidates else None
+            if isinstance(selected_best, dict):
+                _annotate_candidate_metrics(selected_best)
+            viable = _candidate_is_viable(selected_best)
+            viable_results_total = int(len(viable_candidates))
+            status = "ok" if viable else ("no_candidates" if not selected_best else "non_viable")
             status_reason = None
             if status == "no_candidates":
                 status_reason = "No valid ensemble candidate was produced."
             elif status == "non_viable":
-                status_reason = _candidate_status_reason(ensemble_best)
+                status_reason = _candidate_status_reason(selected_best)
 
             member_summaries: List[Dict[str, Any]] = []
             for row in member_runs:
                 best_row = row.get('best', {})
+                member_method = row.get('method')
                 member_summaries.append({
-                    "method": row.get('method'),
+                    "method": member_method,
                     "method_used": row.get('method_used'),
                     "ev": best_row.get('ev') if isinstance(best_row, dict) else None,
                     "ev_per_bar": best_row.get('ev_per_bar') if isinstance(best_row, dict) else None,
@@ -1462,6 +1551,10 @@ def forecast_barrier_optimize(
                     "phantom_profit_risk": best_row.get('phantom_profit_risk') if isinstance(best_row, dict) else None,
                     "tp": best_row.get('tp') if isinstance(best_row, dict) else None,
                     "sl": best_row.get('sl') if isinstance(best_row, dict) else None,
+                    "selected": bool(
+                        isinstance(selected_best, dict)
+                        and str(selected_best.get("member_method")) == str(member_method)
+                    ),
                 })
 
             out = {
@@ -1489,14 +1582,14 @@ def forecast_barrier_optimize(
                     "vol_steps": int(vol_steps_val),
                     "refine": bool(refine_flag),
                 },
-                "results": [ensemble_best] if ensemble_best else [],
-                "results_total": 1 if ensemble_best else 0,
+                "results": summary_results,
+                "results_total": len(candidates),
                 "viable_results_total": viable_results_total,
-                "best": ensemble_best if ensemble_best else None,
+                "best": selected_best,
                 "viable": bool(viable),
-                "least_negative": _least_negative_ref(ensemble_best) if (ensemble_best and not viable) else None,
-                "grid": [ensemble_best] if (return_grid and not concise_val and ensemble_best) else None,
-                "no_candidates": not bool(ensemble_best),
+                "least_negative": _least_negative_ref(selected_best) if (selected_best and not viable) else None,
+                "grid": grid_out,
+                "no_candidates": not bool(selected_best),
                 "status": status,
                 "status_reason": status_reason,
                 "no_action": status != "ok",
@@ -1506,6 +1599,14 @@ def forecast_barrier_optimize(
                     "weights": ensemble_weight_map if ensemble_weight_map else None,
                     "members": member_summaries,
                     "member_errors": member_errors,
+                    "aggregate_metrics": aggregate_metrics or None,
+                    "selected_member": (
+                        {
+                            "method": selected_best.get("member_method"),
+                            "method_used": selected_best.get("member_method_used"),
+                        }
+                        if isinstance(selected_best, dict) else None
+                    ),
                 },
             }
             if objective_changed:
@@ -1513,11 +1614,11 @@ def forecast_barrier_optimize(
                 out["objective_used"] = objective_val
             if member_errors:
                 out["warning"] = f"{len(member_errors)} ensemble member(s) failed."
-            if ensemble_best:
-                out.update(_build_selection_diagnostics(ensemble_best))
+            if selected_best:
+                out.update(_build_selection_diagnostics(selected_best))
             if min_prob_resolve_val is not None:
                 out["min_prob_resolve"] = float(min_prob_resolve_val)
-            if ensemble_best and not viable:
+            if selected_best and not viable:
                 out["advice"] = [
                     "Increase horizon to allow more time for barrier resolution.",
                     "Try the opposite direction and compare objective metrics.",
@@ -1585,6 +1686,15 @@ def forecast_barrier_optimize(
 
         paths = np.vstack(paths_list) if len(paths_list) > 1 else paths_list[0]
         S, H = paths.shape
+        try:
+            sim_anchor_price = float(prices[-1])
+        except Exception:
+            sim_anchor_price = float(last_price_close)
+        paths = _scale_price_paths_to_reference(
+            paths,
+            simulated_anchor_price=sim_anchor_price,
+            reference_price=last_price,
+        )
         bb_sigma = 0.0
         bb_uniform_tp = None
         bb_uniform_sl = None
@@ -2083,31 +2193,7 @@ def forecast_barrier_optimize(
         else:
             results.extend(_evaluate(base_candidates))
 
-        def _sort(res_list: List[Dict[str, Any]]) -> None:
-            if objective_val == 'edge':
-                res_list.sort(key=lambda x: x['edge'], reverse=True)
-            elif objective_val == 'ev':
-                res_list.sort(key=lambda x: x['ev'], reverse=True)
-            elif objective_val == 'ev_cond':
-                res_list.sort(key=lambda x: x['ev_cond'], reverse=True)
-            elif objective_val == 'ev_per_bar':
-                res_list.sort(key=lambda x: x['ev_per_bar'], reverse=True)
-            elif objective_val == 'kelly':
-                res_list.sort(key=lambda x: x['kelly'], reverse=True)
-            elif objective_val == 'kelly_cond':
-                res_list.sort(key=lambda x: x['kelly_cond'], reverse=True)
-            elif objective_val == 'prob_tp_first':
-                res_list.sort(key=lambda x: x['prob_tp_first'], reverse=True)
-            elif objective_val == 'prob_resolve':
-                res_list.sort(key=lambda x: x['prob_resolve'], reverse=True)
-            elif objective_val == 'profit_factor':
-                res_list.sort(key=lambda x: x['profit_factor'], reverse=True)
-            elif objective_val == 'min_loss_prob':
-                res_list.sort(key=lambda x: x['prob_loss'])
-            elif objective_val == 'utility':
-                res_list.sort(key=lambda x: x['utility'], reverse=True)
-
-        _sort(results)
+        _sort_candidate_results(results, objective_val)
 
         if refine_flag and results:
             best_seed = results[0]
@@ -2120,7 +2206,7 @@ def forecast_barrier_optimize(
             refine_candidates: List[Tuple[float, float]] = []
             _add_fixed(refine_candidates, tp_a, tp_b, refine_steps_val, sl_a, sl_b, refine_steps_val)
             results.extend(_evaluate(refine_candidates))
-            _sort(results)
+            _sort_candidate_results(results, objective_val)
 
         ranked_candidates = list(results)
         deduped_ranked: List[Dict[str, Any]] = []

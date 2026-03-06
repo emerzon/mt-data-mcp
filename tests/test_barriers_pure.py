@@ -5,6 +5,8 @@ from mtdata.utils.barriers import (
     resolve_barrier_prices,
     build_barrier_kwargs,
     build_barrier_kwargs_from,
+    normalize_trade_direction,
+    barrier_prices_are_valid,
 )
 
 
@@ -102,6 +104,49 @@ class TestResolveBarrierPrices:
         )
         assert tp == pytest.approx(110.0)
         assert sl == pytest.approx(90.0)
+
+    def test_rejects_non_finite_inputs(self):
+        tp, sl = resolve_barrier_prices(
+            price=100.0, direction="long",
+            tp_abs=float("nan"), sl_abs=90.0,
+        )
+        assert tp is None
+        assert sl is None
+
+
+class TestNormalizeTradeDirection:
+    def test_aliases(self):
+        assert normalize_trade_direction("buy") == ("long", None)
+        assert normalize_trade_direction("sell") == ("short", None)
+
+    def test_invalid(self):
+        direction, err = normalize_trade_direction("sideways")
+        assert direction is None
+        assert err is not None
+
+
+class TestBarrierPricesAreValid:
+    def test_valid_long_geometry(self):
+        assert barrier_prices_are_valid(
+            price=100.0,
+            direction="long",
+            tp_price=101.0,
+            sl_price=99.0,
+        ) is True
+
+    def test_rejects_non_finite_or_inverted_geometry(self):
+        assert barrier_prices_are_valid(
+            price=100.0,
+            direction="long",
+            tp_price=float("nan"),
+            sl_price=99.0,
+        ) is False
+        assert barrier_prices_are_valid(
+            price=100.0,
+            direction="short",
+            tp_price=101.0,
+            sl_price=99.0,
+        ) is False
 
 
 class TestBuildBarrierKwargs:

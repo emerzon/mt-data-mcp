@@ -10,7 +10,10 @@ from ..forecast.forecast import get_forecast_methods_data as _get_forecast_metho
 from ..forecast.tune import genetic_search_forecast_params as _genetic_search_impl
 from ..forecast.tune import optuna_search_forecast_params as _optuna_search_impl
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
-from ..utils.barriers import build_barrier_kwargs_from as _build_barrier_kwargs_from
+from ..utils.barriers import (
+    build_barrier_kwargs_from as _build_barrier_kwargs_from,
+    normalize_trade_direction as _normalize_trade_direction,
+)
 
 from functools import lru_cache
 import difflib
@@ -1035,14 +1038,9 @@ def forecast_barrier_prob(
         mc_method = 'auto'  # type: ignore
     if method_val == 'mc':
         from ..forecast.barriers import forecast_barrier_hit_probabilities as _impl
-        # Ensure direction is valid for MC
-        d_raw = str(direction).lower().strip()
-        if d_raw in ('up', 'long'):
-            d = 'long'
-        elif d_raw in ('down', 'short'):
-            d = 'short'
-        else:
-            d = 'long'
+        d, direction_error = _normalize_trade_direction(direction)
+        if direction_error:
+            return {"error": direction_error}
 
         barrier_kwargs = _build_barrier_kwargs_from(locals())
         return _impl(
@@ -1057,14 +1055,9 @@ def forecast_barrier_prob(
         )
     elif method_val == 'closed_form':
         from ..forecast.barriers import forecast_barrier_closed_form as _impl
-        # Direction semantics match MC: long=upper barrier, short=lower barrier.
-        d_raw = str(direction).lower().strip()
-        if d_raw in ('up', 'long'):
-            d = 'long'
-        elif d_raw in ('down', 'short'):
-            d = 'short'
-        else:
-            d = 'long'
+        d, direction_error = _normalize_trade_direction(direction)
+        if direction_error:
+            return {"error": direction_error}
 
         return _impl(
             symbol=symbol,

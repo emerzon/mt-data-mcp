@@ -400,8 +400,8 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
     assert out["direction"] == "short"
 
     out = raw_barrier(symbol="EURUSD", method="closed_form", direction="weird")
-    assert out["kind"] == "cf"
-    assert out["direction"] == "long"
+    assert "error" in out
+    assert "Invalid direction" in out["error"]
 
     out = raw_barrier(symbol="EURUSD", method="mystery")
     assert out["error"] == "Unknown method: mystery"

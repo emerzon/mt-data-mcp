@@ -9,6 +9,7 @@ from ..utils.barriers import (
     get_pip_size as _get_pip_size,
     resolve_barrier_prices as _resolve_barrier_prices,
     build_barrier_kwargs_from as _build_barrier_kwargs_from,
+    barrier_prices_are_valid as _barrier_prices_are_valid,
 )
 
 
@@ -83,6 +84,13 @@ def labels_triple_barrier(
             )
             if tp is None or sl is None:
                 return {"error": "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or tp_pips/sl_pips"}
+            if not _barrier_prices_are_valid(
+                price=p0,
+                direction="long",
+                tp_price=tp,
+                sl_price=sl,
+            ):
+                return {"error": "Resolved TP/SL barriers are invalid for the entry price."}
 
             hit_tp = -1
             hit_sl = -1

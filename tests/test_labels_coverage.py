@@ -94,6 +94,14 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_non_finite_barrier_gives_error(self, mock_hist, mock_den, mock_pip):
+        mock_hist.return_value = _make_df(60)
+        result = _get_raw_fn()("EURUSD", tp_abs=float("nan"), sl_abs=1.0, horizon=12)
+        assert "error" in result
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
     def test_label_on_close(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
         result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=12, label_on="close")
