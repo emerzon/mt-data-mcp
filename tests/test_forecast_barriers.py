@@ -836,11 +836,83 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertTrue(result.get("success"))
         self.assertLess(float(result["best"]["ev"]), 0.0)
         self.assertFalse(result.get("viable"))
+        self.assertEqual(result.get("status"), "non_viable")
+        self.assertTrue(result.get("no_action"))
+        self.assertEqual(result.get("status_reason"), "Selected candidate has negative EV.")
         self.assertIsInstance(result.get("least_negative"), dict)
         self.assertEqual(result["least_negative"].get("ref"), "best")
         self.assertEqual(result["least_negative"].get("ev"), result["best"].get("ev"))
         self.assertIn("selection_warnings", result)
         self.assertIsInstance(result.get("advice"), list)
+
+    def test_forecast_barrier_optimize_flags_phantom_profit_risk(self):
+        self._set_flat_history(1.0)
+        paths = np.array([
+            [1.0030, 1.0030, 1.0030],
+            [1.0005, 1.0005, 1.0005],
+            [0.9995, 0.9995, 0.9995],
+        ])
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=3,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.2,
+                tp_max=0.2,
+                tp_steps=1,
+                sl_min=2.0,
+                sl_max=2.0,
+                sl_steps=1,
+                objective="ev",
+                return_grid=True,
+            )
+        self.assertTrue(result.get("success"))
+        self.assertGreater(float(result["best"]["ev"]), 0.0)
+        self.assertFalse(result.get("viable"))
+        self.assertEqual(result.get("status"), "non_viable")
+        self.assertTrue(result.get("no_action"))
+        self.assertIn("unresolved paths", result.get("status_reason", "").lower())
+        self.assertTrue(result["best"].get("phantom_profit_risk"))
+        self.assertLess(float(result["best"]["edge_vs_breakeven"]), 0.0)
+        self.assertAlmostEqual(float(result["best"]["breakeven_win_rate"]), 1.0 / 1.1, places=6)
+        self.assertTrue(result.get("ev_edge_conflict"))
+        self.assertIn("unresolved", result.get("ev_edge_conflict_reason", "").lower())
+        self.assertIn("selection_warnings", result)
+
+    def test_forecast_barrier_optimize_guardrails_degenerate_objective(self):
+        self._set_flat_history(1.0)
+        paths = np.vstack([
+            np.array([[1.0040, 1.0040, 1.0040]]),
+            np.full((9, 3), 1.0001),
+        ])
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=3,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.25,
+                tp_max=0.25,
+                tp_steps=1,
+                sl_min=2.5,
+                sl_max=2.5,
+                sl_steps=1,
+                objective="min_loss_prob",
+                return_grid=True,
+            )
+        self.assertTrue(result.get("success"))
+        self.assertTrue(result.get("no_candidates"))
+        self.assertEqual(result.get("status"), "no_candidates")
+        self.assertTrue(result.get("no_action"))
+        self.assertEqual(result.get("min_prob_resolve"), 0.2)
+        self.assertEqual(result.get("results"), [])
 
     def test_forecast_barrier_optimize_flags_no_candidates(self):
         result = forecast_barrier_optimize(
@@ -864,6 +936,8 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertEqual(result.get("results"), [])
         self.assertEqual(result.get("grid"), [])
         self.assertFalse(result.get("viable"))
+        self.assertEqual(result.get("status"), "no_candidates")
+        self.assertTrue(result.get("no_action"))
         self.assertIsNone(result.get("least_negative"))
         self.assertIn("warning", result)
 
@@ -900,9 +974,12 @@ class TestForecastBarriers(unittest.TestCase):
             )
         self.assertTrue(result.get("success"))
         self.assertFalse(result.get("viable"))
+        self.assertEqual(result.get("status"), "non_viable")
+        self.assertTrue(result.get("no_action"))
         self.assertTrue(result.get("viable_only"))
         self.assertTrue(result.get("concise"))
         self.assertEqual(result.get("results_total"), 1)
+        self.assertEqual(result.get("viable_results_total"), 0)
         self.assertEqual(len(result.get("results", [])), 1)
         self.assertIsNone(result.get("grid"))
 

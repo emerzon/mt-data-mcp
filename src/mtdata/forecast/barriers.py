@@ -36,6 +36,10 @@ BARRIER_GRID_PRESETS = {
     },
 }
 
+PHANTOM_PROFIT_NO_HIT_THRESHOLD = 0.50
+PHANTOM_PROFIT_LOSS_THRESHOLD = 0.01
+DEGENERATE_OBJECTIVE_MIN_RESOLVE = 0.20
+
 
 def _binomial_wilson_95(p_hat: float, n: int) -> Tuple[float, float]:
     """Wilson 95% interval for a Bernoulli proportion."""
@@ -69,9 +73,196 @@ def _least_negative_ref(best_row: Optional[Dict[str, Any]]) -> Optional[Dict[str
         "ref": "best",
         "ev": best_row.get("ev"),
         "edge": best_row.get("edge"),
+        "edge_vs_breakeven": best_row.get("edge_vs_breakeven"),
         "kelly": best_row.get("kelly"),
-        "reason": "No non-negative EV candidate was found; see `best` for full details.",
+        "phantom_profit_risk": best_row.get("phantom_profit_risk"),
+        "reason": "No viable candidate was found; see `best` for full details.",
     }
+
+
+def _safe_float(value: Any) -> Optional[float]:
+    try:
+        out = float(value)
+    except Exception:
+        return None
+    if not np.isfinite(out):
+        return None
+    return float(out)
+
+
+def _annotate_candidate_metrics(row: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not isinstance(row, dict):
+        return row
+
+    rr = _safe_float(row.get("rr"))
+    prob_win = _safe_float(row.get("prob_win"))
+    prob_loss = _safe_float(row.get("prob_loss"))
+    prob_no_hit = _safe_float(row.get("prob_no_hit"))
+    prob_resolve = _safe_float(row.get("prob_resolve"))
+
+    if prob_resolve is None and prob_no_hit is not None:
+        prob_resolve = float(max(0.0, min(1.0, 1.0 - prob_no_hit)))
+        row["prob_resolve"] = prob_resolve
+    if prob_no_hit is None and prob_resolve is not None:
+        prob_no_hit = float(max(0.0, min(1.0, 1.0 - prob_resolve)))
+        row["prob_no_hit"] = prob_no_hit
+
+    breakeven_win_rate: Optional[float] = None
+    if rr is not None and rr > 0.0:
+        breakeven_win_rate = float(1.0 / (1.0 + rr))
+        row["breakeven_win_rate"] = breakeven_win_rate
+
+    edge_vs_breakeven: Optional[float] = None
+    if prob_win is not None and breakeven_win_rate is not None:
+        edge_vs_breakeven = float(prob_win - breakeven_win_rate)
+        row["edge_vs_breakeven"] = edge_vs_breakeven
+
+    phantom_profit_risk = bool(
+        prob_loss is not None
+        and prob_no_hit is not None
+        and edge_vs_breakeven is not None
+        and prob_loss < PHANTOM_PROFIT_LOSS_THRESHOLD
+        and prob_no_hit > PHANTOM_PROFIT_NO_HIT_THRESHOLD
+        and edge_vs_breakeven < 0.0
+    )
+    row["phantom_profit_risk"] = phantom_profit_risk
+    return row
+
+
+def _candidate_is_viable(row: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(row, dict):
+        return False
+    _annotate_candidate_metrics(row)
+    ev_value = _safe_float(row.get("ev"))
+    if ev_value is None or ev_value < 0.0:
+        return False
+    if bool(row.get("phantom_profit_risk")):
+        return False
+    return True
+
+
+def _candidate_status_reason(row: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not isinstance(row, dict):
+        return None
+    _annotate_candidate_metrics(row)
+    ev_value = _safe_float(row.get("ev"))
+    if ev_value is None:
+        return "Selected candidate is missing a finite EV estimate."
+    if ev_value < 0.0:
+        return "Selected candidate has negative EV."
+    if bool(row.get("phantom_profit_risk")):
+        return (
+            "Selected candidate relies on unresolved paths and a near-zero loss rate "
+            "to appear profitable."
+        )
+    return None
+
+
+def _build_selection_diagnostics(row: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(row, dict):
+        return {}
+    _annotate_candidate_metrics(row)
+
+    warnings_out: List[str] = []
+    ev_edge_conflict = False
+    ev_edge_conflict_reason: Optional[str] = None
+    caution: Optional[str] = None
+
+    best_ev = _safe_float(row.get("ev"))
+    if best_ev is not None and best_ev < 0.0:
+        warnings_out.append(
+            "Best candidate has negative EV; objective preference may not align with profitability."
+        )
+
+    best_kelly = _safe_float(row.get("kelly"))
+    if best_kelly is not None and best_kelly < 0.0:
+        warnings_out.append(
+            "Best candidate has negative Kelly fraction; sizing should be zero or very conservative."
+        )
+
+    best_edge = _safe_float(row.get("edge"))
+    win_rate = _safe_float(row.get("prob_win"))
+    if best_edge is not None and best_edge < 0.0:
+        if win_rate is not None:
+            warnings_out.append(
+                "Best candidate has negative edge "
+                f"({best_edge:.3f}) with win rate {win_rate:.1%}; "
+                "positive EV depends on reward/risk skew."
+            )
+        else:
+            warnings_out.append(
+                f"Best candidate has negative edge ({best_edge:.3f}); "
+                "positive EV may depend on reward/risk skew."
+            )
+
+    breakeven_win_rate = _safe_float(row.get("breakeven_win_rate"))
+    edge_vs_breakeven = _safe_float(row.get("edge_vs_breakeven"))
+    if edge_vs_breakeven is not None and edge_vs_breakeven < 0.0 and breakeven_win_rate is not None:
+        if win_rate is not None:
+            warnings_out.append(
+                f"Win rate {win_rate:.1%} is below the break-even threshold "
+                f"{breakeven_win_rate:.1%}; unresolved paths or payoff skew are carrying EV."
+            )
+        else:
+            warnings_out.append(
+                f"Break-even win rate is {breakeven_win_rate:.1%}; "
+                "selected candidate is below that threshold."
+            )
+
+    prob_no_hit = _safe_float(row.get("prob_no_hit"))
+    if prob_no_hit is not None and prob_no_hit > PHANTOM_PROFIT_NO_HIT_THRESHOLD:
+        warnings_out.append(
+            f"More than {PHANTOM_PROFIT_NO_HIT_THRESHOLD:.0%} of simulations did not reach either barrier "
+            f"before the horizon ({prob_no_hit:.1%} no-hit)."
+        )
+
+    if best_ev is not None and edge_vs_breakeven is not None:
+        if (best_ev > 0.0 and edge_vs_breakeven < 0.0) or (best_ev < 0.0 and edge_vs_breakeven > 0.0):
+            ev_edge_conflict = True
+            ev_edge_conflict_reason = "ev and edge_vs_breakeven have opposite signs"
+            warnings_out.append(
+                "CAUTION: EV and break-even-adjusted edge disagree; inspect win probability, "
+                "reward/risk, and unresolved-path share before trading."
+            )
+
+    if bool(row.get("phantom_profit_risk")):
+        ev_edge_conflict = True
+        ev_edge_conflict_reason = (
+            "positive EV is dominated by unresolved paths with near-zero loss probability"
+        )
+        warnings_out.append(
+            "CAUTION: SL barrier was not reached in most simulations while the observed loss rate "
+            "was near zero. Positive EV may reflect horizon boundary effects, not trading edge."
+        )
+        caution = (
+            "Selected candidate is dominated by unresolved paths; inspect `prob_no_hit`, "
+            "`prob_resolve`, and `edge_vs_breakeven` before trading."
+        )
+    elif ev_edge_conflict:
+        caution = (
+            "EV and break-even-adjusted edge conflict for the selected candidate; inspect win "
+            "probability and break-even threshold before trading."
+        )
+
+    deduped_warnings: List[str] = []
+    seen: Set[str] = set()
+    for message in warnings_out:
+        msg = str(message).strip()
+        if not msg or msg in seen:
+            continue
+        seen.add(msg)
+        deduped_warnings.append(msg)
+
+    out: Dict[str, Any] = {}
+    if deduped_warnings:
+        out["selection_warnings"] = deduped_warnings
+    if ev_edge_conflict:
+        out["ev_edge_conflict"] = True
+        if ev_edge_conflict_reason:
+            out["ev_edge_conflict_reason"] = ev_edge_conflict_reason
+    if caution:
+        out["caution"] = caution
+    return out
 
 
 def _is_crypto_symbol(symbol: str) -> bool:
@@ -948,6 +1139,7 @@ def forecast_barrier_optimize(
         min_prob_win_val = params_dict.get('min_prob_win', min_prob_win)
         max_prob_no_hit_val = params_dict.get('max_prob_no_hit', max_prob_no_hit)
         max_median_time_val = params_dict.get('max_median_time', max_median_time)
+        min_prob_resolve_val = params_dict.get('min_prob_resolve')
         try:
             min_prob_win_val = float(min_prob_win_val) if min_prob_win_val is not None else None
         except Exception:
@@ -960,6 +1152,10 @@ def forecast_barrier_optimize(
             max_median_time_val = float(max_median_time_val) if max_median_time_val is not None else None
         except Exception:
             max_median_time_val = None
+        try:
+            min_prob_resolve_val = float(min_prob_resolve_val) if min_prob_resolve_val is not None else None
+        except Exception:
+            min_prob_resolve_val = None
         if min_prob_win_val is not None:
             if not np.isfinite(min_prob_win_val):
                 min_prob_win_val = None
@@ -973,6 +1169,13 @@ def forecast_barrier_optimize(
         if max_median_time_val is not None:
             if not np.isfinite(max_median_time_val) or max_median_time_val <= 0:
                 max_median_time_val = None
+        if min_prob_resolve_val is not None:
+            if not np.isfinite(min_prob_resolve_val):
+                min_prob_resolve_val = None
+            else:
+                min_prob_resolve_val = max(0.0, min(1.0, min_prob_resolve_val))
+        elif objective_val in {'profit_factor', 'min_loss_prob'}:
+            min_prob_resolve_val = DEGENERATE_OBJECTIVE_MIN_RESOLVE
 
         tp_min_val = float(params_dict.get('tp_min', tp_min))
         tp_max_val = float(params_dict.get('tp_max', tp_max))
@@ -1153,7 +1356,8 @@ def forecast_barrier_optimize(
                 'tp', 'sl', 'rr', 'tp_price', 'sl_price',
                 'prob_win', 'prob_loss', 'prob_tp_first', 'prob_sl_first',
                 'prob_no_hit', 'prob_tie', 'prob_resolve',
-                'ev', 'ev_cond', 'edge', 'kelly', 'kelly_cond',
+                'ev', 'ev_cond', 'edge', 'breakeven_win_rate', 'edge_vs_breakeven',
+                'kelly', 'kelly_cond',
                 'ev_per_bar', 'profit_factor', 'utility',
                 't_hit_tp_median', 't_hit_sl_median',
                 't_hit_resolve_mean', 't_hit_resolve_median',
@@ -1215,6 +1419,7 @@ def forecast_barrier_optimize(
                     ensemble_best['prob_resolve'] = float(1.0 - float(ensemble_best['prob_no_hit']))
                 except Exception:
                     pass
+            _annotate_candidate_metrics(ensemble_best)
 
             member_prices = [
                 float(r.get('output', {}).get('last_price'))
@@ -1232,13 +1437,14 @@ def forecast_barrier_optimize(
                 if member_close_prices else float(last_price_close)
             )
 
-            viable = False
-            try:
-                ev_best = ensemble_best.get('ev')
-                if ev_best is not None and np.isfinite(float(ev_best)) and float(ev_best) >= 0.0:
-                    viable = True
-            except Exception:
-                viable = False
+            viable = _candidate_is_viable(ensemble_best)
+            viable_results_total = 1 if ensemble_best and viable else 0
+            status = "ok" if viable else ("no_candidates" if not ensemble_best else "non_viable")
+            status_reason = None
+            if status == "no_candidates":
+                status_reason = "No valid ensemble candidate was produced."
+            elif status == "non_viable":
+                status_reason = _candidate_status_reason(ensemble_best)
 
             member_summaries: List[Dict[str, Any]] = []
             for row in member_runs:
@@ -1250,7 +1456,10 @@ def forecast_barrier_optimize(
                     "ev_per_bar": best_row.get('ev_per_bar') if isinstance(best_row, dict) else None,
                     "prob_win": best_row.get('prob_win') if isinstance(best_row, dict) else None,
                     "prob_loss": best_row.get('prob_loss') if isinstance(best_row, dict) else None,
+                    "prob_no_hit": best_row.get('prob_no_hit') if isinstance(best_row, dict) else None,
                     "rr": best_row.get('rr') if isinstance(best_row, dict) else None,
+                    "edge_vs_breakeven": best_row.get('edge_vs_breakeven') if isinstance(best_row, dict) else None,
+                    "phantom_profit_risk": best_row.get('phantom_profit_risk') if isinstance(best_row, dict) else None,
                     "tp": best_row.get('tp') if isinstance(best_row, dict) else None,
                     "sl": best_row.get('sl') if isinstance(best_row, dict) else None,
                 })
@@ -1282,11 +1491,15 @@ def forecast_barrier_optimize(
                 },
                 "results": [ensemble_best] if ensemble_best else [],
                 "results_total": 1 if ensemble_best else 0,
+                "viable_results_total": viable_results_total,
                 "best": ensemble_best if ensemble_best else None,
                 "viable": bool(viable),
                 "least_negative": _least_negative_ref(ensemble_best) if (ensemble_best and not viable) else None,
                 "grid": [ensemble_best] if (return_grid and not concise_val and ensemble_best) else None,
                 "no_candidates": not bool(ensemble_best),
+                "status": status,
+                "status_reason": status_reason,
+                "no_action": status != "ok",
                 "ensemble": {
                     "methods": ensemble_methods,
                     "agg": ensemble_agg,
@@ -1300,6 +1513,10 @@ def forecast_barrier_optimize(
                 out["objective_used"] = objective_val
             if member_errors:
                 out["warning"] = f"{len(member_errors)} ensemble member(s) failed."
+            if ensemble_best:
+                out.update(_build_selection_diagnostics(ensemble_best))
+            if min_prob_resolve_val is not None:
+                out["min_prob_resolve"] = float(min_prob_resolve_val)
             if ensemble_best and not viable:
                 out["advice"] = [
                     "Increase horizon to allow more time for barrier resolution.",
@@ -1611,6 +1828,8 @@ def forecast_barrier_optimize(
                     continue
                 if max_prob_no_hit_val is not None and prob_neutral > max_prob_no_hit_val:
                     continue
+                if min_prob_resolve_val is not None and prob_resolve < min_prob_resolve_val:
+                    continue
                 if max_median_time_val is not None:
                     if t_res_med is None or t_res_med > max_median_time_val:
                         continue
@@ -1655,6 +1874,7 @@ def forecast_barrier_optimize(
                     't_hit_resolve_mean': t_res_mean,
                     't_hit_resolve_median': t_res_med,
                 }
+                _annotate_candidate_metrics(res)
                 out.append(res)
             return out
 
@@ -1937,12 +2157,8 @@ def forecast_barrier_optimize(
         ranked_candidates = deduped_ranked
         viable_candidates: List[Dict[str, Any]] = []
         for row in ranked_candidates:
-            try:
-                ev_candidate = row.get('ev')
-                if ev_candidate is not None and np.isfinite(float(ev_candidate)) and float(ev_candidate) >= 0.0:
-                    viable_candidates.append(row)
-            except Exception:
-                continue
+            if _candidate_is_viable(row):
+                viable_candidates.append(row)
 
         if viable_only_val:
             candidates = viable_candidates if viable_candidates else ranked_candidates
@@ -1975,15 +2191,18 @@ def forecast_barrier_optimize(
             warning = "No valid TP/SL candidates after applying grid generation and constraints."
             
         best = candidates[0] if candidates else None
-        best_ev_value: Optional[float] = None
         if isinstance(best, dict):
-            try:
-                ev_raw = best.get("ev")
-                if ev_raw is not None and np.isfinite(float(ev_raw)):
-                    best_ev_value = float(ev_raw)
-            except Exception:
-                best_ev_value = None
-        viable = bool(best_ev_value is not None and best_ev_value >= 0.0)
+            _annotate_candidate_metrics(best)
+        viable = _candidate_is_viable(best)
+        viable_results_total = int(len(viable_candidates))
+        status = "ok"
+        status_reason = None
+        if no_candidates:
+            status = "no_candidates"
+            status_reason = warning
+        elif not viable:
+            status = "non_viable"
+            status_reason = _candidate_status_reason(best)
 
         out = {
             "success": True,
@@ -2012,11 +2231,15 @@ def forecast_barrier_optimize(
             },
             "results": summary_results,
             "results_total": len(candidates),
+            "viable_results_total": viable_results_total,
             "best": best,
             "viable": viable,
             "least_negative": _least_negative_ref(best) if (best is not None and not viable) else None,
             "grid": grid_out,
             "no_candidates": no_candidates,
+            "status": status,
+            "status_reason": status_reason,
+            "no_action": status != "ok",
         }
         if optuna_meta is not None:
             out["optuna"] = optuna_meta
@@ -2024,57 +2247,7 @@ def forecast_barrier_optimize(
             out["pareto_front"] = pareto_front
             out["pareto_count"] = int(len(pareto_front))
         if isinstance(best, dict):
-            warnings_out: List[str] = []
-            ev_edge_conflict = False
-            best_ev = best.get("ev")
-            try:
-                if best_ev is not None and float(best_ev) < 0:
-                    warnings_out.append(
-                        "Best candidate has negative EV; objective preference may not align with profitability."
-                    )
-            except Exception:
-                pass
-            best_kelly = best.get("kelly")
-            try:
-                if best_kelly is not None and float(best_kelly) < 0:
-                    warnings_out.append(
-                        "Best candidate has negative Kelly fraction; sizing should be zero or very conservative."
-                    )
-            except Exception:
-                pass
-            best_edge = best.get("edge")
-            try:
-                if best_edge is not None and float(best_edge) < 0:
-                    win_rate = best.get("prob_win")
-                    if win_rate is not None:
-                        warnings_out.append(
-                            "Best candidate has negative edge "
-                            f"({float(best_edge):.3f}) with win rate {float(win_rate):.1%}; "
-                            "positive EV depends on reward/risk skew."
-                        )
-                    else:
-                        warnings_out.append(
-                            f"Best candidate has negative edge ({float(best_edge):.3f}); "
-                            "positive EV may depend on reward/risk skew."
-                        )
-                if best_ev is not None and best_edge is not None:
-                    ev_num = float(best_ev)
-                    edge_num = float(best_edge)
-                    if (ev_num > 0.0 and edge_num < 0.0) or (ev_num < 0.0 and edge_num > 0.0):
-                        ev_edge_conflict = True
-                        warnings_out.append(
-                            "CAUTION: EV and edge have opposite signs; positive EV may depend on reward/risk skew with a below break-even win rate."
-                        )
-            except Exception:
-                pass
-            if warnings_out:
-                out["selection_warnings"] = warnings_out
-            if ev_edge_conflict:
-                out["ev_edge_conflict"] = True
-                out["ev_edge_conflict_reason"] = "ev and edge have opposite signs"
-                out["caution"] = (
-                    "EV and edge signs conflict for the selected candidate; inspect win probability and break-even threshold before trading."
-                )
+            out.update(_build_selection_diagnostics(best))
         if warning is not None:
             out["warning"] = warning
         elif best is not None and not viable:
@@ -2086,6 +2259,8 @@ def forecast_barrier_optimize(
             ]
         if invalid_barrier_candidates > 0:
             out["barrier_sanity_filtered"] = int(invalid_barrier_candidates)
+        if min_prob_resolve_val is not None:
+            out["min_prob_resolve"] = float(min_prob_resolve_val)
         if objective_changed:
             out["objective_requested"] = objective_requested
             out["objective_used"] = objective_val
