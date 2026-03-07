@@ -21,6 +21,11 @@ import json
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+
+from .config import load_environment
+
+load_environment()
+
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field

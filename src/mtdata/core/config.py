@@ -1,47 +1,71 @@
-"""Configuration settings for MetaTrader5 MCP Server"""
+"""Configuration settings for MetaTrader5 MCP Server."""
 
-import os
 import logging
+import os
 from typing import Optional
-try:
-    from dotenv import load_dotenv, find_dotenv  # type: ignore
-    # Load environment variables from a .env file if present
-    _env_path = find_dotenv()
-    if _env_path:
-        load_dotenv(_env_path)
-    else:
-        # Fallback to default search (current working directory)
-        load_dotenv()
-except Exception:
-    # dotenv is optional; environment can still be provided by the OS
-    pass
+
 try:
     import pytz  # type: ignore
 except Exception:
     pytz = None  # optional
 
 _WARNED_SERVER_TZ = False
+_ENV_LOADED = False
+
+
+def load_environment(*, force: bool = False) -> bool:
+    """Load environment variables from `.env` once for application entrypoints."""
+    global _ENV_LOADED
+    if _ENV_LOADED and not force:
+        return False
+
+    loaded = False
+    try:
+        from dotenv import find_dotenv, load_dotenv  # type: ignore
+
+        env_path = find_dotenv()
+        if env_path:
+            loaded = bool(load_dotenv(env_path))
+        else:
+            loaded = bool(load_dotenv())
+    except Exception:
+        loaded = False
+
+    _ENV_LOADED = True
+    config_obj = globals().get("mt5_config")
+    if config_obj is not None:
+        try:
+            config_obj.reload_from_env(warn_if_timezone_missing=True)
+        except Exception:
+            pass
+    return loaded
 
 class MT5Config:
-    """MetaTrader5 connection configuration"""
-    
-    def __init__(self):
+    """MetaTrader5 connection configuration."""
+
+    def __init__(self, *, warn_if_timezone_missing: bool = True):
+        self.login: Optional[str] = None
+        self.password: Optional[str] = None
+        self.server: Optional[str] = None
+        self.timeout = 30
+        self.server_tz_name: Optional[str] = None
+        self.client_tz_name: Optional[str] = None
+        self.time_offset_minutes = 0
+        self.reload_from_env(warn_if_timezone_missing=warn_if_timezone_missing)
+
+    def reload_from_env(self, *, warn_if_timezone_missing: bool = True) -> None:
         self.login = os.getenv("MT5_LOGIN")
         self.password = os.getenv("MT5_PASSWORD")
         self.server = os.getenv("MT5_SERVER")
         self.timeout = int(os.getenv("MT5_TIMEOUT", "30"))
-        # Timezone handling
-        # Preferred: IANA tz (pytz) names for server/client
         self.server_tz_name = os.getenv("MT5_SERVER_TZ")  # e.g., "Europe/Lisbon"
         self.client_tz_name = os.getenv("CLIENT_TZ") or os.getenv("MT5_CLIENT_TZ")  # e.g., "America/New_York"
-        # Legacy fallback: offset minutes
-        # Timezone handling: MT5 server offset from UTC in minutes (can be negative).
-        # Example: MT5_TIME_OFFSET_MINUTES=120 for UTC+2
         try:
             self.time_offset_minutes = int(os.getenv("MT5_TIME_OFFSET_MINUTES", "0"))
         except Exception:
             self.time_offset_minutes = 0
-        self._warn_if_timezone_missing()
+        if warn_if_timezone_missing:
+            self._warn_if_timezone_missing()
 
     def _warn_if_timezone_missing(self) -> None:
         """Warn once if MT5 server timezone/offset is not configured."""
@@ -114,5 +138,5 @@ class MT5Config:
             return None
         return None
 
-# Global configuration instance
-mt5_config = MT5Config()
+# Global configuration instance. Entry points call `load_environment()` explicitly.
+mt5_config = MT5Config(warn_if_timezone_missing=False)

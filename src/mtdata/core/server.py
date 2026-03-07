@@ -5,6 +5,10 @@ import os
 import atexit
 from typing import Literal, Optional, cast
 
+from .config import load_environment
+
+load_environment()
+
 from ._mcp_instance import _apply_fastmcp_env_overrides, mcp
 from . import _mcp_tools
 from ._mcp_tools import (

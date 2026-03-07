@@ -13,6 +13,10 @@ import math
 from datetime import datetime
 from typing import get_origin, get_args, Optional, Dict, Any, List, Tuple, Literal, Union, is_typeddict
 import json
+from .config import load_environment
+
+load_environment()
+
 from ..utils.minimal_output import format_result_minimal as _shared_minimal
 
 # Simple debug logging controlled by env var MTDATA_CLI_DEBUG
