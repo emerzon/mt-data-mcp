@@ -1496,15 +1496,14 @@ class TestCreateCommandFunction:
 
 class TestDiscoverTools:
     @patch("mtdata.core.cli.get_mcp_registry")
-    @patch("mtdata.core.cli.server")
-    def test_discover_from_registry(self, mock_server, mock_get_reg):
-        mock_server.__name__ = "mtdata.core.server"
-        mock_server.mcp = MagicMock()
+    @patch("mtdata.core.cli.bootstrap_tools", return_value=())
+    @patch("mtdata.core.cli.mcp", new_callable=MagicMock)
+    def test_discover_from_registry(self, mock_mcp, mock_bootstrap, mock_get_reg):
 
         def fake_tool(symbol: str):
             """Fake tool."""
             pass
-        fake_tool.__module__ = "mtdata.core.server"
+        fake_tool.__module__ = "mtdata.core.forecast"
 
         tool_obj = MagicMock()
         tool_obj.func = fake_tool
@@ -1517,38 +1516,34 @@ class TestDiscoverTools:
         tool_obj.docs = None
 
         mock_get_reg.return_value = {"fake_tool": tool_obj}
-        mock_server.get_tool_registry = None
 
         tools = discover_tools()
         assert "fake_tool" in tools
 
+    @patch("mtdata.core.cli.get_registered_tools", return_value={})
     @patch("mtdata.core.cli.get_mcp_registry", return_value=None)
-    @patch("mtdata.core.cli.server")
-    def test_discover_fallback_scan(self, mock_server, mock_get_reg):
-        mock_server.__name__ = "mtdata.core.server"
-        mock_server.mcp = None
-
+    @patch("mtdata.core.cli.mcp", None)
+    def test_discover_fallback_scan(self, mock_get_reg, mock_get_registered):
         def public_tool(x: int):
             """A public tool."""
             pass
-        public_tool.__module__ = "mtdata.core.server"
+        public_tool.__module__ = "fake.tools"
 
-        mock_server.configure_mock(**{"get_tool_registry": None})
-        # Use a non-spec mock so we can set arbitrary attributes
-        mock_server.__class__ = type(mock_server)
-        type(mock_server).__dir__ = lambda self: ["public_tool"]
-        mock_server.public_tool = public_tool
+        class FakeModule:
+            __name__ = "fake.tools"
 
-        tools = discover_tools()
+        fake_module = FakeModule()
+        fake_module.public_tool = public_tool
+
+        with patch("mtdata.core.cli.bootstrap_tools", return_value=(fake_module,)):
+            tools = discover_tools()
         assert "public_tool" in tools
 
+    @patch("mtdata.core.cli.get_registered_tools", return_value={})
     @patch("mtdata.core.cli.get_mcp_registry", return_value=None)
-    @patch("mtdata.core.cli.server")
-    def test_discover_empty(self, mock_server, mock_get_reg):
-        mock_server.__name__ = "mtdata.core.server"
-        mock_server.mcp = None
-        mock_server.get_tool_registry = None
-        type(mock_server).__dir__ = lambda self: []
+    @patch("mtdata.core.cli.bootstrap_tools", return_value=())
+    @patch("mtdata.core.cli.mcp", None)
+    def test_discover_empty(self, mock_bootstrap, mock_get_reg, mock_get_registered):
         tools = discover_tools()
         assert tools == {}
 

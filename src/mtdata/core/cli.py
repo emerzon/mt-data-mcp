@@ -17,7 +17,10 @@ from .config import load_environment
 
 load_environment()
 
+from ..bootstrap import bootstrap_tools
 from ..utils.minimal_output import format_result_minimal as _shared_minimal
+from ._mcp_instance import mcp
+from ._mcp_tools import get_tool_registry as get_registered_tools
 
 # Simple debug logging controlled by env var MTDATA_CLI_DEBUG
 def _debug_enabled() -> bool:
@@ -57,9 +60,6 @@ def _is_typed_dict_type(value: Any) -> bool:
         or getattr(value, "__optional_keys__", None) is not None
     )
 
-
-# Import server module and attempt to discover tools dynamically
-from . import server
 from .unified_params import add_global_args_to_parser
 from .server_utils import get_mcp_registry
 from .schema import enrich_schema_with_shared_defs, get_function_info as _schema_get_function_info, PARAM_HINTS as _PARAM_HINTS
@@ -502,59 +502,65 @@ def _is_literal_origin(origin: Any) -> bool:
     return origin is Literal or str(origin) in {"typing.Literal", "<class 'typing.Literal'>"}
 
 def discover_tools():
-    """Discover MCP tools from the server.
+    """Discover MCP tools from the shared bootstrap registry.
 
     Priority:
-    1) Use server.get_tool_registry() if available
-    2) Use server.mcp registry if available
-    2) Fallback to scanning public callables in server module (excluding helpers)
+    1) Use the shared tool registry after bootstrap
+    2) Use the MCP registry if available
+    3) Fallback to scanning bootstrapped tool modules
     """
     tools: Dict[str, ToolInfo] = {}
 
-    mcp = getattr(server, 'mcp', None)
     registry = None
+    bootstrapped_modules: Tuple[Any, ...] = ()
     try:
-        get_reg = getattr(server, "get_tool_registry", None)
-        if callable(get_reg):
-            reg = get_reg()
-            if reg and hasattr(reg, "items"):
-                registry = reg
+        bootstrapped_modules = tuple(bootstrap_tools())
     except Exception as e:
-        _debug(f"get_tool_registry failed: {e}")
+        _debug(f"bootstrap_tools failed: {e}")
+    try:
+        reg = get_registered_tools()
+        if reg and hasattr(reg, "items"):
+            registry = reg
+    except Exception as e:
+        _debug(f"get_registered_tools failed: {e}")
     if mcp is not None:
         registry = get_mcp_registry(mcp) or registry
 
+    module_names = {
+        str(getattr(module, "__name__", "")).strip()
+        for module in bootstrapped_modules
+        if getattr(module, "__name__", None)
+    }
     if registry and hasattr(registry, 'items'):
-        pkg_prefix = server.__name__.rsplit('.', 1)[0] + '.'
         for name, obj in registry.items():  # type: ignore[union-attr]
             func = _extract_function_from_tool_obj(obj)
             mod = getattr(func, '__module__', None) if func else None
-            if func and isinstance(mod, str) and (mod == server.__name__ or mod.startswith(pkg_prefix)):
+            if func and isinstance(mod, str) and (not module_names or mod in module_names):
                 meta = _extract_metadata_from_tool_obj(obj)
                 tools[name] = {"func": func, "meta": meta}
 
     if not tools:
-        # Fallback: scan server module for likely tool functions
-        for name in dir(server):
-            if name.startswith('_'):
+        # Fallback: scan bootstrapped modules for likely tool functions
+        for module in bootstrapped_modules:
+            module_name = getattr(module, "__name__", None)
+            if not isinstance(module_name, str):
                 continue
-            if name in {"main", "MT5Connection"}:  # skip non-tool exports
-                continue
-            obj = getattr(server, name)
-            if callable(obj) and getattr(obj, '__module__', None) == server.__name__:
-                # Heuristic: prefer functions with a docstring and at least 0-5 params
-                try:
-                    inspect.signature(obj)
-                except (TypeError, ValueError):
+            for name in dir(module):
+                if name.startswith('_'):
                     continue
-                if isinstance(obj, type):
-                    continue  # skip classes
-                if name.endswith(('_wrapper',)):
-                    continue
-                # Avoid internal helpers
-                if name in {"_group_symbols", "_auto_connect_wrapper"}:
-                    continue
-                tools[name] = {"func": obj, "meta": {"description": None, "param_docs": {}}}
+                obj = getattr(module, name)
+                if callable(obj) and getattr(obj, '__module__', None) == module_name:
+                    try:
+                        inspect.signature(obj)
+                    except (TypeError, ValueError):
+                        continue
+                    if isinstance(obj, type):
+                        continue
+                    if name.endswith(('_wrapper',)):
+                        continue
+                    if name in {"_group_symbols", "_auto_connect_wrapper"}:
+                        continue
+                    tools[name] = {"func": obj, "meta": {"description": None, "param_docs": {}}}
 
     return tools
 

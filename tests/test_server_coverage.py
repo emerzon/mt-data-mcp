@@ -481,15 +481,19 @@ class TestResolveTransport:
 
 class TestToolRegistries:
 
-    def test_get_tool_registry_returns_dict(self):
+    @patch("mtdata.core.server.bootstrap_tools")
+    def test_get_tool_registry_returns_dict(self, mock_bootstrap):
         from mtdata.core.server import get_tool_registry
         result = get_tool_registry()
         assert isinstance(result, dict)
+        mock_bootstrap.assert_called_once()
 
-    def test_get_tool_functions_returns_dict(self):
+    @patch("mtdata.core.server.bootstrap_tools")
+    def test_get_tool_functions_returns_dict(self, mock_bootstrap):
         from mtdata.core.server import get_tool_functions
         result = get_tool_functions()
         assert isinstance(result, dict)
+        mock_bootstrap.assert_called_once()
 
     def test_registries_are_copies(self):
         from mtdata.core.server import get_tool_registry, get_tool_functions, _TOOL_REGISTRY
@@ -544,8 +548,9 @@ class TestDisconnectMt5:
 
 class TestMainEntryPoints:
 
+    @patch("mtdata.core.server.bootstrap_tools")
     @patch("mtdata.core.server.mcp")
-    def test_main_invokes_run(self, mock_mcp, monkeypatch):
+    def test_main_invokes_run(self, mock_mcp, mock_bootstrap, monkeypatch):
         monkeypatch.delenv("MCP_TRANSPORT", raising=False)
         mock_mcp.settings = MagicMock()
         mock_mcp.settings.host = "0.0.0.0"
@@ -573,22 +578,34 @@ class TestMainEntryPoints:
         assert os.environ.get("MCP_TRANSPORT") == "sse"
         mock_main.assert_called_once()
 
+    @patch("mtdata.core.server.main")
+    def test_main_streamable_http_sets_env(self, mock_main, monkeypatch):
+        from mtdata.core.server import main_streamable_http
+        main_streamable_http()
+        assert os.environ.get("MCP_TRANSPORT") == "streamable-http"
+        mock_main.assert_called_once()
+
+    @patch("mtdata.core.server.bootstrap_tools")
     @patch("mtdata.core.server.mcp")
-    def test_main_no_settings(self, mock_mcp, monkeypatch):
+    def test_main_no_settings(self, mock_mcp, mock_bootstrap, monkeypatch):
         monkeypatch.delenv("MCP_TRANSPORT", raising=False)
         mock_mcp.settings = None
         mock_mcp.run = MagicMock()
         from mtdata.core.server import main
         main()
         mock_mcp.run.assert_called_once()
+        mock_bootstrap.assert_called_once()
+        mock_bootstrap.assert_called_once()
 
+    @patch("mtdata.core.server.bootstrap_tools")
     @patch("mtdata.core.server.mcp")
-    def test_main_no_run_fn(self, mock_mcp, monkeypatch):
+    def test_main_no_run_fn(self, mock_mcp, mock_bootstrap, monkeypatch):
         monkeypatch.delenv("MCP_TRANSPORT", raising=False)
         mock_mcp.settings = None
         mock_mcp.run = None
         from mtdata.core.server import main
         main()  # should not raise
+        mock_bootstrap.assert_called_once()
 
 
 # ── mcp instance ──────────────────────────────────────────────────────────
