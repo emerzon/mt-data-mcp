@@ -2,13 +2,14 @@ from typing import Any, Dict, Optional, List, Literal, Tuple
 import os
 
 from .schema import TimeframeLiteral, DenoiseSpec, ForecastLibraryLiteral, ForecastMethodLiteral
-from .server import mcp, _auto_connect_wrapper
+from ._mcp_instance import mcp
 from ..forecast.forecast import forecast as _forecast_impl
 from ..forecast.backtest import forecast_backtest as _forecast_backtest_impl
 from ..forecast.volatility import forecast_volatility as _forecast_volatility_impl
 from ..forecast.forecast import get_forecast_methods_data as _get_forecast_methods_data
 from ..forecast.tune import genetic_search_forecast_params as _genetic_search_impl
 from ..forecast.tune import optuna_search_forecast_params as _optuna_search_impl
+from ..utils.mt5 import _auto_connect_wrapper
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import (
     build_barrier_kwargs_from as _build_barrier_kwargs_from,

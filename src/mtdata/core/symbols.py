@@ -5,9 +5,9 @@ from ..utils.utils import _table_from_rows, _normalize_limit
 from ..utils.utils import _format_time_minimal
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from ..utils.mt5_enums import decode_mt5_enum_label, decode_mt5_bitmask_labels
-from .server import mcp, _auto_connect_wrapper
+from ._mcp_instance import mcp
 from .constants import GROUP_SEARCH_THRESHOLD, DEFAULT_ROW_LIMIT
-import MetaTrader5 as mt5
+from ..utils.mt5 import _auto_connect_wrapper, mt5
 
 
 

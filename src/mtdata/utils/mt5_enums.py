@@ -4,6 +4,14 @@ from typing import Any, Dict, List, Optional
 
 
 _ABBREVIATIONS = {"SL", "TP", "SO", "IOC", "FOK", "BOC", "GTC", "EA", "DMA"}
+_CANONICAL_ENUM_NAMES: Dict[str, Dict[int, str]] = {
+    "SYMBOL_TRADE_EXECUTION_": {
+        0: "SYMBOL_TRADE_EXECUTION_REQUEST",
+        1: "SYMBOL_TRADE_EXECUTION_INSTANT",
+        2: "SYMBOL_TRADE_EXECUTION_MARKET",
+        3: "SYMBOL_TRADE_EXECUTION_EXCHANGE",
+    },
+}
 
 
 def _safe_int(value: Any) -> Optional[int]:
@@ -53,6 +61,9 @@ def decode_mt5_enum_label(mt5_module: Any, value: Any, *, prefix: str) -> Option
     code = _safe_int(value)
     if code is None:
         return None
+    canonical = (_CANONICAL_ENUM_NAMES.get(prefix) or {}).get(code)
+    if canonical:
+        return _prettify_constant_name(canonical, prefix)
     mapping = _constants_by_prefix(mt5_module, prefix)
     name = mapping.get(code)
     if not name:

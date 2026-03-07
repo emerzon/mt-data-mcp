@@ -68,12 +68,11 @@ def _call_tool_raw(func):
     raw = getattr(func, '__wrapped__', None)
     return raw if callable(raw) else func
 
-from ..utils.mt5 import mt5_connection, _ensure_symbol_ready
+from ..utils.mt5 import _ensure_symbol_ready, mt5, mt5_connection
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from ..utils.denoise import get_denoise_methods_data as _get_denoise_methods
 from ..utils.denoise import normalize_denoise_spec as _norm_dn
 from ..utils.dimred import list_dimred_methods as _list_dimred_methods
-import MetaTrader5 as mt5
 from ..core.config import mt5_config
 
 

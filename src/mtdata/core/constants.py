@@ -1,4 +1,4 @@
-import MetaTrader5 as mt5
+from ..utils.mt5 import mt5
 
 # Import shared constants to avoid duplication
 from ..utils.constants import PRECISION_REL_TOL, PRECISION_ABS_TOL, PRECISION_MAX_DECIMALS, TIME_DISPLAY_FORMAT

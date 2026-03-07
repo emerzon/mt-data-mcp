@@ -10,11 +10,10 @@ from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 import numpy as np
-import MetaTrader5 as mt5
 
+from ._mcp_instance import mcp
 from .constants import TIMEFRAME_MAP
-from .server import mcp, _auto_connect_wrapper, _ensure_symbol_ready
-from ..utils.mt5 import _mt5_copy_rates_from
+from ..utils.mt5 import _auto_connect_wrapper, _ensure_symbol_ready, _mt5_copy_rates_from, mt5
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
 
 

@@ -5,17 +5,17 @@ import math
 import numpy as np
 import pandas as pd
 
-import MetaTrader5 as mt5
-
+from ._mcp_instance import mcp
 from .schema import TimeframeLiteral
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from .server import mcp, _auto_connect_wrapper
 from ..utils.mt5 import (
+    _auto_connect_wrapper,
     _mt5_copy_rates_from,
     _mt5_copy_rates_range,
     _mt5_epoch_to_utc,
     _symbol_ready_guard,
     get_symbol_info_cached,
+    mt5,
 )
 from ..utils.utils import (
     _parse_start_datetime,

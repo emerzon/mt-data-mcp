@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional, Literal, List
 
-from .server import mcp, _auto_connect_wrapper
+from ._mcp_instance import mcp
+from ..utils.mt5 import _auto_connect_wrapper
 from .schema import TimeframeLiteral, DenoiseSpec
 from ..forecast.common import fetch_history as _fetch_history
 from ..utils.utils import _format_time_minimal

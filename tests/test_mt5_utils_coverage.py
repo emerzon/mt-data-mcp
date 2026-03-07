@@ -51,6 +51,7 @@ from mtdata.utils.mt5 import (
     _mt5_copy_rates_from_pos,
     _mt5_copy_ticks_range,
     MT5Connection,
+    MT5Adapter,
     MT5Service,
     _auto_connect_wrapper,
     _ensure_symbol_ready,
@@ -99,6 +100,22 @@ class TestGetSymbolInfoCached:
 class TestClearSymbolInfoCache:
     def test_clears_without_error(self):
         clear_symbol_info_cache()
+
+
+class TestMt5Adapter:
+    def test_adapter_reads_live_sys_modules_binding(self):
+        adapter = MT5Adapter()
+        original = sys.modules.get("MetaTrader5")
+        first = types.SimpleNamespace(VERSION="first")
+        second = types.SimpleNamespace(VERSION="second")
+        try:
+            sys.modules["MetaTrader5"] = first
+            assert adapter.VERSION == "first"
+            sys.modules["MetaTrader5"] = second
+            assert adapter.VERSION == "second"
+        finally:
+            if original is not None:
+                sys.modules["MetaTrader5"] = original
 
 
 # ── _mt5_epoch_to_utc  (lines 40-59) ─────────────────────────────────────────

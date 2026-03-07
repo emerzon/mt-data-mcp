@@ -10,7 +10,7 @@ import json
 import logging
 from urllib.parse import parse_qs
 
-from .server import mcp
+from ._mcp_instance import mcp
 from ..services.finviz_service import (
     get_stock_fundamentals,
     get_stock_description,

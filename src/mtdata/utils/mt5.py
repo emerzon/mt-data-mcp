@@ -1,18 +1,121 @@
 import logging
+import importlib
 import time
 from contextlib import contextmanager
 from functools import lru_cache
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Iterator, Tuple
 
-import MetaTrader5 as mt5
-
 from ..core.config import mt5_config
-from ..core.constants import DATA_READY_TIMEOUT, DATA_POLL_INTERVAL
 
 logger = logging.getLogger(__name__)
 
 _SYMBOL_INFO_TTL_SECONDS = 5
+
+
+def _data_ready_timing() -> tuple[float, float]:
+    """Load symbol-readiness timing constants lazily to avoid import cycles."""
+    try:
+        from ..core.constants import DATA_POLL_INTERVAL, DATA_READY_TIMEOUT
+
+        return float(DATA_READY_TIMEOUT), float(DATA_POLL_INTERVAL)
+    except Exception:
+        return 3.0, 0.2
+
+
+def _load_mt5_module() -> Any:
+    """Resolve the live MetaTrader5 module on demand.
+
+    Tests frequently replace ``sys.modules['MetaTrader5']`` after imports, so the
+    adapter cannot hold a stale module reference.
+    """
+    return importlib.import_module("MetaTrader5")
+
+
+class MT5Adapter:
+    """Thin dynamic adapter around MetaTrader5."""
+
+    def _module(self) -> Any:
+        return _load_mt5_module()
+
+    def __dir__(self) -> list[str]:
+        try:
+            return sorted(set(object.__dir__(self)) | set(dir(self._module())))
+        except Exception:
+            return list(object.__dir__(self))
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        object.__setattr__(self, name, value)
+
+    def initialize(self, *args, **kwargs):
+        return self._module().initialize(*args, **kwargs)
+
+    def shutdown(self):
+        return self._module().shutdown()
+
+    def last_error(self):
+        return self._module().last_error()
+
+    def symbol_info(self, symbol):
+        return self._module().symbol_info(symbol)
+
+    def symbol_select(self, symbol, visible=True):
+        return self._module().symbol_select(symbol, visible)
+
+    def symbol_info_tick(self, symbol):
+        return self._module().symbol_info_tick(symbol)
+
+    def order_send(self, request):
+        return self._module().order_send(request)
+
+    def positions_get(self, **kwargs):
+        return self._module().positions_get(**kwargs)
+
+    def orders_get(self, **kwargs):
+        return self._module().orders_get(**kwargs)
+
+    def history_orders_get(self, dt_from, dt_to, **kwargs):
+        return self._module().history_orders_get(dt_from, dt_to, **kwargs)
+
+    def history_deals_get(self, dt_from, dt_to, **kwargs):
+        return self._module().history_deals_get(dt_from, dt_to, **kwargs)
+
+    def account_info(self):
+        return self._module().account_info()
+
+    def terminal_info(self):
+        return self._module().terminal_info()
+
+    def copy_rates_from(self, symbol, timeframe, dt_from, count):
+        return self._module().copy_rates_from(symbol, timeframe, dt_from, count)
+
+    def copy_rates_range(self, symbol, timeframe, dt_from, dt_to):
+        return self._module().copy_rates_range(symbol, timeframe, dt_from, dt_to)
+
+    def copy_rates_from_pos(self, symbol, timeframe, start_pos, count):
+        return self._module().copy_rates_from_pos(symbol, timeframe, start_pos, count)
+
+    def copy_ticks_from(self, symbol, dt_from, count, flags):
+        return self._module().copy_ticks_from(symbol, dt_from, count, flags)
+
+    def copy_ticks_range(self, symbol, dt_from, dt_to, flags):
+        return self._module().copy_ticks_range(symbol, dt_from, dt_to, flags)
+
+    def market_book_add(self, symbol):
+        return self._module().market_book_add(symbol)
+
+    def market_book_get(self, symbol):
+        return self._module().market_book_get(symbol)
+
+    def market_book_release(self, symbol):
+        return self._module().market_book_release(symbol)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._module(), name)
+
+
+mt5_adapter = MT5Adapter()
+mt5 = mt5_adapter
 
 
 @lru_cache(maxsize=256)
@@ -224,18 +327,19 @@ def _ensure_symbol_ready(symbol: str) -> Optional[str]:
     Returns an error string if selection or data readiness fails, else None.
     """
     try:
+        data_ready_timeout, data_poll_interval = _data_ready_timing()
         info_before = mt5.symbol_info(symbol)
         was_visible = bool(info_before.visible) if info_before is not None else None
         if not mt5.symbol_select(symbol, True):
             return f"Failed to select symbol {symbol}: {mt5.last_error()}"
         # If we just made it visible, wait briefly for fresh tick data
         if was_visible is False:
-            deadline = time.time() + DATA_READY_TIMEOUT
+            deadline = time.time() + data_ready_timeout
             while time.time() < deadline:
                 tick = mt5.symbol_info_tick(symbol)
                 if tick and (getattr(tick, 'time', 0) or getattr(tick, 'bid', 0) or getattr(tick, 'ask', 0)):
                     break
-                time.sleep(DATA_POLL_INTERVAL)
+                time.sleep(data_poll_interval)
         # Final check
         tick = mt5.symbol_info_tick(symbol)
         if tick is None:

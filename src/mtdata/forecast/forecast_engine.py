@@ -9,7 +9,7 @@ import pandas as pd
 import math
 
 from mtdata.core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from mtdata.utils.mt5 import get_symbol_info_cached
+from mtdata.utils.mt5 import get_symbol_info_cached, mt5
 from mtdata.utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
@@ -36,7 +36,6 @@ import mtdata.forecast.methods.sktime
 import mtdata.forecast.methods.gluonts_extra
 import mtdata.forecast.methods.analog
 import mtdata.forecast.methods.monte_carlo  # noqa: F401 (method registration side effects)
-import MetaTrader5 as mt5
 
 # Backward-compatibility surface for tests/monkeypatching.
 _PATCHABLE_GLOBALS = (mt5,)

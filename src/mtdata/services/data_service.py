@@ -24,7 +24,7 @@ from ..core.config import mt5_config
 from ..utils.mt5 import (
     _mt5_copy_rates_from, _mt5_copy_rates_range, _mt5_copy_ticks_from,
     _mt5_copy_ticks_range, _mt5_epoch_to_utc, _rates_to_df, _symbol_ready_guard,
-    get_symbol_info_cached
+    get_symbol_info_cached, mt5
 )
 from ..utils.utils import (
     _table_from_rows, _format_time_minimal, _format_time_minimal_local,
@@ -46,9 +46,6 @@ from ..utils.simplify import (
     _select_indices_for_timeseries,
     _simplify_dataframe_rows_ext,
 )
-
-import MetaTrader5 as mt5
-
 logger = logging.getLogger(__name__)
 
 

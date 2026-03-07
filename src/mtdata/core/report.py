@@ -2,9 +2,10 @@ from typing import Any, Dict, Optional, List, Literal, Union
 import time
 import warnings
 
-from .server import mcp, _auto_connect_wrapper
+from ._mcp_instance import mcp
 from .schema import DenoiseSpec
 from .report_utils import render_enhanced_report, format_number, _get_indicator_value
+from ..utils.mt5 import _auto_connect_wrapper
 
 TemplateName = Literal['basic','advanced','scalping','intraday','swing','position']
 

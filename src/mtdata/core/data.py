@@ -3,7 +3,8 @@
 from typing import Any, Dict, Optional, List, Literal
 from .schema import TimeframeLiteral, IndicatorSpec, DenoiseSpec, SimplifySpec
 from .constants import DEFAULT_ROW_LIMIT
-from .server import mcp, _auto_connect_wrapper
+from ._mcp_instance import mcp
+from ..utils.mt5 import _auto_connect_wrapper
 from ..services.data_service import fetch_candles, fetch_ticks
 
 # Explicitly define what should be exported for '*' imports

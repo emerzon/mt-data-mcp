@@ -7,8 +7,8 @@ import time
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple, Union, List, Dict, Any, Literal
 
-from .server import mcp
-from ..utils.mt5 import _auto_connect_wrapper, _mt5_epoch_to_utc
+from ._mcp_instance import mcp
+from ..utils.mt5 import _auto_connect_wrapper, _mt5_epoch_to_utc, mt5_adapter
 from ..utils.mt5_enums import decode_mt5_enum_label
 from .config import mt5_config
 from .constants import DEFAULT_ROW_LIMIT
@@ -349,7 +349,7 @@ def _validate_deviation(deviation: Union[int, float]) -> Tuple[Optional[int], Op
 
 def _prevalidate_trade_place_market_input(symbol: str, volume: Any) -> Optional[Dict[str, Any]]:
     """Validate symbol and volume before market-order SL/TP enforcement returns."""
-    import MetaTrader5 as mt5
+    mt5 = mt5_adapter
 
     @_auto_connect_wrapper
     def _prevalidate():
@@ -739,7 +739,7 @@ def _build_trade_preflight(mt5: Any, account_info: Any = None, terminal_info: An
 @mcp.tool()
 def trade_account_info() -> dict:
     """Get account information (balance, equity, profit, margin level, free margin, account type, leverage, currency)."""
-    import MetaTrader5 as mt5
+    mt5 = mt5_adapter
 
     @_auto_connect_wrapper
     def _get_account_info():
@@ -805,7 +805,7 @@ def trade_history(
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
 ) -> List[Dict[str, Any]]:
     """Get deal or order history as tabular data."""
-    import MetaTrader5 as mt5
+    mt5 = mt5_adapter
     import pandas as pd
 
     @_auto_connect_wrapper
@@ -1057,7 +1057,7 @@ def trade_get_open(
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
 ) -> List[Dict[str, Any]]:
     """Get open positions."""
-    import MetaTrader5 as mt5
+    mt5 = mt5_adapter
     import pandas as pd
 
     @_auto_connect_wrapper
@@ -1166,7 +1166,7 @@ def trade_get_pending(
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
 ) -> List[Dict[str, Any]]:
     """Get pending orders (open orders)."""
-    import MetaTrader5 as mt5
+    mt5 = mt5_adapter
     import pandas as pd
 
     @_auto_connect_wrapper
@@ -1297,7 +1297,7 @@ def _place_market_order(
     deviation: int = 20,
 ) -> dict:
     """Internal helper to place a market order."""
-    import MetaTrader5 as mt5
+    mt5 = mt5_adapter
 
     @_auto_connect_wrapper
     def _place_market_order():
@@ -1698,7 +1698,7 @@ def _place_pending_order(
     deviation: int = 20,
 ) -> dict:
     """Internal helper to place a pending order."""
-    import MetaTrader5 as mt5
+    mt5 = mt5_adapter
 
     @_auto_connect_wrapper
     def _place_pending_order():
@@ -2070,7 +2070,7 @@ def _modify_position(
     comment: Optional[str] = None,
 ) -> dict:
     """Internal helper to modify a position by ticket."""
-    import MetaTrader5 as mt5
+    mt5 = mt5_adapter
 
     @_auto_connect_wrapper
     def _modify_position():
@@ -2177,7 +2177,7 @@ def _modify_pending_order(
     comment: Optional[str] = None,
 ) -> dict:
     """Internal helper to modify a pending order by ticket."""
-    import MetaTrader5 as mt5
+    mt5 = mt5_adapter
 
     @_auto_connect_wrapper
     def _modify_pending_order():
@@ -2333,7 +2333,7 @@ def _close_positions(
     deviation: int = 20,
 ) -> dict:
     """Internal helper to close open positions."""
-    import MetaTrader5 as mt5
+    mt5 = mt5_adapter
 
     @_auto_connect_wrapper
     def _close_positions():
@@ -2641,7 +2641,7 @@ def _cancel_pending(
     comment: Optional[str] = None,
 ) -> dict:
     """Internal helper to cancel pending orders."""
-    import MetaTrader5 as mt5
+    mt5 = mt5_adapter
 
     @_auto_connect_wrapper
     def _cancel_pending():
@@ -2855,7 +2855,7 @@ def trade_risk_analyze(
         proposed_tp=1.1100
     )
     """
-    import MetaTrader5 as mt5
+    mt5 = mt5_adapter
 
     @_auto_connect_wrapper
     def _analyze_risk():

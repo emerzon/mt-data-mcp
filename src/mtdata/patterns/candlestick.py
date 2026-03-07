@@ -58,7 +58,7 @@ def _ensure_candlestick_runtime() -> None:
 
     if mt5 is None:
         try:
-            import MetaTrader5 as mt5_mod  # type: ignore
+            from ..utils.mt5 import mt5 as mt5_mod
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError(
                 "MetaTrader5 not found. Install 'MetaTrader5' to use candlestick detection."

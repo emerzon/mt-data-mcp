@@ -1,12 +1,13 @@
 from typing import Any, Dict, Optional, List, Literal, Tuple
 import numpy as np
 
-from .server import mcp, _auto_connect_wrapper
+from ._mcp_instance import mcp
 from .schema import TimeframeLiteral, DenoiseSpec
 from .constants import TIMEFRAME_SECONDS
 from ..forecast.common import fetch_history as _fetch_history
 from ..utils.utils import _format_time_minimal
 from ..utils.denoise import _resolve_denoise_base_col
+from ..utils.mt5 import _auto_connect_wrapper
 
 
 _CRYPTO_SYMBOL_HINTS = (

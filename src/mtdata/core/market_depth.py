@@ -3,10 +3,9 @@ from typing import Any, Dict
 import math
 import time
 
-from ..utils.mt5 import _mt5_epoch_to_utc
+from ..utils.mt5 import _auto_connect_wrapper, _mt5_epoch_to_utc, mt5
 from ..utils.utils import _format_time_minimal, _format_time_minimal_local, _use_client_tz
-from .server import mcp, _auto_connect_wrapper
-import MetaTrader5 as mt5
+from ._mcp_instance import mcp
 
 @mcp.tool()
 @_auto_connect_wrapper

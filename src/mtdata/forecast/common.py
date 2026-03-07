@@ -12,8 +12,8 @@ from ..utils.mt5 import (
     _mt5_copy_rates_from,
     _mt5_copy_rates_from_pos,
     get_symbol_info_cached,
+    mt5,
 )
-import MetaTrader5 as mt5
 from ..utils.utils import _parse_start_datetime, _utc_epoch_seconds
 
 

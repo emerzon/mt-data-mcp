@@ -599,6 +599,11 @@ class TestMcpInstance:
         from mtdata.core.server import mcp
         assert mcp is not None
 
+    def test_server_reexports_leaf_mcp_singleton(self):
+        from mtdata.core._mcp_instance import mcp as leaf_mcp
+        from mtdata.core.server import mcp as server_mcp
+        assert server_mcp is leaf_mcp
+
     def test_mcp_has_tool_attr(self):
         from mtdata.core.server import mcp
         assert hasattr(mcp, "tool")

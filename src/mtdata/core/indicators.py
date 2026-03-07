@@ -5,7 +5,7 @@ import re
 from .schema import CategoryLiteral, IndicatorNameLiteral
 from .constants import DEFAULT_ROW_LIMIT
 from ..utils.utils import _table_from_rows
-from .server import mcp
+from ._mcp_instance import mcp
 # Import the actual implementation from utils
 from ..utils.indicators import list_ta_indicators as _list_ta_indicators
 

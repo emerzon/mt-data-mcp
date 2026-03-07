@@ -354,7 +354,7 @@ def _build_market_ticker_cli_verbose_meta(result: Any) -> Dict[str, Any]:
         if field in result:
             out[field] = result.get(field)
     try:
-        import MetaTrader5 as mt5  # type: ignore
+        from ..utils.mt5 import mt5
         terminal = mt5.terminal_info() if hasattr(mt5, "terminal_info") else None
         if terminal is not None:
             out["terminal"] = {
