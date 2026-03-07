@@ -48,10 +48,15 @@ def _mock_symbol_guard(error=None, info=None):
 # Unwrap the decorated function
 def _get_pivot_fn():
     from mtdata.core.pivot import pivot_compute_points
-    fn = pivot_compute_points
-    while hasattr(fn, "__wrapped__"):
-        fn = fn.__wrapped__
-    return fn
+    raw = pivot_compute_points
+    while hasattr(raw, "__wrapped__"):
+        raw = raw.__wrapped__
+
+    def _call(*args, **kwargs):
+        with patch("mtdata.core.pivot.ensure_mt5_connection_or_raise", return_value=None):
+            return raw(*args, **kwargs)
+
+    return _call
 
 
 _TF_MAP_PATCH = "mtdata.core.pivot.TIMEFRAME_MAP"

@@ -5,13 +5,19 @@ import math
 
 from .schema import TimeframeLiteral, _PIVOT_METHODS
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..utils.mt5 import _auto_connect_wrapper, _mt5_copy_rates_from, _mt5_epoch_to_utc, _symbol_ready_guard, mt5
+from ..utils.mt5 import (
+    MT5ConnectionError,
+    _mt5_copy_rates_from,
+    _mt5_epoch_to_utc,
+    _symbol_ready_guard,
+    ensure_mt5_connection_or_raise,
+    mt5,
+)
 from ..utils.utils import _format_time_minimal, _format_time_minimal_local, _use_client_tz
 from ._mcp_instance import mcp
 
 
 @mcp.tool()
-@_auto_connect_wrapper
 def pivot_compute_points(
     symbol: str,
     timeframe: TimeframeLiteral = "D1",
@@ -22,6 +28,7 @@ def pivot_compute_points(
     Returns JSON with shared source data plus levels for every supported pivot method.
     """
     try:
+        ensure_mt5_connection_or_raise()
         if timeframe not in TIMEFRAME_MAP:
             return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
         mt5_tf = TIMEFRAME_MAP[timeframe]
@@ -282,6 +289,8 @@ def pivot_compute_points(
         if not _use_ctz:
             payload["timezone"] = "UTC"
         return payload
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
     except Exception as e:
         return {"error": f"Error computing pivot points: {str(e)}"}
 
