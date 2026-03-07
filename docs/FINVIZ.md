@@ -17,19 +17,19 @@ The `finviz_*` tools provide access to US equity fundamental data, screening, ne
 
 ```bash
 # Company fundamentals (P/E, EPS, market cap, etc.)
-python cli.py finviz_fundamentals AAPL --json
+mtdata-cli finviz_fundamentals AAPL --json
 
 # Latest news for a stock
-python cli.py finviz_news NVDA --json
+mtdata-cli finviz_news NVDA --json
 
 # Screen for undervalued tech stocks
-python cli.py finviz_screen --filters '{"Sector": "Technology", "P/E": "Under 15"}' --json
+mtdata-cli finviz_screen --filters '{"Sector": "Technology", "P/E": "Under 15"}' --json
 
 # This week's economic calendar
-python cli.py finviz_calendar --json
+mtdata-cli finviz_calendar --json
 
 # Forex performance snapshot
-python cli.py finviz_forex --json
+mtdata-cli finviz_forex --json
 ```
 
 ---
@@ -41,7 +41,7 @@ python cli.py finviz_forex --json
 Get fundamental metrics for a US stock.
 
 ```bash
-python cli.py finviz_fundamentals AAPL --json
+mtdata-cli finviz_fundamentals AAPL --json
 ```
 
 **Returns:** P/E, Forward P/E, EPS, market cap, sector, industry, dividend yield, 52-week range, analyst recommendations, and 60+ other metrics.
@@ -51,7 +51,7 @@ python cli.py finviz_fundamentals AAPL --json
 Get a company's business description.
 
 ```bash
-python cli.py finviz_description TSLA --json
+mtdata-cli finviz_description TSLA --json
 ```
 
 ### `finviz_peers`
@@ -59,7 +59,7 @@ python cli.py finviz_description TSLA --json
 Find peer companies in the same sector/industry.
 
 ```bash
-python cli.py finviz_peers MSFT --json
+mtdata-cli finviz_peers MSFT --json
 ```
 
 **Returns:** List of ticker symbols for comparable companies.
@@ -69,7 +69,7 @@ python cli.py finviz_peers MSFT --json
 Get analyst ratings history.
 
 ```bash
-python cli.py finviz_ratings GOOGL --json
+mtdata-cli finviz_ratings GOOGL --json
 ```
 
 **Returns:** Date, analyst firm, rating action (upgrade/downgrade/initiate), rating, and price target.
@@ -84,10 +84,10 @@ Get stock-specific or general market news.
 
 ```bash
 # Stock-specific news
-python cli.py finviz_news NVDA --limit 10 --json
+mtdata-cli finviz_news NVDA --limit 10 --json
 
 # General market news (no symbol)
-python cli.py finviz_news --limit 20 --json
+mtdata-cli finviz_news --limit 20 --json
 ```
 
 | Parameter | Default | Description |
@@ -101,8 +101,8 @@ python cli.py finviz_news --limit 20 --json
 Get broad financial market headlines or blog posts.
 
 ```bash
-python cli.py finviz_market_news --news-type news --limit 20 --json
-python cli.py finviz_market_news --news-type blogs --json
+mtdata-cli finviz_market_news --news-type news --limit 20 --json
+mtdata-cli finviz_market_news --news-type blogs --json
 ```
 
 | Parameter | Default | Description |
@@ -120,7 +120,7 @@ python cli.py finviz_market_news --news-type blogs --json
 Get insider trading activity for a specific stock.
 
 ```bash
-python cli.py finviz_insider AAPL --limit 10 --json
+mtdata-cli finviz_insider AAPL --limit 10 --json
 ```
 
 **Returns:** Owner name, relationship (CEO, CFO, Director, etc.), transaction type (buy/sell), shares, value, and date.
@@ -131,13 +131,13 @@ Get market-wide insider trading activity.
 
 ```bash
 # Latest insider trades across the market
-python cli.py finviz_insider_activity --option latest --json
+mtdata-cli finviz_insider_activity --option latest --json
 
 # Top insider buys this week
-python cli.py finviz_insider_activity --option "top week" --json
+mtdata-cli finviz_insider_activity --option "top week" --json
 
 # Only insider buys
-python cli.py finviz_insider_activity --option "insider buy" --json
+mtdata-cli finviz_insider_activity --option "insider buy" --json
 ```
 
 | Parameter | Default | Description |
@@ -156,16 +156,16 @@ Screen stocks using Finviz's powerful filter engine.
 
 ```bash
 # Tech stocks on NASDAQ
-python cli.py finviz_screen --filters '{"Exchange": "NASDAQ", "Sector": "Technology"}' --json
+mtdata-cli finviz_screen --filters '{"Exchange": "NASDAQ", "Sector": "Technology"}' --json
 
 # Large-cap value stocks
-python cli.py finviz_screen --filters '{"Market Cap.": "Large ($10bln to $200bln)", "P/E": "Under 15"}' --json
+mtdata-cli finviz_screen --filters '{"Market Cap.": "Large ($10bln to $200bln)", "P/E": "Under 15"}' --json
 
 # High-dividend stocks with valuation view
-python cli.py finviz_screen --filters '{"Dividend Yield": "Over 5%"}' --view valuation --json
+mtdata-cli finviz_screen --filters '{"Dividend Yield": "Over 5%"}' --view valuation --json
 
 # Sort by market cap descending
-python cli.py finviz_screen --filters '{"Sector": "Healthcare"}' --order "-marketcap" --json
+mtdata-cli finviz_screen --filters '{"Sector": "Healthcare"}' --order "-marketcap" --json
 ```
 
 | Parameter | Default | Description |
@@ -187,7 +187,7 @@ python cli.py finviz_screen --filters '{"Sector": "Healthcare"}' --order "-marke
 Get forex currency pairs performance.
 
 ```bash
-python cli.py finviz_forex --json
+mtdata-cli finviz_forex --json
 ```
 
 **Returns:** Performance data for major currency pairs (daily change, weekly change, etc.).
@@ -197,7 +197,7 @@ python cli.py finviz_forex --json
 Get cryptocurrency performance.
 
 ```bash
-python cli.py finviz_crypto --json
+mtdata-cli finviz_crypto --json
 ```
 
 **Returns:** Price, daily change, volume, and market cap for major cryptocurrencies.
@@ -207,7 +207,7 @@ python cli.py finviz_crypto --json
 Get futures market performance.
 
 ```bash
-python cli.py finviz_futures --json
+mtdata-cli finviz_futures --json
 ```
 
 **Returns:** Performance data for major futures contracts (commodities, indices, bonds, currencies).
@@ -222,16 +222,16 @@ Get economic, earnings, or dividends calendar.
 
 ```bash
 # Economic calendar (default)
-python cli.py finviz_calendar --json
+mtdata-cli finviz_calendar --json
 
 # Earnings calendar
-python cli.py finviz_calendar --calendar earnings --json
+mtdata-cli finviz_calendar --calendar earnings --json
 
 # High-impact economic events only
-python cli.py finviz_calendar --calendar economic --impact high --json
+mtdata-cli finviz_calendar --calendar economic --impact high --json
 
 # Date range filter
-python cli.py finviz_calendar --date-from 2026-03-01 --date-to 2026-03-15 --json
+mtdata-cli finviz_calendar --date-from 2026-03-01 --date-to 2026-03-15 --json
 ```
 
 | Parameter | Default | Description |
@@ -248,8 +248,8 @@ python cli.py finviz_calendar --date-from 2026-03-01 --date-to 2026-03-15 --json
 Get upcoming earnings announcements.
 
 ```bash
-python cli.py finviz_earnings --period "This Week" --json
-python cli.py finviz_earnings --period "Next Week" --json
+mtdata-cli finviz_earnings --period "This Week" --json
+mtdata-cli finviz_earnings --period "Next Week" --json
 ```
 
 | Parameter | Default | Description |
@@ -264,20 +264,20 @@ python cli.py finviz_earnings --period "Next Week" --json
 
 | Task | Command |
 |------|---------|
-| Company fundamentals | `python cli.py finviz_fundamentals AAPL` |
-| Company description | `python cli.py finviz_description TSLA` |
-| Peer companies | `python cli.py finviz_peers MSFT` |
-| Analyst ratings | `python cli.py finviz_ratings GOOGL` |
-| Stock news | `python cli.py finviz_news NVDA` |
-| Market news | `python cli.py finviz_market_news` |
-| Insider trades (stock) | `python cli.py finviz_insider AAPL` |
-| Insider trades (market) | `python cli.py finviz_insider_activity` |
-| Stock screener | `python cli.py finviz_screen --filters '{"Sector":"Technology"}'` |
-| Forex snapshot | `python cli.py finviz_forex` |
-| Crypto snapshot | `python cli.py finviz_crypto` |
-| Futures snapshot | `python cli.py finviz_futures` |
-| Economic calendar | `python cli.py finviz_calendar` |
-| Earnings calendar | `python cli.py finviz_earnings` |
+| Company fundamentals | `mtdata-cli finviz_fundamentals AAPL` |
+| Company description | `mtdata-cli finviz_description TSLA` |
+| Peer companies | `mtdata-cli finviz_peers MSFT` |
+| Analyst ratings | `mtdata-cli finviz_ratings GOOGL` |
+| Stock news | `mtdata-cli finviz_news NVDA` |
+| Market news | `mtdata-cli finviz_market_news` |
+| Insider trades (stock) | `mtdata-cli finviz_insider AAPL` |
+| Insider trades (market) | `mtdata-cli finviz_insider_activity` |
+| Stock screener | `mtdata-cli finviz_screen --filters '{"Sector":"Technology"}'` |
+| Forex snapshot | `mtdata-cli finviz_forex` |
+| Crypto snapshot | `mtdata-cli finviz_crypto` |
+| Futures snapshot | `mtdata-cli finviz_futures` |
+| Economic calendar | `mtdata-cli finviz_calendar` |
+| Earnings calendar | `mtdata-cli finviz_earnings` |
 
 ---
 

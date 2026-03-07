@@ -209,7 +209,7 @@ def forecast_generate(
     ):
         warning = (
             "Using native theta. StatsForecast theta is available via "
-            f"`python cli.py forecast_generate {symbol} --timeframe {timeframe} --library statsforecast --model Theta --horizon {horizon}` "
+            f"`mtdata-cli forecast_generate {symbol} --timeframe {timeframe} --library statsforecast --model Theta --horizon {horizon}` "
             "and may produce different forecasts/interval behavior."
         )
         warnings_out = out.get("warnings")
@@ -245,8 +245,8 @@ def forecast_list_library_models(
             "library": lib,
             "models": sorted(models),
             "usage": [
-                "python cli.py forecast_generate SYMBOL --library native --model analog",
-                "python cli.py forecast_generate SYMBOL --library native --model theta",
+                "mtdata-cli forecast_generate SYMBOL --library native --model analog",
+                "mtdata-cli forecast_generate SYMBOL --library native --model theta",
             ],
         }
 
@@ -271,7 +271,7 @@ def forecast_list_library_models(
         return {
             "library": lib,
             "models": names,
-            "usage": "python cli.py forecast_generate SYMBOL --library statsforecast --model AutoARIMA",
+            "usage": "mtdata-cli forecast_generate SYMBOL --library statsforecast --model AutoARIMA",
         }
 
     if lib == "sktime":
@@ -281,9 +281,9 @@ def forecast_list_library_models(
             "library": lib,
             "models": forecasters,
             "usage": [
-                "python cli.py forecast_generate SYMBOL --library sktime --model theta",
-                "python cli.py forecast_generate SYMBOL --library sktime --model ThetaForecaster",
-                "python cli.py forecast_generate SYMBOL --library sktime --model sktime.forecasting.theta.ThetaForecaster --model-params \"sp=24\"",
+                "mtdata-cli forecast_generate SYMBOL --library sktime --model theta",
+                "mtdata-cli forecast_generate SYMBOL --library sktime --model ThetaForecaster",
+                "mtdata-cli forecast_generate SYMBOL --library sktime --model sktime.forecasting.theta.ThetaForecaster --model-params \"sp=24\"",
             ],
             "note": "The --model value is matched to the closest available forecaster name; you can also pass a dotted class path. Constructor kwargs go in --model-params (or use --set model.<k>=<v>).",
         }
@@ -316,8 +316,8 @@ def forecast_list_library_models(
             "library": lib,
             "models": pretrained,
             "usage": [
-                "python cli.py forecast_generate SYMBOL --library pretrained --model chronos2",
-                "python cli.py forecast_generate SYMBOL --library pretrained --model timesfm",
+                "mtdata-cli forecast_generate SYMBOL --library pretrained --model chronos2",
+                "mtdata-cli forecast_generate SYMBOL --library pretrained --model timesfm",
             ],
         }
 
@@ -326,8 +326,8 @@ def forecast_list_library_models(
             "library": lib,
             "note": "Use `--model <dotted sklearn/lightgbm regressor class>` plus optional constructor kwargs in --model-params (or use --set model.<k>=<v>).",
             "usage": [
-                "python cli.py forecast_generate SYMBOL --library mlforecast --model sklearn.ensemble.RandomForestRegressor --model-params \"n_estimators=200\"",
-                "python cli.py forecast_generate SYMBOL --library native --model mlf_rf",
+                "mtdata-cli forecast_generate SYMBOL --library mlforecast --model sklearn.ensemble.RandomForestRegressor --model-params \"n_estimators=200\"",
+                "mtdata-cli forecast_generate SYMBOL --library native --model mlf_rf",
             ],
         }
 

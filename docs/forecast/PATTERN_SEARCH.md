@@ -20,7 +20,7 @@ Identifies specific visual patterns that traders use for entry/exit signals.
 Single or multi-bar patterns with historical significance.
 
 ```bash
-python cli.py patterns_detect EURUSD --timeframe H1 --mode candlestick --limit 200
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode candlestick --limit 200
 ```
 
 **Output:**
@@ -34,7 +34,7 @@ data[29]{time,pattern}:
 
 **Filter to robust patterns only:**
 ```bash
-python cli.py patterns_detect EURUSD --mode candlestick --robust-only true
+mtdata-cli patterns_detect EURUSD --mode candlestick --robust-only true
 ```
 
 **Common patterns detected:**
@@ -52,7 +52,7 @@ python cli.py patterns_detect EURUSD --mode candlestick --robust-only true
 Larger geometric patterns formed over multiple bars.
 
 ```bash
-python cli.py patterns_detect EURUSD --timeframe H1 --mode classic --limit 500
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode classic --limit 500
 ```
 
 **Patterns detected:**
@@ -79,13 +79,13 @@ python cli.py patterns_detect EURUSD --timeframe H1 --mode classic --limit 500
 
 **By name:**
 ```bash
-python cli.py patterns_detect EURUSD --mode candlestick \
+mtdata-cli patterns_detect EURUSD --mode candlestick \
   --whitelist "ENGULFING,HAMMER,DOJI"
 ```
 
 **By confidence:**
 ```bash
-python cli.py patterns_detect EURUSD --mode candlestick --robust-only true
+mtdata-cli patterns_detect EURUSD --mode candlestick --robust-only true
 ```
 
 ---
@@ -106,7 +106,7 @@ Finds historical windows that "look like" the current market and uses them to pr
 ### Basic Usage
 
 ```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
   --model analog --model-params "window_size=64 top_k=20"
 ```
 
@@ -142,7 +142,7 @@ python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
 
 **Example with refinement:**
 ```bash
-python cli.py forecast_generate EURUSD --horizon 12 \
+mtdata-cli forecast_generate EURUSD --horizon 12 \
   --model analog --model-params "window_size=64 metric=euclidean refine_metric=dtw"
 ```
 
@@ -167,7 +167,7 @@ Use pattern detection as a confirmation signal:
 
 ```bash
 # Check for reversal patterns at support
-python cli.py patterns_detect EURUSD --mode candlestick --robust-only true
+mtdata-cli patterns_detect EURUSD --mode candlestick --robust-only true
 
 # If bullish pattern detected at support level → consider long entry
 ```
@@ -178,7 +178,7 @@ Use analog forecasts to set price targets:
 
 ```bash
 # Find similar historical patterns
-python cli.py forecast_generate EURUSD --model analog \
+mtdata-cli forecast_generate EURUSD --model analog \
   --model-params "window_size=64 top_k=20" --json
 
 # Use forecast percentiles for TP levels
@@ -188,11 +188,11 @@ python cli.py forecast_generate EURUSD --model analog \
 
 ```bash
 # Get patterns and indicators together
-python cli.py data_fetch_candles EURUSD --limit 200 \
+mtdata-cli data_fetch_candles EURUSD --limit 200 \
   --indicators "ema(20),rsi(14)"
 
 # Then check patterns
-python cli.py patterns_detect EURUSD --mode candlestick --robust-only true
+mtdata-cli patterns_detect EURUSD --mode candlestick --robust-only true
 
 # Look for pattern + indicator confluence
 ```
@@ -236,11 +236,11 @@ data[5]{time,pattern}:
 
 | Task | Command |
 |------|---------|
-| Candlestick patterns | `python cli.py patterns_detect EURUSD --mode candlestick` |
-| Robust patterns only | `python cli.py patterns_detect EURUSD --mode candlestick --robust-only true` |
-| Chart patterns | `python cli.py patterns_detect EURUSD --mode classic` |
-| Analog forecast | `python cli.py forecast_generate EURUSD --model analog --model-params "window_size=64 top_k=20"` |
-| Analog with DTW | `python cli.py forecast_generate EURUSD --model analog --model-params "refine_metric=dtw"` |
+| Candlestick patterns | `mtdata-cli patterns_detect EURUSD --mode candlestick` |
+| Robust patterns only | `mtdata-cli patterns_detect EURUSD --mode candlestick --robust-only true` |
+| Chart patterns | `mtdata-cli patterns_detect EURUSD --mode classic` |
+| Analog forecast | `mtdata-cli forecast_generate EURUSD --model analog --model-params "window_size=64 top_k=20"` |
+| Analog with DTW | `mtdata-cli forecast_generate EURUSD --model analog --model-params "refine_metric=dtw"` |
 
 ---
 

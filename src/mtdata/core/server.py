@@ -130,5 +130,11 @@ def main_sse():
     main()
 
 
+def main_streamable_http():
+    """Entry point for streamable HTTP mode (forced)."""
+    os.environ["MCP_TRANSPORT"] = "streamable-http"
+    main()
+
+
 if __name__ == "__main__":
     main()

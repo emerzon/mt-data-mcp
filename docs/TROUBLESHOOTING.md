@@ -19,7 +19,7 @@ Common issues when running mtdata and how to resolve them.
 
 **Test connection:**
 ```bash
-python cli.py symbols_list --limit 10
+mtdata-cli symbols_list --limit 10
 ```
 
 If this works but candles fail:
@@ -57,8 +57,8 @@ symbol
 
 **Solution:** Check command help and provide required arguments:
 ```bash
-python cli.py forecast_generate --help
-python cli.py forecast_generate EURUSD --horizon 12  # symbol is positional
+mtdata-cli forecast_generate --help
+mtdata-cli forecast_generate EURUSD --horizon 12  # symbol is positional
 ```
 
 ### "Invalid choice" for Timeframe/Method/Mode
@@ -67,8 +67,8 @@ python cli.py forecast_generate EURUSD --horizon 12  # symbol is positional
 
 **Solution:** Use `--help` to see allowed values:
 ```bash
-python cli.py forecast_volatility_estimate --help
-python cli.py patterns_detect --help
+mtdata-cli forecast_volatility_estimate --help
+mtdata-cli patterns_detect --help
 ```
 
 **Common timeframes:** `M1`, `M5`, `M15`, `M30`, `H1`, `H4`, `D1`, `W1`, `MN1`
@@ -82,8 +82,8 @@ python cli.py patterns_detect --help
 
 **Solution:** Check method documentation:
 ```bash
-python cli.py forecast_list_methods --json
-python cli.py indicators_describe rsi --json
+mtdata-cli forecast_list_methods --json
+mtdata-cli indicators_describe rsi --json
 ```
 
 ---
@@ -96,7 +96,7 @@ python cli.py indicators_describe rsi --json
 
 **Solution:** Check availability:
 ```bash
-python cli.py forecast_list_methods --json
+mtdata-cli forecast_list_methods --json
 ```
 
 Look for `available: false` and the `requires` field. Install missing packages:
@@ -125,7 +125,7 @@ pip install <missing_package>
 
 Or check if a similar method is available without extra dependencies:
 ```bash
-python cli.py forecast_list_library_models native  # Native methods have minimal deps
+mtdata-cli forecast_list_library_models native  # Native methods have minimal deps
 ```
 
 ---
@@ -136,13 +136,13 @@ python cli.py forecast_list_library_models native  # Native methods have minimal
 
 **Solution:** Use JSON format:
 ```bash
-python cli.py symbols_describe EURUSD --json
-python cli.py forecast_generate EURUSD --horizon 12 --json
+mtdata-cli symbols_describe EURUSD --json
+mtdata-cli forecast_generate EURUSD --horizon 12 --json
 ```
 
 Pipe to `jq` for processing:
 ```bash
-python cli.py forecast_generate EURUSD --json | jq '.forecast'
+mtdata-cli forecast_generate EURUSD --json | jq '.forecast'
 ```
 
 ### Output is Too Verbose
@@ -159,10 +159,10 @@ python cli.py forecast_generate EURUSD --json | jq '.forecast'
 
 ```bash
 # Check indicator syntax
-python cli.py indicators_describe rsi
+mtdata-cli indicators_describe rsi
 
 # Fetch enough bars (at least period + some buffer)
-python cli.py data_fetch_candles EURUSD --limit 200 --indicators "rsi(14)"
+mtdata-cli data_fetch_candles EURUSD --limit 200 --indicators "rsi(14)"
 ```
 
 ---
@@ -179,10 +179,10 @@ python cli.py data_fetch_candles EURUSD --limit 200 --indicators "rsi(14)"
 **Solution:**
 ```bash
 # Check if symbol exists
-python cli.py symbols_list --limit 100
+mtdata-cli symbols_list --limit 100
 
 # Try without date filters
-python cli.py data_fetch_candles EURUSD --limit 100
+mtdata-cli data_fetch_candles EURUSD --limit 100
 ```
 
 ### Timestamps Look Wrong
@@ -204,7 +204,7 @@ To estimate an offset quickly (run during active market hours so ticks are curre
 python scripts/detect_mt5_time_offset.py --symbol EURUSD
 ```
 
-Tip: if you're launching the Web UI via `python webui.py`, mtdata will attempt to auto-detect and apply `MT5_TIME_OFFSET_MINUTES` when neither `MT5_SERVER_TZ` nor `MT5_TIME_OFFSET_MINUTES` is set. This is best-effort and may return 0 when the market is closed.
+Set `MT5_SERVER_TZ` or `MT5_TIME_OFFSET_MINUTES` explicitly before starting `mtdata-webapi`. The Web API no longer auto-detects broker offset or mutates environment variables at startup.
 
 ### Volume is Always Zero
 
@@ -243,20 +243,20 @@ Tip: if you're launching the Web UI via `python webui.py`, mtdata will attempt t
 
 ### Search Commands by Topic
 ```bash
-python cli.py --help forecast
-python cli.py --help barrier
-python cli.py --help indicators
+mtdata-cli --help forecast
+mtdata-cli --help barrier
+mtdata-cli --help indicators
 ```
 
 ### Get Command-Specific Help
 ```bash
-python cli.py forecast_generate --help
-python cli.py regime_detect --help
+mtdata-cli forecast_generate --help
+mtdata-cli regime_detect --help
 ```
 
 ### Enable Debug Mode
 ```bash
-MTDATA_CLI_DEBUG=1 python cli.py forecast_generate EURUSD --horizon 12
+MTDATA_CLI_DEBUG=1 mtdata-cli forecast_generate EURUSD --horizon 12
 ```
 
 ---

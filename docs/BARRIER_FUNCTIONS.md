@@ -19,7 +19,7 @@ This document provides a deep dive into the barrier analytics available in mtdat
 
 Percent barriers are expressed in percent (e.g., `--tp-pct 0.40` means **0.40%**, not 40%):
 ```bash
-python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
+mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
   --method mc --mc-method mc_gbm --direction long --tp-pct 0.40 --sl-pct 0.60 --json
 ```
 
@@ -28,7 +28,7 @@ Look for `prob_tp_first`, `prob_sl_first`, `prob_no_hit`, and `edge` in the outp
 ### 2) Search for “good” TP/SL levels
 
 ```bash
-python cli.py forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
+mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --grid-style volatility --objective edge --json
 ```
 
@@ -102,7 +102,7 @@ where:
 >
 > **Command**:
 > ```bash
-> python cli.py forecast_barrier_prob EURUSD --timeframe M5 --horizon 12 \
+> mtdata-cli forecast_barrier_prob EURUSD --timeframe M5 --horizon 12 \
 >   --method mc --mc-method mc_gbm --tp-pct 0.2 --sl-pct 0.15
 > ```
 
@@ -147,7 +147,7 @@ P(hit | S_t, S_T) = exp(-2 * (B - S_t)(B - S_T) / (σ²Δt))
 >
 > **Command**:
 > ```bash
-> python cli.py forecast_barrier_prob BTCUSD --timeframe M1 --horizon 6 \
+> mtdata-cli forecast_barrier_prob BTCUSD --timeframe M1 --horizon 6 \
 >   --method mc --mc-method mc_gbm_bb --tp-pct 0.1 --sl-pct 0.08
 > ```
 
@@ -195,7 +195,7 @@ Transition: P(s_t = j | s_{t-1} = i) = A_{ij}
 >
 > **Command**:
 > ```bash
-> python cli.py forecast_barrier_prob GBPUSD --timeframe H4 --horizon 48 \
+> mtdata-cli forecast_barrier_prob GBPUSD --timeframe H4 --horizon 48 \
 >   --method mc --mc-method hmm_mc --tp-pct 1.5 --sl-pct 1.0 \
 >   --params "n_states=2 n_sims=5000"
 > ```
@@ -244,7 +244,7 @@ r_t = μ + ε_t
 >
 > **Command**:
 > ```bash
-> python cli.py forecast_barrier_prob SPY --timeframe D1 --horizon 20 \
+> mtdata-cli forecast_barrier_prob SPY --timeframe D1 --horizon 20 \
 >   --method mc --mc-method garch --tp-pct 3.0 --sl-pct 2.0 \
 >   --params "p=1 q=1"
 > ```
@@ -285,7 +285,7 @@ r_t = μ + ε_t
 >
 > **Command**:
 > ```bash
-> python cli.py forecast_barrier_prob USDTRY --timeframe H1 --horizon 24 \
+> mtdata-cli forecast_barrier_prob USDTRY --timeframe H1 --horizon 24 \
 >   --method mc --mc-method bootstrap --tp-pct 2.0 --sl-pct 1.5 \
 >   --params "block_size=5"
 > ```
@@ -335,7 +335,7 @@ dW_t^1 dW_t^2 = ρ dt
 >
 > **Command**:
 > ```bash
-> python cli.py forecast_barrier_prob AAPL --timeframe D1 --horizon 60 \
+> mtdata-cli forecast_barrier_prob AAPL --timeframe D1 --horizon 60 \
 >   --method mc --mc-method heston --tp-pct 10.0 --sl-pct 5.0 \
 >   --params "kappa=2.0 theta=0.04 xi=0.3 rho=-0.5"
 > ```
@@ -383,7 +383,7 @@ J_t: compound Poisson process with log-normal jumps
 >
 > **Command**:
 > ```bash
-> python cli.py forecast_barrier_prob EURUSD --timeframe M15 --horizon 16 \
+> mtdata-cli forecast_barrier_prob EURUSD --timeframe M15 --horizon 16 \
 >   --method mc --mc-method jump_diffusion --tp-pct 0.5 --sl-pct 0.3 \
 >   --params "jump_lambda=0.5 jump_mu=0.001 jump_sigma=0.002"
 > ```
@@ -449,7 +449,7 @@ Note: `garch` requires the `arch` package; auto falls back to `heston` if it is 
 >
 > **Command**:
 > ```bash
-> python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
+> mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
 >   --method auto --tp-pct 0.5 --sl-pct 0.3
 >
 > # Returns: method_used: "hmm_mc", auto_reason: "auto: regime shift (volatility change)"
@@ -476,7 +476,7 @@ Total combinations: tp_steps × sl_steps
 
 **Example**:
 ```bash
-python cli.py forecast_barrier_optimize \
+mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct \
   --tp_min 0.25 --tp_max 1.5 --tp_steps 7 \
@@ -504,7 +504,7 @@ sl_end = sl_start * vol_sl_multiplier
 
 **Example**:
 ```bash
-python cli.py forecast_barrier_optimize \
+mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --grid-style volatility \
   --params "vol_window=250 vol_min_mult=0.5 vol_max_mult=4.0 vol_sl_multiplier=1.8"
@@ -526,7 +526,7 @@ For each SL in [sl_min, sl_max]:
 
 **Example**:
 ```bash
-python cli.py forecast_barrier_optimize \
+mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --grid-style ratio \
   --ratio_min 1.5 --ratio_max 3.0 --ratio_steps 5 \
@@ -548,7 +548,7 @@ Pre-configured ranges for trading styles
 
 **Example**:
 ```bash
-python cli.py forecast_barrier_optimize \
+mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --grid-style preset \
   --preset swing
@@ -647,7 +647,7 @@ Notes:
 
 **Example**:
 ```bash
-python cli.py forecast_barrier_optimize \
+mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct \
   --tp_min 0.25 --tp_max 1.5 --tp_steps 5 \
@@ -669,7 +669,7 @@ Filter candidates before ranking:
 
 **Example**:
 ```bash
-python cli.py forecast_barrier_optimize \
+mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct \
   --tp_min 0.5 --tp_max 2.0 --tp_steps 5 \
@@ -693,7 +693,7 @@ python cli.py forecast_barrier_optimize \
 **Method Selection**:
 ```bash
 # Use auto or mc_gbm_bb for precision
-python cli.py forecast_barrier_optimize \
+mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe M5 --horizon 6 \
   --method mc_gbm_bb --mode pct --grid-style preset \
   --preset scalp \
@@ -720,7 +720,7 @@ python cli.py forecast_barrier_optimize \
 **Method Selection**:
 ```bash
 # HMM captures regimes, volatility grid adapts to current vol
-python cli.py forecast_barrier_optimize \
+mtdata-cli forecast_barrier_optimize \
   XAUUSD --timeframe H4 --horizon 60 \
   --method hmm_mc --mode pct --grid-style volatility \
   --params "vol_window=300 vol_min_mult=0.8 vol_max_mult=3.0" \
@@ -746,7 +746,7 @@ python cli.py forecast_barrier_optimize \
 **Method Selection**:
 ```bash
 # Jump diffusion captures earnings moves
-python cli.py forecast_barrier_optimize \
+mtdata-cli forecast_barrier_optimize \
   AAPL --timeframe D1 --horizon 5 \
   --method jump_diffusion --mode pct \
   --tp_min 3.0 --tp_max 10.0 --tp_steps 5 \
@@ -774,7 +774,7 @@ python cli.py forecast_barrier_optimize \
 **Method Selection**:
 ```bash
 # Bootstrap preserves range characteristics
-python cli.py forecast_barrier_optimize \
+mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method bootstrap --mode pct \
   --tp_min 0.2 --tp_max 0.6 --tp_steps 5 \
@@ -803,7 +803,7 @@ python cli.py forecast_barrier_optimize \
 ```bash
 # Auto method adapts to each pair
 for pair in EURUSD GBPUSD USDJPY AUDUSD NZDUSD USDCAD USDCHF; do
-  python cli.py forecast_barrier_optimize \
+  mtdata-cli forecast_barrier_optimize \
     $pair --timeframe H1 --horizon 12 \
     --method auto --mode pct --grid-style volatility \
     --objective edge --output summary --top_k 1
@@ -895,10 +895,10 @@ done
 **Solution**:
 ```bash
 # Check history length first
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 500
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 500
 
 # If insufficient, use mc_gbm (or mc_gbm_bb for short horizons)
-python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 10 \
+mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 10 \
   --method mc --mc-method mc_gbm --tp-pct 0.2 --sl-pct 0.15
 ```
 
@@ -946,7 +946,7 @@ python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 10 \
 --method auto
 
 # Or manually check for regimes
-python cli.py regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=3"
+mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=3"
 ```
 
 ---
@@ -962,7 +962,7 @@ python cli.py regime_detect EURUSD --timeframe H1 --method hmm --params "n_state
 
 ```bash
 # Example: 2 pip spread on EURUSD
-python cli.py forecast_barrier_prob \
+mtdata-cli forecast_barrier_prob \
   EURUSD --timeframe M5 --horizon 12 \
   --method mc --mc-method hmm_mc --tp_pips 20 --sl_pips 15  # RR = 1.33 after spread
 ```
@@ -978,7 +978,7 @@ Run multiple horizons to understand time dynamics:
 ```bash
 for H in 6 12 24 48; do
   echo "Horizon $H bars:"
-  python cli.py forecast_barrier_prob \
+  mtdata-cli forecast_barrier_prob \
     EURUSD --timeframe H1 --horizon $H \
     --method mc --mc-method hmm_mc --tp-pct 0.5 --sl-pct 0.3 \
     --json | jq '{horizon: .horizon, edge: .edge, prob_resolve: (.prob_tp_first + .prob_sl_first)}'
@@ -993,7 +993,7 @@ Detect regimes first, then optimize per regime:
 
 ```bash
 # Detect current regime
-python cli.py regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=2"
+mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=2"
 
 # If high-vol regime, use wider barriers
 # If low-vol regime, use tighter barriers
@@ -1005,7 +1005,7 @@ python cli.py regime_detect EURUSD --timeframe H1 --method hmm --params "n_state
 
 ```bash
 # Apply denoising before simulation
-python cli.py forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
+mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --grid-style preset --preset swing \
   --denoise lowpass_fft --denoise-params "cutoff_ratio=0.1"
 ```
@@ -1019,7 +1019,7 @@ Test stability of results:
 ```bash
 # Vary n_sims
 for N in 1000 2000 5000 10000; do
-  python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
+  mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
     --method mc --mc-method hmm_mc --tp-pct 0.5 --sl-pct 0.3 --params "n_sims=$N" \
     --json | jq '.prob_tp_first'
 done
@@ -1034,7 +1034,7 @@ Compare methods on same data:
 ```bash
 for METHOD in mc_gbm hmm_mc bootstrap; do
   echo "Method: $METHOD"
-  python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
+  mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
     --method mc --mc-method $METHOD --tp-pct 0.5 --sl-pct 0.3 \
     --json | jq '{method: .method, edge: .edge, prob_resolve: (.prob_tp_first + .prob_sl_first)}'
 done
@@ -1108,14 +1108,14 @@ Validate:
 
 **Quick check**:
 ```bash
-python cli.py forecast_barrier_prob \
+mtdata-cli forecast_barrier_prob \
   EURUSD --timeframe H1 --horizon 12 \
   --method auto --tp-pct 0.5 --sl-pct 0.3
 ```
 
 **Find optimal**:
 ```bash
-python cli.py forecast_barrier_optimize \
+mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --grid-style volatility \
   --refine true --objective edge
@@ -1123,7 +1123,7 @@ python cli.py forecast_barrier_optimize \
 
 **Closed-form check**:
 ```bash
-python cli.py forecast_barrier_prob \
+mtdata-cli forecast_barrier_prob \
   EURUSD --timeframe H1 --horizon 12 \
   --method closed_form --direction long --barrier 1.1000
 ```

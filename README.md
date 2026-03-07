@@ -49,13 +49,13 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 pip install -r requirements.txt
 
 # Verify MT5 connection (lists symbols from the running terminal)
-python cli.py symbols_list --limit 5
+mtdata-cli symbols_list --limit 5
 
 # Fetch recent candles
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 50
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 50
 
 # Generate a baseline price forecast
-python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
 ```
 
 Notes:
@@ -111,9 +111,6 @@ MT5_TIME_OFFSET_MINUTES=0  # Adjust if broker server time differs from UTC
 
 ```
 mtdata/
-├── cli.py              # CLI entry point
-├── server.py           # MCP server entry point (SSE / stdio / streamable-http)
-├── webui.py            # Web API (FastAPI + React UI)
 ├── src/mtdata/
 │   ├── core/           # Tool registry, schemas, server logic, all 51 MCP tools
 │   ├── forecast/       # Forecasting methods, engines, and method registry

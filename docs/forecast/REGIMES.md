@@ -39,7 +39,7 @@ A strategy that profits in one regime may lose in another. Regime detection help
 
 **Example:**
 ```bash
-python cli.py regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=2"
+mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=2"
 ```
 
 **Output:**
@@ -82,7 +82,7 @@ summary:
 
 **Example:**
 ```bash
-python cli.py regime_detect EURUSD --timeframe H1 --method bocpd --threshold 0.5 --output summary
+mtdata-cli regime_detect EURUSD --timeframe H1 --method bocpd --threshold 0.5 --output summary
 ```
 
 **Output:**
@@ -117,7 +117,7 @@ summary:
 
 **Example:**
 ```bash
-python cli.py regime_detect EURUSD --timeframe H1 --method ms_ar --params "k_regimes=2 order=1"
+mtdata-cli regime_detect EURUSD --timeframe H1 --method ms_ar --params "k_regimes=2 order=1"
 ```
 
 **When to use:**
@@ -134,7 +134,7 @@ Only enter trend-following trades when HMM detects high-volatility state:
 
 ```bash
 # Check current regime
-python cli.py regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=2"
+mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=2"
 
 # If state_sigma shows current state is high-volatility:
 #   → Enable trend-following entries
@@ -148,7 +148,7 @@ Monitor for regime transitions and reduce exposure when detected:
 
 ```bash
 # Check for recent change points
-python cli.py regime_detect EURUSD --timeframe H1 --method bocpd --threshold 0.6
+mtdata-cli regime_detect EURUSD --timeframe H1 --method bocpd --threshold 0.6
 
 # If last_cp_prob > 0.6:
 #   → Tighten stops
@@ -162,11 +162,11 @@ Run barrier optimization separately for each regime:
 
 ```bash
 # In low-volatility regime: tighter barriers
-python cli.py forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
+mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
   --tp-min 0.15 --tp-max 0.5 --sl-min 0.1 --sl-max 0.4
 
 # In high-volatility regime: wider barriers
-python cli.py forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
+mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
   --tp-min 0.5 --tp-max 2.0 --sl-min 0.3 --sl-max 1.5
 ```
 
@@ -176,19 +176,19 @@ python cli.py forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
 
 ### Summary Output (Default)
 ```bash
-python cli.py regime_detect EURUSD --timeframe H1 --method hmm --output summary
+mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --output summary
 ```
 Shows aggregate statistics: current state, state distributions, volatility per state.
 
 ### Compact Output
 ```bash
-python cli.py regime_detect EURUSD --timeframe H1 --method hmm --output compact
+mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --output compact
 ```
 Shows regime segments: start time, end time, duration, state ID.
 
 ### Full Output
 ```bash
-python cli.py regime_detect EURUSD --timeframe H1 --method hmm --output full
+mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --output full
 ```
 Shows per-bar state assignments and probabilities.
 
@@ -198,10 +198,10 @@ Shows per-bar state assignments and probabilities.
 
 | Task | Command |
 |------|---------|
-| Classify regimes (2 states) | `python cli.py regime_detect EURUSD --method hmm --params "n_states=2"` |
-| Classify regimes (3 states) | `python cli.py regime_detect EURUSD --method hmm --params "n_states=3"` |
-| Detect change points | `python cli.py regime_detect EURUSD --method bocpd --threshold 0.5` |
-| Markov-switching AR | `python cli.py regime_detect EURUSD --method ms_ar --params "k_regimes=2"` |
+| Classify regimes (2 states) | `mtdata-cli regime_detect EURUSD --method hmm --params "n_states=2"` |
+| Classify regimes (3 states) | `mtdata-cli regime_detect EURUSD --method hmm --params "n_states=3"` |
+| Detect change points | `mtdata-cli regime_detect EURUSD --method bocpd --threshold 0.5` |
+| Markov-switching AR | `mtdata-cli regime_detect EURUSD --method ms_ar --params "k_regimes=2"` |
 
 ---
 

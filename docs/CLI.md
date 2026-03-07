@@ -1,6 +1,6 @@
 # CLI Guide
 
-The CLI is the quickest way to explore mtdata capabilities. All tools are accessible via `python cli.py <command>`.
+The CLI is the quickest way to explore mtdata capabilities. All tools are accessible via `mtdata-cli <command>`.
 
 **Related:**
 - [README.md](../README.md) — Project overview
@@ -19,20 +19,20 @@ There is no built-in “paper trading” mode in mtdata; for simulated execution
 
 **List all commands:**
 ```bash
-python cli.py --help
+mtdata-cli --help
 ```
 
 **Search for commands by topic:**
 ```bash
-python cli.py --help forecast
-python cli.py --help barrier
-python cli.py --help regime
+mtdata-cli --help forecast
+mtdata-cli --help barrier
+mtdata-cli --help regime
 ```
 
 **Get help for a specific command:**
 ```bash
-python cli.py forecast_generate --help
-python cli.py regime_detect --help
+mtdata-cli forecast_generate --help
+mtdata-cli regime_detect --help
 ```
 
 ---
@@ -42,7 +42,7 @@ python cli.py regime_detect --help
 ### Text (Default)
 Human-readable compact output:
 ```bash
-python cli.py symbols_list --limit 5
+mtdata-cli symbols_list --limit 5
 ```
 
 The text format includes a quick schema hint:
@@ -57,13 +57,13 @@ data[5]{name,group,description}:
 ### JSON
 Structured output for programmatic use:
 ```bash
-python cli.py symbols_list --limit 5 --json
+mtdata-cli symbols_list --limit 5 --json
 ```
 
 ### Verbose
 Include additional metadata:
 ```bash
-python cli.py forecast_generate EURUSD --horizon 12 --verbose
+mtdata-cli forecast_generate EURUSD --horizon 12 --verbose
 ```
 
 Tip: with `--json`, `--verbose` also adds `cli_meta` (including timezone hints) to many tool results.
@@ -75,16 +75,16 @@ Tip: with `--json`, `--verbose` also adds `cli_meta` (including timezone hints) 
 ### Positional Arguments
 Most commands take `symbol` as the first positional argument:
 ```bash
-python cli.py forecast_generate EURUSD --horizon 12
-python cli.py regime_detect EURUSD --method hmm
-python cli.py data_fetch_candles EURUSD --limit 100
+mtdata-cli forecast_generate EURUSD --horizon 12
+mtdata-cli regime_detect EURUSD --method hmm
+mtdata-cli data_fetch_candles EURUSD --limit 100
 ```
 
 ### Timeframe
 Specify market data granularity with `--timeframe`:
 ```bash
-python cli.py data_fetch_candles EURUSD --timeframe M15 --limit 100
-python cli.py forecast_generate EURUSD --timeframe H4 --horizon 24
+mtdata-cli data_fetch_candles EURUSD --timeframe M15 --limit 100
+mtdata-cli forecast_generate EURUSD --timeframe H4 --horizon 24
 ```
 
 Available timeframes: `M1`, `M5`, `M15`, `M30`, `H1`, `H4`, `D1`, `W1`, `MN1`
@@ -92,8 +92,8 @@ Available timeframes: `M1`, `M5`, `M15`, `M30`, `H1`, `H4`, `D1`, `W1`, `MN1`
 ### Parameters
 Pass method-specific parameters with `--params`:
 ```bash
-python cli.py forecast_volatility_estimate EURUSD --method ewma --params "lambda=0.94"
-python cli.py regime_detect EURUSD --method hmm --params "n_states=3"
+mtdata-cli forecast_volatility_estimate EURUSD --method ewma --params "lambda=0.94"
+mtdata-cli regime_detect EURUSD --method hmm --params "n_states=3"
 ```
 
 Format: `key=value,key2=value2` or JSON `{"key": value}`
@@ -103,14 +103,14 @@ Use `--simplify` to downsample returned rows for charting or large exports.
 
 ```bash
 # Default simplification (targets ~10% of --limit)
-python cli.py data_fetch_candles EURUSD --timeframe M1 --limit 5000 --simplify
+mtdata-cli data_fetch_candles EURUSD --timeframe M1 --limit 5000 --simplify
 
 # Choose an algorithm + target points
-python cli.py data_fetch_candles EURUSD --timeframe M1 --limit 5000 \
+mtdata-cli data_fetch_candles EURUSD --timeframe M1 --limit 5000 \
   --simplify lttb --simplify-params "points=500"
 
 # Raw ticks (rows output) can also be simplified
-python cli.py data_fetch_ticks EURUSD --output rows --limit 20000 \
+mtdata-cli data_fetch_ticks EURUSD --output rows --limit 20000 \
   --simplify rdp --simplify-params "points=2000"
 ```
 
@@ -119,8 +119,8 @@ See [SIMPLIFICATION.md](SIMPLIFICATION.md) for algorithms and parameters.
 ### Model Parameters
 For forecast models, use `--model-params`:
 ```bash
-python cli.py forecast_generate EURUSD --model arima --model-params "p=2 d=1 q=2"
-python cli.py forecast_generate EURUSD --model mc_gbm --model-params "n_sims=2000 seed=42"
+mtdata-cli forecast_generate EURUSD --model arima --model-params "p=2 d=1 q=2"
+mtdata-cli forecast_generate EURUSD --model mc_gbm --model-params "n_sims=2000 seed=42"
 ```
 
 ---
@@ -130,11 +130,11 @@ python cli.py forecast_generate EURUSD --model mc_gbm --model-params "n_sims=200
 Commands accepting `--start` and `--end` parse flexible date strings:
 ```bash
 # Relative dates
-python cli.py data_fetch_candles EURUSD --start "2 days ago" --end "now"
-python cli.py data_fetch_candles EURUSD --start "1 week ago"
+mtdata-cli data_fetch_candles EURUSD --start "2 days ago" --end "now"
+mtdata-cli data_fetch_candles EURUSD --start "1 week ago"
 
 # Absolute dates
-python cli.py data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
+mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 ```
 
 ---
@@ -239,49 +239,49 @@ See [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md) for detailed examples.
 ### Explore Available Symbols
 ```bash
 # List forex pairs
-python cli.py symbols_list --limit 20
+mtdata-cli symbols_list --limit 20
 
 # Get details for a symbol
-python cli.py symbols_describe EURUSD --json
+mtdata-cli symbols_describe EURUSD --json
 ```
 
 ### Fetch Market Data
 ```bash
 # Basic candles
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 100
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 100
 
 # With indicators
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 100 \
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 100 \
   --indicators "ema(20),rsi(14),macd(12,26,9)"
 
 # With denoising
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 100 \
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 100 \
   --denoise ema --denoise-params "alpha=0.2"
 ```
 
 ### Generate Forecasts
 ```bash
 # Basic forecast
-python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
 
 # Foundation model
-python cli.py forecast_generate EURUSD --library pretrained --model chronos2 --horizon 24
+mtdata-cli forecast_generate EURUSD --library pretrained --model chronos2 --horizon 24
 
 # Monte Carlo simulation
-python cli.py forecast_generate EURUSD --model mc_gbm --model-params "n_sims=2000"
+mtdata-cli forecast_generate EURUSD --model mc_gbm --model-params "n_sims=2000"
 ```
 
 ### Analyze Risk
 ```bash
 # Volatility estimate
-python cli.py forecast_volatility_estimate EURUSD --horizon 12 --method ewma
+mtdata-cli forecast_volatility_estimate EURUSD --horizon 12 --method ewma
 
 # Barrier probability
-python cli.py forecast_barrier_prob EURUSD --horizon 12 \
+mtdata-cli forecast_barrier_prob EURUSD --horizon 12 \
   --method mc --mc-method hmm_mc --tp-pct 0.5 --sl-pct 0.3
 
 # Optimize TP/SL
-python cli.py forecast_barrier_optimize EURUSD --horizon 12 \
+mtdata-cli forecast_barrier_optimize EURUSD --horizon 12 \
   --grid-style volatility --objective edge
 ```
 
@@ -295,36 +295,36 @@ Accepted `order_type` forms:
 
 ```bash
 # Pending order with canonical order_type
-python cli.py trade_place BTCUSD --volume 0.03 --order-type BUY_LIMIT --price 68750 \
+mtdata-cli trade_place BTCUSD --volume 0.03 --order-type BUY_LIMIT --price 68750 \
   --stop-loss 67500 --take-profit 72000
 
 # Same order_type using MT5 alias
-python cli.py trade_place BTCUSD --volume 0.03 --order-type ORDER_TYPE_BUY_LIMIT --price 68750
+mtdata-cli trade_place BTCUSD --volume 0.03 --order-type ORDER_TYPE_BUY_LIMIT --price 68750
 
 # Same order_type using MT5 numeric constant
-python cli.py trade_place BTCUSD --volume 0.03 --order-type 2 --price 68750
+mtdata-cli trade_place BTCUSD --volume 0.03 --order-type 2 --price 68750
 ```
 
 ### Detect Patterns and Regimes
 ```bash
 # Candlestick patterns
-python cli.py patterns_detect EURUSD --mode candlestick --robust-only true
+mtdata-cli patterns_detect EURUSD --mode candlestick --robust-only true
 
 # Regime detection
-python cli.py regime_detect EURUSD --method hmm --params "n_states=2"
+mtdata-cli regime_detect EURUSD --method hmm --params "n_states=2"
 
 # Change-point detection
-python cli.py regime_detect EURUSD --method bocpd --threshold 0.5
+mtdata-cli regime_detect EURUSD --method bocpd --threshold 0.5
 ```
 
 ### Discover Causal Links (Exploratory)
 ```bash
 # Compare a few symbols directly
-python cli.py causal_discover_signals "EURUSD,GBPUSD,USDJPY" --timeframe H1 \
+mtdata-cli causal_discover_signals "EURUSD,GBPUSD,USDJPY" --timeframe H1 \
   --limit 800 --max-lag 5 --transform log_return --significance 0.05
 
 # Pass a single symbol to auto-expand its visible MT5 group (e.g., Forex\\Majors)
-python cli.py causal_discover_signals EURUSD --timeframe H1 --limit 800
+mtdata-cli causal_discover_signals EURUSD --timeframe H1 --limit 800
 ```
 
 See [CAUSAL_DISCOVERY.md](CAUSAL_DISCOVERY.md) for interpretation and caveats.
@@ -335,18 +335,18 @@ See [CAUSAL_DISCOVERY.md](CAUSAL_DISCOVERY.md) for interpretation and caveats.
 
 ### Pipe Output to jq for JSON Processing
 ```bash
-python cli.py forecast_generate EURUSD --json | jq '.forecast'
+mtdata-cli forecast_generate EURUSD --json | jq '.forecast'
 ```
 
 ### Save Output to File
 ```bash
-python cli.py data_fetch_candles EURUSD --limit 1000 --json > eurusd_data.json
+mtdata-cli data_fetch_candles EURUSD --limit 1000 --json > eurusd_data.json
 ```
 
 ### Debug Mode
 Set environment variable for verbose debugging:
 ```bash
-MTDATA_CLI_DEBUG=1 python cli.py forecast_generate EURUSD
+MTDATA_CLI_DEBUG=1 mtdata-cli forecast_generate EURUSD
 ```
 
 ---

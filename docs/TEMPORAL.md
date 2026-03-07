@@ -13,13 +13,13 @@ The `temporal_analyze` command computes grouped statistics (returns, volatility,
 
 ```bash
 # Average returns by day of week
-python cli.py temporal_analyze EURUSD --group-by dow --json
+mtdata-cli temporal_analyze EURUSD --group-by dow --json
 
 # Volatility by hour of day
-python cli.py temporal_analyze EURUSD --group-by hour --limit 2000 --json
+mtdata-cli temporal_analyze EURUSD --group-by hour --limit 2000 --json
 
 # Monthly seasonality
-python cli.py temporal_analyze EURUSD --timeframe D1 --group-by month --limit 1000 --json
+mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month --limit 1000 --json
 ```
 
 ---
@@ -48,7 +48,7 @@ python cli.py temporal_analyze EURUSD --timeframe D1 --group-by month --limit 10
 Shows performance by weekday. Useful for detecting day-of-week effects.
 
 ```bash
-python cli.py temporal_analyze EURUSD --group-by dow --limit 2000 --json
+mtdata-cli temporal_analyze EURUSD --group-by dow --limit 2000 --json
 ```
 
 **Example output (simplified):**
@@ -66,16 +66,16 @@ Fri     400    0.005%     0.062%      50.5%     1100
 Shows performance by hour. Reveals session activity patterns.
 
 ```bash
-python cli.py temporal_analyze EURUSD --group-by hour --limit 5000 --json
+mtdata-cli temporal_analyze EURUSD --group-by hour --limit 5000 --json
 ```
 
 Use `--time-range` to focus on a specific session:
 ```bash
 # London session hours
-python cli.py temporal_analyze EURUSD --group-by hour --time-range "08:00-16:00" --json
+mtdata-cli temporal_analyze EURUSD --group-by hour --time-range "08:00-16:00" --json
 
 # Asian session (wraps midnight)
-python cli.py temporal_analyze EURUSD --group-by hour --time-range "22:00-07:00" --json
+mtdata-cli temporal_analyze EURUSD --group-by hour --time-range "22:00-07:00" --json
 ```
 
 ### Calendar Month (`--group-by month`)
@@ -83,7 +83,7 @@ python cli.py temporal_analyze EURUSD --group-by hour --time-range "22:00-07:00"
 Shows seasonal effects across months. Best with daily data and a long history.
 
 ```bash
-python cli.py temporal_analyze EURUSD --timeframe D1 --group-by month --limit 2000 --json
+mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month --limit 2000 --json
 ```
 
 ### Overall Summary (`--group-by all`)
@@ -91,7 +91,7 @@ python cli.py temporal_analyze EURUSD --timeframe D1 --group-by month --limit 20
 Single aggregate summary across all bars.
 
 ```bash
-python cli.py temporal_analyze EURUSD --group-by all --json
+mtdata-cli temporal_analyze EURUSD --group-by all --json
 ```
 
 ---
@@ -125,13 +125,13 @@ Combine grouping with filters to drill down:
 
 ```bash
 # Only Mondays, grouped by hour
-python cli.py temporal_analyze EURUSD --group-by hour --day-of-week Mon --json
+mtdata-cli temporal_analyze EURUSD --group-by hour --day-of-week Mon --json
 
 # Only January, grouped by day of week
-python cli.py temporal_analyze EURUSD --timeframe D1 --group-by dow --month Jan --limit 2000 --json
+mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by dow --month Jan --limit 2000 --json
 
 # London session hours, grouped by day of week
-python cli.py temporal_analyze EURUSD --group-by dow --time-range "08:00-16:00" --json
+mtdata-cli temporal_analyze EURUSD --group-by dow --time-range "08:00-16:00" --json
 ```
 
 ---
@@ -140,19 +140,19 @@ python cli.py temporal_analyze EURUSD --group-by dow --time-range "08:00-16:00" 
 
 ### Find Best Trading Days
 ```bash
-python cli.py temporal_analyze EURUSD --group-by dow --limit 5000 --json
+mtdata-cli temporal_analyze EURUSD --group-by dow --limit 5000 --json
 # Look for days with highest win_rate and positive avg_return
 ```
 
 ### Find Active Trading Hours
 ```bash
-python cli.py temporal_analyze EURUSD --group-by hour --limit 5000 --json
+mtdata-cli temporal_analyze EURUSD --group-by hour --limit 5000 --json
 # Look for hours with highest avg_range_pct and avg_volume
 ```
 
 ### Seasonal Patterns
 ```bash
-python cli.py temporal_analyze SPX500 --timeframe D1 --group-by month --limit 3000 --json
+mtdata-cli temporal_analyze SPX500 --timeframe D1 --group-by month --limit 3000 --json
 # Compare monthly avg_return and volatility
 ```
 
@@ -162,11 +162,11 @@ python cli.py temporal_analyze SPX500 --timeframe D1 --group-by month --limit 30
 
 | Task | Command |
 |------|---------|
-| Day-of-week stats | `python cli.py temporal_analyze EURUSD --group-by dow` |
-| Hourly stats | `python cli.py temporal_analyze EURUSD --group-by hour` |
-| Monthly seasonality | `python cli.py temporal_analyze EURUSD --timeframe D1 --group-by month` |
-| Filter to Mondays | `python cli.py temporal_analyze EURUSD --group-by hour --day-of-week Mon` |
-| London session only | `python cli.py temporal_analyze EURUSD --group-by hour --time-range "08:00-16:00"` |
+| Day-of-week stats | `mtdata-cli temporal_analyze EURUSD --group-by dow` |
+| Hourly stats | `mtdata-cli temporal_analyze EURUSD --group-by hour` |
+| Monthly seasonality | `mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month` |
+| Filter to Mondays | `mtdata-cli temporal_analyze EURUSD --group-by hour --day-of-week Mon` |
+| London session only | `mtdata-cli temporal_analyze EURUSD --group-by hour --time-range "08:00-16:00"` |
 
 ---
 

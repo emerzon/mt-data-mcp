@@ -294,7 +294,7 @@ def _format_forecast_output(
             symbol_token = symbol_arg if symbol_arg else "SYMBOL"
             timeframe_token = timeframe_arg if timeframe_arg else None
             cmd_parts = [
-                "python cli.py forecast_conformal_intervals",
+                "mtdata-cli forecast_conformal_intervals",
                 symbol_token,
             ]
             if timeframe_token:

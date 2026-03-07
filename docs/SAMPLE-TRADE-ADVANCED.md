@@ -10,7 +10,7 @@ This guide extends the basic workflow with regime filters, conformal intervals, 
 Assumptions
 - Horizon: 12 H1 bars (≈ half‑day)
 - Symbol/TF: EURUSD/H1
-- All commands are runnable via `python cli.py <tool> ... --json`
+- All commands are runnable via `mtdata-cli <tool> ... --json`
 
 ---
 
@@ -29,7 +29,7 @@ Detect structural breaks and label regimes so you avoid trading through hostile 
 1.1 BOCPD change‑points (returns)
 
 ```bash
-python cli.py regime_detect EURUSD --timeframe H1 --limit 1500 \
+mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
   --method bocpd --threshold 0.6 --output summary --lookback 300 --json
 ```
 
@@ -38,7 +38,7 @@ python cli.py regime_detect EURUSD --timeframe H1 --limit 1500 \
 1.2 HMM‑lite regimes (returns)
 
 ```bash
-python cli.py regime_detect EURUSD --timeframe H1 --limit 1500 \
+mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
   --method hmm --params "n_states=3" --output compact --lookback 300 --json
 ```
 
@@ -47,7 +47,7 @@ python cli.py regime_detect EURUSD --timeframe H1 --limit 1500 \
 
 Optional: MS‑AR(1) (statsmodels)
 ```bash
-python cli.py regime_detect EURUSD --timeframe H1 --limit 1500 \
+mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
   --method ms_ar --params "k_regimes=2 order=1" --output summary --json
 ```
 
@@ -58,7 +58,7 @@ python cli.py regime_detect EURUSD --timeframe H1 --limit 1500 \
 Estimate daily realized variance from intraday returns, then map to H1.
 
 ```bash
-python cli.py forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
+mtdata-cli forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
   --method har_rv --params "rv_timeframe=M5,days=150,window_w=5,window_m=22" --json
 ```
 
@@ -72,7 +72,7 @@ python cli.py forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
 Pull data with light denoising and a few TIs for situational awareness (no heavy feature stacks in this flow).
 
 ```bash
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 300 \
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 300 \
   --indicators "ema(20),ema(50),rsi(14),macd(12,26,9)" \
   --denoise ema --denoise-params "columns=close,when=pre_ti,alpha=0.2,keep_original=true" --json
 ```
@@ -87,7 +87,7 @@ python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 300 \
 Calibrate per‑step residual quantiles via rolling backtest; then get point + conformal bands.
 
 ```bash
-python cli.py forecast_conformal_intervals EURUSD --timeframe H1 --method fourier_ols \
+mtdata-cli forecast_conformal_intervals EURUSD --timeframe H1 --method fourier_ols \
   --horizon 12 --steps 25 --spacing 10 --alpha 0.1 --json
 ```
 
@@ -101,7 +101,7 @@ python cli.py forecast_conformal_intervals EURUSD --timeframe H1 --method fourie
 5.1 Optimize TP/SL grid with HMM MC paths
 
 ```bash
-python cli.py forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
+mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --grid-style volatility --refine true --refine-radius 0.35 \
   --tp-min 0.25 --tp-max 1.5 --tp-steps 7 --sl-min 0.25 --sl-max 2.5 --sl-steps 9 \
   --params "n_sims=5000 seed=7" --top-k 5 --return-grid false --output summary --json
@@ -113,14 +113,14 @@ python cli.py forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
 5.2 TP/SL odds for the chosen combo
 
 ```bash
-python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
+mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
   --method mc --mc-method hmm_mc --tp-pct 0.4 --sl-pct 0.8 --params "n_sims=5000 seed=7" --json
 ```
 
 5.3 Closed‑form GBM sanity check (fast)
 
 ```bash
-python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \  
+mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \  
   --method closed_form --direction long --barrier 1.1795 --json      
 ```
 
@@ -133,7 +133,7 @@ python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
 Use triple‑barrier labels offline for signal evaluation and meta‑models.
 
 ```bash
-python cli.py labels_triple_barrier EURUSD --timeframe H1 --limit 2000 \
+mtdata-cli labels_triple_barrier EURUSD --timeframe H1 --limit 2000 \
   --horizon 12 --tp-pct 0.4 --sl-pct 0.8 --label-on high_low \
   --output summary --lookback 300 --json
 ```
@@ -159,7 +159,7 @@ python cli.py labels_triple_barrier EURUSD --timeframe H1 --limit 2000 \
 1) Rolling backtest for chosen forecast method(s)
 
 ```bash
-python cli.py forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
+mtdata-cli forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
   --steps 50 --spacing 5 --methods "theta fourier_ols" --json
 ```
 

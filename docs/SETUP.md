@@ -55,7 +55,7 @@ pip install -e .
 - Bayesian hyperparameter optimization: `optuna`
 - Neural network forecasters (NHiTS, TFT, PatchTST): `neuralforecast`, `torch`
 
-Tip: `python cli.py forecast_list_methods --json` shows `available` and `requires` per method.
+Tip: `mtdata-cli forecast_list_methods --json` shows `available` and `requires` per method.
 
 ---
 
@@ -78,12 +78,12 @@ If you don't have a broker account yet, you can still get started:
 ### 3. Verify Connection
 
 ```bash
-python cli.py symbols_list --limit 10
+mtdata-cli symbols_list --limit 10
 ```
 
 Optional deeper check:
 ```bash
-python cli.py trade_account_info --json
+mtdata-cli trade_account_info --json
 ```
 
 Expected output:
@@ -142,7 +142,7 @@ MT5_SERVER_TZ=America/New_York
    ```
    Then set `MT5_TIME_OFFSET_MINUTES` to the recommended value.
 
-Tip: `python webui.py` will attempt to auto-detect and apply `MT5_TIME_OFFSET_MINUTES` at startup if neither `MT5_SERVER_TZ` nor `MT5_TIME_OFFSET_MINUTES` is set. This is best-effort and may return 0 when the market is closed.
+Set `MT5_SERVER_TZ` or `MT5_TIME_OFFSET_MINUTES` explicitly before starting `mtdata-webapi`; the Web API no longer mutates process environment state at startup.
 
 What happens if it's wrong?
 - Candle timestamps may be shifted, which can affect **daily pivots**, **session filters**, and **backtests**.
@@ -154,10 +154,7 @@ What happens if it's wrong?
 ### CLI
 
 ```bash
-# Direct execution
-python cli.py <command> [options]
-
-# After editable install
+# After `pip install -e .`
 mtdata-cli <command> [options]
 ```
 
@@ -167,13 +164,13 @@ mtdata supports three MCP transport modes:
 
 ```bash
 # SSE transport (default) — for browser/HTTP-based MCP clients
-python server.py
+mtdata-sse
 
 # stdio transport — for IDE integrations (Claude Desktop, VS Code, etc.)
-MCP_TRANSPORT=stdio python server.py
+mtdata-stdio
 
 # Streamable HTTP transport
-MCP_TRANSPORT=streamable-http python server.py
+mtdata-streamable-http
 ```
 
 After editable install, these entry points are available:
@@ -182,6 +179,7 @@ After editable install, these entry points are available:
 |-------------|-----------|-------|
 | `mtdata-sse` | SSE (default) | `mtdata-sse` |
 | `mtdata-stdio` | stdio | `mtdata-stdio` |
+| `mtdata-streamable-http` | Streamable HTTP | `mtdata-streamable-http` |
 | `mtdata-webapi` | Web API (FastAPI) | `mtdata-webapi` |
 | `mtdata-cli` | CLI | `mtdata-cli <command>` |
 
@@ -211,7 +209,7 @@ After editable install, these entry points are available:
 ### Web API
 
 ```bash
-python webui.py
+mtdata-webapi
 ```
 
 Starts a FastAPI server with a React UI at `http://localhost:8000`.
@@ -231,19 +229,19 @@ Run these commands to verify everything works:
 
 ```bash
 # List symbols
-python cli.py symbols_list --limit 5
+mtdata-cli symbols_list --limit 5
 
 # Get symbol details
-python cli.py symbols_describe EURUSD --json
+mtdata-cli symbols_describe EURUSD --json
 
 # Fetch candles
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 100
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 100
 
 # List forecast methods
-python cli.py forecast_list_methods
+mtdata-cli forecast_list_methods
 
 # Generate a forecast
-python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
 ```
 
 ---
@@ -252,9 +250,6 @@ python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
 
 ```
 mtdata/
-├── cli.py              # CLI entry point
-├── server.py           # MCP server entry point (SSE / stdio / streamable-http)
-├── webui.py            # Web API entry point (FastAPI + React UI)
 ├── requirements.txt    # Python dependencies
 ├── pyproject.toml      # Package configuration
 ├── .env                # Local configuration (create this)
@@ -312,7 +307,7 @@ npm run build   # Production build
 
 1. Check server time in MT5: Tools → Options → Server
 2. Set `MT5_TIME_OFFSET_MINUTES` in `.env`
-3. Verify with: `python cli.py data_fetch_candles EURUSD --limit 1 --json`
+3. Verify with: `mtdata-cli data_fetch_candles EURUSD --limit 1 --json`
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more issues.
 

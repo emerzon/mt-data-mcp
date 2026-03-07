@@ -61,21 +61,21 @@ These are research workflows (not financial advice). For a guided narrative, sta
 
 ### 1) Quick market snapshot (no trading)
 ```bash
-python cli.py symbols_describe EURUSD --json
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 200 --json
-python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta --json
+mtdata-cli symbols_describe EURUSD --json
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 200 --json
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta --json
 ```
 
 ### 2) TP/SL odds for a trade idea
 ```bash
-python cli.py forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
+mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
   --method mc --mc-method mc_gbm --direction long --tp-pct 0.4 --sl-pct 0.6 --json
 ```
 
 ### 3) Scan a small watchlist (PowerShell)
 ```powershell
 $symbols = "EURUSD","GBPUSD","USDJPY"
-$symbols | % { python cli.py forecast_volatility_estimate $_ --timeframe H1 --horizon 12 --method ewma --json }
+$symbols | % { mtdata-cli forecast_volatility_estimate $_ --timeframe H1 --horizon 12 --method ewma --json }
 ```
 
 ## Troubleshooting
@@ -88,18 +88,18 @@ $symbols | % { python cli.py forecast_volatility_estimate $_ --timeframe H1 --ho
 
 **List available commands:**
 ```bash
-python cli.py --help
+mtdata-cli --help
 ```
 
 **Search for a command:**
 ```bash
-python cli.py --help forecast
-python cli.py --help barrier
+mtdata-cli --help forecast
+mtdata-cli --help barrier
 ```
 
 **Get help for a specific command:**
 ```bash
-python cli.py forecast_generate --help
-python cli.py regime_detect --help
+mtdata-cli forecast_generate --help
+mtdata-cli regime_detect --help
 ```
 

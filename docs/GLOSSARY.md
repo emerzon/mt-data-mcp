@@ -62,7 +62,7 @@ A simple, robust forecasting technique that decomposes a time series into trend 
 
 **Example:**
 ```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
 ```
 
 ### ARIMA (AutoRegressive Integrated Moving Average)
@@ -87,7 +87,7 @@ Generates thousands of possible future price paths by randomly sampling from his
 
 **Example:**
 ```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 \
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
   --model mc_gbm --model-params "n_sims=2000"
 ```
 
@@ -100,7 +100,7 @@ A foundation model for time series (like GPT for text). Pre-trained on millions 
 
 **Example:**
 ```bash
-python cli.py forecast_generate EURUSD --timeframe H1 --horizon 24 \
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 24 \
   --library pretrained --model chronos2
 ```
 
@@ -125,7 +125,7 @@ A distribution-free method to create prediction intervals. Instead of assuming a
 
 **Example:**
 ```bash
-python cli.py forecast_conformal_intervals EURUSD --timeframe H1 \
+mtdata-cli forecast_conformal_intervals EURUSD --timeframe H1 \
   --method theta --horizon 12 --steps 25 --alpha 0.1
 ```
 
@@ -152,7 +152,7 @@ An algorithm that assumes the market switches between hidden "states" (regimes).
 
 **Example:**
 ```bash
-python cli.py regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=2"
+mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=2"
 ```
 
 **Interpretation:**
@@ -170,7 +170,7 @@ Bayesian Online Change Point Detection. Answers: "Did the market's underlying be
 
 **Example:**
 ```bash
-python cli.py regime_detect EURUSD --timeframe H1 --method bocpd --threshold 0.5
+mtdata-cli regime_detect EURUSD --timeframe H1 --method bocpd --threshold 0.5
 ```
 
 ---
@@ -194,7 +194,7 @@ A volatility estimator that gives more weight to recent observations.
 
 **Example:**
 ```bash
-python cli.py forecast_volatility_estimate EURUSD --timeframe H1 \
+mtdata-cli forecast_volatility_estimate EURUSD --timeframe H1 \
   --horizon 12 --method ewma --params "lambda=0.94"
 ```
 
@@ -533,7 +533,7 @@ Removing random fluctuations ("noise") to reveal the underlying trend ("signal")
 
 **Example:**
 ```bash
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 500 \
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 500 \
   --denoise ema --denoise-params "alpha=0.2"
 ```
 

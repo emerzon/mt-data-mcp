@@ -20,7 +20,7 @@ mtdata includes tools for fetching US equity options data and pricing exotic opt
 List available option expiration dates for a US stock.
 
 ```bash
-python cli.py forecast_options_expirations AAPL --json
+mtdata-cli forecast_options_expirations AAPL --json
 ```
 
 **Returns:** List of expiration dates available for the symbol.
@@ -31,13 +31,13 @@ Fetch an options chain snapshot with filtering.
 
 ```bash
 # Full chain (calls + puts)
-python cli.py forecast_options_chain AAPL --json
+mtdata-cli forecast_options_chain AAPL --json
 
 # Calls only for a specific expiration
-python cli.py forecast_options_chain AAPL --expiration 2026-04-17 --option-type call --json
+mtdata-cli forecast_options_chain AAPL --expiration 2026-04-17 --option-type call --json
 
 # Filter by liquidity
-python cli.py forecast_options_chain TSLA --min-open-interest 100 --min-volume 50 --json
+mtdata-cli forecast_options_chain TSLA --min-open-interest 100 --min-volume 50 --json
 ```
 
 | Parameter | Default | Description |
@@ -59,12 +59,12 @@ Price a barrier option using QuantLib's numerical engine.
 
 ```bash
 # Down-and-out call (knock-out if price falls to barrier)
-python cli.py forecast_quantlib_barrier_price \
+mtdata-cli forecast_quantlib_barrier_price \
   --spot 150 --strike 155 --barrier 140 --maturity-days 30 \
   --option-type call --barrier-type down_out --volatility 0.25 --json
 
 # Up-and-in put (activates if price rises to barrier)
-python cli.py forecast_quantlib_barrier_price \
+mtdata-cli forecast_quantlib_barrier_price \
   --spot 150 --strike 145 --barrier 160 --maturity-days 60 \
   --option-type put --barrier-type up_in --volatility 0.3 --json
 ```
@@ -103,10 +103,10 @@ Calibrate the Heston stochastic volatility model from live options data. The Hes
 
 ```bash
 # Calibrate from call options
-python cli.py forecast_quantlib_heston_calibrate AAPL --option-type call --json
+mtdata-cli forecast_quantlib_heston_calibrate AAPL --option-type call --json
 
 # Calibrate from a specific expiration with liquidity filters
-python cli.py forecast_quantlib_heston_calibrate TSLA \
+mtdata-cli forecast_quantlib_heston_calibrate TSLA \
   --expiration 2026-04-17 --option-type both \
   --min-open-interest 50 --min-volume 10 --max-contracts 30 --json
 ```
@@ -143,10 +143,10 @@ python cli.py forecast_quantlib_heston_calibrate TSLA \
 
 | Task | Command |
 |------|---------|
-| List expirations | `python cli.py forecast_options_expirations AAPL` |
-| Options chain | `python cli.py forecast_options_chain AAPL --option-type call` |
-| Barrier option price | `python cli.py forecast_quantlib_barrier_price --spot 150 --strike 155 --barrier 140 --maturity-days 30` |
-| Heston calibration | `python cli.py forecast_quantlib_heston_calibrate AAPL` |
+| List expirations | `mtdata-cli forecast_options_expirations AAPL` |
+| Options chain | `mtdata-cli forecast_options_chain AAPL --option-type call` |
+| Barrier option price | `mtdata-cli forecast_quantlib_barrier_price --spot 150 --strike 155 --barrier 140 --maturity-days 30` |
+| Heston calibration | `mtdata-cli forecast_quantlib_heston_calibrate AAPL` |
 
 ---
 

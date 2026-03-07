@@ -30,13 +30,13 @@ Denoising helps:
 
 **Smooth closing prices:**
 ```bash
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 200 \
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 200 \
   --denoise ema --denoise-params "alpha=0.2"
 ```
 
 **Remove spikes:**
 ```bash
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 200 \
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 200 \
   --denoise median --denoise-params "window=5"
 ```
 
@@ -60,7 +60,7 @@ Apply denoising to raw price, then calculate indicators on smoothed data.
 **Use when:** You want smoother inputs for trend estimation.
 
 ```bash
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 200 \
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 200 \
   --indicators "rsi(14)" \
   --denoise ema --denoise-params "columns=close,when=pre_ti,alpha=0.2"
 ```
@@ -71,7 +71,7 @@ Calculate indicators on raw data, then smooth the indicator output.
 **Use when:** You want to keep raw price intact but reduce indicator noise.
 
 ```bash
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 200 \
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 200 \
   --indicators "rsi(14)" \
   --denoise ema --denoise-params "columns=RSI_14,when=post_ti,alpha=0.3"
 ```
@@ -212,26 +212,26 @@ Split into components and reconstruct smoother parts.
 
 ### Smooth Closing Prices
 ```bash
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 500 \
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 500 \
   --denoise ema --denoise-params "alpha=0.2,keep_original=true"
 ```
 
 ### Remove Price Spikes
 ```bash
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 500 \
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 500 \
   --denoise hampel --denoise-params "window=7,threshold=3"
 ```
 
 ### Smooth RSI Output
 ```bash
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 500 \
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 500 \
   --indicators "rsi(14)" \
   --denoise ema --denoise-params "columns=RSI_14,when=post_ti,alpha=0.3"
 ```
 
 ### Kalman Filter (Adaptive)
 ```bash
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 500 \
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 500 \
   --denoise kalman --denoise-params "transition_cov=0.01"
 ```
 

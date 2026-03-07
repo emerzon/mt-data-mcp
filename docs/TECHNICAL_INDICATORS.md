@@ -14,20 +14,20 @@ Technical indicators transform OHLCV data into signals for trend, momentum, vola
 
 **List available indicators:**
 ```bash
-python cli.py indicators_list --limit 20
+mtdata-cli indicators_list --limit 20
 ```
 
 **Filter by category:**
 ```bash
-python cli.py indicators_list --category momentum
-python cli.py indicators_list --category trend
-python cli.py indicators_list --category volatility
+mtdata-cli indicators_list --category momentum
+mtdata-cli indicators_list --category trend
+mtdata-cli indicators_list --category volatility
 ```
 
 **Get indicator details:**
 ```bash
-python cli.py indicators_describe rsi --json
-python cli.py indicators_describe macd --json
+mtdata-cli indicators_describe rsi --json
+mtdata-cli indicators_describe macd --json
 ```
 
 ---
@@ -38,7 +38,7 @@ python cli.py indicators_describe macd --json
 
 Add indicators directly when fetching candles:
 ```bash
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 200 \
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 200 \
   --indicators "ema(20),ema(50),rsi(14),macd(12,26,9)"
 ```
 
@@ -78,7 +78,7 @@ Show direction and dynamic support/resistance levels.
 
 **Usage example:**
 ```bash
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 100 \
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 100 \
   --indicators "ema(20),ema(50),bbands(20,2)"
 ```
 
@@ -151,14 +151,14 @@ Smooth noisy indicator outputs to reduce false signals:
 
 **Smooth RSI after calculation:**
 ```bash
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 200 \
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 200 \
   --indicators "rsi(14)" \
   --denoise ema --denoise-params "columns=RSI_14,when=post_ti,alpha=0.3"
 ```
 
 **Smooth price before calculating indicators:**
 ```bash
-python cli.py data_fetch_candles EURUSD --timeframe H1 --limit 200 \
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 200 \
   --indicators "rsi(14)" \
   --denoise ema --denoise-params "columns=close,when=pre_ti,alpha=0.2"
 ```
@@ -195,10 +195,10 @@ See [DENOISING.md](DENOISING.md) for more options.
 
 | Task | Command |
 |------|---------|
-| List indicators | `python cli.py indicators_list` |
-| Momentum indicators | `python cli.py indicators_list --category momentum` |
-| Indicator details | `python cli.py indicators_describe rsi` |
-| Fetch with indicators | `python cli.py data_fetch_candles EURUSD --indicators "ema(20),rsi(14)"` |
+| List indicators | `mtdata-cli indicators_list` |
+| Momentum indicators | `mtdata-cli indicators_list --category momentum` |
+| Indicator details | `mtdata-cli indicators_describe rsi` |
+| Fetch with indicators | `mtdata-cli data_fetch_candles EURUSD --indicators "ema(20),rsi(14)"` |
 
 ---
 

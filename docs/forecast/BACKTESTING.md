@@ -46,21 +46,21 @@ Timeline: [----history----][forecast horizon]
 ### Compare Forecasting Methods
 
 ```bash
-python cli.py forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
+mtdata-cli forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
   --methods "theta sf_autoarima analog" --steps 20 --spacing 10
 ```
 
 ### Single Method with Custom Parameters
 
 ```bash
-python cli.py forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
+mtdata-cli forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
   --methods theta --params "seasonality=24" --steps 30
 ```
 
 ### Volatility Backtest
 
 ```bash
-python cli.py forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
+mtdata-cli forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
   --quantity volatility --methods "ewma parkinson garch" --steps 20
 ```
 
@@ -69,7 +69,7 @@ python cli.py forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
 ## Command Reference
 
 ```bash
-python cli.py forecast_backtest_run <SYMBOL> [OPTIONS]
+mtdata-cli forecast_backtest_run <SYMBOL> [OPTIONS]
 ```
 
 ### Core Parameters
@@ -92,7 +92,7 @@ python cli.py forecast_backtest_run <SYMBOL> [OPTIONS]
 
 **Example with per-method params:**
 ```bash
-python cli.py forecast_backtest_run EURUSD --horizon 12 \
+mtdata-cli forecast_backtest_run EURUSD --horizon 12 \
   --methods "theta arima" \
   --params-per-method '{"theta": {"seasonality": 24}, "arima": {"p": 2, "d": 1, "q": 2}}'
 ```
@@ -111,10 +111,10 @@ Notes:
 **Examples:**
 ```bash
 # Forecast returns instead of prices
-python cli.py forecast_backtest_run EURUSD --quantity return --target return    
+mtdata-cli forecast_backtest_run EURUSD --quantity return --target return    
 
 # Backtest volatility methods
-python cli.py forecast_backtest_run EURUSD --quantity volatility --methods "ewma garch"
+mtdata-cli forecast_backtest_run EURUSD --quantity volatility --methods "ewma garch"
 ```
 
 ### Trade Simulation
@@ -127,7 +127,7 @@ python cli.py forecast_backtest_run EURUSD --quantity volatility --methods "ewma
 **Example with trading costs:**
 ```bash
 # Simulate 2 bps slippage per side (4 bps round-trip)
-python cli.py forecast_backtest_run EURUSD --horizon 12 --methods theta \
+mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \
   --slippage-bps 2 --trade-threshold 0.0005
 ```
 
@@ -145,14 +145,14 @@ Dimred methods supported by the forecasting pipeline: `pca`, `tsne`, `selectkbes
 
 Tip: for `forecast_backtest_run`, pass dimred params as JSON (or use `--dimred-params-params`):
 ```bash
-python cli.py forecast_backtest_run EURUSD --horizon 12 --methods mlf_lightgbm \
+mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods mlf_lightgbm \
   --features '{"include":["close","volume"]}' \
   --dimred-method pca --dimred-params '{"n_components":5}'
 ```
 
 **Example with denoising:**
 ```bash
-python cli.py forecast_backtest_run EURUSD --horizon 12 --methods theta \       
+mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \       
   --denoise ema --denoise-params "alpha=0.2"
 ```
 
@@ -253,25 +253,25 @@ If `--methods` is not specified, the backtest uses available classical methods:
 
 **Fast baselines:**
 ```bash
-python cli.py forecast_backtest_run EURUSD --horizon 12 \
+mtdata-cli forecast_backtest_run EURUSD --horizon 12 \
   --methods "naive drift theta seasonal_naive" --steps 30
 ```
 
 **Statistical models:**
 ```bash
-python cli.py forecast_backtest_run EURUSD --horizon 12 \
+mtdata-cli forecast_backtest_run EURUSD --horizon 12 \
   --methods "sf_autoarima sf_autoets sf_theta" --steps 30
 ```
 
 **ML models:**
 ```bash
-python cli.py forecast_backtest_run EURUSD --horizon 12 \
+mtdata-cli forecast_backtest_run EURUSD --horizon 12 \
   --methods "mlf_lightgbm mlf_rf" --steps 20
 ```
 
 **Foundation models:**
 ```bash
-python cli.py forecast_backtest_run EURUSD --horizon 24 \
+mtdata-cli forecast_backtest_run EURUSD --horizon 24 \
   --methods "chronos2 chronos_bolt" --steps 15
 ```
 
@@ -284,7 +284,7 @@ python cli.py forecast_backtest_run EURUSD --horizon 24 \
 Automatically find optimal parameters for a forecasting method:
 
 ```bash
-python cli.py forecast_tune_genetic EURUSD --timeframe H1 --method theta \
+mtdata-cli forecast_tune_genetic EURUSD --timeframe H1 --method theta \
   --horizon 12 --steps 20 --spacing 10 \
   --metric avg_rmse --mode min \
   --population 20 --generations 10
@@ -319,7 +319,7 @@ python cli.py forecast_tune_genetic EURUSD --timeframe H1 --method theta \
 Define which parameters to search:
 
 ```bash
-python cli.py forecast_tune_genetic EURUSD --method theta \
+mtdata-cli forecast_tune_genetic EURUSD --method theta \
   --search-space '{"seasonality": {"type": "int", "min": 12, "max": 48}}'
 ```
 
@@ -356,7 +356,7 @@ Each method has sensible defaults. Examples:
 
 ```bash
 # Short horizon, tight spacing
-python cli.py forecast_backtest_run EURUSD --timeframe M5 --horizon 6 \
+mtdata-cli forecast_backtest_run EURUSD --timeframe M5 --horizon 6 \
   --methods "naive theta fourier_ols sf_autoarima" \
   --steps 50 --spacing 12 \
   --slippage-bps 1 --trade-threshold 0.0003
@@ -371,13 +371,13 @@ python cli.py forecast_backtest_run EURUSD --timeframe M5 --horizon 6 \
 
 ```bash
 # Step 1: Find optimal seasonality
-python cli.py forecast_tune_genetic EURUSD --timeframe H4 --method theta \
+mtdata-cli forecast_tune_genetic EURUSD --timeframe H4 --method theta \
   --horizon 48 --steps 30 --spacing 24 \
   --metric sharpe_ratio --mode max \
   --population 30 --generations 15
 
 # Step 2: Backtest with optimal params
-python cli.py forecast_backtest_run EURUSD --timeframe H4 --horizon 48 \
+mtdata-cli forecast_backtest_run EURUSD --timeframe H4 --horizon 48 \
   --methods theta --params "seasonality=36" \
   --steps 50 --slippage-bps 2
 ```
@@ -385,7 +385,7 @@ python cli.py forecast_backtest_run EURUSD --timeframe H4 --horizon 48 \
 ### Example 3: Compare Volatility Methods
 
 ```bash
-python cli.py forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
+mtdata-cli forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
   --quantity volatility \
   --methods "ewma parkinson garch har_rv" \
   --steps 30 --spacing 24
@@ -400,11 +400,11 @@ python cli.py forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
 
 ```bash
 # Test if denoising improves accuracy
-python cli.py forecast_backtest_run EURUSD --horizon 12 --methods theta \
+mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \
   --steps 30 --denoise ema --denoise-params "alpha=0.3"
 
 # Compare to non-denoised
-python cli.py forecast_backtest_run EURUSD --horizon 12 --methods theta \
+mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \
   --steps 30
 ```
 
@@ -414,11 +414,11 @@ Simulate real-world model updates:
 
 ```bash
 # Period 1: Optimize on first 6 months
-python cli.py forecast_tune_genetic EURUSD --method theta --horizon 12 \
+mtdata-cli forecast_tune_genetic EURUSD --method theta --horizon 12 \
   --steps 50 --spacing 24 --metric avg_rmse
 
 # Record best params, then test on next 3 months with those params
-python cli.py forecast_backtest_run EURUSD --horizon 12 --methods theta \
+mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \
   --params "seasonality=24" --steps 30 --spacing 24
 
 # Repeat: re-optimize, test out-of-sample
@@ -481,10 +481,10 @@ Run multiple backtests in parallel (different terminals):
 
 ```bash
 # Terminal 1
-python cli.py forecast_backtest_run EURUSD --methods theta --steps 30
+mtdata-cli forecast_backtest_run EURUSD --methods theta --steps 30
 
 # Terminal 2
-python cli.py forecast_backtest_run GBPUSD --methods theta --steps 30
+mtdata-cli forecast_backtest_run GBPUSD --methods theta --steps 30
 ```
 
 ---
@@ -493,11 +493,11 @@ python cli.py forecast_backtest_run GBPUSD --methods theta --steps 30
 
 | Task | Command |
 |------|---------|
-| Compare methods | `python cli.py forecast_backtest_run EURUSD --methods "theta arima analog" --steps 20` |
+| Compare methods | `mtdata-cli forecast_backtest_run EURUSD --methods "theta arima analog" --steps 20` |
 | With trading costs | `--slippage-bps 2 --trade-threshold 0.0005` |
 | Volatility backtest | `--quantity volatility --methods "ewma garch"` |
 | With denoising | `--denoise ema --denoise-params "alpha=0.2"` |
-| Optimize params | `python cli.py forecast_tune_genetic EURUSD --method theta --metric avg_rmse` |
+| Optimize params | `mtdata-cli forecast_tune_genetic EURUSD --method theta --metric avg_rmse` |
 | JSON output | `--json` |
 
 ---

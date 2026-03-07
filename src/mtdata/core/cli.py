@@ -67,6 +67,8 @@ from .schema import enrich_schema_with_shared_defs, get_function_info as _schema
 # Types for discovered metadata
 ToolInfo = Dict[str, Any]
 
+CLI_PROGRAM = "mtdata-cli"
+
 
 
 
@@ -1050,15 +1052,15 @@ def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
     lines.append("")
     lines.append("General Examples:")
     lines.append("  # Basic forecast with a native model")
-    lines.append("  python cli.py forecast_generate EURUSD --library native --model theta --timeframe H1 --horizon 24")
+    lines.append(f"  {CLI_PROGRAM} forecast_generate EURUSD --library native --model theta --timeframe H1 --horizon 24")
     lines.append("")
     lines.append("  # Foundation model (Chronos-2) with covariates")
-    lines.append("  python cli.py forecast_generate BTCUSD --library pretrained --model chronos2 --timeframe H1 --horizon 12 \\")
+    lines.append(f"  {CLI_PROGRAM} forecast_generate BTCUSD --library pretrained --model chronos2 --timeframe H1 --horizon 12 \\")
     lines.append("    --features \"include=open,high future_covariates=hour,dow,is_holiday\" \\")
     lines.append("    --verbose")
     lines.append("")
     lines.append("  # Rolling backtest for accuracy check")
-    lines.append("  python cli.py forecast_backtest_run EURUSD --timeframe H1 --methods theta,seasonal_naive \\")
+    lines.append(f"  {CLI_PROGRAM} forecast_backtest_run EURUSD --timeframe H1 --methods theta,seasonal_naive \\")
     lines.append("    --steps 5 --horizon 12")
     return "\n".join(lines)
 
@@ -1089,32 +1091,32 @@ _EXTENDED_HELP_EXAMPLE_HINTS: Dict[str, Any] = {
 
 _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
     "patterns_detect": (
-        "python cli.py patterns_detect BTCUSD --timeframe H1 --mode candlestick",
-        "python cli.py patterns_detect BTCUSD --timeframe H1 --mode classic --detail full --limit 300",
+        f"{CLI_PROGRAM} patterns_detect BTCUSD --timeframe H1 --mode candlestick",
+        f"{CLI_PROGRAM} patterns_detect BTCUSD --timeframe H1 --mode classic --detail full --limit 300",
     ),
     "pivot_compute_points": (
-        "python cli.py pivot_compute_points BTCUSD --timeframe D1",
+        f"{CLI_PROGRAM} pivot_compute_points BTCUSD --timeframe D1",
         None,
     ),
     "regime_detect": (
-        "python cli.py regime_detect BTCUSD --timeframe H1 --method hmm",
-        "python cli.py regime_detect BTCUSD --timeframe H1 --method hmm --output full --verbose",
+        f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm",
+        f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm --output full --verbose",
     ),
     "trade_risk_analyze": (
-        "python cli.py trade_risk_analyze --symbol BTCUSD --desired-risk-pct 1 --proposed-entry 66317 --proposed-sl 65000",
-        "python cli.py trade_risk_analyze --symbol BTCUSD --desired-risk-pct 1 --proposed-entry 66317 --proposed-sl 65000 --proposed-tp 69000",
+        f"{CLI_PROGRAM} trade_risk_analyze --symbol BTCUSD --desired-risk-pct 1 --proposed-entry 66317 --proposed-sl 65000",
+        f"{CLI_PROGRAM} trade_risk_analyze --symbol BTCUSD --desired-risk-pct 1 --proposed-entry 66317 --proposed-sl 65000 --proposed-tp 69000",
     ),
     "trade_modify": (
-        "python cli.py trade_modify 123456789 --price 61000",
-        "python cli.py trade_modify 123456789 --stop-loss 60500 --take-profit 62500",
+        f"{CLI_PROGRAM} trade_modify 123456789 --price 61000",
+        f"{CLI_PROGRAM} trade_modify 123456789 --stop-loss 60500 --take-profit 62500",
     ),
     "trade_place": (
-        "python cli.py trade_place BTCUSD --volume 0.01 --order-type SELL --stop-loss 68521 --take-profit 67071",
-        "python cli.py trade_place BTCUSD --volume 0.01 --order-type BUY --stop-loss 64500 --take-profit 67200 --comment \"swing long\"",
+        f"{CLI_PROGRAM} trade_place BTCUSD --volume 0.01 --order-type SELL --stop-loss 68521 --take-profit 67071",
+        f"{CLI_PROGRAM} trade_place BTCUSD --volume 0.01 --order-type BUY --stop-loss 64500 --take-profit 67200 --comment \"swing long\"",
     ),
     "trade_close": (
-        "python cli.py trade_close --ticket 123456789",
-        "python cli.py trade_close --symbol BTCUSD --profit-only true",
+        f"{CLI_PROGRAM} trade_close --ticket 123456789",
+        f"{CLI_PROGRAM} trade_close --symbol BTCUSD --profit-only true",
     ),
 }
 
@@ -1195,11 +1197,11 @@ def _build_usage_examples(cmd_name: str, func_info: Dict[str, Any]) -> Tuple[str
             optional_tokens.append(f"--{param['name'].replace('_','-')} {_quote_cli_value(value)}")
     base_parts = [cmd_name]
     base_parts.extend(required_tokens)
-    base = "python cli.py " + " ".join(base_parts)
+    base = CLI_PROGRAM + " " + " ".join(base_parts)
     advanced = None
     if optional_tokens:
         adv_parts = base_parts + optional_tokens[:2]
-        advanced = "python cli.py " + " ".join(adv_parts)
+        advanced = CLI_PROGRAM + " " + " ".join(adv_parts)
     return base, advanced
 
 
@@ -1250,7 +1252,7 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
         print("Available commands:")
         for name in sorted(functions.keys()):
             print(f"  {name}")
-        print("\nTip: run `python cli.py --help` to view the full list.")
+        print(f"\nTip: run `{CLI_PROGRAM} --help` to view the full list.")
         return
     print(f"Extended help for query: {query}")
     print("")
@@ -1273,7 +1275,7 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
         print(f"  Example: {base_example}")
         if advanced_example and advanced_example != base_example:
             print(f"  Example+: {advanced_example}")
-        print(f"  More: python cli.py {name} --help")
+        print(f"  More: {CLI_PROGRAM} {name} --help")
         print("")
 def main():
     """Main CLI entry point with dynamic parameter discovery"""

@@ -165,10 +165,10 @@ Run a rolling-origin backtest.
 
 ## Running the Server
 
-Start the API server using the Python launcher:
+Start the API server using the packaged entry point:
 
 ```bash
-python webui.py
+mtdata-webapi
 ```
 
 Or directly via Uvicorn (if installed):

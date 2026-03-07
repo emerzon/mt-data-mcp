@@ -13,11 +13,11 @@ The `causal_discover_signals` tool performs **pairwise Granger-style causal disc
 
 ```bash
 # Provide an explicit list of symbols
-python cli.py causal_discover_signals "EURUSD,GBPUSD,USDJPY" --timeframe H1 \
+mtdata-cli causal_discover_signals "EURUSD,GBPUSD,USDJPY" --timeframe H1 \
   --limit 800 --max-lag 5 --transform log_return --significance 0.05
 
 # Provide a single symbol to auto-expand its visible MT5 group (e.g., Forex\Majors)
-python cli.py causal_discover_signals EURUSD --timeframe H1 --limit 800
+mtdata-cli causal_discover_signals EURUSD --timeframe H1 --limit 800
 ```
 
 ---
