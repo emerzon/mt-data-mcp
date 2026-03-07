@@ -13,9 +13,11 @@ import math
 from datetime import datetime
 from typing import get_origin, get_args, Optional, Dict, Any, List, Tuple, Literal, Union, is_typeddict
 import json
+from pydantic import BaseModel
 from .config import load_environment
 
 from ..bootstrap.tools import bootstrap_tools
+from ..forecast.requests import ForecastGenerateRequest
 from ..utils.minimal_output import format_result_minimal as _shared_minimal
 from ._mcp_instance import mcp
 from ._mcp_tools import get_tool_registry as get_registered_tools
@@ -66,6 +68,65 @@ from .schema import enrich_schema_with_shared_defs, get_function_info as _schema
 ToolInfo = Dict[str, Any]
 
 CLI_PROGRAM = "mtdata-cli"
+
+
+def _is_pydantic_model_type(value: Any) -> bool:
+    return isinstance(value, type) and issubclass(value, BaseModel)
+
+
+def _iter_request_model_params(model_type: type[BaseModel]) -> List[Dict[str, Any]]:
+    fields = getattr(model_type, "model_fields", None)
+    if isinstance(fields, dict):
+        params: List[Dict[str, Any]] = []
+        for name, field in fields.items():
+            required = bool(field.is_required()) if callable(getattr(field, "is_required", None)) else False
+            default = None if required else getattr(field, "default", None)
+            if getattr(default, "__class__", None).__name__ == "PydanticUndefinedType":
+                default = None
+            params.append(
+                {
+                    "name": name,
+                    "required": required,
+                    "default": default,
+                    "type": getattr(field, "annotation", Any) or Any,
+                }
+            )
+        return params
+
+    legacy_fields = getattr(model_type, "__fields__", None)
+    if isinstance(legacy_fields, dict):
+        return [
+            {
+                "name": name,
+                "required": bool(getattr(field, "required", False)),
+                "default": None if getattr(field, "required", False) else getattr(field, "default", None),
+                "type": getattr(field, "outer_type_", Any) or Any,
+            }
+            for name, field in legacy_fields.items()
+        ]
+
+    return []
+
+
+def _flatten_request_model_param(info: Dict[str, Any]) -> Dict[str, Any]:
+    params = info.get("params") or []
+    if len(params) != 1:
+        return info
+    request_param = params[0]
+    request_model = request_param.get("type")
+    if not _is_pydantic_model_type(request_model):
+        return info
+    info["request_model"] = request_model
+    info["request_param_name"] = request_param["name"]
+    info["params"] = _iter_request_model_params(request_model)
+    return info
+
+
+def _model_dump_compat(model: BaseModel) -> Dict[str, Any]:
+    dump = getattr(model, "model_dump", None)
+    if callable(dump):
+        return dump()
+    return model.dict()
 
 
 
@@ -410,6 +471,7 @@ def get_function_info(func):
     """
     info = _schema_get_function_info(func)
     info['func'] = func
+    info = _flatten_request_model_param(info)
     # Ensure a minimal doc for CLI help if missing
     if not info.get('doc'):
         info['doc'] = f"Execute {info.get('name') or getattr(func, '__name__', 'function')}"
@@ -997,7 +1059,12 @@ def create_command_function(func_info, cmd_name: str = "", cmd_parser: Optional[
             # Only include non-None values
             if arg_value is not None:
                 kwargs[param_name] = arg_value
-        
+
+        request_model = func_info.get("request_model")
+        request_param_name = func_info.get("request_param_name")
+        if request_model is not None and request_param_name:
+            kwargs = {request_param_name: request_model(**kwargs)}
+
         # Call the function (tools now return minimal plain text for API and CLI)
         # Request raw output so we can control formatting in CLI (e.g. verbose flag)
         kwargs['__cli_raw'] = True
@@ -1393,30 +1460,29 @@ def main():
             dimred_params = _merge_dict(dimred_params, overrides.get("dimred"))
             target_spec = _merge_dict(target_spec, overrides.get("target"))
 
-            kwargs = {
-                "symbol": args.symbol,
-                "timeframe": args.timeframe,
-                "library": args.library,
-                "model": args.model,
-                "horizon": int(args.horizon),
-                "lookback": args.lookback,
-                "as_of": args.as_of,
-                "model_params": model_params,
-                "ci_alpha": args.ci_alpha,
-                "quantity": args.quantity,
-                "denoise": denoise or None,
-                "features": features or None,
-                "dimred_method": args.dimred_method,
-                "dimred_params": dimred_params or None,
-                "target_spec": target_spec or None,
-            }
+            request = ForecastGenerateRequest(
+                symbol=args.symbol,
+                timeframe=args.timeframe,
+                library=args.library,
+                model=args.model,
+                horizon=int(args.horizon),
+                lookback=args.lookback,
+                as_of=args.as_of,
+                model_params=model_params,
+                ci_alpha=args.ci_alpha,
+                quantity=args.quantity,
+                denoise=denoise or None,
+                features=features or None,
+                dimred_method=args.dimred_method,
+                dimred_params=dimred_params or None,
+                target_spec=target_spec or None,
+            )
 
             if getattr(args, "print_config", False):
-                print(_format_result_minimal({"forecast_generate": kwargs}, verbose=True))
+                print(_format_result_minimal({"forecast_generate": _model_dump_compat(request)}, verbose=True))
                 return 0
 
-            kwargs["__cli_raw"] = True
-            out = func(**kwargs)
+            out = func(request=request, __cli_raw=True)
             _render_cli_result(out, args=args, cmd_name="forecast_generate")
             return 1 if _result_has_tool_error(out) else 0
 

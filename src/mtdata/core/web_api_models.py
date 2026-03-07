@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, Field
+
+from ..forecast.requests import ForecastBacktestRequest
 
 
 class ForecastPriceBody(BaseModel):
@@ -36,20 +38,5 @@ class ForecastVolBody(BaseModel):
     denoise: Optional[Dict[str, Any]] = None
 
 
-class BacktestBody(BaseModel):
-    symbol: str
-    timeframe: str = Field("H1")
-    horizon: int = Field(12, ge=1)
-    steps: int = Field(5, ge=1)
-    spacing: int = Field(20, ge=1)
-    methods: Optional[List[str]] = None
-    params_per_method: Optional[Dict[str, Any]] = None
-    quantity: str = Field("price")
-    target: str = Field("price")
-    denoise: Optional[Dict[str, Any]] = None
-    params: Optional[Dict[str, Any]] = None
-    features: Optional[Dict[str, Any]] = None
-    dimred_method: Optional[str] = None
-    dimred_params: Optional[Dict[str, Any]] = None
-    slippage_bps: float = 0.0
-    trade_threshold: float = 0.0
+class BacktestBody(ForecastBacktestRequest):
+    pass

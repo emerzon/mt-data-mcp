@@ -9,6 +9,8 @@ import types
 from functools import wraps as _wraps
 from typing import Any, Dict, List, Union, cast, get_args, get_origin
 
+from pydantic import BaseModel
+
 from ..utils.utils import _coerce_scalar
 
 try:
@@ -195,6 +197,18 @@ def _coerce_kwargs_for_callable(func: Any, kwargs: Dict[str, Any]) -> Dict[str, 
             kwargs[param_name] = _coerce_int(kwargs.get(param_name), allow_none=allow_none, name=param_name)
         elif base_ann is float:
             kwargs[param_name] = _coerce_float(kwargs.get(param_name), allow_none=allow_none, name=param_name)
+        elif isinstance(base_ann, type) and issubclass(base_ann, BaseModel):
+            value = kwargs.get(param_name)
+            if value is None and allow_none:
+                continue
+            if isinstance(value, base_ann):
+                continue
+            if isinstance(value, dict):
+                model_validate = getattr(base_ann, "model_validate", None)
+                if callable(model_validate):
+                    kwargs[param_name] = model_validate(value)
+                else:
+                    kwargs[param_name] = base_ann.parse_obj(value)
     return kwargs
 
 

@@ -1,11 +1,18 @@
-from typing import Any, Dict, Optional, List, Literal, Tuple
+from typing import Any, Dict, Optional, List, Literal
 import os
 
-from .schema import TimeframeLiteral, DenoiseSpec, ForecastLibraryLiteral, ForecastMethodLiteral
+from .schema import TimeframeLiteral, DenoiseSpec, ForecastMethodLiteral
 from ._mcp_instance import mcp
 from ..forecast.forecast import forecast as _forecast_impl
 from ..forecast.exceptions import ForecastError
 from ..forecast.backtest import forecast_backtest as _forecast_backtest_impl
+from ..forecast.requests import ForecastBacktestRequest, ForecastGenerateRequest
+from ..forecast.use_cases import (
+    _discover_sktime_forecasters,
+    _resolve_sktime_forecaster,
+    run_forecast_backtest,
+    run_forecast_generate,
+)
 from ..forecast.volatility import forecast_volatility as _forecast_volatility_impl
 from ..forecast.forecast import get_forecast_methods_data as _get_forecast_methods_data
 from ..forecast.tune import genetic_search_forecast_params as _genetic_search_impl
@@ -17,212 +24,22 @@ from ..utils.barriers import (
     normalize_trade_direction as _normalize_trade_direction,
 )
 
-from functools import lru_cache
-import difflib
-
-
-@lru_cache(maxsize=1)
-def _discover_sktime_forecasters() -> Dict[str, Tuple[str, str]]:
-    """Return mapping of forecaster class name (lower) -> (class_name, dotted path).
-
-    Best-effort: skips modules that fail to import (optional dependencies).
-    Filters out test modules and private/internal classes.
-    """
-    try:
-        import pkgutil
-        import importlib
-        import sktime.forecasting as _sf  # type: ignore
-        from sktime.forecasting.base import BaseForecaster  # type: ignore
-    except Exception:
-        return {}
-
-    mapping: Dict[str, Tuple[str, str]] = {}
-
-    def _skip_module(mod_name: str) -> bool:
-        parts = mod_name.split(".")
-        if "tests" in parts:
-            return True
-        if any(p.startswith("test") for p in parts):
-            return True
-        return False
-
-    for mod in pkgutil.walk_packages(getattr(_sf, "__path__", []), _sf.__name__ + "."):
-        mod_name = getattr(mod, "name", None)
-        if not isinstance(mod_name, str) or _skip_module(mod_name):
-            continue
-        try:
-            m = importlib.import_module(mod_name)
-        except Exception:
-            continue
-        for _, obj in vars(m).items():
-            if not isinstance(obj, type):
-                continue
-            if obj is BaseForecaster:
-                continue
-            name = getattr(obj, "__name__", None)
-            if not isinstance(name, str) or not name or name.startswith("_"):
-                continue
-            try:
-                if not issubclass(obj, BaseForecaster):
-                    continue
-            except Exception:
-                continue
-            key = name.lower()
-            if key not in mapping:
-                mapping[key] = (name, f"{obj.__module__}.{name}")
-    return mapping
-
-
-def _normalize_forecaster_name(name: str) -> str:
-    return "".join(ch for ch in str(name).lower() if ch.isalnum())
-
-
-def _resolve_sktime_forecaster(model: str) -> Optional[Tuple[str, str]]:
-    """Resolve a user-provided model name to (class_name, dotted_path) using fuzzy matching."""
-    model_s = str(model or "").strip()
-    if not model_s:
-        return None
-
-    mapping = _discover_sktime_forecasters()
-    if not mapping:
-        return None
-
-    # Exact match on class name (case-insensitive)
-    exact = mapping.get(model_s.lower())
-    if exact:
-        return exact
-
-    # Normalized match (e.g. "theta", "theta_forecaster", "ThetaForecaster")
-    norm_map: Dict[str, Tuple[str, str]] = {}
-    for _, (cls_name, dotted) in mapping.items():
-        norm_map.setdefault(_normalize_forecaster_name(cls_name), (cls_name, dotted))
-
-    qn = _normalize_forecaster_name(model_s)
-    if qn in norm_map:
-        return norm_map[qn]
-
-    # Prefer startswith/contains in normalized space (more intuitive than difflib alone).
-    starts = [v for k, v in norm_map.items() if k.startswith(qn)]
-    if starts:
-        return sorted(starts, key=lambda t: len(t[0]))[0]
-    contains = [v for k, v in norm_map.items() if qn and qn in k]
-    if contains:
-        return sorted(contains, key=lambda t: len(t[0]))[0]
-
-    # Fallback to difflib against normalized names.
-    candidates = difflib.get_close_matches(qn, list(norm_map.keys()), n=1, cutoff=0.6)
-    if candidates:
-        return norm_map[candidates[0]]
-    return None
-
 @mcp.tool()
 @_auto_connect_wrapper
-def forecast_generate(
-    symbol: str,
-    timeframe: TimeframeLiteral = "H1",
-    library: ForecastLibraryLiteral = "native",
-    model: str = "theta",
-    horizon: int = 12,
-    lookback: Optional[int] = None,
-    as_of: Optional[str] = None,
-    model_params: Optional[Dict[str, Any]] = None,
-    ci_alpha: Optional[float] = 0.05,
-    quantity: Literal['price','return','volatility'] = 'price',  # type: ignore
-    denoise: Optional[DenoiseSpec] = None,
-    features: Optional[Dict[str, Any]] = None,
-    dimred_method: Optional[str] = None,
-    dimred_params: Optional[Dict[str, Any]] = None,
-    target_spec: Optional[Dict[str, Any]] = None,
-    method: Optional[str] = None,
-) -> Dict[str, Any]:
+def forecast_generate(request: ForecastGenerateRequest) -> Dict[str, Any]:
     """Generate forecasts for the next `horizon` bars using a selected model.
 
     Supports native or library-backed models with optional preprocessing.
     Delegates to `mtdata.forecast.forecast`.
     """
     try:
-        if int(horizon) <= 0:
-            return {"error": "horizon must be a positive integer"}
-    except Exception:
-        return {"error": "horizon must be a positive integer"}
-    lib = str(library or "native").strip().lower()
-    mdl = str(model or "").strip()
-    p = _parse_kv_or_json(model_params)
-    legacy_method = str(method or "").strip()
-
-    # Backward compatibility for internal callers that still pass `method=...`
-    # instead of the newer `library`/`model` split.
-    if legacy_method:
-        resolved_method = legacy_method
-    elif lib in ("", "native"):
-        resolved_method = mdl or "theta"
-    elif lib == "statsforecast":
-        if not mdl:
-            return {"error": "model is required for library=statsforecast"}
-        resolved_method = "statsforecast"
-        p.setdefault("model_name", mdl)
-    elif lib == "sktime":
-        query = mdl.strip() if mdl else "ThetaForecaster"
-        if "." in query:
-            resolved_method = "sktime"
-            p.setdefault("estimator", query)
-        else:
-            found = _resolve_sktime_forecaster(query)
-            if not found:
-                return {"error": f"Unknown sktime forecaster '{query}'"}
-            _, dotted = found
-            resolved_method = "sktime"
-            p.setdefault("estimator", dotted)
-    elif lib == "pretrained":
-        resolved_method = mdl or "chronos2"
-    elif lib == "mlforecast":
-        if not mdl:
-            return {"error": "model is required for library=mlforecast"}
-        resolved_method = "mlforecast"
-        p.setdefault("model", mdl)
-    else:
-        return {"error": f"Unsupported library: {library}"}
-
-    features = features or {}
-
-    try:
-        out = _forecast_impl(
-            symbol=symbol,
-            timeframe=timeframe,  # type: ignore[arg-type]
-            method=str(resolved_method),  # type: ignore[arg-type]
-            horizon=horizon,
-            lookback=lookback,
-            as_of=as_of,
-            params=p,
-            ci_alpha=ci_alpha,
-            quantity=quantity,    # type: ignore[arg-type]
-            target="price",       # deprecated in core; keep fixed here
-            denoise=denoise,
-            features=features,
-            dimred_method=dimred_method,
-            dimred_params=dimred_params,
-            target_spec=target_spec,
+        return run_forecast_generate(
+            request,
+            forecast_impl=_forecast_impl,
+            resolve_sktime_forecaster=_resolve_sktime_forecaster,
         )
     except ForecastError as exc:
         return {"error": str(exc)}
-    if (
-        isinstance(out, dict)
-        and not legacy_method
-        and lib in ("", "native")
-        and str(resolved_method).strip().lower() == "theta"
-    ):
-        warning = (
-            "Using native theta. StatsForecast theta is available via "
-            f"`mtdata-cli forecast_generate {symbol} --timeframe {timeframe} --library statsforecast --model Theta --horizon {horizon}` "
-            "and may produce different forecasts/interval behavior."
-        )
-        warnings_out = out.get("warnings")
-        if not isinstance(warnings_out, list):
-            warnings_out = []
-        if warning not in warnings_out:
-            warnings_out.append(warning)
-        out["warnings"] = warnings_out
-    return out
 
 
 @mcp.tool()
@@ -340,45 +157,9 @@ def forecast_list_library_models(
 
 @mcp.tool()
 @_auto_connect_wrapper
-def forecast_backtest_run(
-    symbol: str,
-    timeframe: TimeframeLiteral = "H1",
-    horizon: int = 12,
-    steps: int = 5,
-    spacing: int = 20,
-    methods: Optional[List[str]] = None,
-    params_per_method: Optional[Dict[str, Any]] = None,
-    quantity: Literal['price','return','volatility'] = 'price',  # type: ignore
-    target: Literal['price','return'] = 'price',  # type: ignore
-    denoise: Optional[DenoiseSpec] = None,
-    params: Optional[Dict[str, Any]] = None,
-    features: Optional[Dict[str, Any]] = None,
-    dimred_method: Optional[str] = None,
-    dimred_params: Optional[Dict[str, Any]] = None,
-    slippage_bps: float = 0.0,
-    trade_threshold: float = 0.0,
-    detail: Literal['compact', 'full'] = 'compact',  # type: ignore
-) -> Dict[str, Any]:
+def forecast_backtest_run(request: ForecastBacktestRequest) -> Dict[str, Any]:
     """Rolling-origin backtest over historical anchors using the forecast tool."""
-    return _forecast_backtest_impl(
-        symbol=symbol,
-        timeframe=timeframe,  # type: ignore[arg-type]
-        horizon=horizon,
-        steps=steps,
-        spacing=spacing,
-        methods=methods,
-        params_per_method=params_per_method,
-        quantity=quantity,    # type: ignore[arg-type]
-        target=target,        # type: ignore[arg-type]
-        denoise=denoise,
-        params=params,
-        features=features,
-        dimred_method=dimred_method,
-        dimred_params=dimred_params,
-        slippage_bps=slippage_bps,
-        trade_threshold=trade_threshold,
-        detail=detail,
-    )
+    return run_forecast_backtest(request, backtest_impl=_forecast_backtest_impl)
 
 
 @mcp.tool()

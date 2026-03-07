@@ -647,6 +647,7 @@ def post_backtest_response(*, body: BacktestBody, backtest_impl: Callable[..., A
         dimred_params=body.dimred_params,
         slippage_bps=body.slippage_bps,
         trade_threshold=body.trade_threshold,
+        detail=body.detail,  # type: ignore[arg-type]
     )
     if isinstance(result, dict) and result.get("error"):
         raise HTTPException(status_code=400, detail=str(result["error"]))

@@ -17,6 +17,7 @@ from typing import Any, Dict, List
 
 from mtdata.core.forecast import forecast_generate
 from mtdata.forecast.common import default_seasonality
+from mtdata.forecast.requests import ForecastGenerateRequest
 
 
 def _usage() -> str:
@@ -53,12 +54,14 @@ def _run(symbol: str, timeframe: str, horizon: int, models: List[str]) -> Dict[s
         if library in ("", "native") and model == "seasonal_naive":
             params["seasonality"] = int(m_eff)
         res = forecast_generate(
-            symbol=symbol,
-            timeframe=timeframe,
-            library=library or "native",
-            model=model,
-            horizon=int(horizon),
-            model_params=params or None,
+            request=ForecastGenerateRequest(
+                symbol=symbol,
+                timeframe=timeframe,
+                library=library or "native",
+                model=model,
+                horizon=int(horizon),
+                model_params=params or None,
+            ),
             __cli_raw=True,
         )
         out["models"][spec] = res

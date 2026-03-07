@@ -405,6 +405,17 @@ class TestCoerceKwargsForCallable:
         self._call(fn, kw)
         assert kw["x"] == "hello"
 
+    def test_coerces_pydantic_request_kwarg(self):
+        from mtdata.forecast.requests import ForecastGenerateRequest
+
+        def fn(request: ForecastGenerateRequest): ...
+
+        kw = {"request": {"symbol": "EURUSD", "horizon": 24}}
+        self._call(fn, kw)
+        assert isinstance(kw["request"], ForecastGenerateRequest)
+        assert kw["request"].symbol == "EURUSD"
+        assert kw["request"].horizon == 24
+
     def test_handles_bad_signature_gracefully(self):
         kw = {"a": "1"}
         result = self._call("not_a_callable", kw)

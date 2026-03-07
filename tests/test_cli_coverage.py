@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch, call
 
 import pytest
 
+from mtdata.forecast.requests import ForecastGenerateRequest
 
 # ---------------------------------------------------------------------------
 # Fixture: ensure the cli module is importable with heavy deps mocked
@@ -475,6 +476,20 @@ class TestGetFunctionInfo:
         b_param = [p for p in info["params"] if p["name"] == "b"][0]
         assert a_param["required"] is True
         assert b_param["required"] is False
+
+    def test_request_model_param_is_flattened(self):
+        def request_tool(request: ForecastGenerateRequest):
+            """Request tool."""
+            pass
+
+        info = get_function_info(request_tool)
+
+        assert info["request_model"] is ForecastGenerateRequest
+        assert info["request_param_name"] == "request"
+        param_names = [p["name"] for p in info["params"]]
+        assert "request" not in param_names
+        assert "symbol" in param_names
+        assert "horizon" in param_names
 
 
 # ========================================================================
@@ -1312,6 +1327,36 @@ class TestCreateCommandFunction:
         assert call_kwargs["symbol"] == "EURUSD"
         assert call_kwargs["__cli_raw"] is True
 
+    def test_request_model_reconstructed(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "request_model": ForecastGenerateRequest,
+            "request_param_name": "request",
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+                {"name": "horizon", "type": int, "required": False, "default": 12},
+                {"name": "model_params", "type": Dict[str, Any], "required": False, "default": None},
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
+        args = argparse.Namespace(
+            symbol="EURUSD",
+            horizon=24,
+            model_params='{"sp":24}',
+            model_params_params=None,
+            json=False,
+            verbose=False,
+        )
+        cmd_fn(args)
+        call_kwargs = mock_fn.call_args[1]
+        request = call_kwargs["request"]
+        assert isinstance(request, ForecastGenerateRequest)
+        assert request.symbol == "EURUSD"
+        assert request.horizon == 24
+        assert request.model_params == {"sp": 24}
+        assert call_kwargs["__cli_raw"] is True
+
     def test_string_result_text_format(self, capsys):
         mock_fn = MagicMock(return_value="plain text result")
         func_info = {
@@ -1706,9 +1751,12 @@ class TestForecastGenerateIntegration:
         assert result == 0
         mock_fn.assert_called_once()
         call_kwargs = mock_fn.call_args[1]
-        assert call_kwargs["symbol"] == "EURUSD"
-        assert call_kwargs["library"] == "native"
-        assert call_kwargs["model"] == "theta"
+        request = call_kwargs["request"]
+        assert isinstance(request, ForecastGenerateRequest)
+        assert request.symbol == "EURUSD"
+        assert request.library == "native"
+        assert request.model == "theta"
+        assert call_kwargs["__cli_raw"] is True
 
     @patch("mtdata.core.cli.discover_tools")
     def test_forecast_generate_print_config(self, mock_discover, capsys):
@@ -1776,9 +1824,9 @@ class TestForecastGenerateIntegration:
         ]):
             result = main()
         assert result == 0
-        call_kwargs = mock_fn.call_args[1]
-        assert call_kwargs["model_params"]["sp"] == 24
-        assert call_kwargs["model_params"]["max_epochs"] == 20
+        request = mock_fn.call_args[1]["request"]
+        assert request.model_params["sp"] == 24
+        assert request.model_params["max_epochs"] == 20
 
     @patch("mtdata.core.cli.discover_tools")
     def test_forecast_generate_with_denoise(self, mock_discover, capsys):
@@ -1793,8 +1841,8 @@ class TestForecastGenerateIntegration:
         with patch("sys.argv", ["cli.py", "forecast_generate", "EURUSD", "--denoise", "wavelet"]):
             result = main()
         assert result == 0
-        call_kwargs = mock_fn.call_args[1]
-        assert call_kwargs["denoise"] == {"method": "wavelet"}
+        request = mock_fn.call_args[1]["request"]
+        assert request.denoise == {"method": "wavelet"}
 
     @patch("mtdata.core.cli.discover_tools")
     def test_forecast_generate_dict_result_verbose(self, mock_discover, capsys):

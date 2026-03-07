@@ -5,8 +5,12 @@ import importlib
 import pkgutil
 import sys
 
+import pytest
+
 from mtdata.core import forecast as cf
 from mtdata.forecast.exceptions import ForecastError
+from mtdata.forecast import use_cases as forecast_use_cases
+from mtdata.forecast.requests import ForecastGenerateRequest
 
 
 def _unwrap(fn):
@@ -18,7 +22,7 @@ def _unwrap(fn):
 
 def test_normalize_forecaster_name_and_resolve_variants(monkeypatch):
     monkeypatch.setattr(
-        cf,
+        forecast_use_cases,
         "_discover_sktime_forecasters",
         lambda: {
             "thetaforecaster": ("ThetaForecaster", "sktime.forecasting.theta.ThetaForecaster"),
@@ -26,7 +30,7 @@ def test_normalize_forecaster_name_and_resolve_variants(monkeypatch):
         },
     )
 
-    assert cf._normalize_forecaster_name("Theta-Forecaster v2") == "thetaforecasterv2"
+    assert forecast_use_cases._normalize_forecaster_name("Theta-Forecaster v2") == "thetaforecasterv2"
     assert cf._resolve_sktime_forecaster("theta") == (
         "ThetaForecaster",
         "sktime.forecasting.theta.ThetaForecaster",
@@ -107,48 +111,61 @@ def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):
         return {"ok": True, "method": kwargs["method"], "params": kwargs["params"]}
 
     monkeypatch.setattr(cf, "_forecast_impl", fake_forecast_impl)
-    monkeypatch.setattr(cf, "_parse_kv_or_json", lambda v: dict(v or {}))
     monkeypatch.setattr(
         cf,
         "_resolve_sktime_forecaster",
         lambda q: ("ThetaForecaster", "sktime.forecasting.theta.ThetaForecaster") if q == "theta" else None,
     )
 
-    out = raw(symbol="EURUSD", horizon=0)
-    assert out["error"] == "horizon must be a positive integer"
+    with pytest.raises(Exception):
+        ForecastGenerateRequest(symbol="EURUSD", horizon=0)
 
-    out = raw(symbol="EURUSD", library="statsforecast", model="")
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="statsforecast", model=""))
     assert out["error"] == "model is required for library=statsforecast"
 
-    out = raw(symbol="EURUSD", library="sktime", model="unknown")
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="sktime", model="unknown"))
     assert "Unknown sktime forecaster" in out["error"]
 
-    out = raw(symbol="EURUSD", library="native", model="", model_params={"x": 1})
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", model="", model_params={"x": 1}))
     assert out["ok"] is True
     assert captured["method"] == "theta"
     assert captured["params"] == {"x": 1}
 
-    out = raw(symbol="EURUSD", library="statsforecast", model="AutoARIMA", model_params={})
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="statsforecast", model="AutoARIMA", model_params={}))
     assert out["ok"] is True
     assert captured["method"] == "statsforecast"
     assert captured["params"]["model_name"] == "AutoARIMA"
 
-    out = raw(symbol="EURUSD", library="sktime", model="theta", model_params={})
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="sktime", model="theta", model_params={}))
     assert out["ok"] is True
     assert captured["method"] == "sktime"
     assert captured["params"]["estimator"] == "sktime.forecasting.theta.ThetaForecaster"
 
-    out = raw(symbol="EURUSD", library="sktime", model="sktime.forecasting.naive.NaiveForecaster", model_params={})
+    out = raw(
+        request=ForecastGenerateRequest(
+            symbol="EURUSD",
+            library="sktime",
+            model="sktime.forecasting.naive.NaiveForecaster",
+            model_params={},
+        )
+    )
     assert out["ok"] is True
     assert captured["params"]["estimator"] == "sktime.forecasting.naive.NaiveForecaster"
 
-    out = raw(symbol="EURUSD", library="mlforecast", model="sklearn.linear_model.LinearRegression", model_params={})
+    out = raw(
+        request=ForecastGenerateRequest(
+            symbol="EURUSD",
+            library="mlforecast",
+            model="sklearn.linear_model.LinearRegression",
+            model_params={},
+        )
+    )
     assert out["ok"] is True
     assert captured["method"] == "mlforecast"
     assert captured["params"]["model"] == "sklearn.linear_model.LinearRegression"
 
-    out = raw(symbol="EURUSD", library="unsupported", model="x")
-    assert out["error"] == "Unsupported library: unsupported"
+    with pytest.raises(Exception):
+        ForecastGenerateRequest(symbol="EURUSD", library="unsupported", model="x")
 
 
 def test_forecast_generate_accepts_legacy_method_for_internal_callers(monkeypatch):
@@ -160,9 +177,8 @@ def test_forecast_generate_accepts_legacy_method_for_internal_callers(monkeypatc
         return {"ok": True, "method": kwargs["method"]}
 
     monkeypatch.setattr(cf, "_forecast_impl", fake_forecast_impl)
-    monkeypatch.setattr(cf, "_parse_kv_or_json", lambda v: dict(v or {}))
 
-    out = raw(symbol="EURUSD", method="sf_theta", model="theta", library="native")
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", method="sf_theta", model="theta", library="native"))
 
     assert out["ok"] is True
     assert captured["method"] == "sf_theta"
@@ -175,9 +191,8 @@ def test_forecast_generate_native_theta_adds_disambiguation_warning(monkeypatch)
         return {"ok": True, "method": kwargs["method"]}
 
     monkeypatch.setattr(cf, "_forecast_impl", fake_forecast_impl)
-    monkeypatch.setattr(cf, "_parse_kv_or_json", lambda v: dict(v or {}))
 
-    out = raw(symbol="BTCUSD", timeframe="H1", library="native", model="theta", horizon=12)
+    out = raw(request=ForecastGenerateRequest(symbol="BTCUSD", timeframe="H1", library="native", model="theta", horizon=12))
 
     assert out["ok"] is True
     assert any("StatsForecast theta is available" in str(w) for w in out.get("warnings", []))
@@ -187,9 +202,8 @@ def test_forecast_generate_converts_typed_forecast_errors(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
 
     monkeypatch.setattr(cf, "_forecast_impl", lambda **kwargs: (_ for _ in ()).throw(ForecastError("engine exploded")))
-    monkeypatch.setattr(cf, "_parse_kv_or_json", lambda v: dict(v or {}))
 
-    out = raw(symbol="EURUSD", library="native", model="theta")
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", model="theta"))
 
     assert out["error"] == "engine exploded"
 
