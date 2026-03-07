@@ -324,7 +324,7 @@ class TestCausalDiscoverSignals:
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")
-    def test_success_returns_structured_payload(self, mock_fetch, mock_granger):
+    def test_success_returns_structured_payload(self, mock_fetch, mock_granger, caplog):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         base = np.linspace(1.0, 2.0, 80)
         series_map = {
@@ -345,7 +345,10 @@ class TestCausalDiscoverSignals:
 
         mock_granger.side_effect = _granger_side_effect
 
-        with warnings.catch_warnings(record=True) as records:
+        with warnings.catch_warnings(record=True) as records, caplog.at_level(
+            "INFO",
+            logger="mtdata.core.causal",
+        ):
             warnings.simplefilter("always")
             result = self._unwrapped()("A,B", max_lag=2, transform="diff", normalize=False)
 
@@ -357,3 +360,7 @@ class TestCausalDiscoverSignals:
         assert "summary_text" in result["data"]
         assert result["meta"]["pairs_tested"] >= 1
         assert not any("verbose" in str(w.message).lower() for w in records)
+        assert any(
+            "event=finish operation=causal_discover_signals success=True" in record.message
+            for record in caplog.records
+        )

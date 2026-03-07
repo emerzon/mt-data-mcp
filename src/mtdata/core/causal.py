@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import logging
 import time
 import warnings
 from datetime import datetime, timezone
@@ -13,6 +14,7 @@ import numpy as np
 
 from ._mcp_instance import mcp
 from .constants import TIMEFRAME_MAP
+from .execution_logging import infer_result_success, log_operation_finish, log_operation_start
 from .mt5_gateway import create_mt5_gateway
 from ..utils.mt5 import (
     MT5ConnectionError,
@@ -22,6 +24,8 @@ from ..utils.mt5 import (
     mt5,
 )
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
+
+logger = logging.getLogger(__name__)
 
 
 def _causal_connection_error() -> Dict[str, Any] | None:
@@ -272,9 +276,32 @@ def causal_discover_signals(
         transform: Preprocessing transform: "log_return", "pct", "diff", or "level".
         normalize: Z-score columns before testing to stabilise scale.
     """
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="causal_discover_signals",
+        symbols=symbols,
+        timeframe=timeframe,
+        limit=limit,
+        max_lag=max_lag,
+    )
+
+    def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="causal_discover_signals",
+            started_at=started_at,
+            success=infer_result_success(result),
+            symbols=symbols,
+            timeframe=timeframe,
+            limit=limit,
+            max_lag=max_lag,
+        )
+        return result
+
     connection_error = _causal_connection_error()
     if connection_error is not None:
-        return connection_error
+        return _finish(connection_error)
     mt5_gateway = _get_mt5_gateway()
     meta: Dict[str, Any] = {
         "timeframe": str(timeframe),
@@ -288,54 +315,54 @@ def causal_discover_signals(
     try:
         from statsmodels.tsa.stattools import grangercausalitytests
     except Exception:
-        return _causal_error(
+        return _finish(_causal_error(
             "statsmodels is required for causal discovery. Please install 'statsmodels'.",
             code="dependency_missing",
             meta=meta,
-        )
+        ))
 
     symbol_list = _parse_symbols(symbols)
     meta["symbols_input"] = list(symbol_list)
     group_hint: str | None = None
     if not symbol_list:
-        return _causal_error(
+        return _finish(_causal_error(
             "Provide at least one symbol for causal discovery (e.g. 'EURUSD' or 'EURUSD,GBPUSD').",
             code="invalid_input",
             meta=meta,
-        )
+        ))
     if len(symbol_list) == 1:
         expanded, err, group_path = _expand_symbols_for_group(symbol_list[0], gateway=mt5_gateway)
         if err:
-            return _causal_error(
+            return _finish(_causal_error(
                 err,
                 code="symbol_group_error",
                 meta=meta,
-            )
+            ))
         symbol_list = expanded
         group_hint = group_path
 
     if len(symbol_list) < 2:
-        return _causal_error(
+        return _finish(_causal_error(
             "Provide at least two symbols for causal discovery (e.g. 'EURUSD,GBPUSD').",
             code="invalid_input",
             meta=meta,
-        )
+        ))
 
     tf = TIMEFRAME_MAP.get(timeframe)
     if tf is None:
         valid = ", ".join(sorted(TIMEFRAME_MAP.keys()))
-        return _causal_error(
+        return _finish(_causal_error(
             f"Invalid timeframe '{timeframe}'. Valid options: {valid}",
             code="invalid_timeframe",
             meta=meta,
-        )
+        ))
 
     if max_lag < 1:
-        return _causal_error(
+        return _finish(_causal_error(
             "max_lag must be at least 1.",
             code="invalid_input",
             meta=meta,
-        )
+        ))
 
     fetch_count = max(limit + max_lag + 10, 200)
     meta["fetch_count"] = int(fetch_count)
@@ -349,12 +376,12 @@ def causal_discover_signals(
             series_map[symbol] = series
 
     if errors and not series_map:
-        return _causal_error(
+        return _finish(_causal_error(
             errors[0],
             code="data_fetch_failed",
             meta=meta,
             details=errors,
-        )
+        ))
     warnings_out: List[str] = []
     if errors:
         # Note missing symbols but continue with others
@@ -362,12 +389,12 @@ def causal_discover_signals(
         symbol_list = [s for s in symbol_list if s in series_map]
 
     if len(series_map) < 2:
-        return _causal_error(
+        return _finish(_causal_error(
             "Not enough valid symbol data fetched to run causal discovery.",
             code="insufficient_symbols",
             meta=meta,
             warnings=warnings_out,
-        )
+        ))
 
     symbol_rows: Dict[str, int] = {
         str(sym): int(len(series_map.get(sym, pd.Series(dtype=float))))
@@ -406,13 +433,13 @@ def causal_discover_signals(
             align_summary = _format_alignment_detail_summary(alignment_detail)
             if align_summary:
                 details_out.append(align_summary)
-        return _causal_error(
+        return _finish(_causal_error(
             "Insufficient overlapping data between symbols to run tests.",
             code="insufficient_overlap",
             meta=meta,
             warnings=warnings_out,
             details=details_out,
-        )
+        ))
 
     frame = frame.dropna(how="any")
     meta["samples_aligned_clean"] = int(len(frame))
@@ -428,33 +455,33 @@ def causal_discover_signals(
             align_summary = _format_alignment_detail_summary(alignment_detail)
             if align_summary:
                 details_out.append(align_summary)
-        return _causal_error(
+        return _finish(_causal_error(
             "Insufficient clean samples after alignment.",
             code="insufficient_samples",
             meta=meta,
             warnings=warnings_out,
             details=details_out,
-        )
+        ))
 
     transformed = _transform_frame(frame, transform)
     if transformed.empty or len(transformed) <= max_lag + 2:
-        return _causal_error(
+        return _finish(_causal_error(
             "Transform produced insufficient samples for testing. Try using more history or a different transform.",
             code="insufficient_samples",
             meta=meta,
             warnings=warnings_out,
-        )
+        ))
 
     if normalize:
         transformed = _standardize_frame(transformed)
         transformed = transformed.dropna(how="any")
         if transformed.empty or len(transformed) <= max_lag + 2:
-            return _causal_error(
+            return _finish(_causal_error(
                 "Normalization resulted in insufficient samples.",
                 code="insufficient_samples",
                 meta=meta,
                 warnings=warnings_out,
-            )  # rare but possible
+            ))  # rare but possible
 
     rows: List[Dict[str, object]] = []
     pair_attempts = 0
@@ -517,4 +544,4 @@ def causal_discover_signals(
         out["warnings"] = warnings_out
     if not rows_sorted:
         out["message"] = "No causal relationships detected (insufficient data or all tests failed)."
-    return out
+    return _finish(out)
