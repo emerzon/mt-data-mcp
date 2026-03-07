@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, List, Literal
+from typing import Any, Dict, Optional, List, Literal, Tuple
 
 from .schema import TimeframeLiteral, DenoiseSpec, ForecastMethodLiteral
 from ._mcp_instance import mcp
@@ -31,21 +31,31 @@ from ..forecast.volatility import forecast_volatility as _forecast_volatility_im
 from ..forecast.forecast import get_forecast_methods_data as _get_forecast_methods_data
 from ..forecast.tune import genetic_search_forecast_params as _genetic_search_impl
 from ..forecast.tune import optuna_search_forecast_params as _optuna_search_impl
-from ..utils.mt5 import _auto_connect_wrapper
+from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import (
     build_barrier_kwargs_from as _build_barrier_kwargs_from,
     normalize_trade_direction as _normalize_trade_direction,
 )
 
+
+def _forecast_connection_error() -> Optional[Dict[str, Any]]:
+    try:
+        ensure_mt5_connection_or_raise()
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
+    return None
+
 @mcp.tool()
-@_auto_connect_wrapper
 def forecast_generate(request: ForecastGenerateRequest) -> Dict[str, Any]:
     """Generate forecasts for the next `horizon` bars using a selected model.
 
     Supports native or library-backed models with optional preprocessing.
     Delegates to `mtdata.forecast.forecast`.
     """
+    connection_error = _forecast_connection_error()
+    if connection_error is not None:
+        return connection_error
     try:
         return run_forecast_generate(
             request,
@@ -170,18 +180,22 @@ def forecast_list_library_models(
 
 
 @mcp.tool()
-@_auto_connect_wrapper
 def forecast_backtest_run(request: ForecastBacktestRequest) -> Dict[str, Any]:
     """Rolling-origin backtest over historical anchors using the forecast tool."""
+    connection_error = _forecast_connection_error()
+    if connection_error is not None:
+        return connection_error
     return run_forecast_backtest(request, backtest_impl=_forecast_backtest_impl)
 
 
 @mcp.tool()
-@_auto_connect_wrapper
 def forecast_volatility_estimate(
     request: ForecastVolatilityEstimateRequest,
 ) -> Dict[str, Any]:
     """Forecast volatility over `horizon` bars using direct estimators or proxies."""
+    connection_error = _forecast_connection_error()
+    if connection_error is not None:
+        return connection_error
     return run_forecast_volatility_estimate(
         request,
         forecast_volatility_impl=_forecast_volatility_impl,
@@ -189,7 +203,6 @@ def forecast_volatility_estimate(
 
 
 @mcp.tool()
-@_auto_connect_wrapper
 def forecast_list_methods(
     detail: Literal["compact", "full"] = "compact",  # type: ignore
     limit: Optional[int] = None,
@@ -377,13 +390,15 @@ def forecast_list_methods(
 
 
 @mcp.tool()
-@_auto_connect_wrapper
 def forecast_conformal_intervals(request: ForecastConformalIntervalsRequest) -> Dict[str, Any]:
     """Conformalized forecast intervals via rolling-origin calibration.
 
     - Calibrates per-step absolute residual quantiles using `steps` historical anchors (spaced by `spacing`).
     - Returns point forecast (from `method`) and conformal bands per step.
     """
+    connection_error = _forecast_connection_error()
+    if connection_error is not None:
+        return connection_error
     try:
         return run_forecast_conformal_intervals(
             request,
@@ -397,7 +412,6 @@ def forecast_conformal_intervals(request: ForecastConformalIntervalsRequest) -> 
 
 
 @mcp.tool()
-@_auto_connect_wrapper
 def forecast_tune_genetic(request: ForecastTuneGeneticRequest) -> Dict[str, Any]:
     """Genetic search over method params to optimize a backtest metric.
 
@@ -405,6 +419,9 @@ def forecast_tune_genetic(request: ForecastTuneGeneticRequest) -> Dict[str, Any]
     - metric: e.g., 'avg_rmse', 'avg_mae', 'avg_directional_accuracy'
     - mode: 'min' or 'max'
     """
+    connection_error = _forecast_connection_error()
+    if connection_error is not None:
+        return connection_error
     try:
         return run_forecast_tune_genetic(
             request,
@@ -415,9 +432,11 @@ def forecast_tune_genetic(request: ForecastTuneGeneticRequest) -> Dict[str, Any]
 
 
 @mcp.tool()
-@_auto_connect_wrapper
 def forecast_tune_optuna(request: ForecastTuneOptunaRequest) -> Dict[str, Any]:
     """Optuna search over method params to optimize a backtest metric."""
+    connection_error = _forecast_connection_error()
+    if connection_error is not None:
+        return connection_error
     try:
         return run_forecast_tune_optuna(
             request,
@@ -512,7 +531,6 @@ def forecast_quantlib_heston_calibrate(
 
 
 @mcp.tool()
-@_auto_connect_wrapper
 def forecast_barrier_prob(
     request: ForecastBarrierProbRequest,
 ) -> Dict[str, Any]:
@@ -623,6 +641,9 @@ def forecast_barrier_prob(
         barrier=1.2700
     )
     """
+    connection_error = _forecast_connection_error()
+    if connection_error is not None:
+        return connection_error
     from ..forecast.barriers import (
         forecast_barrier_closed_form as _barrier_closed_form_impl,
         forecast_barrier_hit_probabilities as _barrier_hit_probabilities_impl,
@@ -638,11 +659,13 @@ def forecast_barrier_prob(
 
 
 @mcp.tool()
-@_auto_connect_wrapper
 def forecast_barrier_optimize(
     request: ForecastBarrierOptimizeRequest,
 ) -> Dict[str, Any]:
     """Optimize TP/SL barriers with support for presets, volatility scaling, ratios, and two-stage refinement."""
+    connection_error = _forecast_connection_error()
+    if connection_error is not None:
+        return connection_error
     from ..forecast.barriers import forecast_barrier_optimize as _barrier_optimize_impl
 
     return run_forecast_barrier_optimize(

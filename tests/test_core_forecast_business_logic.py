@@ -18,6 +18,7 @@ from mtdata.forecast.requests import (
     ForecastTuneGeneticRequest,
     ForecastTuneOptunaRequest,
 )
+from mtdata.utils.mt5 import MT5ConnectionError
 
 
 def _unwrap(fn):
@@ -25,6 +26,11 @@ def _unwrap(fn):
     while hasattr(current, "__wrapped__"):
         current = current.__wrapped__
     return current
+
+
+@pytest.fixture(autouse=True)
+def _skip_mt5_connection(monkeypatch):
+    monkeypatch.setattr(cf, "ensure_mt5_connection_or_raise", lambda: None)
 
 
 def test_normalize_forecaster_name_and_resolve_variants(monkeypatch):
@@ -215,6 +221,20 @@ def test_forecast_generate_converts_typed_forecast_errors(monkeypatch):
     assert out["error"] == "engine exploded"
 
 
+def test_forecast_generate_returns_connection_error_payload(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+
+    def fail_connection():
+        raise MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running.")
+
+    monkeypatch.setattr(cf, "ensure_mt5_connection_or_raise", fail_connection)
+    monkeypatch.setattr(cf, "_forecast_impl", lambda **kwargs: pytest.fail("forecast implementation should not run"))
+
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", model="theta"))
+
+    assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
+
+
 def test_forecast_list_library_models_and_list_methods(monkeypatch):
     stats_mod = ModuleType("statsforecast")
     models_mod = ModuleType("statsforecast.models")
@@ -338,6 +358,22 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert _unwrap(cf.forecast_list_methods)() == {"methods": [1]}
     monkeypatch.setattr(cf, "_get_forecast_methods_data", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
     assert "Error listing forecast methods" in _unwrap(cf.forecast_list_methods)()["error"]
+
+
+def test_forecast_list_methods_does_not_require_mt5_connection(monkeypatch):
+    def fail_connection():
+        raise MT5ConnectionError("should not be called")
+
+    monkeypatch.setattr(cf, "ensure_mt5_connection_or_raise", fail_connection)
+    monkeypatch.setattr(
+        cf,
+        "_get_forecast_methods_data",
+        lambda: {"total": 1, "categories": {}, "methods": [{"method": "theta", "available": True}]},
+    )
+
+    out = _unwrap(cf.forecast_list_methods)()
+
+    assert out["methods"][0]["method"] == "theta"
 
 
 def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
@@ -613,3 +649,16 @@ def test_forecast_barrier_optimize_applies_default_optuna_config(monkeypatch):
     assert called["params"]["pruner"] == "median"
     assert int(called["params"]["n_jobs"]) >= 1
     assert called["params"]["seed"] == 42
+
+
+def test_forecast_barrier_optimize_returns_connection_error_payload(monkeypatch):
+    raw_opt = _unwrap(cf.forecast_barrier_optimize)
+
+    def fail_connection():
+        raise MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running.")
+
+    monkeypatch.setattr(cf, "ensure_mt5_connection_or_raise", fail_connection)
+
+    out = raw_opt(request=ForecastBarrierOptimizeRequest(symbol="EURUSD"))
+
+    assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
