@@ -4,6 +4,7 @@ import sys
 import math
 
 from src.mtdata.core.trading import _place_market_order, _place_pending_order
+from src.mtdata.core.trading_gateway import MT5TradingGateway
 
 
 @pytest.fixture
@@ -320,3 +321,68 @@ def test_place_market_order_blocks_on_trade_preflight(mock_mt5):
     assert res["preflight"]["execution_ready_strict"] is False
     assert "Terminal AutoTrading is disabled." in res["preflight"]["execution_blockers"]
     mock_mt5.order_send.assert_not_called()
+
+
+def test_place_market_order_accepts_injected_gateway():
+    adapter = MagicMock()
+    adapter.symbol_info.return_value = MagicMock(
+        visible=True,
+        point=0.00001,
+        digits=5,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+    )
+    adapter.symbol_info_tick.side_effect = [
+        MagicMock(bid=1.05000, ask=1.05010),
+        MagicMock(bid=1.05000, ask=1.05010),
+    ]
+    adapter.positions_get.return_value = [MagicMock(sl=1.04000, tp=1.06000)]
+    adapter.order_send.side_effect = [
+        MagicMock(
+            retcode=10009,
+            deal=123,
+            order=456,
+            volume=0.1,
+            price=1.05010,
+            bid=1.05000,
+            ask=1.05010,
+            comment="",
+            request_id=789,
+        ),
+        MagicMock(retcode=10009, comment="", request_id=790),
+    ]
+    adapter.ORDER_TYPE_BUY = 0
+    adapter.ORDER_TYPE_SELL = 1
+    adapter.TRADE_ACTION_DEAL = 1
+    adapter.TRADE_ACTION_SLTP = 6
+    adapter.TRADE_RETCODE_DONE = 10009
+    adapter.ORDER_TIME_GTC = 0
+    adapter.ORDER_FILLING_IOC = 1
+    ensure_connection = MagicMock()
+    gateway = MT5TradingGateway(
+        adapter=adapter,
+        ensure_connection_impl=ensure_connection,
+        build_trade_preflight_impl=lambda mt5, **_: {
+            "execution_ready": True,
+            "execution_ready_strict": True,
+        },
+        retcode_name_impl=lambda mt5, retcode: "TRADE_RETCODE_DONE",
+    )
+
+    with patch(
+        "src.mtdata.core.trading_orders._resolve_open_position",
+        return_value=(MagicMock(sl=0.0, tp=0.0), 456, {}),
+    ):
+        res = _place_market_order(
+            symbol="EURUSD",
+            volume=0.1,
+            order_type="BUY",
+            stop_loss=1.04000,
+            take_profit=1.06000,
+            gateway=gateway,
+        )
+
+    assert "error" not in res
+    ensure_connection.assert_called_once_with()
+    assert adapter.order_send.call_count == 2

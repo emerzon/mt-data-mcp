@@ -7,18 +7,31 @@ from typing import Optional, Union, List, Dict, Any
 from . import trading_comments, trading_time, trading_validation
 from .trading_common import _build_trade_preflight, _retcode_name
 from .trading_execution import _modify_position
+from .trading_gateway import MT5TradingGateway
 from .trading_positions import _resolve_open_position
 from .trading_time import ExpirationValue
 from .trading_validation import MarketOrderTypeInput, OrderTypeInput
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5_adapter
 
 
-def _trading_connection_error() -> Optional[Dict[str, Any]]:
+def _get_trading_gateway(gateway: Optional[MT5TradingGateway] = None) -> MT5TradingGateway:
+    if gateway is not None:
+        return gateway
+    return MT5TradingGateway(
+        adapter=mt5_adapter,
+        ensure_connection_impl=ensure_mt5_connection_or_raise,
+        build_trade_preflight_impl=_build_trade_preflight,
+        retcode_name_impl=_retcode_name,
+    )
+
+
+def _trading_connection_error(gateway: Optional[MT5TradingGateway] = None) -> Optional[Dict[str, Any]]:
     try:
-        ensure_mt5_connection_or_raise()
+        _get_trading_gateway(gateway).ensure_connection()
     except MT5ConnectionError as exc:
         return {"error": str(exc)}
     return None
+
 
 def _place_market_order(
     symbol: str,
@@ -28,17 +41,18 @@ def _place_market_order(
     take_profit: Optional[Union[int, float]] = None,
     comment: Optional[str] = None,
     deviation: int = 20,
+    gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Internal helper to place a market order."""
-    mt5 = mt5_adapter
+    mt5 = _get_trading_gateway(gateway)
 
-    connection_error = _trading_connection_error()
+    connection_error = _trading_connection_error(mt5)
     if connection_error is not None:
         return connection_error
 
     def _place_market_order():
         try:
-            preflight = _build_trade_preflight(mt5)
+            preflight = mt5.build_trade_preflight()
             if not preflight.get("execution_ready_strict", preflight.get("execution_ready", True)):
                 return {
                     "error": "Trading not ready in MT5 terminal/account preflight.",
@@ -151,7 +165,7 @@ def _place_market_order(
                 return {
                     "error": "Failed to send order",
                     "retcode": result.retcode,
-                    "retcode_name": _retcode_name(mt5, result.retcode),
+                    "retcode_name": mt5.retcode_name(result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
                     "request": request,
@@ -291,6 +305,7 @@ def _place_market_order(
                                         stop_loss=norm_sl,
                                         take_profit=norm_tp,
                                         comment=comment,
+                                        gateway=mt5,
                                     )
                                 except Exception as ex:
                                     fallback_out = {"error": f"Fallback modify call failed: {str(ex)}"}
@@ -373,7 +388,7 @@ def _place_market_order(
 
             out: Dict[str, Any] = {
                 "retcode": result.retcode,
-                "retcode_name": _retcode_name(mt5, result.retcode),
+                "retcode_name": mt5.retcode_name(result.retcode),
                 "deal": result.deal,
                 "order": result.order,
                 "volume": result.volume,
@@ -432,17 +447,18 @@ def _place_pending_order(
     expiration: Optional[ExpirationValue] = None,
     comment: Optional[str] = None,
     deviation: int = 20,
+    gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Internal helper to place a pending order."""
-    mt5 = mt5_adapter
+    mt5 = _get_trading_gateway(gateway)
 
-    connection_error = _trading_connection_error()
+    connection_error = _trading_connection_error(mt5)
     if connection_error is not None:
         return connection_error
 
     def _place_pending_order():
         try:
-            preflight = _build_trade_preflight(mt5)
+            preflight = mt5.build_trade_preflight()
             if not preflight.get("execution_ready_strict", preflight.get("execution_ready", True)):
                 return {
                     "error": "Trading not ready in MT5 terminal/account preflight.",
@@ -582,7 +598,7 @@ def _place_pending_order(
                 return {
                     "error": "Failed to send pending order",
                     "retcode": result.retcode,
-                    "retcode_name": _retcode_name(mt5, result.retcode),
+                    "retcode_name": mt5.retcode_name(result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
                     "request": request,
@@ -592,7 +608,7 @@ def _place_pending_order(
             out: Dict[str, Any] = {
                 "success": True,
                 "retcode": result.retcode,
-                "retcode_name": _retcode_name(mt5, result.retcode),
+                "retcode_name": mt5.retcode_name(result.retcode),
                 "deal": result.deal,
                 "order": result.order,
                 "volume": result.volume,

@@ -7,28 +7,41 @@ from typing import Optional, Union, List, Dict, Any
 
 from . import trading_comments, trading_time, trading_validation
 from .trading_common import _retcode_name
+from .trading_gateway import MT5TradingGateway
 from .trading_positions import _resolve_open_position
 from .trading_time import ExpirationValue
 from ..utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc, ensure_mt5_connection_or_raise, mt5_adapter
 
 
-def _trading_connection_error() -> Optional[Dict[str, Any]]:
+def _get_trading_gateway(gateway: Optional[MT5TradingGateway] = None) -> MT5TradingGateway:
+    if gateway is not None:
+        return gateway
+    return MT5TradingGateway(
+        adapter=mt5_adapter,
+        ensure_connection_impl=ensure_mt5_connection_or_raise,
+        retcode_name_impl=_retcode_name,
+    )
+
+
+def _trading_connection_error(gateway: Optional[MT5TradingGateway] = None) -> Optional[Dict[str, Any]]:
     try:
-        ensure_mt5_connection_or_raise()
+        _get_trading_gateway(gateway).ensure_connection()
     except MT5ConnectionError as exc:
         return {"error": str(exc)}
     return None
+
 
 def _modify_position(
     ticket: Union[int, str],
     stop_loss: Optional[Union[int, float]] = None,
     take_profit: Optional[Union[int, float]] = None,
     comment: Optional[str] = None,
+    gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Internal helper to modify a position by ticket."""
-    mt5 = mt5_adapter
+    mt5 = _get_trading_gateway(gateway)
 
-    connection_error = _trading_connection_error()
+    connection_error = _trading_connection_error(mt5)
     if connection_error is not None:
         return connection_error
 
@@ -99,7 +112,7 @@ def _modify_position(
                 return {
                     "error": "Failed to modify position",
                     "retcode": result.retcode,
-                    "retcode_name": _retcode_name(mt5, result.retcode),
+                    "retcode_name": mt5.retcode_name(result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
                     "request": request,
@@ -109,7 +122,7 @@ def _modify_position(
             return {
                 "success": True,
                 "retcode": result.retcode,
-                "retcode_name": _retcode_name(mt5, result.retcode),
+                "retcode_name": mt5.retcode_name(result.retcode),
                 "deal": result.deal,
                 "order": result.order,
                 "comment": result.comment,
@@ -134,11 +147,12 @@ def _modify_pending_order(
     take_profit: Optional[Union[int, float]] = None,
     expiration: Optional[ExpirationValue] = None,
     comment: Optional[str] = None,
+    gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Internal helper to modify a pending order by ticket."""
-    mt5 = mt5_adapter
+    mt5 = _get_trading_gateway(gateway)
 
-    connection_error = _trading_connection_error()
+    connection_error = _trading_connection_error(mt5)
     if connection_error is not None:
         return connection_error
 
@@ -193,7 +207,7 @@ def _modify_pending_order(
                 return {
                     "error": "Failed to modify pending order",
                     "retcode": result.retcode,
-                    "retcode_name": _retcode_name(mt5, result.retcode),
+                    "retcode_name": mt5.retcode_name(result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
                     "request": request,
@@ -203,7 +217,7 @@ def _modify_pending_order(
             return {
                 "success": True,
                 "retcode": result.retcode,
-                "retcode_name": _retcode_name(mt5, result.retcode),
+                "retcode_name": mt5.retcode_name(result.retcode),
                 "deal": result.deal,
                 "order": result.order,
                 "comment": result.comment,
@@ -227,11 +241,12 @@ def _close_positions(
     loss_only: bool = False,
     comment: Optional[str] = None,
     deviation: int = 20,
+    gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Internal helper to close open positions."""
-    mt5 = mt5_adapter
+    mt5 = _get_trading_gateway(gateway)
 
-    connection_error = _trading_connection_error()
+    connection_error = _trading_connection_error(mt5)
     if connection_error is not None:
         return connection_error
 
@@ -377,7 +392,7 @@ def _close_positions(
                                     {
                                         "type_filling": int(fill_mode),
                                         "retcode": getattr(alt_res, "retcode", None),
-                                        "retcode_name": _retcode_name(mt5, getattr(alt_res, "retcode", None)),
+                                        "retcode_name": mt5.retcode_name(getattr(alt_res, "retcode", None)),
                                         "comment": getattr(alt_res, "comment", None),
                                         "comment_fallback": True,
                                     }
@@ -410,7 +425,7 @@ def _close_positions(
                         {
                             "type_filling": int(fill_mode),
                             "retcode": retcode_val,
-                            "retcode_name": _retcode_name(mt5, retcode_val),
+                            "retcode_name": mt5.retcode_name(retcode_val),
                             "comment": getattr(result, "comment", None),
                         }
                     )
@@ -501,7 +516,7 @@ def _close_positions(
                     res_dict = {
                         "ticket": position.ticket,
                         "retcode": result.retcode,
-                        "retcode_name": _retcode_name(mt5, result.retcode),
+                        "retcode_name": mt5.retcode_name(result.retcode),
                         "deal": result.deal,
                         "order": result.order,
                         "volume": result.volume,
@@ -538,11 +553,12 @@ def _cancel_pending(
     ticket: Optional[Union[int, str]] = None,
     symbol: Optional[str] = None,
     comment: Optional[str] = None,
+    gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Internal helper to cancel pending orders."""
-    mt5 = mt5_adapter
+    mt5 = _get_trading_gateway(gateway)
 
-    connection_error = _trading_connection_error()
+    connection_error = _trading_connection_error(mt5)
     if connection_error is not None:
         return connection_error
 
@@ -580,7 +596,7 @@ def _cancel_pending(
                     results.append({
                         "ticket": order.ticket,
                         "retcode": result.retcode,
-                        "retcode_name": _retcode_name(mt5, result.retcode),
+                        "retcode_name": mt5.retcode_name(result.retcode),
                         "deal": result.deal,
                         "order": result.order,
                         "comment": result.comment,
