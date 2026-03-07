@@ -6,6 +6,7 @@ import pytest
 import warnings
 from unittest.mock import patch, MagicMock
 from typing import Any, Dict, List
+from mtdata.utils.mt5 import MT5ConnectionError
 
 
 # ---------------------------------------------------------------------------
@@ -23,9 +24,11 @@ def _get_report_generate():
     raw = _unwrap(report_generate)
 
     def _call(symbol, **kwargs):
+        from mtdata.core import report as report_mod
         from mtdata.core.report_requests import ReportGenerateRequest
 
-        return raw(request=ReportGenerateRequest(symbol=symbol, **kwargs))
+        with patch.object(report_mod, "ensure_mt5_connection_or_raise", return_value=None):
+            return raw(request=ReportGenerateRequest(symbol=symbol, **kwargs))
 
     return _call
 
@@ -38,6 +41,21 @@ def _make_report(sections=None, error=None):
     if sections is not None:
         rep["sections"] = sections
     return rep
+
+
+def test_report_generate_returns_connection_error_payload(monkeypatch):
+    from mtdata.core import report as report_mod
+
+    raw = _unwrap(report_mod.report_generate)
+
+    def fail_connection():
+        raise MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running.")
+
+    monkeypatch.setattr(report_mod, "ensure_mt5_connection_or_raise", fail_connection)
+
+    out = raw(request=report_mod.ReportGenerateRequest(symbol="EURUSD"))
+
+    assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
 
 
 def _make_full_sections():

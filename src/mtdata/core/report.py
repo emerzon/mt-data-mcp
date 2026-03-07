@@ -4,7 +4,7 @@ from ._mcp_instance import mcp
 from .report_requests import ReportGenerateRequest
 from .report_use_cases import run_report_generate
 from .report_utils import render_enhanced_report, format_number, _get_indicator_value
-from ..utils.mt5 import _auto_connect_wrapper
+from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 
 
 def _report_error_text(message: Any) -> str:
@@ -19,6 +19,14 @@ def _report_error_payload(message: Any) -> Dict[str, Any]:
     if not text:
         text = 'Unknown error.'
     return {"error": text}
+
+
+def _report_connection_error() -> Dict[str, Any] | None:
+    try:
+        ensure_mt5_connection_or_raise()
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
+    return None
 
 
 def _append_diagnostic_warning(report: Dict[str, Any], message: str) -> None:
@@ -38,7 +46,6 @@ def _append_diagnostic_warning(report: Dict[str, Any], message: str) -> None:
 
 
 @mcp.tool()
-@_auto_connect_wrapper
 def report_generate(
     request: ReportGenerateRequest,
 ) -> Union[str, Dict[str, Any]]:
@@ -48,9 +55,12 @@ def report_generate(
                 'advanced' (adds regimes, HAR-RV, conformal),
                 or style-specific ('scalping' | 'intraday' | 'swing' | 'position').
     - params: optional dict to tune steps/spacing, grids, and optionally override timeframe per template via 'timeframe' or methods via 'methods'.
-    - denoise: pass-through to candle fetching (e.g., {method:'ema', params:{alpha:0.2}, columns:['close']}).
+    - denoise: pass-through to candle fetching (e.g., {method:'ema', params:{alpha:0.2}, columns:['close']}).  
     - output: 'toon' (structured TOON) or 'markdown' (rendered report text).
     """
+    connection_error = _report_connection_error()
+    if connection_error is not None:
+        return connection_error
     return run_report_generate(
         request,
         render_report=render_enhanced_report,
