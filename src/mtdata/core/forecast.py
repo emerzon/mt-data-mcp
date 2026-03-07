@@ -13,6 +13,7 @@ from ..forecast.requests import (
     ForecastGenerateRequest,
     ForecastTuneGeneticRequest,
     ForecastTuneOptunaRequest,
+    ForecastVolatilityEstimateRequest,
 )
 from ..forecast.use_cases import (
     _discover_sktime_forecasters,
@@ -24,6 +25,7 @@ from ..forecast.use_cases import (
     run_forecast_generate,
     run_forecast_tune_genetic,
     run_forecast_tune_optuna,
+    run_forecast_volatility_estimate,
 )
 from ..forecast.volatility import forecast_volatility as _forecast_volatility_impl
 from ..forecast.forecast import get_forecast_methods_data as _get_forecast_methods_data
@@ -177,25 +179,12 @@ def forecast_backtest_run(request: ForecastBacktestRequest) -> Dict[str, Any]:
 @mcp.tool()
 @_auto_connect_wrapper
 def forecast_volatility_estimate(
-    symbol: str,
-    timeframe: TimeframeLiteral = "H1",
-    horizon: int = 1,
-    method: Literal['ewma','parkinson','gk','rs','yang_zhang','rolling_std','realized_kernel','har_rv','garch','egarch','gjr_garch','garch_t','egarch_t','gjr_garch_t','figarch','arima','sarima','ets','theta'] = 'ewma',  # type: ignore
-    proxy: Optional[Literal['squared_return','abs_return','log_r2']] = None,  # type: ignore
-    params: Optional[Dict[str, Any]] = None,
-    as_of: Optional[str] = None,
-    denoise: Optional[DenoiseSpec] = None,
+    request: ForecastVolatilityEstimateRequest,
 ) -> Dict[str, Any]:
     """Forecast volatility over `horizon` bars using direct estimators or proxies."""
-    return _forecast_volatility_impl(
-        symbol=symbol,
-        timeframe=timeframe,  # type: ignore[arg-type]
-        horizon=horizon,
-        method=method,        # type: ignore[arg-type]
-        proxy=proxy,          # type: ignore[arg-type]
-        params=params,
-        as_of=as_of,
-        denoise=denoise,
+    return run_forecast_volatility_estimate(
+        request,
+        forecast_volatility_impl=_forecast_volatility_impl,
     )
 
 

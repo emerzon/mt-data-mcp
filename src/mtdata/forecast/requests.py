@@ -168,3 +168,14 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     max_median_time: Optional[float] = None
     fast_defaults: bool = False
     search_profile: str = "long"
+
+
+class ForecastVolatilityEstimateRequest(BaseModel):
+    symbol: str
+    timeframe: TimeframeLiteral = "H1"
+    horizon: int = Field(1, ge=1)
+    method: str = "ewma"
+    proxy: Optional[str] = None
+    params: Optional[Dict[str, Any]] = None
+    as_of: Optional[str] = None
+    denoise: Optional[DenoiseSpec] = None

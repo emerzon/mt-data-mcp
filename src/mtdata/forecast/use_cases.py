@@ -18,6 +18,7 @@ from .requests import (
     ForecastGenerateRequest,
     ForecastTuneGeneticRequest,
     ForecastTuneOptunaRequest,
+    ForecastVolatilityEstimateRequest,
 )
 
 
@@ -484,4 +485,21 @@ def run_forecast_barrier_optimize(
         max_median_time=request.max_median_time,
         fast_defaults=request.fast_defaults,
         search_profile=request.search_profile,
+    )
+
+
+def run_forecast_volatility_estimate(
+    request: ForecastVolatilityEstimateRequest,
+    *,
+    forecast_volatility_impl: Any,
+) -> Dict[str, Any]:
+    return forecast_volatility_impl(
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        horizon=request.horizon,
+        method=request.method,
+        proxy=request.proxy,
+        params=request.params,
+        as_of=request.as_of,
+        denoise=request.denoise,
     )
