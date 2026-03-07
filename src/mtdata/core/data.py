@@ -1,27 +1,17 @@
 
-
-from typing import Any, Dict, Optional, List, Literal
-from .schema import TimeframeLiteral, IndicatorSpec, DenoiseSpec, SimplifySpec
-from .constants import DEFAULT_ROW_LIMIT
+from typing import Any, Dict
 from ._mcp_instance import mcp
-from ..utils.mt5 import _auto_connect_wrapper
+from .data_requests import DataFetchCandlesRequest, DataFetchTicksRequest
+from .data_use_cases import run_data_fetch_candles, run_data_fetch_ticks
 from ..services.data_service import fetch_candles, fetch_ticks
+from ..utils.mt5 import ensure_mt5_connection_or_raise
 
 # Explicitly define what should be exported for '*' imports
 __all__ = ['data_fetch_candles', 'data_fetch_ticks']
 
 @mcp.tool()
-@_auto_connect_wrapper
 def data_fetch_candles(
-    symbol: str,
-    timeframe: TimeframeLiteral = "H1",
-    limit: int = DEFAULT_ROW_LIMIT,
-    start: Optional[str] = None,
-    end: Optional[str] = None,
-    ohlcv: Optional[str] = None,
-    indicators: Optional[List[IndicatorSpec]] = None,
-    denoise: Optional[DenoiseSpec] = None,
-    simplify: Optional[SimplifySpec] = None,
+    request: DataFetchCandlesRequest,
 ) -> Dict[str, Any]:
     """Fetch historical candle data with optional technical indicators and denoising.
     
@@ -96,27 +86,15 @@ def data_fetch_candles(
         indicators="rsi(14),ema(20),macd(12,26,9)"
     )
     """
-    return fetch_candles(
-        symbol=symbol,
-        timeframe=timeframe,
-        limit=limit,
-        start=start,
-        end=end,
-        ohlcv=ohlcv,
-        indicators=indicators,
-        denoise=denoise,
-        simplify=simplify
+    return run_data_fetch_candles(
+        request,
+        ensure_connection=ensure_mt5_connection_or_raise,
+        fetch_candles_impl=fetch_candles,
     )
 
 @mcp.tool()
-@_auto_connect_wrapper
 def data_fetch_ticks(
-    symbol: str,
-    limit: int = DEFAULT_ROW_LIMIT,
-    start: Optional[str] = None,
-    end: Optional[str] = None,
-    simplify: Optional[SimplifySpec] = None,
-    output: Literal["summary", "stats", "rows"] = "summary",
+    request: DataFetchTicksRequest,
 ) -> Dict[str, Any]:
     """Fetch tick data for a symbol.
 
@@ -128,11 +106,8 @@ def data_fetch_ticks(
     Use `output="rows"` to return raw tick rows as structured data.
     `simplify` only applies to row output.
     """
-    return fetch_ticks(
-        symbol=symbol,
-        limit=limit,
-        start=start,
-        end=end,
-        simplify=simplify,
-        output=output,
+    return run_data_fetch_ticks(
+        request,
+        ensure_connection=ensure_mt5_connection_or_raise,
+        fetch_ticks_impl=fetch_ticks,
     )
