@@ -9,7 +9,7 @@ import pytest
 # Add src to path to ensure local package is found
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
-from mtdata.core.trading import _normalize_pending_expiration, mt5_config
+from mtdata.core.trading_time import _normalize_pending_expiration, mt5_config
 
 
 def _with_clean_tz_config():

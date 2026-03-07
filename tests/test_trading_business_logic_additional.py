@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from mtdata.core.trading import (
+from mtdata.core.trading_comments import _normalize_trade_comment
+from mtdata.core.trading_time import _server_time_naive_to_mt5_timestamp
+from mtdata.core.trading_validation import (
     _normalize_order_type_input,
-    _normalize_trade_comment,
-    _server_time_naive_to_mt5_timestamp,
     _validate_deviation,
     _validate_volume,
 )

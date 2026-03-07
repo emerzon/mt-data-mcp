@@ -8,474 +8,20 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple, Union, List, Dict, Any, Literal
 
 from ._mcp_instance import mcp
+from . import trading_comments, trading_time, trading_validation
+from .trading_time import ExpirationValue
+from .trading_validation import MarketOrderTypeInput, OrderTypeInput
 from ..utils.mt5 import _auto_connect_wrapper, _mt5_epoch_to_utc, mt5_adapter
 from ..utils.mt5_enums import decode_mt5_enum_label
 from .config import mt5_config
 from .constants import DEFAULT_ROW_LIMIT
 from ..utils.utils import (
-    _coerce_finite_float,
-    _coerce_scalar,
     _format_time_minimal,
     _format_time_minimal_local,
     _normalize_limit,
     _parse_start_datetime,
     _use_client_tz,
 )
-
-
-ExpirationValue = Union[int, float, str, datetime]
-_GTC_EXPIRATION_TOKENS = {"GTC", "GOOD_TILL_CANCEL", "GOOD_TILL_CANCELLED", "NONE", "NO_EXPIRATION"}
-
-MarketOrderTypeLiteral = Literal["BUY", "SELL"]
-OrderTypeLiteral = Literal[
-    "BUY",
-    "SELL",
-    "BUY_LIMIT",
-    "BUY_STOP",
-    "SELL_LIMIT",
-    "SELL_STOP",
-]
-
-MarketOrderTypeInput = Union[MarketOrderTypeLiteral, int, float, str]
-OrderTypeInput = Union[OrderTypeLiteral, int, float, str]
-
-_SUPPORTED_ORDER_TYPES = {
-    "BUY",
-    "SELL",
-    "BUY_LIMIT",
-    "BUY_STOP",
-    "SELL_LIMIT",
-    "SELL_STOP",
-}
-_ORDER_TYPE_NUMERIC_MAP = {
-    0: "BUY",
-    1: "SELL",
-    2: "BUY_LIMIT",
-    3: "SELL_LIMIT",
-    4: "BUY_STOP",
-    5: "SELL_STOP",
-}
-_ORDER_TYPE_ALIASES = {
-    "LONG": "BUY",
-    "SHORT": "SELL",
-}
-_MT5_COMMENT_MAX_LENGTH = 31
-
-
-def _normalize_order_type_input(order_type: Any) -> Tuple[Optional[str], Optional[str]]:
-    """Normalize order_type inputs from MCP clients into canonical MT5 order names."""
-    if order_type is None:
-        return None, "order_type is required."
-
-    value = order_type
-    if isinstance(value, bool):
-        return None, f"Unsupported order_type '{order_type}'."
-
-    if isinstance(value, (int, float)):
-        if not math.isfinite(float(value)):
-            return None, f"Unsupported order_type '{order_type}'."
-        if float(value).is_integer():
-            mapped = _ORDER_TYPE_NUMERIC_MAP.get(int(value))
-            if mapped:
-                return mapped, None
-            return (
-                None,
-                (
-                    f"Unsupported order_type '{order_type}'. "
-                    "Numeric values must match MT5 constants 0..5."
-                ),
-            )
-        return None, f"Unsupported order_type '{order_type}'."
-
-    text = str(value).strip()
-    if not text:
-        return None, "order_type is required."
-
-    scalar = _coerce_scalar(text)
-    if isinstance(scalar, (int, float)) and not isinstance(scalar, bool):
-        if isinstance(scalar, float) and (not math.isfinite(scalar) or not scalar.is_integer()):
-            return None, f"Unsupported order_type '{order_type}'."
-        mapped = _ORDER_TYPE_NUMERIC_MAP.get(int(scalar))
-        if mapped:
-            return mapped, None
-
-    normalized = text.upper().replace("-", "_").replace(" ", "_")
-    while "__" in normalized:
-        normalized = normalized.replace("__", "_")
-    if normalized.startswith("MT5."):
-        normalized = normalized[4:]
-    if normalized.startswith("ORDER_TYPE_"):
-        normalized = normalized[len("ORDER_TYPE_") :]
-    normalized = _ORDER_TYPE_ALIASES.get(normalized, normalized)
-    if normalized in _SUPPORTED_ORDER_TYPES:
-        return normalized, None
-
-    return (
-        None,
-        (
-            f"Unsupported order_type '{order_type}'. "
-            "Use BUY/SELL or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
-        ),
-    )
-
-
-def _to_server_time_naive(dt: datetime) -> datetime:
-    """Convert a datetime (naive or aware) to broker/server local time and drop tzinfo.
-
-    - If client/server tzs are configured (pytz), assume naive input is client tz,
-      convert to server tz, and return naive server time.
-    - Else, use MT5_TIME_OFFSET_MINUTES relative to UTC as a fallback.
-    - If no hints, assume input is UTC.
-    """
-    try:
-        server_tz = mt5_config.get_server_tz()
-        client_tz = mt5_config.get_client_tz()
-    except Exception:
-        server_tz = None
-        client_tz = None
-
-    aware = dt
-    try:
-        if dt.tzinfo is None:
-            # Assume client-local when configured; otherwise assume UTC
-            if client_tz is not None:
-                aware = client_tz.localize(dt) if hasattr(client_tz, 'localize') else dt.replace(tzinfo=client_tz)
-            else:
-                aware = dt.replace(tzinfo=timezone.utc)
-    except Exception:
-        aware = dt.replace(tzinfo=timezone.utc)
-
-    if server_tz is not None:
-        try:
-            server_aware = aware.astimezone(server_tz)
-            return server_aware.replace(tzinfo=None)
-        except Exception:
-            pass
-
-    # Fallback: offset seconds from UTC
-    try:
-        offset_sec = int(mt5_config.get_time_offset_seconds())
-    except Exception:
-        offset_sec = 0
-    try:
-        utc_dt = aware.astimezone(timezone.utc)
-    except Exception:
-        utc_dt = aware if aware.tzinfo is not None else aware.replace(tzinfo=timezone.utc)
-    server_dt = utc_dt + timedelta(seconds=offset_sec)
-    return server_dt.replace(tzinfo=None)
-
-
-def _server_time_naive_to_mt5_timestamp(dt: datetime) -> int:
-    """Convert a server-local naive datetime into an MT5-compatible timestamp.
-
-    MetaTrader5's Python bindings expect pending-order ``expiration`` as an
-    integer timestamp (seconds) in the same "server time epoch" convention used
-    by MT5 ticks/bars.
-
-    This is the inverse of the candle/time normalization in
-    ``mtdata.utils.mt5._mt5_epoch_to_utc``:
-    - MT5 -> UTC: ``dt_local_naive = epoch_base + seconds``
-    - Here (UTC -> MT5): ``seconds = (dt_local_naive - epoch_base)``
-    """
-    if dt.tzinfo is not None:
-        dt = dt.replace(tzinfo=None)
-    dt = dt.replace(microsecond=0)
-    return int((dt - datetime(1970, 1, 1)).total_seconds())
-
-
-
-def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tuple[Optional[int], bool]:
-    """Convert user-supplied expiration data into an MT5-compatible timestamp.
-
-    Returns a tuple ``(normalized_expiration, was_explicitly_provided)``. The
-    normalized expiration is an integer timestamp (seconds) suitable for the MT5
-    ``order_send`` request field ``expiration``.
-
-    When ``was_explicitly_provided`` is False, callers should preserve the broker's existing
-    order setting. When it is True and the normalized expiration is None, callers
-    should submit a Good-Till-Cancelled order to clear any previous expiration.
-    """
-    if expiration is None:
-        return None, False
-
-    if isinstance(expiration, datetime):
-        server_dt = _to_server_time_naive(expiration)
-        return _server_time_naive_to_mt5_timestamp(server_dt), True
-
-    if isinstance(expiration, (int, float)):
-        if not math.isfinite(expiration) or expiration <= 0:
-            return None, True
-        try:
-            # Treat numeric as UTC epoch seconds, convert to MT5 server timestamp.
-            server_dt = _to_server_time_naive(datetime.fromtimestamp(expiration, tz=timezone.utc))
-            return _server_time_naive_to_mt5_timestamp(server_dt), True
-        except (OverflowError, OSError) as exc:
-            raise ValueError(f"Expiration timestamp out of range: {expiration}") from exc
-
-    if isinstance(expiration, str):
-        cleaned = expiration.strip().strip('"').strip("'")
-        if cleaned == "":
-            return None, False
-
-        upper_cleaned = cleaned.upper()
-        if upper_cleaned in _GTC_EXPIRATION_TOKENS:
-            return None, True
-
-        # Regex for simple relative time like 'in 30 minutes', '1h', '30m'
-        import re
-        # Pattern for "in X units" or just "X units" or "Xunits"
-        # Matches: "in 30 min", "30m", "1 hour", "2h", "10 seconds"
-        simple_rel_pattern = re.compile(r'^(?:in\s+)?(\d+(?:\.\d+)?)\s*([a-zA-Z]+)$', re.IGNORECASE)
-        match = simple_rel_pattern.match(cleaned)
-        if match:
-            val = float(match.group(1))
-            unit = match.group(2).lower()
-            delta = None
-            if unit in ('s', 'sec', 'secs', 'second', 'seconds'):
-                delta = timedelta(seconds=val)
-            elif unit in ('m', 'min', 'mins', 'minute', 'minutes'):
-                delta = timedelta(minutes=val)
-            elif unit in ('h', 'hr', 'hrs', 'hour', 'hours'):
-                delta = timedelta(hours=val)
-            elif unit in ('d', 'day', 'days'):
-                delta = timedelta(days=val)
-            elif unit in ('w', 'wk', 'weeks'):
-                delta = timedelta(weeks=val)
-            
-            if delta is not None:
-                # Relative to now (UTC) then converted to server time
-                server_dt = _to_server_time_naive(datetime.now(timezone.utc) + delta)
-                return _server_time_naive_to_mt5_timestamp(server_dt), True
-
-        # Try flexible date parsing first (e.g., 'tomorrow 14:00', 'in 2 hours')
-        try:
-            import dateparser  # type: ignore
-            dt = dateparser.parse(cleaned, settings={
-                'RETURN_AS_TIMEZONE_AWARE': False,
-                'PREFER_DATES_FROM': 'future',
-                'RELATIVE_BASE': datetime.now(), # explicit base
-            })
-            if dt is not None:
-                server_dt = _to_server_time_naive(dt)
-                return _server_time_naive_to_mt5_timestamp(server_dt), True
-        except Exception:
-            pass
-
-        # Fallbacks: numeric epoch or ISO8601
-        try:
-            numeric = float(cleaned)
-            if not math.isfinite(numeric) or numeric <= 0:
-                return None, True
-            try:
-                server_dt = _to_server_time_naive(datetime.fromtimestamp(numeric, tz=timezone.utc))
-                return _server_time_naive_to_mt5_timestamp(server_dt), True
-            except (OverflowError, OSError) as exc:
-                raise ValueError(f"Expiration timestamp out of range: {expiration}") from exc
-        except ValueError:
-            try:
-                server_dt = _to_server_time_naive(datetime.fromisoformat(cleaned))
-                return _server_time_naive_to_mt5_timestamp(server_dt), True
-            except ValueError as exc:
-                raise ValueError(f"Unsupported expiration format: {expiration}") from exc
-
-    raise TypeError(f"Unsupported expiration type: {type(expiration).__name__}")
-
-
-def _validate_volume(volume: Union[int, float], symbol_info: Any) -> Tuple[Optional[float], Optional[str]]:
-    """Validate lot size against symbol constraints (min/max/step)."""
-    try:
-        vol = float(volume)
-    except (TypeError, ValueError):
-        return None, "volume must be numeric"
-
-    if not math.isfinite(vol) or vol <= 0:
-        return None, "volume must be positive and finite"
-
-    min_vol = getattr(symbol_info, "volume_min", None)
-    max_vol = getattr(symbol_info, "volume_max", None)
-    step = getattr(symbol_info, "volume_step", None)
-
-    try:
-        min_vol = float(min_vol) if min_vol is not None else None
-    except (TypeError, ValueError):
-        min_vol = None
-    if min_vol is not None and min_vol <= 0:
-        min_vol = None
-
-    try:
-        max_vol = float(max_vol) if max_vol is not None else None
-    except (TypeError, ValueError):
-        max_vol = None
-    if max_vol is not None and max_vol <= 0:
-        max_vol = None
-
-    try:
-        step = float(step) if step is not None else None
-    except (TypeError, ValueError):
-        step = None
-    if step is not None and step <= 0:
-        step = None
-
-    if min_vol is not None and vol < (min_vol - 1e-12):
-        return None, f"volume must be >= {min_vol}"
-    if max_vol is not None and vol > (max_vol + 1e-12):
-        return None, f"volume must be <= {max_vol}"
-
-    if step is not None:
-        normalized = round(vol / step) * step
-        normalized = float(f"{normalized:.10f}")
-        tol = step * 1e-6
-        if abs(normalized - vol) > tol:
-            return None, f"volume must align to step {step}. Try {normalized}"
-        vol = normalized
-        if min_vol is not None and vol < (min_vol - 1e-12):
-            return None, f"volume must be >= {min_vol}"
-        if max_vol is not None and vol > (max_vol + 1e-12):
-            return None, f"volume must be <= {max_vol}"
-
-    return vol, None
-
-
-def _validate_deviation(deviation: Union[int, float]) -> Tuple[Optional[int], Optional[str]]:
-    """Validate/normalize MT5 deviation (slippage tolerance) in points."""
-    try:
-        dev = int(float(deviation))
-    except (TypeError, ValueError):
-        return None, "deviation must be numeric"
-    if dev < 0:
-        return None, "deviation must be >= 0"
-    return dev, None
-
-
-def _prevalidate_trade_place_market_input(symbol: str, volume: Any) -> Optional[Dict[str, Any]]:
-    """Validate symbol and volume before market-order SL/TP enforcement returns."""
-    mt5 = mt5_adapter
-
-    @_auto_connect_wrapper
-    def _prevalidate():
-        symbol_info = mt5.symbol_info(symbol)
-        if symbol_info is None:
-            return {"error": f"Symbol {symbol} not found"}
-
-        if not getattr(symbol_info, "visible", True):
-            if not mt5.symbol_select(symbol, True):
-                return {"error": f"Failed to select symbol {symbol}"}
-
-        _, volume_error = _validate_volume(volume, symbol_info)
-        if volume_error:
-            return {"error": volume_error}
-        return {"ok": True}
-
-    result = _prevalidate()
-    if isinstance(result, dict):
-        err = result.get("error")
-        if isinstance(err, str):
-            if err.strip():
-                return result
-        elif err not in (None, False):
-            return result
-    return None
-
-
-def _normalize_trade_comment(comment: Optional[str], *, default: str, suffix: str = "") -> str:
-    """Return an MT5-safe comment string.
-
-    MT5 typically enforces a short comment length; we trim to a conservative
-    limit to avoid hard-to-debug order_send failures.
-    """
-    try:
-        base = str(comment or "").strip()
-    except Exception:
-        base = ""
-    if not base:
-        base = str(default or "").strip() or "MCP"
-
-    full = f"{base}{suffix}" if suffix else base
-    try:
-        if len(full) > _MT5_COMMENT_MAX_LENGTH:
-            if suffix:
-                allowed_base = _MT5_COMMENT_MAX_LENGTH - len(suffix)
-                if allowed_base > 0:
-                    full = f"{base[:allowed_base]}{suffix}"
-                else:
-                    full = base[:_MT5_COMMENT_MAX_LENGTH]
-            else:
-                full = base[:_MT5_COMMENT_MAX_LENGTH]
-    except Exception:
-        full = str(default or "MCP")[:_MT5_COMMENT_MAX_LENGTH]
-    return full
-
-
-def _comment_truncation_info(comment: Optional[str], applied_comment: str) -> Optional[Dict[str, Any]]:
-    """Return metadata when a user-supplied comment is truncated by MT5 length limits."""
-    if comment is None:
-        return None
-    try:
-        requested = str(comment).strip()
-    except Exception:
-        requested = ""
-    if not requested:
-        return None
-    if requested == applied_comment:
-        return None
-    return {
-        "requested": requested,
-        "applied": applied_comment,
-        "max_length": _MT5_COMMENT_MAX_LENGTH,
-    }
-
-
-def _comment_row_metadata(comment: Any) -> Dict[str, Any]:
-    """Surface broker comment limits in list views where original input is unavailable."""
-    if comment is None:
-        return {}
-    try:
-        if isinstance(comment, (int, float)) and not math.isfinite(float(comment)):
-            return {}
-    except Exception:
-        pass
-    try:
-        text = str(comment).strip()
-    except Exception:
-        text = ""
-    if not text or text.lower() == "nan":
-        return {}
-    return {
-        "comment_visible_length": len(text),
-        "comment_max_length": _MT5_COMMENT_MAX_LENGTH,
-        "comment_may_be_truncated": True,
-    }
-
-
-def _normalize_ticket_filter(ticket: Any, *, name: str) -> Tuple[Optional[int], Optional[str]]:
-    if ticket in (None, ""):
-        return None, None
-    value = _coerce_finite_float(ticket)
-    if value is None or not float(value).is_integer():
-        return None, f"{name} must be an integer ticket."
-    return int(value), None
-
-
-def _normalize_minutes_back(minutes_back: Any) -> Tuple[Optional[int], Optional[str]]:
-    if minutes_back in (None, ""):
-        return None, None
-    value = _coerce_finite_float(minutes_back)
-    if value is None or not float(value).is_integer():
-        return None, "minutes_back must be a positive integer."
-    minutes = int(value)
-    if minutes <= 0:
-        return None, "minutes_back must be a positive integer."
-    return minutes, None
-
-
-def _coerce_optional_bool(value: Any) -> Optional[bool]:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        if not math.isfinite(float(value)):
-            return None
-        return bool(value)
-    return None
 
 
 def _trade_mode_text(mt5: Any, account_info: Any) -> Optional[str]:
@@ -509,35 +55,6 @@ def _retcode_name(mt5: Any, retcode: Any) -> Optional[str]:
     return None
 
 
-def _safe_int_ticket(value: Any) -> Optional[int]:
-    """Best-effort conversion for MT5 ticket-like values."""
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        try:
-            fv = float(value)
-        except Exception:
-            return None
-        if not math.isfinite(fv) or not fv.is_integer():
-            return None
-        iv = int(fv)
-        return iv if iv > 0 else None
-    try:
-        scalar = _coerce_scalar(str(value).strip())
-    except Exception:
-        scalar = value
-    if isinstance(scalar, (int, float)) and not isinstance(scalar, bool):
-        try:
-            fv = float(scalar)
-        except Exception:
-            return None
-        if not math.isfinite(fv) or not fv.is_integer():
-            return None
-        iv = int(fv)
-        return iv if iv > 0 else None
-    return None
-
-
 def _position_sort_key(position: Any) -> float:
     """Prefer the most recently updated position when multiple candidates exist."""
     for field in ("time_update_msc", "time_msc", "time_update", "time"):
@@ -567,7 +84,7 @@ def _position_side_matches(position: Any, side: Optional[str], mt5: Any) -> bool
 def _position_ticket_fields(position: Any) -> Dict[str, int]:
     out: Dict[str, int] = {}
     for field in ("ticket", "identifier", "position_id", "position", "order", "deal"):
-        tid = _safe_int_ticket(getattr(position, field, None))
+        tid = trading_validation._safe_int_ticket(getattr(position, field, None))
         if tid is not None:
             out[field] = tid
     return out
@@ -617,7 +134,7 @@ def _resolve_open_position(
     """Resolve an open position robustly across ticket/identifier mismatches."""
     candidate_ids: List[int] = []
     for raw in list(ticket_candidates or []):
-        tid = _safe_int_ticket(raw)
+        tid = trading_validation._safe_int_ticket(raw)
         if tid is not None and tid not in candidate_ids:
             candidate_ids.append(tid)
 
@@ -635,7 +152,7 @@ def _resolve_open_position(
             mt5=mt5,
         )
         if picked is not None:
-            resolved = _safe_int_ticket(getattr(picked, "ticket", None)) or candidate
+            resolved = trading_validation._safe_int_ticket(getattr(picked, "ticket", None)) or candidate
             return picked, resolved, {"method": "positions_get(ticket)", "candidate": candidate}
 
     try:
@@ -655,7 +172,7 @@ def _resolve_open_position(
         if exact_matches:
             exact_matches.sort(key=lambda item: _position_sort_key(item[0]), reverse=True)
             pos, field, matched_val = exact_matches[0]
-            resolved = _safe_int_ticket(getattr(pos, "ticket", None))
+            resolved = trading_validation._safe_int_ticket(getattr(pos, "ticket", None))
             return pos, resolved, {
                 "method": "positions_get(fallback_exact)",
                 "matched_field": field,
@@ -671,7 +188,7 @@ def _resolve_open_position(
     )
     if picked is None:
         return None, None, {"method": "positions_get(fallback_heuristic)", "candidate_ids": candidate_ids, "matched": False}
-    resolved = _safe_int_ticket(getattr(picked, "ticket", None))
+    resolved = trading_validation._safe_int_ticket(getattr(picked, "ticket", None))
     return picked, resolved, {"method": "positions_get(fallback_heuristic)"}
 
 
@@ -690,11 +207,11 @@ def _build_trade_preflight(mt5: Any, account_info: Any = None, terminal_info: An
         except Exception:
             term = None
 
-    account_trade_allowed = _coerce_optional_bool(getattr(info, "trade_allowed", None)) if info is not None else None
-    account_trade_expert = _coerce_optional_bool(getattr(info, "trade_expert", None)) if info is not None else None
-    terminal_trade_allowed = _coerce_optional_bool(getattr(term, "trade_allowed", None)) if term is not None else None
-    terminal_tradeapi_disabled = _coerce_optional_bool(getattr(term, "tradeapi_disabled", None)) if term is not None else None
-    terminal_connected = _coerce_optional_bool(getattr(term, "connected", None)) if term is not None else None
+    account_trade_allowed = trading_validation._coerce_optional_bool(getattr(info, "trade_allowed", None)) if info is not None else None
+    account_trade_expert = trading_validation._coerce_optional_bool(getattr(info, "trade_expert", None)) if info is not None else None
+    terminal_trade_allowed = trading_validation._coerce_optional_bool(getattr(term, "trade_allowed", None)) if term is not None else None
+    terminal_tradeapi_disabled = trading_validation._coerce_optional_bool(getattr(term, "tradeapi_disabled", None)) if term is not None else None
+    terminal_connected = trading_validation._coerce_optional_bool(getattr(term, "connected", None)) if term is not None else None
 
     hard_blockers: List[str] = []
     soft_blockers: List[str] = []
@@ -726,7 +243,7 @@ def _build_trade_preflight(mt5: Any, account_info: Any = None, terminal_info: An
         "terminal_trade_allowed": terminal_trade_allowed,
         "terminal_tradeapi_disabled": terminal_tradeapi_disabled,
         "terminal_connected": terminal_connected,
-        "community_account": _coerce_optional_bool(getattr(term, "community_account", None)) if term is not None else None,
+        "community_account": trading_validation._coerce_optional_bool(getattr(term, "community_account", None)) if term is not None else None,
         "auto_trading_enabled": auto_trading_enabled,
         "execution_ready": len(hard_blockers) == 0,
         "execution_ready_strict": len(all_blockers) == 0,
@@ -826,25 +343,25 @@ def trade_history(
             if start and minutes_back not in (None, ""):
                 return {"error": "Use either start or minutes_back, not both."}
 
-            position_ticket_value, position_ticket_error = _normalize_ticket_filter(
+            position_ticket_value, position_ticket_error = trading_validation._normalize_ticket_filter(
                 position_ticket,
                 name="position_ticket",
             )
             if position_ticket_error:
                 return {"error": position_ticket_error}
-            deal_ticket_value, deal_ticket_error = _normalize_ticket_filter(
+            deal_ticket_value, deal_ticket_error = trading_validation._normalize_ticket_filter(
                 deal_ticket,
                 name="deal_ticket",
             )
             if deal_ticket_error:
                 return {"error": deal_ticket_error}
-            order_ticket_value, order_ticket_error = _normalize_ticket_filter(
+            order_ticket_value, order_ticket_error = trading_validation._normalize_ticket_filter(
                 order_ticket,
                 name="order_ticket",
             )
             if order_ticket_error:
                 return {"error": order_ticket_error}
-            minutes_back_value, minutes_back_error = _normalize_minutes_back(minutes_back)
+            minutes_back_value, minutes_back_error = trading_validation._normalize_minutes_back(minutes_back)
             if minutes_back_error:
                 return {"error": minutes_back_error}
 
@@ -1042,7 +559,7 @@ def trade_history(
             for row in records:
                 if isinstance(row, dict):
                     row["timestamp_timezone"] = timezone_label
-                    row.update(_comment_row_metadata(row.get("comment")))
+                    row.update(trading_comments._comment_row_metadata(row.get("comment")))
             return records
         except Exception as e:
             return {"error": str(e)}
@@ -1136,7 +653,7 @@ def trade_get_open(
                     "Magic": _pick_series(df, "magic"),
                 }
             )
-            comment_meta = _pick_series(df, "comment").apply(_comment_row_metadata)
+            comment_meta = _pick_series(df, "comment").apply(trading_comments._comment_row_metadata)
             out_df["Comment Length"] = comment_meta.apply(lambda v: v.get("comment_visible_length"))
             out_df["Comment Limit"] = comment_meta.apply(lambda v: v.get("comment_max_length"))
             out_df["Comment May Be Truncated"] = comment_meta.apply(lambda v: v.get("comment_may_be_truncated"))
@@ -1268,7 +785,7 @@ def trade_get_pending(
                     "Magic": _pick_series(df, "magic"),
                 }
             )
-            comment_meta = _pick_series(df, "comment").apply(_comment_row_metadata)
+            comment_meta = _pick_series(df, "comment").apply(trading_comments._comment_row_metadata)
             out_df["Comment Length"] = comment_meta.apply(lambda v: v.get("comment_visible_length"))
             out_df["Comment Limit"] = comment_meta.apply(lambda v: v.get("comment_max_length"))
             out_df["Comment May Be Truncated"] = comment_meta.apply(lambda v: v.get("comment_may_be_truncated"))
@@ -1316,19 +833,19 @@ def _place_market_order(
                 if not mt5.symbol_select(symbol, True):
                     return {"error": f"Failed to select symbol {symbol}"}
 
-            volume_validated, volume_error = _validate_volume(volume, symbol_info)
+            volume_validated, volume_error = trading_validation._validate_volume(volume, symbol_info)
             if volume_error:
                 return {"error": volume_error}
 
             # Normalize and validate requested order type
-            t, order_type_error = _normalize_order_type_input(order_type)
+            t, order_type_error = trading_validation._normalize_order_type_input(order_type)
             if order_type_error:
                 return {"error": order_type_error}
             if t not in {"BUY", "SELL"}:
                 return {"error": f"Unsupported order_type '{order_type}'. Use BUY or SELL for market orders."}
             side = t
 
-            deviation_validated, deviation_error = _validate_deviation(deviation)
+            deviation_validated, deviation_error = trading_validation._validate_deviation(deviation)
             if deviation_error:
                 return {"error": deviation_error}
 
@@ -1389,8 +906,8 @@ def _place_market_order(
                     return {"error": f"take_profit must be above entry for BUY orders at send time. tp={norm_tp}, price={price}"}
                 if side == "SELL" and norm_tp >= price:
                     return {"error": f"take_profit must be below entry for SELL orders at send time. tp={norm_tp}, price={price}"}
-            request_comment = _normalize_trade_comment(comment, default="MCP order")
-            comment_truncation = _comment_truncation_info(comment, request_comment)
+            request_comment = trading_comments._normalize_trade_comment(comment, default="MCP order")
+            comment_truncation = trading_comments._comment_truncation_info(comment, request_comment)
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,
                 "symbol": symbol,
@@ -1423,8 +940,8 @@ def _place_market_order(
                 }
 
             # If TP/SL were specified, modify the position immediately
-            order_ticket = _safe_int_ticket(getattr(result, "order", None))
-            deal_ticket = _safe_int_ticket(getattr(result, "deal", None))
+            order_ticket = trading_validation._safe_int_ticket(getattr(result, "order", None))
+            deal_ticket = trading_validation._safe_int_ticket(getattr(result, "deal", None))
             position_ticket_candidates: List[int] = []
             for cand in (order_ticket, deal_ticket):
                 if cand is not None and cand not in position_ticket_candidates:
@@ -1480,7 +997,7 @@ def _place_market_order(
                             "sl": norm_sl or 0.0,
                             "tp": norm_tp or 0.0,
                             "magic": 234000,
-                            "comment": _normalize_trade_comment(
+                            "comment": trading_comments._normalize_trade_comment(
                                 comment,
                                 default=request_comment,
                                 suffix=" - set TP/SL",
@@ -1717,7 +1234,7 @@ def _place_pending_order(
                 if not mt5.symbol_select(symbol, True):
                     return {"error": f"Failed to select symbol {symbol}"}
 
-            volume_validated, volume_error = _validate_volume(volume, symbol_info)
+            volume_validated, volume_error = trading_validation._validate_volume(volume, symbol_info)
             if volume_error:
                 return {"error": volume_error}
 
@@ -1725,12 +1242,12 @@ def _place_pending_order(
             if current_price is None:
                 return {"error": f"Failed to get current price for {symbol}"}
 
-            deviation_validated, deviation_error = _validate_deviation(deviation)
+            deviation_validated, deviation_error = trading_validation._validate_deviation(deviation)
             if deviation_error:
                 return {"error": deviation_error}
 
             # Normalize and validate requested order type
-            t, order_type_error = _normalize_order_type_input(order_type)
+            t, order_type_error = trading_validation._normalize_order_type_input(order_type)
             if order_type_error:
                 return {"error": order_type_error}
             explicit_map = {
@@ -1792,7 +1309,7 @@ def _place_pending_order(
             if order_type_value == mt5.ORDER_TYPE_SELL_STOP and not (norm_price < bid):
                 return {"error": f"Price must be below bid for SELL_STOP. price={norm_price}, bid={bid}"}
 
-            normalized_expiration, expiration_specified = _normalize_pending_expiration(expiration)
+            normalized_expiration, expiration_specified = trading_time._normalize_pending_expiration(expiration)
 
             # SL/TP sanity relative to entry
             if norm_sl is not None:
@@ -1806,8 +1323,8 @@ def _place_pending_order(
                 if order_type_value in (mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP) and norm_tp >= norm_price:
                     return {"error": f"take_profit must be below entry for SELL orders. tp={norm_tp}, price={norm_price}"}
 
-            request_comment = _normalize_trade_comment(comment, default="MCP pending order")
-            comment_truncation = _comment_truncation_info(comment, request_comment)
+            request_comment = trading_comments._normalize_trade_comment(comment, default="MCP pending order")
+            comment_truncation = trading_comments._comment_truncation_info(comment, request_comment)
             request = {
                 "action": mt5.TRADE_ACTION_PENDING,
                 "symbol": symbol,
@@ -1929,7 +1446,7 @@ def trade_place(
             ),
         }
 
-    t, order_type_error = _normalize_order_type_input(order_type)
+    t, order_type_error = trading_validation._normalize_order_type_input(order_type)
     if order_type_error:
         return {"error": order_type_error}
     explicit_pending_types = {
@@ -1950,7 +1467,7 @@ def trade_place(
 
     price_provided = price not in (None, 0)
     try:
-        _, expiration_provided = _normalize_pending_expiration(expiration)
+        _, expiration_provided = trading_time._normalize_pending_expiration(expiration)
     except (TypeError, ValueError) as ex:
         return {"error": str(ex)}
 
@@ -1962,7 +1479,7 @@ def trade_place(
         if take_profit in (None, 0):
             missing_protection.append("take_profit")
         if missing_protection:
-            prevalidation_error = _prevalidate_trade_place_market_input(symbol_norm, volume)
+            prevalidation_error = trading_validation._prevalidate_trade_place_market_input(symbol_norm, volume)
             if prevalidation_error is not None:
                 return prevalidation_error
             return {
@@ -2009,7 +1526,7 @@ def trade_place(
                 if warnings_out:
                     result["warnings"] = warnings_out
                 if bool(auto_close_on_sl_tp_fail):
-                    close_ticket = _safe_int_ticket(pos_ticket)
+                    close_ticket = trading_validation._safe_int_ticket(pos_ticket)
                     if close_ticket is None:
                         auto_close_result: Dict[str, Any] = {
                             "error": "Auto-close skipped: position_ticket unavailable."
@@ -2124,7 +1641,7 @@ def _modify_position(
                 "sl": norm_sl,
                 "tp": norm_tp,
                 "magic": 234000,
-                "comment": _normalize_trade_comment(comment, default="MCP modify position"),
+                "comment": trading_comments._normalize_trade_comment(comment, default="MCP modify position"),
             }
 
             result = mt5.order_send(request)
@@ -2188,7 +1705,7 @@ def _modify_pending_order(
                 return {"error": f"Pending order {ticket} not found", "checked_scopes": ["pending_orders"]}
 
             order = orders[0]
-            normalized_expiration, expiration_specified = _normalize_pending_expiration(expiration)
+            normalized_expiration, expiration_specified = trading_time._normalize_pending_expiration(expiration)
 
             request = {
                 "action": mt5.TRADE_ACTION_MODIFY,
@@ -2197,7 +1714,7 @@ def _modify_pending_order(
                 "sl": stop_loss if stop_loss is not None else order.sl,
                 "tp": take_profit if take_profit is not None else order.tp,
                 "magic": 234000,
-                "comment": _normalize_trade_comment(comment, default="MCP modify pending order"),
+                "comment": trading_comments._normalize_trade_comment(comment, default="MCP modify pending order"),
             }
 
             if expiration_specified:
@@ -2216,8 +1733,8 @@ def _modify_pending_order(
                             request["expiration"] = int(current_expiration)
                         except Exception:
                             if isinstance(current_expiration, datetime):
-                                server_dt = _to_server_time_naive(current_expiration)
-                                request["expiration"] = _server_time_naive_to_mt5_timestamp(server_dt)
+                                server_dt = trading_time._to_server_time_naive(current_expiration)
+                                request["expiration"] = trading_time._server_time_naive_to_mt5_timestamp(server_dt)
 
             result = mt5.order_send(request)
             if result is None:
@@ -2275,7 +1792,7 @@ def trade_modify(
     """
     price_val = None if price in (None, 0) else price
     try:
-        _, expiration_specified = _normalize_pending_expiration(expiration)
+        _, expiration_specified = trading_time._normalize_pending_expiration(expiration)
     except (TypeError, ValueError) as ex:
         return {"error": str(ex)}
 
@@ -2365,7 +1882,7 @@ def _close_positions(
             if not to_close:
                 return {"message": "No positions matched criteria"}
 
-            deviation_validated, deviation_error = _validate_deviation(deviation)
+            deviation_validated, deviation_error = trading_validation._validate_deviation(deviation)
             if deviation_error:
                 return {"error": deviation_error}
 
@@ -2420,7 +1937,7 @@ def _close_positions(
                         getattr(tick, "ask", 0.0) or 0.0
                     )
                     close_type = close_type_sell if is_buy_position else close_type_buy
-                    close_comment = _normalize_trade_comment(comment, default="MCP close")
+                    close_comment = trading_comments._normalize_trade_comment(comment, default="MCP close")
                     # Some brokers reject edge-length comments during close-deal requests.
                     if len(close_comment) > 24:
                         close_comment = close_comment[:24]
@@ -2668,7 +2185,7 @@ def _cancel_pending(
                     "action": mt5.TRADE_ACTION_REMOVE,
                     "order": order.ticket,
                     "magic": 234000,
-                    "comment": _normalize_trade_comment(comment, default="MCP cancel pending order"),
+                    "comment": trading_comments._normalize_trade_comment(comment, default="MCP cancel pending order"),
                 }
 
                 result = mt5.order_send(request)

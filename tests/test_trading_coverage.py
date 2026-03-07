@@ -54,21 +54,25 @@ _mt5_stub.POSITION_TYPE_SELL = 1
 sys.modules["MetaTrader5"] = _mt5_stub
 
 from mtdata.core.trading import (
-    _normalize_order_type_input,
-    _to_server_time_naive,
-    _server_time_naive_to_mt5_timestamp,
-    _normalize_pending_expiration,
-    _validate_volume,
-    _validate_deviation,
-    _normalize_trade_comment,
-    _GTC_EXPIRATION_TOKENS,
-    _ORDER_TYPE_NUMERIC_MAP,
-    _SUPPORTED_ORDER_TYPES,
     trade_place,
     trade_modify,
     trade_close,
     trade_account_info,
     trade_risk_analyze,
+)
+from mtdata.core.trading_comments import _normalize_trade_comment
+from mtdata.core.trading_time import (
+    _GTC_EXPIRATION_TOKENS,
+    _normalize_pending_expiration,
+    _server_time_naive_to_mt5_timestamp,
+    _to_server_time_naive,
+)
+from mtdata.core.trading_validation import (
+    _normalize_order_type_input,
+    _ORDER_TYPE_NUMERIC_MAP,
+    _SUPPORTED_ORDER_TYPES,
+    _validate_deviation,
+    _validate_volume,
 )
 
 
@@ -314,7 +318,7 @@ class TestServerTimeNaiveToMT5Timestamp:
 
 class TestToServerTimeNaive:
 
-    @patch("mtdata.core.trading.mt5_config")
+    @patch("mtdata.core.trading_time.mt5_config")
     def test_naive_utc_no_tz_config(self, mock_config):
         mock_config.get_server_tz.side_effect = Exception("no tz")
         mock_config.get_client_tz.side_effect = Exception("no tz")
@@ -324,7 +328,7 @@ class TestToServerTimeNaive:
         assert result.tzinfo is None
         assert result == datetime(2024, 1, 1, 12, 0, 0)
 
-    @patch("mtdata.core.trading.mt5_config")
+    @patch("mtdata.core.trading_time.mt5_config")
     def test_applies_offset_seconds(self, mock_config):
         mock_config.get_server_tz.return_value = None
         mock_config.get_client_tz.return_value = None
@@ -334,7 +338,7 @@ class TestToServerTimeNaive:
         assert result.tzinfo is None
         assert result == datetime(2024, 1, 1, 13, 0, 0)
 
-    @patch("mtdata.core.trading.mt5_config")
+    @patch("mtdata.core.trading_time.mt5_config")
     def test_aware_input_without_tz_config(self, mock_config):
         mock_config.get_server_tz.return_value = None
         mock_config.get_client_tz.return_value = None
@@ -525,24 +529,24 @@ class TestNormalizePendingExpiration:
         val, explicit = _normalize_pending_expiration(float("inf"))
         assert val is None and explicit is True
 
-    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    @patch("mtdata.core.trading_time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_datetime_returns_timestamp(self, _mock):
         dt = datetime(2025, 6, 1, 12, 0, 0)
         val, explicit = _normalize_pending_expiration(dt)
         assert isinstance(val, int) and explicit is True
 
-    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    @patch("mtdata.core.trading_time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_positive_numeric_epoch(self, _mock):
         ts = 1717200000.0  # some future epoch
         val, explicit = _normalize_pending_expiration(ts)
         assert isinstance(val, int) and explicit is True
 
-    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    @patch("mtdata.core.trading_time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_string_numeric_epoch(self, _mock):
         val, explicit = _normalize_pending_expiration("1717200000")
         assert isinstance(val, int) and explicit is True
 
-    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    @patch("mtdata.core.trading_time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_iso8601_string(self, _mock):
         val, explicit = _normalize_pending_expiration("2025-06-01T12:00:00")
         assert isinstance(val, int) and explicit is True
@@ -557,27 +561,27 @@ class TestNormalizePendingExpiration:
         with pytest.raises(TypeError, match="Unsupported expiration type"):
             _normalize_pending_expiration([1, 2, 3])
 
-    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    @patch("mtdata.core.trading_time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_relative_time_30m(self, _mock):
         val, explicit = _normalize_pending_expiration("30m")
         assert isinstance(val, int) and explicit is True
 
-    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    @patch("mtdata.core.trading_time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_relative_time_in_2_hours(self, _mock):
         val, explicit = _normalize_pending_expiration("in 2 hours")
         assert isinstance(val, int) and explicit is True
 
-    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    @patch("mtdata.core.trading_time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_relative_time_1d(self, _mock):
         val, explicit = _normalize_pending_expiration("1d")
         assert isinstance(val, int) and explicit is True
 
-    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    @patch("mtdata.core.trading_time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_relative_time_seconds(self, _mock):
         val, explicit = _normalize_pending_expiration("60s")
         assert isinstance(val, int) and explicit is True
 
-    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    @patch("mtdata.core.trading_time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_relative_time_weeks(self, _mock):
         val, explicit = _normalize_pending_expiration("2w")
         assert isinstance(val, int) and explicit is True
@@ -1234,7 +1238,7 @@ class TestPlacePendingOrder:
         mt5.order_send.return_value = _order_result()
         from mtdata.core.trading import _place_pending_order
         # Use a numeric expiration (epoch seconds)
-        with patch("mtdata.core.trading._normalize_pending_expiration", return_value=(1717200000, True)):
+        with patch("mtdata.core.trading_time._normalize_pending_expiration", return_value=(1717200000, True)):
             result = _place_pending_order("EURUSD", 0.01, "BUY_LIMIT", price=1.09, expiration=1717200000)
         call_args = mt5.order_send.call_args[0][0]
         assert call_args["type_time"] == 2  # ORDER_TIME_SPECIFIED
@@ -1762,37 +1766,37 @@ class TestEdgeCases:
         result = _server_time_naive_to_mt5_timestamp(dt)
         assert result > 0
 
-    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    @patch("mtdata.core.trading_time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_expiration_relative_minutes_variants(self, _mock):
         for variant in ("30min", "30 mins", "30 minute", "30 minutes"):
             val, explicit = _normalize_pending_expiration(variant)
             assert isinstance(val, int) and explicit is True, f"Failed for: {variant}"
 
-    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    @patch("mtdata.core.trading_time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_expiration_relative_hours_variants(self, _mock):
         for variant in ("2h", "2 hr", "2 hrs", "2 hour", "2 hours"):
             val, explicit = _normalize_pending_expiration(variant)
             assert isinstance(val, int) and explicit is True, f"Failed for: {variant}"
 
-    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    @patch("mtdata.core.trading_time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_expiration_relative_seconds_variants(self, _mock):
         for variant in ("60s", "60 sec", "60 secs", "60 second", "60 seconds"):
             val, explicit = _normalize_pending_expiration(variant)
             assert isinstance(val, int) and explicit is True, f"Failed for: {variant}"
 
-    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    @patch("mtdata.core.trading_time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_expiration_relative_days_variants(self, _mock):
         for variant in ("1d", "1 day", "1 days"):
             val, explicit = _normalize_pending_expiration(variant)
             assert isinstance(val, int) and explicit is True, f"Failed for: {variant}"
 
-    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    @patch("mtdata.core.trading_time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_expiration_relative_weeks_variants(self, _mock):
         for variant in ("1w", "1 wk", "1 weeks"):
             val, explicit = _normalize_pending_expiration(variant)
             assert isinstance(val, int) and explicit is True, f"Failed for: {variant}"
 
-    @patch("mtdata.core.trading._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
+    @patch("mtdata.core.trading_time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_expiration_in_prefix(self, _mock):
         val, explicit = _normalize_pending_expiration("in 5 minutes")
         assert isinstance(val, int) and explicit is True
