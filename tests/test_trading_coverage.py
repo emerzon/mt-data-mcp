@@ -170,8 +170,9 @@ def _pending_order(ticket=100, symbol="EURUSD", type_=2, volume=0.01,
 def _bypass_auto_connect(monkeypatch):
     """Make _auto_connect_wrapper a passthrough so no real MT5 connection is needed."""
     passthrough = lambda fn=None, **kw: fn if fn else (lambda f: f)
-    monkeypatch.setattr("mtdata.core.trading._auto_connect_wrapper", passthrough)
     monkeypatch.setattr("mtdata.core.trading_account._auto_connect_wrapper", passthrough)
+    monkeypatch.setattr("mtdata.core.trading_execution._auto_connect_wrapper", passthrough)
+    monkeypatch.setattr("mtdata.core.trading_orders._auto_connect_wrapper", passthrough)
     monkeypatch.setattr("mtdata.core.trading_positions._auto_connect_wrapper", passthrough)
     monkeypatch.setattr("mtdata.core.trading_risk._auto_connect_wrapper", passthrough)
 

@@ -56,7 +56,9 @@ def mock_mt5():
     mock_mt5.positions_get.return_value = [MagicMock(symbol="EURUSD", sl=0.0, tp=0.0)]
     
     # Guard
-    with patch("src.mtdata.core.trading._auto_connect_wrapper", lambda f: f):
+    with patch("src.mtdata.core.trading_orders._auto_connect_wrapper", lambda f: f), patch(
+        "src.mtdata.core.trading_execution._auto_connect_wrapper", lambda f: f
+    ):
         yield mock_mt5
     if prev_mt5 is not None:
         sys.modules["MetaTrader5"] = prev_mt5
