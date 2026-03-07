@@ -9,6 +9,7 @@ import pandas as pd
 import math
 
 from mtdata.core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from mtdata.core.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
 from mtdata.utils.mt5 import get_symbol_info_cached, mt5
 from mtdata.utils.utils import (
     _format_time_minimal,
@@ -148,14 +149,6 @@ def _prepare_ensemble_cv(
 
     return np.asarray(rows, dtype=float), np.asarray(targets, dtype=float)
 
-
-# Local fallbacks for typing aliases used in signatures (avoid import cycle)
-try:
-    from ..core.server import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec  # type: ignore
-except Exception:  # runtime fallback
-    ForecastMethodLiteral = str
-    TimeframeLiteral = str
-    DenoiseSpec = Dict[str, Any]
 
 # Supported forecast methods - dynamically fetch from registry
 def _get_available_methods():

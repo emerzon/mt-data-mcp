@@ -4,14 +4,8 @@ Forecast method definitions and metadata (registry-derived).
 
 from typing import Any, Dict, List
 
+from ..core.schema import ForecastMethodLiteral, TimeframeLiteral
 from .forecast_registry import get_forecast_methods_data as _registry_methods_data
-
-# Local fallbacks for typing aliases (avoid import cycle)
-try:
-    from mtdata.core.server import ForecastMethodLiteral, TimeframeLiteral  # type: ignore
-except Exception:  # runtime fallback
-    ForecastMethodLiteral = str
-    TimeframeLiteral = str
 
 # Supported forecast methods (derived from registry to avoid drift)
 _METHOD_DATA = _registry_methods_data()

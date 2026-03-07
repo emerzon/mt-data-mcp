@@ -4,22 +4,10 @@ Forecast validation utilities and error handling.
 
 from typing import Any, Dict, Optional, List, Literal, Union
 import pandas as pd
-import sys
-import os
 
-# Add the src directory to path for relative imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-
-from mtdata.core.constants import TIMEFRAME_MAP
-from mtdata.forecast.forecast_methods import FORECAST_METHODS, validate_method_params, get_method_requirements
-
-# Local fallbacks for typing aliases (avoid import cycle)
-try:
-    from mtdata.core.server import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec  # type: ignore
-except Exception:  # runtime fallback
-    ForecastMethodLiteral = str
-    TimeframeLiteral = str
-    DenoiseSpec = Dict[str, Any]
+from ..core.constants import TIMEFRAME_MAP
+from ..core.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
+from .forecast_methods import FORECAST_METHODS, validate_method_params, get_method_requirements
 
 
 class ForecastValidationError(Exception):

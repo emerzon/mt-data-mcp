@@ -5,6 +5,7 @@ import os
 os.environ.setdefault("NIXTLA_ID_AS_COL", "1")
 
 from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..core.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
 from .common import fetch_history as _fetch_history
 from .forecast_methods import get_forecast_methods_data
 from .forecast_preprocessing import _create_dimred_reducer
@@ -13,14 +14,6 @@ _FORECAST_METHODS_EXPORT = get_forecast_methods_data
 
 # Removed unused imports of specific method implementations
 # Logic is now handled by forecast_engine via registry
-
-# Local fallbacks for typing aliases used in signatures (avoid import cycle)
-try:
-    from ..core.server import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec  # type: ignore
-except Exception:  # runtime fallback
-    ForecastMethodLiteral = str  # type: ignore
-    TimeframeLiteral = str  # type: ignore
-    DenoiseSpec = Dict[str, Any]  # type: ignore
 
 # Optional availability flags and lazy imports following server logic
 # (Kept for backward compatibility if anything relies on these flags, though mostly unused now)
