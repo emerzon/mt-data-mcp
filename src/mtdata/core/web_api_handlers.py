@@ -9,13 +9,15 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import HTTPException
 
 from ..forecast.exceptions import ForecastError
-from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
+from ..utils.mt5 import MT5ConnectionError
+from .mt5_gateway import get_default_mt5_gateway
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
 
 
 def _require_mt5_connection() -> None:
+    mt5 = get_default_mt5_gateway()
     try:
-        ensure_mt5_connection_or_raise()
+        mt5.ensure_connection()
     except MT5ConnectionError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

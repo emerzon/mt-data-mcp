@@ -2,21 +2,28 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 
+from .mt5_gateway import MT5Gateway
 
-@dataclass
-class MT5TradingGateway:
+
+class MT5TradingGateway(MT5Gateway):
     """Small adapter boundary for trading execution helpers."""
 
-    adapter: Any
-    ensure_connection_impl: Callable[[], None]
-    build_trade_preflight_impl: Optional[Callable[..., Dict[str, Any]]] = None
-    retcode_name_impl: Optional[Callable[[Any, Any], Optional[str]]] = None
-
-    def ensure_connection(self) -> None:
-        self.ensure_connection_impl()
+    def __init__(
+        self,
+        *,
+        adapter: Any,
+        ensure_connection_impl: Callable[[], None],
+        build_trade_preflight_impl: Optional[Callable[..., Dict[str, Any]]] = None,
+        retcode_name_impl: Optional[Callable[[Any, Any], Optional[str]]] = None,
+    ) -> None:
+        super().__init__(
+            adapter=adapter,
+            ensure_connection_impl=ensure_connection_impl,
+        )
+        self.build_trade_preflight_impl = build_trade_preflight_impl
+        self.retcode_name_impl = retcode_name_impl
 
     def build_trade_preflight(
         self,
@@ -36,14 +43,3 @@ class MT5TradingGateway:
         if self.retcode_name_impl is None:
             return None
         return self.retcode_name_impl(self.adapter, retcode)
-
-    def __dir__(self) -> list[str]:
-        names = set(super().__dir__())
-        try:
-            names.update(dir(self.adapter))
-        except Exception:
-            pass
-        return sorted(names)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self.adapter, name)

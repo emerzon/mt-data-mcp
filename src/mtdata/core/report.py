@@ -1,6 +1,7 @@
 from typing import Any, Dict, Union
 
 from ._mcp_instance import mcp
+from .mt5_gateway import create_mt5_gateway
 from .report_requests import ReportGenerateRequest
 from .report_use_cases import run_report_generate
 from .report_utils import render_enhanced_report, format_number, _get_indicator_value
@@ -21,9 +22,14 @@ def _report_error_payload(message: Any) -> Dict[str, Any]:
     return {"error": text}
 
 
+def _get_mt5_gateway():
+    return create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
+
+
 def _report_connection_error() -> Dict[str, Any] | None:
+    mt5 = _get_mt5_gateway()
     try:
-        ensure_mt5_connection_or_raise()
+        mt5.ensure_connection()
     except MT5ConnectionError as exc:
         return {"error": str(exc)}
     return None
