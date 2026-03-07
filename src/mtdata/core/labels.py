@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional, Literal, List
 
 from ._mcp_instance import mcp
+from .mt5_gateway import create_mt5_gateway
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from .schema import TimeframeLiteral, DenoiseSpec
 from ..forecast.common import fetch_history as _fetch_history
@@ -12,6 +13,10 @@ from ..utils.barriers import (
     build_barrier_kwargs_from as _build_barrier_kwargs_from,
     barrier_prices_are_valid as _barrier_prices_are_valid,
 )
+
+
+def _get_mt5_gateway():
+    return create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
 
 
 @mcp.tool()
@@ -43,7 +48,7 @@ def labels_triple_barrier(
     Outputs label: +1 (TP first), -1 (SL first), 0 (neither by horizon), and holding_bars until decision.
     """
     try:
-        ensure_mt5_connection_or_raise()
+        _get_mt5_gateway().ensure_connection()
         output_mode = str(output).strip().lower()
         if output_mode == 'summary_only':
             output_mode = 'summary'

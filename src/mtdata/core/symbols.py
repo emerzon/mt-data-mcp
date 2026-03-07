@@ -6,8 +6,13 @@ from ..utils.utils import _format_time_minimal
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from ..utils.mt5_enums import decode_mt5_enum_label, decode_mt5_bitmask_labels
 from ._mcp_instance import mcp
+from .mt5_gateway import create_mt5_gateway
 from .constants import GROUP_SEARCH_THRESHOLD, DEFAULT_ROW_LIMIT
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5
+
+
+def _get_mt5_gateway():
+    return create_mt5_gateway(adapter=mt5, ensure_connection_impl=ensure_mt5_connection_or_raise)
 
 
 
@@ -19,12 +24,13 @@ def symbols_list(
 ) -> Dict[str, Any]:
     """List symbols or symbol groups."""
     try:
-        ensure_mt5_connection_or_raise()
+        mt5_gateway = _get_mt5_gateway()
+        mt5_gateway.ensure_connection()
         mode = str(list_mode or "symbols").strip().lower()
         if mode not in ("symbols", "groups"):
             return {"error": "list_mode must be 'symbols' or 'groups'."}
         if mode == "groups":
-            return _list_symbol_groups(search_term=search_term, limit=limit)
+            return _list_symbol_groups(search_term=search_term, limit=limit, mt5_gateway=mt5_gateway)
 
         matched_symbols = []
         
@@ -32,9 +38,9 @@ def symbols_list(
             search_upper = search_term.upper()
             
             # Strategy 1: Search for matching group names first
-            all_symbols = mt5.symbols_get()
+            all_symbols = mt5_gateway.symbols_get()
             if all_symbols is None:
-                return {"error": f"Failed to get symbols: {mt5.last_error()}"}
+                return {"error": f"Failed to get symbols: {mt5_gateway.last_error()}"}
             
             # Get all unique groups
             groups = {}
@@ -92,7 +98,7 @@ def symbols_list(
                         matched_symbols = []
         else:
             # No search term - return all symbols
-            matched_symbols = list(mt5.symbols_get() or [])
+            matched_symbols = list(mt5_gateway.symbols_get() or [])
         
         # Build symbol list with visibility rule
         only_visible = False if search_term else True
@@ -121,13 +127,15 @@ def symbols_list(
 def _list_symbol_groups(
     search_term: Optional[str] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
+    mt5_gateway: Any = None,
 ) -> Dict[str, Any]:
     """List group paths as a tabular result with a single column: group."""
     try:
+        gateway = mt5_gateway or _get_mt5_gateway()
         # Get all symbols first
-        all_symbols = mt5.symbols_get()
+        all_symbols = gateway.symbols_get()
         if all_symbols is None:
-            return {"error": f"Failed to get symbols: {mt5.last_error()}"}
+            return {"error": f"Failed to get symbols: {gateway.last_error()}"}
         
         # Collect unique groups and counts
         groups = {}
@@ -165,8 +173,9 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
        Includes information such as Symbol Description, Swap Values, Tick Size/Value, etc.
     """
     try:
-        ensure_mt5_connection_or_raise()
-        symbol_info = mt5.symbol_info(symbol)
+        mt5_gateway = _get_mt5_gateway()
+        mt5_gateway.ensure_connection()
+        symbol_info = mt5_gateway.symbol_info(symbol)
         if symbol_info is None:
             return {"error": f"Symbol {symbol} not found"}
 
@@ -221,7 +230,7 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
             if is_bitmask:
                 labels = []
                 for prefix in prefixes:
-                    labels = decode_mt5_bitmask_labels(mt5, value, prefix=prefix)
+                    labels = decode_mt5_bitmask_labels(mt5_gateway, value, prefix=prefix)
                     if labels:
                         break
                 if labels:
@@ -230,7 +239,7 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
             else:
                 label = None
                 for prefix in prefixes:
-                    label = decode_mt5_enum_label(mt5, value, prefix=prefix)
+                    label = decode_mt5_enum_label(mt5_gateway, value, prefix=prefix)
                     if label:
                         break
                 if label:

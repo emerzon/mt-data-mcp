@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 import math
 
+from .mt5_gateway import create_mt5_gateway
 from .schema import TimeframeLiteral, _PIVOT_METHODS
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..utils.mt5 import (
@@ -17,6 +18,10 @@ from ..utils.utils import _format_time_minimal, _format_time_minimal_local, _use
 from ._mcp_instance import mcp
 
 
+def _get_mt5_gateway():
+    return create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
+
+
 @mcp.tool()
 def pivot_compute_points(
     symbol: str,
@@ -28,7 +33,8 @@ def pivot_compute_points(
     Returns JSON with shared source data plus levels for every supported pivot method.
     """
     try:
-        ensure_mt5_connection_or_raise()
+        mt5 = _get_mt5_gateway()
+        mt5.ensure_connection()
         if timeframe not in TIMEFRAME_MAP:
             return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
         mt5_tf = TIMEFRAME_MAP[timeframe]
