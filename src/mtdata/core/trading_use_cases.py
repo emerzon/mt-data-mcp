@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import logging
 import math
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from ..utils.mt5 import MT5ConnectionError
+from .execution_logging import (
+    infer_result_success,
+    log_operation_finish,
+    log_operation_start,
+)
 from .trading_requests import (
     TradeCloseRequest,
     TradeGetOpenRequest,
@@ -15,6 +22,8 @@ from .trading_requests import (
     TradePlaceRequest,
     TradeRiskAnalyzeRequest,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def run_trade_place(
@@ -28,8 +37,33 @@ def run_trade_place(
     close_positions: Any,
     safe_int_ticket: Any,
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
     missing: List[str] = []
     symbol_norm = str(request.symbol).strip() if request.symbol is not None else ""
+    log_operation_start(
+        logger,
+        operation="trade_place",
+        symbol=symbol_norm or None,
+        requested_order_type=request.order_type,
+    )
+
+    def _finish(
+        result: Dict[str, Any],
+        *,
+        order_type: Optional[str] = None,
+        pending: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="trade_place",
+            started_at=started_at,
+            success=infer_result_success(result),
+            symbol=symbol_norm or None,
+            order_type=order_type,
+            pending=pending,
+        )
+        return result
+
     if not symbol_norm:
         missing.append("symbol")
     if request.volume is None:
@@ -39,7 +73,7 @@ def run_trade_place(
     ):
         missing.append("order_type")
     if missing:
-        return {
+        return _finish({
             "error": (
                 f"Missing required field(s): {', '.join(missing)}. "
                 "Required: symbol, volume, order_type."
@@ -49,27 +83,27 @@ def run_trade_place(
                 "Example: symbol='BTCUSD', volume=0.03, "
                 "order_type='BUY_LIMIT' (or ORDER_TYPE_BUY_LIMIT or 2)."
             ),
-        }
+        })
 
     order_type_norm, order_type_error = normalize_order_type_input(request.order_type)
     if order_type_error:
-        return {"error": order_type_error}
+        return _finish({"error": order_type_error}, order_type=order_type_norm)
     explicit_pending_types = {"BUY_LIMIT", "BUY_STOP", "SELL_LIMIT", "SELL_STOP"}
     market_side_types = {"BUY", "SELL"}
     supported_order_types = explicit_pending_types.union(market_side_types)
     if order_type_norm not in supported_order_types:
-        return {
+        return _finish({
             "error": (
                 f"Unsupported order_type '{request.order_type}'. "
                 "Use BUY/SELL or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
             )
-        }
+        }, order_type=order_type_norm)
 
     price_provided = request.price not in (None, 0)
     try:
         _, expiration_provided = normalize_pending_expiration(request.expiration)
     except (TypeError, ValueError) as ex:
-        return {"error": str(ex)}
+        return _finish({"error": str(ex)}, order_type=order_type_norm)
 
     is_pending = (
         order_type_norm in explicit_pending_types
@@ -88,8 +122,12 @@ def run_trade_place(
                 request.volume,
             )
             if prevalidation_error is not None:
-                return prevalidation_error
-            return {
+                return _finish(
+                    prevalidation_error,
+                    order_type=order_type_norm,
+                    pending=is_pending,
+                )
+            return _finish({
                 "error": (
                     "require_sl_tp=True requires both stop_loss and take_profit for market orders. "
                     "Refusing to place an unprotected position."
@@ -100,7 +138,7 @@ def run_trade_place(
                     "Provide both --stop-loss and --take-profit, "
                     "or explicitly set --require-sl-tp false."
                 ),
-            }
+            }, order_type=order_type_norm, pending=is_pending)
 
     if not is_pending:
         result = place_market_order(
@@ -178,10 +216,14 @@ def run_trade_place(
                 result["protection_status"] = (
                     result.get("protection_status") or "unprotected_position"
                 )
-        return result
+        return _finish(result, order_type=order_type_norm, pending=is_pending)
     if request.price is None:
-        return {"error": "price is required for pending orders."}
-    return place_pending_order(
+        return _finish(
+            {"error": "price is required for pending orders."},
+            order_type=order_type_norm,
+            pending=is_pending,
+        )
+    return _finish(place_pending_order(
         symbol=symbol_norm,
         volume=float(request.volume),
         order_type=order_type_norm,
@@ -191,7 +233,7 @@ def run_trade_place(
         expiration=request.expiration,
         comment=request.comment,
         deviation=request.deviation,
-    )
+    ), order_type=order_type_norm, pending=is_pending)
 
 
 def run_trade_modify(
@@ -201,11 +243,33 @@ def run_trade_modify(
     modify_pending_order: Any,
     modify_position: Any,
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="trade_modify",
+        ticket=request.ticket,
+    )
+
+    def _finish(
+        result: Dict[str, Any],
+        *,
+        pending: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="trade_modify",
+            started_at=started_at,
+            success=infer_result_success(result),
+            ticket=request.ticket,
+            pending=pending,
+        )
+        return result
+
     price_val = None if request.price in (None, 0) else request.price
     try:
         _, expiration_specified = normalize_pending_expiration(request.expiration)
     except (TypeError, ValueError) as ex:
-        return {"error": str(ex)}
+        return _finish({"error": str(ex)})
 
     if price_val is not None or expiration_specified:
         result = modify_pending_order(
@@ -217,14 +281,14 @@ def run_trade_modify(
             comment=request.comment,
         )
         if result.get("error") == f"Pending order {request.ticket} not found":
-            return {
+            return _finish({
                 "error": (
                     f"Pending order {request.ticket} not found. "
                     "Note: price/expiration only apply to pending orders."
                 ),
                 "checked_scopes": ["pending_orders"],
-            }
-        return result
+            }, pending=True)
+        return _finish(result, pending=True)
 
     position_result = modify_position(
         ticket=request.ticket,
@@ -233,7 +297,7 @@ def run_trade_modify(
         comment=request.comment,
     )
     if position_result.get("success"):
-        return position_result
+        return _finish(position_result, pending=False)
     if position_result.get("error") == f"Position {request.ticket} not found":
         pending_result = modify_pending_order(
             ticket=request.ticket,
@@ -244,12 +308,12 @@ def run_trade_modify(
             comment=request.comment,
         )
         if pending_result.get("error") == f"Pending order {request.ticket} not found":
-            return {
+            return _finish({
                 "error": f"Ticket {request.ticket} not found as position or pending order.",
                 "checked_scopes": ["positions", "pending_orders"],
-            }
-        return pending_result
-    return position_result
+            }, pending=None)
+        return _finish(pending_result, pending=True)
+    return _finish(position_result, pending=False)
 
 
 def run_trade_close(
@@ -258,6 +322,34 @@ def run_trade_close(
     close_positions: Any,
     cancel_pending: Any,
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="trade_close",
+        ticket=request.ticket,
+        symbol=request.symbol,
+        profit_only=request.profit_only,
+        loss_only=request.loss_only,
+    )
+
+    def _finish(
+        result: Dict[str, Any],
+        *,
+        scope: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="trade_close",
+            started_at=started_at,
+            success=infer_result_success(result),
+            ticket=request.ticket,
+            symbol=request.symbol,
+            scope=scope,
+            profit_only=request.profit_only,
+            loss_only=request.loss_only,
+        )
+        return result
+
     def _with_no_action(
         payload: Optional[Dict[str, Any]] = None,
         *,
@@ -281,8 +373,8 @@ def run_trade_close(
         if isinstance(result, dict):
             msg = str(result.get("message", "")).strip().lower()
             if msg.startswith("no open positions") or msg == "no positions matched criteria":
-                return _with_no_action(result)
-        return result
+                return _finish(_with_no_action(result), scope="positions")
+        return _finish(result, scope="positions")
 
     if request.ticket is not None:
         position_result = close_positions(
@@ -306,12 +398,12 @@ def run_trade_close(
                 isinstance(pending_result, dict)
                 and pending_result.get("error") == f"Pending order {request.ticket} not found"
             ):
-                return {
+                return _finish({
                     "error": f"Ticket {request.ticket} not found as position or pending order.",
                     "checked_scopes": ["positions", "pending_orders"],
-                }
-            return pending_result
-        return position_result
+                }, scope="ticket")
+            return _finish(pending_result, scope="pending_orders")
+        return _finish(position_result, scope="positions")
 
     if request.symbol is not None:
         position_result = close_positions(
@@ -331,11 +423,14 @@ def run_trade_close(
                 if isinstance(pending_result, dict):
                     pending_msg = str(pending_result.get("message", "")).strip().lower()
                     if pending_msg.startswith("no pending orders for "):
-                        return _with_no_action(
-                            message=f"No open positions or pending orders for {request.symbol}"
+                        return _finish(
+                            _with_no_action(
+                                message=f"No open positions or pending orders for {request.symbol}"
+                            ),
+                            scope="symbol",
                         )
-                return pending_result
-        return position_result
+                return _finish(pending_result, scope="pending_orders")
+        return _finish(position_result, scope="positions")
 
     position_result = close_positions(
         profit_only=False,
@@ -351,9 +446,12 @@ def run_trade_close(
                 isinstance(pending_result, dict)
                 and str(pending_result.get("message", "")).strip().lower() == "no pending orders"
             ):
-                return _with_no_action(message="No open positions or pending orders")
-            return pending_result
-    return position_result
+                return _finish(
+                    _with_no_action(message="No open positions or pending orders"),
+                    scope="all",
+                )
+            return _finish(pending_result, scope="pending_orders")
+    return _finish(position_result, scope="positions")
 
 
 def run_trade_history(

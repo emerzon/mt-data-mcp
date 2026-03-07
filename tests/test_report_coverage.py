@@ -43,6 +43,35 @@ def _make_report(sections=None, error=None):
     return rep
 
 
+def test_run_report_generate_logs_finish_event(caplog):
+    from mtdata.core.report_requests import ReportGenerateRequest
+    from mtdata.core.report_use_cases import run_report_generate
+
+    basic_template = MagicMock(return_value={"sections": {}, "diagnostics": {}})
+    with patch("mtdata.core.report_templates.template_basic", basic_template, create=True), \
+         patch("mtdata.core.report_templates.template_advanced", basic_template, create=True), \
+         patch("mtdata.core.report_templates.template_scalping", basic_template, create=True), \
+         patch("mtdata.core.report_templates.template_intraday", basic_template, create=True), \
+         patch("mtdata.core.report_templates.template_swing", basic_template, create=True), \
+         patch("mtdata.core.report_templates.template_position", basic_template, create=True), \
+         caplog.at_level("INFO", logger="mtdata.core.report_use_cases"):
+        result = run_report_generate(
+            ReportGenerateRequest(symbol="EURUSD"),
+            render_report=lambda rep: "# report",
+            format_number=lambda value: str(value),
+            get_indicator_value=lambda payload, key: payload.get(key),
+            report_error_text=lambda message: f"error: {message}",
+            report_error_payload=lambda message: {"error": str(message)},
+            append_diagnostic_warning=lambda report, message: None,
+        )
+
+    assert isinstance(result, dict)
+    assert any(
+        "event=finish operation=report_generate success=True" in record.message
+        for record in caplog.records
+    )
+
+
 def test_report_generate_returns_connection_error_payload(monkeypatch):
     from mtdata.core import report as report_mod
 

@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import logging
 import time
 import warnings
 from typing import Any, Dict, List
 
+from .execution_logging import (
+    infer_result_success,
+    log_operation_exception,
+    log_operation_finish,
+    log_operation_start,
+)
 from .report_requests import ReportGenerateRequest
+
+logger = logging.getLogger(__name__)
 
 
 def run_report_generate(
@@ -17,10 +26,31 @@ def run_report_generate(
     report_error_payload: Any,
     append_diagnostic_warning: Any,
 ) -> str | Dict[str, Any]:
+    started_at = time.perf_counter()
+    output_mode = str(request.output or "toon").strip().lower()
+    template_name = (request.template or "basic").lower().strip()
+    log_operation_start(
+        logger,
+        operation="report_generate",
+        symbol=request.symbol,
+        template=template_name,
+        output=output_mode,
+    )
+
+    def _finish(result: str | Dict[str, Any]) -> str | Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="report_generate",
+            started_at=started_at,
+            success=infer_result_success(result),
+            symbol=request.symbol,
+            template=template_name,
+            output=output_mode,
+        )
+        return result
+
     try:
-        started = time.perf_counter()
-        output_mode = str(request.output or "toon").strip().lower()
-        name = (request.template or "basic").lower().strip()
+        name = template_name
         params = dict(request.params or {})
         if request.timeframe:
             params["timeframe"] = str(request.timeframe)
@@ -38,8 +68,8 @@ def run_report_generate(
             )
         except Exception as ex:
             if output_mode == "markdown":
-                return report_error_text(f"Failed to import report templates: {ex}")
-            return report_error_payload(f"Failed to import report templates: {ex}")
+                return _finish(report_error_text(f"Failed to import report templates: {ex}"))
+            return _finish(report_error_payload(f"Failed to import report templates: {ex}"))
 
         default_horizon = {
             "basic": 12,
@@ -77,8 +107,8 @@ def run_report_generate(
                     "Use one of basic, advanced, scalping, intraday, swing, position."
                 )
                 if output_mode == "markdown":
-                    return report_error_text(msg)
-                return report_error_payload(msg)
+                    return _finish(report_error_text(msg))
+                return _finish(report_error_payload(msg))
 
         for warning_obj in warning_records:
             try:
@@ -91,13 +121,13 @@ def run_report_generate(
         if not isinstance(rep, dict):
             msg = "Report template returned an unexpected payload."
             if output_mode == "markdown":
-                return report_error_text(msg)
-            return report_error_payload(msg)
+                return _finish(report_error_text(msg))
+            return _finish(report_error_payload(msg))
         if rep.get("error"):
             msg = rep.get("error")
             if output_mode == "markdown":
-                return report_error_text(msg)
-            return report_error_payload(msg)
+                return _finish(report_error_text(msg))
+            return _finish(report_error_payload(msg))
         if captured_warnings:
             for warning_text in captured_warnings:
                 append_diagnostic_warning(rep, warning_text)
@@ -345,14 +375,23 @@ def run_report_generate(
         diagnostics = rep.get("diagnostics")
         if not isinstance(diagnostics, dict):
             diagnostics = {}
-        diagnostics["execution_time_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
+        diagnostics["execution_time_ms"] = round((time.perf_counter() - started_at) * 1000.0, 3)
         rep["diagnostics"] = diagnostics
 
         if output_mode == "markdown":
-            return render_report(rep)
-        return rep
+            return _finish(render_report(rep))
+        return _finish(rep)
     except Exception as exc:
+        log_operation_exception(
+            logger,
+            operation="report_generate",
+            started_at=started_at,
+            exc=exc,
+            symbol=request.symbol,
+            template=template_name,
+            output=output_mode,
+        )
         msg = f"Error generating report: {exc}"
         if str(request.output or "").strip().lower() == "markdown":
-            return report_error_text(msg)
-        return report_error_payload(msg)
+            return _finish(report_error_text(msg))
+        return _finish(report_error_payload(msg))

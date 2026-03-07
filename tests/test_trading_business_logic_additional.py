@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+from mtdata.core.trading_requests import TradePlaceRequest
+from mtdata.core.trading_use_cases import run_trade_place
 from mtdata.core.trading_comments import _normalize_trade_comment
 from mtdata.core.trading_time import _server_time_naive_to_mt5_timestamp
 from mtdata.core.trading_validation import (
@@ -61,3 +63,30 @@ def test_normalize_trade_comment_applies_default_and_suffix_length_caps():
 def test_server_time_naive_to_mt5_timestamp_strips_timezone():
     ts = _server_time_naive_to_mt5_timestamp(datetime(1970, 1, 1, 0, 1, 0, tzinfo=timezone.utc))
     assert ts == 60
+
+
+def test_run_trade_place_logs_finish_event(caplog):
+    request = TradePlaceRequest(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        require_sl_tp=False,
+    )
+
+    with caplog.at_level("INFO", logger="mtdata.core.trading_use_cases"):
+        result = run_trade_place(
+            request,
+            normalize_order_type_input=lambda value: ("BUY", None),
+            normalize_pending_expiration=lambda value: (value, False),
+            prevalidate_trade_place_market_input=lambda symbol, volume: None,
+            place_market_order=lambda **kwargs: {"success": True, "order_id": 7},
+            place_pending_order=lambda **kwargs: {"success": True, "order_id": 8},
+            close_positions=lambda **kwargs: {"closed_count": 1},
+            safe_int_ticket=lambda value: value,
+        )
+
+    assert result == {"success": True, "order_id": 7}
+    assert any(
+        "event=finish operation=trade_place success=True" in record.message
+        for record in caplog.records
+    )
