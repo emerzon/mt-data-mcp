@@ -9,11 +9,12 @@ from ._mcp_instance import mcp
 from .schema import TimeframeLiteral
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..utils.mt5 import (
-    _auto_connect_wrapper,
+    MT5ConnectionError,
     _mt5_copy_rates_from,
     _mt5_copy_rates_range,
     _mt5_epoch_to_utc,
     _symbol_ready_guard,
+    ensure_mt5_connection_or_raise,
     get_symbol_info_cached,
     mt5,
 )
@@ -266,7 +267,6 @@ def _fetch_rates(
 
 
 @mcp.tool()
-@_auto_connect_wrapper
 def temporal_analyze(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
@@ -292,6 +292,7 @@ def temporal_analyze(
     Use group_by='all' for a single overall summary.
     """
     try:
+        ensure_mt5_connection_or_raise()
         context: Dict[str, Any] = {
             "symbol": symbol,
             "timeframe": timeframe,
@@ -519,6 +520,8 @@ def temporal_analyze(
         if groups_out:
             payload["groups"] = groups_out
         return payload
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
     except Exception as e:
         return _error_response(
             f"Error computing temporal analysis: {str(e)}",

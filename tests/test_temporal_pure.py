@@ -21,8 +21,8 @@ from mtdata.core.temporal import (
     temporal_analyze,
 )
 
-# Access the raw function, bypassing @mcp.tool() and @_auto_connect_wrapper
-_raw_temporal_analyze = temporal_analyze.__wrapped__.__wrapped__
+# Access the raw function, bypassing @mcp.tool()
+_raw_temporal_analyze = temporal_analyze.__wrapped__
 
 
 # ---------------------------------------------------------------------------
@@ -518,6 +518,7 @@ def _apply_analyze_patches(func):
     func = patch(_P + "_format_time_minimal", new=_fmt_stub)(func)
     func = patch(_P + "_mt5_epoch_to_utc", new=_epoch_identity)(func)
     func = patch(_P + "_symbol_ready_guard", new=_guard_stub)(func)
+    func = patch(_P + "ensure_mt5_connection_or_raise", new=lambda: None)(func)
     func = patch(_P + "get_symbol_info_cached", new=_info_stub)(func)
     func = patch(_P + "_fetch_rates")(func)
     return func
