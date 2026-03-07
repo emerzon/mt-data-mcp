@@ -54,13 +54,14 @@ _mt5_stub.POSITION_TYPE_SELL = 1
 sys.modules["MetaTrader5"] = _mt5_stub
 
 from mtdata.core.trading import (
-    trade_place,
-    trade_modify,
-    trade_close,
+    trade_place as _trade_place_tool,
+    trade_modify as _trade_modify_tool,
+    trade_close as _trade_close_tool,
     trade_account_info,
     trade_risk_analyze,
 )
 from mtdata.core.trading_comments import _normalize_trade_comment
+from mtdata.core.trading_requests import TradeCloseRequest, TradeModifyRequest, TradePlaceRequest
 from mtdata.core.trading_time import (
     _GTC_EXPIRATION_TOKENS,
     _normalize_pending_expiration,
@@ -74,6 +75,30 @@ from mtdata.core.trading_validation import (
     _validate_deviation,
     _validate_volume,
 )
+
+
+def trade_place(**kwargs):
+    raw_output = bool(kwargs.pop("__cli_raw", False))
+    request = kwargs.pop("request", None)
+    if request is None:
+        request = TradePlaceRequest(**kwargs)
+    return _trade_place_tool(request=request, __cli_raw=raw_output)
+
+
+def trade_modify(**kwargs):
+    raw_output = bool(kwargs.pop("__cli_raw", False))
+    request = kwargs.pop("request", None)
+    if request is None:
+        request = TradeModifyRequest(**kwargs)
+    return _trade_modify_tool(request=request, __cli_raw=raw_output)
+
+
+def trade_close(**kwargs):
+    raw_output = bool(kwargs.pop("__cli_raw", False))
+    request = kwargs.pop("request", None)
+    if request is None:
+        request = TradeCloseRequest(**kwargs)
+    return _trade_close_tool(request=request, __cli_raw=raw_output)
 
 
 def _unwrap_mcp(result):

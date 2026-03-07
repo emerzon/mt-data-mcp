@@ -7,8 +7,25 @@ from unittest.mock import patch
 # Add src to path to ensure local package is found
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
-from mtdata.core.trading import trade_place, trade_modify
+from mtdata.core.trading import trade_place as _trade_place_tool, trade_modify as _trade_modify_tool
+from mtdata.core.trading_requests import TradeModifyRequest, TradePlaceRequest
 from mtdata.core.trading_validation import _normalize_order_type_input
+
+
+def trade_place(**kwargs):
+    raw_output = bool(kwargs.pop("__cli_raw", False))
+    request = kwargs.pop("request", None)
+    if request is None:
+        request = TradePlaceRequest(**kwargs)
+    return _trade_place_tool(request=request, __cli_raw=raw_output)
+
+
+def trade_modify(**kwargs):
+    raw_output = bool(kwargs.pop("__cli_raw", False))
+    request = kwargs.pop("request", None)
+    if request is None:
+        request = TradeModifyRequest(**kwargs)
+    return _trade_modify_tool(request=request, __cli_raw=raw_output)
 
 
 def test_normalize_order_type_accepts_mt5_integer() -> None:

@@ -209,17 +209,18 @@ class TestMergedTools(unittest.TestCase):
         self.mt5.order_send.return_value = MagicMock(retcode=self.mt5.TRADE_RETCODE_DONE)
         
         from src.mtdata.core.trading import trade_close
+        from src.mtdata.core.trading_requests import TradeCloseRequest
 
         # Test close by ticket
-        trade_close(ticket=123, __cli_raw=True)
+        trade_close(request=TradeCloseRequest(ticket=123), __cli_raw=True)
         self.mt5.positions_get.assert_called_with(ticket=123)
 
         # Test close by symbol
-        trade_close(symbol="EURUSD", __cli_raw=True)
+        trade_close(request=TradeCloseRequest(symbol="EURUSD"), __cli_raw=True)
         self.mt5.positions_get.assert_called_with(symbol="EURUSD")
 
         # Test close all
-        trade_close(__cli_raw=True)
+        trade_close(request=TradeCloseRequest(), __cli_raw=True)
         self.mt5.positions_get.assert_called_with()
 
     def test_trading_close_pending(self):
@@ -232,17 +233,18 @@ class TestMergedTools(unittest.TestCase):
         self.mt5.order_send.return_value = MagicMock(retcode=self.mt5.TRADE_RETCODE_DONE) 
 
         from src.mtdata.core.trading import trade_close
+        from src.mtdata.core.trading_requests import TradeCloseRequest
 
         # Test cancel by ticket
-        trade_close(ticket=456, __cli_raw=True)
+        trade_close(request=TradeCloseRequest(ticket=456), __cli_raw=True)
         self.mt5.orders_get.assert_called_with(ticket=456)
 
         # Test cancel by symbol
-        trade_close(symbol="EURUSD", __cli_raw=True)
+        trade_close(request=TradeCloseRequest(symbol="EURUSD"), __cli_raw=True)
         self.mt5.orders_get.assert_called_with(symbol="EURUSD")
 
         # Test cancel all
-        trade_close(__cli_raw=True)
+        trade_close(request=TradeCloseRequest(), __cli_raw=True)
         self.mt5.orders_get.assert_called_with()
 
 if __name__ == '__main__':
