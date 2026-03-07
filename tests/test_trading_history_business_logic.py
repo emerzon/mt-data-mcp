@@ -4,8 +4,6 @@ from collections import namedtuple
 from unittest.mock import MagicMock, patch
 import sys
 
-sys.modules.setdefault("MetaTrader5", MagicMock())
-
 from mtdata.core.trading import trade_history
 from mtdata.utils.mt5 import _mt5_epoch_to_utc
 from mtdata.utils.utils import _format_time_minimal

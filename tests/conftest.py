@@ -5,8 +5,25 @@ sys.modules at import time.  Without cleanup the mocks leak into later
 test modules and cause spurious failures.
 """
 
+from pathlib import Path
 import sys
+from unittest.mock import MagicMock
+
 import pytest
+
+
+_ROOT = Path(__file__).resolve().parents[1]
+_SRC = _ROOT / "src"
+for _path in (str(_SRC), str(_ROOT)):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
+
+
+def _make_mt5_stub() -> MagicMock:
+    return MagicMock(name="MetaTrader5")
+
+
+_DEFAULT_MT5_STUB = sys.modules.setdefault("MetaTrader5", _make_mt5_stub())
 
 
 def _clear_scipy_lru_cache():
@@ -26,11 +43,28 @@ def _clear_scipy_lru_cache():
         pass
 
 
+@pytest.fixture
+def mt5_module():
+    """Install a temporary MetaTrader5 stub for the duration of a test."""
+    prev = sys.modules.get("MetaTrader5")
+    stub = _make_mt5_stub()
+    sys.modules["MetaTrader5"] = stub
+    try:
+        yield stub
+    finally:
+        if prev is None:
+            sys.modules["MetaTrader5"] = _DEFAULT_MT5_STUB
+        else:
+            sys.modules["MetaTrader5"] = prev
+
+
 def pytest_runtest_setup(item):
     """Clear the cache before every test to guard against import-time pollution."""
+    sys.modules.setdefault("MetaTrader5", _DEFAULT_MT5_STUB)
     _clear_scipy_lru_cache()
 
 
 def pytest_runtest_teardown(item, nextitem):
     """Clear the cache after every test as well."""
+    sys.modules.setdefault("MetaTrader5", _DEFAULT_MT5_STUB)
     _clear_scipy_lru_cache()

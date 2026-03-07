@@ -2,21 +2,12 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
-
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-_SRC = os.path.join(_ROOT, "src")
-for _p in (_SRC, _ROOT):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
-sys.modules["MetaTrader5"] = MagicMock()
 
 from mtdata.core import web_api
 from mtdata.core.web_api import (

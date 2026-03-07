@@ -1,20 +1,9 @@
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
-
-
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-_SRC = os.path.join(_ROOT, "src")
-for _p in (_SRC, _ROOT):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
-sys.modules.setdefault("MetaTrader5", MagicMock())
 
 from mtdata.services import data_service
 

@@ -3,8 +3,6 @@ from unittest.mock import MagicMock, patch
 import sys
 import math
 
-sys.modules.setdefault("MetaTrader5", MagicMock())
-
 from src.mtdata.core.trading import _place_market_order, _place_pending_order
 
 

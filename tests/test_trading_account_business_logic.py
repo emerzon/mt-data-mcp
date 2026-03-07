@@ -4,8 +4,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 import sys
 
-sys.modules.setdefault("MetaTrader5", MagicMock())
-
 from mtdata.core.trading import trade_account_info
 
 

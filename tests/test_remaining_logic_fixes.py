@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-import sys
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator, Tuple
@@ -9,15 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
-
-
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-_SRC = os.path.join(_ROOT, "src")
-for _p in (_SRC, _ROOT):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
-sys.modules.setdefault("MetaTrader5", MagicMock())
 
 from mtdata.forecast.backtest import forecast_backtest
 from mtdata.forecast.forecast import _create_dimred_reducer
