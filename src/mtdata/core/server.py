@@ -23,18 +23,10 @@ from ._mcp_tools import (
 )
 from .config import mt5_config
 from .constants import SERVICE_NAME, TIMEFRAME_MAP, TIMEFRAME_SECONDS  # re-export for CLI/tests
-from ..utils.mt5 import mt5_connection, _auto_connect_wrapper, _ensure_symbol_ready
+from ..utils.mt5 import mt5_connection, _ensure_symbol_ready
 
 # Lightweight helpers used by tool modules
 from ..utils.utils import _normalize_ohlcv_arg
-_REEXPORTED_SYMBOLS = (
-    mt5_config,
-    TIMEFRAME_MAP,
-    TIMEFRAME_SECONDS,
-    _auto_connect_wrapper,
-    _ensure_symbol_ready,
-    _normalize_ohlcv_arg,
-)
 
 _ORIG_TOOL_DECORATOR = _mcp_tools._ORIG_TOOL_DECORATOR
 

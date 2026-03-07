@@ -618,8 +618,6 @@ def discover_tools():
                         continue
                     if name.endswith(('_wrapper',)):
                         continue
-                    if name in {"_group_symbols", "_auto_connect_wrapper"}:
-                        continue
                     tools[name] = {"func": obj, "meta": {"description": None, "param_docs": {}}}
 
     return tools

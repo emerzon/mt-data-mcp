@@ -309,9 +309,8 @@ def _skip_mt5_connection(monkeypatch):
     monkeypatch.setattr(regime_mod, "ensure_mt5_connection_or_raise", lambda: None)
 
 
-# We need to import the *unwrapped* function to bypass the @mcp.tool() and
-# @_auto_connect_wrapper decorators.  The underlying function is stored by
-# functools.wraps on the wrapper.
+# We need to import the *unwrapped* function to bypass the @mcp.tool()
+# decorator. The underlying function is stored by functools.wraps.
 def _get_regime_detect():
     from mtdata.core.regime import regime_detect
     fn = regime_detect

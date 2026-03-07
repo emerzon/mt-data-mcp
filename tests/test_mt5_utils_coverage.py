@@ -54,7 +54,6 @@ from mtdata.utils.mt5 import (
     MT5ConnectionError,
     MT5Adapter,
     MT5Service,
-    _auto_connect_wrapper,
     ensure_mt5_connection_or_raise,
     _ensure_symbol_ready,
     _symbol_ready_guard,
@@ -397,42 +396,6 @@ class TestMT5Service:
         svc = MT5Service(connection=c)
         svc.disconnect()
         c.disconnect.assert_called_once()
-
-
-# ── _auto_connect_wrapper  (lines 199-218) ──────────────────────────────────
-
-class TestAutoConnectWrapper:
-    def test_as_decorator_connected(self):
-        svc = MagicMock()
-        svc.ensure_connected.return_value = True
-
-        @_auto_connect_wrapper(service=svc)
-        def my_func():
-            return "ok"
-
-        assert my_func() == "ok"
-
-    def test_as_decorator_not_connected(self):
-        svc = MagicMock()
-        svc.ensure_connected.return_value = False
-
-        @_auto_connect_wrapper(service=svc)
-        def my_func():
-            return "ok"
-
-        with pytest.raises(MT5ConnectionError, match="Failed to connect to MetaTrader5"):
-            my_func()
-
-    def test_as_bare_decorator(self):
-        # Use the global mt5_service; patch its ensure_connected
-        with patch("mtdata.utils.mt5.mt5_service") as svc:
-            svc.ensure_connected.return_value = True
-
-            @_auto_connect_wrapper
-            def my_func():
-                return "bare"
-
-            assert my_func() == "bare"
 
 
 class TestEnsureMt5ConnectionOrRaise:

@@ -317,26 +317,6 @@ def ensure_mt5_connection_or_raise(*, service: Optional[MT5Service] = None) -> N
         raise MT5ConnectionError(_MT5_CONNECTION_FAILURE_MESSAGE)
 
 
-def _auto_connect_wrapper(func=None, *, service: Optional[MT5Service] = None):
-    """Decorator to ensure MT5 connection before tool execution.
-
-    Supports both:
-    - ``@_auto_connect_wrapper`` (uses the global ``mt5_service``)
-    - ``@_auto_connect_wrapper(service=MT5Service(...))`` for tests/injection
-    """
-    import functools
-
-    def decorator(fn):
-        @functools.wraps(fn)
-        def wrapper(*args, **kwargs):
-            ensure_mt5_connection_or_raise(service=service)
-            return fn(*args, **kwargs)
-
-        return wrapper
-
-    return decorator(func) if callable(func) else decorator
-
-
 def _ensure_symbol_ready(symbol: str) -> Optional[str]:
     """Ensure a symbol is selected and its tick data is initialized.
 
