@@ -7,8 +7,6 @@ from typing import Any, Dict, Optional
 
 from .config import load_environment
 
-load_environment()
-
 from fastapi import Query
 
 from .constants import TIMEFRAME_MAP
@@ -220,4 +218,5 @@ mount_webui(app)
 
 def main_webapi() -> None:
     """Entry point to run the FastAPI web server."""
+    load_environment()
     run_webapi(app)

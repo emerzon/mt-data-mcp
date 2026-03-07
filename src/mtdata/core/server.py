@@ -8,8 +8,6 @@ from ..bootstrap.runtime import McpRuntimeSettings, apply_mcp_runtime_settings, 
 from ..bootstrap.tools import bootstrap_tools
 from .config import load_environment
 
-load_environment()
-
 from ._mcp_instance import mcp
 from . import _mcp_tools
 from ._mcp_tools import (
@@ -76,6 +74,7 @@ def main(
     runtime_settings: Optional[McpRuntimeSettings] = None,
 ):
     """Main entry point for the MCP server"""
+    load_environment()
     bootstrap_tools()
     runtime = runtime_settings or load_mcp_runtime_settings(transport_override=transport)
     apply_mcp_runtime_settings(mcp, runtime)

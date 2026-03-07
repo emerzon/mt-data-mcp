@@ -15,8 +15,6 @@ from typing import get_origin, get_args, Optional, Dict, Any, List, Tuple, Liter
 import json
 from .config import load_environment
 
-load_environment()
-
 from ..bootstrap.tools import bootstrap_tools
 from ..utils.minimal_output import format_result_minimal as _shared_minimal
 from ._mcp_instance import mcp
@@ -1285,6 +1283,7 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
         print("")
 def main():
     """Main CLI entry point with dynamic parameter discovery"""
+    load_environment()
     # Discover functions to expose dynamically
     functions = discover_tools()
     if not functions:
