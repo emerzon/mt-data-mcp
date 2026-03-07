@@ -161,3 +161,31 @@ def test_market_depth_returns_connection_error_payload() -> None:
         out = _raw_market_depth_fetch("BTCUSD")
 
     assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
+
+
+def test_market_ticker_logs_finish_event(caplog) -> None:
+    tick = SimpleNamespace(
+        bid=200.0,
+        ask=201.0,
+        last=200.5,
+        volume=5,
+        time=1700000000,
+    )
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth._use_client_tz", return_value=False
+    ), caplog.at_level("INFO", logger="mtdata.core.market_depth"):
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=2,
+            point=0.01,
+            trade_tick_size=0.01,
+            trade_tick_value=1.0,
+        )
+        mt5.symbol_info_tick.return_value = tick
+        out = _raw_market_ticker("BTCUSD")
+
+    assert out["success"] is True
+    assert any(
+        "event=finish operation=market_ticker success=True" in record.message
+        for record in caplog.records
+    )

@@ -1,14 +1,19 @@
 
 from typing import Any, Dict, Optional, Literal
+import logging
+import time
 
 from ..utils.utils import _table_from_rows, _normalize_limit
 from ..utils.utils import _format_time_minimal
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from ..utils.mt5_enums import decode_mt5_enum_label, decode_mt5_bitmask_labels
 from ._mcp_instance import mcp
+from .execution_logging import infer_result_success, log_operation_finish, log_operation_start
 from .mt5_gateway import create_mt5_gateway
 from .constants import GROUP_SEARCH_THRESHOLD, DEFAULT_ROW_LIMIT
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5
+
+logger = logging.getLogger(__name__)
 
 
 def _get_mt5_gateway():
@@ -23,14 +28,37 @@ def symbols_list(
     list_mode: Literal["symbols", "groups"] = "symbols",  # type: ignore
 ) -> Dict[str, Any]:
     """List symbols or symbol groups."""
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="symbols_list",
+        search_term=search_term,
+        limit=limit,
+        list_mode=list_mode,
+    )
+
+    def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="symbols_list",
+            started_at=started_at,
+            success=infer_result_success(result),
+            search_term=search_term,
+            limit=limit,
+            list_mode=list_mode,
+        )
+        return result
+
     try:
         mt5_gateway = _get_mt5_gateway()
         mt5_gateway.ensure_connection()
         mode = str(list_mode or "symbols").strip().lower()
         if mode not in ("symbols", "groups"):
-            return {"error": "list_mode must be 'symbols' or 'groups'."}
+            return _finish({"error": "list_mode must be 'symbols' or 'groups'."})
         if mode == "groups":
-            return _list_symbol_groups(search_term=search_term, limit=limit, mt5_gateway=mt5_gateway)
+            return _finish(
+                _list_symbol_groups(search_term=search_term, limit=limit, mt5_gateway=mt5_gateway)
+            )
 
         matched_symbols = []
         
@@ -40,7 +68,7 @@ def symbols_list(
             # Strategy 1: Search for matching group names first
             all_symbols = mt5_gateway.symbols_get()
             if all_symbols is None:
-                return {"error": f"Failed to get symbols: {mt5_gateway.last_error()}"}
+                return _finish({"error": f"Failed to get symbols: {mt5_gateway.last_error()}"})
             
             # Get all unique groups
             groups = {}
@@ -118,11 +146,11 @@ def symbols_list(
             symbol_list = symbol_list[:limit_value]
         # Build tabular result
         rows = [[s["name"], s["group"], s["description"]] for s in symbol_list]
-        return _table_from_rows(["name", "group", "description"], rows)
+        return _finish(_table_from_rows(["name", "group", "description"], rows))
     except MT5ConnectionError as exc:
-        return {"error": str(exc)}
+        return _finish({"error": str(exc)})
     except Exception as e:
-        return {"error": f"Error getting symbols: {str(e)}"}
+        return _finish({"error": f"Error getting symbols: {str(e)}"})
 
 def _list_symbol_groups(
     search_term: Optional[str] = None,
@@ -172,12 +200,29 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
        Parameters: symbol
        Includes information such as Symbol Description, Swap Values, Tick Size/Value, etc.
     """
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="symbols_describe",
+        symbol=symbol,
+    )
+
+    def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="symbols_describe",
+            started_at=started_at,
+            success=infer_result_success(result),
+            symbol=symbol,
+        )
+        return result
+
     try:
         mt5_gateway = _get_mt5_gateway()
         mt5_gateway.ensure_connection()
         symbol_info = mt5_gateway.symbol_info(symbol)
         if symbol_info is None:
-            return {"error": f"Symbol {symbol} not found"}
+            return _finish({"error": f"Symbol {symbol} not found"})
 
         enum_specs = {
             "trade_mode": {"prefixes": ("SYMBOL_TRADE_MODE_",), "bitmask": False},
@@ -245,11 +290,11 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
                 if label:
                     symbol_data[f"{attr}_label"] = label
         
-        return {
+        return _finish({
             "success": True,
             "symbol": symbol_data
-        }
+        })
     except MT5ConnectionError as exc:
-        return {"error": str(exc)}
+        return _finish({"error": str(exc)})
     except Exception as e:
-        return {"error": f"Error getting symbol info: {str(e)}"}
+        return _finish({"error": f"Error getting symbol info: {str(e)}"})

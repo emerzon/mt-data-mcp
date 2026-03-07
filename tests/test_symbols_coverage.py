@@ -238,6 +238,22 @@ class TestSymbolsListException:
         assert "error" in res
 
 
+def test_symbols_list_logs_finish_event(caplog):
+    fn = _get_symbols_list()
+    with patch(f"{_MT5}.symbols_get", return_value=[_make_symbol("EURUSD")]), \
+         patch(_GROUP_PATH, side_effect=lambda s: s.path), \
+         patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r}), \
+         patch(_NORM_LIMIT, return_value=25), \
+         caplog.at_level("INFO", logger="mtdata.core.symbols"):
+        res = fn(search_term=None, limit=25)
+
+    assert "data" in res
+    assert any(
+        "event=finish operation=symbols_list success=True" in record.message
+        for record in caplog.records
+    )
+
+
 # ---------------------------------------------------------------------------
 # _list_symbol_groups
 # ---------------------------------------------------------------------------

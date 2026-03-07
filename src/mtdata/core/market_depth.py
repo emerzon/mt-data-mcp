@@ -1,12 +1,16 @@
 
 from typing import Any, Dict
+import logging
 import math
 import time
 
+from .execution_logging import infer_result_success, log_operation_finish, log_operation_start
 from .mt5_gateway import create_mt5_gateway
 from ..utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc, ensure_mt5_connection_or_raise, mt5
 from ..utils.utils import _format_time_minimal, _format_time_minimal_local, _use_client_tz
 from ._mcp_instance import mcp
+
+logger = logging.getLogger(__name__)
 
 
 def _get_mt5_gateway():
@@ -19,17 +23,36 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
 
     Parameters: symbol
     """
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="market_depth_fetch",
+        symbol=symbol,
+        spread=spread,
+    )
+
+    def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="market_depth_fetch",
+            started_at=started_at,
+            success=infer_result_success(result),
+            symbol=symbol,
+            spread=spread,
+        )
+        return result
+
     try:
         mt5_gateway = _get_mt5_gateway()
         mt5_gateway.ensure_connection()
         started = time.perf_counter()
         # Ensure symbol is selected
         if not mt5_gateway.symbol_select(symbol, True):
-            return {"error": f"Failed to select symbol {symbol}: {mt5_gateway.last_error()}"}
+            return _finish({"error": f"Failed to select symbol {symbol}: {mt5_gateway.last_error()}"})
 
         symbol_info = mt5_gateway.symbol_info(symbol)
         if symbol_info is None:
-            return {"error": f"Symbol {symbol} not found"}
+            return _finish({"error": f"Symbol {symbol} not found"})
 
         digits = max(0, int(getattr(symbol_info, "digits", 0) or 0))
         point = float(getattr(symbol_info, "point", 0.0) or 0.0)
@@ -124,12 +147,12 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
                     out["data"].update(spread_metrics)
                     out["capabilities"]["spread_overlay_applied"] = True
             out["query_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
-            return out
+            return _finish(out)
         else:
             # Get current tick
             tick = mt5_gateway.symbol_info_tick(symbol)
             if tick is None:
-                return {"error": f"Failed to get tick data for {symbol}"}
+                return _finish({"error": f"Failed to get tick data for {symbol}"})
             
             out = {
                 "success": True,
@@ -171,11 +194,11 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
             if not _use_ctz:
                 out["timezone"] = "UTC"
             out["query_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
-            return out
+            return _finish(out)
     except MT5ConnectionError as exc:
-        return {"error": str(exc)}
+        return _finish({"error": str(exc)})
     except Exception as e:
-        return {"error": f"Error getting market depth: {str(e)}"}
+        return _finish({"error": f"Error getting market depth: {str(e)}"})
 
 
 @mcp.tool()
@@ -184,20 +207,37 @@ def market_ticker(symbol: str) -> Dict[str, Any]:
 
     Parameters: symbol
     """
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="market_ticker",
+        symbol=symbol,
+    )
+
+    def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="market_ticker",
+            started_at=started_at,
+            success=infer_result_success(result),
+            symbol=symbol,
+        )
+        return result
+
     try:
         mt5_gateway = _get_mt5_gateway()
         mt5_gateway.ensure_connection()
         started = time.perf_counter()
         if not mt5_gateway.symbol_select(symbol, True):
-            return {"error": f"Failed to select symbol {symbol}: {mt5_gateway.last_error()}"}
+            return _finish({"error": f"Failed to select symbol {symbol}: {mt5_gateway.last_error()}"})
 
         symbol_info = mt5_gateway.symbol_info(symbol)
         if symbol_info is None:
-            return {"error": f"Symbol {symbol} not found"}
+            return _finish({"error": f"Symbol {symbol} not found"})
 
         tick = mt5_gateway.symbol_info_tick(symbol)
         if tick is None:
-            return {"error": f"Failed to get tick data for {symbol}"}
+            return _finish({"error": f"Failed to get tick data for {symbol}"})
 
         digits = max(0, int(getattr(symbol_info, "digits", 0) or 0))
         point = float(getattr(symbol_info, "point", 0.0) or 0.0)
@@ -271,8 +311,8 @@ def market_ticker(symbol: str) -> Dict[str, Any]:
         }
         if not _use_ctz:
             out["timezone"] = "UTC"
-        return out
+        return _finish(out)
     except MT5ConnectionError as exc:
-        return {"error": str(exc)}
+        return _finish({"error": str(exc)})
     except Exception as e:
-        return {"error": f"Error getting ticker snapshot: {str(e)}"}
+        return _finish({"error": f"Error getting ticker snapshot: {str(e)}"})
