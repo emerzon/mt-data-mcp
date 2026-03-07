@@ -472,10 +472,33 @@ def run_trade_history(
 ) -> Any:
     import pandas as pd
 
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="trade_history",
+        symbol=request.symbol,
+        history_kind=request.history_kind,
+        limit=request.limit,
+    )
+
+    def _finish(result: Any) -> Any:
+        record_count = len(result) if isinstance(result, list) else None
+        log_operation_finish(
+            logger,
+            operation="trade_history",
+            started_at=started_at,
+            success=infer_result_success(result),
+            symbol=request.symbol,
+            history_kind=request.history_kind,
+            limit=request.limit,
+            record_count=record_count,
+        )
+        return result
+
     try:
         gateway.ensure_connection()
     except MT5ConnectionError as exc:
-        return {"error": str(exc)}
+        return _finish({"error": str(exc)})
 
     def _get_history():
         try:
@@ -744,7 +767,7 @@ def run_trade_history(
         except Exception as exc:
             return {"error": str(exc)}
 
-    return _get_history()
+    return _finish(_get_history())
 
 
 def run_trade_risk_analyze(
@@ -752,10 +775,29 @@ def run_trade_risk_analyze(
     *,
     gateway: Any,
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="trade_risk_analyze",
+        symbol=request.symbol,
+        desired_risk_pct=request.desired_risk_pct,
+    )
+
+    def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="trade_risk_analyze",
+            started_at=started_at,
+            success=infer_result_success(result),
+            symbol=request.symbol,
+            desired_risk_pct=request.desired_risk_pct,
+        )
+        return result
+
     try:
         gateway.ensure_connection()
     except MT5ConnectionError as exc:
-        return {"error": str(exc)}
+        return _finish({"error": str(exc)})
 
     def _analyze_risk():
         try:
@@ -1037,7 +1079,7 @@ def run_trade_risk_analyze(
         except Exception as exc:
             return {"error": str(exc)}
 
-    return _analyze_risk()
+    return _finish(_analyze_risk())
 
 
 def run_trade_get_open(
@@ -1053,10 +1095,32 @@ def run_trade_get_open(
 ) -> List[Dict[str, Any]]:
     import pandas as pd
 
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="trade_get_open",
+        symbol=request.symbol,
+        ticket=request.ticket,
+        limit=request.limit,
+    )
+
+    def _finish(result: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        log_operation_finish(
+            logger,
+            operation="trade_get_open",
+            started_at=started_at,
+            success=infer_result_success(result),
+            symbol=request.symbol,
+            ticket=request.ticket,
+            limit=request.limit,
+            record_count=len(result) if isinstance(result, list) else None,
+        )
+        return result
+
     try:
         gateway.ensure_connection()
     except MT5ConnectionError as exc:
-        return [{"error": str(exc)}]
+        return _finish([{"error": str(exc)}])
 
     def _get_open():
         try:
@@ -1162,7 +1226,7 @@ def run_trade_get_open(
         except Exception as exc:
             return [{"error": str(exc)}]
 
-    return _get_open()
+    return _finish(_get_open())
 
 
 def run_trade_get_pending(
@@ -1178,10 +1242,32 @@ def run_trade_get_pending(
 ) -> List[Dict[str, Any]]:
     import pandas as pd
 
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="trade_get_pending",
+        symbol=request.symbol,
+        ticket=request.ticket,
+        limit=request.limit,
+    )
+
+    def _finish(result: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        log_operation_finish(
+            logger,
+            operation="trade_get_pending",
+            started_at=started_at,
+            success=infer_result_success(result),
+            symbol=request.symbol,
+            ticket=request.ticket,
+            limit=request.limit,
+            record_count=len(result) if isinstance(result, list) else None,
+        )
+        return result
+
     try:
         gateway.ensure_connection()
     except MT5ConnectionError as exc:
-        return [{"error": str(exc)}]
+        return _finish([{"error": str(exc)}])
 
     def _get_pending():
         try:
@@ -1321,4 +1407,4 @@ def run_trade_get_pending(
         except Exception as exc:
             return [{"error": str(exc)}]
 
-    return _get_pending()
+    return _finish(_get_pending())

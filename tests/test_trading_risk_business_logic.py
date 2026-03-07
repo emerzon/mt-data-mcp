@@ -6,6 +6,7 @@ import sys
 
 from mtdata.core.trading import trade_risk_analyze as _trade_risk_analyze_tool
 from mtdata.core.trading_requests import TradeRiskAnalyzeRequest
+from mtdata.core.trading_use_cases import run_trade_risk_analyze
 from mtdata.utils.mt5 import MT5ConnectionError
 
 
@@ -105,4 +106,26 @@ def test_trade_risk_analyze_returns_connection_error_payload() -> None:
             __cli_raw=True,
         )
 
-    assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
+    assert out["error"] == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+    assert out["operation"] == "trade_risk_analyze"
+    assert out["success"] is False
+
+
+def test_run_trade_risk_analyze_logs_finish_event(caplog) -> None:
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
+        positions_get=lambda symbol=None: [],
+    )
+
+    with caplog.at_level("INFO", logger="mtdata.core.trading_use_cases"):
+        out = run_trade_risk_analyze(
+            TradeRiskAnalyzeRequest(),
+            gateway=gateway,
+        )
+
+    assert out["success"] is True
+    assert any(
+        "event=finish operation=trade_risk_analyze success=True" in record.message
+        for record in caplog.records
+    )

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from collections import namedtuple
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 import sys
 
 from mtdata.core.trading import trade_history as _trade_history_tool
 from mtdata.core.trading_requests import TradeHistoryRequest
+from mtdata.core.trading_use_cases import run_trade_history
 from mtdata.utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc
 from mtdata.utils.utils import _format_time_minimal
 
@@ -259,6 +261,39 @@ def test_trade_history_replaces_non_finite_values_with_none() -> None:
     assert out[0]["profit"] is None
 
 
+def test_run_trade_history_logs_finish_event(caplog) -> None:
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol"])
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        history_deals_get=lambda from_dt, to_dt, symbol=None: [
+            Deal(ticket=1, time=1700000000, symbol="EURUSD")
+        ],
+    )
+
+    with caplog.at_level("INFO", logger="mtdata.core.trading_use_cases"):
+        out = run_trade_history(
+            TradeHistoryRequest(history_kind="deals"),
+            gateway=gateway,
+            use_client_tz=lambda: False,
+            format_time_minimal=lambda ts: f"t{int(ts)}",
+            format_time_minimal_local=lambda ts: f"lt{int(ts)}",
+            mt5_epoch_to_utc=lambda ts: ts,
+            parse_start_datetime=lambda value: None,
+            normalize_limit=lambda value: value,
+            comment_row_metadata=lambda comment: {},
+            normalize_ticket_filter=lambda value, name: (None, None),
+            normalize_minutes_back=lambda value: (None, None),
+            decode_mt5_enum_label=lambda gateway, value, prefix=None: None,
+            mt5_config=SimpleNamespace(get_client_tz=lambda: "UTC"),
+        )
+
+    assert isinstance(out, list)
+    assert any(
+        "event=finish operation=trade_history success=True" in record.message
+        for record in caplog.records
+    )
+
+
 def test_trade_history_filters_deals_by_position_ticket() -> None:
     mt5, prev = _install_mock_mt5()
     Deal = namedtuple("Deal", ["ticket", "time", "symbol", "position_id"])
@@ -285,7 +320,9 @@ def test_trade_history_rejects_start_with_minutes_back() -> None:
         __cli_raw=True,
     )
 
-    assert out == {"error": "Use either start or minutes_back, not both."}
+    assert out["error"] == "Use either start or minutes_back, not both."
+    assert out["operation"] == "trade_history"
+    assert out["success"] is False
 
 
 def test_trade_history_surfaces_comment_limit_metadata() -> None:
@@ -316,4 +353,6 @@ def test_trade_history_returns_connection_error_payload() -> None:
             __cli_raw=True,
         )
 
-    assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
+    assert out["error"] == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+    assert out["operation"] == "trade_history"
+    assert out["success"] is False
