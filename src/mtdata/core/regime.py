@@ -1,7 +1,10 @@
 from typing import Any, Dict, Optional, List, Literal, Tuple
+import logging
+import time
 import numpy as np
 
 from ._mcp_instance import mcp
+from .execution_logging import infer_result_success, log_operation_finish, log_operation_start
 from .mt5_gateway import create_mt5_gateway
 from .schema import TimeframeLiteral, DenoiseSpec
 from .constants import TIMEFRAME_SECONDS
@@ -9,6 +12,8 @@ from ..forecast.common import fetch_history as _fetch_history
 from ..utils.utils import _format_time_minimal
 from ..utils.denoise import _resolve_denoise_base_col
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
+
+logger = logging.getLogger(__name__)
 
 
 _CRYPTO_SYMBOL_HINTS = (
@@ -746,20 +751,47 @@ def regime_detect(
         - 'full': Returns full consolidated 'regimes'. Raw 'series' included only if include_series=True.
         - 'summary': Returns stats only.
     """
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="regime_detect",
+        symbol=symbol,
+        timeframe=timeframe,
+        method=method,
+        target=target,
+        output=output,
+        limit=limit,
+    )
+
+    def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="regime_detect",
+            started_at=started_at,
+            success=infer_result_success(result),
+            symbol=symbol,
+            timeframe=timeframe,
+            method=method,
+            target=target,
+            output=output,
+            limit=limit,
+        )
+        return result
+
     connection_error = _regime_connection_error()
     if connection_error is not None:
-        return connection_error
+        return _finish(connection_error)
     try:
         p = dict(params or {})
         try:
             min_regime_bars_val = int(p.get("min_regime_bars", min_regime_bars))
         except Exception:
-            return {"error": "min_regime_bars must be an integer >= 1."}
+            return _finish({"error": "min_regime_bars must be an integer >= 1."})
         if min_regime_bars_val < 1:
-            return {"error": "min_regime_bars must be >= 1."}
+            return _finish({"error": "min_regime_bars must be >= 1."})
         df = _fetch_history(symbol, timeframe, int(max(limit, 50)), as_of=None)
         if len(df) < 10:
-            return {"error": "Insufficient history"}
+            return _finish({"error": "Insufficient history"})
         base_col = _resolve_denoise_base_col(df, denoise, base_col='close', default_when='pre_ti')
         y = df[base_col].astype(float).to_numpy()
         times = df['time'].astype(float).to_numpy()
@@ -991,7 +1023,7 @@ def regime_detect(
                     summary["tuning_hint"] = tuning_hint
                 payload["summary"] = summary
                 if output == "summary":
-                    return _summary_only_payload(payload)
+                    return _finish(_summary_only_payload(payload))
                 if output == 'compact' and n > 0:
                     # Compact mode uses the tail of the series; remap CP indices so they
                     # remain consistent with the truncated `times` array used by consolidation.
@@ -1009,13 +1041,13 @@ def regime_detect(
                             tail_cps.append(cp_tail)
                     payload["change_points"] = tail_cps
 
-            return _consolidate_payload(payload, method, output, include_series=include_series)
+            return _finish(_consolidate_payload(payload, method, output, include_series=include_series))
 
         elif method == 'ms_ar':
             try:
                 from statsmodels.tsa.regime_switching.markov_regression import MarkovRegression  # type: ignore
             except Exception:
-                return {"error": "statsmodels MarkovRegression not available. Install statsmodels."}
+                return _finish({"error": "statsmodels MarkovRegression not available. Install statsmodels."})
             k_regimes = int(p.get('k_regimes', 2))
             order = int(p.get('order', 0))
             try:
@@ -1027,7 +1059,7 @@ def regime_detect(
                 state = np.argmax(smoothed, axis=1)
                 probs = smoothed
             except Exception as ex:
-                return {"error": f"MS-AR fitting error: {ex}"}
+                return _finish({"error": f"MS-AR fitting error: {ex}"})
             payload = {
                 "success": True,
                 "symbol": symbol,
@@ -1048,19 +1080,19 @@ def regime_detect(
                 summary = {"lookback": int(n), "last_state": last_s, "state_shares": shares}
                 payload["summary"] = summary
                 if output == "summary":
-                    return _summary_only_payload(payload)
+                    return _finish(_summary_only_payload(payload))
                 if output == 'compact' and n > 0:
                     payload["times"] = t_fmt[-n:]
                     payload["state"] = payload["state"][-n:]
                     payload["state_probabilities"] = payload["state_probabilities"][-n:]
             
-            return _consolidate_payload(payload, method, output, include_series=include_series)
+            return _finish(_consolidate_payload(payload, method, output, include_series=include_series))
 
         elif method == 'hmm':  # 'hmm' (mixture/HMM-lite)
             try:
                 from ..forecast.monte_carlo import fit_gaussian_mixture_1d
             except Exception as ex:
-                return {"error": f"HMM-lite import error: {ex}"}
+                return _finish({"error": f"HMM-lite import error: {ex}"})
             n_states = int(p.get('n_states', 2))
             w, mu, sigma, gamma, _ = fit_gaussian_mixture_1d(x, n_states=max(2, n_states))
             state = np.argmax(gamma, axis=1) if gamma.ndim == 2 and gamma.shape[0] == x.size else np.zeros(x.size, dtype=int)
@@ -1120,14 +1152,14 @@ def regime_detect(
                 }
                 payload["summary"] = summary
                 if output == "summary":
-                    return _summary_only_payload(payload)
+                    return _finish(_summary_only_payload(payload))
                 if output == 'compact' and n > 0:
                     payload["times"] = t_fmt[-n:]
                     payload["state"] = payload["state"][-n:]
                     if isinstance(gamma_for_payload, np.ndarray) and len(gamma_for_payload) >= n:
                          payload["state_probabilities"] = payload["state_probabilities"][-n:]
 
-            return _consolidate_payload(payload, method, output, include_series=include_series)
+            return _finish(_consolidate_payload(payload, method, output, include_series=include_series))
 
         elif method == 'clustering':
             try:
@@ -1136,7 +1168,7 @@ def regime_detect(
                 from sklearn.cluster import KMeans
                 from sklearn.decomposition import PCA
             except ImportError as ex:
-                return {"error": f"Clustering dependencies missing: {ex}"}
+                return _finish({"error": f"Clustering dependencies missing: {ex}"})
 
             window_size = int(p.get('window_size', 20))
             k_regimes = int(p.get('k_regimes', 3))
@@ -1153,7 +1185,7 @@ def regime_detect(
             X_valid = features_df.loc[valid_mask]
             
             if X_valid.empty:
-                 return {"error": "Not enough data for feature extraction (check window_size)"}
+                 return _finish({"error": "Not enough data for feature extraction (check window_size)"})
 
             # Normalize
             scaler = StandardScaler()
@@ -1220,13 +1252,13 @@ def regime_detect(
                 payload["summary"] = summary
 
                 if output == "summary":
-                     return _summary_only_payload(payload)
+                     return _finish(_summary_only_payload(payload))
                 if output == 'compact' and n_summary > 0:
                      payload["times"] = t_fmt[-n_summary:]
                      payload["state"] = payload["state"][-n_summary:]
                      payload["state_probabilities"] = payload["state_probabilities"][-n_summary:]
 
-            return _consolidate_payload(payload, method, output, include_series=include_series)
+            return _finish(_consolidate_payload(payload, method, output, include_series=include_series))
 
     except Exception as e:
-        return {"error": f"Error detecting regimes: {str(e)}"}
+        return _finish({"error": f"Error detecting regimes: {str(e)}"})

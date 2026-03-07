@@ -329,16 +329,21 @@ class TestRegimeDetectBOCPD:
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH)
-    def test_bocpd_full(self, mock_fetch, mock_denoise, mock_fmt):
+    def test_bocpd_full(self, mock_fetch, mock_denoise, mock_fmt, caplog):
         """Happy path: BOCPD with full output."""
         mock_fetch.return_value = _make_df(50)
         cp = np.zeros(49)
         cp[20] = 0.8
-        with patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}):
+        with patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}), \
+             caplog.at_level("INFO", logger="mtdata.core.regime"):
             fn = _get_regime_detect()
             res = fn("EURUSD", timeframe="H1", limit=50, method="bocpd",
                       target="return", threshold=0.5, output="full")
         assert res.get("success") or "regimes" in res or "error" not in res or True
+        assert any(
+            "event=finish operation=regime_detect success=True" in record.message
+            for record in caplog.records
+        )
 
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
