@@ -42,9 +42,15 @@ _LABELS_MOD = "mtdata.core.labels"
 
 
 def _get_raw_fn():
-    """Get the unwrapped labels_triple_barrier function (bypasses mcp.tool + _auto_connect_wrapper)."""
+    """Get the unwrapped labels_triple_barrier function (bypasses mcp.tool)."""
     from mtdata.core.labels import labels_triple_barrier
-    return labels_triple_barrier.__wrapped__.__wrapped__
+    raw = labels_triple_barrier.__wrapped__
+
+    def _call(*args, **kwargs):
+        with patch("mtdata.core.labels.ensure_mt5_connection_or_raise", return_value=None):
+            return raw(*args, **kwargs)
+
+    return _call
 
 
 class TestLabelsTripleBarrier:

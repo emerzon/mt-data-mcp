@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional, Literal, List
 
 from ._mcp_instance import mcp
-from ..utils.mt5 import _auto_connect_wrapper
+from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from .schema import TimeframeLiteral, DenoiseSpec
 from ..forecast.common import fetch_history as _fetch_history
 from ..utils.utils import _format_time_minimal
@@ -15,7 +15,6 @@ from ..utils.barriers import (
 
 
 @mcp.tool()
-@_auto_connect_wrapper
 def labels_triple_barrier(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
@@ -44,6 +43,7 @@ def labels_triple_barrier(
     Outputs label: +1 (TP first), -1 (SL first), 0 (neither by horizon), and holding_bars until decision.
     """
     try:
+        ensure_mt5_connection_or_raise()
         output_mode = str(output).strip().lower()
         if output_mode == 'summary_only':
             output_mode = 'summary'
@@ -163,5 +163,7 @@ def labels_triple_barrier(
                 payload["tp_time"] = tp_times[-n:]
                 payload["sl_time"] = sl_times[-n:]
         return payload
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
     except Exception as e:
         return {"error": f"Error computing triple-barrier labels: {str(e)}"}
