@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import HTTPException
 
+from ..forecast.exceptions import ForecastError
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
 
 
@@ -585,23 +586,26 @@ def get_tick_response(
 
 
 def post_forecast_price_response(*, body: ForecastPriceBody, forecast_impl: Callable[..., Any]) -> Dict[str, Any]:
-    result = forecast_impl(
-        symbol=body.symbol,
-        timeframe=body.timeframe,  # type: ignore[arg-type]
-        method=body.method,  # type: ignore[arg-type]
-        horizon=body.horizon,
-        lookback=body.lookback,
-        as_of=body.as_of,
-        params=body.params,
-        ci_alpha=body.ci_alpha,
-        quantity=body.quantity,  # type: ignore[arg-type]
-        target=body.target,  # type: ignore[arg-type]
-        denoise=body.denoise,
-        features=body.features,
-        dimred_method=body.dimred_method,
-        dimred_params=body.dimred_params,
-        target_spec=body.target_spec,
-    )
+    try:
+        result = forecast_impl(
+            symbol=body.symbol,
+            timeframe=body.timeframe,  # type: ignore[arg-type]
+            method=body.method,  # type: ignore[arg-type]
+            horizon=body.horizon,
+            lookback=body.lookback,
+            as_of=body.as_of,
+            params=body.params,
+            ci_alpha=body.ci_alpha,
+            quantity=body.quantity,  # type: ignore[arg-type]
+            target=body.target,  # type: ignore[arg-type]
+            denoise=body.denoise,
+            features=body.features,
+            dimred_method=body.dimred_method,
+            dimred_params=body.dimred_params,
+            target_spec=body.target_spec,
+        )
+    except ForecastError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     if isinstance(result, dict) and result.get("error"):
         raise HTTPException(status_code=400, detail=str(result["error"]))
     return result

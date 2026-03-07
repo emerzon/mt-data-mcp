@@ -27,6 +27,7 @@ from mtdata.core.web_api import (
     BacktestBody,
     app,
 )
+from mtdata.forecast.exceptions import ForecastError
 
 from fastapi.testclient import TestClient
 
@@ -771,6 +772,12 @@ class TestPostForecastPrice:
         with patch("mtdata.core.web_api._forecast_impl", return_value="raw_string"):
             res = web_api.post_forecast_price(body)
         assert res == "raw_string"
+
+    def test_typed_forecast_error_becomes_http_400(self):
+        with patch("mtdata.core.web_api._forecast_impl", side_effect=ForecastError("engine exploded")):
+            resp = _client.post("/api/forecast/price", json={"symbol": "EURUSD"})
+        assert resp.status_code == 400
+        assert "engine exploded" in resp.text
 
 
 # ===========================================================================

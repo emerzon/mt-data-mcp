@@ -6,6 +6,7 @@ os.environ.setdefault("NIXTLA_ID_AS_COL", "1")
 
 from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..core.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
+from .exceptions import ForecastError
 from .common import fetch_history as _fetch_history
 from .forecast_methods import get_forecast_methods_data
 from .forecast_preprocessing import _create_dimred_reducer
@@ -96,7 +97,7 @@ def forecast(
             dimred_params=dimred_params,
             target_spec=target_spec,
         )
-
-    except Exception as e:
-        import traceback
-        return {"error": f"Forecast failed: {str(e)}", "traceback": traceback.format_exc()}
+    except ForecastError:
+        raise
+    except Exception as exc:
+        raise ForecastError(str(exc)) from exc

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import mtdata.forecast.forecast as ff
 import mtdata.forecast.forecast_engine as fe
 import mtdata.forecast.volatility as fv
+from mtdata.forecast.exceptions import ForecastError
 
 
 def _sample_df(n: int = 40) -> pd.DataFrame:
@@ -154,10 +156,8 @@ def test_forecast_target_spec_is_delegated_without_local_validation(monkeypatch)
     assert captured["target_spec"] == {"base": "typical", "transform": "return", "k": 3, "indicators": "sma:close:5"}
 
 
-def test_forecast_returns_traceback_on_unexpected_exception(monkeypatch):
+def test_forecast_raises_typed_exception_on_unexpected_failure(monkeypatch):
     monkeypatch.setattr(fe, "forecast_engine", lambda **kwargs: (_ for _ in ()).throw(ValueError("engine exploded")))
 
-    out = ff.forecast(symbol="EURUSD", timeframe="H1", method="theta")
-
-    assert out["error"].startswith("Forecast failed: engine exploded")
-    assert "traceback" in out
+    with pytest.raises(ForecastError, match="engine exploded"):
+        ff.forecast(symbol="EURUSD", timeframe="H1", method="theta")

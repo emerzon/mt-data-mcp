@@ -6,6 +6,7 @@ import pkgutil
 import sys
 
 from mtdata.core import forecast as cf
+from mtdata.forecast.exceptions import ForecastError
 
 
 def _unwrap(fn):
@@ -182,6 +183,17 @@ def test_forecast_generate_native_theta_adds_disambiguation_warning(monkeypatch)
     assert any("StatsForecast theta is available" in str(w) for w in out.get("warnings", []))
 
 
+def test_forecast_generate_converts_typed_forecast_errors(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+
+    monkeypatch.setattr(cf, "_forecast_impl", lambda **kwargs: (_ for _ in ()).throw(ForecastError("engine exploded")))
+    monkeypatch.setattr(cf, "_parse_kv_or_json", lambda v: dict(v or {}))
+
+    out = raw(symbol="EURUSD", library="native", model="theta")
+
+    assert out["error"] == "engine exploded"
+
+
 def test_forecast_list_library_models_and_list_methods(monkeypatch):
     stats_mod = ModuleType("statsforecast")
     models_mod = ModuleType("statsforecast.models")
@@ -339,6 +351,10 @@ def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
 
     monkeypatch.setattr(cf, "_forecast_backtest_impl", lambda **kwargs: {"results": {"theta": {"details": []}}})
     assert "Conformal calibration failed" in raw(symbol="EURUSD", method="theta", horizon=2)["error"]
+
+    monkeypatch.setattr(cf, "_forecast_backtest_impl", lambda **kwargs: {"results": {"theta": {"details": [{}]}}})
+    monkeypatch.setattr(cf, "_forecast_impl", lambda **kwargs: (_ for _ in ()).throw(ForecastError("engine exploded")))
+    assert raw(symbol="EURUSD", method="theta", horizon=2)["error"] == "engine exploded"
 
 
 def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):

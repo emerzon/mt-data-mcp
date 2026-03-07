@@ -4,6 +4,7 @@ import os
 from .schema import TimeframeLiteral, DenoiseSpec, ForecastLibraryLiteral, ForecastMethodLiteral
 from ._mcp_instance import mcp
 from ..forecast.forecast import forecast as _forecast_impl
+from ..forecast.exceptions import ForecastError
 from ..forecast.backtest import forecast_backtest as _forecast_backtest_impl
 from ..forecast.volatility import forecast_volatility as _forecast_volatility_impl
 from ..forecast.forecast import get_forecast_methods_data as _get_forecast_methods_data
@@ -184,23 +185,26 @@ def forecast_generate(
 
     features = features or {}
 
-    out = _forecast_impl(
-        symbol=symbol,
-        timeframe=timeframe,  # type: ignore[arg-type]
-        method=str(resolved_method),  # type: ignore[arg-type]
-        horizon=horizon,
-        lookback=lookback,
-        as_of=as_of,
-        params=p,
-        ci_alpha=ci_alpha,
-        quantity=quantity,    # type: ignore[arg-type]
-        target="price",       # deprecated in core; keep fixed here
-        denoise=denoise,
-        features=features,
-        dimred_method=dimred_method,
-        dimred_params=dimred_params,
-        target_spec=target_spec,
-    )
+    try:
+        out = _forecast_impl(
+            symbol=symbol,
+            timeframe=timeframe,  # type: ignore[arg-type]
+            method=str(resolved_method),  # type: ignore[arg-type]
+            horizon=horizon,
+            lookback=lookback,
+            as_of=as_of,
+            params=p,
+            ci_alpha=ci_alpha,
+            quantity=quantity,    # type: ignore[arg-type]
+            target="price",       # deprecated in core; keep fixed here
+            denoise=denoise,
+            features=features,
+            dimred_method=dimred_method,
+            dimred_params=dimred_params,
+            target_spec=target_spec,
+        )
+    except ForecastError as exc:
+        return {"error": str(exc)}
     if (
         isinstance(out, dict)
         and not legacy_method
@@ -645,14 +649,17 @@ def forecast_conformal_intervals(
         qerrs = [float(_np.quantile(_np.array(e, dtype=float), q)) if e else float('nan') for e in errs]
 
         # 2) Forecast now (latest)
-        fc_now = _forecast_impl(
-            symbol=symbol,
-            timeframe=timeframe,
-            method=method,  # type: ignore
-            horizon=int(horizon),
-            params=params,
-            denoise=denoise,
-        )
+        try:
+            fc_now = _forecast_impl(
+                symbol=symbol,
+                timeframe=timeframe,
+                method=method,  # type: ignore
+                horizon=int(horizon),
+                params=params,
+                denoise=denoise,
+            )
+        except ForecastError as exc:
+            return {"error": str(exc)}
         if 'error' in fc_now:
             return fc_now
         yhat = fc_now.get('forecast_price') or []
