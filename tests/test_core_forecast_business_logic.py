@@ -10,7 +10,12 @@ import pytest
 from mtdata.core import forecast as cf
 from mtdata.forecast.exceptions import ForecastError
 from mtdata.forecast import use_cases as forecast_use_cases
-from mtdata.forecast.requests import ForecastGenerateRequest
+from mtdata.forecast.requests import (
+    ForecastConformalIntervalsRequest,
+    ForecastGenerateRequest,
+    ForecastTuneGeneticRequest,
+    ForecastTuneOptunaRequest,
+)
 
 
 def _unwrap(fn):
@@ -352,7 +357,15 @@ def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
     )
     monkeypatch.setattr(cf, "_forecast_impl", lambda **kwargs: {"forecast_price": [100.0, 101.0]})
 
-    out = raw(symbol="EURUSD", method="theta", horizon=2, alpha=0.1, steps=2)
+    out = raw(
+        request=ForecastConformalIntervalsRequest(
+            symbol="EURUSD",
+            method="theta",
+            horizon=2,
+            alpha=0.1,
+            steps=2,
+        )
+    )
 
     assert out["ci_alpha"] == 0.1
     assert out["conformal"]["alpha"] == 0.1
@@ -361,14 +374,16 @@ def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
     assert out["lower_price"][0] <= 100.0 <= out["upper_price"][0]
 
     monkeypatch.setattr(cf, "_forecast_backtest_impl", lambda **kwargs: {"error": "backtest failed"})
-    assert raw(symbol="EURUSD", method="theta", horizon=2)["error"] == "backtest failed"
+    assert raw(request=ForecastConformalIntervalsRequest(symbol="EURUSD", method="theta", horizon=2))["error"] == "backtest failed"
 
     monkeypatch.setattr(cf, "_forecast_backtest_impl", lambda **kwargs: {"results": {"theta": {"details": []}}})
-    assert "Conformal calibration failed" in raw(symbol="EURUSD", method="theta", horizon=2)["error"]
+    assert "Conformal calibration failed" in raw(
+        request=ForecastConformalIntervalsRequest(symbol="EURUSD", method="theta", horizon=2)
+    )["error"]
 
     monkeypatch.setattr(cf, "_forecast_backtest_impl", lambda **kwargs: {"results": {"theta": {"details": [{}]}}})
     monkeypatch.setattr(cf, "_forecast_impl", lambda **kwargs: (_ for _ in ()).throw(ForecastError("engine exploded")))
-    assert raw(symbol="EURUSD", method="theta", horizon=2)["error"] == "engine exploded"
+    assert raw(request=ForecastConformalIntervalsRequest(symbol="EURUSD", method="theta", horizon=2))["error"] == "engine exploded"
 
 
 def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
@@ -383,7 +398,6 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
         return {"ok": True}
 
     monkeypatch.setattr(cf, "_genetic_search_impl", fake_genetic)
-    monkeypatch.setattr(cf, "_parse_kv_or_json", lambda v: dict(v or {}))
 
     import mtdata.forecast.tune as tune_mod
 
@@ -393,19 +407,26 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
         return {"theta": {"window": {"min": 1, "max": 3}}}
 
     monkeypatch.setattr(tune_mod, "default_search_space", fake_default_search_space)
-    out = raw_tune(symbol="EURUSD", method="theta", search_space=None)
+    out = raw_tune(request=ForecastTuneGeneticRequest(symbol="EURUSD", method="theta", search_space=None))
     assert out == {"ok": True}
     assert captured["method"] == "theta"
     assert ss_calls["method"] == "theta"
     assert ss_calls["methods"] is None
     assert "theta" in captured["search_space"]
 
-    out = raw_tune(symbol="EURUSD", method="theta", methods=["theta", "naive"], search_space={"x": {"type": "int"}})
+    out = raw_tune(
+        request=ForecastTuneGeneticRequest(
+            symbol="EURUSD",
+            method="theta",
+            methods=["theta", "naive"],
+            search_space={"x": {"type": "int"}},
+        )
+    )
     assert out == {"ok": True}
     assert captured["method"] is None
 
     monkeypatch.setattr(cf, "_genetic_search_impl", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("fail")))
-    assert "Error in genetic tuning" in raw_tune(symbol="EURUSD")["error"]
+    assert "Error in genetic tuning" in raw_tune(request=ForecastTuneGeneticRequest(symbol="EURUSD"))["error"]
 
     monkeypatch.setattr(cf, "_build_barrier_kwargs_from", lambda _: {"tp_abs": 1.2, "sl_abs": 1.1})
 
@@ -447,7 +468,6 @@ def test_forecast_tune_optuna_routing(monkeypatch):
         return {"ok": True}
 
     monkeypatch.setattr(cf, "_optuna_search_impl", fake_optuna)
-    monkeypatch.setattr(cf, "_parse_kv_or_json", lambda v: dict(v or {}))
 
     import mtdata.forecast.tune as tune_mod
 
@@ -457,19 +477,26 @@ def test_forecast_tune_optuna_routing(monkeypatch):
         return {"theta": {"window": {"min": 1, "max": 3}}}
 
     monkeypatch.setattr(tune_mod, "default_search_space", fake_default_search_space)
-    out = raw_tune(symbol="EURUSD", method="theta", search_space=None)
+    out = raw_tune(request=ForecastTuneOptunaRequest(symbol="EURUSD", method="theta", search_space=None))
     assert out == {"ok": True}
     assert captured["method"] == "theta"
     assert ss_calls["method"] == "theta"
     assert ss_calls["methods"] is None
     assert "theta" in captured["search_space"]
 
-    out = raw_tune(symbol="EURUSD", method="theta", methods=["theta", "naive"], search_space={"x": {"type": "int"}})
+    out = raw_tune(
+        request=ForecastTuneOptunaRequest(
+            symbol="EURUSD",
+            method="theta",
+            methods=["theta", "naive"],
+            search_space={"x": {"type": "int"}},
+        )
+    )
     assert out == {"ok": True}
     assert captured["method"] is None
 
     monkeypatch.setattr(cf, "_optuna_search_impl", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("fail")))
-    assert "Error in optuna tuning" in raw_tune(symbol="EURUSD")["error"]
+    assert "Error in optuna tuning" in raw_tune(request=ForecastTuneOptunaRequest(symbol="EURUSD"))["error"]
 
 
 def test_forecast_options_and_quantlib_tool_routing(monkeypatch):

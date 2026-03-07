@@ -4,12 +4,18 @@ import difflib
 import importlib
 import pkgutil
 from functools import lru_cache
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .backtest import forecast_backtest as _forecast_backtest_impl
 from .exceptions import ForecastError
 from .forecast import forecast as _forecast_impl
-from .requests import ForecastBacktestRequest, ForecastGenerateRequest
+from .requests import (
+    ForecastBacktestRequest,
+    ForecastConformalIntervalsRequest,
+    ForecastGenerateRequest,
+    ForecastTuneGeneticRequest,
+    ForecastTuneOptunaRequest,
+)
 
 
 @lru_cache(maxsize=1)
@@ -202,4 +208,166 @@ def run_forecast_backtest(
         slippage_bps=request.slippage_bps,
         trade_threshold=request.trade_threshold,
         detail=request.detail,
+    )
+
+
+def run_forecast_conformal_intervals(
+    request: ForecastConformalIntervalsRequest,
+    *,
+    backtest_impl: Any = _forecast_backtest_impl,
+    forecast_impl: Any = _forecast_impl,
+) -> Dict[str, Any]:
+    # 1) Rolling backtest to collect residuals.
+    bt = backtest_impl(
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        horizon=int(request.horizon),
+        steps=int(request.steps),
+        spacing=int(request.spacing),
+        methods=[str(request.method)],
+        denoise=request.denoise,
+        params={str(request.method): dict(request.params or {})},
+        detail="full",
+    )
+    if "error" in bt:
+        return bt
+    res = bt.get("results", {}).get(str(request.method))
+    if not res or not res.get("details"):
+        return {"error": "Conformal calibration failed: no backtest details"}
+
+    # Build per-step residuals |y_hat_i - y_i|.
+    fh = int(request.horizon)
+    errs: List[List[float]] = [[] for _ in range(fh)]
+    for detail in res["details"]:
+        fc = detail.get("forecast")
+        act = detail.get("actual")
+        if not fc or not act:
+            continue
+        width = min(len(fc), len(act), fh)
+        for i in range(width):
+            try:
+                errs[i].append(abs(float(fc[i]) - float(act[i])))
+            except Exception:
+                continue
+
+    import numpy as _np
+
+    q = 1.0 - float(request.alpha)
+    qerrs = [
+        float(_np.quantile(_np.array(err, dtype=float), q)) if err else float("nan")
+        for err in errs
+    ]
+
+    # 2) Forecast now (latest).
+    out = forecast_impl(
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        method=request.method,
+        horizon=int(request.horizon),
+        params=request.params,
+        denoise=request.denoise,
+    )
+    if "error" in out:
+        return out
+    yhat = out.get("forecast_price") or []
+    if not yhat:
+        return {"error": "Empty point forecast for conformal intervals"}
+    yhat_arr = _np.array(yhat, dtype=float)
+    fh_eff = min(fh, yhat_arr.size)
+    lo = _np.empty(fh_eff, dtype=float)
+    hi = _np.empty(fh_eff, dtype=float)
+    for i in range(fh_eff):
+        err = qerrs[i] if i < len(qerrs) and _np.isfinite(qerrs[i]) else 0.0
+        lo[i] = yhat_arr[i] - err
+        hi[i] = yhat_arr[i] + err
+
+    result = dict(out)
+    result["conformal"] = {
+        "alpha": float(request.alpha),
+        "calibration_steps": int(request.steps),
+        "calibration_spacing": int(request.spacing),
+        "per_step_q": [float(v) for v in qerrs],
+    }
+    result["lower_price"] = [float(v) for v in lo.tolist()]
+    result["upper_price"] = [float(v) for v in hi.tolist()]
+    result["ci_alpha"] = float(request.alpha)
+    return result
+
+
+def _resolve_tuning_search_space(
+    request: ForecastTuneGeneticRequest | ForecastTuneOptunaRequest,
+) -> tuple[Optional[str], Dict[str, Any]]:
+    method_for_search: Optional[str] = request.method
+    from ..forecast.tune import default_search_space as _default_search_space
+
+    search_space = dict(request.search_space or {})
+    if not search_space:
+        if isinstance(request.methods, (list, tuple)) and len(request.methods) > 0:
+            return None, _default_search_space(method=None, methods=request.methods)
+        return method_for_search, _default_search_space(method=method_for_search, methods=None)
+    if isinstance(request.methods, (list, tuple)) and len(request.methods) > 0:
+        method_for_search = None
+    return method_for_search, search_space
+
+
+def run_forecast_tune_genetic(
+    request: ForecastTuneGeneticRequest,
+    *,
+    genetic_search_impl: Any,
+) -> Dict[str, Any]:
+    method_for_search, search_space = _resolve_tuning_search_space(request)
+    return genetic_search_impl(
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        method=str(method_for_search) if method_for_search is not None else None,
+        methods=request.methods,
+        horizon=int(request.horizon),
+        steps=int(request.steps),
+        spacing=int(request.spacing),
+        search_space=search_space,
+        metric=str(request.metric),
+        mode=str(request.mode),
+        population=int(request.population),
+        generations=int(request.generations),
+        crossover_rate=float(request.crossover_rate),
+        mutation_rate=float(request.mutation_rate),
+        seed=int(request.seed),
+        trade_threshold=float(request.trade_threshold),
+        denoise=request.denoise,
+        features=request.features,
+        dimred_method=request.dimred_method,
+        dimred_params=request.dimred_params,
+    )
+
+
+def run_forecast_tune_optuna(
+    request: ForecastTuneOptunaRequest,
+    *,
+    optuna_search_impl: Any,
+) -> Dict[str, Any]:
+    method_for_search, search_space = _resolve_tuning_search_space(request)
+    return optuna_search_impl(
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        method=str(method_for_search) if method_for_search is not None else None,
+        methods=request.methods,
+        horizon=int(request.horizon),
+        steps=int(request.steps),
+        spacing=int(request.spacing),
+        search_space=search_space,
+        metric=str(request.metric),
+        mode=str(request.mode),
+        n_trials=int(request.n_trials),
+        timeout=float(request.timeout) if request.timeout is not None else None,
+        n_jobs=int(request.n_jobs),
+        sampler=str(request.sampler),
+        pruner=str(request.pruner),
+        study_name=str(request.study_name) if request.study_name is not None else None,
+        storage=str(request.storage) if request.storage is not None else None,
+        seed=int(request.seed),
+        trade_threshold=float(request.trade_threshold),
+        denoise=request.denoise,
+        features=request.features,
+        dimred_method=request.dimred_method,
+        dimred_params=request.dimred_params,
     )

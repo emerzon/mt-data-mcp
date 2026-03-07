@@ -6,12 +6,21 @@ from ._mcp_instance import mcp
 from ..forecast.forecast import forecast as _forecast_impl
 from ..forecast.exceptions import ForecastError
 from ..forecast.backtest import forecast_backtest as _forecast_backtest_impl
-from ..forecast.requests import ForecastBacktestRequest, ForecastGenerateRequest
+from ..forecast.requests import (
+    ForecastBacktestRequest,
+    ForecastConformalIntervalsRequest,
+    ForecastGenerateRequest,
+    ForecastTuneGeneticRequest,
+    ForecastTuneOptunaRequest,
+)
 from ..forecast.use_cases import (
     _discover_sktime_forecasters,
     _resolve_sktime_forecaster,
     run_forecast_backtest,
+    run_forecast_conformal_intervals,
     run_forecast_generate,
+    run_forecast_tune_genetic,
+    run_forecast_tune_optuna,
 )
 from ..forecast.volatility import forecast_volatility as _forecast_volatility_impl
 from ..forecast.forecast import get_forecast_methods_data as _get_forecast_methods_data
@@ -377,121 +386,27 @@ def forecast_list_methods(
 
 @mcp.tool()
 @_auto_connect_wrapper
-def forecast_conformal_intervals(
-    symbol: str,
-    timeframe: TimeframeLiteral = "H1",
-    method: ForecastMethodLiteral = "theta",
-    horizon: int = 12,
-    steps: int = 25,
-    spacing: int = 10,
-    alpha: float = 0.1,
-    denoise: Optional[DenoiseSpec] = None,
-    params: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+def forecast_conformal_intervals(request: ForecastConformalIntervalsRequest) -> Dict[str, Any]:
     """Conformalized forecast intervals via rolling-origin calibration.
 
     - Calibrates per-step absolute residual quantiles using `steps` historical anchors (spaced by `spacing`).
     - Returns point forecast (from `method`) and conformal bands per step.
     """
     try:
-        # 1) Rolling backtest to collect residuals
-        bt = _forecast_backtest_impl(
-            symbol=symbol,
-            timeframe=timeframe,
-            horizon=int(horizon),
-            steps=int(steps),
-            spacing=int(spacing),
-            methods=[str(method)],
-            denoise=denoise,
-            params={str(method): dict(params or {})},
-            detail='full',
+        return run_forecast_conformal_intervals(
+            request,
+            backtest_impl=_forecast_backtest_impl,
+            forecast_impl=_forecast_impl,
         )
-        if 'error' in bt:
-            return bt
-        res = bt.get('results', {}).get(str(method))
-        if not res or not res.get('details'):
-            return {"error": "Conformal calibration failed: no backtest details"}
-        # Build per-step residuals |y_hat_i - y_i|
-        fh = int(horizon)
-        errs = [[] for _ in range(fh)]
-        for d in res['details']:
-            fc = d.get('forecast'); act = d.get('actual')
-            if not fc or not act:
-                continue
-            m = min(len(fc), len(act), fh)
-            for i in range(m):
-                try:
-                    errs[i].append(abs(float(fc[i]) - float(act[i])))
-                except Exception:
-                    continue
-        # Per-step quantiles
-        import numpy as _np
-        q = 1.0 - float(alpha)
-        qerrs = [float(_np.quantile(_np.array(e, dtype=float), q)) if e else float('nan') for e in errs]
-
-        # 2) Forecast now (latest)
-        try:
-            fc_now = _forecast_impl(
-                symbol=symbol,
-                timeframe=timeframe,
-                method=method,  # type: ignore
-                horizon=int(horizon),
-                params=params,
-                denoise=denoise,
-            )
-        except ForecastError as exc:
-            return {"error": str(exc)}
-        if 'error' in fc_now:
-            return fc_now
-        yhat = fc_now.get('forecast_price') or []
-        if not yhat:
-            return {"error": "Empty point forecast for conformal intervals"}
-        yhat_arr = _np.array(yhat, dtype=float)
-        fh_eff = min(fh, yhat_arr.size)
-        lo = _np.empty(fh_eff, dtype=float); hi = _np.empty(fh_eff, dtype=float)
-        for i in range(fh_eff):
-            e = qerrs[i] if i < len(qerrs) and _np.isfinite(qerrs[i]) else 0.0
-            lo[i] = yhat_arr[i] - e
-            hi[i] = yhat_arr[i] + e
-        out = dict(fc_now)
-        out['conformal'] = {
-            'alpha': float(alpha),
-            'calibration_steps': int(steps),
-            'calibration_spacing': int(spacing),
-            'per_step_q': [float(v) for v in qerrs],
-        }
-        out['lower_price'] = [float(v) for v in lo.tolist()]
-        out['upper_price'] = [float(v) for v in hi.tolist()]
-        out['ci_alpha'] = float(alpha)
-        return out
+    except ForecastError as exc:
+        return {"error": str(exc)}
     except Exception as e:
         return {"error": f"Error computing conformal forecast: {str(e)}"}
 
 
 @mcp.tool()
 @_auto_connect_wrapper
-def forecast_tune_genetic(
-    symbol: str,
-    timeframe: TimeframeLiteral = "H1",
-    method: Optional[str] = "theta",
-    methods: Optional[List[str]] = None,
-    horizon: int = 12,
-    steps: int = 5,
-    spacing: int = 20,
-    search_space: Optional[Dict[str, Any]] = None,
-    metric: str = "avg_rmse",
-    mode: str = "min",
-    population: int = 12,
-    generations: int = 10,
-    crossover_rate: float = 0.6,
-    mutation_rate: float = 0.3,
-    seed: int = 42,
-    trade_threshold: float = 0.0,
-    denoise: Optional[DenoiseSpec] = None,
-    features: Optional[Dict[str, Any]] = None,
-    dimred_method: Optional[str] = None,
-    dimred_params: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+def forecast_tune_genetic(request: ForecastTuneGeneticRequest) -> Dict[str, Any]:
     """Genetic search over method params to optimize a backtest metric.
 
     - search_space: dict or JSON like {param: {type, min, max, choices?, log?}}
@@ -499,40 +414,9 @@ def forecast_tune_genetic(
     - mode: 'min' or 'max'
     """
     try:
-        ss = _parse_kv_or_json(search_space)
-        method_for_search: Optional[str] = method
-        from ..forecast.tune import default_search_space as _default_ss
-        if not isinstance(ss, dict) or not ss:
-            # No space provided: keep a pinned single-method search when requested.
-            if isinstance(methods, (list, tuple)) and len(methods) > 0:
-                ss = _default_ss(method=None, methods=methods)
-                method_for_search = None
-            else:
-                ss = _default_ss(method=method_for_search, methods=None)
-        elif isinstance(methods, (list, tuple)) and len(methods) > 0:
-            # Explicit methods list present: treat as multi-method search
-            method_for_search = None
-        return _genetic_search_impl(
-            symbol=symbol,
-            timeframe=timeframe,  # type: ignore[arg-type]
-            method=str(method_for_search) if method_for_search is not None else None,
-            methods=methods,
-            horizon=int(horizon),
-            steps=int(steps),
-            spacing=int(spacing),
-            search_space=ss,
-            metric=str(metric),
-            mode=str(mode),
-            population=int(population),
-            generations=int(generations),
-            crossover_rate=float(crossover_rate),
-            mutation_rate=float(mutation_rate),
-            seed=int(seed),
-            trade_threshold=float(trade_threshold),
-            denoise=denoise,
-            features=features,
-            dimred_method=dimred_method,
-            dimred_params=dimred_params,
+        return run_forecast_tune_genetic(
+            request,
+            genetic_search_impl=_genetic_search_impl,
         )
     except Exception as e:
         return {"error": f"Error in genetic tuning: {e}"}
@@ -540,68 +424,12 @@ def forecast_tune_genetic(
 
 @mcp.tool()
 @_auto_connect_wrapper
-def forecast_tune_optuna(
-    symbol: str,
-    timeframe: TimeframeLiteral = "H1",
-    method: Optional[str] = "theta",
-    methods: Optional[List[str]] = None,
-    horizon: int = 12,
-    steps: int = 5,
-    spacing: int = 20,
-    search_space: Optional[Dict[str, Any]] = None,
-    metric: str = "avg_rmse",
-    mode: str = "min",
-    n_trials: int = 40,
-    timeout: Optional[float] = None,
-    n_jobs: int = 1,
-    sampler: Literal["tpe", "random", "cmaes"] = "tpe",  # type: ignore
-    pruner: Literal["median", "none", "hyperband", "percentile"] = "median",  # type: ignore
-    study_name: Optional[str] = None,
-    storage: Optional[str] = None,
-    seed: int = 42,
-    trade_threshold: float = 0.0,
-    denoise: Optional[DenoiseSpec] = None,
-    features: Optional[Dict[str, Any]] = None,
-    dimred_method: Optional[str] = None,
-    dimred_params: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+def forecast_tune_optuna(request: ForecastTuneOptunaRequest) -> Dict[str, Any]:
     """Optuna search over method params to optimize a backtest metric."""
     try:
-        ss = _parse_kv_or_json(search_space)
-        method_for_search: Optional[str] = method
-        from ..forecast.tune import default_search_space as _default_ss
-        if not isinstance(ss, dict) or not ss:
-            if isinstance(methods, (list, tuple)) and len(methods) > 0:
-                ss = _default_ss(method=None, methods=methods)
-                method_for_search = None
-            else:
-                ss = _default_ss(method=method_for_search, methods=None)
-        elif isinstance(methods, (list, tuple)) and len(methods) > 0:
-            method_for_search = None
-        return _optuna_search_impl(
-            symbol=symbol,
-            timeframe=timeframe,  # type: ignore[arg-type]
-            method=str(method_for_search) if method_for_search is not None else None,
-            methods=methods,
-            horizon=int(horizon),
-            steps=int(steps),
-            spacing=int(spacing),
-            search_space=ss,
-            metric=str(metric),
-            mode=str(mode),
-            n_trials=int(n_trials),
-            timeout=float(timeout) if timeout is not None else None,
-            n_jobs=int(n_jobs),
-            sampler=str(sampler),
-            pruner=str(pruner),
-            study_name=str(study_name) if study_name is not None else None,
-            storage=str(storage) if storage is not None else None,
-            seed=int(seed),
-            trade_threshold=float(trade_threshold),
-            denoise=denoise,
-            features=features,
-            dimred_method=dimred_method,
-            dimred_params=dimred_params,
+        return run_forecast_tune_optuna(
+            request,
+            optuna_search_impl=_optuna_search_impl,
         )
     except Exception as e:
         return {"error": f"Error in optuna tuning: {e}"}
