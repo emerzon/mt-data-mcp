@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
@@ -10,8 +11,36 @@ from fastapi import HTTPException
 
 from ..forecast.exceptions import ForecastError
 from ..utils.mt5 import MT5ConnectionError
+from .error_envelope import build_http_error_detail
 from .mt5_gateway import get_default_mt5_gateway
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
+
+logger = logging.getLogger(__name__)
+
+
+def _http_error(
+    status_code: int,
+    message: Any,
+    *,
+    code: str,
+    operation: str,
+    details: Optional[Dict[str, Any]] = None,
+) -> HTTPException:
+    payload = build_http_error_detail(
+        message,
+        code=code,
+        operation=operation,
+        details=details,
+    )
+    log_fn = logger.error if status_code >= 500 else logger.warning
+    log_fn(
+        "transport=web_api operation=%s request_id=%s status=%s error=%s",
+        operation,
+        payload["request_id"],
+        status_code,
+        payload["error"],
+    )
+    return HTTPException(status_code=status_code, detail=payload)
 
 
 def _require_mt5_connection() -> None:
@@ -19,7 +48,12 @@ def _require_mt5_connection() -> None:
     try:
         mt5.ensure_connection()
     except MT5ConnectionError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise _http_error(
+            500,
+            str(exc),
+            code="mt5_connection_error",
+            operation="require_mt5_connection",
+        )
 
 
 def get_instruments_response(
@@ -32,7 +66,12 @@ def get_instruments_response(
     _require_mt5_connection()
     symbols = mt5.symbols_get()
     if symbols is None:
-        raise HTTPException(status_code=500, detail=f"symbols_get failed: {mt5.last_error()}")
+        raise _http_error(
+            500,
+            f"symbols_get failed: {mt5.last_error()}",
+            code="symbols_get_failed",
+            operation="get_instruments",
+        )
     items: List[Dict[str, Any]] = []
     query = (search or "").strip().lower()
     only_visible = False if query else True
@@ -239,9 +278,11 @@ def get_history_response(
                 if not method_meta or not bool(method_meta.get("available", True)):
                     req = method_meta.get("requires") if method_meta else ""
                     suffix = f"Requires {req}" if req else ""
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Denoise method '{denoise_method_val}' is not available. {suffix}".strip(),
+                    raise _http_error(
+                        400,
+                        f"Denoise method '{denoise_method_val}' is not available. {suffix}".strip(),
+                        code="denoise_method_unavailable",
+                        operation="get_history",
                     )
         except HTTPException:
             raise
@@ -311,12 +352,12 @@ def get_history_response(
             time_as_epoch=True,
         )
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"history fetch failed: {exc}")
+        raise _http_error(400, f"history fetch failed: {exc}", code="history_fetch_failed", operation="get_history")
 
     if not isinstance(result, dict):
-        raise HTTPException(status_code=500, detail="Unexpected history payload")
+        raise _http_error(500, "Unexpected history payload", code="history_payload_invalid", operation="get_history")
     if result.get("error"):
-        raise HTTPException(status_code=400, detail=str(result["error"]))
+        raise _http_error(400, str(result["error"]), code="history_tool_error", operation="get_history")
 
     rows_raw = result.get("data")
     rows: List[Dict[str, Any]] = rows_raw if isinstance(rows_raw, list) else []
@@ -574,11 +615,11 @@ def get_tick_response(
         if err:
             info = mt5.symbol_info(symbol)
             if info is None:
-                raise HTTPException(status_code=404, detail=f"Unknown symbol {symbol}")
-            raise HTTPException(status_code=500, detail=str(err))
+                raise _http_error(404, f"Unknown symbol {symbol}", code="unknown_symbol", operation="get_tick")
+            raise _http_error(500, str(err), code="tick_symbol_ready_failed", operation="get_tick")
         tick = mt5.symbol_info_tick(symbol)
     if tick is None:
-        raise HTTPException(status_code=404, detail=f"No tick data for {symbol}")
+        raise _http_error(404, f"No tick data for {symbol}", code="tick_data_missing", operation="get_tick")
     return {
         "symbol": symbol,
         "time": float(tick.time),
@@ -609,9 +650,9 @@ def post_forecast_price_response(*, body: ForecastPriceBody, forecast_impl: Call
             target_spec=body.target_spec,
         )
     except ForecastError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _http_error(400, str(exc), code="forecast_error", operation="post_forecast_price")
     if isinstance(result, dict) and result.get("error"):
-        raise HTTPException(status_code=400, detail=str(result["error"]))
+        raise _http_error(400, str(result["error"]), code="forecast_tool_error", operation="post_forecast_price")
     return result
 
 
@@ -627,7 +668,7 @@ def post_forecast_volatility_response(*, body: ForecastVolBody, forecast_vol_imp
         denoise=body.denoise,
     )
     if isinstance(result, dict) and result.get("error"):
-        raise HTTPException(status_code=400, detail=str(result["error"]))
+        raise _http_error(400, str(result["error"]), code="forecast_volatility_error", operation="post_forecast_volatility")
     return result
 
 
@@ -652,5 +693,5 @@ def post_backtest_response(*, body: BacktestBody, backtest_impl: Callable[..., A
         detail=body.detail,  # type: ignore[arg-type]
     )
     if isinstance(result, dict) and result.get("error"):
-        raise HTTPException(status_code=400, detail=str(result["error"]))
+        raise _http_error(400, str(result["error"]), code="backtest_error", operation="post_backtest")
     return result

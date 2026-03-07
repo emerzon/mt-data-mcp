@@ -54,6 +54,23 @@ def build_error_payload(
     return payload
 
 
+def build_http_error_detail(
+    message: Any,
+    *,
+    code: str,
+    request_id: Optional[str] = None,
+    operation: Optional[str] = None,
+    details: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    return build_error_payload(
+        message,
+        code=code,
+        request_id=request_id,
+        operation=operation,
+        details=details,
+    )
+
+
 def log_transport_exception(
     logger: logging.Logger,
     *,
