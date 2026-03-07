@@ -543,6 +543,29 @@ class TestRecordingToolDecorator:
             assert callable(fn)
             break
 
+    def test_wrapped_function_adds_error_metadata(self):
+        import mtdata.core.server as srv
+
+        original = srv._ORIG_TOOL_DECORATOR
+        try:
+            srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = srv._recording_tool_decorator()
+
+            def boom():
+                raise RuntimeError("boom")
+
+            wrapped = dec(boom)
+            result = wrapped(__cli_raw=True)
+
+            assert result["error"] == "boom"
+            assert result["success"] is False
+            assert result["error_code"] == "tool_execution_error"
+            assert result["operation"] == "boom"
+            assert isinstance(result.get("request_id"), str)
+            assert result["request_id"]
+        finally:
+            srv._ORIG_TOOL_DECORATOR = original
+
 
 # ── _disconnect_mt5 ──────────────────────────────────────────────────────
 

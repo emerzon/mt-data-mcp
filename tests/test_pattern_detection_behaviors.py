@@ -36,7 +36,11 @@ def test_patterns_detect_returns_connection_error_payload(monkeypatch):
 
     out = patterns_detect(symbol="EURUSD", mode="classic", timeframe="H1")
 
-    assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
+    assert out["error"] == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+    assert out["success"] is False
+    assert out["error_code"] == "tool_error"
+    assert out["operation"] == "patterns_detect"
+    assert isinstance(out.get("request_id"), str)
 
 
 def test_fit_lines_and_arrays_uses_cfg_for_robust_fit(monkeypatch):

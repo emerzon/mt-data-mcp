@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel
 
+from .error_envelope import build_error_payload, log_transport_exception, normalize_error_payload
 from ..utils.utils import _coerce_scalar
 
 try:
@@ -259,11 +260,37 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
 
                 out = func(*a, **kw)
             except Exception as exc:
+                request_id = None
                 try:
-                    logging.getLogger(__name__).exception("Tool '%s' failed", getattr(func, "__name__", "tool"))
+                    request_id = build_error_payload(
+                        str(exc),
+                        code="tool_execution_error",
+                        operation=getattr(func, "__name__", "tool"),
+                        details={"tool": getattr(func, "__name__", "tool")},
+                    )["request_id"]
+                    log_transport_exception(
+                        logging.getLogger(__name__),
+                        transport="mcp",
+                        operation=getattr(func, "__name__", "tool"),
+                        request_id=request_id,
+                        exc=exc,
+                    )
                 except Exception:
                     pass
-                out = {"error": str(exc)}
+                out = build_error_payload(
+                    str(exc),
+                    code="tool_execution_error",
+                    request_id=request_id,
+                    operation=getattr(func, "__name__", "tool"),
+                    details={"tool": getattr(func, "__name__", "tool")},
+                )
+
+            if isinstance(out, dict):
+                out = normalize_error_payload(
+                    out,
+                    default_code="tool_error",
+                    operation=getattr(func, "__name__", "tool"),
+                )
 
             if raw_output:
                 return out
