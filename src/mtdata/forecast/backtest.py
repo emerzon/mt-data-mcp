@@ -2,8 +2,8 @@ from typing import Any, Dict, List, Optional, Tuple, Literal
 import numpy as np
 import math
 
-from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..core.schema import TimeframeLiteral, DenoiseSpec
+from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..shared.schema import TimeframeLiteral, DenoiseSpec
 from ..utils.utils import _format_time_minimal
 from .volatility import forecast_volatility
 from .forecast import forecast

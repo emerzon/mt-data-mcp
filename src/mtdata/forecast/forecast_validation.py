@@ -5,8 +5,8 @@ Forecast validation utilities and error handling.
 from typing import Any, Dict, Optional, List, Literal, Union
 import pandas as pd
 
-from ..core.constants import TIMEFRAME_MAP
-from ..core.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
+from ..shared.constants import TIMEFRAME_MAP
+from ..shared.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
 from .forecast_methods import FORECAST_METHODS, validate_method_params, get_method_requirements
 
 

@@ -17,7 +17,7 @@ from .config import load_environment
 
 load_environment()
 
-from ..bootstrap import bootstrap_tools
+from ..bootstrap.tools import bootstrap_tools
 from ..utils.minimal_output import format_result_minimal as _shared_minimal
 from ._mcp_instance import mcp
 from ._mcp_tools import get_tool_registry as get_registered_tools

@@ -5,8 +5,8 @@ import pandas as pd
 import json
 import math
 
-from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..core.schema import TimeframeLiteral, DenoiseSpec
+from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..shared.schema import TimeframeLiteral, DenoiseSpec
 from ..utils.mt5 import _ensure_symbol_ready, _mt5_copy_rates_from, _mt5_epoch_to_utc, mt5
 from ..utils.utils import _parse_start_datetime
 from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec

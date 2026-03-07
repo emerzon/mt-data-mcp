@@ -4,8 +4,8 @@ import os
 # Adopt upcoming StatsForecast DataFrame format to avoid repeated warnings
 os.environ.setdefault("NIXTLA_ID_AS_COL", "1")
 
-from ..core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..core.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
+from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..shared.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
 from .exceptions import ForecastError
 from .common import fetch_history as _fetch_history
 from .forecast_methods import get_forecast_methods_data

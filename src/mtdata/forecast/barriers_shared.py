@@ -2,8 +2,8 @@ from typing import Any, Dict, Optional, List, Literal, Tuple, Set
 import math
 import warnings
 import numpy as np
-from ..core.schema import TimeframeLiteral, DenoiseSpec
-from ..core.constants import TIMEFRAME_SECONDS
+from ..shared.schema import TimeframeLiteral, DenoiseSpec
+from ..shared.constants import TIMEFRAME_SECONDS
 from .common import fetch_history as _fetch_history, log_returns_from_prices as _log_returns_from_prices
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import (

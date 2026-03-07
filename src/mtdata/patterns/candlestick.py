@@ -66,7 +66,7 @@ def _ensure_candlestick_runtime() -> None:
         mt5 = mt5_mod
 
     if TIMEFRAME_MAP is None:
-        from ..core.constants import TIMEFRAME_MAP as timeframe_map
+        from ..shared.constants import TIMEFRAME_MAP as timeframe_map
 
         TIMEFRAME_MAP = timeframe_map
 

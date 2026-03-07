@@ -6,7 +6,7 @@ from functools import lru_cache
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Iterator, Tuple
 
-from ..core.config import mt5_config
+from ..bootstrap.settings import mt5_config
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ _SYMBOL_INFO_TTL_SECONDS = 5
 def _data_ready_timing() -> tuple[float, float]:
     """Load symbol-readiness timing constants lazily to avoid import cycles."""
     try:
-        from ..core.constants import DATA_POLL_INTERVAL, DATA_READY_TIMEOUT
+        from ..shared.constants import DATA_POLL_INTERVAL, DATA_READY_TIMEOUT
 
         return float(DATA_READY_TIMEOUT), float(DATA_POLL_INTERVAL)
     except Exception:

@@ -8,8 +8,8 @@ import numpy as np
 import pandas as pd
 import math
 
-from mtdata.core.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from mtdata.core.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
+from mtdata.shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from mtdata.shared.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
 from mtdata.utils.mt5 import get_symbol_info_cached, mt5
 from mtdata.utils.utils import (
     _format_time_minimal,

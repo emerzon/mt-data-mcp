@@ -11,14 +11,14 @@ import time
 # Imports from core (schema, constants, server utils)
 
 # Imports from core (schema, constants)
-from ..core.schema import TimeframeLiteral, IndicatorSpec, DenoiseSpec, SimplifySpec
-from ..core.constants import (
+from ..shared.schema import TimeframeLiteral, IndicatorSpec, DenoiseSpec, SimplifySpec
+from ..shared.constants import (
     TIMEFRAME_MAP, TIMEFRAME_SECONDS, FETCH_RETRY_ATTEMPTS, FETCH_RETRY_DELAY,
     SANITY_BARS_TOLERANCE, TI_NAN_WARMUP_FACTOR, TI_NAN_WARMUP_MIN_ADD,
     SIMPLIFY_DEFAULT_METHOD, SIMPLIFY_DEFAULT_MODE, SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT, TICKS_LOOKBACK_DAYS,
     DEFAULT_ROW_LIMIT
 )
-from ..core.config import mt5_config
+from ..bootstrap.settings import mt5_config
 
 # Imports from utils
 from ..utils.mt5 import (

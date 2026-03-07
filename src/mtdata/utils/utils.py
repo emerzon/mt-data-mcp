@@ -141,7 +141,7 @@ def _format_time_minimal_local(epoch_seconds: float) -> str:
     Normalized format everywhere: YYYY-MM-DD HH:MM (local/client tz)
     Falls back to UTC if tz resolution fails.
     """
-    from ..core.config import mt5_config
+    from ..bootstrap.settings import mt5_config
     try:
         tz = mt5_config.get_client_tz()
         if tz is not None:
@@ -154,7 +154,7 @@ def _format_time_minimal_local(epoch_seconds: float) -> str:
 
 def _use_client_tz(_: object = None) -> bool:
     """Return True when a client timezone is configured."""
-    from ..core.config import mt5_config
+    from ..bootstrap.settings import mt5_config
     try:
         return mt5_config.get_client_tz() is not None
     except Exception:
@@ -162,7 +162,7 @@ def _use_client_tz(_: object = None) -> bool:
 
 def _resolve_client_tz(_: object = None):
     """Return the configured client timezone, if any."""
-    from ..core.config import mt5_config
+    from ..bootstrap.settings import mt5_config
     try:
         return mt5_config.get_client_tz()
     except Exception:

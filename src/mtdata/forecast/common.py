@@ -6,7 +6,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from ..core.constants import TIMEFRAME_SECONDS, TIMEFRAME_MAP
+from ..shared.constants import TIMEFRAME_SECONDS, TIMEFRAME_MAP
 from ..utils.mt5 import (
     _ensure_symbol_ready,
     _mt5_copy_rates_from,

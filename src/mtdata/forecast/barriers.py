@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional, Literal
 
-from ..core.schema import TimeframeLiteral, DenoiseSpec
+from ..shared.schema import TimeframeLiteral, DenoiseSpec
 from .common import fetch_history as _fetch_history, log_returns_from_prices as _log_returns_from_prices
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import (

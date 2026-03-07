@@ -19,7 +19,7 @@ except Exception:
 def _get_simplify_defaults() -> Tuple[float, int, int]:
     """Lazy-load simplify defaults from core.constants to avoid circular imports."""
     try:
-        from ..core.constants import (
+        from ..shared.constants import (
             SIMPLIFY_DEFAULT_RATIO,
             SIMPLIFY_DEFAULT_MIN_POINTS,
             SIMPLIFY_DEFAULT_MAX_POINTS,
@@ -728,7 +728,7 @@ def _simplify_dataframe_rows_ext(
     if df.empty:
         return df, None
 
-    from ..core.constants import SIMPLIFY_DEFAULT_MODE
+    from ..shared.constants import SIMPLIFY_DEFAULT_MODE
 
     spec = dict(simplify) if simplify else {}
     mode = str(spec.get('mode', SIMPLIFY_DEFAULT_MODE)).lower().strip() or SIMPLIFY_DEFAULT_MODE
@@ -764,7 +764,7 @@ def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Opt
             return df, None
         
         # Import constants to avoid circular imports
-        from ..core.constants import SIMPLIFY_DEFAULT_METHOD, SIMPLIFY_DEFAULT_MODE
+        from ..shared.constants import SIMPLIFY_DEFAULT_METHOD, SIMPLIFY_DEFAULT_MODE
         
         method = str(simplify.get("method", SIMPLIFY_DEFAULT_METHOD)).lower().strip()
         mode = str(simplify.get("mode", SIMPLIFY_DEFAULT_MODE)).lower().strip() or SIMPLIFY_DEFAULT_MODE

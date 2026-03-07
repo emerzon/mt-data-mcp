@@ -4,7 +4,7 @@ Forecast method definitions and metadata (registry-derived).
 
 from typing import Any, Dict, List
 
-from ..core.schema import ForecastMethodLiteral, TimeframeLiteral
+from ..shared.schema import ForecastMethodLiteral, TimeframeLiteral
 from .forecast_registry import get_forecast_methods_data as _registry_methods_data
 
 # Supported forecast methods (derived from registry to avoid drift)
