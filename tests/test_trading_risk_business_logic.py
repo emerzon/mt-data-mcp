@@ -6,6 +6,7 @@ import sys
 
 from mtdata.core.trading import trade_risk_analyze as _trade_risk_analyze_tool
 from mtdata.core.trading_requests import TradeRiskAnalyzeRequest
+from mtdata.utils.mt5 import MT5ConnectionError
 
 
 def _unwrap(fn):
@@ -19,7 +20,8 @@ def trade_risk_analyze(**kwargs):
     request = kwargs.pop("request", None)
     if request is None:
         request = TradeRiskAnalyzeRequest(**kwargs)
-    return _trade_risk_analyze_tool(request=request, __cli_raw=raw_output)
+    with patch("mtdata.core.trading_risk.ensure_mt5_connection_or_raise", return_value=None):
+        return _trade_risk_analyze_tool(request=request, __cli_raw=raw_output)
 
 
 def _make_symbol_info(*, volume_min: float = 0.1, volume_step: float = 0.1, volume_max: float = 10.0):
@@ -42,13 +44,12 @@ def test_trade_risk_analyze_rounds_down_to_step_to_avoid_overshoot() -> None:
     mt5.positions_get.return_value = []
     mt5.symbol_info.return_value = _make_symbol_info()
 
-    with patch("mtdata.core.trading_risk._auto_connect_wrapper", lambda f: f):
-        out = trade_risk_analyze(
-            symbol="EURUSD",
-            desired_risk_pct=1.0,
-            proposed_entry=100.0,
-            proposed_sl=92.06,
-        )
+    out = trade_risk_analyze(
+        symbol="EURUSD",
+        desired_risk_pct=1.0,
+        proposed_entry=100.0,
+        proposed_sl=92.06,
+    )
 
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
@@ -71,13 +72,12 @@ def test_trade_risk_analyze_warns_when_min_volume_forces_overshoot() -> None:
     mt5.positions_get.return_value = []
     mt5.symbol_info.return_value = _make_symbol_info(volume_min=0.1, volume_step=0.1, volume_max=10.0)
 
-    with patch("mtdata.core.trading_risk._auto_connect_wrapper", lambda f: f):
-        out = trade_risk_analyze(
-            symbol="EURUSD",
-            desired_risk_pct=0.1,
-            proposed_entry=100.0,
-            proposed_sl=80.0,
-        )
+    out = trade_risk_analyze(
+        symbol="EURUSD",
+        desired_risk_pct=0.1,
+        proposed_entry=100.0,
+        proposed_sl=80.0,
+    )
 
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
@@ -93,3 +93,16 @@ def test_trade_risk_analyze_warns_when_min_volume_forces_overshoot() -> None:
     assert "risk_alert" in out
     assert out["risk_alert"]["code"] == "risk_overshoot_after_volume_constraints"
     assert any("minimum trade volume" in note.lower() for note in sizing["sizing_notes"])
+
+
+def test_trade_risk_analyze_returns_connection_error_payload() -> None:
+    with patch(
+        "mtdata.core.trading_risk.ensure_mt5_connection_or_raise",
+        side_effect=MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running."),
+    ):
+        out = _trade_risk_analyze_tool(
+            request=TradeRiskAnalyzeRequest(),
+            __cli_raw=True,
+        )
+
+    assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}

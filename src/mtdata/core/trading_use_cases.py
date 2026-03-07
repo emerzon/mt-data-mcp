@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from ..utils.mt5 import MT5ConnectionError
 from .trading_requests import (
     TradeCloseRequest,
     TradeGetOpenRequest,
@@ -359,7 +360,7 @@ def run_trade_history(
     request: TradeHistoryRequest,
     *,
     mt5: Any,
-    auto_connect_wrapper: Any,
+    ensure_connection: Any,
     use_client_tz: Any,
     format_time_minimal: Any,
     format_time_minimal_local: Any,
@@ -374,7 +375,11 @@ def run_trade_history(
 ) -> Any:
     import pandas as pd
 
-    @auto_connect_wrapper
+    try:
+        ensure_connection()
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
+
     def _get_history():
         try:
             use_client_tz_value = use_client_tz()
@@ -649,9 +654,13 @@ def run_trade_risk_analyze(
     request: TradeRiskAnalyzeRequest,
     *,
     mt5: Any,
-    auto_connect_wrapper: Any,
+    ensure_connection: Any,
 ) -> Dict[str, Any]:
-    @auto_connect_wrapper
+    try:
+        ensure_connection()
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
+
     def _analyze_risk():
         try:
             account = mt5.account_info()
@@ -939,7 +948,7 @@ def run_trade_get_open(
     request: TradeGetOpenRequest,
     *,
     mt5: Any,
-    auto_connect_wrapper: Any,
+    ensure_connection: Any,
     use_client_tz: Any,
     format_time_minimal: Any,
     format_time_minimal_local: Any,
@@ -949,7 +958,11 @@ def run_trade_get_open(
 ) -> List[Dict[str, Any]]:
     import pandas as pd
 
-    @auto_connect_wrapper
+    try:
+        ensure_connection()
+    except MT5ConnectionError as exc:
+        return [{"error": str(exc)}]
+
     def _get_open():
         try:
             use_client_tz_value = use_client_tz()
@@ -1061,7 +1074,7 @@ def run_trade_get_pending(
     request: TradeGetPendingRequest,
     *,
     mt5: Any,
-    auto_connect_wrapper: Any,
+    ensure_connection: Any,
     use_client_tz: Any,
     format_time_minimal: Any,
     format_time_minimal_local: Any,
@@ -1071,7 +1084,11 @@ def run_trade_get_pending(
 ) -> List[Dict[str, Any]]:
     import pandas as pd
 
-    @auto_connect_wrapper
+    try:
+        ensure_connection()
+    except MT5ConnectionError as exc:
+        return [{"error": str(exc)}]
+
     def _get_pending():
         try:
             use_client_tz_value = use_client_tz()

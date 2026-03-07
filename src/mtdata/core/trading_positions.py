@@ -9,7 +9,7 @@ from ._mcp_instance import mcp
 from . import trading_comments, trading_validation
 from .trading_requests import TradeGetOpenRequest, TradeGetPendingRequest
 from .trading_use_cases import run_trade_get_open, run_trade_get_pending
-from ..utils.mt5 import _auto_connect_wrapper, _mt5_epoch_to_utc, mt5_adapter
+from ..utils.mt5 import _mt5_epoch_to_utc, ensure_mt5_connection_or_raise, mt5_adapter
 from ..utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
@@ -163,7 +163,7 @@ def trade_get_open(
     return run_trade_get_open(
         request,
         mt5=mt5_adapter,
-        auto_connect_wrapper=_auto_connect_wrapper,
+        ensure_connection=ensure_mt5_connection_or_raise,
         use_client_tz=_use_client_tz,
         format_time_minimal=_format_time_minimal,
         format_time_minimal_local=_format_time_minimal_local,
@@ -181,7 +181,7 @@ def trade_get_pending(
     return run_trade_get_pending(
         request,
         mt5=mt5_adapter,
-        auto_connect_wrapper=_auto_connect_wrapper,
+        ensure_connection=ensure_mt5_connection_or_raise,
         use_client_tz=_use_client_tz,
         format_time_minimal=_format_time_minimal,
         format_time_minimal_local=_format_time_minimal_local,

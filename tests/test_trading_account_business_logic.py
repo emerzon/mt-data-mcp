@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import sys
 
 from mtdata.core.trading import trade_account_info
+from mtdata.utils.mt5 import MT5ConnectionError
 
 
 def _unwrap(fn):
@@ -44,7 +45,7 @@ def test_trade_account_info_includes_execution_preflight_fields() -> None:
     )
 
     raw = _unwrap(trade_account_info)
-    with patch("mtdata.core.trading_account._auto_connect_wrapper", lambda f: f):
+    with patch("mtdata.core.trading_account.ensure_mt5_connection_or_raise", return_value=None):
         out = raw()
 
     if prev is not None:
@@ -62,3 +63,15 @@ def test_trade_account_info_includes_execution_preflight_fields() -> None:
     assert out["execution_hard_blockers"] == []
     assert "Terminal AutoTrading is disabled." in out["execution_soft_blockers"]
     assert "Terminal AutoTrading is disabled." in out["execution_blockers"]
+
+
+def test_trade_account_info_returns_connection_error_payload() -> None:
+    raw = _unwrap(trade_account_info)
+
+    with patch(
+        "mtdata.core.trading_account.ensure_mt5_connection_or_raise",
+        side_effect=MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running."),
+    ):
+        out = raw()
+
+    assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}

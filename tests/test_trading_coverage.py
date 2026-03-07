@@ -203,16 +203,16 @@ def _pending_order(ticket=100, symbol="EURUSD", type_=2, volume=0.01,
     )
 
 
-# Patch _auto_connect_wrapper to just call the function directly
+# Patch MT5 connection helpers to avoid real terminal access in tests
 @pytest.fixture(autouse=True)
 def _bypass_auto_connect(monkeypatch):
-    """Make _auto_connect_wrapper a passthrough so no real MT5 connection is needed."""
+    """Neutralize MT5 connection guards so no real terminal access is needed."""
     passthrough = lambda fn=None, **kw: fn if fn else (lambda f: f)
-    monkeypatch.setattr("mtdata.core.trading_account._auto_connect_wrapper", passthrough)
+    monkeypatch.setattr("mtdata.core.trading_account.ensure_mt5_connection_or_raise", lambda: None)
     monkeypatch.setattr("mtdata.core.trading_execution._auto_connect_wrapper", passthrough)
     monkeypatch.setattr("mtdata.core.trading_orders._auto_connect_wrapper", passthrough)
-    monkeypatch.setattr("mtdata.core.trading_positions._auto_connect_wrapper", passthrough)
-    monkeypatch.setattr("mtdata.core.trading_risk._auto_connect_wrapper", passthrough)
+    monkeypatch.setattr("mtdata.core.trading_positions.ensure_mt5_connection_or_raise", lambda: None)
+    monkeypatch.setattr("mtdata.core.trading_risk.ensure_mt5_connection_or_raise", lambda: None)
 
 
 # ===================================================================
