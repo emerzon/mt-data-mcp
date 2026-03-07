@@ -9,11 +9,11 @@ from .data_requests import DataFetchCandlesRequest, DataFetchTicksRequest
 def run_data_fetch_candles(
     request: DataFetchCandlesRequest,
     *,
-    ensure_connection: Any,
+    gateway: Any,
     fetch_candles_impl: Any,
 ) -> Dict[str, Any]:
     try:
-        ensure_connection()
+        gateway.ensure_connection()
     except MT5ConnectionError as exc:
         return {"error": str(exc)}
     return fetch_candles_impl(
@@ -32,11 +32,11 @@ def run_data_fetch_candles(
 def run_data_fetch_ticks(
     request: DataFetchTicksRequest,
     *,
-    ensure_connection: Any,
+    gateway: Any,
     fetch_ticks_impl: Any,
 ) -> Dict[str, Any]:
     try:
-        ensure_connection()
+        gateway.ensure_connection()
     except MT5ConnectionError as exc:
         return {"error": str(exc)}
     return fetch_ticks_impl(

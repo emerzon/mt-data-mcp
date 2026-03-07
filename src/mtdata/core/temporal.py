@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from ._mcp_instance import mcp
+from .mt5_gateway import create_mt5_gateway
 from .schema import TimeframeLiteral
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..utils.mt5 import (
@@ -31,6 +32,10 @@ _MONTH_LABELS = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ]
+
+
+def _get_mt5_gateway():
+    return create_mt5_gateway(adapter=mt5, ensure_connection_impl=ensure_mt5_connection_or_raise)
 
 
 def _error_response(
@@ -223,7 +228,9 @@ def _fetch_rates(
     limit: int,
     start: Optional[str],
     end: Optional[str],
+    gateway: Any = None,
 ) -> Tuple[Optional[Any], Optional[str]]:
+    mt5_gateway = gateway or _get_mt5_gateway()
     if timeframe not in TIMEFRAME_MAP:
         return None, f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"
     mt5_tf = TIMEFRAME_MAP[timeframe]
@@ -256,7 +263,7 @@ def _fetch_rates(
         rates = _mt5_copy_rates_from(symbol, mt5_tf, end_dt, int(limit))
         return rates, None
 
-    tick = mt5.symbol_info_tick(symbol)
+    tick = mt5_gateway.symbol_info_tick(symbol)
     if tick is not None and getattr(tick, "time", None):
         t_utc = _mt5_epoch_to_utc(float(tick.time))
         to_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc).replace(tzinfo=None)
@@ -292,7 +299,8 @@ def temporal_analyze(
     Use group_by='all' for a single overall summary.
     """
     try:
-        ensure_mt5_connection_or_raise()
+        mt5_gateway = _get_mt5_gateway()
+        mt5_gateway.ensure_connection()
         context: Dict[str, Any] = {
             "symbol": symbol,
             "timeframe": timeframe,
@@ -366,7 +374,14 @@ def temporal_analyze(
             if err:
                 return _error_response(err, stage="symbol", context=context)
 
-            rates, fetch_err = _fetch_rates(symbol, timeframe, limit, start, end)
+            rates, fetch_err = _fetch_rates(
+                symbol,
+                timeframe,
+                limit,
+                start,
+                end,
+                gateway=mt5_gateway,
+            )
             if fetch_err:
                 return _error_response(fetch_err, stage="fetch", context=context)
         # visibility handled by _symbol_ready_guard

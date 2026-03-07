@@ -3,11 +3,16 @@ from typing import Any, Dict
 from ._mcp_instance import mcp
 from .data_requests import DataFetchCandlesRequest, DataFetchTicksRequest
 from .data_use_cases import run_data_fetch_candles, run_data_fetch_ticks
+from .mt5_gateway import create_mt5_gateway
 from ..services.data_service import fetch_candles, fetch_ticks
 from ..utils.mt5 import ensure_mt5_connection_or_raise
 
 # Explicitly define what should be exported for '*' imports
 __all__ = ['data_fetch_candles', 'data_fetch_ticks']
+
+
+def _get_mt5_gateway():
+    return create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
 
 @mcp.tool()
 def data_fetch_candles(
@@ -86,9 +91,10 @@ def data_fetch_candles(
         indicators="rsi(14),ema(20),macd(12,26,9)"
     )
     """
+    mt5 = _get_mt5_gateway()
     return run_data_fetch_candles(
         request,
-        ensure_connection=ensure_mt5_connection_or_raise,
+        gateway=mt5,
         fetch_candles_impl=fetch_candles,
     )
 
@@ -106,8 +112,9 @@ def data_fetch_ticks(
     Use `output="rows"` to return raw tick rows as structured data.
     `simplify` only applies to row output.
     """
+    mt5 = _get_mt5_gateway()
     return run_data_fetch_ticks(
         request,
-        ensure_connection=ensure_mt5_connection_or_raise,
+        gateway=mt5,
         fetch_ticks_impl=fetch_ticks,
     )
