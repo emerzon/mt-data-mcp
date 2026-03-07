@@ -359,8 +359,7 @@ def run_trade_close(
 def run_trade_history(
     request: TradeHistoryRequest,
     *,
-    mt5: Any,
-    ensure_connection: Any,
+    gateway: Any,
     use_client_tz: Any,
     format_time_minimal: Any,
     format_time_minimal_local: Any,
@@ -376,7 +375,7 @@ def run_trade_history(
     import pandas as pd
 
     try:
-        ensure_connection()
+        gateway.ensure_connection()
     except MT5ConnectionError as exc:
         return {"error": str(exc)}
 
@@ -451,7 +450,7 @@ def run_trade_history(
                 numeric = pd.to_numeric(raw, errors="coerce")
                 if numeric.notna().any():
                     df[f"{col}_code"] = numeric.astype("Int64")
-                df[col] = raw.apply(lambda v: decode_mt5_enum_label(mt5, v, prefix=prefix) or v)
+                df[col] = raw.apply(lambda v: decode_mt5_enum_label(gateway, v, prefix=prefix) or v)
 
             def _reason_to_exit_trigger(reason: Any) -> Optional[str]:
                 txt = str(reason or "").strip().lower()
@@ -527,9 +526,9 @@ def run_trade_history(
 
             if kind == "deals":
                 rows = (
-                    mt5.history_deals_get(from_dt, to_dt, symbol=request.symbol)
+                    gateway.history_deals_get(from_dt, to_dt, symbol=request.symbol)
                     if request.symbol
-                    else mt5.history_deals_get(from_dt, to_dt)
+                    else gateway.history_deals_get(from_dt, to_dt)
                 )
                 if rows is None or len(rows) == 0:
                     return {"message": "No deals found"}
@@ -580,9 +579,9 @@ def run_trade_history(
                         df = df.drop(columns=[noise_col])
             else:
                 rows = (
-                    mt5.history_orders_get(from_dt, to_dt, symbol=request.symbol)
+                    gateway.history_orders_get(from_dt, to_dt, symbol=request.symbol)
                     if request.symbol
-                    else mt5.history_orders_get(from_dt, to_dt)
+                    else gateway.history_orders_get(from_dt, to_dt)
                 )
                 if rows is None or len(rows) == 0:
                     return {"message": "No orders found"}
@@ -653,23 +652,22 @@ def run_trade_history(
 def run_trade_risk_analyze(
     request: TradeRiskAnalyzeRequest,
     *,
-    mt5: Any,
-    ensure_connection: Any,
+    gateway: Any,
 ) -> Dict[str, Any]:
     try:
-        ensure_connection()
+        gateway.ensure_connection()
     except MT5ConnectionError as exc:
         return {"error": str(exc)}
 
     def _analyze_risk():
         try:
-            account = mt5.account_info()
+            account = gateway.account_info()
             if account is None:
                 return {"error": "Failed to get account info"}
 
             equity = float(account.equity)
             currency = account.currency
-            positions = mt5.positions_get(symbol=request.symbol) if request.symbol else mt5.positions_get()
+            positions = gateway.positions_get(symbol=request.symbol) if request.symbol else gateway.positions_get()
             if positions is None:
                 positions = []
 
@@ -680,7 +678,7 @@ def run_trade_risk_analyze(
 
             for pos in positions:
                 try:
-                    sym_info = mt5.symbol_info(pos.symbol)
+                    sym_info = gateway.symbol_info(pos.symbol)
                     if sym_info is None:
                         continue
 
@@ -796,7 +794,7 @@ def run_trade_risk_analyze(
                 if not request.symbol:
                     return {"error": "symbol is required for position sizing"}
 
-                sym_info = mt5.symbol_info(request.symbol)
+                sym_info = gateway.symbol_info(request.symbol)
                 if sym_info is None:
                     return {"error": f"Symbol {request.symbol} not found"}
 
@@ -947,8 +945,7 @@ def run_trade_risk_analyze(
 def run_trade_get_open(
     request: TradeGetOpenRequest,
     *,
-    mt5: Any,
-    ensure_connection: Any,
+    gateway: Any,
     use_client_tz: Any,
     format_time_minimal: Any,
     format_time_minimal_local: Any,
@@ -959,7 +956,7 @@ def run_trade_get_open(
     import pandas as pd
 
     try:
-        ensure_connection()
+        gateway.ensure_connection()
     except MT5ConnectionError as exc:
         return [{"error": str(exc)}]
 
@@ -971,7 +968,7 @@ def run_trade_get_open(
             )
 
             def _mt5_int_const(name: str, fallback: int) -> int:
-                value = getattr(mt5, name, None)
+                value = getattr(gateway, name, None)
                 return value if isinstance(value, int) else fallback
 
             position_type_text_map = {
@@ -990,15 +987,15 @@ def run_trade_get_open(
 
             if request.ticket is not None:
                 ticket_int = int(request.ticket)
-                rows = mt5.positions_get(ticket=ticket_int)
+                rows = gateway.positions_get(ticket=ticket_int)
                 if rows is None or len(rows) == 0:
                     return [{"message": f"No position found with ID {request.ticket}"}]
             elif request.symbol is not None:
-                rows = mt5.positions_get(symbol=request.symbol)
+                rows = gateway.positions_get(symbol=request.symbol)
                 if rows is None or len(rows) == 0:
                     return [{"message": f"No open positions for {request.symbol}"}]
             else:
-                rows = mt5.positions_get()
+                rows = gateway.positions_get()
                 if rows is None or len(rows) == 0:
                     return [{"message": "No open positions"}]
             df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
@@ -1073,8 +1070,7 @@ def run_trade_get_open(
 def run_trade_get_pending(
     request: TradeGetPendingRequest,
     *,
-    mt5: Any,
-    ensure_connection: Any,
+    gateway: Any,
     use_client_tz: Any,
     format_time_minimal: Any,
     format_time_minimal_local: Any,
@@ -1085,7 +1081,7 @@ def run_trade_get_pending(
     import pandas as pd
 
     try:
-        ensure_connection()
+        gateway.ensure_connection()
     except MT5ConnectionError as exc:
         return [{"error": str(exc)}]
 
@@ -1097,7 +1093,7 @@ def run_trade_get_pending(
             )
 
             def _mt5_int_const(name: str, fallback: int) -> int:
-                value = getattr(mt5, name, None)
+                value = getattr(gateway, name, None)
                 return value if isinstance(value, int) else fallback
 
             order_type_map = {
@@ -1122,15 +1118,15 @@ def run_trade_get_pending(
 
             if request.ticket is not None:
                 ticket_int = int(request.ticket)
-                rows = mt5.orders_get(ticket=ticket_int)
+                rows = gateway.orders_get(ticket=ticket_int)
                 if rows is None or len(rows) == 0:
                     return [{"message": f"No pending order found with ID {request.ticket}"}]
             elif request.symbol is not None:
-                rows = mt5.orders_get(symbol=request.symbol)
+                rows = gateway.orders_get(symbol=request.symbol)
                 if rows is None or len(rows) == 0:
                     return [{"message": f"No pending orders for {request.symbol}"}]
             else:
-                rows = mt5.orders_get()
+                rows = gateway.orders_get()
                 if rows is None or len(rows) == 0:
                     return [{"message": "No pending orders"}]
 

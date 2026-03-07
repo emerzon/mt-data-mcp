@@ -171,8 +171,7 @@ def trade_get_open(
     mt5 = _get_trading_gateway()
     return run_trade_get_open(
         request,
-        mt5=mt5,
-        ensure_connection=mt5.ensure_connection,
+        gateway=mt5,
         use_client_tz=_use_client_tz,
         format_time_minimal=_format_time_minimal,
         format_time_minimal_local=_format_time_minimal_local,
@@ -190,8 +189,7 @@ def trade_get_pending(
     mt5 = _get_trading_gateway()
     return run_trade_get_pending(
         request,
-        mt5=mt5,
-        ensure_connection=mt5.ensure_connection,
+        gateway=mt5,
         use_client_tz=_use_client_tz,
         format_time_minimal=_format_time_minimal,
         format_time_minimal_local=_format_time_minimal_local,

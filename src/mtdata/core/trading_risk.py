@@ -22,6 +22,5 @@ def trade_risk_analyze(request: TradeRiskAnalyzeRequest) -> dict:
     mt5 = _get_trading_gateway()
     return run_trade_risk_analyze(
         request,
-        mt5=mt5,
-        ensure_connection=mt5.ensure_connection,
+        gateway=mt5,
     )
