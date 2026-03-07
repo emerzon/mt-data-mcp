@@ -211,6 +211,20 @@ def test_forecast_generate_native_theta_adds_disambiguation_warning(monkeypatch)
     assert any("StatsForecast theta is available" in str(w) for w in out.get("warnings", []))
 
 
+def test_run_forecast_generate_logs_finish_event(caplog):
+    with caplog.at_level("INFO", logger="mtdata.forecast.use_cases"):
+        result = forecast_use_cases.run_forecast_generate(
+            ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", library="native", model="theta"),
+            forecast_impl=lambda **kwargs: {"ok": True, "method": kwargs["method"]},
+            resolve_sktime_forecaster=lambda query: None,
+        )
+    assert result["ok"] is True
+    assert any(
+        "event=finish operation=forecast_generate success=True" in record.message
+        for record in caplog.records
+    )
+
+
 def test_forecast_generate_converts_typed_forecast_errors(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
 

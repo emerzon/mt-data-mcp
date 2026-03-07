@@ -2,14 +2,22 @@ from __future__ import annotations
 
 import difflib
 import importlib
+import logging
 import os
 import pkgutil
+import time
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 from .backtest import forecast_backtest as _forecast_backtest_impl
 from .exceptions import ForecastError
 from .forecast import forecast as _forecast_impl
+from ..core.execution_logging import (
+    infer_result_success,
+    log_operation_exception,
+    log_operation_finish,
+    log_operation_start,
+)
 from .requests import (
     ForecastBacktestRequest,
     ForecastBarrierOptimizeRequest,
@@ -20,6 +28,8 @@ from .requests import (
     ForecastTuneOptunaRequest,
     ForecastVolatilityEstimateRequest,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -114,79 +124,116 @@ def run_forecast_generate(
     forecast_impl: Any = _forecast_impl,
     resolve_sktime_forecaster: Any = _resolve_sktime_forecaster,
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
     lib = str(request.library or "native").strip().lower()
     model = str(request.model or "").strip()
     params = dict(request.model_params or {})
     legacy_method = str(request.method or "").strip()
-
-    if legacy_method:
-        resolved_method = legacy_method
-    elif lib in ("", "native"):
-        resolved_method = model or "theta"
-    elif lib == "statsforecast":
-        if not model:
-            raise ForecastError("model is required for library=statsforecast")
-        resolved_method = "statsforecast"
-        params.setdefault("model_name", model)
-    elif lib == "sktime":
-        query = model.strip() if model else "ThetaForecaster"
-        if "." in query:
-            resolved_method = "sktime"
-            params.setdefault("estimator", query)
-        else:
-            found = resolve_sktime_forecaster(query)
-            if not found:
-                raise ForecastError(f"Unknown sktime forecaster '{query}'")
-            _, dotted = found
-            resolved_method = "sktime"
-            params.setdefault("estimator", dotted)
-    elif lib == "pretrained":
-        resolved_method = model or "chronos2"
-    elif lib == "mlforecast":
-        if not model:
-            raise ForecastError("model is required for library=mlforecast")
-        resolved_method = "mlforecast"
-        params.setdefault("model", model)
-    else:
-        raise ForecastError(f"Unsupported library: {request.library}")
-
-    out = forecast_impl(
+    log_operation_start(
+        logger,
+        operation="forecast_generate",
         symbol=request.symbol,
         timeframe=request.timeframe,
-        method=str(resolved_method),
-        horizon=request.horizon,
-        lookback=request.lookback,
-        as_of=request.as_of,
-        params=params,
-        ci_alpha=request.ci_alpha,
-        quantity=request.quantity,
-        target="price",
-        denoise=request.denoise,
-        features=request.features or {},
-        dimred_method=request.dimred_method,
-        dimred_params=request.dimred_params,
-        target_spec=request.target_spec,
+        library=lib or "native",
+        model=model or None,
+        legacy_method=legacy_method or None,
     )
 
-    if (
-        isinstance(out, dict)
-        and not legacy_method
-        and lib in ("", "native")
-        and str(resolved_method).strip().lower() == "theta"
-    ):
-        warning = (
-            "Using native theta. StatsForecast theta is available via "
-            f"`mtdata-cli forecast_generate {request.symbol} --timeframe {request.timeframe} "
-            f"--library statsforecast --model Theta --horizon {request.horizon}` "
-            "and may produce different forecasts/interval behavior."
+    def _finish(result: Dict[str, Any], *, resolved_method: Optional[str] = None) -> Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="forecast_generate",
+            started_at=started_at,
+            success=infer_result_success(result),
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            library=lib or "native",
+            model=model or None,
+            resolved_method=resolved_method,
         )
-        warnings_out = out.get("warnings")
-        if not isinstance(warnings_out, list):
-            warnings_out = []
-        if warning not in warnings_out:
-            warnings_out.append(warning)
-        out["warnings"] = warnings_out
-    return out
+        return result
+
+    try:
+        if legacy_method:
+            resolved_method = legacy_method
+        elif lib in ("", "native"):
+            resolved_method = model or "theta"
+        elif lib == "statsforecast":
+            if not model:
+                raise ForecastError("model is required for library=statsforecast")
+            resolved_method = "statsforecast"
+            params.setdefault("model_name", model)
+        elif lib == "sktime":
+            query = model.strip() if model else "ThetaForecaster"
+            if "." in query:
+                resolved_method = "sktime"
+                params.setdefault("estimator", query)
+            else:
+                found = resolve_sktime_forecaster(query)
+                if not found:
+                    raise ForecastError(f"Unknown sktime forecaster '{query}'")
+                _, dotted = found
+                resolved_method = "sktime"
+                params.setdefault("estimator", dotted)
+        elif lib == "pretrained":
+            resolved_method = model or "chronos2"
+        elif lib == "mlforecast":
+            if not model:
+                raise ForecastError("model is required for library=mlforecast")
+            resolved_method = "mlforecast"
+            params.setdefault("model", model)
+        else:
+            raise ForecastError(f"Unsupported library: {request.library}")
+
+        out = forecast_impl(
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=str(resolved_method),
+            horizon=request.horizon,
+            lookback=request.lookback,
+            as_of=request.as_of,
+            params=params,
+            ci_alpha=request.ci_alpha,
+            quantity=request.quantity,
+            target="price",
+            denoise=request.denoise,
+            features=request.features or {},
+            dimred_method=request.dimred_method,
+            dimred_params=request.dimred_params,
+            target_spec=request.target_spec,
+        )
+
+        if (
+            isinstance(out, dict)
+            and not legacy_method
+            and lib in ("", "native")
+            and str(resolved_method).strip().lower() == "theta"
+        ):
+            warning = (
+                "Using native theta. StatsForecast theta is available via "
+                f"`mtdata-cli forecast_generate {request.symbol} --timeframe {request.timeframe} "
+                f"--library statsforecast --model Theta --horizon {request.horizon}` "
+                "and may produce different forecasts/interval behavior."
+            )
+            warnings_out = out.get("warnings")
+            if not isinstance(warnings_out, list):
+                warnings_out = []
+            if warning not in warnings_out:
+                warnings_out.append(warning)
+            out["warnings"] = warnings_out
+        return _finish(out, resolved_method=str(resolved_method))
+    except Exception as exc:
+        log_operation_exception(
+            logger,
+            operation="forecast_generate",
+            started_at=started_at,
+            exc=exc,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            library=lib or "native",
+            model=model or None,
+        )
+        raise
 
 
 def run_forecast_backtest(
@@ -194,25 +241,57 @@ def run_forecast_backtest(
     *,
     backtest_impl: Any = _forecast_backtest_impl,
 ) -> Dict[str, Any]:
-    return backtest_impl(
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="forecast_backtest",
         symbol=request.symbol,
         timeframe=request.timeframe,
         horizon=request.horizon,
-        steps=request.steps,
-        spacing=request.spacing,
-        methods=request.methods,
-        params_per_method=request.params_per_method,
-        quantity=request.quantity,
-        target=request.target,
-        denoise=request.denoise,
-        params=request.params,
-        features=request.features,
-        dimred_method=request.dimred_method,
-        dimred_params=request.dimred_params,
-        slippage_bps=request.slippage_bps,
-        trade_threshold=request.trade_threshold,
-        detail=request.detail,
+        methods=len(request.methods or []),
     )
+    try:
+        result = backtest_impl(
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            horizon=request.horizon,
+            steps=request.steps,
+            spacing=request.spacing,
+            methods=request.methods,
+            params_per_method=request.params_per_method,
+            quantity=request.quantity,
+            target=request.target,
+            denoise=request.denoise,
+            params=request.params,
+            features=request.features,
+            dimred_method=request.dimred_method,
+            dimred_params=request.dimred_params,
+            slippage_bps=request.slippage_bps,
+            trade_threshold=request.trade_threshold,
+            detail=request.detail,
+        )
+    except Exception as exc:
+        log_operation_exception(
+            logger,
+            operation="forecast_backtest",
+            started_at=started_at,
+            exc=exc,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            horizon=request.horizon,
+        )
+        raise
+    log_operation_finish(
+        logger,
+        operation="forecast_backtest",
+        started_at=started_at,
+        success=infer_result_success(result),
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        horizon=request.horizon,
+        methods=len(request.methods or []),
+    )
+    return result
 
 
 def run_forecast_conformal_intervals(
@@ -221,80 +300,156 @@ def run_forecast_conformal_intervals(
     backtest_impl: Any = _forecast_backtest_impl,
     forecast_impl: Any = _forecast_impl,
 ) -> Dict[str, Any]:
-    # 1) Rolling backtest to collect residuals.
-    bt = backtest_impl(
-        symbol=request.symbol,
-        timeframe=request.timeframe,
-        horizon=int(request.horizon),
-        steps=int(request.steps),
-        spacing=int(request.spacing),
-        methods=[str(request.method)],
-        denoise=request.denoise,
-        params={str(request.method): dict(request.params or {})},
-        detail="full",
-    )
-    if "error" in bt:
-        return bt
-    res = bt.get("results", {}).get(str(request.method))
-    if not res or not res.get("details"):
-        return {"error": "Conformal calibration failed: no backtest details"}
-
-    # Build per-step residuals |y_hat_i - y_i|.
-    fh = int(request.horizon)
-    errs: List[List[float]] = [[] for _ in range(fh)]
-    for detail in res["details"]:
-        fc = detail.get("forecast")
-        act = detail.get("actual")
-        if not fc or not act:
-            continue
-        width = min(len(fc), len(act), fh)
-        for i in range(width):
-            try:
-                errs[i].append(abs(float(fc[i]) - float(act[i])))
-            except Exception:
-                continue
-
-    import numpy as _np
-
-    q = 1.0 - float(request.alpha)
-    qerrs = [
-        float(_np.quantile(_np.array(err, dtype=float), q)) if err else float("nan")
-        for err in errs
-    ]
-
-    # 2) Forecast now (latest).
-    out = forecast_impl(
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="forecast_conformal_intervals",
         symbol=request.symbol,
         timeframe=request.timeframe,
         method=request.method,
-        horizon=int(request.horizon),
-        params=request.params,
-        denoise=request.denoise,
+        horizon=request.horizon,
     )
-    if "error" in out:
-        return out
-    yhat = out.get("forecast_price") or []
-    if not yhat:
-        return {"error": "Empty point forecast for conformal intervals"}
-    yhat_arr = _np.array(yhat, dtype=float)
-    fh_eff = min(fh, yhat_arr.size)
-    lo = _np.empty(fh_eff, dtype=float)
-    hi = _np.empty(fh_eff, dtype=float)
-    for i in range(fh_eff):
-        err = qerrs[i] if i < len(qerrs) and _np.isfinite(qerrs[i]) else 0.0
-        lo[i] = yhat_arr[i] - err
-        hi[i] = yhat_arr[i] + err
+    try:
+        # 1) Rolling backtest to collect residuals.
+        bt = backtest_impl(
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            horizon=int(request.horizon),
+            steps=int(request.steps),
+            spacing=int(request.spacing),
+            methods=[str(request.method)],
+            denoise=request.denoise,
+            params={str(request.method): dict(request.params or {})},
+            detail="full",
+        )
+        if "error" in bt:
+            result = bt
+            log_operation_finish(
+                logger,
+                operation="forecast_conformal_intervals",
+                started_at=started_at,
+                success=infer_result_success(result),
+                symbol=request.symbol,
+                timeframe=request.timeframe,
+                method=request.method,
+                horizon=request.horizon,
+            )
+            return result
+        res = bt.get("results", {}).get(str(request.method))
+        if not res or not res.get("details"):
+            result = {"error": "Conformal calibration failed: no backtest details"}
+            log_operation_finish(
+                logger,
+                operation="forecast_conformal_intervals",
+                started_at=started_at,
+                success=False,
+                symbol=request.symbol,
+                timeframe=request.timeframe,
+                method=request.method,
+                horizon=request.horizon,
+            )
+            return result
 
-    result = dict(out)
-    result["conformal"] = {
-        "alpha": float(request.alpha),
-        "calibration_steps": int(request.steps),
-        "calibration_spacing": int(request.spacing),
-        "per_step_q": [float(v) for v in qerrs],
-    }
-    result["lower_price"] = [float(v) for v in lo.tolist()]
-    result["upper_price"] = [float(v) for v in hi.tolist()]
-    result["ci_alpha"] = float(request.alpha)
+        # Build per-step residuals |y_hat_i - y_i|.
+        fh = int(request.horizon)
+        errs: List[List[float]] = [[] for _ in range(fh)]
+        for detail in res["details"]:
+            fc = detail.get("forecast")
+            act = detail.get("actual")
+            if not fc or not act:
+                continue
+            width = min(len(fc), len(act), fh)
+            for i in range(width):
+                try:
+                    errs[i].append(abs(float(fc[i]) - float(act[i])))
+                except Exception:
+                    continue
+
+        import numpy as _np
+
+        q = 1.0 - float(request.alpha)
+        qerrs = [
+            float(_np.quantile(_np.array(err, dtype=float), q)) if err else float("nan")
+            for err in errs
+        ]
+
+        # 2) Forecast now (latest).
+        out = forecast_impl(
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            horizon=int(request.horizon),
+            params=request.params,
+            denoise=request.denoise,
+        )
+        if "error" in out:
+            result = out
+            log_operation_finish(
+                logger,
+                operation="forecast_conformal_intervals",
+                started_at=started_at,
+                success=infer_result_success(result),
+                symbol=request.symbol,
+                timeframe=request.timeframe,
+                method=request.method,
+                horizon=request.horizon,
+            )
+            return result
+        yhat = out.get("forecast_price") or []
+        if not yhat:
+            result = {"error": "Empty point forecast for conformal intervals"}
+            log_operation_finish(
+                logger,
+                operation="forecast_conformal_intervals",
+                started_at=started_at,
+                success=False,
+                symbol=request.symbol,
+                timeframe=request.timeframe,
+                method=request.method,
+                horizon=request.horizon,
+            )
+            return result
+        yhat_arr = _np.array(yhat, dtype=float)
+        fh_eff = min(fh, yhat_arr.size)
+        lo = _np.empty(fh_eff, dtype=float)
+        hi = _np.empty(fh_eff, dtype=float)
+        for i in range(fh_eff):
+            err = qerrs[i] if i < len(qerrs) and _np.isfinite(qerrs[i]) else 0.0
+            lo[i] = yhat_arr[i] - err
+            hi[i] = yhat_arr[i] + err
+
+        result = dict(out)
+        result["conformal"] = {
+            "alpha": float(request.alpha),
+            "calibration_steps": int(request.steps),
+            "calibration_spacing": int(request.spacing),
+            "per_step_q": [float(v) for v in qerrs],
+        }
+        result["lower_price"] = [float(v) for v in lo.tolist()]
+        result["upper_price"] = [float(v) for v in hi.tolist()]
+        result["ci_alpha"] = float(request.alpha)
+    except Exception as exc:
+        log_operation_exception(
+            logger,
+            operation="forecast_conformal_intervals",
+            started_at=started_at,
+            exc=exc,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            horizon=request.horizon,
+        )
+        raise
+    log_operation_finish(
+        logger,
+        operation="forecast_conformal_intervals",
+        started_at=started_at,
+        success=infer_result_success(result),
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        method=request.method,
+        horizon=request.horizon,
+    )
     return result
 
 
@@ -319,29 +474,61 @@ def run_forecast_tune_genetic(
     *,
     genetic_search_impl: Any,
 ) -> Dict[str, Any]:
-    method_for_search, search_space = _resolve_tuning_search_space(request)
-    return genetic_search_impl(
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="forecast_tune_genetic",
         symbol=request.symbol,
         timeframe=request.timeframe,
-        method=str(method_for_search) if method_for_search is not None else None,
-        methods=request.methods,
-        horizon=int(request.horizon),
-        steps=int(request.steps),
-        spacing=int(request.spacing),
-        search_space=search_space,
-        metric=str(request.metric),
-        mode=str(request.mode),
-        population=int(request.population),
-        generations=int(request.generations),
-        crossover_rate=float(request.crossover_rate),
-        mutation_rate=float(request.mutation_rate),
-        seed=int(request.seed),
-        trade_threshold=float(request.trade_threshold),
-        denoise=request.denoise,
-        features=request.features,
-        dimred_method=request.dimred_method,
-        dimred_params=request.dimred_params,
+        method=request.method,
+        methods=len(request.methods or []),
     )
+    method_for_search, search_space = _resolve_tuning_search_space(request)
+    try:
+        result = genetic_search_impl(
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=str(method_for_search) if method_for_search is not None else None,
+            methods=request.methods,
+            horizon=int(request.horizon),
+            steps=int(request.steps),
+            spacing=int(request.spacing),
+            search_space=search_space,
+            metric=str(request.metric),
+            mode=str(request.mode),
+            population=int(request.population),
+            generations=int(request.generations),
+            crossover_rate=float(request.crossover_rate),
+            mutation_rate=float(request.mutation_rate),
+            seed=int(request.seed),
+            trade_threshold=float(request.trade_threshold),
+            denoise=request.denoise,
+            features=request.features,
+            dimred_method=request.dimred_method,
+            dimred_params=request.dimred_params,
+        )
+    except Exception as exc:
+        log_operation_exception(
+            logger,
+            operation="forecast_tune_genetic",
+            started_at=started_at,
+            exc=exc,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+        )
+        raise
+    log_operation_finish(
+        logger,
+        operation="forecast_tune_genetic",
+        started_at=started_at,
+        success=infer_result_success(result),
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        method=request.method,
+        methods=len(request.methods or []),
+    )
+    return result
 
 
 def run_forecast_tune_optuna(
@@ -349,32 +536,64 @@ def run_forecast_tune_optuna(
     *,
     optuna_search_impl: Any,
 ) -> Dict[str, Any]:
-    method_for_search, search_space = _resolve_tuning_search_space(request)
-    return optuna_search_impl(
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="forecast_tune_optuna",
         symbol=request.symbol,
         timeframe=request.timeframe,
-        method=str(method_for_search) if method_for_search is not None else None,
-        methods=request.methods,
-        horizon=int(request.horizon),
-        steps=int(request.steps),
-        spacing=int(request.spacing),
-        search_space=search_space,
-        metric=str(request.metric),
-        mode=str(request.mode),
-        n_trials=int(request.n_trials),
-        timeout=float(request.timeout) if request.timeout is not None else None,
-        n_jobs=int(request.n_jobs),
-        sampler=str(request.sampler),
-        pruner=str(request.pruner),
-        study_name=str(request.study_name) if request.study_name is not None else None,
-        storage=str(request.storage) if request.storage is not None else None,
-        seed=int(request.seed),
-        trade_threshold=float(request.trade_threshold),
-        denoise=request.denoise,
-        features=request.features,
-        dimred_method=request.dimred_method,
-        dimred_params=request.dimred_params,
+        method=request.method,
+        methods=len(request.methods or []),
     )
+    method_for_search, search_space = _resolve_tuning_search_space(request)
+    try:
+        result = optuna_search_impl(
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=str(method_for_search) if method_for_search is not None else None,
+            methods=request.methods,
+            horizon=int(request.horizon),
+            steps=int(request.steps),
+            spacing=int(request.spacing),
+            search_space=search_space,
+            metric=str(request.metric),
+            mode=str(request.mode),
+            n_trials=int(request.n_trials),
+            timeout=float(request.timeout) if request.timeout is not None else None,
+            n_jobs=int(request.n_jobs),
+            sampler=str(request.sampler),
+            pruner=str(request.pruner),
+            study_name=str(request.study_name) if request.study_name is not None else None,
+            storage=str(request.storage) if request.storage is not None else None,
+            seed=int(request.seed),
+            trade_threshold=float(request.trade_threshold),
+            denoise=request.denoise,
+            features=request.features,
+            dimred_method=request.dimred_method,
+            dimred_params=request.dimred_params,
+        )
+    except Exception as exc:
+        log_operation_exception(
+            logger,
+            operation="forecast_tune_optuna",
+            started_at=started_at,
+            exc=exc,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+        )
+        raise
+    log_operation_finish(
+        logger,
+        operation="forecast_tune_optuna",
+        started_at=started_at,
+        success=infer_result_success(result),
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        method=request.method,
+        methods=len(request.methods or []),
+    )
+    return result
 
 
 def run_forecast_barrier_prob(
@@ -385,42 +604,108 @@ def run_forecast_barrier_prob(
     barrier_hit_probabilities_impl: Any,
     barrier_closed_form_impl: Any,
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
     method_val = str(request.method or "mc").lower().strip()
     mc_method = request.mc_method
     if method_val == "auto":
         method_val = "mc"
         mc_method = "auto"
+    log_operation_start(
+        logger,
+        operation="forecast_barrier_prob",
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        method=method_val,
+        direction=request.direction,
+    )
 
     direction, direction_error = normalize_trade_direction(request.direction)
     if direction_error:
-        return {"error": direction_error}
-
-    if method_val == "mc":
-        barrier_kwargs = build_barrier_kwargs(request.model_dump())
-        return barrier_hit_probabilities_impl(
+        result = {"error": direction_error}
+        log_operation_finish(
+            logger,
+            operation="forecast_barrier_prob",
+            started_at=started_at,
+            success=False,
             symbol=request.symbol,
             timeframe=request.timeframe,
-            horizon=request.horizon,
-            method=mc_method,
-            direction=direction,
-            **barrier_kwargs,
-            params=request.params,
-            denoise=request.denoise,
+            method=method_val,
+            direction=request.direction,
         )
+        return result
 
-    if method_val == "closed_form":
-        return barrier_closed_form_impl(
+    try:
+        if method_val == "mc":
+            barrier_kwargs = build_barrier_kwargs(request.model_dump())
+            result = barrier_hit_probabilities_impl(
+                symbol=request.symbol,
+                timeframe=request.timeframe,
+                horizon=request.horizon,
+                method=mc_method,
+                direction=direction,
+                **barrier_kwargs,
+                params=request.params,
+                denoise=request.denoise,
+            )
+            log_operation_finish(
+                logger,
+                operation="forecast_barrier_prob",
+                started_at=started_at,
+                success=infer_result_success(result),
+                symbol=request.symbol,
+                timeframe=request.timeframe,
+                method=method_val,
+                direction=direction,
+            )
+            return result
+
+        if method_val == "closed_form":
+            result = barrier_closed_form_impl(
+                symbol=request.symbol,
+                timeframe=request.timeframe,
+                horizon=request.horizon,
+                direction=direction,
+                barrier=request.barrier,
+                mu=request.mu,
+                sigma=request.sigma,
+                denoise=request.denoise,
+            )
+            log_operation_finish(
+                logger,
+                operation="forecast_barrier_prob",
+                started_at=started_at,
+                success=infer_result_success(result),
+                symbol=request.symbol,
+                timeframe=request.timeframe,
+                method=method_val,
+                direction=direction,
+            )
+            return result
+    except Exception as exc:
+        log_operation_exception(
+            logger,
+            operation="forecast_barrier_prob",
+            started_at=started_at,
+            exc=exc,
             symbol=request.symbol,
             timeframe=request.timeframe,
-            horizon=request.horizon,
+            method=method_val,
             direction=direction,
-            barrier=request.barrier,
-            mu=request.mu,
-            sigma=request.sigma,
-            denoise=request.denoise,
         )
+        raise
 
-    return {"error": f"Unknown method: {request.method}"}
+    result = {"error": f"Unknown method: {request.method}"}
+    log_operation_finish(
+        logger,
+        operation="forecast_barrier_prob",
+        started_at=started_at,
+        success=False,
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        method=method_val,
+        direction=direction,
+    )
+    return result
 
 
 def run_forecast_barrier_optimize(
@@ -430,6 +715,15 @@ def run_forecast_barrier_optimize(
     barrier_optimize_impl: Any,
     cpu_count: Any = os.cpu_count,
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="forecast_barrier_optimize",
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        method=request.method,
+        direction=request.direction,
+    )
     params_norm = parse_kv_or_json(request.params)
     if not isinstance(params_norm, dict):
         params_norm = {}
@@ -444,48 +738,72 @@ def run_forecast_barrier_optimize(
         if key not in params_norm:
             params_norm[key] = value
 
-    return barrier_optimize_impl(
+    try:
+        result = barrier_optimize_impl(
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            horizon=request.horizon,
+            method=request.method,
+            direction=request.direction,
+            mode=request.mode,
+            tp_min=request.tp_min,
+            tp_max=request.tp_max,
+            tp_steps=request.tp_steps,
+            sl_min=request.sl_min,
+            sl_max=request.sl_max,
+            sl_steps=request.sl_steps,
+            params=params_norm,
+            denoise=request.denoise,
+            objective=request.objective,
+            return_grid=request.return_grid,
+            top_k=request.top_k,
+            output=request.output,
+            viable_only=request.viable_only,
+            concise=request.concise,
+            grid_style=request.grid_style,
+            preset=request.preset,
+            vol_window=request.vol_window,
+            vol_min_mult=request.vol_min_mult,
+            vol_max_mult=request.vol_max_mult,
+            vol_steps=request.vol_steps,
+            vol_sl_extra=request.vol_sl_extra,
+            vol_floor_pct=request.vol_floor_pct,
+            vol_floor_pips=request.vol_floor_pips,
+            ratio_min=request.ratio_min,
+            ratio_max=request.ratio_max,
+            ratio_steps=request.ratio_steps,
+            refine=request.refine,
+            refine_radius=request.refine_radius,
+            refine_steps=request.refine_steps,
+            min_prob_win=request.min_prob_win,
+            max_prob_no_hit=request.max_prob_no_hit,
+            max_median_time=request.max_median_time,
+            fast_defaults=request.fast_defaults,
+            search_profile=request.search_profile,
+        )
+    except Exception as exc:
+        log_operation_exception(
+            logger,
+            operation="forecast_barrier_optimize",
+            started_at=started_at,
+            exc=exc,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            direction=request.direction,
+        )
+        raise
+    log_operation_finish(
+        logger,
+        operation="forecast_barrier_optimize",
+        started_at=started_at,
+        success=infer_result_success(result),
         symbol=request.symbol,
         timeframe=request.timeframe,
-        horizon=request.horizon,
         method=request.method,
         direction=request.direction,
-        mode=request.mode,
-        tp_min=request.tp_min,
-        tp_max=request.tp_max,
-        tp_steps=request.tp_steps,
-        sl_min=request.sl_min,
-        sl_max=request.sl_max,
-        sl_steps=request.sl_steps,
-        params=params_norm,
-        denoise=request.denoise,
-        objective=request.objective,
-        return_grid=request.return_grid,
-        top_k=request.top_k,
-        output=request.output,
-        viable_only=request.viable_only,
-        concise=request.concise,
-        grid_style=request.grid_style,
-        preset=request.preset,
-        vol_window=request.vol_window,
-        vol_min_mult=request.vol_min_mult,
-        vol_max_mult=request.vol_max_mult,
-        vol_steps=request.vol_steps,
-        vol_sl_extra=request.vol_sl_extra,
-        vol_floor_pct=request.vol_floor_pct,
-        vol_floor_pips=request.vol_floor_pips,
-        ratio_min=request.ratio_min,
-        ratio_max=request.ratio_max,
-        ratio_steps=request.ratio_steps,
-        refine=request.refine,
-        refine_radius=request.refine_radius,
-        refine_steps=request.refine_steps,
-        min_prob_win=request.min_prob_win,
-        max_prob_no_hit=request.max_prob_no_hit,
-        max_median_time=request.max_median_time,
-        fast_defaults=request.fast_defaults,
-        search_profile=request.search_profile,
     )
+    return result
 
 
 def run_forecast_volatility_estimate(
@@ -493,13 +811,46 @@ def run_forecast_volatility_estimate(
     *,
     forecast_volatility_impl: Any,
 ) -> Dict[str, Any]:
-    return forecast_volatility_impl(
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="forecast_volatility_estimate",
         symbol=request.symbol,
         timeframe=request.timeframe,
-        horizon=request.horizon,
         method=request.method,
-        proxy=request.proxy,
-        params=request.params,
-        as_of=request.as_of,
-        denoise=request.denoise,
+        horizon=request.horizon,
     )
+    try:
+        result = forecast_volatility_impl(
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            horizon=request.horizon,
+            method=request.method,
+            proxy=request.proxy,
+            params=request.params,
+            as_of=request.as_of,
+            denoise=request.denoise,
+        )
+    except Exception as exc:
+        log_operation_exception(
+            logger,
+            operation="forecast_volatility_estimate",
+            started_at=started_at,
+            exc=exc,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            horizon=request.horizon,
+        )
+        raise
+    log_operation_finish(
+        logger,
+        operation="forecast_volatility_estimate",
+        started_at=started_at,
+        success=infer_result_success(result),
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        method=request.method,
+        horizon=request.horizon,
+    )
+    return result
