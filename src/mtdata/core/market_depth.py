@@ -3,18 +3,18 @@ from typing import Any, Dict
 import math
 import time
 
-from ..utils.mt5 import _auto_connect_wrapper, _mt5_epoch_to_utc, mt5
+from ..utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc, ensure_mt5_connection_or_raise, mt5
 from ..utils.utils import _format_time_minimal, _format_time_minimal_local, _use_client_tz
 from ._mcp_instance import mcp
 
 @mcp.tool()
-@_auto_connect_wrapper
 def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
     """Return DOM if available; otherwise current bid/ask snapshot for `symbol`.
 
     Parameters: symbol
     """
     try:
+        ensure_mt5_connection_or_raise()
         started = time.perf_counter()
         # Ensure symbol is selected
         if not mt5.symbol_select(symbol, True):
@@ -165,18 +165,20 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
                 out["timezone"] = "UTC"
             out["query_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
             return out
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
     except Exception as e:
         return {"error": f"Error getting market depth: {str(e)}"}
 
 
 @mcp.tool()
-@_auto_connect_wrapper
 def market_ticker(symbol: str) -> Dict[str, Any]:
     """Return a lightweight ticker snapshot with bid/ask/spread for `symbol`.
 
     Parameters: symbol
     """
     try:
+        ensure_mt5_connection_or_raise()
         started = time.perf_counter()
         if not mt5.symbol_select(symbol, True):
             return {"error": f"Failed to select symbol {symbol}: {mt5.last_error()}"}
@@ -262,5 +264,7 @@ def market_ticker(symbol: str) -> Dict[str, Any]:
         if not _use_ctz:
             out["timezone"] = "UTC"
         return out
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
     except Exception as e:
         return {"error": f"Error getting ticker snapshot: {str(e)}"}

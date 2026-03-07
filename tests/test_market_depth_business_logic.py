@@ -4,15 +4,16 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from mtdata.core.market_depth import market_depth_fetch, market_ticker
+from mtdata.utils.mt5 import MT5ConnectionError
 
 
 def _raw_market_depth_fetch(symbol: str, spread: bool = False):
-    # Bypass @mcp.tool and @_auto_connect_wrapper wrappers.
-    return market_depth_fetch.__wrapped__.__wrapped__(symbol, spread=spread)
+    # Bypass @mcp.tool wrapper.
+    return market_depth_fetch.__wrapped__(symbol, spread=spread)
 
 
 def _raw_market_ticker(symbol: str):
-    return market_ticker.__wrapped__.__wrapped__(symbol)
+    return market_ticker.__wrapped__(symbol)
 
 
 def test_market_depth_tick_fallback_includes_price_display() -> None:
@@ -150,3 +151,13 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["diagnostics"]["cache_used"] is False
     assert out["diagnostics"]["source"] == "mt5.symbol_info_tick"
     assert isinstance(out["diagnostics"]["query_latency_ms"], float)
+
+
+def test_market_depth_returns_connection_error_payload() -> None:
+    with patch(
+        "mtdata.core.market_depth.ensure_mt5_connection_or_raise",
+        side_effect=MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running."),
+    ):
+        out = _raw_market_depth_fetch("BTCUSD")
+
+    assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
