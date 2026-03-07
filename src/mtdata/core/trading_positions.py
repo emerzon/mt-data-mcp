@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ._mcp_instance import mcp
 from . import trading_comments, trading_validation
+from .trading_gateway import MT5TradingGateway
 from .trading_requests import TradeGetOpenRequest, TradeGetPendingRequest
 from .trading_use_cases import run_trade_get_open, run_trade_get_pending
 from ..utils.mt5 import _mt5_epoch_to_utc, ensure_mt5_connection_or_raise, mt5_adapter
@@ -16,6 +17,13 @@ from ..utils.utils import (
     _normalize_limit,
     _use_client_tz,
 )
+
+
+def _get_trading_gateway() -> MT5TradingGateway:
+    return MT5TradingGateway(
+        adapter=mt5_adapter,
+        ensure_connection_impl=ensure_mt5_connection_or_raise,
+    )
 
 
 def _position_sort_key(position: Any) -> float:
@@ -160,10 +168,11 @@ def trade_get_open(
     request: TradeGetOpenRequest,
 ) -> List[Dict[str, Any]]:
     """Get open positions."""
+    mt5 = _get_trading_gateway()
     return run_trade_get_open(
         request,
-        mt5=mt5_adapter,
-        ensure_connection=ensure_mt5_connection_or_raise,
+        mt5=mt5,
+        ensure_connection=mt5.ensure_connection,
         use_client_tz=_use_client_tz,
         format_time_minimal=_format_time_minimal,
         format_time_minimal_local=_format_time_minimal_local,
@@ -178,10 +187,11 @@ def trade_get_pending(
     request: TradeGetPendingRequest,
 ) -> List[Dict[str, Any]]:
     """Get pending orders (open orders)."""
+    mt5 = _get_trading_gateway()
     return run_trade_get_pending(
         request,
-        mt5=mt5_adapter,
-        ensure_connection=ensure_mt5_connection_or_raise,
+        mt5=mt5,
+        ensure_connection=mt5.ensure_connection,
         use_client_tz=_use_client_tz,
         format_time_minimal=_format_time_minimal,
         format_time_minimal_local=_format_time_minimal_local,

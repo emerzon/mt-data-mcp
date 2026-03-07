@@ -9,6 +9,7 @@ from ._mcp_instance import mcp
 from . import trading_comments, trading_validation
 from .config import mt5_config
 from .trading_common import _build_trade_preflight
+from .trading_gateway import MT5TradingGateway
 from .trading_requests import TradeHistoryRequest
 from .trading_use_cases import run_trade_history
 from ..utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc, ensure_mt5_connection_or_raise, mt5_adapter
@@ -22,20 +23,28 @@ from ..utils.utils import (
 )
 
 
+def _get_trading_gateway() -> MT5TradingGateway:
+    return MT5TradingGateway(
+        adapter=mt5_adapter,
+        ensure_connection_impl=ensure_mt5_connection_or_raise,
+        build_trade_preflight_impl=_build_trade_preflight,
+    )
+
+
 @mcp.tool()
 def trade_account_info() -> dict:
     """Get account information (balance, equity, profit, margin level, free margin, account type, leverage, currency)."""
-    mt5 = mt5_adapter
+    mt5 = _get_trading_gateway()
 
     try:
-        ensure_mt5_connection_or_raise()
+        mt5.ensure_connection()
     except MT5ConnectionError as exc:
         return {"error": str(exc)}
 
     info = mt5.account_info()
     if info is None:
         return {"error": "Failed to get account info"}
-    preflight = _build_trade_preflight(mt5, account_info=info)
+    preflight = mt5.build_trade_preflight(account_info=info)
     margin_level: Optional[float] = getattr(info, "margin_level", None)
     margin_level_note: Optional[str] = None
     try:
@@ -81,10 +90,11 @@ def trade_account_info() -> dict:
 @mcp.tool()
 def trade_history(request: TradeHistoryRequest) -> List[Dict[str, Any]]:
     """Get deal or order history as tabular data."""
+    mt5 = _get_trading_gateway()
     return run_trade_history(
         request,
-        mt5=mt5_adapter,
-        ensure_connection=ensure_mt5_connection_or_raise,
+        mt5=mt5,
+        ensure_connection=mt5.ensure_connection,
         use_client_tz=_use_client_tz,
         format_time_minimal=_format_time_minimal,
         format_time_minimal_local=_format_time_minimal_local,

@@ -37,5 +37,13 @@ class MT5TradingGateway:
             return None
         return self.retcode_name_impl(self.adapter, retcode)
 
+    def __dir__(self) -> list[str]:
+        names = set(super().__dir__())
+        try:
+            names.update(dir(self.adapter))
+        except Exception:
+            pass
+        return sorted(names)
+
     def __getattr__(self, name: str) -> Any:
         return getattr(self.adapter, name)
