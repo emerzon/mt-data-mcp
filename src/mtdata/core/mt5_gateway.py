@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
+import time
 from typing import Any, Callable
 
+from .execution_logging import log_operation_exception, log_operation_finish, log_operation_start
 from ..utils.mt5 import ensure_mt5_connection_or_raise, mt5_adapter
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -16,7 +21,31 @@ class MT5Gateway:
     ensure_connection_impl: Callable[[], None]
 
     def ensure_connection(self) -> None:
-        self.ensure_connection_impl()
+        started_at = time.perf_counter()
+        adapter_type = type(self.adapter).__name__
+        log_operation_start(
+            logger,
+            operation="mt5_ensure_connection",
+            adapter_type=adapter_type,
+        )
+        try:
+            self.ensure_connection_impl()
+        except Exception as exc:
+            log_operation_exception(
+                logger,
+                operation="mt5_ensure_connection",
+                started_at=started_at,
+                exc=exc,
+                adapter_type=adapter_type,
+            )
+            raise
+        log_operation_finish(
+            logger,
+            operation="mt5_ensure_connection",
+            started_at=started_at,
+            success=True,
+            adapter_type=adapter_type,
+        )
 
     def __dir__(self) -> list[str]:
         names = set(super().__dir__())
