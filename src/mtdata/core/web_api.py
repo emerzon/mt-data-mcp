@@ -87,7 +87,6 @@ def get_instruments(search: Optional[str] = Query(None), limit: Optional[int] = 
     return _get_instruments_response(
         search=search,
         limit=limit,
-        mt5_connection=mt5_connection,
         mt5=mt5,
         extract_group_path=_extract_group_path_util,
     )
@@ -145,7 +144,6 @@ def get_history(
         include_incomplete=include_incomplete,
         denoise_method=denoise_method,
         denoise_params=denoise_params,
-        mt5_connection=mt5_connection,
         fetch_candles_impl=_fetch_candles_impl,
         get_denoise_methods=_get_denoise_methods,
         normalize_denoise_spec=_norm_dn,
@@ -192,7 +190,6 @@ def get_support_resistance(
 def get_tick(symbol: str = Query(...)) -> Dict[str, Any]:
     return _get_tick_response(
         symbol=symbol,
-        mt5_connection=mt5_connection,
         mt5=mt5,
         ensure_symbol_ready=_ensure_symbol_ready,
     )

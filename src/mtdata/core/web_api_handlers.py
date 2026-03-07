@@ -9,19 +9,25 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import HTTPException
 
 from ..forecast.exceptions import ForecastError
+from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
+
+
+def _require_mt5_connection() -> None:
+    try:
+        ensure_mt5_connection_or_raise()
+    except MT5ConnectionError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 def get_instruments_response(
     *,
     search: Optional[str],
     limit: Optional[int],
-    mt5_connection: Any,
     mt5: Any,
     extract_group_path: Callable[[Any], str],
 ) -> Dict[str, Any]:
-    if not mt5_connection._ensure_connection():
-        raise HTTPException(status_code=500, detail="Failed to connect to MetaTrader5.")
+    _require_mt5_connection()
     symbols = mt5.symbols_get()
     if symbols is None:
         raise HTTPException(status_code=500, detail=f"symbols_get failed: {mt5.last_error()}")
@@ -212,14 +218,12 @@ def get_history_response(
     include_incomplete: bool,
     denoise_method: Optional[str],
     denoise_params: Optional[str],
-    mt5_connection: Any,
     fetch_candles_impl: Callable[..., Any],
     get_denoise_methods: Callable[[], Any],
     normalize_denoise_spec: Callable[..., Any],
     mt5_config: Any,
 ) -> Dict[str, Any]:
-    if not mt5_connection._ensure_connection():
-        raise HTTPException(status_code=500, detail="Failed to connect to MetaTrader5.")
+    _require_mt5_connection()
     denoise_method_val = denoise_method.strip() if isinstance(denoise_method, str) else None
     denoise_params_val = denoise_params if isinstance(denoise_params, str) else None
 
@@ -558,12 +562,10 @@ def get_support_resistance_response(
 def get_tick_response(
     *,
     symbol: str,
-    mt5_connection: Any,
     mt5: Any,
     ensure_symbol_ready: Callable[[str], Any],
 ) -> Dict[str, Any]:
-    if not mt5_connection._ensure_connection():
-        raise HTTPException(status_code=500, detail="Failed to connect to MetaTrader5.")
+    _require_mt5_connection()
     tick = mt5.symbol_info_tick(symbol)
     if tick is None:
         err = ensure_symbol_ready(symbol)

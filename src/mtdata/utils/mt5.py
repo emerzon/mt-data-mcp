@@ -11,6 +11,11 @@ from ..bootstrap.settings import mt5_config
 logger = logging.getLogger(__name__)
 
 _SYMBOL_INFO_TTL_SECONDS = 5
+_MT5_CONNECTION_FAILURE_MESSAGE = "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+
+
+class MT5ConnectionError(RuntimeError):
+    """Raised when the MT5 adapter cannot establish a usable connection."""
 
 
 def _data_ready_timing() -> tuple[float, float]:
@@ -299,6 +304,19 @@ class MT5Service:
 mt5_service = MT5Service(mt5_connection)
 
 
+def ensure_mt5_connection_or_raise(*, service: Optional[MT5Service] = None) -> None:
+    """Ensure MT5 is connected or raise a typed adapter error."""
+    svc = service or mt5_service
+    try:
+        connected = bool(svc.ensure_connected())
+    except MT5ConnectionError:
+        raise
+    except Exception as exc:
+        raise MT5ConnectionError(_MT5_CONNECTION_FAILURE_MESSAGE) from exc
+    if not connected:
+        raise MT5ConnectionError(_MT5_CONNECTION_FAILURE_MESSAGE)
+
+
 def _auto_connect_wrapper(func=None, *, service: Optional[MT5Service] = None):
     """Decorator to ensure MT5 connection before tool execution.
 
@@ -311,9 +329,7 @@ def _auto_connect_wrapper(func=None, *, service: Optional[MT5Service] = None):
     def decorator(fn):
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
-            svc = service or mt5_service
-            if not svc.ensure_connected():
-                return {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
+            ensure_mt5_connection_or_raise(service=service)
             return fn(*args, **kwargs)
 
         return wrapper
@@ -374,8 +390,7 @@ def estimate_server_offset(symbol: str = "EURUSD", samples: int = 5) -> int:
     Returns 0 if failed.
     """
     try:
-        if not mt5_connection._ensure_connection():
-            return 0
+        ensure_mt5_connection_or_raise(service=MT5Service(mt5_connection))
         
         # Ensure symbol is ready
         if not mt5.symbol_select(symbol, True):
