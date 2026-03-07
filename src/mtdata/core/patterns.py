@@ -6,6 +6,7 @@ import pandas as pd
 import warnings
 
 from .constants import TIMEFRAME_MAP
+from .mt5_gateway import create_mt5_gateway
 from .patterns_support import (
     _STOCK_PATTERN_UTILS_CACHE,
     _build_stock_pattern_frame,
@@ -50,11 +51,16 @@ _CLASSIC_ENGINE_REGISTRY: Dict[str, ClassicEngineRunner] = {}
 
 
 def _patterns_connection_error() -> Optional[Dict[str, Any]]:
+    mt5_gateway = _get_mt5_gateway()
     try:
-        ensure_mt5_connection_or_raise()
+        mt5_gateway.ensure_connection()
     except MT5ConnectionError as exc:
         return {"error": str(exc)}
     return None
+
+
+def _get_mt5_gateway():
+    return create_mt5_gateway(adapter=mt5, ensure_connection_impl=ensure_mt5_connection_or_raise)
 
 
 def _fetch_pattern_data(
@@ -62,6 +68,7 @@ def _fetch_pattern_data(
     timeframe: str,
     limit: int,
     denoise: Optional[Dict[str, Any]] = None,
+    gateway: Any = None,
 ) -> Tuple[Optional[pd.DataFrame], Optional[Dict[str, Any]]]:
     """Fetch and prepare OHLCV data for pattern detection.
     
@@ -69,13 +76,14 @@ def _fetch_pattern_data(
     """
     if timeframe not in TIMEFRAME_MAP:
         return None, {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
-    
+
+    mt5_gateway = gateway or _get_mt5_gateway()
     mt5_tf = TIMEFRAME_MAP[timeframe]
-    _info = mt5.symbol_info(symbol)
+    _info = mt5_gateway.symbol_info(symbol)
     _was_visible = bool(_info.visible) if _info is not None else None
     try:
         if _was_visible is False:
-            mt5.symbol_select(symbol, True)
+            mt5_gateway.symbol_select(symbol, True)
     except Exception:
         pass
     

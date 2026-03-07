@@ -13,6 +13,7 @@ import numpy as np
 
 from ._mcp_instance import mcp
 from .constants import TIMEFRAME_MAP
+from .mt5_gateway import create_mt5_gateway
 from ..utils.mt5 import (
     MT5ConnectionError,
     _ensure_symbol_ready,
@@ -24,11 +25,16 @@ from ..utils.symbol import _extract_group_path as _extract_group_path_util
 
 
 def _causal_connection_error() -> Dict[str, Any] | None:
+    mt5_gateway = _get_mt5_gateway()
     try:
-        ensure_mt5_connection_or_raise()
+        mt5_gateway.ensure_connection()
     except MT5ConnectionError as exc:
         return {"error": str(exc)}
     return None
+
+
+def _get_mt5_gateway():
+    return create_mt5_gateway(adapter=mt5, ensure_connection_impl=ensure_mt5_connection_or_raise)
 
 
 def _parse_symbols(value: str) -> List[str]:
@@ -40,15 +46,16 @@ def _parse_symbols(value: str) -> List[str]:
     return list(dict.fromkeys(items))  # dedupe preserving order
 
 
-def _expand_symbols_for_group(anchor: str) -> tuple[List[str], str | None, str | None]:
+def _expand_symbols_for_group(anchor: str, gateway: Any = None) -> tuple[List[str], str | None, str | None]:
     """Return visible group members for anchor along with the group path."""
-    info = mt5.symbol_info(anchor)
+    mt5_gateway = gateway or _get_mt5_gateway()
+    info = mt5_gateway.symbol_info(anchor)
     if info is None:
         return [], f"Symbol {anchor} not found", None
     group_path = _extract_group_path_util(info)
-    all_symbols = mt5.symbols_get()
+    all_symbols = mt5_gateway.symbols_get()
     if all_symbols is None:
-        return [], f"Failed to load symbol list: {mt5.last_error()}", group_path
+        return [], f"Failed to load symbol list: {mt5_gateway.last_error()}", group_path
     members: list[str] = []
     for sym in all_symbols:
         if not getattr(sym, 'visible', True) and sym.name != anchor:
@@ -268,6 +275,7 @@ def causal_discover_signals(
     connection_error = _causal_connection_error()
     if connection_error is not None:
         return connection_error
+    mt5_gateway = _get_mt5_gateway()
     meta: Dict[str, Any] = {
         "timeframe": str(timeframe),
         "limit": int(limit),
@@ -296,7 +304,7 @@ def causal_discover_signals(
             meta=meta,
         )
     if len(symbol_list) == 1:
-        expanded, err, group_path = _expand_symbols_for_group(symbol_list[0])
+        expanded, err, group_path = _expand_symbols_for_group(symbol_list[0], gateway=mt5_gateway)
         if err:
             return _causal_error(
                 err,
