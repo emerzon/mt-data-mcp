@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import difflib
 import importlib
+import os
 import pkgutil
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
@@ -11,6 +12,8 @@ from .exceptions import ForecastError
 from .forecast import forecast as _forecast_impl
 from .requests import (
     ForecastBacktestRequest,
+    ForecastBarrierOptimizeRequest,
+    ForecastBarrierProbRequest,
     ForecastConformalIntervalsRequest,
     ForecastGenerateRequest,
     ForecastTuneGeneticRequest,
@@ -370,4 +373,115 @@ def run_forecast_tune_optuna(
         features=request.features,
         dimred_method=request.dimred_method,
         dimred_params=request.dimred_params,
+    )
+
+
+def run_forecast_barrier_prob(
+    request: ForecastBarrierProbRequest,
+    *,
+    build_barrier_kwargs: Any,
+    normalize_trade_direction: Any,
+    barrier_hit_probabilities_impl: Any,
+    barrier_closed_form_impl: Any,
+) -> Dict[str, Any]:
+    method_val = str(request.method or "mc").lower().strip()
+    mc_method = request.mc_method
+    if method_val == "auto":
+        method_val = "mc"
+        mc_method = "auto"
+
+    direction, direction_error = normalize_trade_direction(request.direction)
+    if direction_error:
+        return {"error": direction_error}
+
+    if method_val == "mc":
+        barrier_kwargs = build_barrier_kwargs(request.model_dump())
+        return barrier_hit_probabilities_impl(
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            horizon=request.horizon,
+            method=mc_method,
+            direction=direction,
+            **barrier_kwargs,
+            params=request.params,
+            denoise=request.denoise,
+        )
+
+    if method_val == "closed_form":
+        return barrier_closed_form_impl(
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            horizon=request.horizon,
+            direction=direction,
+            barrier=request.barrier,
+            mu=request.mu,
+            sigma=request.sigma,
+            denoise=request.denoise,
+        )
+
+    return {"error": f"Unknown method: {request.method}"}
+
+
+def run_forecast_barrier_optimize(
+    request: ForecastBarrierOptimizeRequest,
+    *,
+    parse_kv_or_json: Any,
+    barrier_optimize_impl: Any,
+    cpu_count: Any = os.cpu_count,
+) -> Dict[str, Any]:
+    params_norm = parse_kv_or_json(request.params)
+    if not isinstance(params_norm, dict):
+        params_norm = {}
+    defaults = {
+        "optimizer": "optuna",
+        "sampler": "tpe",
+        "pruner": "median",
+        "n_jobs": int((cpu_count() or 1)),
+        "seed": 42,
+    }
+    for key, value in defaults.items():
+        if key not in params_norm:
+            params_norm[key] = value
+
+    return barrier_optimize_impl(
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        horizon=request.horizon,
+        method=request.method,
+        direction=request.direction,
+        mode=request.mode,
+        tp_min=request.tp_min,
+        tp_max=request.tp_max,
+        tp_steps=request.tp_steps,
+        sl_min=request.sl_min,
+        sl_max=request.sl_max,
+        sl_steps=request.sl_steps,
+        params=params_norm,
+        denoise=request.denoise,
+        objective=request.objective,
+        return_grid=request.return_grid,
+        top_k=request.top_k,
+        output=request.output,
+        viable_only=request.viable_only,
+        concise=request.concise,
+        grid_style=request.grid_style,
+        preset=request.preset,
+        vol_window=request.vol_window,
+        vol_min_mult=request.vol_min_mult,
+        vol_max_mult=request.vol_max_mult,
+        vol_steps=request.vol_steps,
+        vol_sl_extra=request.vol_sl_extra,
+        vol_floor_pct=request.vol_floor_pct,
+        vol_floor_pips=request.vol_floor_pips,
+        ratio_min=request.ratio_min,
+        ratio_max=request.ratio_max,
+        ratio_steps=request.ratio_steps,
+        refine=request.refine,
+        refine_radius=request.refine_radius,
+        refine_steps=request.refine_steps,
+        min_prob_win=request.min_prob_win,
+        max_prob_no_hit=request.max_prob_no_hit,
+        max_median_time=request.max_median_time,
+        fast_defaults=request.fast_defaults,
+        search_profile=request.search_profile,
     )

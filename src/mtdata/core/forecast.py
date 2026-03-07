@@ -1,5 +1,4 @@
 from typing import Any, Dict, Optional, List, Literal
-import os
 
 from .schema import TimeframeLiteral, DenoiseSpec, ForecastMethodLiteral
 from ._mcp_instance import mcp
@@ -8,6 +7,8 @@ from ..forecast.exceptions import ForecastError
 from ..forecast.backtest import forecast_backtest as _forecast_backtest_impl
 from ..forecast.requests import (
     ForecastBacktestRequest,
+    ForecastBarrierOptimizeRequest,
+    ForecastBarrierProbRequest,
     ForecastConformalIntervalsRequest,
     ForecastGenerateRequest,
     ForecastTuneGeneticRequest,
@@ -17,6 +18,8 @@ from ..forecast.use_cases import (
     _discover_sktime_forecasters,
     _resolve_sktime_forecaster,
     run_forecast_backtest,
+    run_forecast_barrier_optimize,
+    run_forecast_barrier_prob,
     run_forecast_conformal_intervals,
     run_forecast_generate,
     run_forecast_tune_genetic,
@@ -522,25 +525,7 @@ def forecast_quantlib_heston_calibrate(
 @mcp.tool()
 @_auto_connect_wrapper
 def forecast_barrier_prob(
-    symbol: str,
-    timeframe: TimeframeLiteral = "H1",
-    horizon: int = 12,
-    method: Literal['mc', 'closed_form', 'auto'] = 'mc',
-    # MC params
-    mc_method: Literal['mc_gbm','mc_gbm_bb','hmm_mc','garch','bootstrap','heston','jump_diffusion','auto'] = 'hmm_mc',  # type: ignore
-    direction: Literal['long','short'] = 'long',  # trade direction context
-    tp_abs: Optional[float] = None,
-    sl_abs: Optional[float] = None,
-    tp_pct: Optional[float] = None,
-    sl_pct: Optional[float] = None,
-    tp_pips: Optional[float] = None,
-    sl_pips: Optional[float] = None,
-    params: Optional[Dict[str, Any]] = None,
-    denoise: Optional[DenoiseSpec] = None,
-    # Closed form params
-    barrier: float = 0.0,
-    mu: Optional[float] = None,
-    sigma: Optional[float] = None,
+    request: ForecastBarrierProbRequest,
 ) -> Dict[str, Any]:
     """Calculate probability of price hitting TP/SL barriers using Monte Carlo or Closed Form methods.
     
@@ -649,157 +634,30 @@ def forecast_barrier_prob(
         barrier=1.2700
     )
     """
-    method_val = str(method).lower().strip()
-    if method_val == 'auto':
-        method_val = 'mc'
-        mc_method = 'auto'  # type: ignore
-    if method_val == 'mc':
-        from ..forecast.barriers import forecast_barrier_hit_probabilities as _impl
-        d, direction_error = _normalize_trade_direction(direction)
-        if direction_error:
-            return {"error": direction_error}
+    from ..forecast.barriers import (
+        forecast_barrier_closed_form as _barrier_closed_form_impl,
+        forecast_barrier_hit_probabilities as _barrier_hit_probabilities_impl,
+    )
 
-        barrier_kwargs = _build_barrier_kwargs_from(locals())
-        return _impl(
-            symbol=symbol,
-            timeframe=timeframe,
-            horizon=horizon,
-            method=mc_method,
-            direction=d, # type: ignore
-            **barrier_kwargs,
-            params=params,
-            denoise=denoise,
-        )
-    elif method_val == 'closed_form':
-        from ..forecast.barriers import forecast_barrier_closed_form as _impl
-        d, direction_error = _normalize_trade_direction(direction)
-        if direction_error:
-            return {"error": direction_error}
-
-        return _impl(
-            symbol=symbol,
-            timeframe=timeframe,
-            horizon=horizon,
-            direction=d, # type: ignore
-            barrier=barrier,
-            mu=mu,
-            sigma=sigma,
-            denoise=denoise,
-        )
-    else:
-        return {"error": f"Unknown method: {method}"}
+    return run_forecast_barrier_prob(
+        request,
+        build_barrier_kwargs=_build_barrier_kwargs_from,
+        normalize_trade_direction=_normalize_trade_direction,
+        barrier_hit_probabilities_impl=_barrier_hit_probabilities_impl,
+        barrier_closed_form_impl=_barrier_closed_form_impl,
+    )
 
 
 @mcp.tool()
 @_auto_connect_wrapper
 def forecast_barrier_optimize(
-    symbol: str,
-    timeframe: TimeframeLiteral = "H1",
-    horizon: int = 12,
-    method: Literal['mc_gbm','mc_gbm_bb','hmm_mc','garch','bootstrap','heston','jump_diffusion','auto','ensemble'] = 'auto',  # type: ignore
-    direction: Literal['long','short'] = 'long',  # trade direction context for TP/SL
-    mode: Literal['pct','pips'] = 'pct',  # type: ignore
-    tp_min: float = 0.25,
-    tp_max: float = 1.5,
-    tp_steps: int = 7,
-    sl_min: float = 0.25,
-    sl_max: float = 2.5,
-    sl_steps: int = 9,
-    params: Optional[Dict[str, Any]] = None,
-    denoise: Optional[DenoiseSpec] = None,
-    objective: Literal[
-        'edge',
-        'prob_tp_first',
-        'prob_resolve',
-        'kelly',
-        'kelly_cond',
-        'ev',
-        'ev_cond',
-        'ev_per_bar',
-        'profit_factor',
-        'min_loss_prob',
-        'utility',
-    ] = 'ev',  # type: ignore
-    return_grid: bool = True,
-    top_k: Optional[int] = None,
-    output: Literal['full','summary'] = 'full',  # type: ignore
-    viable_only: bool = False,
-    concise: bool = False,
-    grid_style: Literal['fixed','volatility','ratio','preset'] = 'fixed',  # type: ignore
-    preset: Optional[str] = None,
-    vol_window: int = 250,
-    vol_min_mult: float = 0.5,
-    vol_max_mult: float = 4.0,
-    vol_steps: int = 7,
-    vol_sl_extra: float = 1.8,
-    vol_floor_pct: float = 0.15,
-    vol_floor_pips: float = 8.0,
-    ratio_min: float = 0.5,
-    ratio_max: float = 4.0,
-    ratio_steps: int = 8,
-    refine: bool = False,
-    refine_radius: float = 0.3,
-    refine_steps: int = 5,
-    min_prob_win: Optional[float] = None,
-    max_prob_no_hit: Optional[float] = None,
-    max_median_time: Optional[float] = None,
-    fast_defaults: bool = False,
-    search_profile: Literal['fast','medium','long'] = 'long',  # type: ignore
+    request: ForecastBarrierOptimizeRequest,
 ) -> Dict[str, Any]:
     """Optimize TP/SL barriers with support for presets, volatility scaling, ratios, and two-stage refinement."""
-    from ..forecast.barriers import forecast_barrier_optimize as _impl
-    params_norm = _parse_kv_or_json(params)
-    if not isinstance(params_norm, dict):
-        params_norm = {}
-    defaults = {
-        "optimizer": "optuna",
-        "sampler": "tpe",
-        "pruner": "median",
-        "n_jobs": int(os.cpu_count() or 1),
-        "seed": 42,
-    }
-    for key, value in defaults.items():
-        if key not in params_norm:
-            params_norm[key] = value
-    return _impl(
-        symbol=symbol,
-        timeframe=timeframe,
-        horizon=horizon,
-        method=method,
-        direction=direction,
-        mode=mode,
-        tp_min=tp_min,
-        tp_max=tp_max,
-        tp_steps=tp_steps,
-        sl_min=sl_min,
-        sl_max=sl_max,
-        sl_steps=sl_steps,
-        params=params_norm,
-        denoise=denoise,
-        objective=objective,
-        return_grid=return_grid,
-        top_k=top_k,
-        output=output,
-        viable_only=viable_only,
-        concise=concise,
-        grid_style=grid_style,
-        preset=preset,
-        vol_window=vol_window,
-        vol_min_mult=vol_min_mult,
-        vol_max_mult=vol_max_mult,
-        vol_steps=vol_steps,
-        vol_sl_extra=vol_sl_extra,
-        vol_floor_pct=vol_floor_pct,
-        vol_floor_pips=vol_floor_pips,
-        ratio_min=ratio_min,
-        ratio_max=ratio_max,
-        ratio_steps=ratio_steps,
-        refine=refine,
-        refine_radius=refine_radius,
-        refine_steps=refine_steps,
-        min_prob_win=min_prob_win,
-        max_prob_no_hit=max_prob_no_hit,
-        max_median_time=max_median_time,
-        fast_defaults=fast_defaults,
-        search_profile=search_profile,
+    from ..forecast.barriers import forecast_barrier_optimize as _barrier_optimize_impl
+
+    return run_forecast_barrier_optimize(
+        request,
+        parse_kv_or_json=_parse_kv_or_json,
+        barrier_optimize_impl=_barrier_optimize_impl,
     )

@@ -105,3 +105,66 @@ class ForecastTuneOptunaRequest(BaseModel):
     features: Optional[Dict[str, Any]] = None
     dimred_method: Optional[str] = None
     dimred_params: Optional[Dict[str, Any]] = None
+
+
+class ForecastBarrierProbRequest(BaseModel):
+    symbol: str
+    timeframe: TimeframeLiteral = "H1"
+    horizon: int = Field(12, ge=1)
+    method: str = "mc"
+    mc_method: str = "hmm_mc"
+    direction: str = "long"
+    tp_abs: Optional[float] = None
+    sl_abs: Optional[float] = None
+    tp_pct: Optional[float] = None
+    sl_pct: Optional[float] = None
+    tp_pips: Optional[float] = None
+    sl_pips: Optional[float] = None
+    params: Optional[Dict[str, Any]] = None
+    denoise: Optional[DenoiseSpec] = None
+    barrier: float = 0.0
+    mu: Optional[float] = None
+    sigma: Optional[float] = None
+
+
+class ForecastBarrierOptimizeRequest(BaseModel):
+    symbol: str
+    timeframe: TimeframeLiteral = "H1"
+    horizon: int = Field(12, ge=1)
+    method: str = "auto"
+    direction: str = "long"
+    mode: str = "pct"
+    tp_min: float = 0.25
+    tp_max: float = 1.5
+    tp_steps: int = Field(7, ge=1)
+    sl_min: float = 0.25
+    sl_max: float = 2.5
+    sl_steps: int = Field(9, ge=1)
+    params: Optional[Dict[str, Any]] = None
+    denoise: Optional[DenoiseSpec] = None
+    objective: str = "ev"
+    return_grid: bool = True
+    top_k: Optional[int] = None
+    output: str = "full"
+    viable_only: bool = False
+    concise: bool = False
+    grid_style: str = "fixed"
+    preset: Optional[str] = None
+    vol_window: int = Field(250, ge=1)
+    vol_min_mult: float = 0.5
+    vol_max_mult: float = 4.0
+    vol_steps: int = Field(7, ge=1)
+    vol_sl_extra: float = 1.8
+    vol_floor_pct: float = 0.15
+    vol_floor_pips: float = 8.0
+    ratio_min: float = 0.5
+    ratio_max: float = 4.0
+    ratio_steps: int = Field(8, ge=1)
+    refine: bool = False
+    refine_radius: float = 0.3
+    refine_steps: int = Field(5, ge=1)
+    min_prob_win: Optional[float] = None
+    max_prob_no_hit: Optional[float] = None
+    max_median_time: Optional[float] = None
+    fast_defaults: bool = False
+    search_profile: str = "long"

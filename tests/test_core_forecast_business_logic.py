@@ -11,6 +11,8 @@ from mtdata.core import forecast as cf
 from mtdata.forecast.exceptions import ForecastError
 from mtdata.forecast import use_cases as forecast_use_cases
 from mtdata.forecast.requests import (
+    ForecastBarrierOptimizeRequest,
+    ForecastBarrierProbRequest,
     ForecastConformalIntervalsRequest,
     ForecastGenerateRequest,
     ForecastTuneGeneticRequest,
@@ -445,16 +447,29 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
     monkeypatch.setattr(barriers_mod, "forecast_barrier_hit_probabilities", fake_mc)
     monkeypatch.setattr(barriers_mod, "forecast_barrier_closed_form", fake_cf)
 
-    out = raw_barrier(symbol="EURUSD", method="auto", mc_method="hmm_mc", direction="down")
+    out = raw_barrier(
+        request=ForecastBarrierProbRequest(
+            symbol="EURUSD",
+            method="auto",
+            mc_method="hmm_mc",
+            direction="down",
+        )
+    )
     assert out["kind"] == "mc"
     assert out["method"] == "auto"
     assert out["direction"] == "short"
 
-    out = raw_barrier(symbol="EURUSD", method="closed_form", direction="weird")
+    out = raw_barrier(
+        request=ForecastBarrierProbRequest(
+            symbol="EURUSD",
+            method="closed_form",
+            direction="weird",
+        )
+    )
     assert "error" in out
     assert "Invalid direction" in out["error"]
 
-    out = raw_barrier(symbol="EURUSD", method="mystery")
+    out = raw_barrier(request=ForecastBarrierProbRequest(symbol="EURUSD", method="mystery"))
     assert out["error"] == "Unknown method: mystery"
 
 
@@ -564,7 +579,13 @@ def test_forecast_barrier_optimize_routes_profile_args(monkeypatch):
         return {"ok": True, "search_profile": kwargs.get("search_profile"), "fast_defaults": kwargs.get("fast_defaults")}
 
     monkeypatch.setattr(barriers_mod, "forecast_barrier_optimize", fake_optimize)
-    out = raw_opt(symbol="EURUSD", fast_defaults=True, search_profile="long")
+    out = raw_opt(
+        request=ForecastBarrierOptimizeRequest(
+            symbol="EURUSD",
+            fast_defaults=True,
+            search_profile="long",
+        )
+    )
     assert out["ok"] is True
     assert out["fast_defaults"] is True
     assert out["search_profile"] == "long"
@@ -583,7 +604,7 @@ def test_forecast_barrier_optimize_applies_default_optuna_config(monkeypatch):
         return {"ok": True}
 
     monkeypatch.setattr(barriers_mod, "forecast_barrier_optimize", fake_optimize)
-    out = raw_opt(symbol="BTCUSD")
+    out = raw_opt(request=ForecastBarrierOptimizeRequest(symbol="BTCUSD"))
     assert out["ok"] is True
     assert called["method"] == "auto"
     assert called["search_profile"] == "long"

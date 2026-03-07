@@ -19,6 +19,15 @@ from src.mtdata.core.trading import trade_get_open
 from src.mtdata.core.trading import trade_get_pending
 from src.mtdata.core.patterns import patterns_detect
 from src.mtdata.core.forecast import forecast_barrier_prob
+from src.mtdata.forecast.requests import ForecastBarrierProbRequest
+
+
+def barrier_prob(**kwargs):
+    raw_output = bool(kwargs.pop("__cli_raw", False))
+    request = kwargs.pop("request", None)
+    if request is None:
+        request = ForecastBarrierProbRequest(**kwargs)
+    return forecast_barrier_prob(request=request, __cli_raw=raw_output)
 
 class TestMergedTools(unittest.TestCase):
     def setUp(self):
@@ -163,34 +172,34 @@ class TestMergedTools(unittest.TestCase):
     def test_forecast_barrier_prob(self):
         with patch('src.mtdata.forecast.barriers.forecast_barrier_hit_probabilities') as mock_mc:
             mock_mc.return_value = {"success": True}
-            res = forecast_barrier_prob(symbol="EURUSD", method="mc", __cli_raw=True)
+            res = barrier_prob(symbol="EURUSD", method="mc", __cli_raw=True)
             self.assertEqual(res, {"success": True})
             
         with patch('src.mtdata.forecast.barriers.forecast_barrier_closed_form') as mock_cf:
             mock_cf.return_value = {"success": True}
-            res = forecast_barrier_prob(symbol="EURUSD", method="closed_form", __cli_raw=True)
+            res = barrier_prob(symbol="EURUSD", method="closed_form", __cli_raw=True)
             self.assertEqual(res, {"success": True})
 
     def test_forecast_barrier_prob_direction_normalization(self):
         with patch('src.mtdata.forecast.barriers.forecast_barrier_hit_probabilities') as mock_mc:
             mock_mc.return_value = {"success": True}
-            forecast_barrier_prob(symbol="EURUSD", method="mc", direction="LONG", __cli_raw=True)
+            barrier_prob(symbol="EURUSD", method="mc", direction="LONG", __cli_raw=True)
             self.assertEqual(mock_mc.call_args.kwargs.get("direction"), "long")
 
         with patch('src.mtdata.forecast.barriers.forecast_barrier_closed_form') as mock_cf:
             mock_cf.return_value = {"success": True}
-            forecast_barrier_prob(symbol="EURUSD", method="closed_form", direction="SHORT", __cli_raw=True)
+            barrier_prob(symbol="EURUSD", method="closed_form", direction="SHORT", __cli_raw=True)
             self.assertEqual(mock_cf.call_args.kwargs.get("direction"), "short")
 
     def test_forecast_barrier_prob_rejects_invalid_direction(self):
         with patch('src.mtdata.forecast.barriers.forecast_barrier_hit_probabilities') as mock_mc:
-            res = forecast_barrier_prob(symbol="EURUSD", method="mc", direction="SIDEWAYS", __cli_raw=True)
+            res = barrier_prob(symbol="EURUSD", method="mc", direction="SIDEWAYS", __cli_raw=True)
             self.assertIn("error", res)
             self.assertIn("Invalid direction", res["error"])
             mock_mc.assert_not_called()
 
         with patch('src.mtdata.forecast.barriers.forecast_barrier_closed_form') as mock_cf:
-            res = forecast_barrier_prob(symbol="EURUSD", method="closed_form", direction="SIDEWAYS", __cli_raw=True)
+            res = barrier_prob(symbol="EURUSD", method="closed_form", direction="SIDEWAYS", __cli_raw=True)
             self.assertIn("error", res)
             self.assertIn("Invalid direction", res["error"])
             mock_cf.assert_not_called()
