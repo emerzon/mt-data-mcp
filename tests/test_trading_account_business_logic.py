@@ -46,7 +46,7 @@ def test_trade_account_info_includes_execution_preflight_fields() -> None:
     )
 
     raw = _unwrap(trade_account_info)
-    with patch("mtdata.core.trading._auto_connect_wrapper", lambda f: f):
+    with patch("mtdata.core.trading_account._auto_connect_wrapper", lambda f: f):
         out = raw()
 
     if prev is not None:
