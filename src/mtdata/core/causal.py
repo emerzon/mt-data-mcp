@@ -13,8 +13,22 @@ import numpy as np
 
 from ._mcp_instance import mcp
 from .constants import TIMEFRAME_MAP
-from ..utils.mt5 import _auto_connect_wrapper, _ensure_symbol_ready, _mt5_copy_rates_from, mt5
+from ..utils.mt5 import (
+    MT5ConnectionError,
+    _ensure_symbol_ready,
+    _mt5_copy_rates_from,
+    ensure_mt5_connection_or_raise,
+    mt5,
+)
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
+
+
+def _causal_connection_error() -> Dict[str, Any] | None:
+    try:
+        ensure_mt5_connection_or_raise()
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
+    return None
 
 
 def _parse_symbols(value: str) -> List[str]:
@@ -231,7 +245,6 @@ def _format_alignment_detail_summary(detail: Dict[str, Any]) -> str:
 
 
 @mcp.tool()
-@_auto_connect_wrapper
 def causal_discover_signals(
     symbols: str,
     timeframe: str = "H1",
@@ -252,6 +265,9 @@ def causal_discover_signals(
         transform: Preprocessing transform: "log_return", "pct", "diff", or "level".
         normalize: Z-score columns before testing to stabilise scale.
     """
+    connection_error = _causal_connection_error()
+    if connection_error is not None:
+        return connection_error
     meta: Dict[str, Any] = {
         "timeframe": str(timeframe),
         "limit": int(limit),

@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from mtdata.core import causal as causal_mod
 from mtdata.core.causal import (
     _parse_symbols,
     _expand_symbols_for_group,
@@ -18,6 +19,12 @@ from mtdata.core.causal import (
     _format_summary,
     causal_discover_signals,
 )
+from mtdata.utils.mt5 import MT5ConnectionError
+
+
+@pytest.fixture(autouse=True)
+def _skip_mt5_connection(monkeypatch):
+    monkeypatch.setattr(causal_mod, "ensure_mt5_connection_or_raise", lambda: None)
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +209,16 @@ class TestCausalDiscoverSignals:
         while hasattr(fn, '__wrapped__'):
             fn = fn.__wrapped__
         return fn
+
+    def test_connection_error_payload(self, monkeypatch):
+        def fail_connection():
+            raise MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running.")
+
+        monkeypatch.setattr(causal_mod, "ensure_mt5_connection_or_raise", fail_connection)
+
+        result = self._unwrapped()("EURUSD,GBPUSD")
+
+        assert result == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
 
     def test_empty_symbols(self):
         result = self._unwrapped()("")
