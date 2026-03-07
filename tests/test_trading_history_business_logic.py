@@ -4,9 +4,18 @@ from collections import namedtuple
 from unittest.mock import MagicMock, patch
 import sys
 
-from mtdata.core.trading import trade_history
+from mtdata.core.trading import trade_history as _trade_history_tool
+from mtdata.core.trading_requests import TradeHistoryRequest
 from mtdata.utils.mt5 import _mt5_epoch_to_utc
 from mtdata.utils.utils import _format_time_minimal
+
+
+def trade_history(**kwargs):
+    raw_output = bool(kwargs.pop("__cli_raw", False))
+    request = kwargs.pop("request", None)
+    if request is None:
+        request = TradeHistoryRequest(**kwargs)
+    return _trade_history_tool(request=request, __cli_raw=raw_output)
 
 
 def _install_mock_mt5() -> tuple[MagicMock, object]:

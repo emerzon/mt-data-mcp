@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+import math
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from .trading_requests import TradeCloseRequest, TradeModifyRequest, TradePlaceRequest
+from .trading_requests import (
+    TradeCloseRequest,
+    TradeHistoryRequest,
+    TradeModifyRequest,
+    TradePlaceRequest,
+    TradeRiskAnalyzeRequest,
+)
 
 
 def run_trade_place(
@@ -342,3 +351,583 @@ def run_trade_close(
                 return _with_no_action(message="No open positions or pending orders")
             return pending_result
     return position_result
+
+
+def run_trade_history(
+    request: TradeHistoryRequest,
+    *,
+    mt5: Any,
+    auto_connect_wrapper: Any,
+    use_client_tz: Any,
+    format_time_minimal: Any,
+    format_time_minimal_local: Any,
+    mt5_epoch_to_utc: Any,
+    parse_start_datetime: Any,
+    normalize_limit: Any,
+    comment_row_metadata: Any,
+    normalize_ticket_filter: Any,
+    normalize_minutes_back: Any,
+    decode_mt5_enum_label: Any,
+    mt5_config: Any,
+) -> Any:
+    import pandas as pd
+
+    @auto_connect_wrapper
+    def _get_history():
+        try:
+            use_client_tz_value = use_client_tz()
+            fmt_time = format_time_minimal_local if use_client_tz_value else format_time_minimal
+            trigger_pattern = re.compile(r"\[(sl|tp)\s+([+-]?\d+(?:\.\d+)?)\]", re.IGNORECASE)
+
+            def _normalize_time_col(df: "pd.DataFrame", col: str) -> Optional["pd.Series"]:
+                if col not in df.columns:
+                    return None
+                raw = pd.to_numeric(df[col], errors="coerce")
+                utc = raw.apply(lambda x: mt5_epoch_to_utc(float(x)) if pd.notna(x) else float("nan"))
+                df[col] = utc.apply(lambda x: fmt_time(float(x)) if pd.notna(x) else None)
+                return utc
+
+            if request.start and request.minutes_back not in (None, ""):
+                return {"error": "Use either start or minutes_back, not both."}
+
+            position_ticket_value, position_ticket_error = normalize_ticket_filter(
+                request.position_ticket,
+                name="position_ticket",
+            )
+            if position_ticket_error:
+                return {"error": position_ticket_error}
+            deal_ticket_value, deal_ticket_error = normalize_ticket_filter(
+                request.deal_ticket,
+                name="deal_ticket",
+            )
+            if deal_ticket_error:
+                return {"error": deal_ticket_error}
+            order_ticket_value, order_ticket_error = normalize_ticket_filter(
+                request.order_ticket,
+                name="order_ticket",
+            )
+            if order_ticket_error:
+                return {"error": order_ticket_error}
+            minutes_back_value, minutes_back_error = normalize_minutes_back(request.minutes_back)
+            if minutes_back_error:
+                return {"error": minutes_back_error}
+
+            if request.end:
+                to_dt = parse_start_datetime(request.end)
+                if not to_dt:
+                    return {"error": "Invalid end time."}
+            else:
+                to_dt = datetime.now(timezone.utc).replace(tzinfo=None)
+
+            if minutes_back_value is not None:
+                from_dt = to_dt - timedelta(minutes=minutes_back_value)
+            elif request.start:
+                from_dt = parse_start_datetime(request.start)
+                if not from_dt:
+                    return {"error": "Invalid start time."}
+            else:
+                from_dt = datetime(2020, 1, 1)
+
+            if from_dt > to_dt:
+                return {"error": "start must be before end."}
+
+            kind = str(request.history_kind or "deals").strip().lower()
+            if kind not in ("deals", "orders"):
+                return {"error": "history_kind must be 'deals' or 'orders'."}
+            if kind == "orders" and deal_ticket_value is not None:
+                return {"error": "deal_ticket is only valid when history_kind='deals'."}
+
+            def _decode_enum_column(df: "pd.DataFrame", col: str, prefix: str) -> None:
+                if col not in df.columns:
+                    return
+                raw = df[col]
+                numeric = pd.to_numeric(raw, errors="coerce")
+                if numeric.notna().any():
+                    df[f"{col}_code"] = numeric.astype("Int64")
+                df[col] = raw.apply(lambda v: decode_mt5_enum_label(mt5, v, prefix=prefix) or v)
+
+            def _reason_to_exit_trigger(reason: Any) -> Optional[str]:
+                txt = str(reason or "").strip().lower()
+                if not txt:
+                    return None
+                if re.search(r"\bsl\b|stop\s*loss", txt):
+                    return "SL"
+                if re.search(r"\btp\b|take\s*profit", txt):
+                    return "TP"
+                return None
+
+            def _extract_exit_trigger(
+                comment: Any,
+                reason: Any,
+                entry: Any,
+            ) -> tuple[Optional[str], Optional[float], Optional[str]]:
+                entry_txt = str(entry or "").strip().lower()
+                if entry_txt and "out" not in entry_txt:
+                    return None, None, None
+                if isinstance(comment, str) and comment:
+                    match = trigger_pattern.search(comment)
+                    if match:
+                        trigger = str(match.group(1)).upper()
+                        try:
+                            price = float(match.group(2))
+                        except Exception:
+                            price = None
+                        return trigger, price, "comment"
+                reason_trigger = _reason_to_exit_trigger(reason)
+                if reason_trigger:
+                    return reason_trigger, None, "reason"
+                return None, None, None
+
+            def _filter_by_ticket_columns(
+                df_in: "pd.DataFrame",
+                ticket_value: Optional[int],
+                *,
+                columns: tuple[str, ...],
+            ) -> "pd.DataFrame":
+                if ticket_value is None:
+                    return df_in
+                masks: List["pd.Series"] = []
+                for col in columns:
+                    if col not in df_in.columns:
+                        continue
+                    masks.append(pd.to_numeric(df_in[col], errors="coerce").eq(ticket_value))
+                if not masks:
+                    return df_in.iloc[0:0]
+                mask = masks[0]
+                for extra in masks[1:]:
+                    mask = mask | extra
+                return df_in.loc[mask]
+
+            def _is_non_informative_series(series: "pd.Series") -> bool:
+                vals = pd.Series(series)
+                if vals.dropna().empty:
+                    return True
+                for value in vals:
+                    if value is None:
+                        continue
+                    if isinstance(value, str):
+                        if not value.strip():
+                            continue
+                        return False
+                    try:
+                        numeric = float(value)
+                        if math.isfinite(numeric) and numeric == 0.0:
+                            continue
+                        return False
+                    except Exception:
+                        return False
+                return True
+
+            if kind == "deals":
+                rows = (
+                    mt5.history_deals_get(from_dt, to_dt, symbol=request.symbol)
+                    if request.symbol
+                    else mt5.history_deals_get(from_dt, to_dt)
+                )
+                if rows is None or len(rows) == 0:
+                    return {"message": "No deals found"}
+                df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
+                if request.symbol and "symbol" in df.columns:
+                    df = df.loc[
+                        df["symbol"].astype(str).str.upper() == str(request.symbol).upper()
+                    ]
+                df = _filter_by_ticket_columns(df, deal_ticket_value, columns=("ticket",))
+                df = _filter_by_ticket_columns(df, order_ticket_value, columns=("order",))
+                df = _filter_by_ticket_columns(
+                    df,
+                    position_ticket_value,
+                    columns=("position_id", "position_by_id"),
+                )
+                if len(df) == 0:
+                    return {
+                        "message": (
+                            f"No deals found for {request.symbol}"
+                            if request.symbol
+                            else "No deals found"
+                        )
+                    }
+                sort_src = _normalize_time_col(df, "time")
+                _decode_enum_column(df, "type", "DEAL_TYPE_")
+                _decode_enum_column(df, "entry", "DEAL_ENTRY_")
+                _decode_enum_column(df, "reason", "DEAL_REASON_")
+                if len(df) > 0:
+                    triggers = df.apply(
+                        lambda row: _extract_exit_trigger(
+                            row.get("comment"),
+                            row.get("reason"),
+                            row.get("entry"),
+                        ),
+                        axis=1,
+                        result_type="expand",
+                    )
+                    if isinstance(triggers, pd.DataFrame) and triggers.shape[1] == 3:
+                        triggers.columns = [
+                            "exit_trigger",
+                            "exit_trigger_price",
+                            "exit_trigger_source",
+                        ]
+                        for col in triggers.columns:
+                            df[col] = triggers[col]
+                for noise_col in ("time_msc", "external_id", "fee"):
+                    if noise_col in df.columns and _is_non_informative_series(df[noise_col]):
+                        df = df.drop(columns=[noise_col])
+            else:
+                rows = (
+                    mt5.history_orders_get(from_dt, to_dt, symbol=request.symbol)
+                    if request.symbol
+                    else mt5.history_orders_get(from_dt, to_dt)
+                )
+                if rows is None or len(rows) == 0:
+                    return {"message": "No orders found"}
+                df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
+                if request.symbol and "symbol" in df.columns:
+                    df = df.loc[
+                        df["symbol"].astype(str).str.upper() == str(request.symbol).upper()
+                    ]
+                df = _filter_by_ticket_columns(df, order_ticket_value, columns=("ticket",))
+                df = _filter_by_ticket_columns(
+                    df,
+                    position_ticket_value,
+                    columns=("position_id", "position_by_id"),
+                )
+                if len(df) == 0:
+                    return {
+                        "message": (
+                            f"No orders found for {request.symbol}"
+                            if request.symbol
+                            else "No orders found"
+                        )
+                    }
+                sort_src = _normalize_time_col(df, "time_setup")
+                if sort_src is None:
+                    sort_src = _normalize_time_col(df, "time")
+                _normalize_time_col(df, "time_done")
+                _decode_enum_column(df, "type", "ORDER_TYPE_")
+                _decode_enum_column(df, "state", "ORDER_STATE_")
+                _decode_enum_column(df, "type_time", "ORDER_TIME_")
+                _decode_enum_column(df, "type_filling", "ORDER_FILLING_")
+                _decode_enum_column(df, "reason", "ORDER_REASON_")
+
+            df["__sort_utc"] = (
+                sort_src if sort_src is not None else pd.Series([float("nan")] * len(df))
+            )
+
+            limit_value = normalize_limit(request.limit)
+            if limit_value and len(df) > limit_value:
+                if "__sort_utc" in df.columns:
+                    df = df.sort_values("__sort_utc").tail(limit_value)
+                else:
+                    df = df.tail(limit_value)
+            if "__sort_utc" in df.columns:
+                df = df.drop(columns=["__sort_utc"])
+
+            df = df.replace([float("inf"), float("-inf")], pd.NA)
+            records = df.astype(object).where(df.notna(), None).to_dict(orient="records")
+            timezone_label = "UTC"
+            if use_client_tz_value:
+                try:
+                    tz_obj = mt5_config.get_client_tz()
+                    timezone_label = str(
+                        getattr(tz_obj, "zone", None) or tz_obj or "client_local"
+                    )
+                except Exception:
+                    timezone_label = "client_local"
+            for row in records:
+                if isinstance(row, dict):
+                    row["timestamp_timezone"] = timezone_label
+                    row.update(comment_row_metadata(row.get("comment")))
+            return records
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    return _get_history()
+
+
+def run_trade_risk_analyze(
+    request: TradeRiskAnalyzeRequest,
+    *,
+    mt5: Any,
+    auto_connect_wrapper: Any,
+) -> Dict[str, Any]:
+    @auto_connect_wrapper
+    def _analyze_risk():
+        try:
+            account = mt5.account_info()
+            if account is None:
+                return {"error": "Failed to get account info"}
+
+            equity = float(account.equity)
+            currency = account.currency
+            positions = mt5.positions_get(symbol=request.symbol) if request.symbol else mt5.positions_get()
+            if positions is None:
+                positions = []
+
+            position_risks: List[Dict[str, Any]] = []
+            total_risk_currency = 0.0
+            positions_without_sl = 0
+            total_notional_exposure = 0.0
+
+            for pos in positions:
+                try:
+                    sym_info = mt5.symbol_info(pos.symbol)
+                    if sym_info is None:
+                        continue
+
+                    entry_price = float(pos.price_open)
+                    sl_price = float(pos.sl) if pos.sl and pos.sl > 0 else None
+                    tp_price = float(pos.tp) if pos.tp and pos.tp > 0 else None
+                    volume = float(pos.volume)
+
+                    contract_size = float(sym_info.trade_contract_size)
+                    point = float(getattr(sym_info, "point", 0.0) or 0.0)
+                    tick_value = float(getattr(sym_info, "trade_tick_value", 0.0) or 0.0)
+                    tick_size = float(getattr(sym_info, "trade_tick_size", 0.0) or 0.0)
+                    if not math.isfinite(tick_size) or tick_size <= 0:
+                        tick_size = point if math.isfinite(point) and point > 0 else 0.0
+                    tick_value_valid = math.isfinite(tick_value) and tick_value > 0
+                    if not math.isfinite(contract_size) or contract_size <= 0:
+                        contract_size = 1.0
+
+                    notional_value = abs(volume) * contract_size * entry_price
+                    total_notional_exposure += notional_value
+
+                    risk_currency = None
+                    risk_pct = None
+                    reward_currency = None
+                    rr_ratio = None
+                    risk_status = "undefined"
+
+                    if sl_price and tick_size > 0 and tick_value_valid:
+                        risk_ticks = (
+                            (entry_price - sl_price) / tick_size
+                            if pos.type == 0
+                            else (sl_price - entry_price) / tick_size
+                        )
+                        risk_currency = abs(risk_ticks * tick_value * volume)
+                        risk_pct = (risk_currency / equity) * 100.0 if equity > 0 else 0.0
+                        total_risk_currency += risk_currency
+                        risk_status = "defined"
+
+                        if tp_price:
+                            reward_ticks = (
+                                (tp_price - entry_price) / tick_size
+                                if pos.type == 0
+                                else (entry_price - tp_price) / tick_size
+                            )
+                            reward_currency = abs(reward_ticks * tick_value * volume)
+                            if risk_currency > 0:
+                                rr_ratio = reward_currency / risk_currency
+                    elif sl_price:
+                        risk_status = "undefined"
+                    else:
+                        positions_without_sl += 1
+                        risk_status = "unlimited"
+
+                    position_risks.append(
+                        {
+                            "ticket": pos.ticket,
+                            "symbol": pos.symbol,
+                            "type": "BUY" if pos.type == 0 else "SELL",
+                            "volume": volume,
+                            "entry": entry_price,
+                            "sl": sl_price,
+                            "tp": tp_price,
+                            "risk_currency": round(risk_currency, 2) if risk_currency else None,
+                            "risk_pct": round(risk_pct, 2) if risk_pct else None,
+                            "risk_status": risk_status,
+                            "notional_value": round(notional_value, 2),
+                            "reward_currency": round(reward_currency, 2) if reward_currency else None,
+                            "rr_ratio": round(rr_ratio, 2) if rr_ratio else None,
+                        }
+                    )
+                except Exception:
+                    continue
+
+            total_risk_pct = (total_risk_currency / equity) * 100.0 if equity > 0 else 0.0
+            notional_exposure_pct = (
+                (total_notional_exposure / equity) * 100.0 if equity > 0 else 0.0
+            )
+
+            overall_risk_status = "defined"
+            if positions_without_sl > 0:
+                overall_risk_status = "unlimited"
+            elif total_risk_pct > 10:
+                overall_risk_status = "high"
+            elif total_risk_pct > 5:
+                overall_risk_status = "moderate"
+            else:
+                overall_risk_status = "low"
+
+            result: Dict[str, Any] = {
+                "success": True,
+                "account": {"equity": round(equity, 2), "currency": currency},
+                "portfolio_risk": {
+                    "overall_risk_status": overall_risk_status,
+                    "total_risk_currency": round(total_risk_currency, 2),
+                    "total_risk_pct": round(total_risk_pct, 2),
+                    "positions_count": len(position_risks),
+                    "positions_without_sl": positions_without_sl,
+                    "notional_exposure": round(total_notional_exposure, 2),
+                    "notional_exposure_pct": round(notional_exposure_pct, 2),
+                },
+                "positions": position_risks,
+            }
+            if positions_without_sl > 0:
+                result["warning"] = (
+                    f"{positions_without_sl} position(s) without stop loss - UNLIMITED RISK!"
+                )
+
+            if (
+                request.desired_risk_pct is not None
+                and request.proposed_entry is not None
+                and request.proposed_sl is not None
+            ):
+                if not request.symbol:
+                    return {"error": "symbol is required for position sizing"}
+
+                sym_info = mt5.symbol_info(request.symbol)
+                if sym_info is None:
+                    return {"error": f"Symbol {request.symbol} not found"}
+
+                contract_size = float(sym_info.trade_contract_size)
+                point = float(getattr(sym_info, "point", 0.0) or 0.0)
+                tick_value = float(getattr(sym_info, "trade_tick_value", 0.0) or 0.0)
+                tick_size = float(getattr(sym_info, "trade_tick_size", 0.0) or 0.0)
+                if not math.isfinite(tick_size) or tick_size <= 0:
+                    tick_size = point if math.isfinite(point) and point > 0 else 0.0
+                min_volume = float(sym_info.volume_min)
+                max_volume = float(sym_info.volume_max)
+                volume_step = float(sym_info.volume_step)
+                if not (
+                    math.isfinite(tick_value)
+                    and tick_value > 0
+                    and math.isfinite(tick_size)
+                    and tick_size > 0
+                ):
+                    result["position_sizing_error"] = (
+                        "Symbol tick configuration is invalid for risk sizing"
+                    )
+                    return result
+                if not (math.isfinite(volume_step) and volume_step > 0):
+                    volume_step = max(min_volume, 0.01)
+                if not math.isfinite(contract_size) or contract_size <= 0:
+                    contract_size = 1.0
+
+                risk_amount = equity * (request.desired_risk_pct / 100.0)
+                sl_distance_ticks = abs(request.proposed_entry - request.proposed_sl) / tick_size
+                if sl_distance_ticks > 0:
+                    raw_volume = risk_amount / (sl_distance_ticks * tick_value)
+                    if not math.isfinite(raw_volume) or raw_volume <= 0:
+                        result["position_sizing_error"] = "Calculated volume is invalid"
+                        return result
+
+                    volume_steps = math.floor((raw_volume / volume_step) + 1e-12)
+                    suggested_volume = volume_steps * volume_step
+                    rounding_mode = "rounded_down_to_step"
+                    sizing_notes: List[str] = []
+
+                    if suggested_volume < min_volume:
+                        suggested_volume = min_volume
+                        rounding_mode = "clamped_to_min_volume"
+                        sizing_notes.append(
+                            "Minimum trade volume forces the size up to the broker minimum."
+                        )
+                    elif suggested_volume > max_volume:
+                        suggested_volume = max_volume
+                        rounding_mode = "clamped_to_max_volume"
+                        sizing_notes.append(
+                            "Maximum trade volume caps the size below the unconstrained target."
+                        )
+                    elif suggested_volume < raw_volume:
+                        sizing_notes.append(
+                            "Volume was rounded down to the nearest broker step to avoid exceeding requested risk."
+                        )
+
+                    step_txt = f"{volume_step:.10f}".rstrip("0")
+                    step_decimals = len(step_txt.split(".")[1]) if "." in step_txt else 0
+                    if step_decimals > 0:
+                        suggested_volume = float(f"{suggested_volume:.{step_decimals}f}")
+                    else:
+                        suggested_volume = float(round(suggested_volume))
+
+                    actual_risk = sl_distance_ticks * tick_value * suggested_volume
+                    actual_risk_pct = (actual_risk / equity) * 100.0
+                    risk_pct_diff = actual_risk_pct - float(request.desired_risk_pct)
+                    risk_over_target = actual_risk_pct > (float(request.desired_risk_pct) + 1e-9)
+                    overshoot_pct = max(0.0, float(actual_risk_pct) - float(request.desired_risk_pct))
+                    overshoot_currency = max(0.0, float(actual_risk) - float(risk_amount))
+                    overshoot_reason = None
+                    if risk_over_target:
+                        if rounding_mode == "clamped_to_min_volume":
+                            overshoot_reason = "min_volume_constraint"
+                        elif rounding_mode == "clamped_to_max_volume":
+                            overshoot_reason = "max_volume_constraint"
+                        elif rounding_mode == "rounded_down_to_step":
+                            overshoot_reason = "step_rounding_precision"
+                        else:
+                            overshoot_reason = "broker_volume_constraints"
+                        sizing_notes.append(
+                            "Actual risk still exceeds the requested level after broker volume constraints."
+                        )
+
+                    rr_ratio = None
+                    reward_currency = None
+                    if request.proposed_tp is not None:
+                        tp_distance_ticks = abs(request.proposed_tp - request.proposed_entry) / tick_size
+                        reward_currency = tp_distance_ticks * tick_value * suggested_volume
+                        if actual_risk > 0:
+                            rr_ratio = reward_currency / actual_risk
+
+                    result["position_sizing"] = {
+                        "symbol": request.symbol,
+                        "suggested_volume": suggested_volume,
+                        "requested_risk_currency": round(risk_amount, 2),
+                        "requested_risk_pct": float(request.desired_risk_pct),
+                        "entry": request.proposed_entry,
+                        "sl": request.proposed_sl,
+                        "tp": request.proposed_tp,
+                        "risk_currency": round(actual_risk, 2),
+                        "risk_pct": round(actual_risk_pct, 2),
+                        "risk_pct_diff": round(risk_pct_diff, 2),
+                        "risk_over_target": risk_over_target,
+                        "risk_compliance": (
+                            "exceeds_requested_risk"
+                            if risk_over_target
+                            else "within_requested_risk"
+                        ),
+                        "risk_overshoot_pct": round(overshoot_pct, 2),
+                        "risk_overshoot_currency": round(overshoot_currency, 2),
+                        "risk_over_target_reason": overshoot_reason,
+                        "raw_volume": round(raw_volume, 8),
+                        "volume_step": volume_step,
+                        "volume_min": min_volume,
+                        "volume_max": max_volume,
+                        "volume_rounding": rounding_mode,
+                        "reward_currency": round(reward_currency, 2) if reward_currency else None,
+                        "rr_ratio": round(rr_ratio, 2) if rr_ratio else None,
+                        "sizing_notes": sizing_notes,
+                    }
+                    if risk_over_target:
+                        result["position_sizing_warning"] = (
+                            f"Requested risk {float(request.desired_risk_pct):.2f}% but actual risk is "
+                            f"{float(actual_risk_pct):.2f}% (+{overshoot_pct:.2f}%) after broker volume constraints."
+                        )
+                        result["risk_alert"] = {
+                            "severity": "warning",
+                            "code": "risk_overshoot_after_volume_constraints",
+                            "reason": overshoot_reason,
+                            "requested_risk_pct": float(request.desired_risk_pct),
+                            "actual_risk_pct": round(actual_risk_pct, 2),
+                            "overshoot_pct": round(overshoot_pct, 2),
+                            "requested_risk_currency": round(risk_amount, 2),
+                            "actual_risk_currency": round(actual_risk, 2),
+                            "overshoot_currency": round(overshoot_currency, 2),
+                        }
+                else:
+                    result["position_sizing_error"] = "SL distance must be greater than 0"
+
+            return result
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    return _analyze_risk()

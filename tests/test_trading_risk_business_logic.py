@@ -4,13 +4,22 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 import sys
 
-from mtdata.core.trading import trade_risk_analyze
+from mtdata.core.trading import trade_risk_analyze as _trade_risk_analyze_tool
+from mtdata.core.trading_requests import TradeRiskAnalyzeRequest
 
 
 def _unwrap(fn):
     while hasattr(fn, "__wrapped__"):
         fn = fn.__wrapped__
     return fn
+
+
+def trade_risk_analyze(**kwargs):
+    raw_output = bool(kwargs.pop("__cli_raw", True))
+    request = kwargs.pop("request", None)
+    if request is None:
+        request = TradeRiskAnalyzeRequest(**kwargs)
+    return _trade_risk_analyze_tool(request=request, __cli_raw=raw_output)
 
 
 def _make_symbol_info(*, volume_min: float = 0.1, volume_step: float = 0.1, volume_max: float = 10.0):
@@ -33,9 +42,8 @@ def test_trade_risk_analyze_rounds_down_to_step_to_avoid_overshoot() -> None:
     mt5.positions_get.return_value = []
     mt5.symbol_info.return_value = _make_symbol_info()
 
-    raw = _unwrap(trade_risk_analyze)
     with patch("mtdata.core.trading_risk._auto_connect_wrapper", lambda f: f):
-        out = raw(
+        out = trade_risk_analyze(
             symbol="EURUSD",
             desired_risk_pct=1.0,
             proposed_entry=100.0,
@@ -63,9 +71,8 @@ def test_trade_risk_analyze_warns_when_min_volume_forces_overshoot() -> None:
     mt5.positions_get.return_value = []
     mt5.symbol_info.return_value = _make_symbol_info(volume_min=0.1, volume_step=0.1, volume_max=10.0)
 
-    raw = _unwrap(trade_risk_analyze)
     with patch("mtdata.core.trading_risk._auto_connect_wrapper", lambda f: f):
-        out = raw(
+        out = trade_risk_analyze(
             symbol="EURUSD",
             desired_risk_pct=0.1,
             proposed_entry=100.0,

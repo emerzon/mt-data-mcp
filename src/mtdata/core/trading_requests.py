@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 
 from pydantic import BaseModel
 
@@ -38,3 +38,23 @@ class TradeCloseRequest(BaseModel):
     loss_only: bool = False
     comment: Optional[str] = None
     deviation: int = 20
+
+
+class TradeHistoryRequest(BaseModel):
+    history_kind: Literal["deals", "orders"] = "deals"
+    start: Optional[str] = None
+    end: Optional[str] = None
+    symbol: Optional[str] = None
+    position_ticket: Optional[Union[int, str]] = None
+    deal_ticket: Optional[Union[int, str]] = None
+    order_ticket: Optional[Union[int, str]] = None
+    minutes_back: Optional[int] = None
+    limit: Optional[int] = 200
+
+
+class TradeRiskAnalyzeRequest(BaseModel):
+    symbol: Optional[str] = None
+    desired_risk_pct: Optional[float] = None
+    proposed_entry: Optional[float] = None
+    proposed_sl: Optional[float] = None
+    proposed_tp: Optional[float] = None

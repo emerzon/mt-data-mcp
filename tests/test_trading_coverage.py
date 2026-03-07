@@ -58,10 +58,15 @@ from mtdata.core.trading import (
     trade_modify as _trade_modify_tool,
     trade_close as _trade_close_tool,
     trade_account_info,
-    trade_risk_analyze,
+    trade_risk_analyze as _trade_risk_analyze_tool,
 )
 from mtdata.core.trading_comments import _normalize_trade_comment
-from mtdata.core.trading_requests import TradeCloseRequest, TradeModifyRequest, TradePlaceRequest
+from mtdata.core.trading_requests import (
+    TradeCloseRequest,
+    TradeModifyRequest,
+    TradePlaceRequest,
+    TradeRiskAnalyzeRequest,
+)
 from mtdata.core.trading_time import (
     _GTC_EXPIRATION_TOKENS,
     _normalize_pending_expiration,
@@ -99,6 +104,14 @@ def trade_close(**kwargs):
     if request is None:
         request = TradeCloseRequest(**kwargs)
     return _trade_close_tool(request=request, __cli_raw=raw_output)
+
+
+def trade_risk_analyze(**kwargs):
+    raw_output = bool(kwargs.pop("__cli_raw", False))
+    request = kwargs.pop("request", None)
+    if request is None:
+        request = TradeRiskAnalyzeRequest(**kwargs)
+    return _trade_risk_analyze_tool(request=request, __cli_raw=raw_output)
 
 
 def _unwrap_mcp(result):
