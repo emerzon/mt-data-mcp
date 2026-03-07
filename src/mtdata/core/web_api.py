@@ -10,6 +10,7 @@ from .config import load_environment
 from fastapi import Query
 
 from .constants import TIMEFRAME_MAP
+from .mt5_gateway import create_mt5_gateway
 from .pivot import pivot_compute_points
 from .web_api_handlers import (
     get_dimred_methods_response as _get_dimred_methods_response,
@@ -49,6 +50,13 @@ from .config import mt5_config
 app = create_web_api_app()
 
 
+def _get_web_api_mt5_gateway():
+    return create_mt5_gateway(
+        adapter=mt5,
+        ensure_connection_impl=mt5_connection._ensure_connection,
+    )
+
+
 def _list_sktime_forecasters() -> Dict[str, Any]:
     if _find_spec("sktime") is None:
         return {"available": False, "error": "sktime not installed", "estimators": []}
@@ -85,7 +93,7 @@ def get_instruments(search: Optional[str] = Query(None), limit: Optional[int] = 
     return _get_instruments_response(
         search=search,
         limit=limit,
-        mt5=mt5,
+        mt5=_get_web_api_mt5_gateway(),
         extract_group_path=_extract_group_path_util,
     )
 
@@ -188,7 +196,7 @@ def get_support_resistance(
 def get_tick(symbol: str = Query(...)) -> Dict[str, Any]:
     return _get_tick_response(
         symbol=symbol,
-        mt5=mt5,
+        mt5=_get_web_api_mt5_gateway(),
         ensure_symbol_ready=_ensure_symbol_ready,
     )
 

@@ -21,6 +21,7 @@ from ..forecast.requests import ForecastGenerateRequest
 from ..utils.minimal_output import format_result_minimal as _shared_minimal
 from ._mcp_instance import mcp
 from ._mcp_tools import get_tool_registry as get_registered_tools
+from .mt5_gateway import get_default_mt5_gateway
 
 # Simple debug logging controlled by env var MTDATA_CLI_DEBUG
 def _debug_enabled() -> bool:
@@ -419,7 +420,7 @@ def _build_market_ticker_cli_verbose_meta(result: Any) -> Dict[str, Any]:
         if field in result:
             out[field] = result.get(field)
     try:
-        from ..utils.mt5 import mt5
+        mt5 = get_default_mt5_gateway()
         terminal = mt5.terminal_info() if hasattr(mt5, "terminal_info") else None
         if terminal is not None:
             out["terminal"] = {
