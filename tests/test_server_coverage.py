@@ -16,68 +16,68 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
-# ── _apply_fastmcp_env_overrides ──────────────────────────────────────────
+# ── bootstrap.runtime ─────────────────────────────────────────────────────
 
-class TestApplyFastmcpEnvOverrides:
-    """Tests for the env-var bridging function."""
+class TestMcpRuntimeSettings:
+    def test_load_defaults(self, monkeypatch):
+        from mtdata.bootstrap.runtime import load_mcp_runtime_settings
 
-    def _call(self):
-        from mtdata.core.server import _apply_fastmcp_env_overrides
-        _apply_fastmcp_env_overrides()
-
-    def test_maps_legacy_host(self, monkeypatch):
-        monkeypatch.setenv("MCP_HOST", "1.2.3.4")
+        monkeypatch.delenv("MCP_TRANSPORT", raising=False)
         monkeypatch.delenv("FASTMCP_HOST", raising=False)
-        self._call()
-        assert os.environ["FASTMCP_HOST"] == "1.2.3.4"
-
-    def test_maps_legacy_port(self, monkeypatch):
-        monkeypatch.setenv("MCP_PORT", "9999")
         monkeypatch.delenv("FASTMCP_PORT", raising=False)
-        self._call()
-        assert os.environ["FASTMCP_PORT"] == "9999"
+        settings = load_mcp_runtime_settings()
 
-    def test_maps_legacy_log_level(self, monkeypatch):
-        monkeypatch.setenv("MCP_LOG_LEVEL", "DEBUG")
-        monkeypatch.delenv("FASTMCP_LOG_LEVEL", raising=False)
-        self._call()
-        assert os.environ["FASTMCP_LOG_LEVEL"] == "DEBUG"
+        assert settings.transport == "sse"
+        assert settings.host == "0.0.0.0"
+        assert settings.port == 8000
 
-    def test_maps_legacy_mount_path(self, monkeypatch):
-        monkeypatch.setenv("MCP_MOUNT_PATH", "/api")
-        monkeypatch.delenv("FASTMCP_MOUNT_PATH", raising=False)
-        self._call()
-        assert os.environ["FASTMCP_MOUNT_PATH"] == "/api"
+    def test_load_from_env(self, monkeypatch):
+        from mtdata.bootstrap.runtime import load_mcp_runtime_settings
 
-    def test_maps_legacy_sse_path(self, monkeypatch):
-        monkeypatch.setenv("MCP_SSE_PATH", "/events")
-        monkeypatch.delenv("FASTMCP_SSE_PATH", raising=False)
-        self._call()
-        assert os.environ["FASTMCP_SSE_PATH"] == "/events"
+        monkeypatch.setenv("MCP_TRANSPORT", "streamable-http")
+        monkeypatch.setenv("FASTMCP_HOST", "1.2.3.4")
+        monkeypatch.setenv("FASTMCP_PORT", "9999")
+        monkeypatch.setenv("FASTMCP_LOG_LEVEL", "DEBUG")
+        monkeypatch.setenv("FASTMCP_MOUNT_PATH", "/api")
+        settings = load_mcp_runtime_settings()
 
-    def test_maps_legacy_message_path(self, monkeypatch):
-        monkeypatch.setenv("MCP_MESSAGE_PATH", "/msg")
-        monkeypatch.delenv("FASTMCP_MESSAGE_PATH", raising=False)
-        self._call()
-        assert os.environ["FASTMCP_MESSAGE_PATH"] == "/msg"
+        assert settings.transport == "streamable-http"
+        assert settings.host == "1.2.3.4"
+        assert settings.port == 9999
+        assert settings.log_level == "DEBUG"
+        assert settings.mount_path == "/api"
 
-    def test_does_not_overwrite_existing_fastmcp(self, monkeypatch):
-        monkeypatch.setenv("MCP_HOST", "should-not-win")
-        monkeypatch.setenv("FASTMCP_HOST", "keep-me")
-        self._call()
-        assert os.environ["FASTMCP_HOST"] == "keep-me"
+    def test_invalid_transport_falls_back(self, monkeypatch):
+        from mtdata.bootstrap.runtime import load_mcp_runtime_settings
 
-    def test_default_host_when_nothing_set(self, monkeypatch):
-        monkeypatch.delenv("MCP_HOST", raising=False)
-        monkeypatch.delenv("FASTMCP_HOST", raising=False)
-        self._call()
-        assert os.environ["FASTMCP_HOST"] == "0.0.0.0"
+        monkeypatch.setenv("MCP_TRANSPORT", "grpc")
+        settings = load_mcp_runtime_settings()
+        assert settings.transport == "sse"
 
-    def test_no_mapping_when_legacy_empty(self, monkeypatch):
-        monkeypatch.setenv("MCP_PORT", "")
-        monkeypatch.delenv("FASTMCP_PORT", raising=False)
-        self._call()
-        assert os.environ.get("FASTMCP_PORT") is None or os.environ.get("FASTMCP_PORT") == ""
+    def test_apply_to_mcp_settings(self):
+        from mtdata.bootstrap.runtime import McpRuntimeSettings, apply_mcp_runtime_settings
+
+        mcp = MagicMock()
+        mcp.settings = MagicMock()
+        apply_mcp_runtime_settings(
+            mcp,
+            McpRuntimeSettings(
+                transport="stdio",
+                host="127.0.0.1",
+                port=9000,
+                log_level="WARNING",
+                mount_path="/x",
+                sse_path="/events",
+                message_path="/message",
+            ),
+        )
+
+        assert mcp.settings.host == "127.0.0.1"
+        assert mcp.settings.port == 9000
+        assert mcp.settings.log_level == "WARNING"
+        assert mcp.settings.mount_path == "/x"
+        assert mcp.settings.sse_path == "/events"
+        assert mcp.settings.message_path == "/message"
 
 
 # ── _unwrap_optional_annotation ───────────────────────────────────────────
@@ -447,32 +447,32 @@ class TestResolveTransport:
 
     def test_default_sse(self, monkeypatch):
         monkeypatch.delenv("MCP_TRANSPORT", raising=False)
-        monkeypatch.delenv("MCP_MOUNT_PATH", raising=False)
+        monkeypatch.delenv("FASTMCP_MOUNT_PATH", raising=False)
         t, mp = self._call()
         assert t == "sse"
         assert mp is None
 
     def test_env_stdio(self, monkeypatch):
         monkeypatch.setenv("MCP_TRANSPORT", "stdio")
-        monkeypatch.delenv("MCP_MOUNT_PATH", raising=False)
+        monkeypatch.delenv("FASTMCP_MOUNT_PATH", raising=False)
         t, mp = self._call()
         assert t == "stdio"
 
     def test_env_streamable_http(self, monkeypatch):
         monkeypatch.setenv("MCP_TRANSPORT", "streamable-http")
-        monkeypatch.delenv("MCP_MOUNT_PATH", raising=False)
+        monkeypatch.delenv("FASTMCP_MOUNT_PATH", raising=False)
         t, _ = self._call()
         assert t == "streamable-http"
 
     def test_invalid_falls_back_to_default(self, monkeypatch):
         monkeypatch.setenv("MCP_TRANSPORT", "grpc")
-        monkeypatch.delenv("MCP_MOUNT_PATH", raising=False)
+        monkeypatch.delenv("FASTMCP_MOUNT_PATH", raising=False)
         t, _ = self._call()
         assert t == "sse"
 
     def test_mount_path_returned(self, monkeypatch):
         monkeypatch.setenv("MCP_TRANSPORT", "sse")
-        monkeypatch.setenv("MCP_MOUNT_PATH", "/mcp")
+        monkeypatch.setenv("FASTMCP_MOUNT_PATH", "/mcp")
         _, mp = self._call()
         assert mp == "/mcp"
 
@@ -565,25 +565,22 @@ class TestMainEntryPoints:
         mock_mcp.run.assert_called_once()
 
     @patch("mtdata.core.server.main")
-    def test_main_stdio_sets_env(self, mock_main, monkeypatch):
+    def test_main_stdio_forces_transport(self, mock_main, monkeypatch):
         from mtdata.core.server import main_stdio
         main_stdio()
-        assert os.environ.get("MCP_TRANSPORT") == "stdio"
-        mock_main.assert_called_once()
+        mock_main.assert_called_once_with(transport="stdio")
 
     @patch("mtdata.core.server.main")
-    def test_main_sse_sets_env(self, mock_main, monkeypatch):
+    def test_main_sse_forces_transport(self, mock_main, monkeypatch):
         from mtdata.core.server import main_sse
         main_sse()
-        assert os.environ.get("MCP_TRANSPORT") == "sse"
-        mock_main.assert_called_once()
+        mock_main.assert_called_once_with(transport="sse")
 
     @patch("mtdata.core.server.main")
-    def test_main_streamable_http_sets_env(self, mock_main, monkeypatch):
+    def test_main_streamable_http_forces_transport(self, mock_main, monkeypatch):
         from mtdata.core.server import main_streamable_http
         main_streamable_http()
-        assert os.environ.get("MCP_TRANSPORT") == "streamable-http"
-        mock_main.assert_called_once()
+        mock_main.assert_called_once_with(transport="streamable-http")
 
     @patch("mtdata.core.server.bootstrap_tools")
     @patch("mtdata.core.server.mcp")
