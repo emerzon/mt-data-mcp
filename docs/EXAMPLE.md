@@ -231,3 +231,13 @@ A pragmatic decision checklist:
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
+---
+
+## See Also
+
+- [CLI.md](CLI.md) — Full command reference
+- [FORECAST.md](FORECAST.md) — Forecasting methods guide
+- [TEMPORAL.md](TEMPORAL.md) — Session and seasonal analysis
+- [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) — Barrier optimization deep dive
+- [SAMPLE-TRADE.md](SAMPLE-TRADE.md) — Guided trade workflow
+

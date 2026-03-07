@@ -12,6 +12,7 @@ Safety note: `trade_*` commands can place/modify/close real orders on the accoun
 4. [SAMPLE-TRADE.md](SAMPLE-TRADE.md) — A beginner-friendly workflow with explanations
 5. [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) — More methods + stricter risk/execution gates
 6. Deep dives: [FORECAST.md](FORECAST.md), [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md), [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md)
+7. Specialized: [FINVIZ.md](FINVIZ.md), [TEMPORAL.md](TEMPORAL.md), [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md)
 
 ## Getting Started
 
@@ -32,10 +33,18 @@ Safety note: `trade_*` commands can place/modify/close real orders on the accoun
 | [forecast/UNCERTAINTY.md](forecast/UNCERTAINTY.md) | Confidence and conformal intervals |
 | [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) | TP/SL hit probability and optimization |
 | [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md) | Available indicators and how to use them |
-| [DENOISING.md](DENOISING.md) | Smoothing filters and noise reduction |        
+| [DENOISING.md](DENOISING.md) | Smoothing filters and noise reduction |
 | [SIMPLIFICATION.md](SIMPLIFICATION.md) | Downsampling and output reduction (`--simplify`) |
 | [CAUSAL_DISCOVERY.md](CAUSAL_DISCOVERY.md) | Granger-style causal signal discovery |
+| [TEMPORAL.md](TEMPORAL.md) | Session effects, day-of-week, hourly and monthly patterns |
 | [forecast/PATTERN_SEARCH.md](forecast/PATTERN_SEARCH.md) | Pattern detection and similarity search |
+
+## External Data & Options
+
+| Document | Description |
+|----------|-------------|
+| [FINVIZ.md](FINVIZ.md) | US equity fundamentals, screening, news, insider activity, macro snapshots |
+| [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md) | Options chains, QuantLib barrier pricing, Heston calibration |
 | [WEB_API.md](WEB_API.md) | FastAPI endpoints powering the Web UI |
 
 ## Tutorials

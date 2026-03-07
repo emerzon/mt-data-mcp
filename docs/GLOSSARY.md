@@ -658,6 +658,50 @@ Peak-to-trough decline in account equity.
 
 ---
 
+## External Tools and Techniques
+
+### Finviz
+A financial visualization platform providing fundamental data, stock screening, insider trading activity, analyst ratings, and market news for US equities. Data is delayed 15–20 minutes.
+
+**In mtdata:** The `finviz_*` commands fetch data from Finviz. See [FINVIZ.md](FINVIZ.md).
+
+### QuantLib
+An open-source C++ library (with Python bindings) for quantitative finance, providing pricing engines for exotic options, yield curves, and calibration routines.
+
+**In mtdata:** Used for barrier option pricing (`forecast_quantlib_barrier_price`) and Heston model calibration (`forecast_quantlib_heston_calibrate`). See [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md).
+
+### Heston Model
+A stochastic volatility model where the asset price and its variance follow correlated stochastic processes. Characterized by five parameters: v0 (initial variance), kappa (mean reversion speed), theta (long-run variance), sigma (vol of vol), and rho (correlation).
+
+**When to use:** Pricing barrier options and exotic derivatives where constant-volatility (Black-Scholes) assumptions are inadequate.
+
+### Optuna
+A Bayesian hyperparameter optimization framework supporting TPE, CMA-ES, and random sampling with pruning (early stopping of unpromising trials).
+
+**In mtdata:** Used by `forecast_tune_optuna` for automated parameter tuning. See [FORECAST.md](FORECAST.md).
+
+### Barrier Option
+A financial derivative whose payoff depends on whether the underlying asset's price reaches a specified barrier level. Types include knock-in (activated when barrier is hit) and knock-out (extinguished when barrier is hit).
+
+**In mtdata:** Barrier analysis is central to TP/SL optimization. See [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md).
+
+### Support and Resistance
+Price levels where buying pressure (support) or selling pressure (resistance) tends to concentrate, causing price to pause or reverse.
+
+**In mtdata:** Detected via `support_resistance_levels` and the Web API `/api/support-resistance` endpoint. See [WEB_API.md](WEB_API.md).
+
+### Fundamental Analysis
+Evaluating a security by examining its intrinsic value through financial statements, earnings, revenue, P/E ratios, and other economic data — as opposed to technical analysis which focuses on price/volume patterns.
+
+**In mtdata:** The Finviz commands provide fundamental data for US equities. See [FINVIZ.md](FINVIZ.md).
+
+### Temporal Analysis
+Analyzing how a symbol's behavior varies across time dimensions — day of week, hour of day, month of year — to identify recurring seasonal patterns.
+
+**In mtdata:** The `temporal_analyze` command groups returns by time dimension. See [TEMPORAL.md](TEMPORAL.md).
+
+---
+
 ## See Also
 
 - [Forecasting Guide](FORECAST.md)

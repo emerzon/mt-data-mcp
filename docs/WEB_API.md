@@ -77,7 +77,18 @@ List available denoising algorithms and their parameters.
 List available wavelet families/names (when PyWavelets is installed).
 
 #### `GET /api/dimred/methods`
-List available dimensionality reduction methods (PCA, UMAP, etc.).
+List available dimensionality reduction methods (PCA, UMAP, t-SNE, etc.) with parameter suggestions.
+
+#### `GET /api/support-resistance`
+Identify support and resistance levels.
+
+- **Query Params:**
+  - `symbol` (string, required).
+  - `timeframe` (string): Default "H1".
+  - `limit` (int): History depth to analyze.
+  - `tolerance_pct` (float): Clustering tolerance (0.0015 = 0.15%).
+  - `min_touches` (int): Minimum touches per level (default 2).
+  - `max_levels` (int): Max levels per side (default 4).
 
 ### Forecasting
 
@@ -172,3 +183,11 @@ Control the server host and port via environment variables:
 - `MTDATA_WEBUI_HOST`: Bind address (default `127.0.0.1`).
 - `MTDATA_WEBUI_PORT`: Listen port (default `8000`).
 - `MTDATA_WEBUI_RELOAD`: Set to `1` to enable auto-reload (dev only).
+
+---
+
+## See Also
+
+- [SETUP.md](SETUP.md) — Installation and MCP server configuration
+- [CLI.md](CLI.md) — CLI command reference
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues

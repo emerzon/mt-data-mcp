@@ -201,3 +201,14 @@ Plan B – Mean‑reversion in range regime (reduced size)
 7) Execute with VaR/Kelly‑capped sizing, time stop, and costs.  
 8) Walk‑forward checks; adjust thresholds and monitoring cadence.
 
+---
+
+## See Also
+
+- [SAMPLE-TRADE.md](SAMPLE-TRADE.md) — Basic workflow (start here if new)
+- [FORECAST.md](FORECAST.md) — Forecasting methods guide
+- [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) — Barrier analytics reference
+- [forecast/REGIMES.md](forecast/REGIMES.md) — Regime detection details
+- [forecast/VOLATILITY.md](forecast/VOLATILITY.md) — Volatility estimation methods
+- [forecast/UNCERTAINTY.md](forecast/UNCERTAINTY.md) — Conformal intervals
+

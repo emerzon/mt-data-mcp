@@ -50,9 +50,11 @@ python cli.py forecast_list_methods
 |----------|--------|-------------|
 | **Classical** | `theta`, `naive`, `ses`, `holt`, `arima` | Fast baselines, short horizons |
 | **Seasonal** | `seasonal_naive`, `ets`, `holt_winters_add` | Data with recurring patterns |
-| **Statistical** | `sf_autoarima`, `sf_autoets` | Auto-tuning, medium horizons |
+| **Statistical** | `sf_autoarima`, `sf_autoets`, `sf_autotheta` | Auto-tuning, medium horizons |
 | **ML-Based** | `mlf_lightgbm`, `mlf_rf` | Non-linear patterns, feature engineering |
+| **Neural** | `nhits`, `tft`, `patchtst`, `nbeatsx` | Deep learning, long horizons (requires neuralforecast) |
 | **Foundation** | `chronos2`, `chronos_bolt`, `timesfm`, `lag_llama` | Pretrained models (optional deps) |
+| **GluonTS** | `gt_deepar`, `gt_tft`, `gt_wavenet`, `gt_prophet` | Probabilistic deep models (requires gluonts) |
 | **Simulation** | `mc_gbm`, `hmm_mc` | Risk sizing, barrier analysis |
 | **Ensemble** | `ensemble` | Combine multiple models |
 
@@ -217,6 +219,44 @@ See [DENOISING.md](DENOISING.md) for available filters.
 - **[UNCERTAINTY.md](forecast/UNCERTAINTY.md)** — Confidence and conformal intervals
 - **[PATTERN_SEARCH.md](forecast/PATTERN_SEARCH.md)** — Pattern detection and analog search
 
+## Parameter Optimization
+
+Two tools are available for automated hyperparameter tuning:
+
+### Genetic Algorithm (`forecast_tune_genetic`)
+
+Evolutionary search through parameter space. Good for discrete/mixed search spaces.
+
+```bash
+python cli.py forecast_tune_genetic EURUSD --method theta --horizon 12 \
+  --metric avg_rmse --mode min --population 20 --generations 10
+```
+
+See [BACKTESTING.md](forecast/BACKTESTING.md) for full parameters and examples.
+
+### Optuna (`forecast_tune_optuna`)
+
+Bayesian optimization with TPE, CMA-ES, or random sampling. Supports early stopping (pruning), parallel trials, and persistent study storage.
+
+```bash
+python cli.py forecast_tune_optuna EURUSD --method theta --horizon 12 \
+  --metric avg_rmse --mode min --n-trials 40 --sampler tpe --json
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--method` | `theta` | Forecast method to optimize |
+| `--n-trials` | 40 | Number of optimization trials |
+| `--sampler` | `tpe` | Sampling algorithm: `tpe`, `random`, `cmaes` |
+| `--pruner` | `median` | Early stopping: `median`, `hyperband`, `percentile`, `none` |
+| `--timeout` | (none) | Max wall-clock seconds |
+| `--n-jobs` | 1 | Parallel trial workers |
+| `--study-name` | (auto) | Name for resumable study |
+| `--storage` | (none) | DB URL for persistence (e.g., `sqlite:///study.db`) |
+| `--seed` | 42 | Random seed |
+
+*Requires: `pip install optuna`*
+
 ---
 
 ## Quick Reference
@@ -229,4 +269,16 @@ See [DENOISING.md](DENOISING.md) for available filters.
 | Monte Carlo | `python cli.py forecast_generate EURUSD --model mc_gbm --model-params "n_sims=2000"` |
 | Backtest | `python cli.py forecast_backtest_run EURUSD --methods "theta analog" --steps 20` |
 | Conformal intervals | `python cli.py forecast_conformal_intervals EURUSD --method theta --horizon 12` |
+| Tune (genetic) | `python cli.py forecast_tune_genetic EURUSD --method theta --metric avg_rmse` |
+| Tune (Optuna) | `python cli.py forecast_tune_optuna EURUSD --method theta --metric avg_rmse --n-trials 40` |
+
+---
+
+## See Also
+
+- [CLI.md](CLI.md) — Full command reference
+- [GLOSSARY.md](GLOSSARY.md) — Term definitions
+- [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) — Barrier optimization
+- [TEMPORAL.md](TEMPORAL.md) — Seasonal analysis
+- [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md) — QuantLib pricing tools
 

@@ -149,6 +149,7 @@ python cli.py data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `data_fetch_candles` | Fetch OHLCV candles with optional indicators |
 | `data_fetch_ticks` | Fetch tick data |
 | `market_depth_fetch` | Get order book (DOM) |
+| `market_ticker` | Get current bid/ask/spread snapshot |
 
 ### Forecasting
 | Command | Description |
@@ -159,7 +160,8 @@ python cli.py data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `forecast_backtest_run` | Run rolling-origin backtest |
 | `forecast_conformal_intervals` | Generate calibrated confidence bands |
 | `forecast_volatility_estimate` | Forecast volatility |
-| `forecast_tune_genetic` | Optimize model parameters |
+| `forecast_tune_genetic` | Optimize model parameters (genetic algorithm) |
+| `forecast_tune_optuna` | Optimize model parameters (Bayesian/Optuna) |
 
 ### Risk Analysis
 | Command | Description |
@@ -194,6 +196,41 @@ python cli.py data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | Command | Description |
 |---------|-------------|
 | `report_generate` | Generate consolidated analysis report |
+
+### Temporal Analysis
+| Command | Description |
+|---------|-------------|
+| `temporal_analyze` | Analyze returns, volatility, and volume by time period (day of week, hour, month) |
+
+### Fundamental Data (Finviz)
+| Command | Description |
+|---------|-------------|
+| `finviz_fundamentals` | Get company fundamental metrics (P/E, EPS, market cap, etc.) |
+| `finviz_description` | Get company business description |
+| `finviz_news` | Get stock-specific or general market news |
+| `finviz_market_news` | Get broad market headlines or blog posts |
+| `finviz_insider` | Get insider trading activity for a stock |
+| `finviz_insider_activity` | Get market-wide insider trading activity |
+| `finviz_ratings` | Get analyst ratings history |
+| `finviz_peers` | Find peer companies |
+| `finviz_screen` | Screen stocks using Finviz filters |
+| `finviz_forex` | Get forex pairs performance snapshot |
+| `finviz_crypto` | Get cryptocurrency performance snapshot |
+| `finviz_futures` | Get futures market performance snapshot |
+| `finviz_calendar` | Get economic, earnings, or dividends calendar |
+| `finviz_earnings` | Get upcoming earnings announcements |
+
+See [FINVIZ.md](FINVIZ.md) for detailed examples.
+
+### Options & QuantLib
+| Command | Description |
+|---------|-------------|
+| `forecast_options_expirations` | List available option expiration dates |
+| `forecast_options_chain` | Fetch options chain snapshot with filtering |
+| `forecast_quantlib_barrier_price` | Price a barrier option using QuantLib |
+| `forecast_quantlib_heston_calibrate` | Calibrate Heston stochastic volatility model |
+
+See [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md) for detailed examples.
 
 ---
 
@@ -318,5 +355,8 @@ MTDATA_CLI_DEBUG=1 python cli.py forecast_generate EURUSD
 
 - [SETUP.md](SETUP.md) — Installation guide
 - [EXAMPLE.md](EXAMPLE.md) — Complete workflow example
+- [FINVIZ.md](FINVIZ.md) — Fundamental data commands
+- [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md) — Options and QuantLib commands
+- [TEMPORAL.md](TEMPORAL.md) — Temporal analysis
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues
 

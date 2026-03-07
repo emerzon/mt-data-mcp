@@ -121,3 +121,11 @@ python cli.py data_fetch_candles EURUSD --limit 5000 --simplify apca \
 - Simplification is meant for **visualization and UI performance**. For quantitative analysis (e.g., volatility estimation, backtests), use full-resolution data.
 - In `mode=select`, mtdata returns existing rows; this can miss intra-bar extremes if you simplify OHLC data aggressively.
 
+---
+
+## See Also
+
+- [DENOISING.md](DENOISING.md) — Signal denoising (complementary technique)
+- [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md) — Indicator reference
+- [CLI.md](CLI.md) — Full command reference
+

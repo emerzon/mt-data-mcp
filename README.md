@@ -27,15 +27,18 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 
 | Category | What It Does | Key Tools |
 |----------|--------------|-----------|
-| **Data** | Fetch candles, ticks, market depth from MT5 | `data_fetch_candles`, `data_fetch_ticks`, `market_depth_fetch` |
-| **Forecasting** | Predict price paths with classical or ML models | `forecast_generate`, `forecast_backtest_run` |
+| **Data** | Fetch candles, ticks, market depth from MT5 | `data_fetch_candles`, `data_fetch_ticks`, `market_depth_fetch`, `market_ticker` |
+| **Forecasting** | Predict price paths with classical, ML, or foundation models | `forecast_generate`, `forecast_backtest_run` |
 | **Volatility** | Estimate future price movement magnitude | `forecast_volatility_estimate` |
 | **Regimes** | Detect trending, ranging, or crisis market states | `regime_detect` |
 | **Barriers** | Calculate TP/SL hit probabilities via simulation | `forecast_barrier_prob`, `forecast_barrier_optimize` |
 | **Patterns** | Identify candlestick and chart patterns | `patterns_detect` |
 | **Indicators** | Compute 100+ technical indicators | `data_fetch_candles --indicators` |
 | **Denoising** | Smooth price data to reveal trends | `--denoise` option |
+| **Temporal** | Discover session effects and seasonal patterns | `temporal_analyze` |
 | **Trading** | Place orders, manage positions | `trade_place`, `trade_close` |
+| **Fundamentals** | US equity data, screening, news, calendars | `finviz_fundamentals`, `finviz_screen`, `finviz_calendar` |
+| **Options** | Options chains and QuantLib barrier pricing | `forecast_options_chain`, `forecast_quantlib_barrier_price` |
 
 ## Quick Start
 
@@ -78,6 +81,11 @@ New here? Follow this learning path:
 - **[Technical Indicators](docs/TECHNICAL_INDICATORS.md)** — Available indicators and usage
 - **[Denoising](docs/DENOISING.md)** — Smoothing filters to reveal trends
 - **[Pattern Detection](docs/forecast/PATTERN_SEARCH.md)** — Candlestick and chart patterns
+- **[Temporal Analysis](docs/TEMPORAL.md)** — Session effects, day-of-week, and seasonal patterns
+
+### External Data & Options
+- **[Finviz Fundamentals](docs/FINVIZ.md)** — US equity data, screening, news, calendars
+- **[Options & QuantLib](docs/OPTIONS_QUANTLIB.md)** — Options chains, barrier pricing, Heston calibration
 
 ### Tutorials
 - **[Sample Trade Workflow](docs/SAMPLE-TRADE.md)** — Step-by-step analysis for a trade decision
@@ -85,6 +93,7 @@ New here? Follow this learning path:
 - **[End-to-End Example](docs/EXAMPLE.md)** — Complete research loop with all tools
 
 ### Reference
+- **[Web API](docs/WEB_API.md)** — REST endpoints for the Web UI and integrations
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** — Common issues and fixes
 
 ## Configuration
@@ -103,14 +112,14 @@ MT5_TIME_OFFSET_MINUTES=0  # Adjust if broker server time differs from UTC
 ```
 mtdata/
 ├── cli.py              # CLI entry point
-├── server.py           # MCP server entry point
+├── server.py           # MCP server entry point (SSE / stdio / streamable-http)
 ├── webui.py            # Web API (FastAPI + React UI)
 ├── src/mtdata/
-│   ├── core/           # Tool registry, schemas, server logic
-│   ├── forecast/       # Forecasting methods and engines
+│   ├── core/           # Tool registry, schemas, server logic, all 51 MCP tools
+│   ├── forecast/       # Forecasting methods, engines, and method registry
 │   ├── patterns/       # Pattern detection algorithms
-│   ├── services/       # MT5 data access layer
-│   └── utils/          # Shared utilities
+│   ├── services/       # MT5 data access, Finviz, options data
+│   └── utils/          # Shared utilities (indicators, denoising, etc.)
 ├── webui/              # React + Vite frontend
 ├── docs/               # Documentation
 └── tests/              # Test suite

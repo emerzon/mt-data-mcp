@@ -108,6 +108,10 @@ pip install statsmodels                # For ARIMA/ETS + causal_discover_signals
 pip install PyWavelets                 # For wavelet denoising
 pip install umap-learn                 # For UMAP dimred (Web UI / analysis)
 pip install gluonts[torch]             # For Lag-Llama (pretrained)
+pip install QuantLib                   # For barrier option pricing & Heston calibration
+pip install optuna                     # For Bayesian hyperparameter tuning
+pip install neuralforecast torch       # For NHiTS, TFT, PatchTST, NBEATSx
+pip install finviz                     # For fundamental data, screening, insider activity
 # TimesFM is installed from Git (pinned in `requirements.txt`); re-run `pip install -r requirements.txt`.
 # Lag-Llama may require a separate Python env due to upstream pins (see `requirements.txt`).
 ```
@@ -257,6 +261,50 @@ MTDATA_CLI_DEBUG=1 python cli.py forecast_generate EURUSD --horizon 12
 
 ---
 
+## Optional Dependency Issues
+
+### QuantLib Import Error
+
+**Symptom:** `ModuleNotFoundError: No module named 'QuantLib'` when using `forecast_quantlib_*` commands.
+
+**Solution:**
+```bash
+pip install QuantLib
+```
+On Windows, a pre-built wheel is available. On Linux, you may need build tools (`cmake`, `swig`).
+
+### Finviz Errors
+
+**Symptom:** `finviz_*` commands return empty data or connection errors.
+
+**Possible causes:**
+- `finviz` package not installed → `pip install finviz`
+- Network/firewall blocking finviz.com
+- Rate limiting (finviz throttles rapid requests)
+
+**Note:** Finviz data is US equities only and delayed 15–20 minutes.
+
+### Optuna Not Available
+
+**Symptom:** `forecast_tune_optuna` fails with import error.
+
+**Solution:**
+```bash
+pip install optuna
+```
+
+### Neural Forecast Models Unavailable
+
+**Symptom:** NHiTS, TFT, PatchTST, or NBEATSx show `available: false` in `forecast_list_methods`.
+
+**Solution:**
+```bash
+pip install neuralforecast torch
+```
+These models require PyTorch. GPU is recommended for training speed but not required.
+
+---
+
 ## Quick Fixes
 
 | Issue | Quick Fix |
@@ -268,6 +316,10 @@ MTDATA_CLI_DEBUG=1 python cli.py forecast_generate EURUSD --horizon 12
 | Output hard to read | Add `--json` |
 | Wrong timestamps | Set `MT5_TIME_OFFSET_MINUTES` in `.env` |
 | Command slow | Reduce `--limit`, use faster method |
+| QuantLib import error | `pip install QuantLib` |
+| Finviz empty data | `pip install finviz`, check network |
+| Optuna not found | `pip install optuna` |
+| Neural models unavailable | `pip install neuralforecast torch` |
 
 ---
 
@@ -276,4 +328,6 @@ MTDATA_CLI_DEBUG=1 python cli.py forecast_generate EURUSD --horizon 12
 - [SETUP.md](SETUP.md) — Installation guide
 - [CLI.md](CLI.md) — Command usage
 - [GLOSSARY.md](GLOSSARY.md) — Term definitions
+- [FINVIZ.md](FINVIZ.md) — Finviz fundamental data reference
+- [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md) — Options & QuantLib tools
 

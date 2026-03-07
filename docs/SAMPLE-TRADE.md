@@ -90,3 +90,13 @@ The language is kept simple so anyone with a basic interest in trading can follo
 
 By following these steps you move from raw price numbers to **data‑driven trade ideas** that are backed by both technical analysis and statistical probability. This is the same logical chain that underlies the expert report you received.
 
+---
+
+## See Also
+
+- [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) — Advanced playbook with regimes, conformal intervals, Monte Carlo
+- [FORECAST.md](FORECAST.md) — Forecasting methods guide
+- [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) — Barrier optimization deep dive
+- [GLOSSARY.md](GLOSSARY.md) — Term definitions
+- [FINVIZ.md](FINVIZ.md) — Fundamental data (for equity analysis)
+

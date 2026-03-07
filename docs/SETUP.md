@@ -31,7 +31,7 @@ pip install -r requirements.txt
 
 ### 2. Editable Install (Optional)
 
-For development or to use entry points (`mtdata-server`, `mtdata-cli`):
+For development or to use entry points (`mtdata-sse`, `mtdata-stdio`, `mtdata-cli`, `mtdata-webapi`):
 
 ```bash
 pip install -e .
@@ -51,6 +51,9 @@ pip install -e .
 - Forecasting libraries: `statsforecast`, `sktime`, `mlforecast` (plus `lightgbm` for GBMs)
 - Volatility (GARCH/ARCH): `arch`
 - Optional pattern/simplification accelerators omitted from the default Python 3.14 install: `hnswlib`, `tsdownsample`
+- Barrier option pricing & Heston calibration: `QuantLib`
+- Bayesian hyperparameter optimization: `optuna`
+- Neural network forecasters (NHiTS, TFT, PatchTST): `neuralforecast`, `torch`
 
 Tip: `python cli.py forecast_list_methods --json` shows `available` and `requires` per method.
 
@@ -95,7 +98,7 @@ If you don't see symbols (or you get a connection error):
 - Make sure MT5 is **running** and **logged in**
 - Make sure the symbol is visible in **Market Watch** (right-click → “Show All”)
 - If you have multiple MT5 terminals installed, close extras and retry
-- See [TROUBLESHOOTING.md](TROUBLESHOOTING.md#connection-issues)
+- See [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 
 ---
 
@@ -160,12 +163,49 @@ mtdata-cli <command> [options]
 
 ### MCP Server
 
+mtdata supports three MCP transport modes:
+
 ```bash
-# Direct execution
+# SSE transport (default) — for browser/HTTP-based MCP clients
 python server.py
 
-# After editable install
-mtdata-server
+# stdio transport — for IDE integrations (Claude Desktop, VS Code, etc.)
+MCP_TRANSPORT=stdio python server.py
+
+# Streamable HTTP transport
+MCP_TRANSPORT=streamable-http python server.py
+```
+
+After editable install, these entry points are available:
+
+| Entry Point | Transport | Usage |
+|-------------|-----------|-------|
+| `mtdata-sse` | SSE (default) | `mtdata-sse` |
+| `mtdata-stdio` | stdio | `mtdata-stdio` |
+| `mtdata-webapi` | Web API (FastAPI) | `mtdata-webapi` |
+| `mtdata-cli` | CLI | `mtdata-cli <command>` |
+
+**MCP server environment variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MCP_TRANSPORT` | `sse` | Transport mode: `sse`, `stdio`, `streamable-http` |
+| `FASTMCP_HOST` | `0.0.0.0` | Bind address |
+| `FASTMCP_PORT` | `8000` | Listen port |
+| `FASTMCP_MOUNT_PATH` | `/` | Mount path |
+| `FASTMCP_SSE_PATH` | `/sse` | SSE event stream path |
+| `FASTMCP_MESSAGE_PATH` | `/message` | Message endpoint path |
+| `FASTMCP_LOG_LEVEL` | (default) | Logging level |
+
+**Claude Desktop configuration example** (`claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "mtdata": {
+      "command": "mtdata-stdio"
+    }
+  }
+}
 ```
 
 ### Web API
@@ -213,16 +253,16 @@ python cli.py forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
 ```
 mtdata/
 ├── cli.py              # CLI entry point
-├── server.py           # MCP server entry point
-├── webui.py            # Web API entry point
+├── server.py           # MCP server entry point (SSE / stdio / streamable-http)
+├── webui.py            # Web API entry point (FastAPI + React UI)
 ├── requirements.txt    # Python dependencies
 ├── pyproject.toml      # Package configuration
 ├── .env                # Local configuration (create this)
 ├── src/mtdata/
-│   ├── core/           # Tool registry, server, CLI logic
+│   ├── core/           # Tool registry, server, CLI logic, all 51 MCP tools
 │   ├── forecast/       # Forecasting methods
 │   ├── patterns/       # Pattern detection
-│   ├── services/       # MT5 data access
+│   ├── services/       # MT5 data access, Finviz, options data
 │   └── utils/          # Shared utilities
 ├── webui/              # React frontend
 ├── docs/               # Documentation
@@ -283,4 +323,6 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more issues.
 - [CLI.md](CLI.md) — Learn command usage
 - [EXAMPLE.md](EXAMPLE.md) — Follow an end-to-end workflow
 - [GLOSSARY.md](GLOSSARY.md) — Understand terminology
+- [FINVIZ.md](FINVIZ.md) — Fundamental data and screening
+- [TEMPORAL.md](TEMPORAL.md) — Session and seasonal analysis
 

@@ -75,4 +75,12 @@ Tip: `--json` wraps the text as `{"text": "..."}`.
 
 `causal_discover_signals` requires `statsmodels`. If it is not installed, the tool returns a readable error message.
 
+---
+
+## See Also
+
+- [FORECAST.md](FORECAST.md) — Forecasting methods overview
+- [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md) — Indicator reference
+- [GLOSSARY.md](GLOSSARY.md) — Term definitions
+
 
