@@ -544,6 +544,17 @@ class TestTemporalAnalyze:
         assert "groups" in r
 
     @_apply_analyze_patches
+    def test_temporal_analyze_logs_finish_event(self, mock_fetch, caplog):
+        mock_fetch.return_value = (_make_rates(n=200, start_epoch=1704067200, interval=3600), None)
+        with caplog.at_level("INFO", logger="mtdata.core.temporal"):
+            r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", limit=1000, group_by="dow")
+        assert r.get("success") is True
+        assert any(
+            "event=finish operation=temporal_analyze success=True" in record.message
+            for record in caplog.records
+        )
+
+    @_apply_analyze_patches
     def test_group_by_hour(self, mock_fetch, *_):
         r = self._call(mock_fetch, group_by="hour")
         assert r.get("success") is True

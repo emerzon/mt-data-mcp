@@ -1,6 +1,9 @@
 from typing import Any, Dict, Optional, Literal, List
+import logging
+import time
 
 from ._mcp_instance import mcp
+from .execution_logging import infer_result_success, log_operation_finish, log_operation_start
 from .mt5_gateway import create_mt5_gateway
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from .schema import TimeframeLiteral, DenoiseSpec
@@ -13,6 +16,8 @@ from ..utils.barriers import (
     build_barrier_kwargs_from as _build_barrier_kwargs_from,
     barrier_prices_are_valid as _barrier_prices_are_valid,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _get_mt5_gateway():
@@ -47,6 +52,29 @@ def labels_triple_barrier(
     label_on='high_low' considers intrabar extremes for barrier hits; 'close' uses closes only.
     Outputs label: +1 (TP first), -1 (SL first), 0 (neither by horizon), and holding_bars until decision.
     """
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="labels_triple_barrier",
+        symbol=symbol,
+        timeframe=timeframe,
+        horizon=horizon,
+        output=output,
+    )
+
+    def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="labels_triple_barrier",
+            started_at=started_at,
+            success=infer_result_success(result),
+            symbol=symbol,
+            timeframe=timeframe,
+            horizon=horizon,
+            output=output,
+        )
+        return result
+
     try:
         _get_mt5_gateway().ensure_connection()
         output_mode = str(output).strip().lower()
@@ -59,10 +87,10 @@ def labels_triple_barrier(
         if summary_only_flag:
             output_mode = 'summary'
         if output_mode not in {'full', 'summary', 'compact'}:
-            return {"error": "Invalid output mode. Use 'full', 'summary', 'compact', or summary_only=True."}
+            return _finish({"error": "Invalid output mode. Use 'full', 'summary', 'compact', or summary_only=True."})
         df = _fetch_history(symbol, timeframe, int(max(limit, horizon + 50)), as_of=None)
         if len(df) < horizon + 2:
-            return {"error": "Insufficient history for labeling"}
+            return _finish({"error": "Insufficient history for labeling"})
         base_col = _resolve_denoise_base_col(df, denoise, base_col='close', default_when='pre_ti')
         closes = df[base_col].astype(float).to_numpy()
         highs = df['high'].astype(float).to_numpy() if 'high' in df.columns else None
@@ -89,14 +117,14 @@ def labels_triple_barrier(
                 **barrier_kwargs,
             )
             if tp is None or sl is None:
-                return {"error": "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or tp_pips/sl_pips"}
+                return _finish({"error": "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or tp_pips/sl_pips"})
             if not _barrier_prices_are_valid(
                 price=p0,
                 direction="long",
                 tp_price=tp,
                 sl_price=sl,
             ):
-                return {"error": "Resolved TP/SL barriers are invalid for the entry price."}
+                return _finish({"error": "Resolved TP/SL barriers are invalid for the entry price."})
 
             hit_tp = -1
             hit_sl = -1
@@ -158,7 +186,7 @@ def labels_triple_barrier(
             med_hold = float(_np.median(_np.array(hold_tail, dtype=float))) if hold_tail else float('nan')
             summary = {"lookback": int(n), "counts": counts, "median_holding_bars": med_hold}
             if output_mode == 'summary':
-                return {"success": True, "symbol": symbol, "timeframe": timeframe, "horizon": int(horizon), "summary": summary}
+                return _finish({"success": True, "symbol": symbol, "timeframe": timeframe, "horizon": int(horizon), "summary": summary})
             # compact: include tail only
             payload["summary"] = summary
             if n > 0:
@@ -167,8 +195,8 @@ def labels_triple_barrier(
                 payload["holding_bars"] = hold_tail
                 payload["tp_time"] = tp_times[-n:]
                 payload["sl_time"] = sl_times[-n:]
-        return payload
+        return _finish(payload)
     except MT5ConnectionError as exc:
-        return {"error": str(exc)}
+        return _finish({"error": str(exc)})
     except Exception as e:
-        return {"error": f"Error computing triple-barrier labels: {str(e)}"}
+        return _finish({"error": f"Error computing triple-barrier labels: {str(e)}"})

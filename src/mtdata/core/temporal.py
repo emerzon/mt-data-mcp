@@ -1,11 +1,14 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, List, Literal, Tuple
+import logging
 import math
+import time
 
 import numpy as np
 import pandas as pd
 
 from ._mcp_instance import mcp
+from .execution_logging import infer_result_success, log_operation_finish, log_operation_start
 from .mt5_gateway import create_mt5_gateway
 from .schema import TimeframeLiteral
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
@@ -25,6 +28,8 @@ from ..utils.utils import (
     _format_time_minimal_local,
     _resolve_client_tz,
 )
+
+logger = logging.getLogger(__name__)
 
 
 _DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -298,6 +303,30 @@ def temporal_analyze(
     Returns grouped averages for returns and volatility plus simple extras.
     Use group_by='all' for a single overall summary.
     """
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="temporal_analyze",
+        symbol=symbol,
+        timeframe=timeframe,
+        group_by=group_by,
+        limit=limit,
+    )
+
+    def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="temporal_analyze",
+            started_at=started_at,
+            success=infer_result_success(result),
+            symbol=symbol,
+            timeframe=timeframe,
+            group_by=group_by,
+            limit=limit,
+            bars=result.get("bars") if isinstance(result, dict) else None,
+        )
+        return result
+
     try:
         mt5_gateway = _get_mt5_gateway()
         mt5_gateway.ensure_connection()
@@ -315,47 +344,47 @@ def temporal_analyze(
         limit = int(limit)
         context["limit"] = limit
         if limit <= 1 and not (start and end):
-            return _error_response(
+            return _finish(_error_response(
                 "limit must be >= 2 for return calculations.",
                 stage="validate",
                 context=context,
-            )
+            ))
 
         group_norm = _normalize_group_by(group_by)
         if group_norm not in ("dow", "hour", "month", "all"):
-            return _error_response(
+            return _finish(_error_response(
                 "Invalid group_by. Use: dow, hour, month, all.",
                 stage="validate",
                 context=context,
-            )
+            ))
         context["group_by"] = group_norm
 
         dow_val = _parse_weekday(day_of_week)
         if day_of_week is not None and dow_val is None:
-            return _error_response(
+            return _finish(_error_response(
                 "Invalid day_of_week. Use 0-6 or day name (e.g., Mon).",
                 stage="validate",
                 context=context,
                 details={"day_of_week": day_of_week},
-            )
+            ))
 
         month_val = _parse_month(month)
         if month is not None and month_val is None:
-            return _error_response(
+            return _finish(_error_response(
                 "Invalid month. Use 1-12 or month name (e.g., Jan).",
                 stage="validate",
                 context=context,
                 details={"month": month},
-            )
+            ))
 
         tr_start, tr_end, tr_err = _parse_time_range(time_range)
         if tr_err:
-            return _error_response(
+            return _finish(_error_response(
                 tr_err,
                 stage="validate",
                 context=context,
                 details={"time_range": time_range},
-            )
+            ))
 
         filters: Dict[str, Any] = {}
         if dow_val is not None:
@@ -372,7 +401,7 @@ def temporal_analyze(
         info_before = get_symbol_info_cached(symbol)
         with _symbol_ready_guard(symbol, info_before=info_before) as (err, _info):
             if err:
-                return _error_response(err, stage="symbol", context=context)
+                return _finish(_error_response(err, stage="symbol", context=context))
 
             rates, fetch_err = _fetch_rates(
                 symbol,
@@ -383,25 +412,25 @@ def temporal_analyze(
                 gateway=mt5_gateway,
             )
             if fetch_err:
-                return _error_response(fetch_err, stage="fetch", context=context)
+                return _finish(_error_response(fetch_err, stage="fetch", context=context))
         # visibility handled by _symbol_ready_guard
 
         if rates is None or len(rates) < 2:
-            return _error_response(
+            return _finish(_error_response(
                 f"Failed to get rates for {symbol}.",
                 stage="fetch",
                 context=context,
                 details={"mt5_error": mt5.last_error()},
-            )
+            ))
 
         df = pd.DataFrame(rates)
         if df.empty:
-            return _error_response("No data available.", stage="fetch", context=context, bars=0)
+            return _finish(_error_response("No data available.", stage="fetch", context=context, bars=0))
 
         try:
             df["__epoch"] = df["time"].astype(float).apply(_mt5_epoch_to_utc)
         except Exception:
-            return _error_response("Failed to normalize bar times.", stage="process", context=context)
+            return _finish(_error_response("Failed to normalize bar times.", stage="process", context=context))
 
         if not end:
             tf_secs = TIMEFRAME_SECONDS.get(timeframe)
@@ -412,12 +441,12 @@ def temporal_analyze(
                     df = df.iloc[:-1]
 
         if len(df) < 2:
-            return _error_response(
+            return _finish(_error_response(
                 "Insufficient data after trimming live bars.",
                 stage="trim",
                 context=context,
                 bars=len(df),
-            )
+            ))
 
         client_tz = _resolve_client_tz()
         use_client_tz = client_tz is not None
@@ -429,11 +458,11 @@ def temporal_analyze(
         df["__dt"] = dt
 
         if "close" not in df.columns:
-            return _error_response(
+            return _finish(_error_response(
                 "Rates data missing close prices.",
                 stage="process",
                 context=context,
-            )
+            ))
 
         close = pd.to_numeric(df["close"], errors="coerce").astype(float)
         if return_mode == "log":
@@ -472,13 +501,13 @@ def temporal_analyze(
             df = df.loc[mask]
 
         if len(df) < 2:
-            return _error_response(
+            return _finish(_error_response(
                 "Insufficient data after applying filters.",
                 stage="filter",
                 context=context,
                 bars=len(df),
                 filters=filters,
-            )
+            ))
 
         overall = _stats_for_group(df, volume_col)
         groups_out: List[Dict[str, Any]] = []
@@ -534,12 +563,12 @@ def temporal_analyze(
         }
         if groups_out:
             payload["groups"] = groups_out
-        return payload
+        return _finish(payload)
     except MT5ConnectionError as exc:
-        return {"error": str(exc)}
+        return _finish({"error": str(exc)})
     except Exception as e:
-        return _error_response(
+        return _finish(_error_response(
             f"Error computing temporal analysis: {str(e)}",
             stage="internal",
             context=context if "context" in locals() else None,
-        )
+        ))

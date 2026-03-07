@@ -88,6 +88,33 @@ class TestPivotInvalidInputs:
         assert "Unsupported timeframe" in res["error"]
 
 
+def test_pivot_compute_points_logs_finish_event(caplog):
+    fn = _get_pivot_fn()
+    info = _make_symbol_info()
+
+    @contextmanager
+    def _guard(symbol):
+        yield None, info
+
+    rates = np.array([_make_rate(time_=100.0), _make_rate(time_=200.0)])
+    with patch(_TF_MAP_PATCH, {"D1": 1}), \
+         patch(_TF_SECS_PATCH, {"D1": 86400}), \
+         patch(_GUARD, _guard), \
+         patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()), \
+         patch(_EPOCH, side_effect=lambda x: float(x)), \
+         patch(_COPY_RATES, return_value=rates), \
+         patch(_USE_CTZ, return_value=False), \
+         patch(_FMT, side_effect=lambda x: f"T{int(x)}"), \
+         caplog.at_level("INFO", logger="mtdata.core.pivot"):
+        res = fn("EURUSD", timeframe="D1")
+
+    assert res["success"] is True
+    assert any(
+        "event=finish operation=pivot_compute_points success=True" in record.message
+        for record in caplog.records
+    )
+
+
 class TestPivotSymbolGuardError:
 
     def test_symbol_error(self):

@@ -214,3 +214,18 @@ class TestLabelsTripleBarrier:
         mock_hist.return_value = _make_df(60)
         result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, output="summary")
         assert "median_holding_bars" in result["summary"]
+
+
+@patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+@patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+@patch(f"{_LABELS_MOD}._fetch_history")
+def test_labels_triple_barrier_logs_finish_event(mock_hist, mock_den, mock_pip, caplog):
+    mock_hist.return_value = _make_df(60)
+    with caplog.at_level("INFO", logger="mtdata.core.labels"):
+        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=12)
+
+    assert result["success"] is True
+    assert any(
+        "event=finish operation=labels_triple_barrier success=True" in record.message
+        for record in caplog.records
+    )

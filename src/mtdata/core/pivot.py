@@ -1,8 +1,11 @@
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List
+import logging
 import math
+import time
 
+from .execution_logging import infer_result_success, log_operation_finish, log_operation_start
 from .mt5_gateway import create_mt5_gateway
 from .schema import TimeframeLiteral, _PIVOT_METHODS
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
@@ -16,6 +19,8 @@ from ..utils.mt5 import (
 )
 from ..utils.utils import _format_time_minimal, _format_time_minimal_local, _use_client_tz
 from ._mcp_instance import mcp
+
+logger = logging.getLogger(__name__)
 
 
 def _get_mt5_gateway():
@@ -32,19 +37,38 @@ def pivot_compute_points(
 
     Returns JSON with shared source data plus levels for every supported pivot method.
     """
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="pivot_compute_points",
+        symbol=symbol,
+        timeframe=timeframe,
+    )
+
+    def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="pivot_compute_points",
+            started_at=started_at,
+            success=infer_result_success(result),
+            symbol=symbol,
+            timeframe=timeframe,
+        )
+        return result
+
     try:
         mt5 = _get_mt5_gateway()
         mt5.ensure_connection()
         if timeframe not in TIMEFRAME_MAP:
-            return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+            return _finish({"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"})
         mt5_tf = TIMEFRAME_MAP[timeframe]
         tf_secs = TIMEFRAME_SECONDS.get(timeframe)
         if not tf_secs:
-            return {"error": f"Unsupported timeframe seconds for {timeframe}"}
+            return _finish({"error": f"Unsupported timeframe seconds for {timeframe}"})
 
         with _symbol_ready_guard(symbol) as (err, _info_before):
             if err:
-                return {"error": err}
+                return _finish({"error": err})
             _tick = mt5.symbol_info_tick(symbol)
             if _tick is not None and getattr(_tick, "time", None):
                 t_utc = _mt5_epoch_to_utc(float(_tick.time))
@@ -56,7 +80,7 @@ def pivot_compute_points(
             rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, 5)
 
         if rates is None or len(rates) == 0:
-            return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"} 
+            return _finish({"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}) 
 
         now_ts = server_now_ts
         if len(rates) >= 2:
@@ -66,7 +90,7 @@ def pivot_compute_points(
             if (float(only["time"]) + tf_secs) <= now_ts:
                 src = only
             else:
-                return {"error": "No completed bars available to compute pivot points"}
+                return _finish({"error": "No completed bars available to compute pivot points"})
 
         def _has_field(row, name: str) -> bool:
             try:
@@ -83,7 +107,7 @@ def pivot_compute_points(
         C = float(src["close"]) if _has_field(src, "close") else float("nan")
         O = float(src["open"]) if _has_field(src, "open") else C
         if any(math.isnan(v) for v in (H, L, C)):
-            return {"error": "Pivot calculation requires high, low, and close prices"}
+            return _finish({"error": "Pivot calculation requires high, low, and close prices"})
 
         period_start = float(src["time"]) if _has_field(src, "time") else float("nan")
         period_start = _mt5_epoch_to_utc(period_start)
@@ -294,9 +318,9 @@ def pivot_compute_points(
         }
         if not _use_ctz:
             payload["timezone"] = "UTC"
-        return payload
+        return _finish(payload)
     except MT5ConnectionError as exc:
-        return {"error": str(exc)}
+        return _finish({"error": str(exc)})
     except Exception as e:
-        return {"error": f"Error computing pivot points: {str(e)}"}
+        return _finish({"error": f"Error computing pivot points: {str(e)}"})
 
