@@ -7,12 +7,11 @@ from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from ..utils.mt5_enums import decode_mt5_enum_label, decode_mt5_bitmask_labels
 from ._mcp_instance import mcp
 from .constants import GROUP_SEARCH_THRESHOLD, DEFAULT_ROW_LIMIT
-from ..utils.mt5 import _auto_connect_wrapper, mt5
+from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5
 
 
 
 @mcp.tool()
-@_auto_connect_wrapper
 def symbols_list(
     search_term: Optional[str] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
@@ -20,6 +19,7 @@ def symbols_list(
 ) -> Dict[str, Any]:
     """List symbols or symbol groups."""
     try:
+        ensure_mt5_connection_or_raise()
         mode = str(list_mode or "symbols").strip().lower()
         if mode not in ("symbols", "groups"):
             return {"error": "list_mode must be 'symbols' or 'groups'."}
@@ -113,6 +113,8 @@ def symbols_list(
         # Build tabular result
         rows = [[s["name"], s["group"], s["description"]] for s in symbol_list]
         return _table_from_rows(["name", "group", "description"], rows)
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
     except Exception as e:
         return {"error": f"Error getting symbols: {str(e)}"}
 
@@ -157,13 +159,13 @@ def _list_symbol_groups(
         return {"error": f"Error getting symbol groups: {str(e)}"}
 
 @mcp.tool()
-@_auto_connect_wrapper
 def symbols_describe(symbol: str) -> Dict[str, Any]:
     """Return symbol information as JSON for `symbol`.
        Parameters: symbol
        Includes information such as Symbol Description, Swap Values, Tick Size/Value, etc.
     """
     try:
+        ensure_mt5_connection_or_raise()
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:
             return {"error": f"Symbol {symbol} not found"}
@@ -238,5 +240,7 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
             "success": True,
             "symbol": symbol_data
         }
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
     except Exception as e:
         return {"error": f"Error getting symbol info: {str(e)}"}

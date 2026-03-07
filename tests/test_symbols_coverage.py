@@ -27,12 +27,24 @@ def _unwrap(fn):
 
 def _get_symbols_list():
     from mtdata.core.symbols import symbols_list
-    return _unwrap(symbols_list)
+    raw = _unwrap(symbols_list)
+
+    def _call(*args, **kwargs):
+        with patch("mtdata.core.symbols.ensure_mt5_connection_or_raise", return_value=None):
+            return raw(*args, **kwargs)
+
+    return _call
 
 
 def _get_symbols_describe():
     from mtdata.core.symbols import symbols_describe
-    return _unwrap(symbols_describe)
+    raw = _unwrap(symbols_describe)
+
+    def _call(*args, **kwargs):
+        with patch("mtdata.core.symbols.ensure_mt5_connection_or_raise", return_value=None):
+            return raw(*args, **kwargs)
+
+    return _call
 
 
 _MT5 = "mtdata.core.symbols.mt5"
