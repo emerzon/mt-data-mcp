@@ -20,7 +20,14 @@ def _unwrap(fn):
 
 def _get_report_generate():
     from mtdata.core.report import report_generate
-    return _unwrap(report_generate)
+    raw = _unwrap(report_generate)
+
+    def _call(symbol, **kwargs):
+        from mtdata.core.report_requests import ReportGenerateRequest
+
+        return raw(request=ReportGenerateRequest(symbol=symbol, **kwargs))
+
+    return _call
 
 
 def _make_report(sections=None, error=None):
