@@ -21,25 +21,38 @@ Installation and configuration guide for mtdata.
 
 ## Installation
 
-### 1. Install Python Dependencies
+### 1. Install the Lean Core Package
 
 From the repository root:
-
-```bash
-pip install -r requirements.txt
-```
-
-### 2. Editable Install (Optional)
-
-For development or to use entry points (`mtdata-sse`, `mtdata-stdio`, `mtdata-cli`, `mtdata-webapi`):
 
 ```bash
 pip install -e .
 ```
 
+### 2. Install the Full Feature Set (Optional)
+
+For the validated all-features environment used in local development and docs/examples:
+
+```bash
+pip install -r requirements.txt
+```
+
 ### 3. Optional Dependencies
 
-`requirements.txt` is the supported Python 3.14 dependency set. If you are installing selectively, these features require extra packages:
+The base package is intentionally lean. Install extras as needed:
+
+- Classical forecasting / optimization:
+  `pip install -e .[forecast-classical]`
+- Foundation-model forecasting:
+  `pip install -e .[forecast-foundation]`
+- Web API:
+  `pip install -e .[web]`
+- Experimental pattern engines:
+  `pip install -e .[patterns-ext]`
+- Everything:
+  `pip install -e .[all]`
+
+Feature notes:
 
 - Causal discovery (`causal_discover_signals`) and classical ARIMA/ETS: `statsmodels`
 - Wavelet denoising: `PyWavelets`

@@ -45,7 +45,10 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 **Prerequisites:** Windows + Python 3.14 + MetaTrader 5 installed and running (demo account recommended).
 
 ```bash
-# Install dependencies
+# Lean core install
+pip install -e .
+
+# Full research/web install
 pip install -r requirements.txt
 
 # Verify MT5 connection (lists symbols from the running terminal)
@@ -59,7 +62,8 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
 ```
 
 Notes:
-- The default Python 3.14 install includes the validated Chronos/TimesFM, StatsForecast, sktime, and mlforecast paths.
+- `pip install -e .` now installs the lean core package only.
+- `pip install -r requirements.txt` installs the full validated Python 3.14 stack, including Chronos/TimesFM, StatsForecast, sktime, mlforecast, and the Web API.
 - `gluonts`/Lag-Llama, `hnswlib`, and `tsdownsample` are intentionally excluded from the default 3.14 environment because current wheel support is incomplete or incompatible.
 
 ## Documentation

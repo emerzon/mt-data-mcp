@@ -23,7 +23,14 @@ try:
     from sklearn.exceptions import ConvergenceWarning as _SklearnConvergenceWarning
 except Exception:  # pragma: no cover - defensive fallback
     _SklearnConvergenceWarning = Warning
-from arch.bootstrap import CircularBlockBootstrap
+
+
+def _load_circular_block_bootstrap():
+    try:
+        from arch.bootstrap import CircularBlockBootstrap
+    except ImportError as ex:
+        raise RuntimeError("simulate_bootstrap_mc requires the 'arch' package.") from ex
+    return CircularBlockBootstrap
 
 
 def _normalize_probability_vector(
@@ -595,6 +602,7 @@ def simulate_bootstrap_mc(
         block_size = int(max(1, n ** (1.0/3.0)))
     
     block_size = max(1, int(block_size))
+    CircularBlockBootstrap = _load_circular_block_bootstrap()
     bs = CircularBlockBootstrap(block_size, rets, seed=seed)
     sim_rets = np.zeros((int(n_sims), int(horizon)), dtype=float)
     for s_idx, boot in enumerate(bs.bootstrap(int(n_sims))):
