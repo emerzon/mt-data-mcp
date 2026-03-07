@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, Literal, Optional, Tuple, Union
 
-from ..utils.mt5 import _auto_connect_wrapper, mt5_adapter
+from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5_adapter
 from ..utils.utils import _coerce_finite_float, _coerce_scalar
 
 
@@ -171,7 +171,11 @@ def _prevalidate_trade_place_market_input(symbol: str, volume: Any) -> Optional[
     """Validate symbol and volume before market-order SL/TP enforcement returns."""
     mt5 = mt5_adapter
 
-    @_auto_connect_wrapper
+    try:
+        ensure_mt5_connection_or_raise()
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
+
     def _prevalidate():
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:

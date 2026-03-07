@@ -10,7 +10,15 @@ from .trading_execution import _modify_position
 from .trading_positions import _resolve_open_position
 from .trading_time import ExpirationValue
 from .trading_validation import MarketOrderTypeInput, OrderTypeInput
-from ..utils.mt5 import _auto_connect_wrapper, mt5_adapter
+from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5_adapter
+
+
+def _trading_connection_error() -> Optional[Dict[str, Any]]:
+    try:
+        ensure_mt5_connection_or_raise()
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
+    return None
 
 def _place_market_order(
     symbol: str,
@@ -24,7 +32,10 @@ def _place_market_order(
     """Internal helper to place a market order."""
     mt5 = mt5_adapter
 
-    @_auto_connect_wrapper
+    connection_error = _trading_connection_error()
+    if connection_error is not None:
+        return connection_error
+
     def _place_market_order():
         try:
             preflight = _build_trade_preflight(mt5)
@@ -425,7 +436,10 @@ def _place_pending_order(
     """Internal helper to place a pending order."""
     mt5 = mt5_adapter
 
-    @_auto_connect_wrapper
+    connection_error = _trading_connection_error()
+    if connection_error is not None:
+        return connection_error
+
     def _place_pending_order():
         try:
             preflight = _build_trade_preflight(mt5)

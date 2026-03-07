@@ -209,10 +209,11 @@ def _bypass_auto_connect(monkeypatch):
     """Neutralize MT5 connection guards so no real terminal access is needed."""
     passthrough = lambda fn=None, **kw: fn if fn else (lambda f: f)
     monkeypatch.setattr("mtdata.core.trading_account.ensure_mt5_connection_or_raise", lambda: None)
-    monkeypatch.setattr("mtdata.core.trading_execution._auto_connect_wrapper", passthrough)
-    monkeypatch.setattr("mtdata.core.trading_orders._auto_connect_wrapper", passthrough)
+    monkeypatch.setattr("mtdata.core.trading_execution.ensure_mt5_connection_or_raise", lambda: None)
+    monkeypatch.setattr("mtdata.core.trading_orders.ensure_mt5_connection_or_raise", lambda: None)
     monkeypatch.setattr("mtdata.core.trading_positions.ensure_mt5_connection_or_raise", lambda: None)
     monkeypatch.setattr("mtdata.core.trading_risk.ensure_mt5_connection_or_raise", lambda: None)
+    monkeypatch.setattr("mtdata.core.trading_validation.ensure_mt5_connection_or_raise", lambda: None)
 
 
 # ===================================================================

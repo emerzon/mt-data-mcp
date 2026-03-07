@@ -9,7 +9,15 @@ from . import trading_comments, trading_time, trading_validation
 from .trading_common import _retcode_name
 from .trading_positions import _resolve_open_position
 from .trading_time import ExpirationValue
-from ..utils.mt5 import _auto_connect_wrapper, _mt5_epoch_to_utc, mt5_adapter
+from ..utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc, ensure_mt5_connection_or_raise, mt5_adapter
+
+
+def _trading_connection_error() -> Optional[Dict[str, Any]]:
+    try:
+        ensure_mt5_connection_or_raise()
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
+    return None
 
 def _modify_position(
     ticket: Union[int, str],
@@ -20,7 +28,10 @@ def _modify_position(
     """Internal helper to modify a position by ticket."""
     mt5 = mt5_adapter
 
-    @_auto_connect_wrapper
+    connection_error = _trading_connection_error()
+    if connection_error is not None:
+        return connection_error
+
     def _modify_position():
         try:
             ticket_id = int(ticket)
@@ -127,7 +138,10 @@ def _modify_pending_order(
     """Internal helper to modify a pending order by ticket."""
     mt5 = mt5_adapter
 
-    @_auto_connect_wrapper
+    connection_error = _trading_connection_error()
+    if connection_error is not None:
+        return connection_error
+
     def _modify_pending_order():
         try:
             ticket_id = int(ticket)
@@ -217,7 +231,10 @@ def _close_positions(
     """Internal helper to close open positions."""
     mt5 = mt5_adapter
 
-    @_auto_connect_wrapper
+    connection_error = _trading_connection_error()
+    if connection_error is not None:
+        return connection_error
+
     def _close_positions():
         try:
             # 1. Fetch positions based on criteria
@@ -525,7 +542,10 @@ def _cancel_pending(
     """Internal helper to cancel pending orders."""
     mt5 = mt5_adapter
 
-    @_auto_connect_wrapper
+    connection_error = _trading_connection_error()
+    if connection_error is not None:
+        return connection_error
+
     def _cancel_pending():
         try:
             # 1. Fetch orders based on criteria
