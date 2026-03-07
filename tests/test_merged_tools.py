@@ -19,7 +19,24 @@ from src.mtdata.core.trading import trade_get_open
 from src.mtdata.core.trading import trade_get_pending
 from src.mtdata.core.patterns import patterns_detect
 from src.mtdata.core.forecast import forecast_barrier_prob
+from src.mtdata.core.trading_requests import TradeGetOpenRequest, TradeGetPendingRequest
 from src.mtdata.forecast.requests import ForecastBarrierProbRequest
+
+
+def get_open(**kwargs):
+    raw_output = bool(kwargs.pop("__cli_raw", False))
+    request = kwargs.pop("request", None)
+    if request is None:
+        request = TradeGetOpenRequest(**kwargs)
+    return trade_get_open(request=request, __cli_raw=raw_output)
+
+
+def get_pending(**kwargs):
+    raw_output = bool(kwargs.pop("__cli_raw", False))
+    request = kwargs.pop("request", None)
+    if request is None:
+        request = TradeGetPendingRequest(**kwargs)
+    return trade_get_pending(request=request, __cli_raw=raw_output)
 
 
 def barrier_prob(**kwargs):
@@ -41,15 +58,15 @@ class TestMergedTools(unittest.TestCase):
         self.mt5.positions_get.return_value = None # Simulate empty
 
         # Test default
-        res = trade_get_open(__cli_raw=True)
+        res = get_open(__cli_raw=True)
         self.assertIsInstance(res, list)
 
         # Test with symbol
-        trade_get_open(symbol="EURUSD", __cli_raw=True)
+        get_open(symbol="EURUSD", __cli_raw=True)
         self.mt5.positions_get.assert_called_with(symbol="EURUSD")
 
         # Test with ticket
-        trade_get_open(ticket=123, __cli_raw=True)
+        get_open(ticket=123, __cli_raw=True)
         self.mt5.positions_get.assert_called_with(ticket=123)
 
     def test_trading_open_get_positions_type_translation(self):
@@ -66,7 +83,7 @@ class TestMergedTools(unittest.TestCase):
             )
         ]
 
-        res = trade_get_open(__cli_raw=True)
+        res = get_open(__cli_raw=True)
         self.assertIsInstance(res, list)
         self.assertGreaterEqual(len(res), 1)
         self.assertEqual(res[0].get("Type"), "BUY")
@@ -108,7 +125,7 @@ class TestMergedTools(unittest.TestCase):
             )
         ]
 
-        res = trade_get_open(__cli_raw=True)
+        res = get_open(__cli_raw=True)
         self.assertEqual(res[0].get("Comment Limit"), 31)
         self.assertEqual(res[0].get("Comment Length"), len("audit short"))
         self.assertTrue(res[0].get("Comment May Be Truncated"))
@@ -116,12 +133,12 @@ class TestMergedTools(unittest.TestCase):
     def test_trading_open_get_pending(self):
         self.mt5.orders_get.return_value = None
 
-        trade_get_pending(__cli_raw=True)
+        get_pending(__cli_raw=True)
 
-        trade_get_pending(symbol="EURUSD", __cli_raw=True)
+        get_pending(symbol="EURUSD", __cli_raw=True)
         self.mt5.orders_get.assert_called_with(symbol="EURUSD")
 
-        trade_get_pending(ticket=123, __cli_raw=True)
+        get_pending(ticket=123, __cli_raw=True)
         self.mt5.orders_get.assert_called_with(ticket=123)
 
     def test_trading_open_get_pending_type_translation(self):
@@ -137,7 +154,7 @@ class TestMergedTools(unittest.TestCase):
             )
         ]
 
-        res = trade_get_pending(__cli_raw=True)
+        res = get_pending(__cli_raw=True)
         self.assertIsInstance(res, list)
         self.assertGreaterEqual(len(res), 1)
         self.assertEqual(res[0].get("Type"), "SELL_LIMIT")

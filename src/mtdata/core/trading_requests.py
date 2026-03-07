@@ -58,3 +58,15 @@ class TradeRiskAnalyzeRequest(BaseModel):
     proposed_entry: Optional[float] = None
     proposed_sl: Optional[float] = None
     proposed_tp: Optional[float] = None
+
+
+class TradeGetOpenRequest(BaseModel):
+    symbol: Optional[str] = None
+    ticket: Optional[Union[int, str]] = None
+    limit: Optional[int] = 200
+
+
+class TradeGetPendingRequest(BaseModel):
+    symbol: Optional[str] = None
+    ticket: Optional[Union[int, str]] = None
+    limit: Optional[int] = 200
