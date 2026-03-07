@@ -20,6 +20,7 @@ from src.mtdata.core.trading import trade_get_pending
 from src.mtdata.core.patterns import patterns_detect
 from src.mtdata.core.forecast import forecast_barrier_prob
 from src.mtdata.core.trading_requests import TradeGetOpenRequest, TradeGetPendingRequest
+from src.mtdata.core.patterns_requests import PatternsDetectRequest
 from src.mtdata.forecast.requests import ForecastBarrierProbRequest
 
 
@@ -45,6 +46,14 @@ def barrier_prob(**kwargs):
     if request is None:
         request = ForecastBarrierProbRequest(**kwargs)
     return forecast_barrier_prob(request=request, __cli_raw=raw_output)
+
+
+def detect_patterns(**kwargs):
+    raw_output = bool(kwargs.pop("__cli_raw", False))
+    request = kwargs.pop("request", None)
+    if request is None:
+        request = PatternsDetectRequest(**kwargs)
+    return patterns_detect(request=request, __cli_raw=raw_output)
 
 class TestMergedTools(unittest.TestCase):
     def setUp(self):
@@ -179,11 +188,11 @@ class TestMergedTools(unittest.TestCase):
         # Mock copy rates to return None or empty to trigger error handling, which is fine for signature check
         self.mt5.copy_rates_from.return_value = None
         
-        res = patterns_detect(symbol="EURUSD", mode="candlestick", __cli_raw=True)
+        res = detect_patterns(symbol="EURUSD", mode="candlestick", __cli_raw=True)
         # It might return error because of mocked mt5 returning None for rates
         self.assertTrue("error" in res or "success" in res)
         
-        res = patterns_detect(symbol="EURUSD", mode="classic", __cli_raw=True)
+        res = detect_patterns(symbol="EURUSD", mode="classic", __cli_raw=True)
         self.assertTrue("error" in res or "success" in res)
 
     def test_forecast_barrier_prob(self):

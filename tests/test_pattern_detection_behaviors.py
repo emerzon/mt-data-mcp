@@ -5,6 +5,7 @@ import pytest
 from types import SimpleNamespace
 
 from src.mtdata.core import patterns as core_patterns
+from src.mtdata.core.patterns_requests import PatternsDetectRequest
 from src.mtdata.core.patterns import _apply_config_to_obj, _build_pattern_response
 from src.mtdata.patterns.candlestick import (
     _extract_candlestick_rows,
@@ -15,6 +16,14 @@ from src.mtdata.patterns.candlestick import (
 from src.mtdata.patterns.classic import ClassicDetectorConfig, _fit_lines_and_arrays, _count_recent_touches, detect_classic_patterns
 import src.mtdata.patterns.candlestick as candlestick_mod
 import src.mtdata.patterns.classic as classic_mod
+
+
+def patterns_detect(**kwargs):
+    raw_output = bool(kwargs.pop("__cli_raw", True))
+    request = kwargs.pop("request", None)
+    if request is None:
+        request = PatternsDetectRequest(**kwargs)
+    return core_patterns.patterns_detect(request=request, __cli_raw=raw_output)
 
 
 def test_fit_lines_and_arrays_uses_cfg_for_robust_fit(monkeypatch):
@@ -229,11 +238,7 @@ def test_patterns_detect_candlestick_passes_last_n_bars(monkeypatch):
 
     monkeypatch.setattr(core_patterns, "_detect_candlestick_patterns", _fake_detect)
 
-    raw = core_patterns.patterns_detect
-    while hasattr(raw, "__wrapped__"):
-        raw = raw.__wrapped__
-
-    res = raw(
+    res = patterns_detect(
         symbol="EURUSD",
         timeframe="H1",
         mode="candlestick",
@@ -246,11 +251,7 @@ def test_patterns_detect_candlestick_passes_last_n_bars(monkeypatch):
 
 
 def test_patterns_detect_candlestick_rejects_non_positive_last_n_bars():
-    raw = core_patterns.patterns_detect
-    while hasattr(raw, "__wrapped__"):
-        raw = raw.__wrapped__
-
-    res = raw(
+    res = patterns_detect(
         symbol="EURUSD",
         timeframe="H1",
         mode="candlestick",
@@ -485,7 +486,7 @@ def test_patterns_detect_elliott_without_timeframe_scans_all(monkeypatch):
 
     monkeypatch.setattr(core_patterns, "_detect_elliott_waves", _fake_detect)
 
-    res = core_patterns.patterns_detect(
+    res = patterns_detect(
         symbol="EURUSD",
         mode="elliott",
         detail="full",
@@ -531,7 +532,7 @@ def test_patterns_detect_elliott_with_explicit_timeframe_uses_single_output(monk
 
     monkeypatch.setattr(core_patterns, "_detect_elliott_waves", _fake_detect)
 
-    res = core_patterns.patterns_detect(
+    res = patterns_detect(
         symbol="EURUSD",
         mode="elliott",
         detail="full",
@@ -624,7 +625,7 @@ def test_patterns_detect_classic_ensemble_merges_engine_outputs(monkeypatch):
 
     monkeypatch.setattr(core_patterns, "_run_classic_engine", _fake_engine)
 
-    res = core_patterns.patterns_detect(
+    res = patterns_detect(
         symbol="EURUSD",
         mode="classic",
         detail="full",
@@ -681,7 +682,7 @@ def test_patterns_detect_classic_adds_signal_summary_and_levels(monkeypatch):
 
     monkeypatch.setattr(core_patterns, "_run_classic_engine", _fake_engine)
 
-    res = core_patterns.patterns_detect(
+    res = patterns_detect(
         symbol="EURUSD",
         mode="classic",
         detail="full",
@@ -722,7 +723,7 @@ def test_patterns_detect_engine_findings_report_hidden_completed(monkeypatch):
         ),
     )
 
-    res = core_patterns.patterns_detect(
+    res = patterns_detect(
         symbol="EURUSD",
         mode="classic",
         detail="full",
@@ -749,7 +750,7 @@ def test_patterns_detect_classic_invalid_engine_returns_error(monkeypatch):
     )
     monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda symbol, timeframe, limit, denoise: (df.copy(), None))
 
-    res = core_patterns.patterns_detect(
+    res = patterns_detect(
         symbol="EURUSD",
         mode="classic",
         timeframe="H1",

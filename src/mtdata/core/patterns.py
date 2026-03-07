@@ -5,7 +5,6 @@ import copy
 import pandas as pd
 import warnings
 
-from .schema import TimeframeLiteral
 from .constants import TIMEFRAME_MAP
 from .patterns_support import (
     _STOCK_PATTERN_UTILS_CACHE,
@@ -37,6 +36,8 @@ from ..patterns.candlestick import detect_candlestick_patterns as _detect_candle
 from ..patterns.classic import detect_classic_patterns as _detect_classic_patterns, ClassicDetectorConfig as _ClassicCfg
 from ..patterns.elliott import detect_elliott_waves as _detect_elliott_waves, ElliottWaveConfig as _ElliottCfg
 from ._mcp_instance import mcp
+from .patterns_requests import PatternsDetectRequest
+from .patterns_use_cases import run_patterns_detect
 from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.mt5 import _auto_connect_wrapper, mt5
 
@@ -539,27 +540,7 @@ def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> None:
 @mcp.tool()
 @_auto_connect_wrapper
 def patterns_detect(
-    symbol: str,
-    timeframe: Optional[TimeframeLiteral] = None,
-    mode: Literal['candlestick', 'classic', 'chart', 'elliott'] = 'candlestick',  # type: ignore
-    detail: Literal['compact', 'full'] = 'compact',  # type: ignore
-    limit: int = 1000,
-    # Candlestick specific
-    min_strength: float = 0.95,
-    min_gap: int = 3,
-    robust_only: bool = True,
-    whitelist: Optional[str] = None,
-    top_k: int = 1,
-    last_n_bars: Optional[int] = None,
-    # Classic/Elliott specific
-    denoise: Optional[Dict[str, Any]] = None,
-    config: Optional[Dict[str, Any]] = None,
-    engine: str = "native",
-    ensemble: bool = False,
-    ensemble_weights: Optional[Dict[str, Any]] = None,
-    include_series: bool = False,
-    series_time: str = "string",
-    include_completed: bool = False,
+    request: PatternsDetectRequest,
 ) -> Dict[str, Any]:
     """Detect chart patterns (candlestick, classic chart patterns, or Elliott Wave).
     
@@ -667,216 +648,26 @@ def patterns_detect(
     # Detect Elliott Wave patterns
     patterns_detect(symbol="BTCUSD", mode="elliott", timeframe="H4", detail="full")
     """
-    try:
-        tf_norm: Optional[str] = str(timeframe).strip().upper() if timeframe is not None else None
-        if not tf_norm:
-            tf_norm = None
-
-        mode_value = str(mode).strip().lower()
-        if mode_value == 'chart':
-            mode_value = 'classic'
-        detail_value = str(detail).strip().lower()
-        if detail_value not in ('compact', 'full'):
-            return {"error": "Invalid detail. Use 'compact' or 'full'."}
-
-        if mode_value == 'candlestick':
-            tf_single = tf_norm or "H1"
-            last_n_bars_val: Optional[int] = None
-            if last_n_bars is not None:
-                try:
-                    last_n_bars_val = int(last_n_bars)
-                except Exception:
-                    return {"error": "last_n_bars must be a positive integer."}
-                if last_n_bars_val <= 0:
-                    return {"error": "last_n_bars must be >= 1."}
-            out = _detect_candlestick_patterns(
-                symbol=symbol,
-                timeframe=tf_single,
-                limit=limit,
-                min_strength=min_strength,
-                min_gap=min_gap,
-                robust_only=robust_only,
-                whitelist=whitelist,
-                top_k=top_k,
-                last_n_bars=last_n_bars_val,
-            )
-            if detail_value == 'compact':
-                return _compact_patterns_payload(out if isinstance(out, dict) else {"data": out})
-            return out
-
-        elif mode_value == 'classic':
-            tf_single = tf_norm or "H1"
-            # Fetch and prepare data using shared helper
-            df, err = _fetch_pattern_data(symbol, tf_single, limit, denoise)
-            if err:
-                return err
-
-            cfg = _ClassicCfg()
-            _apply_config_to_obj(cfg, config)
-            engines, invalid_engines = _select_classic_engines(engine, ensemble)
-            if invalid_engines:
-                return {
-                    "error": (
-                        f"Invalid classic engine(s): {invalid_engines}. "
-                        f"Valid options: {list(_available_classic_engines())}"
-                    )
-                }
-
-            per_engine: Dict[str, List[Dict[str, Any]]] = {}
-            engine_errors: Dict[str, str] = {}
-            for eng in engines:
-                patt_rows, eng_err = _run_classic_engine(eng, symbol, df, cfg, config)
-                if eng_err:
-                    engine_errors[eng] = eng_err
-                per_engine[eng] = patt_rows
-
-            non_empty = {e: p for e, p in per_engine.items() if p}
-            if not non_empty:
-                if engine_errors and len(engine_errors) == len(engines):
-                    return {
-                        "error": "No classic engines produced results",
-                        "engines_run": engines,
-                        "engine_errors": engine_errors,
-                    }
-                resp = _build_pattern_response(
-                    symbol, tf_single, limit, mode_value, [],
-                    include_completed, include_series, series_time, df, detail=detail_value
-                )
-                resp["engine"] = "ensemble" if (bool(ensemble) or len(engines) > 1) else engines[0]
-                resp["engines_run"] = engines
-                resp["engine_findings"] = _summarize_engine_findings(per_engine, engines, include_completed)
-                if engine_errors:
-                    resp["engine_errors"] = engine_errors
-                return resp
-
-            run_ensemble = bool(ensemble) or len(non_empty) > 1
-            if run_ensemble:
-                weight_map = _resolve_engine_weights(
-                    engines,
-                    ensemble_weights if isinstance(ensemble_weights, dict) else (
-                        (config or {}).get("ensemble_weights") if isinstance(config, dict) else None
-                    ),
-                )
-                out_list = _merge_classic_ensemble(non_empty, weight_map)
-            else:
-                # keep single-engine behavior when only one engine produces output
-                only_engine = next(iter(non_empty.keys()))
-                out_list = list(non_empty.get(only_engine, []))
-
-            out_list = _enrich_classic_patterns(out_list, df)
-            visible_rows = out_list if include_completed else [
-                row for row in out_list if str(row.get("status", "")).lower() == "forming"
-            ]
-
-            resp = _build_pattern_response(
-                symbol, tf_single, limit, mode_value, out_list,
-                include_completed, include_series, series_time, df, detail=detail_value
-            )
-            resp["engine"] = "ensemble" if run_ensemble else next(iter(non_empty.keys()))
-            resp["engines_run"] = engines
-            resp["engine_findings"] = _summarize_engine_findings(per_engine, engines, include_completed)
-            signal_summary = _summarize_pattern_bias(visible_rows)
-            if signal_summary:
-                resp["signal_summary"] = signal_summary
-            if engine_errors:
-                resp["engine_errors"] = engine_errors
-            return resp
-
-        elif mode_value == 'elliott':
-            cfg = _ElliottCfg()
-            _apply_config_to_obj(cfg, config)
-
-            if tf_norm:
-                # Fetch and prepare data using shared helper
-                df, err = _fetch_pattern_data(symbol, tf_norm, limit, denoise)
-                if err:
-                    return err
-
-                out_list = _format_elliott_patterns(df, cfg)
-                return _build_pattern_response(
-                    symbol, tf_norm, limit, mode_value, out_list,
-                    include_completed, include_series, series_time, df, detail=detail_value
-                )
-
-            # If timeframe is omitted for Elliott mode, scan all available timeframes.
-            scanned_timeframes = list(TIMEFRAME_MAP.keys())
-            findings: List[Dict[str, Any]] = []
-            combined_patterns: List[Dict[str, Any]] = []
-            failed_timeframes: Dict[str, str] = {}
-            series_by_timeframe: Dict[str, Dict[str, Any]] = {}
-
-            for tf in scanned_timeframes:
-                df, err = _fetch_pattern_data(symbol, tf, limit, denoise)
-                if err:
-                    failed_timeframes[tf] = str(err.get("error", "Unknown error"))
-                    continue
-
-                tf_patterns = _format_elliott_patterns(df, cfg)
-                filtered = tf_patterns if include_completed else [
-                    d for d in tf_patterns if str(d.get('status', '')).lower() == 'forming'
-                ]
-                finding_row: Dict[str, Any] = {
-                    "timeframe": tf,
-                    "n_patterns": int(len(filtered)),
-                    "patterns": filtered,
-                }
-                if int(len(filtered)) == 0:
-                    finding_row["diagnostic"] = (
-                        f"No valid Elliott Wave structures detected in {int(limit)} {tf} bars. "
-                        f"{_elliott_timeframe_suggestion(tf)}"
-                    )
-                findings.append(finding_row)
-
-                for row in filtered:
-                    merged = dict(row)
-                    merged["timeframe"] = tf
-                    combined_patterns.append(merged)
-
-                if include_series:
-                    series_payload: Dict[str, Any] = {
-                        "series_close": [float(v) for v in __to_float_np(df.get('close')).tolist()]
-                    }
-                    if 'time' in df.columns:
-                        if str(series_time).lower() == 'epoch':
-                            series_payload["series_epoch"] = [float(v) for v in __to_float_np(df.get('time')).tolist()]
-                        else:
-                            series_payload["series_time"] = [
-                                _format_time_minimal(float(v)) for v in __to_float_np(df.get('time')).tolist()
-                            ]
-                    series_by_timeframe[tf] = series_payload
-
-            if not findings:
-                return {
-                    "error": f"Failed to fetch sufficient bars for {symbol} across all timeframes",
-                    "failed_timeframes": failed_timeframes,
-                }
-
-            resp: Dict[str, Any] = {
-                "success": True,
-                "symbol": symbol,
-                "timeframe": "ALL",
-                "lookback": int(limit),
-                "mode": mode_value,
-                "scanned_timeframes": scanned_timeframes,
-                "findings": findings,
-                "patterns": combined_patterns,
-                "n_patterns": int(len(combined_patterns)),
-            }
-            if int(len(combined_patterns)) == 0:
-                resp["diagnostic"] = (
-                    "No valid Elliott Wave structures were detected across scanned timeframes. "
-                    "Try increasing lookback or focusing on higher-structure windows like H4/D1."
-                )
-            if failed_timeframes:
-                resp["failed_timeframes"] = failed_timeframes
-            if include_series:
-                resp["series_by_timeframe"] = series_by_timeframe
-            if detail_value == "compact":
-                return _compact_patterns_payload(resp)
-            return resp
-        
-        else:
-            return {"error": f"Unknown mode: {mode}. Use candlestick, classic/chart, or elliott."}
-
-    except Exception as e:
-        return {"error": f"Error detecting patterns: {str(e)}"}
+    return run_patterns_detect(
+        request,
+        timeframe_map=TIMEFRAME_MAP,
+        compact_patterns_payload=_compact_patterns_payload,
+        fetch_pattern_data=_fetch_pattern_data,
+        classic_cfg_cls=_ClassicCfg,
+        elliott_cfg_cls=_ElliottCfg,
+        apply_config_to_obj=_apply_config_to_obj,
+        select_classic_engines=_select_classic_engines,
+        available_classic_engines=_available_classic_engines,
+        run_classic_engine=_run_classic_engine,
+        resolve_engine_weights=_resolve_engine_weights,
+        merge_classic_ensemble=_merge_classic_ensemble,
+        enrich_classic_patterns=_enrich_classic_patterns,
+        summarize_engine_findings=_summarize_engine_findings,
+        summarize_pattern_bias=_summarize_pattern_bias,
+        build_pattern_response=_build_pattern_response,
+        format_elliott_patterns=_format_elliott_patterns,
+        detect_candlestick_patterns=_detect_candlestick_patterns,
+        elliott_timeframe_suggestion=_elliott_timeframe_suggestion,
+        format_time_minimal=_format_time_minimal,
+        to_float_np=__to_float_np,
+    )
