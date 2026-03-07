@@ -5,14 +5,22 @@ from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import pytest
 
+from mtdata.core import regime as regime_mod
 from mtdata.core.regime import _auto_calibrate_bocpd_params, regime_detect
+from mtdata.utils.mt5 import MT5ConnectionError
 
 
 def _unwrap(fn):
     while hasattr(fn, "__wrapped__"):
         fn = fn.__wrapped__
     return fn
+
+
+@pytest.fixture(autouse=True)
+def _skip_mt5_connection(monkeypatch):
+    monkeypatch.setattr(regime_mod, "ensure_mt5_connection_or_raise", lambda: None)
 
 
 def _sample_df(n: int = 80) -> pd.DataFrame:
@@ -42,6 +50,19 @@ def test_regime_detect_defaults_to_compact_output() -> None:
     assert "summary" in out
     assert out["summary"].get("lookback") == 20
     assert "regimes" in out
+
+
+def test_regime_detect_returns_connection_error_payload(monkeypatch) -> None:
+    raw = _unwrap(regime_detect)
+
+    def fail_connection() -> None:
+        raise MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running.")
+
+    monkeypatch.setattr(regime_mod, "ensure_mt5_connection_or_raise", fail_connection)
+
+    out = raw(symbol="EURUSD", timeframe="H1", limit=80, method="bocpd")
+
+    assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
 
 
 def test_bocpd_uses_crypto_sensitive_auto_hazard_default() -> None:

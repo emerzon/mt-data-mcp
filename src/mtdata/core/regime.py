@@ -7,7 +7,7 @@ from .constants import TIMEFRAME_SECONDS
 from ..forecast.common import fetch_history as _fetch_history
 from ..utils.utils import _format_time_minimal
 from ..utils.denoise import _resolve_denoise_base_col
-from ..utils.mt5 import _auto_connect_wrapper
+from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 
 
 _CRYPTO_SYMBOL_HINTS = (
@@ -26,6 +26,14 @@ _CRYPTO_SYMBOL_HINTS = (
     "LINK",
     "MATIC",
 )
+
+
+def _regime_connection_error() -> Optional[Dict[str, Any]]:
+    try:
+        ensure_mt5_connection_or_raise()
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
+    return None
 
 
 def _count_state_transitions(state: np.ndarray) -> int:
@@ -701,7 +709,6 @@ def _summary_only_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @mcp.tool()
-@_auto_connect_wrapper
 def regime_detect(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
@@ -733,6 +740,9 @@ def regime_detect(
         - 'full': Returns full consolidated 'regimes'. Raw 'series' included only if include_series=True.
         - 'summary': Returns stats only.
     """
+    connection_error = _regime_connection_error()
+    if connection_error is not None:
+        return connection_error
     try:
         p = dict(params or {})
         try:

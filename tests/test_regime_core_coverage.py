@@ -6,6 +6,7 @@ regime utility calls.
 import numpy as np
 import pandas as pd
 import pytest
+from mtdata.core import regime as regime_mod
 from unittest.mock import patch, MagicMock
 
 
@@ -301,6 +302,11 @@ class TestSummaryOnlyPayload:
 # ---------------------------------------------------------------------------
 # regime_detect integration tests (mocked)
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _skip_mt5_connection(monkeypatch):
+    monkeypatch.setattr(regime_mod, "ensure_mt5_connection_or_raise", lambda: None)
 
 
 # We need to import the *unwrapped* function to bypass the @mcp.tool() and
