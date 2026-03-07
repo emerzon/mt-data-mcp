@@ -16,6 +16,7 @@ from src.mtdata.patterns.candlestick import (
 from src.mtdata.patterns.classic import ClassicDetectorConfig, _fit_lines_and_arrays, _count_recent_touches, detect_classic_patterns
 import src.mtdata.patterns.candlestick as candlestick_mod
 import src.mtdata.patterns.classic as classic_mod
+from src.mtdata.utils.mt5 import MT5ConnectionError
 
 
 def patterns_detect(**kwargs):
@@ -24,6 +25,18 @@ def patterns_detect(**kwargs):
     if request is None:
         request = PatternsDetectRequest(**kwargs)
     return core_patterns.patterns_detect(request=request, __cli_raw=raw_output)
+
+
+def test_patterns_detect_returns_connection_error_payload(monkeypatch):
+    def fail_connection():
+        raise MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running.")
+
+    monkeypatch.setattr(core_patterns, "ensure_mt5_connection_or_raise", fail_connection)
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda *args, **kwargs: pytest.fail("fetch should not run"))
+
+    out = patterns_detect(symbol="EURUSD", mode="classic", timeframe="H1")
+
+    assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
 
 
 def test_fit_lines_and_arrays_uses_cfg_for_robust_fit(monkeypatch):

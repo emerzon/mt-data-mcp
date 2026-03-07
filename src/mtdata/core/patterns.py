@@ -39,7 +39,7 @@ from ._mcp_instance import mcp
 from .patterns_requests import PatternsDetectRequest
 from .patterns_use_cases import run_patterns_detect
 from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
-from ..utils.mt5 import _auto_connect_wrapper, mt5
+from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5
 
 _CLASSIC_ENGINE_ORDER = ("native", "stock_pattern", "precise_patterns")
 ClassicEngineRunner = Callable[
@@ -47,6 +47,14 @@ ClassicEngineRunner = Callable[
     Tuple[List[Dict[str, Any]], Optional[str]],
 ]
 _CLASSIC_ENGINE_REGISTRY: Dict[str, ClassicEngineRunner] = {}
+
+
+def _patterns_connection_error() -> Optional[Dict[str, Any]]:
+    try:
+        ensure_mt5_connection_or_raise()
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
+    return None
 
 
 def _fetch_pattern_data(
@@ -538,7 +546,6 @@ def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> None:
                     pass
 
 @mcp.tool()
-@_auto_connect_wrapper
 def patterns_detect(
     request: PatternsDetectRequest,
 ) -> Dict[str, Any]:
@@ -648,6 +655,9 @@ def patterns_detect(
     # Detect Elliott Wave patterns
     patterns_detect(symbol="BTCUSD", mode="elliott", timeframe="H4", detail="full")
     """
+    connection_error = _patterns_connection_error()
+    if connection_error is not None:
+        return connection_error
     return run_patterns_detect(
         request,
         timeframe_map=TIMEFRAME_MAP,

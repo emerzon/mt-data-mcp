@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 import numpy as np
 import pandas as pd
 import pytest
+from mtdata.core.patterns_requests import PatternsDetectRequest
 
 
 # ---------------------------------------------------------------------------
@@ -890,29 +891,30 @@ def _fully_unwrap(fn):
         fn = fn.__wrapped__
     return fn
 
+
+def _call_patterns_detect(**kwargs):
+    from mtdata.core.patterns import patterns_detect
+
+    inner = _fully_unwrap(patterns_detect)
+    with patch("mtdata.core.patterns.ensure_mt5_connection_or_raise", return_value=None):
+        return inner(request=PatternsDetectRequest(**kwargs))
+
 class TestPatternsDetect:
 
     @patch("mtdata.core.patterns._detect_candlestick_patterns")
     def test_candlestick_mode(self, mock_detect):
         mock_detect.return_value = {"success": True, "patterns": []}
-        from mtdata.core.patterns import patterns_detect
-        # Bypass the _auto_connect_wrapper by calling the underlying function
-        inner = _fully_unwrap(patterns_detect)
-        result = inner(symbol="EURUSD", mode="candlestick")
+        result = _call_patterns_detect(symbol="EURUSD", mode="candlestick")
         mock_detect.assert_called_once()
 
     def test_unknown_mode(self):
-        from mtdata.core.patterns import patterns_detect
-        inner = _fully_unwrap(patterns_detect)
-        result = inner(symbol="EURUSD", mode="unknown_mode")
+        result = _call_patterns_detect(symbol="EURUSD", mode="unknown_mode")
         assert "error" in result
 
     @patch("mtdata.core.patterns._fetch_pattern_data")
     def test_classic_mode_fetch_error(self, mock_fetch):
         mock_fetch.return_value = (None, {"error": "Failed to fetch"})
-        from mtdata.core.patterns import patterns_detect
-        inner = _fully_unwrap(patterns_detect)
-        result = inner(symbol="EURUSD", mode="classic", timeframe="H1")
+        result = _call_patterns_detect(symbol="EURUSD", mode="classic", timeframe="H1")
         assert "error" in result
 
     @patch("mtdata.core.patterns._run_classic_engine")
@@ -922,9 +924,7 @@ class TestPatternsDetect:
         mock_fetch.return_value = (df, None)
         mock_engine.return_value = ([{"name": "Triangle", "status": "forming", "confidence": 0.8,
                                        "start_index": 0, "end_index": 10}], None)
-        from mtdata.core.patterns import patterns_detect
-        inner = _fully_unwrap(patterns_detect)
-        result = inner(symbol="EURUSD", mode="classic", timeframe="H1")
+        result = _call_patterns_detect(symbol="EURUSD", mode="classic", timeframe="H1")
         assert result.get("success") is True
 
     @patch("mtdata.core.patterns._format_elliott_patterns")
@@ -933,9 +933,7 @@ class TestPatternsDetect:
         df = _make_ohlcv_df(200)
         mock_fetch.return_value = (df, None)
         mock_format.return_value = [{"wave_type": "Impulse", "status": "forming"}]
-        from mtdata.core.patterns import patterns_detect
-        inner = _fully_unwrap(patterns_detect)
-        result = inner(symbol="EURUSD", mode="elliott", timeframe="H1")
+        result = _call_patterns_detect(symbol="EURUSD", mode="elliott", timeframe="H1")
         assert result.get("success") is True
 
     @patch("mtdata.core.patterns._format_elliott_patterns")
@@ -944,9 +942,7 @@ class TestPatternsDetect:
         df = _make_ohlcv_df(200)
         mock_fetch.return_value = (df, None)
         mock_format.return_value = []
-        from mtdata.core.patterns import patterns_detect
-        inner = _fully_unwrap(patterns_detect)
-        result = inner(symbol="EURUSD", mode="elliott", timeframe="H1")
+        result = _call_patterns_detect(symbol="EURUSD", mode="elliott", timeframe="H1")
         assert result.get("success") is True
         assert "diagnostic" in result
         assert "No valid Elliott Wave structures detected" in str(result.get("diagnostic"))
@@ -957,9 +953,7 @@ class TestPatternsDetect:
         df = _make_ohlcv_df(200)
         mock_fetch.return_value = (df, None)
         mock_format.return_value = []
-        from mtdata.core.patterns import patterns_detect
-        inner = _fully_unwrap(patterns_detect)
-        result = inner(symbol="EURUSD", mode="elliott", timeframe="D1")
+        result = _call_patterns_detect(symbol="EURUSD", mode="elliott", timeframe="D1")
         diagnostic = str(result.get("diagnostic") or "")
         assert result.get("success") is True
         assert "--timeframe D1 or --timeframe D1" not in diagnostic
@@ -971,9 +965,7 @@ class TestPatternsDetect:
         df = _make_ohlcv_df(200)
         mock_fetch.return_value = (df, None)
         mock_format.return_value = [{"wave_type": "Impulse", "status": "forming"}]
-        from mtdata.core.patterns import patterns_detect
-        inner = _fully_unwrap(patterns_detect)
-        result = inner(symbol="EURUSD", mode="elliott", timeframe=None)
+        result = _call_patterns_detect(symbol="EURUSD", mode="elliott", timeframe=None)
         assert result.get("success") is True
         assert "findings" in result
 
@@ -983,9 +975,7 @@ class TestPatternsDetect:
         df = _make_ohlcv_df(200)
         mock_fetch.return_value = (df, None)
         mock_format.return_value = []
-        from mtdata.core.patterns import patterns_detect
-        inner = _fully_unwrap(patterns_detect)
-        result = inner(symbol="EURUSD", mode="elliott", timeframe=None)
+        result = _call_patterns_detect(symbol="EURUSD", mode="elliott", timeframe=None)
         assert result.get("success") is True
         assert result.get("n_patterns") == 0
         assert "diagnostic" in result
@@ -993,9 +983,7 @@ class TestPatternsDetect:
     @patch("mtdata.core.patterns._fetch_pattern_data")
     def test_elliott_all_tf_all_fail(self, mock_fetch):
         mock_fetch.return_value = (None, {"error": "No data"})
-        from mtdata.core.patterns import patterns_detect
-        inner = _fully_unwrap(patterns_detect)
-        result = inner(symbol="EURUSD", mode="elliott", timeframe=None)
+        result = _call_patterns_detect(symbol="EURUSD", mode="elliott", timeframe=None)
         assert "error" in result
 
     @patch("mtdata.core.patterns._run_classic_engine")
@@ -1003,9 +991,7 @@ class TestPatternsDetect:
     def test_classic_invalid_engine(self, mock_fetch, mock_engine):
         df = _make_ohlcv_df(200)
         mock_fetch.return_value = (df, None)
-        from mtdata.core.patterns import patterns_detect
-        inner = _fully_unwrap(patterns_detect)
-        result = inner(symbol="EURUSD", mode="classic", timeframe="H1", engine="totally_fake_engine_xyz")
+        result = _call_patterns_detect(symbol="EURUSD", mode="classic", timeframe="H1", engine="totally_fake_engine_xyz")
         assert "error" in result
 
     @patch("mtdata.core.patterns._run_classic_engine")
@@ -1014,8 +1000,6 @@ class TestPatternsDetect:
         df = _make_ohlcv_df(200)
         mock_fetch.return_value = (df, None)
         mock_engine.return_value = ([], "engine error")
-        from mtdata.core.patterns import patterns_detect
-        inner = _fully_unwrap(patterns_detect)
-        result = inner(symbol="EURUSD", mode="classic", timeframe="H1")
+        result = _call_patterns_detect(symbol="EURUSD", mode="classic", timeframe="H1")
         # Should return error or empty response
         assert isinstance(result, dict)
