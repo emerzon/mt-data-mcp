@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from mtdata.core.data_requests import DataFetchCandlesRequest, DataFetchTicksRequest
+from mtdata.core import data as core_data
 from mtdata.core.data_use_cases import run_data_fetch_candles, run_data_fetch_ticks
 from mtdata.utils.mt5 import MT5ConnectionError
 
@@ -37,5 +38,30 @@ def test_run_data_fetch_ticks_logs_connection_error(caplog):
     assert result == {"error": "no mt5"}
     assert any(
         "event=finish operation=data_fetch_ticks success=False" in record.message
+        for record in caplog.records
+    )
+
+
+def test_data_fetch_candles_logs_finish_event(monkeypatch, caplog):
+    monkeypatch.setattr(core_data, "_get_mt5_gateway", lambda: object())
+    monkeypatch.setattr(
+        core_data,
+        "run_data_fetch_candles",
+        lambda request, gateway, fetch_candles_impl: {
+            "success": True,
+            "symbol": request.symbol,
+            "timeframe": request.timeframe,
+            "data": [],
+        },
+    )
+
+    raw = getattr(core_data.data_fetch_candles, "__wrapped__", core_data.data_fetch_candles)
+    request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=10)
+    with caplog.at_level("INFO", logger=core_data.logger.name):
+        result = raw(request)
+
+    assert result["success"] is True
+    assert any(
+        "event=finish operation=data_fetch_candles success=True" in record.message
         for record in caplog.records
     )
