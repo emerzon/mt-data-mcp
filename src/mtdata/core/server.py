@@ -23,6 +23,11 @@ from ._mcp_tools import (
 )
 from .config import mt5_config
 from .constants import SERVICE_NAME, TIMEFRAME_MAP, TIMEFRAME_SECONDS  # re-export for CLI/tests
+from .server_entrypoints import (
+    main_sse as _main_sse_entrypoint,
+    main_stdio as _main_stdio_entrypoint,
+    main_streamable_http as _main_streamable_http_entrypoint,
+)
 from ..utils.mt5 import mt5_connection, _ensure_symbol_ready
 
 # Lightweight helpers used by tool modules
@@ -101,17 +106,17 @@ def main(
 
 def main_stdio():
     """Entry point for stdio mode (forced)"""
-    main(transport="stdio")
+    _main_stdio_entrypoint(main)
 
 
 def main_sse():
     """Entry point for SSE mode (forced)"""
-    main(transport="sse")
+    _main_sse_entrypoint(main)
 
 
 def main_streamable_http():
     """Entry point for streamable HTTP mode (forced)."""
-    main(transport="streamable-http")
+    _main_streamable_http_entrypoint(main)
 
 
 if __name__ == "__main__":
