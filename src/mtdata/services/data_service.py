@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta, timezone as dt_timezone
 import logging
 import math
-from typing import Any, Dict, Optional, List, Literal
+from typing import Any, Dict, Optional, List, Literal, Tuple
 import pandas as pd
 import warnings
 import json
@@ -184,6 +184,317 @@ def _trim_df_to_target(
     return out.copy() if copy_rows else out
 
 
+def _normalize_indicator_spec(indicators: Optional[List[IndicatorSpec]]) -> Optional[str]:
+    """Normalize indicator input into the compact internal string format."""
+    if indicators is None:
+        return None
+
+    source: Any = indicators
+    if isinstance(source, str):
+        payload = source.strip()
+        if (payload.startswith('[') and payload.endswith(']')) or (
+            payload.startswith('{') and payload.endswith('}')
+        ):
+            try:
+                source = json.loads(payload)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                source = indicators
+
+    if isinstance(source, (list, tuple)):
+        parts: List[str] = []
+        for item in source:
+            if isinstance(item, dict) and 'name' in item:
+                name = str(item.get('name'))
+                params = item.get('params') or []
+                if isinstance(params, (list, tuple)) and len(params) > 0:
+                    args_str = ",".join(str(_coerce_scalar(str(param))) for param in params)
+                    parts.append(f"{name}({args_str})")
+                else:
+                    parts.append(name)
+            else:
+                parts.append(str(item))
+        return ",".join(parts)
+
+    return str(source)
+
+
+def _extend_unique_headers(headers: List[str], columns: List[str]) -> None:
+    for column in columns:
+        if column not in headers:
+            headers.append(column)
+
+
+def _build_candle_headers(rates: Any, ohlcv: Optional[str]) -> List[str]:
+    """Build the initial candle header set before transforms add derived columns."""
+    tick_volumes = [int(rate["tick_volume"]) for rate in rates]
+    real_volumes = [int(rate["real_volume"]) for rate in rates]
+
+    has_tick_volume = len(set(tick_volumes)) > 1 or any(value != 0 for value in tick_volumes)
+    has_real_volume = len(set(real_volumes)) > 1 or any(value != 0 for value in real_volumes)
+    requested = _normalize_ohlcv_arg(ohlcv)
+
+    headers = ["time"]
+    if requested is not None:
+        if "O" in requested:
+            headers.append("open")
+        if "H" in requested:
+            headers.append("high")
+        if "L" in requested:
+            headers.append("low")
+        if "C" in requested:
+            headers.append("close")
+        if "V" in requested:
+            headers.append("tick_volume")
+        return headers
+
+    headers.extend(["open", "high", "low", "close"])
+    if has_tick_volume:
+        headers.append("tick_volume")
+    if has_real_volume:
+        headers.append("real_volume")
+    return headers
+
+
+def _append_denoise_application(
+    denoise_apps: List[Dict[str, Any]],
+    source_spec: Any,
+    *,
+    default_when: str,
+    default_causality: str,
+    default_keep_original: bool,
+    added_columns: List[str],
+) -> None:
+    try:
+        denoise_meta = dict(source_spec or {})
+        denoise_apps.append(
+            {
+                'method': str(denoise_meta.get('method', 'none')).lower(),
+                'when': str(denoise_meta.get('when', default_when)).lower(),
+                'causality': str(denoise_meta.get('causality', default_causality)),
+                'keep_original': bool(denoise_meta.get('keep_original', default_keep_original)),
+                'columns': denoise_meta.get('columns', 'close'),
+                'params': denoise_meta.get('params') or {},
+                'added_columns': added_columns,
+            }
+        )
+    except Exception:
+        pass
+
+
+def _apply_pre_ti_denoise(
+    df: pd.DataFrame,
+    headers: List[str],
+    denoise: Optional[DenoiseSpec],
+    denoise_apps: List[Dict[str, Any]],
+) -> None:
+    if not denoise:
+        return
+
+    normalized = _normalize_denoise_spec(denoise, default_when='pre_ti')
+    added_columns: List[str] = []
+    if normalized and str(normalized.get('when', 'pre_ti')).lower() == 'pre_ti':
+        added_columns = _apply_denoise_util(df, normalized, default_when='pre_ti')
+        _extend_unique_headers(headers, added_columns)
+
+    _append_denoise_application(
+        denoise_apps,
+        denoise,
+        default_when='pre_ti',
+        default_causality='causal',
+        default_keep_original=False,
+        added_columns=added_columns,
+    )
+
+
+def _apply_indicator_stage(
+    df: pd.DataFrame,
+    headers: List[str],
+    ti_spec: Optional[str],
+    denoise: Optional[DenoiseSpec],
+) -> List[str]:
+    ti_cols: List[str] = []
+    if not ti_spec:
+        return ti_cols
+
+    ti_cols = _apply_ta_indicators_util(df, ti_spec)
+    _extend_unique_headers(headers, ti_cols)
+
+    if denoise and ti_cols:
+        dn_base = _normalize_denoise_spec(denoise, default_when='post_ti')
+        if dn_base and bool(dn_base.get('apply_to_ti') or dn_base.get('ti')):
+            dn_ti = dict(dn_base)
+            dn_ti['columns'] = list(ti_cols)
+            dn_ti.setdefault('when', 'post_ti')
+            dn_ti.setdefault('keep_original', False)
+            _apply_denoise_util(df, dn_ti, default_when='post_ti')
+
+    return ti_cols
+
+
+def _apply_post_ti_denoise(
+    df: pd.DataFrame,
+    headers: List[str],
+    denoise: Optional[DenoiseSpec],
+    denoise_apps: List[Dict[str, Any]],
+) -> None:
+    if not denoise:
+        return
+
+    normalized = _normalize_denoise_spec(denoise, default_when='post_ti')
+    added_columns: List[str] = []
+    if normalized and str(normalized.get('when', 'post_ti')).lower() == 'post_ti':
+        added_columns = _apply_denoise_util(df, normalized, default_when='post_ti')
+        _extend_unique_headers(headers, added_columns)
+
+    _append_denoise_application(
+        denoise_apps,
+        normalized,
+        default_when='post_ti',
+        default_causality='zero_phase',
+        default_keep_original=True,
+        added_columns=added_columns,
+    )
+
+
+def _rebuild_candle_indicator_window(
+    rates: Any,
+    *,
+    use_client_tz: bool,
+    denoise: Optional[DenoiseSpec],
+    ti_spec: Optional[str],
+    headers: List[str],
+) -> Tuple[pd.DataFrame, List[str]]:
+    """Rebuild the warmup window and re-run the pre-indicator stages."""
+    df = _build_rates_df(rates, use_client_tz)
+    if denoise:
+        normalized = _normalize_denoise_spec(denoise, default_when='pre_ti')
+        if normalized and str(normalized.get('when', 'pre_ti')).lower() == 'pre_ti':
+            _apply_denoise_util(df, normalized, default_when='pre_ti')
+    ti_cols = _apply_indicator_stage(df, headers, ti_spec, denoise)
+    return df, ti_cols
+
+
+def _collect_session_gaps(
+    df: pd.DataFrame,
+    *,
+    timeframe: TimeframeLiteral,
+    use_client_tz: bool,
+) -> List[Dict[str, Any]]:
+    session_gaps: List[Dict[str, Any]] = []
+    expected_bar_seconds = float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
+    if expected_bar_seconds <= 0 or '__epoch' not in df.columns or len(df) <= 1:
+        return session_gaps
+
+    try:
+        epochs = pd.to_numeric(df['__epoch'], errors='coerce').to_numpy(dtype=float)
+        threshold = expected_bar_seconds * 1.5
+        for index in range(1, len(epochs)):
+            prev_t = float(epochs[index - 1])
+            curr_t = float(epochs[index])
+            if not (math.isfinite(prev_t) and math.isfinite(curr_t)):
+                continue
+
+            gap_seconds = float(curr_t - prev_t)
+            if gap_seconds <= threshold:
+                continue
+
+            if use_client_tz:
+                from_disp = _format_time_minimal_local(prev_t)
+                to_disp = _format_time_minimal_local(curr_t)
+            else:
+                from_disp = _format_time_minimal(prev_t)
+                to_disp = _format_time_minimal(curr_t)
+
+            missing_bars_est = max(1, int(round(gap_seconds / expected_bar_seconds)) - 1)
+            prev_dt = datetime.fromtimestamp(prev_t, tz=dt_timezone.utc)
+            curr_dt = datetime.fromtimestamp(curr_t, tz=dt_timezone.utc)
+            crosses_weekend = (
+                prev_dt.weekday() >= 5
+                or curr_dt.weekday() >= 5
+                or ((curr_t - prev_t) >= (36.0 * 3600.0))
+            )
+            gap_context = "weekend/session break" if crosses_weekend else "session break"
+            session_gaps.append(
+                {
+                    "from": from_disp,
+                    "to": to_disp,
+                    "from_epoch": prev_t,
+                    "to_epoch": curr_t,
+                    "gap_seconds": gap_seconds,
+                    "expected_bar_seconds": expected_bar_seconds,
+                    "missing_bars_est": int(missing_bars_est),
+                    "context": gap_context,
+                }
+            )
+    except Exception:
+        return []
+
+    return session_gaps
+
+
+def _format_candle_times(
+    df: pd.DataFrame,
+    headers: List[str],
+    *,
+    time_as_epoch: bool,
+    use_client_tz: bool,
+    client_tz: Any,
+) -> None:
+    if 'time' not in headers or len(df) <= 0:
+        return
+
+    epochs_list = df['__epoch'].tolist()
+    if time_as_epoch:
+        df['time'] = [float(value) for value in epochs_list]
+        df.__dict__['_tz_used_name'] = 'UTC'
+        return
+
+    fmt = _time_format_from_epochs(epochs_list)
+    fmt = _maybe_strip_year(fmt, epochs_list)
+    fmt = _style_time_format(fmt)
+    tz_used_name = 'UTC'
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        if use_client_tz:
+            tz_used_name = getattr(client_tz, 'zone', None) or str(client_tz)
+            df['time'] = [
+                datetime.fromtimestamp(value, tz=dt_timezone.utc).astimezone(client_tz).strftime(fmt)
+                for value in epochs_list
+            ]
+        else:
+            df['time'] = [
+                datetime.fromtimestamp(value, tz=dt_timezone.utc).strftime(fmt)
+                for value in epochs_list
+            ]
+    df.__dict__['_tz_used_name'] = tz_used_name
+
+
+def _normalize_simplify_spec(
+    simplify: Optional[SimplifySpec],
+    *,
+    limit: int,
+    fallback_rows: int,
+) -> Optional[Dict[str, Any]]:
+    if simplify is None:
+        return None
+
+    simplify_eff = dict(simplify)
+    simplify_eff['mode'] = str(simplify_eff.get('mode', SIMPLIFY_DEFAULT_MODE)).lower().strip()
+    has_points = any(
+        key in simplify_eff and simplify_eff[key] is not None
+        for key in ("points", "target_points", "max_points", "ratio")
+    )
+    if has_points:
+        return simplify_eff
+
+    try:
+        default_pts = max(3, int(round(int(limit) * SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT)))
+    except Exception:
+        default_pts = max(3, int(round(fallback_rows * SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT)))
+    simplify_eff['points'] = default_pts
+    return simplify_eff
+
+
 def fetch_candles(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
@@ -215,35 +526,7 @@ def fetch_candles(
             if err:
                 return {"error": err}
 
-            # Normalize TI spec from structured list, JSON string, or compact string for internal processing
-            ti_spec = None
-            if ti is not None:
-                source = ti
-                # Accept JSON string input for robustness
-                if isinstance(source, str):
-                    s = source.strip()
-                    if (s.startswith('[') and s.endswith(']')) or (s.startswith('{') and s.endswith('}')):
-                        try:
-                            source = json.loads(s)
-                        except (json.JSONDecodeError, TypeError, ValueError):
-                            source = ti  # leave as original string if parse fails
-                if isinstance(source, (list, tuple)):
-                    parts = []
-                    for item in source:
-                        if isinstance(item, dict) and 'name' in item:
-                            nm = str(item.get('name'))
-                            params = item.get('params') or []
-                            if isinstance(params, (list, tuple)) and len(params) > 0:
-                                args_str = ",".join(str(_coerce_scalar(str(p))) for p in params)
-                                parts.append(f"{nm}({args_str})")
-                            else:
-                                parts.append(nm)
-                        else:
-                            parts.append(str(item))
-                    ti_spec = ",".join(parts)
-                else:
-                    # Already a compact indicator string like "rsi(14),ema(20)"
-                    ti_spec = str(source)
+            ti_spec = _normalize_indicator_spec(ti)
             # Determine warmup bars if technical indicators requested
             unknown_indicators = _find_unknown_ta_indicators_util(ti_spec or "")
             if unknown_indicators:
@@ -278,38 +561,7 @@ def fetch_candles(
         if len(rates) == 0:
             return {"error": "No data available"}
         raw_bars_fetched = int(len(rates))
-        
-        # Check which optional columns have meaningful data (at least one non-zero/different value)
-        tick_volumes = [int(rate["tick_volume"]) for rate in rates]
-        real_volumes = [int(rate["real_volume"]) for rate in rates]
-        
-        has_tick_volume = len(set(tick_volumes)) > 1 or any(v != 0 for v in tick_volumes)
-        has_real_volume = len(set(real_volumes)) > 1 or any(v != 0 for v in real_volumes)
-        
-        # Determine requested columns (O,H,L,C,V) if provided
-        requested: Optional[set] = _normalize_ohlcv_arg(ohlcv)
-        
-        # Build header dynamically
-        headers = ["time"]
-        if requested is not None:
-            # Include only requested subset
-            if "O" in requested:
-                headers.append("open")
-            if "H" in requested:
-                headers.append("high")
-            if "L" in requested:
-                headers.append("low")
-            if "C" in requested:
-                headers.append("close")
-            if "V" in requested:
-                headers.append("tick_volume")
-        else:
-            # Default: OHLC always; include extras if meaningful
-            headers.extend(["open", "high", "low", "close"])
-            if has_tick_volume:
-                headers.append("tick_volume")
-            if has_real_volume:
-                headers.append("real_volume")
+        headers = _build_candle_headers(rates, ohlcv)
         
         # Construct DataFrame to support indicators and consistent output
         client_tz = _resolve_client_tz()
@@ -318,48 +570,8 @@ def fetch_candles(
 
         # Track denoise metadata if applied
         denoise_apps: List[Dict[str, Any]] = []
-        # Optional pre-TI denoising (in-place by default)
-        if denoise:
-            _dn_pre = _normalize_denoise_spec(denoise, default_when='pre_ti')
-            added_dn_pre: List[str] = []
-            if _dn_pre and str(_dn_pre.get('when', 'pre_ti')).lower() == 'pre_ti':
-                added_dn_pre = _apply_denoise_util(df, _dn_pre, default_when='pre_ti')
-                for c in added_dn_pre:
-                    if c not in headers:
-                        headers.append(c)
-            try:
-                dn = dict(denoise)
-                denoise_apps.append({
-                    'method': str(dn.get('method','none')).lower(),
-                    'when': str(dn.get('when','pre_ti')).lower(),
-                    'causality': str(dn.get('causality', 'causal')),
-                    'keep_original': bool(dn.get('keep_original', False)),
-                    'columns': dn.get('columns','close'),
-                    'params': dn.get('params') or {},
-                    'added_columns': added_dn_pre,
-                })
-            except Exception:
-                pass
-
-        # Apply technical indicators if requested (dynamic)
-        ti_cols: List[str] = []
-        if ti_spec:
-            ti_cols = _apply_ta_indicators_util(df, ti_spec)
-            headers.extend([c for c in ti_cols if c not in headers])
-            # Optional: denoise TI columns as well when requested
-            if denoise and ti_cols:
-                dn_base = _normalize_denoise_spec(denoise, default_when='post_ti')
-                if dn_base and bool(dn_base.get('apply_to_ti') or dn_base.get('ti')):
-                    dn_ti = dict(dn_base)
-                    dn_ti['columns'] = list(ti_cols)
-                    dn_ti.setdefault('when', 'post_ti')
-                    dn_ti.setdefault('keep_original', False)
-                    _apply_denoise_util(df, dn_ti, default_when='post_ti')
-
-        # Build final header list when not using OHLCV subset
-        if requested is None:
-            # headers already includes OHLC and optional extras
-            pass
+        _apply_pre_ti_denoise(df, headers, denoise, denoise_apps)
+        ti_cols = _apply_indicator_stage(df, headers, ti_spec, denoise)
 
         # Filter out warmup region to return the intended target window only
         df = _trim_df_to_target(df, start_datetime, end_datetime, candles, copy_rows=True)
@@ -393,24 +605,13 @@ def fetch_candles(
                     }
                     # Rebuild df and indicators with the larger window
                     if rates_retry is not None and len(rates_retry) > 0:
-                        df = _build_rates_df(rates_retry, _use_ctz)
-                        # Optional pre-TI denoising on retried window
-                        if denoise:
-                            _dn_pre2 = _normalize_denoise_spec(denoise, default_when='pre_ti')
-                            if _dn_pre2 and str(_dn_pre2.get('when', 'pre_ti')).lower() == 'pre_ti':
-                                _apply_denoise_util(df, _dn_pre2, default_when='pre_ti')
-                        # Re-apply indicators and re-extend headers
-                        ti_cols = _apply_ta_indicators_util(df, ti_spec)
-                        headers.extend([c for c in ti_cols if c not in headers])
-                        # Optional: denoise TI columns on retried window
-                        if denoise and ti_cols:
-                            dn_base2 = _normalize_denoise_spec(denoise, default_when='post_ti')
-                            if dn_base2 and bool(dn_base2.get('apply_to_ti') or dn_base2.get('ti')):
-                                dn_ti2 = dict(dn_base2)
-                                dn_ti2['columns'] = list(ti_cols)
-                                dn_ti2.setdefault('when', 'post_ti')
-                                dn_ti2.setdefault('keep_original', False)
-                                _apply_denoise_util(df, dn_ti2, default_when='post_ti')
+                        df, ti_cols = _rebuild_candle_indicator_window(
+                            rates_retry,
+                            use_client_tz=_use_ctz,
+                            denoise=denoise,
+                            ti_spec=ti_spec,
+                            headers=headers,
+                        )
                         # Re-trim to target window
                         df = _trim_df_to_target(df, start_datetime, end_datetime, candles, copy_rows=False)
                         rows_after_target_trim = int(len(df))
@@ -418,119 +619,29 @@ def fetch_candles(
                 pass
 
         # Optional post-TI denoising (adds new columns by default)
-        if denoise:
-            _dn_post = _normalize_denoise_spec(denoise, default_when='post_ti')
-            added_dn = []
-            if _dn_post and str(_dn_post.get('when', 'post_ti')).lower() == 'post_ti':
-                added_dn = _apply_denoise_util(df, _dn_post, default_when='post_ti')
-            for c in added_dn:
-                if c not in headers:
-                    headers.append(c)
-            try:
-                dn = _dn_post or {}
-                denoise_apps.append({
-                    'method': str(dn.get('method','none')).lower(),
-                    'when': 'post_ti',
-                    'causality': str(dn.get('causality', 'zero_phase')),
-                    'keep_original': bool(dn.get('keep_original', True)),
-                    'columns': dn.get('columns','close'),
-                    'params': dn.get('params') or {},
-                    'added_columns': added_dn,
-                })
-            except Exception:
-                pass
+        _apply_post_ti_denoise(df, headers, denoise, denoise_apps)
 
         # Ensure headers are unique and exist in df
         headers = [h for h in headers if h in df.columns]
 
         # Detect large time discontinuities (e.g., closed session windows) and
         # surface them explicitly so users can interpret forecast/analysis gaps.
-        session_gaps: List[Dict[str, Any]] = []
+        session_gaps = _collect_session_gaps(df, timeframe=timeframe, use_client_tz=_use_ctz)
         expected_bar_seconds = float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
-        if expected_bar_seconds > 0 and '__epoch' in df.columns and len(df) > 1:
-            try:
-                epochs = pd.to_numeric(df['__epoch'], errors='coerce').to_numpy(dtype=float)
-                threshold = expected_bar_seconds * 1.5
-                for i in range(1, len(epochs)):
-                    prev_t = float(epochs[i - 1])
-                    curr_t = float(epochs[i])
-                    if not (math.isfinite(prev_t) and math.isfinite(curr_t)):
-                        continue
-                    gap_seconds = float(curr_t - prev_t)
-                    if gap_seconds <= threshold:
-                        continue
-                    if _use_ctz:
-                        from_disp = _format_time_minimal_local(prev_t)
-                        to_disp = _format_time_minimal_local(curr_t)
-                    else:
-                        from_disp = _format_time_minimal(prev_t)
-                        to_disp = _format_time_minimal(curr_t)
-                    missing_bars_est = max(1, int(round(gap_seconds / expected_bar_seconds)) - 1)
-                    prev_dt = datetime.fromtimestamp(prev_t, tz=dt_timezone.utc)
-                    curr_dt = datetime.fromtimestamp(curr_t, tz=dt_timezone.utc)
-                    crosses_weekend = (
-                        prev_dt.weekday() >= 5
-                        or curr_dt.weekday() >= 5
-                        or ((curr_t - prev_t) >= (36.0 * 3600.0))
-                    )
-                    gap_context = "weekend/session break" if crosses_weekend else "session break"
-                    session_gaps.append(
-                        {
-                            "from": from_disp,
-                            "to": to_disp,
-                            "from_epoch": prev_t,
-                            "to_epoch": curr_t,
-                            "gap_seconds": gap_seconds,
-                            "expected_bar_seconds": expected_bar_seconds,
-                            "missing_bars_est": int(missing_bars_est),
-                            "context": gap_context,
-                        }
-                    )
-            except Exception:
-                session_gaps = []
 
         # Reformat time consistently across rows for display, unless caller
         # explicitly requests numeric UTC epoch seconds.
-        if 'time' in headers and len(df) > 0:
-            epochs_list = df['__epoch'].tolist()
-            if time_as_epoch:
-                df['time'] = [float(t) for t in epochs_list]
-                df.__dict__['_tz_used_name'] = 'UTC'
-            else:
-                fmt = _time_format_from_epochs(epochs_list)
-                fmt = _maybe_strip_year(fmt, epochs_list)
-                fmt = _style_time_format(fmt)
-                tz_used_name = 'UTC'
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    if _use_ctz:
-                        tz_used_name = getattr(client_tz, 'zone', None) or str(client_tz)
-                        df['time'] = [
-                            datetime.fromtimestamp(t, tz=dt_timezone.utc).astimezone(client_tz).strftime(fmt)
-                            for t in epochs_list
-                        ]
-                    else:
-                        df['time'] = [
-                            datetime.fromtimestamp(t, tz=dt_timezone.utc).strftime(fmt)
-                            for t in epochs_list
-                        ]
-                df.__dict__['_tz_used_name'] = tz_used_name
+        _format_candle_times(
+            df,
+            headers,
+            time_as_epoch=time_as_epoch,
+            use_client_tz=_use_ctz,
+            client_tz=client_tz,
+        )
 
         # Optionally reduce number of rows for readability/output size
         original_rows = len(df)
-        simplify_eff = None
-        if simplify is not None:
-            simplify_eff = dict(simplify)
-            # Default mode
-            simplify_eff['mode'] = str(simplify_eff.get('mode', SIMPLIFY_DEFAULT_MODE)).lower().strip()
-            # If no explicit points/ratio provided, default to 10% of requested limit
-            has_points = any(k in simplify_eff and simplify_eff[k] is not None for k in ("points","target_points","max_points","ratio"))
-            if not has_points:
-                try:
-                    default_pts = max(3, int(round(int(limit) * SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT)))
-                except Exception:
-                    default_pts = max(3, int(round(original_rows * SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT)))
-                simplify_eff['points'] = default_pts
+        simplify_eff = _normalize_simplify_spec(simplify, limit=limit, fallback_rows=original_rows)
         df, simplify_meta = _simplify_dataframe_rows_ext(df, headers, simplify_eff if simplify_eff is not None else simplify)
         # If simplify changed representation, respect returned headers
         if simplify_meta is not None and 'headers' in simplify_meta and isinstance(simplify_meta['headers'], list):
@@ -1035,17 +1146,7 @@ def fetch_ticks(
 
         # If simplify mode requests approximation or resampling, use shared path
         original_count = len(df_ticks)
-        simplify_eff = None
-        if simplify is not None:
-            simplify_eff = dict(simplify)
-            simplify_eff['mode'] = str(simplify_eff.get('mode', SIMPLIFY_DEFAULT_MODE)).lower().strip()
-            has_points = any(k in simplify_eff and simplify_eff[k] is not None for k in ("points","target_points","max_points","ratio"))
-            if not has_points:
-                try:
-                    default_pts = max(3, int(round(int(limit) * SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT)))
-                except Exception:
-                    default_pts = max(3, int(round(original_count * SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT)))
-                simplify_eff['points'] = default_pts
+        simplify_eff = _normalize_simplify_spec(simplify, limit=limit, fallback_rows=original_count)
         simplify_present = (simplify_eff is not None) or (simplify is not None)
         simplify_used = simplify_eff if simplify_eff is not None else simplify
         _mode = str((simplify_used or {}).get('mode', SIMPLIFY_DEFAULT_MODE)).lower().strip() if simplify_present else SIMPLIFY_DEFAULT_MODE
