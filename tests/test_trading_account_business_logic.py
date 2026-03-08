@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from collections import namedtuple
+import logging
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 import sys
 
 from mtdata.core.trading import trade_account_info
+from mtdata.core import trading_account as core_trading_account
+from mtdata.core import trading_positions as core_trading_positions
 from mtdata.core.trading_requests import TradeGetOpenRequest, TradeGetPendingRequest
 from mtdata.core.trading_use_cases import run_trade_get_open, run_trade_get_pending
 from mtdata.utils.mt5 import MT5ConnectionError
@@ -78,6 +81,51 @@ def test_trade_account_info_returns_connection_error_payload() -> None:
         out = raw()
 
     assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
+
+
+def test_trade_account_info_logs_finish_event(caplog) -> None:
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(
+            balance=10000.0,
+            equity=10050.0,
+            profit=50.0,
+            margin=100.0,
+            margin_free=9950.0,
+            margin_level=10050.0,
+            currency="USD",
+            leverage=100,
+            trade_allowed=True,
+            trade_expert=True,
+        ),
+        build_trade_preflight=lambda account_info=None: {
+            "server": "Demo-Server",
+            "company": "Broker LLC",
+            "trade_mode": "demo",
+            "terminal_trade_allowed": True,
+            "terminal_tradeapi_disabled": False,
+            "terminal_connected": True,
+            "auto_trading_enabled": True,
+            "execution_ready": True,
+            "execution_ready_strict": True,
+            "execution_hard_blockers": [],
+            "execution_soft_blockers": [],
+            "execution_blockers": [],
+        },
+    )
+
+    raw = _unwrap(trade_account_info)
+    with patch.object(core_trading_account, "_get_trading_gateway", return_value=gateway), caplog.at_level(
+        logging.INFO,
+        logger=core_trading_account.logger.name,
+    ):
+        out = raw()
+
+    assert out["balance"] == 10000.0
+    assert any(
+        "event=finish operation=trade_account_info success=True" in record.message
+        for record in caplog.records
+    )
 
 
 def test_run_trade_get_open_logs_finish_event(caplog) -> None:
@@ -184,5 +232,22 @@ def test_run_trade_get_pending_logs_finish_event(caplog) -> None:
     assert isinstance(out, list)
     assert any(
         "event=finish operation=trade_get_pending success=True" in record.message
+        for record in caplog.records
+    )
+
+
+def test_trade_get_open_logs_finish_event(caplog) -> None:
+    raw = _unwrap(core_trading_positions.trade_get_open)
+
+    with patch.object(core_trading_positions, "_get_trading_gateway", return_value=object()), patch.object(
+        core_trading_positions,
+        "run_trade_get_open",
+        return_value=[{"ticket": 1, "symbol": "EURUSD"}],
+    ), caplog.at_level(logging.INFO, logger=core_trading_positions.logger.name):
+        out = raw(TradeGetOpenRequest(symbol="EURUSD", limit=10))
+
+    assert out[0]["ticket"] == 1
+    assert any(
+        "event=finish operation=trade_get_open success=True" in record.message
         for record in caplog.records
     )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from unittest.mock import patch
@@ -78,6 +79,26 @@ def test_trade_place_rejects_unknown_numeric_order_type() -> None:
     assert isinstance(out, dict)
     assert "error" in out
     assert "Numeric values must match MT5 constants 0..5" in str(out["error"])
+
+
+def test_trade_place_logs_finish_event(caplog) -> None:
+    with patch("mtdata.core.trading._place_market_order", return_value={"success": True}), caplog.at_level(
+        logging.INFO,
+        logger="mtdata.core.trading",
+    ):
+        out = trade_place(
+            symbol="BTCUSD",
+            volume=0.03,
+            order_type="BUY",
+            require_sl_tp=False,
+            __cli_raw=True,
+        )
+
+    assert out["success"] is True
+    assert any(
+        "event=finish operation=trade_place success=True" in record.message
+        for record in caplog.records
+    )
 
 
 def test_trade_place_missing_required_fields_returns_friendly_error() -> None:

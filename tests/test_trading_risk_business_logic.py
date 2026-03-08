@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 import sys
 
+from mtdata.core import trading_risk as core_trading_risk
 from mtdata.core.trading import trade_risk_analyze as _trade_risk_analyze_tool
 from mtdata.core.trading_requests import TradeRiskAnalyzeRequest
 from mtdata.core.trading_use_cases import run_trade_risk_analyze
@@ -123,6 +125,23 @@ def test_run_trade_risk_analyze_logs_finish_event(caplog) -> None:
             TradeRiskAnalyzeRequest(),
             gateway=gateway,
         )
+
+    assert out["success"] is True
+    assert any(
+        "event=finish operation=trade_risk_analyze success=True" in record.message
+        for record in caplog.records
+    )
+
+
+def test_trade_risk_analyze_logs_finish_event(caplog) -> None:
+    raw = _unwrap(_trade_risk_analyze_tool)
+
+    with patch.object(core_trading_risk, "_get_trading_gateway", return_value=object()), patch.object(
+        core_trading_risk,
+        "run_trade_risk_analyze",
+        return_value={"success": True, "positions": []},
+    ), caplog.at_level(logging.INFO, logger=core_trading_risk.logger.name):
+        out = raw(TradeRiskAnalyzeRequest(symbol="EURUSD"))
 
     assert out["success"] is True
     assert any(

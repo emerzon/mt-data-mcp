@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import math
+import time
 from typing import Any, Dict, List, Optional
 
 from ._mcp_instance import mcp
 from . import trading_comments, trading_validation
 from .config import mt5_config
+from .execution_logging import infer_result_success, log_operation_finish, log_operation_start
 from .trading_common import _build_trade_preflight
 from .trading_gateway import MT5TradingGateway
 from .trading_requests import TradeHistoryRequest
@@ -22,6 +25,8 @@ from ..utils.utils import (
     _use_client_tz,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def _get_trading_gateway() -> MT5TradingGateway:
     return MT5TradingGateway(
@@ -34,16 +39,32 @@ def _get_trading_gateway() -> MT5TradingGateway:
 @mcp.tool()
 def trade_account_info() -> dict:
     """Get account information (balance, equity, profit, margin level, free margin, account type, leverage, currency)."""
+    started_at = time.perf_counter()
+    log_operation_start(logger, operation="trade_account_info")
     mt5 = _get_trading_gateway()
 
     try:
         mt5.ensure_connection()
     except MT5ConnectionError as exc:
-        return {"error": str(exc)}
+        result = {"error": str(exc)}
+        log_operation_finish(
+            logger,
+            operation="trade_account_info",
+            started_at=started_at,
+            success=infer_result_success(result),
+        )
+        return result
 
     info = mt5.account_info()
     if info is None:
-        return {"error": "Failed to get account info"}
+        result = {"error": "Failed to get account info"}
+        log_operation_finish(
+            logger,
+            operation="trade_account_info",
+            started_at=started_at,
+            success=infer_result_success(result),
+        )
+        return result
     preflight = mt5.build_trade_preflight(account_info=info)
     margin_level: Optional[float] = getattr(info, "margin_level", None)
     margin_level_note: Optional[str] = None
@@ -84,14 +105,28 @@ def trade_account_info() -> dict:
     }
     if margin_level_note:
         payload["margin_level_note"] = margin_level_note
+    log_operation_finish(
+        logger,
+        operation="trade_account_info",
+        started_at=started_at,
+        success=infer_result_success(payload),
+    )
     return payload
 
 
 @mcp.tool()
 def trade_history(request: TradeHistoryRequest) -> List[Dict[str, Any]]:
     """Get deal or order history as tabular data."""
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="trade_history",
+        history_kind=request.history_kind,
+        symbol=request.symbol,
+        limit=request.limit,
+    )
     mt5 = _get_trading_gateway()
-    return run_trade_history(
+    result = run_trade_history(
         request,
         gateway=mt5,
         use_client_tz=_use_client_tz,
@@ -106,3 +141,13 @@ def trade_history(request: TradeHistoryRequest) -> List[Dict[str, Any]]:
         decode_mt5_enum_label=decode_mt5_enum_label,
         mt5_config=mt5_config,
     )
+    log_operation_finish(
+        logger,
+        operation="trade_history",
+        started_at=started_at,
+        success=infer_result_success(result),
+        history_kind=request.history_kind,
+        symbol=request.symbol,
+        limit=request.limit,
+    )
+    return result
