@@ -1,8 +1,11 @@
 from typing import Any, Dict, Optional, List, Literal, Tuple
+import logging
+import time
 
 from .mt5_gateway import create_mt5_gateway
 from .schema import TimeframeLiteral, DenoiseSpec, ForecastMethodLiteral
 from ._mcp_instance import mcp
+from .execution_logging import infer_result_success, log_operation_finish, log_operation_start
 from ..forecast.forecast import forecast as _forecast_impl
 from ..forecast.exceptions import ForecastError
 from ..forecast.backtest import forecast_backtest as _forecast_backtest_impl
@@ -39,6 +42,8 @@ from ..utils.barriers import (
     normalize_trade_direction as _normalize_trade_direction,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def _get_mt5_gateway():
     return create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
@@ -52,6 +57,23 @@ def _forecast_connection_error() -> Optional[Dict[str, Any]]:
         return {"error": str(exc)}
     return None
 
+
+def _log_forecast_start(operation: str, **fields: Any) -> float:
+    started_at = time.perf_counter()
+    log_operation_start(logger, operation=operation, **fields)
+    return started_at
+
+
+def _log_forecast_finish(operation: str, started_at: float, result: Dict[str, Any], **fields: Any) -> Dict[str, Any]:
+    log_operation_finish(
+        logger,
+        operation=operation,
+        started_at=started_at,
+        success=infer_result_success(result),
+        **fields,
+    )
+    return result
+
 @mcp.tool()
 def forecast_generate(request: ForecastGenerateRequest) -> Dict[str, Any]:
     """Generate forecasts for the next `horizon` bars using a selected model.
@@ -59,17 +81,49 @@ def forecast_generate(request: ForecastGenerateRequest) -> Dict[str, Any]:
     Supports native or library-backed models with optional preprocessing.
     Delegates to `mtdata.forecast.forecast`.
     """
+    started_at = _log_forecast_start(
+        "forecast_generate",
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        library=request.library,
+        model=request.model,
+    )
     connection_error = _forecast_connection_error()
     if connection_error is not None:
-        return connection_error
+        return _log_forecast_finish(
+            "forecast_generate",
+            started_at,
+            connection_error,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            library=request.library,
+            model=request.model,
+        )
     try:
-        return run_forecast_generate(
+        result = run_forecast_generate(
             request,
             forecast_impl=_forecast_impl,
             resolve_sktime_forecaster=_resolve_sktime_forecaster,
         )
+        return _log_forecast_finish(
+            "forecast_generate",
+            started_at,
+            result,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            library=request.library,
+            model=request.model,
+        )
     except ForecastError as exc:
-        return {"error": str(exc)}
+        return _log_forecast_finish(
+            "forecast_generate",
+            started_at,
+            {"error": str(exc)},
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            library=request.library,
+            model=request.model,
+        )
 
 
 @mcp.tool()
@@ -188,10 +242,34 @@ def forecast_list_library_models(
 @mcp.tool()
 def forecast_backtest_run(request: ForecastBacktestRequest) -> Dict[str, Any]:
     """Rolling-origin backtest over historical anchors using the forecast tool."""
+    started_at = _log_forecast_start(
+        "forecast_backtest_run",
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        horizon=request.horizon,
+        detail=request.detail,
+    )
     connection_error = _forecast_connection_error()
     if connection_error is not None:
-        return connection_error
-    return run_forecast_backtest(request, backtest_impl=_forecast_backtest_impl)
+        return _log_forecast_finish(
+            "forecast_backtest_run",
+            started_at,
+            connection_error,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            horizon=request.horizon,
+            detail=request.detail,
+        )
+    result = run_forecast_backtest(request, backtest_impl=_forecast_backtest_impl)
+    return _log_forecast_finish(
+        "forecast_backtest_run",
+        started_at,
+        result,
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        horizon=request.horizon,
+        detail=request.detail,
+    )
 
 
 @mcp.tool()
@@ -199,12 +277,36 @@ def forecast_volatility_estimate(
     request: ForecastVolatilityEstimateRequest,
 ) -> Dict[str, Any]:
     """Forecast volatility over `horizon` bars using direct estimators or proxies."""
+    started_at = _log_forecast_start(
+        "forecast_volatility_estimate",
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        horizon=request.horizon,
+        method=request.method,
+    )
     connection_error = _forecast_connection_error()
     if connection_error is not None:
-        return connection_error
-    return run_forecast_volatility_estimate(
+        return _log_forecast_finish(
+            "forecast_volatility_estimate",
+            started_at,
+            connection_error,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            horizon=request.horizon,
+            method=request.method,
+        )
+    result = run_forecast_volatility_estimate(
         request,
         forecast_volatility_impl=_forecast_volatility_impl,
+    )
+    return _log_forecast_finish(
+        "forecast_volatility_estimate",
+        started_at,
+        result,
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        horizon=request.horizon,
+        method=request.method,
     )
 
 
@@ -402,19 +504,59 @@ def forecast_conformal_intervals(request: ForecastConformalIntervalsRequest) -> 
     - Calibrates per-step absolute residual quantiles using `steps` historical anchors (spaced by `spacing`).
     - Returns point forecast (from `method`) and conformal bands per step.
     """
+    started_at = _log_forecast_start(
+        "forecast_conformal_intervals",
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        method=request.method,
+        horizon=request.horizon,
+    )
     connection_error = _forecast_connection_error()
     if connection_error is not None:
-        return connection_error
+        return _log_forecast_finish(
+            "forecast_conformal_intervals",
+            started_at,
+            connection_error,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            horizon=request.horizon,
+        )
     try:
-        return run_forecast_conformal_intervals(
+        result = run_forecast_conformal_intervals(
             request,
             backtest_impl=_forecast_backtest_impl,
             forecast_impl=_forecast_impl,
         )
+        return _log_forecast_finish(
+            "forecast_conformal_intervals",
+            started_at,
+            result,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            horizon=request.horizon,
+        )
     except ForecastError as exc:
-        return {"error": str(exc)}
+        return _log_forecast_finish(
+            "forecast_conformal_intervals",
+            started_at,
+            {"error": str(exc)},
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            horizon=request.horizon,
+        )
     except Exception as e:
-        return {"error": f"Error computing conformal forecast: {str(e)}"}
+        return _log_forecast_finish(
+            "forecast_conformal_intervals",
+            started_at,
+            {"error": f"Error computing conformal forecast: {str(e)}"},
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            horizon=request.horizon,
+        )
 
 
 @mcp.tool()
@@ -425,31 +567,95 @@ def forecast_tune_genetic(request: ForecastTuneGeneticRequest) -> Dict[str, Any]
     - metric: e.g., 'avg_rmse', 'avg_mae', 'avg_directional_accuracy'
     - mode: 'min' or 'max'
     """
+    started_at = _log_forecast_start(
+        "forecast_tune_genetic",
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        method=request.method,
+        metric=request.metric,
+    )
     connection_error = _forecast_connection_error()
     if connection_error is not None:
-        return connection_error
+        return _log_forecast_finish(
+            "forecast_tune_genetic",
+            started_at,
+            connection_error,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            metric=request.metric,
+        )
     try:
-        return run_forecast_tune_genetic(
+        result = run_forecast_tune_genetic(
             request,
             genetic_search_impl=_genetic_search_impl,
         )
+        return _log_forecast_finish(
+            "forecast_tune_genetic",
+            started_at,
+            result,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            metric=request.metric,
+        )
     except Exception as e:
-        return {"error": f"Error in genetic tuning: {e}"}
+        return _log_forecast_finish(
+            "forecast_tune_genetic",
+            started_at,
+            {"error": f"Error in genetic tuning: {e}"},
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            metric=request.metric,
+        )
 
 
 @mcp.tool()
 def forecast_tune_optuna(request: ForecastTuneOptunaRequest) -> Dict[str, Any]:
     """Optuna search over method params to optimize a backtest metric."""
+    started_at = _log_forecast_start(
+        "forecast_tune_optuna",
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        method=request.method,
+        metric=request.metric,
+    )
     connection_error = _forecast_connection_error()
     if connection_error is not None:
-        return connection_error
+        return _log_forecast_finish(
+            "forecast_tune_optuna",
+            started_at,
+            connection_error,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            metric=request.metric,
+        )
     try:
-        return run_forecast_tune_optuna(
+        result = run_forecast_tune_optuna(
             request,
             optuna_search_impl=_optuna_search_impl,
         )
+        return _log_forecast_finish(
+            "forecast_tune_optuna",
+            started_at,
+            result,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            metric=request.metric,
+        )
     except Exception as e:
-        return {"error": f"Error in optuna tuning: {e}"}
+        return _log_forecast_finish(
+            "forecast_tune_optuna",
+            started_at,
+            {"error": f"Error in optuna tuning: {e}"},
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            metric=request.metric,
+        )
 
 
 @mcp.tool()
@@ -647,20 +853,44 @@ def forecast_barrier_prob(
         barrier=1.2700
     )
     """
+    started_at = _log_forecast_start(
+        "forecast_barrier_prob",
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        method=request.method,
+        direction=request.direction,
+    )
     connection_error = _forecast_connection_error()
     if connection_error is not None:
-        return connection_error
+        return _log_forecast_finish(
+            "forecast_barrier_prob",
+            started_at,
+            connection_error,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            direction=request.direction,
+        )
     from ..forecast.barriers import (
         forecast_barrier_closed_form as _barrier_closed_form_impl,
         forecast_barrier_hit_probabilities as _barrier_hit_probabilities_impl,
     )
 
-    return run_forecast_barrier_prob(
+    result = run_forecast_barrier_prob(
         request,
         build_barrier_kwargs=_build_barrier_kwargs_from,
         normalize_trade_direction=_normalize_trade_direction,
         barrier_hit_probabilities_impl=_barrier_hit_probabilities_impl,
         barrier_closed_form_impl=_barrier_closed_form_impl,
+    )
+    return _log_forecast_finish(
+        "forecast_barrier_prob",
+        started_at,
+        result,
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        method=request.method,
+        direction=request.direction,
     )
 
 
@@ -669,13 +899,37 @@ def forecast_barrier_optimize(
     request: ForecastBarrierOptimizeRequest,
 ) -> Dict[str, Any]:
     """Optimize TP/SL barriers with support for presets, volatility scaling, ratios, and two-stage refinement."""
+    started_at = _log_forecast_start(
+        "forecast_barrier_optimize",
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        method=request.method,
+        direction=request.direction,
+    )
     connection_error = _forecast_connection_error()
     if connection_error is not None:
-        return connection_error
+        return _log_forecast_finish(
+            "forecast_barrier_optimize",
+            started_at,
+            connection_error,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            direction=request.direction,
+        )
     from ..forecast.barriers import forecast_barrier_optimize as _barrier_optimize_impl
 
-    return run_forecast_barrier_optimize(
+    result = run_forecast_barrier_optimize(
         request,
         parse_kv_or_json=_parse_kv_or_json,
         barrier_optimize_impl=_barrier_optimize_impl,
+    )
+    return _log_forecast_finish(
+        "forecast_barrier_optimize",
+        started_at,
+        result,
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        method=request.method,
+        direction=request.direction,
     )

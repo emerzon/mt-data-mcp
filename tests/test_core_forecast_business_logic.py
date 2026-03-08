@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import ModuleType, SimpleNamespace
 import importlib
+import logging
 import pkgutil
 import sys
 
@@ -235,6 +236,20 @@ def test_forecast_generate_converts_typed_forecast_errors(monkeypatch):
     assert out["error"] == "engine exploded"
 
 
+def test_forecast_generate_logs_finish_event(caplog, monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+    monkeypatch.setattr(cf, "_forecast_impl", lambda **kwargs: {"success": True, "method": kwargs["method"]})
+
+    with caplog.at_level(logging.INFO, logger=cf.logger.name):
+        out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", model="theta"))
+
+    assert out["success"] is True
+    assert any(
+        "event=finish operation=forecast_generate success=True" in record.message
+        for record in caplog.records
+    )
+
+
 def test_forecast_generate_returns_connection_error_payload(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
 
@@ -247,6 +262,38 @@ def test_forecast_generate_returns_connection_error_payload(monkeypatch):
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", model="theta"))
 
     assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
+
+
+def test_forecast_tune_genetic_logs_finish_event(caplog, monkeypatch):
+    raw = _unwrap(cf.forecast_tune_genetic)
+    monkeypatch.setattr(cf, "run_forecast_tune_genetic", lambda request, genetic_search_impl: {"success": True, "best": {}})
+
+    with caplog.at_level(logging.INFO, logger=cf.logger.name):
+        out = raw(request=ForecastTuneGeneticRequest(symbol="EURUSD", method="theta"))
+
+    assert out["success"] is True
+    assert any(
+        "event=finish operation=forecast_tune_genetic success=True" in record.message
+        for record in caplog.records
+    )
+
+
+def test_forecast_barrier_optimize_logs_finish_event(caplog, monkeypatch):
+    raw = _unwrap(cf.forecast_barrier_optimize)
+    monkeypatch.setattr(cf, "run_forecast_barrier_optimize", lambda request, parse_kv_or_json, barrier_optimize_impl: {"success": True, "best": {}})
+
+    fake_barriers = ModuleType("mtdata.forecast.barriers")
+    fake_barriers.forecast_barrier_optimize = lambda **kwargs: {"unused": True}
+    monkeypatch.setitem(sys.modules, "mtdata.forecast.barriers", fake_barriers)
+
+    with caplog.at_level(logging.INFO, logger=cf.logger.name):
+        out = raw(request=ForecastBarrierOptimizeRequest(symbol="EURUSD"))
+
+    assert out["success"] is True
+    assert any(
+        "event=finish operation=forecast_barrier_optimize success=True" in record.message
+        for record in caplog.records
+    )
 
 
 def test_forecast_list_library_models_and_list_methods(monkeypatch):
