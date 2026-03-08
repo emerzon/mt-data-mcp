@@ -6,9 +6,11 @@ from unittest.mock import MagicMock, patch, PropertyMock
 import numpy as np
 import pandas as pd
 import pytest
+from scipy.spatial import cKDTree
 
 from mtdata.forecast.methods.analog import AnalogMethod
 from mtdata.forecast.interface import ForecastResult
+from mtdata.utils.patterns import PatternIndex, _SeriesStore
 
 
 # ===========================================================================
@@ -20,7 +22,7 @@ def _price_series(n=200, name="close"):
     return pd.Series(vals, name=name)
 
 
-def _make_mock_index(n_windows=50, window_size=64, horizon=10):
+def _make_mock_index(n_windows=120, window_size=64, horizon=10):
     """Build a mock Index object returned by build_index."""
     idx = MagicMock()
     idx.X = MagicMock()
@@ -29,8 +31,9 @@ def _make_mock_index(n_windows=50, window_size=64, horizon=10):
 
     full_len = window_size + horizon
     base = np.cumsum(np.random.randn(full_len)) + 100
+    series_len = n_windows + window_size + horizon - 1
 
-    idx.get_symbol_series = MagicMock(return_value=np.cumsum(np.random.randn(200)) + 100)
+    idx.get_symbol_series = MagicMock(return_value=np.cumsum(np.random.randn(max(series_len, window_size))) + 100)
     idx.search = MagicMock(return_value=(
         np.arange(min(25, n_windows)),
         np.random.rand(min(25, n_windows)),
@@ -41,7 +44,55 @@ def _make_mock_index(n_windows=50, window_size=64, horizon=10):
     ))
     idx.get_match_values = MagicMock(return_value=base.copy())
     idx.get_match_times = MagicMock(return_value=np.arange(window_size, dtype=float))
+    idx.future_size = horizon
+    idx.start_end_idx = np.stack(
+        [
+            np.arange(max(n_windows, 1), dtype=int),
+            np.arange(max(n_windows, 1), dtype=int) + (window_size - 1),
+        ],
+        axis=1,
+    )[:n_windows]
     return idx
+
+
+def _make_real_index(series: np.ndarray, *, window_size: int, horizon: int, scale: str = "zscore") -> PatternIndex:
+    values = np.asarray(series, dtype=float)
+    n = values.size
+    limit = n - (window_size + horizon) + 1
+    starts = np.arange(limit, dtype=int)
+    ends = starts + (window_size - 1)
+    idx_arr = starts[:, None] + np.arange(window_size)[None, :]
+    windows = values[idx_arr]
+    if scale == "zscore":
+        mu = np.nanmean(windows, axis=1, keepdims=True)
+        sd = np.nanstd(windows, axis=1, keepdims=True)
+        sd[sd <= 1e-12] = 1.0
+        x = ((windows - mu) / sd).astype(np.float32)
+    else:
+        mn = np.nanmin(windows, axis=1, keepdims=True)
+        mx = np.nanmax(windows, axis=1, keepdims=True)
+        rng = mx - mn
+        rng[rng <= 1e-12] = 1.0
+        x = ((windows - mn) / rng).astype(np.float32)
+    series_store = _SeriesStore(
+        symbol="EURUSD",
+        time_epoch=np.arange(n, dtype=float),
+        close=values,
+    )
+    return PatternIndex(
+        timeframe="H1",
+        window_size=window_size,
+        future_size=horizon,
+        symbols=["EURUSD"],
+        tree=cKDTree(x),
+        X=x,
+        start_end_idx=np.stack([starts, ends], axis=1),
+        labels=np.zeros(limit, dtype=int),
+        series=[series_store],
+        scale=scale,
+        metric="euclidean",
+        engine="ckdtree",
+    )
 
 
 # ===========================================================================
@@ -107,7 +158,9 @@ class TestRunSingleTimeframe:
             "EURUSD", "H1", 10, {"window_size": 64},
             query_vector=np.random.rand(30),
         )
-        assert len(futures) > 0
+        assert futures == []
+        assert meta == []
+        assert self.m._get_timeframe_diagnostic("H1")["reason"] == "insufficient_query_history"
 
     @patch("mtdata.forecast.methods.analog.build_index")
     def test_query_vector_empty(self, mock_bi):
@@ -255,6 +308,50 @@ class TestRunSingleTimeframe:
             assert "index" in m_obj
             assert "scale_factor" in m_obj
 
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_overlap_filter_excludes_recent_windows_using_real_index_geometry(self, mock_bi):
+        window_size = 64
+        horizon = 10
+        series = np.linspace(100.0, 200.0, 200, dtype=float)
+        idx = _make_real_index(series, window_size=window_size, horizon=horizon)
+
+        def fake_search(anchor_values, top_k=5):
+            return np.array([126, 125, 62, 61], dtype=int), np.array([0.01, 0.02, 0.03, 0.04], dtype=float)
+
+        def fake_refine(anchor_values, valid_idxs, valid_dists, top_k, **kwargs):
+            return valid_idxs[:top_k], valid_dists[:top_k]
+
+        idx.search = fake_search
+        idx.refine_matches = fake_refine
+        mock_bi.return_value = idx
+
+        futures, meta = self.m._run_single_timeframe(
+            "EURUSD",
+            "H1",
+            horizon,
+            {"window_size": window_size, "top_k": 2},
+            query_vector=series[-window_size:],
+        )
+
+        assert len(futures) == 2
+        assert [m_obj["index"] for m_obj in meta] == [62, 61]
+        assert self.m._get_timeframe_diagnostic("H1")["excluded_overlap_candidates"] == 2
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_denoise_spec_is_forwarded_to_index_build(self, mock_bi):
+        mock_bi.return_value = _make_mock_index()
+        denoise_spec = {"method": "ema", "params": {"span": 5}}
+
+        self.m._run_single_timeframe(
+            "EURUSD",
+            "H1",
+            10,
+            {"window_size": 64, "denoise": denoise_spec},
+            query_vector=np.random.rand(64),
+        )
+
+        assert mock_bi.call_args.kwargs["denoise"] == denoise_spec
+
 
 # ===========================================================================
 # AnalogMethod.forecast (lines 194-361)
@@ -342,3 +439,12 @@ class TestAnalogMethodForecast:
             params={"symbol": "EURUSD", "timeframe": "H1", "secondary_timeframes": "H4"},
         )
         assert res.forecast is not None
+
+    def test_raises_when_series_shorter_than_window_size(self):
+        with pytest.raises(ValueError, match="requires at least 64 price points"):
+            self.m.forecast(
+                _price_series(n=20),
+                horizon=10,
+                seasonality=1,
+                params={"symbol": "EURUSD", "timeframe": "H1"},
+            )

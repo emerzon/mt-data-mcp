@@ -436,6 +436,10 @@ class TestCalculateLookbackBars:
         result = _calculate_lookback_bars("analog", 12, None, 24, "H1")
         assert result >= 100
 
+    def test_analog_respects_window_size_param(self):
+        result = _calculate_lookback_bars("analog", 12, None, 24, "H1", params={"window_size": 256})
+        assert result >= 258
+
     def test_seasonal_naive(self):
         result = _calculate_lookback_bars("seasonal_naive", 12, None, 24, "H1")
         assert result >= 3 * 24

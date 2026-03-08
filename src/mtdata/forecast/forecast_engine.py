@@ -10,7 +10,8 @@ import math
 
 from mtdata.shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from mtdata.shared.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
-from mtdata.utils.mt5 import get_symbol_info_cached, mt5
+from mtdata.bootstrap.settings import mt5_config
+from mtdata.utils.mt5 import get_cached_mt5_time_alignment, get_symbol_info_cached, mt5
 from mtdata.utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
@@ -160,21 +161,21 @@ _FORECAST_METHODS = _get_available_methods()
 
 
 def _calculate_lookback_bars(method_l: str, horizon: int, lookback: Optional[int],
-                             seasonality: int, timeframe: str) -> int:
+                             seasonality: int, timeframe: str,
+                             params: Optional[Dict[str, Any]] = None) -> int:
     """Calculate the number of bars needed for forecasting."""
+    if method_l == 'analog':
+        p = dict(params or {})
+        try:
+            window_size = int(p.get('window_size', 64))
+        except Exception:
+            window_size = 64
+        if lookback is not None and lookback > 0:
+            return max(int(lookback) + 2, window_size + 2)
+        return max(100, window_size + 2, int(horizon) + 10)
+
     if lookback is not None and lookback > 0:
         return int(lookback) + 2
-
-    if method_l == 'analog':
-        # Default search_depth=5000, window=64.
-        # But we don't have params here. Assume reasonable default.
-        # If the user provides params['search_depth'], we can't see it here easily without changing signature.
-        # So we return a large enough default for fetch. 
-        # Actually AnalogMethod re-fetches, so this 'need' is just for the 'target_series' passed to it,
-        # which it ignores (via Option A).
-        # EXCEPT: the engine checks len(df) < 3. 
-        # So we just need something small like 100 to pass checks.
-        return max(100, int(horizon) + 10)
 
     if method_l == 'seasonal_naive':
         return max(3 * seasonality, int(horizon) + seasonality + 2)
@@ -345,6 +346,8 @@ def _run_registered_forecast_method(
     target: Literal['price', 'return'],
     symbol: str,
     timeframe: TimeframeLiteral,
+    base_col: str,
+    denoise_spec_used: Optional[Any],
     X: Optional[np.ndarray],
     future_exog: Optional[np.ndarray],
 ) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
@@ -353,8 +356,11 @@ def _run_registered_forecast_method(
     if method_l == 'analog':
         method_params.setdefault('symbol', symbol)
         method_params.setdefault('timeframe', timeframe)
+        method_params.setdefault('base_col', base_col)
         if as_of is not None:
             method_params.setdefault('as_of', as_of)
+        if denoise_spec_used is not None:
+            method_params.setdefault('denoise', denoise_spec_used)
     if ci_alpha is not None and 'ci_alpha' not in method_params:
         method_params['ci_alpha'] = ci_alpha
 
@@ -612,7 +618,7 @@ def forecast_engine(
             return {"error": "seasonal_naive requires a positive 'seasonality' in params or auto period"}
 
         # Calculate lookback bars
-        need = _calculate_lookback_bars(method_l, horizon, lookback, seasonality, timeframe)
+        need = _calculate_lookback_bars(method_l, horizon, lookback, seasonality, timeframe, params=p)
 
         # Fetch data (or reuse prefetched) and optional denoise
         try:
@@ -679,7 +685,26 @@ def forecast_engine(
             base_col=base_col,
             target_series=target_series,
         )
-        
+        broker_time_check_result: Optional[Dict[str, Any]] = None
+        broker_time_check_enabled = bool(getattr(mt5_config, "broker_time_check_enabled", False))
+        broker_time_check_ttl_seconds = int(getattr(mt5_config, "broker_time_check_ttl_seconds", 60))
+        if broker_time_check_enabled and prefetched_df is None and as_of is None:
+            try:
+                broker_time_check_result = get_cached_mt5_time_alignment(
+                    symbol=symbol,
+                    probe_timeframe='M1',
+                    ttl_seconds=broker_time_check_ttl_seconds,
+                )
+            except Exception as exc:
+                broker_time_check_result = {
+                    "symbol": str(symbol),
+                    "probe_timeframe": "M1",
+                    "status": "unavailable",
+                    "reason": "inspection_failed",
+                    "error": str(exc),
+                }
+            engine_diagnostics["broker_time_check"] = broker_time_check_result
+
         # Get symbol info for digits
         digits = None
         try:
@@ -705,6 +730,8 @@ def forecast_engine(
                 target=target,
                 symbol=symbol,
                 timeframe=timeframe,
+                base_col=base_col,
+                denoise_spec_used=dn_spec_used,
                 X=X,
                 future_exog=future_exog,
             )
@@ -749,6 +776,16 @@ def forecast_engine(
             symbol=symbol,
             timeframe=timeframe,
         )
+        if broker_time_check_result and broker_time_check_result.get("status") == "misaligned":
+            warning_text = str(broker_time_check_result.get("warning") or "").strip()
+            if warning_text:
+                warnings = result.get("warnings")
+                if not isinstance(warnings, list):
+                    warnings = []
+                if warning_text not in warnings:
+                    warnings.append(warning_text)
+                if warnings:
+                    result["warnings"] = warnings
         if method_l == 'ensemble' and metadata:
             result['ensemble'] = metadata
         return result

@@ -41,6 +41,7 @@ _mt5_mod.mt5 = _mt5_mock
 from mtdata.utils.mt5 import (
     get_symbol_info_cached,
     clear_symbol_info_cache,
+    clear_mt5_time_alignment_cache,
     _mt5_epoch_to_utc,
     _rates_to_df,
     _to_server_naive_dt,
@@ -58,6 +59,8 @@ from mtdata.utils.mt5 import (
     _ensure_symbol_ready,
     _symbol_ready_guard,
     estimate_server_offset,
+    get_cached_mt5_time_alignment,
+    inspect_mt5_time_alignment,
 )
 
 
@@ -535,3 +538,181 @@ class TestEstimateServerOffset:
         conn._ensure_connection.side_effect = Exception("boom")
         assert estimate_server_offset() == 0
         conn._ensure_connection.side_effect = None
+
+
+class TestCachedMt5TimeAlignment:
+    def setup_method(self):
+        clear_mt5_time_alignment_cache()
+
+    def teardown_method(self):
+        clear_mt5_time_alignment_cache()
+
+    def test_uses_cache_within_ttl_bucket(self, monkeypatch):
+        calls = {"count": 0}
+
+        def fake_inspect(**kwargs):
+            calls["count"] += 1
+            return {"status": "ok", "sequence": calls["count"], "symbol": kwargs["symbol"]}
+
+        monkeypatch.setattr(_mt5_mod, "inspect_mt5_time_alignment", fake_inspect)
+        monkeypatch.setattr(_mt5_mod.time, "time", lambda: 120.0)
+
+        first = get_cached_mt5_time_alignment("EURUSD", ttl_seconds=60)
+        second = get_cached_mt5_time_alignment("EURUSD", ttl_seconds=60)
+
+        assert calls["count"] == 1
+        assert first["sequence"] == 1
+        assert second["sequence"] == 1
+        assert first is not second
+
+    def test_ttl_zero_bypasses_cache(self, monkeypatch):
+        calls = {"count": 0}
+
+        def fake_inspect(**kwargs):
+            calls["count"] += 1
+            return {"status": "ok", "sequence": calls["count"]}
+
+        monkeypatch.setattr(_mt5_mod, "inspect_mt5_time_alignment", fake_inspect)
+
+        first = get_cached_mt5_time_alignment("EURUSD", ttl_seconds=0)
+        second = get_cached_mt5_time_alignment("EURUSD", ttl_seconds=0)
+
+        assert calls["count"] == 2
+        assert first["sequence"] == 1
+        assert second["sequence"] == 2
+
+
+class TestInspectMt5TimeAlignment:
+    @patch("mtdata.utils.mt5.mt5_config")
+    def test_ok(self, cfg, monkeypatch):
+        now = 1_700_000_045.0
+        current_bar = float((int(now) // 60) * 60)
+        last_closed_bar = current_bar - 60.0
+        cfg.get_server_tz.return_value = None
+        cfg.get_time_offset_seconds.return_value = 7200
+        cfg.server_tz_name = "Europe/Nicosia"
+
+        monkeypatch.setattr(_mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None)
+        monkeypatch.setattr(_mt5_mod, "_ensure_symbol_ready", lambda symbol: None)
+        monkeypatch.setattr(_mt5_mod.time, "time", lambda: now)
+        monkeypatch.setattr(_mt5_mod.mt5, "symbol_info_tick", lambda symbol: MagicMock(time=now + 7200.0))
+        monkeypatch.setattr(
+            _mt5_mod,
+            "_mt5_copy_rates_from_pos",
+            lambda symbol, timeframe, start_pos, count: [
+                {"time": last_closed_bar - 60.0},
+                {"time": last_closed_bar},
+                {"time": current_bar},
+            ],
+        )
+
+        result = inspect_mt5_time_alignment("EURUSD")
+
+        assert result["status"] == "ok"
+        assert result["reason"] is None
+        assert result["configured_offset_seconds"] == 7200
+        assert result["inferred_offset_seconds"] == 7200
+        assert result["configured_server_tz"] == "Europe/Nicosia"
+        assert abs(result["current_bar_delta_seconds"]) < 1e-9
+        assert abs(result["last_closed_bar_delta_seconds"]) < 1e-9
+
+    @patch("mtdata.utils.mt5.mt5_config")
+    def test_reports_misalignment(self, cfg, monkeypatch):
+        now = 1_700_000_045.0
+        current_bar = float((int(now) // 60) * 60)
+        last_closed_bar = current_bar - 60.0
+        cfg.get_server_tz.return_value = None
+        cfg.get_time_offset_seconds.return_value = 7200
+
+        monkeypatch.setattr(_mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None)
+        monkeypatch.setattr(_mt5_mod, "_ensure_symbol_ready", lambda symbol: None)
+        monkeypatch.setattr(_mt5_mod.time, "time", lambda: now)
+        monkeypatch.setattr(_mt5_mod.mt5, "symbol_info_tick", lambda symbol: MagicMock(time=now + 10800.0))
+        monkeypatch.setattr(
+            _mt5_mod,
+            "_mt5_copy_rates_from_pos",
+            lambda symbol, timeframe, start_pos, count: [
+                {"time": last_closed_bar - 60.0},
+                {"time": last_closed_bar},
+                {"time": current_bar},
+            ],
+        )
+
+        result = inspect_mt5_time_alignment("EURUSD")
+
+        assert result["status"] == "misaligned"
+        assert result["reason"] == "timezone_mismatch"
+        assert result["offset_mismatch_seconds"] == 3600
+        assert "inferred broker offset is 10800s" in result["warning"]
+
+    @patch("mtdata.utils.mt5.mt5_config")
+    def test_reports_stale_data(self, cfg, monkeypatch):
+        now = 1_700_000_045.0
+        current_bar = float((int(now) // 60) * 60)
+        cfg.get_server_tz.return_value = None
+        cfg.get_time_offset_seconds.return_value = 7200
+
+        monkeypatch.setattr(_mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None)
+        monkeypatch.setattr(_mt5_mod, "_ensure_symbol_ready", lambda symbol: None)
+        monkeypatch.setattr(_mt5_mod.time, "time", lambda: now)
+        monkeypatch.setattr(_mt5_mod.mt5, "symbol_info_tick", lambda symbol: MagicMock(time=now + 7200.0))
+        monkeypatch.setattr(
+            _mt5_mod,
+            "_mt5_copy_rates_from_pos",
+            lambda symbol, timeframe, start_pos, count: [
+                {"time": current_bar - 360.0},
+                {"time": current_bar - 300.0},
+                {"time": current_bar - 240.0},
+            ],
+        )
+
+        result = inspect_mt5_time_alignment("EURUSD")
+
+        assert result["status"] == "stale"
+        assert result["reason"] == "market_data_stale"
+        assert "lags expected current bar" in result["warning"]
+        assert result["offset_inference_reliable"] is True
+
+    @patch("mtdata.utils.mt5.mt5_config")
+    def test_closed_market_tick_is_not_treated_as_timezone_mismatch(self, cfg, monkeypatch):
+        now = 1_700_000_045.0
+        current_bar = float((int(now) // 60) * 60)
+        cfg.get_server_tz.return_value = None
+        cfg.get_time_offset_seconds.return_value = 7200
+
+        monkeypatch.setattr(_mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None)
+        monkeypatch.setattr(_mt5_mod, "_ensure_symbol_ready", lambda symbol: None)
+        monkeypatch.setattr(_mt5_mod.time, "time", lambda: now)
+        # Simulate a Friday tick sampled on Sunday: unusable for offset inference.
+        monkeypatch.setattr(_mt5_mod.mt5, "symbol_info_tick", lambda symbol: MagicMock(time=now - 147600.0))
+        monkeypatch.setattr(
+            _mt5_mod,
+            "_mt5_copy_rates_from_pos",
+            lambda symbol, timeframe, start_pos, count: [
+                {"time": current_bar - 3600.0},
+                {"time": current_bar - 3540.0},
+                {"time": current_bar - 3480.0},
+            ],
+        )
+
+        result = inspect_mt5_time_alignment("EURUSD")
+
+        assert result["status"] == "stale"
+        assert result["reason"] == "market_data_stale"
+        assert result["offset_inference_reliable"] is False
+        assert result["inferred_offset_seconds"] == -147600
+        assert "not a plausible live broker offset" in result["warning"]
+        assert "timezone_mismatch" != result["reason"]
+
+    def test_connection_failure(self, monkeypatch):
+        monkeypatch.setattr(
+            _mt5_mod,
+            "ensure_mt5_connection_or_raise",
+            lambda **kwargs: (_ for _ in ()).throw(MT5ConnectionError("boom")),
+        )
+
+        result = inspect_mt5_time_alignment("EURUSD")
+
+        assert result["status"] == "unavailable"
+        assert result["reason"] == "connection_failed"
+        assert result["error"] == "boom"

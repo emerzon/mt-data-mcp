@@ -26,9 +26,13 @@ class AnalogMethod(ForecastMethod):
         {"name": "refine_metric", "type": "str", "description": "Refinement metric (dtw|softdtw|affine|ncc|none)."},
         {"name": "search_engine", "type": "str", "description": "Search engine (ckdtree|hnsw|matrix_profile|mass)."},
         {"name": "secondary_timeframes", "type": "str|list", "description": "Secondary timeframes to ensemble."},
+        {"name": "denoise", "type": "dict|str", "description": "Optional denoise spec applied consistently to the search index."},
         {"name": "drop_last_live", "type": "bool", "description": "Drop last live bar (default: True)."},
         {"name": "ci_alpha", "type": "float", "description": "CI alpha (default: 0.05)."},
     ]
+
+    def __init__(self) -> None:
+        self._timeframe_diagnostics: Dict[str, Dict[str, Any]] = {}
     
     @property
     def name(self) -> str:
@@ -46,6 +50,44 @@ class AnalogMethod(ForecastMethod):
     def supports_features(self) -> Dict[str, bool]:
         # Index is built on price levels; return inputs would need separate index logic.
         return {"price": True, "return": False, "volatility": False, "ci": True}
+
+    def _record_timeframe_diagnostic(self, timeframe: str, diagnostic: Dict[str, Any]) -> None:
+        diag = dict(diagnostic)
+        diag["timeframe"] = str(timeframe)
+        self._timeframe_diagnostics[str(timeframe)] = diag
+
+    def _get_timeframe_diagnostic(self, timeframe: str) -> Dict[str, Any]:
+        diag = self._timeframe_diagnostics.get(str(timeframe), {})
+        return dict(diag) if isinstance(diag, dict) else {}
+
+    def _format_timeframe_failure(self, symbol: str, timeframe: str, default_label: str) -> str:
+        diag = self._get_timeframe_diagnostic(timeframe)
+        reason = str(diag.get("reason") or "").strip()
+        message = str(diag.get("message") or "").strip()
+        detail_parts = []
+        if reason:
+            detail_parts.append(reason.replace("_", " "))
+        if message and message.lower() not in {reason.lower(), "none"}:
+            detail_parts.append(message)
+        detail = "; ".join(detail_parts)
+        base = f"{default_label} for {symbol} {timeframe}"
+        return f"{base}: {detail}" if detail else base
+
+    def _candidate_overlaps_query(
+        self,
+        idx: Any,
+        match_index: int,
+        query_start: Optional[int],
+        fallback_cutoff: int,
+    ) -> bool:
+        if query_start is None:
+            return int(match_index) >= int(fallback_cutoff)
+        try:
+            _start, end = idx.start_end_idx[int(match_index)]
+            future_end = int(end) + int(getattr(idx, "future_size", 0) or 0)
+            return future_end >= int(query_start)
+        except Exception:
+            return int(match_index) >= int(fallback_cutoff)
 
     def _run_single_timeframe(
         self,
@@ -71,12 +113,43 @@ class AnalogMethod(ForecastMethod):
         scale = str(params.get('scale', 'zscore'))
         refine_metric = str(params.get('refine_metric', 'dtw'))
         search_engine = str(params.get('search_engine', 'ckdtree'))
+        denoise_spec = params.get('denoise')
         drop_last_live = bool(params.get('drop_last_live', drop_last_live))
         # Profile-based engines expect z-normalized inputs
         idx_scale = 'zscore' if search_engine in ('matrix_profile', 'mass') else scale
         if search_engine in ('matrix_profile', 'mass') and metric.lower() not in ('euclidean', 'l2'):
             metric = 'euclidean'
-        
+
+        diagnostic: Dict[str, Any] = {
+            "symbol": str(symbol),
+            "timeframe": str(timeframe),
+            "horizon": int(horizon),
+            "window_size": window_size,
+            "search_depth": search_depth,
+            "top_k": top_k,
+            "metric": metric,
+            "scale": scale,
+            "index_scale": idx_scale,
+            "refine_metric": refine_metric,
+            "search_engine": search_engine,
+            "query_source": "external" if query_vector is not None else "latest_history",
+            "denoise_applied": bool(denoise_spec),
+            "requested_search_k": 0,
+            "raw_candidate_count": 0,
+            "valid_candidate_count": 0,
+            "excluded_overlap_candidates": 0,
+            "projection_failures": 0,
+        }
+
+        def fail(reason: str, message: Optional[str] = None, **extra: Any) -> Tuple[List[np.ndarray], List[Dict[str, Any]]]:
+            diagnostic.update(extra)
+            diagnostic["status"] = "failed"
+            diagnostic["reason"] = str(reason)
+            if message:
+                diagnostic["message"] = str(message)
+            self._record_timeframe_diagnostic(str(timeframe), diagnostic)
+            return [], []
+
         # Build Index (for HISTORY lookup)
         try:
             # We fetch enough history to find matches, but we do NOT rely on this fetch for the query vector if provided.
@@ -86,52 +159,74 @@ class AnalogMethod(ForecastMethod):
                 window_size=window_size,
                 future_size=int(horizon),
                 max_bars_per_symbol=search_depth + window_size + int(horizon) + 100,
+                denoise=denoise_spec if isinstance(denoise_spec, dict) or isinstance(denoise_spec, str) else None,
                 scale=idx_scale,
                 metric=metric,
                 engine=search_engine,
                 as_of=as_of,
                 drop_last_live=drop_last_live,
             )
-        except Exception:
-            return [], []
+        except Exception as exc:
+            return fail("build_index_failed", str(exc))
             
         if not idx.X.shape[0]:
-            return [], []
+            return fail("empty_index", "Pattern index did not contain any candidate windows")
+
+        full_series = idx.get_symbol_series(str(symbol))
+        series_len = len(full_series) if full_series is not None else 0
+        query_start = (series_len - window_size) if series_len >= window_size else None
+        diagnostic["series_bars"] = int(series_len)
 
         # Determine Query Vector
         if query_vector is not None:
-            # Validate length
-            if len(query_vector) < window_size:
-                if len(query_vector) == 0:
-                     return [], []
-                # Pad with leading values
-                pad_width = window_size - len(query_vector)
-                query_window = np.pad(query_vector, (pad_width, 0), mode='edge')
-            else:
-                query_window = query_vector[-window_size:]
+            raw_query = np.asarray(query_vector, dtype=float).ravel()
+            diagnostic["query_length_input"] = int(raw_query.size)
+            if raw_query.size < window_size:
+                return fail(
+                    "insufficient_query_history",
+                    f"expected at least {window_size} bars for the analog query but received {raw_query.size}",
+                    query_length_used=int(raw_query.size),
+                )
+            query_window = raw_query[-window_size:]
         else:
             # Fallback to internal latest
-            full_series = idx.get_symbol_series(str(symbol))
             if full_series is None or len(full_series) < window_size:
-                return [], []
+                return fail(
+                    "insufficient_history_in_index",
+                    f"index series for {symbol} had {0 if full_series is None else len(full_series)} bars; need {window_size}",
+                )
             query_window = full_series[-window_size:]
+        if not np.all(np.isfinite(query_window)):
+            return fail("non_finite_query", "Analog query window contains NaN or infinite values")
+        diagnostic["query_length_used"] = int(query_window.size)
         
         # Search
+        n_windows = int(idx.X.shape[0])
+        fallback_cutoff = max(0, n_windows - 5)
+        search_k = min(n_windows, max(int(top_k) * 3, int(top_k) + window_size + int(horizon) + 5))
+        diagnostic["requested_search_k"] = int(search_k)
         try:
-            raw_idxs, raw_dists = idx.search(query_window, top_k=top_k*2 + 5)
-        except Exception:
-            return [], []
+            raw_idxs, raw_dists = idx.search(query_window, top_k=search_k)
+        except Exception as exc:
+            return fail("search_failed", str(exc))
+        diagnostic["raw_candidate_count"] = int(len(raw_idxs))
             
         # Filter
-        n_windows = idx.X.shape[0]
         valid_candidates = []
+        overlap_excluded = 0
         for i, dist in zip(raw_idxs, raw_dists):
-            if i >= n_windows - 5:
+            if self._candidate_overlaps_query(idx, int(i), query_start, fallback_cutoff):
+                overlap_excluded += 1
                 continue
             valid_candidates.append((i, dist))
+        diagnostic["excluded_overlap_candidates"] = int(overlap_excluded)
+        diagnostic["valid_candidate_count"] = int(len(valid_candidates))
             
         if not valid_candidates:
-            return [], []
+            return fail(
+                "no_historical_candidates",
+                "All candidate windows overlapped the active query window or lacked a disjoint future segment",
+            )
             
         # Refine
         valid_idxs = np.array([x[0] for x in valid_candidates], dtype=int)
@@ -143,8 +238,8 @@ class AnalogMethod(ForecastMethod):
                 query_window, valid_idxs, valid_dists, top_k=k,
                 shape_metric=refine_metric, allow_lag=int(window_size * 0.1)
             )
-        except Exception:
-             return [], []
+        except Exception as exc:
+             return fail("refine_failed", str(exc))
         
         # Project
         futures = []
@@ -187,8 +282,16 @@ class AnalogMethod(ForecastMethod):
                 meta_list.append(meta_obj)
 
             except Exception:
+                diagnostic["projection_failures"] = int(diagnostic.get("projection_failures", 0)) + 1
                 continue
 
+        if not futures:
+            return fail("no_projected_paths", "No candidate futures survived projection")
+
+        diagnostic["status"] = "ok"
+        diagnostic["reason"] = None
+        diagnostic["returned_paths"] = int(len(futures))
+        self._record_timeframe_diagnostic(str(timeframe), diagnostic)
         return futures, meta_list
 
     def forecast(
@@ -200,6 +303,8 @@ class AnalogMethod(ForecastMethod):
         exog_future: Optional[pd.DataFrame] = None,
         **kwargs
     ) -> ForecastResult:
+        self._timeframe_diagnostics = {}
+
         # Enforce price-only input to avoid mixing return/volatility series with price-based indices
         base_name = series.name if series is not None else ""
         if series is None or series.empty or (base_name and (base_name.startswith("__") or "return" in base_name or "vol" in base_name)):
@@ -227,6 +332,16 @@ class AnalogMethod(ForecastMethod):
         scale = str(params.get('scale', 'zscore'))
         refine_metric = str(params.get('refine_metric', 'dtw'))
         search_engine = str(params.get('search_engine', 'ckdtree'))
+        denoise_spec = params.get('denoise')
+        base_col = str(params.get('base_col') or base_name or "").strip().lower()
+        if base_col and base_col not in {"close", "close_dn"}:
+            raise ValueError(f"Analog method requires a close-based price series; unsupported base column '{base_col}'")
+        if base_col == "close_dn" and not denoise_spec:
+            raise ValueError("Analog method requires a denoise spec when using 'close_dn' query series")
+        if len(series) < window_size:
+            raise ValueError(
+                f"Analog method requires at least {window_size} price points for the primary query; received {len(series)}"
+            )
 
         # Use input series for primary query vector
         # Handle case where series is empty or missing
@@ -247,9 +362,9 @@ class AnalogMethod(ForecastMethod):
         )
         
         if not p_futures:
-             # Fallback if primary fails?
-             # For now, raise.
-             raise RuntimeError(f"Primary analog search failed for {symbol} {primary_tf}")
+             raise RuntimeError(
+                 self._format_timeframe_failure(symbol, primary_tf, "Primary analog search failed")
+             )
 
         # Pool of all projected paths (from all timeframes)
         # We keep them as arrays of length 'horizon' (primary horizon)
@@ -258,13 +373,47 @@ class AnalogMethod(ForecastMethod):
         pool_futures = [f for f in p_futures]
         
         from ...core.constants import TIMEFRAME_SECONDS
-        p_sec = TIMEFRAME_SECONDS.get(primary_tf, 3600)
+        p_sec = TIMEFRAME_SECONDS.get(primary_tf)
+        if p_sec is None:
+            raise ValueError(f"Analog method does not support timeframe '{primary_tf}'")
+        requested_components = [primary_tf] + secondary_tfs
+        components_used = [primary_tf]
+        component_status = []
+        primary_diag = self._get_timeframe_diagnostic(primary_tf)
+        component_status.append(
+            {
+                "timeframe": primary_tf,
+                "role": "primary",
+                "status": "contributed",
+                "n_paths": int(len(p_futures)),
+                "diagnostic": primary_diag,
+            }
+        )
 
         # 2. Run Secondaries
         for tf in secondary_tfs:
-            if tf == primary_tf: continue
+            if tf == primary_tf:
+                component_status.append(
+                    {
+                        "timeframe": tf,
+                        "role": "secondary",
+                        "status": "skipped_duplicate",
+                        "n_paths": 0,
+                    }
+                )
+                continue
             
-            s_sec = TIMEFRAME_SECONDS.get(tf, 3600)
+            s_sec = TIMEFRAME_SECONDS.get(tf)
+            if s_sec is None:
+                component_status.append(
+                    {
+                        "timeframe": tf,
+                        "role": "secondary",
+                        "status": "skipped_unsupported_timeframe",
+                        "n_paths": 0,
+                    }
+                )
+                continue
             required_duration = horizon * p_sec
             s_horizon = int(np.ceil(required_duration / s_sec))
             s_horizon = max(s_horizon, 3)
@@ -275,6 +424,7 @@ class AnalogMethod(ForecastMethod):
                 symbol, tf, s_horizon, params, query_vector=None, as_of=as_of
             )
             
+            added_paths = 0
             if s_futures:
                 # Resample each path to match primary steps
                 # Time steps:
@@ -287,21 +437,62 @@ class AnalogMethod(ForecastMethod):
 
                 # Require at least one full secondary step covering the primary horizon; otherwise skip to avoid flat/aliased paths
                 if t_p[-1] < t_s[1]:
+                    component_status.append(
+                        {
+                            "timeframe": tf,
+                            "role": "secondary",
+                            "status": "skipped_insufficient_coverage",
+                            "n_paths": 0,
+                            "diagnostic": self._get_timeframe_diagnostic(tf),
+                        }
+                    )
                     continue
                 
                 for s_path in s_futures:
-                    # Interp
-                    # s_path is y, t_s is x. we want y at t_p
-                    # Ensure s_path is clean
-                    valid = np.isfinite(s_path)
-                    if not np.any(valid): continue
-                    
                     # Stepwise hold (piecewise constant) to avoid over-smoothing when upsampling coarse TFs
+                    valid = np.isfinite(s_path)
+                    if not np.any(valid):
+                        continue
                     idxs = np.searchsorted(t_s, t_p, side='right') - 1
                     idxs[idxs < 0] = 0
                     idxs[idxs >= len(s_path)] = len(s_path) - 1
                     step_y = s_path[idxs]
+                    if not np.any(np.isfinite(step_y)):
+                        continue
                     pool_futures.append(step_y)
+                    added_paths += 1
+
+            if added_paths > 0:
+                components_used.append(tf)
+                component_status.append(
+                    {
+                        "timeframe": tf,
+                        "role": "secondary",
+                        "status": "contributed",
+                        "n_paths": int(added_paths),
+                        "diagnostic": self._get_timeframe_diagnostic(tf),
+                    }
+                )
+            elif not s_futures:
+                component_status.append(
+                    {
+                        "timeframe": tf,
+                        "role": "secondary",
+                        "status": "failed",
+                        "n_paths": 0,
+                        "diagnostic": self._get_timeframe_diagnostic(tf),
+                    }
+                )
+            elif added_paths == 0:
+                component_status.append(
+                    {
+                        "timeframe": tf,
+                        "role": "secondary",
+                        "status": "skipped_no_valid_resampled_paths",
+                        "n_paths": 0,
+                        "diagnostic": self._get_timeframe_diagnostic(tf),
+                    }
+                )
 
         # 3. Aggregate
         if not pool_futures:
@@ -335,11 +526,18 @@ class AnalogMethod(ForecastMethod):
         }
         if secondary_tfs:
             params_used["secondary_timeframes"] = secondary_tfs
+            params_used["secondary_timeframes_used"] = components_used[1:]
+        if base_col:
+            params_used["base_col"] = base_col
+        if denoise_spec:
+            params_used["denoise"] = denoise_spec
         
         # Metrics
         metadata = {
             "method": "analog",
-            "components": [primary_tf] + secondary_tfs,
+            "components": components_used,
+            "requested_components": requested_components,
+            "component_status": component_status,
             "params_used": params_used,
             # Just first few analogs from primary for display
             "analogs": [
@@ -349,7 +547,12 @@ class AnalogMethod(ForecastMethod):
             "ensemble_metrics": {
                 "spread": float(spread),
                 "n_paths": int(futures_matrix.shape[0])
-            }
+            },
+            "timeframe_diagnostics": {
+                tf: self._get_timeframe_diagnostic(tf)
+                for tf in requested_components
+                if self._get_timeframe_diagnostic(tf)
+            },
         }
         
         return ForecastResult(

@@ -35,6 +35,12 @@ def test_normalize_weights_and_lookback_helpers():
 
     assert fe._calculate_lookback_bars("theta", horizon=4, lookback=10, seasonality=24, timeframe="H1") == 12
     assert fe._calculate_lookback_bars("analog", horizon=4, lookback=None, seasonality=24, timeframe="H1") >= 100
+    assert fe._calculate_lookback_bars(
+        "analog", horizon=4, lookback=None, seasonality=24, timeframe="H1", params={"window_size": 256}
+    ) >= 258
+    assert fe._calculate_lookback_bars(
+        "analog", horizon=4, lookback=10, seasonality=24, timeframe="H1", params={"window_size": 256}
+    ) >= 258
     assert fe._calculate_lookback_bars("seasonal_naive", horizon=4, lookback=None, seasonality=12, timeframe="H1") == 36
     assert fe._calculate_lookback_bars("fourier_ols", horizon=4, lookback=None, seasonality=24, timeframe="H1") >= 300
 
@@ -505,7 +511,277 @@ def test_forecast_engine_injects_context_for_analog(monkeypatch):
     assert captured["params"]["symbol"] == "EURUSD"
     assert captured["params"]["timeframe"] == "H1"
     assert captured["params"]["as_of"] == "2024-01-01"
+    assert captured["params"]["base_col"] == "close"
     assert captured["kwargs"]["as_of"] == "2024-01-01"
+
+
+def test_forecast_engine_injects_denoise_context_for_analog(monkeypatch):
+    captured = {}
+
+    class CaptureForecaster:
+        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+            captured["params"] = dict(params)
+            return ForecastResult(
+                forecast=np.array([float(series.iloc[-1])], dtype=float),
+                params_used={},
+                metadata={},
+            )
+
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return CaptureForecaster()
+
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("analog",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
+
+    df = _df(40)
+    df["close_dn"] = df["close"] * 10.0
+
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="analog",
+        horizon=1,
+        prefetched_df=df,
+        prefetched_base_col="close_dn",
+        prefetched_denoise_spec={"method": "ema", "params": {"span": 5}},
+    )
+
+    assert out["success"] is True
+    assert captured["params"]["base_col"] == "close_dn"
+    assert captured["params"]["denoise"] == {"method": "ema", "params": {"span": 5}}
+
+
+def test_forecast_engine_analog_rejects_prefetched_history_shorter_than_window(monkeypatch):
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("analog",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
+    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
+
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            from mtdata.forecast.methods.analog import AnalogMethod
+
+            return AnalogMethod()
+
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="analog",
+        horizon=1,
+        params={"window_size": 32},
+        prefetched_df=_df(20),
+    )
+
+    assert out["error"].startswith("Forecast method 'analog' failed: Analog method requires at least 32 price points")
+
+
+def test_forecast_engine_adds_broker_time_check_for_live_data(monkeypatch):
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return SimpleNamespace(
+                forecast=lambda *args, **kwargs: ForecastResult(
+                    forecast=np.array([101.0], dtype=float),
+                    params_used={"used": True},
+                    metadata={},
+                )
+            )
+
+    captured = {}
+
+    def fake_inspect(symbol, probe_timeframe, ttl_seconds):
+        captured["symbol"] = symbol
+        captured["probe_timeframe"] = probe_timeframe
+        captured["ttl_seconds"] = ttl_seconds
+        return {"status": "ok", "reason": None, "probe_timeframe": probe_timeframe}
+
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("naive",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+    monkeypatch.setattr(fe, "_fetch_history", lambda *args, **kwargs: _df(20))
+    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
+    monkeypatch.setattr(fe, "get_cached_mt5_time_alignment", fake_inspect)
+    monkeypatch.setattr(
+        fe,
+        "mt5_config",
+        SimpleNamespace(broker_time_check_enabled=True, broker_time_check_ttl_seconds=45),
+    )
+
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="naive",
+        horizon=1,
+        ci_alpha=None,
+    )
+
+    assert out["success"] is True
+    assert captured == {"symbol": "EURUSD", "probe_timeframe": "M1", "ttl_seconds": 45}
+    assert out["diagnostics"]["broker_time_check"]["status"] == "ok"
+
+
+def test_forecast_engine_surfaces_broker_time_misalignment_warning(monkeypatch):
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return SimpleNamespace(
+                forecast=lambda *args, **kwargs: ForecastResult(
+                    forecast=np.array([101.0], dtype=float),
+                    params_used={"used": True},
+                    metadata={},
+                )
+            )
+
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("naive",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+    monkeypatch.setattr(fe, "_fetch_history", lambda *args, **kwargs: _df(20))
+    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
+    monkeypatch.setattr(
+        fe,
+        "mt5_config",
+        SimpleNamespace(broker_time_check_enabled=True, broker_time_check_ttl_seconds=60),
+    )
+    monkeypatch.setattr(
+        fe,
+        "get_cached_mt5_time_alignment",
+        lambda symbol, probe_timeframe, ttl_seconds: {
+            "status": "misaligned",
+            "reason": "timezone_mismatch",
+            "warning": "MT5 broker-time sanity check failed: inferred broker offset is 10800s but configuration resolves to 7200s",
+        },
+    )
+
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="naive",
+        horizon=1,
+        ci_alpha=None,
+    )
+
+    assert out["success"] is True
+    assert out["diagnostics"]["broker_time_check"]["status"] == "misaligned"
+    assert out["warnings"] == [
+        "MT5 broker-time sanity check failed: inferred broker offset is 10800s but configuration resolves to 7200s"
+    ]
+
+
+def test_forecast_engine_keeps_stale_broker_time_check_diagnostic_only(monkeypatch):
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return SimpleNamespace(
+                forecast=lambda *args, **kwargs: ForecastResult(
+                    forecast=np.array([101.0], dtype=float),
+                    params_used={"used": True},
+                    metadata={},
+                )
+            )
+
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("naive",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+    monkeypatch.setattr(fe, "_fetch_history", lambda *args, **kwargs: _df(20))
+    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
+    monkeypatch.setattr(
+        fe,
+        "mt5_config",
+        SimpleNamespace(broker_time_check_enabled=True, broker_time_check_ttl_seconds=60),
+    )
+    monkeypatch.setattr(
+        fe,
+        "get_cached_mt5_time_alignment",
+        lambda symbol, probe_timeframe, ttl_seconds: {
+            "status": "stale",
+            "reason": "market_data_stale",
+            "warning": "MT5 broker-time sanity check could not confirm live alignment: market is closed",
+        },
+    )
+
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="naive",
+        horizon=1,
+        ci_alpha=None,
+    )
+
+    assert out["success"] is True
+    assert out["diagnostics"]["broker_time_check"]["status"] == "stale"
+    assert "warnings" not in out
+
+
+def test_forecast_engine_skips_broker_time_check_for_prefetched_and_asof(monkeypatch):
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return SimpleNamespace(
+                forecast=lambda *args, **kwargs: ForecastResult(
+                    forecast=np.array([101.0], dtype=float),
+                    params_used={"used": True},
+                    metadata={},
+                )
+            )
+
+    calls = {"count": 0}
+
+    def fake_inspect(symbol, probe_timeframe, ttl_seconds):
+        calls["count"] += 1
+        return {"status": "ok"}
+
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("naive",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+    monkeypatch.setattr(fe, "_fetch_history", lambda *args, **kwargs: _df(20))
+    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
+    monkeypatch.setattr(fe, "get_cached_mt5_time_alignment", fake_inspect)
+    monkeypatch.setattr(
+        fe,
+        "mt5_config",
+        SimpleNamespace(broker_time_check_enabled=True, broker_time_check_ttl_seconds=60),
+    )
+
+    out_prefetched = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="naive",
+        horizon=1,
+        ci_alpha=None,
+        prefetched_df=_df(20),
+    )
+    out_asof = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="naive",
+        horizon=1,
+        ci_alpha=None,
+        as_of="2024-01-01",
+    )
+
+    assert out_prefetched["success"] is True
+    assert out_asof["success"] is True
+    assert calls["count"] == 0
+    assert "broker_time_check" not in out_prefetched["diagnostics"]
+    assert "broker_time_check" not in out_asof["diagnostics"]
 
 
 def test_forecast_engine_target_spec_and_data_validity_errors(monkeypatch):

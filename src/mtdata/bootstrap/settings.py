@@ -13,6 +13,13 @@ _WARNED_SERVER_TZ = False
 _ENV_LOADED = False
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def load_environment(*, force: bool = False) -> bool:
     """Load environment variables from `.env` once for application entrypoints."""
     global _ENV_LOADED
@@ -51,6 +58,8 @@ class MT5Config:
         self.server_tz_name: Optional[str] = None
         self.client_tz_name: Optional[str] = None
         self.time_offset_minutes = 0
+        self.broker_time_check_enabled = False
+        self.broker_time_check_ttl_seconds = 60
         self.reload_from_env(warn_if_timezone_missing=warn_if_timezone_missing)
 
     def reload_from_env(self, *, warn_if_timezone_missing: bool = True) -> None:
@@ -64,6 +73,11 @@ class MT5Config:
             self.time_offset_minutes = int(os.getenv("MT5_TIME_OFFSET_MINUTES", "0"))
         except Exception:
             self.time_offset_minutes = 0
+        self.broker_time_check_enabled = _env_bool("MTDATA_BROKER_TIME_CHECK", default=False)
+        try:
+            self.broker_time_check_ttl_seconds = max(0, int(os.getenv("MTDATA_BROKER_TIME_CHECK_TTL_SECONDS", "60")))
+        except Exception:
+            self.broker_time_check_ttl_seconds = 60
         if warn_if_timezone_missing:
             self._warn_if_timezone_missing()
 

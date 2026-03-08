@@ -85,3 +85,27 @@ def test_mt5_config_handles_invalid_offset_and_bad_timezone(monkeypatch):
     assert conf.get_time_offset_seconds() == 0
     assert conf.get_server_tz() is None
     assert conf.get_client_tz() is None
+
+
+def test_mt5_config_reads_broker_time_check_settings(monkeypatch):
+    monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
+    monkeypatch.setenv("MTDATA_BROKER_TIME_CHECK", "true")
+    monkeypatch.setenv("MTDATA_BROKER_TIME_CHECK_TTL_SECONDS", "300")
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+
+    conf = cfg.MT5Config()
+
+    assert conf.broker_time_check_enabled is True
+    assert conf.broker_time_check_ttl_seconds == 300
+
+
+def test_mt5_config_handles_invalid_broker_time_check_ttl(monkeypatch):
+    monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
+    monkeypatch.setenv("MTDATA_BROKER_TIME_CHECK", "off")
+    monkeypatch.setenv("MTDATA_BROKER_TIME_CHECK_TTL_SECONDS", "bad")
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+
+    conf = cfg.MT5Config()
+
+    assert conf.broker_time_check_enabled is False
+    assert conf.broker_time_check_ttl_seconds == 60
