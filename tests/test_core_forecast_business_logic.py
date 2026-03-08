@@ -250,6 +250,23 @@ def test_forecast_generate_logs_finish_event(caplog, monkeypatch):
     )
 
 
+def test_forecast_generate_wrapper_emits_single_finish_event(caplog, monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+    monkeypatch.setattr(cf, "_forecast_impl", lambda **kwargs: {"success": True, "method": kwargs["method"]})
+
+    with caplog.at_level(logging.INFO):
+        out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", model="theta"))
+
+    assert out["success"] is True
+    finish_records = [
+        record
+        for record in caplog.records
+        if "event=finish operation=forecast_generate success=True" in record.message
+    ]
+    assert len(finish_records) == 1
+    assert finish_records[0].name == cf.logger.name
+
+
 def test_forecast_generate_returns_connection_error_payload(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
 

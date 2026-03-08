@@ -108,6 +108,7 @@ def forecast_generate(request: ForecastGenerateRequest) -> Dict[str, Any]:
             request,
             forecast_impl=_forecast_impl,
             resolve_sktime_forecaster=_resolve_sktime_forecaster,
+            log_events=False,
         ),
     )
 

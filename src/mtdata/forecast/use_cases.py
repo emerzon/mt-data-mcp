@@ -123,34 +123,37 @@ def run_forecast_generate(
     *,
     forecast_impl: Any = _forecast_impl,
     resolve_sktime_forecaster: Any = _resolve_sktime_forecaster,
+    log_events: bool = True,
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
     lib = str(request.library or "native").strip().lower()
     model = str(request.model or "").strip()
     params = dict(request.model_params or {})
     legacy_method = str(request.method or "").strip()
-    log_operation_start(
-        logger,
-        operation="forecast_generate",
-        symbol=request.symbol,
-        timeframe=request.timeframe,
-        library=lib or "native",
-        model=model or None,
-        legacy_method=legacy_method or None,
-    )
-
-    def _finish(result: Dict[str, Any], *, resolved_method: Optional[str] = None) -> Dict[str, Any]:
-        log_operation_finish(
+    if log_events:
+        log_operation_start(
             logger,
             operation="forecast_generate",
-            started_at=started_at,
-            success=infer_result_success(result),
             symbol=request.symbol,
             timeframe=request.timeframe,
             library=lib or "native",
             model=model or None,
-            resolved_method=resolved_method,
+            legacy_method=legacy_method or None,
         )
+
+    def _finish(result: Dict[str, Any], *, resolved_method: Optional[str] = None) -> Dict[str, Any]:
+        if log_events:
+            log_operation_finish(
+                logger,
+                operation="forecast_generate",
+                started_at=started_at,
+                success=infer_result_success(result),
+                symbol=request.symbol,
+                timeframe=request.timeframe,
+                library=lib or "native",
+                model=model or None,
+                resolved_method=resolved_method,
+            )
         return result
 
     try:
@@ -223,16 +226,17 @@ def run_forecast_generate(
             out["warnings"] = warnings_out
         return _finish(out, resolved_method=str(resolved_method))
     except Exception as exc:
-        log_operation_exception(
-            logger,
-            operation="forecast_generate",
-            started_at=started_at,
-            exc=exc,
-            symbol=request.symbol,
-            timeframe=request.timeframe,
-            library=lib or "native",
-            model=model or None,
-        )
+        if log_events:
+            log_operation_exception(
+                logger,
+                operation="forecast_generate",
+                started_at=started_at,
+                exc=exc,
+                symbol=request.symbol,
+                timeframe=request.timeframe,
+                library=lib or "native",
+                model=model or None,
+            )
         raise
 
 
