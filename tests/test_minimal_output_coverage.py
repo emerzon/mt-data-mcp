@@ -6,6 +6,7 @@ from mtdata.utils.minimal_output import (
     _is_empty_value,
     _stringify_scalar,
     _stringify_cell,
+    _compact_forecast_ci,
     _normalize_forecast_payload,
     format_table_toon,
     _encode_inline_array,
@@ -250,8 +251,48 @@ class TestNormalizeForecastPayload:
         }
         result = _normalize_forecast_payload(payload, verbose=False)
         assert "meta" not in result
-        assert result["ci"]["ci_status"] == "unavailable"
+        assert result["ci"] == {"status": "unavailable", "alpha": 0.05}
         assert result["warnings"][0].startswith("Point forecast only")
+
+    def test_ci_diag_omitted_when_bounds_already_rendered(self):
+        payload = {
+            "times": ["t1"],
+            "forecast_price": [100.0],
+            "lower_price": [98.0],
+            "upper_price": [102.0],
+            "ci_requested": True,
+            "ci_alpha_requested": 0.05,
+            "ci_available": True,
+            "ci_status": "available",
+            "ci_alpha": 0.05,
+        }
+        result = _normalize_forecast_payload(payload, verbose=False)
+        assert "ci" not in result
+
+
+class TestCompactForecastCi:
+    def test_omits_available_ci_when_bounds_exist(self):
+        payload = {
+            "ci_requested": True,
+            "ci_available": True,
+            "ci_status": "available",
+            "ci_alpha_requested": 0.05,
+            "ci_alpha": 0.05,
+        }
+        assert _compact_forecast_ci(payload, lower=[1.0], upper=[2.0]) == {}
+
+    def test_compacts_unavailable_ci_to_status_and_alpha(self):
+        payload = {
+            "ci_requested": True,
+            "ci_available": False,
+            "ci_status": "unavailable",
+            "ci_alpha_requested": 0.1,
+            "ci_unavailable": True,
+        }
+        assert _compact_forecast_ci(payload, lower=[], upper=[]) == {
+            "status": "unavailable",
+            "alpha": 0.1,
+        }
 
 
 class TestFormatTableToon:

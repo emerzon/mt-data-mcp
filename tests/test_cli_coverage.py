@@ -1858,6 +1858,33 @@ class TestForecastGenerateIntegration:
             result = main()
         assert result == 0
 
+    @patch("mtdata.core.cli.discover_tools")
+    def test_forecast_generate_omits_redundant_ci_block_when_bounds_rendered(self, mock_discover, capsys):
+        mock_fn = MagicMock(return_value={
+            "times": ["2026-03-07 18:00"],
+            "forecast_price": [67580.67],
+            "lower_price": [63025.26],
+            "upper_price": [71823.47],
+            "ci_requested": True,
+            "ci_alpha_requested": 0.05,
+            "ci_available": True,
+            "ci_status": "available",
+            "ci_alpha": 0.05,
+        })
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "forecast_generate"
+        mock_fn.__doc__ = "Generate forecasts."
+
+        mock_discover.return_value = {
+            "forecast_generate": {"func": mock_fn, "meta": {"description": "Generate forecasts"}},
+        }
+        with patch("sys.argv", ["cli.py", "forecast_generate", "BTCUSD", "--timeframe", "D1"]):
+            result = main()
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "forecast[1]{time,forecast,lower,upper}:" in out
+        assert "\nci:" not in out
+
 
 # ========================================================================
 # Edge cases / misc coverage

@@ -471,19 +471,7 @@ def _normalize_forecast_payload(payload: Dict[str, Any], verbose: bool = True) -
             if isinstance(cli_meta, dict) and cli_meta:
                 out['cli_meta'] = cli_meta
 
-        # Preserve forecast CI diagnostics/warnings in compact output so
-        # non-verbose CLI users still see when intervals are unavailable.
-        ci_diag: Dict[str, Any] = {}
-        for key in (
-            'ci_requested',
-            'ci_alpha_requested',
-            'ci_available',
-            'ci_status',
-            'ci_unavailable',
-            'ci_alpha',
-        ):
-            if key in payload and not _is_empty_value(payload.get(key)):
-                ci_diag[key] = payload.get(key)
+        ci_diag = _compact_forecast_ci(payload, lower=lower, upper=upper)
         if ci_diag:
             out['ci'] = ci_diag
 
@@ -497,6 +485,49 @@ def _normalize_forecast_payload(payload: Dict[str, Any], verbose: bool = True) -
         return out
     except Exception:
         return None
+
+
+def _compact_forecast_ci(
+    payload: Dict[str, Any],
+    *,
+    lower: List[Any],
+    upper: List[Any],
+) -> Dict[str, Any]:
+    """Emit CI diagnostics only when they add signal beyond the forecast table."""
+    ci_requested = bool(payload.get('ci_requested'))
+    ci_available = payload.get('ci_available')
+    ci_status = payload.get('ci_status')
+    ci_unavailable = bool(payload.get('ci_unavailable'))
+    has_interval_columns = bool(lower and upper)
+
+    alpha = None
+    for key in ('ci_alpha', 'ci_alpha_requested'):
+        value = payload.get(key)
+        if not _is_empty_value(value):
+            alpha = value
+            break
+
+    if ci_available is True and has_interval_columns:
+        return {}
+
+    if not ci_requested and ci_available not in (False, True) and _is_empty_value(ci_status) and not ci_unavailable:
+        return {}
+
+    out: Dict[str, Any] = {}
+    if not _is_empty_value(ci_status):
+        out['status'] = ci_status
+    elif ci_unavailable:
+        out['status'] = 'unavailable'
+    elif ci_available is True:
+        out['status'] = 'available'
+
+    if alpha is not None:
+        out['alpha'] = alpha
+
+    if not out and ci_requested:
+        out['requested'] = True
+
+    return out
 
 
 def _format_to_toon(
