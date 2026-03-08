@@ -1,12 +1,11 @@
 
 from typing import Any, Dict
 import logging
-import time
 
 from ._mcp_instance import mcp
 from .data_requests import DataFetchCandlesRequest, DataFetchTicksRequest
 from .data_use_cases import run_data_fetch_candles, run_data_fetch_ticks
-from .execution_logging import infer_result_success, log_operation_finish, log_operation_start
+from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from ..services.data_service import fetch_candles, fetch_ticks
 from ..utils.mt5 import ensure_mt5_connection_or_raise
@@ -97,30 +96,18 @@ def data_fetch_candles(
         indicators="rsi(14),ema(20),macd(12,26,9)"
     )
     """
-    started_at = time.perf_counter()
-    log_operation_start(
+    return run_logged_operation(
         logger,
         operation="data_fetch_candles",
         symbol=request.symbol,
         timeframe=request.timeframe,
         limit=request.limit,
+        func=lambda: run_data_fetch_candles(
+            request,
+            gateway=_get_mt5_gateway(),
+            fetch_candles_impl=fetch_candles,
+        ),
     )
-    mt5 = _get_mt5_gateway()
-    result = run_data_fetch_candles(
-        request,
-        gateway=mt5,
-        fetch_candles_impl=fetch_candles,
-    )
-    log_operation_finish(
-        logger,
-        operation="data_fetch_candles",
-        started_at=started_at,
-        success=infer_result_success(result),
-        symbol=request.symbol,
-        timeframe=request.timeframe,
-        limit=request.limit,
-    )
-    return result
 
 @mcp.tool()
 def data_fetch_ticks(
@@ -136,27 +123,15 @@ def data_fetch_ticks(
     Use `output="rows"` to return raw tick rows as structured data.
     `simplify` only applies to row output.
     """
-    started_at = time.perf_counter()
-    log_operation_start(
+    return run_logged_operation(
         logger,
         operation="data_fetch_ticks",
         symbol=request.symbol,
         limit=request.limit,
         output=request.output,
+        func=lambda: run_data_fetch_ticks(
+            request,
+            gateway=_get_mt5_gateway(),
+            fetch_ticks_impl=fetch_ticks,
+        ),
     )
-    mt5 = _get_mt5_gateway()
-    result = run_data_fetch_ticks(
-        request,
-        gateway=mt5,
-        fetch_ticks_impl=fetch_ticks,
-    )
-    log_operation_finish(
-        logger,
-        operation="data_fetch_ticks",
-        started_at=started_at,
-        success=infer_result_success(result),
-        symbol=request.symbol,
-        limit=request.limit,
-        output=request.output,
-    )
-    return result

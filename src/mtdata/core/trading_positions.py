@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import logging
 import math
-import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from ._mcp_instance import mcp
 from . import trading_comments, trading_validation
-from .execution_logging import infer_result_success, log_operation_finish, log_operation_start
+from .execution_logging import run_logged_operation
 from .trading_gateway import MT5TradingGateway
 from .trading_requests import TradeGetOpenRequest, TradeGetPendingRequest
 from .trading_use_cases import run_trade_get_open, run_trade_get_pending
@@ -173,33 +172,22 @@ def trade_get_open(
     request: TradeGetOpenRequest,
 ) -> List[Dict[str, Any]]:
     """Get open positions."""
-    started_at = time.perf_counter()
-    log_operation_start(
+    return run_logged_operation(
         logger,
         operation="trade_get_open",
         symbol=request.symbol,
         limit=request.limit,
+        func=lambda: run_trade_get_open(
+            request,
+            gateway=_get_trading_gateway(),
+            use_client_tz=_use_client_tz,
+            format_time_minimal=_format_time_minimal,
+            format_time_minimal_local=_format_time_minimal_local,
+            mt5_epoch_to_utc=_mt5_epoch_to_utc,
+            normalize_limit=_normalize_limit,
+            comment_row_metadata=trading_comments._comment_row_metadata,
+        ),
     )
-    mt5 = _get_trading_gateway()
-    result = run_trade_get_open(
-        request,
-        gateway=mt5,
-        use_client_tz=_use_client_tz,
-        format_time_minimal=_format_time_minimal,
-        format_time_minimal_local=_format_time_minimal_local,
-        mt5_epoch_to_utc=_mt5_epoch_to_utc,
-        normalize_limit=_normalize_limit,
-        comment_row_metadata=trading_comments._comment_row_metadata,
-    )
-    log_operation_finish(
-        logger,
-        operation="trade_get_open",
-        started_at=started_at,
-        success=infer_result_success(result),
-        symbol=request.symbol,
-        limit=request.limit,
-    )
-    return result
 
 
 @mcp.tool()
@@ -207,30 +195,19 @@ def trade_get_pending(
     request: TradeGetPendingRequest,
 ) -> List[Dict[str, Any]]:
     """Get pending orders (open orders)."""
-    started_at = time.perf_counter()
-    log_operation_start(
+    return run_logged_operation(
         logger,
         operation="trade_get_pending",
         symbol=request.symbol,
         limit=request.limit,
+        func=lambda: run_trade_get_pending(
+            request,
+            gateway=_get_trading_gateway(),
+            use_client_tz=_use_client_tz,
+            format_time_minimal=_format_time_minimal,
+            format_time_minimal_local=_format_time_minimal_local,
+            mt5_epoch_to_utc=_mt5_epoch_to_utc,
+            normalize_limit=_normalize_limit,
+            comment_row_metadata=trading_comments._comment_row_metadata,
+        ),
     )
-    mt5 = _get_trading_gateway()
-    result = run_trade_get_pending(
-        request,
-        gateway=mt5,
-        use_client_tz=_use_client_tz,
-        format_time_minimal=_format_time_minimal,
-        format_time_minimal_local=_format_time_minimal_local,
-        mt5_epoch_to_utc=_mt5_epoch_to_utc,
-        normalize_limit=_normalize_limit,
-        comment_row_metadata=trading_comments._comment_row_metadata,
-    )
-    log_operation_finish(
-        logger,
-        operation="trade_get_pending",
-        started_at=started_at,
-        success=infer_result_success(result),
-        symbol=request.symbol,
-        limit=request.limit,
-    )
-    return result

@@ -16,15 +16,12 @@ def _unwrap(fn):
 
 def test_finviz_news_rejects_pair_style_symbol_before_service_call() -> None:
     raw = _unwrap(finviz_news)
-    with patch("mtdata.core.finviz.get_stock_news") as mock_news, patch(
-        "mtdata.core.finviz.log_operation_finish"
-    ) as mock_finish:
+    with patch("mtdata.core.finviz.get_stock_news") as mock_news:
         out = raw(symbol="BTCUSD", limit=5, page=1)
 
     assert "error" in out
     assert "not a Finviz-supported equity ticker" in out["error"]
     mock_news.assert_not_called()
-    mock_finish.assert_called_once()
 
 
 def test_get_stock_news_returns_clean_message_for_404_like_errors() -> None:

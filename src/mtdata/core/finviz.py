@@ -8,11 +8,10 @@ Note: Data is delayed 15-20 minutes; US stocks only.
 from typing import Any, Callable, Dict, Optional, Literal
 import json
 import logging
-import time
 from urllib.parse import parse_qs
 
 from ._mcp_instance import mcp
-from .execution_logging import infer_result_success, log_operation_finish, log_operation_start
+from .execution_logging import run_logged_operation
 from ..services.finviz_service import (
     get_stock_fundamentals,
     get_stock_description,
@@ -53,17 +52,12 @@ def _run_logged_tool(
     fields: Dict[str, Any],
     fn: Callable[[], Dict[str, Any]],
 ) -> Dict[str, Any]:
-    started_at = time.perf_counter()
-    log_operation_start(logger, operation=operation, **fields)
-    result = fn()
-    log_operation_finish(
+    return run_logged_operation(
         logger,
         operation=operation,
-        started_at=started_at,
-        success=infer_result_success(result),
+        func=fn,
         **fields,
     )
-    return result
 
 
 @mcp.tool()

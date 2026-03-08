@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from typing import Any, Callable, Optional, TypeVar
+
+ResultT = TypeVar("ResultT")
 
 
 def infer_result_success(result: Any) -> bool:
@@ -66,6 +68,39 @@ def log_operation_exception(
         _format_fields(fields),
         exc,
     )
+
+
+def run_logged_operation(
+    logger: logging.Logger,
+    *,
+    operation: str,
+    func: Callable[[], ResultT],
+    success_eval: Optional[Callable[[ResultT], bool]] = None,
+    **fields: Any,
+) -> ResultT:
+    started_at = time.perf_counter()
+    log_operation_start(logger, operation=operation, **fields)
+    try:
+        result = func()
+    except Exception as exc:
+        log_operation_exception(
+            logger,
+            operation=operation,
+            started_at=started_at,
+            exc=exc,
+            **fields,
+        )
+        raise
+
+    success_value = infer_result_success(result) if success_eval is None else bool(success_eval(result))
+    log_operation_finish(
+        logger,
+        operation=operation,
+        started_at=started_at,
+        success=success_value,
+        **fields,
+    )
+    return result
 
 
 def _elapsed_ms(started_at: float) -> float:
