@@ -19,6 +19,7 @@ from ..shared.constants import (
     DEFAULT_ROW_LIMIT
 )
 from ..bootstrap.settings import mt5_config
+from ..core.runtime_metadata import build_runtime_timezone_meta
 
 # Imports from utils
 from ..utils.mt5 import (
@@ -681,6 +682,10 @@ def fetch_candles(
             time_since_candle_start = current_time - last_epoch
             last_candle_open = 0 <= time_since_candle_start < seconds_per_bar
         
+        timezone_meta_input: Dict[str, Any] = dict(payload)
+        if not _use_ctz:
+            timezone_meta_input["timezone"] = "UTC"
+
         payload.update({
             "success": True,
             "symbol": symbol,
@@ -688,7 +693,14 @@ def fetch_candles(
             "candles": len(df),
             "last_candle_open": last_candle_open,
             "meta": {
-                "server_tz_offset": int(mt5_config.get_time_offset_seconds()),
+                "runtime": {
+                    "timezone": build_runtime_timezone_meta(
+                        timezone_meta_input,
+                        mt5_config=mt5_config,
+                        include_local=False,
+                        include_now=False,
+                    ),
+                },
                 "diagnostics": {
                     "query": {
                         "mode": query_mode,

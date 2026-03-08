@@ -5,6 +5,7 @@ import types
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+from .runtime_metadata import build_runtime_timezone_meta
 from ..utils.minimal_output import format_result_minimal as _shared_minimal
 from .mt5_gateway import get_default_mt5_gateway
 
@@ -134,73 +135,47 @@ def _safe_tz_name(value: Any) -> Optional[str]:
 
 
 def _build_cli_timezone_meta(result: Any) -> Dict[str, Any]:
-    try:
-        from .config import mt5_config
-    except Exception:
-        mt5_config = None
-
-    server_tz_config = None
-    server_tz_resolved = None
-    client_tz_config = None
-    client_tz_resolved = None
-    server_offset_minutes = None
-    if mt5_config is not None:
-        server_tz_config = getattr(mt5_config, "server_tz_name", None) or None
-        client_tz_config = getattr(mt5_config, "client_tz_name", None) or None
-        try:
-            server_tz_resolved = _safe_tz_name(mt5_config.get_server_tz())
-        except Exception:
-            server_tz_resolved = None
-        try:
-            client_tz_resolved = _safe_tz_name(mt5_config.get_client_tz())
-        except Exception:
-            client_tz_resolved = None
-
-    offset_env = os.getenv("MT5_TIME_OFFSET_MINUTES")
-    if offset_env is not None:
-        try:
-            server_offset_minutes = int(offset_env)
-        except Exception:
-            server_offset_minutes = None
-
-    output_timezone = None
-    if isinstance(result, dict):
-        output_timezone = result.get("timezone")
-
-    output_hint = str(output_timezone) if output_timezone else (client_tz_resolved or client_tz_config or "UTC")
-
-    server_source = "none"
-    if server_tz_config:
-        server_source = "MT5_SERVER_TZ"
-    elif offset_env is not None:
-        server_source = "MT5_TIME_OFFSET_MINUTES"
-
-    local_tz = None
-    try:
-        local_tz = _safe_tz_name(datetime.now().astimezone().tzinfo)
-    except Exception:
-        local_tz = None
-
-    return {
-        "output_timezone": output_timezone,
-        "output_timezone_hint": output_hint,
-        "server_tz_source": server_source,
-        "server_tz_config": server_tz_config,
-        "server_tz_resolved": server_tz_resolved,
-        "server_offset_minutes": server_offset_minutes,
-        "client_tz_config": client_tz_config,
-        "client_tz_resolved": client_tz_resolved,
-        "local_tz": local_tz,
-    }
+    return build_runtime_timezone_meta(result)
 
 
 def _build_cli_timezone_meta_brief(result: Any) -> Dict[str, Any]:
     full = _build_cli_timezone_meta(result)
     return {
-        "output_timezone": full.get("output_timezone"),
-        "output_timezone_hint": full.get("output_timezone_hint"),
-        "server_tz": full.get("server_tz_resolved") or full.get("server_tz_config"),
-        "client_tz": full.get("client_tz_resolved") or full.get("client_tz_config"),
+        "output": {
+            "tz": {
+                "value": (
+                    (((full.get("output") or {}).get("tz")) or {}).get("value")
+                    if isinstance((full.get("output") or {}).get("tz"), dict)
+                    else None
+                ),
+                "hint": (
+                    (((full.get("output") or {}).get("tz")) or {}).get("hint")
+                    if isinstance((full.get("output") or {}).get("tz"), dict)
+                    else None
+                ),
+            },
+        },
+        "server": {
+            "tz": {
+                "value": (
+                    ((((full.get("server") or {}).get("tz")) or {}).get("resolved"))
+                    or ((((full.get("server") or {}).get("tz")) or {}).get("configured"))
+                ) if isinstance((full.get("server") or {}).get("tz"), dict) else None,
+            },
+            "now": (full.get("server") or {}).get("now") if isinstance(full.get("server"), dict) else None,
+        },
+        "client": {
+            "tz": {
+                "value": (
+                    ((((full.get("client") or {}).get("tz")) or {}).get("resolved"))
+                    or ((((full.get("client") or {}).get("tz")) or {}).get("configured"))
+                ) if isinstance((full.get("client") or {}).get("tz"), dict) else None,
+            },
+            "now": (full.get("client") or {}).get("now") if isinstance(full.get("client"), dict) else None,
+        },
+        "utc": {
+            "now": (full.get("utc") or {}).get("now") if isinstance(full.get("utc"), dict) else None,
+        },
     }
 
 

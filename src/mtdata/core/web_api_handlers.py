@@ -11,6 +11,7 @@ from fastapi import HTTPException
 
 from ..forecast.exceptions import ForecastError
 from ..utils.mt5 import MT5ConnectionError
+from .runtime_metadata import build_runtime_timezone_meta
 from .error_envelope import build_http_error_detail
 from .mt5_gateway import get_default_mt5_gateway
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
@@ -368,7 +369,14 @@ def get_history_response(
     return {
         "bars": rows,
         "meta": {
-            "server_tz_offset": int(mt5_config.get_time_offset_seconds()),
+            "runtime": {
+                "timezone": build_runtime_timezone_meta(
+                    result,
+                    mt5_config=mt5_config,
+                    include_local=False,
+                    include_now=False,
+                ),
+            },
         },
     }
 

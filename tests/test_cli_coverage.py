@@ -327,44 +327,101 @@ class TestSafeTzName:
 # ========================================================================
 
 class TestBuildCliTimezoneMeta:
-    @patch("mtdata.core.cli.mt5_config", create=True)
+    @patch("mtdata.core.config.mt5_config")
     def test_with_config(self, mock_config):
-        mock_config.server_tz_name = "Etc/GMT-3"
+        mock_config.server_tz_name = "Europe/Nicosia"
         mock_config.client_tz_name = "US/Eastern"
-        mock_config.get_server_tz.return_value = MagicMock(zone="Etc/GMT-3")
-        mock_config.get_client_tz.return_value = MagicMock(zone="US/Eastern")
-        with patch("mtdata.core.cli._build_cli_timezone_meta") as real_fn:
-            real_fn.return_value = {"output_timezone": None, "server_tz_source": "MT5_SERVER_TZ"}
-            result = _build_cli_timezone_meta({"some": "data"})
+        from zoneinfo import ZoneInfo
+
+        mock_config.get_server_tz.return_value = ZoneInfo("Europe/Nicosia")
+        mock_config.get_client_tz.return_value = ZoneInfo("US/Eastern")
+        mock_config.get_time_offset_seconds.return_value = 7200
+        result = _build_cli_timezone_meta({"some": "data"})
         assert isinstance(result, dict)
+        assert result["server"]["tz"]["configured"] == "Europe/Nicosia"
+        assert result["client"]["tz"]["configured"] == "US/Eastern"
+        assert result["server"]["tz"]["offset_seconds"] == 7200
+        assert result["server"]["now"] != result["client"]["now"]
 
-    def test_with_dict_result_containing_timezone(self):
+    @patch("mtdata.core.config.mt5_config")
+    def test_with_dict_result_containing_timezone(self, mock_config):
+        mock_config.server_tz_name = None
+        mock_config.client_tz_name = None
+        mock_config.get_server_tz.return_value = None
+        mock_config.get_client_tz.return_value = None
+        mock_config.get_time_offset_seconds.return_value = 0
         result = _build_cli_timezone_meta({"timezone": "US/Eastern"})
-        assert result["output_timezone"] == "US/Eastern"
+        assert result["output"]["tz"]["value"] == "US/Eastern"
 
-    def test_with_non_dict_result(self):
+    @patch("mtdata.core.config.mt5_config")
+    def test_with_non_dict_result(self, mock_config):
+        mock_config.server_tz_name = None
+        mock_config.client_tz_name = None
+        mock_config.get_server_tz.return_value = None
+        mock_config.get_client_tz.return_value = None
+        mock_config.get_time_offset_seconds.return_value = 0
         result = _build_cli_timezone_meta("some string")
-        assert result["output_timezone"] is None
+        assert result["output"]["tz"].get("value") is None
 
-    def test_with_offset_env(self, monkeypatch):
+    @patch("mtdata.core.config.mt5_config")
+    def test_with_offset_env(self, mock_config, monkeypatch):
+        mock_config.server_tz_name = None
+        mock_config.client_tz_name = None
+        mock_config.get_server_tz.return_value = None
+        mock_config.get_client_tz.return_value = None
+        mock_config.get_time_offset_seconds.return_value = 10800
         monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "180")
         result = _build_cli_timezone_meta({})
-        assert result["server_offset_minutes"] == 180
+        assert result["server"]["tz"]["offset_seconds"] == 10800
 
-    def test_with_invalid_offset_env(self, monkeypatch):
+    @patch("mtdata.core.config.mt5_config")
+    def test_with_invalid_offset_env(self, mock_config, monkeypatch):
+        mock_config.server_tz_name = None
+        mock_config.client_tz_name = None
+        mock_config.get_server_tz.return_value = None
+        mock_config.get_client_tz.return_value = None
+        mock_config.get_time_offset_seconds.return_value = 0
         monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "abc")
         result = _build_cli_timezone_meta({})
-        assert result["server_offset_minutes"] is None
+        assert result["server"].get("tz", {}).get("offset_seconds") is None
 
     def test_server_source_none_by_default(self):
         result = _build_cli_timezone_meta({})
-        assert result["server_tz_source"] in ("none", "MT5_SERVER_TZ", "MT5_TIME_OFFSET_MINUTES")
+        assert result["server"]["source"] in ("none", "MT5_SERVER_TZ", "MT5_TIME_OFFSET_MINUTES")
 
-    def test_offset_env_source(self, monkeypatch):
+    def test_now_fields_are_iso_strings(self):
+        result = _build_cli_timezone_meta({})
+        assert isinstance(result["utc"]["now"], str)
+        datetime.fromisoformat(result["utc"]["now"])
+        if result["server"].get("now") is not None:
+            datetime.fromisoformat(result["server"]["now"])
+        if result.get("client", {}).get("now") is not None:
+            datetime.fromisoformat(result["client"]["now"])
+
+    @patch("mtdata.core.config.mt5_config")
+    def test_offset_env_source(self, mock_config, monkeypatch):
+        mock_config.server_tz_name = None
+        mock_config.client_tz_name = None
+        mock_config.get_server_tz.return_value = None
+        mock_config.get_client_tz.return_value = None
+        mock_config.get_time_offset_seconds.return_value = 3600
         monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "60")
         result = _build_cli_timezone_meta({})
-        if result["server_tz_config"] is None:
-            assert result["server_tz_source"] == "MT5_TIME_OFFSET_MINUTES"
+        if result["server"].get("tz", {}).get("configured") is None:
+            assert result["server"]["source"] == "MT5_TIME_OFFSET_MINUTES"
+
+    @patch("mtdata.core.config.mt5_config")
+    def test_unknown_server_and_client_now_are_omitted(self, mock_config):
+        mock_config.server_tz_name = None
+        mock_config.client_tz_name = None
+        mock_config.get_server_tz.return_value = None
+        mock_config.get_client_tz.return_value = None
+        mock_config.get_time_offset_seconds.return_value = 0
+
+        result = _build_cli_timezone_meta({})
+
+        assert "now" not in result["server"]
+        assert "now" not in result.get("client", {})
 
 
 # ========================================================================
@@ -379,9 +436,15 @@ class TestAttachCliMeta:
         assert "cli_meta" in out
         assert out["cli_meta"]["command"] == "test"
         tz_meta = out["cli_meta"]["timezone"]
-        assert "server_tz" in tz_meta
-        assert "client_tz" in tz_meta
-        assert "local_tz" not in tz_meta
+        assert "server" in tz_meta
+        assert "client" in tz_meta
+        assert "utc" in tz_meta
+        assert "local" not in tz_meta
+        assert "tz" in tz_meta["server"]
+        assert "tz" in tz_meta["client"]
+        assert "value" in tz_meta["server"]["tz"]
+        assert "value" in tz_meta["client"]["tz"]
+        assert "now" in tz_meta["utc"]
 
     def test_non_dict_returns_unchanged(self):
         assert _attach_cli_meta("string", cmd_name="test", verbose=True) == "string"
@@ -1933,7 +1996,8 @@ class TestEdgeCases:
 
     def test_build_cli_timezone_meta_local_tz(self):
         result = _build_cli_timezone_meta({})
-        assert "local_tz" in result
+        assert "local" in result
+        assert "name" in result["local"]["tz"]
 
     def test_attach_cli_meta_with_none_cmd(self):
         r = {"data": 1}

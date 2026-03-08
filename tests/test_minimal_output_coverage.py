@@ -2,6 +2,7 @@
 import pytest
 
 from mtdata.utils.minimal_output import (
+    _build_forecast_meta,
     _is_scalar_value,
     _is_empty_value,
     _stringify_scalar,
@@ -13,6 +14,7 @@ from mtdata.utils.minimal_output import (
     _encode_expanded_array,
     _format_to_toon,
     _format_complex_value,
+    format_result_minimal,
 )
 
 
@@ -183,8 +185,8 @@ class TestNormalizeForecastPayload:
         }
         result = _normalize_forecast_payload(payload, verbose=True)
         assert "meta" in result
-        assert result["meta"]["symbol"] == "EURUSD"
-        assert result["meta"]["timezone"] == "UTC"
+        assert result["meta"]["domain"]["symbol"] == "EURUSD"
+        assert result["meta"]["domain"]["timezone"] == "UTC"
 
     def test_non_verbose_no_meta(self):
         payload = {
@@ -226,7 +228,7 @@ class TestNormalizeForecastPayload:
             "denoise_used": {"method": "wavelet"},
         }
         result = _normalize_forecast_payload(payload, verbose=True)
-        assert result["meta"]["denoise"] == "wavelet"
+        assert result["meta"]["domain"]["denoise"] == "wavelet"
 
     def test_denoise_applied_flag(self):
         payload = {
@@ -235,7 +237,41 @@ class TestNormalizeForecastPayload:
             "denoise_applied": True,
         }
         result = _normalize_forecast_payload(payload, verbose=True)
-        assert result["meta"]["denoise"] == "applied"
+        assert result["meta"]["domain"]["denoise"] == "applied"
+
+    def test_timezone_moves_under_meta_runtime(self):
+        payload = {
+            "times": ["t1"],
+            "forecast_price": [100.0],
+            "method": "analog",
+            "cli_meta": {
+                "command": "forecast_generate",
+                "timezone": {
+                    "output": {"tz": {"hint": "US/Central"}},
+                    "server": {
+                        "tz": {"configured": "Europe/Nicosia"},
+                        "now": "2026-03-08T18:10:00+02:00",
+                    },
+                    "client": {
+                        "now": "2026-03-08T10:10:00-06:00",
+                    },
+                    "utc": {
+                        "now": "2026-03-08T16:10:00+00:00",
+                    },
+                    "local": {
+                        "tz": {"name": "Central Daylight Time"},
+                    },
+                },
+            },
+        }
+        result = _normalize_forecast_payload(payload, verbose=True)
+        assert result["meta"]["tool"] == "forecast_generate"
+        assert result["meta"]["runtime"]["timezone"]["output"]["tz"]["hint"] == "US/Central"
+        assert result["meta"]["runtime"]["timezone"]["server"]["tz"]["configured"] == "Europe/Nicosia"
+        assert result["meta"]["runtime"]["timezone"]["utc"]["now"] == "2026-03-08T16:10:00+00:00"
+        assert result["meta"]["runtime"]["timezone"]["server"]["now"] == "2026-03-08T18:10:00+02:00"
+        assert result["meta"]["runtime"]["timezone"]["client"]["now"] == "2026-03-08T10:10:00-06:00"
+        assert result["meta"]["cli"]["local_tz"] == "Central Daylight Time"
 
     def test_ci_warnings_preserved_in_non_verbose_output(self):
         payload = {
@@ -295,6 +331,104 @@ class TestCompactForecastCi:
         }
 
 
+class TestBuildForecastMeta:
+    def test_groups_domain_and_cli_metadata(self):
+        payload = {
+            "method": "analog",
+            "horizon": 12,
+            "params_used": {"window_size": 64},
+            "cli_meta": {
+                "command": "forecast_generate",
+                "timezone": {
+                    "output": {"tz": {"hint": "US/Central"}},
+                    "server": {
+                        "tz": {"configured": "Europe/Nicosia"},
+                        "now": "2026-03-08T18:10:00+02:00",
+                    },
+                    "client": {
+                        "now": "2026-03-08T10:10:00-06:00",
+                    },
+                    "utc": {
+                        "now": "2026-03-08T16:10:00+00:00",
+                    },
+                    "local": {
+                        "tz": {"name": "Central Daylight Time"},
+                    },
+                },
+            },
+        }
+        assert _build_forecast_meta(payload) == {
+            "tool": "forecast_generate",
+            "domain": {
+                "method": "analog",
+                "horizon": 12,
+                "params": {"window_size": 64},
+            },
+            "runtime": {
+                "timezone": {
+                    "output": {"tz": {"hint": "US/Central"}},
+                    "server": {
+                        "tz": {"configured": "Europe/Nicosia"},
+                        "now": "2026-03-08T18:10:00+02:00",
+                    },
+                    "client": {
+                        "now": "2026-03-08T10:10:00-06:00",
+                    },
+                    "utc": {
+                        "now": "2026-03-08T16:10:00+00:00",
+                    },
+                },
+            },
+            "cli": {
+                "local_tz": "Central Daylight Time",
+            },
+        }
+
+    def test_omits_redundant_resolved_timezone_in_display_meta(self):
+        payload = {
+            "cli_meta": {
+                "command": "forecast_generate",
+                "timezone": {
+                    "server": {
+                        "tz": {
+                            "configured": "Europe/Nicosia",
+                            "resolved": "Europe/Nicosia",
+                        },
+                    },
+                    "client": {
+                        "tz": {
+                            "configured": "US/Central",
+                            "resolved": "US/Central",
+                        },
+                    },
+                },
+            },
+        }
+        result = _build_forecast_meta(payload)
+        assert result["runtime"]["timezone"]["server"]["tz"] == {"configured": "Europe/Nicosia"}
+        assert result["runtime"]["timezone"]["client"]["tz"] == {"configured": "US/Central"}
+
+    def test_keeps_resolved_timezone_when_it_differs(self):
+        payload = {
+            "cli_meta": {
+                "command": "forecast_generate",
+                "timezone": {
+                    "server": {
+                        "tz": {
+                            "configured": "EET",
+                            "resolved": "Europe/Nicosia",
+                        },
+                    },
+                },
+            },
+        }
+        result = _build_forecast_meta(payload)
+        assert result["runtime"]["timezone"]["server"]["tz"] == {
+            "configured": "EET",
+            "resolved": "Europe/Nicosia",
+        }
+
+
 class TestFormatTableToon:
     def test_basic(self):
         lines = format_table_toon(["name", "value"], [["a", 1], ["b", 2]])
@@ -338,6 +472,91 @@ class TestFormatToToon:
     def test_none(self):
         result = _format_to_toon(None, key="empty")
         assert result == "" or "null" in result.lower() or result is None or not result
+
+    def test_single_nested_value_collapses_to_dotted_key(self):
+        result = _format_to_toon({"hint": "US/Central"}, key="output.tz")
+        assert result == "output.tz.hint: US/Central"
+
+    def test_root_dict_keys_remain_top_level(self):
+        result = _format_to_toon({
+            "meta": {
+                "tool": "forecast_generate",
+                "domain": {"method": "analog"},
+                "runtime": {
+                    "timezone": {
+                        "output": {"tz": {"hint": "US/Central"}},
+                        "utc": {"now": "2026-03-08T16:10:00+00:00"},
+                        "server": {
+                            "tz": {"configured": "Europe/Nicosia"},
+                            "now": "2026-03-08T18:10:00+02:00",
+                        },
+                        "client": {"now": "2026-03-08T10:10:00-06:00"},
+                    },
+                },
+                "cli": {"local_tz": "Central Daylight Time"},
+            },
+            "forecast": [{"time": "t1", "forecast": 1.0}],
+        })
+        lines = result.splitlines()
+        assert lines[0] == "meta:"
+        assert lines[1] == "  tool: forecast_generate"
+        assert "  domain.method: analog" in lines
+        assert "  runtime.timezone:" in lines
+        assert "    output.tz.hint: US/Central" in lines
+        assert "    utc.now: \"2026-03-08T16:10:00+00:00\"" in lines
+        assert "    server:" in lines
+        assert "      tz.configured: Europe/Nicosia" in lines
+        assert "      now: \"2026-03-08T18:10:00+02:00\"" in lines
+        assert "    client.now: \"2026-03-08T10:10:00-06:00\"" in lines
+        assert "  cli.local_tz: Central Daylight Time" in lines
+        assert "forecast[1]{time,forecast}:" in lines
+
+
+class TestFormatResultMinimal:
+    def test_verbose_forecast_sections_are_not_nested_under_meta(self):
+        payload = {
+            "times": ["t1"],
+            "forecast_price": [100.0],
+            "symbol": "BTCUSD",
+            "method": "analog",
+            "horizon": 12,
+            "params_used": {"window_size": 64},
+            "cli_meta": {
+                "command": "forecast_generate",
+                "timezone": {
+                    "output": {"tz": {"hint": "US/Central"}},
+                    "utc": {"now": "2026-03-08T16:10:00+00:00"},
+                    "server": {
+                        "tz": {
+                            "configured": "Europe/Nicosia",
+                            "resolved": "Europe/Nicosia",
+                        },
+                        "now": "2026-03-08T18:10:00+02:00",
+                    },
+                    "client": {"now": "2026-03-08T10:10:00-06:00"},
+                    "local": {"tz": {"name": "Central Daylight Time"}},
+                },
+            },
+        }
+        result = format_result_minimal(payload, verbose=True)
+        lines = result.splitlines()
+        assert lines[0] == "meta:"
+        assert "  tool: forecast_generate" in lines
+        assert "  domain:" in lines
+        assert "    symbol: BTCUSD" in lines
+        assert "    params.window_size: 64" in lines
+        assert "  runtime.timezone:" in lines
+        assert "    output.tz.hint: US/Central" in lines
+        assert "    utc.now: \"2026-03-08T16:10:00+00:00\"" in lines
+        assert "      tz.configured: Europe/Nicosia" in lines
+        assert "        tz.resolved: Europe/Nicosia" not in lines
+        assert "      now: \"2026-03-08T18:10:00+02:00\"" in lines
+        assert "    client.now: \"2026-03-08T10:10:00-06:00\"" in lines
+        assert "  cli.local_tz: Central Daylight Time" in lines
+        assert "forecast[1]{time,forecast}:" in lines
+        assert lines.index("  runtime.timezone:") > lines.index("  domain:")
+        assert lines.index("  cli.local_tz: Central Daylight Time") > lines.index("  runtime.timezone:")
+        assert lines.index("forecast[1]{time,forecast}:") > lines.index("  cli.local_tz: Central Daylight Time")
 
 
 class TestFormatComplexValue:

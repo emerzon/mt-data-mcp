@@ -9,6 +9,7 @@ from unittest.mock import patch, MagicMock, PropertyMock
 from contextlib import contextmanager
 from typing import Any, Iterator, Tuple, Optional
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 import sys
 import os
 import math
@@ -531,10 +532,27 @@ class TestFetchCandles(unittest.TestCase):
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
     def test_meta_server_tz_offset(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.server_tz_name = "Europe/Nicosia"
+        mock_cfg.client_tz_name = None
+        mock_cfg.get_server_tz.return_value = ZoneInfo("Europe/Nicosia")
+        mock_cfg.get_client_tz.return_value = None
         mock_cfg.get_time_offset_seconds.return_value = 7200
         mock_from.return_value = _make_rates(10)
         result = fetch_candles('EURUSD', limit=5)
-        self.assertEqual(result['meta']['server_tz_offset'], 7200)
+        self.assertEqual(
+            result['meta']['runtime']['timezone'],
+            {
+                'output': {'tz': {'value': 'UTC', 'hint': 'UTC'}},
+                'server': {
+                    'source': 'MT5_SERVER_TZ',
+                    'tz': {
+                        'configured': 'Europe/Nicosia',
+                        'resolved': 'Europe/Nicosia',
+                        'offset_seconds': 7200,
+                    },
+                },
+            },
+        )
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)

@@ -446,30 +446,9 @@ def _normalize_forecast_payload(payload: Dict[str, Any], verbose: bool = True) -
 
         out: Dict[str, Any] = {}
         if verbose:
-            meta_keys = ('symbol', 'timeframe', 'method', 'horizon', 'lookback_used', 'forecast_trend')
-            meta: Dict[str, Any] = {}
-            for mk in meta_keys:
-                if not _is_empty_value(payload.get(mk)):
-                    meta[mk] = payload.get(mk)
-            dn = payload.get('denoise_used')
-            if isinstance(dn, dict) and dn.get('method'):
-                meta['denoise'] = dn.get('method')
-            elif payload.get('denoise_applied'):
-                meta['denoise'] = 'applied'
-                
-            tz = payload.get('timezone')
-            if isinstance(tz, str) and tz.strip():
-                meta['timezone'] = tz.strip()
-            
-            # Include params_used if verbose
-            if payload.get('params_used'):
-                meta['params'] = payload.get('params_used')
-
-            if meta:
-                out['meta'] = meta
-            cli_meta = payload.get('cli_meta')
-            if isinstance(cli_meta, dict) and cli_meta:
-                out['cli_meta'] = cli_meta
+            meta_block = _build_forecast_meta(payload)
+            if meta_block:
+                out['meta'] = meta_block
 
         ci_diag = _compact_forecast_ci(payload, lower=lower, upper=upper)
         if ci_diag:
@@ -530,6 +509,110 @@ def _compact_forecast_ci(
     return out
 
 
+def _build_forecast_meta(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Group verbose forecast metadata into stable sections."""
+    domain: Dict[str, Any] = {}
+    for key in ('symbol', 'timeframe', 'method', 'horizon', 'lookback_used', 'forecast_trend'):
+        value = payload.get(key)
+        if not _is_empty_value(value):
+            domain[key] = value
+
+    denoise_used = payload.get('denoise_used')
+    if isinstance(denoise_used, dict) and denoise_used.get('method'):
+        domain['denoise'] = denoise_used.get('method')
+    elif payload.get('denoise_applied'):
+        domain['denoise'] = 'applied'
+
+    timezone = payload.get('timezone')
+    if isinstance(timezone, str) and timezone.strip():
+        domain['timezone'] = timezone.strip()
+
+    params_used = payload.get('params_used')
+    if not _is_empty_value(params_used):
+        domain['params'] = params_used
+
+    cli_meta_in = payload.get('cli_meta')
+    cli_meta = dict(cli_meta_in) if isinstance(cli_meta_in, dict) else {}
+    tool_name = str(cli_meta.pop('command', '')).strip()
+    cli_timezone = cli_meta.pop('timezone', None)
+
+    runtime: Dict[str, Any] = {}
+    cli: Dict[str, Any] = {}
+
+    runtime_timezone: Dict[str, Any] = {}
+    timezone_source = cli_timezone if isinstance(cli_timezone, dict) else None
+    if timezone_source is None:
+        try:
+            from ..core.runtime_metadata import build_runtime_timezone_meta
+
+            generated_timezone = build_runtime_timezone_meta(payload)
+            if isinstance(generated_timezone, dict):
+                timezone_source = generated_timezone
+        except Exception:
+            timezone_source = None
+
+    if isinstance(timezone_source, dict):
+        local_meta = timezone_source.get('local')
+        if isinstance(local_meta, dict):
+            local_tz_meta = local_meta.get('tz')
+            if isinstance(local_tz_meta, dict):
+                local_tz = local_tz_meta.get('name')
+                if not _is_empty_value(local_tz):
+                    cli['local_tz'] = local_tz
+
+        for key, value in timezone_source.items():
+            if key == 'local' or _is_empty_value(value):
+                continue
+            runtime_timezone[str(key)] = _compact_timezone_display(value)
+
+    if runtime_timezone:
+        runtime['timezone'] = runtime_timezone
+
+    if cli_meta:
+        cli.update(cli_meta)
+
+    meta: Dict[str, Any] = {}
+    if tool_name:
+        meta['tool'] = tool_name
+    if domain:
+        meta['domain'] = domain
+    if runtime:
+        meta['runtime'] = runtime
+    if cli:
+        meta['cli'] = cli
+    return meta
+
+
+def _compact_timezone_display(value: Any) -> Any:
+    if isinstance(value, dict):
+        out: Dict[str, Any] = {}
+        for key, subval in value.items():
+            compacted = _compact_timezone_display(subval)
+            if _is_empty_value(compacted):
+                continue
+            out[str(key)] = compacted
+        if 'configured' in out and 'resolved' in out and out.get('configured') == out.get('resolved'):
+            out.pop('resolved', None)
+        return out
+    if isinstance(value, list):
+        items = [_compact_timezone_display(item) for item in value]
+        return [item for item in items if not _is_empty_value(item)]
+    return value
+
+
+def _collapse_single_key_path(key: str, value: Any) -> tuple[str, Any]:
+    current_key = str(key)
+    current_value = value
+    while isinstance(current_value, dict):
+        items = [(str(k), v) for k, v in current_value.items() if not _is_empty_value(v)]
+        if len(items) != 1:
+            break
+        subkey, subval = items[0]
+        current_key = f"{current_key}.{subkey}"
+        current_value = subval
+    return current_key, current_value
+
+
 def _format_to_toon(
     value: Any,
     key: Optional[str] = None,
@@ -539,6 +622,8 @@ def _format_to_toon(
     simplify_numbers: bool = True,
 ) -> str:
     ind = _INDENT * indent
+    if key is not None and isinstance(value, dict):
+        key, value = _collapse_single_key_path(key, value)
     if _is_scalar_value(value):
         rendered = _stringify_for_toon(value, delimiter, simplify_numbers=simplify_numbers)
         if key is None:
@@ -570,13 +655,14 @@ def _format_to_toon(
         if not value:
             return f"{ind}{_quote_key(key, delimiter)}: {{}}" if key else "{}"
         lines: List[str] = []
+        child_indent = indent if key is None else indent + 1
         for subkey, subval in value.items():
             if _is_empty_value(subval):
                 continue
             chunk = _format_to_toon(
                 subval,
                 key=subkey,
-                indent=indent + 1,
+                indent=child_indent,
                 delimiter=delimiter,
                 simplify_numbers=simplify_numbers,
             )
