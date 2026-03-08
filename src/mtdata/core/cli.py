@@ -355,8 +355,116 @@ def _merge_dict(dst: Optional[Dict[str, Any]], src: Optional[Dict[str, Any]]) ->
     return _merge_dict_impl(dst, src)
 
 
+_FORECAST_TYPED_ARG_SPECS: Dict[str, Dict[str, Any]] = {
+    "model_params": {
+        "flag": "--model-params",
+        "section": "model",
+        "metavar": "JSON|k=v",
+        "help": "Model params as JSON or key=value pairs.",
+        "examples": [
+            '--model-params "window_size=64 top_k=20"',
+            '--model-params \'{"window_size":64,"top_k":20}\'',
+            '--model-params --set model.window_size=64 --set model.top_k=20',
+        ],
+    },
+    "denoise": {
+        "flag": "--denoise",
+        "section": "denoise",
+        "metavar": "PRESET|JSON",
+        "help": "Denoise preset name or JSON spec.",
+        "examples": [
+            "--denoise ema",
+            '--denoise \'{"method":"ema","params":{"span":10}}\'',
+            '--denoise --set denoise.method=ema',
+        ],
+    },
+    "features": {
+        "flag": "--features",
+        "section": "features",
+        "metavar": "JSON|k=v",
+        "help": "Feature spec as JSON or key=value pairs.",
+        "examples": [
+            '--features "include=open,high future_covariates=hour,dow"',
+            '--features \'{"include":["open","high"],"future_covariates":["hour","dow"]}\'',
+            '--features --set features.include=open,high',
+        ],
+    },
+    "dimred_params": {
+        "flag": "--dimred-params",
+        "section": "dimred",
+        "metavar": "JSON|k=v",
+        "help": "Dimred params as JSON or key=value pairs.",
+        "examples": [
+            '--dimred-params "n_components=4"',
+            '--dimred-params \'{"n_components":4}\'',
+            '--dimred-params --set dimred.n_components=4',
+        ],
+    },
+    "target_spec": {
+        "flag": "--target-spec",
+        "section": "target",
+        "metavar": "JSON|k=v",
+        "help": "Target spec as JSON or key=value pairs.",
+        "examples": [
+            '--target-spec "column=close transform=log"',
+            '--target-spec \'{"column":"close","transform":"log"}\'',
+            '--target-spec --set target.column=close --set target.transform=log',
+        ],
+    },
+}
+
+
+def _add_forecast_typed_arg(
+    group: argparse._ArgumentGroup,
+    flag: str,
+    *,
+    dest: str,
+    metavar: str,
+    help_text: str,
+) -> None:
+    group.add_argument(
+        flag,
+        dest=dest,
+        type=str,
+        nargs="?",
+        const="__PRESENT__",
+        default=None,
+        metavar=metavar,
+        help=help_text,
+    )
+
+
+def _forecast_generate_typed_value_epilog() -> str:
+    lines = ["Typed Value Formats:"]
+    for key in ("denoise", "model_params", "features", "dimred_params", "target_spec"):
+        spec = _FORECAST_TYPED_ARG_SPECS[key]
+        lines.append(f"  {spec['flag']} {spec['metavar']}")
+        for example in spec["examples"]:
+            lines.append(f"    Example: {CLI_PROGRAM} forecast_generate SYMBOL {example}")
+    lines.append("  --set SECTION.KEY=VALUE")
+    lines.append(f"    Example: {CLI_PROGRAM} forecast_generate SYMBOL --set model.window_size=64")
+    return "\n".join(lines)
+
+
+def _resolve_forecast_typed_cli_value(
+    raw_value: Any,
+    *,
+    key: str,
+    overrides: Dict[str, Dict[str, Any]],
+    parser: argparse.ArgumentParser,
+) -> Any:
+    if raw_value != "__PRESENT__":
+        return raw_value
+    spec = _FORECAST_TYPED_ARG_SPECS[key]
+    if overrides.get(spec["section"]):
+        return {}
+    examples = "; ".join(spec["examples"][:2])
+    parser.error(f"{spec['flag']} expects a value. Examples: {examples}")
+
+
 def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     cmd_parser.description = "Generate forecasts with an optional preprocessing pipeline."
+    cmd_parser.epilog = _forecast_generate_typed_value_epilog()
 
     cmd_parser.add_argument("symbol", help="Trading symbol.")
 
@@ -380,8 +488,11 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         "--model-params",
         dest="model_params",
         type=str,
+        nargs="?",
+        const="__PRESENT__",
         default=None,
-        help="Model params (JSON or k=v).",
+        metavar=_FORECAST_TYPED_ARG_SPECS["model_params"]["metavar"],
+        help=_FORECAST_TYPED_ARG_SPECS["model_params"]["help"],
     )
 
     group_window = cmd_parser.add_argument_group("Window")
@@ -402,11 +513,35 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     group_uncertainty.add_argument("--ci-alpha", dest="ci_alpha", type=float, default=0.05, help="CI alpha (0.05 => 95%%).")
 
     group_pipe = cmd_parser.add_argument_group("Pipeline")
-    group_pipe.add_argument("--denoise", type=str, default=None, help="Denoise preset or JSON.")
-    group_pipe.add_argument("--features", type=str, default=None, help="Feature spec (JSON or k=v).")
+    _add_forecast_typed_arg(
+        group_pipe,
+        "--denoise",
+        dest="denoise",
+        metavar=_FORECAST_TYPED_ARG_SPECS["denoise"]["metavar"],
+        help_text=_FORECAST_TYPED_ARG_SPECS["denoise"]["help"],
+    )
+    _add_forecast_typed_arg(
+        group_pipe,
+        "--features",
+        dest="features",
+        metavar=_FORECAST_TYPED_ARG_SPECS["features"]["metavar"],
+        help_text=_FORECAST_TYPED_ARG_SPECS["features"]["help"],
+    )
     group_pipe.add_argument("--dimred-method", dest="dimred_method", type=str, default=None, help="Dimred method.")
-    group_pipe.add_argument("--dimred-params", dest="dimred_params", type=str, default=None, help="Dimred params (JSON or k=v).")
-    group_pipe.add_argument("--target-spec", dest="target_spec", type=str, default=None, help="Target spec (JSON or k=v).")
+    _add_forecast_typed_arg(
+        group_pipe,
+        "--dimred-params",
+        dest="dimred_params",
+        metavar=_FORECAST_TYPED_ARG_SPECS["dimred_params"]["metavar"],
+        help_text=_FORECAST_TYPED_ARG_SPECS["dimred_params"]["help"],
+    )
+    _add_forecast_typed_arg(
+        group_pipe,
+        "--target-spec",
+        dest="target_spec",
+        metavar=_FORECAST_TYPED_ARG_SPECS["target_spec"]["metavar"],
+        help_text=_FORECAST_TYPED_ARG_SPECS["target_spec"]["help"],
+    )
 
     group_overrides = cmd_parser.add_argument_group("Overrides")
     group_overrides.add_argument(
@@ -800,27 +935,62 @@ def main():
         _add_forecast_generate_args(cmd_parser)
 
         def _forecast_generate_cmd(args):
-            # Model params
-            model_params = _parse_kv_string(args.model_params) if isinstance(args.model_params, str) else None
+            try:
+                overrides = _parse_set_overrides(args.set_overrides)
+            except ValueError as exc:
+                cmd_parser.error(str(exc))
 
-            # Pipeline mapping-like params
+            model_params_raw = _resolve_forecast_typed_cli_value(
+                args.model_params,
+                key="model_params",
+                overrides=overrides,
+                parser=cmd_parser,
+            )
+            denoise_raw = _resolve_forecast_typed_cli_value(
+                args.denoise,
+                key="denoise",
+                overrides=overrides,
+                parser=cmd_parser,
+            )
+            features_raw = _resolve_forecast_typed_cli_value(
+                args.features,
+                key="features",
+                overrides=overrides,
+                parser=cmd_parser,
+            )
+            dimred_params_raw = _resolve_forecast_typed_cli_value(
+                args.dimred_params,
+                key="dimred_params",
+                overrides=overrides,
+                parser=cmd_parser,
+            )
+            target_spec_raw = _resolve_forecast_typed_cli_value(
+                args.target_spec,
+                key="target_spec",
+                overrides=overrides,
+                parser=cmd_parser,
+            )
+
+            model_params = _parse_kv_string(model_params_raw) if isinstance(model_params_raw, str) else model_params_raw
+
             denoise = None
-            if args.denoise:
-                denoise = {"method": args.denoise.strip()}
-                if args.denoise.strip().startswith("{"):
-                    parsed = _parse_kv_string(args.denoise)
+            if isinstance(denoise_raw, dict):
+                denoise = dict(denoise_raw)
+            elif denoise_raw:
+                denoise = {"method": str(denoise_raw).strip()}
+                if str(denoise_raw).strip().startswith("{"):
+                    parsed = _parse_kv_string(str(denoise_raw))
                     denoise = parsed if parsed is not None else denoise
 
-            features = _parse_kv_string(args.features) if args.features else None
-            if args.features and not args.features.strip().startswith("{"):
+            features = _parse_kv_string(features_raw) if isinstance(features_raw, str) else features_raw
+            if isinstance(features_raw, str) and not features_raw.strip().startswith("{"):
                 # Accept shorthand like "include=close,volume" (already handled by parse_kv_or_json)
                 pass
 
-            dimred_params = _parse_kv_string(args.dimred_params) if args.dimred_params else None
-            target_spec = _parse_kv_string(args.target_spec) if args.target_spec else None
+            dimred_params = _parse_kv_string(dimred_params_raw) if isinstance(dimred_params_raw, str) else dimred_params_raw
+            target_spec = _parse_kv_string(target_spec_raw) if isinstance(target_spec_raw, str) else target_spec_raw
 
             # --set overrides (sections: model/denoise/features/dimred/target)
-            overrides = _parse_set_overrides(args.set_overrides)
             model_params = _merge_dict(model_params, overrides.get("model"))
             denoise = _merge_dict(denoise, overrides.get("denoise"))
             features = _merge_dict(features, overrides.get("features"))
