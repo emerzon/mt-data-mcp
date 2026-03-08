@@ -2,6 +2,7 @@
 
 Covers lines 45-245 by mocking template functions and external data fetching.
 """
+import logging
 import pytest
 import warnings
 from unittest.mock import patch, MagicMock
@@ -85,6 +86,23 @@ def test_report_generate_returns_connection_error_payload(monkeypatch):
     out = raw(request=report_mod.ReportGenerateRequest(symbol="EURUSD"))
 
     assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
+
+
+def test_report_generate_logs_finish_event(monkeypatch, caplog):
+    from mtdata.core import report as report_mod
+
+    raw = _unwrap(report_mod.report_generate)
+    monkeypatch.setattr(report_mod, "_report_connection_error", lambda: None)
+    monkeypatch.setattr(report_mod, "run_report_generate", lambda *args, **kwargs: {"success": True, "sections": {}})
+
+    with caplog.at_level(logging.INFO, logger=report_mod.logger.name):
+        out = raw(request=report_mod.ReportGenerateRequest(symbol="EURUSD"))
+
+    assert out["success"] is True
+    assert any(
+        "event=finish operation=report_generate success=True" in record.message
+        for record in caplog.records
+    )
 
 
 def _make_full_sections():
