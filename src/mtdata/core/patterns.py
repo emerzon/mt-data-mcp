@@ -4,11 +4,10 @@ import importlib
 import copy
 import logging
 import pandas as pd
-import time
 import warnings
 
 from .constants import TIMEFRAME_MAP
-from .execution_logging import infer_result_success, log_operation_finish, log_operation_start
+from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .patterns_support import (
     _STOCK_PATTERN_UTILS_CACHE,
@@ -668,34 +667,11 @@ def patterns_detect(
     # Detect Elliott Wave patterns
     patterns_detect(symbol="BTCUSD", mode="elliott", timeframe="H4", detail="full")
     """
-    started_at = time.perf_counter()
-    log_operation_start(
-        logger,
-        operation="patterns_detect",
-        symbol=request.symbol,
-        timeframe=request.timeframe,
-        mode=request.mode,
-        detail=request.detail,
-    )
-
-    def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
-        log_operation_finish(
-            logger,
-            operation="patterns_detect",
-            started_at=started_at,
-            success=infer_result_success(result),
-            symbol=request.symbol,
-            timeframe=request.timeframe,
-            mode=request.mode,
-            detail=request.detail,
-        )
-        return result
-
-    connection_error = _patterns_connection_error()
-    if connection_error is not None:
-        return _finish(connection_error)
-    return _finish(
-        run_patterns_detect(
+    def _run() -> Dict[str, Any]:
+        connection_error = _patterns_connection_error()
+        if connection_error is not None:
+            return connection_error
+        return run_patterns_detect(
             request,
             timeframe_map=TIMEFRAME_MAP,
             compact_patterns_payload=_compact_patterns_payload,
@@ -718,4 +694,13 @@ def patterns_detect(
             format_time_minimal=_format_time_minimal,
             to_float_np=__to_float_np,
         )
+
+    return run_logged_operation(
+        logger,
+        operation="patterns_detect",
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        mode=request.mode,
+        detail=request.detail,
+        func=_run,
     )

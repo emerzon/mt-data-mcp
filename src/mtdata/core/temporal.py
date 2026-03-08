@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from ._mcp_instance import mcp
-from .execution_logging import infer_result_success, log_operation_finish, log_operation_start
+from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .schema import TimeframeLiteral
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
@@ -303,33 +303,7 @@ def temporal_analyze(
     Returns grouped averages for returns and volatility plus simple extras.
     Use group_by='all' for a single overall summary.
     """
-    started_at = time.perf_counter()
-    log_operation_start(
-        logger,
-        operation="temporal_analyze",
-        symbol=symbol,
-        timeframe=timeframe,
-        group_by=group_by,
-        limit=limit,
-    )
-
-    def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
-        log_operation_finish(
-            logger,
-            operation="temporal_analyze",
-            started_at=started_at,
-            success=infer_result_success(result),
-            symbol=symbol,
-            timeframe=timeframe,
-            group_by=group_by,
-            limit=limit,
-            bars=result.get("bars") if isinstance(result, dict) else None,
-        )
-        return result
-
-    try:
-        mt5_gateway = _get_mt5_gateway()
-        mt5_gateway.ensure_connection()
+    def _run() -> Dict[str, Any]:
         context: Dict[str, Any] = {
             "symbol": symbol,
             "timeframe": timeframe,
@@ -339,236 +313,243 @@ def temporal_analyze(
             "start": start,
             "end": end,
         }
-        if limit is None:
-            limit = 0
-        limit = int(limit)
-        context["limit"] = limit
-        if limit <= 1 and not (start and end):
-            return _finish(_error_response(
-                "limit must be >= 2 for return calculations.",
-                stage="validate",
-                context=context,
-            ))
-
-        group_norm = _normalize_group_by(group_by)
-        if group_norm not in ("dow", "hour", "month", "all"):
-            return _finish(_error_response(
-                "Invalid group_by. Use: dow, hour, month, all.",
-                stage="validate",
-                context=context,
-            ))
-        context["group_by"] = group_norm
-
-        dow_val = _parse_weekday(day_of_week)
-        if day_of_week is not None and dow_val is None:
-            return _finish(_error_response(
-                "Invalid day_of_week. Use 0-6 or day name (e.g., Mon).",
-                stage="validate",
-                context=context,
-                details={"day_of_week": day_of_week},
-            ))
-
-        month_val = _parse_month(month)
-        if month is not None and month_val is None:
-            return _finish(_error_response(
-                "Invalid month. Use 1-12 or month name (e.g., Jan).",
-                stage="validate",
-                context=context,
-                details={"month": month},
-            ))
-
-        tr_start, tr_end, tr_err = _parse_time_range(time_range)
-        if tr_err:
-            return _finish(_error_response(
-                tr_err,
-                stage="validate",
-                context=context,
-                details={"time_range": time_range},
-            ))
-
-        filters: Dict[str, Any] = {}
-        if dow_val is not None:
-            filters["day_of_week"] = {"value": dow_val, "label": _DOW_LABELS[dow_val]}
-        if month_val is not None:
-            filters["month"] = {"value": month_val, "label": _MONTH_LABELS[month_val - 1]}
-        if tr_start is not None and tr_end is not None:
-            filters["time_range"] = {
-                "start": _time_label(tr_start),
-                "end": _time_label(tr_end),
-                "wraps_midnight": bool(tr_start > tr_end),
-            }
-
-        info_before = get_symbol_info_cached(symbol)
-        with _symbol_ready_guard(symbol, info_before=info_before) as (err, _info):
-            if err:
-                return _finish(_error_response(err, stage="symbol", context=context))
-
-            rates, fetch_err = _fetch_rates(
-                symbol,
-                timeframe,
-                limit,
-                start,
-                end,
-                gateway=mt5_gateway,
-            )
-            if fetch_err:
-                return _finish(_error_response(fetch_err, stage="fetch", context=context))
-        # visibility handled by _symbol_ready_guard
-
-        if rates is None or len(rates) < 2:
-            return _finish(_error_response(
-                f"Failed to get rates for {symbol}.",
-                stage="fetch",
-                context=context,
-                details={"mt5_error": mt5.last_error()},
-            ))
-
-        df = pd.DataFrame(rates)
-        if df.empty:
-            return _finish(_error_response("No data available.", stage="fetch", context=context, bars=0))
-
         try:
-            df["__epoch"] = df["time"].astype(float).apply(_mt5_epoch_to_utc)
-        except Exception:
-            return _finish(_error_response("Failed to normalize bar times.", stage="process", context=context))
+            mt5_gateway = _get_mt5_gateway()
+            mt5_gateway.ensure_connection()
+            effective_limit = 0 if limit is None else int(limit)
+            context["limit"] = effective_limit
+            if effective_limit <= 1 and not (start and end):
+                return _error_response(
+                    "limit must be >= 2 for return calculations.",
+                    stage="validate",
+                    context=context,
+                )
 
-        if not end:
-            tf_secs = TIMEFRAME_SECONDS.get(timeframe)
-            if tf_secs:
-                now_ts = datetime.now(timezone.utc).timestamp()
-                last_epoch = float(df["__epoch"].iloc[-1])
-                if 0 <= (now_ts - last_epoch) < float(tf_secs) and len(df) > 1:
-                    df = df.iloc[:-1]
+            group_norm = _normalize_group_by(group_by)
+            if group_norm not in ("dow", "hour", "month", "all"):
+                return _error_response(
+                    "Invalid group_by. Use: dow, hour, month, all.",
+                    stage="validate",
+                    context=context,
+                )
+            context["group_by"] = group_norm
 
-        if len(df) < 2:
-            return _finish(_error_response(
-                "Insufficient data after trimming live bars.",
-                stage="trim",
-                context=context,
-                bars=len(df),
-            ))
+            dow_val = _parse_weekday(day_of_week)
+            if day_of_week is not None and dow_val is None:
+                return _error_response(
+                    "Invalid day_of_week. Use 0-6 or day name (e.g., Mon).",
+                    stage="validate",
+                    context=context,
+                    details={"day_of_week": day_of_week},
+                )
 
-        client_tz = _resolve_client_tz()
-        use_client_tz = client_tz is not None
-        dt_utc = pd.to_datetime(df["__epoch"], unit="s", utc=True)
-        if use_client_tz:
-            dt = dt_utc.dt.tz_convert(client_tz)
-        else:
-            dt = dt_utc
-        df["__dt"] = dt
+            month_val = _parse_month(month)
+            if month is not None and month_val is None:
+                return _error_response(
+                    "Invalid month. Use 1-12 or month name (e.g., Jan).",
+                    stage="validate",
+                    context=context,
+                    details={"month": month},
+                )
 
-        if "close" not in df.columns:
-            return _finish(_error_response(
-                "Rates data missing close prices.",
-                stage="process",
-                context=context,
-            ))
+            tr_start, tr_end, tr_err = _parse_time_range(time_range)
+            if tr_err:
+                return _error_response(
+                    tr_err,
+                    stage="validate",
+                    context=context,
+                    details={"time_range": time_range},
+                )
 
-        close = pd.to_numeric(df["close"], errors="coerce").astype(float)
-        if return_mode == "log":
-            close_safe = close.where(close > 0)
-            ret = np.log(close_safe / close_safe.shift(1)) * 100.0
-        else:
-            ret = close.pct_change() * 100.0
-        df["__return"] = ret
+            filters: Dict[str, Any] = {}
+            if dow_val is not None:
+                filters["day_of_week"] = {"value": dow_val, "label": _DOW_LABELS[dow_val]}
+            if month_val is not None:
+                filters["month"] = {"value": month_val, "label": _MONTH_LABELS[month_val - 1]}
+            if tr_start is not None and tr_end is not None:
+                filters["time_range"] = {
+                    "start": _time_label(tr_start),
+                    "end": _time_label(tr_end),
+                    "wraps_midnight": bool(tr_start > tr_end),
+                }
 
-        if "high" in df.columns and "low" in df.columns:
-            high = pd.to_numeric(df["high"], errors="coerce").astype(float)
-            low = pd.to_numeric(df["low"], errors="coerce").astype(float)
-            df["__range"] = high - low
-            close_safe = close.where(close > 0)
-            with np.errstate(divide="ignore", invalid="ignore"):
-                df["__range_pct"] = (df["__range"] / close_safe) * 100.0
+            info_before = get_symbol_info_cached(symbol)
+            with _symbol_ready_guard(symbol, info_before=info_before) as (err, _info):
+                if err:
+                    return _error_response(err, stage="symbol", context=context)
 
-        volume_col = None
-        if "real_volume" in df.columns:
-            rv = pd.to_numeric(df["real_volume"], errors="coerce")
-            if rv.notna().any() and float(rv.fillna(0.0).sum()) > 0.0:
-                volume_col = "real_volume"
-        if volume_col is None and "tick_volume" in df.columns:
-            volume_col = "tick_volume"
+                rates, fetch_err = _fetch_rates(
+                    symbol,
+                    timeframe,
+                    effective_limit,
+                    start,
+                    end,
+                    gateway=mt5_gateway,
+                )
+                if fetch_err:
+                    return _error_response(fetch_err, stage="fetch", context=context)
 
-        if dow_val is not None:
-            df = df[df["__dt"].dt.weekday == dow_val]
-        if month_val is not None:
-            df = df[df["__dt"].dt.month == month_val]
-        if tr_start is not None and tr_end is not None:
-            mins = df["__dt"].dt.hour * 60 + df["__dt"].dt.minute
-            if tr_start < tr_end:
-                mask = (mins >= tr_start) & (mins < tr_end)
-            else:
-                mask = (mins >= tr_start) | (mins < tr_end)
-            df = df.loc[mask]
+            if rates is None or len(rates) < 2:
+                return _error_response(
+                    f"Failed to get rates for {symbol}.",
+                    stage="fetch",
+                    context=context,
+                    details={"mt5_error": mt5.last_error()},
+                )
 
-        if len(df) < 2:
-            return _finish(_error_response(
-                "Insufficient data after applying filters.",
-                stage="filter",
-                context=context,
-                bars=len(df),
-                filters=filters,
-            ))
+            df = pd.DataFrame(rates)
+            if df.empty:
+                return _error_response("No data available.", stage="fetch", context=context, bars=0)
 
-        overall = _stats_for_group(df, volume_col)
-        groups_out: List[Dict[str, Any]] = []
-
-        if group_norm == "dow":
-            df["__group"] = df["__dt"].dt.weekday
-            for key, grp in df.groupby("__group", sort=True):
-                row = _stats_for_group(grp, volume_col)
-                row["group"] = _DOW_LABELS[int(key)] if 0 <= int(key) <= 6 else str(key)
-                row["group_key"] = int(key)
-                groups_out.append(row)
-        elif group_norm == "month":
-            df["__group"] = df["__dt"].dt.month
-            for key, grp in df.groupby("__group", sort=True):
-                label = _MONTH_LABELS[int(key) - 1] if 1 <= int(key) <= 12 else str(key)
-                row = _stats_for_group(grp, volume_col)
-                row["group"] = label
-                row["group_key"] = int(key)
-                groups_out.append(row)
-        elif group_norm == "hour":
-            df["__group"] = df["__dt"].dt.hour
-            for key, grp in df.groupby("__group", sort=True):
-                row = _stats_for_group(grp, volume_col)
-                row["group"] = f"{int(key):02d}:00"
-                row["group_key"] = int(key)
-                groups_out.append(row)
-
-        start_epoch = float(df["__epoch"].iloc[0])
-        end_epoch = float(df["__epoch"].iloc[-1])
-        start_str = _format_time_minimal_local(start_epoch) if use_client_tz else _format_time_minimal(start_epoch)
-        end_str = _format_time_minimal_local(end_epoch) if use_client_tz else _format_time_minimal(end_epoch)
-
-        tz_name = "UTC"
-        if use_client_tz:
             try:
-                tz_name = getattr(client_tz, "zone", None) or str(client_tz)
+                df["__epoch"] = df["time"].astype(float).apply(_mt5_epoch_to_utc)
             except Exception:
-                tz_name = "local"
+                return _error_response("Failed to normalize bar times.", stage="process", context=context)
 
-        payload: Dict[str, Any] = {
-            "success": True,
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "group_by": group_norm,
-            "return_mode": return_mode,
-            "timezone": tz_name,
-            "bars": int(len(df)),
-            "start": start_str,
-            "end": end_str,
-            "filters": filters,
-            "overall": overall,
-            "volume_source": volume_col,
-        }
-        if groups_out:
-            payload["groups"] = groups_out
-        return _finish(payload)
-    except MT5ConnectionError as exc:
-        return _finish({"error": str(exc)})
-    except Exception as e:
-        return _finish(_error_response(
-            f"Error computing temporal analysis: {str(e)}",
-            stage="internal",
-            context=context if "context" in locals() else None,
-        ))
+            if not end:
+                tf_secs = TIMEFRAME_SECONDS.get(timeframe)
+                if tf_secs:
+                    now_ts = datetime.now(timezone.utc).timestamp()
+                    last_epoch = float(df["__epoch"].iloc[-1])
+                    if 0 <= (now_ts - last_epoch) < float(tf_secs) and len(df) > 1:
+                        df = df.iloc[:-1]
+
+            if len(df) < 2:
+                return _error_response(
+                    "Insufficient data after trimming live bars.",
+                    stage="trim",
+                    context=context,
+                    bars=len(df),
+                )
+
+            client_tz = _resolve_client_tz()
+            use_client_tz = client_tz is not None
+            dt_utc = pd.to_datetime(df["__epoch"], unit="s", utc=True)
+            dt = dt_utc.dt.tz_convert(client_tz) if use_client_tz else dt_utc
+            df["__dt"] = dt
+
+            if "close" not in df.columns:
+                return _error_response(
+                    "Rates data missing close prices.",
+                    stage="process",
+                    context=context,
+                )
+
+            close = pd.to_numeric(df["close"], errors="coerce").astype(float)
+            if return_mode == "log":
+                close_safe = close.where(close > 0)
+                ret = np.log(close_safe / close_safe.shift(1)) * 100.0
+            else:
+                ret = close.pct_change() * 100.0
+            df["__return"] = ret
+
+            if "high" in df.columns and "low" in df.columns:
+                high = pd.to_numeric(df["high"], errors="coerce").astype(float)
+                low = pd.to_numeric(df["low"], errors="coerce").astype(float)
+                df["__range"] = high - low
+                close_safe = close.where(close > 0)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    df["__range_pct"] = (df["__range"] / close_safe) * 100.0
+
+            volume_col = None
+            if "real_volume" in df.columns:
+                rv = pd.to_numeric(df["real_volume"], errors="coerce")
+                if rv.notna().any() and float(rv.fillna(0.0).sum()) > 0.0:
+                    volume_col = "real_volume"
+            if volume_col is None and "tick_volume" in df.columns:
+                volume_col = "tick_volume"
+
+            if dow_val is not None:
+                df = df[df["__dt"].dt.weekday == dow_val]
+            if month_val is not None:
+                df = df[df["__dt"].dt.month == month_val]
+            if tr_start is not None and tr_end is not None:
+                mins = df["__dt"].dt.hour * 60 + df["__dt"].dt.minute
+                if tr_start < tr_end:
+                    mask = (mins >= tr_start) & (mins < tr_end)
+                else:
+                    mask = (mins >= tr_start) | (mins < tr_end)
+                df = df.loc[mask]
+
+            if len(df) < 2:
+                return _error_response(
+                    "Insufficient data after applying filters.",
+                    stage="filter",
+                    context=context,
+                    bars=len(df),
+                    filters=filters,
+                )
+
+            overall = _stats_for_group(df, volume_col)
+            groups_out: List[Dict[str, Any]] = []
+
+            if group_norm == "dow":
+                df["__group"] = df["__dt"].dt.weekday
+                for key, grp in df.groupby("__group", sort=True):
+                    row = _stats_for_group(grp, volume_col)
+                    row["group"] = _DOW_LABELS[int(key)] if 0 <= int(key) <= 6 else str(key)
+                    row["group_key"] = int(key)
+                    groups_out.append(row)
+            elif group_norm == "month":
+                df["__group"] = df["__dt"].dt.month
+                for key, grp in df.groupby("__group", sort=True):
+                    label = _MONTH_LABELS[int(key) - 1] if 1 <= int(key) <= 12 else str(key)
+                    row = _stats_for_group(grp, volume_col)
+                    row["group"] = label
+                    row["group_key"] = int(key)
+                    groups_out.append(row)
+            elif group_norm == "hour":
+                df["__group"] = df["__dt"].dt.hour
+                for key, grp in df.groupby("__group", sort=True):
+                    row = _stats_for_group(grp, volume_col)
+                    row["group"] = f"{int(key):02d}:00"
+                    row["group_key"] = int(key)
+                    groups_out.append(row)
+
+            start_epoch = float(df["__epoch"].iloc[0])
+            end_epoch = float(df["__epoch"].iloc[-1])
+            start_str = _format_time_minimal_local(start_epoch) if use_client_tz else _format_time_minimal(start_epoch)
+            end_str = _format_time_minimal_local(end_epoch) if use_client_tz else _format_time_minimal(end_epoch)
+
+            tz_name = "UTC"
+            if use_client_tz:
+                try:
+                    tz_name = getattr(client_tz, "zone", None) or str(client_tz)
+                except Exception:
+                    tz_name = "local"
+
+            payload: Dict[str, Any] = {
+                "success": True,
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "group_by": group_norm,
+                "return_mode": return_mode,
+                "timezone": tz_name,
+                "bars": int(len(df)),
+                "start": start_str,
+                "end": end_str,
+                "filters": filters,
+                "overall": overall,
+                "volume_source": volume_col,
+            }
+            if groups_out:
+                payload["groups"] = groups_out
+            return payload
+        except MT5ConnectionError as exc:
+            return {"error": str(exc)}
+        except Exception as exc:
+            return _error_response(
+                f"Error computing temporal analysis: {str(exc)}",
+                stage="internal",
+                context=context,
+            )
+
+    return run_logged_operation(
+        logger,
+        operation="temporal_analyze",
+        symbol=symbol,
+        timeframe=timeframe,
+        group_by=group_by,
+        limit=limit,
+        func=_run,
+    )
