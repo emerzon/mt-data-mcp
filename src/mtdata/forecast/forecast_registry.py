@@ -194,6 +194,7 @@ def _ensure_registry_loaded() -> None:
         from .methods import sktime  # noqa: F401
         from .methods import gluonts_extra  # noqa: F401
         from .methods import analog  # noqa: F401
+        from .methods import ensemble  # noqa: F401
         from .methods import monte_carlo  # noqa: F401
     except Exception:
         pass

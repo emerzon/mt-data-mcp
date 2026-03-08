@@ -36,6 +36,7 @@ import mtdata.forecast.methods.neural
 import mtdata.forecast.methods.sktime
 import mtdata.forecast.methods.gluonts_extra
 import mtdata.forecast.methods.analog
+import mtdata.forecast.methods.ensemble
 import mtdata.forecast.methods.monte_carlo  # noqa: F401 (method registration side effects)
 
 # Backward-compatibility surface for tests/monkeypatching.
@@ -330,123 +331,6 @@ def _build_engine_diagnostics(
     return diagnostics
 
 
-def _run_ensemble_forecast(
-    *,
-    target_series: pd.Series,
-    params: Dict[str, Any],
-    horizon: int,
-    seasonality: int,
-) -> Tuple[np.ndarray, Dict[str, Any]]:
-    base_methods_in = params.get('methods')
-    if isinstance(base_methods_in, str):
-        base_methods = [m.strip().lower() for m in base_methods_in.split(',') if m.strip()]
-    elif isinstance(base_methods_in, (list, tuple)):
-        base_methods = [str(m).lower().strip() for m in base_methods_in if str(m).strip()]
-    else:
-        base_methods = ['naive', 'theta', 'fourier_ols']
-
-    avail = _get_available_methods()
-    base_methods = [m for m in base_methods if m in avail and m != 'ensemble']
-
-    seen: set[str] = set()
-    base_methods = [m for m in base_methods if not (m in seen or seen.add(m))]
-    if not base_methods:
-        base_methods = ['naive', 'theta']
-
-    params_in = params.get('method_params') if isinstance(params.get('method_params'), dict) else {}
-    params_map = {str(k).lower(): (v if isinstance(v, dict) else {}) for k, v in params_in.items()}
-    mode = str(params.get('mode', 'average')).lower()
-    cv_points = int(params.get('cv_points', max(6, len(base_methods) * 2)))
-    min_train = int(params.get('min_train_size', max(30, horizon * 3)))
-    expose_components = bool(params.get('expose_components', True))
-    weights_vec = _normalize_weights(params.get('weights'), len(base_methods))
-    ensemble_meta: Dict[str, Any] = {
-        'mode_requested': mode,
-        'methods': list(base_methods),
-        'cv_points_requested': cv_points,
-    }
-
-    effective_mode = mode
-    rmse = None
-    ensemble_intercept = 0.0
-    coeffs = None
-    cv_rows = 0
-    if mode in ('bma', 'stacking'):
-        X_cv, y_cv = _prepare_ensemble_cv(target_series, base_methods, horizon, seasonality, params_map, cv_points, min_train)
-        cv_rows = int(len(y_cv))
-        if X_cv.shape[0] >= max(3, len(base_methods)):
-            if mode == 'bma':
-                errors = X_cv - y_cv[:, None]
-                rmse = np.sqrt(np.mean(np.square(errors), axis=0))
-                min_rmse = float(np.min(rmse))
-                weights_vec = np.exp(-0.5 * (rmse - min_rmse) / (min_rmse + 1e-12))
-                total = float(np.sum(weights_vec))
-                weights_vec = (weights_vec / total) if total > 0 else None
-            else:
-                X_aug = np.column_stack([np.ones(X_cv.shape[0]), X_cv])
-                beta, *_ = np.linalg.lstsq(X_aug, y_cv, rcond=None)
-                ensemble_intercept = float(beta[0])
-                coeffs = beta[1:]
-                effective_mode = 'stacking'
-        else:
-            effective_mode = 'average'
-
-    component_methods: List[str] = []
-    component_forecasts: List[np.ndarray] = []
-    for member in base_methods:
-        fc = _ensemble_dispatch_method(member, target_series, horizon, seasonality, params_map.get(member, {}))
-        if fc is None or fc.size == 0:
-            continue
-        component_methods.append(member)
-        component_forecasts.append(fc)
-
-    if not component_forecasts:
-        raise ValueError('Ensemble failed: no component forecasts')
-
-    if len(component_methods) != len(base_methods):
-        keep_idx = [base_methods.index(member) for member in component_methods]
-        if effective_mode == 'stacking' and coeffs is not None:
-            coeffs = coeffs[keep_idx]
-        elif weights_vec is not None:
-            weights_vec = weights_vec[keep_idx]
-        base_methods = component_methods
-
-    if effective_mode != 'stacking':
-        total = float(np.sum(weights_vec)) if weights_vec is not None else 0.0
-        if weights_vec is None or total <= 0:
-            weights_vec = np.full(len(base_methods), 1.0 / len(base_methods))
-        else:
-            weights_vec = weights_vec / total
-        combined = np.zeros_like(component_forecasts[0], dtype=float)
-        for weight, forecast in zip(weights_vec, component_forecasts):
-            combined = combined + float(weight) * forecast
-    else:
-        if coeffs is None or coeffs.size != len(base_methods):
-            coeffs = np.full(len(base_methods), 1.0 / len(base_methods))
-            ensemble_intercept = 0.0
-        combined = np.full_like(component_forecasts[0], ensemble_intercept, dtype=float)
-        for weight, forecast in zip(coeffs, component_forecasts):
-            combined = combined + float(weight) * forecast
-        weights_vec = coeffs
-
-    ensemble_meta.update({
-        'mode_used': effective_mode,
-        'methods': list(base_methods),
-        'cv_points_used': cv_rows,
-        'weights': [float(w) for w in (weights_vec.tolist() if isinstance(weights_vec, np.ndarray) else weights_vec)],
-    })
-    if rmse is not None:
-        ensemble_meta['cv_rmse'] = [float(value) for value in rmse.tolist()]
-    if effective_mode == 'stacking':
-        ensemble_meta['intercept'] = float(ensemble_intercept)
-    if expose_components:
-        ensemble_meta['components'] = {
-            member: [float(value) for value in forecast.tolist()]
-            for member, forecast in zip(base_methods, component_forecasts)
-        }
-    return combined, ensemble_meta
-
-
 def _run_registered_forecast_method(
     *,
     method_l: str,
@@ -482,6 +366,11 @@ def _run_registered_forecast_method(
     }
     if X is not None:
         call_kwargs['exog_used'] = X
+    if method_l == 'ensemble':
+        call_kwargs['ensemble_dispatch_method'] = _ensemble_dispatch_method
+        call_kwargs['prepare_ensemble_cv'] = _prepare_ensemble_cv
+        call_kwargs['normalize_weights'] = _normalize_weights
+        call_kwargs['get_available_methods'] = _get_available_methods
 
     res = forecaster.forecast(
         target_series,
@@ -803,36 +692,26 @@ def forecast_engine(
         # Call engine
         metadata: Dict[str, Any] = {}
         try:
+            forecast_values, ci_values, metadata = _run_registered_forecast_method(
+                method_l=method_l,
+                method=method,
+                target_series=target_series,
+                horizon=horizon,
+                seasonality=seasonality,
+                params=p,
+                ci_alpha=ci_alpha,
+                as_of=as_of,
+                quantity_l=quantity_l,
+                target=target,
+                symbol=symbol,
+                timeframe=timeframe,
+                X=X,
+                future_exog=future_exog,
+            )
+        except ValueError as e:
             if method_l == 'ensemble':
-                try:
-                    forecast_values, ensemble_meta = _run_ensemble_forecast(
-                        target_series=target_series,
-                        params=p,
-                        horizon=horizon,
-                        seasonality=seasonality,
-                    )
-                except ValueError as e:
-                    return {"error": str(e)}
-                metadata = ensemble_meta
-            
-            else:
-                forecast_values, ci_values, metadata = _run_registered_forecast_method(
-                    method_l=method_l,
-                    method=method,
-                    target_series=target_series,
-                    horizon=horizon,
-                    seasonality=seasonality,
-                    params=p,
-                    ci_alpha=ci_alpha,
-                    as_of=as_of,
-                    quantity_l=quantity_l,
-                    target=target,
-                    symbol=symbol,
-                    timeframe=timeframe,
-                    X=X,
-                    future_exog=future_exog,
-                )
-
+                return {"error": str(e)}
+            return {"error": f"Forecast method '{method}' failed: {str(e)}"}
         except Exception as e:
             return {"error": f"Forecast method '{method}' failed: {str(e)}"}
 
@@ -870,8 +749,8 @@ def forecast_engine(
             symbol=symbol,
             timeframe=timeframe,
         )
-        if method_l == 'ensemble' and ensemble_meta:
-            result['ensemble'] = ensemble_meta
+        if method_l == 'ensemble' and metadata:
+            result['ensemble'] = metadata
         return result
 
     except Exception as e:
