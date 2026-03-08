@@ -181,6 +181,335 @@ def _calculate_lookback_bars(method_l: str, horizon: int, lookback: Optional[int
         return max(300, int(horizon) + (2 * seasonality if seasonality else 50))
     else:  # naive, drift and others
         return max(100, int(horizon) + 10)
+
+
+def _resolve_history_context(
+    *,
+    symbol: str,
+    timeframe: TimeframeLiteral,
+    need: int,
+    as_of: Optional[str],
+    prefetched_df: Optional[pd.DataFrame],
+    prefetched_base_col: Optional[str],
+    prefetched_denoise_spec: Optional[Any],
+    denoise: Optional[DenoiseSpec],
+) -> Tuple[pd.DataFrame, str, Optional[Any]]:
+    """Return the source DataFrame, active base column, and denoise spec used."""
+    if prefetched_df is not None:
+        base_col = prefetched_base_col or ('close_dn' if 'close_dn' in prefetched_df.columns else 'close')
+        return prefetched_df, base_col, prefetched_denoise_spec
+
+    df = _fetch_history(symbol, timeframe, int(need), as_of)
+    if len(df) < 3:
+        raise ValueError("Not enough closed bars to compute forecast")
+
+    base_col = 'close'
+    dn_spec_used = None
+    if denoise:
+        try:
+            normalized = _normalize_denoise_spec(denoise, default_when='pre_ti')
+        except Exception:
+            normalized = None
+        added = _apply_denoise(df, normalized, default_when='pre_ti') if normalized else []
+        dn_spec_used = normalized
+        if len(added) > 0 and f"{base_col}_dn" in added:
+            base_col = f"{base_col}_dn"
+    return df, base_col, dn_spec_used
+
+
+def _prepare_target_series_context(
+    *,
+    df: pd.DataFrame,
+    quantity_l: str,
+    target: str,
+    base_col: str,
+    features: Optional[Dict[str, Any]],
+    target_spec: Optional[Dict[str, Any]],
+) -> Tuple[pd.Series, str, str]:
+    """Prepare the effective base column and target series consumed by forecasters."""
+    base_col_initial = base_col
+    base_col_prepared = _forecast_preprocessing._prepare_base_data(df, quantity_l, target, base_col)
+    base_col_prepared = _forecast_preprocessing._apply_features_and_target_spec(
+        df,
+        features,
+        target_spec,
+        base_col_prepared,
+        parse_kv_or_json=_parse_kv_or_json,
+    )
+
+    target_series = df[base_col_prepared].dropna()
+    if target_spec:
+        y_arr, target_info = build_target_series(df, base_col_initial, target_spec, legacy_target=str(target))
+        target_series = pd.Series(y_arr, index=df.index)
+        base_col_final = target_info.get('base', base_col_initial)
+    else:
+        base_col_final = base_col_prepared
+        if quantity_l == 'return' or str(target).lower() == 'return':
+            target_series = df[base_col_final].dropna()
+        else:
+            target_series = df[base_col_final]
+
+    target_series = target_series.dropna()
+    return target_series, base_col_initial, base_col_final
+
+
+def _prepare_feature_context(
+    *,
+    df: pd.DataFrame,
+    features: Optional[Dict[str, Any]],
+    exog_used: Optional[np.ndarray],
+    exog_future: Optional[np.ndarray],
+    tf_secs: int,
+    horizon: int,
+    target_series: pd.Series,
+    dimred_method: Optional[str],
+    dimred_params: Optional[Dict[str, Any]],
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    """Prepare training and future exogenous features if requested."""
+    X = exog_used
+    future_exog = exog_future
+    if X is None and features:
+        future_times = _next_times_from_last(float(df['time'].iloc[-1]), int(tf_secs), int(horizon))
+        try:
+            X, built_future_exog, _feat_info = _forecast_preprocessing.prepare_features(
+                df,
+                features,
+                future_times,
+                horizon,
+                training_index=target_series.index,
+                dimred_method=dimred_method,
+                dimred_params=dimred_params,
+                parse_kv_or_json=_parse_kv_or_json,
+                reducer_factory=_forecast_preprocessing._create_dimred_reducer,
+            )
+        except Exception as exc:
+            logger.debug("Feature preparation failed: %s", exc)
+            X, built_future_exog, _feat_info = None, None, {'error': f"feature_build_error: {str(exc)}"}
+        if future_exog is None:
+            future_exog = built_future_exog
+    return X, future_exog
+
+
+def _build_engine_diagnostics(
+    *,
+    df: pd.DataFrame,
+    need: int,
+    lookback: Optional[int],
+    seasonality: int,
+    quantity_l: str,
+    base_col: str,
+    target_series: pd.Series,
+) -> Dict[str, Any]:
+    history_start_epoch: Optional[float]
+    history_end_epoch: Optional[float]
+    try:
+        history_start_epoch = float(df['time'].iloc[0])
+    except Exception:
+        history_start_epoch = None
+    try:
+        history_end_epoch = float(df['time'].iloc[-1])
+    except Exception:
+        history_end_epoch = None
+
+    fmt_time = _format_time_minimal_local if _use_client_tz() else _format_time_minimal
+    diagnostics: Dict[str, Any] = {
+        "lookback_bars_requested": int(lookback) if lookback is not None else None,
+        "lookback_bars_fetched": int(need),
+        "history_bars_used": int(len(df)),
+        "target_points_used": int(len(target_series)),
+        "seasonality_used": int(seasonality),
+        "quantity": quantity_l,
+        "base_col_used": str(base_col),
+    }
+    if history_start_epoch is not None:
+        diagnostics["history_start_epoch"] = history_start_epoch
+        diagnostics["history_start_time"] = fmt_time(history_start_epoch)
+    if history_end_epoch is not None:
+        diagnostics["history_end_epoch"] = history_end_epoch
+        diagnostics["history_end_time"] = fmt_time(history_end_epoch)
+    return diagnostics
+
+
+def _run_ensemble_forecast(
+    *,
+    target_series: pd.Series,
+    params: Dict[str, Any],
+    horizon: int,
+    seasonality: int,
+) -> Tuple[np.ndarray, Dict[str, Any]]:
+    base_methods_in = params.get('methods')
+    if isinstance(base_methods_in, str):
+        base_methods = [m.strip().lower() for m in base_methods_in.split(',') if m.strip()]
+    elif isinstance(base_methods_in, (list, tuple)):
+        base_methods = [str(m).lower().strip() for m in base_methods_in if str(m).strip()]
+    else:
+        base_methods = ['naive', 'theta', 'fourier_ols']
+
+    avail = _get_available_methods()
+    base_methods = [m for m in base_methods if m in avail and m != 'ensemble']
+
+    seen: set[str] = set()
+    base_methods = [m for m in base_methods if not (m in seen or seen.add(m))]
+    if not base_methods:
+        base_methods = ['naive', 'theta']
+
+    params_in = params.get('method_params') if isinstance(params.get('method_params'), dict) else {}
+    params_map = {str(k).lower(): (v if isinstance(v, dict) else {}) for k, v in params_in.items()}
+    mode = str(params.get('mode', 'average')).lower()
+    cv_points = int(params.get('cv_points', max(6, len(base_methods) * 2)))
+    min_train = int(params.get('min_train_size', max(30, horizon * 3)))
+    expose_components = bool(params.get('expose_components', True))
+    weights_vec = _normalize_weights(params.get('weights'), len(base_methods))
+    ensemble_meta: Dict[str, Any] = {
+        'mode_requested': mode,
+        'methods': list(base_methods),
+        'cv_points_requested': cv_points,
+    }
+
+    effective_mode = mode
+    rmse = None
+    ensemble_intercept = 0.0
+    coeffs = None
+    cv_rows = 0
+    if mode in ('bma', 'stacking'):
+        X_cv, y_cv = _prepare_ensemble_cv(target_series, base_methods, horizon, seasonality, params_map, cv_points, min_train)
+        cv_rows = int(len(y_cv))
+        if X_cv.shape[0] >= max(3, len(base_methods)):
+            if mode == 'bma':
+                errors = X_cv - y_cv[:, None]
+                rmse = np.sqrt(np.mean(np.square(errors), axis=0))
+                min_rmse = float(np.min(rmse))
+                weights_vec = np.exp(-0.5 * (rmse - min_rmse) / (min_rmse + 1e-12))
+                total = float(np.sum(weights_vec))
+                weights_vec = (weights_vec / total) if total > 0 else None
+            else:
+                X_aug = np.column_stack([np.ones(X_cv.shape[0]), X_cv])
+                beta, *_ = np.linalg.lstsq(X_aug, y_cv, rcond=None)
+                ensemble_intercept = float(beta[0])
+                coeffs = beta[1:]
+                effective_mode = 'stacking'
+        else:
+            effective_mode = 'average'
+
+    component_methods: List[str] = []
+    component_forecasts: List[np.ndarray] = []
+    for member in base_methods:
+        fc = _ensemble_dispatch_method(member, target_series, horizon, seasonality, params_map.get(member, {}))
+        if fc is None or fc.size == 0:
+            continue
+        component_methods.append(member)
+        component_forecasts.append(fc)
+
+    if not component_forecasts:
+        raise ValueError('Ensemble failed: no component forecasts')
+
+    if len(component_methods) != len(base_methods):
+        keep_idx = [base_methods.index(member) for member in component_methods]
+        if effective_mode == 'stacking' and coeffs is not None:
+            coeffs = coeffs[keep_idx]
+        elif weights_vec is not None:
+            weights_vec = weights_vec[keep_idx]
+        base_methods = component_methods
+
+    if effective_mode != 'stacking':
+        total = float(np.sum(weights_vec)) if weights_vec is not None else 0.0
+        if weights_vec is None or total <= 0:
+            weights_vec = np.full(len(base_methods), 1.0 / len(base_methods))
+        else:
+            weights_vec = weights_vec / total
+        combined = np.zeros_like(component_forecasts[0], dtype=float)
+        for weight, forecast in zip(weights_vec, component_forecasts):
+            combined = combined + float(weight) * forecast
+    else:
+        if coeffs is None or coeffs.size != len(base_methods):
+            coeffs = np.full(len(base_methods), 1.0 / len(base_methods))
+            ensemble_intercept = 0.0
+        combined = np.full_like(component_forecasts[0], ensemble_intercept, dtype=float)
+        for weight, forecast in zip(coeffs, component_forecasts):
+            combined = combined + float(weight) * forecast
+        weights_vec = coeffs
+
+    ensemble_meta.update({
+        'mode_used': effective_mode,
+        'methods': list(base_methods),
+        'cv_points_used': cv_rows,
+        'weights': [float(w) for w in (weights_vec.tolist() if isinstance(weights_vec, np.ndarray) else weights_vec)],
+    })
+    if rmse is not None:
+        ensemble_meta['cv_rmse'] = [float(value) for value in rmse.tolist()]
+    if effective_mode == 'stacking':
+        ensemble_meta['intercept'] = float(ensemble_intercept)
+    if expose_components:
+        ensemble_meta['components'] = {
+            member: [float(value) for value in forecast.tolist()]
+            for member, forecast in zip(base_methods, component_forecasts)
+        }
+    return combined, ensemble_meta
+
+
+def _run_registered_forecast_method(
+    *,
+    method_l: str,
+    method: ForecastMethodLiteral,
+    target_series: pd.Series,
+    horizon: int,
+    seasonality: int,
+    params: Dict[str, Any],
+    ci_alpha: Optional[float],
+    as_of: Optional[str],
+    quantity_l: str,
+    target: Literal['price', 'return'],
+    symbol: str,
+    timeframe: TimeframeLiteral,
+    X: Optional[np.ndarray],
+    future_exog: Optional[np.ndarray],
+) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
+    forecaster = ForecastRegistry.get(method_l)
+    method_params = dict(params)
+    if method_l == 'analog':
+        method_params.setdefault('symbol', symbol)
+        method_params.setdefault('timeframe', timeframe)
+        if as_of is not None:
+            method_params.setdefault('as_of', as_of)
+    if ci_alpha is not None and 'ci_alpha' not in method_params:
+        method_params['ci_alpha'] = ci_alpha
+
+    call_kwargs: Dict[str, Any] = {
+        'ci_alpha': ci_alpha,
+        'as_of': as_of,
+        'quantity': quantity_l,
+        'target': target,
+    }
+    if X is not None:
+        call_kwargs['exog_used'] = X
+
+    res = forecaster.forecast(
+        target_series,
+        horizon,
+        seasonality,
+        method_params,
+        exog_future=future_exog,
+        **call_kwargs,
+    )
+    metadata = res.metadata or {}
+    metadata['params_used'] = res.params_used
+    return res.forecast, res.ci_values, metadata
+
+
+def _merge_engine_diagnostics(metadata: Dict[str, Any], diagnostics: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(metadata, dict):
+        metadata = {}
+    existing_diagnostics = metadata.get("diagnostics")
+    if not isinstance(existing_diagnostics, dict):
+        existing_diagnostics = {}
+    merged_diagnostics = dict(existing_diagnostics)
+    for key, value in diagnostics.items():
+        if key not in merged_diagnostics:
+            merged_diagnostics[key] = value
+    metadata["diagnostics"] = merged_diagnostics
+    return metadata
+
+
 def _format_forecast_output(
     forecast_values: np.ndarray,
     last_epoch: float,
@@ -355,6 +684,7 @@ def forecast_engine(
     """
     try:
         ci_values = None
+        ensemble_meta: Dict[str, Any] = {}
         # Coerce CLI string inputs to proper types
         try:
             horizon = int(horizon) if horizon is not None else 12
@@ -396,30 +726,21 @@ def forecast_engine(
         need = _calculate_lookback_bars(method_l, horizon, lookback, seasonality, timeframe)
 
         # Fetch data (or reuse prefetched) and optional denoise
-        if prefetched_df is not None:
-            df = prefetched_df
-            base_col = prefetched_base_col or ('close_dn' if 'close_dn' in df.columns else 'close')
-            dn_spec_used = prefetched_denoise_spec
-        else:
-            try:
-                df = _fetch_history(symbol, timeframe, int(need), as_of)
-            except Exception as ex:
-                return {"error": str(ex)}
-            if len(df) < 3:
-                return {"error": "Not enough closed bars to compute forecast"}
-
-            # Apply denoising
-            base_col = 'close'
-            dn_spec_used = None
-            if denoise:
-                try:
-                    _dn = _normalize_denoise_spec(denoise, default_when='pre_ti')
-                except Exception:
-                    _dn = None
-                added = _apply_denoise(df, _dn, default_when='pre_ti') if _dn else []
-                dn_spec_used = _dn
-                if len(added) > 0 and f"{base_col}_dn" in added:
-                    base_col = f"{base_col}_dn"
+        try:
+            df, base_col, dn_spec_used = _resolve_history_context(
+                symbol=symbol,
+                timeframe=timeframe,
+                need=need,
+                as_of=as_of,
+                prefetched_df=prefetched_df,
+                prefetched_base_col=prefetched_base_col,
+                prefetched_denoise_spec=prefetched_denoise_spec,
+                denoise=denoise,
+            )
+        except ValueError as ex:
+            return {"error": str(ex)}
+        except Exception as ex:
+            return {"error": str(ex)}
 
         # Track last close for potential price reconstruction
         try:
@@ -427,96 +748,48 @@ def forecast_engine(
         except Exception:
             last_close = float('nan')
 
-        # Prepare base data
-        base_col_initial = base_col
-        base_col_prepared = _forecast_preprocessing._prepare_base_data(df, quantity_l, target, base_col)
-
-        # Apply features and target specification
-        base_col_prepared = _forecast_preprocessing._apply_features_and_target_spec(
-            df,
-            features,
-            target_spec,
-            base_col_prepared,
-            parse_kv_or_json=_parse_kv_or_json,
-        )
-
         # Prepare target series, honoring target_spec if provided
-        target_series = df[base_col_prepared].dropna()
-        target_info: Dict[str, Any] = {}
-        if target_spec:
-            try:
-                y_arr, target_info = build_target_series(df, base_col_initial, target_spec, legacy_target=str(target))
-                target_series = pd.Series(y_arr, index=df.index)
-                base_col = target_info.get('base', base_col_initial)
-            except Exception as ex:
-                return {"error": f"Invalid target_spec: {ex}"}
-        else:
-            base_col = base_col_prepared
-            if quantity_l == 'return' or str(target).lower() == 'return':
-                target_series = df[base_col].dropna()
-            else:
-                target_series = df[base_col]
+        try:
+            target_series, base_col_initial, base_col = _prepare_target_series_context(
+                df=df,
+                quantity_l=quantity_l,
+                target=str(target),
+                base_col=base_col,
+                features=features,
+                target_spec=target_spec,
+            )
+        except Exception as ex:
+            return {"error": f"Invalid target_spec: {ex}"}
 
-        target_series = target_series.dropna()
         if len(target_series) < 3:
             return {"error": f"Not enough valid data points in column '{base_col}'"}
 
         # Prepare feature matrices if applicable (only if exog_used not provided).
-        X = exog_used
-        future_exog = exog_future
-        if X is None and features:
-            future_times = _next_times_from_last(float(df['time'].iloc[-1]), int(tf_secs), int(horizon))
-            try:
-                X, built_future_exog, _feat_info = _forecast_preprocessing.prepare_features(
-                    df,
-                    features,
-                    future_times,
-                    horizon,
-                    training_index=target_series.index,
-                    dimred_method=dimred_method,
-                    dimred_params=dimred_params,
-                    parse_kv_or_json=_parse_kv_or_json,
-                    reducer_factory=_forecast_preprocessing._create_dimred_reducer,
-                )
-            except Exception as exc:
-                logger.debug("Feature preparation failed: %s", exc)
-                X, built_future_exog, _feat_info = None, None, {'error': f"feature_build_error: {str(exc)}"}
-            if future_exog is None:
-                future_exog = built_future_exog
+        X, future_exog = _prepare_feature_context(
+            df=df,
+            features=features,
+            exog_used=exog_used,
+            exog_future=exog_future,
+            tf_secs=tf_secs,
+            horizon=horizon,
+            target_series=target_series,
+            dimred_method=dimred_method,
+            dimred_params=dimred_params,
+        )
 
         # Get last timestamp and values
         last_epoch = float(df['time'].iloc[-1])
 
         # Core run diagnostics to make model context explicit for users.
-        history_start_epoch: Optional[float]
-        history_end_epoch: Optional[float]
-        try:
-            history_start_epoch = float(df['time'].iloc[0])
-        except Exception:
-            history_start_epoch = None
-        try:
-            history_end_epoch = float(df['time'].iloc[-1])
-        except Exception:
-            history_end_epoch = None
-        if _use_client_tz():
-            fmt_time = _format_time_minimal_local
-        else:
-            fmt_time = _format_time_minimal
-        engine_diagnostics: Dict[str, Any] = {
-            "lookback_bars_requested": int(lookback) if lookback is not None else None,
-            "lookback_bars_fetched": int(need),
-            "history_bars_used": int(len(df)),
-            "target_points_used": int(len(target_series)),
-            "seasonality_used": int(seasonality),
-            "quantity": quantity_l,
-            "base_col_used": str(base_col),
-        }
-        if history_start_epoch is not None:
-            engine_diagnostics["history_start_epoch"] = history_start_epoch
-            engine_diagnostics["history_start_time"] = fmt_time(history_start_epoch)
-        if history_end_epoch is not None:
-            engine_diagnostics["history_end_epoch"] = history_end_epoch
-            engine_diagnostics["history_end_time"] = fmt_time(history_end_epoch)
+        engine_diagnostics = _build_engine_diagnostics(
+            df=df,
+            need=need,
+            lookback=lookback,
+            seasonality=seasonality,
+            quantity_l=quantity_l,
+            base_col=base_col,
+            target_series=target_series,
+        )
         
         # Get symbol info for digits
         digits = None
@@ -531,155 +804,34 @@ def forecast_engine(
         metadata: Dict[str, Any] = {}
         try:
             if method_l == 'ensemble':
-                ensemble_meta = {}
-                base_methods_in = p.get('methods')
-                if isinstance(base_methods_in, str):
-                    base_methods = [m.strip().lower() for m in base_methods_in.split(',') if m.strip()]
-                elif isinstance(base_methods_in, (list, tuple)):
-                    base_methods = [str(m).lower().strip() for m in base_methods_in if str(m).strip()]
-                else:
-                    base_methods = ['naive', 'theta', 'fourier_ols']
-                
-                # Filter to available methods
-                avail = _get_available_methods()
-                base_methods = [m for m in base_methods if m in avail and m != 'ensemble']
-                
-                seen: set[str] = set()
-                base_methods = [m for m in base_methods if not (m in seen or seen.add(m))]
-                if not base_methods:
-                    base_methods = ['naive', 'theta']
-                
-                params_in = p.get('method_params') if isinstance(p.get('method_params'), dict) else {}
-                params_map = {str(k).lower(): (v if isinstance(v, dict) else {}) for k, v in params_in.items()}
-                mode = str(p.get('mode', 'average')).lower()
-                cv_points = int(p.get('cv_points', max(6, len(base_methods) * 2)))
-                min_train = int(p.get('min_train_size', max(30, horizon * 3)))
-                expose_components = bool(p.get('expose_components', True))
-                weights_vec = _normalize_weights(p.get('weights'), len(base_methods))
-                ensemble_meta = {
-                    'mode_requested': mode,
-                    'methods': list(base_methods),
-                    'cv_points_requested': cv_points,
-                }
-                effective_mode = mode
-                rmse = None
-                ensemble_intercept = 0.0
-                coeffs = None
-                cv_rows = 0
-                if mode in ('bma', 'stacking'):
-                    X_cv, y_cv = _prepare_ensemble_cv(target_series, base_methods, horizon, seasonality, params_map, cv_points, min_train)
-                    cv_rows = int(len(y_cv))
-                    if X_cv.shape[0] >= max(3, len(base_methods)):
-                        if mode == 'bma':
-                            errors = X_cv - y_cv[:, None]
-                            rmse = np.sqrt(np.mean(np.square(errors), axis=0))
-                            min_rmse = float(np.min(rmse))
-                            weights_vec = np.exp(-0.5 * (rmse - min_rmse) / (min_rmse + 1e-12))
-                            total = float(np.sum(weights_vec))
-                            if total > 0:
-                                weights_vec = weights_vec / total
-                            else:
-                                weights_vec = None
-                        else:
-                            X_aug = np.column_stack([np.ones(X_cv.shape[0]), X_cv])
-                            beta, *_ = np.linalg.lstsq(X_aug, y_cv, rcond=None)
-                            ensemble_intercept = float(beta[0])
-                            coeffs = beta[1:]
-                            effective_mode = 'stacking'
-                    else:
-                        effective_mode = 'average'
-                component_methods: List[str] = []
-                component_forecasts: List[np.ndarray] = []
-                for m in base_methods:
-                    fc = _ensemble_dispatch_method(m, target_series, horizon, seasonality, params_map.get(m, {}))
-                    if fc is None or fc.size == 0:
-                        continue
-                    component_methods.append(m)
-                    component_forecasts.append(fc)
-                if not component_forecasts:
-                    return {'error': 'Ensemble failed: no component forecasts'}
-                if len(component_methods) != len(base_methods):
-                    keep_idx = [base_methods.index(m) for m in component_methods]
-                    if effective_mode == 'stacking' and coeffs is not None:
-                        coeffs = coeffs[keep_idx]
-                    elif weights_vec is not None:
-                        weights_vec = weights_vec[keep_idx]
-                    base_methods = component_methods
-                if effective_mode != 'stacking':
-                    total = float(np.sum(weights_vec)) if weights_vec is not None else 0.0
-                    if weights_vec is None or total <= 0:
-                        weights_vec = np.full(len(base_methods), 1.0 / len(base_methods))
-                    else:
-                        weights_vec = weights_vec / total
-                    combined = np.zeros_like(component_forecasts[0], dtype=float)
-                    for w, fc in zip(weights_vec, component_forecasts):
-                        combined = combined + float(w) * fc
-                else:
-                    if coeffs is None or coeffs.size != len(base_methods):
-                        coeffs = np.full(len(base_methods), 1.0 / len(base_methods))
-                        ensemble_intercept = 0.0
-                    combined = np.full_like(component_forecasts[0], ensemble_intercept, dtype=float)
-                    for w, fc in zip(coeffs, component_forecasts):
-                        combined = combined + float(w) * fc
-                    weights_vec = coeffs
-                forecast_values = combined
-                ensemble_meta.update({
-                    'mode_used': effective_mode,
-                    'methods': list(base_methods),
-                    'cv_points_used': cv_rows,
-                    'weights': [float(w) for w in (weights_vec.tolist() if isinstance(weights_vec, np.ndarray) else weights_vec)],
-                })
+                try:
+                    forecast_values, ensemble_meta = _run_ensemble_forecast(
+                        target_series=target_series,
+                        params=p,
+                        horizon=horizon,
+                        seasonality=seasonality,
+                    )
+                except ValueError as e:
+                    return {"error": str(e)}
                 metadata = ensemble_meta
-                if rmse is not None:
-                    ensemble_meta['cv_rmse'] = [float(v) for v in rmse.tolist()]
-                if effective_mode == 'stacking':
-                    ensemble_meta['intercept'] = float(ensemble_intercept)
-                if expose_components:
-                    ensemble_meta['components'] = {m: [float(v) for v in fc.tolist()] for m, fc in zip(base_methods, component_forecasts)}
             
             else:
-                # Use Registry for all other methods
-                forecaster = ForecastRegistry.get(method_l)
-                
-                # Prepare exog variables if supported and available
-                # Note: X is the feature matrix for the training period. 
-                # For future exog, we would need to generate/fetch it. 
-                # Currently the engine doesn't support generating future exog automatically 
-                # unless provided in params or features.
-                # But some methods (like ML) might use X (training exog) during training.
-                
-                # Call forecast
-                method_params = dict(p)
-                if method_l == 'analog':
-                    method_params.setdefault('symbol', symbol)
-                    method_params.setdefault('timeframe', timeframe)
-                    if as_of is not None:
-                        method_params.setdefault('as_of', as_of)
-                if ci_alpha is not None and 'ci_alpha' not in method_params:
-                    method_params['ci_alpha'] = ci_alpha
-                call_kwargs: Dict[str, Any] = {
-                    'ci_alpha': ci_alpha,
-                    'as_of': as_of,
-                    'quantity': quantity_l,
-                    'target': target,
-                }
-                if X is not None:
-                    call_kwargs['exog_used'] = X
-
-                res = forecaster.forecast(
-                    target_series,
-                    horizon,
-                    seasonality,
-                    method_params,
-                    exog_future=future_exog,
-                    **call_kwargs,
+                forecast_values, ci_values, metadata = _run_registered_forecast_method(
+                    method_l=method_l,
+                    method=method,
+                    target_series=target_series,
+                    horizon=horizon,
+                    seasonality=seasonality,
+                    params=p,
+                    ci_alpha=ci_alpha,
+                    as_of=as_of,
+                    quantity_l=quantity_l,
+                    target=target,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    X=X,
+                    future_exog=future_exog,
                 )
-                forecast_values = res.forecast
-                ci_values = res.ci_values
-                metadata = res.metadata or {}
-                
-                # Add params used to metadata
-                metadata['params_used'] = res.params_used
 
         except Exception as e:
             return {"error": f"Forecast method '{method}' failed: {str(e)}"}
@@ -687,16 +839,7 @@ def forecast_engine(
         if forecast_values is None:
             return {"error": f"Method '{method}' returned no forecast values"}
 
-        if not isinstance(metadata, dict):
-            metadata = {}
-        existing_diagnostics = metadata.get("diagnostics")
-        if not isinstance(existing_diagnostics, dict):
-            existing_diagnostics = {}
-        merged_diagnostics = dict(existing_diagnostics)
-        for k, v in engine_diagnostics.items():
-            if k not in merged_diagnostics:
-                merged_diagnostics[k] = v
-        metadata["diagnostics"] = merged_diagnostics
+        metadata = _merge_engine_diagnostics(metadata, engine_diagnostics)
 
         # Prepare output arrays
         forecast_return_vals = None
