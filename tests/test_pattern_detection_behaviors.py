@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+import logging
 import numpy as np
 import pandas as pd
 import pytest
@@ -594,7 +595,7 @@ def test_detect_classic_patterns_disables_aliases_by_default(monkeypatch):
     assert "Trend Line" in names_alias or "Trend Channel" in names_alias
 
 
-def test_patterns_detect_classic_ensemble_merges_engine_outputs(monkeypatch):
+def test_patterns_detect_classic_ensemble_merges_engine_outputs(monkeypatch, caplog):
     df = pd.DataFrame(
         {
             "time": [1, 2, 3, 4, 5, 6],
@@ -642,16 +643,17 @@ def test_patterns_detect_classic_ensemble_merges_engine_outputs(monkeypatch):
 
     monkeypatch.setattr(core_patterns, "_run_classic_engine", _fake_engine)
 
-    res = patterns_detect(
-        symbol="EURUSD",
-        mode="classic",
-        detail="full",
-        timeframe="H1",
-        engine="native,stock_pattern,precise_patterns",
-        ensemble=True,
-        include_completed=True,
-        __cli_raw=True,
-    )
+    with caplog.at_level(logging.INFO, logger=core_patterns.logger.name):
+        res = patterns_detect(
+            symbol="EURUSD",
+            mode="classic",
+            detail="full",
+            timeframe="H1",
+            engine="native,stock_pattern,precise_patterns",
+            ensemble=True,
+            include_completed=True,
+            __cli_raw=True,
+        )
 
     assert res["success"] is True
     assert res["engine"] == "ensemble"
@@ -660,6 +662,7 @@ def test_patterns_detect_classic_ensemble_merges_engine_outputs(monkeypatch):
     assert set(res["patterns"][0]["source_engines"]) == {"native", "stock_pattern"}
     assert "engine_errors" in res
     assert "precise_patterns" in res["engine_errors"]
+    assert "event=finish operation=patterns_detect success=True" in caplog.text
 
 
 def test_patterns_detect_classic_adds_signal_summary_and_levels(monkeypatch):

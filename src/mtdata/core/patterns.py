@@ -2,10 +2,13 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional, List, Tuple, Literal
 import importlib
 import copy
+import logging
 import pandas as pd
+import time
 import warnings
 
 from .constants import TIMEFRAME_MAP
+from .execution_logging import infer_result_success, log_operation_finish, log_operation_start
 from .mt5_gateway import create_mt5_gateway
 from .patterns_support import (
     _STOCK_PATTERN_UTILS_CACHE,
@@ -41,6 +44,8 @@ from .patterns_requests import PatternsDetectRequest
 from .patterns_use_cases import run_patterns_detect
 from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5
+
+logger = logging.getLogger(__name__)
 
 _CLASSIC_ENGINE_ORDER = ("native", "stock_pattern", "precise_patterns")
 ClassicEngineRunner = Callable[
@@ -663,29 +668,54 @@ def patterns_detect(
     # Detect Elliott Wave patterns
     patterns_detect(symbol="BTCUSD", mode="elliott", timeframe="H4", detail="full")
     """
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="patterns_detect",
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        mode=request.mode,
+        detail=request.detail,
+    )
+
+    def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="patterns_detect",
+            started_at=started_at,
+            success=infer_result_success(result),
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            mode=request.mode,
+            detail=request.detail,
+        )
+        return result
+
     connection_error = _patterns_connection_error()
     if connection_error is not None:
-        return connection_error
-    return run_patterns_detect(
-        request,
-        timeframe_map=TIMEFRAME_MAP,
-        compact_patterns_payload=_compact_patterns_payload,
-        fetch_pattern_data=_fetch_pattern_data,
-        classic_cfg_cls=_ClassicCfg,
-        elliott_cfg_cls=_ElliottCfg,
-        apply_config_to_obj=_apply_config_to_obj,
-        select_classic_engines=_select_classic_engines,
-        available_classic_engines=_available_classic_engines,
-        run_classic_engine=_run_classic_engine,
-        resolve_engine_weights=_resolve_engine_weights,
-        merge_classic_ensemble=_merge_classic_ensemble,
-        enrich_classic_patterns=_enrich_classic_patterns,
-        summarize_engine_findings=_summarize_engine_findings,
-        summarize_pattern_bias=_summarize_pattern_bias,
-        build_pattern_response=_build_pattern_response,
-        format_elliott_patterns=_format_elliott_patterns,
-        detect_candlestick_patterns=_detect_candlestick_patterns,
-        elliott_timeframe_suggestion=_elliott_timeframe_suggestion,
-        format_time_minimal=_format_time_minimal,
-        to_float_np=__to_float_np,
+        return _finish(connection_error)
+    return _finish(
+        run_patterns_detect(
+            request,
+            timeframe_map=TIMEFRAME_MAP,
+            compact_patterns_payload=_compact_patterns_payload,
+            fetch_pattern_data=_fetch_pattern_data,
+            classic_cfg_cls=_ClassicCfg,
+            elliott_cfg_cls=_ElliottCfg,
+            apply_config_to_obj=_apply_config_to_obj,
+            select_classic_engines=_select_classic_engines,
+            available_classic_engines=_available_classic_engines,
+            run_classic_engine=_run_classic_engine,
+            resolve_engine_weights=_resolve_engine_weights,
+            merge_classic_ensemble=_merge_classic_ensemble,
+            enrich_classic_patterns=_enrich_classic_patterns,
+            summarize_engine_findings=_summarize_engine_findings,
+            summarize_pattern_bias=_summarize_pattern_bias,
+            build_pattern_response=_build_pattern_response,
+            format_elliott_patterns=_format_elliott_patterns,
+            detect_candlestick_patterns=_detect_candlestick_patterns,
+            elliott_timeframe_suggestion=_elliott_timeframe_suggestion,
+            format_time_minimal=_format_time_minimal,
+            to_float_np=__to_float_np,
+        )
     )
