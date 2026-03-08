@@ -6,7 +6,6 @@ Automatically discovers function parameters and creates CLI arguments
 
 import argparse
 import sys
-import inspect
 import os
 import types
 import math
@@ -33,6 +32,15 @@ from .cli_formatting import (
     _resolve_cli_formatter,
     _safe_tz_name,
     _sanitize_json_compat,
+)
+from .cli_discovery import (
+    add_dynamic_arguments as _add_dynamic_arguments_impl,
+    apply_schema_overrides as _apply_schema_overrides_impl,
+    discover_tools as _discover_tools_impl,
+    extract_function_from_tool_obj as _extract_function_from_tool_obj_impl,
+    extract_metadata_from_tool_obj as _extract_metadata_from_tool_obj_impl,
+    get_function_info as _get_function_info_impl,
+    resolve_param_kwargs as _resolve_param_kwargs_impl,
 )
 
 # Simple debug logging controlled by env var MTDATA_CLI_DEBUG
@@ -215,49 +223,24 @@ def get_function_info(func):
     This avoids duplicating introspection logic while preserving the CLI's
     expectation that the returned dict contains a 'func' key for invocation.
     """
-    info = _schema_get_function_info(func)
-    info['func'] = func
-    info = _flatten_request_model_param(info)
-    # Ensure a minimal doc for CLI help if missing
-    if not info.get('doc'):
-        info['doc'] = f"Execute {info.get('name') or getattr(func, '__name__', 'function')}"
-    # Backfill type defaults to str for any missing types to keep CLI robust
-    for p in info.get('params', []):
-        if p.get('type') is None:
-            p['type'] = str
-        if 'required' not in p:
-            # Default required based on availability of a default value
-            p['required'] = p.get('default') is None
-    return info
+    return _get_function_info_impl(
+        func,
+        schema_get_function_info=_schema_get_function_info,
+        flatten_request_model_param=_flatten_request_model_param,
+    )
 
 def _apply_schema_overrides(tool: ToolInfo, func_info: Dict[str, Any]) -> Dict[str, Any]:
     """Apply schema metadata to the introspected CLI param info."""
-    meta = tool.setdefault('meta', {})
-    schema = meta.get('schema') or {}
-    schema = enrich_schema_with_shared_defs(schema, func_info)
-    meta['schema'] = schema
-    params_obj = schema.get('parameters') if isinstance(schema.get('parameters'), dict) else schema
-    schema_props = params_obj.get('properties') if isinstance(params_obj, dict) else {}
-    schema_required = set(params_obj.get('required', [])) if isinstance(params_obj, dict) else set()
-    for param in func_info.get('params', []):
-        prop = schema_props.get(param['name']) if isinstance(schema_props, dict) else None
-        if isinstance(prop, dict) and 'default' in prop and param.get('default') is None:
-            param['default'] = prop['default']
-        if param['name'] in schema_required:
-            param['required'] = True
-    return schema
+    return _apply_schema_overrides_impl(
+        tool,
+        func_info,
+        enrich_schema_with_shared_defs=enrich_schema_with_shared_defs,
+    )
 
 
 def _extract_function_from_tool_obj(tool_obj):
     """Best-effort extraction of the underlying function from an MCP tool object."""
-    # Common attributes we might find in registry entries
-    for attr in ("func", "function", "callable", "handler", "wrapped", "_func"):
-        if hasattr(tool_obj, attr) and callable(getattr(tool_obj, attr)):
-            return getattr(tool_obj, attr)
-    # Some registries may store the function directly
-    if callable(tool_obj):
-        return tool_obj
-    return None
+    return _extract_function_from_tool_obj_impl(tool_obj)
 
 def _extract_metadata_from_tool_obj(tool_obj) -> Dict[str, Any]:
     """Attempt to extract description and parameter docs from an MCP tool object.
@@ -266,38 +249,7 @@ def _extract_metadata_from_tool_obj(tool_obj) -> Dict[str, Any]:
     - description: Optional[str]
     - param_docs: Dict[str, str]
     """
-    meta: Dict[str, Any] = {"description": None, "param_docs": {}, "schema": None}
-
-    # Direct description fields
-    for attr in ("description", "doc", "docs"):
-        val = getattr(tool_obj, attr, None)
-        if isinstance(val, str) and val.strip():
-            meta["description"] = val.strip()
-            break
-
-    # JSON schema-like fields
-    schema = None
-    for attr in ("schema", "input_schema", "parameters", "spec"):
-        val = getattr(tool_obj, attr, None)
-        if isinstance(val, dict) and val:
-            schema = val
-            break
-
-    if schema:
-        meta["schema"] = schema
-        # Top-level description
-        if not meta["description"] and isinstance(schema.get("description"), str):
-            meta["description"] = schema.get("description")
-        # Parameters (OpenAI/MCP-style JSON schema)
-        params_obj = schema.get("parameters") if isinstance(schema.get("parameters"), dict) else schema
-        props = params_obj.get("properties") if isinstance(params_obj, dict) else None
-        if isinstance(props, dict):
-            for pname, pdef in props.items():
-                desc = pdef.get("description") if isinstance(pdef, dict) else None
-                if isinstance(desc, str) and desc.strip():
-                    meta["param_docs"][pname] = desc.strip()
-
-    return meta
+    return _extract_metadata_from_tool_obj_impl(tool_obj)
 
 
 def _is_union_origin(origin: Any) -> bool:
@@ -315,58 +267,15 @@ def discover_tools():
     2) Use the MCP registry if available
     3) Fallback to scanning bootstrapped tool modules
     """
-    tools: Dict[str, ToolInfo] = {}
-
-    registry = None
-    bootstrapped_modules: Tuple[Any, ...] = ()
-    try:
-        bootstrapped_modules = tuple(bootstrap_tools())
-    except Exception as e:
-        _debug(f"bootstrap_tools failed: {e}")
-    try:
-        reg = get_registered_tools()
-        if reg and hasattr(reg, "items"):
-            registry = reg
-    except Exception as e:
-        _debug(f"get_registered_tools failed: {e}")
-    if mcp is not None:
-        registry = get_mcp_registry(mcp) or registry
-
-    module_names = {
-        str(getattr(module, "__name__", "")).strip()
-        for module in bootstrapped_modules
-        if getattr(module, "__name__", None)
-    }
-    if registry and hasattr(registry, 'items'):
-        for name, obj in registry.items():  # type: ignore[union-attr]
-            func = _extract_function_from_tool_obj(obj)
-            mod = getattr(func, '__module__', None) if func else None
-            if func and isinstance(mod, str) and (not module_names or mod in module_names):
-                meta = _extract_metadata_from_tool_obj(obj)
-                tools[name] = {"func": func, "meta": meta}
-
-    if not tools:
-        # Fallback: scan bootstrapped modules for likely tool functions
-        for module in bootstrapped_modules:
-            module_name = getattr(module, "__name__", None)
-            if not isinstance(module_name, str):
-                continue
-            for name in dir(module):
-                if name.startswith('_'):
-                    continue
-                obj = getattr(module, name)
-                if callable(obj) and getattr(obj, '__module__', None) == module_name:
-                    try:
-                        inspect.signature(obj)
-                    except (TypeError, ValueError):
-                        continue
-                    if isinstance(obj, type):
-                        continue
-                    if name.endswith(('_wrapper',)):
-                        continue
-                    tools[name] = {"func": obj, "meta": {"description": None, "param_docs": {}}}
-
-    return tools
+    return _discover_tools_impl(
+        bootstrap_tools=bootstrap_tools,
+        get_registered_tools=get_registered_tools,
+        mcp=mcp,
+        get_mcp_registry=get_mcp_registry,
+        debug=_debug,
+        extract_function_from_tool_obj=_extract_function_from_tool_obj,
+        extract_metadata_from_tool_obj=_extract_metadata_from_tool_obj,
+    )
 
 def _resolve_param_kwargs(
     param: Dict[str, Any],
@@ -375,135 +284,19 @@ def _resolve_param_kwargs(
     param_names: Optional[set] = None,
 ) -> Tuple[Dict[str, Any], bool]:
     """Resolve CLI argument kwargs and determine if parameter is a mapping type."""
-    def _escape_argparse_help(text: Optional[str]) -> Optional[str]:
-        # argparse expands help strings using old-style % formatting; escape literal percents.
-        return text.replace('%', '%%') if isinstance(text, str) else text
-
-    def _looks_like_forecast_method_literal(ptype: Any) -> bool:
-        try:
-            origin = get_origin(ptype)
-            if not _is_literal_origin(origin):
-                return False
-            args = set(str(v) for v in get_args(ptype) if v is not None)
-            # Avoid misclassifying volatility method enums (e.g. ewma/parkinson)
-            # as forecast-method enums just because they contain overlapping
-            # names like "arima"/"theta".
-            volatility_markers = {
-                "ewma",
-                "parkinson",
-                "gk",
-                "rs",
-                "yang_zhang",
-                "rolling_std",
-                "realized_kernel",
-                "har_rv",
-                "garch_t",
-                "egarch_t",
-                "gjr_garch_t",
-                "figarch",
-            }
-            if args.intersection(volatility_markers):
-                return False
-            # Heuristic: Forecast methods always include at least one of these canonical names.
-            return bool(args.intersection({'theta', 'naive', 'arima', 'chronos2', 'statsforecast'}))
-        except Exception:
-            return False
-
-    desc = None
-    if param_docs and param['name'] in param_docs:
-        desc = param_docs[param['name']]
-    hint = desc or _PARAM_HINTS.get(param['name'])
-    kwargs = {'help': _escape_argparse_help(hint) or f"{param['name']} parameter", 'dest': param['name']}
-    is_mapping_type = False
-
-    # Dynamically populate choices for 'method' parameter
-    if param['name'] == 'method' and (
-        (cmd_name in {'forecast_generate', 'forecast_conformal_intervals', 'forecast_tune_genetic', 'forecast_tune_optuna'})
-        or _looks_like_forecast_method_literal(param.get('type'))
-    ):
-        # If the tool exposes the newer (library, model) selection, don't explode
-        # help output by enumerating every possible method name.
-        if param_names and ('library' in param_names or 'model' in param_names):
-            # No choices -> free string. Users can use --library/--model for guided selection.
-            pass
-        else:
-            try:
-                from mtdata.forecast.registry import ForecastRegistry
-
-                # Best-effort import: optional method modules may fail to import if their
-                # third-party deps are missing; still surface whatever registers successfully.
-                for mod_name in (
-                    "mtdata.forecast.methods.classical",
-                    "mtdata.forecast.methods.ets_arima",
-                    "mtdata.forecast.methods.statsforecast",
-                    "mtdata.forecast.methods.mlforecast",
-                    "mtdata.forecast.methods.pretrained",
-                    "mtdata.forecast.methods.neural",
-                    "mtdata.forecast.methods.sktime",
-                    "mtdata.forecast.methods.analog",
-                    "mtdata.forecast.methods.monte_carlo",
-                ):
-                    try:
-                        __import__(mod_name)
-                    except Exception as import_ex:
-                        _debug(f"Skipping method module import '{mod_name}': {import_ex}")
-
-                kwargs['choices'] = ForecastRegistry.get_all_method_names()
-            except Exception as e:
-                _debug(f"Failed to dynamically load forecast methods for CLI: {e}")
-                # Fallback to static type choices if dynamic loading fails
-                ptype = param.get('type')
-                origin = get_origin(ptype)
-                if _is_literal_origin(origin):
-                    kwargs['choices'] = [str(v) for v in get_args(ptype) if v is not None]
-    else:
-        # Handle other types
-        try:
-            ptype = param.get('type')
-            # Optional[T] -> T Unwrap first
-            base_type, origin = _unwrap_optional_type(ptype)
-
-            # Check for mapping type on the unwrapped base type
-            is_typed_dict = _is_typed_dict_type(base_type)
-            is_mapping_type = (base_type in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
-
-            # Default to string parsing unless we can provide a better type.
-            kwargs['type'] = str
-
-            if base_type in (int, float, str):
-                kwargs['type'] = base_type
-            elif base_type is bool:
-                kwargs['type'] = str
-                kwargs['choices'] = ['true', 'false']
-                kwargs['metavar'] = 'bool'
-
-            
-            if origin in (list, tuple):
-                inner = get_args(ptype)[0] if get_args(ptype) else None
-                inner_origin = get_origin(inner)
-                if _is_literal_origin(inner_origin):
-                    choices = [str(v) for v in get_args(inner)]
-                    if choices:
-                        kwargs['choices'] = choices
-                    kwargs['type'] = str
-                    kwargs['nargs'] = '+'
-                else:
-                    kwargs['type'] = str
-                    kwargs['nargs'] = '+'
-            elif _is_literal_origin(origin):
-                choices = [str(v) for v in get_args(base_type)]
-                if choices:
-                    kwargs['choices'] = choices
-                kwargs['type'] = str
-        except Exception as e:
-            _debug(f"Type resolution failed for param '{param['name']}': {e}")
-            kwargs['type'] = str
-        
-    # Handle defaults (do not force a default for tri-state bools)
-    if not param['required'] and not (param['type'] == bool and param['default'] is None):
-        kwargs['default'] = param['default']
-
-    return kwargs, is_mapping_type
+    return _resolve_param_kwargs_impl(
+        param,
+        param_docs,
+        cmd_name=cmd_name,
+        param_names=param_names,
+        param_hints=_PARAM_HINTS,
+        debug=_debug,
+        is_literal_origin=_is_literal_origin,
+        unwrap_optional_type=_unwrap_optional_type,
+        is_typed_dict_type=_is_typed_dict_type,
+        get_origin=get_origin,
+        get_args=get_args,
+    )
 
 def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str]] = None, cmd_name: Optional[str] = None):
     """Add arguments to parser based on parameter info.
@@ -512,40 +305,13 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
     original param name (snake_case) so downstream mapping works.
     Also casts Optional[int|float|bool] to their base types for argparse.
     """
-    for param in param_info['params']:
-        hyph = f"--{param['name'].replace('_', '-')}"
-        uscr = f"--{param['name']}"
-        
-        param_names = {p.get('name') for p in (param_info.get('params') or []) if isinstance(p, dict)}
-        kwargs, is_mapping_type = _resolve_param_kwargs(param, param_docs, cmd_name, param_names=param_names)
-        
-        # Add positional argument for first required parameter
-        if param['required'] and param == param_info['params'][0]:
-            positional_kwargs = {
-                k: v for k, v in kwargs.items()
-                if k in ("help", "type", "choices", "metavar")
-            }
-            parser.add_argument(param['name'], **positional_kwargs)
-        else:
-            # For mapping-like params (e.g., --simplify), allow bare flag: '--simplify' triggers defaults
-            if is_mapping_type:
-                local_kwargs = dict(kwargs)
-                local_kwargs['nargs'] = '?'
-                local_kwargs['const'] = '__PRESENT__'
-                parser.add_argument(hyph, uscr, **local_kwargs)
-            else:
-                parser.add_argument(hyph, uscr, **kwargs)
-
-        # If this parameter is mapping-like, add a companion --<name>-params to pass extra kwargs
-        if is_mapping_type:
-            parser.add_argument(
-                f"--{param['name'].replace('_','-')}-params",
-                f"--{param['name']}_params",
-                dest=f"{param['name']}_params",
-                type=str,
-                default=None,
-                help=f"Extra params for {param['name']} (key=value[,key=value])"
-            )
+    _add_dynamic_arguments_impl(
+        parser,
+        param_info,
+        resolve_param_kwargs=_resolve_param_kwargs,
+        param_docs=param_docs,
+        cmd_name=cmd_name,
+    )
 
 def _parse_kv_string(s: str) -> Optional[Dict[str, Any]]:
     """Parse 'k=v,k2=v2' (commas or spaces) into a dict. Delegates to utils implementation."""
