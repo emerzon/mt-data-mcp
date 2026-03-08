@@ -23,8 +23,13 @@ import type {
 // Use environment variable or default to empty (same origin)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const baseURL = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE) || ''
+const API_PREFIX = '/api/v1'
 
 export const api = axios.create({ baseURL })
+
+function apiPath(path: string): string {
+  return `${API_PREFIX}${path}`
+}
 
 /**
  * Standardized error extraction from axios errors.
@@ -44,12 +49,12 @@ export function getErrorMessage(error: unknown): string {
 // ============================================================================
 
 export async function getTimeframes(): Promise<string[]> {
-  const { data } = await api.get<{ timeframes: string[] }>('/api/timeframes')
+  const { data } = await api.get<{ timeframes: string[] }>(apiPath('/timeframes'))
   return data.timeframes ?? []
 }
 
 export async function searchInstruments(search?: string, limit?: number): Promise<Instrument[]> {
-  const { data } = await api.get<{ items: Instrument[] }>('/api/instruments', {
+  const { data } = await api.get<{ items: Instrument[] }>(apiPath('/instruments'), {
     params: { search, limit },
   })
   return data.items ?? []
@@ -101,7 +106,7 @@ export async function getHistory(params: HistoryParams): Promise<HistoryResponse
     }
   }
 
-  const { data } = await api.get<{ bars: HistoryBar[], meta?: { server_tz_offset: number } }>('/api/history', { params: query })
+  const { data } = await api.get<{ bars: HistoryBar[], meta?: { server_tz_offset: number } }>(apiPath('/history'), { params: query })
   return {
     success: true,
     bars: data.bars ?? [],
@@ -110,7 +115,7 @@ export async function getHistory(params: HistoryParams): Promise<HistoryResponse
 }
 
 export async function getTick(symbol: string): Promise<Tick> {
-  const { data } = await api.get<Tick>('/api/tick', { params: { symbol } })
+  const { data } = await api.get<Tick>(apiPath('/tick'), { params: { symbol } })
   return data
 }
 
@@ -119,32 +124,32 @@ export async function getTick(symbol: string): Promise<Tick> {
 // ============================================================================
 
 export async function getMethods(): Promise<MethodsMeta> {
-  const { data } = await api.get<MethodsMeta>('/api/methods')
+  const { data } = await api.get<MethodsMeta>(apiPath('/methods'))
   return data
 }
 
 export async function getVolatilityMethods(): Promise<VolatilityMethodsMeta> {
-  const { data } = await api.get<VolatilityMethodsMeta>('/api/volatility/methods')
+  const { data } = await api.get<VolatilityMethodsMeta>(apiPath('/volatility/methods'))
   return data
 }
 
 export async function getDenoiseMethods(): Promise<DenoiseMethodsMeta> {
-  const { data } = await api.get<DenoiseMethodsMeta>('/api/denoise/methods')
+  const { data } = await api.get<DenoiseMethodsMeta>(apiPath('/denoise/methods'))
   return data
 }
 
 export async function getDimredMethods(): Promise<DimredMethodsMeta> {
-  const { data } = await api.get<DimredMethodsMeta>('/api/dimred/methods')
+  const { data } = await api.get<DimredMethodsMeta>(apiPath('/dimred/methods'))
   return data
 }
 
 export async function getWavelets(): Promise<WaveletsResponse> {
-  const { data } = await api.get<WaveletsResponse>('/api/denoise/wavelets')
+  const { data } = await api.get<WaveletsResponse>(apiPath('/denoise/wavelets'))
   return data
 }
 
 export async function getSktimeEstimators(): Promise<SktimeEstimatorsResponse> {
-  const { data } = await api.get<SktimeEstimatorsResponse>('/api/sktime/estimators')
+  const { data } = await api.get<SktimeEstimatorsResponse>(apiPath('/sktime/estimators'))
   return data
 }
 
@@ -153,17 +158,17 @@ export async function getSktimeEstimators(): Promise<SktimeEstimatorsResponse> {
 // ============================================================================
 
 export async function forecastPrice(body: ForecastPriceBody): Promise<ForecastPayload> {
-  const { data } = await api.post<ForecastPayload>('/api/forecast/price', body)
+  const { data } = await api.post<ForecastPayload>(apiPath('/forecast/price'), body)
   return data
 }
 
 export async function forecastVolatility(body: ForecastVolBody): Promise<VolatilityPayload> {
-  const { data } = await api.post<VolatilityPayload>('/api/forecast/volatility', body)
+  const { data } = await api.post<VolatilityPayload>(apiPath('/forecast/volatility'), body)
   return data
 }
 
 export async function runBacktest(body: BacktestBody): Promise<BacktestResult> {
-  const { data } = await api.post<BacktestResult>('/api/backtest', body)
+  const { data } = await api.post<BacktestResult>(apiPath('/backtest'), body)
   return data
 }
 
@@ -178,7 +183,7 @@ export type PivotParams = {
 }
 
 export async function getPivots(params: PivotParams): Promise<PivotResponse> {
-  const { data } = await api.get<PivotResponse>('/api/pivots', { params })
+  const { data } = await api.get<PivotResponse>(apiPath('/pivots'), { params })
   return data
 }
 
@@ -194,7 +199,7 @@ export type SupportResistanceParams = {
 export async function getSupportResistance(
   params: SupportResistanceParams
 ): Promise<SupportResistanceResponse> {
-  const { data } = await api.get<SupportResistanceResponse>('/api/support-resistance', { params })
+  const { data } = await api.get<SupportResistanceResponse>(apiPath('/support-resistance'), { params })
   return data
 }
 
@@ -203,6 +208,6 @@ export async function getSupportResistance(
 // ============================================================================
 
 export async function healthCheck(): Promise<{ service: string; status: string }> {
-  const { data } = await api.get<{ service: string; status: string }>('/')
+  const { data } = await api.get<{ service: string; status: string }>(apiPath('/health'))
   return data
 }

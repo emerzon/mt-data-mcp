@@ -15,12 +15,10 @@ import type {
   PivotLevel,
   SupportResistanceLevel,
   ChartOverlay,
-  AnchorMetrics,
   ForecastPriceBody,
 } from '../types'
 import { loadJSON, saveJSON } from '../lib/storage'
 import { tfSeconds } from '../lib/timeframes'
-import { toUtcSec } from '../lib/time'
 import { formatDateTime } from '../lib/utils'
 
 // ============================================================================
@@ -46,7 +44,7 @@ export function useChartData(options: UseChartDataOptions) {
   })
 
   return {
-    bars: query.data ?? [],
+    bars: query.data?.bars ?? [],
     isLoading: query.isFetching,
     error: query.error ? getErrorMessage(query.error) : null,
     refetch: query.refetch,
@@ -223,11 +221,14 @@ export function useForecastSettings(symbol: string, timeframe: string) {
   })
 
   const storageKey = symbol && timeframe ? `fc:${symbol}:${timeframe}` : null
+  const legacyStorageKey = symbol && timeframe ? `fc2:${symbol}:${timeframe}` : null
 
   // Load saved settings when symbol/timeframe changes
   useEffect(() => {
     if (!storageKey) return
-    const saved = loadJSON<Partial<ForecastSettings>>(storageKey)
+    const saved =
+      loadJSON<Partial<ForecastSettings>>(storageKey) ??
+      (legacyStorageKey ? loadJSON<Partial<ForecastSettings>>(legacyStorageKey) : null)
     if (saved) {
       setSettings(prev => ({
         ...prev,
@@ -242,7 +243,7 @@ export function useForecastSettings(symbol: string, timeframe: string) {
         dimredParams: saved.dimredParams,
       }))
     }
-  }, [storageKey])
+  }, [legacyStorageKey, storageKey])
 
   // Save settings when they change
   useEffect(() => {
@@ -270,8 +271,7 @@ export function useForecast(
   symbol: string,
   timeframe: string,
   settings: ForecastSettings,
-  bars: HistoryBar[],
-  onResult: (payload: ForecastPayload, metrics: AnchorMetrics | null) => void
+  onResult: (payload: ForecastPayload) => void
 ) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -293,7 +293,7 @@ export function useForecast(
           ci_alpha: settings.ci_alpha,
           target: settings.target,
           as_of: kind === 'full' ? undefined : anchor ? formatDateTime(anchor) : undefined,
-          params: settings.methodParams,
+          params: Object.keys(settings.methodParams).length ? settings.methodParams : undefined,
           denoise: settings.denoise,
           dimred_method: settings.dimredMethod,
           dimred_params: settings.dimredParams,
@@ -306,15 +306,14 @@ export function useForecast(
           __kind: kind,
         }
 
-        const metrics = calculateMetrics(payload, bars, anchor, timeframe)
-        onResult(payload, metrics)
+        onResult(payload)
       } catch (err) {
         setError(getErrorMessage(err))
       } finally {
         setIsLoading(false)
       }
     },
-    [symbol, timeframe, settings, bars, onResult]
+    [symbol, timeframe, settings, onResult]
   )
 
   return { run, isLoading, error }
@@ -389,7 +388,8 @@ export function useChartOverlays(
           ],
           color: colorForLevel(level.level),
           lineStyle: 'dashed',
-          lineWidth: 1.5,
+          lineWidth: 1,
+          label: level.level,
         })
       })
     }
@@ -408,78 +408,11 @@ export function useChartOverlays(
           color,
           lineWidth: 2,
           lineStyle: 'dotted',
+          label: `${level.type === 'resistance' ? 'Res' : 'Sup'} (${level.touches})`,
         })
       })
     }
 
     return Array.from(map.values())
   }, [bars, forecastOverlays, pivotLevels, srLevels, timeframe])
-}
-
-// ============================================================================
-// Metrics Calculator
-// ============================================================================
-
-function calculateMetrics(
-  res: ForecastPayload,
-  bars: HistoryBar[],
-  anchor: number | undefined,
-  timeframe: string
-): AnchorMetrics | null {
-  const main = res.forecast_price ?? res.forecast_return ?? []
-  const isPartial = res.__kind === 'partial'
-
-  if (!isPartial || !anchor || !bars.length) return null
-
-  // Build times array
-  let times: number[] = []
-  if (res.forecast_epoch?.length === main.length) {
-    times = res.forecast_epoch.map(t => toUtcSec(t))
-  } else {
-    const step = tfSeconds(timeframe)
-    if (anchor && step) {
-      times = Array.from({ length: main.length }, (_, i) => anchor + step * (i + 1))
-    }
-  }
-
-  // Map bar times to close prices
-  const closeByTime = new Map<number, number>()
-  for (const bar of bars) {
-    closeByTime.set(Math.floor(bar.time), bar.close)
-  }
-
-  // Collect prediction/actual pairs
-  const yPred: number[] = []
-  const yAct: number[] = []
-  for (let i = 0; i < times.length; i++) {
-    const actual = closeByTime.get(Math.floor(times[i]))
-    if (actual !== undefined && Number.isFinite(main[i])) {
-      yPred.push(Number(main[i]))
-      yAct.push(Number(actual))
-    }
-  }
-
-  if (!yPred.length) return null
-
-  const n = yPred.length
-  const diffs = yPred.map((p, i) => p - yAct[i])
-  const mae = diffs.reduce((acc, d) => acc + Math.abs(d), 0) / n
-  const mape =
-    (yPred.reduce((acc, _, i) => {
-      const denom = Math.abs(yAct[i]) || 1
-      return acc + Math.abs((yPred[i] - yAct[i]) / denom)
-    }, 0) / n) * 100
-  const rmse = Math.sqrt(diffs.reduce((acc, d) => acc + d * d, 0) / n)
-
-  const anchorClose = bars.find(b => Math.floor(b.time) === Math.floor(anchor))?.close ?? yAct[0]
-  let correct = 0
-  for (let i = 0; i < n; i++) {
-    const prev = i === 0 ? anchorClose : yAct[i - 1]
-    const dp = Math.sign(yPred[i] - prev)
-    const da = Math.sign(yAct[i] - prev)
-    if (dp === da) correct += 1
-  }
-  const dirAcc = (correct / n) * 100
-
-  return { overlap: n, mae, mape, rmse, dirAcc }
 }

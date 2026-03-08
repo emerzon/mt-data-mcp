@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 
 from .config import load_environment
 
-from fastapi import Query
+from fastapi import APIRouter, Query
 
 from .constants import TIMEFRAME_MAP
 from .mt5_gateway import create_mt5_gateway
@@ -47,7 +47,10 @@ from ..utils.mt5 import _ensure_symbol_ready, mt5, mt5_connection
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from .config import mt5_config
 
+API_PREFIXES = ("/api", "/api/v1")
+
 app = create_web_api_app()
+api_router = APIRouter()
 
 
 def _get_web_api_mt5_gateway():
@@ -83,12 +86,12 @@ def _call_tool_raw(func: Any) -> Any:
     return raw if callable(raw) else func
 
 
-@app.get("/api/timeframes")
+@api_router.get("/timeframes")
 def get_timeframes() -> Dict[str, Any]:
     return {"timeframes": list(TIMEFRAME_MAP.keys())}
 
 
-@app.get("/api/instruments")
+@api_router.get("/instruments")
 def get_instruments(search: Optional[str] = Query(None), limit: Optional[int] = Query(None, ge=1)) -> Dict[str, Any]:
     return _get_instruments_response(
         search=search,
@@ -98,37 +101,37 @@ def get_instruments(search: Optional[str] = Query(None), limit: Optional[int] = 
     )
 
 
-@app.get("/api/methods")
+@api_router.get("/methods")
 def get_methods() -> Dict[str, Any]:
     return _get_methods_response(get_methods_impl=_get_methods_impl)
 
 
-@app.get("/api/volatility/methods")
+@api_router.get("/volatility/methods")
 def get_vol_methods() -> Dict[str, Any]:
     return _get_vol_methods_response(get_vol_methods=_get_vol_methods)
 
 
-@app.get("/api/sktime/estimators")
+@api_router.get("/sktime/estimators")
 def get_sktime_estimators() -> Dict[str, Any]:
     return _list_sktime_forecasters()
 
 
-@app.get("/api/denoise/methods")
+@api_router.get("/denoise/methods")
 def get_denoise_methods() -> Dict[str, Any]:
     return _get_denoise_methods_response(get_denoise_methods=_get_denoise_methods)
 
 
-@app.get("/api/dimred/methods")
+@api_router.get("/dimred/methods")
 def get_dimred_methods() -> Dict[str, Any]:
     return _get_dimred_methods_response(list_dimred_methods=_list_dimred_methods)
 
 
-@app.get("/api/denoise/wavelets")
+@api_router.get("/denoise/wavelets")
 def get_wavelets() -> Dict[str, Any]:
     return _get_wavelets_response()
 
 
-@app.get("/api/history")
+@api_router.get("/history")
 def get_history(
     symbol: str = Query(...),
     timeframe: str = Query("H1"),
@@ -157,7 +160,7 @@ def get_history(
     )
 
 
-@app.get("/api/pivots")
+@api_router.get("/pivots")
 def get_pivots(
     symbol: str = Query(...),
     timeframe: str = Query("D1"),
@@ -172,7 +175,7 @@ def get_pivots(
     )
 
 
-@app.get("/api/support-resistance")
+@api_router.get("/support-resistance")
 def get_support_resistance(
     symbol: str = Query(...),
     timeframe: str = Query("H1"),
@@ -192,7 +195,7 @@ def get_support_resistance(
     )
 
 
-@app.get("/api/tick")
+@api_router.get("/tick")
 def get_tick(symbol: str = Query(...)) -> Dict[str, Any]:
     return _get_tick_response(
         symbol=symbol,
@@ -201,24 +204,33 @@ def get_tick(symbol: str = Query(...)) -> Dict[str, Any]:
     )
 
 
-@app.post("/api/forecast/price")
+@api_router.post("/forecast/price")
 def post_forecast_price(body: ForecastPriceBody) -> Dict[str, Any]:
     return _post_forecast_price_response(body=body, forecast_impl=_forecast_impl)
 
 
-@app.post("/api/forecast/volatility")
+@api_router.post("/forecast/volatility")
 def post_forecast_volatility(body: ForecastVolBody) -> Dict[str, Any]:
     return _post_forecast_volatility_response(body=body, forecast_vol_impl=_forecast_vol_impl)
 
 
-@app.post("/api/backtest")
+@api_router.post("/backtest")
 def post_backtest(body: BacktestBody) -> Dict[str, Any]:
     return _post_backtest_response(body=body, backtest_impl=_backtest_impl)
 
 
+@api_router.get("/health")
+def health() -> Dict[str, Any]:
+    return {"service": "mtdata-webui", "status": "ok"}
+
+
 @app.get("/")
 def root() -> Dict[str, Any]:
-    return {"service": "mtdata-webui", "status": "ok"}
+    return health()
+
+
+for _prefix in API_PREFIXES:
+    app.include_router(api_router, prefix=_prefix)
 
 
 mount_webui(app)
