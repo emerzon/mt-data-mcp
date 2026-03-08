@@ -5,12 +5,14 @@ Exposes finvizfinance library functionality as MCP tools.
 Note: Data is delayed 15-20 minutes; US stocks only.
 """
 
-from typing import Any, Dict, Optional, Literal
+from typing import Any, Callable, Dict, Optional, Literal
 import json
 import logging
+import time
 from urllib.parse import parse_qs
 
 from ._mcp_instance import mcp
+from .execution_logging import infer_result_success, log_operation_finish, log_operation_start
 from ..services.finviz_service import (
     get_stock_fundamentals,
     get_stock_description,
@@ -46,6 +48,24 @@ def _looks_like_non_equity_symbol(symbol: str) -> bool:
     return False
 
 
+def _run_logged_tool(
+    operation: str,
+    fields: Dict[str, Any],
+    fn: Callable[[], Dict[str, Any]],
+) -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    log_operation_start(logger, operation=operation, **fields)
+    result = fn()
+    log_operation_finish(
+        logger,
+        operation=operation,
+        started_at=started_at,
+        success=infer_result_success(result),
+        **fields,
+    )
+    return result
+
+
 @mcp.tool()
 def finviz_fundamentals(symbol: str) -> Dict[str, Any]:
     """
@@ -69,7 +89,11 @@ def finviz_fundamentals(symbol: str) -> Dict[str, Any]:
     >>> finviz_fundamentals("AAPL")
     {"success": True, "symbol": "AAPL", "fundamentals": {"P/E": "28.5", ...}}
     """
-    return get_stock_fundamentals(symbol)
+    return _run_logged_tool(
+        "finviz_fundamentals",
+        {"symbol": symbol},
+        lambda: get_stock_fundamentals(symbol),
+    )
 
 
 @mcp.tool()
@@ -87,7 +111,11 @@ def finviz_description(symbol: str) -> Dict[str, Any]:
     dict
         Company description text
     """
-    return get_stock_description(symbol)
+    return _run_logged_tool(
+        "finviz_description",
+        {"symbol": symbol},
+        lambda: get_stock_description(symbol),
+    )
 
 
 @mcp.tool()
@@ -110,18 +138,22 @@ def finviz_news(symbol: Optional[str] = None, limit: int = 20, page: int = 1) ->
     dict
         List of news items with title, link, date, source
     """
-    if symbol:
-        symbol_norm = str(symbol).strip().upper()
-        if _looks_like_non_equity_symbol(symbol_norm):
-            return {
-                "error": (
-                    f"{symbol_norm} is not a Finviz-supported equity ticker. "
-                    "finviz_news only covers US equities."
-                )
-            }
-        return get_stock_news(symbol_norm, limit=limit, page=page)
-    else:
+    fields = {"symbol": symbol, "limit": limit, "page": page}
+
+    def _run() -> Dict[str, Any]:
+        if symbol:
+            symbol_norm = str(symbol).strip().upper()
+            if _looks_like_non_equity_symbol(symbol_norm):
+                return {
+                    "error": (
+                        f"{symbol_norm} is not a Finviz-supported equity ticker. "
+                        "finviz_news only covers US equities."
+                    )
+                }
+            return get_stock_news(symbol_norm, limit=limit, page=page)
         return get_general_news(news_type="news", limit=limit, page=page)
+
+    return _run_logged_tool("finviz_news", fields, _run)
 
 
 @mcp.tool()
@@ -146,7 +178,11 @@ def finviz_insider(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any
     dict
         List of insider trades
     """
-    return get_stock_insider_trades(symbol, limit=limit, page=page)
+    return _run_logged_tool(
+        "finviz_insider",
+        {"symbol": symbol, "limit": limit, "page": page},
+        lambda: get_stock_insider_trades(symbol, limit=limit, page=page),
+    )
 
 
 @mcp.tool()
@@ -167,7 +203,11 @@ def finviz_ratings(symbol: str) -> Dict[str, Any]:
     dict
         List of analyst ratings
     """
-    return get_stock_ratings(symbol)
+    return _run_logged_tool(
+        "finviz_ratings",
+        {"symbol": symbol},
+        lambda: get_stock_ratings(symbol),
+    )
 
 
 @mcp.tool()
@@ -185,7 +225,11 @@ def finviz_peers(symbol: str) -> Dict[str, Any]:
     dict
         List of peer ticker symbols
     """
-    return get_stock_peers(symbol)
+    return _run_logged_tool(
+        "finviz_peers",
+        {"symbol": symbol},
+        lambda: get_stock_peers(symbol),
+    )
 
 
 @mcp.tool()
@@ -232,14 +276,19 @@ def finviz_screen(
     Screen for high dividend stocks:
     >>> finviz_screen(filters='{"Dividend Yield": "Over 5%"}', view="valuation")
     """
-    filters_dict = None
-    if filters:
-        try:
-            filters_dict = json.loads(filters)
-        except (json.JSONDecodeError, TypeError):
-            return {"error": f"Invalid filters JSON: {filters}"}
-    
-    return screen_stocks(filters=filters_dict, order=order, limit=limit, page=page, view=view)
+    fields = {"limit": limit, "page": page, "view": view, "order": order}
+
+    def _run() -> Dict[str, Any]:
+        filters_dict = None
+        if filters:
+            try:
+                filters_dict = json.loads(filters)
+            except (json.JSONDecodeError, TypeError):
+                return {"error": f"Invalid filters JSON: {filters}"}
+
+        return screen_stocks(filters=filters_dict, order=order, limit=limit, page=page, view=view)
+
+    return _run_logged_tool("finviz_screen", fields, _run)
 
 
 @mcp.tool()
@@ -265,7 +314,11 @@ def finviz_market_news(
     dict
         List of news/blog items
     """
-    return get_general_news(news_type=news_type, limit=limit, page=page)
+    return _run_logged_tool(
+        "finviz_market_news",
+        {"news_type": news_type, "limit": limit, "page": page},
+        lambda: get_general_news(news_type=news_type, limit=limit, page=page),
+    )
 
 
 @mcp.tool()
@@ -296,7 +349,11 @@ def finviz_insider_activity(
     dict
         List of insider trades with ticker, owner, transaction details
     """
-    return get_insider_activity(option=option, limit=limit, page=page)
+    return _run_logged_tool(
+        "finviz_insider_activity",
+        {"option": option, "limit": limit, "page": page},
+        lambda: get_insider_activity(option=option, limit=limit, page=page),
+    )
 
 
 @mcp.tool()
@@ -312,7 +369,7 @@ def finviz_forex() -> Dict[str, Any]:
     dict
         Forex pairs performance data
     """
-    return get_forex_performance()
+    return _run_logged_tool("finviz_forex", {}, get_forex_performance)
 
 
 @mcp.tool()
@@ -328,7 +385,7 @@ def finviz_crypto() -> Dict[str, Any]:
     dict
         Crypto performance data
     """
-    return get_crypto_performance()
+    return _run_logged_tool("finviz_crypto", {}, get_crypto_performance)
 
 
 @mcp.tool()
@@ -344,7 +401,7 @@ def finviz_futures() -> Dict[str, Any]:
     dict
         Futures performance data
     """
-    return get_futures_performance()
+    return _run_logged_tool("finviz_futures", {}, get_futures_performance)
 
 
 @mcp.tool()
@@ -385,39 +442,53 @@ def finviz_calendar(
     dict
         Calendar entries (schema depends on calendar type).
     """
-    raw_q = params or query
-    if raw_q:
-        q = raw_q.strip()
-        if q.startswith("?"):
-            q = q[1:]
-        parsed = {k: (v[-1] if v else None) for k, v in parse_qs(q).items()}
-        date_from = date_from or parsed.get("dateFrom")
-        date_to = date_to or parsed.get("dateTo")
-        impact = impact or parsed.get("impact")  # type: ignore[assignment]
-        if parsed.get("page"):
-            try:
-                page = int(str(parsed["page"]))
-            except ValueError:
-                pass
-        if parsed.get("pageSize"):
-            try:
-                limit = int(str(parsed["pageSize"]))
-            except ValueError:
-                pass
+    fields = {
+        "calendar": calendar,
+        "impact": impact,
+        "date_from": date_from,
+        "date_to": date_to,
+        "limit": limit,
+        "page": page,
+    }
 
-    cal = (calendar or "").strip().lower()
-    if "?" in cal:
-        cal = cal.split("?", 1)[0]
-    if "/" in cal:
-        cal = cal.rstrip("/").split("/")[-1]
+    def _run() -> Dict[str, Any]:
+        nonlocal impact, date_from, date_to, limit, page
 
-    if cal == "economic":
-        return get_economic_calendar(impact=impact, limit=limit, page=page, date_from=date_from, date_to=date_to)
-    if cal == "earnings":
-        return get_earnings_calendar_api(limit=limit, page=page, date_from=date_from, date_to=date_to)
-    if cal == "dividends":
-        return get_dividends_calendar_api(limit=limit, page=page, date_from=date_from, date_to=date_to)
-    return {"error": f"Unsupported calendar '{calendar}'. Expected economic, earnings, or dividends."}
+        raw_q = params or query
+        if raw_q:
+            q = raw_q.strip()
+            if q.startswith("?"):
+                q = q[1:]
+            parsed = {k: (v[-1] if v else None) for k, v in parse_qs(q).items()}
+            date_from = date_from or parsed.get("dateFrom")
+            date_to = date_to or parsed.get("dateTo")
+            impact = impact or parsed.get("impact")  # type: ignore[assignment]
+            if parsed.get("page"):
+                try:
+                    page = int(str(parsed["page"]))
+                except ValueError:
+                    pass
+            if parsed.get("pageSize"):
+                try:
+                    limit = int(str(parsed["pageSize"]))
+                except ValueError:
+                    pass
+
+        cal = (calendar or "").strip().lower()
+        if "?" in cal:
+            cal = cal.split("?", 1)[0]
+        if "/" in cal:
+            cal = cal.rstrip("/").split("/")[-1]
+
+        if cal == "economic":
+            return get_economic_calendar(impact=impact, limit=limit, page=page, date_from=date_from, date_to=date_to)
+        if cal == "earnings":
+            return get_earnings_calendar_api(limit=limit, page=page, date_from=date_from, date_to=date_to)
+        if cal == "dividends":
+            return get_dividends_calendar_api(limit=limit, page=page, date_from=date_from, date_to=date_to)
+        return {"error": f"Unsupported calendar '{calendar}'. Expected economic, earnings, or dividends."}
+
+    return _run_logged_tool("finviz_calendar", fields, _run)
 
 
 @mcp.tool()
@@ -446,4 +517,8 @@ def finviz_earnings(
     dict
         Earnings calendar data
     """
-    return get_earnings_calendar(period=period, limit=limit, page=page)
+    return _run_logged_tool(
+        "finviz_earnings",
+        {"period": period, "limit": limit, "page": page},
+        lambda: get_earnings_calendar(period=period, limit=limit, page=page),
+    )
