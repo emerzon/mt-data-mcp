@@ -42,6 +42,14 @@ from .cli_discovery import (
     get_function_info as _get_function_info_impl,
     resolve_param_kwargs as _resolve_param_kwargs_impl,
 )
+from .cli_runtime import (
+    coerce_cli_scalar as _coerce_cli_scalar_impl,
+    create_command_function as _create_command_function_impl,
+    merge_dict as _merge_dict_impl,
+    normalize_cli_list_value as _normalize_cli_list_value_impl,
+    parse_kv_string as _parse_kv_string_impl,
+    parse_set_overrides as _parse_set_overrides_impl,
+)
 
 # Simple debug logging controlled by env var MTDATA_CLI_DEBUG
 def _debug_enabled() -> bool:
@@ -315,13 +323,7 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
 
 def _parse_kv_string(s: str) -> Optional[Dict[str, Any]]:
     """Parse 'k=v,k2=v2' (commas or spaces) into a dict. Delegates to utils implementation."""
-    try:
-        from ..utils.utils import parse_kv_or_json
-        result = parse_kv_or_json(s)
-        return result if result else None
-    except Exception as e:
-        _debug(f"Failed to parse kv string '{s}': {e}")
-        return None
+    return _parse_kv_string_impl(s, debug=_debug)
 
 
 def _unwrap_optional_type(ptype: Any) -> Tuple[Any, Any]:
@@ -337,100 +339,20 @@ def _unwrap_optional_type(ptype: Any) -> Tuple[Any, Any]:
 
 def _normalize_cli_list_value(value: Any) -> Any:
     """Normalize CLI list values from comma/space/JSON forms into a flat list."""
-    if value is None:
-        return None
-
-    out: List[Any] = []
-
-    def _add_text_tokens(text: str) -> None:
-        s = str(text or "").strip()
-        if not s:
-            return
-        if s.startswith("[") and s.endswith("]"):
-            try:
-                parsed = json.loads(s)
-                if isinstance(parsed, list):
-                    for item in parsed:
-                        if isinstance(item, str):
-                            tok = item.strip()
-                            if tok:
-                                out.append(tok)
-                        elif item is not None:
-                            out.append(item)
-                    return
-            except Exception:
-                pass
-        for tok in s.replace(",", " ").split():
-            t = tok.strip()
-            if t:
-                out.append(t)
-
-    if isinstance(value, str):
-        _add_text_tokens(value)
-        return out
-    if isinstance(value, (list, tuple)):
-        for item in value:
-            if isinstance(item, str):
-                _add_text_tokens(item)
-            elif item is not None:
-                out.append(item)
-        return out
-    return value
+    return _normalize_cli_list_value_impl(value)
 
 
 def _coerce_cli_scalar(v: str) -> Any:
-    s = v.strip()
-    if not s:
-        return s
-    sl = s.lower()
-    if sl == "true":
-        return True
-    if sl == "false":
-        return False
-    if sl == "null" or sl == "none":
-        return None
-    # JSON value (string/number/list/object/bool/null)
-    if s[0] in ('{', '[', '"') or sl in ("true", "false", "null") or s.replace(".", "", 1).isdigit():
-        try:
-            import json
-            return json.loads(s)
-        except Exception:
-            pass
-    # Number
-    try:
-        if "." in s:
-            return float(s)
-        return int(s)
-    except Exception:
-        return s
+    return _coerce_cli_scalar_impl(v)
 
 
 def _parse_set_overrides(items: Optional[List[str]]) -> Dict[str, Dict[str, Any]]:
     """Parse repeated --set entries like 'model.sp=24' into nested dicts."""
-    out: Dict[str, Dict[str, Any]] = {}
-    for item in items or []:
-        if not isinstance(item, str) or not item.strip():
-            continue
-        if "=" not in item:
-            raise ValueError(f"Invalid --set '{item}': expected section.key=value")
-        left, right = item.split("=", 1)
-        left = left.strip()
-        if "." not in left:
-            raise ValueError(f"Invalid --set '{item}': expected section.key=value")
-        section, key = left.split(".", 1)
-        section = section.strip().lower()
-        key = key.strip()
-        if not section or not key:
-            raise ValueError(f"Invalid --set '{item}': expected section.key=value")
-        out.setdefault(section, {})[key] = _coerce_cli_scalar(right)
-    return out
+    return _parse_set_overrides_impl(items, coerce_cli_scalar=_coerce_cli_scalar)
 
 
 def _merge_dict(dst: Optional[Dict[str, Any]], src: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    d = dict(dst or {})
-    for k, v in (src or {}).items():
-        d[k] = v
-    return d
+    return _merge_dict_impl(dst, src)
 
 
 def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
@@ -508,81 +430,16 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
 
 def create_command_function(func_info, cmd_name: str = "", cmd_parser: Optional[argparse.ArgumentParser] = None):
     """Create a command function that calls the MCP function dynamically"""
-    def command_func(args):
-        # Build kwargs from args
-        kwargs = {}
-        for param in func_info['params']:
-            param_name = param['name']
-            arg_value = getattr(args, param_name, param['default'])
-            
-            # Normalize boolean values coming as strings
-            if param.get('type') == bool and isinstance(arg_value, str):
-                if arg_value.lower() == 'true':
-                    arg_value = True
-                elif arg_value.lower() == 'false':
-                    arg_value = False
-            # Handle mapping-like params for CLI convenience
-            try:
-                ptype = param.get('type')
-                # Unwrap Optional
-                base_type, origin = _unwrap_optional_type(ptype)
-
-                is_typed_dict = _is_typed_dict_type(base_type)
-                is_mapping = (base_type in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
-                is_list_like = origin in (list, tuple)
-            except Exception:
-                is_mapping = False
-                is_list_like = False
-            # Bare flag sentinel: treat as empty mapping to trigger defaults
-            if is_mapping and arg_value == '__PRESENT__':
-                arg_value = {}
-            if is_list_like:
-                arg_value = _normalize_cli_list_value(arg_value)
-            # For mapping-like params, support shorthand and companion '<name>_params'
-            if is_mapping:
-                # Try to parse JSON/KV string if it looks like one
-                if isinstance(arg_value, str) and arg_value.strip():
-                    if arg_value.strip().startswith('{'):
-                         parsed = _parse_kv_string(arg_value)
-                         if parsed is not None:
-                             arg_value = parsed
-                    # Shorthand: --simplify lttb  -> {"method":"lttb"}
-                    elif not arg_value.strip().startswith('{'):
-                        arg_value = {"method": arg_value.strip()}
-                # Companion params: --simplify-params 'points=100,ratio=0.5'
-                extra_param_name = f"{param_name}_params"
-                extra_val = getattr(args, extra_param_name, None)
-                if isinstance(extra_val, str) and extra_val.strip():
-                    extra = _parse_kv_string(extra_val)
-                    if extra:
-                        if arg_value is None or arg_value == {}:
-                            arg_value = extra
-                        elif isinstance(arg_value, dict):
-                            # merge without clobbering keys explicitly present in arg_value
-                            for k, v in extra.items():
-                                if k not in arg_value:
-                                    arg_value[k] = v
-                        else:
-                            # Unexpected type; replace
-                            arg_value = extra
-            
-            # Only include non-None values
-            if arg_value is not None:
-                kwargs[param_name] = arg_value
-
-        request_model = func_info.get("request_model")
-        request_param_name = func_info.get("request_param_name")
-        if request_model is not None and request_param_name:
-            kwargs = {request_param_name: request_model(**kwargs)}
-
-        # Call the function (tools now return minimal plain text for API and CLI)
-        # Request raw output so we can control formatting in CLI (e.g. verbose flag)
-        kwargs['__cli_raw'] = True
-        result = func_info['func'](**kwargs)
-        _render_cli_result(result, args=args, cmd_name=cmd_name)
-        return 1 if _result_has_tool_error(result) else 0
-
-    return command_func
+    return _create_command_function_impl(
+        func_info,
+        cmd_name=cmd_name,
+        render_cli_result=_render_cli_result,
+        result_has_tool_error=_result_has_tool_error,
+        normalize_cli_list_value=_normalize_cli_list_value,
+        parse_kv_string=_parse_kv_string,
+        unwrap_optional_type=_unwrap_optional_type,
+        is_typed_dict_type=_is_typed_dict_type,
+    )
 
 def _type_name(t):
     try:
