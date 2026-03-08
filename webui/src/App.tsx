@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { OHLCChart } from './components/OHLCChart'
-import { ChartToolbar } from './components/ChartToolbar'
 import { useChartWorkspace } from './features/chart-workspace/useChartWorkspace'
+import { ChartToolbar } from './features/chart-workspace/ChartToolbar'
 import { ForecastPanel } from './features/forecast-studio/ForecastPanel'
 
 export default function App() {
