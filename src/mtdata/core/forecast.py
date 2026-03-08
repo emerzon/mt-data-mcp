@@ -135,6 +135,19 @@ def forecast_list_library_models(
     - statsforecast: lists `statsforecast.models.*` class names.
     - sktime: lists supported aliases plus notes for using dotted estimator paths.
     """
+    started_at = _log_forecast_start(
+        "forecast_list_library_models",
+        library=library,
+    )
+
+    def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        return _log_forecast_finish(
+            "forecast_list_library_models",
+            started_at,
+            result,
+            library=library,
+        )
+
     lib = str(library).strip().lower()
     if lib == "native":
         # "Native" methods are mtdata-provided top-level algorithms (as opposed to
@@ -146,20 +159,20 @@ def forecast_list_library_models(
 
         excluded = {"statsforecast", "sktime", "mlforecast", "chronos2", "chronos_bolt", "timesfm", "lag_llama"}
         models = [m for m in _METHODS if m not in excluded]
-        return {
+        return _finish({
             "library": lib,
             "models": sorted(models),
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library native --model analog",
                 "mtdata-cli forecast_generate SYMBOL --library native --model theta",
             ],
-        }
+        })
 
     if lib == "statsforecast":
         try:
             from statsforecast import models as _models  # type: ignore
         except Exception as ex:
-            return {"library": lib, "error": f"statsforecast import failed: {ex}"}
+            return _finish({"library": lib, "error": f"statsforecast import failed: {ex}"})
         names: List[str] = []
         for attr in dir(_models):
             if attr.startswith("_"):
@@ -173,16 +186,16 @@ def forecast_list_library_models(
                 continue
             names.append(attr)
         names = sorted(set(names))
-        return {
+        return _finish({
             "library": lib,
             "models": names,
             "usage": "mtdata-cli forecast_generate SYMBOL --library statsforecast --model AutoARIMA",
-        }
+        })
 
     if lib == "sktime":
         mapping = _discover_sktime_forecasters()
         forecasters = sorted({v[0] for v in mapping.values()})
-        return {
+        return _finish({
             "library": lib,
             "models": forecasters,
             "usage": [
@@ -191,7 +204,7 @@ def forecast_list_library_models(
                 "mtdata-cli forecast_generate SYMBOL --library sktime --model sktime.forecasting.theta.ThetaForecaster --model-params \"sp=24\"",
             ],
             "note": "The --model value is matched to the closest available forecaster name; you can also pass a dotted class path. Constructor kwargs go in --model-params (or use --set model.<k>=<v>).",
-        }
+        })
 
     if lib == "pretrained":
         # These are the pretrained adapters shipped with mtdata.
@@ -217,26 +230,26 @@ def forecast_list_library_models(
                 "notes": "May not be installable on Python 3.13 due to upstream pins; included for completeness.",
             },
         ]
-        return {
+        return _finish({
             "library": lib,
             "models": pretrained,
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library pretrained --model chronos2",
                 "mtdata-cli forecast_generate SYMBOL --library pretrained --model timesfm",
             ],
-        }
+        })
 
     if lib == "mlforecast":
-        return {
+        return _finish({
             "library": lib,
             "note": "Use `--model <dotted sklearn/lightgbm regressor class>` plus optional constructor kwargs in --model-params (or use --set model.<k>=<v>).",
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library mlforecast --model sklearn.ensemble.RandomForestRegressor --model-params \"n_estimators=200\"",
                 "mtdata-cli forecast_generate SYMBOL --library native --model mlf_rf",
             ],
-        }
+        })
 
-    return {"library": lib, "error": "Unsupported library (supported: native, statsforecast, sktime, pretrained, mlforecast)"}
+    return _finish({"library": lib, "error": "Unsupported library (supported: native, statsforecast, sktime, pretrained, mlforecast)"})
 
 
 @mcp.tool()
@@ -321,6 +334,23 @@ def forecast_list_methods(
     - detail='compact' (default): concise list suitable for terminal usage.
     - detail='full': include full parameter docs and supports metadata.
     """
+    started_at = _log_forecast_start(
+        "forecast_list_methods",
+        detail=detail,
+        limit=limit,
+        search=search,
+    )
+
+    def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        return _log_forecast_finish(
+            "forecast_list_methods",
+            started_at,
+            result,
+            detail=detail,
+            limit=limit,
+            search=search,
+        )
+
     try:
         data = _get_forecast_methods_data()
         detail_value = str(detail or "compact").strip().lower()
@@ -330,9 +360,9 @@ def forecast_list_methods(
             try:
                 limit_value = int(limit)
             except Exception:
-                return {"error": f"Invalid limit: {limit}. Must be a positive integer."}
+                return _finish({"error": f"Invalid limit: {limit}. Must be a positive integer."})
             if limit_value <= 0:
-                return {"error": f"Invalid limit: {limit_value}. Must be >= 1."}
+                return _finish({"error": f"Invalid limit: {limit_value}. Must be >= 1."})
 
         categories_raw = data.get("categories") if isinstance(data.get("categories"), dict) else {}
         method_to_category: Dict[str, str] = {}
@@ -373,7 +403,7 @@ def forecast_list_methods(
         if detail_value == "full":
             methods_full = data.get("methods")
             if not isinstance(methods_full, list):
-                return data
+                return _finish(data)
             enriched_full: List[Dict[str, Any]] = []
             for row in methods_full:
                 if not isinstance(row, dict):
@@ -401,13 +431,13 @@ def forecast_list_methods(
                 "Methods include namespace/concept/method_id fields to disambiguate similarly named implementations "
                 "(for example native:theta vs statsforecast:theta)."
             )
-            return out_full
+            return _finish(out_full)
         methods = data.get("methods")
         if not isinstance(methods, list):
-            return data
+            return _finish(data)
 
         if any(not isinstance(item, dict) for item in methods):
-            return data
+            return _finish(data)
 
         compact_methods: List[Dict[str, Any]] = []
         available_count = 0
@@ -476,7 +506,7 @@ def forecast_list_methods(
         )
         if limit_value is not None:
             selected_methods = selected_methods[:limit_value]
-        return {
+        return _finish({
             "detail": "compact",
             "total": int(data.get("total") or len(compact_methods)),
             "total_filtered": int(len(compact_methods)),
@@ -492,9 +522,9 @@ def forecast_list_methods(
                 "search": search_value or None,
                 "limit": limit_value,
             },
-        }
+        })
     except Exception as e:
-        return {"error": f"Error listing forecast methods: {e}"}
+        return _finish({"error": f"Error listing forecast methods: {e}"})
 
 
 @mcp.tool()
@@ -664,7 +694,13 @@ def forecast_options_expirations(
 ) -> Dict[str, Any]:
     """Fetch available option expirations for a symbol."""
     from ..services.options_service import get_options_expirations as _impl
-    return _impl(symbol=symbol)
+    started_at = _log_forecast_start("forecast_options_expirations", symbol=symbol)
+    return _log_forecast_finish(
+        "forecast_options_expirations",
+        started_at,
+        _impl(symbol=symbol),
+        symbol=symbol,
+    )
 
 
 @mcp.tool()
@@ -678,13 +714,28 @@ def forecast_options_chain(
 ) -> Dict[str, Any]:
     """Fetch options chain snapshots for a symbol."""
     from ..services.options_service import get_options_chain as _impl
-    return _impl(
+    started_at = _log_forecast_start(
+        "forecast_options_chain",
         symbol=symbol,
         expiration=expiration,
         option_type=option_type,
-        min_open_interest=int(min_open_interest),
-        min_volume=int(min_volume),
-        limit=int(limit),
+        limit=limit,
+    )
+    return _log_forecast_finish(
+        "forecast_options_chain",
+        started_at,
+        _impl(
+            symbol=symbol,
+            expiration=expiration,
+            option_type=option_type,
+            min_open_interest=int(min_open_interest),
+            min_volume=int(min_volume),
+            limit=int(limit),
+        ),
+        symbol=symbol,
+        expiration=expiration,
+        option_type=option_type,
+        limit=limit,
     )
 
 
@@ -703,17 +754,30 @@ def forecast_quantlib_barrier_price(
 ) -> Dict[str, Any]:
     """Price a barrier option using QuantLib."""
     from ..forecast.quantlib_tools import price_barrier_option_quantlib as _impl
-    return _impl(
-        spot=float(spot),
-        strike=float(strike),
-        barrier=float(barrier),
-        maturity_days=int(maturity_days),
+    started_at = _log_forecast_start(
+        "forecast_quantlib_barrier_price",
         option_type=option_type,
         barrier_type=barrier_type,
-        risk_free_rate=float(risk_free_rate),
-        dividend_yield=float(dividend_yield),
-        volatility=float(volatility),
-        rebate=float(rebate),
+        maturity_days=maturity_days,
+    )
+    return _log_forecast_finish(
+        "forecast_quantlib_barrier_price",
+        started_at,
+        _impl(
+            spot=float(spot),
+            strike=float(strike),
+            barrier=float(barrier),
+            maturity_days=int(maturity_days),
+            option_type=option_type,
+            barrier_type=barrier_type,
+            risk_free_rate=float(risk_free_rate),
+            dividend_yield=float(dividend_yield),
+            volatility=float(volatility),
+            rebate=float(rebate),
+        ),
+        option_type=option_type,
+        barrier_type=barrier_type,
+        maturity_days=maturity_days,
     )
 
 
@@ -730,15 +794,30 @@ def forecast_quantlib_heston_calibrate(
 ) -> Dict[str, Any]:
     """Calibrate Heston parameters from an option chain using QuantLib."""
     from ..forecast.quantlib_tools import calibrate_heston_quantlib_from_options as _impl
-    return _impl(
+    started_at = _log_forecast_start(
+        "forecast_quantlib_heston_calibrate",
         symbol=symbol,
         expiration=expiration,
         option_type=option_type,
-        risk_free_rate=float(risk_free_rate),
-        dividend_yield=float(dividend_yield),
-        min_open_interest=int(min_open_interest),
-        min_volume=int(min_volume),
-        max_contracts=int(max_contracts),
+        max_contracts=max_contracts,
+    )
+    return _log_forecast_finish(
+        "forecast_quantlib_heston_calibrate",
+        started_at,
+        _impl(
+            symbol=symbol,
+            expiration=expiration,
+            option_type=option_type,
+            risk_free_rate=float(risk_free_rate),
+            dividend_yield=float(dividend_yield),
+            min_open_interest=int(min_open_interest),
+            min_volume=int(min_volume),
+            max_contracts=int(max_contracts),
+        ),
+        symbol=symbol,
+        expiration=expiration,
+        option_type=option_type,
+        max_contracts=max_contracts,
     )
 
 

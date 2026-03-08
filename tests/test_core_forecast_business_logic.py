@@ -437,6 +437,19 @@ def test_forecast_list_methods_does_not_require_mt5_connection(monkeypatch):
     assert out["methods"][0]["method"] == "theta"
 
 
+def test_forecast_list_library_models_logs_finish_event(caplog):
+    raw_list_models = _unwrap(cf.forecast_list_library_models)
+
+    with caplog.at_level(logging.INFO, logger=cf.logger.name):
+        out = raw_list_models("mlforecast")
+
+    assert out["library"] == "mlforecast"
+    assert any(
+        "event=finish operation=forecast_list_library_models success=True" in record.message
+        for record in caplog.records
+    )
+
+
 def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
     raw = _unwrap(cf.forecast_conformal_intervals)
 
@@ -663,6 +676,23 @@ def test_forecast_options_and_quantlib_tool_routing(monkeypatch):
     assert out["kind"] == "cal"
     assert out["symbol"] == "AAPL"
     assert out["option_type"] == "put"
+
+
+def test_forecast_options_chain_logs_finish_event(caplog, monkeypatch):
+    raw_chain = _unwrap(cf.forecast_options_chain)
+
+    import mtdata.services.options_service as options_service
+
+    monkeypatch.setattr(options_service, "get_options_chain", lambda **kwargs: {"success": True, **kwargs})
+
+    with caplog.at_level(logging.INFO, logger=cf.logger.name):
+        out = raw_chain(symbol="AAPL", expiration="2026-06-19", option_type="call", limit=25)
+
+    assert out["success"] is True
+    assert any(
+        "event=finish operation=forecast_options_chain success=True" in record.message
+        for record in caplog.records
+    )
 
 
 def test_forecast_barrier_optimize_routes_profile_args(monkeypatch):
