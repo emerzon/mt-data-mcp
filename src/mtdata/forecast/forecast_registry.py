@@ -52,15 +52,14 @@ def get_forecast_methods_data() -> Dict[str, Any]:
     categories: Dict[str, List[str]] = {}
 
     for method in ForecastRegistry.get_all_method_names():
-        if method == "ensemble":
-            entry = _ensemble_metadata()
-            methods.append(entry)
-            categories.setdefault("ensemble", []).append(method)
-            continue
         try:
             cls = ForecastRegistry.get_class(method)
             inst = cls()
         except Exception:
+            if method == "ensemble":
+                entry = _ensemble_metadata()
+                methods.append(entry)
+                categories.setdefault("ensemble", []).append(method)
             continue
 
         supports = inst.supports_features or {"price": True, "return": True, "volatility": False, "ci": False}

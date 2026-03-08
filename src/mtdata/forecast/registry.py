@@ -35,8 +35,5 @@ class ForecastRegistry:
 
     @classmethod
     def get_all_method_names(cls) -> List[str]:
-        """Get all available forecast method names, including 'ensemble'."""
-        methods = list(cls._methods.keys())
-        if 'ensemble' not in methods:
-            methods.append('ensemble')
-        return sorted(methods)
+        """Get all available forecast method names from the registered classes."""
+        return sorted(cls._methods.keys())
