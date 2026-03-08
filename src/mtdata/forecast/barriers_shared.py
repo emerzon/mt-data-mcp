@@ -44,6 +44,7 @@ BARRIER_GRID_PRESETS = {
 PHANTOM_PROFIT_NO_HIT_THRESHOLD = 0.50
 PHANTOM_PROFIT_LOSS_THRESHOLD = 0.01
 DEGENERATE_OBJECTIVE_MIN_RESOLVE = 0.20
+LOW_CONFIDENCE_CI_THRESHOLD = 0.10
 
 
 def _binomial_wilson_95(p_hat: float, n: int) -> Tuple[float, float]:
@@ -140,7 +141,7 @@ def _sort_candidate_results(res_list: List[Dict[str, Any]], objective_val: str) 
         res_list.sort(key=lambda x: x['ev'], reverse=True)
 
 
-def _annotate_candidate_metrics(row: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _annotate_candidate_metrics(row: Optional[Dict[str, Any]], cost_per_trade: float = 0.0) -> Optional[Dict[str, Any]]:
     if not isinstance(row, dict):
         return row
 
@@ -149,6 +150,9 @@ def _annotate_candidate_metrics(row: Optional[Dict[str, Any]]) -> Optional[Dict[
     prob_loss = _safe_float(row.get("prob_loss"))
     prob_no_hit = _safe_float(row.get("prob_no_hit"))
     prob_resolve = _safe_float(row.get("prob_resolve"))
+    tp = _safe_float(row.get("tp"))
+    sl = _safe_float(row.get("sl"))
+    cost = max(0.0, float(cost_per_trade))
 
     if prob_resolve is None and prob_no_hit is not None:
         prob_resolve = float(max(0.0, min(1.0, 1.0 - prob_no_hit)))
@@ -162,9 +166,21 @@ def _annotate_candidate_metrics(row: Optional[Dict[str, Any]]) -> Optional[Dict[
         breakeven_win_rate = float(1.0 / (1.0 + rr))
         row["breakeven_win_rate"] = breakeven_win_rate
 
+    breakeven_win_rate_net: Optional[float] = None
+    if cost > 0.0 and tp is not None and sl is not None:
+        net_reward = tp - cost
+        net_risk = sl + cost
+        if net_reward > 0.0 and net_risk > 0.0:
+            breakeven_win_rate_net = float(net_risk / (net_reward + net_risk))
+            row["breakeven_win_rate_net"] = breakeven_win_rate_net
+        elif net_reward <= 0.0:
+            breakeven_win_rate_net = 1.0
+            row["breakeven_win_rate_net"] = breakeven_win_rate_net
+
     edge_vs_breakeven: Optional[float] = None
-    if prob_win is not None and breakeven_win_rate is not None:
-        edge_vs_breakeven = float(prob_win - breakeven_win_rate)
+    effective_breakeven = breakeven_win_rate_net if breakeven_win_rate_net is not None else breakeven_win_rate
+    if prob_win is not None and effective_breakeven is not None:
+        edge_vs_breakeven = float(prob_win - effective_breakeven)
         row["edge_vs_breakeven"] = edge_vs_breakeven
 
     phantom_profit_risk = bool(
@@ -176,13 +192,25 @@ def _annotate_candidate_metrics(row: Optional[Dict[str, Any]]) -> Optional[Dict[
         and edge_vs_breakeven < 0.0
     )
     row["phantom_profit_risk"] = phantom_profit_risk
+
+    prob_win_ci = row.get("prob_win_ci95")
+    low_confidence = False
+    if isinstance(prob_win_ci, dict):
+        ci_lo = _safe_float(prob_win_ci.get("low"))
+        ci_hi = _safe_float(prob_win_ci.get("high"))
+        if ci_lo is not None and ci_hi is not None:
+            ci_width = ci_hi - ci_lo
+            low_confidence = ci_width > LOW_CONFIDENCE_CI_THRESHOLD
+            row["prob_win_ci_width"] = float(ci_width)
+    row["low_confidence"] = low_confidence
+
     return row
 
 
-def _candidate_is_viable(row: Optional[Dict[str, Any]]) -> bool:
+def _candidate_is_viable(row: Optional[Dict[str, Any]], cost_per_trade: float = 0.0) -> bool:
     if not isinstance(row, dict):
         return False
-    _annotate_candidate_metrics(row)
+    _annotate_candidate_metrics(row, cost_per_trade=cost_per_trade)
     ev_value = _safe_float(row.get("ev"))
     if ev_value is None or ev_value < 0.0:
         return False
@@ -191,10 +219,10 @@ def _candidate_is_viable(row: Optional[Dict[str, Any]]) -> bool:
     return True
 
 
-def _candidate_status_reason(row: Optional[Dict[str, Any]]) -> Optional[str]:
+def _candidate_status_reason(row: Optional[Dict[str, Any]], cost_per_trade: float = 0.0) -> Optional[str]:
     if not isinstance(row, dict):
         return None
-    _annotate_candidate_metrics(row)
+    _annotate_candidate_metrics(row, cost_per_trade=cost_per_trade)
     ev_value = _safe_float(row.get("ev"))
     if ev_value is None:
         return "Selected candidate is missing a finite EV estimate."
@@ -208,10 +236,10 @@ def _candidate_status_reason(row: Optional[Dict[str, Any]]) -> Optional[str]:
     return None
 
 
-def _build_selection_diagnostics(row: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def _build_selection_diagnostics(row: Optional[Dict[str, Any]], cost_per_trade: float = 0.0) -> Dict[str, Any]:
     if not isinstance(row, dict):
         return {}
-    _annotate_candidate_metrics(row)
+    _annotate_candidate_metrics(row, cost_per_trade=cost_per_trade)
 
     warnings_out: List[str] = []
     ev_edge_conflict = False
@@ -312,6 +340,22 @@ def _build_selection_diagnostics(row: Optional[Dict[str, Any]]) -> Dict[str, Any
             out["ev_edge_conflict_reason"] = ev_edge_conflict_reason
     if caution:
         out["caution"] = caution
+    if bool(row.get("low_confidence")):
+        ci_w = _safe_float(row.get("prob_win_ci_width"))
+        ci_msg = f" (CI width: {ci_w:.1%})" if ci_w is not None else ""
+        out["confidence_warning"] = (
+            f"Win probability estimate has wide confidence interval{ci_msg}. "
+            "Increase n_sims or use search_profile='long' for tighter estimates."
+        )
+        out["low_confidence"] = True
+        prob_win_val = _safe_float(row.get("prob_win"))
+        if prob_win_val is not None:
+            # n needed for CI width ≤ 0.05: Wilson CI ≈ 2*z*sqrt(p*(1-p)/n) ≤ 0.05
+            target_width = 0.05
+            z = 1.96
+            pq = prob_win_val * (1.0 - prob_win_val)
+            min_sims = int(math.ceil((2.0 * z) ** 2 * pq / (target_width ** 2)))
+            out["min_sims_recommended"] = max(min_sims, 2000)
     return out
 
 

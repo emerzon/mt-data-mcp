@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional, List, Literal, Tuple, Set
 import math
+import traceback
 import warnings
 import numpy as np
 from ..shared.schema import TimeframeLiteral, DenoiseSpec
@@ -134,44 +135,51 @@ def forecast_barrier_hit_probabilities(
             )
         bb_enabled = method_key == 'mc_gbm_bb'
         
-        if method_key in ('mc_gbm', 'mc_gbm_bb'):
-            sim = _simulate_gbm_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed))
-        elif method_key == 'hmm_mc':
-            n_states = int(p.get('n_states', 2) or 2)
-            sim = _simulate_hmm_mc(prices, horizon=horizon_val, n_states=int(n_states), n_sims=int(sims), seed=int(seed))
-        elif method_key == 'garch':
-            p_order = int(p.get('p', 1))
-            q_order = int(p.get('q', 1))
-            sim = _simulate_garch_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed), p_order=p_order, q_order=q_order)
-        elif method_key == 'bootstrap':
-            bs = p.get('block_size')
-            if bs: bs = int(bs)
-            sim = _simulate_bootstrap_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed), block_size=bs)
-        elif method_key == 'heston':
-            sim = _simulate_heston_mc(
-                prices,
-                horizon=horizon_val,
-                n_sims=int(sims),
-                seed=int(seed),
-                kappa=p.get('kappa'),
-                theta=p.get('theta'),
-                xi=p.get('xi'),
-                rho=p.get('rho'),
-                v0=p.get('v0'),
-            )
-        elif method_key == 'jump_diffusion':
-            sim = _simulate_jump_diffusion_mc(
-                prices,
-                horizon=horizon_val,
-                n_sims=int(sims),
-                seed=int(seed),
-                jump_lambda=p.get('jump_lambda', p.get('lambda')),
-                jump_mu=p.get('jump_mu'),
-                jump_sigma=p.get('jump_sigma'),
-                jump_threshold=float(p.get('jump_threshold', 3.0)),
-            )
-        else:
-            return {"error": f"Unsupported method: {method}. Use 'mc_gbm', 'mc_gbm_bb', 'hmm_mc', 'garch', 'bootstrap', 'heston', 'jump_diffusion', or 'auto'"}
+        try:
+            if method_key in ('mc_gbm', 'mc_gbm_bb'):
+                sim = _simulate_gbm_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed))
+            elif method_key == 'hmm_mc':
+                n_states = int(p.get('n_states', 2) or 2)
+                sim = _simulate_hmm_mc(prices, horizon=horizon_val, n_states=int(n_states), n_sims=int(sims), seed=int(seed))
+            elif method_key == 'garch':
+                p_order = int(p.get('p', 1))
+                q_order = int(p.get('q', 1))
+                sim = _simulate_garch_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed), p_order=p_order, q_order=q_order)
+            elif method_key == 'bootstrap':
+                bs = p.get('block_size')
+                if bs: bs = int(bs)
+                sim = _simulate_bootstrap_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed), block_size=bs)
+            elif method_key == 'heston':
+                sim = _simulate_heston_mc(
+                    prices,
+                    horizon=horizon_val,
+                    n_sims=int(sims),
+                    seed=int(seed),
+                    kappa=p.get('kappa'),
+                    theta=p.get('theta'),
+                    xi=p.get('xi'),
+                    rho=p.get('rho'),
+                    v0=p.get('v0'),
+                )
+            elif method_key == 'jump_diffusion':
+                sim = _simulate_jump_diffusion_mc(
+                    prices,
+                    horizon=horizon_val,
+                    n_sims=int(sims),
+                    seed=int(seed),
+                    jump_lambda=p.get('jump_lambda', p.get('lambda')),
+                    jump_mu=p.get('jump_mu'),
+                    jump_sigma=p.get('jump_sigma'),
+                    jump_threshold=float(p.get('jump_threshold', 3.0)),
+                )
+            else:
+                return {"error": f"Unsupported method: {method}. Use 'mc_gbm', 'mc_gbm_bb', 'hmm_mc', 'garch', 'bootstrap', 'heston', 'jump_diffusion', or 'auto'"}
+        except (ValueError, RuntimeError, np.linalg.LinAlgError) as e:
+            return {
+                "error": f"Simulation failed ({method_key}): {e}",
+                "error_type": "simulation_failure",
+                "traceback_summary": traceback.format_exc()[-500:],
+            }
 
         price_paths = np.asarray(sim['price_paths'], dtype=float)
         S, H = price_paths.shape
@@ -349,8 +357,14 @@ def forecast_barrier_hit_probabilities(
             out['model_summary'] = str(sim['model_summary'])
             
         return out
+    except (KeyError, AttributeError, IndexError):
+        raise
     except Exception as e:
-        return {"error": f"Error computing barrier probabilities: {str(e)}"}
+        return {
+            "error": f"Error computing barrier probabilities: {str(e)}",
+            "error_type": type(e).__name__,
+            "traceback_summary": traceback.format_exc()[-500:],
+        }
 
 def forecast_barrier_closed_form(
     symbol: str,
@@ -434,5 +448,11 @@ def forecast_barrier_closed_form(
             "sigma_annual": sigma_val,
             "prob_hit": float(prob),
         }
+    except (KeyError, AttributeError, IndexError):
+        raise
     except Exception as e:
-        return {"error": f"Error computing closed-form barrier probability: {str(e)}"}
+        return {
+            "error": f"Error computing closed-form barrier probability: {str(e)}",
+            "error_type": type(e).__name__,
+            "traceback_summary": traceback.format_exc()[-500:],
+        }

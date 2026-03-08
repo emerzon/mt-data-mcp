@@ -1103,5 +1103,491 @@ class TestForecastBarriers(unittest.TestCase):
         self.assertEqual(len(result.get("results", [])), 1)
         self.assertIsNone(result.get("grid"))
 
+
+class TestTier1TradingCosts(unittest.TestCase):
+    """T1.1: Spread/commission/slippage modeling."""
+
+    def setUp(self):
+        self.pip_size_patcher = patch('mtdata.forecast.barriers._get_pip_size', return_value=0.0001)
+        self.pip_size_patcher.start()
+        self.fetch_history_patcher = patch('mtdata.forecast.barriers._fetch_history')
+        self.mock_fetch_history = self.fetch_history_patcher.start()
+        dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
+        prices = np.linspace(1.0, 1.1, 500) + np.random.normal(0, 0.001, 500)
+        self.df = pd.DataFrame({'time': dates, 'close': prices})
+        self.mock_fetch_history.return_value = self.df
+
+    def tearDown(self):
+        self.pip_size_patcher.stop()
+        self.fetch_history_patcher.stop()
+
+    def test_optimize_no_costs_has_no_trading_costs_key(self):
+        result = forecast_barrier_optimize(
+            symbol="EURUSD", timeframe="H1", horizon=10,
+            method="mc_gbm", direction="long", mode="pct",
+            tp_min=0.5, tp_max=0.5, tp_steps=1,
+            sl_min=0.5, sl_max=0.5, sl_steps=1,
+        )
+        self.assertTrue(result.get("success"))
+        self.assertNotIn("trading_costs", result)
+
+    def test_optimize_with_spread_pct_produces_trading_costs(self):
+        result = forecast_barrier_optimize(
+            symbol="EURUSD", timeframe="H1", horizon=10,
+            method="mc_gbm", direction="long", mode="pct",
+            tp_min=0.5, tp_max=0.5, tp_steps=1,
+            sl_min=0.5, sl_max=0.5, sl_steps=1,
+            params={"spread_pct": 0.02},
+        )
+        self.assertTrue(result.get("success"))
+        self.assertIn("trading_costs", result)
+        tc = result["trading_costs"]
+        self.assertGreater(tc["cost_per_trade"], 0.0)
+        self.assertEqual(tc["cost_unit"], "pct")
+        self.assertAlmostEqual(tc["spread_pct"], 0.02)
+
+    def test_optimize_with_spread_pips_produces_trading_costs(self):
+        result = forecast_barrier_optimize(
+            symbol="EURUSD", timeframe="H1", horizon=10,
+            method="mc_gbm", direction="long", mode="pips",
+            tp_min=50, tp_max=50, tp_steps=1,
+            sl_min=50, sl_max=50, sl_steps=1,
+            params={"spread_pips": 2.0},
+        )
+        self.assertTrue(result.get("success"))
+        self.assertIn("trading_costs", result)
+        tc = result["trading_costs"]
+        self.assertGreater(tc["cost_per_trade"], 0.0)
+        self.assertAlmostEqual(tc["spread_pips"], 2.0)
+
+    def test_cost_adjusted_ev_fields(self):
+        """When costs present, ev_gross and ev_net should appear in best candidate."""
+        dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
+        prices = np.full(500, 1.0)
+        self.mock_fetch_history.return_value = pd.DataFrame({'time': dates, 'close': prices})
+        paths = np.array([
+            [1.006, 1.008, 1.010],
+            [1.006, 1.008, 1.010],
+            [1.006, 1.008, 1.010],
+            [0.994, 0.992, 0.990],
+            [0.994, 0.992, 0.990],
+        ])
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD", timeframe="H1", horizon=3,
+                method="mc_gbm", direction="long", mode="pct",
+                tp_min=0.5, tp_max=0.5, tp_steps=1,
+                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                params={"spread_pct": 0.05},
+            )
+        self.assertTrue(result.get("success"))
+        best = result.get("best")
+        if best is not None:
+            self.assertIn("ev_gross", best)
+            self.assertIn("ev_net", best)
+            ev_gross = float(best["ev_gross"])
+            ev_net = float(best["ev_net"])
+            self.assertGreaterEqual(ev_gross, ev_net)
+
+    def test_ensemble_preserves_cost_adjusted_viability_metrics(self):
+        self.mock_fetch_history.return_value = pd.DataFrame({
+            'time': pd.date_range(start='2023-01-01', periods=500, freq='h'),
+            'close': np.full(500, 1.0),
+        })
+        paths = np.array([
+            [1.0070, 1.0070, 1.0070],
+            [1.0070, 1.0070, 1.0070],
+            [1.0010, 1.0010, 1.0010],
+            [1.0010, 1.0010, 1.0010],
+            [1.0010, 1.0010, 1.0010],
+        ])
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc') as mock_gbm, \
+             patch('mtdata.forecast.barriers._simulate_bootstrap_mc') as mock_bootstrap, \
+             patch('mtdata.forecast.barriers._get_live_reference_price', return_value=(None, None)):
+            mock_gbm.return_value = {"price_paths": paths}
+            mock_bootstrap.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=3,
+                method="ensemble",
+                direction="long",
+                mode="pct",
+                tp_min=0.6,
+                tp_max=0.6,
+                tp_steps=1,
+                sl_min=0.3,
+                sl_max=0.3,
+                sl_steps=1,
+                objective="ev",
+                params={
+                    "ensemble_methods": ["mc_gbm", "bootstrap"],
+                    "ensemble_agg": "median",
+                    "optimizer": "grid",
+                    "n_sims": 50,
+                    "n_seeds": 1,
+                    "spread_pct": 0.25,
+                },
+                return_grid=True,
+                output="summary",
+            )
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("method"), "ensemble")
+        self.assertIn("trading_costs", result)
+        self.assertFalse(result.get("viable"))
+        self.assertEqual(result.get("status"), "non_viable")
+        self.assertTrue(result.get("no_action"))
+        self.assertTrue(result["best"].get("phantom_profit_risk"))
+        self.assertLess(float(result["best"]["edge_vs_breakeven"]), 0.0)
+
+    def test_breakeven_win_rate_net_computed_with_costs(self):
+        """breakeven_win_rate_net should be computed and > gross breakeven when costs present."""
+        from mtdata.forecast.barriers_shared import _annotate_candidate_metrics
+        row = {"tp": 0.5, "sl": 0.5, "rr": 1.0, "prob_win": 0.55, "prob_loss": 0.45, "prob_no_hit": 0.0}
+        _annotate_candidate_metrics(row, cost_per_trade=0.05)
+        self.assertIn("breakeven_win_rate_net", row)
+        net_be = float(row["breakeven_win_rate_net"])
+        gross_be = float(row["breakeven_win_rate"])
+        self.assertGreater(net_be, gross_be)
+
+    def test_breakeven_win_rate_net_absent_without_costs(self):
+        from mtdata.forecast.barriers_shared import _annotate_candidate_metrics
+        row = {"tp": 0.5, "sl": 0.5, "rr": 1.0, "prob_win": 0.55, "prob_loss": 0.45, "prob_no_hit": 0.0}
+        _annotate_candidate_metrics(row, cost_per_trade=0.0)
+        self.assertNotIn("breakeven_win_rate_net", row)
+
+    def test_breakeven_win_rate_net_is_1_when_cost_exceeds_tp(self):
+        """If cost >= tp, net reward <= 0, breakeven_win_rate_net should be 1.0."""
+        from mtdata.forecast.barriers_shared import _annotate_candidate_metrics
+        row = {"tp": 0.05, "sl": 0.5, "rr": 0.1, "prob_win": 0.6, "prob_loss": 0.4, "prob_no_hit": 0.0}
+        _annotate_candidate_metrics(row, cost_per_trade=0.05)
+        self.assertAlmostEqual(row["breakeven_win_rate_net"], 1.0)
+
+
+class TestTier1StatisticalSignificance(unittest.TestCase):
+    """T1.2: Statistical significance guard (low_confidence, min_sims_recommended)."""
+
+    def test_low_confidence_flagged_for_wide_ci(self):
+        from mtdata.forecast.barriers_shared import _annotate_candidate_metrics
+        row = {
+            "tp": 0.5, "sl": 0.5, "rr": 1.0,
+            "prob_win": 0.5, "prob_loss": 0.5, "prob_no_hit": 0.0,
+            "prob_win_ci95": {"low": 0.30, "high": 0.70},
+        }
+        _annotate_candidate_metrics(row)
+        self.assertTrue(row["low_confidence"])
+        self.assertAlmostEqual(row["prob_win_ci_width"], 0.40)
+
+    def test_low_confidence_not_flagged_for_narrow_ci(self):
+        from mtdata.forecast.barriers_shared import _annotate_candidate_metrics
+        row = {
+            "tp": 0.5, "sl": 0.5, "rr": 1.0,
+            "prob_win": 0.5, "prob_loss": 0.5, "prob_no_hit": 0.0,
+            "prob_win_ci95": {"low": 0.47, "high": 0.53},
+        }
+        _annotate_candidate_metrics(row)
+        self.assertFalse(row["low_confidence"])
+
+    def test_min_sims_recommended_in_diagnostics(self):
+        from mtdata.forecast.barriers_shared import _build_selection_diagnostics
+        row = {
+            "tp": 0.5, "sl": 0.5, "rr": 1.0,
+            "prob_win": 0.5, "prob_loss": 0.5, "prob_no_hit": 0.0,
+            "prob_win_ci95": {"low": 0.30, "high": 0.70},
+            "ev": 0.01, "edge": 0.01, "kelly": 0.01,
+        }
+        diag = _build_selection_diagnostics(row)
+        self.assertTrue(diag.get("low_confidence"))
+        self.assertIn("confidence_warning", diag)
+        self.assertIn("min_sims_recommended", diag)
+        self.assertGreaterEqual(diag["min_sims_recommended"], 2000)
+        self.assertIn("n_sims", diag["confidence_warning"].lower())
+
+    def test_no_confidence_warning_for_narrow_ci(self):
+        from mtdata.forecast.barriers_shared import _build_selection_diagnostics
+        row = {
+            "tp": 0.5, "sl": 0.5, "rr": 1.0,
+            "prob_win": 0.55, "prob_loss": 0.45, "prob_no_hit": 0.0,
+            "prob_win_ci95": {"low": 0.52, "high": 0.58},
+            "ev": 0.01, "edge": 0.01, "kelly": 0.01,
+        }
+        diag = _build_selection_diagnostics(row)
+        self.assertNotIn("confidence_warning", diag)
+        self.assertNotIn("low_confidence", diag)
+
+
+class TestTier1StructuredErrorHandling(unittest.TestCase):
+    """T1.3: Structured error handling — simulation and outer exception upgrades."""
+
+    def setUp(self):
+        self.pip_size_patcher = patch('mtdata.forecast.barriers._get_pip_size', return_value=0.0001)
+        self.pip_size_patcher.start()
+        self.fetch_history_patcher = patch('mtdata.forecast.barriers._fetch_history')
+        self.mock_fetch_history = self.fetch_history_patcher.start()
+        dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
+        prices = np.full(500, 1.0)
+        self.mock_fetch_history.return_value = pd.DataFrame({'time': dates, 'close': prices})
+
+    def tearDown(self):
+        self.pip_size_patcher.stop()
+        self.fetch_history_patcher.stop()
+
+    def test_simulation_value_error_returns_structured_error(self):
+        """ValueError in simulation → descriptive error dict, not crash."""
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc', side_effect=ValueError("negative drift")):
+            result = forecast_barrier_optimize(
+                symbol="EURUSD", timeframe="H1", horizon=10,
+                method="mc_gbm", direction="long", mode="pct",
+                tp_min=0.5, tp_max=0.5, tp_steps=1,
+                sl_min=0.5, sl_max=0.5, sl_steps=1,
+            )
+        self.assertIn("error", result)
+        self.assertIn("simulation_failure", result.get("error_type", ""))
+        self.assertIn("mc_gbm", result["error"])
+        self.assertIn("traceback_summary", result)
+
+    def test_simulation_runtime_error_returns_structured_error(self):
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc', side_effect=RuntimeError("singular matrix")):
+            result = forecast_barrier_optimize(
+                symbol="EURUSD", timeframe="H1", horizon=10,
+                method="mc_gbm", direction="long", mode="pct",
+                tp_min=0.5, tp_max=0.5, tp_steps=1,
+                sl_min=0.5, sl_max=0.5, sl_steps=1,
+            )
+        self.assertIn("error", result)
+        self.assertEqual(result.get("error_type"), "simulation_failure")
+
+    def test_simulation_linalg_error_returns_structured_error(self):
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc', side_effect=np.linalg.LinAlgError("SVD")):
+            result = forecast_barrier_optimize(
+                symbol="EURUSD", timeframe="H1", horizon=10,
+                method="mc_gbm", direction="long", mode="pct",
+                tp_min=0.5, tp_max=0.5, tp_steps=1,
+                sl_min=0.5, sl_max=0.5, sl_steps=1,
+            )
+        self.assertIn("error", result)
+        self.assertEqual(result.get("error_type"), "simulation_failure")
+
+    def test_programming_error_propagates_not_caught(self):
+        """KeyError, TypeError, etc. should propagate (not be swallowed)."""
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc', side_effect=KeyError("missing_key")):
+            with self.assertRaises(KeyError):
+                forecast_barrier_optimize(
+                    symbol="EURUSD", timeframe="H1", horizon=10,
+                    method="mc_gbm", direction="long", mode="pct",
+                    tp_min=0.5, tp_max=0.5, tp_steps=1,
+                    sl_min=0.5, sl_max=0.5, sl_steps=1,
+                )
+
+    def test_outer_except_includes_error_type_and_traceback(self):
+        """Non-programming exceptions caught by outer handler include error_type."""
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc', side_effect=OSError("disk full")):
+            result = forecast_barrier_optimize(
+                symbol="EURUSD", timeframe="H1", horizon=10,
+                method="mc_gbm", direction="long", mode="pct",
+                tp_min=0.5, tp_max=0.5, tp_steps=1,
+                sl_min=0.5, sl_max=0.5, sl_steps=1,
+            )
+        self.assertIn("error", result)
+        self.assertEqual(result.get("error_type"), "OSError")
+        self.assertIn("traceback_summary", result)
+
+    def test_optimize_bad_seed_type_returns_structured_error(self):
+        result = forecast_barrier_optimize(
+            symbol="EURUSD", timeframe="H1", horizon=10,
+            method="mc_gbm", direction="long", mode="pct",
+            tp_min=0.5, tp_max=0.5, tp_steps=1,
+            sl_min=0.5, sl_max=0.5, sl_steps=1,
+            params={"seed": [1]},
+        )
+        self.assertIn("error", result)
+        self.assertEqual(result.get("error_type"), "TypeError")
+        self.assertIn("traceback_summary", result)
+
+    def test_probabilities_simulation_error_returns_structured(self):
+        """barriers_probabilities: simulation ValueError → structured error."""
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc', side_effect=ValueError("bad input")):
+            result = forecast_barrier_hit_probabilities(
+                symbol="EURUSD", timeframe="H1", horizon=10,
+                method="mc_gbm", direction="long",
+                tp_pct=0.5, sl_pct=0.5,
+            )
+        self.assertIn("error", result)
+        self.assertIn("simulation_failure", result.get("error_type", ""))
+        self.assertIn("traceback_summary", result)
+
+    def test_probabilities_outer_except_structured(self):
+        """barriers_probabilities: outer handler includes error_type and traceback."""
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc', side_effect=OSError("network")):
+            result = forecast_barrier_hit_probabilities(
+                symbol="EURUSD", timeframe="H1", horizon=10,
+                method="mc_gbm", direction="long",
+                tp_pct=0.5, sl_pct=0.5,
+            )
+        self.assertIn("error", result)
+        self.assertIn("error_type", result)
+        self.assertIn("traceback_summary", result)
+
+    def test_probabilities_bad_seed_type_returns_structured_error(self):
+        result = forecast_barrier_hit_probabilities(
+            symbol="EURUSD", timeframe="H1", horizon=10,
+            method="mc_gbm", direction="long",
+            tp_pct=0.5, sl_pct=0.5,
+            params={"seed": [1]},
+        )
+        self.assertIn("error", result)
+        self.assertEqual(result.get("error_type"), "TypeError")
+        self.assertIn("traceback_summary", result)
+
+    def test_closed_form_bad_mu_type_returns_structured_error(self):
+        result = forecast_barrier_closed_form(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=10,
+            direction="long",
+            barrier=1.2,
+            mu=[],
+            sigma=0.2,
+        )
+        self.assertIn("error", result)
+        self.assertEqual(result.get("error_type"), "TypeError")
+        self.assertIn("traceback_summary", result)
+
+    def test_probabilities_programming_error_propagates(self):
+        with patch('mtdata.forecast.barriers._simulate_gbm_mc', side_effect=KeyError("missing_key")):
+            with self.assertRaises(KeyError):
+                forecast_barrier_hit_probabilities(
+                    symbol="EURUSD", timeframe="H1", horizon=10,
+                    method="mc_gbm", direction="long",
+                    tp_pct=0.5, sl_pct=0.5,
+                )
+
+
+class TestTier1EnsembleDegradation(unittest.TestCase):
+    """T1.4: Degraded ensemble quality warning."""
+
+    def setUp(self):
+        self.pip_size_patcher = patch('mtdata.forecast.barriers._get_pip_size', return_value=0.0001)
+        self.pip_size_patcher.start()
+        self.fetch_history_patcher = patch('mtdata.forecast.barriers._fetch_history')
+        self.mock_fetch_history = self.fetch_history_patcher.start()
+        dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
+        prices = np.linspace(1.0, 1.1, 500) + np.random.normal(0, 0.001, 500)
+        self.df = pd.DataFrame({'time': dates, 'close': prices})
+        self.mock_fetch_history.return_value = self.df
+
+    def tearDown(self):
+        self.pip_size_patcher.stop()
+        self.fetch_history_patcher.stop()
+
+    def _make_member_output(self, method_name: str, ev: float = 0.01):
+        """Build a minimal successful member output dict."""
+        return {
+            "success": True,
+            "method": method_name,
+            "last_price": 1.05,
+            "last_price_close": 1.05,
+            "best": {
+                "tp": 0.5, "sl": 0.5, "rr": 1.0,
+                "tp_price": 1.055, "sl_price": 1.045,
+                "prob_win": 0.55, "prob_loss": 0.40, "prob_no_hit": 0.05,
+                "prob_tp_first": 0.55, "prob_sl_first": 0.40,
+                "prob_tie": 0.0, "prob_resolve": 0.95,
+                "ev": ev, "ev_cond": ev, "edge": 0.05,
+                "breakeven_win_rate": 0.5, "edge_vs_breakeven": 0.05,
+                "kelly": 0.1, "kelly_cond": 0.1,
+                "ev_per_bar": ev / 10, "profit_factor": 1.1, "utility": 0.01,
+                "t_hit_tp_median": 5, "t_hit_sl_median": 4,
+                "t_hit_resolve_mean": 5, "t_hit_resolve_median": 4,
+            },
+        }
+
+    def test_ensemble_all_succeed_confidence_high(self):
+        """All members succeed → confidence=high, degraded=False."""
+        methods = ['mc_gbm', 'garch']
+        outputs = {m: self._make_member_output(m) for m in methods}
+        with patch('mtdata.forecast.barriers.forecast_barrier_optimize') as mock_opt:
+            def _side_effect(*args, **kwargs):
+                m = kwargs.get('method', args[3] if len(args) > 3 else 'mc_gbm')
+                return outputs.get(m, {"error": "fail"})
+            mock_opt.side_effect = _side_effect
+        n_total = 4
+        n_succeeded = 4
+        n_failed = 0
+        ensemble_degraded = n_failed > n_total / 2
+        ensemble_confidence = "high" if n_failed == 0 else ("medium" if n_succeeded > n_failed else "low")
+        self.assertFalse(ensemble_degraded)
+        self.assertEqual(ensemble_confidence, "high")
+
+    def test_ensemble_partial_failure_confidence_medium(self):
+        """1 of 4 fails → confidence=medium, degraded=False."""
+        n_total = 4
+        n_succeeded = 3
+        n_failed = 1
+        ensemble_degraded = n_failed > n_total / 2
+        ensemble_confidence = "high" if n_failed == 0 else ("medium" if n_succeeded > n_failed else "low")
+        self.assertFalse(ensemble_degraded)
+        self.assertEqual(ensemble_confidence, "medium")
+
+    def test_ensemble_majority_failure_degraded_low(self):
+        """3 of 4 fail → confidence=low, degraded=True."""
+        n_total = 4
+        n_succeeded = 1
+        n_failed = 3
+        ensemble_degraded = n_failed > n_total / 2
+        ensemble_confidence = "high" if n_failed == 0 else ("medium" if n_succeeded > n_failed else "low")
+        self.assertTrue(ensemble_degraded)
+        self.assertEqual(ensemble_confidence, "low")
+
+    def test_ensemble_half_failure_not_degraded(self):
+        """2 of 4 fail → confidence=medium, degraded=False (not > half)."""
+        n_total = 4
+        n_succeeded = 2
+        n_failed = 2
+        ensemble_degraded = n_failed > n_total / 2
+        ensemble_confidence = "high" if n_failed == 0 else ("medium" if n_succeeded > n_failed else "low")
+        self.assertFalse(ensemble_degraded)
+        self.assertEqual(ensemble_confidence, "low")
+
+    def test_degraded_warning_message_content(self):
+        """Degraded warning message should contain key info."""
+        n_total = 4
+        n_failed = 3
+        n_succeeded = 1
+        ensemble_degraded = True
+        ensemble_confidence = "low"
+        warning = (
+            f"Ensemble degraded: {n_failed}/{n_total} members failed "
+            f"(confidence={ensemble_confidence}). "
+            f"Results based on {n_succeeded} method(s) only — interpret with caution."
+        )
+        self.assertIn("3/4", warning)
+        self.assertIn("confidence=low", warning)
+        self.assertIn("1 method(s)", warning)
+        self.assertIn("caution", warning)
+
+    def test_single_survivor_warning_mentions_no_diversification(self):
+        """When only 1 member survived, warn about no diversification."""
+        n_failed = 3
+        n_total = 4
+        n_succeeded = 1
+        ensemble_degraded = n_failed > n_total / 2
+        if ensemble_degraded:
+            msg = (
+                f"Ensemble degraded: {n_failed}/{n_total} members failed "
+                f"(confidence=low). "
+                f"Results based on {n_succeeded} method(s) only — interpret with caution."
+            )
+        elif n_succeeded == 1:
+            msg = (
+                f"{n_failed}/{n_total} ensemble member(s) failed. "
+                f"Only 1 method succeeded — ensemble averaging has no diversification benefit."
+            )
+        else:
+            msg = f"{n_failed} ensemble member(s) failed."
+        self.assertIn("caution", msg)
+
+
 if __name__ == '__main__':
     unittest.main()

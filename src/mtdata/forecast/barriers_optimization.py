@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional, List, Literal, Tuple, Set
 import math
+import traceback
 import warnings
 import numpy as np
 from ..shared.schema import TimeframeLiteral, DenoiseSpec
@@ -414,6 +415,27 @@ def forecast_barrier_optimize(
         n_seeds = int(params_dict.get('n_seeds', 1) or 1)
         if n_seeds <= 0:
             return {"error": f"Invalid n_seeds: {n_seeds}. Must be >= 1."}
+
+        spread_pips_val = float(params_dict.get('spread_pips', 0.0) or 0.0)
+        spread_pct_val = float(params_dict.get('spread_pct', 0.0) or 0.0)
+        commission_pct_val = float(params_dict.get('commission_pct', 0.0) or 0.0)
+        slippage_pips_val = float(params_dict.get('slippage_pips', 0.0) or 0.0)
+        slippage_pct_val = float(params_dict.get('slippage_pct', 0.0) or 0.0)
+
+        if mode_val == 'pct':
+            # pips → pct points:  pips * pip_size / price * 100
+            pip_to_pct = (float(pip_size) / last_price * 100.0) if (pip_size and last_price > 0) else 0.0
+            cost_spread = spread_pct_val + spread_pips_val * pip_to_pct
+            cost_slippage = slippage_pct_val + slippage_pips_val * pip_to_pct
+            cost_commission = commission_pct_val
+        else:
+            # pct → pips:  pct / 100 * price / pip_size
+            pct_to_pips = (last_price / float(pip_size) / 100.0) if (pip_size and pip_size > 0 and last_price > 0) else 0.0
+            cost_spread = spread_pips_val + spread_pct_val * pct_to_pips
+            cost_slippage = slippage_pips_val + slippage_pct_val * pct_to_pips
+            cost_commission = commission_pct_val * pct_to_pips
+        cost_per_trade = max(0.0, cost_spread + cost_slippage + cost_commission)
+        has_trading_costs = cost_per_trade > 0.0
         paths_list: List[np.ndarray] = []
         method_name = str(method).lower().strip()
         method_requested = method_name
@@ -532,7 +554,7 @@ def forecast_barrier_optimize(
                 actual_best = dict(best_row)
                 actual_best["member_method"] = str(member_method)
                 actual_best["member_method_used"] = str(member_out.get('method', member_method))
-                _annotate_candidate_metrics(actual_best)
+                _annotate_candidate_metrics(actual_best, cost_per_trade=cost_per_trade)
                 member_runs.append({
                     "method": member_method,
                     "method_used": member_out.get('method', member_method),
@@ -542,6 +564,12 @@ def forecast_barrier_optimize(
 
             if not member_runs:
                 return {"error": "Ensemble failed: no successful member methods.", "member_errors": member_errors}
+
+            n_total = len(ensemble_methods)
+            n_succeeded = len(member_runs)
+            n_failed = len(member_errors)
+            ensemble_degraded = n_failed > n_total / 2
+            ensemble_confidence = "high" if n_failed == 0 else ("medium" if n_succeeded > n_failed else "low")
 
             metric_keys = [
                 'tp', 'sl', 'rr', 'tp_price', 'sl_price',
@@ -610,7 +638,7 @@ def forecast_barrier_optimize(
                     aggregate_metrics['prob_resolve'] = float(1.0 - float(aggregate_metrics['prob_no_hit']))
                 except Exception:
                     pass
-            _annotate_candidate_metrics(aggregate_metrics)
+            _annotate_candidate_metrics(aggregate_metrics, cost_per_trade=cost_per_trade)
 
             ranked_candidates = [
                 dict(row.get('best', {}))
@@ -618,7 +646,10 @@ def forecast_barrier_optimize(
                 if isinstance(row.get('best'), dict)
             ]
             _sort_candidate_results(ranked_candidates, objective_val)
-            viable_candidates = [row for row in ranked_candidates if _candidate_is_viable(row)]
+            viable_candidates = [
+                row for row in ranked_candidates
+                if _candidate_is_viable(row, cost_per_trade=cost_per_trade)
+            ]
             if viable_only_val:
                 candidates = viable_candidates if viable_candidates else ranked_candidates
             else:
@@ -661,15 +692,18 @@ def forecast_barrier_optimize(
 
             selected_best = candidates[0] if candidates else None
             if isinstance(selected_best, dict):
-                _annotate_candidate_metrics(selected_best)
-            viable = _candidate_is_viable(selected_best)
+                _annotate_candidate_metrics(selected_best, cost_per_trade=cost_per_trade)
+            viable = _candidate_is_viable(selected_best, cost_per_trade=cost_per_trade)
             viable_results_total = int(len(viable_candidates))
             status = "ok" if viable else ("no_candidates" if not selected_best else "non_viable")
             status_reason = None
             if status == "no_candidates":
                 status_reason = "No valid ensemble candidate was produced."
             elif status == "non_viable":
-                status_reason = _candidate_status_reason(selected_best)
+                status_reason = _candidate_status_reason(
+                    selected_best,
+                    cost_per_trade=cost_per_trade,
+                )
 
             member_summaries: List[Dict[str, Any]] = []
             for row in member_runs:
@@ -737,6 +771,11 @@ def forecast_barrier_optimize(
                     "members": member_summaries,
                     "member_errors": member_errors,
                     "aggregate_metrics": aggregate_metrics or None,
+                    "n_total": n_total,
+                    "n_succeeded": n_succeeded,
+                    "n_failed": n_failed,
+                    "degraded": ensemble_degraded,
+                    "confidence": ensemble_confidence,
                     "selected_member": (
                         {
                             "method": selected_best.get("member_method"),
@@ -750,11 +789,38 @@ def forecast_barrier_optimize(
                 out["objective_requested"] = objective_requested
                 out["objective_used"] = objective_val
             if member_errors:
-                out["warning"] = f"{len(member_errors)} ensemble member(s) failed."
+                if ensemble_degraded:
+                    out["warning"] = (
+                        f"Ensemble degraded: {n_failed}/{n_total} members failed "
+                        f"(confidence={ensemble_confidence}). "
+                        f"Results based on {n_succeeded} method(s) only — interpret with caution."
+                    )
+                elif n_succeeded == 1:
+                    out["warning"] = (
+                        f"{n_failed}/{n_total} ensemble member(s) failed. "
+                        f"Only 1 method succeeded — ensemble averaging has no diversification benefit."
+                    )
+                else:
+                    out["warning"] = f"{n_failed} ensemble member(s) failed."
             if selected_best:
-                out.update(_build_selection_diagnostics(selected_best))
+                out.update(
+                    _build_selection_diagnostics(
+                        selected_best,
+                        cost_per_trade=cost_per_trade,
+                    )
+                )
             if min_prob_resolve_val is not None:
                 out["min_prob_resolve"] = float(min_prob_resolve_val)
+            if has_trading_costs:
+                out["trading_costs"] = {
+                    "cost_per_trade": _safe_float(cost_per_trade),
+                    "cost_unit": mode_val,
+                    "spread_pips": _safe_float(spread_pips_val) if spread_pips_val else None,
+                    "spread_pct": _safe_float(spread_pct_val) if spread_pct_val else None,
+                    "commission_pct": _safe_float(commission_pct_val) if commission_pct_val else None,
+                    "slippage_pips": _safe_float(slippage_pips_val) if slippage_pips_val else None,
+                    "slippage_pct": _safe_float(slippage_pct_val) if slippage_pct_val else None,
+                }
             if selected_best and not viable:
                 out["advice"] = [
                     "Increase horizon to allow more time for barrier resolution.",
@@ -770,56 +836,63 @@ def forecast_barrier_optimize(
             )
         bb_enabled = method_name == 'mc_gbm_bb'
         
-        if method_name in ('mc_gbm', 'mc_gbm_bb'):
-            for offset in range(max(1, n_seeds)):
-                sim = _simulate_gbm_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed + offset))
-                paths_list.append(np.asarray(sim['price_paths'], dtype=float))
-        elif method_name == 'hmm_mc':
-            n_states = int(params_dict.get('n_states', 2) or 2)
-            for offset in range(max(1, n_seeds)):
-                sim = _simulate_hmm_mc(prices, horizon=horizon_val, n_states=int(n_states), n_sims=int(sims), seed=int(seed + offset))
-                paths_list.append(np.asarray(sim['price_paths'], dtype=float))
-        elif method_name == 'garch':
-            p_order = int(params_dict.get('p', 1))
-            q_order = int(params_dict.get('q', 1))
-            for offset in range(max(1, n_seeds)):
-                sim = _simulate_garch_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed + offset), p_order=p_order, q_order=q_order)
-                paths_list.append(np.asarray(sim['price_paths'], dtype=float))
-        elif method_name == 'bootstrap':
-            bs = params_dict.get('block_size')
-            if bs: bs = int(bs)
-            for offset in range(max(1, n_seeds)):
-                sim = _simulate_bootstrap_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed + offset), block_size=bs)
-                paths_list.append(np.asarray(sim['price_paths'], dtype=float))
-        elif method_name == 'heston':
-            for offset in range(max(1, n_seeds)):
-                sim = _simulate_heston_mc(
-                    prices,
-                    horizon=horizon_val,
-                    n_sims=int(sims),
-                    seed=int(seed + offset),
-                    kappa=params_dict.get('kappa'),
-                    theta=params_dict.get('theta'),
-                    xi=params_dict.get('xi'),
-                    rho=params_dict.get('rho'),
-                    v0=params_dict.get('v0'),
-                )
-                paths_list.append(np.asarray(sim['price_paths'], dtype=float))
-        elif method_name == 'jump_diffusion':
-            for offset in range(max(1, n_seeds)):
-                sim = _simulate_jump_diffusion_mc(
-                    prices,
-                    horizon=horizon_val,
-                    n_sims=int(sims),
-                    seed=int(seed + offset),
-                    jump_lambda=params_dict.get('jump_lambda', params_dict.get('lambda')),
-                    jump_mu=params_dict.get('jump_mu'),
-                    jump_sigma=params_dict.get('jump_sigma'),
-                    jump_threshold=float(params_dict.get('jump_threshold', 3.0)),
-                )
-                paths_list.append(np.asarray(sim['price_paths'], dtype=float))
-        else:
-            return {"error": f"Unsupported method: {method}. Use 'mc_gbm', 'mc_gbm_bb', 'hmm_mc', 'garch', 'bootstrap', 'heston', 'jump_diffusion', 'auto', or 'ensemble'."}
+        try:
+            if method_name in ('mc_gbm', 'mc_gbm_bb'):
+                for offset in range(max(1, n_seeds)):
+                    sim = _simulate_gbm_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed + offset))
+                    paths_list.append(np.asarray(sim['price_paths'], dtype=float))
+            elif method_name == 'hmm_mc':
+                n_states = int(params_dict.get('n_states', 2) or 2)
+                for offset in range(max(1, n_seeds)):
+                    sim = _simulate_hmm_mc(prices, horizon=horizon_val, n_states=int(n_states), n_sims=int(sims), seed=int(seed + offset))
+                    paths_list.append(np.asarray(sim['price_paths'], dtype=float))
+            elif method_name == 'garch':
+                p_order = int(params_dict.get('p', 1))
+                q_order = int(params_dict.get('q', 1))
+                for offset in range(max(1, n_seeds)):
+                    sim = _simulate_garch_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed + offset), p_order=p_order, q_order=q_order)
+                    paths_list.append(np.asarray(sim['price_paths'], dtype=float))
+            elif method_name == 'bootstrap':
+                bs = params_dict.get('block_size')
+                if bs: bs = int(bs)
+                for offset in range(max(1, n_seeds)):
+                    sim = _simulate_bootstrap_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed + offset), block_size=bs)
+                    paths_list.append(np.asarray(sim['price_paths'], dtype=float))
+            elif method_name == 'heston':
+                for offset in range(max(1, n_seeds)):
+                    sim = _simulate_heston_mc(
+                        prices,
+                        horizon=horizon_val,
+                        n_sims=int(sims),
+                        seed=int(seed + offset),
+                        kappa=params_dict.get('kappa'),
+                        theta=params_dict.get('theta'),
+                        xi=params_dict.get('xi'),
+                        rho=params_dict.get('rho'),
+                        v0=params_dict.get('v0'),
+                    )
+                    paths_list.append(np.asarray(sim['price_paths'], dtype=float))
+            elif method_name == 'jump_diffusion':
+                for offset in range(max(1, n_seeds)):
+                    sim = _simulate_jump_diffusion_mc(
+                        prices,
+                        horizon=horizon_val,
+                        n_sims=int(sims),
+                        seed=int(seed + offset),
+                        jump_lambda=params_dict.get('jump_lambda', params_dict.get('lambda')),
+                        jump_mu=params_dict.get('jump_mu'),
+                        jump_sigma=params_dict.get('jump_sigma'),
+                        jump_threshold=float(params_dict.get('jump_threshold', 3.0)),
+                    )
+                    paths_list.append(np.asarray(sim['price_paths'], dtype=float))
+            else:
+                return {"error": f"Unsupported method: {method}. Use 'mc_gbm', 'mc_gbm_bb', 'hmm_mc', 'garch', 'bootstrap', 'heston', 'jump_diffusion', 'auto', or 'ensemble'."}
+        except (ValueError, RuntimeError, np.linalg.LinAlgError) as e:
+            return {
+                "error": f"Simulation failed ({method_name}): {e}",
+                "error_type": "simulation_failure",
+                "traceback_summary": traceback.format_exc()[-500:],
+            }
 
         paths = np.vstack(paths_list) if len(paths_list) > 1 else paths_list[0]
         S, H = paths.shape
@@ -1020,7 +1093,11 @@ def forecast_barrier_optimize(
                     continue
 
                 # Resolve tie paths by splitting expected outcome 50/50.
-                ev_val = (prob_win + 0.5 * prob_tie) * reward - (prob_loss + 0.5 * prob_tie) * risk
+                ev_gross = (prob_win + 0.5 * prob_tie) * reward - (prob_loss + 0.5 * prob_tie) * risk
+                if has_trading_costs:
+                    ev_val = (prob_win + 0.5 * prob_tie) * (reward - cost_per_trade) - (prob_loss + 0.5 * prob_tie) * (risk + cost_per_trade)
+                else:
+                    ev_val = ev_gross
                 edge = prob_win - prob_loss
                 win_lo, win_hi = _binomial_wilson_95(prob_win, int(S))
                 loss_lo, loss_hi = _binomial_wilson_95(prob_loss, int(S))
@@ -1109,6 +1186,8 @@ def forecast_barrier_optimize(
                     'prob_no_hit_ci95': {'low': float(no_hit_lo), 'high': float(no_hit_hi)},
                     'prob_resolve': prob_resolve,
                     'ev': ev_val,
+                    'ev_gross': ev_gross if has_trading_costs else None,
+                    'ev_net': ev_val if has_trading_costs else None,
                     'ev_cond': ev_cond,
                     'edge': edge,
                     'kelly': kelly_val,
@@ -1121,7 +1200,7 @@ def forecast_barrier_optimize(
                     't_hit_resolve_mean': t_res_mean,
                     't_hit_resolve_median': t_res_med,
                 }
-                _annotate_candidate_metrics(res)
+                _annotate_candidate_metrics(res, cost_per_trade=cost_per_trade)
                 out.append(res)
             return out
 
@@ -1227,14 +1306,21 @@ def forecast_barrier_optimize(
                     })
                     return values
 
-                with warnings.catch_warnings():
-                    _suppress_optuna_experimental_warnings()
-                    study.optimize(
-                        _objective_trial,
-                        n_trials=int(optuna_trials_val),
-                        timeout=float(optuna_timeout_val) if optuna_timeout_val is not None else None,
-                        n_jobs=int(optuna_n_jobs_val),
-                    )
+                try:
+                    with warnings.catch_warnings():
+                        _suppress_optuna_experimental_warnings()
+                        study.optimize(
+                            _objective_trial,
+                            n_trials=int(optuna_trials_val),
+                            timeout=float(optuna_timeout_val) if optuna_timeout_val is not None else None,
+                            n_jobs=int(optuna_n_jobs_val),
+                        )
+                except (ValueError, RuntimeError) as e:
+                    return {
+                        "error": f"Optuna optimization failed (pareto): {e}",
+                        "error_type": "optuna_failure",
+                        "traceback_summary": traceback.format_exc()[-500:],
+                    }
                 front: List[Dict[str, Any]] = []
                 for trial in study.best_trials:
                     row = trial_rows.get(int(trial.number))
@@ -1286,14 +1372,21 @@ def forecast_barrier_optimize(
                         return float(row.get('prob_loss', 1.0))
                     return float(row.get(objective_val, row.get('ev', -1e18)))
 
-                with warnings.catch_warnings():
-                    _suppress_optuna_experimental_warnings()
-                    study.optimize(
-                        _objective_trial,
-                        n_trials=int(optuna_trials_val),
-                        timeout=float(optuna_timeout_val) if optuna_timeout_val is not None else None,
-                        n_jobs=int(optuna_n_jobs_val),
-                    )
+                try:
+                    with warnings.catch_warnings():
+                        _suppress_optuna_experimental_warnings()
+                        study.optimize(
+                            _objective_trial,
+                            n_trials=int(optuna_trials_val),
+                            timeout=float(optuna_timeout_val) if optuna_timeout_val is not None else None,
+                            n_jobs=int(optuna_n_jobs_val),
+                        )
+                except (ValueError, RuntimeError) as e:
+                    return {
+                        "error": f"Optuna optimization failed: {e}",
+                        "error_type": "optuna_failure",
+                        "traceback_summary": traceback.format_exc()[-500:],
+                    }
 
             dedup: Dict[Tuple[int, int], Dict[str, Any]] = {}
             for row in sampled_rows:
@@ -1380,7 +1473,7 @@ def forecast_barrier_optimize(
         ranked_candidates = deduped_ranked
         viable_candidates: List[Dict[str, Any]] = []
         for row in ranked_candidates:
-            if _candidate_is_viable(row):
+            if _candidate_is_viable(row, cost_per_trade=cost_per_trade):
                 viable_candidates.append(row)
 
         if viable_only_val:
@@ -1415,8 +1508,8 @@ def forecast_barrier_optimize(
             
         best = candidates[0] if candidates else None
         if isinstance(best, dict):
-            _annotate_candidate_metrics(best)
-        viable = _candidate_is_viable(best)
+            _annotate_candidate_metrics(best, cost_per_trade=cost_per_trade)
+        viable = _candidate_is_viable(best, cost_per_trade=cost_per_trade)
         viable_results_total = int(len(viable_candidates))
         status = "ok"
         status_reason = None
@@ -1425,7 +1518,7 @@ def forecast_barrier_optimize(
             status_reason = warning
         elif not viable:
             status = "non_viable"
-            status_reason = _candidate_status_reason(best)
+            status_reason = _candidate_status_reason(best, cost_per_trade=cost_per_trade)
 
         out = {
             "success": True,
@@ -1470,7 +1563,7 @@ def forecast_barrier_optimize(
             out["pareto_front"] = pareto_front
             out["pareto_count"] = int(len(pareto_front))
         if isinstance(best, dict):
-            out.update(_build_selection_diagnostics(best))
+            out.update(_build_selection_diagnostics(best, cost_per_trade=cost_per_trade))
         if warning is not None:
             out["warning"] = warning
         elif best is not None and not viable:
@@ -1498,7 +1591,23 @@ def forecast_barrier_optimize(
             out["viable_only"] = True
         if concise_val:
             out["concise"] = True
+        if has_trading_costs:
+            out["trading_costs"] = {
+                "cost_per_trade": _safe_float(cost_per_trade),
+                "cost_unit": mode_val,
+                "spread_pips": _safe_float(spread_pips_val) if spread_pips_val else None,
+                "spread_pct": _safe_float(spread_pct_val) if spread_pct_val else None,
+                "commission_pct": _safe_float(commission_pct_val) if commission_pct_val else None,
+                "slippage_pips": _safe_float(slippage_pips_val) if slippage_pips_val else None,
+                "slippage_pct": _safe_float(slippage_pct_val) if slippage_pct_val else None,
+            }
         return out
 
+    except (KeyError, AttributeError, IndexError):
+        raise
     except Exception as e:
-        return {"error": f"Error optimizing barriers: {str(e)}"}
+        return {
+            "error": f"Error optimizing barriers: {str(e)}",
+            "error_type": type(e).__name__,
+            "traceback_summary": traceback.format_exc()[-500:],
+        }
