@@ -9,6 +9,7 @@ Covers:
 
 import math
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Literal, Union
 from typing_extensions import TypedDict
@@ -321,6 +322,32 @@ Values above 70 often indicate overbought conditions.
         params = {p["name"]: p for p in docs["parameters"]}
         assert params["length"]["description"] == "Window length."
         assert params["scalar"]["description"] == "Optional scalar multiplier."
+
+    def test_indicators_describe_logs_finish_event(self, monkeypatch, caplog):
+        from mtdata.core import indicators as core_indicators
+
+        monkeypatch.setattr(
+            core_indicators,
+            "_list_ta_indicators",
+            lambda detailed=True: [
+                {
+                    "name": "rsi",
+                    "category": "momentum",
+                    "params": [],
+                    "description": "Relative Strength Index.",
+                }
+            ],
+        )
+
+        raw_describe = getattr(core_indicators.indicators_describe, "__wrapped__", core_indicators.indicators_describe)
+        with caplog.at_level(logging.INFO, logger=core_indicators.logger.name):
+            out = raw_describe("rsi")
+
+        assert out["success"] is True
+        assert any(
+            "event=finish" in record.message and "operation=indicators_describe" in record.message
+            for record in caplog.records
+        )
 
 
 # ===================================================================

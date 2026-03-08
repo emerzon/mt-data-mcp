@@ -1,13 +1,17 @@
-
 from typing import Any, Dict, Optional, List
+import logging
 import re
+import time
 
 from .schema import CategoryLiteral, IndicatorNameLiteral
 from .constants import DEFAULT_ROW_LIMIT
 from ..utils.utils import _table_from_rows
 from ._mcp_instance import mcp
+from .execution_logging import infer_result_success, log_operation_finish, log_operation_start
 # Import the actual implementation from utils
 from ..utils.indicators import list_ta_indicators as _list_ta_indicators
+
+logger = logging.getLogger(__name__)
 
 def _infer_defaults_from_doc(func_name: str, doc_text: str, params: List[Dict[str, Any]]):
     """Delegate to utils implementation."""
@@ -146,6 +150,27 @@ def indicators_list(
 
     Parameters: search_term?, category?, limit?
     """
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="indicators_list",
+        search_term=search_term,
+        category=category,
+        limit=limit,
+    )
+
+    def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="indicators_list",
+            started_at=started_at,
+            success=infer_result_success(result),
+            search_term=search_term,
+            category=category,
+            limit=limit,
+        )
+        return result
+
     try:
         items = _list_ta_indicators(detailed=False)
         if search_term:
@@ -171,9 +196,9 @@ def indicators_list(
         if limit_value and limit_value > 0:
             items = items[:limit_value]
         rows = [[it.get('name',''), it.get('category','')] for it in items]
-        return _table_from_rows(["name", "category"], rows)
+        return _finish(_table_from_rows(["name", "category"], rows))
     except Exception as e:
-        return {"error": f"Error listing indicators: {e}"}
+        return _finish({"error": f"Error listing indicators: {e}"})
 
 
 # Note: category annotation is set at definition time above to be captured in the MCP schema
@@ -184,11 +209,28 @@ def indicators_describe(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: 
 
     Parameters: name
     """
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="indicators_describe",
+        name=name,
+    )
+
+    def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="indicators_describe",
+            started_at=started_at,
+            success=infer_result_success(result),
+            name=name,
+        )
+        return result
+
     try:
         items = _list_ta_indicators(detailed=True)
         target = next((it for it in items if it.get('name','').lower() == str(name).lower()), None)
         if not target:
-            return {"error": f"Indicator '{name}' not found"}
+            return _finish({"error": f"Indicator '{name}' not found"})
         indicator = dict(target)
         docs = _build_indicator_documentation(indicator)
         indicator["description"] = docs.get("description") or indicator.get("description") or ""
@@ -198,8 +240,8 @@ def indicators_describe(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: 
             "interpretation": docs.get("interpretation"),
             "sources": docs.get("sources") or [],
         }
-        return {"success": True, "indicator": indicator}
+        return _finish({"success": True, "indicator": indicator})
     except Exception as e:
-        return {"error": f"Error getting indicator details: {e}"}
+        return _finish({"error": f"Error getting indicator details: {e}"})
 
 
