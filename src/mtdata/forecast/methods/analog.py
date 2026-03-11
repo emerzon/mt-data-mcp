@@ -46,6 +46,18 @@ def _weighted_nanstd(values: np.ndarray, weights: np.ndarray) -> float:
     return float(np.sqrt(max(var, 0.0)))
 
 
+def _effective_sample_size(weights: np.ndarray) -> float:
+    w = np.asarray(weights, dtype=float).ravel()
+    w = w[np.isfinite(w) & (w > 0)]
+    if w.size == 0:
+        return 0.0
+    total = float(np.sum(w))
+    if total <= 0:
+        return 0.0
+    norm = w / total
+    return float(1.0 / np.sum(norm * norm))
+
+
 @ForecastRegistry.register("analog")
 class AnalogMethod(ForecastMethod):
     """Nearest-neighbor analog forecast using historical pattern matching."""
@@ -67,6 +79,11 @@ class AnalogMethod(ForecastMethod):
         {"name": "secondary_timeframes", "type": "str|list", "description": "Secondary timeframes to ensemble."},
         {"name": "component_weights", "type": "dict|str", "description": "Optional timeframe weights (e.g. H1=2,H4=1)."},
         {"name": "weight_temperature", "type": "float", "description": "Optional score-to-weight temperature for analog aggregation."},
+        {"name": "min_primary_paths", "type": "int", "description": "Require at least this many primary analogs after filtering."},
+        {"name": "min_total_paths", "type": "int", "description": "Require at least this many total paths in the final ensemble."},
+        {"name": "min_effective_paths", "type": "float", "description": "Require at least this many effective weighted paths in the final ensemble."},
+        {"name": "max_primary_best_score", "type": "float", "description": "Optional upper bound on the best primary analog score."},
+        {"name": "max_primary_median_score", "type": "float", "description": "Optional upper bound on the median primary analog score."},
         {"name": "min_separation", "type": "int", "description": "Minimum bar spacing between retained analog starts (default: window_size/4)."},
         {"name": "max_search_rounds", "type": "int", "description": "Maximum adaptive search expansions (default: 6)."},
         {"name": "search_expand_factor", "type": "float", "description": "Adaptive search expansion factor (default: 2.0)."},
@@ -99,6 +116,12 @@ class AnalogMethod(ForecastMethod):
         diag = dict(diagnostic)
         diag["timeframe"] = str(timeframe)
         self._timeframe_diagnostics[str(timeframe)] = diag
+
+    def _update_timeframe_diagnostic(self, timeframe: str, **updates: Any) -> Dict[str, Any]:
+        diag = self._get_timeframe_diagnostic(timeframe)
+        diag.update(updates)
+        self._record_timeframe_diagnostic(timeframe, diag)
+        return diag
 
     def _get_timeframe_diagnostic(self, timeframe: str) -> Dict[str, Any]:
         diag = self._timeframe_diagnostics.get(str(timeframe), {})
@@ -150,6 +173,100 @@ class AnalogMethod(ForecastMethod):
             return pd.to_datetime(time_values.iloc[-1], utc=True)
         except Exception:
             return None
+
+    def _resample_history_df(
+        self,
+        history_df: Optional[pd.DataFrame],
+        source_timeframe: str,
+        target_timeframe: str,
+    ) -> Optional[pd.DataFrame]:
+        from ...core.constants import TIMEFRAME_SECONDS
+
+        if history_df is None or history_df.empty or "time" not in history_df.columns or "close" not in history_df.columns:
+            return None
+        source_sec = TIMEFRAME_SECONDS.get(str(source_timeframe))
+        target_sec = TIMEFRAME_SECONDS.get(str(target_timeframe))
+        if source_sec is None or target_sec is None or target_sec < source_sec or (target_sec % source_sec) != 0:
+            return None
+
+        frame = history_df.copy()
+        try:
+            if pd.api.types.is_numeric_dtype(frame["time"]):
+                time_index = pd.to_datetime(frame["time"].astype(float), unit="s", utc=True)
+            else:
+                time_index = pd.to_datetime(frame["time"], utc=True)
+        except Exception:
+            return None
+
+        work = frame.copy()
+        work.index = pd.DatetimeIndex(time_index)
+        work = work[~work.index.isna()].sort_index()
+        if work.empty:
+            return None
+
+        agg_map: Dict[str, str] = {}
+        for col, func in (
+            ("open", "first"),
+            ("high", "max"),
+            ("low", "min"),
+            ("close", "last"),
+            ("tick_volume", "sum"),
+            ("real_volume", "sum"),
+            ("volume", "sum"),
+            ("spread", "last"),
+        ):
+            if col in work.columns:
+                agg_map[col] = func
+        if "close" not in agg_map:
+            return None
+
+        try:
+            resampled = work.resample(f"{int(target_sec)}s", origin="epoch", label="left", closed="left").agg(agg_map)
+        except Exception:
+            return None
+        resampled = resampled.dropna(subset=["close"])
+        if resampled.empty:
+            return None
+
+        out = resampled.reset_index(drop=False)
+        time_col = str(out.columns[0])
+        out["time"] = (pd.to_datetime(out[time_col], utc=True).astype("int64") // 10**9).astype("int64")
+        if time_col != "time":
+            out = out.drop(columns=[time_col])
+        ordered_cols = ["time"] + [col for col in ("open", "high", "low", "close", "tick_volume", "real_volume", "volume", "spread") if col in out.columns]
+        return out.loc[:, ordered_cols].reset_index(drop=True)
+
+    def _resolve_timeframe_history_context(
+        self,
+        *,
+        primary_timeframe: str,
+        target_timeframe: str,
+        primary_history_df: Optional[pd.DataFrame],
+        primary_history_base_col: str,
+        primary_history_denoise_spec: Optional[Any],
+        history_by_timeframe: Dict[str, pd.DataFrame],
+        history_base_cols_by_timeframe: Dict[str, str],
+        history_denoise_specs_by_timeframe: Dict[str, Any],
+    ) -> Tuple[Optional[pd.DataFrame], str, Optional[Any], Optional[str]]:
+        target_key = str(target_timeframe)
+        if target_key in history_by_timeframe and isinstance(history_by_timeframe[target_key], pd.DataFrame):
+            return (
+                history_by_timeframe[target_key].copy(),
+                str(history_base_cols_by_timeframe.get(target_key) or (primary_history_base_col if target_key == str(primary_timeframe) else "close")).strip().lower() or "close",
+                history_denoise_specs_by_timeframe.get(target_key, primary_history_denoise_spec if target_key == str(primary_timeframe) else None),
+                "provided_timeframe_history",
+            )
+        if target_key == str(primary_timeframe) and primary_history_df is not None:
+            return (
+                primary_history_df.copy(),
+                str(primary_history_base_col or "close").strip().lower() or "close",
+                primary_history_denoise_spec,
+                "provided_primary_history",
+            )
+        resampled_history = self._resample_history_df(primary_history_df, str(primary_timeframe), target_key)
+        if resampled_history is not None:
+            return resampled_history, "close", primary_history_denoise_spec, "resampled_primary_history"
+        return None, "close", None, None
 
     def _select_diverse_matches(
         self,
@@ -604,6 +721,47 @@ class AnalogMethod(ForecastMethod):
         if horizon < 1:
             raise ValueError("Analog method requires horizon >= 1")
 
+        def _parse_nonnegative_int_param(name: str) -> int:
+            raw_value = params.get(name)
+            if raw_value is None:
+                return 0
+            try:
+                value = int(raw_value)
+            except Exception as exc:
+                raise ValueError(f"Analog method requires '{name}' to be an integer >= 0") from exc
+            if value < 0:
+                raise ValueError(f"Analog method requires '{name}' to be >= 0")
+            return value
+
+        def _parse_optional_nonnegative_float_param(name: str) -> Optional[float]:
+            raw_value = params.get(name)
+            if raw_value is None:
+                return None
+            try:
+                value = float(raw_value)
+            except Exception as exc:
+                raise ValueError(f"Analog method requires '{name}' to be a float >= 0") from exc
+            if not np.isfinite(value) or value < 0:
+                raise ValueError(f"Analog method requires '{name}' to be a finite float >= 0")
+            return float(value)
+
+        min_primary_paths = _parse_nonnegative_int_param("min_primary_paths")
+        min_total_paths = _parse_nonnegative_int_param("min_total_paths")
+        min_effective_paths = _parse_optional_nonnegative_float_param("min_effective_paths")
+        max_primary_best_score = _parse_optional_nonnegative_float_param("max_primary_best_score")
+        max_primary_median_score = _parse_optional_nonnegative_float_param("max_primary_median_score")
+        quality_gate_thresholds: Dict[str, Any] = {}
+        if min_primary_paths > 0:
+            quality_gate_thresholds["min_primary_paths"] = int(min_primary_paths)
+        if min_total_paths > 0:
+            quality_gate_thresholds["min_total_paths"] = int(min_total_paths)
+        if min_effective_paths is not None and min_effective_paths > 0:
+            quality_gate_thresholds["min_effective_paths"] = float(min_effective_paths)
+        if max_primary_best_score is not None:
+            quality_gate_thresholds["max_primary_best_score"] = float(max_primary_best_score)
+        if max_primary_median_score is not None:
+            quality_gate_thresholds["max_primary_median_score"] = float(max_primary_median_score)
+
         requested_metric = str(params.get("metric", "euclidean"))
         requested_scale = str(params.get("scale", "zscore"))
         refine_metric = str(params.get("refine_metric", "dtw"))
@@ -616,6 +774,23 @@ class AnalogMethod(ForecastMethod):
         history_df = kwargs.get("history_df")
         history_base_col = str(kwargs.get("history_base_col") or base_col or "close").strip().lower() or "close"
         history_denoise_spec = kwargs.get("history_denoise_spec") if kwargs.get("history_denoise_spec") is not None else denoise_spec
+        raw_history_by_timeframe = kwargs.get("history_by_timeframe")
+        history_by_timeframe = {
+            str(key): value
+            for key, value in (raw_history_by_timeframe.items() if isinstance(raw_history_by_timeframe, dict) else [])
+            if isinstance(value, pd.DataFrame)
+        }
+        raw_history_base_cols_by_timeframe = kwargs.get("history_base_cols_by_timeframe")
+        history_base_cols_by_timeframe = {
+            str(key): str(value).strip().lower()
+            for key, value in (raw_history_base_cols_by_timeframe.items() if isinstance(raw_history_base_cols_by_timeframe, dict) else [])
+            if str(value).strip()
+        }
+        raw_history_denoise_specs_by_timeframe = kwargs.get("history_denoise_specs_by_timeframe")
+        history_denoise_specs_by_timeframe = {
+            str(key): value
+            for key, value in (raw_history_denoise_specs_by_timeframe.items() if isinstance(raw_history_denoise_specs_by_timeframe, dict) else [])
+        }
 
         if base_col and base_col not in {"close", "close_dn"}:
             raise ValueError(f"Analog method requires a close-based price series; unsupported base column '{base_col}'")
@@ -635,8 +810,19 @@ class AnalogMethod(ForecastMethod):
             elif isinstance(sec_tf_param, list):
                 secondary_tfs = [str(s) for s in sec_tf_param]
 
+        resolved_primary_history_df, resolved_primary_history_base_col, resolved_primary_history_denoise_spec, _primary_history_source = self._resolve_timeframe_history_context(
+            primary_timeframe=str(primary_tf),
+            target_timeframe=str(primary_tf),
+            primary_history_df=history_df if isinstance(history_df, pd.DataFrame) else None,
+            primary_history_base_col=history_base_col,
+            primary_history_denoise_spec=history_denoise_spec,
+            history_by_timeframe=history_by_timeframe,
+            history_base_cols_by_timeframe=history_base_cols_by_timeframe,
+            history_denoise_specs_by_timeframe=history_denoise_specs_by_timeframe,
+        )
+
         if as_of is None:
-            derived_as_of = self._derive_as_of_from_history(history_df if isinstance(history_df, pd.DataFrame) else None)
+            derived_as_of = self._derive_as_of_from_history(resolved_primary_history_df)
             if derived_as_of is not None:
                 as_of = derived_as_of
 
@@ -647,12 +833,98 @@ class AnalogMethod(ForecastMethod):
             params,
             query_vector=primary_query,
             as_of=as_of,
-            history_df=history_df if isinstance(history_df, pd.DataFrame) else None,
-            history_base_col=history_base_col,
-            history_denoise_spec=history_denoise_spec,
+            history_df=resolved_primary_history_df,
+            history_base_col=resolved_primary_history_base_col,
+            history_denoise_spec=resolved_primary_history_denoise_spec,
         )
         if not p_futures:
             raise RuntimeError(self._format_timeframe_failure(symbol, primary_tf, "Primary analog search failed"))
+
+        primary_scores = np.asarray([meta.get("score", np.nan) for meta in p_analogs], dtype=float)
+        finite_primary_scores = primary_scores[np.isfinite(primary_scores)]
+        primary_score_summary = {
+            "best": float(np.min(finite_primary_scores)) if finite_primary_scores.size > 0 else None,
+            "median": float(np.median(finite_primary_scores)) if finite_primary_scores.size > 0 else None,
+            "worst": float(np.max(finite_primary_scores)) if finite_primary_scores.size > 0 else None,
+        }
+        quality_gate_state: Dict[str, Any] = {
+            "status": "not_configured" if not quality_gate_thresholds else "pending",
+            "thresholds": dict(quality_gate_thresholds),
+            "primary": {
+                "n_paths": int(len(p_futures)),
+                "score_summary": dict(primary_score_summary),
+            },
+        }
+
+        if min_primary_paths > 0 and len(p_futures) < min_primary_paths:
+            quality_gate_state["status"] = "failed"
+            quality_gate_state["failed_check"] = "min_primary_paths"
+            self._update_timeframe_diagnostic(
+                primary_tf,
+                status="rejected",
+                reason="insufficient_primary_paths",
+                message=f"expected at least {min_primary_paths} primary analog paths but received {len(p_futures)}",
+                returned_paths=int(len(p_futures)),
+                score_summary=dict(primary_score_summary),
+                quality_gate=quality_gate_state,
+            )
+            raise RuntimeError(self._format_timeframe_failure(symbol, primary_tf, "Primary analog search rejected"))
+
+        score_gate_requested = max_primary_best_score is not None or max_primary_median_score is not None
+        if score_gate_requested and finite_primary_scores.size == 0:
+            quality_gate_state["status"] = "failed"
+            quality_gate_state["failed_check"] = "primary_scores_missing"
+            self._update_timeframe_diagnostic(
+                primary_tf,
+                status="rejected",
+                reason="missing_primary_scores",
+                message="primary score thresholds were requested but no finite primary analog scores were available",
+                returned_paths=int(len(p_futures)),
+                score_summary=dict(primary_score_summary),
+                quality_gate=quality_gate_state,
+            )
+            raise RuntimeError(self._format_timeframe_failure(symbol, primary_tf, "Primary analog search rejected"))
+
+        if max_primary_best_score is not None and primary_score_summary["best"] is not None and float(primary_score_summary["best"]) > float(max_primary_best_score):
+            quality_gate_state["status"] = "failed"
+            quality_gate_state["failed_check"] = "max_primary_best_score"
+            self._update_timeframe_diagnostic(
+                primary_tf,
+                status="rejected",
+                reason="primary_best_score_too_high",
+                message=(
+                    f"best primary analog score {float(primary_score_summary['best']):.6g} "
+                    f"exceeded threshold {float(max_primary_best_score):.6g}"
+                ),
+                returned_paths=int(len(p_futures)),
+                score_summary=dict(primary_score_summary),
+                quality_gate=quality_gate_state,
+            )
+            raise RuntimeError(self._format_timeframe_failure(symbol, primary_tf, "Primary analog search rejected"))
+
+        if max_primary_median_score is not None and primary_score_summary["median"] is not None and float(primary_score_summary["median"]) > float(max_primary_median_score):
+            quality_gate_state["status"] = "failed"
+            quality_gate_state["failed_check"] = "max_primary_median_score"
+            self._update_timeframe_diagnostic(
+                primary_tf,
+                status="rejected",
+                reason="primary_median_score_too_high",
+                message=(
+                    f"median primary analog score {float(primary_score_summary['median']):.6g} "
+                    f"exceeded threshold {float(max_primary_median_score):.6g}"
+                ),
+                returned_paths=int(len(p_futures)),
+                score_summary=dict(primary_score_summary),
+                quality_gate=quality_gate_state,
+            )
+            raise RuntimeError(self._format_timeframe_failure(symbol, primary_tf, "Primary analog search rejected"))
+
+        self._update_timeframe_diagnostic(
+            primary_tf,
+            score_summary=dict(primary_score_summary),
+            returned_paths=int(len(p_futures)),
+            quality_gate=dict(quality_gate_state),
+        )
 
         from ...core.constants import TIMEFRAME_SECONDS
 
@@ -696,6 +968,16 @@ class AnalogMethod(ForecastMethod):
                 continue
             required_duration = horizon * p_sec
             s_horizon = max(int(np.ceil(required_duration / s_sec)), 3)
+            s_history_df, s_history_base_col, s_history_denoise_spec, _secondary_history_source = self._resolve_timeframe_history_context(
+                primary_timeframe=str(primary_tf),
+                target_timeframe=str(tf),
+                primary_history_df=resolved_primary_history_df,
+                primary_history_base_col=resolved_primary_history_base_col,
+                primary_history_denoise_spec=resolved_primary_history_denoise_spec,
+                history_by_timeframe=history_by_timeframe,
+                history_base_cols_by_timeframe=history_base_cols_by_timeframe,
+                history_denoise_specs_by_timeframe=history_denoise_specs_by_timeframe,
+            )
             s_futures, s_analogs = self._run_single_timeframe(
                 symbol,
                 tf,
@@ -703,9 +985,9 @@ class AnalogMethod(ForecastMethod):
                 params,
                 query_vector=None,
                 as_of=as_of,
-                history_df=None,
-                history_base_col="close",
-                history_denoise_spec=denoise_spec,
+                history_df=s_history_df,
+                history_base_col=s_history_base_col,
+                history_denoise_spec=s_history_denoise_spec,
             )
 
             added_paths = 0
@@ -809,6 +1091,40 @@ class AnalogMethod(ForecastMethod):
             path_weights /= total_weight
 
         futures_matrix = np.vstack([np.asarray(entry["path"], dtype=float) for entry in pool_entries])
+        effective_paths = _effective_sample_size(path_weights)
+        quality_gate_state["ensemble"] = {
+            "total_paths": int(futures_matrix.shape[0]),
+            "effective_paths": float(effective_paths),
+        }
+        if min_total_paths > 0 and int(futures_matrix.shape[0]) < min_total_paths:
+            quality_gate_state["status"] = "failed"
+            quality_gate_state["failed_check"] = "min_total_paths"
+            self._update_timeframe_diagnostic(
+                primary_tf,
+                status="rejected",
+                reason="insufficient_total_paths",
+                message=f"expected at least {min_total_paths} final ensemble paths but received {int(futures_matrix.shape[0])}",
+                quality_gate=quality_gate_state,
+                ensemble_metrics=dict(quality_gate_state["ensemble"]),
+            )
+            raise RuntimeError(self._format_timeframe_failure(symbol, primary_tf, "Analog ensemble rejected"))
+        if min_effective_paths is not None and float(effective_paths) < float(min_effective_paths):
+            quality_gate_state["status"] = "failed"
+            quality_gate_state["failed_check"] = "min_effective_paths"
+            self._update_timeframe_diagnostic(
+                primary_tf,
+                status="rejected",
+                reason="insufficient_effective_paths",
+                message=(
+                    f"effective ensemble paths {float(effective_paths):.6g} "
+                    f"fell below threshold {float(min_effective_paths):.6g}"
+                ),
+                quality_gate=quality_gate_state,
+                ensemble_metrics=dict(quality_gate_state["ensemble"]),
+            )
+            raise RuntimeError(self._format_timeframe_failure(symbol, primary_tf, "Analog ensemble rejected"))
+
+        quality_gate_state["status"] = "passed" if quality_gate_thresholds else "not_configured"
         p50 = np.asarray([_weighted_quantile(futures_matrix[:, col], path_weights, 0.5) for col in range(futures_matrix.shape[1])], dtype=float)
         lower_q = max(0.0, min(1.0, ci_alpha / 2.0))
         upper_q = max(0.0, min(1.0, 1.0 - ci_alpha / 2.0))
@@ -816,6 +1132,11 @@ class AnalogMethod(ForecastMethod):
         p_upper = np.asarray([_weighted_quantile(futures_matrix[:, col], path_weights, upper_q) for col in range(futures_matrix.shape[1])], dtype=float)
         spread = float(np.nanmean([_weighted_nanstd(futures_matrix[:, col], path_weights) for col in range(futures_matrix.shape[1])]))
         stdev = spread
+        self._update_timeframe_diagnostic(
+            primary_tf,
+            quality_gate=quality_gate_state,
+            ensemble_metrics=dict(quality_gate_state["ensemble"]),
+        )
 
         params_used = {
             "window_size": window_size,
@@ -858,6 +1179,8 @@ class AnalogMethod(ForecastMethod):
             params_used["base_col"] = base_col
         if history_denoise_spec is not None:
             params_used["denoise"] = history_denoise_spec
+        for key, value in quality_gate_thresholds.items():
+            params_used[key] = value
 
         primary_indices = [idx for idx, entry in enumerate(pool_entries) if entry.get("timeframe") == primary_tf]
         primary_weight_by_index = {
@@ -871,6 +1194,9 @@ class AnalogMethod(ForecastMethod):
             tf = str(status.get("timeframe"))
             if tf in component_weight_map and status.get("status") == "contributed":
                 status["component_weight"] = float(component_weight_map[tf])
+            diag = self._get_timeframe_diagnostic(tf)
+            if diag:
+                status["diagnostic"] = diag
 
         metadata = {
             "method": "analog",
@@ -890,12 +1216,14 @@ class AnalogMethod(ForecastMethod):
             "ensemble_metrics": {
                 "spread": float(spread),
                 "n_paths": int(futures_matrix.shape[0]),
+                "effective_paths": float(effective_paths),
                 "weighted": True,
                 "score_summary": {
                     "best": float(np.min(finite_scores)) if finite_scores.size > 0 else None,
                     "median": float(np.median(finite_scores)) if finite_scores.size > 0 else None,
                     "worst": float(np.max(finite_scores)) if finite_scores.size > 0 else None,
                 },
+                "quality_gate": quality_gate_state,
             },
             "timeframe_diagnostics": {
                 tf: self._get_timeframe_diagnostic(tf)
