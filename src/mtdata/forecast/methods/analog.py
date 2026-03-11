@@ -63,6 +63,7 @@ class AnalogMethod(ForecastMethod):
         {"name": "affine_alpha_max", "type": "float", "description": "Upper bound for affine refinement scale."},
         {"name": "affine_penalty", "type": "float", "description": "Penalty for affine scale departure from 1.0."},
         {"name": "search_engine", "type": "str", "description": "Search engine (ckdtree|hnsw|matrix_profile|mass)."},
+        {"name": "search_symbols", "type": "str|list", "description": "Optional symbol universe to search; primary symbol is always included."},
         {"name": "secondary_timeframes", "type": "str|list", "description": "Secondary timeframes to ensemble."},
         {"name": "component_weights", "type": "dict|str", "description": "Optional timeframe weights (e.g. H1=2,H4=1)."},
         {"name": "weight_temperature", "type": "float", "description": "Optional score-to-weight temperature for analog aggregation."},
@@ -122,7 +123,14 @@ class AnalogMethod(ForecastMethod):
         match_index: int,
         query_start: Optional[int],
         fallback_cutoff: int,
+        query_symbol: str,
     ) -> bool:
+        try:
+            candidate_symbol = str(idx.get_match_symbol(int(match_index)))
+        except Exception:
+            candidate_symbol = str(query_symbol)
+        if candidate_symbol != str(query_symbol):
+            return False
         if query_start is None:
             return int(match_index) >= int(fallback_cutoff)
         try:
@@ -263,6 +271,22 @@ class AnalogMethod(ForecastMethod):
             total = float(np.sum(weights))
         return weights / total
 
+    def _parse_search_symbols(self, primary_symbol: str, raw_value: Any) -> List[str]:
+        symbols: List[str] = [str(primary_symbol)]
+        if isinstance(raw_value, str):
+            symbols.extend([part.strip() for part in raw_value.split(",") if part.strip()])
+        elif isinstance(raw_value, (list, tuple, set)):
+            symbols.extend([str(item).strip() for item in raw_value if str(item).strip()])
+        unique: List[str] = []
+        seen = set()
+        for sym in symbols:
+            key = str(sym).strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            unique.append(key)
+        return unique
+
     def _run_single_timeframe(
         self,
         symbol: str,
@@ -285,6 +309,7 @@ class AnalogMethod(ForecastMethod):
         refine_metric = str(params.get("refine_metric", "dtw"))
         search_engine = str(params.get("search_engine", "ckdtree"))
         denoise_spec = history_denoise_spec if history_df is not None else params.get("denoise")
+        search_symbols = self._parse_search_symbols(str(symbol), params.get("search_symbols"))
         projection_mode = str(params.get("projection_mode", "auto"))
         drop_last_live = bool(params.get("drop_last_live", drop_last_live))
         max_search_rounds = max(0, int(params.get("max_search_rounds", 6)))
@@ -326,6 +351,7 @@ class AnalogMethod(ForecastMethod):
             "index_scale": idx_scale,
             "refine_metric": refine_metric,
             "search_engine": search_engine,
+            "search_symbols_requested": list(search_symbols),
             "query_source": "external" if query_vector is not None else "latest_history",
             "denoise_requested": bool(denoise_spec),
             "denoise_applied": False,
@@ -353,7 +379,7 @@ class AnalogMethod(ForecastMethod):
         try:
             max_bars = search_depth + window_size + int(horizon) - 1
             idx = build_index(
-                symbols=[str(symbol)],
+                symbols=search_symbols,
                 timeframe=str(timeframe),
                 window_size=window_size,
                 future_size=int(horizon),
@@ -383,6 +409,7 @@ class AnalogMethod(ForecastMethod):
             diagnostic["denoise_applied"] = bool(prep_info.get("denoise_applied", diagnostic["denoise_applied"]))
             if prep_info.get("denoise_error"):
                 diagnostic["denoise_error"] = str(prep_info.get("denoise_error"))
+        diagnostic["search_symbols_used"] = list((build_meta.get("bars_per_symbol", {}) or {}).keys()) if build_meta else list(search_symbols)
 
         full_series = idx.get_symbol_series(str(symbol))
         series_len = len(full_series) if full_series is not None else 0
@@ -430,7 +457,7 @@ class AnalogMethod(ForecastMethod):
             valid_candidates = []
             overlap_excluded = 0
             for cand_idx, dist in zip(raw_idxs, raw_dists):
-                if self._candidate_overlaps_query(idx, int(cand_idx), query_start, fallback_cutoff):
+                if self._candidate_overlaps_query(idx, int(cand_idx), query_start, fallback_cutoff, str(symbol)):
                     overlap_excluded += 1
                     continue
                 valid_candidates.append((int(cand_idx), float(dist)))
@@ -509,6 +536,7 @@ class AnalogMethod(ForecastMethod):
                     "score": float(score),
                     "date": _mt5_epoch_to_utc(float(t_start)),
                     "index": int(cand_idx),
+                    "symbol": str(idx.get_match_symbol(int(cand_idx))),
                     "scale_factor": float(scale_factor),
                     "projection_mode": projection_mode_used,
                 }
@@ -583,6 +611,7 @@ class AnalogMethod(ForecastMethod):
         index_scale = "zscore" if search_engine in ("matrix_profile", "mass") else requested_scale
         effective_metric = "euclidean" if search_engine in ("matrix_profile", "mass") and requested_metric.lower() not in ("euclidean", "l2") else requested_metric
         denoise_spec = params.get("denoise")
+        search_symbols = self._parse_search_symbols(str(symbol), params.get("search_symbols"))
         base_col = str(params.get("base_col") or base_name or "").strip().lower()
         history_df = kwargs.get("history_df")
         history_base_col = str(kwargs.get("history_base_col") or base_col or "close").strip().lower() or "close"
@@ -806,6 +835,8 @@ class AnalogMethod(ForecastMethod):
             "n_paths": int(futures_matrix.shape[0]),
             "stdev": stdev,
         }
+        if len(search_symbols) > 1:
+            params_used["search_symbols"] = search_symbols
         if params.get("dtw_band_frac") is not None:
             params_used["dtw_band_frac"] = float(params.get("dtw_band_frac"))
         if params.get("soft_dtw_gamma") is not None:
@@ -846,6 +877,7 @@ class AnalogMethod(ForecastMethod):
             "components": components_used,
             "requested_components": requested_components,
             "component_weights": component_weight_map,
+            "search_symbols": search_symbols,
             "component_status": component_status,
             "params_used": params_used,
             "analogs": [

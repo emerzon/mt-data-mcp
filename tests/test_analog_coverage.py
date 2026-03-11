@@ -44,6 +44,7 @@ def _make_mock_index(n_windows=120, window_size=64, horizon=10):
     ))
     idx.get_match_values = MagicMock(return_value=base.copy())
     idx.get_match_times = MagicMock(return_value=np.arange(window_size, dtype=float))
+    idx.get_match_symbol = MagicMock(return_value="EURUSD")
     idx.future_size = horizon
     idx.start_end_idx = np.stack(
         [
@@ -306,6 +307,7 @@ class TestRunSingleTimeframe:
             assert "score" in m_obj
             assert "date" in m_obj
             assert "index" in m_obj
+            assert "symbol" in m_obj
             assert "scale_factor" in m_obj
 
     @patch("mtdata.forecast.methods.analog.build_index")
@@ -404,6 +406,43 @@ class TestRunSingleTimeframe:
 
         assert mock_bi.call_args.kwargs["history_by_symbol"] == {"EURUSD": history_df}
         assert mock_bi.call_args.kwargs["history_base_cols"] == {"EURUSD": "close_dn"}
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_search_symbols_are_forwarded_to_index_build(self, mock_bi):
+        mock_bi.return_value = _make_mock_index()
+
+        self.m._run_single_timeframe(
+            "EURUSD",
+            "H1",
+            10,
+            {"window_size": 32, "top_k": 3, "search_symbols": "GBPUSD, EURUSD, USDJPY"},
+            query_vector=np.linspace(100.0, 110.0, 32, dtype=float),
+        )
+
+        assert mock_bi.call_args.kwargs["symbols"] == ["EURUSD", "GBPUSD", "USDJPY"]
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_overlap_filter_does_not_exclude_other_symbol_candidates(self, mock_bi):
+        idx = _make_mock_index(n_windows=20, window_size=8, horizon=2)
+        idx.search.return_value = (np.array([19, 18], dtype=int), np.array([0.01, 0.02], dtype=float))
+        idx.refine_matches.side_effect = lambda anchor_values, valid_idxs, valid_dists, top_k, **kwargs: (
+            valid_idxs[:top_k],
+            valid_dists[:top_k],
+        )
+        idx.get_match_symbol.side_effect = lambda i: "GBPUSD" if int(i) == 19 else "EURUSD"
+        mock_bi.return_value = idx
+
+        futures, meta = self.m._run_single_timeframe(
+            "EURUSD",
+            "H1",
+            2,
+            {"window_size": 8, "top_k": 1, "search_symbols": ["EURUSD", "GBPUSD"], "min_separation": 0},
+            query_vector=np.random.rand(8),
+        )
+
+        assert len(futures) == 1
+        assert meta[0]["symbol"] == "GBPUSD"
+        assert self.m._get_timeframe_diagnostic("H1")["excluded_overlap_candidates"] == 1
 
     @patch("mtdata.forecast.methods.analog.build_index")
     def test_search_expands_when_overlap_filters_initial_neighbors(self, mock_bi):

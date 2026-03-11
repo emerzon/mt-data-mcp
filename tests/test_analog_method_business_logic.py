@@ -148,3 +148,33 @@ def test_analog_method_reports_only_contributing_components(monkeypatch):
     assert out.metadata["requested_components"] == ["H1", "H4"]
     secondary_status = next(item for item in out.metadata["component_status"] if item["timeframe"] == "H4")
     assert secondary_status["status"] == "skipped_insufficient_coverage"
+
+
+def test_analog_method_reports_search_symbol_universe(monkeypatch):
+    method = AnalogMethod()
+    series = pd.Series(np.linspace(100.0, 108.0, 80), name="close")
+
+    def fake_run(symbol, timeframe, horizon, params, query_vector=None, **kwargs):
+        method._timeframe_diagnostics[timeframe] = {
+            "status": "ok",
+            "returned_paths": 1,
+            "search_symbols_used": ["EURUSD", "GBPUSD"],
+        }
+        return ([np.array([101.0, 102.0, 103.0], dtype=float)], [{"score": 0.1, "symbol": "GBPUSD"}])
+
+    monkeypatch.setattr(method, "_run_single_timeframe", fake_run)
+
+    out = method.forecast(
+        series,
+        horizon=3,
+        seasonality=1,
+        params={
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "search_symbols": ["GBPUSD", "USDJPY"],
+        },
+    )
+
+    assert out.params_used["search_symbols"] == ["EURUSD", "GBPUSD", "USDJPY"]
+    assert out.metadata["search_symbols"] == ["EURUSD", "GBPUSD", "USDJPY"]
+    assert out.metadata["analogs"][0]["meta"]["symbol"] == "GBPUSD"
