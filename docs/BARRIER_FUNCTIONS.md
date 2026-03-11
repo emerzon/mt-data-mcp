@@ -6,6 +6,7 @@
 - [GLOSSARY.md](GLOSSARY.md) — TP/SL, pips, and spread
 - [SAMPLE-TRADE.md](SAMPLE-TRADE.md) — Practical workflow example
 - [CLI.md](CLI.md) — CLI usage and output formats
+- [forecast/UNCERTAINTY.md](forecast/UNCERTAINTY.md) — Confidence and interval concepts
 
 Barrier functions are essential tools for risk management in trading. They help answer the critical question: *"What's the probability that my take-profit will be hit before my stop-loss within a given time horizon?"*
 
@@ -676,6 +677,145 @@ mtdata-cli forecast_barrier_optimize \
   --sl_min 0.5 --sl_max 2.0 --sl_steps 5 \
   --min_prob_win 0.55 --max_prob_no_hit 0.15 --max_median_time 8
 ```
+
+---
+
+### Statistical Robustness
+
+`forecast_barrier_optimize` can attach extra diagnostics for Monte Carlo quality. This is useful when you want to check whether the selected TP/SL pair is stable enough to trust for research or discretionary trading review.
+
+Enable it with `statistical_robustness=true` in `params` or with the Python keyword arguments.
+
+**What it currently adds:**
+- Minimum simulation guidance based on the requested CI width
+- Convergence diagnostics for the Monte Carlo success estimate
+- Cross-seed stability checks for the selected barrier pair
+- Optional bootstrap uncertainty for `prob_win`, `prob_loss`, `ev`, `edge`, `kelly`, and related metrics
+- Optional power analysis
+- Optional local sensitivity analysis around the selected `tp` and `sl`
+
+**Important:** These checks do not make a trade valid by themselves. They are quality controls on the simulation and on the optimizer output.
+
+#### Python Example
+
+```python
+from mtdata.forecast.barriers import forecast_barrier_optimize
+
+result = forecast_barrier_optimize(
+    symbol="EURUSD",
+    timeframe="H1",
+    horizon=12,
+    method="hmm_mc",
+    mode="pct",
+    grid_style="volatility",
+    objective="ev",
+    statistical_robustness=True,
+    target_ci_width=0.05,
+    n_seeds_stability=3,
+    enable_bootstrap=True,
+    n_bootstrap=500,
+    enable_power_analysis=True,
+    enable_sensitivity_analysis=True,
+    sensitivity_params=["tp", "sl"],
+    params={"n_sims": 5000, "seed": 42},
+)
+```
+
+#### CLI Example
+
+```bash
+mtdata-cli forecast_barrier_optimize EURUSD \
+  --timeframe H1 \
+  --horizon 12 \
+  --method hmm_mc \
+  --mode pct \
+  --grid-style volatility \
+  --objective ev \
+  --params "statistical_robustness=true,target_ci_width=0.05,n_seeds_stability=3,enable_bootstrap=true,n_bootstrap=500,enable_power_analysis=true,n_sims=5000,seed=42" \
+  --json
+```
+
+Use Python when you want to pass `sensitivity_params` explicitly.
+
+#### Parameters
+
+| Parameter | Default | Meaning |
+|-----------|---------|---------|
+| `statistical_robustness` | `False` | Enables the extra diagnostics block |
+| `target_ci_width` | `0.05` | Requested width used for minimum-simulation guidance |
+| `n_seeds_stability` | `3` | Number of seed re-runs requested for the selected barrier pair |
+| `enable_convergence_check` | `True` | Adds `convergence_diagnostic` |
+| `enable_bootstrap` | `False` | Adds `bootstrap_uncertainty` |
+| `n_bootstrap` | `200` | Number of bootstrap resamples |
+| `enable_power_analysis` | `False` | Adds `power_analysis` |
+| `power_effect_size` | `0.05` | Effect size assumed in the power calculation |
+| `enable_sensitivity_analysis` | `False` | Adds local `tp`/`sl` sensitivity checks |
+| `sensitivity_params` | `["tp", "sl"]` | Parameters varied in the sensitivity pass |
+
+#### Output Shape
+
+When enabled, the result can include:
+
+```json
+{
+  "min_sims_recommended": 1537,
+  "statistical_robustness": {
+    "minimum_simulations": {
+      "recommended": 1537,
+      "used": 5000,
+      "target_ci_width": 0.05,
+      "confidence": 0.95
+    },
+    "convergence_diagnostic": {
+      "converged": true,
+      "current_estimate": 0.55,
+      "window_mean": 0.548,
+      "window_std": 0.008,
+      "max_change": 0.006
+    },
+    "cross_seed_stability": {
+      "stable": true,
+      "n_seeds": 3,
+      "seeds_attempted": 3,
+      "seeds_succeeded": 3,
+      "metrics": {
+        "prob_win": {
+          "mean": 0.55,
+          "std": 0.02,
+          "cv": 0.036
+        }
+      }
+    },
+    "bootstrap_uncertainty": {
+      "prob_win": {
+        "mean": 0.55,
+        "std": 0.018,
+        "ci_low": 0.51,
+        "ci_high": 0.59
+      }
+    },
+    "power_analysis": {
+      "power": 0.92,
+      "min_n_for_80_power": 3200
+    },
+    "sensitivity_analysis": {
+      "tp": {
+        "success": true,
+        "values_tested": 5
+      }
+    }
+  }
+}
+```
+
+Only the sections you enable are returned. `cross_seed_stability` may also report an error if fewer than two seed re-runs succeed.
+
+#### Practical Use
+
+- For a quick research pass, start with `target_ci_width=0.10`, `n_seeds_stability=2`, and leave bootstrap off.
+- For a fuller review, use `target_ci_width=0.05`, `n_seeds_stability=3`, and turn on bootstrap.
+- Treat failed convergence or unstable cross-seed metrics as a reason to increase `n_sims` or simplify the setup before trusting the optimizer output.
+- Sensitivity analysis is most useful after you already have a candidate worth inspecting; it is not a replacement for the main grid search.
 
 ---
 
