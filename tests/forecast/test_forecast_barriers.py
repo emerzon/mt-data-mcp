@@ -1228,6 +1228,7 @@ class TestTier1TradingCosts(unittest.TestCase):
                     "n_sims": 50,
                     "n_seeds": 1,
                     "spread_pct": 0.25,
+                    "min_barrier_multiplier": 0.0,
                 },
                 return_grid=True,
                 output="summary",

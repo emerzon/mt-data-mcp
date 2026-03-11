@@ -434,8 +434,32 @@ def forecast_barrier_optimize(
             cost_spread = spread_pips_val + spread_pct_val * pct_to_pips
             cost_slippage = slippage_pips_val + slippage_pct_val * pct_to_pips
             cost_commission = commission_pct_val * pct_to_pips
+        dir_long = (direction_norm == 'long')
+
+        # Define separated costs for precise modeling
+        if dir_long:
+            ev_deduct_cost = max(0.0, cost_spread + cost_slippage + cost_commission)
+            hit_adjust_spread = 0.0
+        else:
+            ev_deduct_cost = max(0.0, cost_slippage + cost_commission)
+            # For short, hit conditions need spread in absolute price terms
+            if mode_val == 'pct':
+                hit_adjust_spread = (cost_spread / 100.0) * last_price if last_price > 0 else 0.0
+            else:
+                hit_adjust_spread = cost_spread * float(pip_size) if pip_size else 0.0
+
+        # Keep old cost_per_trade for backwards compatibility in outputs
         cost_per_trade = max(0.0, cost_spread + cost_slippage + cost_commission)
         has_trading_costs = cost_per_trade > 0.0
+
+        # Minimum barrier constraints
+        min_barrier_multiplier = float(params_dict.get('min_barrier_multiplier', 2.0) if params_dict.get('min_barrier_multiplier') is not None else 2.0)
+        if mode_val == 'pct':
+            min_barrier_absolute = float(params_dict.get('min_barrier_pct', 0.0) or 0.0)
+        else:
+            min_barrier_absolute = float(params_dict.get('min_barrier_pips', 0.0) or 0.0)
+        min_barrier_distance = max(min_barrier_absolute, min_barrier_multiplier * cost_spread)
+        
         paths_list: List[np.ndarray] = []
         method_name = str(method).lower().strip()
         method_requested = method_name
@@ -942,6 +966,8 @@ def forecast_barrier_optimize(
                 return
             if tp_val <= 0 or sl_val <= 0:
                 return
+            if tp_val < min_barrier_distance or sl_val < min_barrier_distance:
+                return
             key = (int(round(tp_val * 1e6)), int(round(sl_val * 1e6)))
             if key in seen:
                 return
@@ -1041,18 +1067,22 @@ def forecast_barrier_optimize(
                             invalid_barrier_candidates += 1
                             continue
 
+                # Adjust short trigger levels for Bid/Ask spread
+                tp_trigger = tp_p - hit_adjust_spread if not dir_long else tp_p
+                sl_trigger = sl_p - hit_adjust_spread if not dir_long else sl_p
+
                 # Vectorized hit detection
                 if dir_long:
-                    hit_tp = (paths >= tp_p)
-                    hit_sl = (paths <= sl_p)
+                    hit_tp = (paths >= tp_trigger)
+                    hit_sl = (paths <= sl_trigger)
                 else:
-                    hit_tp = (paths <= tp_p)
-                    hit_sl = (paths >= sl_p)
+                    hit_tp = (paths <= tp_trigger)
+                    hit_sl = (paths >= sl_trigger)
                 if bb_enabled and bb_log_paths is not None and bb_uniform_tp is not None and bb_uniform_sl is not None:
                     tp_dir = "up" if dir_long else "down"
                     sl_dir = "down" if dir_long else "up"
-                    tp_bridge = _brownian_bridge_hits(bb_log_paths, float(np.log(tp_p)), bb_sigma, direction=tp_dir, uniform=bb_uniform_tp)
-                    sl_bridge = _brownian_bridge_hits(bb_log_paths, float(np.log(sl_p)), bb_sigma, direction=sl_dir, uniform=bb_uniform_sl)
+                    tp_bridge = _brownian_bridge_hits(bb_log_paths, float(np.log(max(1e-12, tp_trigger))), bb_sigma, direction=tp_dir, uniform=bb_uniform_tp)
+                    sl_bridge = _brownian_bridge_hits(bb_log_paths, float(np.log(max(1e-12, sl_trigger))), bb_sigma, direction=sl_dir, uniform=bb_uniform_sl)
                     hit_tp = hit_tp | tp_bridge
                     hit_sl = hit_sl | sl_bridge
 
@@ -1095,7 +1125,7 @@ def forecast_barrier_optimize(
                 # Resolve tie paths by splitting expected outcome 50/50.
                 ev_gross = (prob_win + 0.5 * prob_tie) * reward - (prob_loss + 0.5 * prob_tie) * risk
                 if has_trading_costs:
-                    ev_val = (prob_win + 0.5 * prob_tie) * (reward - cost_per_trade) - (prob_loss + 0.5 * prob_tie) * (risk + cost_per_trade)
+                    ev_val = (prob_win + 0.5 * prob_tie) * (reward - ev_deduct_cost) - (prob_loss + 0.5 * prob_tie) * (risk + ev_deduct_cost)
                 else:
                     ev_val = ev_gross
                 edge = prob_win - prob_loss
@@ -1225,9 +1255,9 @@ def forecast_barrier_optimize(
 
             tp_vals = [float(tp) for tp, _ in base_candidates] if base_candidates else [float(tp_min_val), float(tp_max_val)]
             sl_vals = [float(sl) for _, sl in base_candidates] if base_candidates else [float(sl_min_val), float(sl_max_val)]
-            tp_lo = max(1e-9, float(min(tp_vals)))
+            tp_lo = max(1e-9, min_barrier_distance, float(min(tp_vals)))
             tp_hi = max(tp_lo, float(max(tp_vals)))
-            sl_lo = max(1e-9, float(min(sl_vals)))
+            sl_lo = max(1e-9, min_barrier_distance, float(min(sl_vals)))
             sl_hi = max(sl_lo, float(max(sl_vals)))
             rr_lo = max(1e-9, float(min(ratio_min_val, ratio_max_val)))
             rr_hi = max(rr_lo, float(max(ratio_min_val, ratio_max_val)))
