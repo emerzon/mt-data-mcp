@@ -1853,6 +1853,28 @@ class TestMain:
         mock_fn.assert_called_once()
 
     @patch("mtdata.core.cli.discover_tools")
+    def test_global_timeframe_before_command_is_applied(self, mock_discover):
+        mock_fn = MagicMock(return_value="output text")
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "my_tool"
+        mock_fn.__doc__ = "My tool."
+
+        def my_tool(symbol: str, timeframe: str = "H1"):
+            """My tool."""
+            pass
+
+        info = get_function_info(my_tool)
+        info["func"] = mock_fn
+
+        mock_discover.return_value = {
+            "my_tool": {"func": mock_fn, "meta": {"description": "My tool"}, "_cli_func_info": info},
+        }
+        with patch("sys.argv", ["cli.py", "--timeframe", "D1", "my_tool", "EURUSD"]):
+            result = main()
+        assert result == 0
+        assert mock_fn.call_args[1]["timeframe"] == "D1"
+
+    @patch("mtdata.core.cli.discover_tools")
     def test_command_exception_handled(self, mock_discover, capsys):
         mock_fn = MagicMock(side_effect=RuntimeError("fail!"))
         mock_fn.__module__ = "mtdata.core.server"
@@ -2059,6 +2081,22 @@ class TestForecastGenerateIntegration:
         request = mock_fn.call_args[1]["request"]
         assert request.model_params["sp"] == 24
         assert request.model_params["max_epochs"] == 20
+
+    @patch("mtdata.core.cli.discover_tools")
+    def test_forecast_generate_uses_global_timeframe_before_command(self, mock_discover):
+        mock_fn = MagicMock(return_value={"forecast": [1.0]})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "forecast_generate"
+        mock_fn.__doc__ = "Generate forecasts."
+
+        mock_discover.return_value = {
+            "forecast_generate": {"func": mock_fn, "meta": {"description": "Generate forecasts"}},
+        }
+        with patch("sys.argv", ["cli.py", "--timeframe", "D1", "forecast_generate", "EURUSD"]):
+            result = main()
+        assert result == 0
+        request = mock_fn.call_args[1]["request"]
+        assert request.timeframe == "D1"
 
     @patch("mtdata.core.cli.discover_tools")
     def test_forecast_generate_with_denoise(self, mock_discover, capsys):

@@ -33,6 +33,88 @@ def _trading_connection_error(gateway: Optional[MT5TradingGateway] = None) -> Op
     return None
 
 
+def _safe_last_error(mt5: Any) -> Any:
+    try:
+        if hasattr(mt5, "last_error"):
+            return mt5.last_error()
+    except Exception:
+        return None
+    return None
+
+
+def _invalid_comment_error_text(result: Any, last_error: Any) -> Optional[str]:
+    texts: List[str] = []
+    try:
+        result_comment = getattr(result, "comment", None)
+    except Exception:
+        result_comment = None
+    if isinstance(result_comment, str) and result_comment.strip():
+        texts.append(result_comment.strip())
+    if isinstance(last_error, tuple):
+        if len(last_error) >= 2 and isinstance(last_error[1], str) and last_error[1].strip():
+            texts.append(last_error[1].strip())
+        elif last_error:
+            texts.append(str(last_error))
+    elif isinstance(last_error, str) and last_error.strip():
+        texts.append(last_error.strip())
+    elif last_error not in (None, False):
+        texts.append(str(last_error))
+    combined = " | ".join(text for text in texts if text)
+    lowered = combined.lower()
+    if "invalid" in lowered and "comment" in lowered:
+        return combined or "Invalid comment field."
+    return None
+
+
+def _send_order_with_comment_fallback(
+    mt5: Any,
+    request: Dict[str, Any],
+) -> tuple[Any, Optional[Dict[str, Any]], Any]:
+    result = mt5.order_send(request)
+    last_error = _safe_last_error(mt5)
+    invalid_comment = _invalid_comment_error_text(result, last_error)
+    if invalid_comment is None:
+        return result, None, last_error
+
+    fallback_requests: List[tuple[str, Dict[str, Any]]] = []
+    minimal_comment = trading_comments._normalize_trade_comment("MCP", default="MCP")
+    if request.get("comment") != minimal_comment:
+        req_short = dict(request)
+        req_short["comment"] = minimal_comment
+        fallback_requests.append(("minimal", req_short))
+    if "comment" in request:
+        req_nocomment = dict(request)
+        req_nocomment.pop("comment", None)
+        fallback_requests.append(("none", req_nocomment))
+
+    strategies = [strategy for strategy, _req in fallback_requests]
+    for strategy, alt_request in fallback_requests:
+        alt_result = mt5.order_send(alt_request)
+        alt_last_error = _safe_last_error(mt5)
+        if alt_result is not None and getattr(alt_result, "retcode", None) == mt5.TRADE_RETCODE_DONE:
+            return (
+                alt_result,
+                {
+                    "used": True,
+                    "strategy": strategy,
+                    "invalid_comment_error": invalid_comment,
+                    "request": alt_request,
+                },
+                alt_last_error,
+            )
+
+    return (
+        result,
+        {
+            "used": False,
+            "attempted": bool(fallback_requests),
+            "strategies": strategies,
+            "invalid_comment_error": invalid_comment,
+        },
+        last_error,
+    )
+
+
 def _place_market_order(
     symbol: str,
     volume: float,
@@ -140,6 +222,7 @@ def _place_market_order(
                 if side == "SELL" and norm_tp >= price:
                     return {"error": f"take_profit must be below entry for SELL orders at send time. tp={norm_tp}, price={price}"}
             request_comment = trading_comments._normalize_trade_comment(comment, default="MCP order")
+            comment_sanitization = trading_comments._comment_sanitization_info(comment, request_comment)
             comment_truncation = trading_comments._comment_truncation_info(comment, request_comment)
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,
@@ -153,23 +236,36 @@ def _place_market_order(
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": mt5.ORDER_FILLING_IOC,
             }
-            result = mt5.order_send(request)
+            result, comment_fallback, last_error = _send_order_with_comment_fallback(mt5, request)
             if result is None:
-                # Surface MetaTrader last_error when available for easier debugging
-                try:
-                    err = mt5.last_error()
-                except Exception:
-                    err = None
-                return {"error": "Failed to send order", "last_error": err}
-            if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
                 return {
                     "error": "Failed to send order",
+                    "last_error": last_error,
+                    "request": request,
+                    "comment_fallback": comment_fallback,
+                }
+            if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
+                error_message = "Failed to send order"
+                invalid_comment = (
+                    comment_fallback.get("invalid_comment_error")
+                    if isinstance(comment_fallback, dict)
+                    else None
+                )
+                if invalid_comment:
+                    error_message = (
+                        "Failed to send order: broker rejected the comment field. "
+                        "Comments are sanitized to letters/numbers/spaces/_/./-; "
+                        "try a simpler comment or omit --comment."
+                    )
+                return {
+                    "error": error_message,
                     "retcode": result.retcode,
                     "retcode_name": mt5.retcode_name(result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
                     "request": request,
-                    "last_error": mt5.last_error() if hasattr(mt5, "last_error") else None,
+                    "last_error": last_error,
+                    "comment_fallback": comment_fallback,
                 }
 
             # If TP/SL were specified, modify the position immediately
@@ -367,9 +463,17 @@ def _place_market_order(
                     sl_tp_apply_status = "failed"
 
             warnings_out: List[str] = []
+            if comment_sanitization:
+                warnings_out.append(
+                    f"Comment sanitized for broker compatibility: '{comment_sanitization['applied']}'"
+                )
             if comment_truncation:
                 warnings_out.append(
                     f"Comment truncated to {comment_truncation['max_length']} characters: '{comment_truncation['applied']}'"
+                )
+            if isinstance(comment_fallback, dict) and comment_fallback.get("used"):
+                warnings_out.append(
+                    "Broker rejected the comment field; order was retried with a minimal MT5-safe comment."
                 )
             if sl_tp_requested and sl_tp_apply_status == "failed":
                 fix_hint = (
@@ -416,6 +520,8 @@ def _place_market_order(
                 "sl_tp_fallback_used": sl_tp_fallback_used,
                 "sl_tp_fallback_result": sl_tp_fallback_result,
             }
+            if comment_sanitization:
+                out["comment_sanitization"] = comment_sanitization
             if sl_tp_requested:
                 if sl_tp_apply_status == "applied":
                     out["protection_status"] = (
@@ -427,6 +533,8 @@ def _place_market_order(
                     out["protection_status"] = "unprotected_position"
             if comment_truncation:
                 out["comment_truncation"] = comment_truncation
+            if comment_fallback:
+                out["comment_fallback"] = comment_fallback
             if warnings_out:
                 out["warnings"] = warnings_out
             return out
@@ -562,6 +670,7 @@ def _place_pending_order(
                     return {"error": f"take_profit must be below entry for SELL orders. tp={norm_tp}, price={norm_price}"}
 
             request_comment = trading_comments._normalize_trade_comment(comment, default="MCP pending order")
+            comment_sanitization = trading_comments._comment_sanitization_info(comment, request_comment)
             comment_truncation = trading_comments._comment_truncation_info(comment, request_comment)
             request = {
                 "action": mt5.TRADE_ACTION_PENDING,
@@ -585,24 +694,37 @@ def _place_pending_order(
                     request["type_time"] = mt5.ORDER_TIME_SPECIFIED
                     request["expiration"] = normalized_expiration
 
-            result = mt5.order_send(request)
+            result, comment_fallback, last_error = _send_order_with_comment_fallback(mt5, request)
             if result is None:
-                # Surface MetaTrader last_error when available for easier debugging
-                try:
-                    err = mt5.last_error()
-                except Exception:
-                    err = None
-                return {"error": "Failed to send pending order", "last_error": err, "request": request}
-
-            if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
                 return {
                     "error": "Failed to send pending order",
+                    "last_error": last_error,
+                    "request": request,
+                    "comment_fallback": comment_fallback,
+                }
+
+            if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
+                error_message = "Failed to send pending order"
+                invalid_comment = (
+                    comment_fallback.get("invalid_comment_error")
+                    if isinstance(comment_fallback, dict)
+                    else None
+                )
+                if invalid_comment:
+                    error_message = (
+                        "Failed to send pending order: broker rejected the comment field. "
+                        "Comments are sanitized to letters/numbers/spaces/_/./-; "
+                        "try a simpler comment or omit --comment."
+                    )
+                return {
+                    "error": error_message,
                     "retcode": result.retcode,
                     "retcode_name": mt5.retcode_name(result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
                     "request": request,
-                    "last_error": mt5.last_error() if hasattr(mt5, "last_error") else None,
+                    "last_error": last_error,
+                    "comment_fallback": comment_fallback,
                 }
 
             out: Dict[str, Any] = {
@@ -623,11 +745,25 @@ def _place_pending_order(
             }
             if expiration_specified:
                 out["requested_expiration"] = normalized_expiration
+            warnings_out: List[str] = []
+            if comment_sanitization:
+                out["comment_sanitization"] = comment_sanitization
+                warnings_out.append(
+                    f"Comment sanitized for broker compatibility: '{comment_sanitization['applied']}'"
+                )
             if comment_truncation:
                 out["comment_truncation"] = comment_truncation
-                out["warnings"] = [
+                warnings_out.append(
                     f"Comment truncated to {comment_truncation['max_length']} characters: '{comment_truncation['applied']}'"
-                ]
+                )
+            if comment_fallback:
+                out["comment_fallback"] = comment_fallback
+                if comment_fallback.get("used"):
+                    warnings_out.append(
+                        "Broker rejected the comment field; pending order was retried with a minimal MT5-safe comment."
+                    )
+            if warnings_out:
+                out["warnings"] = warnings_out
             return out
 
         except Exception as e:

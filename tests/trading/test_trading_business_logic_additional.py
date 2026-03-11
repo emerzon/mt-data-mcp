@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from mtdata.core.trading_requests import TradePlaceRequest
 from mtdata.core.trading_use_cases import run_trade_place
-from mtdata.core.trading_comments import _normalize_trade_comment
+from mtdata.core.trading_comments import _comment_sanitization_info, _normalize_trade_comment
 from mtdata.core.trading_time import _server_time_naive_to_mt5_timestamp
 from mtdata.core.trading_validation import (
     _normalize_order_type_input,
@@ -58,6 +58,28 @@ def test_normalize_trade_comment_applies_default_and_suffix_length_caps():
     long_comment = _normalize_trade_comment("x" * 50, default="ignored", suffix="-TP")
     assert len(long_comment) == 31
     assert long_comment.endswith("-TP")
+
+
+def test_normalize_trade_comment_sanitizes_special_characters():
+    comment = _normalize_trade_comment(
+        "Short: EV+, R:R 9.65",
+        default="ignored",
+    )
+    assert ":" not in comment
+    assert "," not in comment
+    assert "+" not in comment
+    assert comment == "Short EV R R 9.65"
+
+
+def test_comment_sanitization_info_reports_changes():
+    info = _comment_sanitization_info(
+        "Short: ETS bearish, barrier EV+, R:R 9.65",
+        "Short ETS bearish barrier EV R R 9.65",
+    )
+    assert info == {
+        "requested": "Short: ETS bearish, barrier EV+, R:R 9.65",
+        "applied": "Short ETS bearish barrier EV R R 9.65",
+    }
 
 
 def test_server_time_naive_to_mt5_timestamp_strips_timezone():

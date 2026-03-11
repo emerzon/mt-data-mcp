@@ -158,6 +158,29 @@ def _model_dump_compat(model: BaseModel) -> Dict[str, Any]:
     return model.dict()
 
 
+def _argv_option_present_after_command(argv: List[str], command: str, option: str) -> bool:
+    try:
+        cmd_index = argv.index(command)
+    except ValueError:
+        return False
+    for token in argv[cmd_index + 1 :]:
+        if token == option or token.startswith(f"{option}="):
+            return True
+    return False
+
+
+def _apply_global_cli_overrides(args: Any, argv: List[str]) -> Any:
+    command = getattr(args, "command", None)
+    if not isinstance(command, str) or not command:
+        return args
+    global_timeframe = getattr(args, "_global_timeframe", None)
+    if global_timeframe is None:
+        return args
+    if not _argv_option_present_after_command(argv, command, "--timeframe"):
+        setattr(args, "timeframe", global_timeframe)
+    return args
+
+
 def _format_result_minimal(result: Any, verbose: bool = True) -> str:
     try:
         return _shared_minimal(result, verbose=verbose)
@@ -873,7 +896,14 @@ def main():
         color=_argparse_color_enabled(),
     )
     # Add unified global parameters
-    add_global_args_to_parser(parser)
+    add_global_args_to_parser(parser, exclude_params=["timeframe"])
+    parser.add_argument(
+        "--timeframe",
+        dest="_global_timeframe",
+        default=argparse.SUPPRESS,
+        metavar="TIMEFRAME",
+        help="Timeframe for market data (H1, M30, D1, etc.)",
+    )
 
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
     
@@ -1028,6 +1058,7 @@ def main():
     
     # Parse arguments
     args = parser.parse_args()
+    args = _apply_global_cli_overrides(args, sys.argv[1:])
     
     if not args.command:
         parser.print_help()

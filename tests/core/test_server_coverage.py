@@ -429,6 +429,23 @@ class TestCoerceKwargsForCallable:
         assert "symbol" not in kw
         assert "horizon" not in kw
 
+    def test_coerces_indicator_string_into_data_request_model(self):
+        from mtdata.core.data_requests import DataFetchCandlesRequest
+
+        def fn(request: DataFetchCandlesRequest): ...
+
+        kw = {
+            "symbol": "BTCUSD",
+            "indicators": "ema(20),rsi(14),macd(12,26,9)",
+        }
+        self._call(fn, kw)
+        assert isinstance(kw["request"], DataFetchCandlesRequest)
+        assert kw["request"].indicators == [
+            {"name": "ema", "params": [20.0]},
+            {"name": "rsi", "params": [14.0]},
+            {"name": "macd", "params": [12.0, 26.0, 9.0]},
+        ]
+
     def test_handles_bad_signature_gracefully(self):
         kw = {"a": "1"}
         result = self._call("not_a_callable", kw)

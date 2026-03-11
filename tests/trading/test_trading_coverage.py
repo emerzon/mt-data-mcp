@@ -1078,6 +1078,34 @@ class TestPlaceMarketOrder:
         assert any("Comment truncated" in str(w) for w in result.get("warnings", []))
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_comment_is_sanitized_and_retried_when_broker_rejects_field(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.side_effect = [
+            _order_result(retcode=10013, comment='Invalid "comment" argument'),
+            _order_result(comment=""),
+        ]
+        from mtdata.core.trading import _place_market_order
+
+        result = _place_market_order(
+            "BTCUSD",
+            0.01,
+            "SELL",
+            comment="Short: ETS bearish, barrier EV+, R:R 9.65",
+        )
+
+        assert "error" not in result
+        assert result["comment_sanitization"]["requested"] == "Short: ETS bearish, barrier EV+, R:R 9.65"
+        assert result["comment_fallback"]["used"] is True
+        assert result["comment_fallback"]["strategy"] == "minimal"
+        assert any("sanitized for broker compatibility" in str(w) for w in result.get("warnings", []))
+        assert any("retried with a minimal MT5-safe comment" in str(w) for w in result.get("warnings", []))
+        first_request = mt5.order_send.call_args_list[0].args[0]
+        second_request = mt5.order_send.call_args_list[1].args[0]
+        assert first_request["comment"] == "Short ETS bearish barrier EV R"
+        assert second_request["comment"] == "MCP"
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_sl_tp_broker_adjustment_is_reported(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)

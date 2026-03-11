@@ -3,35 +3,66 @@
 from __future__ import annotations
 
 import math
+import re
 from typing import Any, Dict, Optional
 
 
 _MT5_COMMENT_MAX_LENGTH = 31
+_MT5_COMMENT_SANITIZE_RE = re.compile(r"[^A-Za-z0-9 _.!-]+")
+
+
+def _sanitize_trade_comment_text(value: Any) -> str:
+    try:
+        text = str(value or "").strip()
+    except Exception:
+        return ""
+    if not text:
+        return ""
+    text = _MT5_COMMENT_SANITIZE_RE.sub(" ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
 def _normalize_trade_comment(comment: Optional[str], *, default: str, suffix: str = "") -> str:
     """Return an MT5-safe comment string."""
-    try:
-        base = str(comment or "").strip()
-    except Exception:
-        base = ""
+    base = _sanitize_trade_comment_text(comment)
     if not base:
-        base = str(default or "").strip() or "MCP"
+        base = _sanitize_trade_comment_text(default) or "MCP"
 
-    full = f"{base}{suffix}" if suffix else base
+    suffix_text = _sanitize_trade_comment_text(suffix)
+    full = f"{base}{suffix_text}" if suffix_text else base
     try:
         if len(full) > _MT5_COMMENT_MAX_LENGTH:
-            if suffix:
-                allowed_base = _MT5_COMMENT_MAX_LENGTH - len(suffix)
+            if suffix_text:
+                allowed_base = _MT5_COMMENT_MAX_LENGTH - len(suffix_text)
                 if allowed_base > 0:
-                    full = f"{base[:allowed_base]}{suffix}"
+                    full = f"{base[:allowed_base]}{suffix_text}"
                 else:
                     full = base[:_MT5_COMMENT_MAX_LENGTH]
             else:
                 full = base[:_MT5_COMMENT_MAX_LENGTH]
     except Exception:
-        full = str(default or "MCP")[:_MT5_COMMENT_MAX_LENGTH]
-    return full
+        full = (_sanitize_trade_comment_text(default) or "MCP")[:_MT5_COMMENT_MAX_LENGTH]
+    return full.strip()
+
+
+def _comment_sanitization_info(comment: Optional[str], applied_comment: str) -> Optional[Dict[str, Any]]:
+    """Return metadata when a user-supplied comment is sanitized."""
+    if comment is None:
+        return None
+    try:
+        requested = str(comment).strip()
+    except Exception:
+        requested = ""
+    if not requested:
+        return None
+    sanitized = _sanitize_trade_comment_text(requested)
+    if not sanitized or sanitized == requested:
+        return None
+    return {
+        "requested": requested,
+        "applied": applied_comment,
+    }
 
 
 def _comment_truncation_info(comment: Optional[str], applied_comment: str) -> Optional[Dict[str, Any]]:
