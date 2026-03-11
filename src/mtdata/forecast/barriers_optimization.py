@@ -40,6 +40,14 @@ from .barriers_shared import (
     _scale_price_paths_to_reference,
     _sort_candidate_results,
 )
+from .barrier_stats import (
+    minimum_simulations_for_ci_width as _min_sims_for_ci,
+    mc_convergence_diagnostic as _mc_convergence,
+    cross_seed_stability as _cross_seed_stability,
+    bootstrap_metric_uncertainty as _bootstrap_uncertainty,
+    sensitivity_analysis_single_parameter as _sensitivity_analysis,
+    statistical_power_analysis as _power_analysis,
+)
 
 
 def forecast_barrier_optimize(
@@ -95,6 +103,18 @@ def forecast_barrier_optimize(
     max_median_time: Optional[float] = None,
     fast_defaults: bool = False,
     search_profile: Literal['fast', 'medium', 'long'] = 'medium',
+    statistical_robustness: bool = False,
+    target_ci_width: float = 0.05,
+    n_seeds_stability: int = 3,
+    enable_bootstrap: bool = False,
+    n_bootstrap: int = 200,
+    enable_convergence_check: bool = True,
+    convergence_window: int = 100,
+    convergence_threshold: float = 0.01,
+    enable_power_analysis: bool = False,
+    power_effect_size: float = 0.05,
+    enable_sensitivity_analysis: bool = False,
+    sensitivity_params: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Optimize TP/SL barriers over a grid of candidate levels.
 
@@ -110,6 +130,20 @@ def forecast_barrier_optimize(
     Metrics:
     - ev/ev_cond/ev_per_bar are reported in the same units as tp/sl (pct points
       or ticks). `ev_per_bar` divides by mean resolution time (bars).
+    
+    Statistical Robustness:
+    - statistical_robustness: Enable comprehensive statistical analysis
+    - target_ci_width: Target confidence interval width (default 0.05 = ±2.5%)
+    - n_seeds_stability: Number of seeds for cross-seed stability analysis
+    - enable_bootstrap: Enable bootstrap uncertainty estimation
+    - n_bootstrap: Number of bootstrap samples
+    - enable_convergence_check: Check MC convergence diagnostics
+    - convergence_window: Window size for convergence check
+    - convergence_threshold: Convergence threshold for probability change
+    - enable_power_analysis: Statistical power analysis for probabilities
+    - power_effect_size: Minimum detectable effect size for power analysis
+    - enable_sensitivity_analysis: Sensitivity analysis for barrier parameters
+    - sensitivity_params: List of parameters to analyze (default: ['tp', 'sl'])
     """
     try:
         if timeframe not in TIMEFRAME_SECONDS:
@@ -373,6 +407,50 @@ def forecast_barrier_optimize(
         sl_max_val = float(params_dict.get('sl_max', sl_max))
         sl_steps_default = int(_profile_default('sl_steps', int(sl_steps), 9, 'sl_steps'))
         sl_steps_val = max(1, int(params_dict.get('sl_steps', sl_steps_default)))
+        
+        statistical_robustness_requested = _coerce_bool_flag(
+            params_dict.get('statistical_robustness', statistical_robustness),
+            default=bool(statistical_robustness),
+        )
+        target_ci_width_val = float(params_dict.get('target_ci_width', target_ci_width))
+        if not 0 < target_ci_width_val < 1:
+            target_ci_width_val = 0.05
+        n_seeds_stability_val = max(2, int(params_dict.get('n_seeds_stability', n_seeds_stability)))
+        enable_bootstrap_val = _coerce_bool_flag(
+            params_dict.get('enable_bootstrap', enable_bootstrap),
+            default=bool(enable_bootstrap),
+        )
+        n_bootstrap_val = max(50, int(params_dict.get('n_bootstrap', n_bootstrap)))
+        enable_convergence_check_val = _coerce_bool_flag(
+            params_dict.get('enable_convergence_check', enable_convergence_check),
+            default=bool(enable_convergence_check),
+        )
+        convergence_window_val = max(10, int(params_dict.get('convergence_window', convergence_window)))
+        convergence_threshold_val = float(params_dict.get('convergence_threshold', convergence_threshold))
+        if convergence_threshold_val <= 0:
+            convergence_threshold_val = 0.01
+        enable_power_analysis_val = _coerce_bool_flag(
+            params_dict.get('enable_power_analysis', enable_power_analysis),
+            default=bool(enable_power_analysis),
+        )
+        power_effect_size_val = float(params_dict.get('power_effect_size', power_effect_size))
+        if power_effect_size_val <= 0:
+            power_effect_size_val = 0.05
+        enable_sensitivity_analysis_val = _coerce_bool_flag(
+            params_dict.get('enable_sensitivity_analysis', enable_sensitivity_analysis),
+            default=bool(enable_sensitivity_analysis),
+        )
+        sensitivity_params_requested = params_dict.get('sensitivity_params', sensitivity_params)
+        if isinstance(sensitivity_params_requested, str):
+            sensitivity_params_requested = [
+                p.strip().lower() for p in sensitivity_params_requested.split(',') if p.strip()
+            ]
+        elif not isinstance(sensitivity_params_requested, list):
+            sensitivity_params_requested = ['tp', 'sl']
+        else:
+            sensitivity_params_requested = [
+                str(p).strip().lower() for p in sensitivity_params_requested if str(p).strip()
+            ]
 
         need = int(max(300, horizon_val + 100))
         df = _fetch_history(symbol, timeframe, need, as_of=None)
@@ -415,6 +493,16 @@ def forecast_barrier_optimize(
         n_seeds = int(params_dict.get('n_seeds', 1) or 1)
         if n_seeds <= 0:
             return {"error": f"Invalid n_seeds: {n_seeds}. Must be >= 1."}
+        
+        if statistical_robustness_requested:
+            min_sims_recommended = _min_sims_for_ci(
+                target_width=target_ci_width_val,
+                expected_prob=0.5,
+                confidence=0.95,
+                conservative=True,
+            )
+            if sims < min_sims_recommended:
+                sims = min_sims_recommended
 
         spread_pips_val = float(params_dict.get('spread_pips', 0.0) or 0.0)
         spread_pct_val = float(params_dict.get('spread_pct', 0.0) or 0.0)
@@ -460,7 +548,6 @@ def forecast_barrier_optimize(
             min_barrier_absolute = float(params_dict.get('min_barrier_pips', 0.0) or 0.0)
         min_barrier_distance = max(min_barrier_absolute, min_barrier_multiplier * cost_spread)
         
-        paths_list: List[np.ndarray] = []
         method_name = str(method).lower().strip()
         method_requested = method_name
         auto_reason = None
@@ -858,59 +945,157 @@ def forecast_barrier_optimize(
             method_name, auto_reason = _auto_barrier_method(
                 symbol, timeframe, prices, horizon=horizon_val
             )
-        bb_enabled = method_name == 'mc_gbm_bb'
-        
-        try:
+
+        def _simulate_paths_for_seed_range(
+            seed_base: int,
+            seed_count: int,
+        ) -> Tuple[
+            np.ndarray,
+            bool,
+            float,
+            Optional[np.ndarray],
+            Optional[np.ndarray],
+            Optional[np.ndarray],
+        ]:
+            local_paths_list: List[np.ndarray] = []
+            local_bb_enabled = method_name == 'mc_gbm_bb'
+            effective_seed_count = max(1, int(seed_count))
+
             if method_name in ('mc_gbm', 'mc_gbm_bb'):
-                for offset in range(max(1, n_seeds)):
-                    sim = _simulate_gbm_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed + offset))
-                    paths_list.append(np.asarray(sim['price_paths'], dtype=float))
+                for offset in range(effective_seed_count):
+                    sim = _simulate_gbm_mc(
+                        prices,
+                        horizon=horizon_val,
+                        n_sims=int(sims),
+                        seed=int(seed_base + offset),
+                    )
+                    local_paths_list.append(np.asarray(sim['price_paths'], dtype=float))
             elif method_name == 'hmm_mc':
                 n_states = int(params_dict.get('n_states', 2) or 2)
-                for offset in range(max(1, n_seeds)):
-                    sim = _simulate_hmm_mc(prices, horizon=horizon_val, n_states=int(n_states), n_sims=int(sims), seed=int(seed + offset))
-                    paths_list.append(np.asarray(sim['price_paths'], dtype=float))
+                for offset in range(effective_seed_count):
+                    sim = _simulate_hmm_mc(
+                        prices,
+                        horizon=horizon_val,
+                        n_states=int(n_states),
+                        n_sims=int(sims),
+                        seed=int(seed_base + offset),
+                    )
+                    local_paths_list.append(np.asarray(sim['price_paths'], dtype=float))
             elif method_name == 'garch':
                 p_order = int(params_dict.get('p', 1))
                 q_order = int(params_dict.get('q', 1))
-                for offset in range(max(1, n_seeds)):
-                    sim = _simulate_garch_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed + offset), p_order=p_order, q_order=q_order)
-                    paths_list.append(np.asarray(sim['price_paths'], dtype=float))
+                for offset in range(effective_seed_count):
+                    sim = _simulate_garch_mc(
+                        prices,
+                        horizon=horizon_val,
+                        n_sims=int(sims),
+                        seed=int(seed_base + offset),
+                        p_order=p_order,
+                        q_order=q_order,
+                    )
+                    local_paths_list.append(np.asarray(sim['price_paths'], dtype=float))
             elif method_name == 'bootstrap':
                 bs = params_dict.get('block_size')
-                if bs: bs = int(bs)
-                for offset in range(max(1, n_seeds)):
-                    sim = _simulate_bootstrap_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed + offset), block_size=bs)
-                    paths_list.append(np.asarray(sim['price_paths'], dtype=float))
+                if bs:
+                    bs = int(bs)
+                for offset in range(effective_seed_count):
+                    sim = _simulate_bootstrap_mc(
+                        prices,
+                        horizon=horizon_val,
+                        n_sims=int(sims),
+                        seed=int(seed_base + offset),
+                        block_size=bs,
+                    )
+                    local_paths_list.append(np.asarray(sim['price_paths'], dtype=float))
             elif method_name == 'heston':
-                for offset in range(max(1, n_seeds)):
+                for offset in range(effective_seed_count):
                     sim = _simulate_heston_mc(
                         prices,
                         horizon=horizon_val,
                         n_sims=int(sims),
-                        seed=int(seed + offset),
+                        seed=int(seed_base + offset),
                         kappa=params_dict.get('kappa'),
                         theta=params_dict.get('theta'),
                         xi=params_dict.get('xi'),
                         rho=params_dict.get('rho'),
                         v0=params_dict.get('v0'),
                     )
-                    paths_list.append(np.asarray(sim['price_paths'], dtype=float))
+                    local_paths_list.append(np.asarray(sim['price_paths'], dtype=float))
             elif method_name == 'jump_diffusion':
-                for offset in range(max(1, n_seeds)):
+                for offset in range(effective_seed_count):
                     sim = _simulate_jump_diffusion_mc(
                         prices,
                         horizon=horizon_val,
                         n_sims=int(sims),
-                        seed=int(seed + offset),
+                        seed=int(seed_base + offset),
                         jump_lambda=params_dict.get('jump_lambda', params_dict.get('lambda')),
                         jump_mu=params_dict.get('jump_mu'),
                         jump_sigma=params_dict.get('jump_sigma'),
                         jump_threshold=float(params_dict.get('jump_threshold', 3.0)),
                     )
-                    paths_list.append(np.asarray(sim['price_paths'], dtype=float))
+                    local_paths_list.append(np.asarray(sim['price_paths'], dtype=float))
             else:
-                return {"error": f"Unsupported method: {method}. Use 'mc_gbm', 'mc_gbm_bb', 'hmm_mc', 'garch', 'bootstrap', 'heston', 'jump_diffusion', 'auto', or 'ensemble'."}
+                raise ValueError(
+                    f"Unsupported method: {method}. Use 'mc_gbm', 'mc_gbm_bb', "
+                    f"'hmm_mc', 'garch', 'bootstrap', 'heston', 'jump_diffusion', "
+                    f"'auto', or 'ensemble'."
+                )
+
+            local_paths = (
+                np.vstack(local_paths_list)
+                if len(local_paths_list) > 1
+                else local_paths_list[0]
+            )
+            try:
+                sim_anchor_price = float(prices[-1])
+            except Exception:
+                sim_anchor_price = float(last_price_close)
+            local_paths = _scale_price_paths_to_reference(
+                local_paths,
+                simulated_anchor_price=sim_anchor_price,
+                reference_price=last_price,
+            )
+
+            local_bb_sigma = 0.0
+            local_bb_log_paths = None
+            local_bb_uniform_tp = None
+            local_bb_uniform_sl = None
+            if local_bb_enabled:
+                rets = _log_returns_from_prices(prices)
+                rets = rets[np.isfinite(rets)]
+                local_bb_sigma = float(np.std(rets, ddof=1)) if rets.size else 0.0
+                if not np.isfinite(local_bb_sigma) or local_bb_sigma <= 0:
+                    local_bb_enabled = False
+                else:
+                    local_sims_total, local_horizon = local_paths.shape
+                    log_paths = np.log(np.clip(local_paths, 1e-12, None))
+                    log_s0 = float(np.log(max(last_price, 1e-12)))
+                    local_bb_log_paths = np.concatenate(
+                        [np.full((local_sims_total, 1), log_s0), log_paths],
+                        axis=1,
+                    )
+                    rng_bb = np.random.RandomState(int(seed_base) + 7)
+                    local_bb_uniform_tp = rng_bb.rand(local_sims_total, local_horizon)
+                    local_bb_uniform_sl = rng_bb.rand(local_sims_total, local_horizon)
+
+            return (
+                local_paths,
+                local_bb_enabled,
+                local_bb_sigma,
+                local_bb_log_paths,
+                local_bb_uniform_tp,
+                local_bb_uniform_sl,
+            )
+
+        try:
+            (
+                paths,
+                bb_enabled,
+                bb_sigma,
+                bb_log_paths,
+                bb_uniform_tp,
+                bb_uniform_sl,
+            ) = _simulate_paths_for_seed_range(seed_base=int(seed), seed_count=int(n_seeds))
         except (ValueError, RuntimeError, np.linalg.LinAlgError) as e:
             return {
                 "error": f"Simulation failed ({method_name}): {e}",
@@ -918,34 +1103,7 @@ def forecast_barrier_optimize(
                 "traceback_summary": traceback.format_exc()[-500:],
             }
 
-        paths = np.vstack(paths_list) if len(paths_list) > 1 else paths_list[0]
         S, H = paths.shape
-        try:
-            sim_anchor_price = float(prices[-1])
-        except Exception:
-            sim_anchor_price = float(last_price_close)
-        paths = _scale_price_paths_to_reference(
-            paths,
-            simulated_anchor_price=sim_anchor_price,
-            reference_price=last_price,
-        )
-        bb_sigma = 0.0
-        bb_uniform_tp = None
-        bb_uniform_sl = None
-        bb_log_paths = None
-        if bb_enabled:
-            rets = _log_returns_from_prices(prices)
-            rets = rets[np.isfinite(rets)]
-            bb_sigma = float(np.std(rets, ddof=1)) if rets.size else 0.0
-            if not np.isfinite(bb_sigma) or bb_sigma <= 0:
-                bb_enabled = False
-            else:
-                log_paths = np.log(np.clip(paths, 1e-12, None))
-                log_s0 = float(np.log(max(last_price, 1e-12)))
-                bb_log_paths = np.concatenate([np.full((S, 1), log_s0), log_paths], axis=1)
-                rng_bb = np.random.RandomState(int(seed) + 7)
-                bb_uniform_tp = rng_bb.rand(S, H)
-                bb_uniform_sl = rng_bb.rand(S, H)
 
         def _linspace(a: float, b: float, n: int) -> np.ndarray:
             try:
@@ -1030,9 +1188,19 @@ def forecast_barrier_optimize(
         dir_long = direction_norm == 'long'
         invalid_barrier_candidates = 0
 
-        def _evaluate(bucket: List[Tuple[float, float]]) -> List[Dict[str, Any]]:
+        def _evaluate(
+            bucket: List[Tuple[float, float]],
+            eval_paths: np.ndarray,
+            eval_bb_enabled: bool,
+            eval_bb_sigma: float,
+            eval_bb_log_paths: Optional[np.ndarray],
+            eval_bb_uniform_tp: Optional[np.ndarray],
+            eval_bb_uniform_sl: Optional[np.ndarray],
+            count_invalid: bool = True,
+        ) -> List[Dict[str, Any]]:
             out: List[Dict[str, Any]] = []
             nonlocal invalid_barrier_candidates
+            sims_total, horizon_total = eval_paths.shape
             for tp_unit, sl_unit in bucket:
                 # Convert to price levels
                 if mode_val == 'pct':
@@ -1052,19 +1220,23 @@ def forecast_barrier_optimize(
 
                 # Hard sanity check for trade geometry and price validity.
                 if not np.isfinite(tp_p) or not np.isfinite(sl_p):
-                    invalid_barrier_candidates += 1
+                    if count_invalid:
+                        invalid_barrier_candidates += 1
                     continue
                 if np.isfinite(last_price) and last_price > 0.0:
                     if tp_p <= 0.0 or sl_p <= 0.0:
-                        invalid_barrier_candidates += 1
+                        if count_invalid:
+                            invalid_barrier_candidates += 1
                         continue
                     if dir_long:
                         if not (sl_p < last_price < tp_p):
-                            invalid_barrier_candidates += 1
+                            if count_invalid:
+                                invalid_barrier_candidates += 1
                             continue
                     else:
                         if not (tp_p < last_price < sl_p):
-                            invalid_barrier_candidates += 1
+                            if count_invalid:
+                                invalid_barrier_candidates += 1
                             continue
 
                 # Adjust short trigger levels for Bid/Ask spread
@@ -1073,16 +1245,33 @@ def forecast_barrier_optimize(
 
                 # Vectorized hit detection
                 if dir_long:
-                    hit_tp = (paths >= tp_trigger)
-                    hit_sl = (paths <= sl_trigger)
+                    hit_tp = (eval_paths >= tp_trigger)
+                    hit_sl = (eval_paths <= sl_trigger)
                 else:
-                    hit_tp = (paths <= tp_trigger)
-                    hit_sl = (paths >= sl_trigger)
-                if bb_enabled and bb_log_paths is not None and bb_uniform_tp is not None and bb_uniform_sl is not None:
+                    hit_tp = (eval_paths <= tp_trigger)
+                    hit_sl = (eval_paths >= sl_trigger)
+                if (
+                    eval_bb_enabled
+                    and eval_bb_log_paths is not None
+                    and eval_bb_uniform_tp is not None
+                    and eval_bb_uniform_sl is not None
+                ):
                     tp_dir = "up" if dir_long else "down"
                     sl_dir = "down" if dir_long else "up"
-                    tp_bridge = _brownian_bridge_hits(bb_log_paths, float(np.log(max(1e-12, tp_trigger))), bb_sigma, direction=tp_dir, uniform=bb_uniform_tp)
-                    sl_bridge = _brownian_bridge_hits(bb_log_paths, float(np.log(max(1e-12, sl_trigger))), bb_sigma, direction=sl_dir, uniform=bb_uniform_sl)
+                    tp_bridge = _brownian_bridge_hits(
+                        eval_bb_log_paths,
+                        float(np.log(max(1e-12, tp_trigger))),
+                        eval_bb_sigma,
+                        direction=tp_dir,
+                        uniform=eval_bb_uniform_tp,
+                    )
+                    sl_bridge = _brownian_bridge_hits(
+                        eval_bb_log_paths,
+                        float(np.log(max(1e-12, sl_trigger))),
+                        eval_bb_sigma,
+                        direction=sl_dir,
+                        uniform=eval_bb_uniform_sl,
+                    )
                     hit_tp = hit_tp | tp_bridge
                     hit_sl = hit_sl | sl_bridge
 
@@ -1092,26 +1281,26 @@ def forecast_barrier_optimize(
                 first_tp = hit_tp.argmax(axis=1)
                 first_sl = hit_sl.argmax(axis=1)
 
-                first_tp[~any_tp] = H
-                first_sl[~any_sl] = H
+                first_tp[~any_tp] = horizon_total
+                first_sl[~any_sl] = horizon_total
 
                 wins = (first_tp < first_sl)
                 losses = (first_sl < first_tp)
-                ties = (first_tp == first_sl) & (first_tp < H)
+                ties = (first_tp == first_sl) & (first_tp < horizon_total)
 
                 n_wins = wins.sum()
                 n_losses = losses.sum()
                 n_ties = ties.sum()
 
-                prob_win = n_wins / S
-                prob_loss = n_losses / S
-                prob_tie = n_ties / S
+                prob_win = n_wins / sims_total
+                prob_loss = n_losses / sims_total
+                prob_tie = n_ties / sims_total
                 prob_neutral = max(0.0, 1.0 - prob_win - prob_loss - prob_tie)
                 prob_resolve = 1.0 - prob_neutral
                 # Keep strict win/loss metrics and add first-hit probabilities with
                 # 50/50 tie splitting to match forecast_barrier_hit_probabilities.
-                prob_tp_first = (n_wins + 0.5 * n_ties) / S
-                prob_sl_first = (n_losses + 0.5 * n_ties) / S
+                prob_tp_first = (n_wins + 0.5 * n_ties) / sims_total
+                prob_sl_first = (n_losses + 0.5 * n_ties) / sims_total
 
                 risk = sl_unit
                 reward = tp_unit
@@ -1129,10 +1318,10 @@ def forecast_barrier_optimize(
                 else:
                     ev_val = ev_gross
                 edge = prob_win - prob_loss
-                win_lo, win_hi = _binomial_wilson_95(prob_win, int(S))
-                loss_lo, loss_hi = _binomial_wilson_95(prob_loss, int(S))
-                tie_lo, tie_hi = _binomial_wilson_95(prob_tie, int(S))
-                no_hit_lo, no_hit_hi = _binomial_wilson_95(prob_neutral, int(S))
+                win_lo, win_hi = _binomial_wilson_95(prob_win, int(sims_total))
+                loss_lo, loss_hi = _binomial_wilson_95(prob_loss, int(sims_total))
+                tie_lo, tie_hi = _binomial_wilson_95(prob_tie, int(sims_total))
+                no_hit_lo, no_hit_hi = _binomial_wilson_95(prob_neutral, int(sims_total))
 
                 kelly_val = 0.0
                 if rr > 0:
@@ -1149,7 +1338,7 @@ def forecast_barrier_optimize(
                     ev_cond = 0.0
                     kelly_cond = 0.0
 
-                resolve_mask = (first_tp < H) | (first_sl < H)
+                resolve_mask = (first_tp < horizon_total) | (first_sl < horizon_total)
                 if np.any(resolve_mask):
                     resolve_times = np.minimum(first_tp, first_sl)[resolve_mask] + 1
                     t_res_mean = float(np.mean(resolve_times)) if resolve_times.size else None
@@ -1206,10 +1395,10 @@ def forecast_barrier_optimize(
                     'prob_sl_first': prob_sl_first,
                     'prob_no_hit': prob_neutral,
                     'prob_tie': prob_tie,
-                    'prob_win_se': _binomial_se(prob_win, int(S)),
-                    'prob_loss_se': _binomial_se(prob_loss, int(S)),
-                    'prob_tie_se': _binomial_se(prob_tie, int(S)),
-                    'prob_no_hit_se': _binomial_se(prob_neutral, int(S)),
+                    'prob_win_se': _binomial_se(prob_win, int(sims_total)),
+                    'prob_loss_se': _binomial_se(prob_loss, int(sims_total)),
+                    'prob_tie_se': _binomial_se(prob_tie, int(sims_total)),
+                    'prob_no_hit_se': _binomial_se(prob_neutral, int(sims_total)),
                     'prob_win_ci95': {'low': float(win_lo), 'high': float(win_hi)},
                     'prob_loss_ci95': {'low': float(loss_lo), 'high': float(loss_hi)},
                     'prob_tie_ci95': {'low': float(tie_lo), 'high': float(tie_hi)},
@@ -1319,7 +1508,15 @@ def forecast_barrier_optimize(
                         tp_unit = float(trial.suggest_float('tp', tp_lo, tp_hi))
                         sl_unit = float(trial.suggest_float('sl', sl_lo, sl_hi))
 
-                    rows = _evaluate([(tp_unit, sl_unit)])
+                    rows = _evaluate(
+                        [(tp_unit, sl_unit)],
+                        paths,
+                        bb_enabled,
+                        bb_sigma,
+                        bb_log_paths,
+                        bb_uniform_tp,
+                        bb_uniform_sl,
+                    )
                     if not rows:
                         return _bad_values()
                     row = rows[0]
@@ -1390,7 +1587,15 @@ def forecast_barrier_optimize(
                         tp_unit = float(trial.suggest_float('tp', tp_lo, tp_hi))
                         sl_unit = float(trial.suggest_float('sl', sl_lo, sl_hi))
 
-                    rows = _evaluate([(tp_unit, sl_unit)])
+                    rows = _evaluate(
+                        [(tp_unit, sl_unit)],
+                        paths,
+                        bb_enabled,
+                        bb_sigma,
+                        bb_log_paths,
+                        bb_uniform_tp,
+                        bb_uniform_sl,
+                    )
                     if not rows:
                         return -1e18 if maximize else 1e18
                     row = rows[0]
@@ -1451,7 +1656,17 @@ def forecast_barrier_optimize(
                     for metric_name, direction_name in pareto_objectives
                 ]
         else:
-            results.extend(_evaluate(base_candidates))
+            results.extend(
+                _evaluate(
+                    base_candidates,
+                    paths,
+                    bb_enabled,
+                    bb_sigma,
+                    bb_log_paths,
+                    bb_uniform_tp,
+                    bb_uniform_sl,
+                )
+            )
 
         _sort_candidate_results(results, objective_val)
 
@@ -1465,7 +1680,17 @@ def forecast_barrier_optimize(
             sl_b = sl_c * (1.0 + refine_radius_val)
             refine_candidates: List[Tuple[float, float]] = []
             _add_fixed(refine_candidates, tp_a, tp_b, refine_steps_val, sl_a, sl_b, refine_steps_val)
-            results.extend(_evaluate(refine_candidates))
+            results.extend(
+                _evaluate(
+                    refine_candidates,
+                    paths,
+                    bb_enabled,
+                    bb_sigma,
+                    bb_log_paths,
+                    bb_uniform_tp,
+                    bb_uniform_sl,
+                )
+            )
             _sort_candidate_results(results, objective_val)
 
         ranked_candidates = list(results)
@@ -1574,6 +1799,19 @@ def forecast_barrier_optimize(
                 "ratio_steps": int(ratio_steps_val),
                 "vol_steps": int(vol_steps_val),
                 "refine": bool(refine_flag),
+                "statistical_robustness": {
+                    "enabled": bool(statistical_robustness_requested),
+                    "target_ci_width": target_ci_width_val,
+                    "n_seeds_stability": n_seeds_stability_val,
+                    "bootstrap_enabled": bool(enable_bootstrap_val),
+                    "n_bootstrap": n_bootstrap_val,
+                    "convergence_check_enabled": bool(enable_convergence_check_val),
+                    "convergence_window": convergence_window_val,
+                    "convergence_threshold": convergence_threshold_val,
+                    "power_analysis_enabled": bool(enable_power_analysis_val),
+                    "power_effect_size": power_effect_size_val,
+                    "sensitivity_analysis_enabled": bool(enable_sensitivity_analysis_val),
+                } if statistical_robustness_requested else None,
             },
             "results": summary_results,
             "results_total": len(candidates),
@@ -1592,6 +1830,170 @@ def forecast_barrier_optimize(
         if pareto_front is not None:
             out["pareto_front"] = pareto_front
             out["pareto_count"] = int(len(pareto_front))
+        
+        if statistical_robustness_requested and isinstance(best, dict) and len(candidates) > 0:
+            statistical_analysis: Dict[str, Any] = {
+                "minimum_simulations": {
+                    "recommended": int(min_sims_recommended),
+                    "used": int(sims),
+                    "target_ci_width": target_ci_width_val,
+                    "confidence": 0.95,
+                }
+            }
+
+            if enable_power_analysis_val and best.get('prob_win') is not None:
+                prob_win_val = float(best['prob_win'])
+                power_result = _power_analysis(
+                    base_prob=prob_win_val,
+                    effect_size=power_effect_size_val,
+                    n_sims=int(sims),
+                    alpha=0.05,
+                )
+                if 'error' not in power_result:
+                    statistical_analysis['power_analysis'] = power_result
+            
+            if enable_convergence_check_val:
+                n_sims_total = paths.shape[0]
+                favorable_threshold = last_price * (1.001 if dir_long else 0.999)
+                cumulative_successes = np.cumsum(
+                    (
+                        (paths >= favorable_threshold)
+                        if dir_long
+                        else (paths <= favorable_threshold)
+                    ).any(axis=1)
+                )
+                cumulative_trials = np.arange(1, n_sims_total + 1)
+                convergence_result = _mc_convergence(
+                    cumulative_successes,
+                    cumulative_trials,
+                    window_size=convergence_window_val,
+                    threshold=convergence_threshold_val,
+                )
+                statistical_analysis['convergence_diagnostic'] = convergence_result
+            
+            if enable_bootstrap_val:
+                try:
+                    tp_trigger = float(best.get('tp_price', 0))
+                    sl_trigger = float(best.get('sl_price', 0))
+                    if tp_trigger > 0 and sl_trigger > 0:
+                        bootstrap_result = _bootstrap_uncertainty(
+                            paths=paths,
+                            tp_trigger=tp_trigger,
+                            sl_trigger=sl_trigger,
+                            direction=direction_norm,
+                            entry_price=last_price,
+                            n_bootstrap=n_bootstrap_val,
+                            seed=seed,
+                        )
+                        if bootstrap_result:
+                            statistical_analysis['bootstrap_uncertainty'] = bootstrap_result
+                except Exception:
+                    pass
+            
+            if n_seeds_stability_val > 1:
+                results_by_seed: Dict[int, Dict[str, Any]] = {}
+                for seed_offset in range(min(n_seeds_stability_val, 5)):
+                    seed_key = int(seed + seed_offset)
+                    try:
+                        (
+                            stability_paths,
+                            stability_bb_enabled,
+                            stability_bb_sigma,
+                            stability_bb_log_paths,
+                            stability_bb_uniform_tp,
+                            stability_bb_uniform_sl,
+                        ) = _simulate_paths_for_seed_range(seed_base=seed_key, seed_count=1)
+                    except (ValueError, RuntimeError, np.linalg.LinAlgError):
+                        continue
+                    seed_rows = _evaluate(
+                        [(float(best.get('tp', 0.0)), float(best.get('sl', 0.0)))],
+                        stability_paths,
+                        stability_bb_enabled,
+                        stability_bb_sigma,
+                        stability_bb_log_paths,
+                        stability_bb_uniform_tp,
+                        stability_bb_uniform_sl,
+                        count_invalid=False,
+                    )
+                    if seed_rows:
+                        results_by_seed[seed_key] = seed_rows[0]
+
+                if len(results_by_seed) > 1:
+                    stability_result = _cross_seed_stability(
+                        results_by_seed=results_by_seed,
+                        threshold_cv=0.10,
+                    )
+                    stability_result["seeds_attempted"] = int(min(n_seeds_stability_val, 5))
+                    stability_result["seeds_succeeded"] = int(len(results_by_seed))
+                    statistical_analysis['cross_seed_stability'] = stability_result
+                else:
+                    statistical_analysis['cross_seed_stability'] = {
+                        "stable": False,
+                        "error": "Need at least 2 successful seed re-runs for stability analysis",
+                        "seeds_attempted": int(min(n_seeds_stability_val, 5)),
+                        "seeds_succeeded": int(len(results_by_seed)),
+                        "recommendation": "Retry with a supported stochastic method or fewer failure-prone seeds.",
+                    }
+
+            if enable_sensitivity_analysis_val and sensitivity_params_requested:
+                base_result = {"best": best}
+                sensitivity_results: Dict[str, Any] = {}
+
+                def _local_sensitivity_values(base_value: float) -> List[float]:
+                    values: List[float] = []
+                    seen_values: Set[int] = set()
+                    for multiplier in (0.8, 0.9, 1.0, 1.1, 1.2):
+                        value = max(min_barrier_distance, float(base_value) * multiplier)
+                        key = int(round(value * 1e6))
+                        if key in seen_values:
+                            continue
+                        seen_values.add(key)
+                        values.append(value)
+                    return values
+
+                def _evaluate_sensitivity(override: Dict[str, float]) -> Dict[str, Any]:
+                    tp_unit = float(override.get('tp', best.get('tp', 0.0)))
+                    sl_unit = float(override.get('sl', best.get('sl', 0.0)))
+                    rows = _evaluate(
+                        [(tp_unit, sl_unit)],
+                        paths,
+                        bb_enabled,
+                        bb_sigma,
+                        bb_log_paths,
+                        bb_uniform_tp,
+                        bb_uniform_sl,
+                        count_invalid=False,
+                    )
+                    if not rows:
+                        return {"success": False}
+                    return {"success": True, "best": rows[0]}
+
+                for param_name in sensitivity_params_requested:
+                    if param_name not in {'tp', 'sl'}:
+                        continue
+                    base_value_raw = best.get(param_name)
+                    if base_value_raw is None:
+                        continue
+                    try:
+                        parameter_values = _local_sensitivity_values(float(base_value_raw))
+                    except (TypeError, ValueError):
+                        continue
+                    sensitivity_result = _sensitivity_analysis(
+                        base_result=base_result,
+                        parameter_name=param_name,
+                        parameter_values=parameter_values,
+                        evaluate_fn=_evaluate_sensitivity,
+                    )
+                    if sensitivity_result.get("success"):
+                        sensitivity_results[param_name] = sensitivity_result
+
+                if sensitivity_results:
+                    statistical_analysis["sensitivity_analysis"] = sensitivity_results
+            
+            if statistical_analysis:
+                out['statistical_robustness'] = statistical_analysis
+                out['min_sims_recommended'] = int(min_sims_recommended)
+        
         if isinstance(best, dict):
             out.update(_build_selection_diagnostics(best, cost_per_trade=cost_per_trade))
         if warning is not None:
