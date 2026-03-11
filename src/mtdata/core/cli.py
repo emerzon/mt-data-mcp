@@ -479,10 +479,11 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     )
     group_model.add_argument(
         "--model",
+        "--method",
         dest="model",
         type=str,
         default="theta",
-        help="Model name.",
+        help="Model name. The legacy --method alias is also accepted.",
     )
     group_model.add_argument(
         "--model-params",

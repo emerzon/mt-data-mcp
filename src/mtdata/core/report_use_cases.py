@@ -11,6 +11,42 @@ from .report_requests import ReportGenerateRequest
 logger = logging.getLogger(__name__)
 
 
+def _has_payload_error(payload: Any) -> bool:
+    if isinstance(payload, dict):
+        err = payload.get("error")
+        if isinstance(err, str) and err.strip():
+            return True
+        return any(_has_payload_error(value) for key, value in payload.items() if key != "error")
+    if isinstance(payload, list):
+        return any(_has_payload_error(item) for item in payload)
+    return False
+
+
+def _has_payload_content(payload: Any) -> bool:
+    if isinstance(payload, dict):
+        return any(_has_payload_content(value) for key, value in payload.items() if key != "error")
+    if isinstance(payload, list):
+        return any(_has_payload_content(item) for item in payload)
+    return payload not in (None, "")
+
+
+def _build_sections_status(sections: Dict[str, Any]) -> Dict[str, Any]:
+    statuses: Dict[str, str] = {}
+    summary = {"ok": 0, "partial": 0, "error": 0}
+    for name, payload in sections.items():
+        has_error = _has_payload_error(payload)
+        has_content = _has_payload_content(payload)
+        if has_error and has_content:
+            status = "partial"
+        elif has_error:
+            status = "error"
+        else:
+            status = "ok"
+        statuses[str(name)] = status
+        summary[status] += 1
+    return {"summary": summary, "sections": statuses}
+
+
 def run_report_generate(
     request: ReportGenerateRequest,
     *,
@@ -350,6 +386,14 @@ def run_report_generate(
                 pass
 
             rep["summary"] = summ
+            sections = rep.get("sections")
+            if isinstance(sections, dict):
+                sections_status = _build_sections_status(sections)
+                rep["sections_status"] = sections_status
+                summary_counts = sections_status.get("summary", {})
+                rep["success"] = bool(
+                    int(summary_counts.get("error", 0)) == 0 and int(summary_counts.get("partial", 0)) == 0
+                )
             diagnostics = rep.get("diagnostics")
             if not isinstance(diagnostics, dict):
                 diagnostics = {}

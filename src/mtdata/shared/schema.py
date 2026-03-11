@@ -35,10 +35,10 @@ PARAM_HINTS = {
     "return_mode": "Return calculation mode: pct or log.",
     "output": "Output mode (full/summary/compact).",
     "ohlcv": "OHLCV column selector (e.g. 'close', 'high,low').",
-    "indicators": "List of technical indicators to apply (e.g. 'rsi(14), sma(20)').",
+    "indicators": "Indicators as compact specs like 'rsi(14),macd(12,26,9)' or JSON like '[{\"name\":\"rsi\",\"params\":[14]}]'. Bare names such as 'rsi' are also accepted.",
     "denoise": "Denoise preset or JSON spec.",
-    "simplify": "Simplify spec (JSON/preset).",
-    "method": "Method/algorithm for this tool.",
+    "simplify": "Simplify preset or JSON spec. Examples: '--simplify select', '--simplify \"{\"\"mode\"\":\"\"select\"\",\"\"method\"\":\"\"lttb\"\",\"\"ratio\"\":0.2}\"', or '--simplify select --simplify-params \"ratio=0.2\"'.",
+    "method": "Method/algorithm for this tool. For forecast methods, run forecast_list_methods to browse valid names.",
     "mode": "Mode for this tool.",
     "engine": "Detection engine or comma-separated engines (for ensemble mode).",
     "ensemble": "Enable multi-engine consensus merge when true.",
@@ -133,7 +133,7 @@ PARAM_HINTS = {
     "objective": "Optimization objective.",
     "return_grid": "Include full grid results in output.",
     "grid_style": "TP/SL grid style.",
-    "preset": "TP/SL grid preset.",
+    "preset": "TP/SL grid preset. Common examples: volatility, conservative, aggressive.",
     "tp_min": "Minimum TP level for grid (pct or pips depending on mode).",
     "tp_max": "Maximum TP level for grid (pct or pips depending on mode).",
     "tp_steps": "Number of TP grid steps.",
@@ -154,7 +154,7 @@ PARAM_HINTS = {
     "refine_radius": "Refinement radius around best grid point.",
     "refine_steps": "Number of refinement steps per axis.",
     "optimizer": "Barrier optimizer backend: grid or optuna.",
-    "fast_defaults": "Use a faster low-cost optimization profile (fewer sims/steps/trials).",
+    "fast_defaults": "Use a faster low-cost optimization profile (fewer sims/steps/trials). Example: '--fast-defaults true'.",
     "search_profile": "Search intensity profile: fast, medium, or long.",
     "profile": "Alias for search_profile in params payloads.",
     "ensemble_methods": "Comma-list or array of member simulators for method=ensemble.",
@@ -773,6 +773,8 @@ def get_function_info(func: Any) -> Dict[str, Any]:
     params = []
     for name, param in sig.parameters.items():
         if name in ("self", "cls"):
+            continue
+        if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
             continue
         annotation = type_hints.get(name, param.annotation)
         if annotation is inspect._empty:

@@ -276,6 +276,19 @@ class ETSMethod(ETSArimaMethod):
 
         if seasonal is not None and m < 2:
             raise ValueError("ETS seasonal component requires seasonality >= 2")
+        if seasonal is not None:
+            min_required = int(m * 2)
+            obs = int(len(vals))
+            if obs < min_required:
+                timeframe = str(kwargs.get("timeframe") or "").strip().upper()
+                cycle_label = f"{m} bars"
+                if timeframe:
+                    cycle_label = f"{m} bars on {timeframe}"
+                raise ValueError(
+                    "ETS seasonal fitting requires at least "
+                    f"{min_required} observations (2 full cycles of {cycle_label}); "
+                    f"got {obs}. Increase lookback/history, disable seasonality, or use 'ses'/'holt'."
+                )
 
         damped = bool(params.get("damped", False))
         if trend is None:

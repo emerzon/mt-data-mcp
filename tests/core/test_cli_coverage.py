@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch, call
 import pytest
 
 from mtdata.forecast.requests import ForecastGenerateRequest
+from mtdata.core.data_requests import DataFetchCandlesRequest
 
 # ---------------------------------------------------------------------------
 # Fixture: ensure the cli module is importable with heavy deps mocked
@@ -539,6 +540,14 @@ class TestGetFunctionInfo:
         b_param = [p for p in info["params"] if p["name"] == "b"][0]
         assert a_param["required"] is True
         assert b_param["required"] is False
+
+    def test_variadic_params_are_skipped(self):
+        def fn(symbol: str, *args, **kwargs):
+            pass
+
+        info = get_function_info(fn)
+
+        assert [p["name"] for p in info["params"]] == ["symbol"]
 
     def test_request_model_param_is_flattened(self):
         def request_tool(request: ForecastGenerateRequest):
@@ -1282,6 +1291,30 @@ class TestAddDynamicArguments:
         assert args.simplify == "lttb"
         assert args.simplify_params == "points=100"
 
+    def test_first_required_param_accepts_flag_alias(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+                {"name": "count", "type": int, "required": False, "default": 10},
+            ]
+        }
+        add_dynamic_arguments(parser, func_info)
+        args = parser.parse_args(["--symbol", "EURUSD", "--count", "20"])
+        assert args.symbol == "EURUSD"
+        assert args.count == 20
+
+    def test_single_word_flag_is_not_duplicated(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "ticket", "type": int, "required": False, "default": None},
+            ]
+        }
+        add_dynamic_arguments(parser, func_info)
+        ticket_action = next(action for action in parser._actions if action.dest == "ticket")
+        assert ticket_action.option_strings == ["--ticket"]
+
 
 # ========================================================================
 # _parse_kv_string
@@ -1368,6 +1401,13 @@ class TestResolveParamKwargs:
         assert kwargs["choices"] == ["a", "b"]
         assert kwargs["nargs"] == "+"
 
+    def test_forecast_method_help_avoids_massive_choices(self):
+        param = {"name": "method", "type": str, "required": False, "default": None}
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="forecast_conformal_intervals")
+        assert "choices" not in kwargs
+        assert kwargs["metavar"] == "METHOD"
+        assert "forecast_list_methods" in kwargs["help"]
+
 
 # ========================================================================
 # create_command_function
@@ -1419,6 +1459,71 @@ class TestCreateCommandFunction:
         assert request.horizon == 24
         assert request.model_params == {"sp": 24}
         assert call_kwargs["__cli_raw"] is True
+
+    def test_indicator_compact_string_reconstructed(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "request_model": DataFetchCandlesRequest,
+            "request_param_name": "request",
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+                {"name": "indicators", "type": Optional[List[Dict[str, Any]]], "required": False, "default": None},
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="data_fetch_candles")
+        args = argparse.Namespace(
+            symbol="EURUSD",
+            indicators="rsi(14),macd(12,26,9)",
+            indicators_params=None,
+            json=False,
+            verbose=False,
+        )
+        cmd_fn(args)
+        request = mock_fn.call_args[1]["request"]
+        assert request.indicators == [
+            {"name": "rsi", "params": [14.0]},
+            {"name": "macd", "params": [12.0, 26.0, 9.0]},
+        ]
+
+    def test_indicator_params_dict_returns_friendly_error(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "request_model": DataFetchCandlesRequest,
+            "request_param_name": "request",
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+                {"name": "indicators", "type": Optional[List[Dict[str, Any]]], "required": False, "default": None},
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="data_fetch_candles")
+        args = argparse.Namespace(
+            symbol="EURUSD",
+            indicators='[{"name":"rsi","params":{"period":14}}]',
+            indicators_params=None,
+            json=False,
+            verbose=False,
+        )
+        status = cmd_fn(args)
+        assert status == 1
+        assert "'params' must be a list of numbers" in capsys.readouterr().out
+        mock_fn.assert_not_called()
+
+    def test_missing_required_argument_returns_structured_error(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
+        args = argparse.Namespace(symbol=None, json=False, verbose=False)
+        status = cmd_fn(args)
+        assert status == 1
+        assert "Missing required argument(s): symbol." in capsys.readouterr().out
+        mock_fn.assert_not_called()
 
     def test_string_result_text_format(self, capsys):
         mock_fn = MagicMock(return_value="plain text result")
@@ -1628,6 +1733,35 @@ class TestDiscoverTools:
         tools = discover_tools()
         assert "fake_tool" in tools
 
+    @patch("mtdata.core.cli.get_mcp_registry")
+    @patch("mtdata.core.cli.bootstrap_tools")
+    @patch("mtdata.core.cli.mcp", new_callable=MagicMock)
+    def test_discover_from_registry_includes_submodule_tools(self, mock_mcp, mock_bootstrap, mock_get_reg):
+        def fake_tool(symbol: str):
+            """Fake tool."""
+            pass
+
+        fake_tool.__module__ = "mtdata.core.trading_positions"
+
+        class FakeModule:
+            __name__ = "mtdata.core.trading"
+
+        tool_obj = MagicMock()
+        tool_obj.func = fake_tool
+        tool_obj.description = "Fake trading tool"
+        tool_obj.schema = None
+        tool_obj.input_schema = None
+        tool_obj.parameters = None
+        tool_obj.spec = None
+        tool_obj.doc = None
+        tool_obj.docs = None
+
+        mock_bootstrap.return_value = (FakeModule(),)
+        mock_get_reg.return_value = {"trade_get_open": tool_obj}
+
+        tools = discover_tools()
+        assert "trade_get_open" in tools
+
     @patch("mtdata.core.cli.get_registered_tools", return_value={})
     @patch("mtdata.core.cli.get_mcp_registry", return_value=None)
     @patch("mtdata.core.cli.mcp", None)
@@ -1711,7 +1845,7 @@ class TestMain:
         info["func"] = mock_fn
 
         mock_discover.return_value = {
-            "my_tool": {"func": mock_fn, "meta": {"description": "My tool"}},
+            "my_tool": {"func": mock_fn, "meta": {"description": "My tool"}, "_cli_func_info": info},
         }
         with patch("sys.argv", ["cli.py", "my_tool", "EURUSD"]):
             result = main()
@@ -1725,8 +1859,15 @@ class TestMain:
         mock_fn.__name__ = "bad_tool"
         mock_fn.__doc__ = "Bad tool."
 
+        def bad_tool(symbol: str):
+            """Bad tool."""
+            pass
+
+        info = get_function_info(bad_tool)
+        info["func"] = mock_fn
+
         mock_discover.return_value = {
-            "bad_tool": {"func": mock_fn, "meta": {"description": "Bad tool"}},
+            "bad_tool": {"func": mock_fn, "meta": {"description": "Bad tool"}, "_cli_func_info": info},
         }
         with patch("sys.argv", ["cli.py", "bad_tool", "X"]):
             result = main()
@@ -1740,8 +1881,15 @@ class TestMain:
         mock_fn.__name__ = "bad_tool"
         mock_fn.__doc__ = "Bad tool."
 
+        def bad_tool(symbol: str):
+            """Bad tool."""
+            pass
+
+        info = get_function_info(bad_tool)
+        info["func"] = mock_fn
+
         mock_discover.return_value = {
-            "bad_tool": {"func": mock_fn, "meta": {"description": "Bad tool"}},
+            "bad_tool": {"func": mock_fn, "meta": {"description": "Bad tool"}, "_cli_func_info": info},
         }
         with patch("sys.argv", ["cli.py", "bad_tool", "X"]):
             result = main()
@@ -1754,8 +1902,15 @@ class TestMain:
         mock_fn.__name__ = "noop_tool"
         mock_fn.__doc__ = "No-op tool."
 
+        def noop_tool(symbol: str):
+            """No-op tool."""
+            pass
+
+        info = get_function_info(noop_tool)
+        info["func"] = mock_fn
+
         mock_discover.return_value = {
-            "noop_tool": {"func": mock_fn, "meta": {"description": "No-op tool"}},
+            "noop_tool": {"func": mock_fn, "meta": {"description": "No-op tool"}, "_cli_func_info": info},
         }
         with patch("sys.argv", ["cli.py", "noop_tool", "X"]):
             result = main()
@@ -1768,8 +1923,15 @@ class TestMain:
         mock_fn.__name__ = "slow_tool"
         mock_fn.__doc__ = "Slow tool."
 
+        def slow_tool(symbol: str):
+            """Slow tool."""
+            pass
+
+        info = get_function_info(slow_tool)
+        info["func"] = mock_fn
+
         mock_discover.return_value = {
-            "slow_tool": {"func": mock_fn, "meta": {"description": "Slow tool"}},
+            "slow_tool": {"func": mock_fn, "meta": {"description": "Slow tool"}, "_cli_func_info": info},
         }
         with patch("sys.argv", ["cli.py", "slow_tool", "X"]):
             result = main()
@@ -1784,8 +1946,15 @@ class TestMain:
         mock_fn.__name__ = "debug_tool"
         mock_fn.__doc__ = "Debug tool."
 
+        def debug_tool(symbol: str):
+            """Debug tool."""
+            pass
+
+        info = get_function_info(debug_tool)
+        info["func"] = mock_fn
+
         mock_discover.return_value = {
-            "debug_tool": {"func": mock_fn, "meta": {"description": "Debug tool"}},
+            "debug_tool": {"func": mock_fn, "meta": {"description": "Debug tool"}, "_cli_func_info": info},
         }
         with patch("sys.argv", ["cli.py", "debug_tool", "X"]):
             result = main()

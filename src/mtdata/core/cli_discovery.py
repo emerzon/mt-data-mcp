@@ -1,3 +1,4 @@
+import argparse
 import inspect
 from typing import Any, Callable, Dict, Optional, Tuple
 
@@ -103,6 +104,13 @@ def discover_tools(
     """Discover CLI-visible tools from the bootstrap and MCP registries."""
     tools: Dict[str, ToolInfo] = {}
 
+    def _module_is_visible(module_name: Any, allowed_modules: set[str], allowed_prefixes: tuple[str, ...]) -> bool:
+        if not isinstance(module_name, str):
+            return False
+        if module_name in allowed_modules:
+            return True
+        return any(module_name.startswith(prefix) for prefix in allowed_prefixes)
+
     registry = None
     bootstrapped_modules: Tuple[Any, ...] = ()
     try:
@@ -123,11 +131,16 @@ def discover_tools(
         for module in bootstrapped_modules
         if getattr(module, "__name__", None)
     }
+    module_prefixes = tuple(
+        f"{module_name.rsplit('.', 1)[0]}."
+        for module_name in module_names
+        if "." in module_name
+    )
     if registry and hasattr(registry, "items"):
         for name, obj in registry.items():
             func = extract_function_from_tool_obj(obj)
             mod = getattr(func, "__module__", None) if func else None
-            if func and isinstance(mod, str) and (not module_names or mod in module_names):
+            if func and (not module_names or _module_is_visible(mod, module_names, module_prefixes)):
                 meta = extract_metadata_from_tool_obj(obj)
                 tools[name] = {"func": func, "meta": meta}
 
@@ -239,14 +252,10 @@ def resolve_param_kwargs(
         or _looks_like_forecast_method_literal(param.get("type"))
     ):
         if not (param_names and ("library" in param_names or "model" in param_names)):
-            choices = _load_forecast_method_choices(debug)
-            if choices:
-                kwargs["choices"] = choices
-            else:
-                ptype = param.get("type")
-                origin = get_origin(ptype)
-                if is_literal_origin(origin):
-                    kwargs["choices"] = [str(v) for v in get_args(ptype) if v is not None]
+            help_suffix = " Use forecast_list_methods to browse available methods."
+            if help_suffix not in kwargs["help"]:
+                kwargs["help"] = f"{kwargs['help']}{help_suffix}"
+            kwargs["metavar"] = "METHOD"
     else:
         try:
             ptype = param.get("type")
@@ -300,9 +309,19 @@ def add_dynamic_arguments(
     cmd_name: Optional[str] = None,
 ) -> None:
     """Add CLI arguments for an introspected function schema."""
+    def _dedupe_flags(*flags: str) -> tuple[str, ...]:
+        seen: set[str] = set()
+        out: list[str] = []
+        for flag in flags:
+            if flag and flag not in seen:
+                seen.add(flag)
+                out.append(flag)
+        return tuple(out)
+
     for param in param_info["params"]:
         hyph = f"--{param['name'].replace('_', '-')}"
         uscr = f"--{param['name']}"
+        option_flags = _dedupe_flags(hyph, uscr)
 
         param_names = {p.get("name") for p in (param_info.get("params") or []) if isinstance(p, dict)}
         kwargs, is_mapping_type = resolve_param_kwargs(
@@ -314,20 +333,26 @@ def add_dynamic_arguments(
 
         if param["required"] and param == param_info["params"][0]:
             positional_kwargs = {k: v for k, v in kwargs.items() if k in ("help", "type", "choices", "metavar")}
+            positional_kwargs["nargs"] = "?"
+            positional_kwargs["default"] = argparse.SUPPRESS
             parser.add_argument(param["name"], **positional_kwargs)
+            parser.add_argument(*option_flags, **kwargs)
         else:
             if is_mapping_type:
                 local_kwargs = dict(kwargs)
                 local_kwargs["nargs"] = "?"
                 local_kwargs["const"] = "__PRESENT__"
-                parser.add_argument(hyph, uscr, **local_kwargs)
+                parser.add_argument(*option_flags, **local_kwargs)
             else:
-                parser.add_argument(hyph, uscr, **kwargs)
+                parser.add_argument(*option_flags, **kwargs)
 
         if is_mapping_type:
-            parser.add_argument(
+            params_flags = _dedupe_flags(
                 f"--{param['name'].replace('_', '-')}-params",
                 f"--{param['name']}_params",
+            )
+            parser.add_argument(
+                *params_flags,
                 dest=f"{param['name']}_params",
                 type=str,
                 default=None,

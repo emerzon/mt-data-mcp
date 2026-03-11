@@ -1,5 +1,8 @@
 import json
-from typing import Any, Callable, Dict, List, Optional, Tuple
+import re
+from typing import Any, Callable, Dict, List, Optional, Tuple, get_args, get_origin
+
+from pydantic import ValidationError
 
 
 def parse_kv_string(s: str, *, debug: Callable[[str], None]) -> Optional[Dict[str, Any]]:
@@ -21,6 +24,46 @@ def normalize_cli_list_value(value: Any) -> Any:
 
     out: List[Any] = []
 
+    def _split_compact_tokens(text: str) -> List[str]:
+        s = str(text or "").strip()
+        if not s:
+            return []
+        parts: List[str] = []
+        current: List[str] = []
+        depth = 0
+        in_quote: Optional[str] = None
+        for ch in s:
+            if in_quote:
+                current.append(ch)
+                if ch == in_quote:
+                    in_quote = None
+                continue
+            if ch in ('"', "'"):
+                in_quote = ch
+                current.append(ch)
+                continue
+            if ch in "([{":
+                depth += 1
+                current.append(ch)
+                continue
+            if ch in ")]}":
+                depth = max(0, depth - 1)
+                current.append(ch)
+                continue
+            if ch == "," and depth == 0:
+                token = "".join(current).strip()
+                if token:
+                    parts.append(token)
+                current = []
+                continue
+            current.append(ch)
+        token = "".join(current).strip()
+        if token:
+            parts.append(token)
+        if len(parts) > 1:
+            return parts
+        return [token for token in s.split() if token]
+
     def _add_text_tokens(text: str) -> None:
         s = str(text or "").strip()
         if not s:
@@ -39,7 +82,7 @@ def normalize_cli_list_value(value: Any) -> Any:
                     return
             except Exception:
                 pass
-        for token in s.replace(",", " ").split():
+        for token in _split_compact_tokens(s):
             value_token = token.strip()
             if value_token:
                 out.append(value_token)
@@ -126,8 +169,89 @@ def create_command_function(
 ) -> Callable[[Any], int]:
     """Build a CLI command callable for a tool function."""
 
+    def _build_cli_error(message: str) -> Dict[str, Any]:
+        return {"error": str(message).strip() or "Invalid command input."}
+
+    def _normalize_indicator_token(token: Any) -> Dict[str, Any]:
+        if isinstance(token, dict):
+            params = token.get("params")
+            if isinstance(params, dict):
+                raise ValueError("'params' must be a list of numbers, e.g., [14], not a dict.")
+            return dict(token)
+        if token is None:
+            raise ValueError("Indicator entries cannot be null.")
+        if isinstance(token, str):
+            stripped = token.strip()
+            if not stripped:
+                raise ValueError("Indicator entries cannot be empty.")
+            if stripped.startswith("{") and stripped.endswith("}"):
+                try:
+                    parsed = json.loads(stripped)
+                except Exception as exc:
+                    raise ValueError(f"Invalid indicator JSON: {exc}") from exc
+                if not isinstance(parsed, dict):
+                    raise ValueError("Indicator JSON entries must be objects with 'name' and optional 'params'.")
+                return _normalize_indicator_token(parsed)
+            match = re.fullmatch(r"([A-Za-z0-9_]+)(?:\((.*)\))?", stripped)
+            if not match:
+                raise ValueError(
+                    "Invalid indicator format. Use bare names like 'rsi' or compact specs like 'macd(12,26,9)'."
+                )
+            name = match.group(1)
+            params_blob = match.group(2)
+            if params_blob is None or not params_blob.strip():
+                return {"name": name}
+            params_out: List[float] = []
+            for raw_part in params_blob.split(","):
+                part = raw_part.strip()
+                if not part:
+                    continue
+                try:
+                    value = json.loads(part)
+                except Exception:
+                    try:
+                        value = float(part)
+                    except Exception as exc:
+                        raise ValueError(
+                            f"Indicator params must be numeric. Invalid value {part!r} in {stripped!r}."
+                        ) from exc
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    raise ValueError(
+                        f"Indicator params must be numeric. Invalid value {part!r} in {stripped!r}."
+                    )
+                params_out.append(float(value))
+            return {"name": name, "params": params_out}
+        raise ValueError("Indicators must be strings or objects.")
+
+    def _normalize_indicator_specs(value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            value = normalize_cli_list_value(value)
+        if not isinstance(value, list):
+            return value
+        return [_normalize_indicator_token(item) for item in value]
+
+    def _friendly_validation_error(exc: ValidationError) -> str:
+        try:
+            errors = exc.errors()
+        except Exception:
+            return str(exc)
+        messages: List[str] = []
+        for item in errors:
+            loc = ".".join(str(part) for part in item.get("loc", ()))
+            msg = str(item.get("msg") or "Invalid value.")
+            if "indicators" in loc and "params" in loc and ("list" in msg.lower() or "valid list" in msg.lower()):
+                return "'params' must be a list of numbers, e.g., [14], not a dict."
+            if loc:
+                messages.append(f"{loc}: {msg}")
+            else:
+                messages.append(msg)
+        return "; ".join(messages) or str(exc)
+
     def command_func(args: Any) -> int:
         kwargs: Dict[str, Any] = {}
+        missing_required: List[str] = []
         for param in func_info["params"]:
             param_name = param["name"]
             arg_value = getattr(args, param_name, param["default"])
@@ -145,14 +269,22 @@ def create_command_function(
                 is_typed_dict = is_typed_dict_type(base_type)
                 is_mapping = (base_type in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
                 is_list_like = origin in (list, tuple)
+                inner_type = get_args(base_type)[0] if origin in (list, tuple) and get_args(base_type) else None
             except Exception:
                 is_mapping = False
                 is_list_like = False
+                inner_type = None
 
             if is_mapping and arg_value == "__PRESENT__":
                 arg_value = {}
             if is_list_like:
                 arg_value = normalize_cli_list_value(arg_value)
+                if param_name == "indicators":
+                    try:
+                        arg_value = _normalize_indicator_specs(arg_value)
+                    except ValueError as exc:
+                        render_cli_result(_build_cli_error(str(exc)), args=args, cmd_name=cmd_name)
+                        return 1
             if is_mapping:
                 if isinstance(arg_value, str) and arg_value.strip():
                     if arg_value.strip().startswith("{"):
@@ -176,13 +308,33 @@ def create_command_function(
                         else:
                             arg_value = extra
 
+            if param["required"] and arg_value in (None, ""):
+                missing_required.append(param_name)
+                continue
             if arg_value is not None:
                 kwargs[param_name] = arg_value
+
+        if missing_required:
+            missing_text = ", ".join(missing_required)
+            render_cli_result(
+                _build_cli_error(f"Missing required argument(s): {missing_text}."),
+                args=args,
+                cmd_name=cmd_name,
+            )
+            return 1
 
         request_model = func_info.get("request_model")
         request_param_name = func_info.get("request_param_name")
         if request_model is not None and request_param_name:
-            kwargs = {request_param_name: request_model(**kwargs)}
+            try:
+                kwargs = {request_param_name: request_model(**kwargs)}
+            except ValidationError as exc:
+                render_cli_result(
+                    _build_cli_error(_friendly_validation_error(exc)),
+                    args=args,
+                    cmd_name=cmd_name,
+                )
+                return 1
 
         kwargs["__cli_raw"] = True
         result = func_info["func"](**kwargs)

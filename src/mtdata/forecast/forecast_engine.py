@@ -25,6 +25,7 @@ from mtdata.forecast.common import (
     default_seasonality as _default_seasonality_period,
     next_times_from_last as _next_times_from_last,
 )
+from mtdata.forecast.forecast_validation import format_invalid_method_error
 from mtdata.forecast.target_builder import build_target_series
 from mtdata.forecast.registry import ForecastRegistry
 # Import all method modules to ensure registration
@@ -375,6 +376,7 @@ def _run_registered_forecast_method(
         'as_of': as_of,
         'quantity': quantity_l,
         'target': target,
+        'timeframe': timeframe,
     }
     if X is not None:
         call_kwargs['exog_used'] = X
@@ -614,7 +616,7 @@ def forecast_engine(
         # Refresh available methods
         available_methods = _get_available_methods()
         if method_l not in available_methods:
-            return {"error": f"Invalid method: {method}. Valid options: {list(available_methods)}"}
+            return {"error": format_invalid_method_error(method, list(available_methods))}
 
         # Volatility models have a dedicated endpoint
         if quantity_l == 'volatility' or method_l.startswith('vol_'):

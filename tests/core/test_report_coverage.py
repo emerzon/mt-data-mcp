@@ -728,6 +728,45 @@ class TestReportWarnings:
         assert "execution_time_ms" in res["diagnostics"]
         assert float(res["diagnostics"]["execution_time_ms"]) >= 0.0
 
+    def test_sections_status_summary_is_added(self):
+        fn = _get_report_generate()
+        rep = _make_report(sections=_make_full_sections())
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            res = fn("EURUSD", template="basic", output="toon")
+
+        assert res["sections_status"]["summary"]["ok"] >= 1
+        assert res["sections_status"]["sections"]["forecast"] == "ok"
+        assert res["success"] is True
+
+    def test_partial_section_marks_report_unsuccessful(self):
+        fn = _get_report_generate()
+        sec = _make_full_sections()
+        sec["barriers"] = {
+            "long": {"best": {"tp": 1.5, "sl": 0.8, "edge": 0.3}},
+            "short": {"error": "optimizer failed"},
+        }
+        rep = _make_report(sections=sec)
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            res = fn("EURUSD", template="basic", output="toon")
+
+        assert res["sections_status"]["sections"]["barriers"] == "partial"
+        assert res["sections_status"]["summary"]["partial"] >= 1
+        assert res["success"] is False
+
 
 # ---------------------------------------------------------------------------
 # Top-level exception

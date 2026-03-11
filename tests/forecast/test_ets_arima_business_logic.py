@@ -247,7 +247,7 @@ def test_ets_forecast_manual_path_and_param_extraction(monkeypatch):
     monkeypatch.setattr(ea, "_ETS", FakeETS)
 
     out = ea.ETSMethod().forecast(
-        pd.Series([1.0, 2.0, 3.0, 4.0]),
+        pd.Series([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]),
         horizon=2,
         seasonality=4,
         params={"alpha": "0.3", "beta": 0.4, "gamma": 0.5, "seasonal": "auto"},
@@ -268,6 +268,18 @@ def test_ets_forecast_manual_path_and_param_extraction(monkeypatch):
         "smoothing_trend": 0.4,
         "smoothing_seasonal": 0.5,
     }
+
+
+def test_ets_forecast_rejects_insufficient_history_for_seasonal_fit(monkeypatch):
+    monkeypatch.setattr(ea, "_SM_ETS_AVAILABLE", True)
+    with pytest.raises(ValueError, match="requires at least 192 observations"):
+        ea.ETSMethod().forecast(
+            pd.Series(np.arange(150.0)),
+            horizon=12,
+            seasonality=96,
+            params={"seasonal": "auto"},
+            timeframe="M15",
+        )
 
 
 def test_arima_requires_statsmodels(monkeypatch):

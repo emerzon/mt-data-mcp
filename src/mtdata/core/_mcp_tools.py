@@ -186,6 +186,34 @@ def _coerce_kwargs_for_callable(func: Any, kwargs: Dict[str, Any]) -> Dict[str, 
     except Exception:
         return kwargs
     for param_name, param in sig.parameters.items():
+        ann = param.annotation
+        if ann is inspect._empty or param_name in kwargs:
+            continue
+        base_ann, allow_none = _unwrap_optional_annotation(ann)
+        if not (isinstance(base_ann, type) and issubclass(base_ann, BaseModel)):
+            continue
+        try:
+            model_fields = getattr(base_ann, "model_fields", None)
+            if isinstance(model_fields, dict):
+                field_names = set(model_fields.keys())
+            else:
+                legacy_fields = getattr(base_ann, "__fields__", None)
+                field_names = set(legacy_fields.keys()) if isinstance(legacy_fields, dict) else set()
+        except Exception:
+            field_names = set()
+        if not field_names:
+            continue
+        payload = {key: kwargs.pop(key) for key in list(kwargs.keys()) if key in field_names}
+        if not payload and allow_none:
+            continue
+        if not payload and param.default is not inspect._empty:
+            continue
+        model_validate = getattr(base_ann, "model_validate", None)
+        if callable(model_validate):
+            kwargs[param_name] = model_validate(payload)
+        else:
+            kwargs[param_name] = base_ann.parse_obj(payload)
+    for param_name, param in sig.parameters.items():
         if param_name not in kwargs:
             continue
         ann = param.annotation

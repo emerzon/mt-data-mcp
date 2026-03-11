@@ -1703,3 +1703,14 @@ class TestFullReportRoundTrip:
         result = render_enhanced_report(report)
         for line in result.split("\n"):
             assert line == line.rstrip(), f"Trailing whitespace: {line!r}"
+
+    def test_section_status_block_renders_when_present(self):
+        report = self._make_full_report()
+        report["sections_status"] = {
+            "summary": {"ok": 3, "partial": 1, "error": 0},
+            "sections": {"context": "ok", "forecast": "ok", "barriers": "partial"},
+        }
+        result = render_enhanced_report(report)
+        assert "Section Status" in result
+        assert "Partial" in result
+        assert "barriers" in result

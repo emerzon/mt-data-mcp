@@ -25,6 +25,11 @@ def render_enhanced_report(report: Dict[str, Any]) -> str:
 
     output_lines: List[str] = []
 
+    status_block = _render_sections_status(report.get("sections_status"))
+    if status_block:
+        output_lines.extend(status_block)
+        output_lines.append("")
+
     sections = report.get("sections", {})
     if not isinstance(sections, dict):
         sections = {}
@@ -53,6 +58,28 @@ def render_enhanced_report(report: Dict[str, Any]) -> str:
 
     rendered = "\n".join(line.rstrip() for line in output_lines).rstrip()
     return rendered + "\n" if rendered else ""
+
+
+def _render_sections_status(data: Any) -> List[str]:
+    if not isinstance(data, dict):
+        return []
+    summary = data.get("summary")
+    sections = data.get("sections")
+    if not isinstance(summary, dict) or not isinstance(sections, dict):
+        return []
+    lines = ["## Section Status"]
+    summary_row = [[
+        str(int(summary.get("ok", 0))),
+        str(int(summary.get("partial", 0))),
+        str(int(summary.get("error", 0))),
+    ]]
+    lines.extend(_format_table(["OK", "Partial", "Error"], summary_row, name="summary"))
+    section_rows: List[List[str]] = []
+    for name in sorted(sections.keys()):
+        section_rows.append([str(name), str(sections[name])])
+    if section_rows:
+        lines.extend(_format_table(["Section", "Status"], section_rows, name="sections"))
+    return lines
 
 
 def _render_context_section(data: Any) -> List[str]:

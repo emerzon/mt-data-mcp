@@ -2,6 +2,7 @@
 Forecast validation utilities and error handling.
 """
 
+import difflib
 from typing import Any, Dict, Optional, List, Literal, Union
 import pandas as pd
 
@@ -13,6 +14,39 @@ from .forecast_methods import FORECAST_METHODS, validate_method_params, get_meth
 class ForecastValidationError(Exception):
     """Custom exception for forecast validation errors."""
     pass
+
+
+def suggest_forecast_methods(method: Any, valid_methods: List[str], limit: int = 5) -> List[str]:
+    needle = str(method or "").strip().lower()
+    if not needle:
+        return []
+    ranked: List[str] = []
+    for candidate in valid_methods:
+        name = str(candidate).strip()
+        lowered = name.lower()
+        concepts = {
+            lowered,
+            lowered.removeprefix("sf_"),
+            lowered.removeprefix("skt_"),
+            lowered.removeprefix("mlf_"),
+        }
+        if any(needle == concept or needle in concept for concept in concepts if concept):
+            if name not in ranked:
+                ranked.append(name)
+    fuzzy = difflib.get_close_matches(needle, [str(item) for item in valid_methods], n=limit, cutoff=0.45)
+    for name in fuzzy:
+        if name not in ranked:
+            ranked.append(name)
+    return ranked[:limit]
+
+
+def format_invalid_method_error(method: Any, valid_methods: List[str]) -> str:
+    suggestions = suggest_forecast_methods(method, valid_methods)
+    message = f"Invalid method: {method!s}."
+    if suggestions:
+        message += f" Did you mean: {', '.join(suggestions)}?"
+    message += " Run forecast_list_methods for the full catalog."
+    return message
 
 
 def validate_timeframe(timeframe: TimeframeLiteral) -> List[str]:
@@ -28,7 +62,7 @@ def validate_method(method: ForecastMethodLiteral) -> List[str]:
     errors = []
     method_l = str(method).lower().strip()
     if method_l not in FORECAST_METHODS:
-        errors.append(f"Invalid method: {method}. Valid options: {list(FORECAST_METHODS)}")
+        errors.append(format_invalid_method_error(method, list(FORECAST_METHODS)))
     return errors
 
 
