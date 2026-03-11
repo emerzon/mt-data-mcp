@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from ..utils.barriers import normalize_trade_direction
 from ..utils.mt5 import MT5ConnectionError
 from .execution_logging import (
     infer_result_success,
@@ -25,6 +26,48 @@ from .trading_requests import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_trade_risk_direction(
+    *,
+    direction: Any,
+    entry: float,
+    stop_loss: float,
+) -> tuple[str | None, str | None, str]:
+    direction_text = str(direction).strip() if direction is not None else ""
+    if direction_text:
+        direction_norm, direction_error = normalize_trade_direction(direction_text)
+        return direction_norm, direction_error, "explicit"
+    if stop_loss < entry:
+        return "long", None, "inferred_from_stop_loss"
+    if stop_loss > entry:
+        return "short", None, "inferred_from_stop_loss"
+    return (
+        None,
+        "Unable to infer trade direction when proposed_sl equals proposed_entry. "
+        "Provide direction='long' or direction='short'.",
+        "inferred_from_stop_loss",
+    )
+
+
+def _validate_trade_risk_levels(
+    *,
+    direction: str,
+    entry: float,
+    stop_loss: float,
+    take_profit: float | None,
+) -> str | None:
+    if direction == "long":
+        if stop_loss >= entry:
+            return "For long trades, proposed_sl must be below proposed_entry."
+        if take_profit is not None and take_profit <= entry:
+            return "For long trades, proposed_tp must be above proposed_entry."
+        return None
+    if stop_loss <= entry:
+        return "For short trades, proposed_sl must be above proposed_entry."
+    if take_profit is not None and take_profit >= entry:
+        return "For short trades, proposed_tp must be below proposed_entry."
+    return None
 
 
 def run_trade_place(
@@ -963,8 +1006,34 @@ def run_trade_risk_analyze(
                 if not math.isfinite(contract_size) or contract_size <= 0:
                     contract_size = 1.0
 
+                direction_norm, direction_error, direction_source = _resolve_trade_risk_direction(
+                    direction=request.direction,
+                    entry=float(request.proposed_entry),
+                    stop_loss=float(request.proposed_sl),
+                )
+                if direction_error or direction_norm is None:
+                    result["position_sizing_error"] = (
+                        direction_error
+                        or "Unable to resolve trade direction for position sizing."
+                    )
+                    return result
+                level_error = _validate_trade_risk_levels(
+                    direction=direction_norm,
+                    entry=float(request.proposed_entry),
+                    stop_loss=float(request.proposed_sl),
+                    take_profit=float(request.proposed_tp)
+                    if request.proposed_tp is not None
+                    else None,
+                )
+                if level_error:
+                    result["position_sizing_error"] = level_error
+                    return result
+
                 risk_amount = equity * (request.desired_risk_pct / 100.0)
-                sl_distance_ticks = abs(request.proposed_entry - request.proposed_sl) / tick_size
+                if direction_norm == "long":
+                    sl_distance_ticks = (request.proposed_entry - request.proposed_sl) / tick_size
+                else:
+                    sl_distance_ticks = (request.proposed_sl - request.proposed_entry) / tick_size
                 if sl_distance_ticks > 0:
                     raw_volume = risk_amount / (sl_distance_ticks * tick_value)
                     if not math.isfinite(raw_volume) or raw_volume <= 0:
@@ -991,6 +1060,10 @@ def run_trade_risk_analyze(
                     elif suggested_volume < raw_volume:
                         sizing_notes.append(
                             "Volume was rounded down to the nearest broker step to avoid exceeding requested risk."
+                        )
+                    if direction_source == "inferred_from_stop_loss":
+                        sizing_notes.append(
+                            "Direction was inferred from stop-loss placement."
                         )
 
                     step_txt = f"{volume_step:.10f}".rstrip("0")
@@ -1023,13 +1096,22 @@ def run_trade_risk_analyze(
                     rr_ratio = None
                     reward_currency = None
                     if request.proposed_tp is not None:
-                        tp_distance_ticks = abs(request.proposed_tp - request.proposed_entry) / tick_size
+                        if direction_norm == "long":
+                            tp_distance_ticks = (
+                                request.proposed_tp - request.proposed_entry
+                            ) / tick_size
+                        else:
+                            tp_distance_ticks = (
+                                request.proposed_entry - request.proposed_tp
+                            ) / tick_size
                         reward_currency = tp_distance_ticks * tick_value * suggested_volume
                         if actual_risk > 0:
                             rr_ratio = reward_currency / actual_risk
 
                     result["position_sizing"] = {
                         "symbol": request.symbol,
+                        "direction": direction_norm,
+                        "direction_source": direction_source,
                         "suggested_volume": suggested_volume,
                         "requested_risk_currency": round(risk_amount, 2),
                         "requested_risk_pct": float(request.desired_risk_pct),

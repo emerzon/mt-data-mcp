@@ -318,10 +318,24 @@ def add_dynamic_arguments(
                 out.append(flag)
         return tuple(out)
 
+    def _extra_option_flags(param_name: str, cmd_name_value: Optional[str]) -> tuple[str, ...]:
+        extras: list[str] = []
+        if param_name == "limit":
+            extras.append("--bars")
+        if cmd_name_value == "trade_history" and param_name == "position_ticket":
+            extras.append("--ticket")
+        if cmd_name_value == "forecast_conformal_intervals" and param_name == "method":
+            extras.append("--model")
+        return tuple(extras)
+
     for param in param_info["params"]:
         hyph = f"--{param['name'].replace('_', '-')}"
         uscr = f"--{param['name']}"
-        option_flags = _dedupe_flags(hyph, uscr)
+        option_flags = _dedupe_flags(
+            hyph,
+            uscr,
+            *_extra_option_flags(param["name"], cmd_name),
+        )
 
         param_names = {p.get("name") for p in (param_info.get("params") or []) if isinstance(p, dict)}
         kwargs, is_mapping_type = resolve_param_kwargs(
@@ -345,6 +359,15 @@ def add_dynamic_arguments(
                 parser.add_argument(*option_flags, **local_kwargs)
             else:
                 parser.add_argument(*option_flags, **kwargs)
+        if cmd_name == "trade_history" and param["name"] == "minutes_back":
+            parser.add_argument(
+                "--days",
+                dest="_trade_history_days",
+                type=float,
+                default=argparse.SUPPRESS,
+                metavar="DAYS",
+                help="Alias for --minutes-back expressed in days.",
+            )
 
         if is_mapping_type:
             params_flags = _dedupe_flags(

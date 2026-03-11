@@ -18,6 +18,7 @@ import pytest
 
 from mtdata.forecast.requests import ForecastGenerateRequest
 from mtdata.core.data_requests import DataFetchCandlesRequest
+from mtdata.core.trading_requests import TradeHistoryRequest
 
 # ---------------------------------------------------------------------------
 # Fixture: ensure the cli module is importable with heavy deps mocked
@@ -1315,6 +1316,39 @@ class TestAddDynamicArguments:
         ticket_action = next(action for action in parser._actions if action.dest == "ticket")
         assert ticket_action.option_strings == ["--ticket"]
 
+    def test_limit_accepts_bars_alias(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "limit", "type": int, "required": False, "default": 100},
+            ]
+        }
+        add_dynamic_arguments(parser, func_info, cmd_name="data_fetch_candles")
+        args = parser.parse_args(["--bars", "250"])
+        assert args.limit == 250
+
+    def test_trade_history_position_ticket_accepts_ticket_alias(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "position_ticket", "type": int, "required": False, "default": None},
+            ]
+        }
+        add_dynamic_arguments(parser, func_info, cmd_name="trade_history")
+        args = parser.parse_args(["--ticket", "123456"])
+        assert args.position_ticket == 123456
+
+    def test_forecast_conformal_method_accepts_model_alias(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "method", "type": str, "required": False, "default": "theta"},
+            ]
+        }
+        add_dynamic_arguments(parser, func_info, cmd_name="forecast_conformal_intervals")
+        args = parser.parse_args(["--model", "arima"])
+        assert args.method == "arima"
+
 
 # ========================================================================
 # _parse_kv_string
@@ -1873,6 +1907,54 @@ class TestMain:
             result = main()
         assert result == 0
         assert mock_fn.call_args[1]["timeframe"] == "D1"
+
+    @patch("mtdata.core.cli.discover_tools")
+    def test_trade_history_days_alias_converts_to_minutes(self, mock_discover):
+        mock_fn = MagicMock(return_value=[])
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "trade_history"
+        mock_fn.__doc__ = "Trade history."
+
+        def trade_history(request: TradeHistoryRequest):
+            """Trade history."""
+            pass
+
+        info = get_function_info(trade_history)
+        info["func"] = mock_fn
+
+        mock_discover.return_value = {
+            "trade_history": {"func": mock_fn, "meta": {"description": "Trade history"}, "_cli_func_info": info},
+        }
+        with patch("sys.argv", ["cli.py", "trade_history", "--days", "2", "--ticket", "123456"]):
+            result = main()
+        assert result == 0
+        request = mock_fn.call_args[1]["request"]
+        assert isinstance(request, TradeHistoryRequest)
+        assert request.minutes_back == 2880
+        assert str(request.position_ticket) == "123456"
+
+    @patch("mtdata.core.cli.discover_tools")
+    def test_trade_history_minutes_back_overrides_days_alias(self, mock_discover):
+        mock_fn = MagicMock(return_value=[])
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "trade_history"
+        mock_fn.__doc__ = "Trade history."
+
+        def trade_history(request: TradeHistoryRequest):
+            """Trade history."""
+            pass
+
+        info = get_function_info(trade_history)
+        info["func"] = mock_fn
+
+        mock_discover.return_value = {
+            "trade_history": {"func": mock_fn, "meta": {"description": "Trade history"}, "_cli_func_info": info},
+        }
+        with patch("sys.argv", ["cli.py", "trade_history", "--days", "2", "--minutes-back", "60"]):
+            result = main()
+        assert result == 0
+        request = mock_fn.call_args[1]["request"]
+        assert request.minutes_back == 60
 
     @patch("mtdata.core.cli.discover_tools")
     def test_command_exception_handled(self, mock_discover, capsys):

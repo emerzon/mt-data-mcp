@@ -23,7 +23,11 @@ def _get_trading_gateway() -> MT5TradingGateway:
 
 @mcp.tool()
 def trade_risk_analyze(request: TradeRiskAnalyzeRequest) -> dict:
-    """Analyze risk exposure for existing positions and calculate position sizing for new trades."""
+    """Analyze risk exposure for existing positions and calculate position sizing for new trades.
+
+    When sizing a proposed trade, pass direction='long' or direction='short' to
+    validate that proposed SL/TP are on the correct side of the entry.
+    """
     return run_logged_operation(
         logger,
         operation="trade_risk_analyze",

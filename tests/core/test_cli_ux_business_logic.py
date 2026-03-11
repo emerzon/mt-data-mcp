@@ -7,8 +7,10 @@ def test_build_usage_examples_trade_risk_analyze_uses_symbol_flag() -> None:
     base, advanced = _build_usage_examples("trade_risk_analyze", {"params": []})
 
     assert "--symbol BTCUSD" in base
+    assert "--direction long" in base
     assert "--desired-risk-pct 1" in base
     assert advanced is not None
+    assert "--direction long" in advanced
     assert "--proposed-tp 69000" in advanced
 
 

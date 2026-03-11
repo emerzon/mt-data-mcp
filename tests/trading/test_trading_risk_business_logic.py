@@ -98,6 +98,81 @@ def test_trade_risk_analyze_warns_when_min_volume_forces_overshoot() -> None:
     assert any("minimum trade volume" in note.lower() for note in sizing["sizing_notes"])
 
 
+def test_trade_risk_analyze_accepts_explicit_short_direction() -> None:
+    mt5 = MagicMock()
+    prev = sys.modules.get("MetaTrader5")
+    sys.modules["MetaTrader5"] = mt5
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+
+    out = trade_risk_analyze(
+        symbol="EURUSD",
+        direction="short",
+        desired_risk_pct=1.0,
+        proposed_entry=100.0,
+        proposed_sl=108.0,
+        proposed_tp=92.0,
+    )
+
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    sizing = out["position_sizing"]
+    assert sizing["direction"] == "short"
+    assert sizing["direction_source"] == "explicit"
+    assert sizing["risk_pct"] <= 1.0
+    assert sizing["risk_compliance"] == "within_requested_risk"
+    assert sizing["rr_ratio"] == 1.0
+
+
+def test_trade_risk_analyze_rejects_wrong_side_stop_for_short_trade() -> None:
+    mt5 = MagicMock()
+    prev = sys.modules.get("MetaTrader5")
+    sys.modules["MetaTrader5"] = mt5
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+
+    out = trade_risk_analyze(
+        symbol="EURUSD",
+        direction="short",
+        desired_risk_pct=1.0,
+        proposed_entry=100.0,
+        proposed_sl=95.0,
+    )
+
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert out["position_sizing_error"] == "For short trades, proposed_sl must be above proposed_entry."
+    assert "position_sizing" not in out
+
+
+def test_trade_risk_analyze_rejects_wrong_side_take_profit_for_long_trade() -> None:
+    mt5 = MagicMock()
+    prev = sys.modules.get("MetaTrader5")
+    sys.modules["MetaTrader5"] = mt5
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+
+    out = trade_risk_analyze(
+        symbol="EURUSD",
+        direction="long",
+        desired_risk_pct=1.0,
+        proposed_entry=100.0,
+        proposed_sl=92.0,
+        proposed_tp=95.0,
+    )
+
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert out["position_sizing_error"] == "For long trades, proposed_tp must be above proposed_entry."
+    assert "position_sizing" not in out
+
+
 def test_trade_risk_analyze_returns_connection_error_payload() -> None:
     with patch(
         "mtdata.core.trading_risk.ensure_mt5_connection_or_raise",

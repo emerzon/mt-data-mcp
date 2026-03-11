@@ -55,6 +55,7 @@ class TradeHistoryRequest(BaseModel):
 class TradeRiskAnalyzeRequest(BaseModel):
     symbol: Optional[str] = None
     desired_risk_pct: Optional[float] = None
+    direction: Optional[str] = None
     proposed_entry: Optional[float] = None
     proposed_sl: Optional[float] = None
     proposed_tp: Optional[float] = None

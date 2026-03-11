@@ -217,6 +217,109 @@ def _pair_overlap_counts(series_map: Dict[str, pd.Series], symbols: List[str]) -
     return overlaps
 
 
+def _build_overlap_frame(
+    series_map: Dict[str, pd.Series],
+    symbols: List[str],
+    limit: int,
+) -> pd.DataFrame:
+    aligned_map = {
+        symbol: series_map[symbol]
+        for symbol in symbols
+        if isinstance(series_map.get(symbol), pd.Series)
+    }
+    if len(aligned_map) < 2:
+        return pd.DataFrame()
+    return pd.concat(aligned_map, axis=1, join="inner").tail(limit)
+
+
+def _pair_overlap_symbols(pair_key: str) -> tuple[str, str]:
+    left, _, right = str(pair_key).partition("-")
+    return left, right
+
+
+def _select_prune_symbol(
+    symbols: List[str],
+    pair_overlaps: Dict[str, int],
+    *,
+    bottleneck_pair: str,
+) -> str | None:
+    candidates = [symbol for symbol in _pair_overlap_symbols(bottleneck_pair) if symbol in symbols]
+    if len(candidates) < 2:
+        return None
+    anchor = symbols[0] if symbols else None
+    totals: Dict[str, int] = {symbol: 0 for symbol in candidates}
+    for pair_key, overlap_rows in pair_overlaps.items():
+        pair_symbols = _pair_overlap_symbols(pair_key)
+        for symbol in candidates:
+            if symbol in pair_symbols:
+                totals[symbol] += int(overlap_rows)
+    candidates.sort(
+        key=lambda symbol: (
+            totals.get(symbol, 0),
+            1 if symbol == anchor else 0,
+            -symbols.index(symbol),
+        )
+    )
+    return candidates[0]
+
+
+def _prune_symbols_for_overlap(
+    series_map: Dict[str, pd.Series],
+    symbols: List[str],
+    *,
+    limit: int,
+    minimum_required: int,
+) -> tuple[List[str], pd.DataFrame, Dict[str, Any] | None]:
+    active_symbols = [symbol for symbol in symbols if symbol in series_map]
+    frame = _build_overlap_frame(series_map, active_symbols, limit)
+    if len(active_symbols) < 3 or len(frame) >= minimum_required:
+        return active_symbols, frame, None
+
+    dropped_symbols: List[str] = []
+    iterations: List[Dict[str, Any]] = []
+    while len(active_symbols) > 2 and len(frame) < minimum_required:
+        pair_overlaps = _pair_overlap_counts(series_map, active_symbols)
+        if not pair_overlaps:
+            break
+        bottleneck_pair, bottleneck_rows = min(pair_overlaps.items(), key=lambda kv: kv[1])
+        drop_symbol = _select_prune_symbol(
+            active_symbols,
+            pair_overlaps,
+            bottleneck_pair=str(bottleneck_pair),
+        )
+        if not drop_symbol:
+            break
+        aligned_before = int(len(frame))
+        active_symbols = [symbol for symbol in active_symbols if symbol != drop_symbol]
+        frame = _build_overlap_frame(series_map, active_symbols, limit)
+        dropped_symbols.append(drop_symbol)
+        iterations.append(
+            {
+                "dropped_symbol": drop_symbol,
+                "bottleneck_pair": str(bottleneck_pair),
+                "bottleneck_rows": int(bottleneck_rows),
+                "aligned_rows_before": aligned_before,
+                "aligned_rows_after": int(len(frame)),
+                "remaining_symbols": list(active_symbols),
+            }
+        )
+
+    if not dropped_symbols:
+        return active_symbols, frame, None
+    return (
+        active_symbols,
+        frame,
+        {
+            "initial_symbols": list(symbols),
+            "dropped_symbols": dropped_symbols,
+            "kept_symbols": list(active_symbols),
+            "aligned_rows_after_pruning": int(len(frame)),
+            "minimum_required": int(minimum_required),
+            "iterations": iterations,
+        },
+    )
+
+
 def _build_alignment_detail(
     symbol_rows: Dict[str, int],
     pair_overlaps: Dict[str, int],
@@ -385,7 +488,7 @@ def causal_discover_signals(
         if pair_overlaps:
             meta["pair_overlaps"] = pair_overlaps
 
-        frame = pd.concat(series_map, axis=1, join="inner").tail(limit)
+        frame = _build_overlap_frame(series_map, symbol_list, limit)
         meta["symbols_used"] = list(frame.columns) if isinstance(frame, pd.DataFrame) else list(series_map.keys())
         min_required_samples = int(max_lag + 6)
         meta["minimum_samples_required"] = int(min_required_samples)
@@ -398,6 +501,42 @@ def causal_discover_signals(
         )
         if alignment_detail is not None:
             meta["alignment_detail"] = alignment_detail
+        overlap_pruning = None
+        if frame.empty or len(frame) <= max_lag + 5:
+            pruned_symbols, pruned_frame, overlap_pruning = _prune_symbols_for_overlap(
+                series_map,
+                symbol_list,
+                limit=limit,
+                minimum_required=min_required_samples,
+            )
+            if overlap_pruning is not None:
+                symbol_list = pruned_symbols
+                frame = pruned_frame
+                meta["overlap_pruning"] = overlap_pruning
+                meta["pruned_symbols"] = list(overlap_pruning.get("dropped_symbols") or [])
+                meta["symbols_used"] = list(symbol_list)
+                meta["samples_aligned_raw_after_pruning"] = int(len(frame))
+                pair_overlaps_after = _pair_overlap_counts(series_map, symbol_list)
+                if pair_overlaps_after:
+                    meta["pair_overlaps_after_pruning"] = pair_overlaps_after
+                symbol_rows_after = {
+                    str(sym): int(symbol_rows.get(sym, 0))
+                    for sym in symbol_list
+                    if sym in symbol_rows
+                }
+                alignment_detail_after = _build_alignment_detail(
+                    symbol_rows=symbol_rows_after,
+                    pair_overlaps=pair_overlaps_after,
+                    aligned_rows=int(len(frame)),
+                    minimum_required=min_required_samples,
+                )
+                if alignment_detail_after is not None:
+                    meta["alignment_detail_after_pruning"] = alignment_detail_after
+                dropped_text = ", ".join(overlap_pruning.get("dropped_symbols") or [])
+                kept_text = ", ".join(symbol_list)
+                warnings_out.append(
+                    f"Dropped {dropped_text} due to insufficient overlap; continuing with {kept_text}."
+                )
         if frame.empty or len(frame) <= max_lag + 5:
             details_out = [
                 _format_overlap_details(
@@ -410,6 +549,13 @@ def causal_discover_signals(
                 align_summary = _format_alignment_detail_summary(alignment_detail)
                 if align_summary:
                     details_out.append(align_summary)
+            if overlap_pruning is not None:
+                dropped_text = ", ".join(overlap_pruning.get("dropped_symbols") or [])
+                kept_text = ", ".join(overlap_pruning.get("kept_symbols") or [])
+                details_out.append(
+                    "Auto-pruning dropped "
+                    f"{dropped_text}; kept {kept_text}; aligned after pruning: {int(len(frame))}."
+                )
             return _causal_error(
                 "Insufficient overlapping data between symbols to run tests.",
                 code="insufficient_overlap",

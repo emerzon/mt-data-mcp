@@ -174,10 +174,18 @@ def _apply_global_cli_overrides(args: Any, argv: List[str]) -> Any:
     if not isinstance(command, str) or not command:
         return args
     global_timeframe = getattr(args, "_global_timeframe", None)
-    if global_timeframe is None:
-        return args
-    if not _argv_option_present_after_command(argv, command, "--timeframe"):
+    if global_timeframe is not None and not _argv_option_present_after_command(argv, command, "--timeframe"):
         setattr(args, "timeframe", global_timeframe)
+    if command == "trade_history":
+        history_days = getattr(args, "_trade_history_days", None)
+        if history_days is not None and not (
+            _argv_option_present_after_command(argv, command, "--minutes-back")
+            or _argv_option_present_after_command(argv, command, "--minutes_back")
+        ):
+            try:
+                setattr(args, "minutes_back", int(round(float(history_days) * 1440.0)))
+            except Exception:
+                setattr(args, "minutes_back", history_days)
     return args
 
 
@@ -700,8 +708,8 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
         f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm --output full --verbose",
     ),
     "trade_risk_analyze": (
-        f"{CLI_PROGRAM} trade_risk_analyze --symbol BTCUSD --desired-risk-pct 1 --proposed-entry 66317 --proposed-sl 65000",
-        f"{CLI_PROGRAM} trade_risk_analyze --symbol BTCUSD --desired-risk-pct 1 --proposed-entry 66317 --proposed-sl 65000 --proposed-tp 69000",
+        f"{CLI_PROGRAM} trade_risk_analyze --symbol BTCUSD --direction long --desired-risk-pct 1 --proposed-entry 66317 --proposed-sl 65000",
+        f"{CLI_PROGRAM} trade_risk_analyze --symbol BTCUSD --direction long --desired-risk-pct 1 --proposed-entry 66317 --proposed-sl 65000 --proposed-tp 69000",
     ),
     "trade_modify": (
         f"{CLI_PROGRAM} trade_modify 123456789 --price 61000",

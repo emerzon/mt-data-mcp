@@ -307,6 +307,37 @@ class TestCausalDiscoverSignals:
         assert detail.get("bottleneck_pair") in {"EURUSD-USDJPY", "GBPUSD-USDJPY"}
         assert int(detail.get("aligned_rows", 0)) == 76
 
+    @patch("statsmodels.tsa.stattools.grangercausalitytests")
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_auto_prunes_symbol_with_no_overlap(self, mock_fetch, mock_granger):
+        idx_ab = pd.date_range("2024-01-01", periods=80, freq="h")
+        idx_c = pd.date_range("2024-03-01", periods=80, freq="h")
+        series_map = {
+            "EURUSD": pd.Series(np.linspace(1.0, 2.0, 80), index=idx_ab),
+            "GBPUSD": pd.Series(np.linspace(2.0, 3.0, 80), index=idx_ab),
+            "USDJPY": pd.Series(np.linspace(3.0, 4.0, 80), index=idx_c),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_granger.return_value = {
+            1: ({"ssr_ftest": (1.0, 0.02, 10, 1)}, None),
+            2: ({"ssr_ftest": (1.0, 0.03, 10, 1)}, None),
+        }
+
+        result = self._unwrapped()("EURUSD,GBPUSD,USDJPY", max_lag=2, transform="diff", normalize=False)
+
+        assert result["success"] is True
+        assert result["meta"]["symbols_used"] == ["EURUSD", "GBPUSD"]
+        assert result["meta"]["pruned_symbols"] == ["USDJPY"]
+        assert result["meta"]["samples_aligned_raw_after_pruning"] == 80
+        assert "pair_overlaps_after_pruning" in result["meta"]
+        warnings_out = result.get("warnings", [])
+        assert any("Dropped USDJPY due to insufficient overlap" in warning for warning in warnings_out)
+
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {})
     def test_invalid_timeframe(self):
         result = self._unwrapped()("A,B", timeframe="BAD")
