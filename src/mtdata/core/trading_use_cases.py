@@ -372,6 +372,7 @@ def run_trade_close(
         operation="trade_close",
         ticket=request.ticket,
         symbol=request.symbol,
+        volume=request.volume,
         profit_only=request.profit_only,
         loss_only=request.loss_only,
     )
@@ -388,6 +389,7 @@ def run_trade_close(
             success=infer_result_success(result),
             ticket=request.ticket,
             symbol=request.symbol,
+            volume=request.volume,
             scope=scope,
             profit_only=request.profit_only,
             loss_only=request.loss_only,
@@ -405,10 +407,26 @@ def run_trade_close(
         out["no_action"] = True
         return out
 
+    if request.volume is not None:
+        if request.ticket is None:
+            return _finish({
+                "error": (
+                    "volume is only supported when closing a specific open position by ticket."
+                )
+            }, scope="positions")
+        if request.profit_only or request.loss_only:
+            return _finish({
+                "error": (
+                    "volume cannot be combined with profit_only or loss_only. "
+                    "Use ticket for a specific partial close."
+                )
+            }, scope="positions")
+
     if request.profit_only or request.loss_only:
         result = close_positions(
             ticket=request.ticket,
             symbol=request.symbol,
+            volume=None,
             profit_only=request.profit_only,
             loss_only=request.loss_only,
             comment=request.comment,
@@ -424,11 +442,24 @@ def run_trade_close(
         position_result = close_positions(
             ticket=request.ticket,
             symbol=request.symbol,
+            volume=request.volume,
             profit_only=False,
             loss_only=False,
             comment=request.comment,
             deviation=request.deviation,
         )
+        if (
+            request.volume is not None
+            and isinstance(position_result, dict)
+            and position_result.get("error") == f"Position {request.ticket} not found"
+        ):
+            return _finish({
+                "error": (
+                    f"Position {request.ticket} not found. "
+                    "Partial close volume only applies to open positions."
+                ),
+                "checked_scopes": ["positions"],
+            }, scope="positions")
         if (
             isinstance(position_result, dict)
             and position_result.get("error") == f"Position {request.ticket} not found"
@@ -452,6 +483,7 @@ def run_trade_close(
     if request.symbol is not None:
         position_result = close_positions(
             symbol=request.symbol,
+            volume=None,
             profit_only=False,
             loss_only=False,
             comment=request.comment,
@@ -477,6 +509,7 @@ def run_trade_close(
         return _finish(position_result, scope="positions")
 
     position_result = close_positions(
+        volume=None,
         profit_only=False,
         loss_only=False,
         comment=request.comment,

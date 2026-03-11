@@ -237,6 +237,7 @@ def _modify_pending_order(
 def _close_positions(
     ticket: Optional[Union[int, str]] = None,
     symbol: Optional[str] = None,
+    volume: Optional[Union[int, float]] = None,
     profit_only: bool = False,
     loss_only: bool = False,
     comment: Optional[str] = None,
@@ -286,6 +287,72 @@ def _close_positions(
             # 3. Close positions
             results = []
             for position in to_close:
+                requested_volume = None
+                position_volume_before = None
+                remaining_volume_estimate = None
+                try:
+                    position_volume_before = float(getattr(position, "volume", 0.0) or 0.0)
+                except Exception:
+                    position_volume_before = None
+                if volume is not None:
+                    symbol_info = mt5.symbol_info(position.symbol)
+                    if symbol_info is None:
+                        results.append({
+                            "ticket": position.ticket,
+                            "error": f"Failed to get symbol info for {position.symbol}",
+                        })
+                        continue
+                    requested_volume, requested_volume_error = trading_validation._validate_volume(
+                        volume,
+                        symbol_info,
+                    )
+                    if requested_volume_error:
+                        results.append({
+                            "ticket": position.ticket,
+                            "error": requested_volume_error,
+                            "requested_volume": volume,
+                        })
+                        continue
+                    if (
+                        position_volume_before is None
+                        or not math.isfinite(position_volume_before)
+                        or position_volume_before <= 0
+                    ):
+                        results.append({
+                            "ticket": position.ticket,
+                            "error": "Open position volume is invalid for partial close.",
+                            "requested_volume": requested_volume,
+                        })
+                        continue
+                    if requested_volume > (position_volume_before + 1e-12):
+                        results.append({
+                            "ticket": position.ticket,
+                            "error": (
+                                f"volume must be <= open position volume ({position_volume_before:g})"
+                            ),
+                            "requested_volume": requested_volume,
+                            "position_volume": position_volume_before,
+                        })
+                        continue
+                    remaining_volume_estimate = max(0.0, position_volume_before - requested_volume)
+                    if remaining_volume_estimate > 1e-12:
+                        _, remaining_error = trading_validation._validate_volume(
+                            remaining_volume_estimate,
+                            symbol_info,
+                        )
+                        if remaining_error:
+                            results.append({
+                                "ticket": position.ticket,
+                                "error": (
+                                    "remaining position volume would be invalid after partial close: "
+                                    f"{remaining_error}"
+                                ),
+                                "requested_volume": requested_volume,
+                                "position_volume": position_volume_before,
+                                "remaining_volume": remaining_volume_estimate,
+                            })
+                            continue
+
                 fill_modes: List[int] = []
                 for fill_attr in ("ORDER_FILLING_IOC", "ORDER_FILLING_FOK", "ORDER_FILLING_RETURN"):
                     if hasattr(mt5, fill_attr):
@@ -343,7 +410,7 @@ def _close_positions(
                         "action": mt5.TRADE_ACTION_DEAL,
                         "position": position.ticket,
                         "symbol": position.symbol,
-                        "volume": position.volume,
+                        "volume": requested_volume if requested_volume is not None else position.volume,
                         "type": close_type,
                         "price": close_price,
                         "deviation": deviation_validated,
@@ -527,6 +594,9 @@ def _close_positions(
                         "pnl": realized_pnl,
                         "pnl_price_delta": pnl_price_delta,
                         "duration_seconds": duration_seconds,
+                        "requested_volume": requested_volume if requested_volume is not None else position_volume_before,
+                        "position_volume_before": position_volume_before,
+                        "position_volume_remaining_estimate": remaining_volume_estimate,
                         "attempts": attempts,
                     }
                     results.append(res_dict)
@@ -535,9 +605,13 @@ def _close_positions(
             if ticket is not None and len(results) == 1:
                 return results[0]
             success_count = 0
+            done_codes = {
+                int(getattr(mt5, "TRADE_RETCODE_DONE", 10009)),
+                int(getattr(mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010)),
+            }
             for item in results:
                 try:
-                    if int(item.get("retcode")) == int(mt5.TRADE_RETCODE_DONE):
+                    if int(item.get("retcode")) in done_codes:
                         success_count += 1
                 except Exception:
                     continue

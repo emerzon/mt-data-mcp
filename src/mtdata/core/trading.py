@@ -67,7 +67,10 @@ def trade_modify(request: TradeModifyRequest) -> dict:
 
 @mcp.tool()
 def trade_close(request: TradeCloseRequest) -> dict:
-    """Close positions or cancel pending orders."""
+    """Close positions or cancel pending orders.
+
+    Set volume to partially close a specific open position by ticket.
+    """
     return run_logged_operation(
         logger,
         operation="trade_close",

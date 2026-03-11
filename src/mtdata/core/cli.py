@@ -721,7 +721,7 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
     ),
     "trade_close": (
         f"{CLI_PROGRAM} trade_close --ticket 123456789",
-        f"{CLI_PROGRAM} trade_close --symbol BTCUSD --profit-only true",
+        f"{CLI_PROGRAM} trade_close --ticket 123456789 --volume 0.05",
     ),
 }
 

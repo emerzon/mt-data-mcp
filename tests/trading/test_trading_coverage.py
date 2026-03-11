@@ -761,6 +761,45 @@ class TestTradeClose:
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
+    def test_partial_close_by_ticket_passes_volume(self, mock_close, mock_cancel):
+        mock_close.return_value = {"closed_count": 1}
+        trade_close(ticket=123, volume=0.05)
+        mock_close.assert_called_once_with(
+            ticket=123,
+            symbol=None,
+            volume=0.05,
+            profit_only=False,
+            loss_only=False,
+            comment=None,
+            deviation=20,
+        )
+        mock_cancel.assert_not_called()
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_partial_close_requires_ticket(self, mock_close, mock_cancel):
+        out = _unwrap_mcp(trade_close(symbol="EURUSD", volume=0.05))
+        if isinstance(out, dict):
+            assert "volume is only supported" in str(out.get("error", "")).lower()
+        else:
+            assert "volume is only supported" in out.lower()
+        mock_close.assert_not_called()
+        mock_cancel.assert_not_called()
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_partial_close_ticket_not_found_does_not_cancel_pending(self, mock_close, mock_cancel):
+        mock_close.return_value = {"error": "Position 123 not found"}
+        out = _unwrap_mcp(trade_close(ticket=123, volume=0.05))
+        if isinstance(out, dict):
+            assert "partial close volume only applies to open positions" in str(out.get("error", "")).lower()
+            assert out.get("checked_scopes") == ["positions"]
+        else:
+            assert "partial close volume only applies to open positions" in out.lower()
+        mock_cancel.assert_not_called()
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
     def test_symbol_no_open_or_pending_marks_no_action(self, mock_close, mock_cancel):
         mock_close.return_value = {"message": "No open positions for EURUSD"}
         mock_cancel.return_value = {"message": "No pending orders for EURUSD"}
@@ -1439,6 +1478,46 @@ class TestClosePositions:
         assert result["close_price"] == 1.1
         assert "pnl" in result
         assert "duration_seconds" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_partial_close_uses_requested_volume(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position(ticket=42, volume=0.10)]
+        mt5.symbol_info.return_value = _sym(volume_min=0.01, volume_step=0.01)
+        mt5.symbol_info_tick.return_value = _tick()
+        mt5.order_send.return_value = _order_result(volume=0.05)
+        from mtdata.core.trading import _close_positions
+        result = _close_positions(ticket=42, volume=0.05)
+        request = mt5.order_send.call_args[0][0]
+        assert request["volume"] == 0.05
+        assert result["requested_volume"] == 0.05
+        assert result["position_volume_before"] == 0.10
+        assert result["position_volume_remaining_estimate"] == 0.05
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_partial_close_rejects_volume_greater_than_position(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position(ticket=42, volume=0.10)]
+        mt5.symbol_info.return_value = _sym(volume_min=0.01, volume_step=0.01)
+        from mtdata.core.trading import _close_positions
+        result = _close_positions(ticket=42, volume=0.20)
+        assert "volume must be <=" in result["error"]
+        assert result["position_volume"] == 0.10
+        mt5.order_send.assert_not_called()
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_partial_close_rejects_invalid_remaining_volume(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position(ticket=42, volume=0.03)]
+        mt5.symbol_info.return_value = _sym(volume_min=0.02, volume_step=0.01)
+        from mtdata.core.trading import _close_positions
+        result = _close_positions(ticket=42, volume=0.02)
+        assert "remaining position volume would be invalid" in result["error"]
+        assert result["remaining_volume"] == pytest.approx(0.01)
+        mt5.order_send.assert_not_called()
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_symbol_no_positions(self):
