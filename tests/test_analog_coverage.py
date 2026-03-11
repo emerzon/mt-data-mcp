@@ -329,13 +329,42 @@ class TestRunSingleTimeframe:
             "EURUSD",
             "H1",
             horizon,
-            {"window_size": window_size, "top_k": 2},
+            {"window_size": window_size, "top_k": 2, "min_separation": 0},
             query_vector=series[-window_size:],
         )
 
         assert len(futures) == 2
         assert [m_obj["index"] for m_obj in meta] == [62, 61]
         assert self.m._get_timeframe_diagnostic("H1")["excluded_overlap_candidates"] == 2
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_default_min_separation_deduplicates_adjacent_candidates(self, mock_bi):
+        window_size = 64
+        horizon = 10
+        series = np.linspace(100.0, 200.0, 200, dtype=float)
+        idx = _make_real_index(series, window_size=window_size, horizon=horizon)
+
+        def fake_search(anchor_values, top_k=5):
+            return np.array([62, 61, 20], dtype=int), np.array([0.01, 0.02, 0.03], dtype=float)
+
+        def fake_refine(anchor_values, valid_idxs, valid_dists, top_k, **kwargs):
+            return valid_idxs[:top_k], valid_dists[:top_k]
+
+        idx.search = fake_search
+        idx.refine_matches = fake_refine
+        mock_bi.return_value = idx
+
+        futures, meta = self.m._run_single_timeframe(
+            "EURUSD",
+            "H1",
+            horizon,
+            {"window_size": window_size, "top_k": 2},
+            query_vector=series[-window_size:],
+        )
+
+        assert len(futures) == 2
+        assert [m_obj["index"] for m_obj in meta] == [62, 20]
+        assert self.m._get_timeframe_diagnostic("H1")["excluded_near_duplicate_candidates"] >= 1
 
     @patch("mtdata.forecast.methods.analog.build_index")
     def test_denoise_spec_is_forwarded_to_index_build(self, mock_bi):
@@ -351,6 +380,61 @@ class TestRunSingleTimeframe:
         )
 
         assert mock_bi.call_args.kwargs["denoise"] == denoise_spec
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_prefetched_history_is_forwarded_to_index_build(self, mock_bi):
+        mock_bi.return_value = _make_mock_index()
+        history_df = pd.DataFrame(
+            {
+                "time": np.arange(80, dtype=float),
+                "close_dn": np.linspace(100.0, 110.0, 80, dtype=float),
+            }
+        )
+
+        self.m._run_single_timeframe(
+            "EURUSD",
+            "H1",
+            10,
+            {"window_size": 32, "top_k": 3},
+            query_vector=np.linspace(100.0, 110.0, 32, dtype=float),
+            history_df=history_df,
+            history_base_col="close_dn",
+            history_denoise_spec={"method": "ema", "params": {"span": 5}},
+        )
+
+        assert mock_bi.call_args.kwargs["history_by_symbol"] == {"EURUSD": history_df}
+        assert mock_bi.call_args.kwargs["history_base_cols"] == {"EURUSD": "close_dn"}
+
+    @patch("mtdata.forecast.methods.analog.build_index")
+    def test_search_expands_when_overlap_filters_initial_neighbors(self, mock_bi):
+        idx = _make_mock_index(n_windows=20, window_size=8, horizon=2)
+        calls = []
+
+        def fake_search(anchor_values, top_k=5):
+            calls.append(int(top_k))
+            if int(top_k) < 20:
+                return np.arange(19, 11, -1, dtype=int), np.linspace(0.01, 0.08, 8, dtype=float)
+            return np.array([19, 18, 1, 0], dtype=int), np.array([0.01, 0.02, 0.03, 0.04], dtype=float)
+
+        def fake_refine(anchor_values, valid_idxs, valid_dists, top_k, **kwargs):
+            return valid_idxs[:top_k], valid_dists[:top_k]
+
+        idx.search = fake_search
+        idx.refine_matches = fake_refine
+        mock_bi.return_value = idx
+
+        futures, meta = self.m._run_single_timeframe(
+            "EURUSD",
+            "H1",
+            2,
+            {"window_size": 8, "top_k": 2, "max_search_rounds": 3, "min_separation": 0},
+            query_vector=np.random.rand(8),
+        )
+
+        assert len(futures) == 2
+        assert [m_obj["index"] for m_obj in meta] == [1, 0]
+        assert len(calls) >= 2
+        assert self.m._get_timeframe_diagnostic("H1")["search_rounds"] >= 1
 
 
 # ===========================================================================

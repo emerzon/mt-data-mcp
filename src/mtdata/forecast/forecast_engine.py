@@ -199,6 +199,11 @@ def _resolve_history_context(
     """Return the source DataFrame, active base column, and denoise spec used."""
     if prefetched_df is not None:
         base_col = prefetched_base_col or ('close_dn' if 'close_dn' in prefetched_df.columns else 'close')
+        if prefetched_denoise_spec:
+            try:
+                prefetched_denoise_spec = _normalize_denoise_spec(prefetched_denoise_spec, default_when='pre_ti')
+            except Exception:
+                prefetched_denoise_spec = None
         return prefetched_df, base_col, prefetched_denoise_spec
 
     df = _fetch_history(symbol, timeframe, int(need), as_of)
@@ -336,6 +341,7 @@ def _run_registered_forecast_method(
     *,
     method_l: str,
     method: ForecastMethodLiteral,
+    df: pd.DataFrame,
     target_series: pd.Series,
     horizon: int,
     seasonality: int,
@@ -372,6 +378,10 @@ def _run_registered_forecast_method(
     }
     if X is not None:
         call_kwargs['exog_used'] = X
+    if method_l == 'analog':
+        call_kwargs['history_df'] = df.copy()
+        call_kwargs['history_base_col'] = str(base_col)
+        call_kwargs['history_denoise_spec'] = denoise_spec_used
     if method_l == 'ensemble':
         call_kwargs['ensemble_dispatch_method'] = _ensemble_dispatch_method
         call_kwargs['prepare_ensemble_cv'] = _prepare_ensemble_cv
@@ -720,6 +730,7 @@ def forecast_engine(
             forecast_values, ci_values, metadata = _run_registered_forecast_method(
                 method_l=method_l,
                 method=method,
+                df=df,
                 target_series=target_series,
                 horizon=horizon,
                 seasonality=seasonality,

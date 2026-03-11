@@ -513,6 +513,9 @@ def test_forecast_engine_injects_context_for_analog(monkeypatch):
     assert captured["params"]["as_of"] == "2024-01-01"
     assert captured["params"]["base_col"] == "close"
     assert captured["kwargs"]["as_of"] == "2024-01-01"
+    assert isinstance(captured["kwargs"]["history_df"], pd.DataFrame)
+    assert captured["kwargs"]["history_base_col"] == "close"
+    assert captured["kwargs"]["history_denoise_spec"] is None
 
 
 def test_forecast_engine_injects_denoise_context_for_analog(monkeypatch):
@@ -521,6 +524,7 @@ def test_forecast_engine_injects_denoise_context_for_analog(monkeypatch):
     class CaptureForecaster:
         def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
             captured["params"] = dict(params)
+            captured["kwargs"] = dict(kwargs)
             return ForecastResult(
                 forecast=np.array([float(series.iloc[-1])], dtype=float),
                 params_used={},
@@ -554,7 +558,11 @@ def test_forecast_engine_injects_denoise_context_for_analog(monkeypatch):
 
     assert out["success"] is True
     assert captured["params"]["base_col"] == "close_dn"
-    assert captured["params"]["denoise"] == {"method": "ema", "params": {"span": 5}}
+    assert captured["params"]["denoise"]["method"] == "ema"
+    assert captured["params"]["denoise"]["params"] == {"span": 5}
+    assert captured["params"]["denoise"]["columns"] == ["close"]
+    assert captured["kwargs"]["history_base_col"] == "close_dn"
+    assert captured["kwargs"]["history_denoise_spec"]["method"] == "ema"
 
 
 def test_forecast_engine_analog_rejects_prefetched_history_shorter_than_window(monkeypatch):
