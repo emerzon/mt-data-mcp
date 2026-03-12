@@ -78,17 +78,28 @@ def _parse_doc_sections(text: str) -> Dict[str, List[str]]:
 
 def _parse_parameter_docs(lines: List[str]) -> Dict[str, str]:
     out: Dict[str, str] = {}
+    current_param: Optional[str] = None
     for line in lines or []:
         text = str(line or "").strip()
         if not text:
             continue
         match = _DOC_PARAM_RE.match(text)
-        if not match:
+        if match:
+            pname = str(match.group(1)).strip()
+            pdesc = str(match.group(2)).strip()
+            if not pname or not pdesc:
+                current_param = None
+                continue
+            if pname in out:
+                out[pname] = f"{out[pname]} {pdesc}".strip()
+            else:
+                out[pname] = pdesc
+            current_param = pname
             continue
-        pname = str(match.group(1)).strip()
-        pdesc = str(match.group(2)).strip()
-        if pname and pdesc and pname not in out:
-            out[pname] = pdesc
+        if current_param and not _DOC_SECTION_RE.match(text):
+            out[current_param] = f"{out[current_param]} {text}".strip()
+            continue
+        current_param = None
     return out
 
 
@@ -102,8 +113,7 @@ def _extract_interpretation(sections: Dict[str, List[str]]) -> Optional[str]:
     if explicit:
         return explicit
     overview = [ln for ln in sections.get("overview", []) if not _DOC_SIG_RE.match(str(ln or "").strip())]
-    # Keep the first concise paragraph from overview as interpretation fallback.
-    return _join_doc_lines(overview[:3]) or None
+    return _join_doc_lines(overview) or None
 
 
 def _build_indicator_documentation(target: Dict[str, Any]) -> Dict[str, Any]:
@@ -111,6 +121,7 @@ def _build_indicator_documentation(target: Dict[str, Any]) -> Dict[str, Any]:
     raw_desc = str(target.get("description") or "")
     cleaned_desc = _clean_help_text(raw_desc, func_name=name) if raw_desc else ""
     sections = _parse_doc_sections(cleaned_desc)
+    overview = [ln for ln in sections.get("overview", []) if not _DOC_SIG_RE.match(str(ln or "").strip())]
     param_docs = _parse_parameter_docs(sections.get("parameters", []))
 
     params_out: List[Dict[str, Any]] = []
@@ -132,7 +143,7 @@ def _build_indicator_documentation(target: Dict[str, Any]) -> Dict[str, Any]:
             sources.append(src)
 
     return {
-        "description": cleaned_desc,
+        "description": _join_doc_lines(overview) or cleaned_desc,
         "calculation": calc_text,
         "parameters": params_out,
         "interpretation": interp_text,

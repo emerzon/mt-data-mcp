@@ -213,6 +213,11 @@ def _prepare_result_for_cli_display(result: Any, *, cmd_name: str, verbose: bool
                 rows_out.append(row)
         return rows_out
 
+    def _drop_keys_from_dict(value: Any, keys: set[str]) -> Any:
+        if not isinstance(value, dict):
+            return value
+        return {k: v for k, v in value.items() if k not in keys}
+
     if isinstance(result, list):
         if cmd == "trade_get_open":
             return _drop_keys_from_rows(
@@ -302,6 +307,61 @@ def _prepare_result_for_cli_display(result: Any, *, cmd_name: str, verbose: bool
             data_out = dict(data)
             data_out.pop("time", None)
             out["data"] = data_out
+
+    if cmd == "causal_discover_signals":
+        data = out.get("data")
+        if isinstance(data, dict):
+            data_out = dict(data)
+            data_out.pop("summary_text", None)
+            out["data"] = data_out
+
+    if cmd == "regime_detect":
+        params_used = out.get("params_used")
+        if isinstance(params_used, dict):
+            params_out = dict(params_used)
+
+            auto_cal = params_out.get("auto_calibration")
+            if isinstance(auto_cal, dict):
+                auto_cal_out = _drop_keys_from_dict(
+                    auto_cal,
+                    {
+                        "sigma",
+                        "kurtosis_excess",
+                        "jump_share_abs_z_ge_2_5",
+                        "trend_strength",
+                        "move_zscore",
+                        "vol_norm",
+                        "kurt_norm",
+                        "jump_norm",
+                        "trend_norm",
+                        "move_sig_norm",
+                        "sensitivity",
+                        "hazard_floor",
+                        "hazard_cap",
+                    },
+                )
+                params_out["auto_calibration"] = auto_cal_out
+
+            threshold_cal = params_out.get("cp_threshold_calibration")
+            if isinstance(threshold_cal, dict):
+                threshold_cal_out = _drop_keys_from_dict(
+                    threshold_cal,
+                    {
+                        "base_threshold",
+                        "window",
+                        "step",
+                        "windows_used",
+                        "bootstrap_runs",
+                        "null_scores_count",
+                        "null_max_quantile",
+                        "quantile",
+                        "threshold_delta",
+                        "error",
+                    },
+                )
+                params_out["cp_threshold_calibration"] = threshold_cal_out
+
+            out["params_used"] = params_out
 
     return out
 

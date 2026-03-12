@@ -323,6 +323,52 @@ Values above 70 often indicate overbought conditions.
         assert params["length"]["description"] == "Window length."
         assert params["scalar"]["description"] == "Optional scalar multiplier."
 
+    def test_indicators_describe_cleans_signature_and_preserves_multiline_docs(self, monkeypatch):
+        from mtdata.core import indicators as core_indicators
+
+        sample_doc = """Python Library Documentation: function rsi in module pandas_ta_classic.momentum.rsi
+
+rsi(close, length=14, talib=True)
+Relative Strength Index
+Tracks momentum across the selected lookback window.
+Useful for overbought and oversold analysis.
+Parameters:
+talib (bool): If TA Lib is installed and talib is True,
+    Returns the TA Lib version. Default: True
+Interpretation:
+Values above 70 often indicate overbought conditions.
+Values below 30 often indicate oversold conditions.
+"""
+        monkeypatch.setattr(
+            core_indicators,
+            "_list_ta_indicators",
+            lambda detailed=True: [
+                {
+                    "name": "rsi",
+                    "category": "momentum",
+                    "params": [{"name": "talib"}],
+                    "description": sample_doc,
+                }
+            ],
+        )
+
+        raw_describe = getattr(core_indicators.indicators_describe, "__wrapped__", core_indicators.indicators_describe)
+        out = raw_describe("rsi")
+        indicator = out["indicator"]
+        docs = indicator["documentation"]
+        params = {p["name"]: p for p in docs["parameters"]}
+
+        assert "pandas_ta_classic" not in indicator["description"]
+        assert "rsi(" not in indicator["description"]
+        assert "Useful for overbought and oversold analysis." in indicator["description"]
+        assert docs["interpretation"] == (
+            "Values above 70 often indicate overbought conditions.\n"
+            "Values below 30 often indicate oversold conditions."
+        )
+        assert params["talib"]["description"] == (
+            "If TA Lib is installed and talib is True, Returns the TA Lib version. Default: True"
+        )
+
     def test_indicators_describe_logs_finish_event(self, monkeypatch, caplog):
         from mtdata.core import indicators as core_indicators
 

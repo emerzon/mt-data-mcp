@@ -32,6 +32,10 @@ class TestExtractGroupPath:
         sym = SimpleNamespace(path="EURUSD", name="EURUSD")
         assert _extract_group_path(sym) == "Unknown"
 
+    def test_strips_symbol_suffix_variant_from_path(self):
+        sym = SimpleNamespace(path="Stock CFD's\\NYSE\\24HR NYSE\\WMT.NYSE-24", name="WMT")
+        assert _extract_group_path(sym) == "Stock CFD's\\NYSE\\24HR NYSE"
+
     def test_missing_attributes(self):
         sym = object()
         assert _extract_group_path(sym) == "Unknown"

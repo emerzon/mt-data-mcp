@@ -392,6 +392,58 @@ class TestFormatResultForCli:
         assert "stats_display" not in ticks
         assert "stats" in ticks
 
+    def test_toon_format_hides_redundant_causal_summary_and_regime_calibration_internals(self):
+        causal = _format_result_for_cli(
+            {
+                "success": True,
+                "data": {
+                    "links": [{"effect": "EURUSD", "cause": "GBPUSD", "lag": 1, "p_value": 0.02}],
+                    "summary_text": "Effect <- Cause | Lag | p-value",
+                },
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="causal_discover_signals",
+        )
+        assert "summary_text" not in causal
+        assert "links[1]" in causal
+
+        regime = _format_result_for_cli(
+            {
+                "success": True,
+                "params_used": {
+                    "hazard_lambda": 168,
+                    "auto_calibration": {
+                        "calibrated": True,
+                        "points": 219,
+                        "sigma": 0.0031,
+                        "kurtosis_excess": 1.2,
+                        "jump_share_abs_z_ge_2_5": 0.08,
+                        "trend_norm": 0.4,
+                    },
+                    "cp_threshold_calibration": {
+                        "mode": "walkforward_quantile",
+                        "calibrated": True,
+                        "points": 219,
+                        "window": 80,
+                        "null_max_quantile": 0.42,
+                    },
+                },
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="regime_detect",
+        )
+        assert "hazard_lambda" in regime
+        assert "auto_calibration:" in regime
+        assert "calibrated: true" in regime
+        assert "sigma" not in regime
+        assert "kurtosis_excess" not in regime
+        assert "jump_share_abs_z_ge_2_5" not in regime
+        assert "trend_norm" not in regime
+        assert "window:" not in regime
+        assert "null_max_quantile" not in regime
+
     def test_toon_format_hides_internal_trade_metadata_in_default_view(self):
         open_out = _format_result_for_cli(
             [
