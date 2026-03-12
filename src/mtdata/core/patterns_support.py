@@ -289,8 +289,10 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "mode": payload.get("mode"),
         "n_patterns": total_i,
         "summary": summary,
-        "recent_patterns": recent_rows,
     }
+    if summary["more_patterns"] > 0:
+        compact["show_all_hint"] = "Use --detail full to show all detected patterns."
+    compact["recent_patterns"] = recent_rows
 
     for key in ("engine", "engines_run", "engine_findings", "engine_errors", "scanned_timeframes"):
         value = payload.get(key)

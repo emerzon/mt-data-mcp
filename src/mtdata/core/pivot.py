@@ -282,6 +282,7 @@ def pivot_compute_points(
                     "session_boundary": "MT5 broker/session calendar",
                     "display_timezone": "client_local" if _use_ctz else "UTC",
                 },
+                "levels_note": "null cells mean that pivot method does not define that level.",
                 "levels": levels_table,
             }
             if not _use_ctz:

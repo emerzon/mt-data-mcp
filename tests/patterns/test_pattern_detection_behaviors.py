@@ -473,6 +473,35 @@ def test_build_pattern_response_compact_keeps_actionable_fields():
     assert compact["summary"]["signal_bias"]["net_bias"] == "bullish"
 
 
+def test_build_pattern_response_compact_adds_hint_when_rows_are_truncated():
+    df = pd.DataFrame({"time": list(range(12)), "close": [100.0 + i for i in range(12)]})
+    patterns = [
+        {
+            "name": f"Pattern {i}",
+            "status": "forming",
+            "confidence": 0.9 - (i * 0.01),
+            "end_index": min(i, len(df) - 1),
+        }
+        for i in range(9)
+    ]
+
+    compact = _build_pattern_response(
+        "EURUSD",
+        "H1",
+        100,
+        "classic",
+        patterns,
+        include_completed=False,
+        include_series=False,
+        series_time="string",
+        df=df,
+        detail="compact",
+    )
+
+    assert compact["summary"]["more_patterns"] == 1
+    assert compact["show_all_hint"] == "Use --detail full to show all detected patterns."
+
+
 def test_patterns_detect_elliott_without_timeframe_scans_all(monkeypatch):
     monkeypatch.setattr(core_patterns, "TIMEFRAME_MAP", {"M1": 1, "H1": 2})
 
