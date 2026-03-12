@@ -421,7 +421,7 @@ def screen_stocks(
             "stocks": stocks_list,
         }
     except Exception as e:
-        logger.exception("Error running stock screener")
+        logger.warning("Error running stock screener: %s", e)
         return {"error": f"Failed to run screener: {str(e)}"}
 
 

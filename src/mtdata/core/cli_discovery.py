@@ -6,6 +6,15 @@ from typing import Any, Callable, Dict, Optional, Tuple
 ToolInfo = Dict[str, Any]
 
 
+_COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
+    ("forecast_quantlib_barrier_price", "option_type"): "Option side: call or put.",
+    ("forecast_tune_optuna", "search_space"): "Optuna search space (JSON or k=v).",
+    ("report_generate", "output"): "Output format: formatted text or markdown.",
+    ("trade_modify", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
+    ("trade_place", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
+}
+
+
 def get_function_info(
     func: Any,
     *,
@@ -244,6 +253,9 @@ def resolve_param_kwargs(
     if param_docs and param["name"] in param_docs:
         desc = param_docs[param["name"]]
     hint = desc or param_hints.get(param["name"])
+    override_help = _COMMAND_PARAM_HELP_OVERRIDES.get((str(cmd_name or ""), str(param["name"])))
+    if override_help:
+        hint = override_help
     kwargs = {"help": _escape_argparse_help(hint) or f"{param['name']} parameter", "dest": param["name"]}
     is_mapping_type = False
 
@@ -253,7 +265,7 @@ def resolve_param_kwargs(
     ):
         if not (param_names and ("library" in param_names or "model" in param_names)):
             help_suffix = " Use forecast_list_methods to browse available methods."
-            if help_suffix not in kwargs["help"]:
+            if "forecast_list_methods" not in kwargs["help"]:
                 kwargs["help"] = f"{kwargs['help']}{help_suffix}"
             kwargs["metavar"] = "METHOD"
     else:

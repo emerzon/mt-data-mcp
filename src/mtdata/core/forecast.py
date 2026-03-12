@@ -251,7 +251,7 @@ def forecast_tune_optuna(request: ForecastTuneOptunaRequest) -> Dict[str, Any]:
 def forecast_options_expirations(
     symbol: str,
 ) -> Dict[str, Any]:
-    """Fetch available option expirations for a symbol."""
+    """Fetch option expirations via Yahoo Finance; provider availability/auth can change."""
     from ..services.options_service import get_options_expirations as _impl
     return _run_forecast_operation(
         "forecast_options_expirations",
@@ -269,7 +269,7 @@ def forecast_options_chain(
     min_volume: int = 0,
     limit: int = 200,
 ) -> Dict[str, Any]:
-    """Fetch options chain snapshots for a symbol."""
+    """Fetch option-chain snapshots via Yahoo Finance; provider availability/auth can change."""
     from ..services.options_service import get_options_chain as _impl
     return _run_forecast_operation(
         "forecast_options_chain",
@@ -783,7 +783,7 @@ def _forecast_list_methods_impl(
             "methods": selected_methods,
             "methods_shown": int(len(selected_methods)),
             "methods_hidden": int(max(0, len(compact_methods) - len(selected_methods))),
-            "note": "Compact view groups methods by category and shows a small representative subset. Pass detail='full' for exhaustive docs.",
+            "note": "Compact view groups methods by category and shows a small representative subset. Use --detail full to see all methods.",
             "filters": {
                 "search": search_value or None,
                 "limit": limit_value,

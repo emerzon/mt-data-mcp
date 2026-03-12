@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Any, Callable, Dict, List, Optional, Tuple, get_args, get_origin
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, get_args, get_origin
 
 from pydantic import ValidationError
 
@@ -172,6 +172,18 @@ def create_command_function(
     def _build_cli_error(message: str) -> Dict[str, Any]:
         return {"error": str(message).strip() or "Invalid command input."}
 
+    def _literal_choices_for_param(param: Optional[Dict[str, Any]]) -> Optional[List[str]]:
+        if not isinstance(param, dict):
+            return None
+        try:
+            ptype, origin = unwrap_optional_type(param.get("type"))
+        except Exception:
+            return None
+        if origin is Literal or str(origin) in {"typing.Literal", "<class 'typing.Literal'>"}:
+            choices = [str(value) for value in get_args(ptype) if value is not None]
+            return choices or None
+        return None
+
     def _normalize_indicator_token(token: Any) -> Dict[str, Any]:
         if isinstance(token, dict):
             params = token.get("params")
@@ -316,8 +328,15 @@ def create_command_function(
 
         if missing_required:
             missing_text = ", ".join(missing_required)
+            message = f"Missing required argument(s): {missing_text}."
+            if len(missing_required) == 1:
+                missing_name = missing_required[0]
+                param_def = next((param for param in func_info["params"] if param.get("name") == missing_name), None)
+                choices = _literal_choices_for_param(param_def)
+                if choices:
+                    message = f"Missing required argument '{missing_name}'. Valid values: {', '.join(choices)}."
             render_cli_result(
-                _build_cli_error(f"Missing required argument(s): {missing_text}."),
+                _build_cli_error(message),
                 args=args,
                 cmd_name=cmd_name,
             )

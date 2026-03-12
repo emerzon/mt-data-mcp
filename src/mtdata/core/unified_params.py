@@ -46,12 +46,12 @@ def add_global_args_to_parser(
             **verbose_kwargs,
         )
 
-    # Output format: TOON by default, JSON when explicitly requested.
+    # Output format: formatted text by default, JSON when explicitly requested.
     if 'json' not in exclude_params:
         json_kwargs = {
             "action": "store_true",
             "dest": "json",
-            "help": "Output raw JSON (default output is TOON text).",
+            "help": "Output raw JSON (default output is formatted text).",
         }
         if suppress_defaults:
             json_kwargs["default"] = argparse.SUPPRESS

@@ -196,12 +196,53 @@ def _format_result_minimal(result: Any, verbose: bool = True) -> str:
         return str(result) if result is not None else ""
 
 
+def _prepare_result_for_cli_display(result: Any, *, cmd_name: str, verbose: bool) -> Any:
+    if bool(verbose) or not isinstance(result, dict):
+        return result
+
+    cmd = str(cmd_name or "").strip()
+    out = dict(result)
+
+    if cmd == "data_fetch_candles":
+        meta = out.get("meta")
+        if isinstance(meta, dict):
+            meta_out = dict(meta)
+            diagnostics = meta_out.get("diagnostics")
+            if isinstance(diagnostics, dict):
+                diagnostics_out = dict(diagnostics)
+                query = diagnostics_out.get("query")
+                if isinstance(query, dict):
+                    query_out = dict(query)
+                    query_out.pop("warmup_bars", None)
+                    warmup_retry = query_out.get("warmup_retry")
+                    if isinstance(warmup_retry, dict):
+                        retry_out = dict(warmup_retry)
+                        retry_out.pop("warmup_bars", None)
+                        if retry_out:
+                            query_out["warmup_retry"] = retry_out
+                        else:
+                            query_out.pop("warmup_retry", None)
+                    diagnostics_out["query"] = query_out
+                meta_out["diagnostics"] = diagnostics_out
+            out["meta"] = meta_out
+
+    if cmd == "forecast_volatility_estimate":
+        out.pop("params_explained", None)
+
+    if cmd == "forecast_barrier_prob":
+        out.pop("tp_hit_prob_by_t", None)
+        out.pop("sl_hit_prob_by_t", None)
+
+    return out
+
+
 def _format_result_for_cli(result: Any, *, fmt: str, verbose: bool, cmd_name: str) -> str:
     fmt_s = _normalize_cli_formatter(fmt)
     if fmt_s == CLI_FORMAT_JSON:
         payload = {"text": result} if isinstance(result, str) else result
         payload = _sanitize_json_compat(payload)
         return json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False, default=_json_default)
+    result = _prepare_result_for_cli_display(result, cmd_name=cmd_name, verbose=verbose)
     if isinstance(result, str):
         return result
     simplify_numbers = not str(cmd_name or "").startswith("trade_")
@@ -209,6 +250,40 @@ def _format_result_for_cli(result: Any, *, fmt: str, verbose: bool, cmd_name: st
         return _shared_minimal(result, verbose=verbose, simplify_numbers=simplify_numbers)
     except TypeError:
         return _format_result_minimal(result, verbose=verbose)
+
+
+def _normalize_console_text(text: str) -> str:
+    normalized = str(text)
+    for src, dst in {
+        "\u2192": "->",
+        "\u2190": "<-",
+        "\u2026": "...",
+    }.items():
+        normalized = normalized.replace(src, dst)
+    return normalized
+
+
+def _write_cli_text(text: str, *, stream: Any = None) -> None:
+    target = stream if stream is not None else sys.stdout
+    payload = str(text)
+    rendered = payload if payload.endswith("\n") else f"{payload}\n"
+    try:
+        target.write(rendered)
+    except UnicodeEncodeError:
+        safe_text = _normalize_console_text(payload)
+        safe_rendered = safe_text if safe_text.endswith("\n") else f"{safe_text}\n"
+        encoding = getattr(target, "encoding", None) or "utf-8"
+        encoded = safe_rendered.encode(encoding, errors="replace")
+        buffer = getattr(target, "buffer", None)
+        if buffer is not None and hasattr(buffer, "write"):
+            buffer.write(encoded)
+        else:
+            target.write(encoded.decode(encoding, errors="replace"))
+    if hasattr(target, "flush"):
+        try:
+            target.flush()
+        except Exception:
+            pass
 
 
 def _render_cli_result(result: Any, *, args: Any, cmd_name: str) -> None:
@@ -221,7 +296,7 @@ def _render_cli_result(result: Any, *, args: Any, cmd_name: str) -> None:
         cmd_name=cmd_name,
     )
     if output:
-        print(output)
+        _write_cli_text(output)
 
 
 def _result_has_tool_error(result: Any) -> bool:
@@ -897,7 +972,7 @@ def main():
 
     
     parser = _safe_argument_parser(
-        description="Dynamic CLI for MetaTrader5 MCP tools (TOON output by default)",
+        description="Dynamic CLI for MetaTrader5 MCP tools (formatted text output by default)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=_build_epilog(functions),
         suggest_on_error=True,

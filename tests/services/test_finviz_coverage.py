@@ -207,6 +207,19 @@ class TestScreenStocks:
         assert "error" in result
 
     @patch("mtdata.services.finviz_service._apply_finvizfinance_timeout_patch")
+    def test_exception_logs_warning_without_traceback(self, mock_patch):
+        mock_logger = MagicMock()
+        with patch.object(svc, "logger", mock_logger):
+            with patch.dict(
+                "sys.modules",
+                {"finvizfinance.screener.overview": MagicMock(Overview=MagicMock(side_effect=Exception("429 Too Many Requests")))},
+            ):
+                result = svc.screen_stocks()
+        assert "error" in result
+        mock_logger.warning.assert_called_once()
+        mock_logger.exception.assert_not_called()
+
+    @patch("mtdata.services.finviz_service._apply_finvizfinance_timeout_patch")
     @patch("mtdata.services.finviz_service._run_screener_view")
     def test_with_filters_and_order(self, mock_run, mock_patch):
         mock_run.return_value = (pd.DataFrame({"Ticker": ["Z"]}), 50)

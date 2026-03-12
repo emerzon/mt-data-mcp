@@ -42,6 +42,7 @@ from mtdata.core.cli import (
     _format_result_minimal,
     _json_default,
     _format_result_for_cli,
+    _write_cli_text,
     _safe_tz_name,
     _build_cli_timezone_meta,
     _attach_cli_meta,
@@ -299,6 +300,72 @@ class TestFormatResultForCli:
     def test_none_fmt_defaults_to_toon(self):
         result = _format_result_for_cli("hello", fmt=None, verbose=False, cmd_name="test")
         assert isinstance(result, str)
+
+    def test_toon_format_hides_candle_warmup_details_in_default_view(self):
+        result = _format_result_for_cli(
+            {
+                "meta": {
+                    "diagnostics": {
+                        "query": {
+                            "requested_bars": 100,
+                            "warmup_bars": 50,
+                            "warmup_retry": {"applied": False, "warmup_bars": 80},
+                        }
+                    }
+                }
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="data_fetch_candles",
+        )
+        assert "warmup_bars" not in result
+        assert "requested_bars" in result
+
+    def test_toon_format_hides_verbose_only_forecast_fields_in_default_view(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "tp_hit_prob_by_t": [0.1, 0.2],
+                "sl_hit_prob_by_t": [0.3, 0.4],
+                "hit_prob_by_t": [{"bar": 1, "tp_hit_prob": 0.1, "sl_hit_prob": 0.3}],
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="forecast_barrier_prob",
+        )
+        assert "tp_hit_prob_by_t" not in result
+        assert "sl_hit_prob_by_t" not in result
+        assert "hit_prob_by_t" in result
+
+        vol_result = _format_result_for_cli(
+            {"success": True, "params_explained": {"lambda_": "EWMA decay factor"}},
+            fmt="toon",
+            verbose=False,
+            cmd_name="forecast_volatility_estimate",
+        )
+        assert "params_explained" not in vol_result
+
+
+class TestWriteCliText:
+    def test_falls_back_for_unencodable_console_text(self):
+        class _FakeStream:
+            encoding = "cp1252"
+
+            def __init__(self) -> None:
+                self.parts: List[str] = []
+
+            def write(self, text: str) -> int:
+                if "→" in text:
+                    raise UnicodeEncodeError("charmap", text, 0, len(text), "cannot encode")
+                self.parts.append(text)
+                return len(text)
+
+            def flush(self) -> None:
+                return None
+
+        stream = _FakeStream()
+        _write_cli_text("Price $267 → $268", stream=stream)
+        assert "".join(stream.parts) == "Price $267 -> $268\n"
 
 
 # ========================================================================
@@ -1441,6 +1508,17 @@ class TestResolveParamKwargs:
         assert "choices" not in kwargs
         assert kwargs["metavar"] == "METHOD"
         assert "forecast_list_methods" in kwargs["help"]
+        assert kwargs["help"].count("forecast_list_methods") == 1
+
+    def test_report_generate_output_help_is_command_specific(self):
+        param = {"name": "output", "type": Literal["toon", "markdown"], "required": False, "default": "toon"}
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="report_generate")
+        assert kwargs["help"] == "Output format: formatted text or markdown."
+
+    def test_forecast_tune_optuna_search_space_help_is_command_specific(self):
+        param = {"name": "search_space", "type": Dict[str, Any], "required": False, "default": None}
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="forecast_tune_optuna")
+        assert kwargs["help"] == "Optuna search space (JSON or k=v)."
 
 
 # ========================================================================
@@ -1557,6 +1635,28 @@ class TestCreateCommandFunction:
         status = cmd_fn(args)
         assert status == 1
         assert "Missing required argument(s): symbol." in capsys.readouterr().out
+        mock_fn.assert_not_called()
+
+    def test_missing_required_literal_argument_shows_valid_values(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "params": [
+                {
+                    "name": "library",
+                    "type": Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast"],
+                    "required": True,
+                    "default": None,
+                },
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="forecast_list_library_models")
+        args = argparse.Namespace(library=None, json=False, verbose=False)
+        status = cmd_fn(args)
+        assert status == 1
+        out = capsys.readouterr().out
+        assert "Missing required argument 'library'." in out
+        assert "native, statsforecast, sktime, pretrained, mlforecast" in out
         mock_fn.assert_not_called()
 
     def test_string_result_text_format(self, capsys):
