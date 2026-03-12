@@ -1569,6 +1569,31 @@ class TestAddDynamicArguments:
         args = parser.parse_args(["--model", "arima"])
         assert args.method == "arima"
 
+    def test_labels_triple_barrier_hides_summary_only_cli_duplicate(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {
+                    "name": "output",
+                    "type": Literal["full", "summary", "compact", "summary_only"],
+                    "required": False,
+                    "default": "full",
+                },
+                {
+                    "name": "summary_only",
+                    "type": bool,
+                    "required": False,
+                    "default": False,
+                },
+            ]
+        }
+
+        add_dynamic_arguments(parser, func_info, cmd_name="labels_triple_barrier")
+
+        output_action = next(action for action in parser._actions if action.dest == "output")
+        assert output_action.choices == ["full", "summary", "compact"]
+        assert not any(action.dest == "summary_only" for action in parser._actions)
+
 
 # ========================================================================
 # _parse_kv_string

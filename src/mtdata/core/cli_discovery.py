@@ -9,6 +9,7 @@ ToolInfo = Dict[str, Any]
 _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("forecast_quantlib_barrier_price", "option_type"): "Option side: call or put.",
     ("forecast_tune_optuna", "search_space"): "Optuna search space (JSON or k=v).",
+    ("labels_triple_barrier", "output"): "Output mode: full, summary, or compact.",
     ("report_generate", "output"): "Output format: formatted text or markdown.",
     ("trade_modify", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
     ("trade_place", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
@@ -299,6 +300,8 @@ def resolve_param_kwargs(
                     kwargs["nargs"] = "+"
             elif is_literal_origin(origin):
                 choices = [str(v) for v in get_args(base_type)]
+                if cmd_name == "labels_triple_barrier" and param["name"] == "output":
+                    choices = [choice for choice in choices if choice != "summary_only"]
                 if choices:
                     kwargs["choices"] = choices
                 kwargs["type"] = str
@@ -341,6 +344,8 @@ def add_dynamic_arguments(
         return tuple(extras)
 
     for param in param_info["params"]:
+        if cmd_name == "labels_triple_barrier" and param["name"] == "summary_only":
+            continue
         hyph = f"--{param['name'].replace('_', '-')}"
         uscr = f"--{param['name']}"
         option_flags = _dedupe_flags(
