@@ -197,10 +197,65 @@ def _format_result_minimal(result: Any, verbose: bool = True) -> str:
 
 
 def _prepare_result_for_cli_display(result: Any, *, cmd_name: str, verbose: bool) -> Any:
-    if bool(verbose) or not isinstance(result, dict):
+    if bool(verbose):
         return result
 
     cmd = str(cmd_name or "").strip()
+
+    def _drop_keys_from_rows(value: Any, keys: set[str]) -> Any:
+        if not isinstance(value, list):
+            return value
+        rows_out: List[Any] = []
+        for row in value:
+            if isinstance(row, dict):
+                rows_out.append({k: v for k, v in row.items() if k not in keys})
+            else:
+                rows_out.append(row)
+        return rows_out
+
+    if isinstance(result, list):
+        if cmd == "trade_get_open":
+            return _drop_keys_from_rows(
+                result,
+                {
+                    "Comment Length",
+                    "Comment Limit",
+                    "Comment May Be Truncated",
+                },
+            )
+        if cmd == "trade_history":
+            return _drop_keys_from_rows(
+                result,
+                {
+                    "comment_visible_length",
+                    "comment_max_length",
+                    "comment_may_be_truncated",
+                    "type_code",
+                    "entry_code",
+                    "reason_code",
+                    "time_msc",
+                },
+            )
+        if cmd == "trade_get_pending":
+            if (
+                len(result) == 1
+                and isinstance(result[0], dict)
+                and set(result[0].keys()) == {"message"}
+            ):
+                return {"count": 0, "message": result[0]["message"]}
+            return _drop_keys_from_rows(
+                result,
+                {
+                    "Comment Length",
+                    "Comment Limit",
+                    "Comment May Be Truncated",
+                },
+            )
+        return result
+
+    if not isinstance(result, dict):
+        return result
+
     out = dict(result)
 
     if cmd == "data_fetch_candles":
@@ -232,6 +287,21 @@ def _prepare_result_for_cli_display(result: Any, *, cmd_name: str, verbose: bool
     if cmd == "forecast_barrier_prob":
         out.pop("tp_hit_prob_by_t", None)
         out.pop("sl_hit_prob_by_t", None)
+
+    if cmd == "data_fetch_ticks":
+        out.pop("start_epoch", None)
+        out.pop("end_epoch", None)
+        out.pop("stats_display", None)
+
+    if cmd == "market_ticker" and out.get("time_display") is not None:
+        out.pop("time", None)
+
+    if cmd == "market_depth_fetch":
+        data = out.get("data")
+        if isinstance(data, dict) and data.get("time_display") is not None:
+            data_out = dict(data)
+            data_out.pop("time", None)
+            out["data"] = data_out
 
     return out
 

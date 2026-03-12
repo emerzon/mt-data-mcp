@@ -295,13 +295,14 @@ class TestGetGeneralNews:
 class TestGetInsiderActivity:
     @patch("mtdata.services.finviz_service._apply_finvizfinance_timeout_patch")
     def test_success(self, mock_patch):
-        df = pd.DataFrame({"Ticker": ["AAPL"], "Owner": ["CEO"]})
+        df = pd.DataFrame({"Ticker": ["AAPL"], "Owner": ["CEO"], "Date": ["Nov 07 '25"]})
         mock_ins = MagicMock()
         mock_ins.return_value.get_insider.return_value = df
         with patch.dict("sys.modules", {"finvizfinance.insider": MagicMock(Insider=mock_ins)}):
             result = svc.get_insider_activity("latest", limit=10)
         assert result["success"] is True
         assert result["count"] == 1
+        assert result["insider_trades"][0]["Date"] == "2025-11-07"
 
     @patch("mtdata.services.finviz_service._apply_finvizfinance_timeout_patch")
     def test_empty(self, mock_patch):

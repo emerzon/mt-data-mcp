@@ -149,7 +149,7 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
                     "last": float(tick.last) if tick.last else None,
                     "bid_display": _price_display(tick.bid),
                     "ask_display": _price_display(tick.ask),
-                    "last_display": _price_display(tick.last),
+                    "last_display": _price_display(float(tick.last) if tick.last else None),
                     "volume": int(tick.volume) if tick.volume else None,
                     "time": int(_mt5_epoch_to_utc(float(tick.time))) if tick.time else None,
                     "note": "Full market depth not available, showing current bid/ask snapshot.",

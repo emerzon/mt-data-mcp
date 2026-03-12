@@ -45,6 +45,36 @@ def _compute_screener_fetch_limit(limit: int, page: int, max_rows: int) -> int:
     return max(1, min(max_rows, needed))
 
 
+def _normalize_finviz_date_string(value: Any) -> Any:
+    """Normalize Finviz short dates like `Nov 07 '25` to ISO 8601."""
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text:
+        return value
+    text = text.replace("’", "'")
+    for fmt in ("%b %d '%y", "%b %d %Y", "%Y-%m-%d"):
+        try:
+            return datetime.datetime.strptime(text, fmt).date().isoformat()
+        except Exception:
+            continue
+    return value
+
+
+def _normalize_finviz_dates_in_rows(rows: List[Dict[str, Any]], *keys: str) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    wanted = set(keys)
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_out = dict(row)
+        for key in wanted:
+            if key in row_out:
+                row_out[key] = _normalize_finviz_date_string(row_out.get(key))
+        out.append(row_out)
+    return out
+
+
 def _run_screener_view(
     screener: Any,
     *,
@@ -255,6 +285,7 @@ def get_stock_insider_trades(symbol: str, limit: int = 20, page: int = 1) -> Dic
         start_idx = (safe_page - 1) * safe_limit
         end_idx = start_idx + safe_limit
         trades_list = insider_df.iloc[start_idx:end_idx].to_dict(orient="records")
+        trades_list = _normalize_finviz_dates_in_rows(trades_list, "Date")
         return {
             "success": True,
             "symbol": symbol.upper(),
@@ -514,6 +545,7 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
         start_idx = (safe_page - 1) * safe_limit
         end_idx = start_idx + safe_limit
         items_list = df.iloc[start_idx:end_idx].to_dict(orient="records")
+        items_list = _normalize_finviz_dates_in_rows(items_list, "Date")
         return {
             "success": True,
             "option": option,

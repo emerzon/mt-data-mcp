@@ -87,7 +87,7 @@ def format_number(value: Any, decimals: Optional[int] = None) -> str:
     except (TypeError, ValueError):
         return str(value)
     if not math.isfinite(num):
-        return str(value)
+        return "null"
     if decimals is None:
         decimals = _adaptive_decimals(num)
     return format_float(num, int(decimals))

@@ -56,13 +56,11 @@ class TestFormatNumber:
     def test_non_numeric_string(self):
         assert format_number("hello") == "hello"
 
-    def test_inf_returns_str(self):
-        result = format_number(float('inf'))
-        assert "inf" in result.lower()
+    def test_inf_returns_null(self):
+        assert format_number(float('inf')) == "null"
 
-    def test_nan_returns_str(self):
-        result = format_number(float('nan'))
-        assert "nan" in result.lower()
+    def test_nan_returns_null(self):
+        assert format_number(float('nan')) == "null"
 
     def test_explicit_decimals(self):
         assert format_number(1.23456, decimals=2) == "1.23"

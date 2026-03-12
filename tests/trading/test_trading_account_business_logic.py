@@ -71,6 +71,31 @@ def test_trade_account_info_includes_execution_preflight_fields() -> None:
     assert "Terminal AutoTrading is disabled." in out["execution_blockers"]
 
 
+def test_trade_account_info_rounds_margin_level_for_display() -> None:
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(
+            balance=10000.0,
+            equity=10050.0,
+            profit=50.0,
+            margin=100.0,
+            margin_free=9950.0,
+            margin_level=53231.42857143,
+            currency="USD",
+            leverage=100,
+            trade_allowed=True,
+            trade_expert=True,
+        ),
+        build_trade_preflight=lambda account_info=None: {},
+    )
+
+    raw = _unwrap(trade_account_info)
+    with patch.object(core_trading_account, "_get_trading_gateway", return_value=gateway):
+        out = raw()
+
+    assert out["margin_level"] == 53231.43
+
+
 def test_trade_account_info_returns_connection_error_payload() -> None:
     raw = _unwrap(trade_account_info)
 

@@ -60,6 +60,8 @@ def trade_account_info() -> dict:
                 margin_level_note = "N/A (no open margin/positions)"
             elif not math.isfinite(ml_val):
                 margin_level = None
+            else:
+                margin_level = round(float(ml_val), 2)
         except Exception:
             pass
 

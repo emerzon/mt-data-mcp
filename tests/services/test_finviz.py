@@ -67,7 +67,7 @@ class TestFinvizService:
         
         mock_stock = MagicMock()
         mock_df = pd.DataFrame([
-            {"Owner": "John Doe", "Relationship": "CEO", "Transaction": "Buy"},
+            {"Owner": "John Doe", "Relationship": "CEO", "Transaction": "Buy", "Date": "Nov 07 '25"},
         ])
         mock_stock.ticker_inside_trader.return_value = mock_df
         mock_finviz.return_value = mock_stock
@@ -76,6 +76,7 @@ class TestFinvizService:
         
         assert result["success"] is True
         assert result["count"] == 1
+        assert result["insider_trades"][0]["Date"] == "2025-11-07"
 
     @patch('finvizfinance.quote.finvizfinance')
     def test_get_stock_ratings_success(self, mock_finviz):

@@ -345,6 +345,107 @@ class TestFormatResultForCli:
         )
         assert "params_explained" not in vol_result
 
+    def test_toon_format_hides_raw_time_and_duplicate_tick_stats_in_default_view(self):
+        ticker = _format_result_for_cli(
+            {
+                "success": True,
+                "time": 1700000000,
+                "time_display": "2023-11-14 22:13",
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="market_ticker",
+        )
+        assert "time_display" in ticker
+        assert "time:" not in ticker
+
+        depth = _format_result_for_cli(
+            {
+                "success": True,
+                "data": {
+                    "bid": 1.1,
+                    "time": 1700000000,
+                    "time_display": "2023-11-14 22:13",
+                },
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="market_depth_fetch",
+        )
+        assert "time_display" in depth
+        assert "time:" not in depth
+
+        ticks = _format_result_for_cli(
+            {
+                "success": True,
+                "start_epoch": 1.0,
+                "end_epoch": 2.0,
+                "stats": {"bid": {"first": 1.1}},
+                "stats_display": {"bid": {"first": "1.10"}},
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="data_fetch_ticks",
+        )
+        assert "start_epoch" not in ticks
+        assert "end_epoch" not in ticks
+        assert "stats_display" not in ticks
+        assert "stats" in ticks
+
+    def test_toon_format_hides_internal_trade_metadata_in_default_view(self):
+        open_out = _format_result_for_cli(
+            [
+                {
+                    "Symbol": "EURUSD",
+                    "Comment Length": 11,
+                    "Comment Limit": 31,
+                    "Comment May Be Truncated": True,
+                }
+            ],
+            fmt="toon",
+            verbose=False,
+            cmd_name="trade_get_open",
+        )
+        assert "Comment Length" not in open_out
+        assert "Comment Limit" not in open_out
+        assert "Comment May Be Truncated" not in open_out
+
+        hist_out = _format_result_for_cli(
+            [
+                {
+                    "symbol": "EURUSD",
+                    "comment_visible_length": 11,
+                    "comment_max_length": 31,
+                    "comment_may_be_truncated": True,
+                    "type_code": 0,
+                    "entry_code": 1,
+                    "reason_code": 2,
+                    "time_msc": 1700000000000,
+                }
+            ],
+            fmt="toon",
+            verbose=False,
+            cmd_name="trade_history",
+        )
+        assert "comment_visible_length" not in hist_out
+        assert "comment_max_length" not in hist_out
+        assert "comment_may_be_truncated" not in hist_out
+        assert "type_code" not in hist_out
+        assert "entry_code" not in hist_out
+        assert "reason_code" not in hist_out
+        assert "time_msc" not in hist_out
+
+    def test_toon_format_normalizes_empty_pending_orders_message(self):
+        result = _format_result_for_cli(
+            [{"message": "No pending orders"}],
+            fmt="toon",
+            verbose=False,
+            cmd_name="trade_get_pending",
+        )
+        assert "count: 0" in result
+        assert "message: No pending orders" in result
+        assert "items[1]" not in result
+
 
 class TestWriteCliText:
     def test_falls_back_for_unencodable_console_text(self):
