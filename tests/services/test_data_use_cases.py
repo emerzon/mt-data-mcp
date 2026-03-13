@@ -65,3 +65,31 @@ def test_data_fetch_candles_logs_finish_event(monkeypatch, caplog):
         "event=finish operation=data_fetch_candles success=True" in record.message
         for record in caplog.records
     )
+
+
+def test_data_fetch_candles_wrapper_and_use_case_emit_single_finish_event(monkeypatch, caplog):
+    gateway = SimpleNamespace(ensure_connection=lambda: None)
+    monkeypatch.setattr(core_data, "_get_mt5_gateway", lambda: gateway)
+    monkeypatch.setattr(
+        core_data,
+        "fetch_candles",
+        lambda **kwargs: {
+            "success": True,
+            "symbol": kwargs["symbol"],
+            "timeframe": kwargs["timeframe"],
+            "data": [],
+        },
+    )
+
+    raw = getattr(core_data.data_fetch_candles, "__wrapped__", core_data.data_fetch_candles)
+    request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=10)
+    with caplog.at_level("INFO"):
+        result = raw(request)
+
+    assert result["success"] is True
+    finish_records = [
+        record
+        for record in caplog.records
+        if "event=finish operation=data_fetch_candles success=True" in record.message
+    ]
+    assert len(finish_records) == 1

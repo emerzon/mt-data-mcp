@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 import logging
 import time
 from typing import Any, Callable, Optional, TypeVar
 
 ResultT = TypeVar("ResultT")
+
+_ACTIVE_OPERATIONS: ContextVar[tuple[str, ...]] = ContextVar(
+    "mtdata_active_operations",
+    default=(),
+)
 
 
 def infer_result_success(result: Any) -> bool:
@@ -33,6 +39,9 @@ def infer_result_success(result: Any) -> bool:
 
 
 def log_operation_start(logger: logging.Logger, *, operation: str, **fields: Any) -> None:
+    parent_operation = _push_operation(operation)
+    if parent_operation == str(operation):
+        return
     logger.debug("event=start operation=%s %s", operation, _format_fields(fields))
 
 
@@ -44,6 +53,9 @@ def log_operation_finish(
     success: bool,
     **fields: Any,
 ) -> None:
+    parent_operation = _pop_operation(operation)
+    if parent_operation == str(operation):
+        return
     logger.info(
         "event=finish operation=%s success=%s duration_ms=%.3f %s",
         operation,
@@ -61,6 +73,9 @@ def log_operation_exception(
     exc: BaseException,
     **fields: Any,
 ) -> None:
+    parent_operation = _pop_operation(operation)
+    if parent_operation == str(operation):
+        return
     logger.exception(
         "event=error operation=%s duration_ms=%.3f %s error=%s",
         operation,
@@ -105,6 +120,30 @@ def run_logged_operation(
 
 def _elapsed_ms(started_at: float) -> float:
     return round((time.perf_counter() - float(started_at)) * 1000.0, 3)
+
+
+def _push_operation(operation: str) -> Optional[str]:
+    stack = _ACTIVE_OPERATIONS.get()
+    parent = stack[-1] if stack else None
+    _ACTIVE_OPERATIONS.set(stack + (str(operation),))
+    return parent
+
+
+def _pop_operation(operation: str) -> Optional[str]:
+    stack = _ACTIVE_OPERATIONS.get()
+    op_name = str(operation)
+    if not stack:
+        return None
+    if stack[-1] == op_name:
+        parent = stack[-2] if len(stack) > 1 else None
+        _ACTIVE_OPERATIONS.set(stack[:-1])
+        return parent
+    for idx in range(len(stack) - 1, -1, -1):
+        if stack[idx] == op_name:
+            parent = stack[idx - 1] if idx > 0 else None
+            _ACTIVE_OPERATIONS.set(stack[:idx] + stack[idx + 1 :])
+            return parent
+    return None
 
 
 def _format_fields(fields: dict[str, Any]) -> str:

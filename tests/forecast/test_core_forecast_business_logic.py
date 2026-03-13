@@ -601,6 +601,36 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
     assert out["error"] == "Unknown method: mystery"
 
 
+def test_forecast_barrier_prob_wrapper_emits_single_finish_event(caplog, monkeypatch):
+    raw = _unwrap(cf.forecast_barrier_prob)
+    monkeypatch.setattr(cf, "_forecast_connection_error", lambda: None)
+    monkeypatch.setattr(cf, "_build_barrier_kwargs_from", lambda _: {"tp_abs": 1.2, "sl_abs": 1.1})
+
+    import mtdata.forecast.barriers as barriers_mod
+
+    monkeypatch.setattr(
+        barriers_mod,
+        "forecast_barrier_hit_probabilities",
+        lambda **kwargs: {"success": True, "kind": "mc", "direction": kwargs["direction"]},
+    )
+    monkeypatch.setattr(
+        barriers_mod,
+        "forecast_barrier_closed_form",
+        lambda **kwargs: {"success": True, "kind": "closed_form", "direction": kwargs["direction"]},
+    )
+
+    with caplog.at_level(logging.INFO):
+        out = raw(request=ForecastBarrierProbRequest(symbol="EURUSD", timeframe="H1"))
+
+    assert out["success"] is True
+    finish_records = [
+        record
+        for record in caplog.records
+        if "event=finish operation=forecast_barrier_prob success=True" in record.message
+    ]
+    assert len(finish_records) == 1
+
+
 def test_forecast_tune_optuna_routing(monkeypatch):
     raw_tune = _unwrap(cf.forecast_tune_optuna)
     captured = {}
