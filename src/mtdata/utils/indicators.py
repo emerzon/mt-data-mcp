@@ -15,6 +15,24 @@ except ModuleNotFoundError:  # fallback for alternate distribution import
         ) from e
 
 
+_INDICATOR_ALIASES: dict[str, str] = {
+    "bb": "bbands",
+    "bollinger": "bbands",
+    "bollinger_bands": "bbands",
+    "bollingerbands": "bbands",
+}
+
+
+def _normalize_ta_indicator_name(name: str) -> str:
+    lname = str(name or "").strip().lower()
+    return _INDICATOR_ALIASES.get(lname, lname)
+
+
+def _indicator_aliases(name: str) -> List[str]:
+    canonical = _normalize_ta_indicator_name(name)
+    return sorted(alias for alias, target in _INDICATOR_ALIASES.items() if target == canonical and alias != canonical)
+
+
 def clean_help_text(text: str, func_name: Optional[str] = None) -> str:
     if not isinstance(text, str):
         return ''
@@ -155,6 +173,7 @@ def list_ta_indicators(*, detailed: bool = False) -> List[Dict[str, Any]]:
                     "params": params,
                     "description": desc,
                     "category": category,
+                    "aliases": _indicator_aliases(name),
                 })
         except Exception:
             continue
@@ -229,13 +248,13 @@ def _parse_ti_specs(spec: str) -> List[Tuple[str, List[int | float], Dict[str, i
         # Flex: detect trailing number in name (EMA21 -> length=21)
         import re
         m = re.search(r"(.*?)[_\-]?([0-9]{1,3})$", name)
-        if m and not args and 'length' not in kwargs:
+        if m and str(m.group(1) or "").strip() and not args and 'length' not in kwargs:
             try:
                 kwargs['length'] = int(m.group(2))
                 name = m.group(1)
             except Exception:
                 pass
-        specs.append((name.strip(), args, kwargs))
+        specs.append((_normalize_ta_indicator_name(name.strip()), args, kwargs))
     return specs
 
 
@@ -246,7 +265,7 @@ def _find_unknown_ta_indicators(spec: str) -> List[str]:
         return []
     unknown: List[str] = []
     for name, _args, _kwargs in _parse_ti_specs(text):
-        lname = str(name or "").strip().lower()
+        lname = _normalize_ta_indicator_name(str(name or "").strip())
         if not lname:
             continue
         if not callable(getattr(pta, lname, None)):
@@ -272,7 +291,7 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:
     before = set(df.columns)
     specs = _parse_ti_specs(ti_spec)
     for name, args, kwargs in specs:
-        lname = name.lower()
+        lname = _normalize_ta_indicator_name(name)
         func = getattr(pta, lname, None)
         if not callable(func):
             continue
@@ -361,7 +380,7 @@ def _estimate_warmup_bars(ti_spec: Optional[str]) -> int:
     max_warmup = 0
     specs = _parse_ti_specs(ti_spec)
     for name, args, kwargs in specs:
-        lname = name.lower()
+        lname = _normalize_ta_indicator_name(name)
         def geti(key, default):
             if key in kwargs:
                 try:
@@ -392,7 +411,7 @@ def _estimate_warmup_bars(ti_spec: Optional[str]) -> int:
                 warm = int(k) + int(d) + int(s)
             except Exception:
                 warm = 20
-        elif lname in ("bbands", "bb"):
+        elif lname == "bbands":
             length = kwargs.get("length", args[0] if len(args) > 0 else 20)
             try:
                 warm = int(length)

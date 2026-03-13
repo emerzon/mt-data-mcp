@@ -75,7 +75,7 @@ def _normalize_indicator_entry(value: Any) -> Dict[str, Any]:
     match = re.fullmatch(r"([A-Za-z0-9_]+)(?:\((.*)\))?", stripped)
     if not match:
         raise ValueError(
-            "Invalid indicator format. Use bare names like 'rsi' or compact specs like 'macd(12,26,9)'."
+            "Invalid indicator format. Use bare names like 'rsi' or compact specs like 'sma(20)' and 'macd(12,26,9)'."
         )
 
     name = match.group(1)
@@ -126,6 +126,31 @@ def _normalize_indicator_specs(value: Any) -> Any:
     return value
 
 
+def _validate_positive_limit(value: int) -> int:
+    if int(value) <= 0:
+        raise ValueError("limit must be greater than 0.")
+    return int(value)
+
+
+def _validate_indicator_entries(value: Any) -> Any:
+    if value is None or not isinstance(value, list):
+        return value
+
+    validated: List[Dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            validated.append(item)
+            continue
+        name = str(item.get("name") or "").strip()
+        if re.fullmatch(r"[+-]?\d+(?:\.\d+)?", name):
+            raise ValueError("Indicator params must use parentheses, e.g. sma(20), not sma,20.")
+        normalized = dict(item)
+        if name:
+            normalized["name"] = name
+        validated.append(normalized)
+    return validated
+
+
 class DataFetchCandlesRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
@@ -142,6 +167,16 @@ class DataFetchCandlesRequest(BaseModel):
     def _coerce_indicators(cls, value: Any) -> Any:
         return _normalize_indicator_specs(value)
 
+    @field_validator("indicators")
+    @classmethod
+    def _validate_indicators(cls, value: Any) -> Any:
+        return _validate_indicator_entries(value)
+
+    @field_validator("limit")
+    @classmethod
+    def _validate_limit(cls, value: int) -> int:
+        return _validate_positive_limit(value)
+
 
 class DataFetchTicksRequest(BaseModel):
     symbol: str
@@ -150,3 +185,8 @@ class DataFetchTicksRequest(BaseModel):
     end: Optional[str] = None
     simplify: Optional[SimplifySpec] = None
     output: Literal["summary", "stats", "rows"] = "summary"
+
+    @field_validator("limit")
+    @classmethod
+    def _validate_limit(cls, value: int) -> int:
+        return _validate_positive_limit(value)

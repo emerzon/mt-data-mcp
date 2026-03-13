@@ -14,10 +14,33 @@ _BAR_LIMIT_ALIAS_COMMANDS: set[str] = {
     "regime_detect",
 }
 
+_OPTIONAL_FIRST_POSITIONAL_PARAMS: set[tuple[str, str]] = {
+    ("finviz_news", "symbol"),
+}
+
+_COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {
+    (
+        "forecast_barrier_optimize",
+        "method",
+    ): [
+        "mc_gbm",
+        "mc_gbm_bb",
+        "hmm_mc",
+        "garch",
+        "bootstrap",
+        "heston",
+        "jump_diffusion",
+        "auto",
+    ],
+}
+
 
 _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
+    ("data_fetch_candles", "indicators"): "Technical indicators. Use names like rsi, bb, or compact specs like sma(20) and macd(12,26,9). Use parentheses for params, not sma,20.",
+    ("forecast_barrier_optimize", "method"): "Barrier simulation method: mc_gbm, mc_gbm_bb, hmm_mc, garch, bootstrap, heston, jump_diffusion, or auto.",
     ("forecast_quantlib_barrier_price", "option_type"): "Option side: call or put.",
     ("forecast_tune_optuna", "search_space"): "Optuna search space (JSON or k=v).",
+    ("indicators_list", "detail"): "Output detail: compact table or full rows with aliases and descriptions.",
     ("labels_triple_barrier", "output"): "Output mode: full, summary, or compact.",
     ("report_generate", "output"): "Output format: formatted text or markdown.",
     ("trade_modify", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
@@ -321,6 +344,14 @@ def resolve_param_kwargs(
     if not param["required"] and not (param["type"] == bool and param["default"] is None):
         kwargs["default"] = param["default"]
 
+    choice_override = _COMMAND_PARAM_CHOICE_OVERRIDES.get((str(cmd_name or ""), str(param["name"])))
+    if choice_override:
+        kwargs["choices"] = list(choice_override)
+        kwargs["type"] = lambda value: str(value or "").strip().lower()
+
+    if (str(cmd_name or ""), str(param["name"])) == ("indicators_list", "category"):
+        kwargs["type"] = lambda value: str(value or "").strip().lower()
+
     return kwargs, is_mapping_type
 
 
@@ -372,8 +403,20 @@ def add_dynamic_arguments(
         )
 
         is_optional_bool = param.get("type") is bool and not param.get("required", False)
+        allow_optional_first_positional = (
+            param == param_info["params"][0]
+            and (str(cmd_name or ""), str(param["name"])) in _OPTIONAL_FIRST_POSITIONAL_PARAMS
+        )
 
         if param["required"] and param == param_info["params"][0]:
+            positional_kwargs = {k: v for k, v in kwargs.items() if k in ("help", "type", "choices", "metavar")}
+            positional_kwargs["nargs"] = "?"
+            positional_kwargs["default"] = argparse.SUPPRESS
+            parser.add_argument(param["name"], **positional_kwargs)
+            hidden_alias_kwargs = dict(kwargs)
+            hidden_alias_kwargs["help"] = argparse.SUPPRESS
+            parser.add_argument(*option_flags, **hidden_alias_kwargs)
+        elif allow_optional_first_positional:
             positional_kwargs = {k: v for k, v in kwargs.items() if k in ("help", "type", "choices", "metavar")}
             positional_kwargs["nargs"] = "?"
             positional_kwargs["default"] = argparse.SUPPRESS

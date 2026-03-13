@@ -337,6 +337,21 @@ class TestFormatResultForCli:
         assert "sl_hit_prob_by_t" not in result
         assert "hit_prob_by_t" in result
 
+    def test_toon_format_hides_barrier_optimization_grid_in_default_view(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "best": {"tp": 0.5, "sl": 0.25, "ev": 0.1},
+                "results": [{"tp": 0.5, "sl": 0.25, "ev": 0.1}],
+                "grid": [{"tp": 0.5, "sl": 0.25, "ev": 0.1}, {"tp": 0.75, "sl": 0.25, "ev": 0.08}],
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="forecast_barrier_optimize",
+        )
+        assert "grid" not in result
+        assert "best" in result
+
         vol_result = _format_result_for_cli(
             {"success": True, "params_explained": {"lambda_": "EWMA decay factor"}},
             fmt="toon",
@@ -1576,6 +1591,35 @@ class TestAddDynamicArguments:
         limit_action = next(action for action in parser._actions if action.dest == "limit")
         assert "--bars" not in limit_action.option_strings
 
+    def test_finviz_news_accepts_optional_positional_symbol(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "symbol", "type": str, "required": False, "default": None},
+                {"name": "limit", "type": int, "required": False, "default": 20},
+            ]
+        }
+        add_dynamic_arguments(parser, func_info, cmd_name="finviz_news")
+        args = parser.parse_args(["AAPL", "--limit", "5"])
+        assert args.symbol == "AAPL"
+        assert args.limit == 5
+
+    def test_indicators_list_category_accepts_mixed_case(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {
+                    "name": "category",
+                    "type": Literal["momentum", "trend", "volatility"],
+                    "required": False,
+                    "default": None,
+                },
+            ]
+        }
+        add_dynamic_arguments(parser, func_info, cmd_name="indicators_list")
+        args = parser.parse_args(["--category", "Trend"])
+        assert args.category == "trend"
+
     def test_trade_history_position_ticket_accepts_ticket_alias(self):
         parser = argparse.ArgumentParser()
         func_info = {
@@ -1727,6 +1771,21 @@ class TestResolveParamKwargs:
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="forecast_tune_optuna")
         assert kwargs["help"] == "Optuna search space (JSON or k=v)."
 
+    def test_forecast_barrier_optimize_method_has_cli_choices(self):
+        param = {"name": "method", "type": str, "required": False, "default": "auto"}
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="forecast_barrier_optimize")
+        assert kwargs["choices"] == [
+            "mc_gbm",
+            "mc_gbm_bb",
+            "hmm_mc",
+            "garch",
+            "bootstrap",
+            "heston",
+            "jump_diffusion",
+            "auto",
+        ]
+        assert "Barrier simulation method" in kwargs["help"]
+
 
 # ========================================================================
 # create_command_function
@@ -1827,6 +1886,48 @@ class TestCreateCommandFunction:
         status = cmd_fn(args)
         assert status == 1
         assert "'params' must be a list of numbers" in capsys.readouterr().out
+        mock_fn.assert_not_called()
+
+    def test_indicator_param_comma_syntax_returns_friendly_error(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "request_model": DataFetchCandlesRequest,
+            "request_param_name": "request",
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+                {"name": "indicators", "type": Optional[List[Dict[str, Any]]], "required": False, "default": None},
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="data_fetch_candles")
+        args = argparse.Namespace(
+            symbol="EURUSD",
+            indicators="sma,20",
+            indicators_params=None,
+            json=False,
+            verbose=False,
+        )
+        status = cmd_fn(args)
+        assert status == 1
+        assert "sma(20), not sma,20" in capsys.readouterr().out
+        mock_fn.assert_not_called()
+
+    def test_negative_limit_returns_friendly_validation_error(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "request_model": DataFetchCandlesRequest,
+            "request_param_name": "request",
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+                {"name": "limit", "type": int, "required": False, "default": 200},
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="data_fetch_candles")
+        args = argparse.Namespace(symbol="EURUSD", limit=-5, json=False, verbose=False)
+        status = cmd_fn(args)
+        assert status == 1
+        assert "limit must be greater than 0." in capsys.readouterr().out
         mock_fn.assert_not_called()
 
     def test_missing_required_argument_returns_structured_error(self, capsys):

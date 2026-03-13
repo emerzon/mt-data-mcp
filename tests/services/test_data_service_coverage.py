@@ -671,6 +671,10 @@ class TestFetchCandles(unittest.TestCase):
         self.assertIn('error', result)
         self.assertIn('Invalid timeframe', result['error'])
 
+    def test_negative_limit_returns_friendly_error(self):
+        result = fetch_candles('EURUSD', limit=-5)
+        self.assertEqual(result, {'error': 'limit must be greater than 0.'})
+
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_GUARD, _mock_symbol_guard_error)
     def test_symbol_guard_error(self, mock_info):
@@ -689,6 +693,18 @@ class TestFetchCandles(unittest.TestCase):
         result = fetch_candles('EURUSD', limit=5)
         self.assertIn('error', result)
         self.assertIn('Failed to get rates', result['error'])
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM, return_value=None)
+    @patch(_CACHED_INFO, return_value=None)
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_generic_symbol_failure_is_rewritten(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        _mt5_mock.last_error.return_value = (-1, 'Terminal: Call failed')
+        result = fetch_candles('NOTASYMBOL', limit=5)
+        self.assertEqual(result['error'], "Symbol 'NOTASYMBOL' was not found or is not available in MT5.")
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM, return_value=[])
@@ -758,6 +774,18 @@ class TestFetchCandles(unittest.TestCase):
         mock_from.assert_not_called()
 
     @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_indicator_param_syntax_error_is_friendly(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        result = fetch_candles('EURUSD', limit=10, indicators='sma,20')
+        self.assertEqual(result['error'], 'Indicator params must use parentheses, e.g. sma(20), not sma,20.')
+        mock_from.assert_not_called()
+
+    @patch(_MT5_CONFIG)
     @patch(_APPLY_TI, return_value=['rsi_14'])
     @patch(_RATES_FROM)
     @patch(_CACHED_INFO, return_value=MagicMock())
@@ -775,6 +803,26 @@ class TestFetchCandles(unittest.TestCase):
             'EURUSD', limit=10,
             indicators='[{"name":"rsi","params":[14]}]',
         )
+        self.assertTrue(result.get('success'))
+
+    @patch(_MT5_CONFIG)
+    @patch(_APPLY_TI, return_value=['BBL_20_2.0'])
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=20)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_bollinger_alias_indicator_string_spec(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_ti, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(30)
+
+        def add_col(df, spec):
+            self.assertEqual(spec, 'bb(20)')
+            df['BBL_20_2.0'] = 1.1
+            return ['BBL_20_2.0']
+
+        mock_ti.side_effect = add_col
+        result = fetch_candles('EURUSD', limit=10, indicators='bb(20)')
         self.assertTrue(result.get('success'))
 
     @patch(_MT5_CONFIG)

@@ -26,6 +26,7 @@ from mtdata.utils.indicators import (
     _try_number,
     _parse_ti_number,
     infer_defaults_from_doc,
+    _find_unknown_ta_indicators,
     _parse_ti_specs,
     _estimate_warmup_bars,
 )
@@ -211,7 +212,7 @@ class TestParseTiSpecs:
     def test_trailing_number_in_name(self):
         specs = _parse_ti_specs("EMA21")
         name, args, kwargs = specs[0]
-        assert name == "EMA"
+        assert name == "ema"
         assert kwargs.get("length") == 21
 
     def test_nested_parens_not_split(self):
@@ -223,6 +224,13 @@ class TestParseTiSpecs:
         name, args, kwargs = specs[0]
         assert name == "stoch"
         assert 14 in args or kwargs.get("length") == 14
+
+    def test_bollinger_alias_normalizes_to_bbands(self):
+        specs = _parse_ti_specs("bb(20),bollinger_bands(20)")
+        assert [name for name, _args, _kwargs in specs] == ["bbands", "bbands"]
+
+    def test_bollinger_aliases_are_not_reported_as_unknown(self):
+        assert _find_unknown_ta_indicators("bb(20),bollinger_bands(20)") == []
 
 
 class TestEstimateWarmupBars:
@@ -416,6 +424,53 @@ Values below 30 often indicate oversold conditions.
         assert out["more_available"] == 5
         assert out["truncated"] is True
         assert out["show_all_hint"] == "Increase --limit to view more matching indicators."
+
+    def test_indicators_list_full_detail_includes_aliases_and_descriptions(self, monkeypatch):
+        from mtdata.core import indicators as core_indicators
+
+        monkeypatch.setattr(
+            core_indicators,
+            "_list_ta_indicators",
+            lambda detailed=False: [
+                {
+                    "name": "bbands",
+                    "category": "volatility",
+                    "description": "Bollinger Bands volatility envelope.",
+                    "aliases": ["bb", "bollinger_bands"],
+                }
+            ],
+        )
+
+        raw_list = getattr(core_indicators.indicators_list, "__wrapped__", core_indicators.indicators_list)
+        out = raw_list(search_term="bb", detail="full")
+
+        assert out["success"] is True
+        assert out["detail"] == "full"
+        assert out["data"][0]["aliases"] == "bb, bollinger_bands"
+        assert "Bollinger Bands" in out["data"][0]["description"]
+
+    def test_indicators_describe_accepts_aliases(self, monkeypatch):
+        from mtdata.core import indicators as core_indicators
+
+        monkeypatch.setattr(
+            core_indicators,
+            "_list_ta_indicators",
+            lambda detailed=True: [
+                {
+                    "name": "bbands",
+                    "category": "volatility",
+                    "params": [{"name": "length", "default": 20}],
+                    "description": "Bollinger Bands volatility envelope.",
+                    "aliases": ["bb", "bollinger_bands"],
+                }
+            ],
+        )
+
+        raw_describe = getattr(core_indicators.indicators_describe, "__wrapped__", core_indicators.indicators_describe)
+        out = raw_describe("bb")
+
+        assert out["success"] is True
+        assert out["indicator"]["name"] == "bbands"
 
 
 # ===================================================================

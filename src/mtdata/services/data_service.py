@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta, timezone as dt_timezone
 import logging
 import math
+import re
 from typing import Any, Dict, Optional, List, Literal, Tuple
 import pandas as pd
 import warnings
@@ -37,6 +38,7 @@ from ..utils.indicators import (
     _estimate_warmup_bars_util,
     _apply_ta_indicators_util,
     _find_unknown_ta_indicators_util,
+    _parse_ti_specs,
 )
 from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
 
@@ -48,6 +50,39 @@ from ..utils.simplify import (
     _simplify_dataframe_rows_ext,
 )
 logger = logging.getLogger(__name__)
+
+
+def _format_mt5_last_error() -> str:
+    try:
+        err = mt5.last_error()
+    except Exception as exc:
+        return str(exc)
+    if isinstance(err, tuple) and len(err) == 2:
+        code, message = err
+        return f"({code}, {message!r})"
+    return str(err)
+
+
+def _describe_rate_fetch_error(symbol: str, *, info_before: Any = None) -> str:
+    if info_before is None:
+        try:
+            info_before = get_symbol_info_cached(symbol)
+        except Exception:
+            info_before = None
+
+    error_text = _format_mt5_last_error()
+    if info_before is None and "call failed" in error_text.lower():
+        return f"Symbol '{symbol}' was not found or is not available in MT5."
+    return f"Failed to get rates for {symbol}: {error_text}"
+
+
+def _indicator_param_syntax_error(ti_spec: Optional[str]) -> Optional[str]:
+    if not ti_spec:
+        return None
+    for name, _args, _kwargs in _parse_ti_specs(ti_spec):
+        if re.fullmatch(r"[+-]?\d+(?:\.\d+)?", str(name or "").strip()):
+            return "Indicator params must use parentheses, e.g. sma(20), not sma,20."
+    return None
 
 
 def _fetch_rates_with_warmup(
@@ -513,6 +548,8 @@ def fetch_candles(
         query_started_at = time.perf_counter()
         # Backward/compat mappings to internal variable names used in implementation
         candles = int(limit)
+        if candles <= 0:
+            return {"error": "limit must be greater than 0."}
         start_datetime = start
         end_datetime = end
         ti = indicators
@@ -528,6 +565,9 @@ def fetch_candles(
                 return {"error": err}
 
             ti_spec = _normalize_indicator_spec(ti)
+            indicator_syntax_error = _indicator_param_syntax_error(ti_spec)
+            if indicator_syntax_error:
+                return {"error": indicator_syntax_error}
             # Determine warmup bars if technical indicators requested
             unknown_indicators = _find_unknown_ta_indicators_util(ti_spec or "")
             if unknown_indicators:
@@ -556,7 +596,7 @@ def fetch_candles(
         # visibility handled by _symbol_ready_guard
         
         if rates is None:
-            return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}
+            return {"error": _describe_rate_fetch_error(symbol, info_before=_info_before)}
 
         # Generate tabular format with dynamic column filtering
         if len(rates) == 0:
@@ -813,6 +853,9 @@ def fetch_ticks(
         - "rows": return tick rows as structured data.
     """
     try:
+        effective_limit = int(limit)
+        if effective_limit <= 0:
+            return {"error": "limit must be greater than 0."}
         # Ensure symbol is ready; remember original visibility to restore later
         _info_before = get_symbol_info_cached(symbol)
         with _symbol_ready_guard(symbol, info_before=_info_before) as (err, _info):
@@ -827,7 +870,6 @@ def fetch_ticks(
                 price_digits = 0
 
             # Normalized params only
-            effective_limit = int(limit)
             output_mode = str(output or "summary").lower().strip()
             if start:
                 from_date = _parse_start_datetime(start)

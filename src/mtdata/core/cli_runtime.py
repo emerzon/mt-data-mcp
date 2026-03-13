@@ -207,7 +207,7 @@ def create_command_function(
             match = re.fullmatch(r"([A-Za-z0-9_]+)(?:\((.*)\))?", stripped)
             if not match:
                 raise ValueError(
-                    "Invalid indicator format. Use bare names like 'rsi' or compact specs like 'macd(12,26,9)'."
+                    "Invalid indicator format. Use bare names like 'rsi' or compact specs like 'sma(20)' and 'macd(12,26,9)'."
                 )
             name = match.group(1)
             params_blob = match.group(2)

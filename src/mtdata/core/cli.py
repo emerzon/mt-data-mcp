@@ -293,6 +293,9 @@ def _prepare_result_for_cli_display(result: Any, *, cmd_name: str, verbose: bool
         out.pop("tp_hit_prob_by_t", None)
         out.pop("sl_hit_prob_by_t", None)
 
+    if cmd == "forecast_barrier_optimize":
+        out.pop("grid", None)
+
     if cmd == "data_fetch_ticks":
         out.pop("start_epoch", None)
         out.pop("end_epoch", None)

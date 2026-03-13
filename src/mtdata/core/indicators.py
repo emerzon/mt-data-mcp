@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Literal
 import logging
 import re
 
@@ -155,14 +155,19 @@ def indicators_list(
     search_term: Optional[str] = None,
     category: Optional[CategoryLiteral] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
+    detail: Literal["compact", "full"] = "compact",
 ) -> Dict[str, Any]:  # type: ignore
-    """List indicators as a tabular result with columns: name, category. Optional filters: search_term, category.
+    """List indicators as a tabular result with optional search, category, and detail filters.
 
-    Parameters: search_term?, category?, limit?
+    Parameters: search_term?, category?, limit?, detail?
     """
     def _run() -> Dict[str, Any]:
         try:
-            items = _list_ta_indicators(detailed=False)
+            detail_mode = str(detail or "compact").strip().lower()
+            if detail_mode not in {"compact", "full"}:
+                detail_mode = "compact"
+            detailed = detail_mode == "full"
+            items = _list_ta_indicators(detailed=detailed)
             if search_term:
                 q = search_term.strip().lower()
                 filtered = []
@@ -170,7 +175,8 @@ def indicators_list(
                     name = it.get('name', '').lower()
                     desc = (it.get('description') or '').lower()
                     cat = (it.get('category') or '').lower()
-                    if q in name or q in desc or q in cat:
+                    aliases = [str(alias).strip().lower() for alias in (it.get("aliases") or []) if str(alias).strip()]
+                    if q in name or q in desc or q in cat or any(q in alias for alias in aliases):
                         filtered.append(it)
                 items = filtered
             if category:
@@ -186,8 +192,21 @@ def indicators_list(
                 limit_value = None
             if limit_value and limit_value > 0:
                 items = items[:limit_value]
-            rows = [[it.get('name',''), it.get('category','')] for it in items]
-            result = _table_from_rows(["name", "category"], rows)
+            if detailed:
+                rows = [
+                    [
+                        it.get("name", ""),
+                        it.get("category", ""),
+                        ", ".join(str(alias) for alias in (it.get("aliases") or []) if str(alias).strip()),
+                        it.get("description", ""),
+                    ]
+                    for it in items
+                ]
+                result = _table_from_rows(["name", "category", "aliases", "description"], rows)
+            else:
+                rows = [[it.get('name',''), it.get('category','')] for it in items]
+                result = _table_from_rows(["name", "category"], rows)
+            result["detail"] = detail_mode
             if total_matches > len(items):
                 result["total_count"] = total_matches
                 result["more_available"] = total_matches - len(items)
@@ -203,6 +222,7 @@ def indicators_list(
         search_term=search_term,
         category=category,
         limit=limit,
+        detail=detail,
         func=_run,
     )
 
@@ -218,7 +238,19 @@ def indicators_describe(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: 
     def _run() -> Dict[str, Any]:
         try:
             items = _list_ta_indicators(detailed=True)
-            target = next((it for it in items if it.get('name','').lower() == str(name).lower()), None)
+            target = next(
+                (
+                    it
+                    for it in items
+                    if it.get('name','').lower() == str(name).lower()
+                    or str(name).lower() in {
+                        str(alias).strip().lower()
+                        for alias in (it.get("aliases") or [])
+                        if str(alias).strip()
+                    }
+                ),
+                None,
+            )
             if not target:
                 return {"error": f"Indicator '{name}' not found"}
             indicator = dict(target)
