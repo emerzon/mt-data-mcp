@@ -395,6 +395,28 @@ Values below 30 often indicate oversold conditions.
             for record in caplog.records
         )
 
+    def test_indicators_list_reports_when_results_are_truncated(self, monkeypatch):
+        from mtdata.core import indicators as core_indicators
+
+        monkeypatch.setattr(
+            core_indicators,
+            "_list_ta_indicators",
+            lambda detailed=False: [
+                {"name": f"ind_{i:02d}", "category": "momentum", "description": ""}
+                for i in range(30)
+            ],
+        )
+
+        raw_list = getattr(core_indicators.indicators_list, "__wrapped__", core_indicators.indicators_list)
+        out = raw_list(category="momentum", limit=25)
+
+        assert out["success"] is True
+        assert out["count"] == 25
+        assert out["total_count"] == 30
+        assert out["more_available"] == 5
+        assert out["truncated"] is True
+        assert out["show_all_hint"] == "Increase --limit to view more matching indicators."
+
 
 # ===================================================================
 # 3. mtdata.utils.utils

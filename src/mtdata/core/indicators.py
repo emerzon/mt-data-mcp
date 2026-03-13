@@ -177,6 +177,7 @@ def indicators_list(
                 cat_q = category.strip().lower()
                 items = [it for it in items if (it.get('category') or '').lower() == cat_q]
             items.sort(key=lambda x: (x.get('category') or '', x.get('name') or ''))
+            total_matches = len(items)
             limit_value = None
             try:
                 if limit is not None:
@@ -186,7 +187,13 @@ def indicators_list(
             if limit_value and limit_value > 0:
                 items = items[:limit_value]
             rows = [[it.get('name',''), it.get('category','')] for it in items]
-            return _table_from_rows(["name", "category"], rows)
+            result = _table_from_rows(["name", "category"], rows)
+            if total_matches > len(items):
+                result["total_count"] = total_matches
+                result["more_available"] = total_matches - len(items)
+                result["truncated"] = True
+                result["show_all_hint"] = "Increase --limit to view more matching indicators."
+            return result
         except Exception as exc:
             return {"error": f"Error listing indicators: {exc}"}
 
