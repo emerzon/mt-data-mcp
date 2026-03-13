@@ -1486,8 +1486,14 @@ class TestAddDynamicArguments:
             ]
         }
         add_dynamic_arguments(parser, func_info)
+        args = parser.parse_args(["--flag"])
+        assert args.flag == "true"
         args = parser.parse_args(["--flag", "true"])
         assert args.flag == "true"
+        args = parser.parse_args(["--flag", "false"])
+        assert args.flag == "false"
+        args = parser.parse_args(["--no-flag"])
+        assert args.flag == "false"
 
     def test_list_param(self):
         parser = argparse.ArgumentParser()

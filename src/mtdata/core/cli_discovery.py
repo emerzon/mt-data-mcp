@@ -362,6 +362,8 @@ def add_dynamic_arguments(
             param_names=param_names,
         )
 
+        is_optional_bool = param.get("type") is bool and not param.get("required", False)
+
         if param["required"] and param == param_info["params"][0]:
             positional_kwargs = {k: v for k, v in kwargs.items() if k in ("help", "type", "choices", "metavar")}
             positional_kwargs["nargs"] = "?"
@@ -369,7 +371,23 @@ def add_dynamic_arguments(
             parser.add_argument(param["name"], **positional_kwargs)
             parser.add_argument(*option_flags, **kwargs)
         else:
-            if is_mapping_type:
+            if is_optional_bool:
+                local_kwargs = dict(kwargs)
+                local_kwargs["nargs"] = "?"
+                local_kwargs["const"] = "true"
+                parser.add_argument(*option_flags, **local_kwargs)
+                no_flags = _dedupe_flags(
+                    f"--no-{param['name'].replace('_', '-')}",
+                    f"--no_{param['name']}",
+                )
+                parser.add_argument(
+                    *no_flags,
+                    dest=param["name"],
+                    action="store_const",
+                    const="false",
+                    help=f"Disable {param['name'].replace('_', ' ')}.",
+                )
+            elif is_mapping_type:
                 local_kwargs = dict(kwargs)
                 local_kwargs["nargs"] = "?"
                 local_kwargs["const"] = "__PRESENT__"
