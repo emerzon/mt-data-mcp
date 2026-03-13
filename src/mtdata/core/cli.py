@@ -930,6 +930,22 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
     ),
 }
 
+_TIMEFRAMELESS_GLOBAL_COMMANDS: set[str] = {
+    "forecast_options_chain",
+    "forecast_options_expirations",
+    "forecast_quantlib_barrier_price",
+    "forecast_quantlib_heston_calibrate",
+    "indicators_describe",
+    "indicators_list",
+    "market_ticker",
+    "symbols_describe",
+    "trade_account_info",
+    "trade_close",
+    "trade_history",
+    "trade_modify",
+    "trade_risk_analyze",
+}
+
 
 def _format_cli_literal(value: Any) -> Optional[str]:
     if value is None:
@@ -1150,6 +1166,8 @@ def main():
             exclude_globals.append('timeframe')
         # Finviz tools don't use MT5 timeframe
         if cmd_name.startswith('finviz_'):
+            exclude_globals.append('timeframe')
+        if cmd_name in _TIMEFRAMELESS_GLOBAL_COMMANDS:
             exclude_globals.append('timeframe')
         add_global_args_to_parser(cmd_parser, exclude_params=exclude_globals, suppress_defaults=True)
         

@@ -1531,6 +1531,18 @@ class TestAddDynamicArguments:
         assert args.symbol == "EURUSD"
         assert args.count == 20
 
+    def test_first_required_param_flag_alias_is_hidden_from_help(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+            ]
+        }
+        add_dynamic_arguments(parser, func_info)
+        symbol_actions = [action for action in parser._actions if action.dest == "symbol"]
+        optional_action = next(action for action in symbol_actions if action.option_strings)
+        assert optional_action.help == argparse.SUPPRESS
+
     def test_single_word_flag_is_not_duplicated(self):
         parser = argparse.ArgumentParser()
         func_info = {
@@ -1552,6 +1564,17 @@ class TestAddDynamicArguments:
         add_dynamic_arguments(parser, func_info, cmd_name="data_fetch_candles")
         args = parser.parse_args(["--bars", "250"])
         assert args.limit == 250
+
+    def test_limit_does_not_get_bars_alias_for_non_bar_command(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "limit", "type": int, "required": False, "default": 100},
+            ]
+        }
+        add_dynamic_arguments(parser, func_info, cmd_name="finviz_news")
+        limit_action = next(action for action in parser._actions if action.dest == "limit")
+        assert "--bars" not in limit_action.option_strings
 
     def test_trade_history_position_ticket_accepts_ticket_alias(self):
         parser = argparse.ArgumentParser()
@@ -2191,6 +2214,56 @@ class TestMain:
             result = main()
         assert result == 0
         assert mock_fn.call_args[1]["timeframe"] == "D1"
+
+    @patch("mtdata.core.cli.discover_tools")
+    def test_help_hides_irrelevant_timeframe_for_trade_account_info(self, mock_discover, capsys):
+        mock_fn = MagicMock(return_value={"success": True})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "trade_account_info"
+        mock_fn.__doc__ = "Trade account info."
+
+        def trade_account_info():
+            """Trade account info."""
+            pass
+
+        info = get_function_info(trade_account_info)
+        info["func"] = mock_fn
+
+        mock_discover.return_value = {
+            "trade_account_info": {
+                "func": mock_fn,
+                "meta": {"description": "Trade account info"},
+                "_cli_func_info": info,
+            },
+        }
+        with patch("sys.argv", ["cli.py", "trade_account_info", "--help"]), pytest.raises(SystemExit):
+            main()
+        out = capsys.readouterr().out
+        assert "--timeframe" not in out
+
+    @patch("mtdata.core.cli.discover_tools")
+    def test_help_hides_duplicate_symbol_option_for_required_first_arg(self, mock_discover, capsys):
+        mock_fn = MagicMock(return_value={"success": True})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "my_tool"
+        mock_fn.__doc__ = "My tool."
+
+        def my_tool(symbol: str):
+            """My tool."""
+            pass
+
+        info = get_function_info(my_tool)
+        info["func"] = mock_fn
+
+        mock_discover.return_value = {
+            "my_tool": {"func": mock_fn, "meta": {"description": "My tool"}, "_cli_func_info": info},
+        }
+        with patch("sys.argv", ["cli.py", "my_tool", "--help"]), pytest.raises(SystemExit):
+            main()
+        out = capsys.readouterr().out
+        assert "positional arguments:" in out
+        assert "symbol" in out
+        assert "--symbol" not in out
 
     @patch("mtdata.core.cli.discover_tools")
     def test_trade_history_days_alias_converts_to_minutes(self, mock_discover):

@@ -6,6 +6,15 @@ from typing import Any, Callable, Dict, Optional, Tuple
 ToolInfo = Dict[str, Any]
 
 
+_BAR_LIMIT_ALIAS_COMMANDS: set[str] = {
+    "causal_discover_signals",
+    "data_fetch_candles",
+    "labels_triple_barrier",
+    "patterns_detect",
+    "regime_detect",
+}
+
+
 _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("forecast_quantlib_barrier_price", "option_type"): "Option side: call or put.",
     ("forecast_tune_optuna", "search_space"): "Optuna search space (JSON or k=v).",
@@ -335,7 +344,7 @@ def add_dynamic_arguments(
 
     def _extra_option_flags(param_name: str, cmd_name_value: Optional[str]) -> tuple[str, ...]:
         extras: list[str] = []
-        if param_name == "limit":
+        if param_name == "limit" and cmd_name_value in _BAR_LIMIT_ALIAS_COMMANDS:
             extras.append("--bars")
         if cmd_name_value == "trade_history" and param_name == "position_ticket":
             extras.append("--ticket")
@@ -369,7 +378,9 @@ def add_dynamic_arguments(
             positional_kwargs["nargs"] = "?"
             positional_kwargs["default"] = argparse.SUPPRESS
             parser.add_argument(param["name"], **positional_kwargs)
-            parser.add_argument(*option_flags, **kwargs)
+            hidden_alias_kwargs = dict(kwargs)
+            hidden_alias_kwargs["help"] = argparse.SUPPRESS
+            parser.add_argument(*option_flags, **hidden_alias_kwargs)
         else:
             if is_optional_bool:
                 local_kwargs = dict(kwargs)
