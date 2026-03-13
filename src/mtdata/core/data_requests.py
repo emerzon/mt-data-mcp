@@ -190,3 +190,27 @@ class DataFetchTicksRequest(BaseModel):
     @classmethod
     def _validate_limit(cls, value: int) -> int:
         return _validate_positive_limit(value)
+
+
+class WaitCandleRequest(BaseModel):
+    timeframe: TimeframeLiteral = "H1"
+    buffer_seconds: float = 1.0
+    max_wait_seconds: Optional[float] = 3600.0
+
+    @field_validator("buffer_seconds")
+    @classmethod
+    def _validate_buffer_seconds(cls, value: float) -> float:
+        value_f = float(value)
+        if value_f < 0:
+            raise ValueError("buffer_seconds must be greater than or equal to 0.")
+        return value_f
+
+    @field_validator("max_wait_seconds")
+    @classmethod
+    def _validate_max_wait_seconds(cls, value: Optional[float]) -> Optional[float]:
+        if value is None:
+            return None
+        value_f = float(value)
+        if value_f < 0:
+            raise ValueError("max_wait_seconds must be greater than or equal to 0.")
+        return value_f

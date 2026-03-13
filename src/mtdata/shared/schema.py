@@ -67,6 +67,8 @@ PARAM_HINTS = {
     "max_error": "Max approximation error.",
     "segments": "Segment count.",
     "bucket_seconds": "Resample bucket size in seconds.",
+    "buffer_seconds": "Extra seconds to wait after the candle close before returning.",
+    "max_wait_seconds": "Maximum seconds this tool may block before returning timing metadata instead.",
     "schema": "Encoding schema (e.g. delta).",
     "bits": "Bits per symbol for encoding schemas.",
     "paa": "PAA segments for symbolic representation.",

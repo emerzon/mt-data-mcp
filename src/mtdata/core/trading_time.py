@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import math
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple, Union
 
 from .config import mt5_config
+from ..shared.constants import TIMEFRAME_SECONDS
 
 
 ExpirationValue = Union[int, float, str, datetime]
@@ -59,6 +61,136 @@ def _server_time_naive_to_mt5_timestamp(dt: datetime) -> int:
         dt = dt.replace(tzinfo=None)
     dt = dt.replace(microsecond=0)
     return int((dt - datetime(1970, 1, 1)).total_seconds())
+
+
+def _server_time_naive_to_utc(dt: datetime) -> datetime:
+    """Convert a server-local naive datetime into UTC."""
+    if dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc)
+
+    try:
+        server_tz = mt5_config.get_server_tz()
+    except Exception:
+        server_tz = None
+
+    if server_tz is not None:
+        try:
+            aware_server = server_tz.localize(dt, is_dst=None) if hasattr(server_tz, "localize") else dt.replace(tzinfo=server_tz)
+        except Exception:
+            try:
+                aware_server = server_tz.localize(dt, is_dst=True) if hasattr(server_tz, "localize") else dt.replace(tzinfo=server_tz)
+            except Exception:
+                aware_server = dt.replace(tzinfo=server_tz)
+        return aware_server.astimezone(timezone.utc)
+
+    try:
+        offset_sec = int(mt5_config.get_time_offset_seconds())
+    except Exception:
+        offset_sec = 0
+    return (dt - timedelta(seconds=offset_sec)).replace(tzinfo=timezone.utc)
+
+
+def _next_candle_close_server_time(timeframe: str, *, now_utc: Optional[datetime] = None) -> datetime:
+    """Return the next candle close in server-local naive time."""
+    tf = str(timeframe or "").upper().strip()
+    if tf not in TIMEFRAME_SECONDS:
+        valid = ", ".join(sorted(TIMEFRAME_SECONDS.keys()))
+        raise ValueError(f"Invalid timeframe '{timeframe}'. Valid options: {valid}")
+
+    current_utc = now_utc or datetime.now(timezone.utc)
+    if current_utc.tzinfo is None:
+        current_utc = current_utc.replace(tzinfo=timezone.utc)
+    else:
+        current_utc = current_utc.astimezone(timezone.utc)
+
+    server_now = _to_server_time_naive(current_utc)
+    server_now = server_now.replace(tzinfo=None)
+
+    if tf == "MN1":
+        if server_now.month == 12:
+            return server_now.replace(year=server_now.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        return server_now.replace(month=server_now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    if tf == "W1":
+        days_until_next_monday = (7 - server_now.weekday()) % 7
+        if days_until_next_monday == 0:
+            days_until_next_monday = 7
+        return (server_now + timedelta(days=days_until_next_monday)).replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+
+    if tf == "D1":
+        return (server_now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    interval_seconds = int(TIMEFRAME_SECONDS[tf])
+    if interval_seconds <= 0:
+        raise ValueError(f"Unsupported timeframe seconds for {tf}")
+
+    day_start = server_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elapsed_seconds = max(0.0, (server_now - day_start).total_seconds())
+    next_slot = int(math.floor(elapsed_seconds / float(interval_seconds))) + 1
+    return day_start + timedelta(seconds=float(next_slot * interval_seconds))
+
+
+def _next_candle_wait_payload(
+    timeframe: str,
+    *,
+    buffer_seconds: float = 1.0,
+    now_utc: Optional[datetime] = None,
+) -> dict:
+    """Build timing metadata for the next candle close without sleeping."""
+    current_utc = now_utc or datetime.now(timezone.utc)
+    if current_utc.tzinfo is None:
+        current_utc = current_utc.replace(tzinfo=timezone.utc)
+    else:
+        current_utc = current_utc.astimezone(timezone.utc)
+
+    next_close_server = _next_candle_close_server_time(timeframe, now_utc=current_utc)
+    next_close_utc = _server_time_naive_to_utc(next_close_server)
+    wait_seconds = max(
+        0.0,
+        float((next_close_utc - current_utc).total_seconds()) + max(0.0, float(buffer_seconds)),
+    )
+
+    try:
+        server_tz_name = getattr(mt5_config, "server_tz_name", None) or f"UTC{int(mt5_config.get_time_offset_seconds()) / 3600:+g}"
+    except Exception:
+        server_tz_name = "UTC"
+
+    return {
+        "timeframe": str(timeframe).upper().strip(),
+        "buffer_seconds": float(buffer_seconds),
+        "sleep_seconds": float(wait_seconds),
+        "started_at_utc": current_utc.isoformat(),
+        "next_candle_close_utc": next_close_utc.isoformat(),
+        "next_candle_close_server": next_close_server.isoformat(),
+        "server_timezone": str(server_tz_name),
+    }
+
+
+def _sleep_until_next_candle(
+    timeframe: str,
+    *,
+    buffer_seconds: float = 1.0,
+    sleep_impl=time.sleep,
+    now_utc: Optional[datetime] = None,
+) -> dict:
+    """Sleep until the next candle closes and return timing metadata."""
+    payload = _next_candle_wait_payload(
+        timeframe,
+        buffer_seconds=buffer_seconds,
+        now_utc=now_utc,
+    )
+    sleep_seconds = float(payload.get("sleep_seconds", 0.0) or 0.0)
+    sleep_impl(sleep_seconds)
+    payload["status"] = "completed"
+    payload["slept"] = True
+    payload["slept_seconds"] = sleep_seconds
+    payload["remaining_seconds"] = 0.0
+    return payload
 
 
 def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tuple[Optional[int], bool]:

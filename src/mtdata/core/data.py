@@ -3,15 +3,15 @@ from typing import Any, Dict
 import logging
 
 from ._mcp_instance import mcp
-from .data_requests import DataFetchCandlesRequest, DataFetchTicksRequest
-from .data_use_cases import run_data_fetch_candles, run_data_fetch_ticks
+from .data_requests import DataFetchCandlesRequest, DataFetchTicksRequest, WaitCandleRequest
+from .data_use_cases import run_data_fetch_candles, run_data_fetch_ticks, run_wait_candle
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from ..services.data_service import fetch_candles, fetch_ticks
 from ..utils.mt5 import ensure_mt5_connection_or_raise
 
 # Explicitly define what should be exported for '*' imports
-__all__ = ['data_fetch_candles', 'data_fetch_ticks']
+__all__ = ['data_fetch_candles', 'data_fetch_ticks', 'wait_candle']
 
 logger = logging.getLogger(__name__)
 
@@ -134,4 +134,27 @@ def data_fetch_ticks(
             gateway=_get_mt5_gateway(),
             fetch_ticks_impl=fetch_ticks,
         ),
+    )
+
+
+@mcp.tool()
+def wait_candle(
+    request: WaitCandleRequest,
+) -> Dict[str, Any]:
+    """Sleep until the next candle on `timeframe` is closed.
+
+    This uses the configured MT5 server timezone or offset to align candle
+    boundaries. For example, `timeframe="M5"` waits until the next M5 candle
+    close, then applies the optional `buffer_seconds`.
+
+    To stay compatible with MCP clients that impose tool-call timeouts, the tool
+    only blocks up to `max_wait_seconds` by default. If the remaining wait is
+    longer, it returns timing metadata immediately instead of sleeping.
+    """
+    return run_logged_operation(
+        logger,
+        operation="wait_candle",
+        timeframe=request.timeframe,
+        buffer_seconds=request.buffer_seconds,
+        func=lambda: run_wait_candle(request),
     )
