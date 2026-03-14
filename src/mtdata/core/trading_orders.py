@@ -204,6 +204,15 @@ def _place_market_order(
                     return {"error": f"take_profit must be above entry for BUY orders. tp={norm_tp}, price={validate_price}"}
                 if side == "SELL" and norm_tp >= validate_price:
                     return {"error": f"take_profit must be below entry for SELL orders. tp={norm_tp}, price={validate_price}"}
+            live_protection_error = trading_validation._validate_live_protection_levels(
+                symbol_info=symbol_info,
+                tick=validate_tick,
+                side=side,
+                stop_loss=norm_sl,
+                take_profit=norm_tp,
+            )
+            if live_protection_error is not None:
+                return live_protection_error
 
             # Place market order without TP/SL first (TRADE_ACTION_DEAL doesn't
             # reliably support them)
@@ -221,6 +230,15 @@ def _place_market_order(
                     return {"error": f"take_profit must be above entry for BUY orders at send time. tp={norm_tp}, price={price}"}
                 if side == "SELL" and norm_tp >= price:
                     return {"error": f"take_profit must be below entry for SELL orders at send time. tp={norm_tp}, price={price}"}
+            live_protection_error = trading_validation._validate_live_protection_levels(
+                symbol_info=symbol_info,
+                tick=send_tick,
+                side=side,
+                stop_loss=norm_sl,
+                take_profit=norm_tp,
+            )
+            if live_protection_error is not None:
+                return live_protection_error
             request_comment = trading_comments._normalize_trade_comment(comment, default="MCP order")
             comment_sanitization = trading_comments._comment_sanitization_info(comment, request_comment)
             comment_truncation = trading_comments._comment_truncation_info(comment, request_comment)
@@ -322,6 +340,7 @@ def _place_market_order(
                         # Use TRADE_ACTION_SLTP to set TP/SL on the position
                         modify_request = {
                             "action": mt5.TRADE_ACTION_SLTP,
+                            "symbol": symbol,
                             "position": position_ticket,
                             "sl": norm_sl or 0.0,
                             "tp": norm_tp or 0.0,

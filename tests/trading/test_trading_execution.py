@@ -89,6 +89,7 @@ def test_place_market_order_success(mock_mt5):
     
     sltp_req = mock_mt5.order_send.call_args_list[1].args[0]
     assert sltp_req["action"] == mock_mt5.TRADE_ACTION_SLTP
+    assert sltp_req["symbol"] == "EURUSD"
     assert math.isclose(sltp_req["sl"], 1.04000)
     assert math.isclose(sltp_req["tp"], 1.06000)
     assert sltp_req["position"] == 456  # Matching the 'order' ticket from the mock result
@@ -144,6 +145,46 @@ def test_place_market_order_sl_tp_logic_violations(mock_mt5):
     )
     assert "error" in res
     assert "take_profit must be below entry" in res["error"]
+
+
+def test_place_market_order_rejects_buy_stop_loss_inside_live_spread(mock_mt5):
+    res = _place_market_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        stop_loss=1.05005,  # Below ask, but still above bid and invalid for a BUY position
+        take_profit=1.06000,
+    )
+
+    assert "error" in res
+    assert "live bid" in res["error"]
+    mock_mt5.order_send.assert_not_called()
+
+
+def test_place_market_order_rejects_levels_inside_broker_stop_distance(mock_mt5):
+    mock_mt5.symbol_info.return_value = MagicMock(
+        visible=True,
+        point=0.00001,
+        digits=5,
+        trade_calc_mode=0,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+        trade_stops_level=30,
+        trade_freeze_level=0,
+    )
+
+    res = _place_market_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        stop_loss=1.04990,  # 10 points below bid; broker requires 30
+        take_profit=1.06000,
+    )
+
+    assert "error" in res
+    assert "min_distance_points=30" in res["error"]
+    mock_mt5.order_send.assert_not_called()
 
 
 def test_place_market_order_volume_validation(mock_mt5):

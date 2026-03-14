@@ -168,6 +168,148 @@ def _validate_deviation(deviation: Union[int, float]) -> Tuple[Optional[int], Op
     return dev, None
 
 
+def _validate_live_protection_levels(
+    *,
+    symbol_info: Any,
+    tick: Any,
+    side: str,
+    stop_loss: Optional[float],
+    take_profit: Optional[float],
+) -> Optional[Dict[str, Any]]:
+    """Validate live SL/TP attachment against current quotes and broker distances."""
+    side_norm = str(side).upper().strip()
+    if side_norm not in {"BUY", "SELL"}:
+        return None
+
+    try:
+        bid = float(getattr(tick, "bid", float("nan")) or float("nan"))
+    except Exception:
+        bid = float("nan")
+    try:
+        ask = float(getattr(tick, "ask", float("nan")) or float("nan"))
+    except Exception:
+        ask = float("nan")
+    if not math.isfinite(bid) or bid <= 0 or not math.isfinite(ask) or ask <= 0:
+        return {"error": "Failed to get valid current bid/ask for SL/TP validation."}
+
+    reference_price = bid if side_norm == "BUY" else ask
+    reference_label = "bid" if side_norm == "BUY" else "ask"
+
+    try:
+        point = float(getattr(symbol_info, "point", 0.0) or 0.0)
+    except Exception:
+        point = 0.0
+    if not math.isfinite(point) or point <= 0:
+        point = 0.0
+
+    try:
+        stops_level_points = int(float(getattr(symbol_info, "trade_stops_level", 0) or 0))
+    except Exception:
+        stops_level_points = 0
+    if stops_level_points < 0:
+        stops_level_points = 0
+
+    try:
+        freeze_level_points = int(float(getattr(symbol_info, "trade_freeze_level", 0) or 0))
+    except Exception:
+        freeze_level_points = 0
+    if freeze_level_points < 0:
+        freeze_level_points = 0
+
+    min_distance_points = max(stops_level_points, freeze_level_points)
+    min_distance_price = float(min_distance_points) * point if point > 0 else 0.0
+    tol = point * 0.1 if point > 0 else 1e-9
+
+    def _metadata() -> Dict[str, Any]:
+        return {
+            "side": side_norm,
+            "bid": bid,
+            "ask": ask,
+            "reference_price": reference_price,
+            "reference_label": reference_label,
+            "trade_stops_level": stops_level_points,
+            "trade_freeze_level": freeze_level_points,
+            "min_distance_points": min_distance_points,
+            "min_distance_price": min_distance_price,
+        }
+
+    if stop_loss is not None:
+        sl = float(stop_loss)
+        if side_norm == "BUY":
+            if sl >= (reference_price - tol):
+                return {
+                    "error": (
+                        "stop_loss must be below the live bid for BUY positions "
+                        f"before TP/SL can be attached. sl={sl}, bid={bid}, ask={ask}"
+                    ),
+                    **_metadata(),
+                }
+            if min_distance_price > 0 and (reference_price - sl) < (min_distance_price - tol):
+                return {
+                    "error": (
+                        "stop_loss is too close to the live bid for BUY positions. "
+                        f"sl={sl}, bid={bid}, min_distance_points={min_distance_points}"
+                    ),
+                    **_metadata(),
+                }
+        else:
+            if sl <= (reference_price + tol):
+                return {
+                    "error": (
+                        "stop_loss must be above the live ask for SELL positions "
+                        f"before TP/SL can be attached. sl={sl}, bid={bid}, ask={ask}"
+                    ),
+                    **_metadata(),
+                }
+            if min_distance_price > 0 and (sl - reference_price) < (min_distance_price - tol):
+                return {
+                    "error": (
+                        "stop_loss is too close to the live ask for SELL positions. "
+                        f"sl={sl}, ask={ask}, min_distance_points={min_distance_points}"
+                    ),
+                    **_metadata(),
+                }
+
+    if take_profit is not None:
+        tp = float(take_profit)
+        if side_norm == "BUY":
+            if tp <= (reference_price + tol):
+                return {
+                    "error": (
+                        "take_profit must be above the live bid for BUY positions "
+                        f"before TP/SL can be attached. tp={tp}, bid={bid}, ask={ask}"
+                    ),
+                    **_metadata(),
+                }
+            if min_distance_price > 0 and (tp - reference_price) < (min_distance_price - tol):
+                return {
+                    "error": (
+                        "take_profit is too close to the live bid for BUY positions. "
+                        f"tp={tp}, bid={bid}, min_distance_points={min_distance_points}"
+                    ),
+                    **_metadata(),
+                }
+        else:
+            if tp >= (reference_price - tol):
+                return {
+                    "error": (
+                        "take_profit must be below the live ask for SELL positions "
+                        f"before TP/SL can be attached. tp={tp}, bid={bid}, ask={ask}"
+                    ),
+                    **_metadata(),
+                }
+            if min_distance_price > 0 and (reference_price - tp) < (min_distance_price - tol):
+                return {
+                    "error": (
+                        "take_profit is too close to the live ask for SELL positions. "
+                        f"tp={tp}, ask={ask}, min_distance_points={min_distance_points}"
+                    ),
+                    **_metadata(),
+                }
+
+    return None
+
+
 def _get_trading_gateway(gateway: Optional[MT5TradingGateway] = None) -> MT5TradingGateway:
     if gateway is not None:
         return gateway

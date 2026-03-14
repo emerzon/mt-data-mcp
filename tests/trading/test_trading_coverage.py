@@ -1609,6 +1609,7 @@ class TestModifyPosition:
     def _setup_mt5(self, mt5):
         mt5.TRADE_ACTION_SLTP = 6
         mt5.TRADE_RETCODE_DONE = 10009
+        mt5.symbol_info_tick.return_value = _tick(bid=1.1050, ask=1.1052)
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_position_not_found(self):
@@ -1644,6 +1645,7 @@ class TestModifyPosition:
         result = _modify_position(ticket=123, stop_loss=1.08)
         assert result.get("success") is True
         req = mt5.order_send.call_args.args[0]
+        assert req.get("symbol") == "EURUSD"
         assert req.get("position") == 777
         assert result.get("position_ticket") == 777
 

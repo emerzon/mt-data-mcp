@@ -31,6 +31,35 @@ def _trading_connection_error(gateway: Optional[MT5TradingGateway] = None) -> Op
     return None
 
 
+def _safe_int_attr(obj: Any, name: str, default: int) -> int:
+    try:
+        value = getattr(obj, name)
+    except Exception:
+        return default
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, (int, float)):
+        try:
+            fv = float(value)
+        except Exception:
+            return default
+        if not math.isfinite(fv) or not fv.is_integer():
+            return default
+        return int(fv)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return default
+        try:
+            fv = float(text)
+        except Exception:
+            return default
+        if not math.isfinite(fv) or not fv.is_integer():
+            return default
+        return int(fv)
+    return default
+
+
 def _modify_position(
     ticket: Union[int, str],
     stop_loss: Optional[Union[int, float]] = None,
@@ -90,8 +119,31 @@ def _modify_position(
             if norm_tp is None:
                 norm_tp = 0.0
 
+            position_type_buy = _safe_int_attr(
+                mt5,
+                "POSITION_TYPE_BUY",
+                _safe_int_attr(mt5, "ORDER_TYPE_BUY", 0),
+            )
+            try:
+                side = "BUY" if int(getattr(position, "type", position_type_buy)) == int(position_type_buy) else "SELL"
+            except Exception:
+                side = "BUY"
+            tick = mt5.symbol_info_tick(position.symbol)
+            if tick is None:
+                return {"error": f"Failed to get current price for {position.symbol}"}
+            live_protection_error = trading_validation._validate_live_protection_levels(
+                symbol_info=symbol_info,
+                tick=tick,
+                side=side,
+                stop_loss=None if float(norm_sl) == 0.0 else float(norm_sl),
+                take_profit=None if float(norm_tp) == 0.0 else float(norm_tp),
+            )
+            if live_protection_error is not None:
+                return live_protection_error
+
             request = {
                 "action": mt5.TRADE_ACTION_SLTP,
+                "symbol": position.symbol,
                 "position": resolved_ticket,
                 "sl": norm_sl,
                 "tp": norm_tp,
