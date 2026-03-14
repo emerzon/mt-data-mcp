@@ -501,7 +501,7 @@ def _compact_forecast_ci(
         out['status'] = 'available'
 
     if alpha is not None:
-        out['alpha'] = alpha
+        out['ci_alpha'] = alpha
 
     if not out and ci_requested:
         out['requested'] = True

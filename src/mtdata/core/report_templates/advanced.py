@@ -69,7 +69,7 @@ def template_advanced(
             horizon=int(horizon),
             steps=int(p.get('conformal_steps', 25)),
             spacing=int(p.get('conformal_spacing', 10)),
-            alpha=float(p.get('conformal_alpha', 0.1)),
+            ci_alpha=float(p.get('conformal_alpha', 0.1)),
         )
         if 'error' in conf:
             base['sections']['forecast_conformal'] = {'error': conf['error'], 'method': best_method}
@@ -79,7 +79,7 @@ def template_advanced(
                 'lower_price': conf.get('lower_price'),
                 'upper_price': conf.get('upper_price'),
                 'per_step_q': conf.get('conformal', {}).get('per_step_q'),
-                'alpha': conf.get('ci_alpha'),
+                'ci_alpha': conf.get('ci_alpha'),
             }
 
     return base

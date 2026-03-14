@@ -18,10 +18,10 @@ class TestForecastTypedArgs:
         parser = argparse.ArgumentParser()
         _add_forecast_generate_args(parser)
 
-        args = parser.parse_args(["BTCUSD", "--denoise", "--model-params"])
+        args = parser.parse_args(["BTCUSD", "--denoise", "--params"])
 
         assert args.denoise == "__PRESENT__"
-        assert args.model_params == "__PRESENT__"
+        assert args.params == "__PRESENT__"
 
     @patch("mtdata.core.cli.discover_tools")
     def test_main_shows_targeted_error_for_bare_denoise(self, mock_discover, capsys):

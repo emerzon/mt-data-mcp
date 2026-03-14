@@ -287,7 +287,7 @@ class TestNormalizeForecastPayload:
         }
         result = _normalize_forecast_payload(payload, verbose=False)
         assert "meta" not in result
-        assert result["ci"] == {"status": "unavailable", "alpha": 0.05}
+        assert result["ci"] == {"status": "unavailable", "ci_alpha": 0.05}
         assert result["warnings"][0].startswith("Point forecast only")
 
     def test_ci_diag_omitted_when_bounds_already_rendered(self):
@@ -317,7 +317,7 @@ class TestCompactForecastCi:
         }
         assert _compact_forecast_ci(payload, lower=[1.0], upper=[2.0]) == {}
 
-    def test_compacts_unavailable_ci_to_status_and_alpha(self):
+    def test_compacts_unavailable_ci_to_status_and_ci_alpha(self):
         payload = {
             "ci_requested": True,
             "ci_available": False,
@@ -327,7 +327,7 @@ class TestCompactForecastCi:
         }
         assert _compact_forecast_ci(payload, lower=[], upper=[]) == {
             "status": "unavailable",
-            "alpha": 0.1,
+            "ci_alpha": 0.1,
         }
 
 

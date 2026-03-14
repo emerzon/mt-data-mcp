@@ -296,7 +296,7 @@ def resolve_param_kwargs(
         (cmd_name in {"forecast_generate", "forecast_conformal_intervals", "forecast_tune_genetic", "forecast_tune_optuna"})
         or _looks_like_forecast_method_literal(param.get("type"))
     ):
-        if not (param_names and ("library" in param_names or "model" in param_names)):
+        if not (param_names and "library" in param_names):
             help_suffix = " Use forecast_list_methods to browse available methods."
             if "forecast_list_methods" not in kwargs["help"]:
                 kwargs["help"] = f"{kwargs['help']}{help_suffix}"
@@ -379,8 +379,6 @@ def add_dynamic_arguments(
             extras.append("--bars")
         if cmd_name_value == "trade_history" and param_name == "position_ticket":
             extras.append("--ticket")
-        if cmd_name_value == "forecast_conformal_intervals" and param_name == "method":
-            extras.append("--model")
         return tuple(extras)
 
     for param in param_info["params"]:

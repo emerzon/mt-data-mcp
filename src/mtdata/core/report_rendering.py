@@ -746,8 +746,8 @@ def _render_forecast_conformal_section(data: Any) -> List[str]:
 
         formatted = [f"q{idx}={_format_quantile_value(item)}" for idx, item in enumerate(sliced, start=1)]
         lines.append(f"- First step quantiles: {', '.join(formatted)}")
-    if data.get("alpha") is not None:
-        lines.append(f"- Alpha: {format_number(data['alpha'])}")
+    if data.get("ci_alpha") is not None:
+        lines.append(f"- CI alpha: {format_number(data['ci_alpha'])}")
     return lines
 
 

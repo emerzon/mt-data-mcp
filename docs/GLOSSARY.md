@@ -62,7 +62,7 @@ A simple, robust forecasting technique that decomposes a time series into trend 
 
 **Example:**
 ```bash
-mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta
 ```
 
 ### ARIMA (AutoRegressive Integrated Moving Average)
@@ -88,7 +88,7 @@ Generates thousands of possible future price paths by randomly sampling from his
 **Example:**
 ```bash
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
-  --model mc_gbm --model-params "n_sims=2000"
+  --method mc_gbm --params "n_sims=2000"
 ```
 
 **Interpretation:** Instead of one forecast line, you get percentile bands showing where price might land.
@@ -101,7 +101,7 @@ A foundation model for time series (like GPT for text). Pre-trained on millions 
 **Example:**
 ```bash
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 24 \
-  --library pretrained --model chronos2
+  --library pretrained --method chronos2
 ```
 
 ---

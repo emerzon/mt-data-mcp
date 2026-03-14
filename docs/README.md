@@ -63,7 +63,7 @@ These are research workflows (not financial advice). For a guided narrative, sta
 ```bash
 mtdata-cli symbols_describe EURUSD --json
 mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 200 --json
-mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta --json
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta --json
 ```
 
 ### 2) TP/SL odds for a trade idea

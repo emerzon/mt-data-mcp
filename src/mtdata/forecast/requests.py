@@ -11,11 +11,11 @@ class ForecastGenerateRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     library: ForecastLibraryLiteral = "native"
-    model: str = "theta"
+    method: str = "theta"
     horizon: int = Field(12, ge=1)
     lookback: Optional[int] = Field(None, ge=1)
     as_of: Optional[str] = None
-    model_params: Optional[Dict[str, Any]] = None
+    params: Optional[Dict[str, Any]] = None
     ci_alpha: Optional[float] = Field(0.05, ge=0.0, le=0.5)
     quantity: Literal["price", "return", "volatility"] = "price"
     denoise: Optional[DenoiseSpec] = None
@@ -23,7 +23,6 @@ class ForecastGenerateRequest(BaseModel):
     dimred_method: Optional[str] = None
     dimred_params: Optional[Dict[str, Any]] = None
     target_spec: Optional[Dict[str, Any]] = None
-    method: Optional[str] = None
 
 
 class ForecastBacktestRequest(BaseModel):
@@ -52,7 +51,7 @@ class ForecastConformalIntervalsRequest(BaseModel):
     horizon: int = Field(12, ge=1)
     steps: int = Field(25, ge=1)
     spacing: int = Field(10, ge=1)
-    alpha: float = Field(0.1, gt=0.0, lt=1.0)
+    ci_alpha: float = Field(0.1, gt=0.0, lt=1.0)
     denoise: Optional[DenoiseSpec] = None
     params: Optional[Dict[str, Any]] = None
 

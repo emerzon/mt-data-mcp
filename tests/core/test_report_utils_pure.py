@@ -1517,13 +1517,13 @@ class TestRenderForecastConformalSection:
             "method": "conformal",
             "lower_price": 1.0,
             "upper_price": 1.5,
-            "alpha": 0.1,
+            "ci_alpha": 0.1,
         }
         lines = _render_forecast_conformal_section(data)
         text = "\n".join(lines)
         assert "Conformal Intervals" in text
         assert "conformal" in text
-        assert "Alpha" in text
+        assert "CI alpha" in text
 
     def test_with_quantiles(self):
         data = {"per_step_q": [0.1, 0.2, 0.3]}
@@ -1671,7 +1671,7 @@ class TestFullReportRoundTrip:
                     "method": "conformal",
                     "lower_price": 1.08,
                     "upper_price": 1.09,
-                    "alpha": 0.1,
+                    "ci_alpha": 0.1,
                 },
             },
         }

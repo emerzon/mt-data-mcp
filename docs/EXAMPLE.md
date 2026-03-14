@@ -94,14 +94,14 @@ Simple baseline (Theta):
 
 ```bash
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
-  --library native --model theta --json
+  --library native --method theta --json
 ```
 
 Pattern-based “analog” forecast (nearest-neighbor style):
 
 ```bash
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
-  --library native --model analog --model-params "window_size=64 search_depth=5000 top_k=20 scale=zscore" \
+  --library native --method analog --params "window_size=64 search_depth=5000 top_k=20 scale=zscore" \
   --json
 ```
 
@@ -109,7 +109,7 @@ Optional: foundation model (if available):
 
 ```bash
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 24 \
-  --library pretrained --model chronos2 --model-params "context_length=512" \
+  --library pretrained --method chronos2 --params "context_length=512" \
   --json
 ```
 
@@ -117,7 +117,7 @@ Optional: Monte Carlo simulation forecast (range of outcomes):
 
 ```bash
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
-  --library native --model mc_gbm --model-params "n_sims=3000 seed=7" \
+  --library native --method mc_gbm --params "n_sims=3000 seed=7" \
   --json
 ```
 

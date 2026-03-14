@@ -11,6 +11,7 @@ from ..utils.mt5 import _ensure_symbol_ready, _mt5_copy_rates_from, _mt5_epoch_t
 from ..utils.utils import _parse_start_datetime
 from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
 from .common import (
+    bars_per_year as _bars_per_year,
     default_seasonality as _default_seasonality_period,
     log_returns_from_prices as _log_returns_from_prices,
     pd_freq_from_timeframe as _pd_freq_from_timeframe,
@@ -209,23 +210,6 @@ def get_volatility_methods_data() -> Dict[str, Any]:
     })
 
     return {"methods": methods}
-# Use shared helpers from common.py for seasonality and pandas freq mapping
-
-def _bars_per_year(timeframe: str) -> int:
-    """Approximate number of bars per year for a given timeframe.
-
-    Uses 365 days; for intraday frames computes 365*24*3600 / seconds_per_bar.
-    """
-    try:
-        secs = TIMEFRAME_SECONDS.get(timeframe)
-        if not secs or secs <= 0:
-            return 0
-        return int(round((365.0 * 24.0 * 3600.0) / float(secs)))
-    except Exception:
-        return 0
-
-
-
 # --- Range-based variance helpers -------------------------------------------------
 
 def _parkinson_sigma_sq(high: np.ndarray, low: np.ndarray) -> np.ndarray:

@@ -116,11 +116,11 @@ mtdata-cli data_fetch_ticks EURUSD --output rows --limit 20000 \
 
 See [SIMPLIFICATION.md](SIMPLIFICATION.md) for algorithms and parameters.
 
-### Model Parameters
-For forecast models, use `--model-params`:
+### Method Parameters
+For forecast methods, use `--params`:
 ```bash
-mtdata-cli forecast_generate EURUSD --model arima --model-params "p=2 d=1 q=2"
-mtdata-cli forecast_generate EURUSD --model mc_gbm --model-params "n_sims=2000 seed=42"
+mtdata-cli forecast_generate EURUSD --method arima --params "p=2 d=1 q=2"
+mtdata-cli forecast_generate EURUSD --method mc_gbm --params "n_sims=2000 seed=42"
 ```
 
 ---
@@ -262,13 +262,13 @@ mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 100 \
 ### Generate Forecasts
 ```bash
 # Basic forecast
-mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta
 
-# Foundation model
-mtdata-cli forecast_generate EURUSD --library pretrained --model chronos2 --horizon 24
+# Foundation method
+mtdata-cli forecast_generate EURUSD --library pretrained --method chronos2 --horizon 24
 
 # Monte Carlo simulation
-mtdata-cli forecast_generate EURUSD --model mc_gbm --model-params "n_sims=2000"
+mtdata-cli forecast_generate EURUSD --method mc_gbm --params "n_sims=2000"
 ```
 
 ### Analyze Risk

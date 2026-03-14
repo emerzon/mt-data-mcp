@@ -91,9 +91,9 @@ def _run_forecast_operation(
 
 @mcp.tool()
 def forecast_generate(request: ForecastGenerateRequest) -> Dict[str, Any]:
-    """Generate forecasts for the next `horizon` bars using a selected model.
+    """Generate forecasts for the next `horizon` bars using a selected method.
 
-    Supports native or library-backed models with optional preprocessing.
+    Supports native or library-backed methods with optional preprocessing.
     Delegates to `mtdata.forecast.forecast`.
     """
     return _run_forecast_operation(
@@ -101,7 +101,7 @@ def forecast_generate(request: ForecastGenerateRequest) -> Dict[str, Any]:
         symbol=request.symbol,
         timeframe=request.timeframe,
         library=request.library,
-        model=request.model,
+        method=request.method,
         require_connection=True,
         catch_forecast_error=True,
         func=lambda: run_forecast_generate(
@@ -525,8 +525,8 @@ def _forecast_list_library_models_impl(
             "library": lib,
             "models": sorted(m for m in _METHODS if m not in excluded),
             "usage": [
-                "mtdata-cli forecast_generate SYMBOL --library native --model analog",
-                "mtdata-cli forecast_generate SYMBOL --library native --model theta",
+                "mtdata-cli forecast_generate SYMBOL --library native --method analog",
+                "mtdata-cli forecast_generate SYMBOL --library native --method theta",
             ],
         }
 
@@ -551,7 +551,7 @@ def _forecast_list_library_models_impl(
         return {
             "library": lib,
             "models": sorted(set(names)),
-            "usage": "mtdata-cli forecast_generate SYMBOL --library statsforecast --model AutoARIMA",
+            "usage": "mtdata-cli forecast_generate SYMBOL --library statsforecast --method AutoARIMA",
         }
 
     if lib == "sktime":
@@ -560,11 +560,11 @@ def _forecast_list_library_models_impl(
             "library": lib,
             "models": sorted({v[0] for v in mapping.values()}),
             "usage": [
-                "mtdata-cli forecast_generate SYMBOL --library sktime --model theta",
-                "mtdata-cli forecast_generate SYMBOL --library sktime --model ThetaForecaster",
-                "mtdata-cli forecast_generate SYMBOL --library sktime --model sktime.forecasting.theta.ThetaForecaster --model-params \"sp=24\"",
+                "mtdata-cli forecast_generate SYMBOL --library sktime --method theta",
+                "mtdata-cli forecast_generate SYMBOL --library sktime --method ThetaForecaster",
+                "mtdata-cli forecast_generate SYMBOL --library sktime --method sktime.forecasting.theta.ThetaForecaster --params \"sp=24\"",
             ],
-            "note": "The --model value is matched to the closest available forecaster name; you can also pass a dotted class path. Constructor kwargs go in --model-params (or use --set model.<k>=<v>).",
+            "note": "The --method value is matched to the closest available forecaster name; you can also pass a dotted class path. Constructor kwargs go in --params (or use --set method.<k>=<v>).",
         }
 
     if lib == "pretrained":
@@ -572,39 +572,39 @@ def _forecast_list_library_models_impl(
             "library": lib,
             "models": [
                 {
-                    "model": "chronos2",
+                    "method": "chronos2",
                     "requires": ["chronos-forecasting>=2.0.0", "torch"],
                     "notes": "Hugging Face model id via params.model_name (default: amazon/chronos-bolt-base for compatibility).",
                 },
                 {
-                    "model": "chronos_bolt",
+                    "method": "chronos_bolt",
                     "requires": ["chronos-forecasting>=2.0.0", "torch"],
                     "notes": "Same adapter as chronos2; different default naming.",
                 },
                 {
-                    "model": "timesfm",
+                    "method": "timesfm",
                     "requires": ["timesfm", "torch"],
                     "notes": "Uses timesfm 2.x (GitHub) API; runs without downloading external weights.",
                 },
                 {
-                    "model": "lag_llama",
+                    "method": "lag_llama",
                     "requires": ["lag-llama", "gluonts", "torch"],
                     "notes": "May not be installable on Python 3.13 due to upstream pins; included for completeness.",
                 },
             ],
             "usage": [
-                "mtdata-cli forecast_generate SYMBOL --library pretrained --model chronos2",
-                "mtdata-cli forecast_generate SYMBOL --library pretrained --model timesfm",
+                "mtdata-cli forecast_generate SYMBOL --library pretrained --method chronos2",
+                "mtdata-cli forecast_generate SYMBOL --library pretrained --method timesfm",
             ],
         }
 
     if lib == "mlforecast":
         return {
             "library": lib,
-            "note": "Use `--model <dotted sklearn/lightgbm regressor class>` plus optional constructor kwargs in --model-params (or use --set model.<k>=<v>).",
+            "note": "Use `--method <dotted sklearn/lightgbm regressor class>` plus optional constructor kwargs in --params (or use --set method.<k>=<v>).",
             "usage": [
-                "mtdata-cli forecast_generate SYMBOL --library mlforecast --model sklearn.ensemble.RandomForestRegressor --model-params \"n_estimators=200\"",
-                "mtdata-cli forecast_generate SYMBOL --library native --model mlf_rf",
+                "mtdata-cli forecast_generate SYMBOL --library mlforecast --method sklearn.ensemble.RandomForestRegressor --params \"n_estimators=200\"",
+                "mtdata-cli forecast_generate SYMBOL --library native --method mlf_rf",
             ],
         }
 

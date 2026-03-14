@@ -58,7 +58,7 @@ mtdata-cli symbols_list --limit 5
 mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 50
 
 # Generate a baseline price forecast
-mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta
 ```
 
 Notes:

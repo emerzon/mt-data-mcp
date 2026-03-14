@@ -586,7 +586,7 @@ def _coerce_cli_scalar(v: str) -> Any:
 
 
 def _parse_set_overrides(items: Optional[List[str]]) -> Dict[str, Dict[str, Any]]:
-    """Parse repeated --set entries like 'model.sp=24' into nested dicts."""
+    """Parse repeated --set entries like 'method.sp=24' into nested dicts."""
     return _parse_set_overrides_impl(items, coerce_cli_scalar=_coerce_cli_scalar)
 
 
@@ -595,15 +595,15 @@ def _merge_dict(dst: Optional[Dict[str, Any]], src: Optional[Dict[str, Any]]) ->
 
 
 _FORECAST_TYPED_ARG_SPECS: Dict[str, Dict[str, Any]] = {
-    "model_params": {
-        "flag": "--model-params",
-        "section": "model",
+    "params": {
+        "flag": "--params",
+        "section": "method",
         "metavar": "JSON|k=v",
-        "help": "Model params as JSON or key=value pairs.",
+        "help": "Method params as JSON or key=value pairs.",
         "examples": [
-            '--model-params "window_size=64 top_k=20"',
-            '--model-params \'{"window_size":64,"top_k":20}\'',
-            '--model-params --set model.window_size=64 --set model.top_k=20',
+            '--params "window_size=64 top_k=20"',
+            '--params \'{"window_size":64,"top_k":20}\'',
+            '--params --set method.window_size=64 --set method.top_k=20',
         ],
     },
     "denoise": {
@@ -675,13 +675,13 @@ def _add_forecast_typed_arg(
 
 def _forecast_generate_typed_value_epilog() -> str:
     lines = ["Typed Value Formats:"]
-    for key in ("denoise", "model_params", "features", "dimred_params", "target_spec"):
+    for key in ("denoise", "params", "features", "dimred_params", "target_spec"):
         spec = _FORECAST_TYPED_ARG_SPECS[key]
         lines.append(f"  {spec['flag']} {spec['metavar']}")
         for example in spec["examples"]:
             lines.append(f"    Example: {CLI_PROGRAM} forecast_generate SYMBOL {example}")
     lines.append("  --set SECTION.KEY=VALUE")
-    lines.append(f"    Example: {CLI_PROGRAM} forecast_generate SYMBOL --set model.window_size=64")
+    lines.append(f"    Example: {CLI_PROGRAM} forecast_generate SYMBOL --set method.window_size=64")
     return "\n".join(lines)
 
 
@@ -707,32 +707,31 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
 
     cmd_parser.add_argument("symbol", help="Trading symbol.")
 
-    group_model = cmd_parser.add_argument_group("Model")
-    group_model.add_argument(
+    group_method = cmd_parser.add_argument_group("Method")
+    group_method.add_argument(
         "--library",
         dest="library",
         type=str,
         choices=["native", "statsforecast", "sktime", "mlforecast", "pretrained"],
         default="native",
-        help="Model library.",
+        help="Method library.",
     )
-    group_model.add_argument(
-        "--model",
+    group_method.add_argument(
         "--method",
-        dest="model",
+        dest="method",
         type=str,
         default="theta",
-        help="Model name. The legacy --method alias is also accepted.",
+        help="Method name within the selected library.",
     )
-    group_model.add_argument(
-        "--model-params",
-        dest="model_params",
+    group_method.add_argument(
+        "--params",
+        dest="params",
         type=str,
         nargs="?",
         const="__PRESENT__",
         default=None,
-        metavar=_FORECAST_TYPED_ARG_SPECS["model_params"]["metavar"],
-        help=_FORECAST_TYPED_ARG_SPECS["model_params"]["help"],
+        metavar=_FORECAST_TYPED_ARG_SPECS["params"]["metavar"],
+        help=_FORECAST_TYPED_ARG_SPECS["params"]["help"],
     )
 
     group_window = cmd_parser.add_argument_group("Window")
@@ -790,7 +789,7 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         action="append",
         default=None,
         metavar="SECTION.KEY=VALUE",
-        help="Override nested params (model, denoise, features, dimred, target).",
+        help="Override nested params (method, denoise, features, dimred, target).",
     )
 
     group_dbg = cmd_parser.add_argument_group("Debug")
@@ -864,11 +863,11 @@ def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
     lines.append("  - bool: pass true|false (e.g., --flag true)")
     lines.append("")
     lines.append("General Examples:")
-    lines.append("  # Basic forecast with a native model")
-    lines.append(f"  {CLI_PROGRAM} forecast_generate EURUSD --library native --model theta --timeframe H1 --horizon 24")
+    lines.append("  # Basic forecast with a native method")
+    lines.append(f"  {CLI_PROGRAM} forecast_generate EURUSD --library native --method theta --timeframe H1 --horizon 24")
     lines.append("")
     lines.append("  # Foundation model (Chronos-2) with covariates")
-    lines.append(f"  {CLI_PROGRAM} forecast_generate BTCUSD --library pretrained --model chronos2 --timeframe H1 --horizon 12 \\")
+    lines.append(f"  {CLI_PROGRAM} forecast_generate BTCUSD --library pretrained --method chronos2 --timeframe H1 --horizon 12 \\")
     lines.append("    --features \"include=open,high future_covariates=hour,dow,is_holiday\" \\")
     lines.append("    --verbose")
     lines.append("")
@@ -884,15 +883,12 @@ _EXTENDED_HELP_EXAMPLE_HINTS: Dict[str, Any] = {
     'timeframe': 'H1',
     'method': 'nhits',
     'library': 'native',
-    'model': 'theta',
-    'model_params': '"sp=24"',
     'methods': 'theta nhits',
     'horizon': '8',
     'lookback': '200',
     'steps': '5',
     'spacing': '20',
     'quantity': 'return',
-    'target': 'price',
     'ci_alpha': '0.1',
     'params': '"max_epochs=20"',
     'features': '"include=open,high future_covariates=hour,dow"',
@@ -1205,9 +1201,9 @@ def main():
             except ValueError as exc:
                 cmd_parser.error(str(exc))
 
-            model_params_raw = _resolve_forecast_typed_cli_value(
-                args.model_params,
-                key="model_params",
+            params_raw = _resolve_forecast_typed_cli_value(
+                args.params,
+                key="params",
                 overrides=overrides,
                 parser=cmd_parser,
             )
@@ -1236,7 +1232,7 @@ def main():
                 parser=cmd_parser,
             )
 
-            model_params = _parse_kv_string(model_params_raw) if isinstance(model_params_raw, str) else model_params_raw
+            params = _parse_kv_string(params_raw) if isinstance(params_raw, str) else params_raw
 
             denoise = None
             if isinstance(denoise_raw, dict):
@@ -1255,8 +1251,8 @@ def main():
             dimred_params = _parse_kv_string(dimred_params_raw) if isinstance(dimred_params_raw, str) else dimred_params_raw
             target_spec = _parse_kv_string(target_spec_raw) if isinstance(target_spec_raw, str) else target_spec_raw
 
-            # --set overrides (sections: model/denoise/features/dimred/target)
-            model_params = _merge_dict(model_params, overrides.get("model"))
+            # --set overrides (sections: method/denoise/features/dimred/target)
+            params = _merge_dict(params, overrides.get("method"))
             denoise = _merge_dict(denoise, overrides.get("denoise"))
             features = _merge_dict(features, overrides.get("features"))
             dimred_params = _merge_dict(dimred_params, overrides.get("dimred"))
@@ -1266,11 +1262,11 @@ def main():
                 symbol=args.symbol,
                 timeframe=args.timeframe,
                 library=args.library,
-                model=args.model,
+                method=args.method,
                 horizon=int(args.horizon),
                 lookback=args.lookback,
                 as_of=args.as_of,
-                model_params=model_params,
+                params=params,
                 ci_alpha=args.ci_alpha,
                 quantity=args.quantity,
                 denoise=denoise or None,

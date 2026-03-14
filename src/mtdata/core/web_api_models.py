@@ -61,11 +61,11 @@ class ForecastPriceBody(BaseModel):
             symbol=self.symbol,
             timeframe=self.timeframe,
             library="native",
-            model=self.method,
+            method=self.method,
             horizon=self.horizon,
             lookback=self.lookback,
             as_of=self.as_of,
-            model_params=self.params,
+            params=self.params,
             ci_alpha=self.ci_alpha,
             quantity=self.quantity,
             denoise=self.denoise,
@@ -73,7 +73,6 @@ class ForecastPriceBody(BaseModel):
             dimred_method=self.dimred_method,
             dimred_params=self.dimred_params,
             target_spec=self.target_spec,
-            method=self.method,
         )
 
 

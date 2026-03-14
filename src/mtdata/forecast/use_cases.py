@@ -82,17 +82,17 @@ def _normalize_forecaster_name(name: str) -> str:
     return "".join(ch for ch in str(name).lower() if ch.isalnum())
 
 
-def _resolve_sktime_forecaster(model: str) -> Optional[Tuple[str, str]]:
-    """Resolve a user-provided model name to (class_name, dotted_path)."""
-    model_s = str(model or "").strip()
-    if not model_s:
+def _resolve_sktime_forecaster(method: str) -> Optional[Tuple[str, str]]:
+    """Resolve a user-provided method name to (class_name, dotted_path)."""
+    method_s = str(method or "").strip()
+    if not method_s:
         return None
 
     mapping = _discover_sktime_forecasters()
     if not mapping:
         return None
 
-    exact = mapping.get(model_s.lower())
+    exact = mapping.get(method_s.lower())
     if exact:
         return exact
 
@@ -100,7 +100,7 @@ def _resolve_sktime_forecaster(model: str) -> Optional[Tuple[str, str]]:
     for _, (cls_name, dotted) in mapping.items():
         norm_map.setdefault(_normalize_forecaster_name(cls_name), (cls_name, dotted))
 
-    query_norm = _normalize_forecaster_name(model_s)
+    query_norm = _normalize_forecaster_name(method_s)
     if query_norm in norm_map:
         return norm_map[query_norm]
 
@@ -127,9 +127,8 @@ def run_forecast_generate(
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
     lib = str(request.library or "native").strip().lower()
-    model = str(request.model or "").strip()
-    params = dict(request.model_params or {})
-    legacy_method = str(request.method or "").strip()
+    method = str(request.method or "").strip()
+    params = dict(request.params or {})
     if log_events:
         log_operation_start(
             logger,
@@ -137,8 +136,7 @@ def run_forecast_generate(
             symbol=request.symbol,
             timeframe=request.timeframe,
             library=lib or "native",
-            model=model or None,
-            legacy_method=legacy_method or None,
+            method=method or None,
         )
 
     def _finish(result: Dict[str, Any], *, resolved_method: Optional[str] = None) -> Dict[str, Any]:
@@ -151,23 +149,21 @@ def run_forecast_generate(
                 symbol=request.symbol,
                 timeframe=request.timeframe,
                 library=lib or "native",
-                model=model or None,
+                method=method or None,
                 resolved_method=resolved_method,
             )
         return result
 
     try:
-        if legacy_method:
-            resolved_method = legacy_method
-        elif lib in ("", "native"):
-            resolved_method = model or "theta"
+        if lib in ("", "native"):
+            resolved_method = method or "theta"
         elif lib == "statsforecast":
-            if not model:
-                raise ForecastError("model is required for library=statsforecast")
+            if not method:
+                raise ForecastError("method is required for library=statsforecast")
             resolved_method = "statsforecast"
-            params.setdefault("model_name", model)
+            params.setdefault("model_name", method)
         elif lib == "sktime":
-            query = model.strip() if model else "ThetaForecaster"
+            query = method.strip() if method else "ThetaForecaster"
             if "." in query:
                 resolved_method = "sktime"
                 params.setdefault("estimator", query)
@@ -179,12 +175,12 @@ def run_forecast_generate(
                 resolved_method = "sktime"
                 params.setdefault("estimator", dotted)
         elif lib == "pretrained":
-            resolved_method = model or "chronos2"
+            resolved_method = method or "chronos2"
         elif lib == "mlforecast":
-            if not model:
-                raise ForecastError("model is required for library=mlforecast")
+            if not method:
+                raise ForecastError("method is required for library=mlforecast")
             resolved_method = "mlforecast"
-            params.setdefault("model", model)
+            params.setdefault("model", method)
         else:
             raise ForecastError(f"Unsupported library: {request.library}")
 
@@ -208,14 +204,13 @@ def run_forecast_generate(
 
         if (
             isinstance(out, dict)
-            and not legacy_method
             and lib in ("", "native")
             and str(resolved_method).strip().lower() == "theta"
         ):
             warning = (
                 "Using native theta. StatsForecast theta is available via "
                 f"`mtdata-cli forecast_generate {request.symbol} --timeframe {request.timeframe} "
-                f"--library statsforecast --model Theta --horizon {request.horizon}` "
+                f"--library statsforecast --method Theta --horizon {request.horizon}` "
                 "and may produce different forecasts/interval behavior."
             )
             warnings_out = out.get("warnings")
@@ -235,7 +230,7 @@ def run_forecast_generate(
                 symbol=request.symbol,
                 timeframe=request.timeframe,
                 library=lib or "native",
-                model=model or None,
+                method=method or None,
             )
         raise
 
@@ -372,7 +367,7 @@ def run_forecast_conformal_intervals(
 
         import numpy as _np
 
-        q = 1.0 - float(request.alpha)
+        q = 1.0 - float(request.ci_alpha)
         qerrs = [
             float(_np.quantile(_np.array(err, dtype=float), q)) if err else float("nan")
             for err in errs
@@ -425,14 +420,14 @@ def run_forecast_conformal_intervals(
 
         result = dict(out)
         result["conformal"] = {
-            "alpha": float(request.alpha),
+            "ci_alpha": float(request.ci_alpha),
             "calibration_steps": int(request.steps),
             "calibration_spacing": int(request.spacing),
             "per_step_q": [float(v) for v in qerrs],
         }
         result["lower_price"] = [float(v) for v in lo.tolist()]
         result["upper_price"] = [float(v) for v in hi.tolist()]
-        result["ci_alpha"] = float(request.alpha)
+        result["ci_alpha"] = float(request.ci_alpha)
     except Exception as exc:
         log_operation_exception(
             logger,

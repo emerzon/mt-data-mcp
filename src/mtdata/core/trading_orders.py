@@ -5,32 +5,23 @@ import time
 from typing import Optional, Union, List, Dict, Any
 
 from . import trading_comments, trading_time, trading_validation
-from .trading_common import _build_trade_preflight, _retcode_name
 from .trading_execution import _modify_position
-from .trading_gateway import MT5TradingGateway
+from .trading_gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .trading_positions import _resolve_open_position
 from .trading_time import ExpirationValue
 from .trading_validation import MarketOrderTypeInput, OrderTypeInput
-from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5_adapter
 
 
 def _get_trading_gateway(gateway: Optional[MT5TradingGateway] = None) -> MT5TradingGateway:
-    if gateway is not None:
-        return gateway
-    return MT5TradingGateway(
-        adapter=mt5_adapter,
-        ensure_connection_impl=ensure_mt5_connection_or_raise,
-        build_trade_preflight_impl=_build_trade_preflight,
-        retcode_name_impl=_retcode_name,
+    return create_trading_gateway(
+        gateway=gateway,
+        include_trade_preflight=True,
+        include_retcode_name=True,
     )
 
 
 def _trading_connection_error(gateway: Optional[MT5TradingGateway] = None) -> Optional[Dict[str, Any]]:
-    try:
-        _get_trading_gateway(gateway).ensure_connection()
-    except MT5ConnectionError as exc:
-        return {"error": str(exc)}
-    return None
+    return trading_connection_error(gateway)
 
 
 def _safe_last_error(mt5: Any) -> Any:

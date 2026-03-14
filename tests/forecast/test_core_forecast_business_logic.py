@@ -135,23 +135,23 @@ def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):
     with pytest.raises(Exception):
         ForecastGenerateRequest(symbol="EURUSD", horizon=0)
 
-    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="statsforecast", model=""))
-    assert out["error"] == "model is required for library=statsforecast"
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="statsforecast", method=""))
+    assert out["error"] == "method is required for library=statsforecast"
 
-    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="sktime", model="unknown"))
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="sktime", method="unknown"))
     assert "Unknown sktime forecaster" in out["error"]
 
-    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", model="", model_params={"x": 1}))
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="", params={"x": 1}))
     assert out["ok"] is True
     assert captured["method"] == "theta"
     assert captured["params"] == {"x": 1}
 
-    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="statsforecast", model="AutoARIMA", model_params={}))
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="statsforecast", method="AutoARIMA", params={}))
     assert out["ok"] is True
     assert captured["method"] == "statsforecast"
     assert captured["params"]["model_name"] == "AutoARIMA"
 
-    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="sktime", model="theta", model_params={}))
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="sktime", method="theta", params={}))
     assert out["ok"] is True
     assert captured["method"] == "sktime"
     assert captured["params"]["estimator"] == "sktime.forecasting.theta.ThetaForecaster"
@@ -160,8 +160,8 @@ def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):
         request=ForecastGenerateRequest(
             symbol="EURUSD",
             library="sktime",
-            model="sktime.forecasting.naive.NaiveForecaster",
-            model_params={},
+            method="sktime.forecasting.naive.NaiveForecaster",
+            params={},
         )
     )
     assert out["ok"] is True
@@ -171,8 +171,8 @@ def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):
         request=ForecastGenerateRequest(
             symbol="EURUSD",
             library="mlforecast",
-            model="sklearn.linear_model.LinearRegression",
-            model_params={},
+            method="sklearn.linear_model.LinearRegression",
+            params={},
         )
     )
     assert out["ok"] is True
@@ -180,23 +180,7 @@ def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):
     assert captured["params"]["model"] == "sklearn.linear_model.LinearRegression"
 
     with pytest.raises(Exception):
-        ForecastGenerateRequest(symbol="EURUSD", library="unsupported", model="x")
-
-
-def test_forecast_generate_accepts_legacy_method_for_internal_callers(monkeypatch):
-    raw = _unwrap(cf.forecast_generate)
-    captured = {}
-
-    def fake_forecast_impl(**kwargs):
-        captured.update(kwargs)
-        return {"ok": True, "method": kwargs["method"]}
-
-    monkeypatch.setattr(cf, "_forecast_impl", fake_forecast_impl)
-
-    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", method="sf_theta", model="theta", library="native"))
-
-    assert out["ok"] is True
-    assert captured["method"] == "sf_theta"
+        ForecastGenerateRequest(symbol="EURUSD", library="unsupported", method="x")
 
 
 def test_forecast_generate_native_theta_adds_disambiguation_warning(monkeypatch):
@@ -207,7 +191,7 @@ def test_forecast_generate_native_theta_adds_disambiguation_warning(monkeypatch)
 
     monkeypatch.setattr(cf, "_forecast_impl", fake_forecast_impl)
 
-    out = raw(request=ForecastGenerateRequest(symbol="BTCUSD", timeframe="H1", library="native", model="theta", horizon=12))
+    out = raw(request=ForecastGenerateRequest(symbol="BTCUSD", timeframe="H1", library="native", method="theta", horizon=12))
 
     assert out["ok"] is True
     assert any("StatsForecast theta is available" in str(w) for w in out.get("warnings", []))
@@ -216,7 +200,7 @@ def test_forecast_generate_native_theta_adds_disambiguation_warning(monkeypatch)
 def test_run_forecast_generate_logs_finish_event(caplog):
     with caplog.at_level("INFO", logger="mtdata.forecast.use_cases"):
         result = forecast_use_cases.run_forecast_generate(
-            ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", library="native", model="theta"),
+            ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", library="native", method="theta"),
             forecast_impl=lambda **kwargs: {"ok": True, "method": kwargs["method"]},
             resolve_sktime_forecaster=lambda query: None,
         )
@@ -249,7 +233,7 @@ def test_forecast_generate_converts_typed_forecast_errors(monkeypatch):
 
     monkeypatch.setattr(cf, "_forecast_impl", lambda **kwargs: (_ for _ in ()).throw(ForecastError("engine exploded")))
 
-    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", model="theta"))
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="theta"))
 
     assert out["error"] == "engine exploded"
 
@@ -259,7 +243,7 @@ def test_forecast_generate_logs_finish_event(caplog, monkeypatch):
     monkeypatch.setattr(cf, "_forecast_impl", lambda **kwargs: {"success": True, "method": kwargs["method"]})
 
     with caplog.at_level(logging.INFO, logger=cf.logger.name):
-        out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", model="theta"))
+        out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="theta"))
 
     assert out["success"] is True
     assert any(
@@ -273,7 +257,7 @@ def test_forecast_generate_wrapper_emits_single_finish_event(caplog, monkeypatch
     monkeypatch.setattr(cf, "_forecast_impl", lambda **kwargs: {"success": True, "method": kwargs["method"]})
 
     with caplog.at_level(logging.INFO):
-        out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", model="theta"))
+        out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="theta"))
 
     assert out["success"] is True
     finish_records = [
@@ -294,7 +278,7 @@ def test_forecast_generate_returns_connection_error_payload(monkeypatch):
     monkeypatch.setattr(cf, "ensure_mt5_connection_or_raise", fail_connection)
     monkeypatch.setattr(cf, "_forecast_impl", lambda **kwargs: pytest.fail("forecast implementation should not run"))
 
-    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", model="theta"))
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="theta"))
 
     assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
 
@@ -510,13 +494,13 @@ def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
             symbol="EURUSD",
             method="theta",
             horizon=2,
-            alpha=0.1,
+            ci_alpha=0.1,
             steps=2,
         )
     )
 
     assert out["ci_alpha"] == 0.1
-    assert out["conformal"]["alpha"] == 0.1
+    assert out["conformal"]["ci_alpha"] == 0.1
     assert len(out["lower_price"]) == 2
     assert len(out["upper_price"]) == 2
     assert out["lower_price"][0] <= 100.0 <= out["upper_price"][0]

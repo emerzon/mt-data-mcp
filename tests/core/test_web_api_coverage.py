@@ -773,7 +773,7 @@ class TestPostForecastPrice:
         assert request.quantity == "return"
         assert request.dimred_method == "pca"
         assert request.target_spec == {"col": "close"}
-        assert request.model_params == {"order": [1, 1, 1]}
+        assert request.params == {"order": [1, 1, 1]}
 
     def test_legacy_target_is_normalized(self):
         with patch("mtdata.core.web_api._run_forecast_generate_impl", return_value={}) as mock_fc:

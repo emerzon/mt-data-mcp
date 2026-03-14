@@ -1047,17 +1047,17 @@ class TestParseSetOverrides:
         assert _parse_set_overrides([]) == {}
 
     def test_single_override(self):
-        result = _parse_set_overrides(["model.sp=24"])
-        assert result == {"model": {"sp": 24}}
+        result = _parse_set_overrides(["method.sp=24"])
+        assert result == {"method": {"sp": 24}}
 
     def test_multiple_overrides(self):
-        result = _parse_set_overrides(["model.sp=24", "model.max_epochs=20"])
-        assert result["model"]["sp"] == 24
-        assert result["model"]["max_epochs"] == 20
+        result = _parse_set_overrides(["method.sp=24", "method.max_epochs=20"])
+        assert result["method"]["sp"] == 24
+        assert result["method"]["max_epochs"] == 20
 
     def test_multiple_sections(self):
-        result = _parse_set_overrides(["model.sp=24", "denoise.method=wavelet"])
-        assert "model" in result
+        result = _parse_set_overrides(["method.sp=24", "denoise.method=wavelet"])
+        assert "method" in result
         assert "denoise" in result
 
     def test_invalid_no_equals(self):
@@ -1069,20 +1069,20 @@ class TestParseSetOverrides:
             _parse_set_overrides(["key=value"])
 
     def test_empty_string_items_skipped(self):
-        result = _parse_set_overrides(["", "model.x=1", "  "])
-        assert result == {"model": {"x": 1}}
+        result = _parse_set_overrides(["", "method.x=1", "  "])
+        assert result == {"method": {"x": 1}}
 
     def test_non_string_items_skipped(self):
         result = _parse_set_overrides([None, 123])
         assert result == {}
 
     def test_boolean_value_coercion(self):
-        result = _parse_set_overrides(["model.flag=true"])
-        assert result["model"]["flag"] is True
+        result = _parse_set_overrides(["method.flag=true"])
+        assert result["method"]["flag"] is True
 
     def test_null_value_coercion(self):
-        result = _parse_set_overrides(["model.param=null"])
-        assert result["model"]["param"] is None
+        result = _parse_set_overrides(["method.param=null"])
+        assert result["method"]["param"] is None
 
 
 # ========================================================================
@@ -1434,7 +1434,7 @@ class TestAddForecastGenerateArgs:
         args = parser.parse_args(["EURUSD"])
         assert args.symbol == "EURUSD"
         assert args.library == "native"
-        assert args.model == "theta"
+        assert args.method == "theta"
         assert args.timeframe == "H1"
         assert args.horizon == 12
 
@@ -1444,7 +1444,7 @@ class TestAddForecastGenerateArgs:
         args = parser.parse_args([
             "GBPUSD",
             "--library", "pretrained",
-            "--model", "chronos2",
+            "--method", "chronos2",
             "--timeframe", "D1",
             "--horizon", "24",
             "--lookback", "200",
@@ -1456,7 +1456,7 @@ class TestAddForecastGenerateArgs:
         ])
         assert args.symbol == "GBPUSD"
         assert args.library == "pretrained"
-        assert args.model == "chronos2"
+        assert args.method == "chronos2"
         assert args.horizon == 24
         assert args.lookback == 200
         assert args.quantity == "return"
@@ -1630,17 +1630,6 @@ class TestAddDynamicArguments:
         add_dynamic_arguments(parser, func_info, cmd_name="trade_history")
         args = parser.parse_args(["--ticket", "123456"])
         assert args.position_ticket == 123456
-
-    def test_forecast_conformal_method_accepts_model_alias(self):
-        parser = argparse.ArgumentParser()
-        func_info = {
-            "params": [
-                {"name": "method", "type": str, "required": False, "default": "theta"},
-            ]
-        }
-        add_dynamic_arguments(parser, func_info, cmd_name="forecast_conformal_intervals")
-        args = parser.parse_args(["--model", "arima"])
-        assert args.method == "arima"
 
     def test_labels_triple_barrier_hides_summary_only_cli_duplicate(self):
         parser = argparse.ArgumentParser()
@@ -1817,15 +1806,15 @@ class TestCreateCommandFunction:
             "params": [
                 {"name": "symbol", "type": str, "required": True, "default": None},
                 {"name": "horizon", "type": int, "required": False, "default": 12},
-                {"name": "model_params", "type": Dict[str, Any], "required": False, "default": None},
+                {"name": "params", "type": Dict[str, Any], "required": False, "default": None},
             ],
         }
         cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
         args = argparse.Namespace(
             symbol="EURUSD",
             horizon=24,
-            model_params='{"sp":24}',
-            model_params_params=None,
+            params='{"sp":24}',
+            params_params=None,
             json=False,
             verbose=False,
         )
@@ -1835,7 +1824,7 @@ class TestCreateCommandFunction:
         assert isinstance(request, ForecastGenerateRequest)
         assert request.symbol == "EURUSD"
         assert request.horizon == 24
-        assert request.model_params == {"sp": 24}
+        assert request.params == {"sp": 24}
         assert call_kwargs["__cli_raw"] is True
 
     def test_indicator_compact_string_reconstructed(self, capsys):
@@ -2549,7 +2538,7 @@ class TestForecastGenerateIntegration:
         assert isinstance(request, ForecastGenerateRequest)
         assert request.symbol == "EURUSD"
         assert request.library == "native"
-        assert request.model == "theta"
+        assert request.method == "theta"
         assert call_kwargs["__cli_raw"] is True
 
     @patch("mtdata.core.cli.discover_tools")
@@ -2613,14 +2602,14 @@ class TestForecastGenerateIntegration:
         }
         with patch("sys.argv", [
             "cli.py", "forecast_generate", "EURUSD",
-            "--set", "model.sp=24",
-            "--set", "model.max_epochs=20",
+            "--set", "method.sp=24",
+            "--set", "method.max_epochs=20",
         ]):
             result = main()
         assert result == 0
         request = mock_fn.call_args[1]["request"]
-        assert request.model_params["sp"] == 24
-        assert request.model_params["max_epochs"] == 20
+        assert request.params["sp"] == 24
+        assert request.params["max_epochs"] == 20
 
     @patch("mtdata.core.cli.discover_tools")
     def test_forecast_generate_uses_global_timeframe_before_command(self, mock_discover):

@@ -158,23 +158,23 @@ class TestGetVolatilityMethodsData:
 
 class TestBarsPerYear:
     @pytest.mark.parametrize("tf,expected", [
-        ("M1", 525600),
-        ("M5", 105120),
-        ("M15", 35040),
-        ("H1", 8760),
-        ("H4", 2190),
-        ("D1", 365),
-        ("W1", 52),
-        ("MN1", 12),
+        ("M1", 525600.0),
+        ("M5", 105120.0),
+        ("M15", 35040.0),
+        ("H1", 8760.0),
+        ("H4", 2190.0),
+        ("D1", 365.0),
+        ("W1", 365.0 * 24.0 * 3600.0 / 604800.0),
+        ("MN1", 365.0 * 24.0 * 3600.0 / 2592000.0),
     ])
     def test_known_timeframes(self, tf, expected):
-        assert _bars_per_year(tf) == expected
+        assert _bars_per_year(tf) == pytest.approx(expected)
 
-    def test_invalid_timeframe_returns_zero(self):
-        assert _bars_per_year("INVALID") == 0
+    def test_invalid_timeframe_returns_nan(self):
+        assert math.isnan(_bars_per_year("INVALID"))
 
-    def test_empty_string_returns_zero(self):
-        assert _bars_per_year("") == 0
+    def test_empty_string_returns_nan(self):
+        assert math.isnan(_bars_per_year(""))
 
 
 # ===================================================================

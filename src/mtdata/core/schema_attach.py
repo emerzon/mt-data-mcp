@@ -92,8 +92,8 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
                 if name == "forecast_generate":
                     _set_ref("quantity", "#/$defs/QuantitySpec")
                     _set_ref("denoise", "#/$defs/DenoiseSpec", allow_null=True)
-                    if "model_params" in params:
-                        params["model_params"] = {
+                    if "params" in params:
+                        params["params"] = {
                             "type": "object",
                             "additionalProperties": True,
                         }

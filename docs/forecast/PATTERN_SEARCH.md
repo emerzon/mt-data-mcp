@@ -107,7 +107,7 @@ Finds historical windows that "look like" the current market and uses them to pr
 
 ```bash
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
-  --model analog --model-params "window_size=64 top_k=20"
+  --method analog --params "window_size=64 top_k=20"
 ```
 
 ### Parameters
@@ -143,7 +143,7 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
 **Example with refinement:**
 ```bash
 mtdata-cli forecast_generate EURUSD --horizon 12 \
-  --model analog --model-params "window_size=64 metric=euclidean refine_metric=dtw"
+  --method analog --params "window_size=64 metric=euclidean refine_metric=dtw"
 ```
 
 This first finds candidates with fast Euclidean distance, then refines ranking using DTW.
@@ -178,8 +178,8 @@ Use analog forecasts to set price targets:
 
 ```bash
 # Find similar historical patterns
-mtdata-cli forecast_generate EURUSD --model analog \
-  --model-params "window_size=64 top_k=20" --json
+mtdata-cli forecast_generate EURUSD --method analog \
+  --params "window_size=64 top_k=20" --json
 
 # Use forecast percentiles for TP levels
 ```
@@ -239,8 +239,8 @@ data[5]{time,pattern}:
 | Candlestick patterns | `mtdata-cli patterns_detect EURUSD --mode candlestick` |
 | Robust patterns only | `mtdata-cli patterns_detect EURUSD --mode candlestick --robust-only true` |
 | Chart patterns | `mtdata-cli patterns_detect EURUSD --mode classic` |
-| Analog forecast | `mtdata-cli forecast_generate EURUSD --model analog --model-params "window_size=64 top_k=20"` |
-| Analog with DTW | `mtdata-cli forecast_generate EURUSD --model analog --model-params "refine_metric=dtw"` |
+| Analog forecast | `mtdata-cli forecast_generate EURUSD --method analog --params "window_size=64 top_k=20"` |
+| Analog with DTW | `mtdata-cli forecast_generate EURUSD --method analog --params "refine_metric=dtw"` |
 
 ---
 

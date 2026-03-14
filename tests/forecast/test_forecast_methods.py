@@ -2,7 +2,7 @@
 """Lightweight forecast test runner.
 
 Usage:
-  python tests/test_forecast_methods.py EURUSD H1 12 [model ...]
+  python tests/test_forecast_methods.py EURUSD H1 12 [method ...]
   python tests/test_forecast_methods.py EURUSD H1 12 statsforecast:AutoARIMA
 
 Writes JSON output into tests/test_results/.
@@ -21,54 +21,54 @@ from mtdata.forecast.requests import ForecastGenerateRequest
 
 
 def _usage() -> str:
-    return "Usage: python tests/test_forecast_methods.py SYMBOL TIMEFRAME HORIZON [model ...]"
+    return "Usage: python tests/test_forecast_methods.py SYMBOL TIMEFRAME HORIZON [method ...]"
 
 
-def _resolve_models(args: List[str]) -> List[str]:
+def _resolve_methods(args: List[str]) -> List[str]:
     if args:
         return [m.strip() for m in args if m.strip()]
     # Keep defaults lightweight and dependency-free.
     return ["theta", "naive", "drift", "seasonal_naive"]
 
 
-def _parse_model_spec(spec: str) -> tuple[str, str]:
+def _parse_method_spec(spec: str) -> tuple[str, str]:
     parts = spec.split(":", 1)
     if len(parts) == 2:
         return parts[0].strip(), parts[1].strip()
     return "native", spec.strip()
 
 
-def _run(symbol: str, timeframe: str, horizon: int, models: List[str]) -> Dict[str, Any]:
+def _run(symbol: str, timeframe: str, horizon: int, methods: List[str]) -> Dict[str, Any]:
     out: Dict[str, Any] = {
         "symbol": symbol,
         "timeframe": timeframe,
         "horizon": int(horizon),
-        "models": {},
+        "methods": {},
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
     }
     m_eff = default_seasonality(timeframe)
     successes = 0
-    for spec in models:
-        library, model = _parse_model_spec(spec)
+    for spec in methods:
+        library, method = _parse_method_spec(spec)
         params = {}
-        if library in ("", "native") and model == "seasonal_naive":
+        if library in ("", "native") and method == "seasonal_naive":
             params["seasonality"] = int(m_eff)
         res = forecast_generate(
             request=ForecastGenerateRequest(
                 symbol=symbol,
                 timeframe=timeframe,
                 library=library or "native",
-                model=model,
+                method=method,
                 horizon=int(horizon),
-                model_params=params or None,
+                params=params or None,
             ),
             __cli_raw=True,
         )
-        out["models"][spec] = res
+        out["methods"][spec] = res
         if isinstance(res, dict) and not res.get("error"):
             successes += 1
     out["successes"] = successes
-    out["failures"] = max(0, len(models) - successes)
+    out["failures"] = max(0, len(methods) - successes)
     return out
 
 
@@ -83,9 +83,9 @@ def main() -> int:
     except ValueError:
         print("HORIZON must be an integer.")
         return 2
-    models = _resolve_models(sys.argv[4:])
+    methods = _resolve_methods(sys.argv[4:])
 
-    result = _run(symbol, timeframe, horizon, models)
+    result = _run(symbol, timeframe, horizon, methods)
     out_dir = os.path.join(os.path.dirname(__file__), "test_results")
     os.makedirs(out_dir, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")

@@ -29,7 +29,7 @@ Request intervals with `--ci-alpha`:
 
 ```bash
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
-  --model theta --ci-alpha 0.1 --json
+  --method theta --ci-alpha 0.1 --json
 ```
 
 **Parameters:**
@@ -192,7 +192,7 @@ mtdata-cli forecast_conformal_intervals EURUSD --method sf_autoarima --horizon 1
 
 | Task | Command |
 |------|---------|
-| Model CI (90%) | `mtdata-cli forecast_generate EURUSD --model theta --ci-alpha 0.1` |
+| Method CI (90%) | `mtdata-cli forecast_generate EURUSD --method theta --ci-alpha 0.1` |
 | Conformal intervals | `mtdata-cli forecast_conformal_intervals EURUSD --method theta --horizon 12` |
 | Triple-barrier labels | `mtdata-cli labels_triple_barrier EURUSD --horizon 12 --tp-pct 0.5 --sl-pct 0.3` |
 

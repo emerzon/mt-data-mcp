@@ -32,16 +32,16 @@ Forecasts are estimates, not guarantees. Always:
 ### Basic Usage
 
 ```bash
-# Theta model (fast, reliable baseline)
-mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
+# Theta method (fast, reliable baseline)
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta
 
 # With JSON output for programmatic use
-mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta --json
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta --json
 ```
 
-### Choosing a Model
+### Choosing a Method
 
-Run this to see available models:
+Run this to see available methods:
 ```bash
 mtdata-cli forecast_list_methods
 ```
@@ -64,19 +64,19 @@ mtdata-cli forecast_list_methods
 
 **Theta Method** — Decomposes trend and curvature. Robust baseline.
 ```bash
-mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta
 ```
 
 **ARIMA** — Models autocorrelation in the data.
 ```bash
-mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --model arima \
-  --model-params "p=2 d=1 q=2"
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method arima \
+  --params "p=2 d=1 q=2"
 ```
 
 **ETS** — Exponential smoothing with optional trend/seasonality.
 ```bash
-mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 24 --model ets \
-  --model-params "seasonality=24"
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 24 --method ets \
+  --params "seasonality=24"
 ```
 
 ### Foundation Models
@@ -86,7 +86,7 @@ Pre-trained deep learning models that work without tuning.
 **Chronos 2** — Amazon's foundation model for time series.
 ```bash
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 24 \
-  --library pretrained --model chronos2
+  --library pretrained --method chronos2
 ```
 
 *Requires: `pip install chronos-forecasting torch`*
@@ -94,13 +94,13 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 24 \
 **Chronos-Bolt** — Faster Chronos variant.
 ```bash
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 24 \
-  --library pretrained --model chronos_bolt
+  --library pretrained --method chronos_bolt
 ```
 
 **TimesFM** — Google's foundation model (TimesFM 2.x adapter).
 ```bash
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 24 \
-  --library pretrained --model timesfm
+  --library pretrained --method timesfm
 ```
 
 *Requires: `pip install torch` plus a TimesFM install (see `requirements.txt`).*
@@ -108,7 +108,7 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 24 \
 **Lag-Llama** — Foundation model via GluonTS.
 ```bash
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 24 \
-  --library pretrained --model lag_llama --model-params '{"ckpt_path":"C:/path/to/lag-llama.ckpt"}'
+  --library pretrained --method lag_llama --params '{"ckpt_path":"C:/path/to/lag-llama.ckpt"}'
 ```
 
 *Requires: `pip install gluonts[torch]` plus Lag-Llama; may not be installable on all Python versions due to upstream pins.*
@@ -119,7 +119,7 @@ Generates thousands of possible future paths instead of a single forecast.
 
 ```bash
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
-  --model mc_gbm --model-params "n_sims=2000 seed=42"
+  --method mc_gbm --params "n_sims=2000 seed=42"
 ```
 
 **Output includes:**
@@ -133,7 +133,7 @@ Finds historical windows similar to the current pattern and averages what happen
 
 ```bash
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
-  --model analog --model-params "window_size=64 top_k=20"
+  --method analog --params "window_size=64 top_k=20"
 ```
 
 **Parameters:**
@@ -194,7 +194,7 @@ See **[BACKTESTING.md](forecast/BACKTESTING.md)** for complete guide including p
 
 Add indicators as input features:
 ```bash
-mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta \
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta \
   --features "include=close,volume"
 ```
 
@@ -202,7 +202,7 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta \
 
 Smooth data before forecasting:
 ```bash
-mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta \
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta \
   --denoise '{"method":"ema","params":{"alpha":0.2}}'
 ```
 
@@ -264,9 +264,9 @@ mtdata-cli forecast_tune_optuna EURUSD --method theta --horizon 12 \
 | Task | Command |
 |------|---------|
 | List methods | `mtdata-cli forecast_list_methods` |
-| Basic forecast | `mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --model theta` |
-| Foundation model | `mtdata-cli forecast_generate EURUSD --library pretrained --model chronos2 --horizon 24` |
-| Monte Carlo | `mtdata-cli forecast_generate EURUSD --model mc_gbm --model-params "n_sims=2000"` |
+| Basic forecast | `mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta` |
+| Foundation method | `mtdata-cli forecast_generate EURUSD --library pretrained --method chronos2 --horizon 24` |
+| Monte Carlo | `mtdata-cli forecast_generate EURUSD --method mc_gbm --params "n_sims=2000"` |
 | Backtest | `mtdata-cli forecast_backtest_run EURUSD --methods "theta analog" --steps 20` |
 | Conformal intervals | `mtdata-cli forecast_conformal_intervals EURUSD --method theta --horizon 12` |
 | Tune (genetic) | `mtdata-cli forecast_tune_genetic EURUSD --method theta --metric avg_rmse` |

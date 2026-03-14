@@ -129,7 +129,7 @@ def parse_set_overrides(
     *,
     coerce_cli_scalar: Callable[[str], Any],
 ) -> Dict[str, Dict[str, Any]]:
-    """Parse repeated --set entries like 'model.sp=24' into nested dicts."""
+    """Parse repeated --set entries like 'method.sp=24' into nested dicts."""
     out: Dict[str, Dict[str, Any]] = {}
     for item in items or []:
         if not isinstance(item, str) or not item.strip():

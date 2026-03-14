@@ -2,13 +2,17 @@ from typing import Any, Dict, List, Optional, Tuple, Literal
 import numpy as np
 import math
 
-from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..shared.constants import TIMEFRAME_MAP
 from ..shared.schema import TimeframeLiteral, DenoiseSpec
 from ..utils.utils import _format_time_minimal
 from .volatility import forecast_volatility
 from .forecast import forecast
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
-from .common import fetch_history as _fetch_history, log_returns_from_prices as _log_returns_from_prices
+from .common import (
+    bars_per_year as _bars_per_year,
+    fetch_history as _fetch_history,
+    log_returns_from_prices as _log_returns_from_prices,
+)
 
 
 
@@ -35,19 +39,6 @@ def _get_forecast_methods_data_safe() -> Dict[str, Any]:
             {'method': 'fourier_ols', 'available': True},
         ]
     }
-
-
-def _bars_per_year(timeframe: str) -> float:
-    """Approximate number of bars per year for a timeframe."""
-    try:
-        secs = TIMEFRAME_SECONDS.get(str(timeframe))
-        if not secs or secs <= 0:
-            return float('nan')
-        return float((365.0 * 24.0 * 3600.0) / float(secs))
-    except Exception:
-        return float('nan')
-
-
 _MIN_ANNUALIZATION_TRADES = 30
 _MIN_ANNUALIZATION_YEARS = 0.25
 

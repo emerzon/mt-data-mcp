@@ -5,8 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, Literal, Optional, Tuple, Union
 
-from .trading_gateway import MT5TradingGateway
-from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5_adapter
+from .trading_gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from ..utils.utils import _coerce_finite_float, _coerce_scalar
 
 
@@ -311,12 +310,7 @@ def _validate_live_protection_levels(
 
 
 def _get_trading_gateway(gateway: Optional[MT5TradingGateway] = None) -> MT5TradingGateway:
-    if gateway is not None:
-        return gateway
-    return MT5TradingGateway(
-        adapter=mt5_adapter,
-        ensure_connection_impl=ensure_mt5_connection_or_raise,
-    )
+    return create_trading_gateway(gateway=gateway)
 
 
 def _prevalidate_trade_place_market_input(
@@ -326,11 +320,9 @@ def _prevalidate_trade_place_market_input(
 ) -> Optional[Dict[str, Any]]:
     """Validate symbol and volume before market-order SL/TP enforcement returns."""
     mt5 = _get_trading_gateway(gateway)
-
-    try:
-        mt5.ensure_connection()
-    except MT5ConnectionError as exc:
-        return {"error": str(exc)}
+    connection_error = trading_connection_error(mt5)
+    if connection_error is not None:
+        return connection_error
 
     def _prevalidate():
         symbol_info = mt5.symbol_info(symbol)

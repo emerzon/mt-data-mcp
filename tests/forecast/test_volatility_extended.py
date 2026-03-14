@@ -178,10 +178,10 @@ class TestImportFallbacks:
 
 class TestBarsPerYearException:
     def test_exception_in_computation(self):
-        """Line 225-226: except branch returns 0."""
-        with patch(f"{MOD}.TIMEFRAME_SECONDS") as mock_ts:
+        """Invalid TIMEFRAME_SECONDS access returns NaN."""
+        with patch("mtdata.forecast.common.TIMEFRAME_SECONDS") as mock_ts:
             mock_ts.get.side_effect = TypeError("mock")
-            assert _bars_per_year("H1") == 0
+            assert math.isnan(_bars_per_year("H1"))
 
 
 # ===================================================================
@@ -837,10 +837,10 @@ class TestScatteredBranches:
         w = _kernel_weight("parzen", 8, 10)
         assert 0.0 <= w <= 1.0
 
-    def test_bars_per_year_returns_int(self):
-        """Line 224: happy path returns int."""
+    def test_bars_per_year_returns_float(self):
+        """Shared helper returns a finite float."""
         result = _bars_per_year("M5")
-        assert isinstance(result, int) and result > 0
+        assert isinstance(result, float) and result > 0
 
     @pytest.mark.parametrize("method", ["arima", "sarima", "ets", "theta"])
     def test_general_method_result_fields(self, method):
