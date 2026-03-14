@@ -344,6 +344,29 @@ def _close_price_at_index(df: pd.DataFrame, end_index: Any) -> Optional[float]:
     return float(last) if last is not None and np.isfinite(last) else None
 
 
+_CLASSIC_BIAS_KEYWORDS = (
+    ("inverse head and shoulders", "bullish"),
+    ("head and shoulders", "bearish"),
+    ("falling wedge", "bullish"),
+    ("rising wedge", "bearish"),
+    ("double bottom", "bullish"),
+    ("triple bottom", "bullish"),
+    ("double top", "bearish"),
+    ("triple top", "bearish"),
+    ("rounding bottom", "bullish"),
+    ("rounding top", "bearish"),
+    ("cup and handle", "bullish"),
+    ("ascending triangle", "bullish"),
+    ("descending triangle", "bearish"),
+    ("bull", "bullish"),
+    ("ascending", "bullish"),
+    ("uptrend", "bullish"),
+    ("bear", "bearish"),
+    ("descending", "bearish"),
+    ("downtrend", "bearish"),
+)
+
+
 def _infer_classic_bias(name: Any, details: Dict[str, Any]) -> str:
     for key in ("breakout_direction", "breakout_expected"):
         bias = _normalize_pattern_bias(details.get(key))
@@ -353,32 +376,9 @@ def _infer_classic_bias(name: Any, details: Dict[str, Any]) -> str:
     name_text = str(name or "").strip().lower()
     if not name_text:
         return "neutral"
-    if "inverse head and shoulders" in name_text:
-        return "bullish"
-    if "head and shoulders" in name_text:
-        return "bearish"
-    if "falling wedge" in name_text:
-        return "bullish"
-    if "rising wedge" in name_text:
-        return "bearish"
-    if "double bottom" in name_text or "triple bottom" in name_text:
-        return "bullish"
-    if "double top" in name_text or "triple top" in name_text:
-        return "bearish"
-    if "rounding bottom" in name_text:
-        return "bullish"
-    if "rounding top" in name_text:
-        return "bearish"
-    if "cup and handle" in name_text:
-        return "bullish"
-    if "ascending triangle" in name_text:
-        return "bullish"
-    if "descending triangle" in name_text:
-        return "bearish"
-    if "bull" in name_text or "ascending" in name_text or "uptrend" in name_text:
-        return "bullish"
-    if "bear" in name_text or "descending" in name_text or "downtrend" in name_text:
-        return "bearish"
+    for keyword, bias in _CLASSIC_BIAS_KEYWORDS:
+        if keyword in name_text:
+            return bias
     return "neutral"
 
 

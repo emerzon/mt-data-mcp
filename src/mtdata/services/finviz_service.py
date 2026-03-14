@@ -12,6 +12,7 @@ import datetime
 from typing import Any, Dict, List, Optional, Literal
 import os
 import threading
+import importlib
 import requests
 
 logger = logging.getLogger(__name__)
@@ -182,6 +183,52 @@ def _crypto_price_display(value: Any) -> Optional[str]:
     return f"{num:.{decimals}f}"
 
 
+_FINVIZ_SCREENER_VIEWS = {
+    "overview": ("finvizfinance.screener.overview", "Overview"),
+    "valuation": ("finvizfinance.screener.valuation", "Valuation"),
+    "financial": ("finvizfinance.screener.financial", "Financial"),
+    "ownership": ("finvizfinance.screener.ownership", "Ownership"),
+    "performance": ("finvizfinance.screener.performance", "Performance"),
+    "technical": ("finvizfinance.screener.technical", "Technical"),
+}
+
+
+def _load_finviz_attr(module_name: str, attr_name: str) -> Any:
+    module = importlib.import_module(module_name)
+    return getattr(module, attr_name)
+
+
+def _get_finviz_stock_quote(symbol: str) -> tuple[str, Any]:
+    _apply_finvizfinance_timeout_patch()
+    finvizfinance = _load_finviz_attr("finvizfinance.quote", "finvizfinance")
+    symbol_norm = str(symbol).upper()
+    return symbol_norm, finvizfinance(symbol_norm)
+
+
+def _build_finviz_screener(view: str) -> Any:
+    module_name, class_name = _FINVIZ_SCREENER_VIEWS.get(
+        view,
+        _FINVIZ_SCREENER_VIEWS["overview"],
+    )
+    screener_cls = _load_finviz_attr(module_name, class_name)
+    return screener_cls()
+
+
+def _fetch_finviz_market_performance_rows(
+    *,
+    module_name: str,
+    class_name: str,
+    empty_error: str,
+) -> List[Dict[str, Any]]:
+    _apply_finvizfinance_timeout_patch()
+    market_cls = _load_finviz_attr(module_name, class_name)
+    market_client = market_cls()
+    df = market_client.performance()
+    if df is None or df.empty:
+        raise ValueError(empty_error)
+    return df.to_dict(orient="records")
+
+
 def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
     """
     Get fundamental data for a stock symbol.
@@ -189,15 +236,13 @@ def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
     Returns metrics like P/E, EPS, market cap, sector, industry, etc.
     """
     try:
-        _apply_finvizfinance_timeout_patch()
-        from finvizfinance.quote import finvizfinance
-        stock = finvizfinance(symbol.upper())
+        symbol_norm, stock = _get_finviz_stock_quote(symbol)
         fundament = stock.ticker_fundament()
         if fundament is None:
             return {"error": f"No fundamental data found for {symbol}"}
         return {
             "success": True,
-            "symbol": symbol.upper(),
+            "symbol": symbol_norm,
             "fundamentals": fundament,
         }
     except Exception as e:
@@ -208,15 +253,13 @@ def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
 def get_stock_description(symbol: str) -> Dict[str, Any]:
     """Get company description for a stock symbol."""
     try:
-        _apply_finvizfinance_timeout_patch()
-        from finvizfinance.quote import finvizfinance
-        stock = finvizfinance(symbol.upper())
+        symbol_norm, stock = _get_finviz_stock_quote(symbol)
         desc = stock.ticker_description()
         if not desc:
             return {"error": f"No description found for {symbol}"}
         return {
             "success": True,
-            "symbol": symbol.upper(),
+            "symbol": symbol_norm,
             "description": desc,
         }
     except Exception as e:
@@ -232,10 +275,7 @@ def get_stock_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any
     """
     try:
         safe_limit, safe_page = _sanitize_pagination(limit, page)
-        _apply_finvizfinance_timeout_patch()
-        from finvizfinance.quote import finvizfinance
-        symbol_norm = str(symbol).upper()
-        stock = finvizfinance(symbol_norm)
+        symbol_norm, stock = _get_finviz_stock_quote(symbol)
         news_df = stock.ticker_news()
         if news_df is None or news_df.empty:
             return {"error": f"No news found for {symbol}"}
@@ -274,9 +314,7 @@ def get_stock_insider_trades(symbol: str, limit: int = 20, page: int = 1) -> Dic
     """
     try:
         safe_limit, safe_page = _sanitize_pagination(limit, page)
-        _apply_finvizfinance_timeout_patch()
-        from finvizfinance.quote import finvizfinance
-        stock = finvizfinance(symbol.upper())
+        symbol_norm, stock = _get_finviz_stock_quote(symbol)
         insider_df = stock.ticker_inside_trader()
         if insider_df is None or insider_df.empty:
             return {"error": f"No insider trades found for {symbol}"}
@@ -288,7 +326,7 @@ def get_stock_insider_trades(symbol: str, limit: int = 20, page: int = 1) -> Dic
         trades_list = _normalize_finviz_dates_in_rows(trades_list, "Date")
         return {
             "success": True,
-            "symbol": symbol.upper(),
+            "symbol": symbol_norm,
             "count": len(trades_list),
             "total": total,
             "page": safe_page,
@@ -307,16 +345,14 @@ def get_stock_ratings(symbol: str) -> Dict[str, Any]:
     Returns list of ratings with date, status, analyst, rating, price target.
     """
     try:
-        _apply_finvizfinance_timeout_patch()
-        from finvizfinance.quote import finvizfinance
-        stock = finvizfinance(symbol.upper())
+        symbol_norm, stock = _get_finviz_stock_quote(symbol)
         ratings_df = stock.ticker_outer_ratings()
         if ratings_df is None or ratings_df.empty:
             return {"error": f"No ratings found for {symbol}"}
         ratings_list = ratings_df.to_dict(orient="records")
         return {
             "success": True,
-            "symbol": symbol.upper(),
+            "symbol": symbol_norm,
             "count": len(ratings_list),
             "ratings": ratings_list,
         }
@@ -328,15 +364,13 @@ def get_stock_ratings(symbol: str) -> Dict[str, Any]:
 def get_stock_peers(symbol: str) -> Dict[str, Any]:
     """Get peer companies for a stock symbol."""
     try:
-        _apply_finvizfinance_timeout_patch()
-        from finvizfinance.quote import finvizfinance
-        stock = finvizfinance(symbol.upper())
+        symbol_norm, stock = _get_finviz_stock_quote(symbol)
         peers = stock.ticker_peer()
         if not peers:
             return {"error": f"No peers found for {symbol}"}
         return {
             "success": True,
-            "symbol": symbol.upper(),
+            "symbol": symbol_norm,
             "peers": peers if isinstance(peers, list) else [peers],
         }
     except Exception as e:
@@ -391,27 +425,7 @@ def screen_stocks(
         safe_limit, safe_page = _sanitize_pagination(limit, page)
         _apply_finvizfinance_timeout_patch()
         view_lower = view.lower().strip()
-        if view_lower == "overview":
-            from finvizfinance.screener.overview import Overview
-            screener = Overview()
-        elif view_lower == "valuation":
-            from finvizfinance.screener.valuation import Valuation
-            screener = Valuation()
-        elif view_lower == "financial":
-            from finvizfinance.screener.financial import Financial
-            screener = Financial()
-        elif view_lower == "ownership":
-            from finvizfinance.screener.ownership import Ownership
-            screener = Ownership()
-        elif view_lower == "performance":
-            from finvizfinance.screener.performance import Performance
-            screener = Performance()
-        elif view_lower == "technical":
-            from finvizfinance.screener.technical import Technical
-            screener = Technical()
-        else:
-            from finvizfinance.screener.overview import Overview
-            screener = Overview()
+        screener = _build_finviz_screener(view_lower)
         
         if filters:
             screener.set_filter(filters_dict=filters)
@@ -563,15 +577,11 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
 def get_forex_performance() -> Dict[str, Any]:
     """Get forex currency pairs performance data."""
     try:
-        _apply_finvizfinance_timeout_patch()
-        from finvizfinance.forex import Forex
-        forex = Forex()
-        df = forex.performance()
-        
-        if df is None or df.empty:
-            return {"error": "No forex performance data available"}
-        
-        items_list = df.to_dict(orient="records")
+        items_list = _fetch_finviz_market_performance_rows(
+            module_name="finvizfinance.forex",
+            class_name="Forex",
+            empty_error="No forex performance data available",
+        )
         return {
             "success": True,
             "market": "forex",
@@ -586,15 +596,11 @@ def get_forex_performance() -> Dict[str, Any]:
 def get_crypto_performance() -> Dict[str, Any]:
     """Get cryptocurrency performance data."""
     try:
-        _apply_finvizfinance_timeout_patch()
-        from finvizfinance.crypto import Crypto
-        crypto = Crypto()
-        df = crypto.performance()
-        
-        if df is None or df.empty:
-            return {"error": "No crypto performance data available"}
-        
-        items_list = df.to_dict(orient="records")
+        items_list = _fetch_finviz_market_performance_rows(
+            module_name="finvizfinance.crypto",
+            class_name="Crypto",
+            empty_error="No crypto performance data available",
+        )
         warnings_out: List[str] = []
         for row in items_list:
             if not isinstance(row, dict) or "Price" not in row:
@@ -628,15 +634,11 @@ def get_crypto_performance() -> Dict[str, Any]:
 def get_futures_performance() -> Dict[str, Any]:
     """Get futures market performance data."""
     try:
-        _apply_finvizfinance_timeout_patch()
-        from finvizfinance.future import Future
-        future = Future()
-        df = future.performance()
-        
-        if df is None or df.empty:
-            return {"error": "No futures performance data available"}
-        
-        items_list = df.to_dict(orient="records")
+        items_list = _fetch_finviz_market_performance_rows(
+            module_name="finvizfinance.future",
+            class_name="Future",
+            empty_error="No futures performance data available",
+        )
         return {
             "success": True,
             "market": "futures",

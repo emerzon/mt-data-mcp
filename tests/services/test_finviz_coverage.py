@@ -631,20 +631,3 @@ class TestGetDividendsCalendarApi:
         assert "error" in result
 
 
-# ---------------------------------------------------------------------------
-# Cache helpers
-# ---------------------------------------------------------------------------
-
-
-class TestCacheHelpers:
-    def test_is_cache_valid_no_entry(self):
-        assert svc._is_cache_valid("__nonexistent__") is False
-
-    def test_update_and_check(self):
-        svc._update_cache_ts("__test_key__")
-        assert svc._is_cache_valid("__test_key__") is True
-
-    def test_expired_cache(self):
-        import time
-        svc._cache_timestamps["__old__"] = time.time() - svc._CACHE_TTL - 10
-        assert svc._is_cache_valid("__old__") is False
