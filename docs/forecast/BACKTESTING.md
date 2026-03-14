@@ -97,12 +97,11 @@ mtdata-cli forecast_backtest_run EURUSD --horizon 12 \
   --params-per-method '{"theta": {"seasonality": 24}, "arima": {"p": 2, "d": 1, "q": 2}}'
 ```
 
-### Quantity and Target
+### Quantity
 
 | Parameter | Options | Description |
 |-----------|---------|-------------|
 | `--quantity` | `price`, `return`, `volatility` | What to forecast |
-| `--target` | `price`, `return` | Target series for comparison |
 
 Notes:
 - `return` uses **log returns** (`ln(close_t / close_{t-1})`), which is often more stationary than prices.
@@ -111,7 +110,7 @@ Notes:
 **Examples:**
 ```bash
 # Forecast returns instead of prices
-mtdata-cli forecast_backtest_run EURUSD --quantity return --target return    
+mtdata-cli forecast_backtest_run EURUSD --quantity return
 
 # Backtest volatility methods
 mtdata-cli forecast_backtest_run EURUSD --quantity volatility --methods "ewma garch"

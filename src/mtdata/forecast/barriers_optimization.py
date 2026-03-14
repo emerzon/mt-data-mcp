@@ -10,7 +10,7 @@ from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import (
     get_pip_size as _get_pip_size,
     resolve_barrier_prices as _resolve_barrier_prices,
-    normalize_trade_direction as _normalize_trade_direction,
+    normalize_trade_direction,
     barrier_prices_are_valid as _barrier_prices_are_valid,
 )
 from .monte_carlo import (
@@ -154,7 +154,7 @@ def forecast_barrier_optimize(
             return {"error": f"Invalid horizon: {horizon}. Must be a positive integer."}
         if horizon_val <= 0:
             return {"error": f"Invalid horizon: {horizon_val}. Must be >= 1."}
-        direction_norm, direction_error = _normalize_trade_direction(direction)
+        direction_norm, direction_error = normalize_trade_direction(direction)
         if direction_error:
             return {"error": direction_error}
 

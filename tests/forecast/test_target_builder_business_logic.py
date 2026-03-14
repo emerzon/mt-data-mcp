@@ -38,11 +38,11 @@ def test_resolve_alias_base_variants_and_missing_inputs():
 def test_build_target_series_legacy_price_and_return():
     df = _ohlc_df(5)
 
-    y_price, info_price = tb.build_target_series(df, base_col="close", target_spec=None, legacy_target="price")
+    y_price, info_price = tb.build_target_series(df, base_col="close", target_spec=None, quantity="price")
     assert np.allclose(y_price, df["close"].to_numpy())
     assert info_price == {"mode": "price", "base": "close", "transform": "none"}
 
-    y_ret, info_ret = tb.build_target_series(df, base_col="close", target_spec=None, legacy_target="return")
+    y_ret, info_ret = tb.build_target_series(df, base_col="close", target_spec=None, quantity="return")
     assert y_ret.shape[0] == 5
     assert info_ret == {"mode": "return", "base": "close", "transform": "log_return"}
 

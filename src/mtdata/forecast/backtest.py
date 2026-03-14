@@ -12,6 +12,7 @@ from .common import (
     bars_per_year as _bars_per_year,
     fetch_history as _fetch_history,
     log_returns_from_prices as _log_returns_from_prices,
+    quantity_to_target as _quantity_to_target,
 )
 
 
@@ -133,7 +134,6 @@ def forecast_backtest(
     methods: Optional[List[str]] = None,
     params_per_method: Optional[Dict[str, Any]] = None,
     quantity: Literal['price','return','volatility'] = 'price',  # type: ignore
-    target: Literal['price','return'] = 'price',  # type: ignore
     denoise: Optional[DenoiseSpec] = None,
     anchors: Optional[List[str]] = None,
     # Unified per-run tuning applied to all methods (unless overridden in params_per_method)
@@ -148,7 +148,7 @@ def forecast_backtest(
 ) -> Dict[str, Any]:
     """Rolling-origin backtest over historical anchors using the forecast tool.
 
-    Parameters: symbol, timeframe, horizon, steps, spacing, methods?, params_per_method?, target, denoise?
+    Parameters: symbol, timeframe, horizon, steps, spacing, methods?, params_per_method?, quantity, denoise?
     - Picks `steps` anchor points spaced `spacing` bars apart, each with `horizon` future bars for validation.
     - For each method, runs our `forecast` as-of that anchor and reports MAE/RMSE/directional accuracy.
     """
@@ -215,6 +215,7 @@ def forecast_backtest(
                 if not methods:
                     methods = [m for m in ('naive', 'drift', 'theta') if m in avail]
         params_map = dict(params_per_method or {})
+        target_mode = _quantity_to_target(quantity)
 
         # Build ground-truth windows for each anchor
         closes = df['close'].astype(float).to_numpy()
@@ -223,7 +224,7 @@ def forecast_backtest(
         for idx in anchor_indices:
             if idx + int(horizon) >= len(closes):
                 continue
-            if target == 'return' and quantity != 'volatility':
+            if target_mode == 'return' and quantity != 'volatility':
                 prev = np.maximum(closes[idx: idx + int(horizon)], 1e-12)
                 nxt = np.maximum(closes[idx + 1: idx + 1 + int(horizon)], 1e-12)
                 with np.errstate(divide='ignore', invalid='ignore'):
@@ -278,7 +279,7 @@ def forecast_backtest(
                             horizon=int(horizon),
                             as_of=anchor_time,
                             params=pm,
-                            target=target,
+                            quantity=quantity,  # type: ignore[arg-type]
                             denoise=_dn_used,
                             features=features,
                             dimred_method=dimred_method,
@@ -307,7 +308,7 @@ def forecast_backtest(
                         "realized_sigma": realized_sigma,
                     })
                 else:
-                    if target == 'return':
+                    if target_mode == 'return':
                         fc = r.get('forecast_return') or r.get('forecast_price')
                     else:
                         fc = r.get('forecast_price')
@@ -327,12 +328,12 @@ def forecast_backtest(
                     else:
                         da = float('nan')
                     entry_price = float(closes[idx]) if idx < len(closes) else float('nan')
-                    if target == 'return':
+                    if target_mode == 'return':
                         expected_move = float(np.nansum(fcv[:m]))
                     else:
                         expected_move = float((float(fcv[m - 1]) - entry_price)) if math.isfinite(entry_price) else float('nan')
                     expected_return = float('nan')
-                    if target == 'return':
+                    if target_mode == 'return':
                         try:
                             expected_return = float(math.exp(expected_move) - 1.0)
                         except Exception:
@@ -356,7 +357,7 @@ def forecast_backtest(
                     exit_price = float('nan')
                     exit_step = m - 1
                     if direction != 0:
-                        if target == 'return':
+                        if target_mode == 'return':
                             try:
                                 realized_path = np.array(act[:m], dtype=float)
                                 if not np.all(np.isfinite(realized_path)):

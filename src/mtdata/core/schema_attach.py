@@ -112,14 +112,8 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
                     if "method" in params:
                         params["method"] = {
                             "type": "string",
-                            "enum": ["mc", "closed_form", "auto"],
-                            "description": "Barrier probability mode: 'mc' (Monte Carlo), 'closed_form', or 'auto' (MC with auto method).",
-                        }
-                    if "mc_method" in params:
-                        params["mc_method"] = {
-                            "type": "string",
-                            "enum": ["mc_gbm", "mc_gbm_bb", "hmm_mc", "garch", "bootstrap", "heston", "jump_diffusion", "auto"],
-                            "description": "Monte Carlo engine for barrier simulation.",
+                            "enum": ["mc_gbm", "mc_gbm_bb", "hmm_mc", "garch", "bootstrap", "heston", "jump_diffusion", "closed_form", "auto"],
+                            "description": "Barrier probability algorithm. Use a Monte Carlo engine, 'closed_form', or 'auto'.",
                         }
                 if name == "forecast_barrier_optimize":
                     if "method" in params:

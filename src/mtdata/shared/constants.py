@@ -1,10 +1,17 @@
 from ..utils.mt5 import mt5
 
 # Import shared constants to avoid duplication
-from ..utils.constants import PRECISION_REL_TOL, PRECISION_ABS_TOL, PRECISION_MAX_DECIMALS, TIME_DISPLAY_FORMAT
+from ..utils.constants import (
+    DISPLAY_MAX_DECIMALS,
+    PRECISION_REL_TOL,
+    PRECISION_ABS_TOL,
+    PRECISION_MAX_DECIMALS,
+    TIME_DISPLAY_FORMAT,
+)
 
 # Re-export precision/display constants from a single canonical location.
 _PRECISION_EXPORTS = (
+    DISPLAY_MAX_DECIMALS,
     PRECISION_REL_TOL,
     PRECISION_ABS_TOL,
     PRECISION_MAX_DECIMALS,

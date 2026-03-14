@@ -38,7 +38,7 @@ from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import (
     build_barrier_kwargs_from as _build_barrier_kwargs_from,
-    normalize_trade_direction as _normalize_trade_direction,
+    normalize_trade_direction,
 )
 
 logger = logging.getLogger(__name__)
@@ -380,23 +380,17 @@ def forecast_barrier_prob(
     horizon : int, optional (default=12)
         Number of bars to forecast ahead
     
-    method : str, optional (default="mc")
+    method : str, optional (default="hmm_mc")
         Calculation method:
-        - "mc": Monte Carlo simulation (more flexible, handles complex scenarios)
+        - "hmm_mc": Hidden Markov Model Monte Carlo
+        - "mc_gbm": Geometric Brownian Motion Monte Carlo
+        - "mc_gbm_bb": GBM Monte Carlo with Brownian-bridge correction
+        - "garch": GARCH(1,1) Monte Carlo
+        - "bootstrap": Historical bootstrap Monte Carlo
+        - "heston": Heston stochastic-volatility Monte Carlo
+        - "jump_diffusion": Merton jump-diffusion Monte Carlo
         - "closed_form": Analytical solution (faster, simpler assumptions)
-        - "auto": Alias for Monte Carlo with mc_method="auto"
-    
-    Monte Carlo Parameters (method="mc"):
-    -------------------------------------
-    mc_method : str, optional (default="hmm_mc")
-        - "hmm_mc": Hidden Markov Model-based MC
-        - "mc_gbm": Geometric Brownian Motion MC
-        - "mc_gbm_bb": GBM MC with Brownian-bridge barrier correction
-        - "heston": Heston stochastic volatility MC
-        - "jump_diffusion": Merton jump-diffusion MC
-        - "garch": GARCH(1,1) volatility model (requires 'arch' package)
-        - "bootstrap": Circular block bootstrap (historical simulation)
-        - "auto": auto-select based on symbol/timeframe + recent returns
+        - "auto": Auto-select a Monte Carlo engine
 
     direction : str, optional (default="long")
         Trade direction: "long" / "short"
@@ -444,7 +438,7 @@ def forecast_barrier_prob(
     # Check probability of hitting TP vs SL (Monte Carlo)
     forecast_barrier_prob(
         symbol="EURUSD",
-        method="mc",
+        method="hmm_mc",
         direction="long",
         tp_abs=1.1100,
         sl_abs=1.0950
@@ -481,7 +475,7 @@ def forecast_barrier_prob(
         func=lambda: run_forecast_barrier_prob(
             request,
             build_barrier_kwargs=_build_barrier_kwargs_from,
-            normalize_trade_direction=_normalize_trade_direction,
+            normalize_trade_direction=normalize_trade_direction,
             barrier_hit_probabilities_impl=_barrier_hit_probabilities_impl,
             barrier_closed_form_impl=_barrier_closed_form_impl,
         ),

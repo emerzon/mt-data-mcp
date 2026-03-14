@@ -9,7 +9,7 @@ from ..utils.utils import _safe_float, parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import (
     get_pip_size as _get_pip_size,
     resolve_barrier_prices as _resolve_barrier_prices,
-    normalize_trade_direction as _normalize_trade_direction,
+    normalize_trade_direction,
     barrier_prices_are_valid as _barrier_prices_are_valid,
 )
 from .monte_carlo import (
@@ -510,7 +510,7 @@ def _get_live_reference_price(symbol: str, direction: str) -> Tuple[Optional[flo
     ask = _valid_price(getattr(tick, "ask", None))
     last = _valid_price(getattr(tick, "last", None))
 
-    direction_norm, _ = _normalize_trade_direction(direction)
+    direction_norm, _ = normalize_trade_direction(direction)
     if direction_norm == "long":
         if ask is not None:
             return ask, "live_tick_ask"

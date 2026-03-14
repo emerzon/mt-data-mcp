@@ -2,9 +2,15 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from ..shared.schema import DenoiseSpec, ForecastLibraryLiteral, TimeframeLiteral
+
+
+def _reject_removed_field(values: Any, *, field_name: str, replacement: str) -> Any:
+    if isinstance(values, dict) and field_name in values:
+        raise ValueError(f"{field_name} was removed; use {replacement}")
+    return values
 
 
 class ForecastGenerateRequest(BaseModel):
@@ -24,6 +30,11 @@ class ForecastGenerateRequest(BaseModel):
     dimred_params: Optional[Dict[str, Any]] = None
     target_spec: Optional[Dict[str, Any]] = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_removed_target(cls, values: Any) -> Any:
+        return _reject_removed_field(values, field_name="target", replacement="quantity")
+
 
 class ForecastBacktestRequest(BaseModel):
     symbol: str
@@ -42,6 +53,11 @@ class ForecastBacktestRequest(BaseModel):
     slippage_bps: float = 0.0
     trade_threshold: float = 0.0
     detail: Literal["compact", "full"] = "compact"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_removed_target(cls, values: Any) -> Any:
+        return _reject_removed_field(values, field_name="target", replacement="quantity")
 
 
 class ForecastConformalIntervalsRequest(BaseModel):
@@ -109,8 +125,7 @@ class ForecastBarrierProbRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     horizon: int = Field(12, ge=1)
-    method: str = "mc"
-    mc_method: str = "hmm_mc"
+    method: str = "hmm_mc"
     direction: str = "long"
     tp_abs: Optional[float] = None
     sl_abs: Optional[float] = None
@@ -123,6 +138,11 @@ class ForecastBarrierProbRequest(BaseModel):
     barrier: float = 0.0
     mu: Optional[float] = None
     sigma: Optional[float] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_removed_mc_method(cls, values: Any) -> Any:
+        return _reject_removed_field(values, field_name="mc_method", replacement="method")
 
 
 class ForecastBarrierOptimizeRequest(BaseModel):

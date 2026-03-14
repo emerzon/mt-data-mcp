@@ -131,6 +131,11 @@ def bars_per_year(timeframe: str) -> float:
         return float("nan")
 
 
+def quantity_to_target(quantity: str) -> str:
+    """Map a forecast quantity to the corresponding price/return target mode."""
+    return "return" if str(quantity).strip().lower() == "return" else "price"
+
+
 def next_times_from_last(last_epoch: float, tf_secs: int, horizon: int) -> List[float]:
     base = float(last_epoch)
     step = float(tf_secs)

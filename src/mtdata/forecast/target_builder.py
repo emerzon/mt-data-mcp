@@ -28,7 +28,7 @@ def build_target_series(
     df: pd.DataFrame,
     base_col: str,
     target_spec: Optional[Dict[str, Any]] = None,
-    legacy_target: str = 'price',
+    quantity: str = 'price',
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
     """Build target series from base column with optional transformations.
     
@@ -38,8 +38,7 @@ def build_target_series(
     target_info: Dict[str, Any] = {}
     
     if not target_spec or not isinstance(target_spec, dict):
-        # Legacy mode: simple price or return
-        if legacy_target == 'return':
+        if str(quantity).strip().lower() == 'return':
             y = np.log(df[base_col].astype(float).to_numpy())
             y = np.diff(y, prepend=y[0])
             target_info = {'mode': 'return', 'base': base_col, 'transform': 'log_return'}

@@ -129,6 +129,8 @@ PARAM_HINTS = {
     "slippage_bps": "Backtest slippage in basis points.",
     "objective": "Optimization objective.",
     "return_grid": "Include full grid results in output.",
+    "viable_only": "Only return viable barrier candidates when true.",
+    "concise": "Return a shorter barrier-optimization payload when true.",
     "grid_style": "TP/SL grid style.",
     "preset": "TP/SL grid preset. Common examples: volatility, conservative, aggressive.",
     "tp_min": "Minimum TP level for grid (pct or pips depending on mode).",

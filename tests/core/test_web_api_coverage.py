@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 from zoneinfo import ZoneInfo
 
 import pytest
+from pydantic import ValidationError
 
 from mtdata.core import web_api
 from mtdata.core.web_api import (
@@ -140,7 +141,7 @@ class TestPydanticModels:
         body = ForecastPriceBody(
             symbol="GBPUSD", timeframe="D1", method="arima",
             horizon=5, lookback=200, ci_alpha=0.1,
-            quantity="return", target="return",
+            quantity="return",
             denoise={"method": "wavelet"}, features={"rsi": {}},
             dimred_method="pca", dimred_params={"n_components": 3},
             target_spec={"col": "close"},
@@ -148,6 +149,10 @@ class TestPydanticModels:
         assert body.symbol == "GBPUSD"
         assert body.quantity == "return"
         assert body.dimred_method == "pca"
+
+    def test_forecast_price_body_rejects_removed_target(self):
+        with pytest.raises(ValidationError):
+            ForecastPriceBody(symbol="GBPUSD", target="return")
 
     def test_backtest_body_custom(self):
         body = BacktestBody(
@@ -775,11 +780,11 @@ class TestPostForecastPrice:
         assert request.target_spec == {"col": "close"}
         assert request.params == {"order": [1, 1, 1]}
 
-    def test_legacy_target_is_normalized(self):
+    def test_removed_target_is_rejected(self):
         with patch("mtdata.core.web_api._run_forecast_generate_impl", return_value={}) as mock_fc:
-            _client.post("/api/forecast/price", json={"symbol": "EURUSD", "target": "return"})
-        request = mock_fc.call_args.args[0]
-        assert request.quantity == "return"
+            resp = _client.post("/api/forecast/price", json={"symbol": "EURUSD", "target": "return"})
+        assert resp.status_code == 422
+        mock_fc.assert_not_called()
 
     def test_non_dict_result_returned(self):
         """Non-dict return passes through without error check."""
@@ -861,11 +866,11 @@ class TestPostBacktest:
         assert request.quantity == "return"
         assert request.detail == "full"
 
-    def test_backtest_legacy_target_is_normalized(self):
+    def test_backtest_removed_target_is_rejected(self):
         with patch("mtdata.core.web_api._run_forecast_backtest_impl", return_value={}) as mock_bt:
-            _client.post("/api/backtest", json={"symbol": "EURUSD", "target": "return"})
-        request = mock_bt.call_args.args[0]
-        assert request.quantity == "return"
+            resp = _client.post("/api/backtest", json={"symbol": "EURUSD", "target": "return"})
+        assert resp.status_code == 422
+        mock_bt.assert_not_called()
 
 
 # ===========================================================================

@@ -20,8 +20,6 @@ from ..utils.indicators import (
 )
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from .common import (
-    default_seasonality as _default_seasonality_common,
-    next_times_from_last as _next_times_from_last_common,
     pd_freq_from_timeframe as _pd_freq_from_timeframe_common,
 )
 
@@ -40,17 +38,6 @@ _BASE_EXCLUDE_COLUMNS = {
     "tick_volume",
     "real_volume",
 }
-
-
-def _default_seasonality_period(timeframe: str) -> int:
-    """Infer a default seasonality for forecasting based on timeframe."""
-    return _default_seasonality_common(timeframe)
-
-
-def _next_times_from_last(last_epoch: float, tf_secs: int, horizon: int) -> List[float]:
-    """Generate future timestamps for forecasting."""
-    return _next_times_from_last_common(last_epoch, tf_secs, horizon)
-
 
 def _pd_freq_from_timeframe(tf: str) -> str:
     """Convert an MT5 timeframe to a pandas frequency string."""
@@ -107,7 +94,7 @@ def _create_dimred_reducer(method: Any, params: Optional[Dict[str, Any]]) -> Any
     return _Identity(), {"method": "identity"}
 
 
-def _prepare_base_data(df: pd.DataFrame, quantity: str, target: str, base_col: str = "close") -> str:
+def _prepare_base_data(df: pd.DataFrame, quantity: str, base_col: str = "close") -> str:
     """Prepare the modeling base column."""
     source_col = base_col if base_col in df.columns else "close"
 
@@ -624,8 +611,6 @@ def apply_preprocessing(
 
 
 __all__ = [
-    "_default_seasonality_period",
-    "_next_times_from_last",
     "_pd_freq_from_timeframe",
     "_create_dimred_reducer",
     "_prepare_base_data",

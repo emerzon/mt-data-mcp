@@ -229,14 +229,12 @@ export function useForecastSettings(symbol: string, timeframe: string) {
     const saved =
       loadJSON<
         Partial<ForecastSettings> & {
-          target?: ForecastSettings['quantity']
           methodParams?: Record<string, unknown>
         }
       >(storageKey) ??
       (legacyStorageKey
         ? loadJSON<
             Partial<ForecastSettings> & {
-              target?: ForecastSettings['quantity']
               methodParams?: Record<string, unknown>
             }
           >(legacyStorageKey)
@@ -247,7 +245,7 @@ export function useForecastSettings(symbol: string, timeframe: string) {
         method: saved.method ?? prev.method,
         horizon: saved.horizon ?? prev.horizon,
         lookback: saved.lookback ?? prev.lookback,
-        quantity: saved.quantity ?? saved.target ?? prev.quantity,
+        quantity: saved.quantity ?? prev.quantity,
         ci_alpha: saved.ci_alpha ?? prev.ci_alpha,
         params: saved.params ?? saved.methodParams ?? prev.params,
         denoise: saved.denoise,

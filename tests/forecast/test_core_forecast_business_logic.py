@@ -225,7 +225,7 @@ def test_run_forecast_backtest_derives_target_from_quantity():
 
     assert result["success"] is True
     assert captured["quantity"] == "return"
-    assert captured["target"] == "return"
+    assert "target" not in captured
 
 
 def test_forecast_generate_converts_typed_forecast_errors(monkeypatch):
@@ -581,7 +581,6 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
         request=ForecastBarrierProbRequest(
             symbol="EURUSD",
             method="auto",
-            mc_method="hmm_mc",
             direction="down",
         )
     )

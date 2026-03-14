@@ -7,7 +7,7 @@ from mtdata.forecast.forecast_validation import (
     validate_horizon,
     validate_lookback,
     validate_ci_alpha,
-    validate_quantity_target_combination,
+    validate_quantity_method_combination,
     validate_denoise_spec,
     validate_features_spec,
     validate_dimred_spec,
@@ -82,29 +82,25 @@ class TestValidateCiAlpha:
         assert len(errors) > 0
 
 
-class TestValidateQuantityTargetCombination:
-    def test_price_price(self):
-        errors = validate_quantity_target_combination("price", "price", "linear")
+class TestValidateQuantityMethodCombination:
+    def test_price_quantity(self):
+        errors = validate_quantity_method_combination("price", "linear")
         assert not any("Invalid quantity" in e for e in errors)
 
-    def test_return_return(self):
-        errors = validate_quantity_target_combination("return", "return", "linear")
+    def test_return_quantity(self):
+        errors = validate_quantity_method_combination("return", "linear")
         assert not any("Invalid quantity" in e for e in errors)
 
     def test_invalid_quantity(self):
-        errors = validate_quantity_target_combination("foo", "price", "linear")
+        errors = validate_quantity_method_combination("foo", "linear")
         assert any("Invalid quantity" in e for e in errors)
 
-    def test_invalid_target(self):
-        errors = validate_quantity_target_combination("price", "foo", "linear")
-        assert any("Invalid target" in e for e in errors)
-
     def test_volatility_method_warns(self):
-        errors = validate_quantity_target_combination("price", "price", "vol_garch")
+        errors = validate_quantity_method_combination("price", "vol_garch")
         assert any("forecast_volatility" in e for e in errors)
 
     def test_volatility_quantity_warns(self):
-        errors = validate_quantity_target_combination("volatility", "price", "linear")
+        errors = validate_quantity_method_combination("volatility", "linear")
         assert any("forecast_volatility" in e for e in errors)
 
 

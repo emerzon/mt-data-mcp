@@ -683,31 +683,31 @@ class TestPrepareBaseData:
 
     def test_price_returns_source_col(self):
         df = self._make_df()
-        col = _prepare_base_data(df, "price", "price", "close")
+        col = _prepare_base_data(df, "price", "close")
         assert col == "close"
 
     def test_return_creates_log_return(self):
         df = self._make_df()
-        col = _prepare_base_data(df, "return", "price", "close")
+        col = _prepare_base_data(df, "return", "close")
         assert col == "__log_return"
         assert "__log_return" in df.columns
 
     def test_volatility_creates_squared_return(self):
         df = self._make_df()
-        col = _prepare_base_data(df, "volatility", "price", "close")
+        col = _prepare_base_data(df, "volatility", "close")
         assert col == "__squared_return"
         assert "__squared_return" in df.columns
         assert "__log_return" in df.columns
 
     def test_missing_base_col_falls_back(self):
         df = self._make_df()
-        col = _prepare_base_data(df, "price", "price", "nonexistent")
+        col = _prepare_base_data(df, "price", "nonexistent")
         assert col == "close"
 
     def test_custom_base_col(self):
         df = self._make_df()
         df["close_dn"] = df["close"] * 0.99
-        col = _prepare_base_data(df, "price", "price", "close_dn")
+        col = _prepare_base_data(df, "price", "close_dn")
         assert col == "close_dn"
 
 

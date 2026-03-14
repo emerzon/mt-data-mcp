@@ -9,30 +9,10 @@ from pydantic import BaseModel, Field, model_validator
 from ..forecast.requests import ForecastBacktestRequest, ForecastGenerateRequest
 
 
-def _normalize_legacy_target(values: Any) -> Any:
-    if not isinstance(values, dict):
-        return values
-
-    data = dict(values)
-    legacy_target = data.pop("target", None)
-    quantity = data.get("quantity")
-
-    quantity_text = str(quantity).strip().lower() if quantity is not None else None
-    legacy_target_text = str(legacy_target).strip().lower() if legacy_target is not None else None
-
-    if quantity_text is None and legacy_target_text:
-        data["quantity"] = legacy_target_text
-        return data
-
-    if (
-        quantity_text is not None
-        and legacy_target_text is not None
-        and quantity_text != "volatility"
-        and quantity_text != legacy_target_text
-    ):
-        raise ValueError("target is deprecated; use quantity, and if both are provided they must match")
-
-    return data
+def _reject_removed_target(values: Any) -> Any:
+    if isinstance(values, dict) and "target" in values:
+        raise ValueError("target was removed; use quantity")
+    return values
 
 
 class ForecastPriceBody(BaseModel):
@@ -53,8 +33,8 @@ class ForecastPriceBody(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _normalize_target_alias(cls, values: Any) -> Any:
-        return _normalize_legacy_target(values)
+    def _reject_removed_target(cls, values: Any) -> Any:
+        return _reject_removed_target(values)
 
     def to_domain_request(self) -> ForecastGenerateRequest:
         return ForecastGenerateRequest(
@@ -107,8 +87,8 @@ class BacktestBody(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _normalize_target_alias(cls, values: Any) -> Any:
-        return _normalize_legacy_target(values)
+    def _reject_removed_target(cls, values: Any) -> Any:
+        return _reject_removed_target(values)
 
     def to_domain_request(self) -> ForecastBacktestRequest:
         return ForecastBacktestRequest(

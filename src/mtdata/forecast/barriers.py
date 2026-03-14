@@ -6,7 +6,7 @@ from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import (
     get_pip_size as _get_pip_size,
     resolve_barrier_prices as _resolve_barrier_prices,
-    normalize_trade_direction as _normalize_trade_direction,
+    normalize_trade_direction,
     barrier_prices_are_valid as _barrier_prices_are_valid,
 )
 from .monte_carlo import (
@@ -50,7 +50,7 @@ def _sync_barrier_dependencies() -> None:
         "_parse_kv_or_json": _parse_kv_or_json,
         "_get_pip_size": _get_pip_size,
         "_resolve_barrier_prices": _resolve_barrier_prices,
-        "_normalize_trade_direction": _normalize_trade_direction,
+        "_normalize_trade_direction": normalize_trade_direction,
         "_barrier_prices_are_valid": _barrier_prices_are_valid,
         "_simulate_gbm_mc": _simulate_gbm_mc,
         "_simulate_hmm_mc": _simulate_hmm_mc,

@@ -206,7 +206,7 @@ class TestForecastBacktest:
         with patch("mtdata.forecast.backtest.forecast") as fc:
             fc.return_value = {"forecast_return": [0.001] * 12}
             result = forecast_backtest(
-                "EURUSD", timeframe="H1", target="return", methods=["naive"]
+                "EURUSD", timeframe="H1", quantity="return", methods=["naive"]
             )
         assert isinstance(result, dict)
 
@@ -277,7 +277,7 @@ class TestForecastBacktest:
         with patch("mtdata.forecast.backtest.forecast") as fc:
             fc.return_value = {"forecast_return": [0.01] * 12}
             result = forecast_backtest(
-                "EURUSD", timeframe="H1", target="return",
+                "EURUSD", timeframe="H1", quantity="return",
                 methods=["naive"], slippage_bps=5.0,
             )
         assert isinstance(result, dict)

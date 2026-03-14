@@ -823,7 +823,6 @@ def forecast_volatility(
                             as_of=as_of,
                             params=None,
                             ci_alpha=ci_alpha,
-                            target=target,  # type: ignore
                             denoise=denoise,
                         )
                         if isinstance(r, dict) and r.get('success') and r.get('forecast_price'):
@@ -908,7 +907,6 @@ def forecast_volatility(
                     "symbol": first_res.get('symbol', symbol),
                     "timeframe": first_res.get('timeframe', timeframe),
                     "method": "ensemble",
-                    "target": first_res.get('target', str(target)),
                     "params_used": {
                         "base_methods": used_methods,
                         "aggregator": aggregator,

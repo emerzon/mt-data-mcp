@@ -194,7 +194,6 @@ def run_forecast_generate(
             params=params,
             ci_alpha=request.ci_alpha,
             quantity=request.quantity,
-            target="price",
             denoise=request.denoise,
             features=request.features or {},
             dimred_method=request.dimred_method,
@@ -249,7 +248,6 @@ def run_forecast_backtest(
         horizon=request.horizon,
         methods=len(request.methods or []),
     )
-    target = "return" if str(request.quantity).strip().lower() == "return" else "price"
     try:
         result = backtest_impl(
             symbol=request.symbol,
@@ -260,7 +258,6 @@ def run_forecast_backtest(
             methods=request.methods,
             params_per_method=request.params_per_method,
             quantity=request.quantity,
-            target=target,
             denoise=request.denoise,
             params=request.params,
             features=request.features,
@@ -605,11 +602,17 @@ def run_forecast_barrier_prob(
     barrier_closed_form_impl: Any,
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
-    method_val = str(request.method or "mc").lower().strip()
-    mc_method = request.mc_method
-    if method_val == "auto":
-        method_val = "mc"
-        mc_method = "auto"
+    method_val = str(request.method or "hmm_mc").lower().strip()
+    mc_methods = {
+        "auto",
+        "bootstrap",
+        "garch",
+        "heston",
+        "hmm_mc",
+        "jump_diffusion",
+        "mc_gbm",
+        "mc_gbm_bb",
+    }
     log_operation_start(
         logger,
         operation="forecast_barrier_prob",
@@ -635,13 +638,13 @@ def run_forecast_barrier_prob(
         return result
 
     try:
-        if method_val == "mc":
+        if method_val in mc_methods:
             barrier_kwargs = build_barrier_kwargs(request.model_dump())
             result = barrier_hit_probabilities_impl(
                 symbol=request.symbol,
                 timeframe=request.timeframe,
                 horizon=request.horizon,
-                method=mc_method,
+                method=method_val,
                 direction=direction,
                 **barrier_kwargs,
                 params=request.params,

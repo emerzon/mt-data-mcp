@@ -98,11 +98,10 @@ def validate_ci_alpha(ci_alpha: Optional[float]) -> List[str]:
     return errors
 
 
-def validate_quantity_target_combination(quantity: str, target: str, method: str) -> List[str]:
-    """Validate quantity and target parameter combination."""
+def validate_quantity_method_combination(quantity: str, method: str) -> List[str]:
+    """Validate quantity and method compatibility."""
     errors = []
     quantity_l = str(quantity).lower().strip()
-    target_l = str(target).lower().strip()
     method_l = str(method).lower().strip()
 
     # Check volatility method usage
@@ -112,10 +111,6 @@ def validate_quantity_target_combination(quantity: str, target: str, method: str
     # Validate quantity values
     if quantity_l not in ['price', 'return', 'volatility']:
         errors.append(f"Invalid quantity: {quantity}. Must be 'price', 'return', or 'volatility'")
-
-    # Validate target values
-    if target_l not in ['price', 'return']:
-        errors.append(f"Invalid target: {target}. Must be 'price' or 'return'")
 
     return errors
 
@@ -305,7 +300,6 @@ def validate_forecast_request(
     params: Optional[Dict[str, Any]] = None,
     ci_alpha: Optional[float] = 0.05,
     quantity: Literal['price', 'return', 'volatility'] = 'price',
-    target: Literal['price', 'return'] = 'price',
     denoise: Optional[DenoiseSpec] = None,
     features: Optional[Dict[str, Any]] = None,
     dimred_method: Optional[str] = None,
@@ -321,7 +315,7 @@ def validate_forecast_request(
     errors.extend(validate_horizon(horizon))
     errors.extend(validate_lookback(lookback))
     errors.extend(validate_ci_alpha(ci_alpha))
-    errors.extend(validate_quantity_target_combination(quantity, target, method))
+    errors.extend(validate_quantity_method_combination(quantity, method))
 
     # Advanced parameter validation
     errors.extend(validate_denoise_spec(denoise))

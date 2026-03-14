@@ -116,7 +116,6 @@ Generate price forecasts.
   "params": {},
   "ci_alpha": 0.05,
   "quantity": "price",
-  "target": "price",
   "denoise": {
     "method": "ema",
     "params": {"alpha": 0.2}
@@ -155,7 +154,6 @@ Run a rolling-origin backtest.
   "spacing": 10,
   "methods": ["theta", "naive"],
   "quantity": "price",
-  "target": "price",
   "denoise": null,
   "features": null,
   "dimred_method": null,

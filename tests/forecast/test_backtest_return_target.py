@@ -38,7 +38,7 @@ def test_backtest_return_target_scores_against_returns() -> None:
             horizon=horizon,
             methods=["naive"],
             anchors=[anchor],
-            target="return",
+            quantity="return",
         )
 
     detail = res["results"]["naive"]["details"][0]
@@ -69,7 +69,6 @@ def test_backtest_volatility_with_return_target_uses_price_truth_windows() -> No
             methods=["ewma"],
             anchors=[anchor],
             quantity="volatility",
-            target="return",
         )
 
     detail = res["results"]["ewma"]["details"][0]
@@ -98,7 +97,7 @@ def test_backtest_return_target_converts_log_returns_to_simple_trade_returns() -
             horizon=horizon,
             methods=["naive"],
             anchors=[anchor],
-            target="return",
+            quantity="return",
         )
 
     detail = res["results"]["naive"]["details"][0]
@@ -145,7 +144,6 @@ def test_backtest_price_target_trade_returns_vary_by_forecast_implied_exit() -> 
             horizon=horizon,
             methods=["slow", "aggressive"],
             anchors=[anchor],
-            target="price",
         )
 
     slow_detail = res["results"]["slow"]["details"][0]
@@ -176,7 +174,6 @@ def test_backtest_default_detail_is_compact_without_full_series_arrays() -> None
             horizon=3,
             methods=["naive"],
             anchors=[anchor],
-            target="price",
         )
 
     detail = res["results"]["naive"]["details"][0]
@@ -204,7 +201,6 @@ def test_backtest_full_detail_includes_series_arrays() -> None:
             horizon=3,
             methods=["naive"],
             anchors=[anchor],
-            target="price",
             detail="full",
         )
 

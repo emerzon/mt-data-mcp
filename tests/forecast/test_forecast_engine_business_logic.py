@@ -47,11 +47,11 @@ def test_normalize_weights_and_lookback_helpers():
 
 def test_preprocessing_helpers_and_output_format():
     df = _df(6)
-    base_col = fp._prepare_base_data(df, quantity="return", target="price")
+    base_col = fp._prepare_base_data(df, quantity="return")
     assert base_col == "__log_return"
     assert "__log_return" in df.columns
 
-    base_col = fp._prepare_base_data(df, quantity="volatility", target="price")
+    base_col = fp._prepare_base_data(df, quantity="volatility")
     assert base_col == "__squared_return"
     assert "__squared_return" in df.columns
 

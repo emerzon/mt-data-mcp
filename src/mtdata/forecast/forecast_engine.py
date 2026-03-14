@@ -8,41 +8,55 @@ import numpy as np
 import pandas as pd
 import math
 
-from mtdata.shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from mtdata.shared.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
-from mtdata.bootstrap.settings import mt5_config
-from mtdata.utils.mt5 import get_cached_mt5_time_alignment, get_symbol_info_cached, mt5
-from mtdata.utils.utils import (
+from ..bootstrap.settings import mt5_config
+from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..shared.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
+from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
+from ..utils.mt5 import get_cached_mt5_time_alignment, get_symbol_info_cached, mt5
+from ..utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
     _use_client_tz,
     parse_kv_or_json as _parse_kv_or_json,
 )
-from mtdata.utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
-from mtdata.forecast import forecast_preprocessing as _forecast_preprocessing
-from mtdata.forecast.common import (
+from . import forecast_preprocessing as _forecast_preprocessing
+from .common import (
+    default_seasonality,
     fetch_history as _fetch_history,
-    default_seasonality as _default_seasonality_period,
-    next_times_from_last as _next_times_from_last,
+    next_times_from_last,
 )
-from mtdata.forecast.forecast_validation import format_invalid_method_error
-from mtdata.forecast.target_builder import build_target_series
-from mtdata.forecast.registry import ForecastRegistry
+from .forecast_validation import format_invalid_method_error
+from .registry import ForecastRegistry
+from .target_builder import build_target_series
+
 # Import all method modules to ensure registration
-import mtdata.forecast.methods.classical
-import mtdata.forecast.methods.ets_arima
-import mtdata.forecast.methods.statsforecast
-import mtdata.forecast.methods.mlforecast
-import mtdata.forecast.methods.pretrained
-import mtdata.forecast.methods.neural
-import mtdata.forecast.methods.sktime
-import mtdata.forecast.methods.gluonts_extra
-import mtdata.forecast.methods.analog
-import mtdata.forecast.methods.ensemble
-import mtdata.forecast.methods.monte_carlo  # noqa: F401 (method registration side effects)
+from .methods import analog as _analog_methods
+from .methods import classical as _classical_methods
+from .methods import ensemble as _ensemble_methods
+from .methods import ets_arima as _ets_arima_methods
+from .methods import gluonts_extra as _gluonts_extra_methods
+from .methods import mlforecast as _mlforecast_methods
+from .methods import monte_carlo as _monte_carlo_methods
+from .methods import neural as _neural_methods
+from .methods import pretrained as _pretrained_methods
+from .methods import sktime as _sktime_methods
+from .methods import statsforecast as _statsforecast_methods
 
 # Backward-compatibility surface for tests/monkeypatching.
 _PATCHABLE_GLOBALS = (mt5,)
+_REGISTERED_METHOD_MODULES = (
+    _analog_methods,
+    _classical_methods,
+    _ensemble_methods,
+    _ets_arima_methods,
+    _gluonts_extra_methods,
+    _mlforecast_methods,
+    _monte_carlo_methods,
+    _neural_methods,
+    _pretrained_methods,
+    _sktime_methods,
+    _statsforecast_methods,
+)
 
 _ENSEMBLE_BASE_METHODS = (
     'naive',
@@ -229,14 +243,13 @@ def _prepare_target_series_context(
     *,
     df: pd.DataFrame,
     quantity_l: str,
-    target: str,
     base_col: str,
     features: Optional[Dict[str, Any]],
     target_spec: Optional[Dict[str, Any]],
 ) -> Tuple[pd.Series, str, str]:
     """Prepare the effective base column and target series consumed by forecasters."""
     base_col_initial = base_col
-    base_col_prepared = _forecast_preprocessing._prepare_base_data(df, quantity_l, target, base_col)
+    base_col_prepared = _forecast_preprocessing._prepare_base_data(df, quantity_l, base_col)
     base_col_prepared = _forecast_preprocessing._apply_features_and_target_spec(
         df,
         features,
@@ -247,12 +260,12 @@ def _prepare_target_series_context(
 
     target_series = df[base_col_prepared].dropna()
     if target_spec:
-        y_arr, target_info = build_target_series(df, base_col_initial, target_spec, legacy_target=str(target))
+        y_arr, target_info = build_target_series(df, base_col_initial, target_spec, quantity=quantity_l)
         target_series = pd.Series(y_arr, index=df.index)
         base_col_final = target_info.get('base', base_col_initial)
     else:
         base_col_final = base_col_prepared
-        if quantity_l == 'return' or str(target).lower() == 'return':
+        if quantity_l == 'return':
             target_series = df[base_col_final].dropna()
         else:
             target_series = df[base_col_final]
@@ -277,7 +290,7 @@ def _prepare_feature_context(
     X = exog_used
     future_exog = exog_future
     if X is None and features:
-        future_times = _next_times_from_last(float(df['time'].iloc[-1]), int(tf_secs), int(horizon))
+        future_times = next_times_from_last(float(df['time'].iloc[-1]), int(tf_secs), int(horizon))
         try:
             X, built_future_exog, _feat_info = _forecast_preprocessing.prepare_features(
                 df,
@@ -350,7 +363,6 @@ def _run_registered_forecast_method(
     ci_alpha: Optional[float],
     as_of: Optional[str],
     quantity_l: str,
-    target: Literal['price', 'return'],
     symbol: str,
     timeframe: TimeframeLiteral,
     base_col: str,
@@ -375,7 +387,6 @@ def _run_registered_forecast_method(
         'ci_alpha': ci_alpha,
         'as_of': as_of,
         'quantity': quantity_l,
-        'target': target,
         'timeframe': timeframe,
     }
     if X is not None:
@@ -438,7 +449,7 @@ def _format_forecast_output(
 ) -> Dict[str, Any]:
     """Format forecast output with proper structure."""
     # Generate future time indices
-    future_epochs = _next_times_from_last(last_epoch, tf_secs, horizon)
+    future_epochs = next_times_from_last(last_epoch, tf_secs, horizon)
 
     # Time formatting
     _use_ctz = _use_client_tz()
@@ -573,7 +584,6 @@ def forecast_engine(
     params: Optional[Dict[str, Any]] = None,
     ci_alpha: Optional[float] = 0.05,
     quantity: Literal['price','return','volatility'] = 'price',
-    target: Literal['price','return'] = 'price',
     denoise: Optional[DenoiseSpec] = None,
     features: Optional[Dict[str, Any]] = None,
     dimred_method: Optional[str] = None,
@@ -624,7 +634,7 @@ def forecast_engine(
 
         # Parse method params
         p = _parse_kv_or_json(params)
-        seasonality = int(p.get('seasonality')) if p.get('seasonality') is not None else _default_seasonality_period(timeframe)
+        seasonality = int(p.get('seasonality')) if p.get('seasonality') is not None else default_seasonality(timeframe)
 
         if method_l == 'seasonal_naive' and (not seasonality or seasonality <= 0):
             return {"error": "seasonal_naive requires a positive 'seasonality' in params or auto period"}
@@ -660,7 +670,6 @@ def forecast_engine(
             target_series, base_col_initial, base_col = _prepare_target_series_context(
                 df=df,
                 quantity_l=quantity_l,
-                target=str(target),
                 base_col=base_col,
                 features=features,
                 target_spec=target_spec,
@@ -740,7 +749,6 @@ def forecast_engine(
                 ci_alpha=ci_alpha,
                 as_of=as_of,
                 quantity_l=quantity_l,
-                target=target,
                 symbol=symbol,
                 timeframe=timeframe,
                 base_col=base_col,

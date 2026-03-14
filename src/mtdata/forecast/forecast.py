@@ -37,7 +37,6 @@ def forecast(
     params: Optional[Dict[str, Any]] = None,
     ci_alpha: Optional[float] = 0.05,
     quantity: Literal['price','return','volatility'] = 'price',  # type: ignore
-    target: Literal['price','return'] = 'price',  # deprecated in favor of quantity for modeling scale
     denoise: Optional[DenoiseSpec] = None,
     # Feature engineering for exogenous/multivariate models
     features: Optional[Dict[str, Any]] = None,
@@ -48,12 +47,12 @@ def forecast(
     target_spec: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Fast forecasts for the next `horizon` bars using lightweight methods.
-    Parameters: symbol, timeframe, method, horizon, lookback?, as_of?, params?, ci_alpha?, target, denoise?
+    Parameters: symbol, timeframe, method, horizon, lookback?, as_of?, params?, ci_alpha?, quantity, denoise?
 
     Methods: naive, seasonal_naive, drift, theta, fourier_ols, ses, holt, holt_winters_add, holt_winters_mul, arima, sarima.
     
     - `params`: method-specific settings; use `seasonality` inside params when needed (auto if omitted).
-    - `target`: 'price' or 'return' (log-return). Price forecasts operate on close prices.
+    - `quantity`: 'price', 'return', or 'volatility'.
     - `ci_alpha`: confidence level (e.g., 0.05). Set to null to disable intervals.
     - `features`: Dict or "key=value" string for feature engineering.
         - `include`: List of columns to include (e.g., "open,high").
@@ -90,7 +89,6 @@ def forecast(
             params=params,
             ci_alpha=ci_alpha,
             quantity=quantity,
-            target=target,
             denoise=denoise,
             features=features,
             dimred_method=dimred_method,
