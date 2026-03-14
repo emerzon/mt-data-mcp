@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional, Tuple
 import logging
 import math
+from copy import deepcopy
 
 import numpy as np
 import pandas as pd
@@ -1003,6 +1004,44 @@ def _resolve_denoise_base_col(
     return base_col
 
 
+_DENOISE_BASE_DEFAULTS = {"columns": ["close"], "keep_original": False, "suffix": "_dn"}
+
+_DENOISE_METHOD_DEFAULT_PARAMS: Dict[str, Dict[str, Any]] = {
+    "ema": {"span": 10},
+    "sma": {"window": 10},
+    "median": {"window": 7},
+    "lowpass_fft": {"cutoff_ratio": 0.1},
+    "butterworth": {"cutoff": 0.1, "order": 4, "btype": "low", "padlen": None},
+    "hp": {"lamb": 1600.0},
+    "savgol": {"window": 11, "polyorder": 2, "mode": "interp"},
+    "tv": {"weight": "auto", "n_iter": 50, "tol": 1e-4},
+    "kalman": {"process_var": "auto", "measurement_var": "auto", "initial_state": None, "initial_cov": None},
+    "hampel": {"window": 7, "n_sigmas": 3.0},
+    "bilateral": {"sigma_s": 2.0, "sigma_r": 0.5, "truncate": 3.0},
+    "wavelet_packet": {"wavelet": "db4", "level": None, "threshold": "auto", "mode": "soft", "threshold_scale": "auto"},
+    "ssa": {"window": 10, "components": 2},
+    "l1_trend": {"lamb": "auto", "n_iter": 50, "rho": "auto"},
+    "lms": {"order": 5, "mu": "auto", "eps": 1e-6, "leak": 0.0, "bias": True},
+    "rls": {"order": 5, "lambda_": "auto", "delta": 1.0, "bias": True},
+    "beta": {"window": 9, "beta": 1.3, "n_iter": 20, "eps": 1e-6},
+    "vmd": {"alpha": 2000.0, "tau": 0.0, "k": 5, "dc": 0, "init": 1, "tol": 1e-7, "keep_modes": None, "drop_modes": None, "keep_ratio": "auto"},
+    "loess": {"frac": 0.2, "it": 0, "delta": 0.0},
+    "stl": {"period": None, "seasonal": None, "trend": None, "low_pass": None, "robust": False, "component": "trend"},
+    "whittaker": {"lamb": 1000.0, "order": 2},
+    "gaussian": {"sigma": 2.0, "truncate": 4.0, "mode": "nearest"},
+    "wavelet": {"wavelet": "db4", "level": None, "threshold": "auto", "mode": "soft"},
+    "emd": {"drop_imfs": [0], "keep_imfs": None, "max_imfs": "auto"},
+    "eemd": {"drop_imfs": [0], "keep_imfs": None, "max_imfs": "auto", "noise_strength": 0.2, "trials": 100},
+    "ceemdan": {"drop_imfs": [0], "keep_imfs": None, "max_imfs": "auto", "noise_strength": 0.2, "trials": 100},
+}
+
+
+def _denoise_base_defaults(default_when: str = "pre_ti") -> Dict[str, Any]:
+    base = deepcopy(_DENOISE_BASE_DEFAULTS)
+    base["when"] = default_when
+    return base
+
+
 def get_denoise_methods_data() -> Dict[str, Any]:
     def avail_requires(name: str) -> Tuple[bool, str]:
         if name == 'wavelet':
@@ -1028,7 +1067,7 @@ def get_denoise_methods_data() -> Dict[str, Any]:
         return (True, '')
 
     methods: List[Dict[str, Any]] = []
-    base_defaults = {"when": "pre_ti", "columns": ["close"], "keep_original": False, "suffix": "_dn"}
+    base_defaults = _denoise_base_defaults("pre_ti")
 
     def add(method: str, description: str, params: List[Dict[str, Any]], supports: Dict[str, bool]):
         available, requires = avail_requires(method)
@@ -1202,7 +1241,7 @@ def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[
 
     Returns a dict with keys: method, params, columns, when, causality, keep_original, suffix.
     """
-    base = {"when": default_when, "columns": ["close"], "keep_original": False, "suffix": "_dn"}
+    base = _denoise_base_defaults(default_when)
     if not spec:
         return None
     if isinstance(spec, dict):
@@ -1223,62 +1262,8 @@ def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[
         return None
     if method == '' or method == 'none':
         return None
-    # Method-specific default params
-    params: Dict[str, Any] = {}
-    if method == 'ema':
-        params = {"span": 10}
-    elif method == 'sma':
-        params = {"window": 10}
-    elif method == 'median':
-        params = {"window": 7}
-    elif method == 'lowpass_fft':
-        params = {"cutoff_ratio": 0.1}
-    elif method == 'butterworth':
-        params = {"cutoff": 0.1, "order": 4, "btype": "low", "padlen": None}
-    elif method == 'hp':
-        params = {"lamb": 1600.0}
-    elif method == 'savgol':
-        params = {"window": 11, "polyorder": 2, "mode": "interp"}
-    elif method == 'tv':
-        params = {"weight": "auto", "n_iter": 50, "tol": 1e-4}
-    elif method == 'kalman':
-        params = {"process_var": "auto", "measurement_var": "auto", "initial_state": None, "initial_cov": None}
-    elif method == 'hampel':
-        params = {"window": 7, "n_sigmas": 3.0}
-    elif method == 'bilateral':
-        params = {"sigma_s": 2.0, "sigma_r": 0.5, "truncate": 3.0}
-    elif method == 'wavelet_packet':
-        params = {"wavelet": "db4", "level": None, "threshold": "auto", "mode": "soft", "threshold_scale": "auto"}
-    elif method == 'ssa':
-        params = {"window": 10, "components": 2}
-    elif method == 'l1_trend':
-        params = {"lamb": "auto", "n_iter": 50, "rho": "auto"}
-    elif method == 'lms':
-        params = {"order": 5, "mu": "auto", "eps": 1e-6, "leak": 0.0, "bias": True}
-    elif method == 'rls':
-        params = {"order": 5, "lambda_": "auto", "delta": 1.0, "bias": True}
-    elif method == 'beta':
-        params = {"window": 9, "beta": 1.3, "n_iter": 20, "eps": 1e-6}
-    elif method == 'vmd':
-        params = {"alpha": 2000.0, "tau": 0.0, "k": 5, "dc": 0, "init": 1, "tol": 1e-7, "keep_modes": None, "drop_modes": None, "keep_ratio": "auto"}
-    elif method == 'loess':
-        params = {"frac": 0.2, "it": 0, "delta": 0.0}
-    elif method == 'stl':
-        params = {"period": None, "seasonal": None, "trend": None, "low_pass": None, "robust": False, "component": "trend"}
-    elif method == 'whittaker':
-        params = {"lamb": 1000.0, "order": 2}
-    elif method == 'gaussian':
-        params = {"sigma": 2.0, "truncate": 4.0, "mode": "nearest"}
-    elif method == 'wavelet':
-        params = {"wavelet": "db4", "level": None, "threshold": "auto", "mode": "soft"}
-    elif method == 'emd':
-        params = {"drop_imfs": [0], "keep_imfs": None, "max_imfs": "auto"}
-    elif method == 'eemd':
-        params = {"drop_imfs": [0], "keep_imfs": None, "max_imfs": "auto", "noise_strength": 0.2, "trials": 100}
-    elif method == 'ceemdan':
-        params = {"drop_imfs": [0], "keep_imfs": None, "max_imfs": "auto", "noise_strength": 0.2, "trials": 100}
-    else:
-        # Unknown method; ignore
+    params = deepcopy(_DENOISE_METHOD_DEFAULT_PARAMS.get(method))
+    if params is None:
         return None
     out = dict(base)
     out.update({"method": method, "params": params})
