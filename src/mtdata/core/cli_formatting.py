@@ -11,6 +11,7 @@ from .mt5_gateway import get_default_mt5_gateway
 
 CLI_FORMAT_TOON = "toon"
 CLI_FORMAT_JSON = "json"
+_JSON_UNSET = object()
 
 
 def _format_result_minimal(result: Any, verbose: bool = True) -> str:
@@ -21,57 +22,15 @@ def _format_result_minimal(result: Any, verbose: bool = True) -> str:
 
 
 def _json_default(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, bool)):
-        return value
-    if isinstance(value, float):
-        return value if math.isfinite(value) else None
-    if isinstance(value, dict):
-        return {str(k): _sanitize_json_compat(v) for k, v in value.items()}
-    asdict = getattr(value, "_asdict", None)
-    if callable(asdict):
-        try:
-            return _sanitize_json_compat(asdict())
-        except Exception:
-            pass
-    if isinstance(value, (list, tuple, set)):
-        return [_sanitize_json_compat(v) for v in value]
-    if isinstance(value, types.GeneratorType):
-        return [_sanitize_json_compat(v) for v in value]
-    if isinstance(value, range):
-        return [_sanitize_json_compat(v) for v in value]
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    if isinstance(value, bytearray):
-        return bytes(value).decode("utf-8", errors="replace")
     return _sanitize_json_compat(value)
 
 
-def _sanitize_json_compat(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, bool)):
-        return value
-    if isinstance(value, float):
-        return value if math.isfinite(value) else None
-    if isinstance(value, dict):
-        return {str(k): _sanitize_json_compat(v) for k, v in value.items()}
-    asdict = getattr(value, "_asdict", None)
-    if callable(asdict):
-        try:
-            return _sanitize_json_compat(asdict())
-        except Exception:
-            pass
-    if isinstance(value, (list, tuple, set)):
-        return [_sanitize_json_compat(v) for v in value]
-    if isinstance(value, types.GeneratorType):
-        return [_sanitize_json_compat(v) for v in value]
-    if isinstance(value, range):
-        return [_sanitize_json_compat(v) for v in value]
+def _json_special_value(value: Any) -> Any:
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, (bytes, bytearray)):
         try:
-            return value.decode("utf-8", errors="replace")
+            return bytes(value).decode("utf-8", errors="replace")
         except Exception:
             return str(value)
 
@@ -96,6 +55,32 @@ def _sanitize_json_compat(value: Any) -> Any:
             return fv if math.isfinite(fv) else None
     except Exception:
         pass
+
+    return _JSON_UNSET
+
+
+def _sanitize_json_compat(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {str(k): _sanitize_json_compat(v) for k, v in value.items()}
+    asdict = getattr(value, "_asdict", None)
+    if callable(asdict):
+        try:
+            return _sanitize_json_compat(asdict())
+        except Exception:
+            pass
+    if isinstance(value, (list, tuple, set)):
+        return [_sanitize_json_compat(v) for v in value]
+    if isinstance(value, types.GeneratorType):
+        return [_sanitize_json_compat(v) for v in value]
+    if isinstance(value, range):
+        return [_sanitize_json_compat(v) for v in value]
+    special_value = _json_special_value(value)
+    if special_value is not _JSON_UNSET:
+        return special_value
 
     return str(value)
 

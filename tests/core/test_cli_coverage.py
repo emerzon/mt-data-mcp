@@ -1738,6 +1738,18 @@ class TestResolveParamKwargs:
         assert "forecast_list_methods" in kwargs["help"]
         assert kwargs["help"].count("forecast_list_methods") == 1
 
+    def test_forecast_method_literal_help_uses_method_browser_hint(self):
+        param = {
+            "name": "method",
+            "type": Literal["theta", "arima"],
+            "required": False,
+            "default": "theta",
+        }
+        kwargs, _ = _resolve_param_kwargs(param, None)
+        assert "choices" not in kwargs
+        assert kwargs["metavar"] == "METHOD"
+        assert "forecast_list_methods" in kwargs["help"]
+
     def test_report_generate_output_help_is_command_specific(self):
         param = {"name": "output", "type": Literal["toon", "markdown"], "required": False, "default": "toon"}
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="report_generate")

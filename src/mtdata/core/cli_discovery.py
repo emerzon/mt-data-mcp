@@ -47,6 +47,52 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("trade_place", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
 }
 
+_VOLATILITY_METHOD_LITERAL_MARKERS = {
+    "ewma",
+    "parkinson",
+    "gk",
+    "rs",
+    "yang_zhang",
+    "rolling_std",
+    "realized_kernel",
+    "har_rv",
+    "garch_t",
+    "egarch_t",
+    "gjr_garch_t",
+    "figarch",
+}
+
+_FORECAST_METHOD_LITERAL_MARKERS = {
+    "theta",
+    "naive",
+    "arima",
+    "chronos2",
+    "statsforecast",
+}
+
+
+def _is_forecast_method_literal(
+    ptype: Any,
+    *,
+    is_literal_origin: Callable[[Any], bool],
+    get_origin_func: Callable[[Any], Any],
+    get_args_func: Callable[[Any], Tuple[Any, ...]],
+) -> bool:
+    try:
+        origin = get_origin_func(ptype)
+        if not is_literal_origin(origin):
+            return False
+        args = {str(v) for v in get_args_func(ptype) if v is not None}
+        if args.intersection(_VOLATILITY_METHOD_LITERAL_MARKERS):
+            return False
+        return bool(args.intersection(_FORECAST_METHOD_LITERAL_MARKERS))
+    except Exception:
+        return False
+
+
+def _dedupe_flags(*flags: str) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(flag for flag in flags if flag))
+
 
 def get_function_info(
     func: Any,
@@ -256,32 +302,6 @@ def resolve_param_kwargs(
     def _escape_argparse_help(text: Optional[str]) -> Optional[str]:
         return text.replace("%", "%%") if isinstance(text, str) else text
 
-    def _looks_like_forecast_method_literal(ptype: Any) -> bool:
-        try:
-            origin = get_origin(ptype)
-            if not is_literal_origin(origin):
-                return False
-            args = set(str(v) for v in get_args(ptype) if v is not None)
-            volatility_markers = {
-                "ewma",
-                "parkinson",
-                "gk",
-                "rs",
-                "yang_zhang",
-                "rolling_std",
-                "realized_kernel",
-                "har_rv",
-                "garch_t",
-                "egarch_t",
-                "gjr_garch_t",
-                "figarch",
-            }
-            if args.intersection(volatility_markers):
-                return False
-            return bool(args.intersection({"theta", "naive", "arima", "chronos2", "statsforecast"}))
-        except Exception:
-            return False
-
     desc = None
     if param_docs and param["name"] in param_docs:
         desc = param_docs[param["name"]]
@@ -294,7 +314,12 @@ def resolve_param_kwargs(
 
     if param["name"] == "method" and (
         (cmd_name in {"forecast_generate", "forecast_conformal_intervals", "forecast_tune_genetic", "forecast_tune_optuna"})
-        or _looks_like_forecast_method_literal(param.get("type"))
+        or _is_forecast_method_literal(
+            param.get("type"),
+            is_literal_origin=is_literal_origin,
+            get_origin_func=get_origin,
+            get_args_func=get_args,
+        )
     ):
         if not (param_names and "library" in param_names):
             help_suffix = " Use forecast_list_methods to browse available methods."
@@ -364,15 +389,6 @@ def add_dynamic_arguments(
     cmd_name: Optional[str] = None,
 ) -> None:
     """Add CLI arguments for an introspected function schema."""
-    def _dedupe_flags(*flags: str) -> tuple[str, ...]:
-        seen: set[str] = set()
-        out: list[str] = []
-        for flag in flags:
-            if flag and flag not in seen:
-                seen.add(flag)
-                out.append(flag)
-        return tuple(out)
-
     def _extra_option_flags(param_name: str, cmd_name_value: Optional[str]) -> tuple[str, ...]:
         extras: list[str] = []
         if param_name == "limit" and cmd_name_value in _BAR_LIMIT_ALIAS_COMMANDS:
