@@ -254,6 +254,7 @@ def run_forecast_backtest(
         horizon=request.horizon,
         methods=len(request.methods or []),
     )
+    target = "return" if str(request.quantity).strip().lower() == "return" else "price"
     try:
         result = backtest_impl(
             symbol=request.symbol,
@@ -264,7 +265,7 @@ def run_forecast_backtest(
             methods=request.methods,
             params_per_method=request.params_per_method,
             quantity=request.quantity,
-            target=request.target,
+            target=target,
             denoise=request.denoise,
             params=request.params,
             features=request.features,

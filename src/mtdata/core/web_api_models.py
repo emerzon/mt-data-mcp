@@ -112,10 +112,6 @@ class BacktestBody(BaseModel):
         return _normalize_legacy_target(values)
 
     def to_domain_request(self) -> ForecastBacktestRequest:
-        target: Literal["price", "return"] = "price"
-        if self.quantity == "return":
-            target = "return"
-
         return ForecastBacktestRequest(
             symbol=self.symbol,
             timeframe=self.timeframe,
@@ -125,7 +121,6 @@ class BacktestBody(BaseModel):
             methods=self.methods,
             params_per_method=self.params_per_method,
             quantity=self.quantity,
-            target=target,
             denoise=self.denoise,
             params=self.params,
             features=self.features,

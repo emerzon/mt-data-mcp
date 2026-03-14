@@ -12,6 +12,7 @@ from mtdata.core import forecast as cf
 from mtdata.forecast.exceptions import ForecastError
 from mtdata.forecast import use_cases as forecast_use_cases
 from mtdata.forecast.requests import (
+    ForecastBacktestRequest,
     ForecastBarrierOptimizeRequest,
     ForecastBarrierProbRequest,
     ForecastConformalIntervalsRequest,
@@ -224,6 +225,23 @@ def test_run_forecast_generate_logs_finish_event(caplog):
         "event=finish operation=forecast_generate success=True" in record.message
         for record in caplog.records
     )
+
+
+def test_run_forecast_backtest_derives_target_from_quantity():
+    captured = {}
+
+    def fake_backtest_impl(**kwargs):
+        captured.update(kwargs)
+        return {"success": True}
+
+    result = forecast_use_cases.run_forecast_backtest(
+        ForecastBacktestRequest(symbol="EURUSD", quantity="return"),
+        backtest_impl=fake_backtest_impl,
+    )
+
+    assert result["success"] is True
+    assert captured["quantity"] == "return"
+    assert captured["target"] == "return"
 
 
 def test_forecast_generate_converts_typed_forecast_errors(monkeypatch):

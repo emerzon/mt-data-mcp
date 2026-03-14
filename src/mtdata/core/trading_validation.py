@@ -344,7 +344,7 @@ def _prevalidate_trade_place_market_input(
         _, volume_error = _validate_volume(volume, symbol_info)
         if volume_error:
             return {"error": volume_error}
-        return {"ok": True}
+        return {"success": True}
 
     result = _prevalidate()
     if isinstance(result, dict):

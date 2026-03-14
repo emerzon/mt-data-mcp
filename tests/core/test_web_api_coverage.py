@@ -156,7 +156,7 @@ class TestPydanticModels:
             trade_threshold=0.01,
         )
         assert body.methods == ["theta", "arima"]
-        assert body.to_domain_request().target == "price"
+        assert body.to_domain_request().quantity == "price"
 
 
 # ===========================================================================
@@ -858,7 +858,7 @@ class TestPostBacktest:
         assert request.trade_threshold == 0.01
         assert request.dimred_method == "pca"
         assert request.methods == ["theta"]
-        assert request.target == "return"
+        assert request.quantity == "return"
         assert request.detail == "full"
 
     def test_backtest_legacy_target_is_normalized(self):
@@ -866,7 +866,6 @@ class TestPostBacktest:
             _client.post("/api/backtest", json={"symbol": "EURUSD", "target": "return"})
         request = mock_bt.call_args.args[0]
         assert request.quantity == "return"
-        assert request.target == "return"
 
 
 # ===========================================================================

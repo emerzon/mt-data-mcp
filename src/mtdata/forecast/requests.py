@@ -35,7 +35,6 @@ class ForecastBacktestRequest(BaseModel):
     methods: Optional[List[str]] = None
     params_per_method: Optional[Dict[str, Any]] = None
     quantity: Literal["price", "return", "volatility"] = "price"
-    target: Literal["price", "return"] = "price"
     denoise: Optional[DenoiseSpec] = None
     params: Optional[Dict[str, Any]] = None
     features: Optional[Dict[str, Any]] = None
