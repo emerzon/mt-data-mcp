@@ -29,11 +29,11 @@ from .web_api_handlers import (
 )
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
 from .web_api_runtime import create_web_api_app, mount_webui, run_webapi
-from ..forecast.backtest import forecast_backtest as _backtest_impl
 from ..forecast.common import fetch_history as _fetch_history_impl
-from ..forecast.forecast import (
-    forecast as _forecast_impl,
-    get_forecast_methods_data as _get_methods_impl,
+from ..forecast.forecast import get_forecast_methods_data as _get_methods_impl
+from ..forecast.use_cases import (
+    run_forecast_backtest as _run_forecast_backtest_impl,
+    run_forecast_generate as _run_forecast_generate_impl,
 )
 from ..forecast.volatility import (
     forecast_volatility as _forecast_vol_impl,
@@ -206,7 +206,7 @@ def get_tick(symbol: str = Query(...)) -> Dict[str, Any]:
 
 @api_router.post("/forecast/price")
 def post_forecast_price(body: ForecastPriceBody) -> Dict[str, Any]:
-    return _post_forecast_price_response(body=body, forecast_impl=_forecast_impl)
+    return _post_forecast_price_response(body=body, forecast_generate_use_case=_run_forecast_generate_impl)
 
 
 @api_router.post("/forecast/volatility")
@@ -216,7 +216,7 @@ def post_forecast_volatility(body: ForecastVolBody) -> Dict[str, Any]:
 
 @api_router.post("/backtest")
 def post_backtest(body: BacktestBody) -> Dict[str, Any]:
-    return _post_backtest_response(body=body, backtest_impl=_backtest_impl)
+    return _post_backtest_response(body=body, backtest_use_case=_run_forecast_backtest_impl)
 
 
 @api_router.get("/health")

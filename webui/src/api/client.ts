@@ -1,6 +1,7 @@
 import axios, { AxiosError } from 'axios'
 import type {
   HistoryBar,
+  HistoryResponse,
   Instrument,
   Tick,
   MethodsMeta,
@@ -74,14 +75,6 @@ export type HistoryParams = {
   include_incomplete?: boolean
 }
 
-export type HistoryResponse = {
-  success: boolean
-  bars: HistoryBar[]
-  meta?: {
-    server_tz_offset: number
-  }
-}
-
 export async function getHistory(params: HistoryParams): Promise<HistoryResponse> {
   const query: Record<string, unknown> = {
     symbol: params.symbol,
@@ -106,11 +99,10 @@ export async function getHistory(params: HistoryParams): Promise<HistoryResponse
     }
   }
 
-  const { data } = await api.get<{ bars: HistoryBar[], meta?: { server_tz_offset: number } }>(apiPath('/history'), { params: query })
+  const { data } = await api.get<HistoryResponse>(apiPath('/history'), { params: query })
   return {
-    success: true,
     bars: data.bars ?? [],
-    meta: data.meta
+    meta: data.meta,
   }
 }
 

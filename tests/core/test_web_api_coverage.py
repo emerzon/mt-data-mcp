@@ -121,7 +121,7 @@ class TestPydanticModels:
         assert body.horizon == 12
         assert body.ci_alpha == 0.05
         assert body.quantity == "price"
-        assert body.target == "price"
+        assert body.to_domain_request().method == "theta"
 
     def test_forecast_vol_body_defaults(self):
         body = ForecastVolBody(symbol="EURUSD")
@@ -146,6 +146,7 @@ class TestPydanticModels:
             target_spec={"col": "close"},
         )
         assert body.symbol == "GBPUSD"
+        assert body.quantity == "return"
         assert body.dimred_method == "pca"
 
     def test_backtest_body_custom(self):
@@ -155,6 +156,7 @@ class TestPydanticModels:
             trade_threshold=0.01,
         )
         assert body.methods == ["theta", "arima"]
+        assert body.to_domain_request().target == "price"
 
 
 # ===========================================================================
@@ -743,44 +745,51 @@ class TestGetTick:
 class TestPostForecastPrice:
     def test_success(self):
         result = {"forecast_price": [1.1, 1.2], "forecast_time": [1, 2]}
-        with patch("mtdata.core.web_api._forecast_impl", return_value=result):
+        with patch("mtdata.core.web_api._run_forecast_generate_impl", return_value=result):
             resp = _client.post("/api/forecast/price", json={"symbol": "EURUSD"})
         assert resp.status_code == 200
         assert resp.json() == result
 
     def test_error_in_result(self):
-        with patch("mtdata.core.web_api._forecast_impl", return_value={"error": "fail"}):
+        with patch("mtdata.core.web_api._run_forecast_generate_impl", return_value={"error": "fail"}):
             resp = _client.post("/api/forecast/price", json={"symbol": "EURUSD"})
         assert resp.status_code == 400
 
     def test_passes_all_params(self):
-        with patch("mtdata.core.web_api._forecast_impl", return_value={}) as mock_fc:
+        with patch("mtdata.core.web_api._run_forecast_generate_impl", return_value={}) as mock_fc:
             _client.post("/api/forecast/price", json={
                 "symbol": "GBPUSD", "timeframe": "D1", "method": "arima",
                 "horizon": 5, "lookback": 200, "as_of": "2025-01-01",
                 "params": {"order": [1, 1, 1]}, "ci_alpha": 0.1,
-                "quantity": "return", "target": "return",
+                "quantity": "return",
                 "denoise": {"method": "wavelet"}, "features": {"rsi": {}},
                 "dimred_method": "pca", "dimred_params": {"n": 3},
                 "target_spec": {"col": "close"},
             })
-        kw = mock_fc.call_args.kwargs
-        assert kw["symbol"] == "GBPUSD"
-        assert kw["method"] == "arima"
-        assert kw["horizon"] == 5
-        assert kw["quantity"] == "return"
-        assert kw["dimred_method"] == "pca"
-        assert kw["target_spec"] == {"col": "close"}
+        request = mock_fc.call_args.args[0]
+        assert request.symbol == "GBPUSD"
+        assert request.method == "arima"
+        assert request.horizon == 5
+        assert request.quantity == "return"
+        assert request.dimred_method == "pca"
+        assert request.target_spec == {"col": "close"}
+        assert request.model_params == {"order": [1, 1, 1]}
+
+    def test_legacy_target_is_normalized(self):
+        with patch("mtdata.core.web_api._run_forecast_generate_impl", return_value={}) as mock_fc:
+            _client.post("/api/forecast/price", json={"symbol": "EURUSD", "target": "return"})
+        request = mock_fc.call_args.args[0]
+        assert request.quantity == "return"
 
     def test_non_dict_result_returned(self):
         """Non-dict return passes through without error check."""
         body = ForecastPriceBody(symbol="EURUSD")
-        with patch("mtdata.core.web_api._forecast_impl", return_value="raw_string"):
+        with patch("mtdata.core.web_api._run_forecast_generate_impl", return_value="raw_string"):
             res = web_api.post_forecast_price(body)
         assert res == "raw_string"
 
     def test_typed_forecast_error_becomes_http_400(self):
-        with patch("mtdata.core.web_api._forecast_impl", side_effect=ForecastError("engine exploded")):
+        with patch("mtdata.core.web_api._run_forecast_generate_impl", side_effect=ForecastError("engine exploded")):
             resp = _client.post("/api/forecast/price", json={"symbol": "EURUSD"})
         assert resp.status_code == 400
         assert "engine exploded" in resp.text
@@ -823,32 +832,41 @@ class TestPostForecastVolatility:
 class TestPostBacktest:
     def test_success(self):
         result = {"results": []}
-        with patch("mtdata.core.web_api._backtest_impl", return_value=result):
+        with patch("mtdata.core.web_api._run_forecast_backtest_impl", return_value=result):
             resp = _client.post("/api/backtest", json={"symbol": "EURUSD"})
         assert resp.status_code == 200
         assert resp.json() == result
 
     def test_error(self):
-        with patch("mtdata.core.web_api._backtest_impl", return_value={"error": "fail"}):
+        with patch("mtdata.core.web_api._run_forecast_backtest_impl", return_value={"error": "fail"}):
             resp = _client.post("/api/backtest", json={"symbol": "EURUSD"})
         assert resp.status_code == 400
 
     def test_passes_all_params(self):
-        with patch("mtdata.core.web_api._backtest_impl", return_value={}) as mock_bt:
+        with patch("mtdata.core.web_api._run_forecast_backtest_impl", return_value={}) as mock_bt:
             _client.post("/api/backtest", json={
                 "symbol": "EURUSD", "timeframe": "D1", "horizon": 10,
                 "steps": 3, "spacing": 10, "methods": ["theta"],
                 "params_per_method": {"theta": {}}, "quantity": "return",
-                "target": "return", "denoise": {"method": "wavelet"},
+                "denoise": {"method": "wavelet"},
                 "params": {"extra": True}, "features": {"rsi": {}},
                 "dimred_method": "pca", "dimred_params": {"n": 2},
-                "slippage_bps": 1.5, "trade_threshold": 0.01,
+                "slippage_bps": 1.5, "trade_threshold": 0.01, "detail": "full",
             })
-        kw = mock_bt.call_args.kwargs
-        assert kw["slippage_bps"] == 1.5
-        assert kw["trade_threshold"] == 0.01
-        assert kw["dimred_method"] == "pca"
-        assert kw["methods"] == ["theta"]
+        request = mock_bt.call_args.args[0]
+        assert request.slippage_bps == 1.5
+        assert request.trade_threshold == 0.01
+        assert request.dimred_method == "pca"
+        assert request.methods == ["theta"]
+        assert request.target == "return"
+        assert request.detail == "full"
+
+    def test_backtest_legacy_target_is_normalized(self):
+        with patch("mtdata.core.web_api._run_forecast_backtest_impl", return_value={}) as mock_bt:
+            _client.post("/api/backtest", json={"symbol": "EURUSD", "target": "return"})
+        request = mock_bt.call_args.args[0]
+        assert request.quantity == "return"
+        assert request.target == "return"
 
 
 # ===========================================================================

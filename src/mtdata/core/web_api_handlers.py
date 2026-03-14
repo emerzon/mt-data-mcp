@@ -638,25 +638,9 @@ def get_tick_response(
     }
 
 
-def post_forecast_price_response(*, body: ForecastPriceBody, forecast_impl: Callable[..., Any]) -> Dict[str, Any]:
+def post_forecast_price_response(*, body: ForecastPriceBody, forecast_generate_use_case: Callable[..., Any]) -> Dict[str, Any]:
     try:
-        result = forecast_impl(
-            symbol=body.symbol,
-            timeframe=body.timeframe,  # type: ignore[arg-type]
-            method=body.method,  # type: ignore[arg-type]
-            horizon=body.horizon,
-            lookback=body.lookback,
-            as_of=body.as_of,
-            params=body.params,
-            ci_alpha=body.ci_alpha,
-            quantity=body.quantity,  # type: ignore[arg-type]
-            target=body.target,  # type: ignore[arg-type]
-            denoise=body.denoise,
-            features=body.features,
-            dimred_method=body.dimred_method,
-            dimred_params=body.dimred_params,
-            target_spec=body.target_spec,
-        )
+        result = forecast_generate_use_case(body.to_domain_request())
     except ForecastError as exc:
         raise _http_error(400, str(exc), code="forecast_error", operation="post_forecast_price")
     if isinstance(result, dict) and result.get("error"):
@@ -680,26 +664,8 @@ def post_forecast_volatility_response(*, body: ForecastVolBody, forecast_vol_imp
     return result
 
 
-def post_backtest_response(*, body: BacktestBody, backtest_impl: Callable[..., Any]) -> Dict[str, Any]:
-    result = backtest_impl(
-        symbol=body.symbol,
-        timeframe=body.timeframe,  # type: ignore[arg-type]
-        horizon=body.horizon,
-        steps=body.steps,
-        spacing=body.spacing,
-        methods=body.methods,
-        params_per_method=body.params_per_method,
-        quantity=body.quantity,  # type: ignore[arg-type]
-        target=body.target,  # type: ignore[arg-type]
-        denoise=body.denoise,
-        params=body.params,
-        features=body.features,
-        dimred_method=body.dimred_method,
-        dimred_params=body.dimred_params,
-        slippage_bps=body.slippage_bps,
-        trade_threshold=body.trade_threshold,
-        detail=body.detail,  # type: ignore[arg-type]
-    )
+def post_backtest_response(*, body: BacktestBody, backtest_use_case: Callable[..., Any]) -> Dict[str, Any]:
+    result = backtest_use_case(body.to_domain_request())
     if isinstance(result, dict) and result.get("error"):
         raise _http_error(400, str(result["error"]), code="backtest_error", operation="post_backtest")
     return result

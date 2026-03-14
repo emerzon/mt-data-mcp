@@ -20,15 +20,43 @@ export type HistoryBar = {
   close_dn?: number // denoised close (when denoising applied)
 }
 
+export type RuntimeTimezoneMeta = {
+  output?: {
+    tz?: {
+      value?: string | null
+      hint?: string
+    }
+  }
+  server?: {
+    source?: string
+    tz?: {
+      configured?: string | null
+      resolved?: string | null
+      offset_seconds?: number
+    }
+  }
+  client?: {
+    tz?: {
+      configured?: string | null
+      resolved?: string | null
+    }
+  }
+  utc?: {
+    now?: string
+  }
+  local?: {
+    tz?: {
+      name?: string | null
+    }
+  }
+}
+
 export type HistoryResponse = {
-  success: boolean
-  symbol: string
-  timeframe: string
-  candles: number
-  last_candle_open: boolean
-  data: HistoryBar[]
+  bars: HistoryBar[]
   meta?: {
-    server_tz_offset: number
+    runtime?: {
+      timezone?: RuntimeTimezoneMeta
+    }
   }
 }
 
@@ -202,7 +230,6 @@ export type ForecastPriceBody = {
   params?: Record<string, unknown>
   ci_alpha?: number
   quantity?: 'price' | 'return' | 'volatility'
-  target?: 'price' | 'return'
   denoise?: DenoiseSpecUI
   features?: Record<string, unknown>
   dimred_method?: string
@@ -229,8 +256,7 @@ export type BacktestBody = {
   spacing?: number
   methods?: string[]
   params_per_method?: Record<string, unknown>
-  quantity?: 'price' | 'return'
-  target?: 'price' | 'return'
+  quantity?: 'price' | 'return' | 'volatility'
   denoise?: DenoiseSpecUI
   params?: Record<string, unknown>
   features?: Record<string, unknown>
@@ -238,6 +264,7 @@ export type BacktestBody = {
   dimred_params?: Record<string, unknown>
   slippage_bps?: number
   trade_threshold?: number
+  detail?: 'compact' | 'full'
 }
 
 export type BacktestResult = {

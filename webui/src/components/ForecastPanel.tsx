@@ -131,14 +131,14 @@ function ForecastTab({
           />
         </div>
         <div>
-          <label className="text-xs text-slate-400 mb-1 block">Target</label>
+          <label className="text-xs text-slate-400 mb-1 block">Quantity</label>
           <select
             className="w-full bg-slate-800 text-slate-200 text-sm rounded-lg px-3 py-2 border border-slate-700"
-            value={settings.target}
+            value={settings.quantity}
             onChange={(event) =>
               setSettings((previous) => ({
                 ...previous,
-                target: event.target.value as 'price' | 'return',
+                quantity: event.target.value as 'price' | 'return',
               }))
             }
           >
@@ -235,12 +235,12 @@ function ForecastTab({
                     <label className="text-xs text-slate-500 mb-0.5 block">{param.name}</label>
                     <input
                       className="w-full bg-slate-800 text-slate-200 text-xs rounded px-2 py-1.5 border border-slate-700"
-                      value={String(settings.methodParams[param.name] ?? '')}
+                      value={String(settings.params[param.name] ?? '')}
                       onChange={(event) =>
                         setSettings((previous) => ({
                           ...previous,
-                          methodParams: {
-                            ...previous.methodParams,
+                          params: {
+                            ...previous.params,
                             [param.name]: coerce(event.target.value),
                           },
                         }))

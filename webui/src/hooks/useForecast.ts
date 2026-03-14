@@ -202,9 +202,9 @@ export type ForecastSettings = {
   method: string
   horizon: number
   lookback: number | ''
-  target: 'price' | 'return'
+  quantity: 'price' | 'return'
   ci_alpha: number
-  methodParams: Record<string, unknown>
+  params: Record<string, unknown>
   denoise?: DenoiseSpecUI
   dimredMethod?: string
   dimredParams?: Record<string, unknown>
@@ -215,9 +215,9 @@ export function useForecastSettings(symbol: string, timeframe: string) {
     method: 'theta',
     horizon: 12,
     lookback: '',
-    target: 'price',
+    quantity: 'price',
     ci_alpha: 0.1,
-    methodParams: {},
+    params: {},
   })
 
   const storageKey = symbol && timeframe ? `fc:${symbol}:${timeframe}` : null
@@ -227,17 +227,29 @@ export function useForecastSettings(symbol: string, timeframe: string) {
   useEffect(() => {
     if (!storageKey) return
     const saved =
-      loadJSON<Partial<ForecastSettings>>(storageKey) ??
-      (legacyStorageKey ? loadJSON<Partial<ForecastSettings>>(legacyStorageKey) : null)
+      loadJSON<
+        Partial<ForecastSettings> & {
+          target?: ForecastSettings['quantity']
+          methodParams?: Record<string, unknown>
+        }
+      >(storageKey) ??
+      (legacyStorageKey
+        ? loadJSON<
+            Partial<ForecastSettings> & {
+              target?: ForecastSettings['quantity']
+              methodParams?: Record<string, unknown>
+            }
+          >(legacyStorageKey)
+        : null)
     if (saved) {
       setSettings(prev => ({
         ...prev,
         method: saved.method ?? prev.method,
         horizon: saved.horizon ?? prev.horizon,
         lookback: saved.lookback ?? prev.lookback,
-        target: saved.target ?? prev.target,
+        quantity: saved.quantity ?? saved.target ?? prev.quantity,
         ci_alpha: saved.ci_alpha ?? prev.ci_alpha,
-        methodParams: saved.methodParams ?? prev.methodParams,
+        params: saved.params ?? saved.methodParams ?? prev.params,
         denoise: saved.denoise,
         dimredMethod: saved.dimredMethod,
         dimredParams: saved.dimredParams,
@@ -291,9 +303,9 @@ export function useForecast(
           horizon: settings.horizon,
           lookback: settings.lookback === '' ? undefined : Number(settings.lookback),
           ci_alpha: settings.ci_alpha,
-          target: settings.target,
+          quantity: settings.quantity,
           as_of: kind === 'full' ? undefined : anchor ? formatDateTime(anchor) : undefined,
-          params: Object.keys(settings.methodParams).length ? settings.methodParams : undefined,
+          params: Object.keys(settings.params).length ? settings.params : undefined,
           denoise: settings.denoise,
           dimred_method: settings.dimredMethod,
           dimred_params: settings.dimredParams,

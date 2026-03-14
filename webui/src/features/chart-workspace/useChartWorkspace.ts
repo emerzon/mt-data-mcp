@@ -67,8 +67,9 @@ export function useChartWorkspace() {
   })
 
   useEffect(() => {
-    if (histDataResponse?.meta?.server_tz_offset !== undefined) {
-      setServerOffset(histDataResponse.meta.server_tz_offset)
+    const serverOffsetSeconds = histDataResponse?.meta?.runtime?.timezone?.server?.tz?.offset_seconds
+    if (serverOffsetSeconds !== undefined) {
+      setServerOffset(serverOffsetSeconds)
     }
   }, [histDataResponse])
 
