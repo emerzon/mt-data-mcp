@@ -89,6 +89,18 @@ def get_default_mt5_gateway() -> MT5Gateway:
     return get_mt5_gateway()
 
 
+def get_web_api_mt5_gateway(
+    *,
+    adapter: Any = None,
+    ensure_connection_impl: Callable[[], None] | None = None,
+) -> MT5Gateway:
+    """Build the MT5 gateway used by the web API transport."""
+    return get_mt5_gateway(
+        adapter=adapter,
+        ensure_connection_impl=ensure_connection_impl,
+    )
+
+
 def mt5_connection_error(
     gateway: Optional[Any] = None,
 ) -> Optional[Dict[str, Any]]:
