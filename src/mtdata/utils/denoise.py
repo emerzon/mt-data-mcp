@@ -576,6 +576,603 @@ def _vmd_denoise(
         y = modes[idx_sel].sum(axis=1)
     return y
 
+
+def _series_like(s: pd.Series, values: np.ndarray) -> pd.Series:
+    return pd.Series(values, index=s.index)
+
+
+def _denoise_ema_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    alpha = params.get('alpha')
+    span = params.get('span', 10)
+    if alpha is not None:
+        y = pd.Series(x).ewm(alpha=float(alpha), adjust=False).mean().values
+    else:
+        y = pd.Series(x).ewm(span=int(span), adjust=False).mean().values
+    if causality == 'zero_phase':
+        y2 = pd.Series(y[::-1]).ewm(span=int(span), adjust=False).mean().values[::-1]
+        y = 0.5 * (y + y2)
+    return _series_like(s, y)
+
+
+def _denoise_rolling_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+    *,
+    default_window: int,
+    reducer: str,
+) -> pd.Series:
+    window = max(1, int(params.get('window', default_window)))
+    series = pd.Series(x)
+    rolling_kwargs: Dict[str, Any] = {"window": window, "min_periods": 1}
+    if causality == 'zero_phase':
+        rolling_kwargs["center"] = True
+    if reducer == 'mean':
+        y = series.rolling(**rolling_kwargs).mean().values
+    else:
+        y = series.rolling(**rolling_kwargs).median().values
+    return _series_like(s, y)
+
+
+def _denoise_sma_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    return _denoise_rolling_series(s, x, params, causality, default_window=10, reducer='mean')
+
+
+def _denoise_median_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    return _denoise_rolling_series(s, x, params, causality, default_window=7, reducer='median')
+
+
+def _denoise_lowpass_fft_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    del causality
+    cutoff_ratio = float(params.get('cutoff_ratio', 0.1))
+    X = np.fft.rfft(x)
+    kmax = int(len(X) * cutoff_ratio)
+    Y = np.zeros_like(X)
+    Y[:max(1, kmax)] = X[:max(1, kmax)]
+    y = np.fft.irfft(Y, n=len(x))
+    return _series_like(s, y)
+
+
+def _denoise_butterworth_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    cutoff = params.get('cutoff', 0.1)
+    order = int(params.get('order', 4))
+    btype = str(params.get('btype', 'low'))
+    padlen = params.get('padlen')
+    y = _butterworth_filter(x, cutoff=cutoff, order=order, btype=btype, causality=causality, padlen=padlen)
+    return _series_like(s, y)
+
+
+def _denoise_hp_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    del causality
+    lamb = params.get('lamb', params.get('lambda', 1600.0))
+    y = _hp_filter(x, float(lamb))
+    return _series_like(s, y)
+
+
+def _denoise_savgol_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    del causality
+    if _savgol_filter is None:
+        return s
+    window = int(params.get('window', 11))
+    if window < 3:
+        return s
+    if window % 2 == 0:
+        window += 1
+    polyorder = int(params.get('polyorder', 2))
+    polyorder = max(0, min(polyorder, window - 1))
+    mode = str(params.get('mode', 'interp'))
+    try:
+        y = _savgol_filter(x, window_length=window, polyorder=polyorder, mode=mode)
+    except Exception as exc:
+        _logger.warning("savgol_filter failed (window=%d, polyorder=%d): %s", window, polyorder, exc)
+        return s
+    return _series_like(s, y)
+
+
+def _denoise_tv_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    del causality
+    weight = params.get('weight', params.get('lambda', 'auto'))
+    if weight == 'auto' or weight is None:
+        scale = float(np.std(x))
+        weight_val = 0.1 * scale if scale > 0 else 1.0
+    else:
+        weight_val = float(weight)
+    n_iter = int(params.get('n_iter', 50))
+    tol = float(params.get('tol', 1e-4))
+    y = _tv_denoise_1d(x, weight=weight_val, n_iter=n_iter, tol=tol)
+    return _series_like(s, y)
+
+
+def _denoise_kalman_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    measurement_var = params.get('measurement_var', params.get('r', 'auto'))
+    process_var = params.get('process_var', params.get('q', 'auto'))
+    series_var = float(np.var(x))
+    if measurement_var == 'auto' or measurement_var is None:
+        measurement_val = series_var if series_var > 0 else 1.0
+    else:
+        measurement_val = float(measurement_var)
+    if process_var == 'auto' or process_var is None:
+        process_val = measurement_val * 0.01
+    else:
+        process_val = float(process_var)
+    init_state = params.get('initial_state')
+    init_cov = params.get('initial_cov')
+    y_fwd = _kalman_filter_1d(
+        x,
+        process_var=process_val,
+        measurement_var=measurement_val,
+        initial_state=init_state,
+        initial_cov=init_cov,
+    )
+    if causality == 'zero_phase':
+        bwd_initial_state = float(y_fwd[-1]) if y_fwd.size > 0 else init_state
+        y_bwd = _kalman_filter_1d(
+            x[::-1],
+            process_var=process_val,
+            measurement_var=measurement_val,
+            initial_state=bwd_initial_state,
+            initial_cov=init_cov,
+        )[::-1]
+        y = 0.5 * (y_fwd + y_bwd)
+    else:
+        y = y_fwd
+    return _series_like(s, y)
+
+
+def _denoise_loess_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    del causality
+    if _lowess is None:
+        return s
+    frac = float(params.get('frac', 0.2))
+    it = int(params.get('it', 0))
+    delta = float(params.get('delta', 0.0))
+    exog = np.arange(len(x), dtype=float)
+    y = _lowess(x, exog, frac=frac, it=it, delta=delta, return_sorted=False)
+    return _series_like(s, y)
+
+
+def _denoise_stl_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    del causality
+    if _STL is None:
+        return s
+    period = params.get('period')
+    if period is None:
+        return s
+    period_val = int(period)
+    if period_val < 2 or period_val >= len(x):
+        return s
+    seasonal = params.get('seasonal')
+    trend = params.get('trend')
+    low_pass = params.get('low_pass')
+    robust = bool(params.get('robust', False))
+    stl_kwargs: Dict[str, Any] = {"period": period_val, "robust": robust}
+    if seasonal is not None:
+        stl_kwargs["seasonal"] = int(seasonal)
+    if trend is not None:
+        stl_kwargs["trend"] = int(trend)
+    if low_pass is not None:
+        stl_kwargs["low_pass"] = int(low_pass)
+    stl = _STL(x, **stl_kwargs)
+    res = stl.fit()
+    component = str(params.get('component', 'trend')).lower().strip()
+    if component == 'seasonal':
+        y = res.seasonal
+    elif component == 'resid':
+        y = res.resid
+    elif component in ('trend+seasonal', 'trend_seasonal'):
+        y = res.trend + res.seasonal
+    elif component in ('trend+resid', 'trend_resid'):
+        y = res.trend + res.resid
+    else:
+        y = res.trend
+    return _series_like(s, y)
+
+
+def _denoise_whittaker_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    del causality
+    lamb = params.get('lamb', params.get('lambda', 1000.0))
+    order = int(params.get('order', 2))
+    y = _whittaker_smooth(x, float(lamb), order=order)
+    return _series_like(s, y)
+
+
+def _denoise_gaussian_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    del causality
+    if _gaussian_filter1d is None:
+        return s
+    sigma = float(params.get('sigma', 2.0))
+    if sigma <= 0:
+        return s
+    truncate = float(params.get('truncate', 4.0))
+    mode = str(params.get('mode', 'nearest'))
+    y = _gaussian_filter1d(x, sigma=sigma, mode=mode, truncate=truncate)
+    return _series_like(s, y)
+
+
+def _denoise_hampel_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    window = int(params.get('window', 7))
+    n_sigmas = float(params.get('n_sigmas', 3.0))
+    y = _hampel_filter(x, window=window, n_sigmas=n_sigmas, causality=causality)
+    return _series_like(s, y)
+
+
+def _denoise_bilateral_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    sigma_s = float(params.get('sigma_s', 2.0))
+    sigma_r = float(params.get('sigma_r', 0.5))
+    truncate = float(params.get('truncate', 3.0))
+    y = _bilateral_filter_1d(x, sigma_s=sigma_s, sigma_r=sigma_r, truncate=truncate, causality=causality)
+    return _series_like(s, y)
+
+
+def _denoise_wavelet_packet_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    del causality
+    if _pywt is None:
+        return s
+    wavelet = str(params.get('wavelet', 'db4'))
+    level = params.get('level')
+    mode = str(params.get('mode', 'soft'))
+    thr = params.get('threshold', 'auto')
+    thr_scale = params.get('threshold_scale', 'auto')
+    y = _wavelet_packet_denoise(
+        x,
+        wavelet=wavelet,
+        level=level,
+        threshold=thr,
+        mode=mode,
+        threshold_scale=thr_scale,
+    )
+    return _series_like(s, y)
+
+
+def _denoise_ssa_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    del causality
+    window = int(params.get('window', max(10, len(x) // 3)))
+    components = params.get('components')
+    y = _ssa_denoise(x, window=window, components=components)
+    return _series_like(s, y)
+
+
+def _denoise_l1_trend_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    del causality
+    lamb_param = params.get('lamb', params.get('lambda', 'auto'))
+    n_iter = int(params.get('n_iter', 50))
+    rho_param = params.get('rho', 'auto')
+    rho = float(rho_param) if rho_param not in ('auto', None) else 1.0
+    if lamb_param in ('auto', None):
+        mean = float(np.mean(x))
+        std = float(np.std(x))
+        if std <= 0:
+            return s
+        x_scaled = (x - mean) / std
+        scale = math.sqrt(max(len(x), 1) / 100.0)
+        lamb = 5.0 * scale
+        y_scaled = _l1_trend_filter(x_scaled, lamb=lamb, n_iter=n_iter, rho=rho)
+        y = y_scaled * std + mean
+    else:
+        lamb = float(lamb_param)
+        y = _l1_trend_filter(x, lamb=lamb, n_iter=n_iter, rho=rho)
+    return _series_like(s, y)
+
+
+def _denoise_lms_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    order = int(params.get('order', 5))
+    mu_param = params.get('mu', 'auto')
+    mu = float(mu_param) if mu_param not in ('auto', None) else 0.5
+    mu = max(1e-4, min(mu, 1.5))
+    eps = float(params.get('eps', 1e-6))
+    leak = float(params.get('leak', 0.0))
+    bias = bool(params.get('bias', True))
+    y_fwd = _adaptive_lms_filter(x, order=order, mu=mu, eps=eps, leak=leak, use_bias=bias)
+    if causality == 'zero_phase':
+        y_bwd = _adaptive_lms_filter(x[::-1], order=order, mu=mu, eps=eps, leak=leak, use_bias=bias)[::-1]
+        y = 0.5 * (y_fwd + y_bwd)
+    else:
+        y = y_fwd
+    return _series_like(s, y)
+
+
+def _denoise_rls_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    order = int(params.get('order', 5))
+    lam_param = params.get('lambda_', params.get('lam', 'auto'))
+    lam = float(lam_param) if lam_param not in ('auto', None) else 0.99
+    lam = max(0.9, min(lam, 0.999))
+    delta = float(params.get('delta', 1.0))
+    bias = bool(params.get('bias', True))
+    y_fwd = _adaptive_rls_filter(x, order=order, lam=lam, delta=delta, use_bias=bias)
+    if causality == 'zero_phase':
+        y_bwd = _adaptive_rls_filter(x[::-1], order=order, lam=lam, delta=delta, use_bias=bias)[::-1]
+        y = 0.5 * (y_fwd + y_bwd)
+    else:
+        y = y_fwd
+    return _series_like(s, y)
+
+
+def _denoise_beta_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    window = int(params.get('window', 9))
+    beta = float(params.get('beta', 1.3))
+    n_iter = int(params.get('n_iter', 20))
+    eps = float(params.get('eps', 1e-6))
+    y = _beta_smooth(x, window=window, beta=beta, n_iter=n_iter, eps=eps, causality=causality)
+    return _series_like(s, y)
+
+
+def _denoise_vmd_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    del causality
+    alpha = float(params.get('alpha', 2000.0))
+    tau = float(params.get('tau', 0.0))
+    k = int(params.get('k', params.get('K', 5)))
+    dc = int(params.get('dc', 0))
+    init = int(params.get('init', 1))
+    tol = float(params.get('tol', 1e-7))
+    keep_modes = params.get('keep_modes')
+    drop_modes = params.get('drop_modes')
+    keep_ratio = params.get('keep_ratio', 'auto')
+    if keep_ratio in ('auto', None):
+        denom = float(np.std(x)) + 1e-12
+        noise_level = float(np.std(np.diff(x))) / denom if denom > 0 else 0.0
+        keep_ratio_val = 0.9 - 0.2 * min(1.0, noise_level)
+        keep_ratio_val = max(0.7, min(0.95, keep_ratio_val))
+    else:
+        keep_ratio_val = float(keep_ratio)
+    y = _vmd_denoise(
+        x,
+        alpha=alpha,
+        tau=tau,
+        k=k,
+        dc=dc,
+        init=init,
+        tol=tol,
+        keep_modes=keep_modes,
+        drop_modes=drop_modes,
+        keep_ratio=keep_ratio_val,
+    )
+    return _series_like(s, y)
+
+
+def _denoise_wavelet_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    del causality
+    if _pywt is None:
+        return s
+    wavelet = str(params.get('wavelet', 'db4'))
+    level = params.get('level')
+    mode = str(params.get('mode', 'soft'))
+    coeffs = _pywt.wavedec(x, wavelet, mode='periodization', level=level)
+    sigma = np.median(np.abs(coeffs[-1])) / 0.6745 if len(coeffs) > 1 else np.std(x)
+    thr = params.get('threshold', 'auto')
+    thr_val = float(sigma * np.sqrt(2 * np.log(len(x)))) if thr == 'auto' else float(thr)
+    new_coeffs = [coeffs[0]]
+    for c in coeffs[1:]:
+        new_coeffs.append(_pywt.threshold(c, thr_val, mode=mode))
+    y = _pywt.waverec(new_coeffs, wavelet, mode='periodization')[: len(x)]
+    return _series_like(s, y)
+
+
+def _denoise_emd_family_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+    *,
+    method: str,
+) -> pd.Series:
+    del causality
+    if not any(component is not None for component in (_EMD, _EEMD, _CEEMDAN)):
+        return s
+    xnp = np.asarray(x, dtype=float)
+    max_imfs = params.get('max_imfs', 'auto')
+    if isinstance(max_imfs, str) and max_imfs == 'auto':
+        k = int(max(2, min(10, round(math.log2(len(xnp))))))
+    else:
+        k = int(max_imfs)
+    if method == 'emd' and _EMD is not None:
+        emd = _EMD()
+        imfs = emd.emd(xnp, max_imf=k)
+    elif method == 'eemd' and _EEMD is not None:
+        noise_strength = float(params.get('noise_strength', 0.2))
+        trials = int(params.get('trials', 100))
+        random_state = params.get('random_state')
+        eemd = _EEMD(trials=trials, noise_strength=noise_strength)
+        if random_state is not None:
+            eemd.random_state = int(random_state)
+        imfs = eemd.eemd(xnp, max_imf=k)
+    else:
+        if _CEEMDAN is None:
+            return s
+        noise_strength = float(params.get('noise_strength', 0.2))
+        trials = int(params.get('trials', 100))
+        random_state = params.get('random_state')
+        ce = _CEEMDAN(trials=trials, noise_strength=noise_strength)
+        if random_state is not None:
+            ce.random_state = int(random_state)
+        imfs = ce.ceemdan(xnp, max_imf=k)
+    imfs = np.atleast_2d(imfs)
+    resid = xnp - imfs.sum(axis=0)
+    k_all = list(range(imfs.shape[0]))
+    keep_imfs = params.get('keep_imfs')
+    drop_imfs = params.get('drop_imfs', [0])
+    if isinstance(keep_imfs, (list, tuple)) and len(keep_imfs) > 0:
+        k_sel = [idx for idx in keep_imfs if 0 <= int(idx) < imfs.shape[0]]
+    elif isinstance(drop_imfs, (list, tuple)) and len(drop_imfs) > 0:
+        drop = {int(idx) for idx in drop_imfs}
+        k_sel = [idx for idx in k_all if idx not in drop]
+    else:
+        k_sel = [idx for idx in k_all if idx != 0]
+    y = resid + imfs[k_sel].sum(axis=0) if len(k_sel) > 0 else resid
+    return _series_like(s, y)
+
+
+def _denoise_emd_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    return _denoise_emd_family_series(s, x, params, causality, method='emd')
+
+
+def _denoise_eemd_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    return _denoise_emd_family_series(s, x, params, causality, method='eemd')
+
+
+def _denoise_ceemdan_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    return _denoise_emd_family_series(s, x, params, causality, method='ceemdan')
+
+
+_DENOISE_METHOD_HANDLERS = {
+    'ema': _denoise_ema_series,
+    'sma': _denoise_sma_series,
+    'median': _denoise_median_series,
+    'lowpass_fft': _denoise_lowpass_fft_series,
+    'butterworth': _denoise_butterworth_series,
+    'hp': _denoise_hp_series,
+    'savgol': _denoise_savgol_series,
+    'tv': _denoise_tv_series,
+    'kalman': _denoise_kalman_series,
+    'loess': _denoise_loess_series,
+    'stl': _denoise_stl_series,
+    'whittaker': _denoise_whittaker_series,
+    'gaussian': _denoise_gaussian_series,
+    'hampel': _denoise_hampel_series,
+    'bilateral': _denoise_bilateral_series,
+    'wavelet_packet': _denoise_wavelet_packet_series,
+    'ssa': _denoise_ssa_series,
+    'l1_trend': _denoise_l1_trend_series,
+    'lms': _denoise_lms_series,
+    'rls': _denoise_rls_series,
+    'beta': _denoise_beta_series,
+    'vmd': _denoise_vmd_series,
+    'wavelet': _denoise_wavelet_series,
+    'emd': _denoise_emd_series,
+    'eemd': _denoise_eemd_series,
+    'ceemdan': _denoise_ceemdan_series,
+}
+
 def _denoise_series(
     s: pd.Series,
     method: str = 'none',
@@ -590,338 +1187,11 @@ def _denoise_series(
         return s
     if method == 'none':
         return s
-    # Forward/backward fill using modern accessors to avoid FutureWarning
+    handler = _DENOISE_METHOD_HANDLERS.get(method)
+    if handler is None:
+        return s
     x = s.astype(float).ffill().bfill().values
-    if method == 'ema':
-        alpha = params.get('alpha')
-        span = params.get('span', 10)
-        if alpha is not None:
-            y = pd.Series(x).ewm(alpha=float(alpha), adjust=False).mean().values
-        else:
-            y = pd.Series(x).ewm(span=int(span), adjust=False).mean().values
-        if causality == 'zero_phase':
-            y2 = pd.Series(y[::-1]).ewm(span=int(span), adjust=False).mean().values[::-1]
-            y = 0.5 * (y + y2)
-        return pd.Series(y, index=s.index)
-    if method == 'sma':
-        window = max(1, int(params.get('window', 10)))
-        if causality == 'zero_phase':
-            y = pd.Series(x).rolling(window=window, center=True, min_periods=1).mean().values
-        else:
-            y = pd.Series(x).rolling(window=window, min_periods=1).mean().values
-        return pd.Series(y, index=s.index)
-    if method == 'median':
-        window = max(1, int(params.get('window', 7)))
-        if causality == 'zero_phase':
-            y = pd.Series(x).rolling(window=window, center=True, min_periods=1).median().values
-        else:
-            y = pd.Series(x).rolling(window=window, min_periods=1).median().values
-        return pd.Series(y, index=s.index)
-    if method == 'lowpass_fft':
-        cutoff_ratio = float(params.get('cutoff_ratio', 0.1))
-        X = np.fft.rfft(x)
-        kmax = int(len(X) * cutoff_ratio)
-        Y = np.zeros_like(X)
-        Y[:max(1, kmax)] = X[:max(1, kmax)]
-        y = np.fft.irfft(Y, n=len(x))
-        return pd.Series(y, index=s.index)
-    if method == 'butterworth':
-        cutoff = params.get('cutoff', 0.1)
-        order = int(params.get('order', 4))
-        btype = str(params.get('btype', 'low'))
-        padlen = params.get('padlen')
-        y = _butterworth_filter(x, cutoff=cutoff, order=order, btype=btype, causality=causality, padlen=padlen)
-        return pd.Series(y, index=s.index)
-    if method == 'hp':
-        lamb = params.get('lamb', params.get('lambda', 1600.0))
-        y = _hp_filter(x, float(lamb))
-        return pd.Series(y, index=s.index)
-    if method == 'savgol' and _savgol_filter is not None:
-        window = int(params.get('window', 11))
-        if window < 3:
-            return s
-        if window % 2 == 0:
-            window += 1
-        polyorder = int(params.get('polyorder', 2))
-        polyorder = max(0, min(polyorder, window - 1))
-        mode = str(params.get('mode', 'interp'))
-        try:
-            y = _savgol_filter(x, window_length=window, polyorder=polyorder, mode=mode)
-        except Exception as exc:
-            _logger.warning("savgol_filter failed (window=%d, polyorder=%d): %s", window, polyorder, exc)
-            return s
-        return pd.Series(y, index=s.index)
-    if method == 'tv':
-        weight = params.get('weight', params.get('lambda', 'auto'))
-        if weight == 'auto' or weight is None:
-            scale = float(np.std(x))
-            weight_val = 0.1 * scale if scale > 0 else 1.0
-        else:
-            weight_val = float(weight)
-        n_iter = int(params.get('n_iter', 50))
-        tol = float(params.get('tol', 1e-4))
-        y = _tv_denoise_1d(x, weight=weight_val, n_iter=n_iter, tol=tol)
-        return pd.Series(y, index=s.index)
-    if method == 'kalman':
-        measurement_var = params.get('measurement_var', params.get('r', 'auto'))
-        process_var = params.get('process_var', params.get('q', 'auto'))
-        series_var = float(np.var(x))
-        if measurement_var == 'auto' or measurement_var is None:
-            measurement_val = series_var if series_var > 0 else 1.0
-        else:
-            measurement_val = float(measurement_var)
-        if process_var == 'auto' or process_var is None:
-            process_val = measurement_val * 0.01
-        else:
-            process_val = float(process_var)
-        init_state = params.get('initial_state')
-        init_cov = params.get('initial_cov')
-        y_fwd = _kalman_filter_1d(
-            x,
-            process_var=process_val,
-            measurement_var=measurement_val,
-            initial_state=init_state,
-            initial_cov=init_cov,
-        )
-        if causality == 'zero_phase':
-            bwd_initial_state = float(y_fwd[-1]) if y_fwd.size > 0 else init_state
-            y_bwd = _kalman_filter_1d(
-                x[::-1],
-                process_var=process_val,
-                measurement_var=measurement_val,
-                initial_state=bwd_initial_state,
-                initial_cov=init_cov,
-            )[::-1]
-            y = 0.5 * (y_fwd + y_bwd)
-        else:
-            y = y_fwd
-        return pd.Series(y, index=s.index)
-    if method == 'loess' and _lowess is not None:
-        frac = float(params.get('frac', 0.2))
-        it = int(params.get('it', 0))
-        delta = float(params.get('delta', 0.0))
-        exog = np.arange(len(x), dtype=float)
-        y = _lowess(x, exog, frac=frac, it=it, delta=delta, return_sorted=False)
-        return pd.Series(y, index=s.index)
-    if method == 'stl' and _STL is not None:
-        period = params.get('period')
-        if period is None:
-            return s
-        period_val = int(period)
-        if period_val < 2 or period_val >= len(x):
-            return s
-        seasonal = params.get('seasonal')
-        trend = params.get('trend')
-        low_pass = params.get('low_pass')
-        robust = bool(params.get('robust', False))
-        stl_kwargs: Dict[str, Any] = {"period": period_val, "robust": robust}
-        if seasonal is not None:
-            stl_kwargs["seasonal"] = int(seasonal)
-        if trend is not None:
-            stl_kwargs["trend"] = int(trend)
-        if low_pass is not None:
-            stl_kwargs["low_pass"] = int(low_pass)
-        stl = _STL(x, **stl_kwargs)
-        res = stl.fit()
-        component = str(params.get('component', 'trend')).lower().strip()
-        if component == 'seasonal':
-            y = res.seasonal
-        elif component == 'resid':
-            y = res.resid
-        elif component in ('trend+seasonal', 'trend_seasonal'):
-            y = res.trend + res.seasonal
-        elif component in ('trend+resid', 'trend_resid'):
-            y = res.trend + res.resid
-        else:
-            y = res.trend
-        return pd.Series(y, index=s.index)
-    if method == 'whittaker':
-        lamb = params.get('lamb', params.get('lambda', 1000.0))
-        order = int(params.get('order', 2))
-        y = _whittaker_smooth(x, float(lamb), order=order)
-        return pd.Series(y, index=s.index)
-    if method == 'gaussian' and _gaussian_filter1d is not None:
-        sigma = float(params.get('sigma', 2.0))
-        if sigma <= 0:
-            return s
-        truncate = float(params.get('truncate', 4.0))
-        mode = str(params.get('mode', 'nearest'))
-        y = _gaussian_filter1d(x, sigma=sigma, mode=mode, truncate=truncate)
-        return pd.Series(y, index=s.index)
-    if method == 'hampel':
-        window = int(params.get('window', 7))
-        n_sigmas = float(params.get('n_sigmas', 3.0))
-        y = _hampel_filter(x, window=window, n_sigmas=n_sigmas, causality=causality)
-        return pd.Series(y, index=s.index)
-    if method == 'bilateral':
-        sigma_s = float(params.get('sigma_s', 2.0))
-        sigma_r = float(params.get('sigma_r', 0.5))
-        truncate = float(params.get('truncate', 3.0))
-        y = _bilateral_filter_1d(x, sigma_s=sigma_s, sigma_r=sigma_r, truncate=truncate, causality=causality)
-        return pd.Series(y, index=s.index)
-    if method == 'wavelet_packet' and _pywt is not None:
-        wavelet = str(params.get('wavelet', 'db4'))
-        level = params.get('level')
-        mode = str(params.get('mode', 'soft'))
-        thr = params.get('threshold', 'auto')
-        thr_scale = params.get('threshold_scale', 'auto')
-        y = _wavelet_packet_denoise(
-            x,
-            wavelet=wavelet,
-            level=level,
-            threshold=thr,
-            mode=mode,
-            threshold_scale=thr_scale,
-        )
-        return pd.Series(y, index=s.index)
-    if method == 'ssa':
-        window = int(params.get('window', max(10, len(x) // 3)))
-        components = params.get('components')
-        y = _ssa_denoise(x, window=window, components=components)
-        return pd.Series(y, index=s.index)
-    if method == 'l1_trend':
-        lamb_param = params.get('lamb', params.get('lambda', 'auto'))
-        n_iter = int(params.get('n_iter', 50))
-        rho_param = params.get('rho', 'auto')
-        rho = float(rho_param) if rho_param not in ('auto', None) else 1.0
-        if lamb_param in ('auto', None):
-            mean = float(np.mean(x))
-            std = float(np.std(x))
-            if std <= 0:
-                return s
-            x_scaled = (x - mean) / std
-            scale = math.sqrt(max(len(x), 1) / 100.0)
-            lamb = 5.0 * scale
-            y_scaled = _l1_trend_filter(x_scaled, lamb=lamb, n_iter=n_iter, rho=rho)
-            y = y_scaled * std + mean
-        else:
-            lamb = float(lamb_param)
-            y = _l1_trend_filter(x, lamb=lamb, n_iter=n_iter, rho=rho)
-        return pd.Series(y, index=s.index)
-    if method == 'lms':
-        order = int(params.get('order', 5))
-        mu_param = params.get('mu', 'auto')
-        mu = float(mu_param) if mu_param not in ('auto', None) else 0.5
-        mu = max(1e-4, min(mu, 1.5))
-        eps = float(params.get('eps', 1e-6))
-        leak = float(params.get('leak', 0.0))
-        bias = bool(params.get('bias', True))
-        y_fwd = _adaptive_lms_filter(x, order=order, mu=mu, eps=eps, leak=leak, use_bias=bias)
-        if causality == 'zero_phase':
-            y_bwd = _adaptive_lms_filter(x[::-1], order=order, mu=mu, eps=eps, leak=leak, use_bias=bias)[::-1]
-            y = 0.5 * (y_fwd + y_bwd)
-        else:
-            y = y_fwd
-        return pd.Series(y, index=s.index)
-    if method == 'rls':
-        order = int(params.get('order', 5))
-        lam_param = params.get('lambda_', params.get('lam', 'auto'))
-        lam = float(lam_param) if lam_param not in ('auto', None) else 0.99
-        lam = max(0.9, min(lam, 0.999))
-        delta = float(params.get('delta', 1.0))
-        bias = bool(params.get('bias', True))
-        y_fwd = _adaptive_rls_filter(x, order=order, lam=lam, delta=delta, use_bias=bias)
-        if causality == 'zero_phase':
-            y_bwd = _adaptive_rls_filter(x[::-1], order=order, lam=lam, delta=delta, use_bias=bias)[::-1]
-            y = 0.5 * (y_fwd + y_bwd)
-        else:
-            y = y_fwd
-        return pd.Series(y, index=s.index)
-    if method == 'beta':
-        window = int(params.get('window', 9))
-        beta = float(params.get('beta', 1.3))
-        n_iter = int(params.get('n_iter', 20))
-        eps = float(params.get('eps', 1e-6))
-        y = _beta_smooth(x, window=window, beta=beta, n_iter=n_iter, eps=eps, causality=causality)
-        return pd.Series(y, index=s.index)
-    if method == 'vmd':
-        alpha = float(params.get('alpha', 2000.0))
-        tau = float(params.get('tau', 0.0))
-        k = int(params.get('k', params.get('K', 5)))
-        dc = int(params.get('dc', 0))
-        init = int(params.get('init', 1))
-        tol = float(params.get('tol', 1e-7))
-        keep_modes = params.get('keep_modes')
-        drop_modes = params.get('drop_modes')
-        keep_ratio = params.get('keep_ratio', 'auto')
-        if keep_ratio in ('auto', None):
-            denom = float(np.std(x)) + 1e-12
-            noise_level = float(np.std(np.diff(x))) / denom if denom > 0 else 0.0
-            keep_ratio_val = 0.9 - 0.2 * min(1.0, noise_level)
-            keep_ratio_val = max(0.7, min(0.95, keep_ratio_val))
-        else:
-            keep_ratio_val = float(keep_ratio)
-        y = _vmd_denoise(
-            x,
-            alpha=alpha,
-            tau=tau,
-            k=k,
-            dc=dc,
-            init=init,
-            tol=tol,
-            keep_modes=keep_modes,
-            drop_modes=drop_modes,
-            keep_ratio=keep_ratio_val,
-        )
-        return pd.Series(y, index=s.index)
-    if method == 'wavelet' and _pywt is not None:
-        wavelet = str(params.get('wavelet', 'db4'))
-        level = params.get('level')
-        mode = str(params.get('mode', 'soft'))
-        coeffs = _pywt.wavedec(x, wavelet, mode='periodization', level=level)
-        sigma = np.median(np.abs(coeffs[-1])) / 0.6745 if len(coeffs) > 1 else np.std(x)
-        thr = params.get('threshold', 'auto')
-        thr_val = float(sigma * np.sqrt(2 * np.log(len(x)))) if thr == 'auto' else float(thr)
-        new_coeffs = [coeffs[0]]
-        for c in coeffs[1:]:
-            new_coeffs.append(_pywt.threshold(c, thr_val, mode=mode))
-        y = _pywt.waverec(new_coeffs, wavelet, mode='periodization')[: len(x)]
-        return pd.Series(y, index=s.index)
-    if method in ('emd', 'eemd', 'ceemdan') and any(x is not None for x in (_EMD, _EEMD, _CEEMDAN)):
-        xnp = np.asarray(x, dtype=float)
-        max_imfs = params.get('max_imfs', 'auto')
-        if isinstance(max_imfs, str) and max_imfs == 'auto':
-            import math
-            k = int(max(2, min(10, round(math.log2(len(xnp))))))
-        else:
-            k = int(max_imfs)
-        if method == 'emd' and _EMD is not None:
-            emd = _EMD()
-            imfs = emd.emd(xnp, max_imf=k)
-        elif method == 'eemd' and _EEMD is not None:
-            noise_strength = float(params.get('noise_strength', 0.2))
-            trials = int(params.get('trials', 100))
-            random_state = params.get('random_state')
-            eemd = _EEMD(trials=trials, noise_strength=noise_strength)
-            if random_state is not None:
-                eemd.random_state = int(random_state)
-            imfs = eemd.eemd(xnp, max_imf=k)
-        else:
-            if _CEEMDAN is not None:
-                noise_strength = float(params.get('noise_strength', 0.2))
-                trials = int(params.get('trials', 100))
-                random_state = params.get('random_state')
-                ce = _CEEMDAN(trials=trials, noise_strength=noise_strength)
-                if random_state is not None:
-                    ce.random_state = int(random_state)
-                imfs = ce.ceemdan(xnp, max_imf=k)
-            else:
-                return s
-        imfs = np.atleast_2d(imfs)
-        resid = xnp - imfs.sum(axis=0)
-        k_all = list(range(imfs.shape[0]))
-        keep_imfs = params.get('keep_imfs')
-        drop_imfs = params.get('drop_imfs', [0])
-        if isinstance(keep_imfs, (list, tuple)) and len(keep_imfs) > 0:
-            k_sel = [k for k in keep_imfs if 0 <= int(k) < imfs.shape[0]]
-        elif isinstance(drop_imfs, (list, tuple)) and len(drop_imfs) > 0:
-            drop = {int(k) for k in drop_imfs}
-            k_sel = [k for k in k_all if k not in drop]
-        else:
-            k_sel = [k for k in k_all if k != 0]
-        y = resid + imfs[k_sel].sum(axis=0) if len(k_sel) > 0 else resid
-        return pd.Series(y, index=s.index)
-    return s
+    return handler(s, x, params, causality)
 
 
 def _apply_denoise(
