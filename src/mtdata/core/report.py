@@ -3,7 +3,7 @@ import logging
 
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
-from .mt5_gateway import create_mt5_gateway, mt5_connection_error
+from .mt5_gateway import get_mt5_gateway, mt5_connection_error
 from .report_requests import ReportGenerateRequest
 from .report_use_cases import run_report_generate
 from .report_utils import render_enhanced_report, format_number, _get_indicator_value
@@ -26,12 +26,10 @@ def _report_error_text(message: Any) -> str:
 def _report_error_payload(message: Any) -> Dict[str, Any]:
     return {"error": _normalize_report_error_message(message)}
 
-def _get_mt5_gateway():
-    return create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
-
-
 def _report_connection_error() -> Dict[str, Any] | None:
-    return mt5_connection_error(_get_mt5_gateway())
+    return mt5_connection_error(
+        get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
+    )
 
 
 def _append_diagnostic_warning(report: Dict[str, Any], message: str) -> None:

@@ -8,7 +8,7 @@ import pandas as pd
 
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
-from .mt5_gateway import create_mt5_gateway
+from .mt5_gateway import get_mt5_gateway
 from .schema import TimeframeLiteral
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.validators import invalid_timeframe_error, unsupported_timeframe_seconds_error
@@ -38,10 +38,6 @@ _MONTH_LABELS = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ]
-
-
-def _get_mt5_gateway():
-    return create_mt5_gateway(adapter=mt5, ensure_connection_impl=ensure_mt5_connection_or_raise)
 
 
 def _error_response(
@@ -238,7 +234,10 @@ def _fetch_rates(
     end: Optional[str],
     gateway: Any = None,
 ) -> Tuple[Optional[Any], Optional[str]]:
-    mt5_gateway = gateway or _get_mt5_gateway()
+    mt5_gateway = gateway or get_mt5_gateway(
+        adapter=mt5,
+        ensure_connection_impl=ensure_mt5_connection_or_raise,
+    )
     if timeframe not in TIMEFRAME_MAP:
         return None, invalid_timeframe_error(timeframe, TIMEFRAME_MAP)
     mt5_tf = TIMEFRAME_MAP[timeframe]
@@ -317,7 +316,10 @@ def temporal_analyze(
             "end": end,
         }
         try:
-            mt5_gateway = _get_mt5_gateway()
+            mt5_gateway = get_mt5_gateway(
+                adapter=mt5,
+                ensure_connection_impl=ensure_mt5_connection_or_raise,
+            )
             mt5_gateway.ensure_connection()
             effective_limit = 0 if limit is None else int(limit)
             context["limit"] = effective_limit

@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional, List, Literal, Tuple
 import logging
 
-from .mt5_gateway import create_mt5_gateway, mt5_connection_error
+from .mt5_gateway import get_mt5_gateway, mt5_connection_error
 from .schema import TimeframeLiteral, DenoiseSpec, ForecastMethodLiteral
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
@@ -44,12 +44,10 @@ from ..utils.barriers import (
 logger = logging.getLogger(__name__)
 
 
-def _get_mt5_gateway():
-    return create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
-
-
 def _forecast_connection_error() -> Optional[Dict[str, Any]]:
-    return mt5_connection_error(_get_mt5_gateway())
+    return mt5_connection_error(
+        get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
+    )
 
 
 def _run_forecast_operation(

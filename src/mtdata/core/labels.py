@@ -3,7 +3,7 @@ import logging
 
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
-from .mt5_gateway import create_mt5_gateway
+from .mt5_gateway import get_mt5_gateway
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from .schema import TimeframeLiteral, DenoiseSpec
 from ..forecast.common import fetch_history as _fetch_history
@@ -17,10 +17,6 @@ from ..utils.barriers import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _get_mt5_gateway():
-    return create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
 
 
 @mcp.tool()
@@ -53,7 +49,7 @@ def labels_triple_barrier(
     """
     def _run() -> Dict[str, Any]:
         try:
-            _get_mt5_gateway().ensure_connection()
+            get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise).ensure_connection()
             output_mode = str(output).strip().lower()
             if output_mode == 'summary_only':
                 output_mode = 'summary'

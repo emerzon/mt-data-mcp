@@ -5,16 +5,12 @@ import math
 import time
 
 from .execution_logging import run_logged_operation
-from .mt5_gateway import create_mt5_gateway
+from .mt5_gateway import get_mt5_gateway
 from ..utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc, ensure_mt5_connection_or_raise, mt5
 from ..utils.utils import _format_time_minimal, _format_time_minimal_local, _use_client_tz
 from ._mcp_instance import mcp
 
 logger = logging.getLogger(__name__)
-
-
-def _get_mt5_gateway():
-    return create_mt5_gateway(adapter=mt5, ensure_connection_impl=ensure_mt5_connection_or_raise)
 
 
 @mcp.tool()
@@ -25,7 +21,10 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
     """
     def _run() -> Dict[str, Any]:
         try:
-            mt5_gateway = _get_mt5_gateway()
+            mt5_gateway = get_mt5_gateway(
+                adapter=mt5,
+                ensure_connection_impl=ensure_mt5_connection_or_raise,
+            )
             mt5_gateway.ensure_connection()
             started = time.perf_counter()
             if not mt5_gateway.symbol_select(symbol, True):
@@ -195,7 +194,10 @@ def market_ticker(symbol: str) -> Dict[str, Any]:
     """
     def _run() -> Dict[str, Any]:
         try:
-            mt5_gateway = _get_mt5_gateway()
+            mt5_gateway = get_mt5_gateway(
+                adapter=mt5,
+                ensure_connection_impl=ensure_mt5_connection_or_raise,
+            )
             mt5_gateway.ensure_connection()
             started = time.perf_counter()
             if not mt5_gateway.symbol_select(symbol, True):

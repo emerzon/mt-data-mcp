@@ -5,7 +5,7 @@ import logging
 import math
 
 from .execution_logging import run_logged_operation
-from .mt5_gateway import create_mt5_gateway
+from .mt5_gateway import get_mt5_gateway
 from .schema import TimeframeLiteral, _PIVOT_METHODS
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.validators import invalid_timeframe_error, unsupported_timeframe_seconds_error
@@ -23,10 +23,6 @@ from ._mcp_instance import mcp
 logger = logging.getLogger(__name__)
 
 
-def _get_mt5_gateway():
-    return create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
-
-
 @mcp.tool()
 def pivot_compute_points(
     symbol: str,
@@ -39,7 +35,7 @@ def pivot_compute_points(
     """
     def _run() -> Dict[str, Any]:
         try:
-            mt5 = _get_mt5_gateway()
+            mt5 = get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
             mt5.ensure_connection()
             if timeframe not in TIMEFRAME_MAP:
                 return {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}

@@ -5,7 +5,7 @@ import numpy as np
 
 from ._mcp_instance import mcp
 from .execution_logging import infer_result_success, log_operation_finish, log_operation_start
-from .mt5_gateway import create_mt5_gateway, mt5_connection_error
+from .mt5_gateway import get_mt5_gateway, mt5_connection_error
 from .schema import TimeframeLiteral, DenoiseSpec
 from .constants import TIMEFRAME_SECONDS
 from ..forecast.common import fetch_history as _fetch_history
@@ -34,12 +34,10 @@ _CRYPTO_SYMBOL_HINTS = (
 )
 
 
-def _get_mt5_gateway():
-    return create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
-
-
 def _regime_connection_error() -> Optional[Dict[str, Any]]:
-    return mt5_connection_error(_get_mt5_gateway())
+    return mt5_connection_error(
+        get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
+    )
 
 
 def _count_state_transitions(state: np.ndarray) -> int:

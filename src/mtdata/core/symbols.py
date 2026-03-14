@@ -8,16 +8,11 @@ from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from ..utils.mt5_enums import decode_mt5_enum_label, decode_mt5_bitmask_labels
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
-from .mt5_gateway import create_mt5_gateway
+from .mt5_gateway import get_mt5_gateway
 from .constants import GROUP_SEARCH_THRESHOLD, DEFAULT_ROW_LIMIT
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5
 
 logger = logging.getLogger(__name__)
-
-
-def _get_mt5_gateway():
-    return create_mt5_gateway(adapter=mt5, ensure_connection_impl=ensure_mt5_connection_or_raise)
-
 
 
 @mcp.tool()
@@ -29,7 +24,10 @@ def symbols_list(
     """List symbols or symbol groups."""
     def _run() -> Dict[str, Any]:
         try:
-            mt5_gateway = _get_mt5_gateway()
+            mt5_gateway = get_mt5_gateway(
+                adapter=mt5,
+                ensure_connection_impl=ensure_mt5_connection_or_raise,
+            )
             mt5_gateway.ensure_connection()
             mode = str(list_mode or "symbols").strip().lower()
             if mode not in ("symbols", "groups"):
@@ -127,7 +125,10 @@ def _list_symbol_groups(
 ) -> Dict[str, Any]:
     """List group paths as a tabular result with a single column: group."""
     try:
-        gateway = mt5_gateway or _get_mt5_gateway()
+        gateway = mt5_gateway or get_mt5_gateway(
+            adapter=mt5,
+            ensure_connection_impl=ensure_mt5_connection_or_raise,
+        )
         # Get all symbols first
         all_symbols = gateway.symbols_get()
         if all_symbols is None:
@@ -170,7 +171,10 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
     """
     def _run() -> Dict[str, Any]:
         try:
-            mt5_gateway = _get_mt5_gateway()
+            mt5_gateway = get_mt5_gateway(
+                adapter=mt5,
+                ensure_connection_impl=ensure_mt5_connection_or_raise,
+            )
             mt5_gateway.ensure_connection()
             symbol_info = mt5_gateway.symbol_info(symbol)
             if symbol_info is None:

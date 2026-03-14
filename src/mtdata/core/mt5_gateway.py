@@ -70,8 +70,23 @@ def create_mt5_gateway(
     )
 
 
+def get_mt5_gateway(
+    *,
+    adapter: Any | None = None,
+    ensure_connection_impl: Callable[[], None] | None = None,
+) -> MT5Gateway:
+    return create_mt5_gateway(
+        adapter=mt5_adapter if adapter is None else adapter,
+        ensure_connection_impl=(
+            ensure_mt5_connection_or_raise
+            if ensure_connection_impl is None
+            else ensure_connection_impl
+        ),
+    )
+
+
 def get_default_mt5_gateway() -> MT5Gateway:
-    return create_mt5_gateway()
+    return get_mt5_gateway()
 
 
 def mt5_connection_error(

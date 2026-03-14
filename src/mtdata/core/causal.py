@@ -15,7 +15,7 @@ import numpy as np
 from ._mcp_instance import mcp
 from .constants import TIMEFRAME_MAP
 from .execution_logging import run_logged_operation
-from .mt5_gateway import create_mt5_gateway, mt5_connection_error
+from .mt5_gateway import get_mt5_gateway, mt5_connection_error
 from ..utils.mt5 import (
     ensure_mt5_connection_or_raise,
     mt5,
@@ -28,11 +28,12 @@ logger = logging.getLogger(__name__)
 
 
 def _causal_connection_error() -> Dict[str, Any] | None:
-    return mt5_connection_error(_get_mt5_gateway())
-
-
-def _get_mt5_gateway():
-    return create_mt5_gateway(adapter=mt5, ensure_connection_impl=ensure_mt5_connection_or_raise)
+    return mt5_connection_error(
+        get_mt5_gateway(
+            adapter=mt5,
+            ensure_connection_impl=ensure_mt5_connection_or_raise,
+        )
+    )
 
 
 def _parse_symbols(value: str) -> List[str]:
@@ -46,7 +47,10 @@ def _parse_symbols(value: str) -> List[str]:
 
 def _expand_symbols_for_group(anchor: str, gateway: Any = None) -> tuple[List[str], str | None, str | None]:
     """Return visible group members for anchor along with the group path."""
-    mt5_gateway = gateway or _get_mt5_gateway()
+    mt5_gateway = gateway or get_mt5_gateway(
+        adapter=mt5,
+        ensure_connection_impl=ensure_mt5_connection_or_raise,
+    )
     info = mt5_gateway.symbol_info(anchor)
     if info is None:
         return [], f"Symbol {anchor} not found", None
@@ -377,7 +381,10 @@ def causal_discover_signals(
         connection_error = _causal_connection_error()
         if connection_error is not None:
             return connection_error
-        mt5_gateway = _get_mt5_gateway()
+        mt5_gateway = get_mt5_gateway(
+            adapter=mt5,
+            ensure_connection_impl=ensure_mt5_connection_or_raise,
+        )
         meta: Dict[str, Any] = {
             "timeframe": str(timeframe),
             "limit": int(limit),

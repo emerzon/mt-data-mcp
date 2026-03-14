@@ -8,7 +8,7 @@ import warnings
 
 from .constants import TIMEFRAME_MAP
 from .execution_logging import run_logged_operation
-from .mt5_gateway import create_mt5_gateway, mt5_connection_error
+from .mt5_gateway import get_mt5_gateway, mt5_connection_error
 from .patterns_support import (
     _STOCK_PATTERN_UTILS_CACHE,
     _build_stock_pattern_frame,
@@ -55,11 +55,12 @@ ClassicEngineRunner = Callable[
 _CLASSIC_ENGINE_REGISTRY: Dict[str, ClassicEngineRunner] = {}
 
 def _patterns_connection_error() -> Optional[Dict[str, Any]]:
-    return mt5_connection_error(_get_mt5_gateway())
-
-
-def _get_mt5_gateway():
-    return create_mt5_gateway(adapter=mt5, ensure_connection_impl=ensure_mt5_connection_or_raise)
+    return mt5_connection_error(
+        get_mt5_gateway(
+            adapter=mt5,
+            ensure_connection_impl=ensure_mt5_connection_or_raise,
+        )
+    )
 
 
 def _fetch_pattern_data(
@@ -76,7 +77,10 @@ def _fetch_pattern_data(
     if timeframe not in TIMEFRAME_MAP:
         return None, {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
 
-    mt5_gateway = gateway or _get_mt5_gateway()
+    mt5_gateway = gateway or get_mt5_gateway(
+        adapter=mt5,
+        ensure_connection_impl=ensure_mt5_connection_or_raise,
+    )
     mt5_tf = TIMEFRAME_MAP[timeframe]
     _info = mt5_gateway.symbol_info(symbol)
     _was_visible = bool(_info.visible) if _info is not None else None

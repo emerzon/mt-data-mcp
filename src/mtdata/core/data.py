@@ -6,7 +6,7 @@ from ._mcp_instance import mcp
 from .data_requests import DataFetchCandlesRequest, DataFetchTicksRequest, WaitCandleRequest
 from .data_use_cases import run_data_fetch_candles, run_data_fetch_ticks, run_wait_candle
 from .execution_logging import run_logged_operation
-from .mt5_gateway import create_mt5_gateway
+from .mt5_gateway import get_mt5_gateway
 from ..services.data_service import fetch_candles, fetch_ticks
 from ..utils.mt5 import ensure_mt5_connection_or_raise
 
@@ -15,9 +15,6 @@ __all__ = ['data_fetch_candles', 'data_fetch_ticks', 'wait_candle']
 
 logger = logging.getLogger(__name__)
 
-
-def _get_mt5_gateway():
-    return create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
 
 @mcp.tool()
 def data_fetch_candles(
@@ -104,7 +101,7 @@ def data_fetch_candles(
         limit=request.limit,
         func=lambda: run_data_fetch_candles(
             request,
-            gateway=_get_mt5_gateway(),
+            gateway=get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
             fetch_candles_impl=fetch_candles,
         ),
     )
@@ -131,7 +128,7 @@ def data_fetch_ticks(
         output=request.output,
         func=lambda: run_data_fetch_ticks(
             request,
-            gateway=_get_mt5_gateway(),
+            gateway=get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
             fetch_ticks_impl=fetch_ticks,
         ),
     )

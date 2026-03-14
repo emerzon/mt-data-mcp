@@ -43,7 +43,6 @@ def test_run_data_fetch_ticks_logs_connection_error(caplog):
 
 
 def test_data_fetch_candles_logs_finish_event(monkeypatch, caplog):
-    monkeypatch.setattr(core_data, "_get_mt5_gateway", lambda: object())
     monkeypatch.setattr(
         core_data,
         "run_data_fetch_candles",
@@ -68,15 +67,13 @@ def test_data_fetch_candles_logs_finish_event(monkeypatch, caplog):
 
 
 def test_data_fetch_candles_wrapper_and_use_case_emit_single_finish_event(monkeypatch, caplog):
-    gateway = SimpleNamespace(ensure_connection=lambda: None)
-    monkeypatch.setattr(core_data, "_get_mt5_gateway", lambda: gateway)
     monkeypatch.setattr(
         core_data,
-        "fetch_candles",
-        lambda **kwargs: {
+        "run_data_fetch_candles",
+        lambda request, gateway, fetch_candles_impl: {
             "success": True,
-            "symbol": kwargs["symbol"],
-            "timeframe": kwargs["timeframe"],
+            "symbol": request.symbol,
+            "timeframe": request.timeframe,
             "data": [],
         },
     )
