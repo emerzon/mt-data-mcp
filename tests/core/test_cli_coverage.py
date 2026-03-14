@@ -82,37 +82,25 @@ from mtdata.core.cli import (
 # ========================================================================
 
 class TestDebugEnabled:
-    def test_default_off(self, monkeypatch):
-        monkeypatch.delenv("MTDATA_CLI_DEBUG", raising=False)
-        assert _debug_enabled() is False
-
-    def test_enabled_with_1(self, monkeypatch):
-        monkeypatch.setenv("MTDATA_CLI_DEBUG", "1")
-        assert _debug_enabled() is True
-
-    def test_enabled_with_true(self, monkeypatch):
-        monkeypatch.setenv("MTDATA_CLI_DEBUG", "true")
-        assert _debug_enabled() is True
-
-    def test_disabled_with_0(self, monkeypatch):
-        monkeypatch.setenv("MTDATA_CLI_DEBUG", "0")
-        assert _debug_enabled() is False
-
-    def test_disabled_with_false(self, monkeypatch):
-        monkeypatch.setenv("MTDATA_CLI_DEBUG", "false")
-        assert _debug_enabled() is False
-
-    def test_disabled_with_no(self, monkeypatch):
-        monkeypatch.setenv("MTDATA_CLI_DEBUG", "no")
-        assert _debug_enabled() is False
-
-    def test_disabled_with_empty(self, monkeypatch):
-        monkeypatch.setenv("MTDATA_CLI_DEBUG", "")
-        assert _debug_enabled() is False
-
-    def test_enabled_with_yes(self, monkeypatch):
-        monkeypatch.setenv("MTDATA_CLI_DEBUG", "yes")
-        assert _debug_enabled() is True
+    @pytest.mark.parametrize(
+        ("env_value", "expected"),
+        [
+            (None, False),
+            ("1", True),
+            ("true", True),
+            ("0", False),
+            ("false", False),
+            ("no", False),
+            ("", False),
+            ("yes", True),
+        ],
+    )
+    def test_debug_env_values(self, monkeypatch, env_value, expected):
+        if env_value is None:
+            monkeypatch.delenv("MTDATA_CLI_DEBUG", raising=False)
+        else:
+            monkeypatch.setenv("MTDATA_CLI_DEBUG", env_value)
+        assert _debug_enabled() is expected
 
 
 class TestDebug:
@@ -247,7 +235,7 @@ class TestFormatResultMinimal:
         result = _format_result_minimal(None)
         assert result == ""
 
-    @patch("mtdata.core.cli._shared_minimal", side_effect=Exception("boom"))
+    @patch("mtdata.core.cli_formatting._shared_minimal", side_effect=Exception("boom"))
     def test_fallback_on_exception(self, mock_shared):
         result = _format_result_minimal({"key": "value"})
         assert "key" in result

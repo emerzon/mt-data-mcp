@@ -98,6 +98,64 @@ ToolInfo = Dict[str, Any]
 
 CLI_PROGRAM = "mtdata-cli"
 
+_CLI_LIST_RESULT_DROP_KEYS: Dict[str, set[str]] = {
+    "trade_get_open": {
+        "Comment Length",
+        "Comment Limit",
+        "Comment May Be Truncated",
+    },
+    "trade_history": {
+        "comment_visible_length",
+        "comment_max_length",
+        "comment_may_be_truncated",
+        "type_code",
+        "entry_code",
+        "reason_code",
+        "time_msc",
+    },
+    "trade_get_pending": {
+        "Comment Length",
+        "Comment Limit",
+        "Comment May Be Truncated",
+    },
+}
+
+_CLI_DICT_RESULT_DROP_KEYS: Dict[str, set[str]] = {
+    "forecast_volatility_estimate": {"params_explained"},
+    "forecast_barrier_prob": {"tp_hit_prob_by_t", "sl_hit_prob_by_t"},
+    "forecast_barrier_optimize": {"grid"},
+    "data_fetch_ticks": {"start_epoch", "end_epoch", "stats_display"},
+}
+
+_REGIME_AUTO_CALIBRATION_DEFAULT_VIEW_DROP_KEYS = {
+    "sigma",
+    "kurtosis_excess",
+    "jump_share_abs_z_ge_2_5",
+    "trend_strength",
+    "move_zscore",
+    "vol_norm",
+    "kurt_norm",
+    "jump_norm",
+    "trend_norm",
+    "move_sig_norm",
+    "sensitivity",
+    "hazard_floor",
+    "hazard_cap",
+}
+
+_REGIME_THRESHOLD_CALIBRATION_DEFAULT_VIEW_DROP_KEYS = {
+    "base_threshold",
+    "window",
+    "step",
+    "windows_used",
+    "bootstrap_runs",
+    "null_scores_count",
+    "null_max_quantile",
+    "quantile",
+    "threshold_delta",
+    "error",
+}
+
 
 def _is_pydantic_model_type(value: Any) -> bool:
     return isinstance(value, type) and issubclass(value, BaseModel)
@@ -189,11 +247,119 @@ def _apply_global_cli_overrides(args: Any, argv: List[str]) -> Any:
     return args
 
 
-def _format_result_minimal(result: Any, verbose: bool = True) -> str:
-    try:
-        return _shared_minimal(result, verbose=verbose)
-    except Exception:
-        return str(result) if result is not None else ""
+def _drop_cli_result_keys(value: Any, keys: set[str]) -> Any:
+    if isinstance(value, dict):
+        return {k: v for k, v in value.items() if k not in keys}
+    if isinstance(value, list):
+        return [
+            {k: v for k, v in row.items() if k not in keys} if isinstance(row, dict) else row
+            for row in value
+        ]
+    return value
+
+
+def _prepare_pending_orders_for_cli_display(result: list[Any]) -> Any:
+    if (
+        len(result) == 1
+        and isinstance(result[0], dict)
+        and set(result[0].keys()) == {"message"}
+    ):
+        return {"count": 0, "message": result[0]["message"]}
+    return _drop_cli_result_keys(result, _CLI_LIST_RESULT_DROP_KEYS["trade_get_pending"])
+
+
+def _prepare_candle_result_for_cli_display(result: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(result)
+    meta = out.get("meta")
+    if not isinstance(meta, dict):
+        return out
+    meta_out = dict(meta)
+    diagnostics = meta_out.get("diagnostics")
+    if not isinstance(diagnostics, dict):
+        out["meta"] = meta_out
+        return out
+    diagnostics_out = dict(diagnostics)
+    query = diagnostics_out.get("query")
+    if isinstance(query, dict):
+        query_out = dict(query)
+        query_out.pop("warmup_bars", None)
+        warmup_retry = query_out.get("warmup_retry")
+        if isinstance(warmup_retry, dict):
+            retry_out = dict(warmup_retry)
+            retry_out.pop("warmup_bars", None)
+            if retry_out:
+                query_out["warmup_retry"] = retry_out
+            else:
+                query_out.pop("warmup_retry", None)
+        diagnostics_out["query"] = query_out
+    meta_out["diagnostics"] = diagnostics_out
+    out["meta"] = meta_out
+    return out
+
+
+def _prepare_market_ticker_for_cli_display(result: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(result)
+    if out.get("time_display") is not None:
+        out.pop("time", None)
+    return out
+
+
+def _prepare_market_depth_for_cli_display(result: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(result)
+    data = out.get("data")
+    if isinstance(data, dict) and data.get("time_display") is not None:
+        data_out = dict(data)
+        data_out.pop("time", None)
+        out["data"] = data_out
+    return out
+
+
+def _prepare_causal_result_for_cli_display(result: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(result)
+    data = out.get("data")
+    if isinstance(data, dict):
+        data_out = dict(data)
+        data_out.pop("summary_text", None)
+        out["data"] = data_out
+    return out
+
+
+def _prepare_regime_result_for_cli_display(result: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(result)
+    params_used = out.get("params_used")
+    if not isinstance(params_used, dict):
+        return out
+    params_out = dict(params_used)
+
+    auto_cal = params_out.get("auto_calibration")
+    if isinstance(auto_cal, dict):
+        params_out["auto_calibration"] = _drop_cli_result_keys(
+            auto_cal,
+            _REGIME_AUTO_CALIBRATION_DEFAULT_VIEW_DROP_KEYS,
+        )
+
+    threshold_cal = params_out.get("cp_threshold_calibration")
+    if isinstance(threshold_cal, dict):
+        params_out["cp_threshold_calibration"] = _drop_cli_result_keys(
+            threshold_cal,
+            _REGIME_THRESHOLD_CALIBRATION_DEFAULT_VIEW_DROP_KEYS,
+        )
+
+    out["params_used"] = params_out
+    return out
+
+
+_CLI_LIST_RESULT_TRANSFORMS = {
+    "trade_get_pending": _prepare_pending_orders_for_cli_display,
+}
+
+_CLI_DICT_RESULT_TRANSFORMS = {
+    "data_fetch_candles": _prepare_candle_result_for_cli_display,
+    "market_ticker": _prepare_market_ticker_for_cli_display,
+    "market_depth_fetch": _prepare_market_depth_for_cli_display,
+    "causal_discover_signals": _prepare_causal_result_for_cli_display,
+    "regime_detect": _prepare_regime_result_for_cli_display,
+}
 
 
 def _prepare_result_for_cli_display(result: Any, *, cmd_name: str, verbose: bool) -> Any:
@@ -202,170 +368,22 @@ def _prepare_result_for_cli_display(result: Any, *, cmd_name: str, verbose: bool
 
     cmd = str(cmd_name or "").strip()
 
-    def _drop_keys_from_rows(value: Any, keys: set[str]) -> Any:
-        if not isinstance(value, list):
-            return value
-        rows_out: List[Any] = []
-        for row in value:
-            if isinstance(row, dict):
-                rows_out.append({k: v for k, v in row.items() if k not in keys})
-            else:
-                rows_out.append(row)
-        return rows_out
-
-    def _drop_keys_from_dict(value: Any, keys: set[str]) -> Any:
-        if not isinstance(value, dict):
-            return value
-        return {k: v for k, v in value.items() if k not in keys}
-
     if isinstance(result, list):
-        if cmd == "trade_get_open":
-            return _drop_keys_from_rows(
-                result,
-                {
-                    "Comment Length",
-                    "Comment Limit",
-                    "Comment May Be Truncated",
-                },
-            )
-        if cmd == "trade_history":
-            return _drop_keys_from_rows(
-                result,
-                {
-                    "comment_visible_length",
-                    "comment_max_length",
-                    "comment_may_be_truncated",
-                    "type_code",
-                    "entry_code",
-                    "reason_code",
-                    "time_msc",
-                },
-            )
-        if cmd == "trade_get_pending":
-            if (
-                len(result) == 1
-                and isinstance(result[0], dict)
-                and set(result[0].keys()) == {"message"}
-            ):
-                return {"count": 0, "message": result[0]["message"]}
-            return _drop_keys_from_rows(
-                result,
-                {
-                    "Comment Length",
-                    "Comment Limit",
-                    "Comment May Be Truncated",
-                },
-            )
+        row_keys = _CLI_LIST_RESULT_DROP_KEYS.get(cmd)
+        if row_keys is not None and cmd not in _CLI_LIST_RESULT_TRANSFORMS:
+            return _drop_cli_result_keys(result, row_keys)
+        transform = _CLI_LIST_RESULT_TRANSFORMS.get(cmd)
+        if transform is not None:
+            return transform(result)
         return result
 
     if not isinstance(result, dict):
         return result
 
-    out = dict(result)
-
-    if cmd == "data_fetch_candles":
-        meta = out.get("meta")
-        if isinstance(meta, dict):
-            meta_out = dict(meta)
-            diagnostics = meta_out.get("diagnostics")
-            if isinstance(diagnostics, dict):
-                diagnostics_out = dict(diagnostics)
-                query = diagnostics_out.get("query")
-                if isinstance(query, dict):
-                    query_out = dict(query)
-                    query_out.pop("warmup_bars", None)
-                    warmup_retry = query_out.get("warmup_retry")
-                    if isinstance(warmup_retry, dict):
-                        retry_out = dict(warmup_retry)
-                        retry_out.pop("warmup_bars", None)
-                        if retry_out:
-                            query_out["warmup_retry"] = retry_out
-                        else:
-                            query_out.pop("warmup_retry", None)
-                    diagnostics_out["query"] = query_out
-                meta_out["diagnostics"] = diagnostics_out
-            out["meta"] = meta_out
-
-    if cmd == "forecast_volatility_estimate":
-        out.pop("params_explained", None)
-
-    if cmd == "forecast_barrier_prob":
-        out.pop("tp_hit_prob_by_t", None)
-        out.pop("sl_hit_prob_by_t", None)
-
-    if cmd == "forecast_barrier_optimize":
-        out.pop("grid", None)
-
-    if cmd == "data_fetch_ticks":
-        out.pop("start_epoch", None)
-        out.pop("end_epoch", None)
-        out.pop("stats_display", None)
-
-    if cmd == "market_ticker" and out.get("time_display") is not None:
-        out.pop("time", None)
-
-    if cmd == "market_depth_fetch":
-        data = out.get("data")
-        if isinstance(data, dict) and data.get("time_display") is not None:
-            data_out = dict(data)
-            data_out.pop("time", None)
-            out["data"] = data_out
-
-    if cmd == "causal_discover_signals":
-        data = out.get("data")
-        if isinstance(data, dict):
-            data_out = dict(data)
-            data_out.pop("summary_text", None)
-            out["data"] = data_out
-
-    if cmd == "regime_detect":
-        params_used = out.get("params_used")
-        if isinstance(params_used, dict):
-            params_out = dict(params_used)
-
-            auto_cal = params_out.get("auto_calibration")
-            if isinstance(auto_cal, dict):
-                auto_cal_out = _drop_keys_from_dict(
-                    auto_cal,
-                    {
-                        "sigma",
-                        "kurtosis_excess",
-                        "jump_share_abs_z_ge_2_5",
-                        "trend_strength",
-                        "move_zscore",
-                        "vol_norm",
-                        "kurt_norm",
-                        "jump_norm",
-                        "trend_norm",
-                        "move_sig_norm",
-                        "sensitivity",
-                        "hazard_floor",
-                        "hazard_cap",
-                    },
-                )
-                params_out["auto_calibration"] = auto_cal_out
-
-            threshold_cal = params_out.get("cp_threshold_calibration")
-            if isinstance(threshold_cal, dict):
-                threshold_cal_out = _drop_keys_from_dict(
-                    threshold_cal,
-                    {
-                        "base_threshold",
-                        "window",
-                        "step",
-                        "windows_used",
-                        "bootstrap_runs",
-                        "null_scores_count",
-                        "null_max_quantile",
-                        "quantile",
-                        "threshold_delta",
-                        "error",
-                    },
-                )
-                params_out["cp_threshold_calibration"] = threshold_cal_out
-
-            out["params_used"] = params_out
-
+    out = _drop_cli_result_keys(dict(result), _CLI_DICT_RESULT_DROP_KEYS.get(cmd, set()))
+    transform = _CLI_DICT_RESULT_TRANSFORMS.get(cmd)
+    if transform is not None:
+        out = transform(out)
     return out
 
 
@@ -1244,10 +1262,6 @@ def main():
                     denoise = parsed if parsed is not None else denoise
 
             features = _parse_kv_string(features_raw) if isinstance(features_raw, str) else features_raw
-            if isinstance(features_raw, str) and not features_raw.strip().startswith("{"):
-                # Accept shorthand like "include=close,volume" (already handled by parse_kv_or_json)
-                pass
-
             dimred_params = _parse_kv_string(dimred_params_raw) if isinstance(dimred_params_raw, str) else dimred_params_raw
             target_spec = _parse_kv_string(target_spec_raw) if isinstance(target_spec_raw, str) else target_spec_raw
 
