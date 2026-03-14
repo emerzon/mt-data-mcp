@@ -13,7 +13,7 @@ from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
 from ..shared.validators import invalid_timeframe_error, unsupported_timeframe_seconds_error
 from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
-from ..utils.mt5 import get_cached_mt5_time_alignment, get_symbol_info_cached, mt5
+from ..utils.mt5 import get_cached_mt5_time_alignment, get_symbol_info_cached
 from ..utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
@@ -43,8 +43,6 @@ from .methods import pretrained as _pretrained_methods
 from .methods import sktime as _sktime_methods
 from .methods import statsforecast as _statsforecast_methods
 
-# Backward-compatibility surface for tests/monkeypatching.
-_PATCHABLE_GLOBALS = (mt5,)
 _REGISTERED_METHOD_MODULES = (
     _analog_methods,
     _classical_methods,

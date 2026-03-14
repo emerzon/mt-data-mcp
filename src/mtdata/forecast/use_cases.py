@@ -112,7 +112,7 @@ def _resolve_sktime_forecaster(method: str) -> Optional[Tuple[str, str]]:
     if contains:
         return sorted(contains, key=lambda item: len(item[0]))[0]
 
-    candidates = difflib.get_close_matches(query_norm, list(norm_map.keys()), n=1, cutoff=0.6)
+    candidates = difflib.get_close_matches(query_norm, list(norm_map), n=1, cutoff=0.6)
     if candidates:
         return norm_map[candidates[0]]
     return None

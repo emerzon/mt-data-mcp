@@ -113,7 +113,7 @@ def get_options_chain(
             if chosen_expiry_epoch < 0:
                 return {
                     "error": f"Requested expiration {chosen_expiry_ymd} not available for {symbol_norm}",
-                    "expirations": sorted(list(available_map.keys())),
+                    "expirations": sorted(available_map),
                 }
 
         payload = _fetch_yahoo_options_payload(symbol_norm, chosen_expiry_epoch)
@@ -174,7 +174,7 @@ def get_options_chain(
             "underlying_price": _to_numeric(quote.get("regularMarketPrice"), float, float("nan")),
             "currency": quote.get("currency"),
             "contract_size": quote.get("contractSize"),
-            "expirations": sorted(list(available_map.keys())),
+            "expirations": sorted(available_map),
             "option_type": option_type_norm,
             "min_open_interest": int(min_oi),
             "min_volume": int(min_vol),

@@ -190,9 +190,7 @@ class TestUnifiedForecast(unittest.TestCase):
             'volume': np.ones(30) * 1000,
         })
         with patch('mtdata.forecast.forecast._fetch_history', return_value=df), \
-             patch('mtdata.forecast.forecast_engine._fetch_history', return_value=df), \
-             patch('mtdata.forecast.forecast_engine.mt5') as mock_mt5:
-            mock_mt5.symbol_info.return_value = None
+             patch('mtdata.forecast.forecast_engine._fetch_history', return_value=df):
             res = forecast(
                 symbol='X',
                 timeframe='H1',

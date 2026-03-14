@@ -24,7 +24,7 @@ class ForecastRegistry:
     @classmethod
     def list_available(cls) -> List[str]:
         """List names of all registered methods."""
-        return list(cls._methods.keys())
+        return list(cls._methods)
 
     @classmethod
     def get_class(cls, name: str) -> Type[ForecastMethod]:

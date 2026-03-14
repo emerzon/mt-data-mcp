@@ -191,24 +191,37 @@ TimeframeLiteral = Literal[_TIMEFRAME_CHOICES]  # type: ignore
 OhlcvCharLiteral = Literal['O', 'H', 'L', 'C', 'V']  # type: ignore
 
 # ---- Technical Indicators (dynamic discovery and application) ----
-try:
-    from ..utils.indicators import list_ta_indicators as _list_ta_indicators_docs
-    _CATEGORY_CHOICES = sorted({it.get('category') for it in _list_ta_indicators_docs(detailed=False) if it.get('category')})
-except Exception:
-    _CATEGORY_CHOICES = []
+def _load_indicator_doc_choices(
+    list_ta_indicators_docs: Optional[Any] = None,
+) -> Tuple[List[str], List[str]]:
+    if list_ta_indicators_docs is None:
+        try:
+            from ..utils.indicators import list_ta_indicators as list_ta_indicators_docs
+        except Exception:
+            return [], []
+    try:
+        docs = list_ta_indicators_docs(detailed=False)
+    except Exception:
+        return [], []
+    if not isinstance(docs, list):
+        return [], []
+
+    categories = sorted(
+        {it.get("category") for it in docs if isinstance(it, dict) and it.get("category")}
+    )
+    names = sorted(
+        {it.get("name") for it in docs if isinstance(it, dict) and it.get("name")}
+    )
+    return categories, names
+
+
+_CATEGORY_CHOICES, _INDICATOR_NAME_CHOICES = _load_indicator_doc_choices()
 
 if _CATEGORY_CHOICES:
     # Create a Literal type alias dynamically
     CategoryLiteral = Literal[tuple(_CATEGORY_CHOICES)]  # type: ignore
 else:
     CategoryLiteral = str  # fallback
-
-# Build indicator name Literal so details endpoint has enum name choices
-try:
-    from ..utils.indicators import list_ta_indicators as _list_ta_indicators_docs
-    _INDICATOR_NAME_CHOICES = sorted({it.get('name') for it in _list_ta_indicators_docs(detailed=False) if it.get('name')})
-except Exception:
-    _INDICATOR_NAME_CHOICES = []
 
 if _INDICATOR_NAME_CHOICES:
     IndicatorNameLiteral = Literal[tuple(_INDICATOR_NAME_CHOICES)]  # type: ignore

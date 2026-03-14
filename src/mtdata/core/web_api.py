@@ -88,7 +88,7 @@ def _web_api_gateway():
 
 @api_router.get("/timeframes")
 def get_timeframes() -> Dict[str, Any]:
-    return {"timeframes": list(TIMEFRAME_MAP.keys())}
+    return {"timeframes": list(TIMEFRAME_MAP)}
 
 
 @api_router.get("/instruments")

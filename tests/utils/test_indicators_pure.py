@@ -53,6 +53,7 @@ from mtdata.core.schema import (
     shared_defs,
     complex_defs,
     _ensure_defs,
+    _load_indicator_doc_choices,
     apply_param_hints,
     _parameters_obj,
     apply_timeframe_ref,
@@ -68,6 +69,7 @@ from mtdata.core.schema import (
     _SIMPLIFY_MODES,
     _SIMPLIFY_METHODS,
     _PIVOT_METHODS,
+    VolatilityParams,
 )
 
 
@@ -783,6 +785,31 @@ class TestSharedDefs:
         vals = defs["TimeframeSpec"]["enum"]
         assert vals == sorted(vals)
 
+    def test_load_indicator_doc_choices_uses_single_loader_call(self):
+        calls = []
+
+        def fake_loader(*, detailed=False):
+            calls.append(detailed)
+            return [
+                {"category": "trend", "name": "ema"},
+                {"category": "momentum", "name": "rsi"},
+                {"category": "trend", "name": "ema"},
+            ]
+
+        categories, names = _load_indicator_doc_choices(fake_loader)
+
+        assert calls == [False]
+        assert categories == ["momentum", "trend"]
+        assert names == ["ema", "rsi"]
+
+    def test_load_indicator_doc_choices_falls_back_on_loader_error(self):
+        categories, names = _load_indicator_doc_choices(
+            lambda *, detailed=False: (_ for _ in ()).throw(RuntimeError("boom"))
+        )
+
+        assert categories == []
+        assert names == []
+
 
 class TestComplexDefs:
     def test_has_expected_keys(self):
@@ -797,6 +824,11 @@ class TestComplexDefs:
         spec = defs["IndicatorSpec"]
         assert spec["type"] == "object"
         assert "name" in spec["properties"]
+
+    def test_volatility_params_schema_matches_typed_dict_keys(self):
+        defs = complex_defs()
+
+        assert set(defs["VolatilityParams"]["properties"]) == set(VolatilityParams.__annotations__)
 
 
 class TestEnsureDefs:
