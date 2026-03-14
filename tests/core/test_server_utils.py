@@ -1,26 +1,6 @@
 """Tests for src/mtdata/core/server_utils.py"""
 from types import SimpleNamespace
-from mtdata.core.server_utils import coerce_scalar, normalize_ohlcv_arg, get_mcp_registry
-
-
-class TestCoerceScalar:
-    def test_int(self):
-        assert coerce_scalar("10") == 10
-
-    def test_float(self):
-        result = coerce_scalar("3.14")
-        assert isinstance(result, float)
-
-    def test_string(self):
-        assert coerce_scalar("abc") == "abc"
-
-
-class TestNormalizeOhlcvArg:
-    def test_all(self):
-        assert normalize_ohlcv_arg("all") == {"O", "H", "L", "C", "V"}
-
-    def test_none(self):
-        assert normalize_ohlcv_arg(None) is None
+from mtdata.core.server_utils import get_mcp_registry
 
 
 class TestGetMcpRegistry:

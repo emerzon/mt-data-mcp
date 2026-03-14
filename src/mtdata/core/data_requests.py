@@ -132,6 +132,15 @@ def _validate_positive_limit(value: int) -> int:
     return int(value)
 
 
+def _validate_non_negative(value: Optional[float], name: str) -> Optional[float]:
+    if value is None:
+        return None
+    value_f = float(value)
+    if value_f < 0:
+        raise ValueError(f"{name} must be greater than or equal to 0.")
+    return value_f
+
+
 def _validate_indicator_entries(value: Any) -> Any:
     if value is None or not isinstance(value, list):
         return value
@@ -200,17 +209,12 @@ class WaitCandleRequest(BaseModel):
     @field_validator("buffer_seconds")
     @classmethod
     def _validate_buffer_seconds(cls, value: float) -> float:
-        value_f = float(value)
-        if value_f < 0:
+        validated = _validate_non_negative(value, "buffer_seconds")
+        if validated is None:
             raise ValueError("buffer_seconds must be greater than or equal to 0.")
-        return value_f
+        return validated
 
     @field_validator("max_wait_seconds")
     @classmethod
     def _validate_max_wait_seconds(cls, value: Optional[float]) -> Optional[float]:
-        if value is None:
-            return None
-        value_f = float(value)
-        if value_f < 0:
-            raise ValueError("max_wait_seconds must be greater than or equal to 0.")
-        return value_f
+        return _validate_non_negative(value, "max_wait_seconds")

@@ -20,36 +20,12 @@ def detect_flags_pennants(
     max_len = min(cfg.max_consolidation_bars, n // 3)
     if max_len < 10:
         return out
-        
+
     pole_len = max(10, max_len // 2)
-    # Original logic used c[-1] vs c[-1 - pole_len]
-    # However, this measures return *during* consolidation if pole_len < window
-    # But to pass the regression test we must match the logic it expects, 
-    # OR fix the logic if the test setup implies a pole exists.
-    
-    # In the failing test:
-    # window=30. pole_len=15.
-    # c[-1] is 149.5 (end of consolidation). c[-16] is 147.7 (middle of consolidation).
-    # ret is small (~1.2%). min_pole_return_pct=1.0.
-    # So ret > 1.0. The condition passes.
-    
-    # Wait, my previous extraction used:
-    # ret = (c[-1] - c[-1 - pole_len]) ...
-    # And it failed?
-    
-    # Ah, I might have messed up the imports in continuation.py?
-    # No, let's look at the error again.
-    # "AssertionError: assert 'Bull Pennant' in set()"
-    # This means NO pattern was found.
-    
-    # If ret condition passed, maybe it failed later?
-    
     ret = (c[-1] - c[-1 - pole_len]) / max(1e-9, c[-1 - pole_len]) * 100.0
-    # print(f"DEBUG: {pole_len=}, {ret=}, {cfg.min_pole_return_pct=}")
     if abs(ret) < cfg.min_pole_return_pct:
-        # print("DEBUG: Return too small")
         return out
-        
+
     window = cfg.max_consolidation_bars
     seg = c[-window:]
     seg_h = h[-window:] if h.size >= window else seg
@@ -60,11 +36,10 @@ def detect_flags_pennants(
         peaks2, troughs2 = _detect_pivots_close(seg, cfg, seg_h, seg_l)
     except TypeError:
         peaks2, troughs2 = _detect_pivots_close(seg, cfg)
-    
-    # print(f"DEBUG: {peaks2=}, {troughs2=}")
+
     if peaks2.size < 2 or troughs2.size < 2:
         return out
-        
+
     # build local arrays for consolidation region
     sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(peaks2, troughs2, seg, seg.size, cfg)
     dist_recent = float(np.mean((top - bot)[-max(5, seg.size//4):]))
@@ -80,7 +55,7 @@ def detect_flags_pennants(
         name = "Pennant"
     elif parallel:
         name = "Flag"
-        
+
     if name:
         conf = _conf(4, min(r2h, r2l), 1.0, cfg)
         titled = ("Bull " + name) if ret > 0 else ("Bear " + name)
@@ -114,7 +89,7 @@ def detect_flags_pennants(
         if bool(cfg.include_aliases):
             out.append(_alias(base, name, 0.95))
             out.append(_alias(base, "Continuation Pattern", 0.9))
-            
+
     return out
 
 def detect_cup_handle(

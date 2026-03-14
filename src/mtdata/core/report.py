@@ -12,18 +12,19 @@ from ..utils.mt5 import ensure_mt5_connection_or_raise
 logger = logging.getLogger(__name__)
 
 
-def _report_error_text(message: Any) -> str:
+def _normalize_report_error_message(message: Any) -> str:
     text = str(message).strip()
     if not text:
         text = 'Unknown error.'
-    return f"error: {text}\n"
+    return text
+
+
+def _report_error_text(message: Any) -> str:
+    return f"error: {_normalize_report_error_message(message)}\n"
 
 
 def _report_error_payload(message: Any) -> Dict[str, Any]:
-    text = str(message).strip()
-    if not text:
-        text = 'Unknown error.'
-    return {"error": text}
+    return {"error": _normalize_report_error_message(message)}
 
 def _get_mt5_gateway():
     return create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
