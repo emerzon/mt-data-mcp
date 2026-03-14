@@ -41,6 +41,7 @@ from ..patterns.elliott import detect_elliott_waves as _detect_elliott_waves, El
 from ._mcp_instance import mcp
 from .patterns_requests import PatternsDetectRequest
 from .patterns_use_cases import run_patterns_detect
+from ..shared.validators import invalid_timeframe_error
 from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5
 
@@ -73,7 +74,7 @@ def _fetch_pattern_data(
     Returns (df, error_dict) where error_dict is None on success.
     """
     if timeframe not in TIMEFRAME_MAP:
-        return None, {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+        return None, {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
 
     mt5_gateway = gateway or _get_mt5_gateway()
     mt5_tf = TIMEFRAME_MAP[timeframe]

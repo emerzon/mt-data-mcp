@@ -5,6 +5,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from ..shared.validators import invalid_timeframe_error
 from ..utils.utils import (
     _table_from_rows,
     _format_time_minimal_local,
@@ -246,7 +247,7 @@ def detect_candlestick_patterns(
     except ModuleNotFoundError as exc:
         return {"error": str(exc)}
     if timeframe not in TIMEFRAME_MAP:
-        return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+        return {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP or {})}
     try:
         thr = _parse_min_strength(min_strength)
     except ValueError as exc:

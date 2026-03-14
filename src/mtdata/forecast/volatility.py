@@ -7,6 +7,7 @@ import math
 
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import TimeframeLiteral, DenoiseSpec
+from ..shared.validators import invalid_timeframe_error, unsupported_timeframe_seconds_error
 from ..utils.mt5 import _ensure_symbol_ready, _mt5_copy_rates_from, _mt5_epoch_to_utc, mt5
 from ..utils.utils import _parse_start_datetime
 from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
@@ -328,11 +329,11 @@ def forecast_volatility(
     """
     try:
         if timeframe not in TIMEFRAME_MAP:
-            return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+            return {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
         mt5_tf = TIMEFRAME_MAP[timeframe]
         tf_secs = TIMEFRAME_SECONDS.get(timeframe)
         if not tf_secs:
-            return {"error": f"Unsupported timeframe seconds for {timeframe}"}
+            return {"error": unsupported_timeframe_seconds_error(timeframe)}
         method_l = str(method).lower().strip()
         garch_family = {'garch','egarch','gjr_garch','garch_t','egarch_t','gjr_garch_t','figarch'}
         valid_direct = {'ewma','parkinson','gk','rs','yang_zhang','rolling_std','realized_kernel','har_rv'} | garch_family
@@ -1174,7 +1175,7 @@ def forecast_volatility(
                 # Map to per-bar and horizon sigma for requested timeframe
                 tf_secs = TIMEFRAME_SECONDS.get(timeframe)
                 if not tf_secs:
-                    return {"error": f"Unsupported timeframe seconds for {timeframe}"}
+                    return {"error": unsupported_timeframe_seconds_error(timeframe)}
                 bars_per_day = float(86400.0 / float(tf_secs))
                 sbar = float(math.sqrt(rv_next / bars_per_day))
                 h_days = float(int(horizon)) / bars_per_day

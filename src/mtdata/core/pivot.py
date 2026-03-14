@@ -8,6 +8,7 @@ from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .schema import TimeframeLiteral, _PIVOT_METHODS
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..shared.validators import invalid_timeframe_error, unsupported_timeframe_seconds_error
 from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from,
@@ -41,11 +42,11 @@ def pivot_compute_points(
             mt5 = _get_mt5_gateway()
             mt5.ensure_connection()
             if timeframe not in TIMEFRAME_MAP:
-                return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+                return {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
             mt5_tf = TIMEFRAME_MAP[timeframe]
             tf_secs = TIMEFRAME_SECONDS.get(timeframe)
             if not tf_secs:
-                return {"error": f"Unsupported timeframe seconds for {timeframe}"}
+                return {"error": unsupported_timeframe_seconds_error(timeframe)}
 
             with _symbol_ready_guard(symbol) as (err, _info_before):
                 if err:

@@ -11,6 +11,7 @@ from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .schema import TimeframeLiteral
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..shared.validators import invalid_timeframe_error, unsupported_timeframe_seconds_error
 from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from,
@@ -239,7 +240,7 @@ def _fetch_rates(
 ) -> Tuple[Optional[Any], Optional[str]]:
     mt5_gateway = gateway or _get_mt5_gateway()
     if timeframe not in TIMEFRAME_MAP:
-        return None, f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"
+        return None, invalid_timeframe_error(timeframe, TIMEFRAME_MAP)
     mt5_tf = TIMEFRAME_MAP[timeframe]
 
     if start and end:
@@ -258,7 +259,7 @@ def _fetch_rates(
             return None, "Invalid start date format."
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe)
         if not seconds_per_bar:
-            return None, f"Unsupported timeframe seconds for {timeframe}"
+            return None, unsupported_timeframe_seconds_error(timeframe)
         end_dt = start_dt + timedelta(seconds=seconds_per_bar * max(int(limit), 1))
         rates = _mt5_copy_rates_range(symbol, mt5_tf, start_dt, end_dt)
         return rates, None

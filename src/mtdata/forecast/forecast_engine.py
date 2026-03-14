@@ -11,6 +11,7 @@ import math
 from ..bootstrap.settings import mt5_config
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
+from ..shared.validators import invalid_timeframe_error, unsupported_timeframe_seconds_error
 from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.mt5 import get_cached_mt5_time_alignment, get_symbol_info_cached, mt5
 from ..utils.utils import (
@@ -615,10 +616,10 @@ def forecast_engine(
         
         # Validation
         if timeframe not in TIMEFRAME_MAP:
-            return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+            return {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
         tf_secs = TIMEFRAME_SECONDS.get(timeframe)
         if not tf_secs:
-            return {"error": f"Unsupported timeframe seconds for {timeframe}"}
+            return {"error": unsupported_timeframe_seconds_error(timeframe)}
 
         method_l = str(method).lower().strip()
         quantity_l = str(quantity).lower().strip()

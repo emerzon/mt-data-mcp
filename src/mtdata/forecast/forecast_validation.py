@@ -8,6 +8,7 @@ import pandas as pd
 
 from ..shared.constants import TIMEFRAME_MAP
 from ..shared.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
+from ..shared.validators import invalid_timeframe_error
 from .forecast_methods import FORECAST_METHODS, validate_method_params, get_method_requirements
 
 
@@ -53,7 +54,7 @@ def validate_timeframe(timeframe: TimeframeLiteral) -> List[str]:
     """Validate timeframe parameter."""
     errors = []
     if timeframe not in TIMEFRAME_MAP:
-        errors.append(f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}")
+        errors.append(invalid_timeframe_error(timeframe, TIMEFRAME_MAP))
     return errors
 
 

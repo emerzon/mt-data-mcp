@@ -4,6 +4,7 @@ import math
 
 from ..shared.constants import TIMEFRAME_MAP
 from ..shared.schema import TimeframeLiteral, DenoiseSpec
+from ..shared.validators import invalid_timeframe_error
 from ..utils.utils import _format_time_minimal
 from .volatility import forecast_volatility
 from .forecast import forecast
@@ -159,7 +160,7 @@ def forecast_backtest(
             detail_mode = "compact"
         include_paths = detail_mode == "full"
         if timeframe not in TIMEFRAME_MAP:
-            return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+            return {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
 
         # Fetch sufficient history via shared helper; ensure enough bars for anchors
         if anchors and isinstance(anchors, (list, tuple)) and len(anchors) > 0:

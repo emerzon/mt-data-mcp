@@ -21,6 +21,7 @@ from ..shared.constants import (
 )
 from ..bootstrap.settings import mt5_config
 from ..core.runtime_metadata import build_runtime_timezone_meta
+from ..shared.validators import invalid_timeframe_error
 
 # Imports from utils
 from ..utils.mt5 import (
@@ -555,7 +556,7 @@ def fetch_candles(
         ti = indicators
         # Validate timeframe using the shared map
         if timeframe not in TIMEFRAME_MAP:
-            return {"error": f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}"}
+            return {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
         mt5_timeframe = TIMEFRAME_MAP[timeframe]
         
         # Ensure symbol is ready; remember original visibility to restore later
