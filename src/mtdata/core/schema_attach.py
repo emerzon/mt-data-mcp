@@ -3,7 +3,7 @@ Shared schema defs and dynamic attachment of JSON Schemas to MCP tools.
 Extracted from core.server to keep server thinner.
 """
 import logging
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 from .server_utils import get_mcp_registry
 
 from .schema import (
@@ -15,6 +15,46 @@ from .schema import (
 )
 
 logger = logging.getLogger(__name__)
+
+_BARRIER_PROB_METHODS = [
+    "mc_gbm",
+    "mc_gbm_bb",
+    "hmm_mc",
+    "garch",
+    "bootstrap",
+    "heston",
+    "jump_diffusion",
+    "closed_form",
+    "auto",
+]
+
+_BARRIER_OPTIMIZE_METHODS = [
+    "mc_gbm",
+    "mc_gbm_bb",
+    "hmm_mc",
+    "garch",
+    "bootstrap",
+    "heston",
+    "jump_diffusion",
+    "auto",
+]
+
+_TRADE_PLACE_STRING_ORDER_TYPES = [
+    "BUY",
+    "SELL",
+    "BUY_LIMIT",
+    "BUY_STOP",
+    "SELL_LIMIT",
+    "SELL_STOP",
+    "ORDER_TYPE_BUY",
+    "ORDER_TYPE_SELL",
+    "ORDER_TYPE_BUY_LIMIT",
+    "ORDER_TYPE_BUY_STOP",
+    "ORDER_TYPE_SELL_LIMIT",
+    "ORDER_TYPE_SELL_STOP",
+]
+
+_SchemaPatcher = Callable[[Dict[str, Any]], None]
 
 
 def _safe_schema_op(operation: str, func, default=None):
@@ -56,6 +96,133 @@ def server_shared_defs(shared_enums: Dict[str, Any]) -> Dict[str, Any]:
     return defs
 
 
+def _schema_params(schema: Dict[str, Any]) -> tuple[Dict[str, Any], set[str]]:
+    params_obj = schema.get("parameters", {})
+    if not isinstance(params_obj, dict):
+        return {}, set()
+    params = params_obj.get("properties", {})
+    if not isinstance(params, dict):
+        return {}, set()
+    required_params = set(params_obj.get("required", []))
+    return params, required_params
+
+
+def _set_ref(
+    params: Dict[str, Any],
+    required_params: set[str],
+    param_name: str,
+    ref: str,
+    *,
+    allow_null: bool = False,
+) -> None:
+    if param_name not in params:
+        return
+    if allow_null and param_name not in required_params:
+        params[param_name] = {"anyOf": [{"$ref": ref}, {"type": "null"}]}
+        return
+    params[param_name] = {"$ref": ref}
+
+
+def _patch_forecast_generate_schema(schema: Dict[str, Any]) -> None:
+    params, required_params = _schema_params(schema)
+    _set_ref(params, required_params, "quantity", "#/$defs/QuantitySpec")
+    _set_ref(params, required_params, "denoise", "#/$defs/DenoiseSpec", allow_null=True)
+    if "params" in params:
+        params["params"] = {
+            "type": "object",
+            "additionalProperties": True,
+        }
+
+
+def _patch_indicators_list_schema(schema: Dict[str, Any]) -> None:
+    params, required_params = _schema_params(schema)
+    if "IndicatorCategory" in schema.get("$defs", {}):
+        _set_ref(params, required_params, "category", "#/$defs/IndicatorCategory")
+
+
+def _patch_indicators_describe_schema(schema: Dict[str, Any]) -> None:
+    params, required_params = _schema_params(schema)
+    if "IndicatorName" in schema.get("$defs", {}):
+        _set_ref(params, required_params, "name", "#/$defs/IndicatorName")
+
+
+def _patch_data_fetch_candles_schema(schema: Dict[str, Any]) -> None:
+    params, required_params = _schema_params(schema)
+    if "indicators" in params:
+        params["indicators"] = {"type": "array", "items": {"$ref": "#/$defs/IndicatorSpec"}}
+    _set_ref(params, required_params, "denoise", "#/$defs/DenoiseSpec", allow_null=True)
+    _set_ref(params, required_params, "simplify", "#/$defs/SimplifySpec", allow_null=True)
+
+
+def _patch_data_fetch_ticks_schema(schema: Dict[str, Any]) -> None:
+    params, required_params = _schema_params(schema)
+    _set_ref(params, required_params, "simplify", "#/$defs/SimplifySpec", allow_null=True)
+
+
+def _patch_forecast_barrier_prob_schema(schema: Dict[str, Any]) -> None:
+    params, _required_params = _schema_params(schema)
+    if "method" not in params:
+        return
+    params["method"] = {
+        "type": "string",
+        "enum": list(_BARRIER_PROB_METHODS),
+        "description": "Barrier probability algorithm. Use a Monte Carlo engine, 'closed_form', or 'auto'.",
+    }
+
+
+def _patch_forecast_barrier_optimize_schema(schema: Dict[str, Any]) -> None:
+    params, _required_params = _schema_params(schema)
+    if "method" not in params:
+        return
+    params["method"] = {
+        "type": "string",
+        "enum": list(_BARRIER_OPTIMIZE_METHODS),
+        "description": "Barrier simulation method for optimization.",
+    }
+
+
+def _patch_trade_place_schema(schema: Dict[str, Any]) -> None:
+    params_obj = schema.get("parameters", {})
+    if isinstance(params_obj, dict):
+        params_obj["required"] = ["symbol", "volume", "order_type"]
+    params, _required_params = _schema_params(schema)
+    if "order_type" in params:
+        params["order_type"] = {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "enum": list(_TRADE_PLACE_STRING_ORDER_TYPES),
+                },
+                {
+                    "type": "integer",
+                    "enum": [0, 1, 2, 3, 4, 5],
+                },
+            ],
+            "description": "Required. BUY/SELL (market by default; pending if price is provided), pending aliases, or MT5 numeric constants (0..5)."
+        }
+    if "expiration" in params:
+        params["expiration"] = {
+            "anyOf": [
+                {"type": "string"},
+                {"type": "number"},
+                {"type": "null"}
+            ],
+            "description": "Dateparser input, UTC epoch seconds, or GTC token."
+        }
+
+
+_TOOL_SCHEMA_PATCHERS: Dict[str, tuple[_SchemaPatcher, ...]] = {
+    "forecast_generate": (_patch_forecast_generate_schema,),
+    "indicators_list": (_patch_indicators_list_schema,),
+    "indicators_describe": (_patch_indicators_describe_schema,),
+    "data_fetch_candles": (_patch_data_fetch_candles_schema,),
+    "data_fetch_ticks": (_patch_data_fetch_ticks_schema,),
+    "forecast_barrier_prob": (_patch_forecast_barrier_prob_schema,),
+    "forecast_barrier_optimize": (_patch_forecast_barrier_optimize_schema,),
+    "trade_place": (_patch_trade_place_schema,),
+}
+
+
 def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
     """Attach enriched JSON Schemas to registered MCP tools on the given server."""
     try:
@@ -89,93 +256,8 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
             _safe_schema_op(f"update_defs:{name}", _update_defs)
 
             def _patch_params() -> None:
-                params = schema.get("parameters", {}).get("properties", {})
-                required_params = set(schema.get("parameters", {}).get("required", []))
-
-                def _set_ref(param_name: str, ref: str, allow_null: bool = False) -> None:
-                    if param_name not in params:
-                        return
-                    if allow_null and param_name not in required_params:
-                        params[param_name] = {"anyOf": [{"$ref": ref}, {"type": "null"}]}
-                    else:
-                        params[param_name] = {"$ref": ref}
-
-                if name == "forecast_generate":
-                    _set_ref("quantity", "#/$defs/QuantitySpec")
-                    _set_ref("denoise", "#/$defs/DenoiseSpec", allow_null=True)
-                    if "params" in params:
-                        params["params"] = {
-                            "type": "object",
-                            "additionalProperties": True,
-                        }
-                if name == "indicators_list" and "category" in params and "IndicatorCategory" in schema.get("$defs", {}):
-                    _set_ref("category", "#/$defs/IndicatorCategory")
-                if name == "indicators_describe" and "name" in params and "IndicatorName" in schema.get("$defs", {}):
-                    _set_ref("name", "#/$defs/IndicatorName")
-                if name == "data_fetch_candles":
-                    if "indicators" in params:
-                        params["indicators"] = {"type": "array", "items": {"$ref": "#/$defs/IndicatorSpec"}}
-                    _set_ref("denoise", "#/$defs/DenoiseSpec", allow_null=True)
-                    _set_ref("simplify", "#/$defs/SimplifySpec", allow_null=True)
-                if name == "data_fetch_ticks":
-                    _set_ref("simplify", "#/$defs/SimplifySpec", allow_null=True)
-                if name == "forecast_barrier_prob":
-                    if "method" in params:
-                        params["method"] = {
-                            "type": "string",
-                            "enum": ["mc_gbm", "mc_gbm_bb", "hmm_mc", "garch", "bootstrap", "heston", "jump_diffusion", "closed_form", "auto"],
-                            "description": "Barrier probability algorithm. Use a Monte Carlo engine, 'closed_form', or 'auto'.",
-                        }
-                if name == "forecast_barrier_optimize":
-                    if "method" in params:
-                        params["method"] = {
-                            "type": "string",
-                            "enum": ["mc_gbm", "mc_gbm_bb", "hmm_mc", "garch", "bootstrap", "heston", "jump_diffusion", "auto"],
-                            "description": "Barrier simulation method for optimization.",
-                        }
-                # Trading schemas: add enums and param docs where helpful
-                if name == "trade_place":
-                    params_obj = schema.get("parameters", {})
-                    if isinstance(params_obj, dict):
-                        params_obj["required"] = ["symbol", "volume", "order_type"]
-                    # Clarify acceptable order type values for orders
-                    if "order_type" in params:
-                        params["order_type"] = {
-                            "anyOf": [
-                                {
-                                    "type": "string",
-                                    "enum": [
-                                        "BUY",
-                                        "SELL",
-                                        "BUY_LIMIT",
-                                        "BUY_STOP",
-                                        "SELL_LIMIT",
-                                        "SELL_STOP",
-                                        "ORDER_TYPE_BUY",
-                                        "ORDER_TYPE_SELL",
-                                        "ORDER_TYPE_BUY_LIMIT",
-                                        "ORDER_TYPE_BUY_STOP",
-                                        "ORDER_TYPE_SELL_LIMIT",
-                                        "ORDER_TYPE_SELL_STOP",
-                                    ],
-                                },
-                                {
-                                    "type": "integer",
-                                    "enum": [0, 1, 2, 3, 4, 5],
-                                },
-                            ],
-                            "description": "Required. BUY/SELL (market by default; pending if price is provided), pending aliases, or MT5 numeric constants (0..5)."
-                        }
-                    # Document expiration flexibility
-                    if "expiration" in params:
-                        params["expiration"] = {
-                            "anyOf": [
-                                {"type": "string"},
-                                {"type": "number"},
-                                {"type": "null"}
-                            ],
-                            "description": "Dateparser input, UTC epoch seconds, or GTC token."
-                        }
+                for patcher in _TOOL_SCHEMA_PATCHERS.get(name, ()):
+                    patcher(schema)
             _safe_schema_op(f"patch_params:{name}", _patch_params)
             _apply_param_hints(schema)
             _safe_schema_op(f"set_obj_schema:{name}", lambda: setattr(obj, "schema", schema))
