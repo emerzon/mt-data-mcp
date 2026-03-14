@@ -14,13 +14,6 @@ from ..utils.mt5 import ensure_mt5_connection_or_raise, mt5_adapter
 logger = logging.getLogger(__name__)
 
 
-def _get_trading_gateway() -> MT5TradingGateway:
-    return create_trading_gateway(
-        adapter=mt5_adapter,
-        ensure_connection_impl=ensure_mt5_connection_or_raise,
-    )
-
-
 @mcp.tool()
 def trade_risk_analyze(request: TradeRiskAnalyzeRequest) -> dict:
     """Analyze risk exposure for existing positions and calculate position sizing for new trades.
@@ -34,6 +27,9 @@ def trade_risk_analyze(request: TradeRiskAnalyzeRequest) -> dict:
         symbol=request.symbol,
         func=lambda: run_trade_risk_analyze(
             request,
-            gateway=_get_trading_gateway(),
+            gateway=create_trading_gateway(
+                adapter=mt5_adapter,
+                ensure_connection_impl=ensure_mt5_connection_or_raise,
+            ),
         ),
     )

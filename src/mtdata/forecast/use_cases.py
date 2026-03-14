@@ -602,7 +602,9 @@ def run_forecast_barrier_prob(
     barrier_closed_form_impl: Any,
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
-    method_val = str(request.method or "hmm_mc").lower().strip()
+    method_raw = str(request.method or "hmm_mc").lower().strip()
+    method_aliases = {"mc": "hmm_mc"}
+    method_val = method_aliases.get(method_raw, method_raw)
     mc_methods = {
         "auto",
         "bootstrap",

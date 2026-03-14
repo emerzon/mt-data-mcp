@@ -5,6 +5,7 @@ import math
 
 from src.mtdata.core.trading import _place_market_order, _place_pending_order
 from src.mtdata.core.trading_gateway import MT5TradingGateway
+from src.mtdata.core.trading_gateway import create_trading_gateway as create_real_trading_gateway
 
 
 @pytest.fixture
@@ -55,8 +56,18 @@ def mock_mt5():
     mock_mt5.positions_get.return_value = [MagicMock(symbol="EURUSD", sl=0.0, tp=0.0)]
     
     # Guard
-    with patch("src.mtdata.core.trading_orders.ensure_mt5_connection_or_raise", return_value=None), patch(
-        "src.mtdata.core.trading_execution.ensure_mt5_connection_or_raise", return_value=None
+    def _build_gateway(*, gateway=None, include_trade_preflight=False, include_retcode_name=False, **_):
+        if gateway is not None:
+            return gateway
+        return create_real_trading_gateway(
+            adapter=mock_mt5,
+            include_trade_preflight=include_trade_preflight,
+            include_retcode_name=include_retcode_name,
+            ensure_connection_impl=lambda: None,
+        )
+
+    with patch("src.mtdata.core.trading_orders.create_trading_gateway", side_effect=_build_gateway), patch(
+        "src.mtdata.core.trading_execution.create_trading_gateway", side_effect=_build_gateway
     ):
         yield mock_mt5
     if prev_mt5 is not None:

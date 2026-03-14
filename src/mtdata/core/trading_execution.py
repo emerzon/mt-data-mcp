@@ -10,17 +10,7 @@ from .trading_gateway import MT5TradingGateway, create_trading_gateway, trading_
 from .trading_positions import _resolve_open_position
 from .trading_time import ExpirationValue
 from ..utils.mt5 import _mt5_epoch_to_utc
-
-
-def _get_trading_gateway(gateway: Optional[MT5TradingGateway] = None) -> MT5TradingGateway:
-    return create_trading_gateway(
-        gateway=gateway,
-        include_retcode_name=True,
-    )
-
-
-def _trading_connection_error(gateway: Optional[MT5TradingGateway] = None) -> Optional[Dict[str, Any]]:
-    return trading_connection_error(gateway)
+from ..utils.mt5 import ensure_mt5_connection_or_raise
 
 
 def _safe_int_attr(obj: Any, name: str, default: int) -> int:
@@ -60,9 +50,12 @@ def _modify_position(
     gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Internal helper to modify a position by ticket."""
-    mt5 = _get_trading_gateway(gateway)
+    mt5 = create_trading_gateway(
+        gateway=gateway,
+        include_retcode_name=True,
+    )
 
-    connection_error = _trading_connection_error(mt5)
+    connection_error = trading_connection_error(mt5)
     if connection_error is not None:
         return connection_error
 
@@ -194,9 +187,12 @@ def _modify_pending_order(
     gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Internal helper to modify a pending order by ticket."""
-    mt5 = _get_trading_gateway(gateway)
+    mt5 = create_trading_gateway(
+        gateway=gateway,
+        include_retcode_name=True,
+    )
 
-    connection_error = _trading_connection_error(mt5)
+    connection_error = trading_connection_error(mt5)
     if connection_error is not None:
         return connection_error
 
@@ -289,9 +285,12 @@ def _close_positions(
     gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Internal helper to close open positions."""
-    mt5 = _get_trading_gateway(gateway)
+    mt5 = create_trading_gateway(
+        gateway=gateway,
+        include_retcode_name=True,
+    )
 
-    connection_error = _trading_connection_error(mt5)
+    connection_error = trading_connection_error(mt5)
     if connection_error is not None:
         return connection_error
 
@@ -674,9 +673,12 @@ def _cancel_pending(
     gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Internal helper to cancel pending orders."""
-    mt5 = _get_trading_gateway(gateway)
+    mt5 = create_trading_gateway(
+        gateway=gateway,
+        include_retcode_name=True,
+    )
 
-    connection_error = _trading_connection_error(mt5)
+    connection_error = trading_connection_error(mt5)
     if connection_error is not None:
         return connection_error
 

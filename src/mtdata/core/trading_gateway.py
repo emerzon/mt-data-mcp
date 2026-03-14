@@ -52,8 +52,11 @@ def create_trading_gateway(
     include_trade_preflight: bool = False,
     include_retcode_name: bool = False,
     adapter: Any = mt5_adapter,
-    ensure_connection_impl: Callable[[], None] = ensure_mt5_connection_or_raise,
+    ensure_connection_impl: Optional[Callable[[], None]] = None,
 ) -> "MT5TradingGateway":
+    if ensure_connection_impl is None:
+        ensure_connection_impl = ensure_mt5_connection_or_raise
+
     if gateway is not None:
         return gateway
 

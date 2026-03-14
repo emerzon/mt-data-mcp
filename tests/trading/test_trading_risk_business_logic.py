@@ -211,7 +211,7 @@ def test_run_trade_risk_analyze_logs_finish_event(caplog) -> None:
 def test_trade_risk_analyze_logs_finish_event(caplog) -> None:
     raw = _unwrap(_trade_risk_analyze_tool)
 
-    with patch.object(core_trading_risk, "_get_trading_gateway", return_value=object()), patch.object(
+    with patch.object(core_trading_risk, "create_trading_gateway", return_value=object()), patch.object(
         core_trading_risk,
         "run_trade_risk_analyze",
         return_value={"success": True, "positions": []},

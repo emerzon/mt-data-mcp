@@ -24,6 +24,7 @@ import os
 from datetime import datetime, timezone, timedelta
 from types import SimpleNamespace
 from collections import namedtuple
+import importlib
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -208,12 +209,20 @@ def _pending_order(ticket=100, symbol="EURUSD", type_=2, volume=0.01,
 def _bypass_auto_connect(monkeypatch):
     """Neutralize MT5 connection guards so no real terminal access is needed."""
     passthrough = lambda fn=None, **kw: fn if fn else (lambda f: f)
-    monkeypatch.setattr("mtdata.core.trading_account.ensure_mt5_connection_or_raise", lambda: None)
-    monkeypatch.setattr("mtdata.core.trading_execution.ensure_mt5_connection_or_raise", lambda: None)
-    monkeypatch.setattr("mtdata.core.trading_orders.ensure_mt5_connection_or_raise", lambda: None)
-    monkeypatch.setattr("mtdata.core.trading_positions.ensure_mt5_connection_or_raise", lambda: None)
-    monkeypatch.setattr("mtdata.core.trading_risk.ensure_mt5_connection_or_raise", lambda: None)
-    monkeypatch.setattr("mtdata.core.trading_validation.ensure_mt5_connection_or_raise", lambda: None)
+    monkeypatch.setattr("mtdata.core.trading_gateway.ensure_mt5_connection_or_raise", lambda: None)
+    monkeypatch.setattr("src.mtdata.core.trading_gateway.ensure_mt5_connection_or_raise", lambda: None)
+    for module_name in [
+        "mtdata.core.trading_account",
+        "mtdata.core.trading_execution",
+        "mtdata.core.trading_orders",
+        "mtdata.core.trading_positions",
+        "mtdata.core.trading_risk",
+        "mtdata.core.trading_validation",
+    ]:
+        module = importlib.import_module(module_name)
+        if hasattr(module, "ensure_mt5_connection_or_raise"):
+            monkeypatch.setattr(f"{module_name}.ensure_mt5_connection_or_raise", lambda: None)
+    return passthrough
 
 
 # ===================================================================

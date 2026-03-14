@@ -7,6 +7,7 @@ from typing import Any, Dict, Literal, Optional, Tuple, Union
 
 from .trading_gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from ..utils.utils import _coerce_finite_float, _coerce_scalar
+from ..utils.mt5 import ensure_mt5_connection_or_raise
 
 
 MarketOrderTypeLiteral = Literal["BUY", "SELL"]
@@ -309,17 +310,13 @@ def _validate_live_protection_levels(
     return None
 
 
-def _get_trading_gateway(gateway: Optional[MT5TradingGateway] = None) -> MT5TradingGateway:
-    return create_trading_gateway(gateway=gateway)
-
-
 def _prevalidate_trade_place_market_input(
     symbol: str,
     volume: Any,
     gateway: Optional[MT5TradingGateway] = None,
 ) -> Optional[Dict[str, Any]]:
     """Validate symbol and volume before market-order SL/TP enforcement returns."""
-    mt5 = _get_trading_gateway(gateway)
+    mt5 = create_trading_gateway(gateway=gateway)
     connection_error = trading_connection_error(mt5)
     if connection_error is not None:
         return connection_error

@@ -10,18 +10,7 @@ from .trading_gateway import MT5TradingGateway, create_trading_gateway, trading_
 from .trading_positions import _resolve_open_position
 from .trading_time import ExpirationValue
 from .trading_validation import MarketOrderTypeInput, OrderTypeInput
-
-
-def _get_trading_gateway(gateway: Optional[MT5TradingGateway] = None) -> MT5TradingGateway:
-    return create_trading_gateway(
-        gateway=gateway,
-        include_trade_preflight=True,
-        include_retcode_name=True,
-    )
-
-
-def _trading_connection_error(gateway: Optional[MT5TradingGateway] = None) -> Optional[Dict[str, Any]]:
-    return trading_connection_error(gateway)
+from ..utils.mt5 import ensure_mt5_connection_or_raise
 
 
 def _safe_last_error(mt5: Any) -> Any:
@@ -117,9 +106,13 @@ def _place_market_order(
     gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Internal helper to place a market order."""
-    mt5 = _get_trading_gateway(gateway)
+    mt5 = create_trading_gateway(
+        gateway=gateway,
+        include_trade_preflight=True,
+        include_retcode_name=True,
+    )
 
-    connection_error = _trading_connection_error(mt5)
+    connection_error = trading_connection_error(mt5)
     if connection_error is not None:
         return connection_error
 
@@ -568,9 +561,13 @@ def _place_pending_order(
     gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Internal helper to place a pending order."""
-    mt5 = _get_trading_gateway(gateway)
+    mt5 = create_trading_gateway(
+        gateway=gateway,
+        include_trade_preflight=True,
+        include_retcode_name=True,
+    )
 
-    connection_error = _trading_connection_error(mt5)
+    connection_error = trading_connection_error(mt5)
     if connection_error is not None:
         return connection_error
 

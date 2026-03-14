@@ -26,19 +26,15 @@ from ..utils.utils import (
 logger = logging.getLogger(__name__)
 
 
-def _get_trading_gateway() -> MT5TradingGateway:
-    return create_trading_gateway(
-        include_trade_preflight=True,
-        adapter=mt5_adapter,
-        ensure_connection_impl=ensure_mt5_connection_or_raise,
-    )
-
-
 @mcp.tool()
 def trade_account_info() -> dict:
     """Get account information (balance, equity, profit, margin level, free margin, account type, leverage, currency)."""
     def _run() -> dict:
-        mt5 = _get_trading_gateway()
+        mt5 = create_trading_gateway(
+            include_trade_preflight=True,
+            adapter=mt5_adapter,
+            ensure_connection_impl=ensure_mt5_connection_or_raise,
+        )
 
         try:
             mt5.ensure_connection()
@@ -110,7 +106,11 @@ def trade_history(request: TradeHistoryRequest) -> List[Dict[str, Any]]:
         limit=request.limit,
         func=lambda: run_trade_history(
             request,
-            gateway=_get_trading_gateway(),
+            gateway=create_trading_gateway(
+                include_trade_preflight=True,
+                adapter=mt5_adapter,
+                ensure_connection_impl=ensure_mt5_connection_or_raise,
+            ),
             use_client_tz=_use_client_tz,
             format_time_minimal=_format_time_minimal,
             format_time_minimal_local=_format_time_minimal_local,

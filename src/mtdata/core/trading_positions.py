@@ -12,7 +12,7 @@ from .execution_logging import run_logged_operation
 from .trading_gateway import MT5TradingGateway, create_trading_gateway
 from .trading_requests import TradeGetOpenRequest, TradeGetPendingRequest
 from .trading_use_cases import run_trade_get_open, run_trade_get_pending
-from ..utils.mt5 import _mt5_epoch_to_utc
+from ..utils.mt5 import _mt5_epoch_to_utc, ensure_mt5_connection_or_raise
 from ..utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
@@ -21,10 +21,6 @@ from ..utils.utils import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _get_trading_gateway() -> MT5TradingGateway:
-    return create_trading_gateway()
 
 
 def _position_sort_key(position: Any) -> float:
@@ -176,7 +172,7 @@ def trade_get_open(
         limit=request.limit,
         func=lambda: run_trade_get_open(
             request,
-            gateway=_get_trading_gateway(),
+            gateway=create_trading_gateway(),
             use_client_tz=_use_client_tz,
             format_time_minimal=_format_time_minimal,
             format_time_minimal_local=_format_time_minimal_local,
@@ -199,7 +195,7 @@ def trade_get_pending(
         limit=request.limit,
         func=lambda: run_trade_get_pending(
             request,
-            gateway=_get_trading_gateway(),
+            gateway=create_trading_gateway(),
             use_client_tz=_use_client_tz,
             format_time_minimal=_format_time_minimal,
             format_time_minimal_local=_format_time_minimal_local,
