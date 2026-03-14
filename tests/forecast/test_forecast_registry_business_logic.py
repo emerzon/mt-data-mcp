@@ -101,11 +101,13 @@ def test_get_forecast_methods_data_assembles_categories_and_skips_broken(monkeyp
     assert data["total"] == 3
     assert "broken" not in methods
 
+    assert methods["good"]["category"] == "classic"
     assert methods["good"]["description"] == "Good method summary."
     assert methods["good"]["params"] == [{"name": "window", "type": "int"}]
     assert methods["good"]["available"] is True
 
     assert methods["missing_params"]["available"] is False
+    assert methods["missing_params"]["category"] == "unknown"
     assert methods["missing_params"]["params"] == []
     assert methods["missing_params"]["supports"] == {
         "price": True,
@@ -117,3 +119,15 @@ def test_get_forecast_methods_data_assembles_categories_and_skips_broken(monkeyp
     assert "good" in data["categories"]["classic"]
     assert "missing_params" in data["categories"]["unknown"]
     assert "ensemble" in data["categories"]["ensemble"]
+
+
+def test_find_method_definition_returns_match_and_none():
+    method_data = {
+        "methods": [
+            {"method": "theta", "available": True},
+            {"method": "mlf_rf", "available": False},
+        ]
+    }
+
+    assert fr._find_method_definition("theta", method_data) == {"method": "theta", "available": True}
+    assert fr._find_method_definition("missing", method_data) is None

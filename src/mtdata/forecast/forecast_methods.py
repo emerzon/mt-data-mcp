@@ -2,10 +2,13 @@
 Forecast method definitions and metadata (registry-derived).
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from ..shared.schema import ForecastMethodLiteral, TimeframeLiteral
-from .forecast_registry import get_forecast_methods_data as _registry_methods_data
+from .forecast_registry import (
+    DEFAULT_METHOD_SUPPORTS as _DEFAULT_METHOD_SUPPORTS,
+    _find_method_definition as _registry_find_method_definition,
+    get_forecast_methods_data as _registry_methods_data,
+)
 
 # Supported forecast methods (derived from registry to avoid drift)
 _METHOD_DATA = _registry_methods_data()
@@ -19,9 +22,18 @@ def get_forecast_methods_data() -> Dict[str, Any]:
     return _registry_methods_data()
 
 
+def _find_method_definition(method: str) -> Optional[Dict[str, Any]]:
+    return _registry_find_method_definition(method, get_forecast_methods_data())
+
+
 def get_method_category(method: str) -> str:
     """Get the category of a forecast method."""
     method_data = get_forecast_methods_data()
+    method_def = _registry_find_method_definition(method, method_data)
+    if isinstance(method_def, dict):
+        category = method_def.get("category")
+        if isinstance(category, str) and category.strip():
+            return category
     categories = method_data.get("categories") or {}
     for cat, methods in categories.items():
         if method in methods:
@@ -31,40 +43,35 @@ def get_method_category(method: str) -> str:
 
 def get_method_requirements(method: str) -> List[str]:
     """Get the list of required packages for a method."""
-    method_data = get_forecast_methods_data()
-    for m in method_data["methods"]:
-        if m["method"] == method:
-            return m["requires"]
+    method_def = _find_method_definition(method)
+    if isinstance(method_def, dict):
+        requires = method_def.get("requires")
+        if isinstance(requires, list):
+            return requires
     return []
 
 
 def get_method_supports(method: str) -> Dict[str, bool]:
     """Get the supported data types and features for a method."""
-    method_data = get_forecast_methods_data()
-    for m in method_data["methods"]:
-        if m["method"] == method:
-            return m["supports"]
-    return {"price": False, "return": False, "volatility": False, "ci": False}
+    method_def = _find_method_definition(method)
+    if isinstance(method_def, dict):
+        supports = method_def.get("supports")
+        if isinstance(supports, dict):
+            return supports
+    return {key: False for key in _DEFAULT_METHOD_SUPPORTS}
 
 
 def validate_method_params(method: str, params: Dict[str, Any]) -> List[str]:
     """Validate method parameters and return list of errors."""
     errors = []
 
-    # Get method definition
-    method_data = get_forecast_methods_data()
-    method_def = None
-    for m in method_data["methods"]:
-        if m["method"] == method:
-            method_def = m
-            break
-
+    method_def = _find_method_definition(method)
     if not method_def:
         errors.append(f"Unknown method: {method}")
         return errors
 
     # Check parameter types
-    for param_def in method_def["params"]:
+    for param_def in method_def.get("params", []):
         param_name = param_def["name"]
         param_type = param_def["type"]
 

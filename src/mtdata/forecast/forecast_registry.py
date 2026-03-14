@@ -11,6 +11,13 @@ import importlib.util as _importlib_util
 
 from .registry import ForecastRegistry
 
+DEFAULT_METHOD_SUPPORTS: Dict[str, bool] = {
+    "price": True,
+    "return": True,
+    "volatility": False,
+    "ci": False,
+}
+
 # Import availability checkers
 try:
     _SM_ETS_AVAILABLE = _importlib_util.find_spec("statsmodels.tsa.holtwinters") is not None
@@ -42,6 +49,20 @@ except Exception:
     _SKTIME_AVAILABLE = False
 
 
+def _find_method_definition(
+    method: str,
+    method_data: Dict[str, Any] | None = None,
+) -> Dict[str, Any] | None:
+    data = method_data if isinstance(method_data, dict) else get_forecast_methods_data()
+    methods = data.get("methods") if isinstance(data, dict) else None
+    if not isinstance(methods, list):
+        return None
+    for method_def in methods:
+        if isinstance(method_def, dict) and method_def.get("method") == method:
+            return method_def
+    return None
+
+
 def get_forecast_methods_data() -> Dict[str, Any]:
     """Return metadata about available forecast methods and their requirements.
 
@@ -62,16 +83,18 @@ def get_forecast_methods_data() -> Dict[str, Any]:
                 categories.setdefault("ensemble", []).append(method)
             continue
 
-        supports = inst.supports_features or {"price": True, "return": True, "volatility": False, "ci": False}
+        supports = inst.supports_features or dict(DEFAULT_METHOD_SUPPORTS)
         requires = list(getattr(inst, "required_packages", []) or [])
         params = getattr(inst, "PARAMS", None)
         if not isinstance(params, list):
             params = []
         desc = _extract_description(cls, method)
         available, reqs = _check_requirements(method, requires)
+        cat = str(getattr(inst, "category", "unknown") or "unknown").lower()
 
         entry = {
             "method": method,
+            "category": cat,
             "available": bool(available),
             "requires": sorted(set(reqs)),
             "description": desc,
@@ -80,7 +103,6 @@ def get_forecast_methods_data() -> Dict[str, Any]:
         }
         methods.append(entry)
 
-        cat = str(getattr(inst, "category", "unknown") or "unknown").lower()
         categories.setdefault(cat, []).append(method)
 
     return {
@@ -202,6 +224,7 @@ def _ensure_registry_loaded() -> None:
 def _ensemble_metadata() -> Dict[str, Any]:
     return {
         "method": "ensemble",
+        "category": "ensemble",
         "available": True,
         "requires": [],
         "description": "Adaptive ensemble with averaging, Bayesian model averaging, or stacking.",
