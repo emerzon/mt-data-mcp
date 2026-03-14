@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ..utils.utils import _format_time_minimal, to_float_np as __to_float_np
+from ..utils.utils import _format_time_minimal, _safe_float, to_float_np as __to_float_np
 
 _STOCK_PATTERN_CODE_TO_NAME = {
     "TRNG": "Triangle",
@@ -38,13 +38,6 @@ def _round_value(x: Any) -> Any:
         return float(np.round(float(x), 8))
     except Exception:
         return x
-
-
-def _safe_float(value: Any) -> Optional[float]:
-    try:
-        return float(value)
-    except Exception:
-        return None
 
 
 def _pattern_label(row: Dict[str, Any]) -> Optional[str]:

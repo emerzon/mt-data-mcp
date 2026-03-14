@@ -52,6 +52,12 @@ def _coerce_finite_float(value: Any) -> Optional[float]:
     return float(out)
 
 
+def _safe_float(value: Any, default: Optional[float] = None) -> Optional[float]:
+    """Best-effort finite float coercion with an optional fallback."""
+    out = _coerce_finite_float(value)
+    return default if out is None else out
+
+
 def _normalize_ohlcv_arg(ohlcv: Optional[str]) -> Optional[Set[str]]:
     """Normalize user-provided OHLCV selection into a set of letters.
 

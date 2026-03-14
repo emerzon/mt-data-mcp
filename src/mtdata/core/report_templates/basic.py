@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional, List
 from math import isfinite
 from ..schema import DenoiseSpec
 from ..report_utils import now_utc_iso, parse_table_tail, pick_best_forecast_method, summarize_barrier_grid, attach_multi_timeframes
+from ...utils.utils import _safe_float
 
 
 _TREND_COMPACT_LEGEND: Dict[str, str] = {
@@ -23,7 +24,7 @@ _TREND_REGIME_LABELS = {
 }
 
 
-def _get_raw_result(func, *args, **kwargs):
+def _get_raw_result(func: Any, *args: Any, **kwargs: Any) -> Dict[str, Any]:
     """Call function and return raw dict, handling both wrapped and unwrapped cases."""
     try:
         if '__cli_raw' not in kwargs:
@@ -194,16 +195,6 @@ def _parse_table_data(table_lines: List[str]) -> Any:
 def _unwrap_mcp_function(func):
     """Legacy function - now just returns the original function."""
     return func
-
-
-# --- Compact trend metrics -------------------------------------------------
-
-def _safe_float(x: Any, default: Optional[float] = None) -> Optional[float]:
-    try:
-        v = float(x)
-        return v if isfinite(v) else default
-    except Exception:
-        return default
 
 
 def _ema(values: List[float], length: int) -> List[float]:

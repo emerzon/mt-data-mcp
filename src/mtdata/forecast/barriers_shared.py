@@ -5,7 +5,7 @@ import numpy as np
 from ..shared.schema import TimeframeLiteral, DenoiseSpec
 from ..shared.constants import TIMEFRAME_SECONDS
 from .common import fetch_history as _fetch_history, log_returns_from_prices as _log_returns_from_prices
-from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
+from ..utils.utils import _safe_float, parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import (
     get_pip_size as _get_pip_size,
     resolve_barrier_prices as _resolve_barrier_prices,
@@ -84,16 +84,6 @@ def _least_negative_ref(best_row: Optional[Dict[str, Any]]) -> Optional[Dict[str
         "phantom_profit_risk": best_row.get("phantom_profit_risk"),
         "reason": "No viable candidate was found; see `best` for full details.",
     }
-
-
-def _safe_float(value: Any) -> Optional[float]:
-    try:
-        out = float(value)
-    except Exception:
-        return None
-    if not np.isfinite(out):
-        return None
-    return float(out)
 
 
 def _scale_price_paths_to_reference(

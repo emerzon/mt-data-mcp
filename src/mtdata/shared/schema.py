@@ -15,10 +15,6 @@ except Exception:  # pragma: no cover - Python 3.14+ should provide this
     annotationlib = None
 
 from .constants import TIMEFRAME_MAP
-try:
-    from ..forecast.registry import ForecastRegistry
-except Exception:
-    ForecastRegistry = None
 
 
 PARAM_HINTS = {

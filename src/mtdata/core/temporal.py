@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, List, Literal, Tuple
 import logging
-import math
 import time
 
 import numpy as np
@@ -27,6 +26,7 @@ from ..utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
     _resolve_client_tz,
+    _safe_float,
 )
 
 logger = logging.getLogger(__name__)
@@ -181,14 +181,6 @@ def _parse_time_range(value: Optional[str]) -> Tuple[Optional[int], Optional[int
 
 def _time_label(minutes: int) -> str:
     return f"{minutes // 60:02d}:{minutes % 60:02d}"
-
-
-def _safe_float(value: Any) -> Optional[float]:
-    try:
-        v = float(value)
-        return v if math.isfinite(v) else None
-    except Exception:
-        return None
 
 
 def _stats_for_group(df: pd.DataFrame, volume_col: Optional[str]) -> Dict[str, Any]:

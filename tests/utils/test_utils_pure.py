@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from mtdata.utils.utils import (
+    _safe_float,
     _coerce_scalar,
     _normalize_ohlcv_arg,
     _normalize_limit,
@@ -18,6 +19,18 @@ from mtdata.utils.utils import (
     align_finite,
     _utc_epoch_seconds,
 )
+
+
+class TestSafeFloat:
+    def test_returns_finite_float(self):
+        assert _safe_float("2.5") == 2.5
+
+    def test_rejects_non_finite_values(self):
+        assert _safe_float(float("nan")) is None
+        assert _safe_float(float("inf")) is None
+
+    def test_uses_default_when_conversion_fails(self):
+        assert _safe_float("abc", default=1.25) == 1.25
 
 
 class TestCoerceScalar:
