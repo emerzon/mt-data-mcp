@@ -46,6 +46,28 @@ def _compute_screener_fetch_limit(limit: int, page: int, max_rows: int) -> int:
     return max(1, min(max_rows, needed))
 
 
+def _paginate_finviz_records(
+    items: Any,
+    *,
+    limit: int,
+    page: int,
+) -> tuple[List[Any], int, int, int, int]:
+    safe_limit, safe_page = _sanitize_pagination(limit, page)
+    total = len(items) if items is not None else 0
+    start_idx = (safe_page - 1) * safe_limit
+    end_idx = start_idx + safe_limit
+
+    if hasattr(items, "iloc"):
+        rows = items.iloc[start_idx:end_idx].to_dict(orient="records")
+    elif isinstance(items, list):
+        rows = items[start_idx:end_idx]
+    else:
+        rows = []
+
+    pages = 0 if total <= 0 else (total + safe_limit - 1) // safe_limit
+    return rows, total, safe_limit, safe_page, pages
+
+
 def _normalize_finviz_date_string(value: Any) -> Any:
     """Normalize Finviz short dates like `Nov 07 '25` to ISO 8601."""
     if not isinstance(value, str):
@@ -274,23 +296,22 @@ def get_stock_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any
     Returns list of news items with title, link, date, source.
     """
     try:
-        safe_limit, safe_page = _sanitize_pagination(limit, page)
         symbol_norm, stock = _get_finviz_stock_quote(symbol)
         news_df = stock.ticker_news()
         if news_df is None or news_df.empty:
             return {"error": f"No news found for {symbol}"}
-        # Apply pagination
-        total = len(news_df)
-        start_idx = (safe_page - 1) * safe_limit
-        end_idx = start_idx + safe_limit
-        news_list = news_df.iloc[start_idx:end_idx].to_dict(orient="records")
+        news_list, total, safe_limit, safe_page, pages = _paginate_finviz_records(
+            news_df,
+            limit=limit,
+            page=page,
+        )
         return {
             "success": True,
             "symbol": symbol_norm,
             "count": len(news_list),
             "total": total,
             "page": safe_page,
-            "pages": (total + safe_limit - 1) // safe_limit,
+            "pages": pages,
             "news": news_list,
         }
     except Exception as e:
@@ -313,16 +334,15 @@ def get_stock_insider_trades(symbol: str, limit: int = 20, page: int = 1) -> Dic
     Returns list of insider trades with owner, relationship, date, transaction, cost, shares, value.
     """
     try:
-        safe_limit, safe_page = _sanitize_pagination(limit, page)
         symbol_norm, stock = _get_finviz_stock_quote(symbol)
         insider_df = stock.ticker_inside_trader()
         if insider_df is None or insider_df.empty:
             return {"error": f"No insider trades found for {symbol}"}
-        # Apply pagination
-        total = len(insider_df)
-        start_idx = (safe_page - 1) * safe_limit
-        end_idx = start_idx + safe_limit
-        trades_list = insider_df.iloc[start_idx:end_idx].to_dict(orient="records")
+        trades_list, total, safe_limit, safe_page, pages = _paginate_finviz_records(
+            insider_df,
+            limit=limit,
+            page=page,
+        )
         trades_list = _normalize_finviz_dates_in_rows(trades_list, "Date")
         return {
             "success": True,
@@ -330,7 +350,7 @@ def get_stock_insider_trades(symbol: str, limit: int = 20, page: int = 1) -> Dic
             "count": len(trades_list),
             "total": total,
             "page": safe_page,
-            "pages": (total + safe_limit - 1) // safe_limit,
+            "pages": pages,
             "insider_trades": trades_list,
         }
     except Exception as e:
@@ -422,7 +442,6 @@ def screen_stocks(
         Screener results with stock list
     """
     try:
-        safe_limit, safe_page = _sanitize_pagination(limit, page)
         _apply_finvizfinance_timeout_patch()
         view_lower = view.lower().strip()
         screener = _build_finviz_screener(view_lower)
@@ -434,8 +453,13 @@ def screen_stocks(
         df, fetch_limit = _run_screener_view(
             screener,
             order=order_name,
-            limit=safe_limit,
-            page=safe_page,
+            limit=limit,
+            page=page,
+        )
+        _rows, _total, safe_limit, safe_page, _pages = _paginate_finviz_records(
+            df,
+            limit=limit,
+            page=page,
         )
         if df is None or df.empty:
             return {
@@ -447,12 +471,12 @@ def screen_stocks(
                 "stocks": [],
                 "message": "No stocks matched the filter criteria",
             }
-        
-        # Apply pagination
-        total = len(df)
-        start_idx = (safe_page - 1) * safe_limit
-        end_idx = start_idx + safe_limit
-        stocks_list = df.iloc[start_idx:end_idx].to_dict(orient="records")
+
+        stocks_list, total, safe_limit, safe_page, pages = _paginate_finviz_records(
+            df,
+            limit=limit,
+            page=page,
+        )
         truncated = bool(total >= fetch_limit and fetch_limit >= _FINVIZ_SCREENER_MAX_ROWS)
         return {
             "success": True,
@@ -461,7 +485,7 @@ def screen_stocks(
             "count": len(stocks_list),
             "total": total,
             "page": safe_page,
-            "pages": (total + safe_limit - 1) // safe_limit,
+            "pages": pages,
             "truncated": truncated,
             "stocks": stocks_list,
         }
@@ -484,7 +508,6 @@ def get_general_news(news_type: str = "news", limit: int = 20, page: int = 1) ->
         Page number (default 1)
     """
     try:
-        safe_limit, safe_page = _sanitize_pagination(limit, page)
         _apply_finvizfinance_timeout_patch()
         from finvizfinance.news import News
 
@@ -503,18 +526,11 @@ def get_general_news(news_type: str = "news", limit: int = 20, page: int = 1) ->
             total = len(items)
         elif not items:
             return {"error": f"No {news_type} found"}
-        else:
-            total = len(items)
-
-        # Apply pagination
-        start_idx = (safe_page - 1) * safe_limit
-        end_idx = start_idx + safe_limit
-
-        # items is typically a DataFrame
-        if hasattr(items, "iloc"):
-            items_list = items.iloc[start_idx:end_idx].to_dict(orient="records")
-        else:
-            items_list = items[start_idx:end_idx] if isinstance(items, list) else []
+        items_list, total, safe_limit, safe_page, pages = _paginate_finviz_records(
+            items,
+            limit=limit,
+            page=page,
+        )
 
         return {
             "success": True,
@@ -522,7 +538,7 @@ def get_general_news(news_type: str = "news", limit: int = 20, page: int = 1) ->
             "count": len(items_list),
             "total": total,
             "page": safe_page,
-            "pages": (total + safe_limit - 1) // safe_limit,
+            "pages": pages,
             "items": items_list,
         }
     except Exception as e:
@@ -544,7 +560,6 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
         Page number (default 1)
     """
     try:
-        safe_limit, safe_page = _sanitize_pagination(limit, page)
         _apply_finvizfinance_timeout_patch()
         from finvizfinance.insider import Insider
 
@@ -554,11 +569,11 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
         if df is None or df.empty:
             return {"error": f"No insider activity found for option '{option}'"}
 
-        # Apply pagination
-        total = len(df)
-        start_idx = (safe_page - 1) * safe_limit
-        end_idx = start_idx + safe_limit
-        items_list = df.iloc[start_idx:end_idx].to_dict(orient="records")
+        items_list, total, safe_limit, safe_page, pages = _paginate_finviz_records(
+            df,
+            limit=limit,
+            page=page,
+        )
         items_list = _normalize_finviz_dates_in_rows(items_list, "Date")
         return {
             "success": True,
@@ -566,7 +581,7 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
             "count": len(items_list),
             "total": total,
             "page": safe_page,
-            "pages": (total + safe_limit - 1) // safe_limit,
+            "pages": pages,
             "insider_trades": items_list,
         }
     except Exception as e:
@@ -664,7 +679,6 @@ def get_earnings_calendar(
     "This Month".
     """
     try:
-        safe_limit, safe_page = _sanitize_pagination(limit, page)
         _apply_finvizfinance_timeout_patch()
         from finvizfinance.earnings import Earnings
 
@@ -688,18 +702,18 @@ def get_earnings_calendar(
         if df is None or df.empty:
             return {"error": "No earnings calendar data available"}
 
-        # Apply pagination
-        total = len(df)
-        start_idx = (safe_page - 1) * safe_limit
-        end_idx = start_idx + safe_limit
-        items_list = df.iloc[start_idx:end_idx].to_dict(orient="records")
+        items_list, total, safe_limit, safe_page, pages = _paginate_finviz_records(
+            df,
+            limit=limit,
+            page=page,
+        )
         return {
             "success": True,
             "period": period,
             "count": len(items_list),
             "total": total,
             "page": safe_page,
-            "pages": (total + safe_limit - 1) // safe_limit,
+            "pages": pages,
             "truncated": False,
             "earnings": items_list,
         }

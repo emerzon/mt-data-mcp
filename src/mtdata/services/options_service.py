@@ -12,19 +12,24 @@ _YAHOO_OPTIONS_URL = "https://query2.finance.yahoo.com/v7/finance/options/{symbo
 _HTTP_TIMEOUT = 15.0
 
 
-def _to_int(value: Any, default: int = 0) -> int:
+def _to_numeric(value: Any, numeric_type: type, default: Any) -> Any:
     try:
-        return int(value)
+        return numeric_type(value)
     except Exception:
-        return int(default)
+        return numeric_type(default)
 
 
-def _to_float(value: Any, default: float = float("nan")) -> float:
-    try:
-        out = float(value)
-        return out
-    except Exception:
-        return float(default)
+def _extract_expiration_epochs(payload: Dict[str, Any]) -> List[int]:
+    expiration_epochs = payload.get("expirationDates", [])
+    if not isinstance(expiration_epochs, list):
+        expiration_epochs = []
+    return sorted(
+        {
+            _to_numeric(value, int, 0)
+            for value in expiration_epochs
+            if isinstance(value, (int, float))
+        }
+    )
 
 
 def _epoch_to_ymd(epoch: int) -> str:
@@ -61,17 +66,13 @@ def get_options_expirations(symbol: str) -> Dict[str, Any]:
     """Return available option expirations for a symbol."""
     try:
         payload = _fetch_yahoo_options_payload(symbol)
-        expiration_epochs = payload.get("expirationDates", [])
-        if not isinstance(expiration_epochs, list):
-            expiration_epochs = []
-        expiration_epochs = [int(v) for v in expiration_epochs if isinstance(v, (int, float))]
-        expiration_epochs = sorted(set(expiration_epochs))
+        expiration_epochs = _extract_expiration_epochs(payload)
         expirations = [_epoch_to_ymd(v) for v in expiration_epochs]
         quote = payload.get("quote", {}) if isinstance(payload.get("quote"), dict) else {}
         return {
             "success": True,
             "symbol": str(symbol).upper().strip(),
-            "underlying_price": _to_float(quote.get("regularMarketPrice")),
+            "underlying_price": _to_numeric(quote.get("regularMarketPrice"), float, float("nan")),
             "currency": quote.get("currency"),
             "expirations": expirations,
             "expiration_count": int(len(expirations)),
@@ -96,11 +97,7 @@ def get_options_chain(
             return {"error": f"Invalid option_type: {option_type}. Use call|put|both."}
 
         base = _fetch_yahoo_options_payload(symbol_norm)
-        expiration_epochs = base.get("expirationDates", [])
-        if not isinstance(expiration_epochs, list):
-            expiration_epochs = []
-        expiration_epochs = [int(v) for v in expiration_epochs if isinstance(v, (int, float))]
-        expiration_epochs = sorted(set(expiration_epochs))
+        expiration_epochs = _extract_expiration_epochs(base)
         if not expiration_epochs:
             return {"error": f"No option expirations found for {symbol_norm}"}
 
@@ -130,36 +127,36 @@ def get_options_chain(
         calls_raw = calls_raw if isinstance(calls_raw, list) else []
         puts_raw = puts_raw if isinstance(puts_raw, list) else []
 
-        min_oi = max(0, _to_int(min_open_interest, 0))
-        min_vol = max(0, _to_int(min_volume, 0))
-        max_rows = max(1, _to_int(limit, 200))
+        min_oi = max(0, _to_numeric(min_open_interest, int, 0))
+        min_vol = max(0, _to_numeric(min_volume, int, 0))
+        max_rows = max(1, _to_numeric(limit, int, 200))
 
         def _norm(rows: List[Dict[str, Any]], side: str) -> List[Dict[str, Any]]:
             out: List[Dict[str, Any]] = []
             for row in rows:
                 if not isinstance(row, dict):
                     continue
-                oi = max(0, _to_int(row.get("openInterest"), 0))
-                vol = max(0, _to_int(row.get("volume"), 0))
+                oi = max(0, _to_numeric(row.get("openInterest"), int, 0))
+                vol = max(0, _to_numeric(row.get("volume"), int, 0))
                 if oi < min_oi or vol < min_vol:
                     continue
-                strike = _to_float(row.get("strike"))
+                strike = _to_numeric(row.get("strike"), float, float("nan"))
                 if not (strike == strike and strike > 0):
                     continue
                 entry: Dict[str, Any] = {
                     "side": side,
                     "contract": row.get("contractSymbol"),
                     "strike": float(strike),
-                    "last": _to_float(row.get("lastPrice")),
-                    "bid": _to_float(row.get("bid")),
-                    "ask": _to_float(row.get("ask")),
-                    "change": _to_float(row.get("change")),
-                    "percent_change": _to_float(row.get("percentChange")),
+                    "last": _to_numeric(row.get("lastPrice"), float, float("nan")),
+                    "bid": _to_numeric(row.get("bid"), float, float("nan")),
+                    "ask": _to_numeric(row.get("ask"), float, float("nan")),
+                    "change": _to_numeric(row.get("change"), float, float("nan")),
+                    "percent_change": _to_numeric(row.get("percentChange"), float, float("nan")),
                     "volume": int(vol),
                     "open_interest": int(oi),
-                    "implied_volatility": _to_float(row.get("impliedVolatility")),
+                    "implied_volatility": _to_numeric(row.get("impliedVolatility"), float, float("nan")),
                     "in_the_money": bool(row.get("inTheMoney", False)),
-                    "last_trade_epoch": _to_int(row.get("lastTradeDate"), 0),
+                    "last_trade_epoch": _to_numeric(row.get("lastTradeDate"), int, 0),
                     "currency": row.get("currency"),
                 }
                 out.append(entry)
@@ -174,7 +171,7 @@ def get_options_chain(
             "success": True,
             "symbol": symbol_norm,
             "expiration": chosen_expiry_ymd,
-            "underlying_price": _to_float(quote.get("regularMarketPrice")),
+            "underlying_price": _to_numeric(quote.get("regularMarketPrice"), float, float("nan")),
             "currency": quote.get("currency"),
             "contract_size": quote.get("contractSize"),
             "expirations": sorted(list(available_map.keys())),
@@ -188,4 +185,3 @@ def get_options_chain(
         }
     except Exception as e:
         return {"error": f"Failed to fetch options chain: {e}"}
-
