@@ -1,94 +1,26 @@
-from typing import Any, Dict, Optional, Literal
+from typing import Any, Dict, Literal, Optional
 
-from ..shared.schema import TimeframeLiteral, DenoiseSpec
-from .common import fetch_history as _fetch_history, log_returns_from_prices as _log_returns_from_prices
-from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
-from ..utils.barriers import (
-    get_pip_size as _get_pip_size,
-    resolve_barrier_prices as _resolve_barrier_prices,
-    normalize_trade_direction,
-    barrier_prices_are_valid as _barrier_prices_are_valid,
-)
-from .monte_carlo import (
-    simulate_gbm_mc as _simulate_gbm_mc,
-    simulate_hmm_mc as _simulate_hmm_mc,
-    simulate_garch_mc as _simulate_garch_mc,
-    simulate_bootstrap_mc as _simulate_bootstrap_mc,
-    simulate_heston_mc as _simulate_heston_mc,
-    simulate_jump_diffusion_mc as _simulate_jump_diffusion_mc,
-    gbm_single_barrier_upcross_prob as _gbm_upcross_prob,
-)
-from . import barriers_probabilities as _barriers_probabilities
+from ..shared.schema import DenoiseSpec, TimeframeLiteral
+from ..utils.barriers import normalize_trade_direction as _normalize_trade_direction
 from . import barriers_optimization as _barriers_optimization
-from . import barriers_shared as _barriers_shared
+from . import barriers_probabilities as _barriers_probabilities
 from .barriers_shared import (
     BARRIER_GRID_PRESETS,
     DEGENERATE_OBJECTIVE_MIN_RESOLVE,
     PHANTOM_PROFIT_LOSS_THRESHOLD,
     PHANTOM_PROFIT_NO_HIT_THRESHOLD,
-    _annotate_candidate_metrics,
     _auto_barrier_method,
-    _binomial_se,
-    _binomial_wilson_95,
     _brownian_bridge_hits,
-    _build_selection_diagnostics,
-    _candidate_is_viable,
-    _candidate_status_reason,
-    _get_live_reference_price,
     _is_crypto_symbol,
-    _least_negative_ref,
-    _safe_float,
-    _scale_price_paths_to_reference,
-    _sort_candidate_results,
 )
-
-
-def _sync_barrier_dependencies() -> None:
-    sync_map = {
-        "_fetch_history": _fetch_history,
-        "_log_returns_from_prices": _log_returns_from_prices,
-        "_parse_kv_or_json": _parse_kv_or_json,
-        "_get_pip_size": _get_pip_size,
-        "_resolve_barrier_prices": _resolve_barrier_prices,
-        "_normalize_trade_direction": normalize_trade_direction,
-        "_barrier_prices_are_valid": _barrier_prices_are_valid,
-        "_simulate_gbm_mc": _simulate_gbm_mc,
-        "_simulate_hmm_mc": _simulate_hmm_mc,
-        "_simulate_garch_mc": _simulate_garch_mc,
-        "_simulate_bootstrap_mc": _simulate_bootstrap_mc,
-        "_simulate_heston_mc": _simulate_heston_mc,
-        "_simulate_jump_diffusion_mc": _simulate_jump_diffusion_mc,
-        "_gbm_upcross_prob": _gbm_upcross_prob,
-        "_auto_barrier_method": _auto_barrier_method,
-        "_binomial_se": _binomial_se,
-        "_binomial_wilson_95": _binomial_wilson_95,
-        "_brownian_bridge_hits": _brownian_bridge_hits,
-        "_build_selection_diagnostics": _build_selection_diagnostics,
-        "_candidate_is_viable": _candidate_is_viable,
-        "_candidate_status_reason": _candidate_status_reason,
-        "_get_live_reference_price": _get_live_reference_price,
-        "_is_crypto_symbol": _is_crypto_symbol,
-        "_least_negative_ref": _least_negative_ref,
-        "_safe_float": _safe_float,
-        "_scale_price_paths_to_reference": _scale_price_paths_to_reference,
-        "_sort_candidate_results": _sort_candidate_results,
-        "_annotate_candidate_metrics": _annotate_candidate_metrics,
-        "BARRIER_GRID_PRESETS": BARRIER_GRID_PRESETS,
-        "DEGENERATE_OBJECTIVE_MIN_RESOLVE": DEGENERATE_OBJECTIVE_MIN_RESOLVE,
-        "PHANTOM_PROFIT_NO_HIT_THRESHOLD": PHANTOM_PROFIT_NO_HIT_THRESHOLD,
-        "PHANTOM_PROFIT_LOSS_THRESHOLD": PHANTOM_PROFIT_LOSS_THRESHOLD,
-    }
-    for module in (_barriers_shared, _barriers_probabilities, _barriers_optimization):
-        for name, value in sync_map.items():
-            setattr(module, name, value)
 
 
 def forecast_barrier_hit_probabilities(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
-    method: Literal['mc_gbm', 'mc_gbm_bb', 'hmm_mc', 'garch', 'bootstrap', 'heston', 'jump_diffusion', 'auto'] = 'hmm_mc',
-    direction: Literal['long', 'short'] = 'long',
+    method: Literal["mc_gbm", "mc_gbm_bb", "hmm_mc", "garch", "bootstrap", "heston", "jump_diffusion", "auto"] = "hmm_mc",
+    direction: Literal["long", "short"] = "long",
     tp_abs: Optional[float] = None,
     sl_abs: Optional[float] = None,
     tp_pct: Optional[float] = None,
@@ -98,7 +30,6 @@ def forecast_barrier_hit_probabilities(
     params: Optional[Dict[str, Any]] = None,
     denoise: Optional[DenoiseSpec] = None,
 ) -> Dict[str, Any]:
-    _sync_barrier_dependencies()
     return _barriers_probabilities.forecast_barrier_hit_probabilities(
         symbol=symbol,
         timeframe=timeframe,
@@ -120,13 +51,12 @@ def forecast_barrier_closed_form(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
-    direction: Literal['long', 'short'] = 'long',
+    direction: Literal["long", "short"] = "long",
     barrier: float = 0.0,
     mu: Optional[float] = None,
     sigma: Optional[float] = None,
     denoise: Optional[DenoiseSpec] = None,
 ) -> Dict[str, Any]:
-    _sync_barrier_dependencies()
     return _barriers_probabilities.forecast_barrier_closed_form(
         symbol=symbol,
         timeframe=timeframe,
@@ -143,9 +73,9 @@ def forecast_barrier_optimize(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
-    method: Literal['mc_gbm', 'mc_gbm_bb', 'hmm_mc', 'garch', 'bootstrap', 'heston', 'jump_diffusion', 'auto'] = 'hmm_mc',
-    direction: Literal['long', 'short'] = 'long',
-    mode: Literal['pct', 'pips'] = 'pct',
+    method: Literal["mc_gbm", "mc_gbm_bb", "hmm_mc", "garch", "bootstrap", "heston", "jump_diffusion", "auto"] = "hmm_mc",
+    direction: Literal["long", "short"] = "long",
+    mode: Literal["pct", "pips"] = "pct",
     tp_min: float = 0.25,
     tp_max: float = 1.5,
     tp_steps: int = 7,
@@ -154,13 +84,25 @@ def forecast_barrier_optimize(
     sl_steps: int = 9,
     params: Optional[Dict[str, Any]] = None,
     denoise: Optional[DenoiseSpec] = None,
-    objective: Literal['edge', 'prob_tp_first', 'prob_resolve', 'kelly', 'kelly_cond', 'ev', 'ev_cond', 'ev_per_bar', 'profit_factor', 'min_loss_prob', 'utility'] = 'ev',
+    objective: Literal[
+        "edge",
+        "prob_tp_first",
+        "prob_resolve",
+        "kelly",
+        "kelly_cond",
+        "ev",
+        "ev_cond",
+        "ev_per_bar",
+        "profit_factor",
+        "min_loss_prob",
+        "utility",
+    ] = "ev",
     return_grid: bool = True,
     top_k: Optional[int] = None,
-    output: Literal['full', 'summary'] = 'full',
+    output: Literal["full", "summary"] = "full",
     viable_only: bool = False,
     concise: bool = False,
-    grid_style: Literal['fixed', 'volatility', 'ratio', 'preset'] = 'fixed',
+    grid_style: Literal["fixed", "volatility", "ratio", "preset"] = "fixed",
     preset: Optional[str] = None,
     vol_window: int = 250,
     vol_min_mult: float = 0.5,
@@ -179,7 +121,7 @@ def forecast_barrier_optimize(
     max_prob_no_hit: Optional[float] = None,
     max_median_time: Optional[float] = None,
     fast_defaults: bool = False,
-    search_profile: Literal['fast', 'medium', 'long'] = 'medium',
+    search_profile: Literal["fast", "medium", "long"] = "medium",
     statistical_robustness: bool = False,
     target_ci_width: float = 0.05,
     n_seeds_stability: int = 3,
@@ -193,7 +135,6 @@ def forecast_barrier_optimize(
     enable_sensitivity_analysis: bool = False,
     sensitivity_params: Optional[list] = None,
 ) -> Dict[str, Any]:
-    _sync_barrier_dependencies()
     return _barriers_optimization.forecast_barrier_optimize(
         symbol=symbol,
         timeframe=timeframe,
@@ -248,3 +189,18 @@ def forecast_barrier_optimize(
         enable_sensitivity_analysis=enable_sensitivity_analysis,
         sensitivity_params=sensitivity_params,
     )
+
+
+__all__ = [
+    "BARRIER_GRID_PRESETS",
+    "DEGENERATE_OBJECTIVE_MIN_RESOLVE",
+    "PHANTOM_PROFIT_LOSS_THRESHOLD",
+    "PHANTOM_PROFIT_NO_HIT_THRESHOLD",
+    "_auto_barrier_method",
+    "_brownian_bridge_hits",
+    "_is_crypto_symbol",
+    "_normalize_trade_direction",
+    "forecast_barrier_closed_form",
+    "forecast_barrier_hit_probabilities",
+    "forecast_barrier_optimize",
+]

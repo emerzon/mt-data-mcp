@@ -8,6 +8,7 @@ import unittest
 import numpy as np
 import sys
 import os
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
@@ -23,6 +24,25 @@ from mtdata.forecast.barrier_stats import (
     statistical_power_analysis,
     ensemble_ci_from_multiple_methods,
 )
+
+_BARRIER_OPT_ROOT = "mtdata.forecast.barriers_optimization"
+
+
+class _BarrierOptimizationPatchMixin:
+    def _start_barrier_optimization_patchers(self) -> None:
+        self._barrier_patchers = [
+            patch(f"{_BARRIER_OPT_ROOT}._get_pip_size", return_value=0.0001),
+            patch(f"{_BARRIER_OPT_ROOT}._fetch_history"),
+        ]
+        self._barrier_patchers[0].start()
+        self.mock_fetch_history = self._barrier_patchers[1].start()
+
+    def _set_barrier_history(self, df):
+        self.mock_fetch_history.return_value = df
+
+    def _stop_barrier_optimization_patchers(self) -> None:
+        for patcher in reversed(getattr(self, "_barrier_patchers", [])):
+            patcher.stop()
 
 
 class TestBarrierStats(unittest.TestCase):
@@ -281,27 +301,21 @@ class TestBarrierStats(unittest.TestCase):
         self.assertGreater(result['ci_high'], result['mean'])
 
 
-class TestBarrierOptimizationWithStats(unittest.TestCase):
+class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.TestCase):
     """Test barrier optimization with statistical robustness features."""
     
     def setUp(self):
-        from unittest.mock import patch
         import pandas as pd
         
-        self.pip_size_patcher = patch('mtdata.forecast.barriers._get_pip_size', return_value=0.0001)
-        self.pip_size_patcher.start()
-        
-        self.fetch_history_patcher = patch('mtdata.forecast.barriers._fetch_history')
-        self.mock_fetch_history = self.fetch_history_patcher.start()
+        self._start_barrier_optimization_patchers()
         
         dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
         prices = np.linspace(1.0, 1.1, 500) + np.random.normal(0, 0.001, 500)
         self.df = pd.DataFrame({'time': dates, 'close': prices})
-        self.mock_fetch_history.return_value = self.df
+        self._set_barrier_history(self.df)
     
     def tearDown(self):
-        self.pip_size_patcher.stop()
-        self.fetch_history_patcher.stop()
+        self._stop_barrier_optimization_patchers()
     
     def test_barrier_optimize_with_statistical_robustness(self):
         """Test barrier optimization with statistical robustness enabled."""
@@ -407,7 +421,7 @@ class TestBarrierOptimizationWithStats(unittest.TestCase):
             )
             return {'price_paths': paths[:n_sims]}
 
-        with patch('mtdata.forecast.barriers._simulate_gbm_mc', side_effect=fake_sim):
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc', side_effect=fake_sim):
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
                 timeframe="H1",
@@ -461,7 +475,7 @@ class TestBarrierOptimizationWithStats(unittest.TestCase):
                 'window_size': int(window_size),
             }
 
-        with patch('mtdata.forecast.barriers._simulate_gbm_mc', side_effect=fake_sim):
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc', side_effect=fake_sim):
             with patch('mtdata.forecast.barriers_optimization._mc_convergence', side_effect=fake_convergence):
                 result = forecast_barrier_optimize(
                     symbol="EURUSD",
@@ -501,7 +515,7 @@ class TestBarrierOptimizationWithStats(unittest.TestCase):
             loss_path = np.full((loss_count, horizon), base * 0.99)
             return {'price_paths': np.vstack([win_path, loss_path])[:n_sims]}
 
-        with patch('mtdata.forecast.barriers._simulate_gbm_mc', side_effect=fake_sim):
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc', side_effect=fake_sim):
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
                 timeframe="H1",
