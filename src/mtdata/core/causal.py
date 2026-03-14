@@ -15,13 +15,12 @@ import numpy as np
 from ._mcp_instance import mcp
 from .constants import TIMEFRAME_MAP
 from .execution_logging import run_logged_operation
-from .mt5_gateway import create_mt5_gateway
+from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 from ..utils.mt5 import (
-    MT5ConnectionError,
-    _ensure_symbol_ready,
-    _mt5_copy_rates_from,
     ensure_mt5_connection_or_raise,
     mt5,
+    _ensure_symbol_ready,
+    _mt5_copy_rates_from,
 )
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
 
@@ -29,12 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 def _causal_connection_error() -> Dict[str, Any] | None:
-    mt5_gateway = _get_mt5_gateway()
-    try:
-        mt5_gateway.ensure_connection()
-    except MT5ConnectionError as exc:
-        return {"error": str(exc)}
-    return None
+    return mt5_connection_error(_get_mt5_gateway())
 
 
 def _get_mt5_gateway():

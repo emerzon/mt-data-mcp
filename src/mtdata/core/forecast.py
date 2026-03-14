@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional, List, Literal, Tuple
 import logging
 
-from .mt5_gateway import create_mt5_gateway
+from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 from .schema import TimeframeLiteral, DenoiseSpec, ForecastMethodLiteral
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
@@ -34,7 +34,7 @@ from ..forecast.volatility import forecast_volatility as _forecast_volatility_im
 from ..forecast.forecast import get_forecast_methods_data as _get_forecast_methods_data
 from ..forecast.tune import genetic_search_forecast_params as _genetic_search_impl
 from ..forecast.tune import optuna_search_forecast_params as _optuna_search_impl
-from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
+from ..utils.mt5 import ensure_mt5_connection_or_raise
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import (
     build_barrier_kwargs_from as _build_barrier_kwargs_from,
@@ -49,12 +49,7 @@ def _get_mt5_gateway():
 
 
 def _forecast_connection_error() -> Optional[Dict[str, Any]]:
-    mt5 = _get_mt5_gateway()
-    try:
-        mt5.ensure_connection()
-    except MT5ConnectionError as exc:
-        return {"error": str(exc)}
-    return None
+    return mt5_connection_error(_get_mt5_gateway())
 
 
 def _run_forecast_operation(

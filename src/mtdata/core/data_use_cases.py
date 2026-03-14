@@ -4,12 +4,16 @@ import logging
 import time
 from typing import Any, Dict
 
-from ..utils.mt5 import MT5ConnectionError
+from .mt5_gateway import mt5_connection_error
 from .data_requests import DataFetchCandlesRequest, DataFetchTicksRequest, WaitCandleRequest
 from .execution_logging import run_logged_operation
 from .trading_time import _next_candle_wait_payload, _sleep_until_next_candle
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_gateway_connection(gateway: Any) -> Dict[str, Any] | None:
+    return mt5_connection_error(gateway)
 
 
 def run_data_fetch_candles(
@@ -75,10 +79,9 @@ def _run_data_fetch_candles_impl(
     gateway: Any,
     fetch_candles_impl: Any,
 ) -> Dict[str, Any]:
-    try:
-        gateway.ensure_connection()
-    except MT5ConnectionError as exc:
-        return {"error": str(exc)}
+    connection_error = _ensure_gateway_connection(gateway)
+    if connection_error is not None:
+        return connection_error
     return fetch_candles_impl(
         symbol=request.symbol,
         timeframe=request.timeframe,
@@ -98,10 +101,9 @@ def _run_data_fetch_ticks_impl(
     gateway: Any,
     fetch_ticks_impl: Any,
 ) -> Dict[str, Any]:
-    try:
-        gateway.ensure_connection()
-    except MT5ConnectionError as exc:
-        return {"error": str(exc)}
+    connection_error = _ensure_gateway_connection(gateway)
+    if connection_error is not None:
+        return connection_error
     return fetch_ticks_impl(
         symbol=request.symbol,
         limit=request.limit,

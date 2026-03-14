@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Dict, Optional
 
 from .execution_logging import log_operation_exception, log_operation_finish, log_operation_start
-from ..utils.mt5 import ensure_mt5_connection_or_raise, mt5_adapter
+from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -72,3 +72,14 @@ def create_mt5_gateway(
 
 def get_default_mt5_gateway() -> MT5Gateway:
     return create_mt5_gateway()
+
+
+def mt5_connection_error(
+    gateway: Optional[Any] = None,
+) -> Optional[Dict[str, Any]]:
+    try:
+        mt5_gateway = gateway if gateway is not None else get_default_mt5_gateway()
+        mt5_gateway.ensure_connection()
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
+    return None

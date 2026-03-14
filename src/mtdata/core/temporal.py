@@ -79,7 +79,14 @@ def _normalize_group_by(value: Optional[str]) -> str:
     return v
 
 
-def _parse_weekday(value: Optional[str]) -> Optional[int]:
+def _parse_mapped_value(
+    value: Optional[str],
+    *,
+    minimum: int,
+    maximum: int,
+    mapping: Dict[str, int],
+    numeric_aliases: Optional[Dict[int, int]] = None,
+) -> Optional[int]:
     if value is None:
         return None
     text = str(value).strip().lower()
@@ -87,10 +94,15 @@ def _parse_weekday(value: Optional[str]) -> Optional[int]:
         return None
     if text.isdigit():
         num = int(text)
-        if 0 <= num <= 6:
+        if numeric_aliases and num in numeric_aliases:
+            return numeric_aliases[num]
+        if minimum <= num <= maximum:
             return num
-        if num == 7:
-            return 6
+        return None
+    return mapping.get(text)
+
+
+def _parse_weekday(value: Optional[str]) -> Optional[int]:
     mapping = {
         "mon": 0, "monday": 0,
         "tue": 1, "tues": 1, "tuesday": 1,
@@ -100,21 +112,16 @@ def _parse_weekday(value: Optional[str]) -> Optional[int]:
         "sat": 5, "saturday": 5,
         "sun": 6, "sunday": 6,
     }
-    if text in mapping:
-        return mapping[text]
-    return None
+    return _parse_mapped_value(
+        value,
+        minimum=0,
+        maximum=6,
+        mapping=mapping,
+        numeric_aliases={7: 6},
+    )
 
 
 def _parse_month(value: Optional[str]) -> Optional[int]:
-    if value is None:
-        return None
-    text = str(value).strip().lower()
-    if not text:
-        return None
-    if text.isdigit():
-        num = int(text)
-        if 1 <= num <= 12:
-            return num
     mapping = {
         "jan": 1, "january": 1,
         "feb": 2, "february": 2,
@@ -129,9 +136,12 @@ def _parse_month(value: Optional[str]) -> Optional[int]:
         "nov": 11, "november": 11,
         "dec": 12, "december": 12,
     }
-    if text in mapping:
-        return mapping[text]
-    return None
+    return _parse_mapped_value(
+        value,
+        minimum=1,
+        maximum=12,
+        mapping=mapping,
+    )
 
 
 def _parse_time_token(token: str) -> Optional[int]:

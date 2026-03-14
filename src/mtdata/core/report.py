@@ -3,11 +3,11 @@ import logging
 
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
-from .mt5_gateway import create_mt5_gateway
+from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 from .report_requests import ReportGenerateRequest
 from .report_use_cases import run_report_generate
 from .report_utils import render_enhanced_report, format_number, _get_indicator_value
-from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
+from ..utils.mt5 import ensure_mt5_connection_or_raise
 
 logger = logging.getLogger(__name__)
 
@@ -25,18 +25,12 @@ def _report_error_payload(message: Any) -> Dict[str, Any]:
         text = 'Unknown error.'
     return {"error": text}
 
-
 def _get_mt5_gateway():
     return create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
 
 
 def _report_connection_error() -> Dict[str, Any] | None:
-    mt5 = _get_mt5_gateway()
-    try:
-        mt5.ensure_connection()
-    except MT5ConnectionError as exc:
-        return {"error": str(exc)}
-    return None
+    return mt5_connection_error(_get_mt5_gateway())
 
 
 def _append_diagnostic_warning(report: Dict[str, Any], message: str) -> None:

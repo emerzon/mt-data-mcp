@@ -8,7 +8,7 @@ import warnings
 
 from .constants import TIMEFRAME_MAP
 from .execution_logging import run_logged_operation
-from .mt5_gateway import create_mt5_gateway
+from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 from .patterns_support import (
     _STOCK_PATTERN_UTILS_CACHE,
     _build_stock_pattern_frame,
@@ -53,14 +53,8 @@ ClassicEngineRunner = Callable[
 ]
 _CLASSIC_ENGINE_REGISTRY: Dict[str, ClassicEngineRunner] = {}
 
-
 def _patterns_connection_error() -> Optional[Dict[str, Any]]:
-    mt5_gateway = _get_mt5_gateway()
-    try:
-        mt5_gateway.ensure_connection()
-    except MT5ConnectionError as exc:
-        return {"error": str(exc)}
-    return None
+    return mt5_connection_error(_get_mt5_gateway())
 
 
 def _get_mt5_gateway():
