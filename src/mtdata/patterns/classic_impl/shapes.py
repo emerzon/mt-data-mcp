@@ -1,5 +1,5 @@
 import numpy as np
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
     _fit_line, _fit_line_robust, _fit_lines_and_arrays, 
@@ -7,6 +7,89 @@ from .utils import (
     _is_converging, _find_recent_breakout, _find_forward_level_breakout, 
     _result, _alias, _conf
 )
+
+
+def _fit_line_bounded_shape(
+    c: np.ndarray,
+    peaks: np.ndarray,
+    troughs: np.ndarray,
+    cfg: ClassicDetectorConfig,
+    *,
+    min_points: int,
+) -> Optional[Dict[str, Any]]:
+    n = c.size
+    k = min(8, peaks.size, troughs.size)
+    if k < min_points:
+        return None
+
+    ih = peaks[-k:]
+    il = troughs[-k:]
+    sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(ih, il, c, n, cfg)
+    tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
+    touches = _count_touches(top, bot, ih, il, c, tol_abs)
+    return {
+        "n": n,
+        "k": k,
+        "ih": ih,
+        "il": il,
+        "sh": sh,
+        "bh": bh,
+        "r2h": r2h,
+        "sl": sl,
+        "bl": bl,
+        "r2l": r2l,
+        "top": top,
+        "bot": bot,
+        "tol_abs": tol_abs,
+        "touches": touches,
+    }
+
+
+def _build_line_bounded_pattern_results(
+    name: str,
+    shape: Dict[str, Any],
+    t: np.ndarray,
+    cfg: ClassicDetectorConfig,
+    *,
+    alias_name: Optional[str] = None,
+    alias_scale: float = 0.95,
+) -> List[ClassicPatternResult]:
+    conf = _conf(shape["touches"], min(shape["r2h"], shape["r2l"]), 1.0, cfg)
+    status = "forming"
+    breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
+    bdir, bidx = _find_recent_breakout(
+        shape["c"],
+        upper=shape["top"],
+        lower=shape["bot"],
+        tol_abs=shape["tol_abs"],
+        lookback_bars=breakout_look,
+    )
+
+    if bdir is not None and bidx is not None:
+        status = "completed"
+        conf = min(1.0, conf + 0.08)
+
+    end_index = int(max(int(max(shape["ih"][-1], shape["il"][-1])), int(bidx) if bidx is not None else int(max(shape["ih"][-1], shape["il"][-1]))))
+    base = _result(
+        name,
+        status,
+        conf,
+        int(min(shape["ih"][0], shape["il"][0])),
+        end_index,
+        t,
+        {
+            "top_slope": float(shape["sh"]),
+            "top_intercept": float(shape["bh"]),
+            "bottom_slope": float(shape["sl"]),
+            "bottom_intercept": float(shape["bl"]),
+            "breakout_direction": bdir,
+            "breakout_index": int(bidx) if bidx is not None else None,
+        },
+    )
+    results = [base]
+    if alias_name:
+        results.append(_alias(base, alias_name, alias_scale))
+    return results
 
 def detect_rectangles(
     c: np.ndarray,
@@ -67,53 +150,20 @@ def detect_triangles(
     t: np.ndarray,
     cfg: ClassicDetectorConfig
 ) -> List[ClassicPatternResult]:
-    out: List[ClassicPatternResult] = []
-    n = c.size
-    k = min(8, peaks.size, troughs.size)
-    if k < 4:
-        return out
-        
-    ih = peaks[-k:]; il = troughs[-k:]
-    sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(ih, il, c, n, cfg)
-    
-    converging = _is_converging(top, bot, k, n, cfg)
-    tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
-    touches = _count_touches(top, bot, ih, il, c, tol_abs)
-    
-    if converging and touches >= cfg.min_channel_touches - 1:
-        if abs(sh) <= cfg.max_flat_slope and sl > cfg.max_flat_slope:
-            name = "Ascending Triangle"
-        elif abs(sl) <= cfg.max_flat_slope and sh < -cfg.max_flat_slope:
-            name = "Descending Triangle"
-        else:
-            name = "Symmetrical Triangle"
-            
-        conf = _conf(touches, min(r2h, r2l), 1.0, cfg)
-        status = "forming"
-        breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
-        bdir, bidx = _find_recent_breakout(c, upper=top, lower=bot, tol_abs=tol_abs, lookback_bars=breakout_look)
-        
-        if bdir is not None and bidx is not None:
-            status = "completed"
-            conf = min(1.0, conf + 0.08)
-            
-        out.append(_result(
-            name,
-            status,
-            conf,
-            int(min(ih[0], il[0])),
-            int(max(int(max(ih[-1], il[-1])), int(bidx) if bidx is not None else int(max(ih[-1], il[-1])))),
-            t,
-            {
-                "top_slope": float(sh),
-                "top_intercept": float(bh),
-                "bottom_slope": float(sl),
-                "bottom_intercept": float(bl),
-                "breakout_direction": bdir,
-                "breakout_index": int(bidx) if bidx is not None else None,
-            },
-        ))
-    return out
+    shape = _fit_line_bounded_shape(c, peaks, troughs, cfg, min_points=4)
+    if shape is None or not _is_converging(shape["top"], shape["bot"], shape["k"], shape["n"], cfg):
+        return []
+    if shape["touches"] < cfg.min_channel_touches - 1:
+        return []
+
+    if abs(shape["sh"]) <= cfg.max_flat_slope and shape["sl"] > cfg.max_flat_slope:
+        name = "Ascending Triangle"
+    elif abs(shape["sl"]) <= cfg.max_flat_slope and shape["sh"] < -cfg.max_flat_slope:
+        name = "Descending Triangle"
+    else:
+        name = "Symmetrical Triangle"
+    shape["c"] = c
+    return _build_line_bounded_pattern_results(name, shape, t, cfg)
 
 def detect_wedges(
     c: np.ndarray,
@@ -122,50 +172,16 @@ def detect_wedges(
     t: np.ndarray,
     cfg: ClassicDetectorConfig
 ) -> List[ClassicPatternResult]:
-    out: List[ClassicPatternResult] = []
-    n = c.size
-    k = min(8, peaks.size, troughs.size)
-    if k < 4:
-        return out
-        
-    ih = peaks[-k:]; il = troughs[-k:]
-    sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(ih, il, c, n, cfg)
-    
-    converging = _is_converging(top, bot, k, n, cfg)
-    same_sign = (sh > 0 and sl > 0) or (sh < 0 and sl < 0)
-    tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
-    touches = _count_touches(top, bot, ih, il, c, tol_abs)
-    
-    if converging and same_sign and touches >= cfg.min_channel_touches - 1:
-        name = "Rising Wedge" if sh > 0 and sl > 0 else "Falling Wedge"
-        conf = _conf(touches, min(r2h, r2l), 1.0, cfg)
-        status = "forming"
-        breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
-        bdir, bidx = _find_recent_breakout(c, upper=top, lower=bot, tol_abs=tol_abs, lookback_bars=breakout_look)
-        
-        if bdir is not None and bidx is not None:
-            status = "completed"
-            conf = min(1.0, conf + 0.08)
-            
-        base = _result(
-            name,
-            status,
-            conf,
-            int(min(ih[0], il[0])),
-            int(max(int(max(ih[-1], il[-1])), int(bidx) if bidx is not None else int(max(ih[-1], il[-1])))),
-            t,
-            {
-                "top_slope": float(sh),
-                "bottom_slope": float(sl),
-                "top_intercept": float(bh),
-                "bottom_intercept": float(bl),
-                "breakout_direction": bdir,
-                "breakout_index": int(bidx) if bidx is not None else None,
-            },
-        )
-        out.append(base)
-        out.append(_alias(base, "Wedge", 0.95))
-    return out
+    shape = _fit_line_bounded_shape(c, peaks, troughs, cfg, min_points=4)
+    if shape is None or not _is_converging(shape["top"], shape["bot"], shape["k"], shape["n"], cfg):
+        return []
+    same_sign = (shape["sh"] > 0 and shape["sl"] > 0) or (shape["sh"] < 0 and shape["sl"] < 0)
+    if not same_sign or shape["touches"] < cfg.min_channel_touches - 1:
+        return []
+
+    name = "Rising Wedge" if shape["sh"] > 0 and shape["sl"] > 0 else "Falling Wedge"
+    shape["c"] = c
+    return _build_line_bounded_pattern_results(name, shape, t, cfg, alias_name="Wedge")
 
 def detect_broadening(
     c: np.ndarray,
