@@ -7,24 +7,11 @@ os.environ.setdefault("NIXTLA_ID_AS_COL", "1")
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
 from .exceptions import ForecastError
+from .forecast_registry import get_forecast_methods_data
+
+# Re-exported for compatibility with older tests/importers that patch these seams.
 from .common import fetch_history as _fetch_history
-from .forecast_methods import get_forecast_methods_data
 from .forecast_preprocessing import _create_dimred_reducer
-
-_FORECAST_METHODS_EXPORT = get_forecast_methods_data
-
-# Removed unused imports of specific method implementations
-# Logic is now handled by forecast_engine via registry
-
-# Optional availability flags and lazy imports following server logic
-# (Kept for backward compatibility if anything relies on these flags, though mostly unused now)
-try:
-    from statsmodels.tsa.holtwinters import SimpleExpSmoothing as _SES, ExponentialSmoothing as _ETS  # type: ignore
-    _SM_ETS_AVAILABLE = True
-except Exception:
-    _SM_ETS_AVAILABLE = False
-    _SES = _ETS = None  # type: ignore
-# ... (other availability checks can remain or be cleaned up, keeping for safety) ...
 
 
 def forecast(

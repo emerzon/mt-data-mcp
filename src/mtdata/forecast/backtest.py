@@ -26,7 +26,7 @@ def _get_forecast_methods_data_safe() -> Dict[str, Any]:
     Only 'method' and 'available' keys are required by this module.
     """
     try:
-        from .forecast import get_forecast_methods_data as _get
+        from .forecast_registry import get_forecast_methods_data as _get
         data = _get()
         if isinstance(data, dict) and 'methods' in data:
             return data
