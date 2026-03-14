@@ -12,13 +12,13 @@ def run_transport_entrypoint(
     main_fn(transport=transport)
 
 
-def main_stdio(main_fn: Callable[..., None]) -> None:
-    run_transport_entrypoint(main_fn, transport="stdio")
+def _make_transport_entrypoint(transport: TransportName) -> Callable[[Callable[..., None]], None]:
+    def _entrypoint(main_fn: Callable[..., None]) -> None:
+        run_transport_entrypoint(main_fn, transport=transport)
+
+    return _entrypoint
 
 
-def main_sse(main_fn: Callable[..., None]) -> None:
-    run_transport_entrypoint(main_fn, transport="sse")
-
-
-def main_streamable_http(main_fn: Callable[..., None]) -> None:
-    run_transport_entrypoint(main_fn, transport="streamable-http")
+main_stdio = _make_transport_entrypoint("stdio")
+main_sse = _make_transport_entrypoint("sse")
+main_streamable_http = _make_transport_entrypoint("streamable-http")

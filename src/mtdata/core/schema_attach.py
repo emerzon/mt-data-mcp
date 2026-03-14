@@ -2,6 +2,7 @@
 Shared schema defs and dynamic attachment of JSON Schemas to MCP tools.
 Extracted from core.server to keep server thinner.
 """
+import logging
 from typing import Any, Dict
 from .server_utils import get_mcp_registry
 
@@ -13,11 +14,21 @@ from .schema import (
     apply_param_hints as _apply_param_hints,
 )
 
+logger = logging.getLogger(__name__)
+
+
+def _safe_schema_op(operation: str, func, default=None):
+    try:
+        return func()
+    except Exception as exc:
+        logger.debug("schema_attach operation=%s skipped: %s", operation, exc)
+        return default
+
 
 def server_shared_defs(shared_enums: Dict[str, Any]) -> Dict[str, Any]:
     """Build server-level $defs based on provided enum lists (avoids circular imports)."""
     defs: Dict[str, Any] = {}
-    try:
+    def _build_defs() -> None:
         defs.update({
             "OhlcvChar": {"type": "string", "enum": ["O","H","L","C","V"], "description": "OHLCV column code"},
             "DenoiseMethod": {"type": "string", "enum": list(shared_enums.get("DENOISE_METHODS", []))},
@@ -41,8 +52,7 @@ def server_shared_defs(shared_enums: Dict[str, Any]) -> Dict[str, Any]:
             defs["IndicatorCategory"] = {"type": "string", "enum": list(shared_enums["CATEGORY_CHOICES"])}
         if shared_enums.get("INDICATOR_NAME_CHOICES"):
             defs["IndicatorName"] = {"type": "string", "enum": list(shared_enums["INDICATOR_NAME_CHOICES"])}
-    except Exception:
-        pass
+    _safe_schema_op("server_shared_defs", _build_defs)
     return defs
 
 
@@ -70,14 +80,15 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
             info = _get_function_info(func)
             schema = _build_minimal_schema(info)
             schema = _enrich_schema_with_shared_defs(schema, info)
-            try:
+            def _update_defs() -> None:
                 if "$defs" not in schema:
                     schema["$defs"] = {}
                 schema["$defs"].update({k: v for k, v in shared_defs.items() if k not in schema["$defs"]})
                 schema["$defs"].update({k: v for k, v in _complex_defs().items() if k not in schema["$defs"]})
-            except Exception:
-                pass
-            try:
+
+            _safe_schema_op(f"update_defs:{name}", _update_defs)
+
+            def _patch_params() -> None:
                 params = schema.get("parameters", {}).get("properties", {})
                 required_params = set(schema.get("parameters", {}).get("required", []))
 
@@ -165,16 +176,9 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
                             ],
                             "description": "Dateparser input, UTC epoch seconds, or GTC token."
                         }
-            except Exception:
-                pass
+            _safe_schema_op(f"patch_params:{name}", _patch_params)
             _apply_param_hints(schema)
-            try:
-                setattr(obj, "schema", schema)
-            except Exception:
-                pass
-            try:
-                setattr(func, "schema", schema)
-            except Exception:
-                pass
+            _safe_schema_op(f"set_obj_schema:{name}", lambda: setattr(obj, "schema", schema))
+            _safe_schema_op(f"set_func_schema:{name}", lambda: setattr(func, "schema", schema))
     except Exception:
         pass
