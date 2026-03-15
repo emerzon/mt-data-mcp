@@ -422,6 +422,28 @@ class TestBuildResult:
         assert result.wave_type == "Candidate"
         assert result.details["candidate_validates_as"] == "impulse"
 
+    def test_impulse_result_includes_wave5_targets(self):
+        c = _impulse_close()
+        t = np.arange(6, dtype=float) * 3600 + 1_700_000_000
+        analyzer = ElliottWaveAnalyzer(c, t, ElliottWaveConfig())
+        rule_eval = _evaluate_impulse_rules(c, [0, 1, 2, 3, 4, 5], bullish=True)
+        scenario = ElliottScenario(
+            pivots=[0, 1, 2, 3, 4, 5],
+            bullish=True,
+            confidence=0.7,
+            cls_score=0.6,
+            rule_eval=rule_eval,
+            threshold_used=1.0,
+            min_distance_used=1,
+            wave_type="Impulse",
+        )
+
+        result = analyzer.build_result(scenario)
+
+        assert "wave5_targets" in result.details
+        assert result.details["wave5_targets"]["zone_high"] >= result.details["wave5_targets"]["zone_low"]
+        assert result.details["wave5_targets"]["equal_wave1"] == pytest.approx(rule_eval.metrics["wave5_target_equal_wave1"])
+
 
 # ===== ElliottWaveAnalyzer.build_fallback (lines 623-651) ==================
 
@@ -589,6 +611,12 @@ class TestDetectElliottWaves:
             top_k=10,
         )
 
+        monkeypatch.setattr(
+            elliott_mod,
+            "_pivot_signature_for_settings",
+            lambda _close, threshold_pct, _min_distance: (0, 10, 20, 30, 40, int(float(threshold_pct) * 100)),
+        )
+
         def _fake_analyze(self, threshold_pct, min_distance):
             _ = self
             return [
@@ -612,6 +640,47 @@ class TestDetectElliottWaves:
         assert results[0].wave_type == "Correction"
         assert results[0].confidence == pytest.approx(0.5)
 
+    def test_autotune_skips_repeated_pivot_signatures(self, monkeypatch):
+        df = _make_df(np.linspace(100.0, 120.0, 80))
+        cfg = ElliottWaveConfig(
+            autotune=True,
+            tune_thresholds=[0.2, 0.5],
+            tune_min_distance=[1],
+            include_fallback_candidate=False,
+            min_confidence=0.0,
+            top_k=10,
+        )
+        call_log = []
+
+        monkeypatch.setattr(
+            elliott_mod,
+            "_pivot_signature_for_settings",
+            lambda *_args, **_kwargs: (0, 10, 20, 30),
+        )
+
+        def _fake_analyze(self, threshold_pct, min_distance):
+            _ = self
+            call_log.append((float(threshold_pct), int(min_distance)))
+            return [
+                ElliottScenario(
+                    pivots=[0, 10, 20, 30],
+                    bullish=True,
+                    confidence=0.6,
+                    cls_score=0.5,
+                    rule_eval=ElliottRuleEvaluation(valid=True, fib_score=0.5, metrics={}),
+                    threshold_used=float(threshold_pct),
+                    min_distance_used=int(min_distance),
+                    wave_type="Correction",
+                )
+            ]
+
+        monkeypatch.setattr(elliott_mod.ElliottWaveAnalyzer, "analyze_once", _fake_analyze)
+
+        results = detect_elliott_waves(df, cfg)
+
+        assert len(call_log) == 1
+        assert len(results) == 1
+
     def test_autotune_filters_correction_overlap_with_impulse(self, monkeypatch):
         df = _make_df(np.linspace(100.0, 120.0, 80))
         cfg = ElliottWaveConfig(
@@ -621,6 +690,12 @@ class TestDetectElliottWaves:
             include_fallback_candidate=False,
             min_confidence=0.0,
             top_k=10,
+        )
+
+        monkeypatch.setattr(
+            elliott_mod,
+            "_pivot_signature_for_settings",
+            lambda _close, threshold_pct, _min_distance: (0, 10, 20, 30, 40, int(float(threshold_pct) * 100)),
         )
 
         def _fake_analyze(self, threshold_pct, min_distance):

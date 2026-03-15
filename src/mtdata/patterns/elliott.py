@@ -34,6 +34,7 @@ class ElliottWaveConfig:
     autotune: bool = True
     tune_thresholds: Optional[List[float]] = None
     tune_min_distance: Optional[List[int]] = None
+    autotune_skip_repeated_pivots: bool = True
 
     # Analyzer controls
     min_confidence: float = 0.0
@@ -404,6 +405,11 @@ def _evaluate_impulse_rules(c: np.ndarray, piv: List[int], bullish: bool) -> Ell
     s3 = _window_hit(e3, 1.618, 2.618)
     s5 = max(_window_hit(rel53, 0.8, 1.2), _window_hit(rel5_alt, 0.55, 0.75))
     fib_score = float(0.25 * (s2 + s3 + s4 + s5))
+    direction = 1.0 if bullish else -1.0
+    wave5_target_equal_wave1 = float(w[4] + direction * absL[0])
+    wave5_target_0618_wave3 = float(w[4] + direction * 0.618 * absL[2])
+    wave5_target_zone_low = float(min(wave5_target_equal_wave1, wave5_target_0618_wave3))
+    wave5_target_zone_high = float(max(wave5_target_equal_wave1, wave5_target_0618_wave3))
 
     metrics = {
         "r2": float(r2),
@@ -412,6 +418,10 @@ def _evaluate_impulse_rules(c: np.ndarray, piv: List[int], bullish: bool) -> Ell
         "rel53": float(rel53),
         "rel5_alt": float(rel5_alt),
         "fib_score": fib_score,
+        "wave5_target_equal_wave1": wave5_target_equal_wave1,
+        "wave5_target_0618_wave3": wave5_target_0618_wave3,
+        "wave5_target_zone_low": wave5_target_zone_low,
+        "wave5_target_zone_high": wave5_target_zone_high,
     }
     return ElliottRuleEvaluation(valid=(len(violations) == 0), fib_score=fib_score, metrics=metrics, violations=violations)
 
@@ -543,6 +553,16 @@ def _upsert_elliott_result(
     prior = results_by_key.get(key)
     if prior is None or float(result.confidence) > float(prior.confidence):
         results_by_key[key] = result
+
+
+def _pivot_signature_for_settings(
+    close: np.ndarray,
+    threshold_pct: float,
+    min_distance: int,
+) -> Tuple[int, ...]:
+    piv_idx, _ = _zigzag_pivots_indices(close, float(threshold_pct))
+    piv_idx = _enforce_min_distance_on_pivots(piv_idx, close, int(max(1, min_distance)))
+    return tuple(int(idx) for idx in piv_idx)
 
 
 def _interval_coverage_ratio(a_start: int, a_end: int, b_start: int, b_end: int) -> float:
@@ -766,6 +786,23 @@ class ElliottWaveAnalyzer:
             details["correction_metrics"] = dict(scenario.rule_eval.metrics)
             details["prior_impulse_direction"] = "bear" if scenario.bullish else "bull"
             details["trend_context"] = "counter_trend"
+        if str(scenario.wave_type).lower() == "impulse":
+            wave5_targets: Dict[str, float] = {}
+            for src_key, out_key in (
+                ("wave5_target_equal_wave1", "equal_wave1"),
+                ("wave5_target_0618_wave3", "wave3_0_618"),
+                ("wave5_target_zone_low", "zone_low"),
+                ("wave5_target_zone_high", "zone_high"),
+            ):
+                value = scenario.rule_eval.metrics.get(src_key)
+                if value is None:
+                    continue
+                try:
+                    wave5_targets[out_key] = float(value)
+                except Exception:
+                    continue
+            if wave5_targets:
+                details["wave5_targets"] = wave5_targets
         if scenario.fallback_candidate and scenario.validated_wave_type:
             details["candidate_validates_as"] = str(scenario.validated_wave_type).lower()
 
@@ -882,6 +919,7 @@ def detect_elliott_waves(df: pd.DataFrame, config: Optional[ElliottWaveConfig] =
             else sorted({max(1, md_base - 2), md_base, md_base + 2, md_base + 4})
         )
 
+        seen_pivot_signatures: set[Tuple[int, ...]] = set()
         for thr_val in thr_list:
             try:
                 thr_f = float(thr_val)
@@ -892,6 +930,12 @@ def detect_elliott_waves(df: pd.DataFrame, config: Optional[ElliottWaveConfig] =
                     md_i = int(md)
                 except Exception:
                     continue
+                if bool(getattr(config, "autotune_skip_repeated_pivots", True)):
+                    signature = _pivot_signature_for_settings(c, thr_f, md_i)
+                    if len(signature) > 1 and signature in seen_pivot_signatures:
+                        continue
+                    if len(signature) > 1:
+                        seen_pivot_signatures.add(signature)
 
                 scenarios = analyzer.analyze_once(thr_f, md_i)
                 for scenario in scenarios:
