@@ -487,7 +487,6 @@ def _format_forecast_output(
         "forecast_start_gap_bars": forecast_start_gap_bars,
         "forecast_anchor": "next_timeframe_bar_after_last_observation",
         "forecast_step_seconds": int(tf_secs),
-        "forecast_time": future_times,
         "forecast_epoch": future_epochs,
     }
 
@@ -496,12 +495,10 @@ def _format_forecast_output(
         if forecast_return_values is None:
             forecast_return_values = forecast_values
         result["forecast_return"] = [float(v) for v in forecast_return_values]
-        result["forecast"] = [float(v) for v in forecast_return_values]
         if reconstructed_prices is not None:
             result["forecast_price"] = [float(v) for v in reconstructed_prices]
     else:
         result["forecast_price"] = [float(v) for v in forecast_values]
-        result["forecast"] = [float(v) for v in forecast_values]
     
     if digits is not None:
         result["digits"] = int(digits)
@@ -556,7 +553,6 @@ def _format_forecast_output(
 
     # Add metadata
     result.update({
-        "last_epoch": float(last_epoch),
         "quantity": quantity,
         "denoise_applied": denoise_used,
     })

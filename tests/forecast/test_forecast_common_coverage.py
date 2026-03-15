@@ -493,6 +493,8 @@ class TestFormatForecastOutput:
         assert result["horizon"] == 3
         assert len(result["forecast_price"]) == 3
         assert len(result["forecast_epoch"]) == 3
+        assert "forecast_time" not in result
+        assert "last_epoch" not in result
 
     def test_return_quantity(self):
         vals = np.array([0.01, -0.02])

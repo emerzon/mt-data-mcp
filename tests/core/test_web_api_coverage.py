@@ -749,7 +749,7 @@ class TestGetTick:
 
 class TestPostForecastPrice:
     def test_success(self):
-        result = {"forecast_price": [1.1, 1.2], "forecast_time": [1, 2]}
+        result = {"forecast_price": [1.1, 1.2], "forecast_epoch": [1, 2]}
         with patch("mtdata.core.web_api._run_forecast_generate_impl", return_value=result):
             resp = _client.post("/api/forecast/price", json={"symbol": "EURUSD"})
         assert resp.status_code == 200
