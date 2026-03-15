@@ -596,10 +596,7 @@ class ElliottWaveAnalyzer:
 
         wave_points_labeled: List[Dict[str, Any]] = []
         for j, idx in enumerate(piv_seq):
-            try:
-                ti = float(self.times[idx]) if self.times.size > idx else None
-            except Exception:
-                ti = None
+            ti = PatternResultBase.resolve_time(self.times, idx)
             wave_points_labeled.append(
                 {
                     "label": labels[j],
@@ -635,8 +632,8 @@ class ElliottWaveAnalyzer:
             confidence=float(scenario.confidence),
             start_index=start_index,
             end_index=end_index,
-            start_time=float(self.times[start_index]) if self.times.size > start_index else None,
-            end_time=float(self.times[end_index]) if self.times.size > end_index else None,
+            start_time=PatternResultBase.resolve_time(self.times, start_index),
+            end_time=PatternResultBase.resolve_time(self.times, end_index),
             details=details,
         )
 
@@ -703,7 +700,13 @@ def detect_elliott_waves(df: pd.DataFrame, config: Optional[ElliottWaveConfig] =
     if not isinstance(df, pd.DataFrame) or "close" not in df.columns:
         return []
 
-    t = to_float_np(df.get("time", pd.Series(df.index).astype(np.int64) // 10**9))
+    if "time" in df.columns:
+        try:
+            t = to_float_np(df["time"])
+        except (TypeError, ValueError):
+            t = np.asarray([], dtype=float)
+    else:
+        t = np.asarray([], dtype=float)
     c = to_float_np(df["close"])
     n = int(c.size)
     pattern_types = _normalize_pattern_types(config)

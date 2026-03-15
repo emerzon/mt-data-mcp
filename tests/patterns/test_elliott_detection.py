@@ -33,6 +33,9 @@ def test_detect_elliott_waves_returns_candidate_for_fallback():
     assert results[0].wave_type == "Candidate"
     assert bool(results[0].details.get("fallback_candidate")) is True
     assert len(results[0].wave_sequence) < 6
+    assert results[0].start_time is None
+    assert results[0].end_time is None
+    assert all(point["time"] is None for point in results[0].details["wave_points_labeled"])
 
 
 def test_zigzag_pretrend_uses_running_extrema_before_trend_is_set():

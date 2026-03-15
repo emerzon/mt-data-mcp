@@ -139,10 +139,13 @@ def _merge_scanned_patterns(
 
 
 def _scan_classic_patterns(
-    df: pd.DataFrame,
+    t: np.ndarray,
+    c: np.ndarray,
+    h: np.ndarray,
+    l: np.ndarray,
     cfg: ClassicDetectorConfig,
 ) -> List[ClassicPatternResult]:
-    n_total = len(df)
+    n_total = int(c.size)
     step = max(1, int(getattr(cfg, "scan_step_bars", 10)))
     min_prefix = max(100, int(getattr(cfg, "scan_min_prefix_bars", 120)))
     prefix_ends = list(range(min_prefix, n_total + 1, step))
@@ -154,11 +157,7 @@ def _scan_classic_patterns(
 
     merged: List[ClassicPatternResult] = []
     for end in prefix_ends:
-        prepared = _prepare_classic_inputs(df.iloc[:end], scan_cfg)
-        if prepared is None:
-            continue
-        _, t, c, h, l, n = prepared
-        batch = _detect_classic_patterns_once(t, c, h, l, n, scan_cfg)
+        batch = _detect_classic_patterns_once(t[:end], c[:end], h[:end], l[:end], int(end), scan_cfg)
         merged = _merge_scanned_patterns(merged, batch, cfg)
     return merged
 
@@ -216,7 +215,7 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
 
     _, t, c, h, l, n = prepared
     if bool(getattr(cfg, "scan_historical", False)):
-        results = _scan_classic_patterns(prepared[0], cfg)
+        results = _scan_classic_patterns(t, c, h, l, cfg)
     else:
         results = _detect_classic_patterns_once(t, c, h, l, n, cfg)
 

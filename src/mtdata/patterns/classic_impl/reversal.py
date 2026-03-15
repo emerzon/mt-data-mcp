@@ -1,5 +1,6 @@
 import numpy as np
 from typing import List, Optional
+from ..common import PatternResultBase
 from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
     _level_close, _tol_abs_from_close, _find_forward_level_breakout,
@@ -52,8 +53,8 @@ def detect_tops_bottoms(
                     confidence=min(1.0, (0.5 + 0.1 * (len(cluster) - 2 + 2)) + (0.08 if break_i is not None else 0.0)),
                     start_index=start_i,
                     end_index=int(break_i if break_i is not None else end_i),
-                    start_time=float(t[start_i]) if t.size else None,
-                    end_time=float(t[int(break_i if break_i is not None else end_i)]) if t.size else None,
+                    start_time=PatternResultBase.resolve_time(t, start_i),
+                    end_time=PatternResultBase.resolve_time(t, int(break_i if break_i is not None else end_i)),
                     details={
                         "level": level,
                         "touches": int(len(cluster)),
@@ -177,8 +178,8 @@ def detect_head_shoulders(
             confidence=float(base_conf),
             start_index=int(lsh),
             end_index=end_i,
-            start_time=float(t[int(lsh)]) if t.size else None,
-            end_time=float(t[int(end_i)]) if t.size else None,
+            start_time=PatternResultBase.resolve_time(t, int(lsh)),
+            end_time=PatternResultBase.resolve_time(t, int(end_i)),
             details=details,
         ))
     return out

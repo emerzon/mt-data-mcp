@@ -8,6 +8,7 @@ from scipy.signal import find_peaks
 from tslearn.metrics import dtw as _ts_dtw
 
 from ...utils.utils import to_float_np
+from ..common import PatternResultBase
 from .config import ClassicDetectorConfig, ClassicPatternResult
 
 
@@ -90,13 +91,14 @@ def _paa(a: np.ndarray, m: int) -> np.ndarray:
     if n == m:
         return a.copy()
     idx = np.linspace(0, n, num=m + 1, dtype=float)
-    out = []
-    for i in range(m):
-        s = int(idx[i]); e = int(idx[i + 1])
-        if e <= s:
-            e = min(n, s + 1)
-        out.append(float(np.mean(a[s:e])))
-    return np.asarray(out, dtype=float)
+    starts = idx[:-1].astype(int)
+    ends = idx[1:].astype(int)
+    ends = np.maximum(ends, starts + 1)
+    ends = np.minimum(ends, n)
+    prefix = np.concatenate(([0.0], np.cumsum(a, dtype=float)))
+    sums = prefix[ends] - prefix[starts]
+    counts = np.maximum(1, ends - starts)
+    return sums / counts
 
 
 def _dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
@@ -212,11 +214,14 @@ def _last_touch_indexes(bound_y: np.ndarray, idxs: np.ndarray, y: np.ndarray, to
 def _build_time_array(df: pd.DataFrame) -> np.ndarray:
     t = df.get('time')
     if t is None:
-        return np.arange(len(df), dtype=float)
+        return np.asarray([], dtype=float)
     try:
-        return to_float_np(t)
+        arr = to_float_np(t)
     except (TypeError, ValueError):
-        return np.arange(len(df), dtype=float)
+        return np.asarray([], dtype=float)
+    if arr.size == 0 or not np.isfinite(arr).any():
+        return np.asarray([], dtype=float)
+    return arr
 
 
 def _tol_abs_from_close(close: np.ndarray, tol_pct: float) -> float:
@@ -234,8 +239,8 @@ def _result(name: str, status: str, confidence: float,
         confidence=float(confidence),
         start_index=int(start_index),
         end_index=int(end_index),
-        start_time=float(t[int(start_index)]) if t.size else None,
-        end_time=float(t[int(end_index)]) if t.size else None,
+        start_time=PatternResultBase.resolve_time(t, int(start_index)),
+        end_time=PatternResultBase.resolve_time(t, int(end_index)),
         details=details,
     )
 

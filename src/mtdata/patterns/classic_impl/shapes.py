@@ -1,5 +1,6 @@
 import numpy as np
 from typing import Any, Dict, List, Optional
+from ..common import PatternResultBase
 from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
     _detect_pivots_close, _fit_line, _fit_line_robust, _fit_lines_and_arrays, 
@@ -133,8 +134,8 @@ def detect_rectangles(
             confidence=conf,
             start_index=int(min(peaks[-k], troughs[-k])),
             end_index=int(bidx if bidx is not None else max(peaks[-1], troughs[-1])),
-            start_time=float(t[int(min(peaks[-k], troughs[-k]))]) if t.size else None,
-            end_time=float(t[int(bidx if bidx is not None else max(peaks[-1], troughs[-1]))]) if t.size else None,
+            start_time=PatternResultBase.resolve_time(t, int(min(peaks[-k], troughs[-k]))),
+            end_time=PatternResultBase.resolve_time(t, int(bidx if bidx is not None else max(peaks[-1], troughs[-1]))),
             details={
                 "resistance": top,
                 "support": bot,

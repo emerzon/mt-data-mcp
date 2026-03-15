@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import logging
+from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
 import warnings
 
@@ -23,6 +24,8 @@ _mt5_copy_rates_from: Any = None
 _rates_to_df: Any = None
 _symbol_ready_guard: Any = None
 _CANDLESTICK_PATTERN_METHOD_CACHE: Optional[Tuple[str, ...]] = None
+_CANDLESTICK_PATTERN_METHOD_CACHE_KEY: Optional[str] = None
+_CANDLESTICK_PATTERN_METHOD_CACHE_LOCK = Lock()
 
 
 def _normalize_candlestick_name(pattern_name: str) -> str:
@@ -94,14 +97,29 @@ def _discover_candlestick_pattern_methods(ta_accessor: Any) -> Tuple[str, ...]:
     return tuple(sorted(methods))
 
 
-def _get_candlestick_pattern_methods(temp: pd.DataFrame) -> List[str]:
-    global _CANDLESTICK_PATTERN_METHOD_CACHE
+def _candlestick_accessor_cache_key(ta_accessor: Any) -> str:
+    accessor_type = type(ta_accessor)
+    return f"{accessor_type.__module__}.{accessor_type.__qualname__}"
 
-    if _CANDLESTICK_PATTERN_METHOD_CACHE is None:
+
+def _get_candlestick_pattern_methods(temp: pd.DataFrame) -> List[str]:
+    global _CANDLESTICK_PATTERN_METHOD_CACHE, _CANDLESTICK_PATTERN_METHOD_CACHE_KEY
+
+    cache_key = _candlestick_accessor_cache_key(temp.ta)
+
+    if _CANDLESTICK_PATTERN_METHOD_CACHE is not None and _CANDLESTICK_PATTERN_METHOD_CACHE_KEY == cache_key:
+        return list(_CANDLESTICK_PATTERN_METHOD_CACHE)
+
+    with _CANDLESTICK_PATTERN_METHOD_CACHE_LOCK:
+        if _CANDLESTICK_PATTERN_METHOD_CACHE is not None and _CANDLESTICK_PATTERN_METHOD_CACHE_KEY == cache_key:
+            return list(_CANDLESTICK_PATTERN_METHOD_CACHE)
         try:
             _CANDLESTICK_PATTERN_METHOD_CACHE = _discover_candlestick_pattern_methods(temp.ta)
+            _CANDLESTICK_PATTERN_METHOD_CACHE_KEY = cache_key
         except Exception:
             logger.warning("Failed to enumerate candlestick pattern detectors from pandas_ta.", exc_info=True)
+            _CANDLESTICK_PATTERN_METHOD_CACHE = None
+            _CANDLESTICK_PATTERN_METHOD_CACHE_KEY = None
             return []
     return list(_CANDLESTICK_PATTERN_METHOD_CACHE)
 

@@ -146,6 +146,47 @@ def test_get_candlestick_pattern_methods_caches_discovery(monkeypatch):
     assert fake_temp.ta.dir_calls == 1
 
 
+def test_get_candlestick_pattern_methods_invalidates_cache_on_accessor_type_change(monkeypatch):
+    class _AlphaTA:
+        def __init__(self):
+            self.dir_calls = 0
+
+        def __dir__(self):
+            self.dir_calls += 1
+            return ["cdl_alpha"]
+
+        def __getattr__(self, name):
+            if name == "cdl_alpha":
+                return lambda *args, **kwargs: None
+            raise AttributeError(name)
+
+    class _BetaTA:
+        def __init__(self):
+            self.dir_calls = 0
+
+        def __dir__(self):
+            self.dir_calls += 1
+            return ["cdl_beta"]
+
+        def __getattr__(self, name):
+            if name == "cdl_beta":
+                return lambda *args, **kwargs: None
+            raise AttributeError(name)
+
+    alpha_temp = SimpleNamespace(ta=_AlphaTA())
+    beta_temp = SimpleNamespace(ta=_BetaTA())
+    monkeypatch.setattr(candlestick_mod, "_CANDLESTICK_PATTERN_METHOD_CACHE", None)
+    monkeypatch.setattr(candlestick_mod, "_CANDLESTICK_PATTERN_METHOD_CACHE_KEY", None)
+
+    out_alpha = _get_candlestick_pattern_methods(alpha_temp)
+    out_beta = _get_candlestick_pattern_methods(beta_temp)
+
+    assert out_alpha == ["cdl_alpha"]
+    assert out_beta == ["cdl_beta"]
+    assert alpha_temp.ta.dir_calls == 1
+    assert beta_temp.ta.dir_calls == 1
+
+
 def test_extract_candlestick_rows_prefers_non_deprioritized_hits():
     df_tail = pd.DataFrame({"time": ["T0", "T1"]})
     temp_tail = pd.DataFrame(
@@ -818,6 +859,24 @@ def test_detect_rectangles_mark_completed_on_breakout():
     assert out
     assert out[0].status == "completed"
     assert out[0].details["breakout_direction"] == "up"
+
+
+def test_detect_rectangles_without_time_values_return_none_timestamps():
+    from src.mtdata.patterns.classic_impl.shapes import detect_rectangles
+
+    n = 120
+    close = np.full(n, 100.0, dtype=float)
+    peaks = np.array([20, 40, 60], dtype=int)
+    troughs = np.array([30, 50, 70], dtype=int)
+    close[peaks] = 105.0
+    close[troughs] = 95.0
+    close[-1] = 106.0
+
+    out = detect_rectangles(close, peaks, troughs, np.asarray([], dtype=float), ClassicDetectorConfig(min_channel_touches=2))
+
+    assert out
+    assert out[0].start_time is None
+    assert out[0].end_time is None
 
 
 def test_detect_trend_lines_extend_to_current_bar():
