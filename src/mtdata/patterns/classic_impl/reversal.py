@@ -168,16 +168,28 @@ def detect_head_shoulders(
         if nl1 < 0 or nl2 >= n:
             continue
 
-        neckline_source = troughs if regular else peaks
-        neck_idxs = np.asarray([idx for idx in neckline_source.tolist() if lsh < idx < rsh], dtype=int)
-        if neck_idxs.size < 2:
-            continue
-        neck_x = neck_idxs.astype(float)
-        neck_y = c[neck_idxs]
-        if bool(cfg.use_robust_fit) and neck_idxs.size >= max(2, int(cfg.ransac_min_samples)):
-            slope, intercept, r2 = _fit_line_robust(neck_x, neck_y, cfg)
-        else:
+        if regular:
+            neck_idxs = np.asarray([nl1, nl2], dtype=int)
+            validation_source = troughs
+            neck_x = neck_idxs.astype(float)
+            neck_y = c[neck_idxs]
             slope, intercept, r2 = _fit_line(neck_x, neck_y)
+            neck_idx_set = {int(v) for v in neck_idxs.tolist()}
+            neck_validation_points = int(
+                sum(
+                    1
+                    for idx in validation_source.tolist()
+                    if lsh < int(idx) < rsh and int(idx) not in neck_idx_set
+                )
+            )
+        else:
+            neck_idxs = np.asarray([idx for idx in peaks.tolist() if lsh < idx < rsh], dtype=int)
+            if neck_idxs.size < 2:
+                continue
+            neck_x = neck_idxs.astype(float)
+            neck_y = c[neck_idxs]
+            slope, intercept, r2 = _fit_line(neck_x, neck_y)
+            neck_validation_points = 0
 
         left_span = head_idx - lsh; right_span = rsh - head_idx
         span_ratio = left_span / float(max(1, right_span))
@@ -240,6 +252,7 @@ def detect_head_shoulders(
             'neck_intercept': float(intercept),
             'neck_r2': float(r2),
             'neck_points': int(neck_idxs.size),
+            'neck_validation_points': int(neck_validation_points),
             'bias': 'bearish' if regular else 'bullish',
         }
         out.append(ClassicPatternResult(
@@ -267,8 +280,7 @@ def detect_rounding(
     if not valid_windows:
         return out
 
-    best: Optional[ClassicPatternResult] = None
-    best_rank = (-1.0, -1.0, -1.0)
+    candidates: List[ClassicPatternResult] = []
     for W in valid_windows:
         seg = c[-W:]
         x = np.linspace(-1.0, 1.0, W)
@@ -326,9 +338,8 @@ def detect_rounding(
                 "bias": bias,
             },
         )
-        rank = (float(candidate.confidence), float(amp_pct), -abs(float(xv)))
-        if best is None or rank > best_rank:
-            best = candidate
-            best_rank = rank
+        candidates.append(candidate)
 
-    return [best] if best is not None else out
+    if not candidates:
+        return out
+    return _dedupe_overlapping_patterns(candidates, overlap_threshold=0.75)

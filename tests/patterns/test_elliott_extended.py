@@ -399,6 +399,30 @@ class TestBuildResult:
         labels = [wp["label"] for wp in result.details["wave_points_labeled"]]
         assert labels[0] == "W0"
 
+    def test_build_result_marks_unconfirmed_terminal_pivot_and_classifier_state(self):
+        c = _impulse_close()
+        t = np.arange(6, dtype=float) * 3600 + 1_700_000_000
+        analyzer = ElliottWaveAnalyzer(c, t, ElliottWaveConfig())
+        rule_eval = _evaluate_impulse_rules(c, [0, 1, 2, 3, 4, 5], bullish=True)
+        scenario = ElliottScenario(
+            pivots=[0, 1, 2, 3, 4, 5],
+            bullish=True,
+            confidence=0.7,
+            cls_score=0.5,
+            rule_eval=rule_eval,
+            threshold_used=1.0,
+            min_distance_used=1,
+            wave_type="Impulse",
+            classification_available=False,
+            pivot_confirmations=[True, True, True, True, True, False],
+        )
+
+        result = analyzer.build_result(scenario)
+
+        assert result.details["classification_available"] is False
+        assert result.details["has_unconfirmed_terminal_pivot"] is True
+        assert result.details["wave_points_labeled"][-1]["is_confirmed"] is False
+
     def test_fallback_result_exposes_validated_wave_type(self):
         c = _impulse_close()
         t = np.arange(6, dtype=float) * 3600 + 1_700_000_000
@@ -768,6 +792,36 @@ class TestDetectElliottWaves:
 
         assert any(s.wave_type == "Impulse" for s in scenarios)
         assert not any(s.wave_type == "Correction" for s in scenarios)
+
+    def test_analyze_once_uses_rule_score_when_classification_unavailable(self, monkeypatch):
+        close = _impulse_close()
+        t = np.arange(close.size, dtype=float) * 3600 + 1_700_000_000
+        analyzer = ElliottWaveAnalyzer(
+            close,
+            t,
+            ElliottWaveConfig(
+                autotune=False,
+                min_distance=1,
+                wave_min_len=1,
+                min_confidence=0.0,
+                pattern_types=["impulse"],
+                include_fallback_candidate=False,
+            ),
+        )
+
+        monkeypatch.setattr(elliott_mod, "_zigzag_pivots_indices", lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5], ["up"] * 6))
+        monkeypatch.setattr(
+            elliott_mod,
+            "_classify_waves",
+            lambda features, config: (np.array([]), None, None, None, None),
+        )
+
+        scenarios = analyzer.analyze_once(1.0, 1)
+
+        assert scenarios
+        assert scenarios[0].classification_available is False
+        assert scenarios[0].confidence == pytest.approx(scenarios[0].rule_eval.fib_score)
+        assert scenarios[0].pivot_confirmations[-1] is False
 
 
 # ===== _window_hit =========================================================

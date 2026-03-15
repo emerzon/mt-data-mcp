@@ -29,6 +29,7 @@ class ElliottWaveConfig:
     volume_confirm_min_ratio: float = 1.05
     volume_confirm_bonus: float = 0.06
     volume_confirm_penalty: float = 0.04
+    impulse_fib_weights: List[float] = field(default_factory=lambda: [0.30, 0.35, 0.20, 0.15])
     use_regime_context: bool = True
     regime_window_bars: int = 160
     regime_trend_strength_threshold: float = 1.25
@@ -83,6 +84,8 @@ class ElliottScenario:
     synthetic_terminal_pivot: bool = False
     wave_type: str = "Impulse"
     validated_wave_type: Optional[str] = None
+    classification_available: bool = False
+    pivot_confirmations: Optional[List[bool]] = None
 
 
 def _normalize_pattern_types(config: ElliottWaveConfig) -> set[str]:
@@ -324,6 +327,25 @@ def _select_directional_cluster(cluster_means: np.ndarray, bullish: bool) -> Opt
     return int(np.argmax(scores) if bullish else np.argmin(scores))
 
 
+def _normalized_impulse_fib_weights(config: Optional[ElliottWaveConfig]) -> Tuple[float, float, float, float]:
+    defaults = (0.30, 0.35, 0.20, 0.15)
+    if config is None:
+        return defaults
+    raw = getattr(config, "impulse_fib_weights", None)
+    if not isinstance(raw, (list, tuple)) or len(raw) != 4:
+        return defaults
+    try:
+        weights = [float(v) for v in raw]
+    except Exception:
+        return defaults
+    if not all(np.isfinite(v) and v >= 0.0 for v in weights):
+        return defaults
+    total = float(sum(weights))
+    if total <= 1e-12:
+        return defaults
+    return tuple(float(v / total) for v in weights)
+
+
 def _classify_waves(
     features: np.ndarray,
     config: ElliottWaveConfig,
@@ -335,6 +357,10 @@ def _classify_waves(
         return np.array([]), None, None, None, None
 
     try:
+        feature_std = np.nanstd(features, axis=0)
+        if not np.all(np.isfinite(feature_std)) or float(np.nanmax(np.abs(feature_std))) <= 1e-8:
+            return np.array([]), None, None, None, None
+
         scaler = StandardScaler()
         scaled = scaler.fit_transform(features)
         if not np.all(np.isfinite(scaled)):
@@ -343,6 +369,8 @@ def _classify_waves(
         gmm = GaussianMixture(n_components=config.gmm_components, random_state=42)
         gmm.fit(scaled)
         labels = gmm.predict(scaled)
+        if np.unique(labels).size < int(config.gmm_components):
+            return np.array([]), None, None, None, None
         probs = gmm.predict_proba(scaled)
         impulsive_cluster = _select_impulsive_cluster(gmm.means_)
         if impulsive_cluster is None:
@@ -366,7 +394,12 @@ def _window_hit(v: float, lo: float, hi: float, taper: float = 0.2) -> float:
     return float(max(0.0, 1.0 - d))
 
 
-def _evaluate_impulse_rules(c: np.ndarray, piv: List[int], bullish: bool) -> ElliottRuleEvaluation:
+def _evaluate_impulse_rules(
+    c: np.ndarray,
+    piv: List[int],
+    bullish: bool,
+    config: Optional[ElliottWaveConfig] = None,
+) -> ElliottRuleEvaluation:
     """Validate core 5-wave impulse rules and compute Fibonacci alignment score."""
 
     if len(piv) != 6:
@@ -412,7 +445,8 @@ def _evaluate_impulse_rules(c: np.ndarray, piv: List[int], bullish: bool) -> Ell
     s4 = _window_hit(r4, 0.236, 0.382)
     s3 = _window_hit(e3, 1.618, 2.618)
     s5 = max(_window_hit(rel53, 0.8, 1.2), _window_hit(rel5_alt, 0.55, 0.75))
-    fib_score = float(0.25 * (s2 + s3 + s4 + s5))
+    w2, w3, w4, w5 = _normalized_impulse_fib_weights(config)
+    fib_score = float(w2 * s2 + w3 * s3 + w4 * s4 + w5 * s5)
     direction = 1.0 if bullish else -1.0
     wave5_target_equal_wave1 = float(w[4] + direction * absL[0])
     wave5_target_0618_wave3 = float(w[4] + direction * 0.618 * absL[2])
@@ -430,6 +464,10 @@ def _evaluate_impulse_rules(c: np.ndarray, piv: List[int], bullish: bool) -> Ell
         "wave5_target_0618_wave3": wave5_target_0618_wave3,
         "wave5_target_zone_low": wave5_target_zone_low,
         "wave5_target_zone_high": wave5_target_zone_high,
+        "fib_weight_wave2": float(w2),
+        "fib_weight_wave3": float(w3),
+        "fib_weight_wave4": float(w4),
+        "fib_weight_wave5": float(w5),
     }
     return ElliottRuleEvaluation(valid=(len(violations) == 0), fib_score=fib_score, metrics=metrics, violations=violations)
 
@@ -439,6 +477,14 @@ def _impulse_rules_and_score(c: np.ndarray, piv: List[int], bullish: bool) -> Tu
 
     ev = _evaluate_impulse_rules(c, piv, bullish)
     return ev.valid, ev.fib_score, ev.metrics
+
+
+def _blend_confidence(rule_score: float, cls_score: float, *, classification_available: bool, rule_weight: float, cls_weight: float) -> float:
+    if not classification_available:
+        return float(min(1.0, max(0.0, rule_score)))
+    total = float(max(1e-9, rule_weight + cls_weight))
+    blended = (float(rule_weight) * float(rule_score) + float(cls_weight) * float(cls_score)) / total
+    return float(min(1.0, max(0.0, blended)))
 
 
 def _evaluate_correction_rules(
@@ -643,6 +689,7 @@ class ElliottWaveAnalyzer:
 
         _, gmm, _, probs, _ = _classify_waves(features, self.config)
         cluster_means = gmm.means_ if gmm is not None else None
+        classification_available = probs is not None and cluster_means is not None
 
         out: List[ElliottScenario] = []
         pattern_types = _normalize_pattern_types(self.config)
@@ -664,7 +711,7 @@ class ElliottWaveAnalyzer:
                 if not (bullish or bearish):
                     continue
 
-                rule_eval = _evaluate_impulse_rules(self.close, piv_seq, bullish=bullish)
+                rule_eval = _evaluate_impulse_rules(self.close, piv_seq, bullish=bullish, config=self.config)
                 if not rule_eval.valid:
                     continue
 
@@ -678,7 +725,16 @@ class ElliottWaveAnalyzer:
                     counter_slots=[1, 3],
                     wave_index_map=wave_index_map,
                 )
-                confidence = float(min(1.0, max(0.0, 0.65 * rule_eval.fib_score + 0.35 * cls_score)))
+                pivot_confirmations = [True] * len(piv_seq)
+                if piv_seq and int(piv_seq[-1]) == int(piv_idx[-1]):
+                    pivot_confirmations[-1] = False
+                confidence = _blend_confidence(
+                    rule_eval.fib_score,
+                    cls_score,
+                    classification_available=classification_available,
+                    rule_weight=0.65,
+                    cls_weight=0.35,
+                )
                 if confidence < float(self.config.min_confidence):
                     continue
 
@@ -692,6 +748,8 @@ class ElliottWaveAnalyzer:
                         threshold_used=float(threshold_pct),
                         min_distance_used=int(min_distance),
                         wave_type="Impulse",
+                        classification_available=classification_available,
+                        pivot_confirmations=pivot_confirmations,
                     )
                 )
                 correction_exclusions.update(_contiguous_pivot_slices(piv_seq, 4))
@@ -731,7 +789,16 @@ class ElliottWaveAnalyzer:
                     counter_slots=[1],
                     wave_index_map=wave_index_map,
                 )
-                confidence = float(min(1.0, max(0.0, 0.60 * rule_eval.fib_score + 0.40 * cls_score)))
+                pivot_confirmations = [True] * len(piv_seq)
+                if piv_seq and int(piv_seq[-1]) == int(piv_idx[-1]):
+                    pivot_confirmations[-1] = False
+                confidence = _blend_confidence(
+                    rule_eval.fib_score,
+                    cls_score,
+                    classification_available=classification_available,
+                    rule_weight=0.60,
+                    cls_weight=0.40,
+                )
                 if confidence < float(self.config.min_confidence):
                     continue
 
@@ -745,6 +812,8 @@ class ElliottWaveAnalyzer:
                         threshold_used=float(threshold_pct),
                         min_distance_used=int(min_distance),
                         wave_type="Correction",
+                        classification_available=classification_available,
+                        pivot_confirmations=pivot_confirmations,
                     )
                 )
 
@@ -762,12 +831,16 @@ class ElliottWaveAnalyzer:
         wave_points_labeled: List[Dict[str, Any]] = []
         for j, idx in enumerate(piv_seq):
             ti = PatternResultBase.resolve_time(self.times, idx)
+            is_confirmed = True
+            if isinstance(scenario.pivot_confirmations, list) and j < len(scenario.pivot_confirmations):
+                is_confirmed = bool(scenario.pivot_confirmations[j])
             wave_points_labeled.append(
                 {
                     "label": labels[j],
                     "index": int(idx),
                     "time": ti,
                     "price": float(self.close[idx]),
+                    "is_confirmed": bool(is_confirmed),
                 }
             )
 
@@ -788,6 +861,12 @@ class ElliottWaveAnalyzer:
             "min_distance_used": int(scenario.min_distance_used),
             "fallback_candidate": bool(scenario.fallback_candidate),
             "synthetic_terminal_pivot": bool(scenario.synthetic_terminal_pivot),
+            "classification_available": bool(scenario.classification_available),
+            "has_unconfirmed_terminal_pivot": bool(
+                isinstance(scenario.pivot_confirmations, list)
+                and len(scenario.pivot_confirmations) > 0
+                and not bool(scenario.pivot_confirmations[-1])
+            ),
             "invalidation_level": invalidation_level,
         }
         if str(scenario.wave_type).lower() == "correction":
@@ -855,7 +934,7 @@ class ElliottWaveAnalyzer:
         rule_eval = ElliottRuleEvaluation(valid=False, fib_score=0.0, metrics={}, violations=["fallback_candidate"])
         validated_wave_type: Optional[str] = None
         if len(piv_seq) == 6 and "impulse" in pattern_types:
-            rule_eval = _evaluate_impulse_rules(self.close, piv_seq, bullish=bullish)
+            rule_eval = _evaluate_impulse_rules(self.close, piv_seq, bullish=bullish, config=self.config)
             if rule_eval.valid:
                 validated_wave_type = "Impulse"
         elif len(piv_seq) == 4 and "correction" in pattern_types:
@@ -883,6 +962,8 @@ class ElliottWaveAnalyzer:
             synthetic_terminal_pivot=bool(synthetic_terminal_pivot),
             wave_type="Candidate",
             validated_wave_type=validated_wave_type,
+            classification_available=False,
+            pivot_confirmations=([True] * max(0, len(piv_seq) - 1)) + ([False] if piv_seq else []),
         )
         return self.build_result(scenario)
 

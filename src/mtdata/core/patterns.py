@@ -39,6 +39,7 @@ from ..utils.mt5 import _mt5_copy_rates_from
 from ..utils.utils import _format_time_minimal, to_float_np as __to_float_np
 from ..patterns.candlestick import detect_candlestick_patterns as _detect_candlestick_patterns
 from ..patterns.classic import detect_classic_patterns as _detect_classic_patterns, ClassicDetectorConfig as _ClassicCfg
+from ..patterns.common import data_quality_warnings
 from ..patterns.elliott import detect_elliott_waves as _detect_elliott_waves, ElliottWaveConfig as _ElliottCfg
 from ._mcp_instance import mcp
 from .patterns_requests import PatternsDetectRequest
@@ -151,6 +152,12 @@ def _fetch_pattern_data(
     if len(df) > int(limit):
         df = df.iloc[-int(limit):].copy()
 
+    warnings_out.extend(
+        data_quality_warnings(
+            df,
+            timeframe_seconds=float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0),
+        )
+    )
     if warnings_out:
         df.attrs["warnings"] = list(warnings_out)
     
@@ -265,6 +272,9 @@ def _build_pattern_response(
     filtered = patterns if include_completed else [
         d for d in patterns if str(d.get('status', '')).lower() == 'forming'
     ]
+    completed_hidden = 0 if include_completed else int(
+        sum(1 for d in patterns if str(d.get("status", "")).lower() == "completed")
+    )
     
     resp: Dict[str, Any] = {
         "success": True,
@@ -275,6 +285,12 @@ def _build_pattern_response(
         "patterns": filtered,
         "n_patterns": int(len(filtered)),
     }
+    if completed_hidden > 0:
+        resp["completed_patterns_hidden"] = int(completed_hidden)
+        resp["note"] = (
+            f"{int(completed_hidden)} completed pattern(s) hidden; "
+            "set include_completed=true to include them."
+        )
     if str(mode).lower() == "elliott" and int(len(filtered)) == 0:
         resp["diagnostic"] = (
             f"No valid Elliott Wave structures detected in {int(limit)} {timeframe} bars. "
@@ -655,10 +671,10 @@ def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> List[str
 
     if not isinstance(config, dict):
         return []
-    unknown_keys: List[str] = []
+    invalid_keys: List[str] = []
     for k, v in config.items():
         if not hasattr(cfg, k):
-            unknown_keys.append(str(k))
+            invalid_keys.append(str(k))
             continue
         current = getattr(cfg, k)
         try:
@@ -673,15 +689,21 @@ def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> List[str
                     setattr(cfg, k, [v])
             elif isinstance(current, bool):
                 coerced = _coerce_bool(v)
-                setattr(cfg, k, bool(coerced) if isinstance(coerced, bool) else current)
+                if not isinstance(coerced, bool):
+                    invalid_keys.append(str(k))
+                    continue
+                setattr(cfg, k, bool(coerced))
+            elif current is None:
+                setattr(cfg, k, v)
             else:
                 setattr(cfg, k, type(current)(v))
         except Exception:
-            try:
-                setattr(cfg, k, v)
-            except Exception:
-                pass
-    return unknown_keys
+            invalid_keys.append(str(k))
+    deduped: List[str] = []
+    for key in invalid_keys:
+        if key not in deduped:
+            deduped.append(key)
+    return deduped
 
 @mcp.tool()
 def patterns_detect(

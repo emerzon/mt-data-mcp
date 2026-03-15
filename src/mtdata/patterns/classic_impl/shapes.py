@@ -275,6 +275,9 @@ def detect_diamonds(
     cfg: ClassicDetectorConfig,
     high: Optional[np.ndarray] = None,
     low: Optional[np.ndarray] = None,
+    *,
+    peaks: Optional[np.ndarray] = None,
+    troughs: Optional[np.ndarray] = None,
 ) -> List[ClassicPatternResult]:
     out: List[ClassicPatternResult] = []
     n = c.size
@@ -285,7 +288,17 @@ def detect_diamonds(
     seg = c[-W:]
     seg_h = np.asarray(high[-W:], dtype=float) if high is not None and high.size >= W else seg
     seg_l = np.asarray(low[-W:], dtype=float) if low is not None and low.size >= W else seg
-    peaks, troughs = _detect_pivots_close(seg, cfg, seg_h, seg_l)
+    seg_start = int(n - W)
+    local_peaks = None
+    local_troughs = None
+    if isinstance(peaks, np.ndarray):
+        local_peaks = peaks[(peaks >= seg_start) & (peaks < n)] - seg_start
+    if isinstance(troughs, np.ndarray):
+        local_troughs = troughs[(troughs >= seg_start) & (troughs < n)] - seg_start
+    if local_peaks is None or local_troughs is None:
+        local_peaks, local_troughs = _detect_pivots_close(seg, cfg, seg_h, seg_l)
+    peaks = np.asarray(local_peaks, dtype=int)
+    troughs = np.asarray(local_troughs, dtype=int)
     min_side = max(2, int(cfg.diamond_min_pivots_per_side))
     if peaks.size < (2 * min_side) or troughs.size < (2 * min_side):
         return out

@@ -13,7 +13,10 @@ def detect_flags_pennants(
     l: np.ndarray,
     t: np.ndarray,
     n: int,
-    cfg: ClassicDetectorConfig
+    cfg: ClassicDetectorConfig,
+    *,
+    peaks: Optional[np.ndarray] = None,
+    troughs: Optional[np.ndarray] = None,
 ) -> List[ClassicPatternResult]:
     out: List[ClassicPatternResult] = []
     # Identify a recent impulse (pole)
@@ -25,25 +28,34 @@ def detect_flags_pennants(
     if window < 10:
         return out
     idx0 = n - window
-    pole_len = max(10, max_len // 2)
-    pole_base_idx = idx0 - pole_len
-    if pole_base_idx < 0:
-        return out
-
     seg = c[-window:]
-    pole_base = float(c[pole_base_idx])
     seg_high = float(np.max(seg))
     seg_low = float(np.min(seg))
     bull_tip_idx_local = int(np.argmax(seg))
     bear_tip_idx_local = int(np.argmin(seg))
-    bull_ret = (seg_high - pole_base) / max(1e-9, abs(pole_base)) * 100.0
-    bear_ret = (seg_low - pole_base) / max(1e-9, abs(pole_base)) * 100.0
+    pole_len = max(10, max_len // 2)
+    fallback_base_idx = idx0 - pole_len
+    if fallback_base_idx < 0:
+        return out
+
+    hist_peaks = peaks if isinstance(peaks, np.ndarray) else np.asarray([], dtype=int)
+    hist_troughs = troughs if isinstance(troughs, np.ndarray) else np.asarray([], dtype=int)
+    bull_base_idx = int(hist_troughs[hist_troughs < idx0][-1]) if hist_troughs.size and np.any(hist_troughs < idx0) else int(fallback_base_idx)
+    bear_base_idx = int(hist_peaks[hist_peaks < idx0][-1]) if hist_peaks.size and np.any(hist_peaks < idx0) else int(fallback_base_idx)
+    bull_base = float(c[bull_base_idx])
+    bear_base = float(c[bear_base_idx])
+    bull_ret = (seg_high - bull_base) / max(1e-9, abs(bull_base)) * 100.0
+    bear_ret = (seg_low - bear_base) / max(1e-9, abs(bear_base)) * 100.0
     if abs(bull_ret) >= abs(bear_ret):
         ret = float(bull_ret)
+        pole_base_idx = int(bull_base_idx)
+        pole_base = float(bull_base)
         pole_tip = float(seg_high)
         pole_tip_idx_local = bull_tip_idx_local
     else:
         ret = float(bear_ret)
+        pole_base_idx = int(bear_base_idx)
+        pole_base = float(bear_base)
         pole_tip = float(seg_low)
         pole_tip_idx_local = bear_tip_idx_local
     if abs(ret) < cfg.min_pole_return_pct:

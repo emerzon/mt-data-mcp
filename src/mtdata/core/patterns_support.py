@@ -302,6 +302,10 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         value = payload.get(key)
         if value not in (None, "", [], {}):
             compact[key] = value
+    for key in ("warnings", "note", "completed_patterns_hidden"):
+        value = payload.get(key)
+        if value not in (None, "", [], {}):
+            compact[key] = value
 
     findings = payload.get("findings")
     if isinstance(findings, list):

@@ -6,6 +6,8 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from .common import data_quality_warnings
+from ..shared.constants import TIMEFRAME_SECONDS
 from ..shared.validators import invalid_timeframe_error
 from ..utils.utils import (
     _table_from_rows,
@@ -26,6 +28,7 @@ _symbol_ready_guard: Any = None
 _CANDLESTICK_PATTERN_METHOD_CACHE: Optional[Tuple[str, ...]] = None
 _CANDLESTICK_PATTERN_METHOD_CACHE_KEY: Optional[str] = None
 _CANDLESTICK_PATTERN_METHOD_CACHE_LOCK = Lock()
+_CANDLESTICK_RUNTIME_LOCK = Lock()
 _ROBUST_CANDLESTICK_WHITELIST = {
     'engulfing', 'harami', '3inside', '3outside', 'eveningstar', 'morningstar',
     'darkcloudcover', 'piercing', 'inside', 'outside', 'hikkake'
@@ -93,42 +96,53 @@ def _candlestick_span_bars(pattern_name: str) -> int:
 def _ensure_candlestick_runtime() -> None:
     global ta, mt5, TIMEFRAME_MAP, _mt5_copy_rates_from, _rates_to_df, _symbol_ready_guard
 
-    if ta is None:
-        try:
-            import pandas_ta as ta_mod  # type: ignore
-        except ModuleNotFoundError:
+    if (
+        ta is not None
+        and mt5 is not None
+        and TIMEFRAME_MAP is not None
+        and _mt5_copy_rates_from is not None
+        and _rates_to_df is not None
+        and _symbol_ready_guard is not None
+    ):
+        return
+
+    with _CANDLESTICK_RUNTIME_LOCK:
+        if ta is None:
             try:
-                import pandas_ta_classic as ta_mod  # type: ignore
+                import pandas_ta as ta_mod  # type: ignore
+            except ModuleNotFoundError:
+                try:
+                    import pandas_ta_classic as ta_mod  # type: ignore
+                except ModuleNotFoundError as e:
+                    raise ModuleNotFoundError(
+                        "pandas_ta not found. Install 'pandas-ta-classic' (or 'pandas-ta')."
+                    ) from e
+            ta = ta_mod
+
+        if mt5 is None:
+            try:
+                from ..utils.mt5 import mt5 as mt5_mod
             except ModuleNotFoundError as e:
                 raise ModuleNotFoundError(
-                    "pandas_ta not found. Install 'pandas-ta-classic' (or 'pandas-ta')."
+                    "MetaTrader5 not found. Install 'MetaTrader5' to use candlestick detection."
                 ) from e
-        ta = ta_mod
+            mt5 = mt5_mod
 
-    if mt5 is None:
-        try:
-            from ..utils.mt5 import mt5 as mt5_mod
-        except ModuleNotFoundError as e:
-            raise ModuleNotFoundError(
-                "MetaTrader5 not found. Install 'MetaTrader5' to use candlestick detection."
-            ) from e
-        mt5 = mt5_mod
+        if TIMEFRAME_MAP is None:
+            from ..shared.constants import TIMEFRAME_MAP as timeframe_map
 
-    if TIMEFRAME_MAP is None:
-        from ..shared.constants import TIMEFRAME_MAP as timeframe_map
+            TIMEFRAME_MAP = timeframe_map
 
-        TIMEFRAME_MAP = timeframe_map
+        if _mt5_copy_rates_from is None or _rates_to_df is None or _symbol_ready_guard is None:
+            from ..utils.mt5 import (
+                _mt5_copy_rates_from as copy_rates_from,
+                _rates_to_df as rates_to_df,
+                _symbol_ready_guard as symbol_ready_guard,
+            )
 
-    if _mt5_copy_rates_from is None or _rates_to_df is None or _symbol_ready_guard is None:
-        from ..utils.mt5 import (
-            _mt5_copy_rates_from as copy_rates_from,
-            _rates_to_df as rates_to_df,
-            _symbol_ready_guard as symbol_ready_guard,
-        )
-
-        _mt5_copy_rates_from = copy_rates_from
-        _rates_to_df = rates_to_df
-        _symbol_ready_guard = symbol_ready_guard
+            _mt5_copy_rates_from = copy_rates_from
+            _rates_to_df = rates_to_df
+            _symbol_ready_guard = symbol_ready_guard
 
 
 def _discover_candlestick_pattern_methods(ta_accessor: Any) -> Tuple[str, ...]:
@@ -211,21 +225,6 @@ def _extract_candlestick_rows(
         dtype=object,
     )
     normalized_names = np.asarray([_normalize_candlestick_name(name) for name in base_names], dtype=object)
-    allowed_mask = np.asarray(
-        [
-            _is_candlestick_allowed(
-                str(name),
-                robust_only=bool(robust_only),
-                robust_set=robust_set,
-                whitelist_set=whitelist_set,
-            )
-            for name in base_names
-        ],
-        dtype=bool,
-    )
-    if not bool(np.any(allowed_mask)):
-        return []
-
     try:
         values = (
             temp_tail.loc[:, pattern_cols]
@@ -236,7 +235,6 @@ def _extract_candlestick_rows(
         values = temp_tail.loc[:, pattern_cols].to_numpy(dtype=float, copy=True)
 
     active_mask = np.isfinite(values) & (np.abs(values) >= float(threshold) * 100.0)
-    active_mask &= allowed_mask[np.newaxis, :]
     if not bool(np.any(active_mask)):
         return []
 
@@ -285,6 +283,11 @@ def _extract_candlestick_rows(
                 end_time = str(time_vals[i])
                 direction = "bullish" if value > 0 else "bearish"
                 strength = float(max(0.0, min(1.0, abs(value) / 100.0)))
+                raw_signal: Any
+                if abs(value - round(value)) <= 1e-9:
+                    raw_signal = int(round(value))
+                else:
+                    raw_signal = float(value)
                 price = float(close_vals[i]) if close_vals is not None and np.isfinite(close_vals[i]) else None
                 rows.append(
                     [
@@ -292,6 +295,7 @@ def _extract_candlestick_rows(
                         f"{dir_title} {label_core}" if label_core else dir_title,
                         direction,
                         strength,
+                        raw_signal,
                         price,
                         start_time,
                         end_time,
@@ -356,6 +360,10 @@ def detect_candlestick_patterns(
         return {"error": "No candle data available"}
 
     df = _rates_to_df(rates)
+    warnings_out = data_quality_warnings(
+        df,
+        timeframe_seconds=float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0),
+    )
     epochs = [float(t) for t in df['time'].tolist()] if 'time' in df.columns else []
     _use_ctz = _use_client_tz()
     if _use_ctz:
@@ -454,7 +462,7 @@ def detect_candlestick_patterns(
         start_index=start_index,
     )
 
-    headers = ["time", "pattern", "direction", "confidence", "price", "start_time", "end_time", "n_bars"]
+    headers = ["time", "pattern", "direction", "confidence", "raw_signal", "price", "start_time", "end_time", "n_bars"]
     payload = _table_from_rows(headers, rows)
     signal_cutoff = float(thr) * 100.0
     payload.update({
@@ -467,6 +475,8 @@ def detect_candlestick_patterns(
         "signal_cutoff": float(signal_cutoff),
         "signal_scale": "pandas_ta_signal_x100",
     })
+    if warnings_out:
+        payload["warnings"] = warnings_out
     if last_n_val is not None:
         payload["last_n_bars"] = int(last_n_val)
     if not _use_ctz:

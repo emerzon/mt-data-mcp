@@ -154,9 +154,10 @@ class TestExtractCandlestickRows:
             include_metrics=True,
         )
 
-        assert rows[0][5] == "2024-01-02"
-        assert rows[0][6] == "2024-01-04"
-        assert rows[0][7] == 3
+        assert rows[0][4] == 100
+        assert rows[0][6] == "2024-01-02"
+        assert rows[0][7] == "2024-01-04"
+        assert rows[0][8] == 3
 
 
 class TestCandlestickSpanBars:

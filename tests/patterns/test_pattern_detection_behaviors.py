@@ -231,7 +231,7 @@ def test_extract_candlestick_rows_includes_metrics_when_enabled():
         include_metrics=True,
     )
 
-    assert rows == [["T1", "Bullish ENGULFING", "bullish", 1.0, 101.5, "T0", "T1", 2]]
+    assert rows == [["T1", "Bullish ENGULFING", "bullish", 1.0, 100, 101.5, "T0", "T1", 2]]
 
 
 @contextmanager
@@ -337,6 +337,59 @@ def test_detect_candlestick_patterns_prefilters_methods_by_whitelist(monkeypatch
     assert res["min_strength"] == pytest.approx(0.95)
     assert res["signal_cutoff"] == pytest.approx(95.0)
     assert res["signal_scale"] == "pandas_ta_signal_x100"
+
+
+def test_detect_candlestick_patterns_exposes_raw_signal_and_quality_warning(monkeypatch):
+    class _FakeFrame(pd.DataFrame):
+        @property
+        def _constructor(self):
+            return _FakeFrame
+
+        @property
+        def ta(self):
+            frame = self
+
+            class _Accessor:
+                def cdl_alpha(self, append=True):
+                    _ = append
+                    frame["cdl_alpha"] = [0.0, 200.0, 0.0]
+
+            return _Accessor()
+
+    monkeypatch.setattr(candlestick_mod, "_ensure_candlestick_runtime", lambda: None)
+    monkeypatch.setattr(candlestick_mod, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(candlestick_mod, "_symbol_ready_guard", _always_ready_guard)
+    monkeypatch.setattr(candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object(), object(), object()])
+    monkeypatch.setattr(candlestick_mod, "_get_candlestick_pattern_methods", lambda _temp: ["cdl_alpha"])
+
+    def _fake_rates_to_df(_rates):
+        return _FakeFrame(
+            {
+                "time": [1_700_000_000.0, 1_700_003_600.0, 1_700_007_200.0],
+                "open": [100.0, 100.0, 100.0],
+                "high": [100.0, 100.0, 100.0],
+                "low": [100.0, 100.0, 100.0],
+                "close": [100.0, 100.0, 100.0],
+            }
+        )
+
+    monkeypatch.setattr(candlestick_mod, "_rates_to_df", _fake_rates_to_df)
+
+    res = candlestick_mod.detect_candlestick_patterns(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=10,
+        min_strength=0.95,
+        min_gap=0,
+        robust_only=False,
+        whitelist=None,
+        top_k=1,
+    )
+
+    assert res["success"] is True
+    assert res["data"][0]["raw_signal"] == 200
+    assert "warnings" in res
+    assert any("repeated close prices" in warning for warning in res["warnings"])
 
 
 def test_extract_candlestick_rows_respects_start_index():
@@ -528,6 +581,16 @@ def test_apply_config_to_obj_coerces_bool_strings():
     assert cfg.use_dtw_check is True
 
 
+def test_apply_config_to_obj_rejects_invalid_type_coercion():
+    cfg = ClassicDetectorConfig()
+    original = cfg.min_distance
+
+    invalid = _apply_config_to_obj(cfg, {"min_distance": "not-an-int"})
+
+    assert cfg.min_distance == original
+    assert invalid == ["min_distance"]
+
+
 def test_build_pattern_response_include_completed_filter_behavior():
     df = pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 11.0, 12.0]})
     patterns = [
@@ -560,6 +623,8 @@ def test_build_pattern_response_include_completed_filter_behavior():
 
     assert forming_only["n_patterns"] == 1
     assert forming_only["patterns"][0]["status"] == "forming"
+    assert forming_only["completed_patterns_hidden"] == 1
+    assert "include_completed=true" in forming_only["note"]
     assert with_completed["n_patterns"] == 2
 
 
@@ -1226,7 +1291,7 @@ def test_detect_tops_bottoms_merges_connected_same_level_cluster():
     assert triple_top.details["touches"] == 4
 
 
-def test_detect_head_shoulders_fits_neckline_with_all_internal_troughs(monkeypatch):
+def test_detect_head_shoulders_fits_neckline_with_reaction_troughs(monkeypatch):
     from src.mtdata.patterns.classic_impl import reversal
 
     captured = {}
@@ -1251,9 +1316,10 @@ def test_detect_head_shoulders_fits_neckline_with_all_internal_troughs(monkeypat
     )
 
     assert out
-    assert captured["x"] == [2.0, 5.0, 6.0]
+    assert captured["x"] == [2.0, 5.0]
     assert out[0].details["neckline_source"] == "troughs"
-    assert out[0].details["neck_points"] == 3
+    assert out[0].details["neck_points"] == 2
+    assert out[0].details["neck_validation_points"] == 1
 
 
 def test_detect_inverse_head_shoulders_uses_internal_peaks_for_neckline(monkeypatch):
@@ -1314,6 +1380,36 @@ def test_detect_rounding_tries_multiple_windows(monkeypatch):
     assert called == [100, 220] or called == [220, 100]
     assert out
     assert out[0].details["window_bars"] == 100
+
+
+def test_detect_rounding_returns_multiple_non_overlapping_windows(monkeypatch):
+    from src.mtdata.patterns.classic_impl import reversal
+
+    n = 320
+    close = np.linspace(100.0, 110.0, n)
+    fits = {
+        100: np.array([0.5, 0.0, 95.0], dtype=float),
+        220: np.array([0.55, 0.0, 95.0], dtype=float),
+    }
+
+    def _fake_polyfit(x, y, deg):
+        _ = (y, deg)
+        value = fits.get(len(x))
+        if value is None:
+            raise np.linalg.LinAlgError("skip")
+        return value
+
+    monkeypatch.setattr(reversal.np, "polyfit", _fake_polyfit)
+    monkeypatch.setattr(reversal, "_level_close", lambda *_args, **_kwargs: True)
+
+    out = reversal.detect_rounding(
+        close,
+        np.arange(n, dtype=float),
+        ClassicDetectorConfig(rounding_window_bars=220, rounding_window_sizes=[100, 220]),
+    )
+
+    assert len(out) == 2
+    assert {pattern.details["window_bars"] for pattern in out} == {100, 220}
 
 
 def test_dedupe_overlapping_head_shoulders_results():

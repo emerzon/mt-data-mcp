@@ -1067,6 +1067,21 @@ class TestFetchPatternData:
         assert "warnings" in df.attrs
         assert any("raw prices were used" in str(w) for w in df.attrs["warnings"])
 
+    @patch("mtdata.core.patterns.mt5")
+    @patch("mtdata.core.patterns._mt5_copy_rates_from")
+    def test_data_quality_warnings_are_attached(self, mock_rates, mock_mt5):
+        mock_mt5.symbol_info.return_value = MagicMock(visible=True)
+        rates = _make_rates_array(200)
+        rates["close"] = rates["close"][0]
+        mock_rates.return_value = rates
+
+        df, err = self._call("EURUSD", "H1", 100)
+
+        assert err is None
+        assert df is not None
+        assert "warnings" in df.attrs
+        assert any("repeated close prices" in str(w) for w in df.attrs["warnings"])
+
 
 # ── _format_elliott_patterns ─────────────────────────────────────────────
 

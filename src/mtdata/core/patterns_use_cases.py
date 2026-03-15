@@ -234,6 +234,7 @@ def run_patterns_detect(
         failed_timeframes: Dict[str, str] = {}
         series_by_timeframe: Dict[str, Dict[str, Any]] = {}
         warnings_out: List[str] = []
+        completed_hidden_total = 0
 
         for tf in scanned_timeframes:
             df, err = deps.fetch_pattern_data(request.symbol, tf, request.limit, request.denoise)
@@ -249,11 +250,17 @@ def run_patterns_detect(
                     d for d in tf_patterns if str(d.get("status", "")).lower() == "forming"
                 ]
             )
+            completed_hidden = 0 if request.include_completed else int(
+                sum(1 for d in tf_patterns if str(d.get("status", "")).lower() == "completed")
+            )
+            completed_hidden_total += int(completed_hidden)
             finding_row: Dict[str, Any] = {
                 "timeframe": tf,
                 "n_patterns": int(len(filtered)),
                 "patterns": filtered,
             }
+            if completed_hidden > 0:
+                finding_row["completed_patterns_hidden"] = int(completed_hidden)
             tf_warnings = df.attrs.get("warnings")
             if isinstance(tf_warnings, list) and tf_warnings:
                 finding_row["warnings"] = [str(w) for w in tf_warnings if str(w)]
@@ -309,6 +316,12 @@ def run_patterns_detect(
             resp["diagnostic"] = (
                 "No valid Elliott Wave structures were detected across scanned timeframes. "
                 "Try increasing lookback or focusing on higher-structure windows like H4/D1."
+            )
+        if completed_hidden_total > 0:
+            resp["completed_patterns_hidden"] = int(completed_hidden_total)
+            resp["note"] = (
+                f"{int(completed_hidden_total)} completed pattern(s) hidden; "
+                "set include_completed=true to include them."
             )
         if failed_timeframes:
             resp["failed_timeframes"] = failed_timeframes
