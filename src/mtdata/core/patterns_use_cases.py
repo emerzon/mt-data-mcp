@@ -162,7 +162,7 @@ def run_patterns_detect(
             only_engine = next(iter(non_empty.keys()))
             out_list = list(non_empty.get(only_engine, []))
 
-        out_list = enrich_classic_patterns(out_list, df)
+        out_list = enrich_classic_patterns(out_list, df, cfg)
         visible_rows = (
             out_list
             if request.include_completed

@@ -15,6 +15,7 @@ from .patterns_support import (
     _build_stock_pattern_frame,
     _compact_patterns_payload,
     _enrich_classic_patterns,
+    _enrich_elliott_patterns,
     _estimate_classic_bars_to_completion,
     _format_pattern_dates,
     _index_pos_for_timestamp,
@@ -256,7 +257,7 @@ def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[st
             )
         except Exception:
             continue
-    return out_list
+    return _enrich_elliott_patterns(out_list, df, cfg)
 
 
 def _format_classic_native_patterns(df: pd.DataFrame, cfg: _ClassicCfg) -> List[Dict[str, Any]]:

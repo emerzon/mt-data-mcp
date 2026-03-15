@@ -1354,6 +1354,7 @@ def test_patterns_detect_classic_adds_signal_summary_and_levels(monkeypatch):
     rows = res["patterns"]
     assert all("bias" in row for row in rows)
     assert all("reference_price" in row for row in rows)
+    assert all("volume_confirmation" in row["details"] for row in rows if isinstance(row.get("details"), dict))
     assert all("target_price" in row for row in rows)
     assert all("invalidation_price" in row for row in rows)
 

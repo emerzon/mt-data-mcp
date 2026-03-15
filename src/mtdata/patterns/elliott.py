@@ -25,6 +25,10 @@ class ElliottWaveConfig:
     gmm_components: int = 2  # Impulsive vs corrective clusters
     min_gmm_waves: int = 8
     wave_min_len: int = 3
+    use_volume_confirmation: bool = True
+    volume_confirm_min_ratio: float = 1.05
+    volume_confirm_bonus: float = 0.06
+    volume_confirm_penalty: float = 0.04
 
     # Autotuning controls
     autotune: bool = True

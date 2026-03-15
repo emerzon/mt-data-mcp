@@ -624,6 +624,7 @@ class TestEnrichClassicPatterns:
 
     def test_forming_patterns_project_line_levels_to_current_bar(self):
         from mtdata.core.patterns_support import _enrich_classic_patterns
+        from mtdata.patterns.classic import ClassicDetectorConfig
 
         df = _make_ohlcv_df(6)
         rows = [
@@ -645,6 +646,41 @@ class TestEnrichClassicPatterns:
 
         assert enriched[0]["price_levels"]["resistance"] == pytest.approx(105.0)
         assert enriched[0]["price_levels"]["support"] == pytest.approx(97.5)
+
+    def test_completed_patterns_gain_volume_confirmation_bonus(self):
+        from mtdata.core.patterns_support import _enrich_classic_patterns
+        from mtdata.patterns.classic import ClassicDetectorConfig
+
+        df = _make_ohlcv_df(12)
+        df["tick_volume"] = [100, 110, 105, 95, 100, 120, 130, 125, 140, 300, 320, 115]
+        rows = [
+            {
+                "name": "Ascending Triangle",
+                "status": "completed",
+                "confidence": 0.6,
+                "start_index": 2,
+                "end_index": 10,
+                "details": {"breakout_direction": "up"},
+            }
+        ]
+
+        enriched = _enrich_classic_patterns(
+            rows,
+            df,
+            ClassicDetectorConfig(
+                volume_confirm_lookback_bars=4,
+                volume_confirm_breakout_bars=2,
+                volume_confirm_min_ratio=1.2,
+                volume_confirm_bonus=0.1,
+                volume_confirm_penalty=0.1,
+            ),
+        )
+
+        volume_confirmation = enriched[0]["details"]["volume_confirmation"]
+        assert enriched[0]["confidence"] == pytest.approx(0.7)
+        assert volume_confirmation["status"] == "confirmed"
+        assert volume_confirmation["volume_source"] in {"volume", "tick_volume"}
+        assert volume_confirmation["breakout_to_baseline_ratio"] > 1.2
 
 
 # ── _build_pattern_response ──────────────────────────────────────────────
@@ -978,6 +1014,46 @@ class TestFormatElliottPatterns:
         result = self._call(df, MagicMock())
         # Should either skip or handle gracefully
         assert isinstance(result, list)
+
+    @patch("mtdata.core.patterns._detect_elliott_waves")
+    def test_adds_volume_confirmation(self, mock_detect):
+        from mtdata.patterns.elliott import ElliottWaveConfig
+
+        df = _make_ohlcv_df(12)
+        df["tick_volume"] = [200, 210, 220, 100, 110, 240, 250, 120, 130, 260, 270, 140]
+        mock_detect.return_value = [
+            _mock_pattern_result(
+                wave_type="Impulse",
+                start_index=0,
+                end_index=10,
+                confidence=0.7,
+                details={
+                    "pattern_family": "impulse",
+                    "wave_points_labeled": [
+                        {"label": "W0", "index": 0, "time": 1.0, "price": 1.0},
+                        {"label": "W1", "index": 2, "time": 2.0, "price": 2.0},
+                        {"label": "W2", "index": 4, "time": 3.0, "price": 3.0},
+                        {"label": "W3", "index": 6, "time": 4.0, "price": 4.0},
+                        {"label": "W4", "index": 8, "time": 5.0, "price": 5.0},
+                        {"label": "W5", "index": 10, "time": 6.0, "price": 6.0},
+                    ],
+                },
+            ),
+        ]
+
+        result = self._call(
+            df,
+            ElliottWaveConfig(
+                volume_confirm_min_ratio=1.1,
+                volume_confirm_bonus=0.1,
+                volume_confirm_penalty=0.1,
+            ),
+        )
+
+        volume_confirmation = result[0]["details"]["volume_confirmation"]
+        assert result[0]["confidence"] == pytest.approx(0.8)
+        assert volume_confirmation["status"] == "confirmed"
+        assert volume_confirmation["trend_to_counter_ratio"] > 1.1
 
 
 # ── patterns_detect (main tool) ──────────────────────────────────────────

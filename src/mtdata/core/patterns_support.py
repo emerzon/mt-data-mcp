@@ -345,6 +345,295 @@ def _close_price_at_index(df: pd.DataFrame, end_index: Any) -> Optional[float]:
     return float(last) if last is not None and np.isfinite(last) else None
 
 
+def _config_bool(config: Any, key: str, default: bool) -> bool:
+    try:
+        value = getattr(config, key)
+    except Exception:
+        return bool(default)
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if s in {"true", "1", "yes", "y", "on"}:
+            return True
+        if s in {"false", "0", "no", "n", "off"}:
+            return False
+    return bool(default)
+
+
+def _config_int(config: Any, key: str, default: int, *, minimum: int = 0) -> int:
+    try:
+        value = int(getattr(config, key))
+    except Exception:
+        value = int(default)
+    return max(int(minimum), int(value))
+
+
+def _config_float(config: Any, key: str, default: float, *, minimum: float = 0.0) -> float:
+    try:
+        value = float(getattr(config, key))
+    except Exception:
+        value = float(default)
+    if not np.isfinite(value):
+        value = float(default)
+    return float(max(float(minimum), value))
+
+
+def _resolve_volume_series(df: pd.DataFrame) -> Tuple[Optional[np.ndarray], Optional[str]]:
+    if not isinstance(df, pd.DataFrame) or len(df) <= 0:
+        return None, None
+
+    if "real_volume" in df.columns:
+        try:
+            real_volume = pd.to_numeric(df["real_volume"], errors="coerce").to_numpy(dtype=float, copy=False)
+        except Exception:
+            real_volume = np.asarray([], dtype=float)
+        finite_real = real_volume[np.isfinite(real_volume)]
+        if finite_real.size > 0 and np.nanmax(finite_real) > 0:
+            return real_volume, "real_volume"
+
+    for col in ("volume", "tick_volume", "Volume"):
+        if col not in df.columns:
+            continue
+        try:
+            volume = pd.to_numeric(df[col], errors="coerce").to_numpy(dtype=float, copy=False)
+        except Exception:
+            continue
+        if volume.size <= 0:
+            continue
+        if np.isfinite(volume).any():
+            return volume, str(col)
+    return None, None
+
+
+def _volume_window_mean(volume: Optional[np.ndarray], start_index: Any, end_index: Any) -> Optional[float]:
+    if volume is None or len(volume) <= 0:
+        return None
+    try:
+        start_i = int(start_index)
+        end_i = int(end_index)
+    except Exception:
+        return None
+    start_i = max(0, start_i)
+    end_i = min(int(len(volume) - 1), end_i)
+    if end_i < start_i:
+        return None
+    window = np.asarray(volume[start_i : end_i + 1], dtype=float)
+    window = window[np.isfinite(window)]
+    window = window[window >= 0]
+    if window.size <= 0:
+        return None
+    return float(np.mean(window))
+
+
+def _apply_confidence_delta(row: Dict[str, Any], delta: float) -> None:
+    if not np.isfinite(delta) or abs(float(delta)) <= 1e-12:
+        return
+    conf = _row_confidence_weight(row)
+    row["confidence"] = float(max(0.0, min(1.0, conf + float(delta))))
+
+
+def _attach_classic_volume_confirmation(
+    row: Dict[str, Any],
+    df: pd.DataFrame,
+    config: Any,
+) -> Dict[str, Any]:
+    out = dict(row)
+    details = out.get("details")
+    if not isinstance(details, dict):
+        details = {}
+    else:
+        details = dict(details)
+
+    payload: Dict[str, Any] = {
+        "mode": "breakout",
+        "status": "disabled" if not _config_bool(config, "use_volume_confirmation", True) else "unavailable",
+        "volume_source": None,
+    }
+    if payload["status"] == "disabled":
+        details["volume_confirmation"] = payload
+        out["details"] = details
+        return out
+
+    volume, source = _resolve_volume_series(df)
+    payload["volume_source"] = source
+    if volume is None or source is None:
+        details["volume_confirmation"] = payload
+        out["details"] = details
+        return out
+
+    breakout_bars = _config_int(config, "volume_confirm_breakout_bars", 2, minimum=1)
+    lookback_bars = _config_int(config, "volume_confirm_lookback_bars", 20, minimum=breakout_bars + 1)
+    min_ratio = _config_float(config, "volume_confirm_min_ratio", 1.10, minimum=1.0)
+    bonus = _config_float(config, "volume_confirm_bonus", 0.08, minimum=0.0)
+    penalty = _config_float(config, "volume_confirm_penalty", 0.06, minimum=0.0)
+
+    end_index = max(0, min(int(len(volume) - 1), int(_safe_float(out.get("end_index")) or 0)))
+    signal_start = max(0, int(end_index - breakout_bars + 1))
+    baseline_end = int(signal_start - 1)
+    baseline_start = max(0, int(baseline_end - lookback_bars + 1))
+    signal_avg = _volume_window_mean(volume, signal_start, end_index)
+    baseline_avg = _volume_window_mean(volume, baseline_start, baseline_end)
+    ratio = (
+        float(signal_avg) / float(baseline_avg)
+        if signal_avg is not None and baseline_avg is not None and baseline_avg > 0
+        else None
+    )
+
+    payload["lookback_bars"] = int(lookback_bars)
+    payload["breakout_bars"] = int(breakout_bars)
+    if baseline_avg is not None:
+        payload["baseline_avg_volume"] = _round_value(baseline_avg)
+    if signal_avg is not None:
+        payload["breakout_avg_volume"] = _round_value(signal_avg)
+    if ratio is not None and np.isfinite(ratio):
+        payload["breakout_to_baseline_ratio"] = _round_value(ratio)
+
+    status = str(out.get("status", "")).strip().lower()
+    confidence_delta = 0.0
+    if ratio is None:
+        payload["status"] = "unavailable"
+    elif status == "completed":
+        reject_ratio = (1.0 / float(min_ratio)) if min_ratio > 0 else 0.0
+        if ratio >= float(min_ratio):
+            payload["status"] = "confirmed"
+            confidence_delta = float(bonus)
+        elif ratio <= float(reject_ratio):
+            payload["status"] = "rejected"
+            confidence_delta = -float(penalty)
+        else:
+            payload["status"] = "neutral"
+    else:
+        payload["status"] = "pending"
+
+    if abs(confidence_delta) > 1e-12:
+        payload["confidence_delta"] = _round_value(confidence_delta)
+        _apply_confidence_delta(out, confidence_delta)
+
+    details["volume_confirmation"] = payload
+    out["details"] = details
+    return out
+
+
+def _elliott_wave_indices(details: Dict[str, Any]) -> List[int]:
+    points = details.get("wave_points_labeled")
+    if not isinstance(points, list):
+        return []
+    out: List[int] = []
+    for item in points:
+        if not isinstance(item, dict):
+            continue
+        idx = _safe_float(item.get("index"))
+        if idx is None:
+            continue
+        out.append(int(idx))
+    return out
+
+
+def _attach_elliott_volume_confirmation(
+    row: Dict[str, Any],
+    df: pd.DataFrame,
+    config: Any,
+) -> Dict[str, Any]:
+    out = dict(row)
+    details = out.get("details")
+    if not isinstance(details, dict):
+        details = {}
+    else:
+        details = dict(details)
+
+    payload: Dict[str, Any] = {
+        "mode": "wave_segments",
+        "status": "disabled" if not _config_bool(config, "use_volume_confirmation", True) else "unavailable",
+        "volume_source": None,
+    }
+    if payload["status"] == "disabled":
+        details["volume_confirmation"] = payload
+        out["details"] = details
+        return out
+
+    wave_type = str(out.get("wave_type") or details.get("pattern_family") or "").strip().lower()
+    if wave_type == "candidate":
+        payload["status"] = "candidate"
+        details["volume_confirmation"] = payload
+        out["details"] = details
+        return out
+
+    family = str(details.get("pattern_family") or wave_type).strip().lower()
+    if family not in {"impulse", "correction"}:
+        details["volume_confirmation"] = payload
+        out["details"] = details
+        return out
+
+    volume, source = _resolve_volume_series(df)
+    payload["volume_source"] = source
+    if volume is None or source is None:
+        details["volume_confirmation"] = payload
+        out["details"] = details
+        return out
+
+    pivots = _elliott_wave_indices(details)
+    if len(pivots) < 4:
+        details["volume_confirmation"] = payload
+        out["details"] = details
+        return out
+
+    segment_averages: Dict[int, float] = {}
+    for segment_index in range(len(pivots) - 1):
+        seg_avg = _volume_window_mean(volume, pivots[segment_index], pivots[segment_index + 1])
+        if seg_avg is not None:
+            segment_averages[segment_index] = float(seg_avg)
+
+    trend_slots = [0, 2, 4] if family == "impulse" else [0, 2]
+    counter_slots = [1, 3] if family == "impulse" else [1]
+    trend_values = [segment_averages[i] for i in trend_slots if i in segment_averages]
+    counter_values = [segment_averages[i] for i in counter_slots if i in segment_averages]
+    if not trend_values or not counter_values:
+        details["volume_confirmation"] = payload
+        out["details"] = details
+        return out
+
+    trend_avg = float(np.mean(np.asarray(trend_values, dtype=float)))
+    counter_avg = float(np.mean(np.asarray(counter_values, dtype=float)))
+    ratio = (trend_avg / counter_avg) if counter_avg > 0 else None
+
+    payload["trend_segment_avg_volume"] = _round_value(trend_avg)
+    payload["counter_segment_avg_volume"] = _round_value(counter_avg)
+    payload["trend_segments_used"] = int(len(trend_values))
+    payload["counter_segments_used"] = int(len(counter_values))
+    if ratio is not None and np.isfinite(ratio):
+        payload["trend_to_counter_ratio"] = _round_value(ratio)
+
+    min_ratio = _config_float(config, "volume_confirm_min_ratio", 1.05, minimum=1.0)
+    bonus = _config_float(config, "volume_confirm_bonus", 0.06, minimum=0.0)
+    penalty = _config_float(config, "volume_confirm_penalty", 0.04, minimum=0.0)
+    confidence_delta = 0.0
+    if ratio is None:
+        payload["status"] = "unavailable"
+    else:
+        reject_ratio = (1.0 / float(min_ratio)) if min_ratio > 0 else 0.0
+        if ratio >= float(min_ratio):
+            payload["status"] = "confirmed"
+            confidence_delta = float(bonus)
+        elif ratio <= float(reject_ratio):
+            payload["status"] = "rejected"
+            confidence_delta = -float(penalty)
+        else:
+            payload["status"] = "neutral"
+
+    if abs(confidence_delta) > 1e-12:
+        payload["confidence_delta"] = _round_value(confidence_delta)
+        _apply_confidence_delta(out, confidence_delta)
+
+    details["volume_confirmation"] = payload
+    out["details"] = details
+    return out
+
+
 _CLASSIC_BIAS_KEYWORDS = (
     ("inverse head and shoulders", "bullish"),
     ("head and shoulders", "bearish"),
@@ -461,7 +750,7 @@ def _classic_pattern_height(
     return None
 
 
-def _enrich_classic_pattern_row(row: Dict[str, Any], df: pd.DataFrame) -> Dict[str, Any]:
+def _enrich_classic_pattern_row(row: Dict[str, Any], df: pd.DataFrame, config: Any = None) -> Dict[str, Any]:
     out = dict(row)
     details = out.get("details")
     if not isinstance(details, dict):
@@ -514,15 +803,24 @@ def _enrich_classic_pattern_row(row: Dict[str, Any], df: pd.DataFrame) -> Dict[s
         out["invalidation_price"] = _round_value(invalidation)
     if levels:
         out["price_levels"] = {key: _round_value(value) for key, value in levels.items()}
-    return out
+    return _attach_classic_volume_confirmation(out, df, config)
 
 
-def _enrich_classic_patterns(rows: List[Dict[str, Any]], df: pd.DataFrame) -> List[Dict[str, Any]]:
+def _enrich_classic_patterns(rows: List[Dict[str, Any]], df: pd.DataFrame, config: Any = None) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
-        out.append(_enrich_classic_pattern_row(row, df))
+        out.append(_enrich_classic_pattern_row(row, df, config))
+    return out
+
+
+def _enrich_elliott_patterns(rows: List[Dict[str, Any]], df: pd.DataFrame, config: Any = None) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        out.append(_attach_elliott_volume_confirmation(row, df, config))
     return out
 
 

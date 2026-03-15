@@ -68,6 +68,13 @@ class ClassicDetectorConfig:
     use_dtw_check: bool = True      # optional DTW shape confirmation for select patterns
     dtw_paa_len: int = 80            # PAA downsampling length for DTW
     dtw_max_dist: float = 0.6        # acceptance threshold after z-norm
+    # Volume confirmation
+    use_volume_confirmation: bool = True
+    volume_confirm_lookback_bars: int = 20
+    volume_confirm_breakout_bars: int = 2
+    volume_confirm_min_ratio: float = 1.10
+    volume_confirm_bonus: float = 0.08
+    volume_confirm_penalty: float = 0.06
     # Output/completion controls
     include_aliases: bool = False    # include generic aliases like "Trend Line"/"Trend Channel"
     completion_confirm_bars: int = 2 # touches needed near the right edge to mark completed
