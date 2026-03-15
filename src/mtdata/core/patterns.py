@@ -514,8 +514,11 @@ def _run_classic_engine(
     return runner(symbol, df, cfg, config)
 
 
-def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> None:
-    """Apply config dict values to a config object's attributes."""
+def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> List[str]:
+    """Apply config dict values to a config object's attributes.
+
+    Returns any unknown keys that were not applied to the target object.
+    """
 
     def _coerce_bool(value: Any) -> Any:
         if isinstance(value, bool):
@@ -531,30 +534,34 @@ def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> None:
         return value
 
     if not isinstance(config, dict):
-        return
+        return []
+    unknown_keys: List[str] = []
     for k, v in config.items():
-        if hasattr(cfg, k):
-            current = getattr(cfg, k)
-            try:
-                # Handle list-like attrs from common CLI forms, e.g. "impulse,correction".
-                if isinstance(current, list):
-                    if isinstance(v, str):
-                        parsed = [p.strip() for p in v.replace(";", ",").split(",") if p.strip()]
-                        setattr(cfg, k, parsed)
-                    elif isinstance(v, (list, tuple, set)):
-                        setattr(cfg, k, [x for x in v])
-                    else:
-                        setattr(cfg, k, [v])
-                elif isinstance(current, bool):
-                    coerced = _coerce_bool(v)
-                    setattr(cfg, k, bool(coerced) if isinstance(coerced, bool) else current)
+        if not hasattr(cfg, k):
+            unknown_keys.append(str(k))
+            continue
+        current = getattr(cfg, k)
+        try:
+            # Handle list-like attrs from common CLI forms, e.g. "impulse,correction".
+            if isinstance(current, list):
+                if isinstance(v, str):
+                    parsed = [p.strip() for p in v.replace(";", ",").split(",") if p.strip()]
+                    setattr(cfg, k, parsed)
+                elif isinstance(v, (list, tuple, set)):
+                    setattr(cfg, k, [x for x in v])
                 else:
-                    setattr(cfg, k, type(current)(v))
+                    setattr(cfg, k, [v])
+            elif isinstance(current, bool):
+                coerced = _coerce_bool(v)
+                setattr(cfg, k, bool(coerced) if isinstance(coerced, bool) else current)
+            else:
+                setattr(cfg, k, type(current)(v))
+        except Exception:
+            try:
+                setattr(cfg, k, v)
             except Exception:
-                try:
-                    setattr(cfg, k, v)
-                except Exception:
-                    pass
+                pass
+    return unknown_keys
 
 @mcp.tool()
 def patterns_detect(

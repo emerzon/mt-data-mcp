@@ -433,52 +433,61 @@ class TestApplyConfigToObj:
 
     def _call(self, cfg, config):
         from mtdata.core.patterns import _apply_config_to_obj
-        _apply_config_to_obj(cfg, config)
+        return _apply_config_to_obj(cfg, config)
 
     def test_sets_float_attr(self):
         obj = SimpleNamespace(min_prominence_pct=0.5)
-        self._call(obj, {"min_prominence_pct": 0.8})
+        unknown = self._call(obj, {"min_prominence_pct": 0.8})
         assert obj.min_prominence_pct == pytest.approx(0.8)
+        assert unknown == []
 
     def test_sets_int_attr(self):
         obj = SimpleNamespace(min_distance=5)
-        self._call(obj, {"min_distance": 10})
+        unknown = self._call(obj, {"min_distance": 10})
         assert obj.min_distance == 10
+        assert unknown == []
 
     def test_sets_bool_attr_from_string(self):
         obj = SimpleNamespace(use_robust_fit=False)
-        self._call(obj, {"use_robust_fit": "true"})
+        unknown = self._call(obj, {"use_robust_fit": "true"})
         assert obj.use_robust_fit is True
+        assert unknown == []
 
     def test_sets_bool_false_from_string(self):
         obj = SimpleNamespace(use_robust_fit=True)
-        self._call(obj, {"use_robust_fit": "false"})
+        unknown = self._call(obj, {"use_robust_fit": "false"})
         assert obj.use_robust_fit is False
+        assert unknown == []
 
     def test_sets_list_from_string(self):
         obj = SimpleNamespace(pattern_types=["impulse"])
-        self._call(obj, {"pattern_types": "impulse,correction"})
+        unknown = self._call(obj, {"pattern_types": "impulse,correction"})
         assert obj.pattern_types == ["impulse", "correction"]
+        assert unknown == []
 
     def test_sets_list_from_list(self):
         obj = SimpleNamespace(pattern_types=["impulse"])
-        self._call(obj, {"pattern_types": ["a", "b"]})
+        unknown = self._call(obj, {"pattern_types": ["a", "b"]})
         assert obj.pattern_types == ["a", "b"]
+        assert unknown == []
 
     def test_ignores_unknown_keys(self):
         obj = SimpleNamespace(x=1)
-        self._call(obj, {"unknown_key": 99})
+        unknown = self._call(obj, {"unknown_key": 99})
         assert not hasattr(obj, "unknown_key")
+        assert unknown == ["unknown_key"]
 
     def test_none_config_noop(self):
         obj = SimpleNamespace(x=1)
-        self._call(obj, None)
+        unknown = self._call(obj, None)
         assert obj.x == 1
+        assert unknown == []
 
     def test_non_dict_config_noop(self):
         obj = SimpleNamespace(x=1)
-        self._call(obj, "not a dict")
+        unknown = self._call(obj, "not a dict")
         assert obj.x == 1
+        assert unknown == []
 
 
 # ── _resolve_engine_weights ──────────────────────────────────────────────
@@ -963,6 +972,45 @@ class TestPatternsDetect:
                                        "start_index": 0, "end_index": 10}], None)
         result = _call_patterns_detect(symbol="EURUSD", mode="classic", timeframe="H1")
         assert result.get("success") is True
+
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    def test_classic_invalid_config_key_returns_error_before_fetch(self, mock_fetch):
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="classic",
+            timeframe="H1",
+            config={"min_prominance_pct": 0.3},
+        )
+        assert result == {"error": "Invalid config key(s): ['min_prominance_pct']"}
+        mock_fetch.assert_not_called()
+
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    def test_classic_mode_allows_engine_extra_config_keys(self, mock_fetch, mock_engine):
+        df = _make_ohlcv_df(200)
+        mock_fetch.return_value = (df, None)
+        mock_engine.return_value = ([{
+            "name": "Triangle",
+            "status": "forming",
+            "confidence": 0.8,
+            "start_index": 0,
+            "end_index": 10,
+        }], None)
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="classic",
+            timeframe="H1",
+            config={"native_multiscale": True},
+        )
+        assert result.get("success") is True
+        mock_fetch.assert_called_once()
+        mock_engine.assert_called_once()
+
+    @patch("mtdata.core.patterns._fetch_pattern_data", side_effect=RuntimeError("boom"))
+    def test_classic_fetch_exception_propagates(self, mock_fetch):
+        with pytest.raises(RuntimeError, match="boom"):
+            _call_patterns_detect(symbol="EURUSD", mode="classic", timeframe="H1")
+        mock_fetch.assert_called_once()
 
     @patch("mtdata.core.patterns._format_elliott_patterns")
     @patch("mtdata.core.patterns._fetch_pattern_data")
