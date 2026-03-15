@@ -238,11 +238,14 @@ def _segment_waves_from_pivots(pivots: List[int]) -> List[Tuple[int, int]]:
     return waves
 
 
-def _extract_wave_features(waves: List[Tuple[int, int]], close: np.ndarray) -> np.ndarray:
-    """Extract per-wave features used for optional clustering."""
-
+def _extract_wave_features_with_index(
+    waves: List[Tuple[int, int]],
+    close: np.ndarray,
+) -> Tuple[np.ndarray, Dict[int, int]]:
+    """Extract per-wave features and preserve the source wave index mapping."""
     features: List[List[float]] = []
-    for start, end in waves:
+    wave_index_map: Dict[int, int] = {}
+    for wave_idx, (start, end) in enumerate(waves):
         if end <= start:
             continue
         s = float(close[start])
@@ -254,11 +257,18 @@ def _extract_wave_features(waves: List[Tuple[int, int]], close: np.ndarray) -> n
         price_change = e - s
         slope = price_change / duration if duration > 0 else 0.0
         normalized_price_change = price_change / s if s != 0 else 0.0
+        wave_index_map[wave_idx] = len(features)
         features.append([duration, normalized_price_change, slope])
 
     if not features:
-        return np.empty((0, 3), dtype=float)
-    return np.asarray(features, dtype=float)
+        return np.empty((0, 3), dtype=float), {}
+    return np.asarray(features, dtype=float), wave_index_map
+
+
+def _extract_wave_features(waves: List[Tuple[int, int]], close: np.ndarray) -> np.ndarray:
+    """Backward-compatible feature extractor used by existing tests/importers."""
+    features, _ = _extract_wave_features_with_index(waves, close)
+    return features
 
 
 def _classify_waves(
@@ -417,16 +427,26 @@ def _classification_score_window(
     window_len: int,
     trend_slots: List[int],
     counter_slots: List[int],
+    wave_index_map: Optional[Dict[int, int]] = None,
 ) -> float:
     if probs is None or cluster_means is None:
-        return 0.5
-    if probs.shape[0] < (k + window_len):
         return 0.5
     if cluster_means.ndim != 2 or cluster_means.shape[0] < 1:
         return 0.5
 
     cluster_for_trend = int(np.argmax(cluster_means[:, 1])) if bullish else int(np.argmin(cluster_means[:, 1]))
-    window_probs = probs[k : k + window_len, cluster_for_trend]
+    if wave_index_map is not None:
+        mapped_rows: List[int] = []
+        for offset in range(window_len):
+            mapped = wave_index_map.get(int(k + offset))
+            if mapped is None:
+                return 0.5
+            mapped_rows.append(int(mapped))
+        window_probs = probs[np.asarray(mapped_rows, dtype=int), cluster_for_trend]
+    else:
+        if probs.shape[0] < (k + window_len):
+            return 0.5
+        window_probs = probs[k : k + window_len, cluster_for_trend]
     if window_probs.shape[0] != window_len:
         return 0.5
 
@@ -461,6 +481,62 @@ def _upsert_elliott_result(
         results_by_key[key] = result
 
 
+def _interval_overlap_ratio(a_start: int, a_end: int, b_start: int, b_end: int) -> float:
+    lo = max(int(a_start), int(b_start))
+    hi = min(int(a_end), int(b_end))
+    inter = max(0, hi - lo + 1)
+    union = max(int(a_end), int(b_end)) - min(int(a_start), int(b_start)) + 1
+    if union <= 0:
+        return 0.0
+    return float(inter) / float(union)
+
+
+def _interval_coverage_ratio(a_start: int, a_end: int, b_start: int, b_end: int) -> float:
+    lo = max(int(a_start), int(b_start))
+    hi = min(int(a_end), int(b_end))
+    inter = max(0, hi - lo + 1)
+    span = max(0, int(a_end) - int(a_start) + 1)
+    if span <= 0:
+        return 0.0
+    return float(inter) / float(span)
+
+
+def _filter_overlapping_corrections(
+    results: List[ElliottWaveResult],
+    *,
+    overlap_threshold: float = 0.8,
+) -> List[ElliottWaveResult]:
+    impulses = [result for result in results if str(result.wave_type).lower() == "impulse"]
+    if not impulses:
+        return results
+
+    filtered: List[ElliottWaveResult] = []
+    for result in results:
+        if str(result.wave_type).lower() != "correction":
+            filtered.append(result)
+            continue
+        overlaps_impulse = any(
+            max(
+                _interval_overlap_ratio(
+                    int(result.start_index),
+                    int(result.end_index),
+                    int(impulse.start_index),
+                    int(impulse.end_index),
+                ),
+                _interval_coverage_ratio(
+                    int(result.start_index),
+                    int(result.end_index),
+                    int(impulse.start_index),
+                    int(impulse.end_index),
+                ),
+            ) >= float(overlap_threshold)
+            for impulse in impulses
+        )
+        if not overlaps_impulse:
+            filtered.append(result)
+    return filtered
+
+
 class ElliottWaveAnalyzer:
     """Facade-style analyzer inspired by ta4j's scenario pipeline."""
 
@@ -479,7 +555,7 @@ class ElliottWaveAnalyzer:
         if not waves:
             return []
 
-        features = _extract_wave_features(waves, self.close)
+        features, wave_index_map = _extract_wave_features_with_index(waves, self.close)
         if features.shape[0] == 0:
             return []
 
@@ -518,6 +594,7 @@ class ElliottWaveAnalyzer:
                     window_len=5,
                     trend_slots=[0, 2, 4],
                     counter_slots=[1, 3],
+                    wave_index_map=wave_index_map,
                 )
                 confidence = float(min(1.0, max(0.0, 0.65 * rule_eval.fib_score + 0.35 * cls_score)))
                 if confidence < float(self.config.min_confidence):
@@ -565,6 +642,7 @@ class ElliottWaveAnalyzer:
                     window_len=3,
                     trend_slots=[0, 2],
                     counter_slots=[1],
+                    wave_index_map=wave_index_map,
                 )
                 confidence = float(min(1.0, max(0.0, 0.60 * rule_eval.fib_score + 0.40 * cls_score)))
                 if confidence < float(self.config.min_confidence):
@@ -754,17 +832,16 @@ def detect_elliott_waves(df: pd.DataFrame, config: Optional[ElliottWaveConfig] =
         for scenario in scenarios:
             _upsert_elliott_result(results_by_key, analyzer.build_result(scenario))
 
-    results = list(results_by_key.values())
-    results.sort(key=lambda r: (float(r.confidence), int(r.end_index)), reverse=True)
-
     recent_bars = int(max(1, getattr(config, "recent_bars", 3)))
+    results = _filter_overlapping_corrections(list(results_by_key.values()))
+    results.sort(key=lambda r: (float(r.confidence), int(r.end_index)), reverse=True)
     has_recent = any(int(getattr(r, "end_index", -10)) >= int(n - recent_bars) for r in results)
     if not has_recent:
         thr_base = float(config.swing_threshold_pct if config.swing_threshold_pct is not None else config.min_prominence_pct)
         fallback = analyzer.build_fallback(thr_base, int(max(1, config.min_distance)))
         if fallback is not None:
             _upsert_elliott_result(results_by_key, fallback)
-            results = list(results_by_key.values())
+            results = _filter_overlapping_corrections(list(results_by_key.values()))
 
     results.sort(key=lambda r: (float(r.confidence), int(r.end_index)), reverse=True)
     k = int(getattr(config, "top_k", 10))

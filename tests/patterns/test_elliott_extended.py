@@ -222,6 +222,21 @@ class TestClassificationScoreWindow:
         score = _classification_score_window(probs, means, 5, True, 5, [0], [1])
         assert score == 0.5
 
+    def test_missing_wave_mapping_returns_neutral(self):
+        probs = np.random.rand(3, 2)
+        means = np.array([[0.1, 0.5], [-0.1, -0.3]])
+        score = _classification_score_window(
+            probs,
+            means,
+            0,
+            True,
+            3,
+            [0, 2],
+            [1],
+            wave_index_map={0: 0, 2: 1, 3: 2},
+        )
+        assert score == 0.5
+
 
 # ===== _evaluate_impulse_rules and _evaluate_correction_rules ==============
 
@@ -529,6 +544,52 @@ class TestDetectElliottWaves:
         assert len(results) == 1
         assert results[0].wave_type == "Correction"
         assert results[0].confidence == pytest.approx(0.5)
+
+    def test_autotune_filters_correction_overlap_with_impulse(self, monkeypatch):
+        df = _make_df(np.linspace(100.0, 120.0, 80))
+        cfg = ElliottWaveConfig(
+            autotune=True,
+            tune_thresholds=[0.2, 0.5],
+            tune_min_distance=[1],
+            include_fallback_candidate=False,
+            min_confidence=0.0,
+            top_k=10,
+        )
+
+        def _fake_analyze(self, threshold_pct, min_distance):
+            _ = self
+            if float(threshold_pct) < 0.3:
+                return [
+                    ElliottScenario(
+                        pivots=[0, 10, 20, 30],
+                        bullish=True,
+                        confidence=0.6,
+                        cls_score=0.5,
+                        rule_eval=ElliottRuleEvaluation(valid=True, fib_score=0.5, metrics={}),
+                        threshold_used=float(threshold_pct),
+                        min_distance_used=int(min_distance),
+                        wave_type="Correction",
+                    )
+                ]
+            return [
+                ElliottScenario(
+                    pivots=[0, 10, 20, 30, 40, 50],
+                    bullish=True,
+                    confidence=0.7,
+                    cls_score=0.5,
+                    rule_eval=ElliottRuleEvaluation(valid=True, fib_score=0.5, metrics={}),
+                    threshold_used=float(threshold_pct),
+                    min_distance_used=int(min_distance),
+                    wave_type="Impulse",
+                )
+            ]
+
+        monkeypatch.setattr(elliott_mod.ElliottWaveAnalyzer, "analyze_once", _fake_analyze)
+
+        results = detect_elliott_waves(df, cfg)
+
+        assert any(result.wave_type == "Impulse" for result in results)
+        assert not any(result.wave_type == "Correction" for result in results)
 
     def test_analyze_once_skips_correction_subsequence_of_impulse(self, monkeypatch):
         close = _impulse_close()

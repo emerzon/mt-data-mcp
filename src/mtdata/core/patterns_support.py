@@ -382,7 +382,12 @@ def _infer_classic_bias(name: Any, details: Dict[str, Any]) -> str:
     return "neutral"
 
 
-def _classic_price_levels(details: Dict[str, Any], end_index: Any) -> Dict[str, float]:
+def _classic_price_levels(
+    details: Dict[str, Any],
+    end_index: Any,
+    *,
+    eval_index: Any = None,
+) -> Dict[str, float]:
     levels: Dict[str, float] = {}
     for key in (
         "support",
@@ -400,7 +405,7 @@ def _classic_price_levels(details: Dict[str, Any], end_index: Any) -> Dict[str, 
             levels[key] = value
 
     try:
-        idx_float = float(end_index)
+        idx_float = float(end_index if eval_index is None else eval_index)
     except Exception:
         idx_float = 0.0
 
@@ -463,7 +468,11 @@ def _enrich_classic_pattern_row(row: Dict[str, Any], df: pd.DataFrame) -> Dict[s
     name = out.get("name") or out.get("pattern")
     bias = _infer_classic_bias(name, details)
     reference_price = _close_price_at_index(df, out.get("end_index"))
-    levels = _classic_price_levels(details, out.get("end_index"))
+    status = str(out.get("status", "")).strip().lower()
+    level_eval_index = out.get("end_index")
+    if status == "forming" and len(df) > 0:
+        level_eval_index = int(len(df) - 1)
+    levels = _classic_price_levels(details, out.get("end_index"), eval_index=level_eval_index)
     height = _classic_pattern_height(levels, details, reference_price)
 
     support = levels.get("support")
@@ -573,8 +582,6 @@ def _estimate_classic_bars_to_completion(
             t_star = (bottom_intercept - top_intercept) / denom
             bars = int(max(0, int(round(t_star - (n_bars - 1)))))
             return int(min(max(0, bars), 3 * length))
-        if name_text in ("pennants", "flag", "bull pennants", "bear pennants", "bull flag", "bear flag"):
-            return int(max(1, min(2 * length, int(round(0.3 * length)))))
         if "pennant" in name_text or "flag" in name_text:
             return int(max(1, min(2 * length, int(round(0.3 * length)))))
     except Exception:
@@ -846,7 +853,7 @@ def _merge_classic_ensemble(
         anchor_engine = max(engines, key=lambda engine: float(by_engine[engine].get("confidence", 0.0)))
         anchor = dict(by_engine[anchor_engine])
         statuses = [str(by_engine[engine].get("status", "forming")).lower() for engine in engines]
-        anchor["status"] = "completed" if statuses and all(status == "completed" for status in statuses) else "forming"
+        anchor["status"] = "completed" if any(status == "completed" for status in statuses) else "forming"
         anchor["confidence"] = float(max(0.0, min(1.0, conf)))
         anchor["support_count"] = int(len(engines))
         anchor["source_engines"] = engines

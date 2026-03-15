@@ -21,16 +21,32 @@ def detect_flags_pennants(
     if max_len < 10:
         return out
 
+    window = min(int(cfg.max_consolidation_bars), n - 1)
+    if window < 10:
+        return out
+    idx0 = n - window
     pole_len = max(10, max_len // 2)
-    ret = (c[-1] - c[-1 - pole_len]) / max(1e-9, c[-1 - pole_len]) * 100.0
+    pole_base_idx = idx0 - pole_len
+    if pole_base_idx < 0:
+        return out
+
+    seg = c[-window:]
+    pole_base = float(c[pole_base_idx])
+    seg_high = float(np.max(seg))
+    seg_low = float(np.min(seg))
+    bull_ret = (seg_high - pole_base) / max(1e-9, abs(pole_base)) * 100.0
+    bear_ret = (seg_low - pole_base) / max(1e-9, abs(pole_base)) * 100.0
+    if abs(bull_ret) >= abs(bear_ret):
+        ret = float(bull_ret)
+        pole_tip = float(seg_high)
+    else:
+        ret = float(bear_ret)
+        pole_tip = float(seg_low)
     if abs(ret) < cfg.min_pole_return_pct:
         return out
 
-    window = cfg.max_consolidation_bars
-    seg = c[-window:]
     seg_h = h[-window:] if h.size >= window else seg
     seg_l = l[-window:] if l.size >= window else seg
-    idx0 = n - window
     
     try:
         peaks2, troughs2 = _detect_pivots_close(seg, cfg, seg_h, seg_l)
@@ -78,6 +94,8 @@ def detect_flags_pennants(
             t,
             {
                 "pole_return_pct": float(ret),
+                "pole_base_price": float(pole_base),
+                "pole_tip_price": float(pole_tip),
                 "top_slope": float(sh),
                 "bottom_slope": float(sl),
                 "breakout_direction": bdir,

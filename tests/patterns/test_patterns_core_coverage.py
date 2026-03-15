@@ -564,6 +564,14 @@ class TestMergeClassicEnsemble:
         result = self._call(pats, {"native": 1.0, "stock": 1.0})
         assert result[0]["status"] == "completed"
 
+    def test_any_completed_status_promotes_merged_pattern(self):
+        pats = {
+            "native": [{"name": "triangle", "start_index": 0, "end_index": 10, "confidence": 0.8, "status": "completed"}],
+            "stock": [{"name": "triangle", "start_index": 0, "end_index": 10, "confidence": 0.7, "status": "forming"}],
+        }
+        result = self._call(pats, {"native": 1.0, "stock": 1.0})
+        assert result[0]["status"] == "completed"
+
 
 # ── _estimate_classic_bars_to_completion ─────────────────────────────────
 
@@ -599,6 +607,35 @@ class TestEstimateClassicBarsToCompletion:
         details = {"top_slope": 0.01, "top_intercept": 1.0, "bottom_slope": 0.01, "bottom_intercept": 1.0}
         result = self._call("Triangle", details, 0, 50, 100)
         assert result is None
+
+
+# ── _enrich_classic_patterns / current level projection ──────────────────
+
+class TestEnrichClassicPatterns:
+
+    def test_forming_patterns_project_line_levels_to_current_bar(self):
+        from mtdata.core.patterns_support import _enrich_classic_patterns
+
+        df = _make_ohlcv_df(6)
+        rows = [
+            {
+                "name": "Ascending Triangle",
+                "status": "forming",
+                "start_index": 0,
+                "end_index": 2,
+                "details": {
+                    "top_slope": 1.0,
+                    "top_intercept": 100.0,
+                    "bottom_slope": 0.5,
+                    "bottom_intercept": 95.0,
+                },
+            }
+        ]
+
+        enriched = _enrich_classic_patterns(rows, df)
+
+        assert enriched[0]["price_levels"]["resistance"] == pytest.approx(105.0)
+        assert enriched[0]["price_levels"]["support"] == pytest.approx(97.5)
 
 
 # ── _build_pattern_response ──────────────────────────────────────────────

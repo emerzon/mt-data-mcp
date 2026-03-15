@@ -29,6 +29,7 @@ def _fit_line_bounded_shape(
     tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
     touches = _count_touches(top, bot, ih, il, c, tol_abs)
     return {
+        "c": c,
         "n": n,
         "k": k,
         "ih": ih,
@@ -168,7 +169,6 @@ def detect_triangles(
         name = "Descending Triangle"
     else:
         name = "Symmetrical Triangle"
-    shape["c"] = c
     return _build_line_bounded_pattern_results(name, shape, t, cfg)
 
 def detect_wedges(
@@ -186,7 +186,6 @@ def detect_wedges(
         return []
 
     name = "Rising Wedge" if shape["sh"] > 0 and shape["sl"] > 0 else "Falling Wedge"
-    shape["c"] = c
     return _build_line_bounded_pattern_results(name, shape, t, cfg, alias_name="Wedge")
 
 def detect_broadening(
@@ -323,7 +322,10 @@ def detect_diamonds(
         if width_ratio < float(cfg.diamond_min_width_ratio):
             continue
 
-        geom_score = min(1.0, width_ratio / max(1e-9, float(cfg.diamond_min_width_ratio)))
+        min_ratio = float(cfg.diamond_min_width_ratio)
+        target_ratio = max(min_ratio + 1e-6, float(getattr(cfg, "diamond_target_width_ratio", 1.5)))
+        geom_score = (width_ratio - min_ratio) / max(1e-9, target_ratio - min_ratio)
+        geom_score = float(max(0.0, min(1.0, geom_score)))
         candidate = {
             "split": int(split),
             "touches": int(left_peaks.size + right_peaks.size + left_troughs.size + right_troughs.size),
@@ -377,6 +379,7 @@ def detect_diamonds(
             "breakout_index": int(n - W + bidx_local) if bidx_local is not None else None,
             "diamond_split_index": int(n - W + best["split"]),
             "width_ratio": float(best["width_ratio"]),
+            "geometry_score": float(best["geom_score"]),
             "upper_left_slope": float(best["lh_slope"]),
             "lower_left_slope": float(best["ll_slope"]),
             "upper_right_slope": float(best["rh_slope"]),

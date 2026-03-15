@@ -47,6 +47,7 @@ class ClassicDetectorConfig:
     diamond_min_pivots_per_side: int = 2
     diamond_min_boundary_r2: float = 0.2
     diamond_min_width_ratio: float = 1.15
+    diamond_target_width_ratio: float = 1.5
     diamond_prior_pole_return_pct: float = 2.0
     convergence_fallback_scale: float = 1.2  # fallback widening factor when no past window exists
     channel_parallel_slope_ratio: float = 0.15  # relative slope spread tolerated for channels

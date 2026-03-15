@@ -431,6 +431,45 @@ def test_detect_classic_uses_singular_pennant_name(monkeypatch):
     assert "Bull Pennants" not in names
 
 
+def test_detect_flags_pennants_measure_pole_from_tip_not_last_bar(monkeypatch):
+    from src.mtdata.patterns.classic_impl import continuation
+
+    n = 120
+    window = 30
+    close = np.full(n, 102.0, dtype=float)
+    close[75:90] = np.linspace(100.0, 106.0, 15)
+    seg = np.linspace(104.0, 103.0, window)
+    seg[0] = 106.0
+    seg[-1] = 101.8
+    close[-window:] = seg
+
+    peaks = np.array([4, 11, 18, 25], dtype=int)
+    troughs = np.array([2, 9, 16, 23], dtype=int)
+    top = np.linspace(106.0, 104.0, window)
+    bot = np.linspace(102.0, 103.0, window)
+
+    monkeypatch.setattr(continuation, "_detect_pivots_close", lambda *_args, **_kwargs: (peaks, troughs))
+    monkeypatch.setattr(
+        continuation,
+        "_fit_lines_and_arrays",
+        lambda *_args, **_kwargs: (-0.05, 106.0, 0.9, 0.03, 102.0, 0.9, top.copy(), bot.copy()),
+    )
+
+    out = continuation.detect_flags_pennants(
+        close,
+        close + 0.2,
+        close - 0.2,
+        np.arange(n, dtype=float),
+        n,
+        ClassicDetectorConfig(max_consolidation_bars=window, min_pole_return_pct=4.0),
+    )
+
+    assert out
+    assert out[0].name == "Bull Pennant"
+    assert out[0].details["pole_return_pct"] > 4.0
+    assert out[0].details["pole_tip_price"] == pytest.approx(106.0)
+
+
 def test_detect_classic_channel_parallel_ratio_uses_config(monkeypatch):
     n = 150
     close = np.linspace(100.0, 120.0, n)
@@ -972,6 +1011,7 @@ def test_detect_diamonds_respects_geometry_threshold(monkeypatch):
     assert out_relaxed
     assert out_relaxed[0].status == "completed"
     assert out_relaxed[0].details["diamond_split_index"] == 100
+    assert 0.0 < out_relaxed[0].details["geometry_score"] < 1.0
 
 
 def test_detect_diamonds_forward_high_low_arrays_to_pivot_detection(monkeypatch):
@@ -997,6 +1037,49 @@ def test_detect_diamonds_forward_high_low_arrays_to_pivot_detection(monkeypatch)
     assert out == []
     assert np.array_equal(captured["high"], high[-n:])
     assert np.array_equal(captured["low"], low[-n:])
+
+
+def test_dedupe_overlapping_head_shoulders_results():
+    from src.mtdata.patterns.classic_impl.reversal import _dedupe_overlapping_patterns
+
+    patterns = [
+        ClassicPatternResult(
+            name="Head and Shoulders",
+            status="forming",
+            confidence=0.82,
+            start_index=10,
+            end_index=40,
+            start_time=None,
+            end_time=None,
+            details={},
+        ),
+        ClassicPatternResult(
+            name="Head and Shoulders",
+            status="forming",
+            confidence=0.75,
+            start_index=14,
+            end_index=38,
+            start_time=None,
+            end_time=None,
+            details={},
+        ),
+        ClassicPatternResult(
+            name="Head and Shoulders",
+            status="forming",
+            confidence=0.9,
+            start_index=70,
+            end_index=100,
+            start_time=None,
+            end_time=None,
+            details={},
+        ),
+    ]
+
+    out = _dedupe_overlapping_patterns(patterns, overlap_threshold=0.6)
+
+    assert len(out) == 2
+    assert any(p.start_index == 10 and p.end_index == 40 for p in out)
+    assert any(p.start_index == 70 and p.end_index == 100 for p in out)
 
 
 def test_detect_classic_patterns_disables_aliases_by_default(monkeypatch):

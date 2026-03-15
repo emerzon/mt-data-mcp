@@ -8,6 +8,48 @@ from .utils import (
     _template_hs, _znorm, _paa, _dtw_distance
 )
 
+
+def _interval_overlap_ratio(a_start: int, a_end: int, b_start: int, b_end: int) -> float:
+    lo = max(int(a_start), int(b_start))
+    hi = min(int(a_end), int(b_end))
+    inter = max(0, hi - lo + 1)
+    union = max(int(a_end), int(b_end)) - min(int(a_start), int(b_start)) + 1
+    if union <= 0:
+        return 0.0
+    return float(inter) / float(union)
+
+
+def _dedupe_overlapping_patterns(
+    results: List[ClassicPatternResult],
+    *,
+    overlap_threshold: float = 0.6,
+) -> List[ClassicPatternResult]:
+    deduped: List[ClassicPatternResult] = []
+    ordered = sorted(
+        results,
+        key=lambda r: (
+            float(r.confidence),
+            int(r.end_index) - int(r.start_index),
+            int(r.end_index),
+        ),
+        reverse=True,
+    )
+    for candidate in ordered:
+        if any(
+            candidate.name == prior.name
+            and _interval_overlap_ratio(
+                int(candidate.start_index),
+                int(candidate.end_index),
+                int(prior.start_index),
+                int(prior.end_index),
+            ) >= float(overlap_threshold)
+            for prior in deduped
+        ):
+            continue
+        deduped.append(candidate)
+    deduped.sort(key=lambda r: (int(r.start_index), int(r.end_index)))
+    return deduped
+
 def detect_tops_bottoms(
     c: np.ndarray,
     peaks: np.ndarray,
@@ -182,7 +224,7 @@ def detect_head_shoulders(
             end_time=PatternResultBase.resolve_time(t, int(end_i)),
             details=details,
         ))
-    return out
+    return _dedupe_overlapping_patterns(out)
 
 def detect_rounding(
     c: np.ndarray,
