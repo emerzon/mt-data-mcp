@@ -2,6 +2,7 @@
 import numpy as np
 import pandas as pd
 import pytest
+import mtdata.patterns.elliott as elliott_mod
 
 from mtdata.patterns.elliott import (
     ElliottWaveConfig,
@@ -381,6 +382,21 @@ class TestBuildFallback:
         result = analyzer.build_fallback(0.5, 1)
         assert result is None or isinstance(result, ElliottWaveResult)
 
+    def test_fallback_marks_synthetic_terminal_pivot(self, monkeypatch):
+        cfg = ElliottWaveConfig(include_fallback_candidate=True, min_distance=1, pattern_types=["correction"])
+        close = _trending_close(20, seed=21)
+        t = np.arange(20, dtype=float) * 3600 + 1_700_000_000
+        analyzer = ElliottWaveAnalyzer(close, t, cfg)
+
+        monkeypatch.setattr(elliott_mod, "_zigzag_pivots_indices", lambda *_args, **_kwargs: ([0, 4, 8], ["up", "down", "up"]))
+        monkeypatch.setattr(elliott_mod, "_enforce_min_distance_on_pivots", lambda pivots, *_args, **_kwargs: list(pivots))
+
+        result = analyzer.build_fallback(0.5, 1)
+
+        assert result is not None
+        assert result.wave_sequence[-1] == len(close) - 1
+        assert result.details["synthetic_terminal_pivot"] is True
+
 
 # ===== detect_elliott_waves (lines 672-728, 747-751) =======================
 
@@ -479,6 +495,76 @@ class TestDetectElliottWaves:
         )
         results = detect_elliott_waves(df, cfg)
         assert isinstance(results, list)
+
+    def test_autotune_duplicate_sequence_keeps_highest_confidence(self, monkeypatch):
+        df = _make_df(np.linspace(100.0, 120.0, 80))
+        cfg = ElliottWaveConfig(
+            autotune=True,
+            tune_thresholds=[0.2, 0.5],
+            tune_min_distance=[1],
+            include_fallback_candidate=False,
+            min_confidence=0.0,
+            top_k=10,
+        )
+
+        def _fake_analyze(self, threshold_pct, min_distance):
+            _ = self
+            return [
+                ElliottScenario(
+                    pivots=[0, 10, 20, 30],
+                    bullish=True,
+                    confidence=float(threshold_pct),
+                    cls_score=0.5,
+                    rule_eval=ElliottRuleEvaluation(valid=True, fib_score=0.5, metrics={}),
+                    threshold_used=float(threshold_pct),
+                    min_distance_used=int(min_distance),
+                    wave_type="Correction",
+                )
+            ]
+
+        monkeypatch.setattr(elliott_mod.ElliottWaveAnalyzer, "analyze_once", _fake_analyze)
+
+        results = detect_elliott_waves(df, cfg)
+
+        assert len(results) == 1
+        assert results[0].wave_type == "Correction"
+        assert results[0].confidence == pytest.approx(0.5)
+
+    def test_analyze_once_skips_correction_subsequence_of_impulse(self, monkeypatch):
+        close = _impulse_close()
+        t = np.arange(close.size, dtype=float) * 3600 + 1_700_000_000
+        analyzer = ElliottWaveAnalyzer(
+            close,
+            t,
+            ElliottWaveConfig(
+                autotune=False,
+                min_distance=1,
+                wave_min_len=1,
+                min_confidence=0.0,
+                pattern_types=["impulse", "correction"],
+                include_fallback_candidate=False,
+            ),
+        )
+
+        monkeypatch.setattr(elliott_mod, "_zigzag_pivots_indices", lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5], ["up"] * 6))
+
+        fake_gmm = type("FakeGMM", (), {"means_": np.array([[0.0, -0.1, 0.0], [0.0, 0.1, 0.0]])})()
+        monkeypatch.setattr(
+            elliott_mod,
+            "_classify_waves",
+            lambda features, config: (
+                np.array([1, 0, 1, 0, 1], dtype=int),
+                fake_gmm,
+                None,
+                np.full((features.shape[0], 2), 0.5, dtype=float),
+                1,
+            ),
+        )
+
+        scenarios = analyzer.analyze_once(1.0, 1)
+
+        assert any(s.wave_type == "Impulse" for s in scenarios)
+        assert not any(s.wave_type == "Correction" for s in scenarios)
 
 
 # ===== _window_hit =========================================================

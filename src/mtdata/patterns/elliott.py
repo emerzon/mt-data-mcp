@@ -65,6 +65,7 @@ class ElliottScenario:
     threshold_used: float
     min_distance_used: int
     fallback_candidate: bool = False
+    synthetic_terminal_pivot: bool = False
     wave_type: str = "Impulse"
 
 
@@ -440,6 +441,26 @@ def _classification_score_window(
     return float(min(1.0, max(0.0, cls_score)))
 
 
+def _contiguous_pivot_slices(pivots: List[int], size: int) -> set[Tuple[int, ...]]:
+    if size <= 0 or len(pivots) < size:
+        return set()
+    return {tuple(int(v) for v in pivots[i : i + size]) for i in range(len(pivots) - size + 1)}
+
+
+def _elliott_result_key(result: ElliottWaveResult) -> Tuple[str, Tuple[int, ...]]:
+    return str(result.wave_type), tuple(int(i) for i in result.wave_sequence)
+
+
+def _upsert_elliott_result(
+    results_by_key: Dict[Tuple[str, Tuple[int, ...]], ElliottWaveResult],
+    result: ElliottWaveResult,
+) -> None:
+    key = _elliott_result_key(result)
+    prior = results_by_key.get(key)
+    if prior is None or float(result.confidence) > float(prior.confidence):
+        results_by_key[key] = result
+
+
 class ElliottWaveAnalyzer:
     """Facade-style analyzer inspired by ta4j's scenario pipeline."""
 
@@ -469,6 +490,7 @@ class ElliottWaveAnalyzer:
         pattern_types = _normalize_pattern_types(self.config)
         total_waves = len(waves)
         min_wave_span = int(max(1, max(min_distance, self.config.wave_min_len)))
+        correction_exclusions: set[Tuple[int, ...]] = set()
 
         if "impulse" in pattern_types:
             for k in range(0, total_waves - 4):
@@ -513,11 +535,14 @@ class ElliottWaveAnalyzer:
                         wave_type="Impulse",
                     )
                 )
+                correction_exclusions.update(_contiguous_pivot_slices(piv_seq, 4))
 
         if "correction" in pattern_types:
             for k in range(0, total_waves - 2):
                 piv_seq = [int(x) for x in piv_idx[k : k + 4]]
                 if len(piv_seq) < 4:
+                    continue
+                if tuple(piv_seq) in correction_exclusions:
                     continue
 
                 if any((piv_seq[j + 1] - piv_seq[j]) < min_wave_span for j in range(3)):
@@ -598,6 +623,7 @@ class ElliottWaveAnalyzer:
             "tuned_threshold_pct": float(scenario.threshold_used),
             "min_distance_used": int(scenario.min_distance_used),
             "fallback_candidate": bool(scenario.fallback_candidate),
+            "synthetic_terminal_pivot": bool(scenario.synthetic_terminal_pivot),
             "invalidation_level": invalidation_level,
         }
         if str(scenario.wave_type).lower() == "correction":
@@ -628,8 +654,10 @@ class ElliottWaveAnalyzer:
         if len(piv_idx) < 1:
             return None
 
+        synthetic_terminal_pivot = False
         if int(piv_idx[-1]) != int(n - 1):
             piv_idx = list(piv_idx) + [int(n - 1)]
+            synthetic_terminal_pivot = True
         if len(piv_idx) < 2:
             return None
 
@@ -662,6 +690,7 @@ class ElliottWaveAnalyzer:
             threshold_used=thr_cand,
             min_distance_used=int(min_distance),
             fallback_candidate=True,
+            synthetic_terminal_pivot=bool(synthetic_terminal_pivot),
             wave_type=wave_type,
         )
         return self.build_result(scenario)
@@ -686,8 +715,7 @@ def detect_elliott_waves(df: pd.DataFrame, config: Optional[ElliottWaveConfig] =
 
     analyzer = ElliottWaveAnalyzer(c, t, config)
 
-    results: List[ElliottWaveResult] = []
-    seen_keys = set()
+    results_by_key: Dict[Tuple[str, Tuple[int, ...]], ElliottWaveResult] = {}
 
     if bool(getattr(config, "autotune", False)):
         thr_list = (
@@ -716,22 +744,14 @@ def detect_elliott_waves(df: pd.DataFrame, config: Optional[ElliottWaveConfig] =
                 scenarios = analyzer.analyze_once(thr_f, md_i)
                 for scenario in scenarios:
                     result = analyzer.build_result(scenario)
-                    key = (result.wave_type, tuple(int(i) for i in result.wave_sequence))
-                    if key in seen_keys:
-                        for j in range(len(results)):
-                            old_key = (results[j].wave_type, tuple(int(i) for i in results[j].wave_sequence))
-                            if old_key == key and result.confidence > results[j].confidence:
-                                results[j] = result
-                                break
-                        continue
-                    seen_keys.add(key)
-                    results.append(result)
+                    _upsert_elliott_result(results_by_key, result)
     else:
         thr = float(config.swing_threshold_pct if config.swing_threshold_pct is not None else config.min_prominence_pct)
         scenarios = analyzer.analyze_once(thr, int(max(1, config.min_distance)))
         for scenario in scenarios:
-            results.append(analyzer.build_result(scenario))
+            _upsert_elliott_result(results_by_key, analyzer.build_result(scenario))
 
+    results = list(results_by_key.values())
     results.sort(key=lambda r: (float(r.confidence), int(r.end_index)), reverse=True)
 
     recent_bars = int(max(1, getattr(config, "recent_bars", 3)))
@@ -740,15 +760,8 @@ def detect_elliott_waves(df: pd.DataFrame, config: Optional[ElliottWaveConfig] =
         thr_base = float(config.swing_threshold_pct if config.swing_threshold_pct is not None else config.min_prominence_pct)
         fallback = analyzer.build_fallback(thr_base, int(max(1, config.min_distance)))
         if fallback is not None:
-            fallback_key = (fallback.wave_type, tuple(int(i) for i in fallback.wave_sequence))
-            if fallback_key not in seen_keys:
-                results.append(fallback)
-            else:
-                for j in range(len(results)):
-                    key_j = (results[j].wave_type, tuple(int(i) for i in results[j].wave_sequence))
-                    if key_j == fallback_key and fallback.confidence > results[j].confidence:
-                        results[j] = fallback
-                        break
+            _upsert_elliott_result(results_by_key, fallback)
+            results = list(results_by_key.values())
 
     results.sort(key=lambda r: (float(r.confidence), int(r.end_index)), reverse=True)
     k = int(getattr(config, "top_k", 10))

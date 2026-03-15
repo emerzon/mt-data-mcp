@@ -106,6 +106,25 @@ def _get_candlestick_pattern_methods(temp: pd.DataFrame) -> List[str]:
     return list(_CANDLESTICK_PATTERN_METHOD_CACHE)
 
 
+def _filter_candlestick_pattern_methods(
+    pattern_methods: List[str],
+    *,
+    robust_only: bool,
+    robust_set: set[str],
+    whitelist_set: Optional[set[str]],
+) -> List[str]:
+    return [
+        name
+        for name in pattern_methods
+        if _is_candlestick_allowed(
+            str(name),
+            robust_only=bool(robust_only),
+            robust_set=robust_set,
+            whitelist_set=whitelist_set,
+        )
+    ]
+
+
 def _extract_candlestick_rows(
     df_tail: pd.DataFrame,
     temp_tail: pd.DataFrame,
@@ -298,6 +317,28 @@ def detect_candlestick_patterns(
     if not pattern_methods:
         return {"error": "No candlestick pattern detectors (cdl_*) found in pandas_ta."}
 
+    _robust_whitelist = {
+        'engulfing', 'harami', '3inside', '3outside', 'eveningstar', 'morningstar',
+        'darkcloudcover', 'piercing', 'inside', 'outside', 'hikkake'
+    }
+    parsed_whitelist: Optional[set[str]] = None
+    if whitelist and isinstance(whitelist, str):
+        try:
+            parts = [p.strip() for p in whitelist.split(',') if p.strip()]
+            if parts:
+                parsed_whitelist = {_normalize_candlestick_name(p) for p in parts}
+        except Exception:
+            pass
+
+    pattern_methods = _filter_candlestick_pattern_methods(
+        pattern_methods,
+        robust_only=bool(robust_only),
+        robust_set=_robust_whitelist,
+        whitelist_set=parsed_whitelist,
+    )
+    if not pattern_methods:
+        return {"error": "No candlestick detectors match the requested filters."}
+
     before_cols = set(temp.columns)
     for name in sorted(pattern_methods):
         try:
@@ -312,19 +353,6 @@ def detect_candlestick_patterns(
     pattern_cols = [c for c in temp.columns if c not in before_cols and c.lower().startswith('cdl_')]
     if not pattern_cols:
         return {"error": "No candle patterns produced any outputs."}
-
-    _robust_whitelist = {
-        'engulfing', 'harami', '3inside', '3outside', 'eveningstar', 'morningstar',
-        'darkcloudcover', 'piercing', 'inside', 'outside', 'hikkake'
-    }
-    parsed_whitelist: Optional[set[str]] = None
-    if whitelist and isinstance(whitelist, str):
-        try:
-            parts = [p.strip() for p in whitelist.split(',') if p.strip()]
-            if parts:
-                parsed_whitelist = {_normalize_candlestick_name(p) for p in parts}
-        except Exception:
-            pass
 
     try:
         gap = max(0, int(min_gap))

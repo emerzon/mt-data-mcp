@@ -232,6 +232,69 @@ def test_detect_candlestick_patterns_does_not_flatten_unexpected_errors(monkeypa
         )
 
 
+def test_detect_candlestick_patterns_prefilters_methods_by_whitelist(monkeypatch):
+    calls = []
+
+    class _FakeFrame(pd.DataFrame):
+        _metadata = ["_calls"]
+
+        @property
+        def _constructor(self):
+            return _FakeFrame
+
+        @property
+        def ta(self):
+            frame = self
+
+            class _Accessor:
+                def cdl_alpha(self, append=True):
+                    _ = append
+                    frame._calls.append("cdl_alpha")
+                    frame["cdl_alpha"] = [0.0, 100.0]
+
+                def cdl_beta(self, append=True):
+                    _ = append
+                    frame._calls.append("cdl_beta")
+                    frame["cdl_beta"] = [0.0, 100.0]
+
+            return _Accessor()
+
+    monkeypatch.setattr(candlestick_mod, "_ensure_candlestick_runtime", lambda: None)
+    monkeypatch.setattr(candlestick_mod, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(candlestick_mod, "_symbol_ready_guard", _always_ready_guard)
+    monkeypatch.setattr(candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object(), object()])
+    monkeypatch.setattr(candlestick_mod, "_get_candlestick_pattern_methods", lambda _temp: ["cdl_alpha", "cdl_beta"])
+
+    def _fake_rates_to_df(_rates):
+        frame = _FakeFrame(
+            {
+                "time": [1_700_000_000.0, 1_700_003_600.0],
+                "open": [100.0, 101.0],
+                "high": [101.0, 102.0],
+                "low": [99.0, 100.0],
+                "close": [100.5, 101.5],
+            }
+        )
+        frame._calls = calls
+        return frame
+
+    monkeypatch.setattr(candlestick_mod, "_rates_to_df", _fake_rates_to_df)
+
+    res = candlestick_mod.detect_candlestick_patterns(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=10,
+        min_strength=0.95,
+        min_gap=0,
+        robust_only=False,
+        whitelist="alpha",
+        top_k=1,
+    )
+
+    assert res["success"] is True
+    assert calls == ["cdl_alpha"]
+
+
 def test_extract_candlestick_rows_respects_start_index():
     df = pd.DataFrame({"time": ["T0", "T1", "T2"], "close": [100.0, 101.0, 102.0]})
     temp = pd.DataFrame({"cdl_engulfing": [100.0, 100.0, 100.0]})
