@@ -569,11 +569,11 @@ class TestFetchCandles(unittest.TestCase):
         query = diagnostics['query']
         self.assertEqual(query['requested_bars'], 5)
         self.assertEqual(query['raw_bars_fetched'], 10)
-        self.assertEqual(query['rows_returned'], 5)
+        self.assertEqual(result['candles'], 5)
         self.assertIn('latency_ms', query)
         self.assertIn('warmup_retry', query)
         self.assertEqual(diagnostics['indicators']['requested'], False)
-        self.assertEqual(diagnostics['session_gaps']['count'], 0)
+        self.assertEqual(diagnostics['session_gaps']['expected_bar_seconds'], 3600.0)
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)

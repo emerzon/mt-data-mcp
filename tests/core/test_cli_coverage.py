@@ -382,7 +382,6 @@ class TestFormatResultForCli:
                 "start_epoch": 1.0,
                 "end_epoch": 2.0,
                 "stats": {"bid": {"first": 1.1}},
-                "stats_display": {"bid": {"first": "1.10"}},
             },
             fmt="toon",
             verbose=False,
@@ -689,16 +688,16 @@ class TestAttachCliMeta:
         r = {
             "meta": {
                 "diagnostics": {
-                    "query": {"rows_returned": 5, "latency_ms": 12.3},
+                    "query": {"raw_bars_fetched": 5, "latency_ms": 12.3},
                     "indicators": {"requested": False},
-                    "session_gaps": {"count": 0},
+                    "session_gaps": {"expected_bar_seconds": 3600.0},
                 }
             },
             "warnings": ["sample warning"],
         }
         out = _attach_cli_meta(r, cmd_name="data_fetch_candles", verbose=True)
         cmd_diag = out["cli_meta"]["command_diagnostics"]["data_fetch_candles"]
-        assert cmd_diag["query"]["rows_returned"] == 5
+        assert cmd_diag["query"]["raw_bars_fetched"] == 5
         assert cmd_diag["indicators"]["requested"] is False
         assert cmd_diag["warnings"] == ["sample warning"]
 

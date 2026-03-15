@@ -750,8 +750,6 @@ def fetch_candles(
                         "warmup_bars": int(warmup_bars),
                         "raw_bars_fetched": raw_bars_fetched,
                         "rows_after_target_trim": rows_after_target_trim,
-                        "rows_after_simplify": int(len(df)),
-                        "rows_returned": int(len(rows)),
                         "cache_status": "unknown",
                         "warmup_retry": warmup_retry_meta,
                     },
@@ -759,15 +757,12 @@ def fetch_candles(
                         "requested": bool(ti_spec),
                         "spec": str(ti_spec or ""),
                         "added_columns": ti_added_cols,
-                        "added_columns_count": int(len(ti_added_cols)),
                     },
                     "denoise": {
                         "applied": bool(denoise_apps),
-                        "applications_count": int(len(denoise_apps)),
                         "added_columns": denoise_added_cols,
                     },
                     "session_gaps": {
-                        "count": int(len(session_gaps)),
                         "expected_bar_seconds": float(expected_bar_seconds) if expected_bar_seconds > 0 else None,
                     },
                     "simplify": {
@@ -825,10 +820,6 @@ def fetch_candles(
             except Exception:
                 pass
             payload['warnings'] = warns
-        try:
-            payload["meta"]["diagnostics"]["query"]["warnings_count"] = int(len(payload.get("warnings") or []))
-        except Exception:
-            pass
         return payload
     except Exception as e:
         return {"error": f"Error getting rates: {str(e)}"}
@@ -1183,20 +1174,6 @@ def fetch_ticks(
                     else {"kind": volume_kind}
                 )
 
-            if price_digits > 0:
-                stats_display: Dict[str, Dict[str, str]] = {}
-                for field in ("bid", "ask", "mid", "spread", "last"):
-                    section = out.get("stats", {}).get(field)
-                    if not isinstance(section, dict):
-                        continue
-                    display_section: Dict[str, str] = {}
-                    for metric, value in section.items():
-                        if isinstance(value, (int, float)) and math.isfinite(float(value)):
-                            display_section[metric] = f"{float(value):.{price_digits}f}"
-                    if display_section:
-                        stats_display[field] = display_section
-                if stats_display:
-                    out["stats_display"] = stats_display
             return out
 
         # If simplify mode requests approximation or resampling, use shared path
@@ -1342,7 +1319,6 @@ def fetch_ticks(
             meta = {
                 "method": (_simp_method_used or str((simplify_used or {}).get('method', SIMPLIFY_DEFAULT_METHOD)).lower()),
                 "original_rows": original_count,
-                "returned_rows": len(rows),
                 "multi_column": True,
                 "columns": [c for c in ["bid","ask"] + (["last"] if has_last else []) + (["volume"] if has_volume else [])],
             }
@@ -1356,8 +1332,6 @@ def fetch_ticks(
                             meta[key] = (simplify or {})[key]
             except Exception:
                 pass
-            # Normalize points to actual returned rows
-            meta["points"] = len(rows)
             payload["simplify"] = meta
         return payload
     except Exception as e:

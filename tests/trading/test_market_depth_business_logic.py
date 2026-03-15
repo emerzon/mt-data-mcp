@@ -40,9 +40,9 @@ def test_market_depth_tick_fallback_includes_price_display() -> None:
     assert out["capabilities"]["depth_source"] == "symbol_info_tick"
     assert out["data"]["recommended_alternative"] == "market_ticker"
     assert out["price_precision"] == 2
-    assert out["data"]["bid_display"] == "65601.00"
-    assert out["data"]["ask_display"] == "65601.50"
-    assert out["data"]["last_display"] == "65601.00"
+    assert out["data"]["bid"] == 65601.0
+    assert out["data"]["ask"] == 65601.5
+    assert out["data"]["last"] == 65601.0
     assert isinstance(out.get("query_latency_ms"), float)
 
 
@@ -66,7 +66,7 @@ def test_market_depth_tick_fallback_hides_zero_last_display() -> None:
 
     assert out["success"] is True
     assert out["data"]["last"] is None
-    assert out["data"]["last_display"] is None
+    assert "last_display" not in out["data"]
 
 
 def test_market_depth_full_depth_includes_price_display() -> None:
@@ -170,7 +170,7 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["ask"] == 201.0
     assert out["spread"] == 1.0
     assert out["spread_points"] == 100.0
-    assert out["spread_display"] == "1.00"
+    assert "spread_display" not in out
     assert out["diagnostics"]["cache_used"] is False
     assert out["diagnostics"]["source"] == "mt5.symbol_info_tick"
     assert isinstance(out["diagnostics"]["query_latency_ms"], float)

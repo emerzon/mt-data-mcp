@@ -264,7 +264,6 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     summary: Dict[str, Any] = {
         "unique_patterns": len(counts),
-        "showing_recent": len(recent_rows),
         "more_patterns": max(0, total_i - len(recent_rows)),
     }
     if counts:

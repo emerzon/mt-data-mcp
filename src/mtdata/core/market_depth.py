@@ -58,7 +58,6 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
                     spread_usd = (spread_abs / tick_size) * tick_value
                 return {
                     "spread": spread_abs,
-                    "spread_display": _price_display(spread_abs),
                     "spread_points": spread_points,
                     "spread_pct": spread_pct,
                     "spread_usd": spread_usd,
@@ -146,9 +145,6 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
                     "bid": float(tick.bid) if tick.bid else None,
                     "ask": float(tick.ask) if tick.ask else None,
                     "last": float(tick.last) if tick.last else None,
-                    "bid_display": _price_display(tick.bid),
-                    "ask_display": _price_display(tick.ask),
-                    "last_display": _price_display(float(tick.last) if tick.last else None),
                     "volume": int(tick.volume) if tick.volume else None,
                     "time": int(_mt5_epoch_to_utc(float(tick.time))) if tick.time else None,
                     "note": "Full market depth not available, showing current bid/ask snapshot.",
@@ -220,17 +216,6 @@ def market_ticker(symbol: str) -> Dict[str, Any]:
             ask = float(tick.ask) if tick.ask else None
             last = float(tick.last) if tick.last else None
 
-            def _fmt_price(value: Any) -> Any:
-                if value is None:
-                    return None
-                try:
-                    v = float(value)
-                    if digits > 0:
-                        return f"{v:.{digits}f}"
-                    return str(v)
-                except Exception:
-                    return None
-
             spread_abs = None
             spread_points = None
             spread_pct = None
@@ -254,11 +239,7 @@ def market_ticker(symbol: str) -> Dict[str, Any]:
                 "bid": bid,
                 "ask": ask,
                 "last": last,
-                "bid_display": _fmt_price(bid),
-                "ask_display": _fmt_price(ask),
-                "last_display": _fmt_price(last),
                 "spread": spread_abs,
-                "spread_display": _fmt_price(spread_abs),
                 "spread_points": spread_points,
                 "spread_pct": spread_pct,
                 "spread_usd": spread_usd,
