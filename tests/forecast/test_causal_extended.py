@@ -388,7 +388,7 @@ class TestCausalDiscoverSignals:
         assert "meta" in result
         assert result["data"]["count_links"] >= 1
         assert isinstance(result["data"]["links"], list)
-        assert "summary_text" in result["data"]
+        assert "summary_text" not in result["data"]
         assert result["meta"]["pairs_tested"] >= 1
         assert not any("verbose" in str(w.message).lower() for w in records)
         assert any(

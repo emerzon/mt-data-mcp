@@ -473,10 +473,15 @@ def _compact_forecast_ci(
     upper: List[Any],
 ) -> Dict[str, Any]:
     """Emit CI diagnostics only when they add signal beyond the forecast table."""
-    ci_requested = bool(payload.get('ci_requested'))
-    ci_available = payload.get('ci_available')
     ci_status = payload.get('ci_status')
-    ci_unavailable = bool(payload.get('ci_unavailable'))
+    if _is_empty_value(ci_status):
+        ci_available = payload.get('ci_available')
+        if ci_available is True:
+            ci_status = 'available'
+        elif payload.get('ci_unavailable') or ci_available is False:
+            ci_status = 'unavailable'
+        elif bool(payload.get('ci_requested')):
+            ci_status = 'requested'
     has_interval_columns = bool(lower and upper)
 
     alpha = None
@@ -486,25 +491,18 @@ def _compact_forecast_ci(
             alpha = value
             break
 
-    if ci_available is True and has_interval_columns:
+    if ci_status == 'available' and has_interval_columns:
         return {}
 
-    if not ci_requested and ci_available not in (False, True) and _is_empty_value(ci_status) and not ci_unavailable:
+    if _is_empty_value(ci_status) and alpha is None:
         return {}
 
     out: Dict[str, Any] = {}
     if not _is_empty_value(ci_status):
         out['status'] = ci_status
-    elif ci_unavailable:
-        out['status'] = 'unavailable'
-    elif ci_available is True:
-        out['status'] = 'available'
 
     if alpha is not None:
         out['ci_alpha'] = alpha
-
-    if not out and ci_requested:
-        out['requested'] = True
 
     return out
 

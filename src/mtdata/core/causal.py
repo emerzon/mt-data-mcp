@@ -657,7 +657,6 @@ def causal_discover_signals(
         data: Dict[str, Any] = {
             "links": rows_sorted,
             "count_links": int(len(rows_sorted)),
-            "summary_text": _format_summary(rows_sorted, list(transformed.columns), transform, significance, group_hint=group_hint),
         }
         out: Dict[str, Any] = {
             "success": True,

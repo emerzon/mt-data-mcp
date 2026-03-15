@@ -108,21 +108,15 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertEqual(result["last_price_source"], "live_tick_ask")
         self.assertAlmostEqual(result["tp_price"], 1.2345 * 1.005, places=8)
         self.assertAlmostEqual(result["sl_price"], 1.2345 * 0.995, places=8)
-        self.assertEqual(len(result["hit_prob_by_t"]), 4)
-        self.assertEqual(result["hit_prob_by_t"][0]["bar"], 1)
-        self.assertEqual(result["hit_prob_by_t"][0]["t_seconds"], 3600)
-        self.assertAlmostEqual(
-            result["hit_prob_by_t"][0]["tp_hit_prob"],
-            result["tp_hit_prob_by_t"][0],
-            places=8,
-        )
-        self.assertAlmostEqual(
-            result["hit_prob_by_t"][0]["sl_hit_prob"],
-            result["sl_hit_prob_by_t"][0],
-            places=8,
-        )
-        self.assertTrue(result["time_to_hit_seconds_derived"])
-        self.assertEqual(result["time_to_hit_seconds_formula"], "bars * 3600")
+        self.assertEqual(len(result["tp_hit_prob_by_t"]), 4)
+        self.assertEqual(len(result["sl_hit_prob_by_t"]), 4)
+        self.assertAlmostEqual(result["tp_hit_prob_by_t"][0], 0.0, places=8)
+        self.assertAlmostEqual(result["sl_hit_prob_by_t"][0], 0.0, places=8)
+        self.assertNotIn("hit_prob_by_t", result)
+        self.assertNotIn("time_to_tp_seconds", result)
+        self.assertNotIn("time_to_sl_seconds", result)
+        self.assertNotIn("time_to_hit_seconds_derived", result)
+        self.assertNotIn("time_to_hit_seconds_formula", result)
 
     def test_forecast_barrier_hit_probabilities_falls_back_to_close_price(self):
         self._set_flat_history(1.0, bars=200)

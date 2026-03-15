@@ -309,21 +309,19 @@ class TestFormatResultForCli:
         assert "warmup_bars" not in result
         assert "requested_bars" in result
 
-    def test_toon_format_hides_verbose_only_forecast_fields_in_default_view(self):
+    def test_toon_format_keeps_barrier_probability_curves_in_default_view(self):
         result = _format_result_for_cli(
             {
                 "success": True,
                 "tp_hit_prob_by_t": [0.1, 0.2],
                 "sl_hit_prob_by_t": [0.3, 0.4],
-                "hit_prob_by_t": [{"bar": 1, "tp_hit_prob": 0.1, "sl_hit_prob": 0.3}],
             },
             fmt="toon",
             verbose=False,
             cmd_name="forecast_barrier_prob",
         )
-        assert "tp_hit_prob_by_t" not in result
-        assert "sl_hit_prob_by_t" not in result
-        assert "hit_prob_by_t" in result
+        assert "tp_hit_prob_by_t" in result
+        assert "sl_hit_prob_by_t" in result
 
     def test_toon_format_hides_barrier_optimization_grid_in_default_view(self):
         result = _format_result_for_cli(
@@ -2664,9 +2662,6 @@ class TestForecastGenerateIntegration:
             "forecast_price": [67580.67],
             "lower_price": [63025.26],
             "upper_price": [71823.47],
-            "ci_requested": True,
-            "ci_alpha_requested": 0.05,
-            "ci_available": True,
             "ci_status": "available",
             "ci_alpha": 0.05,
         })

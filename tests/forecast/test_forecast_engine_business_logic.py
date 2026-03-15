@@ -94,10 +94,11 @@ def test_preprocessing_helpers_and_output_format():
     assert res["forecast"] == [0.01, 0.02, -0.01]
     assert res["forecast_price"] == [101.0, 103.0, 102.0]
     assert res["ci_alpha"] == 0.1
-    assert res["ci_requested"] is True
-    assert res["ci_available"] is True
     assert res["ci_status"] == "available"
-    assert res["ci_alpha_requested"] == 0.1
+    assert "ci_requested" not in res
+    assert "ci_available" not in res
+    assert "ci_alpha_requested" not in res
+    assert "ci_unavailable" not in res
     assert res["lower_return"] == [0.0, 0.01, -0.02]
     assert res["upper_return"] == [0.02, 0.03, 0.0]
     assert "lower_price" not in res
@@ -118,16 +119,16 @@ def test_preprocessing_helpers_and_output_format():
         quantity="price",
         denoise_used=False,
     )
-    assert no_ci["ci_unavailable"] is True
-    assert no_ci["ci_requested"] is True
-    assert no_ci["ci_available"] is False
     assert no_ci["ci_status"] == "unavailable"
-    assert no_ci["ci_alpha_requested"] == 0.05
+    assert no_ci["ci_alpha"] == 0.05
+    assert "ci_unavailable" not in no_ci
+    assert "ci_requested" not in no_ci
+    assert "ci_available" not in no_ci
+    assert "ci_alpha_requested" not in no_ci
     assert "warnings" in no_ci
     assert "Point forecast only" in no_ci["warnings"][0]
     assert "forecast_conformal_intervals" in no_ci["warnings"][0]
     assert no_ci["forecast"] == [101.0, 102.0]
-    assert "ci_alpha" not in no_ci
     assert "lower_price" not in no_ci
     assert "upper_price" not in no_ci
 
@@ -456,17 +457,17 @@ def test_forecast_engine_warns_when_ci_requested_but_method_has_no_intervals(mon
     )
 
     assert out["success"] is True
-    assert out["ci_unavailable"] is True
-    assert out["ci_requested"] is True
-    assert out["ci_available"] is False
     assert out["ci_status"] == "unavailable"
-    assert out["ci_alpha_requested"] == 0.1
+    assert out["ci_alpha"] == 0.1
+    assert "ci_unavailable" not in out
+    assert "ci_requested" not in out
+    assert "ci_available" not in out
+    assert "ci_alpha_requested" not in out
     assert "warnings" in out
     assert "Point forecast only" in out["warnings"][0]
     assert "EURUSD" in out["warnings"][0]
     assert "--timeframe H1" in out["warnings"][0]
     assert " SYMBOL " not in out["warnings"][0]
-    assert "ci_alpha" not in out
     assert "lower_price" not in out
     assert "upper_price" not in out
 

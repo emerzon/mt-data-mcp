@@ -447,9 +447,6 @@ def forecast_backtest(
                     trade_returns = [float(v) for v in trade_returns if v is not None and np.isfinite(v)]
                     metrics = _compute_performance_metrics(trade_returns, timeframe, int(horizon), float(slippage_bps)) if trade_returns else {}
                     if metrics:
-                        agg["avg_trade_return"] = float(metrics.get("avg_return_per_trade", float('nan')))
-                        agg["win_rate"] = float(metrics.get("win_rate", float('nan')))
-                        agg["consistency"] = float(metrics.get("win_rate", float('nan')))
                         agg["metrics"] = metrics
                         agg["slippage_bps"] = float(slippage_bps)
                 if _dn_used:

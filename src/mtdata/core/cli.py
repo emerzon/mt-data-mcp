@@ -122,7 +122,6 @@ _CLI_LIST_RESULT_DROP_KEYS: Dict[str, set[str]] = {
 
 _CLI_DICT_RESULT_DROP_KEYS: Dict[str, set[str]] = {
     "forecast_volatility_estimate": {"params_explained"},
-    "forecast_barrier_prob": {"tp_hit_prob_by_t", "sl_hit_prob_by_t"},
     "forecast_barrier_optimize": {"grid"},
     "data_fetch_ticks": {"start_epoch", "end_epoch", "stats_display"},
 }

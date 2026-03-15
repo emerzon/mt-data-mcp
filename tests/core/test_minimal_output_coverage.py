@@ -277,10 +277,8 @@ class TestNormalizeForecastPayload:
         payload = {
             "times": ["t1"],
             "forecast_price": [100.0],
-            "ci_requested": True,
-            "ci_alpha_requested": 0.05,
-            "ci_available": False,
             "ci_status": "unavailable",
+            "ci_alpha": 0.05,
             "warnings": [
                 "Point forecast only for method 'theta'; confidence intervals are unavailable."
             ],
@@ -296,9 +294,6 @@ class TestNormalizeForecastPayload:
             "forecast_price": [100.0],
             "lower_price": [98.0],
             "upper_price": [102.0],
-            "ci_requested": True,
-            "ci_alpha_requested": 0.05,
-            "ci_available": True,
             "ci_status": "available",
             "ci_alpha": 0.05,
         }
@@ -309,21 +304,15 @@ class TestNormalizeForecastPayload:
 class TestCompactForecastCi:
     def test_omits_available_ci_when_bounds_exist(self):
         payload = {
-            "ci_requested": True,
-            "ci_available": True,
             "ci_status": "available",
-            "ci_alpha_requested": 0.05,
             "ci_alpha": 0.05,
         }
         assert _compact_forecast_ci(payload, lower=[1.0], upper=[2.0]) == {}
 
     def test_compacts_unavailable_ci_to_status_and_ci_alpha(self):
         payload = {
-            "ci_requested": True,
-            "ci_available": False,
             "ci_status": "unavailable",
-            "ci_alpha_requested": 0.1,
-            "ci_unavailable": True,
+            "ci_alpha": 0.1,
         }
         assert _compact_forecast_ci(payload, lower=[], upper=[]) == {
             "status": "unavailable",
