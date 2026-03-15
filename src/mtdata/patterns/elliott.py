@@ -29,12 +29,20 @@ class ElliottWaveConfig:
     volume_confirm_min_ratio: float = 1.05
     volume_confirm_bonus: float = 0.06
     volume_confirm_penalty: float = 0.04
+    use_regime_context: bool = True
+    regime_window_bars: int = 160
+    regime_trend_strength_threshold: float = 1.25
+    regime_efficiency_trending_threshold: float = 0.35
+    regime_alignment_bonus: float = 0.05
+    regime_countertrend_penalty: float = 0.05
 
     # Autotuning controls
     autotune: bool = True
     tune_thresholds: Optional[List[float]] = None
     tune_min_distance: Optional[List[int]] = None
     autotune_skip_repeated_pivots: bool = True
+    scan_timeframes: List[str] = field(default_factory=lambda: ["H1", "H4", "D1"])
+    max_scan_timeframes: int = 3
 
     # Analyzer controls
     min_confidence: float = 0.0

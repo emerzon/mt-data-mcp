@@ -42,7 +42,7 @@ from ..patterns.classic import detect_classic_patterns as _detect_classic_patter
 from ..patterns.elliott import detect_elliott_waves as _detect_elliott_waves, ElliottWaveConfig as _ElliottCfg
 from ._mcp_instance import mcp
 from .patterns_requests import PatternsDetectRequest
-from .patterns_use_cases import run_patterns_detect
+from .patterns_use_cases import PatternsDetectDeps, run_patterns_detect
 from ..shared.validators import invalid_timeframe_error
 from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5
@@ -50,6 +50,7 @@ from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5
 logger = logging.getLogger(__name__)
 
 _CLASSIC_ENGINE_ORDER = ("native", "stock_pattern", "precise_patterns")
+_DEFAULT_ELLIOTT_SCAN_TIMEFRAMES = ("H1", "H4", "D1")
 ClassicEngineRunner = Callable[
     [str, pd.DataFrame, _ClassicCfg, Optional[Dict[str, Any]]],
     Tuple[List[Dict[str, Any]], Optional[str]],
@@ -176,6 +177,75 @@ def _elliott_timeframe_suggestion(timeframe: Optional[str]) -> str:
     if len(suggestions) == 1:
         return f"Try --timeframe {suggestions[0]} or increase --limit."
     return f"Try --timeframe {suggestions[0]} or --timeframe {suggestions[1]}."
+
+
+def _resolve_elliott_scan_timeframes(cfg: _ElliottCfg) -> List[str]:
+    raw_scan = getattr(cfg, "scan_timeframes", None)
+    requested: List[str] = []
+    if isinstance(raw_scan, str):
+        requested = [part.strip().upper() for part in raw_scan.replace(";", ",").split(",") if part.strip()]
+    elif isinstance(raw_scan, (list, tuple, set)):
+        requested = [str(part).strip().upper() for part in raw_scan if str(part).strip()]
+
+    if not requested:
+        requested = [tf for tf in _DEFAULT_ELLIOTT_SCAN_TIMEFRAMES if tf in TIMEFRAME_MAP]
+    if not requested:
+        requested = [str(tf).strip().upper() for tf in TIMEFRAME_MAP.keys()]
+
+    try:
+        max_scan = int(getattr(cfg, "max_scan_timeframes", 3))
+    except Exception:
+        max_scan = 3
+    if max_scan <= 0:
+        max_scan = max(1, len(TIMEFRAME_MAP))
+
+    out: List[str] = []
+    seen = set()
+    for timeframe in requested:
+        if timeframe not in TIMEFRAME_MAP or timeframe in seen:
+            continue
+        seen.add(timeframe)
+        out.append(timeframe)
+        if len(out) >= max_scan:
+            break
+    if out:
+        return out
+
+    fallback: List[str] = []
+    for timeframe in TIMEFRAME_MAP.keys():
+        tf = str(timeframe).strip().upper()
+        if tf in seen:
+            continue
+        seen.add(tf)
+        fallback.append(tf)
+        if len(fallback) >= max_scan:
+            break
+    return fallback
+
+
+def _patterns_detect_deps() -> PatternsDetectDeps:
+    return PatternsDetectDeps(
+        compact_patterns_payload=_compact_patterns_payload,
+        fetch_pattern_data=_fetch_pattern_data,
+        classic_cfg_cls=_ClassicCfg,
+        elliott_cfg_cls=_ElliottCfg,
+        apply_config_to_obj=_apply_config_to_obj,
+        select_classic_engines=_select_classic_engines,
+        available_classic_engines=_available_classic_engines,
+        run_classic_engine=_run_classic_engine,
+        resolve_engine_weights=_resolve_engine_weights,
+        merge_classic_ensemble=_merge_classic_ensemble,
+        enrich_classic_patterns=_enrich_classic_patterns,
+        summarize_engine_findings=_summarize_engine_findings,
+        summarize_pattern_bias=_summarize_pattern_bias,
+        build_pattern_response=_build_pattern_response,
+        format_elliott_patterns=_format_elliott_patterns,
+        detect_candlestick_patterns=_detect_candlestick_patterns,
+        elliott_timeframe_suggestion=_elliott_timeframe_suggestion,
+        resolve_elliott_scan_timeframes=_resolve_elliott_scan_timeframes,
+        format_time_minimal=_format_time_minimal,
+        to_float_np=__to_float_np,
+    )
 
 
 def _build_pattern_response(
@@ -628,8 +698,9 @@ def patterns_detect(
     
     timeframe : str, optional
         Chart timeframe: "M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"
-        For `mode="elliott"`, when omitted, all available timeframes are scanned and
-        returned in a single aggregated output.
+        For `mode="elliott"`, when omitted, a default higher-structure subset
+        (`H1`, `H4`, `D1` when available) is scanned and returned in one
+        aggregated output.
     
     mode : str, optional (default="candlestick")
         Pattern detection method:
@@ -727,29 +798,7 @@ def patterns_detect(
         connection_error = _patterns_connection_error()
         if connection_error is not None:
             return connection_error
-        return run_patterns_detect(
-            request,
-            timeframe_map=TIMEFRAME_MAP,
-            compact_patterns_payload=_compact_patterns_payload,
-            fetch_pattern_data=_fetch_pattern_data,
-            classic_cfg_cls=_ClassicCfg,
-            elliott_cfg_cls=_ElliottCfg,
-            apply_config_to_obj=_apply_config_to_obj,
-            select_classic_engines=_select_classic_engines,
-            available_classic_engines=_available_classic_engines,
-            run_classic_engine=_run_classic_engine,
-            resolve_engine_weights=_resolve_engine_weights,
-            merge_classic_ensemble=_merge_classic_ensemble,
-            enrich_classic_patterns=_enrich_classic_patterns,
-            summarize_engine_findings=_summarize_engine_findings,
-            summarize_pattern_bias=_summarize_pattern_bias,
-            build_pattern_response=_build_pattern_response,
-            format_elliott_patterns=_format_elliott_patterns,
-            detect_candlestick_patterns=_detect_candlestick_patterns,
-            elliott_timeframe_suggestion=_elliott_timeframe_suggestion,
-            format_time_minimal=_format_time_minimal,
-            to_float_np=__to_float_np,
-        )
+        return run_patterns_detect(request, _patterns_detect_deps())
 
     return run_logged_operation(
         logger,

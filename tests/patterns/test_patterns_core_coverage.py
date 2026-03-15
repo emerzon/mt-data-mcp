@@ -747,6 +747,44 @@ class TestEnrichClassicPatterns:
 
         assert enriched[0]["bias"] == "bearish"
 
+    def test_regime_context_adjusts_classic_confidence(self):
+        from mtdata.core.patterns_support import _enrich_classic_patterns
+        from mtdata.patterns.classic import ClassicDetectorConfig
+
+        n = 180
+        df = pd.DataFrame(
+            {
+                "close": np.linspace(100.0, 140.0, n),
+                "tick_volume": np.full(n, 100.0),
+            }
+        )
+        rows = [
+            {
+                "name": "Ascending Triangle",
+                "status": "forming",
+                "confidence": 0.6,
+                "start_index": 20,
+                "end_index": n - 2,
+                "details": {"bias": "bullish", "support": 132.0, "resistance": 141.0},
+            }
+        ]
+
+        enriched = _enrich_classic_patterns(
+            rows,
+            df,
+            ClassicDetectorConfig(
+                use_volume_confirmation=False,
+                regime_alignment_bonus=0.07,
+                regime_countertrend_penalty=0.04,
+            ),
+        )
+
+        regime_context = enriched[0]["details"]["regime_context"]
+        assert regime_context["state"] == "trending"
+        assert regime_context["direction"] == "bullish"
+        assert regime_context["status"] == "aligned"
+        assert enriched[0]["confidence"] == pytest.approx(0.67)
+
 
 # ── _build_pattern_response ──────────────────────────────────────────────
 
@@ -1119,6 +1157,47 @@ class TestFormatElliottPatterns:
         assert result[0]["confidence"] == pytest.approx(0.8)
         assert volume_confirmation["status"] == "confirmed"
         assert volume_confirmation["trend_to_counter_ratio"] > 1.1
+
+    @patch("mtdata.core.patterns._detect_elliott_waves")
+    def test_adds_regime_context(self, mock_detect):
+        from mtdata.patterns.elliott import ElliottWaveConfig
+
+        n = 180
+        df = pd.DataFrame(
+            {
+                "time": np.arange(n, dtype=float),
+                "close": np.linspace(150.0, 100.0, n),
+                "tick_volume": np.full(n, 100.0),
+            }
+        )
+        mock_detect.return_value = [
+            _mock_pattern_result(
+                wave_type="Impulse",
+                start_index=10,
+                end_index=n - 2,
+                confidence=0.55,
+                details={
+                    "pattern_family": "impulse",
+                    "trend": "bear",
+                    "sequence_direction": "bear",
+                },
+            ),
+        ]
+
+        result = self._call(
+            df,
+            ElliottWaveConfig(
+                use_volume_confirmation=False,
+                regime_alignment_bonus=0.06,
+                regime_countertrend_penalty=0.03,
+            ),
+        )
+
+        regime_context = result[0]["details"]["regime_context"]
+        assert regime_context["state"] == "trending"
+        assert regime_context["direction"] == "bearish"
+        assert regime_context["status"] == "aligned"
+        assert result[0]["confidence"] == pytest.approx(0.61)
 
 
 # ── patterns_detect (main tool) ──────────────────────────────────────────

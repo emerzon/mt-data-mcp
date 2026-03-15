@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from .patterns_requests import PatternsDetectRequest
@@ -23,29 +24,33 @@ def _unknown_config_keys_for_mode(mode: str, unknown_keys: List[str]) -> List[st
     return list(unknown_keys)
 
 
+@dataclass(frozen=True)
+class PatternsDetectDeps:
+    compact_patterns_payload: Any
+    fetch_pattern_data: Any
+    classic_cfg_cls: Any
+    elliott_cfg_cls: Any
+    apply_config_to_obj: Any
+    select_classic_engines: Any
+    available_classic_engines: Any
+    run_classic_engine: Any
+    resolve_engine_weights: Any
+    merge_classic_ensemble: Any
+    enrich_classic_patterns: Any
+    summarize_engine_findings: Any
+    summarize_pattern_bias: Any
+    build_pattern_response: Any
+    format_elliott_patterns: Any
+    detect_candlestick_patterns: Any
+    elliott_timeframe_suggestion: Any
+    resolve_elliott_scan_timeframes: Any
+    format_time_minimal: Any
+    to_float_np: Any
+
+
 def run_patterns_detect(
     request: PatternsDetectRequest,
-    *,
-    timeframe_map: Dict[str, Any],
-    compact_patterns_payload: Any,
-    fetch_pattern_data: Any,
-    classic_cfg_cls: Any,
-    elliott_cfg_cls: Any,
-    apply_config_to_obj: Any,
-    select_classic_engines: Any,
-    available_classic_engines: Any,
-    run_classic_engine: Any,
-    resolve_engine_weights: Any,
-    merge_classic_ensemble: Any,
-    enrich_classic_patterns: Any,
-    summarize_engine_findings: Any,
-    summarize_pattern_bias: Any,
-    build_pattern_response: Any,
-    format_elliott_patterns: Any,
-    detect_candlestick_patterns: Any,
-    elliott_timeframe_suggestion: Any,
-    format_time_minimal: Any,
-    to_float_np: Any,
+    deps: PatternsDetectDeps,
 ) -> Dict[str, Any]:
     tf_norm: Optional[str] = (
         str(request.timeframe).strip().upper() if request.timeframe is not None else None
@@ -70,7 +75,7 @@ def run_patterns_detect(
                 return {"error": "last_n_bars must be a positive integer."}
             if last_n_bars_val <= 0:
                 return {"error": "last_n_bars must be >= 1."}
-        out = detect_candlestick_patterns(
+        out = deps.detect_candlestick_patterns(
             symbol=request.symbol,
             timeframe=tf_single,
             limit=request.limit,
@@ -82,34 +87,34 @@ def run_patterns_detect(
             last_n_bars=last_n_bars_val,
         )
         if detail_value == "compact":
-            return compact_patterns_payload(out if isinstance(out, dict) else {"data": out})
+            return deps.compact_patterns_payload(out if isinstance(out, dict) else {"data": out})
         return out
 
     if mode_value == "classic":
         tf_single = tf_norm or "H1"
-        cfg = classic_cfg_cls()
+        cfg = deps.classic_cfg_cls()
         unknown_cfg = _unknown_config_keys_for_mode(
             mode_value,
-            apply_config_to_obj(cfg, request.config),
+            deps.apply_config_to_obj(cfg, request.config),
         )
         if unknown_cfg:
             return {"error": f"Invalid config key(s): {sorted(unknown_cfg)}"}
-        df, err = fetch_pattern_data(request.symbol, tf_single, request.limit, request.denoise)
+        df, err = deps.fetch_pattern_data(request.symbol, tf_single, request.limit, request.denoise)
         if err:
             return err
-        engines, invalid_engines = select_classic_engines(request.engine, request.ensemble)
+        engines, invalid_engines = deps.select_classic_engines(request.engine, request.ensemble)
         if invalid_engines:
             return {
                 "error": (
                     f"Invalid classic engine(s): {invalid_engines}. "
-                    f"Valid options: {list(available_classic_engines())}"
+                    f"Valid options: {list(deps.available_classic_engines())}"
                 )
             }
 
         per_engine: Dict[str, List[Dict[str, Any]]] = {}
         engine_errors: Dict[str, str] = {}
         for eng in engines:
-            patt_rows, eng_err = run_classic_engine(
+            patt_rows, eng_err = deps.run_classic_engine(
                 eng, request.symbol, df, cfg, request.config
             )
             if eng_err:
@@ -124,7 +129,7 @@ def run_patterns_detect(
                     "engines_run": engines,
                     "engine_errors": engine_errors,
                 }
-            resp = build_pattern_response(
+            resp = deps.build_pattern_response(
                 request.symbol,
                 tf_single,
                 request.limit,
@@ -138,7 +143,7 @@ def run_patterns_detect(
             )
             resp["engine"] = "ensemble" if (bool(request.ensemble) or len(engines) > 1) else engines[0]
             resp["engines_run"] = engines
-            resp["engine_findings"] = summarize_engine_findings(
+            resp["engine_findings"] = deps.summarize_engine_findings(
                 per_engine, engines, request.include_completed
             )
             if engine_errors:
@@ -147,7 +152,7 @@ def run_patterns_detect(
 
         run_ensemble = bool(request.ensemble) or len(non_empty) > 1
         if run_ensemble:
-            weight_map = resolve_engine_weights(
+            weight_map = deps.resolve_engine_weights(
                 engines,
                 request.ensemble_weights
                 if isinstance(request.ensemble_weights, dict)
@@ -157,13 +162,13 @@ def run_patterns_detect(
                     else None
                 ),
             )
-            out_list = merge_classic_ensemble(non_empty, weight_map)
+            out_list = deps.merge_classic_ensemble(non_empty, weight_map)
         else:
             only_engine = next(iter(non_empty.keys()))
             out_list = list(non_empty.get(only_engine, []))
 
-        out_list = enrich_classic_patterns(out_list, df, cfg)
-        resp = build_pattern_response(
+        out_list = deps.enrich_classic_patterns(out_list, df, cfg)
+        resp = deps.build_pattern_response(
             request.symbol,
             tf_single,
             request.limit,
@@ -177,7 +182,7 @@ def run_patterns_detect(
         )
         resp["engine"] = "ensemble" if run_ensemble else next(iter(non_empty.keys()))
         resp["engines_run"] = engines
-        resp["engine_findings"] = summarize_engine_findings(
+        resp["engine_findings"] = deps.summarize_engine_findings(
             per_engine, engines, request.include_completed
         )
         signal_summary = None
@@ -188,7 +193,7 @@ def run_patterns_detect(
         else:
             rows = resp.get("patterns")
             if isinstance(rows, list):
-                signal_summary = summarize_pattern_bias(rows)
+                signal_summary = deps.summarize_pattern_bias(rows)
         if signal_summary:
             resp["signal_summary"] = signal_summary
         if engine_errors:
@@ -196,21 +201,21 @@ def run_patterns_detect(
         return resp
 
     if mode_value == "elliott":
-        cfg = elliott_cfg_cls()
+        cfg = deps.elliott_cfg_cls()
         unknown_cfg = _unknown_config_keys_for_mode(
             mode_value,
-            apply_config_to_obj(cfg, request.config),
+            deps.apply_config_to_obj(cfg, request.config),
         )
         if unknown_cfg:
             return {"error": f"Invalid config key(s): {sorted(unknown_cfg)}"}
 
         if tf_norm:
-            df, err = fetch_pattern_data(request.symbol, tf_norm, request.limit, request.denoise)
+            df, err = deps.fetch_pattern_data(request.symbol, tf_norm, request.limit, request.denoise)
             if err:
                 return err
 
-            out_list = format_elliott_patterns(df, cfg)
-            return build_pattern_response(
+            out_list = deps.format_elliott_patterns(df, cfg)
+            return deps.build_pattern_response(
                 request.symbol,
                 tf_norm,
                 request.limit,
@@ -223,7 +228,7 @@ def run_patterns_detect(
                 detail=detail_value,
             )
 
-        scanned_timeframes = list(timeframe_map.keys())
+        scanned_timeframes = deps.resolve_elliott_scan_timeframes(cfg)
         findings: List[Dict[str, Any]] = []
         combined_patterns: List[Dict[str, Any]] = []
         failed_timeframes: Dict[str, str] = {}
@@ -231,12 +236,12 @@ def run_patterns_detect(
         warnings_out: List[str] = []
 
         for tf in scanned_timeframes:
-            df, err = fetch_pattern_data(request.symbol, tf, request.limit, request.denoise)
+            df, err = deps.fetch_pattern_data(request.symbol, tf, request.limit, request.denoise)
             if err:
                 failed_timeframes[tf] = str(err.get("error", "Unknown error"))
                 continue
 
-            tf_patterns = format_elliott_patterns(df, cfg)
+            tf_patterns = deps.format_elliott_patterns(df, cfg)
             filtered = (
                 tf_patterns
                 if request.include_completed
@@ -256,7 +261,7 @@ def run_patterns_detect(
             if int(len(filtered)) == 0:
                 finding_row["diagnostic"] = (
                     f"No valid Elliott Wave structures detected in {int(request.limit)} {tf} bars. "
-                    f"{elliott_timeframe_suggestion(tf)}"
+                    f"{deps.elliott_timeframe_suggestion(tf)}"
                 )
             findings.append(finding_row)
 
@@ -267,17 +272,17 @@ def run_patterns_detect(
 
             if request.include_series:
                 series_payload: Dict[str, Any] = {
-                    "series_close": [float(v) for v in to_float_np(df.get("close")).tolist()]
+                    "series_close": [float(v) for v in deps.to_float_np(df.get("close")).tolist()]
                 }
                 if "time" in df.columns:
                     if str(request.series_time).lower() == "epoch":
                         series_payload["series_epoch"] = [
-                            float(v) for v in to_float_np(df.get("time")).tolist()
+                            float(v) for v in deps.to_float_np(df.get("time")).tolist()
                         ]
                     else:
                         series_payload["series_time"] = [
-                            format_time_minimal(float(v))
-                            for v in to_float_np(df.get("time")).tolist()
+                            deps.format_time_minimal(float(v))
+                            for v in deps.to_float_np(df.get("time")).tolist()
                         ]
                 series_by_timeframe[tf] = series_payload
 
@@ -312,7 +317,7 @@ def run_patterns_detect(
         if request.include_series:
             resp["series_by_timeframe"] = series_by_timeframe
         if detail_value == "compact":
-            return compact_patterns_payload(resp)
+            return deps.compact_patterns_payload(resp)
         return resp
 
     return {"error": f"Unknown mode: {request.mode}. Use candlestick, classic/chart, or elliott."}

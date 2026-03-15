@@ -79,6 +79,13 @@ class ClassicDetectorConfig:
     volume_confirm_min_ratio: float = 1.10
     volume_confirm_bonus: float = 0.08
     volume_confirm_penalty: float = 0.06
+    # Regime context
+    use_regime_context: bool = True
+    regime_window_bars: int = 160
+    regime_trend_strength_threshold: float = 1.25
+    regime_efficiency_trending_threshold: float = 0.35
+    regime_alignment_bonus: float = 0.05
+    regime_countertrend_penalty: float = 0.05
     # Output/completion controls
     include_aliases: bool = False    # include generic aliases like "Trend Line"/"Trend Channel"
     completion_confirm_bars: int = 2 # touches needed near the right edge to mark completed

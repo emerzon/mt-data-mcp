@@ -75,6 +75,13 @@ def _row_pattern_bias(row: Dict[str, Any]) -> Optional[str]:
             bias = _normalize_pattern_bias(details.get(key))
             if bias:
                 return bias
+        pattern_family = str(details.get("pattern_family") or "").strip().lower()
+        trend_context = str(details.get("trend_context") or "").strip().lower()
+        if pattern_family != "correction" and trend_context != "counter_trend":
+            for key in ("sequence_direction", "trend"):
+                bias = _normalize_pattern_bias(details.get(key))
+                if bias:
+                    return bias
     return None
 
 
@@ -440,6 +447,133 @@ def _apply_confidence_delta(row: Dict[str, Any], delta: float) -> None:
     row["confidence"] = float(max(0.0, min(1.0, conf + float(delta))))
 
 
+def _infer_market_regime(df: pd.DataFrame, config: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(df, pd.DataFrame) or len(df) <= 0:
+        return None
+
+    try:
+        close = pd.to_numeric(df.get("close"), errors="coerce").to_numpy(dtype=float, copy=False)
+    except Exception:
+        return None
+    if close.size < 20:
+        return None
+
+    close = close[np.isfinite(close)]
+    if close.size < 20:
+        return None
+
+    window_bars = min(
+        int(close.size),
+        _config_int(config, "regime_window_bars", 160, minimum=20),
+    )
+    segment = np.asarray(close[-window_bars:], dtype=float)
+    if segment.size < 20:
+        return None
+
+    diffs = np.diff(segment)
+    finite_diffs = diffs[np.isfinite(diffs)]
+    path_length = float(np.sum(np.abs(finite_diffs))) if finite_diffs.size else 0.0
+    move = float(segment[-1] - segment[0])
+    base_price = float(segment[0]) if abs(float(segment[0])) > 1e-9 else 1e-9
+    trend_strength = float(abs(move) / max(float(np.nanstd(segment)), 1e-9))
+    efficiency_ratio = float(abs(move) / max(path_length, 1e-9))
+    trend_threshold = _config_float(config, "regime_trend_strength_threshold", 1.25, minimum=0.1)
+    efficiency_threshold = _config_float(
+        config,
+        "regime_efficiency_trending_threshold",
+        0.35,
+        minimum=0.05,
+    )
+
+    if efficiency_ratio >= efficiency_threshold and trend_strength >= trend_threshold:
+        state = "trending"
+    elif efficiency_ratio <= max(0.1, 0.55 * efficiency_threshold):
+        state = "ranging"
+    else:
+        state = "transition"
+
+    direction = "neutral"
+    if move > 1e-9:
+        direction = "bullish"
+    elif move < -1e-9:
+        direction = "bearish"
+
+    return {
+        "state": state,
+        "direction": direction,
+        "window_bars": int(window_bars),
+        "trend_strength": _round_value(trend_strength),
+        "efficiency_ratio": _round_value(efficiency_ratio),
+        "window_move_pct": _round_value((move / base_price) * 100.0),
+    }
+
+
+def _attach_regime_context(
+    row: Dict[str, Any],
+    regime_context: Optional[Dict[str, Any]],
+    config: Any,
+) -> Dict[str, Any]:
+    out = dict(row)
+    details = out.get("details")
+    if not isinstance(details, dict):
+        details = {}
+    else:
+        details = dict(details)
+
+    payload: Dict[str, Any] = {
+        "status": "disabled" if not _config_bool(config, "use_regime_context", True) else "unavailable",
+    }
+    if payload["status"] == "disabled":
+        details["regime_context"] = payload
+        out["details"] = details
+        return out
+    if not isinstance(regime_context, dict):
+        details["regime_context"] = payload
+        out["details"] = details
+        return out
+
+    payload.update(regime_context)
+    bias = _row_pattern_bias(out)
+    if bias:
+        payload["pattern_bias"] = bias
+
+    bonus = _config_float(config, "regime_alignment_bonus", 0.05, minimum=0.0)
+    penalty = _config_float(config, "regime_countertrend_penalty", 0.05, minimum=0.0)
+    confidence_delta = 0.0
+
+    if bias in {"bullish", "bearish"}:
+        if payload.get("state") == "trending" and payload.get("direction") in {"bullish", "bearish"}:
+            if bias == payload.get("direction"):
+                payload["status"] = "aligned"
+                payload["alignment"] = "aligned"
+                confidence_delta = float(bonus)
+            else:
+                payload["status"] = "countertrend"
+                payload["alignment"] = "countertrend"
+                confidence_delta = -float(penalty)
+        else:
+            payload["status"] = "context_only"
+            payload["alignment"] = "neutral"
+    elif bias == "neutral":
+        if payload.get("state") == "ranging":
+            payload["status"] = "range_aligned"
+            payload["alignment"] = "range_aligned"
+            confidence_delta = float(0.5 * bonus)
+        else:
+            payload["status"] = "context_only"
+            payload["alignment"] = "neutral"
+    else:
+        payload["status"] = "not_directional"
+
+    if abs(confidence_delta) > 1e-12:
+        payload["confidence_delta"] = _round_value(confidence_delta)
+        _apply_confidence_delta(out, confidence_delta)
+
+    details["regime_context"] = payload
+    out["details"] = details
+    return out
+
+
 def _attach_classic_volume_confirmation(
     row: Dict[str, Any],
     df: pd.DataFrame,
@@ -756,7 +890,12 @@ def _classic_pattern_height(
     return None
 
 
-def _enrich_classic_pattern_row(row: Dict[str, Any], df: pd.DataFrame, config: Any = None) -> Dict[str, Any]:
+def _enrich_classic_pattern_row(
+    row: Dict[str, Any],
+    df: pd.DataFrame,
+    config: Any = None,
+    regime_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     out = dict(row)
     details = out.get("details")
     if not isinstance(details, dict):
@@ -867,24 +1006,28 @@ def _enrich_classic_pattern_row(row: Dict[str, Any], df: pd.DataFrame, config: A
         elif price_est is not None:
             out["bars_to_completion"] = int(price_est)
             out["bars_to_completion_basis"] = "price_proximity"
-    return _attach_classic_volume_confirmation(out, df, config)
+    out = _attach_classic_volume_confirmation(out, df, config)
+    return _attach_regime_context(out, regime_context, config)
 
 
 def _enrich_classic_patterns(rows: List[Dict[str, Any]], df: pd.DataFrame, config: Any = None) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
+    regime_context = _infer_market_regime(df, config)
     for row in rows:
         if not isinstance(row, dict):
             continue
-        out.append(_enrich_classic_pattern_row(row, df, config))
+        out.append(_enrich_classic_pattern_row(row, df, config, regime_context))
     return out
 
 
 def _enrich_elliott_patterns(rows: List[Dict[str, Any]], df: pd.DataFrame, config: Any = None) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
+    regime_context = _infer_market_regime(df, config)
     for row in rows:
         if not isinstance(row, dict):
             continue
-        out.append(_attach_elliott_volume_confirmation(row, df, config))
+        enriched = _attach_elliott_volume_confirmation(row, df, config)
+        out.append(_attach_regime_context(enriched, regime_context, config))
     return out
 
 

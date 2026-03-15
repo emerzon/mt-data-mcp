@@ -654,8 +654,8 @@ def test_build_pattern_response_compact_adds_hint_when_rows_are_truncated():
     assert compact["show_all_hint"] == "Use --detail full to show all detected patterns."
 
 
-def test_patterns_detect_elliott_without_timeframe_scans_all(monkeypatch):
-    monkeypatch.setattr(core_patterns, "TIMEFRAME_MAP", {"M1": 1, "H1": 2})
+def test_patterns_detect_elliott_without_timeframe_scans_default_subset(monkeypatch):
+    monkeypatch.setattr(core_patterns, "TIMEFRAME_MAP", {"M1": 1, "H1": 2, "H4": 3, "D1": 4})
 
     df = pd.DataFrame(
         {
@@ -696,10 +696,105 @@ def test_patterns_detect_elliott_without_timeframe_scans_all(monkeypatch):
 
     assert res["success"] is True
     assert res["timeframe"] == "ALL"
-    assert res["scanned_timeframes"] == ["M1", "H1"]
+    assert res["scanned_timeframes"] == ["H1", "H4", "D1"]
+    assert res["n_patterns"] == 3
+    assert len(res["findings"]) == 3
+    assert {p["timeframe"] for p in res["patterns"]} == {"H1", "H4", "D1"}
+
+
+def test_patterns_detect_elliott_scan_timeframes_can_override_default(monkeypatch):
+    monkeypatch.setattr(core_patterns, "TIMEFRAME_MAP", {"M15": 1, "H1": 2, "H4": 3, "D1": 4})
+
+    df = pd.DataFrame(
+        {
+            "time": [1, 2, 3, 4, 5, 6],
+            "close": [10.0, 11.0, 12.0, 13.0, 14.0, 15.0],
+            "tick_volume": [100, 100, 100, 100, 100, 100],
+        }
+    )
+
+    def _fake_fetch(symbol, timeframe, limit, denoise):
+        return df.copy(), None
+
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", _fake_fetch)
+
+    def _fake_detect(_df, _cfg):
+        return [
+            SimpleNamespace(
+                wave_type="Impulse",
+                confidence=0.88,
+                start_index=0,
+                end_index=5,
+                start_time=1.0,
+                end_time=6.0,
+                details={"score": 0.75},
+            )
+        ]
+
+    monkeypatch.setattr(core_patterns, "_detect_elliott_waves", _fake_detect)
+
+    res = patterns_detect(
+        symbol="EURUSD",
+        mode="elliott",
+        detail="full",
+        timeframe=None,
+        include_completed=True,
+        config={"scan_timeframes": ["M15", "H1"], "max_scan_timeframes": 2},
+        __cli_raw=True,
+    )
+
+    assert res["success"] is True
+    assert res["scanned_timeframes"] == ["M15", "H1"]
     assert res["n_patterns"] == 2
-    assert len(res["findings"]) == 2
-    assert {p["timeframe"] for p in res["patterns"]} == {"M1", "H1"}
+
+
+def test_patterns_detect_classic_applies_regime_context(monkeypatch):
+    n = 180
+    df = pd.DataFrame(
+        {
+            "time": np.arange(n, dtype=float),
+            "close": np.linspace(100.0, 140.0, n),
+            "tick_volume": np.full(n, 100.0),
+        }
+    )
+
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda symbol, timeframe, limit, denoise: (df.copy(), None))
+
+    def _fake_run_classic_engine(engine, symbol, source_df, cfg, config):
+        _ = (engine, symbol, source_df, cfg, config)
+        return (
+            [
+                {
+                    "name": "Ascending Triangle",
+                    "status": "forming",
+                    "confidence": 0.60,
+                    "start_index": 20,
+                    "end_index": n - 2,
+                    "details": {"bias": "bullish", "support": 132.0, "resistance": 141.0},
+                }
+            ],
+            None,
+        )
+
+    monkeypatch.setattr(core_patterns, "_run_classic_engine", _fake_run_classic_engine)
+
+    res = patterns_detect(
+        symbol="EURUSD",
+        mode="classic",
+        detail="full",
+        timeframe="H1",
+        include_completed=True,
+        __cli_raw=True,
+    )
+
+    assert res["success"] is True
+    assert res["n_patterns"] == 1
+    row = res["patterns"][0]
+    regime = row["details"]["regime_context"]
+    assert regime["state"] == "trending"
+    assert regime["direction"] == "bullish"
+    assert regime["status"] == "aligned"
+    assert float(row["confidence"]) > 0.60
 
 
 def test_patterns_detect_elliott_with_explicit_timeframe_uses_single_output(monkeypatch):
