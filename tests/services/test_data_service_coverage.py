@@ -952,7 +952,7 @@ class TestFetchCandles(unittest.TestCase):
         result = fetch_candles('EURUSD', limit=5, denoise={'method': 'ema', 'when': 'post_ti'})
         self.assertTrue(result.get('success'))
         if result.get('denoise'):
-            self.assertTrue(result['denoise']['applied'])
+            self.assertTrue(result['denoise']['applications'])
 
     # -- Start / End datetime ------------------------------------------------
 

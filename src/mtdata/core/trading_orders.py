@@ -298,7 +298,6 @@ def _place_market_order(
                 return {
                     "error": "Failed to send order",
                     "last_error": last_error,
-                    "request": request,
                     "comment_fallback": comment_fallback,
                 }
             if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
@@ -320,7 +319,6 @@ def _place_market_order(
                     "retcode_name": mt5.retcode_name(result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
-                    "request": request,
                     "last_error": last_error,
                     "comment_fallback": comment_fallback,
                 }
@@ -758,7 +756,6 @@ def _place_pending_order(
                 return {
                     "error": "Failed to send pending order",
                     "last_error": last_error,
-                    "request": request,
                     "comment_fallback": comment_fallback,
                 }
 
@@ -781,7 +778,6 @@ def _place_pending_order(
                     "retcode_name": mt5.retcode_name(result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
-                    "request": request,
                     "last_error": last_error,
                     "comment_fallback": comment_fallback,
                 }

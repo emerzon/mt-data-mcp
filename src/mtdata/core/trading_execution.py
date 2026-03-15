@@ -143,7 +143,7 @@ def _modify_position(
                     last_err = mt5.last_error()
                 except Exception:
                     last_err = None
-                return {"error": "Failed to modify position", "request": request, "last_error": last_err}
+                return {"error": "Failed to modify position", "last_error": last_err}
 
             if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
                 return {
@@ -152,7 +152,6 @@ def _modify_position(
                     "retcode_name": mt5.retcode_name(result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
-                    "request": request,
                     "last_error": mt5.last_error() if hasattr(mt5, "last_error") else None,
                 }
 
@@ -241,7 +240,7 @@ def _modify_pending_order(
                     last_err = mt5.last_error()
                 except Exception:
                     last_err = None
-                return {"error": "Failed to modify pending order", "request": request, "last_error": last_err}
+                return {"error": "Failed to modify pending order", "last_error": last_err}
 
             if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
                 return {
@@ -250,7 +249,6 @@ def _modify_pending_order(
                     "retcode_name": mt5.retcode_name(result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
-                    "request": request,
                     "last_error": mt5.last_error() if hasattr(mt5, "last_error") else None,
                 }
 
@@ -571,7 +569,6 @@ def _close_positions(
                             "ticket": position.ticket,
                             "error": error_msg,
                             "attempts": attempts,
-                            "request": request,
                             "last_error": last_error,
                         }
                     )

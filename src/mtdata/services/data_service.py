@@ -72,7 +72,7 @@ def _describe_rate_fetch_error(symbol: str, *, info_before: Any = None) -> str:
             info_before = None
 
     error_text = _format_mt5_last_error()
-    if info_before is None and "call failed" in error_text.lower():
+    if info_before is None:
         return f"Symbol '{symbol}' was not found or is not available in MT5."
     return f"Failed to get rates for {symbol}: {error_text}"
 
@@ -532,6 +532,17 @@ def _normalize_simplify_spec(
     return simplify_eff
 
 
+def _public_simplify_meta(meta: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(meta, dict):
+        return None
+    out: Dict[str, Any] = {}
+    for key in ("method", "mode", "points", "ratio"):
+        value = meta.get(key)
+        if value is not None:
+            out[key] = value
+    return out or None
+
+
 def fetch_candles(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
@@ -694,14 +705,6 @@ def fetch_candles(
         query_latency_ms = round((time.perf_counter() - query_started_at) * 1000.0, 3)
         query_mode = "range" if (start_datetime or end_datetime) else "latest"
         ti_added_cols = [str(c) for c in ti_cols if isinstance(c, str)]
-        denoise_added_cols = sorted({
-            str(col)
-            for app in denoise_apps
-            if isinstance(app, dict)
-            for col in (app.get("added_columns") or [])
-            if isinstance(col, str) and col
-        })
-
         # Build tabular payload
         payload = _table_from_rows(headers, rows)
         if time_as_epoch:
@@ -758,27 +761,8 @@ def fetch_candles(
                         "spec": str(ti_spec or ""),
                         "added_columns": ti_added_cols,
                     },
-                    "denoise": {
-                        "applied": bool(denoise_apps),
-                        "added_columns": denoise_added_cols,
-                    },
                     "session_gaps": {
                         "expected_bar_seconds": float(expected_bar_seconds) if expected_bar_seconds > 0 else None,
-                    },
-                    "simplify": {
-                        "applied": bool(simplify_meta is not None),
-                        "rows_before": int(original_rows),
-                        "rows_after": int(len(df)),
-                        "method": (
-                            str((simplify_meta or {}).get("method"))
-                            if isinstance(simplify_meta, dict) and simplify_meta.get("method") is not None
-                            else None
-                        ),
-                        "mode": (
-                            str((simplify_meta or {}).get("mode"))
-                            if isinstance(simplify_meta, dict) and simplify_meta.get("mode") is not None
-                            else None
-                        ),
                     },
                 },
             },
@@ -787,23 +771,17 @@ def fetch_candles(
             payload["timezone"] = "UTC"
         if simplify_meta is not None:
             payload["simplified"] = True
-            payload["simplify"] = simplify_meta
-            payload["simplify"]["timeframe"] = timeframe
-            payload["simplify"]["original_candles"] = original_rows
+            payload["simplify"] = _public_simplify_meta(simplify_meta) or {"applied": True}
         # Attach denoise applications metadata if any
         if denoise_apps:
-            payload['denoise'] = {
-                'applied': True,
-                'applications': denoise_apps,
-            }
+            payload['denoise'] = {'applications': denoise_apps}
         if session_gaps:
             payload['session_gaps'] = session_gaps
             warns = payload.get('warnings')
             if not isinstance(warns, list):
                 warns = []
             warns.append(
-                "Detected {n} session gap(s) larger than expected bar spacing ({secs:.0f}s).".format(
-                    n=len(session_gaps),
+                "Detected session gaps larger than expected bar spacing ({secs:.0f}s).".format(
                     secs=expected_bar_seconds,
                 )
             )
