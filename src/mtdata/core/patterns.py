@@ -51,8 +51,7 @@ from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5
 
 logger = logging.getLogger(__name__)
 
-_CLASSIC_ENGINE_ORDER = ("native", "stock_pattern", "precise_patterns")
-_HIDDEN_CLASSIC_ENGINES = frozenset({"precise_patterns"})
+_CLASSIC_ENGINE_ORDER = ("native", "stock_pattern")
 _DEFAULT_ELLIOTT_SCAN_TIMEFRAMES = ("H1", "H4", "D1")
 ClassicEngineRunner = Callable[
     [str, pd.DataFrame, _ClassicCfg, Optional[Dict[str, Any]]],
@@ -392,15 +391,8 @@ def _register_classic_engine(name: str) -> Callable[[ClassicEngineRunner], Class
 
 
 def _available_classic_engines() -> Tuple[str, ...]:
-    ordered = [
-        name for name in _CLASSIC_ENGINE_ORDER
-        if name in _CLASSIC_ENGINE_REGISTRY and name not in _HIDDEN_CLASSIC_ENGINES
-    ]
-    ordered.extend(
-        name
-        for name in _CLASSIC_ENGINE_REGISTRY.keys()
-        if name not in ordered and name not in _HIDDEN_CLASSIC_ENGINES
-    )
+    ordered = [name for name in _CLASSIC_ENGINE_ORDER if name in _CLASSIC_ENGINE_REGISTRY]
+    ordered.extend(name for name in _CLASSIC_ENGINE_REGISTRY.keys() if name not in ordered)
     return tuple(ordered)
 
 
@@ -620,35 +612,6 @@ def _run_classic_engine_stock_pattern(
             d["bars_to_completion"] = int(est)
         out_list.append(d)
     return out_list, None
-
-
-@_register_classic_engine("precise_patterns")
-def _run_classic_engine_precise_patterns(
-    symbol: str,
-    df: pd.DataFrame,
-    cfg: _ClassicCfg,
-    config: Optional[Dict[str, Any]],
-) -> Tuple[List[Dict[str, Any]], Optional[str]]:
-    _ = symbol
-    _ = df
-    _ = cfg
-    _ = config
-    try:
-        patterns_mod = importlib.import_module("precise_patterns.patterns")
-    except Exception:
-        return [], "precise-patterns engine unavailable (install package to enable)"
-
-    reg = getattr(patterns_mod, "Registry", None)
-    if reg is None or not hasattr(reg, "all"):
-        return [], "precise-patterns has no stable Registry API for pattern extraction"
-    try:
-        names = list((reg.all() or {}).keys())  # type: ignore[call-arg]
-    except Exception:
-        names = []
-    if not names:
-        return [], "precise-patterns has no registered pattern implementations"
-    return [], "precise-patterns adapter is experimental and currently yields no classic detections"
-
 
 def _run_classic_engine(
     engine: str,
