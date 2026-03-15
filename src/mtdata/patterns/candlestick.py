@@ -30,6 +30,39 @@ _ROBUST_CANDLESTICK_WHITELIST = {
     'engulfing', 'harami', '3inside', '3outside', 'eveningstar', 'morningstar',
     'darkcloudcover', 'piercing', 'inside', 'outside', 'hikkake'
 }
+_CANDLESTICK_PATTERN_BAR_SPANS = {
+    '2crows': 2,
+    'counterattack': 2,
+    'darkcloudcover': 2,
+    'engulfing': 2,
+    'harami': 2,
+    'haramicross': 2,
+    'hikkake': 2,
+    'hikkakemod': 2,
+    'inside': 2,
+    'outside': 2,
+    'piercing': 2,
+    'tasukigap': 2,
+    '3blackcrows': 3,
+    '3inside': 3,
+    '3outside': 3,
+    '3starsinsouth': 3,
+    '3whitesoldiers': 3,
+    'advanceblock': 3,
+    'deliberation': 3,
+    'eveningstar': 3,
+    'gapsidesidewhite': 3,
+    'identical3crows': 3,
+    'morningstar': 3,
+    'sticksandwich': 3,
+    'tristar': 3,
+    'unique3river': 3,
+    'xsidegap3methods': 3,
+    'breakaway': 5,
+    'ladderbottom': 5,
+    'mathold': 5,
+    'risefall3methods': 5,
+}
 _DEPRIORITIZED_CANDLESTICK_PATTERNS = {
     'shortline', 'longline', 'spinningtop', 'highwave',
     'marubozu', 'closingmarubozu', 'doji', 'gravestonedoji', 'longleggeddoji', 'rickshawman'
@@ -51,6 +84,10 @@ def _parse_min_strength(min_strength: float) -> float:
     if not (0.0 <= thr <= 1.0):
         raise ValueError("min_strength must be between 0.0 and 1.0.")
     return thr
+
+
+def _candlestick_span_bars(pattern_name: str) -> int:
+    return int(_CANDLESTICK_PATTERN_BAR_SPANS.get(_normalize_candlestick_name(pattern_name), 1))
 
 
 def _ensure_candlestick_runtime() -> None:
@@ -242,16 +279,23 @@ def _extract_candlestick_rows(
             label_core = name.replace('_', ' ').strip().upper()
             dir_title = 'Bullish' if value > 0 else 'Bearish'
             if include_metrics:
+                span_bars = _candlestick_span_bars(name)
+                start_bar_idx = max(0, int(i - span_bars + 1))
+                start_time = str(time_vals[start_bar_idx])
+                end_time = str(time_vals[i])
                 direction = "bullish" if value > 0 else "bearish"
                 strength = float(max(0.0, min(1.0, abs(value) / 100.0)))
                 price = float(close_vals[i]) if close_vals is not None and np.isfinite(close_vals[i]) else None
                 rows.append(
                     [
-                        t_val,
+                        end_time,
                         f"{dir_title} {label_core}" if label_core else dir_title,
                         direction,
                         strength,
                         price,
+                        start_time,
+                        end_time,
+                        int(span_bars),
                     ]
                 )
             else:
@@ -410,7 +454,7 @@ def detect_candlestick_patterns(
         start_index=start_index,
     )
 
-    headers = ["time", "pattern", "direction", "confidence", "price"]
+    headers = ["time", "pattern", "direction", "confidence", "price", "start_time", "end_time", "n_bars"]
     payload = _table_from_rows(headers, rows)
     signal_cutoff = float(thr) * 100.0
     payload.update({

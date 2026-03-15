@@ -118,6 +118,7 @@ def detect_flags_pennants(
                 "breakout_direction": bdir,
                 "breakout_index": int(idx0 + bidx_local) if bidx_local is not None else None,
                 "breakout_expected": expected,
+                "bias": "bullish" if ret > 0 else "bearish",
             },
         )
         out.append(base)

@@ -682,6 +682,71 @@ class TestEnrichClassicPatterns:
         assert volume_confirmation["volume_source"] in {"volume", "tick_volume"}
         assert volume_confirmation["breakout_to_baseline_ratio"] > 1.2
 
+    def test_completed_targets_are_flagged_stale(self):
+        from mtdata.core.patterns_support import _enrich_classic_patterns
+
+        df = pd.DataFrame({"close": [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111]})
+        rows = [
+            {
+                "name": "Head and Shoulders",
+                "status": "completed",
+                "confidence": 0.7,
+                "start_index": 0,
+                "end_index": 6,
+                "details": {"bias": "bearish", "support": 95.0},
+            }
+        ]
+
+        enriched = _enrich_classic_patterns(rows, df)
+
+        assert enriched[0]["target_stale"] is True
+        assert enriched[0]["target_reference_age_bars"] == 5
+
+    def test_forming_patterns_use_structure_and_price_for_completion_estimate(self):
+        from mtdata.core.patterns_support import _enrich_classic_patterns
+
+        df = _make_ohlcv_df(8)
+        df["close"] = [100.0, 100.5, 101.0, 101.3, 101.6, 101.8, 102.0, 102.2]
+        rows = [
+            {
+                "name": "Ascending Triangle",
+                "status": "forming",
+                "start_index": 0,
+                "end_index": 4,
+                "details": {
+                    "bias": "bullish",
+                    "top_slope": -0.2,
+                    "top_intercept": 104.0,
+                    "bottom_slope": 0.2,
+                    "bottom_intercept": 98.0,
+                    "breakout_level": 103.0,
+                },
+            }
+        ]
+
+        enriched = _enrich_classic_patterns(rows, df)
+
+        assert enriched[0]["bars_to_completion"] >= 1
+        assert enriched[0]["bars_to_completion_basis"] in {"structure", "structure_and_price", "price_proximity"}
+
+    def test_explicit_detail_bias_beats_name_inference(self):
+        from mtdata.core.patterns_support import _enrich_classic_patterns
+
+        df = _make_ohlcv_df(6)
+        rows = [
+            {
+                "name": "Bull Flag",
+                "status": "forming",
+                "start_index": 0,
+                "end_index": 4,
+                "details": {"bias": "bearish", "breakout_level": 99.0},
+            }
+        ]
+
+        enriched = _enrich_classic_patterns(rows, df)
+
+        assert enriched[0]["bias"] == "bearish"
+
 
 # ── _build_pattern_response ──────────────────────────────────────────────
 

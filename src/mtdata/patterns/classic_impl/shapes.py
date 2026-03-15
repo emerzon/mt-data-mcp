@@ -55,6 +55,7 @@ def _build_line_bounded_pattern_results(
     *,
     alias_name: Optional[str] = None,
     alias_scale: float = 0.95,
+    bias: str = "neutral",
 ) -> List[ClassicPatternResult]:
     conf = _conf(shape["touches"], min(shape["r2h"], shape["r2l"]), 1.0, cfg)
     status = "forming"
@@ -87,6 +88,7 @@ def _build_line_bounded_pattern_results(
             "bottom_intercept": float(shape["bl"]),
             "breakout_direction": bdir,
             "breakout_index": int(bidx) if bidx is not None else None,
+            "bias": str(bias),
         },
     )
     results = [base]
@@ -161,6 +163,7 @@ def detect_rectangles(
                 "matched_lows": low_hits,
                 "breakout_direction": bdir,
                 "breakout_index": int(bidx) if bidx is not None else None,
+                "bias": "bullish" if bdir == "up" else "bearish" if bdir == "down" else "neutral",
             },
         ))
     return out
@@ -187,7 +190,8 @@ def detect_triangles(
         name = "Descending Triangle"
     else:
         name = "Symmetrical Triangle"
-    return _build_line_bounded_pattern_results(name, shape, t, cfg)
+    bias = "bullish" if name == "Ascending Triangle" else "bearish" if name == "Descending Triangle" else "neutral"
+    return _build_line_bounded_pattern_results(name, shape, t, cfg, bias=bias)
 
 def detect_wedges(
     c: np.ndarray,
@@ -204,7 +208,8 @@ def detect_wedges(
         return []
 
     name = "Rising Wedge" if shape["sh"] > 0 and shape["sl"] > 0 else "Falling Wedge"
-    return _build_line_bounded_pattern_results(name, shape, t, cfg, alias_name="Wedge")
+    bias = "bearish" if name == "Rising Wedge" else "bullish"
+    return _build_line_bounded_pattern_results(name, shape, t, cfg, alias_name="Wedge", bias=bias)
 
 def detect_broadening(
     c: np.ndarray,
@@ -259,7 +264,8 @@ def detect_broadening(
             {"top_slope": float(sh), "bottom_slope": float(sl),
              "top_intercept": float(bh), "bottom_intercept": float(bl),
              "breakout_direction": bdir,
-             "breakout_index": int(bidx) if bidx is not None else None},
+             "breakout_index": int(bidx) if bidx is not None else None,
+             "bias": "bullish" if bdir == "up" else "bearish" if bdir == "down" else "neutral"},
         ))
     return out
 
@@ -423,6 +429,17 @@ def detect_diamonds(
             "lower_left_slope": float(best["ll_slope"]),
             "upper_right_slope": float(best["rh_slope"]),
             "lower_right_slope": float(best["rl_slope"]),
+            "bias": (
+                "bullish"
+                if bdir == "up"
+                else "bearish"
+                if bdir == "down"
+                else "bullish"
+                if abs(ret) >= float(cfg.diamond_prior_pole_return_pct) and ret > 0
+                else "bearish"
+                if abs(ret) >= float(cfg.diamond_prior_pole_return_pct) and ret < 0
+                else "neutral"
+            ),
         },
     ))
     return out

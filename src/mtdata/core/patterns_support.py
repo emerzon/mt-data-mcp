@@ -71,7 +71,7 @@ def _row_pattern_bias(row: Dict[str, Any]) -> Optional[str]:
         return direction
     details = row.get("details")
     if isinstance(details, dict):
-        for key in ("breakout_direction", "breakout_expected"):
+        for key in ("bias", "pattern_bias", "breakout_direction", "breakout_expected"):
             bias = _normalize_pattern_bias(details.get(key))
             if bias:
                 return bias
@@ -207,6 +207,8 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "price",
             "reference_price",
             "target_price",
+            "target_stale",
+            "target_reference_age_bars",
             "invalidation_price",
             "bars_to_completion",
         ):
@@ -236,6 +238,7 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "price",
             "reference_price",
             "target_price",
+            "target_stale",
             "invalidation_price",
         ):
             value = best.get(key)
@@ -658,7 +661,7 @@ _CLASSIC_BIAS_KEYWORDS = (
 
 
 def _infer_classic_bias(name: Any, details: Dict[str, Any]) -> str:
-    for key in ("breakout_direction", "breakout_expected"):
+    for key in ("bias", "pattern_bias", "breakout_direction", "breakout_expected"):
         bias = _normalize_pattern_bias(details.get(key))
         if bias in ("bullish", "bearish"):
             return bias
@@ -739,6 +742,9 @@ def _classic_pattern_height(
     bottom = levels.get("bottom")
     if left_rim is not None and bottom is not None and left_rim > bottom:
         return float(left_rim - bottom)
+    cup_extreme = _detail_float(details, "cup_extreme")
+    if left_rim is not None and cup_extreme is not None:
+        return float(abs(left_rim - cup_extreme))
 
     pole_return_pct = _detail_float(details, "pole_return_pct")
     if pole_return_pct is not None and reference_price is not None:
@@ -759,9 +765,15 @@ def _enrich_classic_pattern_row(row: Dict[str, Any], df: pd.DataFrame, config: A
     bias = _infer_classic_bias(name, details)
     reference_price = _close_price_at_index(df, out.get("end_index"))
     status = str(out.get("status", "")).strip().lower()
+    current_bar_index = int(max(0, len(df) - 1)) if len(df) > 0 else 0
+    try:
+        end_index_i = int(out.get("end_index"))
+    except Exception:
+        end_index_i = current_bar_index
+    reference_age_bars = max(0, current_bar_index - end_index_i)
     level_eval_index = out.get("end_index")
     if status == "forming" and len(df) > 0:
-        level_eval_index = int(len(df) - 1)
+        level_eval_index = current_bar_index
     levels = _classic_price_levels(details, out.get("end_index"), eval_index=level_eval_index)
     height = _classic_pattern_height(levels, details, reference_price)
 
@@ -780,6 +792,8 @@ def _enrich_classic_pattern_row(row: Dict[str, Any], df: pd.DataFrame, config: A
                 invalidation = support
             elif neckline is not None and neckline < reference_price:
                 invalidation = neckline
+            elif _detail_float(details, "breakout_level") is not None and float(_detail_float(details, "breakout_level")) < reference_price:
+                invalidation = float(_detail_float(details, "breakout_level"))
             elif height is not None and height > 0:
                 invalidation = reference_price - 0.5 * height
         elif bias == "bearish":
@@ -791,6 +805,8 @@ def _enrich_classic_pattern_row(row: Dict[str, Any], df: pd.DataFrame, config: A
                 invalidation = resistance
             elif neckline is not None and neckline > reference_price:
                 invalidation = neckline
+            elif _detail_float(details, "breakout_level") is not None and float(_detail_float(details, "breakout_level")) > reference_price:
+                invalidation = float(_detail_float(details, "breakout_level"))
             elif height is not None and height > 0:
                 invalidation = reference_price + 0.5 * height
 
@@ -799,10 +815,58 @@ def _enrich_classic_pattern_row(row: Dict[str, Any], df: pd.DataFrame, config: A
         out["reference_price"] = _round_value(reference_price)
     if target is not None:
         out["target_price"] = _round_value(target)
+        out["target_reference_age_bars"] = int(reference_age_bars)
+        if status == "completed" and reference_age_bars > 0:
+            out["target_stale"] = True
     if invalidation is not None:
         out["invalidation_price"] = _round_value(invalidation)
     if levels:
         out["price_levels"] = {key: _round_value(value) for key, value in levels.items()}
+    if status == "forming" and reference_price is not None and len(df) > 1:
+        structural_est = _estimate_classic_bars_to_completion(
+            str(name or ""),
+            details,
+            int(out.get("start_index", 0)),
+            int(out.get("end_index", level_eval_index if level_eval_index is not None else 0)),
+            len(df),
+        )
+        price_est: Optional[int] = None
+        try:
+            close_arr = pd.to_numeric(df.get("close"), errors="coerce").to_numpy(dtype=float, copy=False)
+            recent_steps = np.abs(np.diff(close_arr[-min(len(close_arr), 20):]))
+            finite_steps = recent_steps[np.isfinite(recent_steps)]
+            step_size = float(np.median(finite_steps)) if finite_steps.size else 0.0
+            if step_size > 1e-9:
+                level_targets: List[float] = []
+                breakout_level = _detail_float(details, "breakout_level")
+                if bias == "bullish":
+                    if resistance is not None and resistance > reference_price:
+                        level_targets.append(float(resistance))
+                    if breakout_level is not None and breakout_level > reference_price:
+                        level_targets.append(float(breakout_level))
+                elif bias == "bearish":
+                    if support is not None and support < reference_price:
+                        level_targets.append(float(support))
+                    if breakout_level is not None and breakout_level < reference_price:
+                        level_targets.append(float(breakout_level))
+                else:
+                    for candidate in (support, resistance, breakout_level):
+                        if candidate is not None:
+                            level_targets.append(float(candidate))
+                distances = [abs(float(level) - reference_price) for level in level_targets if np.isfinite(level)]
+                if distances:
+                    price_est = int(max(0, int(np.ceil(min(distances) / step_size))))
+        except Exception:
+            price_est = None
+        if structural_est is not None and price_est is not None:
+            out["bars_to_completion"] = int(max(structural_est, price_est))
+            out["bars_to_completion_basis"] = "structure_and_price"
+        elif structural_est is not None:
+            out["bars_to_completion"] = int(structural_est)
+            out["bars_to_completion_basis"] = "structure"
+        elif price_est is not None:
+            out["bars_to_completion"] = int(price_est)
+            out["bars_to_completion_basis"] = "price_proximity"
     return _attach_classic_volume_confirmation(out, df, config)
 
 

@@ -231,7 +231,7 @@ def test_extract_candlestick_rows_includes_metrics_when_enabled():
         include_metrics=True,
     )
 
-    assert rows == [["T1", "Bullish ENGULFING", "bullish", 1.0, 101.5]]
+    assert rows == [["T1", "Bullish ENGULFING", "bullish", 1.0, 101.5, "T0", "T1", 2]]
 
 
 @contextmanager

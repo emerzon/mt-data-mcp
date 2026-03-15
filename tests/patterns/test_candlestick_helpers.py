@@ -9,6 +9,7 @@ from mtdata.patterns.candlestick import (
     _is_candlestick_allowed,
     _extract_candlestick_rows,
     _discover_candlestick_pattern_methods,
+    _candlestick_span_bars,
 )
 
 
@@ -138,6 +139,32 @@ class TestExtractCandlestickRows:
         )
         bearish = [r for r in rows if "Bearish" in str(r[1])]
         assert len(bearish) > 0
+
+    def test_include_metrics_adds_span_context(self):
+        df_tail = pd.DataFrame({
+            "time": [f"2024-01-{i+1:02d}" for i in range(5)],
+            "close": np.linspace(100, 104, 5),
+        })
+        temp_tail = pd.DataFrame({"cdl_morning_star": [0, 0, 0, 100, 0]}, dtype=float)
+
+        rows = _extract_candlestick_rows(
+            df_tail, temp_tail, ["cdl_morning_star"],
+            threshold=0.5, robust_only=False, robust_set=set(),
+            whitelist_set=None, min_gap=0, top_k=5, deprioritize=set(),
+            include_metrics=True,
+        )
+
+        assert rows[0][5] == "2024-01-02"
+        assert rows[0][6] == "2024-01-04"
+        assert rows[0][7] == 3
+
+
+class TestCandlestickSpanBars:
+    def test_defaults_to_single_bar(self):
+        assert _candlestick_span_bars("cdl_doji") == 1
+
+    def test_known_multi_bar_pattern(self):
+        assert _candlestick_span_bars("cdl_morning_star") == 3
 
 
 class TestDiscoverCandlestickPatternMethods:

@@ -115,6 +115,7 @@ def detect_tops_bottoms(
                         "neckline": neckline,
                         "breakout_direction": direction if break_i is not None else None,
                         "breakout_index": int(break_i) if break_i is not None else None,
+                        "bias": "bearish" if "Top" in name else "bullish",
                     },
                 ))
     
@@ -239,6 +240,7 @@ def detect_head_shoulders(
             'neck_intercept': float(intercept),
             'neck_r2': float(r2),
             'neck_points': int(neck_idxs.size),
+            'bias': 'bearish' if regular else 'bullish',
         }
         out.append(ClassicPatternResult(
             name=name,

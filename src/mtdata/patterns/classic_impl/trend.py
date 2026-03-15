@@ -49,6 +49,7 @@ def detect_trend_lines(
                 "touches": int(touches),
                 "line_level_recent": float(line_vals[recent_i]),
                 "completion_touches_recent": int(recent_touches),
+                "bias": "bullish" if tl_dir == "Ascending" else "bearish" if tl_dir == "Descending" else "neutral",
             }
             base_item = _result(name, status, conf, int(idxs[0]), int(n - 1), t, details)
             results.append(base_item)
@@ -117,6 +118,7 @@ def detect_channels(
             "r2_lower": float(r2l),
             "channel_width_recent": float(width[recent_i]),
             "completion_touches_recent": int(recent_hits),
+            "bias": "bullish" if name == "Ascending Channel" else "bearish" if name == "Descending Channel" else "neutral",
         }
         base = _result(name, status, conf, int(min(ih[0], il[0])), int(max(ih[-1], il[-1])), t, details)
         ch_results.append(base)

@@ -448,6 +448,17 @@ def _run_classic_engine_stock_pattern(
         ("find_uptrend_line", "low"),
         ("find_downtrend_line", "high"),
     ]
+    stock_pattern_bias = {
+        "find_double_top": "bearish",
+        "find_double_bottom": "bullish",
+        "find_triangles": "neutral",
+        "find_hns": "bearish",
+        "find_reverse_hns": "bullish",
+        "find_bullish_flag": "bullish",
+        "find_bearish_flag": "bearish",
+        "find_uptrend_line": "bullish",
+        "find_downtrend_line": "bearish",
+    }
     out_list: List[Dict[str, Any]] = []
     n_bars = len(df)
     for fn_name, pivot_type in fn_specs:
@@ -492,6 +503,9 @@ def _run_classic_engine_stock_pattern(
                 }
             }
         )
+        if isinstance(details, dict):
+            details = dict(details)
+            details.setdefault("bias", stock_pattern_bias.get(fn_name, "neutral"))
         d: Dict[str, Any] = {
             "name": name,
             "status": "forming",
