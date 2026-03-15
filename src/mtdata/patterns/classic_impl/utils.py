@@ -38,6 +38,23 @@ def _fit_line(x: np.ndarray, y: np.ndarray) -> Tuple[float, float, float]:
     return float(p[0]), float(p[1]), float(r2)
 
 
+def _ransac_residual_threshold(x: np.ndarray, y: np.ndarray, cfg: ClassicDetectorConfig) -> float:
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    if x.size == 0 or y.size == 0:
+        return 1e-9
+
+    slope, intercept, _ = _fit_line(x, y)
+    y_hat = slope * x + intercept
+    baseline_resid = np.abs(y - y_hat)
+    finite_resid = baseline_resid[np.isfinite(baseline_resid)]
+    resid_scale = float(np.median(finite_resid)) if finite_resid.size else 0.0
+    if not np.isfinite(resid_scale) or resid_scale <= 1e-9:
+        finite_y = y[np.isfinite(y)]
+        resid_scale = float(np.ptp(finite_y)) if finite_y.size else 0.0
+    return max(1e-9, float(cfg.ransac_residual_pct) * max(1e-9, resid_scale))
+
+
 def _fit_line_robust(x: np.ndarray, y: np.ndarray, cfg: ClassicDetectorConfig) -> Tuple[float, float, float]:
     """Optionally fit a robust line via RANSAC; fallback to ordinary fit."""
     if not cfg.use_robust_fit:
@@ -46,8 +63,7 @@ def _fit_line_robust(x: np.ndarray, y: np.ndarray, cfg: ClassicDetectorConfig) -
     yv = y.astype(float)
     if X.shape[0] < max(2, int(cfg.ransac_min_samples)):
         return _fit_line(x, y)
-    med = float(np.median(np.abs(yv))) if yv.size else 1.0
-    resid = max(1e-9, float(cfg.ransac_residual_pct) * max(1.0, med))
+    resid = _ransac_residual_threshold(x, yv, cfg)
     try:
         ransac_cls = _get_ransac_regressor_cls()
     except ImportError:

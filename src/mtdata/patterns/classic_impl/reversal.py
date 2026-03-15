@@ -50,6 +50,32 @@ def _dedupe_overlapping_patterns(
     deduped.sort(key=lambda r: (int(r.start_index), int(r.end_index)))
     return deduped
 
+
+def _level_components(vals: np.ndarray, tol_pct: float) -> List[List[int]]:
+    n = int(vals.size)
+    if n <= 0:
+        return []
+    visited = np.zeros(n, dtype=bool)
+    components: List[List[int]] = []
+    for i in range(n):
+        if visited[i]:
+            continue
+        queue = [int(i)]
+        visited[i] = True
+        component = [int(i)]
+        while queue:
+            cur = queue.pop()
+            for j in range(n):
+                if visited[j]:
+                    continue
+                if _level_close(float(vals[cur]), float(vals[j]), tol_pct):
+                    visited[j] = True
+                    queue.append(int(j))
+                    component.append(int(j))
+        component.sort()
+        components.append(component)
+    return components
+
 def detect_tops_bottoms(
     c: np.ndarray,
     peaks: np.ndarray,
@@ -64,20 +90,8 @@ def detect_tops_bottoms(
             return
         vals = c[idxs]
         tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
-        # cluster by approximate equal level
-        used = np.zeros(idxs.size, dtype=bool)
-        for i in range(idxs.size):
-            if used[i]:
-                continue
-            level = vals[i]
-            cluster = [i]
-            for j in range(i+1, idxs.size):
-                if used[j]:
-                    continue
-                if _level_close(vals[j], level, cfg.same_level_tol_pct):
-                    cluster.append(j)
+        for cluster in _level_components(vals.astype(float), float(cfg.same_level_tol_pct)):
             if len(cluster) >= 2:
-                used[cluster] = True
                 name = name_triple if len(cluster) >= 3 else name_top
                 ii = idxs[cluster]
                 start_i, end_i = int(ii[0]), int(ii[-1])
@@ -151,9 +165,15 @@ def detect_head_shoulders(
         if nl1 < 0 or nl2 >= n:
             continue
 
-        slope, intercept, r2 = _fit_line(
-            np.array([nl1, nl2], dtype=float), np.array([c[nl1], c[nl2]], dtype=float)
-        )
+        neck_idxs = np.asarray([ti for ti in troughs.tolist() if lsh < ti < rsh], dtype=int)
+        if neck_idxs.size < 2:
+            continue
+        neck_x = neck_idxs.astype(float)
+        neck_y = c[neck_idxs]
+        if bool(cfg.use_robust_fit) and neck_idxs.size >= max(2, int(cfg.ransac_min_samples)):
+            slope, intercept, r2 = _fit_line_robust(neck_x, neck_y, cfg)
+        else:
+            slope, intercept, r2 = _fit_line(neck_x, neck_y)
 
         left_span = head_idx - lsh; right_span = rsh - head_idx
         span_ratio = left_span / float(max(1, right_span))
@@ -184,8 +204,9 @@ def detect_head_shoulders(
         sym_conf = max(0.0, 1.0 - abs(span_ratio - 1.0))
         sh_sim_conf = max(0.0, 1.0 - (abs(ls_p - rs_p) / max(1e-9, abs(sh_avg))))
         neck_penalty = max(0.0, 1.0 - min(1.0, abs(slope) / max(1e-6, cfg.max_flat_slope * 5.0)))
+        neck_quality = 0.5 * neck_penalty + 0.5 * max(0.0, min(1.0, float(r2)))
         prom_conf = min(1.0, abs(head_prom) / (tol_pct * 2.0))
-        base_conf = 0.25 * sym_conf + 0.35 * sh_sim_conf + 0.2 * neck_penalty + 0.2 * prom_conf
+        base_conf = 0.25 * sym_conf + 0.35 * sh_sim_conf + 0.2 * neck_quality + 0.2 * prom_conf
         if broke:
             base_conf = min(1.0, base_conf + 0.1)
 
@@ -213,6 +234,7 @@ def detect_head_shoulders(
             'neck_slope': float(slope),
             'neck_intercept': float(intercept),
             'neck_r2': float(r2),
+            'neck_points': int(neck_idxs.size),
         }
         out.append(ClassicPatternResult(
             name=name,

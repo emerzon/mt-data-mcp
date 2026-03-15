@@ -45,9 +45,11 @@ class ClassicDetectorConfig:
     diamond_min_window_bars: int = 120
     diamond_max_window_bars: int = 240
     diamond_min_pivots_per_side: int = 2
-    diamond_min_boundary_r2: float = 0.2
+    diamond_min_boundary_r2: float = 0.6
     diamond_min_width_ratio: float = 1.15
     diamond_target_width_ratio: float = 1.5
+    diamond_split_min_frac: float = 0.25
+    diamond_split_max_frac: float = 0.75
     diamond_prior_pole_return_pct: float = 2.0
     convergence_fallback_scale: float = 1.2  # fallback widening factor when no past window exists
     channel_parallel_slope_ratio: float = 0.15  # relative slope spread tolerated for channels
@@ -60,7 +62,7 @@ class ClassicDetectorConfig:
     geometry_weight: float = 0.30
     # Robust fitting and shape checks
     use_robust_fit: bool = True     # use RANSAC for line fits when available
-    ransac_residual_pct: float = 0.15  # residual threshold as fraction of median price
+    ransac_residual_pct: float = 0.15  # residual threshold as fraction of baseline residual scale
     ransac_min_samples: int = 2
     ransac_max_trials: int = 50
     use_dtw_check: bool = True      # optional DTW shape confirmation for select patterns

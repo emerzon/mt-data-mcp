@@ -259,11 +259,13 @@ def detect_diamonds(
     if peaks.size < (2 * min_side) or troughs.size < (2 * min_side):
         return out
 
+    split_min = float(max(0.0, min(0.49, getattr(cfg, "diamond_split_min_frac", 0.25))))
+    split_max = float(min(1.0, max(0.51, getattr(cfg, "diamond_split_max_frac", 0.75))))
     candidate_splits = sorted(
         {
             int(idx)
             for idx in np.concatenate((peaks, troughs))
-            if int(W * 0.3) <= int(idx) <= int(W * 0.7)
+            if int(W * split_min) <= int(idx) <= int(W * split_max)
         }
     )
     if not candidate_splits:

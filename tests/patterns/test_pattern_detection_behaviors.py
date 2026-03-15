@@ -1039,6 +1039,97 @@ def test_detect_diamonds_forward_high_low_arrays_to_pivot_detection(monkeypatch)
     assert np.array_equal(captured["low"], low[-n:])
 
 
+def test_detect_diamonds_accepts_asymmetric_split_with_stricter_default_r2(monkeypatch):
+    from src.mtdata.patterns.classic_impl import shapes
+
+    n = 200
+    close = np.linspace(100.0, 101.0, n)
+    close[-1] = 111.0
+    peaks = np.array([10, 30, 50, 160, 180], dtype=int)
+    troughs = np.array([5, 25, 49, 170, 190], dtype=int)
+
+    def _fake_fit(x, y):
+        _ = y
+        xs = tuple(int(v) for v in x.tolist())
+        if xs == tuple(peaks[peaks < 50].tolist()):
+            return 0.05, 102.0, 0.75
+        if xs == tuple(troughs[troughs < 50].tolist()):
+            return -0.05, 98.0, 0.75
+        if xs == tuple(peaks[peaks >= 50].tolist()):
+            return -0.10, 120.0, 0.75
+        if xs == tuple(troughs[troughs >= 50].tolist()):
+            return 0.10, 80.0, 0.75
+        return 0.0, 100.0, 0.0
+
+    monkeypatch.setattr(shapes, "_detect_pivots_close", lambda seg, cfg, *args: (peaks, troughs))
+    monkeypatch.setattr(shapes, "_fit_line", _fake_fit)
+
+    out = shapes.detect_diamonds(
+        close,
+        np.arange(n, dtype=float),
+        ClassicDetectorConfig(
+            use_robust_fit=False,
+            breakout_lookahead=40,
+            completion_lookback_bars=40,
+        ),
+    )
+
+    assert out
+    assert out[0].details["diamond_split_index"] in {49, 50}
+
+
+def test_detect_tops_bottoms_merges_connected_same_level_cluster():
+    from src.mtdata.patterns.classic_impl.reversal import detect_tops_bottoms
+
+    close = np.array(
+        [98.0, 100.1, 95.0, 100.0, 94.8, 99.9, 95.2, 100.2, 96.0],
+        dtype=float,
+    )
+    peaks = np.array([1, 3, 5, 7], dtype=int)
+    troughs = np.array([2, 4, 6], dtype=int)
+
+    out = detect_tops_bottoms(
+        close,
+        peaks,
+        troughs,
+        np.arange(close.size, dtype=float),
+        ClassicDetectorConfig(same_level_tol_pct=0.5),
+    )
+
+    assert out
+    triple_top = next(pattern for pattern in out if pattern.name == "Triple Top")
+    assert triple_top.details["touches"] == 4
+
+
+def test_detect_head_shoulders_fits_neckline_with_all_internal_troughs(monkeypatch):
+    from src.mtdata.patterns.classic_impl import reversal
+
+    captured = {}
+
+    def _fake_fit(x, y):
+        captured["x"] = x.tolist()
+        captured["y"] = y.tolist()
+        return 0.0, 95.0, 0.8
+
+    monkeypatch.setattr(reversal, "_fit_line", _fake_fit)
+
+    close = np.array([96.0, 100.0, 95.0, 103.0, 110.0, 96.0, 95.5, 99.0, 100.5, 97.0], dtype=float)
+    peaks = np.array([1, 4, 8], dtype=int)
+    troughs = np.array([2, 5, 6], dtype=int)
+
+    out = reversal.detect_head_shoulders(
+        close,
+        peaks,
+        troughs,
+        np.arange(close.size, dtype=float),
+        ClassicDetectorConfig(same_level_tol_pct=1.0, use_dtw_check=False, use_robust_fit=False),
+    )
+
+    assert out
+    assert captured["x"] == [2.0, 5.0, 6.0]
+    assert out[0].details["neck_points"] == 3
+
+
 def test_dedupe_overlapping_head_shoulders_results():
     from src.mtdata.patterns.classic_impl.reversal import _dedupe_overlapping_patterns
 

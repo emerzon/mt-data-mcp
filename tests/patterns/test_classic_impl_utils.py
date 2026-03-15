@@ -1,4 +1,6 @@
 """Tests for patterns/classic_impl/utils.py — pure math helpers (no MT5)."""
+from types import SimpleNamespace
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -82,6 +84,32 @@ class TestFitLineRobust:
         y[5] = 999.0  # outlier
         slope, intercept, r2 = _fit_line_robust(x, y, cfg)
         assert abs(slope - 2.0) < 0.5
+
+    def test_residual_threshold_is_shift_invariant(self, monkeypatch):
+        thresholds = []
+
+        class _FakeRansac:
+            def __init__(self, *, residual_threshold, **kwargs):
+                _ = kwargs
+                thresholds.append(float(residual_threshold))
+                self.estimator_ = SimpleNamespace(coef_=np.array([1.0]), intercept_=0.0)
+
+            def fit(self, X, y):
+                _ = X
+                _ = y
+                return self
+
+        monkeypatch.setattr(utils_mod, "_get_ransac_regressor_cls", lambda: _FakeRansac)
+
+        cfg = ClassicDetectorConfig(use_robust_fit=True, ransac_residual_pct=0.15)
+        x = np.arange(6, dtype=float)
+        y = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 50.0], dtype=float)
+
+        _fit_line_robust(x, y, cfg)
+        _fit_line_robust(x, y + 1000.0, cfg)
+
+        assert len(thresholds) == 2
+        assert thresholds[0] == pytest.approx(thresholds[1])
 
 
 class TestZnorm:

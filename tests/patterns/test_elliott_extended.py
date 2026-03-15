@@ -20,6 +20,7 @@ from mtdata.patterns.elliott import (
     _impulse_rules_and_score,
     _evaluate_correction_rules,
     _classification_score_window,
+    _result_sort_key,
     ElliottWaveAnalyzer,
     detect_elliott_waves,
 )
@@ -319,6 +320,33 @@ class TestEvaluateCorrectionRules:
         c = np.array([100, 120, 115, 116], dtype=float)
         ev = _evaluate_correction_rules(c, [0, 1, 2, 3], bullish=True)
         assert "waveC_too_short" in ev.violations
+
+    def test_waveC_quarter_of_a_is_allowed_by_default(self):
+        c = np.array([100, 120, 115, 120], dtype=float)
+        ev = _evaluate_correction_rules(c, [0, 1, 2, 3], bullish=True)
+        assert "waveC_too_short" not in ev.violations
+
+
+class TestResultSortKey:
+    def test_breaks_ties_deterministically(self):
+        shared = dict(
+            confidence=0.8,
+            end_index=10,
+            start_index=0,
+            start_time=None,
+            end_time=None,
+            details={},
+        )
+        results = [
+            ElliottWaveResult(wave_type="Impulse", wave_sequence=[2, 4, 6, 8, 10, 12], **shared),
+            ElliottWaveResult(wave_type="Correction", wave_sequence=[1, 3, 5, 10], **shared),
+            ElliottWaveResult(wave_type="Impulse", wave_sequence=[1, 3, 5, 7, 9, 10], **shared),
+        ]
+
+        ordered = sorted(results, key=_result_sort_key)
+
+        assert [r.wave_type for r in ordered] == ["Correction", "Impulse", "Impulse"]
+        assert ordered[1].wave_sequence == [1, 3, 5, 7, 9, 10]
 
 
 # ===== ElliottWaveAnalyzer.build_result (lines 576-577) ====================

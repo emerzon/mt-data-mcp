@@ -35,6 +35,7 @@ class ElliottWaveConfig:
     top_k: int = 10
     include_fallback_candidate: bool = True
     recent_bars: int = 3
+    correction_min_c_vs_a: float = 0.25
     pattern_types: List[str] = field(default_factory=lambda: ["impulse", "correction"])
 
 
@@ -376,7 +377,12 @@ def _impulse_rules_and_score(c: np.ndarray, piv: List[int], bullish: bool) -> Tu
     return ev.valid, ev.fib_score, ev.metrics
 
 
-def _evaluate_correction_rules(c: np.ndarray, piv: List[int], bullish: bool) -> ElliottRuleEvaluation:
+def _evaluate_correction_rules(
+    c: np.ndarray,
+    piv: List[int],
+    bullish: bool,
+    config: Optional[ElliottWaveConfig] = None,
+) -> ElliottRuleEvaluation:
     """Validate a 3-wave corrective sequence (ABC) and compute score."""
 
     if len(piv) != 4:
@@ -402,7 +408,8 @@ def _evaluate_correction_rules(c: np.ndarray, piv: List[int], bullish: bool) -> 
         violations.append("waveB_over_retrace")
 
     # C should have meaningful size versus A to avoid noise classifications.
-    if absL[2] < 0.5 * absL[0]:
+    min_c_vs_a = float(getattr(config, "correction_min_c_vs_a", 0.25)) if config is not None else 0.25
+    if absL[2] < min_c_vs_a * absL[0]:
         violations.append("waveC_too_short")
 
     b_retrace = absL[1] / absL[0] if absL[0] > 0 else 0.0
@@ -459,6 +466,15 @@ def _classification_score_window(
     counter_score = float(sum(counter_vals) / len(counter_vals)) if counter_vals else 0.5
     cls_score = 0.5 * trend_score + 0.5 * (1.0 - counter_score)
     return float(min(1.0, max(0.0, cls_score)))
+
+
+def _result_sort_key(result: ElliottWaveResult) -> Tuple[float, int, str, Tuple[int, ...]]:
+    return (
+        -float(result.confidence),
+        -int(result.end_index),
+        str(result.wave_type).lower(),
+        tuple(int(i) for i in result.wave_sequence),
+    )
 
 
 def _contiguous_pivot_slices(pivots: List[int], size: int) -> set[Tuple[int, ...]]:
@@ -630,7 +646,12 @@ class ElliottWaveAnalyzer:
                 if not (bullish or bearish):
                     continue
 
-                rule_eval = _evaluate_correction_rules(self.close, piv_seq, bullish=bullish)
+                rule_eval = _evaluate_correction_rules(
+                    self.close,
+                    piv_seq,
+                    bullish=bullish,
+                    config=self.config,
+                )
                 if not rule_eval.valid:
                     continue
 
@@ -749,7 +770,12 @@ class ElliottWaveAnalyzer:
             if rule_eval.valid:
                 wave_type = "Impulse"
         elif len(piv_seq) == 4 and "correction" in pattern_types:
-            rule_eval = _evaluate_correction_rules(self.close, piv_seq, bullish=bullish)
+            rule_eval = _evaluate_correction_rules(
+                self.close,
+                piv_seq,
+                bullish=bullish,
+                config=self.config,
+            )
             if rule_eval.valid:
                 wave_type = "Correction"
 
@@ -834,7 +860,7 @@ def detect_elliott_waves(df: pd.DataFrame, config: Optional[ElliottWaveConfig] =
 
     recent_bars = int(max(1, getattr(config, "recent_bars", 3)))
     results = _filter_overlapping_corrections(list(results_by_key.values()))
-    results.sort(key=lambda r: (float(r.confidence), int(r.end_index)), reverse=True)
+    results.sort(key=_result_sort_key)
     has_recent = any(int(getattr(r, "end_index", -10)) >= int(n - recent_bars) for r in results)
     if not has_recent:
         thr_base = float(config.swing_threshold_pct if config.swing_threshold_pct is not None else config.min_prominence_pct)
@@ -843,7 +869,7 @@ def detect_elliott_waves(df: pd.DataFrame, config: Optional[ElliottWaveConfig] =
             _upsert_elliott_result(results_by_key, fallback)
             results = _filter_overlapping_corrections(list(results_by_key.values()))
 
-    results.sort(key=lambda r: (float(r.confidence), int(r.end_index)), reverse=True)
+    results.sort(key=_result_sort_key)
     k = int(getattr(config, "top_k", 10))
     if k > 0:
         results = results[:k]
