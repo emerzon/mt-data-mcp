@@ -809,10 +809,43 @@ class TestTradeClose:
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
+    def test_symbol_close_requires_close_all_confirmation(self, mock_close, mock_cancel):
+        out = _unwrap_mcp(trade_close(symbol="EURUSD"))
+        if isinstance(out, dict):
+            assert "refusing bulk close without explicit confirmation" in str(out.get("error", "")).lower()
+        else:
+            assert "refusing bulk close without explicit confirmation" in out.lower()
+        mock_close.assert_not_called()
+        mock_cancel.assert_not_called()
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_global_close_requires_close_all_confirmation(self, mock_close, mock_cancel):
+        out = _unwrap_mcp(trade_close())
+        if isinstance(out, dict):
+            assert "refusing bulk close without explicit confirmation" in str(out.get("error", "")).lower()
+        else:
+            assert "refusing bulk close without explicit confirmation" in out.lower()
+        mock_close.assert_not_called()
+        mock_cancel.assert_not_called()
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_close_all_cannot_be_combined_with_ticket(self, mock_close, mock_cancel):
+        out = _unwrap_mcp(trade_close(ticket=123, close_all=True))
+        if isinstance(out, dict):
+            assert "close_all cannot be combined with ticket" in str(out.get("error", "")).lower()
+        else:
+            assert "close_all cannot be combined with ticket" in out.lower()
+        mock_close.assert_not_called()
+        mock_cancel.assert_not_called()
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
     def test_symbol_no_open_or_pending_marks_no_action(self, mock_close, mock_cancel):
         mock_close.return_value = {"message": "No open positions for EURUSD"}
         mock_cancel.return_value = {"message": "No pending orders for EURUSD"}
-        out = _unwrap_mcp(trade_close(symbol="EURUSD"))
+        out = _unwrap_mcp(trade_close(symbol="EURUSD", close_all=True))
         if isinstance(out, dict):
             assert out.get("message") == "No open positions or pending orders for EURUSD"
             assert out.get("no_action") is True
@@ -827,7 +860,7 @@ class TestTradeClose:
     def test_global_no_open_or_pending_marks_no_action(self, mock_close, mock_cancel):
         mock_close.return_value = {"message": "No open positions"}
         mock_cancel.return_value = {"message": "No pending orders"}
-        out = _unwrap_mcp(trade_close())
+        out = _unwrap_mcp(trade_close(close_all=True))
         if isinstance(out, dict):
             assert out.get("message") == "No open positions or pending orders"
             assert out.get("no_action") is True

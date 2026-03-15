@@ -69,7 +69,9 @@ def trade_modify(request: TradeModifyRequest) -> dict:
 def trade_close(request: TradeCloseRequest) -> dict:
     """Close positions or cancel pending orders.
 
-    Set volume to partially close a specific open position by ticket.
+    `ticket` closes a specific position or pending order.
+    Any bulk close requires `close_all=true`.
+    Set `volume` only to partially close a specific open position by ticket.
     """
     return run_logged_operation(
         logger,

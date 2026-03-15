@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import inspect
 from datetime import datetime, timedelta, timezone
 
+from mtdata.core import data as core_data
 from mtdata.core.data_requests import WaitEventRequest
 from mtdata.core.data_use_cases import run_wait_event
 
@@ -94,6 +96,31 @@ class SequenceGateway:
         return seq[idx]
 
 
+def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
+    monkeypatch.setattr(
+        core_data,
+        "run_wait_event",
+        lambda request, gateway: {
+            "success": True,
+            "symbol": request.symbol,
+            "timeframe": request.timeframe,
+            "watch_for_inferred": request.watch_for is None,
+        },
+    )
+    monkeypatch.setattr(core_data, "get_mt5_gateway", lambda ensure_connection_impl=None: object())
+
+    sig = inspect.signature(core_data.wait_event)
+    assert tuple(sig.parameters.keys()) == ("instrument", "timeframe")
+
+    raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
+    result = raw("BTCUSD", "M1")
+
+    assert result["success"] is True
+    assert result["symbol"] == "BTCUSD"
+    assert result["timeframe"] == "M1"
+    assert result["watch_for_inferred"] is True
+
+
 def test_run_wait_event_defers_boundary_only_when_cap_is_short(monkeypatch) -> None:
     monkeypatch.setattr(
         "mtdata.core.wait_events._next_candle_wait_payload",
@@ -173,6 +200,85 @@ def test_run_wait_event_uses_all_default_watchers_when_omitted() -> None:
     assert result["matched_event"]["type"] == "order_created"
     assert result["criteria"]["watch_for_inferred"] is True
     assert any(item["type"] == "price_change" for item in result["criteria"]["watch_for"])
+    assert result["criteria"]["end_on_inferred"] is False
+
+
+def test_run_wait_event_infers_candle_boundary_from_request_timeframe(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "mtdata.core.wait_events._next_candle_wait_payload",
+        lambda timeframe, buffer_seconds, now_utc: {
+            "timeframe": timeframe,
+            "buffer_seconds": buffer_seconds,
+            "sleep_seconds": 2.0,
+            "started_at_utc": now_utc.isoformat(),
+            "next_candle_close_utc": (now_utc + timedelta(seconds=2)).isoformat(),
+            "next_candle_close_server": "2026-03-15T12:00:02",
+            "server_timezone": "UTC",
+        },
+    )
+    gateway = SequenceGateway(orders_seq=[[], [], []], positions_seq=[[], [], []])
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[],
+            symbol="EURUSD",
+            timeframe="M1",
+            poll_interval_seconds=1.0,
+            max_wait_seconds=10.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "completed"
+    assert result["event"] == "candle_close"
+    assert result["boundary_event"]["type"] == "candle_close"
+    assert result["boundary_event"]["timeframe"] == "M1"
+
+
+def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "mtdata.core.wait_events._next_candle_wait_payload",
+        lambda timeframe, buffer_seconds, now_utc: {
+            "timeframe": timeframe,
+            "buffer_seconds": buffer_seconds,
+            "sleep_seconds": 2.0,
+            "started_at_utc": now_utc.isoformat(),
+            "next_candle_close_utc": (now_utc + timedelta(seconds=2)).isoformat(),
+            "next_candle_close_server": "2026-03-15T12:00:02",
+            "server_timezone": "UTC",
+        },
+    )
+    gateway = SequenceGateway(
+        orders_seq=[[], [], []],
+        positions_seq=[[], [], []],
+        history_orders_seq=[[], [], []],
+        history_deals_seq=[[], [], []],
+        ticks_by_symbol={"EURUSD": []},
+    )
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+
+    result = run_wait_event(
+        WaitEventRequest(
+            symbol="EURUSD",
+            timeframe="M1",
+            poll_interval_seconds=1.0,
+            max_wait_seconds=10.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "boundary_reached"
+    assert result["boundary_event"]["type"] == "candle_close"
+    assert result["boundary_event"]["timeframe"] == "M1"
+    assert result["criteria"]["watch_for_inferred"] is True
+    assert result["criteria"]["end_on_inferred"] is True
 
 
 def test_run_wait_event_stops_on_candle_boundary_when_no_watch_event(monkeypatch) -> None:

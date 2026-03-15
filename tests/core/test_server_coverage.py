@@ -596,6 +596,54 @@ class TestRecordingToolDecorator:
         finally:
             srv._ORIG_TOOL_DECORATOR = original
 
+    def test_flattens_request_model_signature_for_mcp_and_keeps_nested_request_compat(self):
+        import mtdata.core.server as srv
+        from mtdata.core.data_requests import WaitEventRequest
+
+        original = srv._ORIG_TOOL_DECORATOR
+        calls = []
+        try:
+            srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = srv._recording_tool_decorator()
+
+            def sample_tool(request: WaitEventRequest):
+                calls.append(request)
+                return {
+                    "symbol": request.symbol,
+                    "timeframe": request.timeframe,
+                    "poll_interval_seconds": request.poll_interval_seconds,
+                }
+
+            wrapped = dec(sample_tool)
+            sig = inspect.signature(wrapped)
+
+            assert "request" not in sig.parameters
+            assert "symbol" in sig.parameters
+            assert "timeframe" in sig.parameters
+            assert "poll_interval_seconds" in sig.parameters
+
+            flat_result = wrapped(
+                __cli_raw=True,
+                symbol="BTCUSD",
+                timeframe="M1",
+                poll_interval_seconds=0.5,
+            )
+            assert isinstance(calls[-1], WaitEventRequest)
+            assert calls[-1].symbol == "BTCUSD"
+            assert calls[-1].timeframe == "M1"
+            assert flat_result["symbol"] == "BTCUSD"
+
+            nested_result = wrapped(
+                __cli_raw=True,
+                request={"symbol": "ETHUSD", "timeframe": "H1"},
+            )
+            assert isinstance(calls[-1], WaitEventRequest)
+            assert calls[-1].symbol == "ETHUSD"
+            assert calls[-1].timeframe == "H1"
+            assert nested_result["symbol"] == "ETHUSD"
+        finally:
+            srv._ORIG_TOOL_DECORATOR = original
+
 
 # ── _disconnect_mt5 ──────────────────────────────────────────────────────
 

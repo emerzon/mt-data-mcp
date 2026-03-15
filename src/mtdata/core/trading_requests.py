@@ -33,6 +33,7 @@ class TradeModifyRequest(BaseModel):
 
 class TradeCloseRequest(BaseModel):
     ticket: Optional[Union[int, str]] = None
+    close_all: bool = False
     symbol: Optional[str] = None
     volume: Optional[float] = None
     profit_only: bool = False

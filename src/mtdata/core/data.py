@@ -9,6 +9,7 @@ from .data_requests import (
     WaitCandleRequest,
     WaitEventRequest,
 )
+from .schema import TimeframeLiteral
 from .data_use_cases import (
     run_data_fetch_candles,
     run_data_fetch_ticks,
@@ -146,29 +147,21 @@ def data_fetch_ticks(
 
 @mcp.tool()
 def wait_event(
-    request: WaitEventRequest,
+    instrument: str,
+    timeframe: TimeframeLiteral = "M1",
 ) -> Dict[str, Any]:
-    """Wait for account or market events, optionally ending on candle-close boundaries.
+    """Wait for default events on an instrument until the next timeframe boundary.
 
-    `watch_for` holds the events to match, such as `order_filled`,
-    `position_opened`, `price_change`, or `volume_spike`.
-    If `watch_for` is omitted, the tool listens to all supported account events
-    by default, plus market events when `symbol` is available at the request
-    level. Pass `watch_for=[]` to disable watched events and use only `end_on`
-    boundaries.
-    `end_on` holds boundary conditions, currently `candle_close`, that stop the
-    wait if nothing else happens first.
-
-    Use `max_wait_seconds` as a hard safety cap for MCP clients. For market
-    movement events, windows are tick-based (`ticks`) or recent-duration-based
-    (`minutes`), and thresholds can be fixed (`fixed_pct`) or adaptive
-    (`ratio_to_baseline`, `zscore`) over recent tick activity.
+    The tool watches the standard event set for the instrument, including
+    `position_opened`, and stops at the next candle close for `timeframe` if no
+    watched event happens first.
     """
+    request = WaitEventRequest(symbol=instrument, timeframe=timeframe)
     return run_logged_operation(
         logger,
         operation="wait_event",
-        watch_for=len(request.watch_for or []),
-        end_on=len(request.end_on),
+        instrument=instrument,
+        timeframe=timeframe,
         func=lambda: run_wait_event(
             request,
             gateway=get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),

@@ -371,6 +371,7 @@ def run_trade_close(
         logger,
         operation="trade_close",
         ticket=request.ticket,
+        close_all=request.close_all,
         symbol=request.symbol,
         volume=request.volume,
         profit_only=request.profit_only,
@@ -388,6 +389,7 @@ def run_trade_close(
             started_at=started_at,
             success=infer_result_success(result),
             ticket=request.ticket,
+            close_all=request.close_all,
             symbol=request.symbol,
             volume=request.volume,
             scope=scope,
@@ -421,6 +423,24 @@ def run_trade_close(
                     "Use ticket for a specific partial close."
                 )
             }, scope="positions")
+
+    if request.ticket is not None and request.close_all:
+        return _finish({
+            "error": (
+                "close_all cannot be combined with ticket. "
+                "Use ticket for a specific position or pending order, "
+                "or omit ticket and pass close_all=true for a bulk close."
+            )
+        }, scope="ticket")
+
+    if request.ticket is None and not request.close_all:
+        return _finish({
+            "error": (
+                "Refusing bulk close without explicit confirmation. "
+                "Provide ticket for a specific position or pending order, "
+                "or pass close_all=true to close matching positions or pending orders."
+            )
+        }, scope="bulk_confirmation")
 
     if request.profit_only or request.loss_only:
         result = close_positions(

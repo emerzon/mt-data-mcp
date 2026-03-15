@@ -44,6 +44,7 @@ def run_wait_event_loop(
     watch_for = compiled["watch_for"]
     boundaries = compiled["end_on"]
     watch_for_inferred = bool(compiled.get("watch_for_inferred"))
+    end_on_inferred = bool(compiled.get("end_on_inferred"))
     watch_for_payload = list(compiled.get("watch_for_payload", []))
     end_on_payload = list(compiled.get("end_on_payload", []))
     max_wait_seconds = (
@@ -87,6 +88,7 @@ def run_wait_event_loop(
                 watch_for_payload=watch_for_payload,
                 end_on_payload=end_on_payload,
                 watch_for_inferred=watch_for_inferred,
+                end_on_inferred=end_on_inferred,
             )
 
     started_at_monotonic = float(monotonic_impl())
@@ -122,6 +124,7 @@ def run_wait_event_loop(
                 watch_for_payload=watch_for_payload,
                 end_on_payload=end_on_payload,
                 watch_for_inferred=watch_for_inferred,
+                end_on_inferred=end_on_inferred,
             )
 
         boundary_event = _evaluate_boundaries(boundaries, observed_at_utc=observed_at_utc)
@@ -137,6 +140,7 @@ def run_wait_event_loop(
                 watch_for_payload=watch_for_payload,
                 end_on_payload=end_on_payload,
                 watch_for_inferred=watch_for_inferred,
+                end_on_inferred=end_on_inferred,
             )
 
         elapsed_seconds = max(0.0, float(monotonic_impl()) - started_at_monotonic)
@@ -152,6 +156,7 @@ def run_wait_event_loop(
                 watch_for_payload=watch_for_payload,
                 end_on_payload=end_on_payload,
                 watch_for_inferred=watch_for_inferred,
+                end_on_inferred=end_on_inferred,
             )
 
         sleep_seconds = _next_poll_sleep_seconds(
@@ -174,6 +179,15 @@ def _compile_request(
     raw_watch_specs = request.watch_for
     watch_for_inferred = raw_watch_specs is None
     source_watch_specs = _default_watch_specs(request) if raw_watch_specs is None else list(raw_watch_specs)
+    source_end_specs: List[Any]
+    end_on_inferred = False
+    if request.end_on:
+        source_end_specs = list(request.end_on)
+    elif request.timeframe is not None:
+        source_end_specs = [CandleCloseEventSpec(timeframe=request.timeframe)]
+        end_on_inferred = True
+    else:
+        source_end_specs = []
     watch_for: List[Dict[str, Any]] = []
     for spec in source_watch_specs:
         compiled = _compile_watch_event(spec, request=request)
@@ -182,7 +196,7 @@ def _compile_request(
         watch_for.append(compiled)
 
     end_on: List[Dict[str, Any]] = []
-    for spec in request.end_on:
+    for spec in source_end_specs:
         compiled = _compile_boundary_event(
             spec,
             request=request,
@@ -196,6 +210,7 @@ def _compile_request(
         "watch_for": watch_for,
         "watch_for_inferred": watch_for_inferred,
         "watch_for_payload": [_public_watch_spec_payload(spec, request=request) for spec in source_watch_specs],
+        "end_on_inferred": end_on_inferred,
         "end_on": sorted(
             end_on,
             key=lambda item: (
@@ -203,7 +218,7 @@ def _compile_request(
                 str(item.get("timeframe") or ""),
             ),
         ),
-        "end_on_payload": [_public_boundary_spec_payload(spec, request=request) for spec in request.end_on],
+        "end_on_payload": [_public_boundary_spec_payload(spec, request=request) for spec in source_end_specs],
     }
 
 
@@ -911,6 +926,7 @@ def _build_wait_result(
     watch_for_payload: List[Dict[str, Any]],
     end_on_payload: List[Dict[str, Any]],
     watch_for_inferred: bool,
+    end_on_inferred: bool,
 ) -> Dict[str, Any]:
     elapsed_seconds = max(0.0, (observed_at_utc - started_at_utc).total_seconds())
     return {
@@ -932,6 +948,7 @@ def _build_wait_result(
             "watch_for": list(watch_for_payload),
             "watch_for_inferred": bool(watch_for_inferred),
             "end_on": list(end_on_payload),
+            "end_on_inferred": bool(end_on_inferred),
             "accept_preexisting": bool(request.accept_preexisting),
         },
     }

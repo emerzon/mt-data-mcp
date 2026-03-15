@@ -251,11 +251,11 @@ class TestMergedTools(unittest.TestCase):
         self.mt5.positions_get.assert_called_with(ticket=123)
 
         # Test close by symbol
-        trade_close(request=TradeCloseRequest(symbol="EURUSD"), __cli_raw=True)
+        trade_close(request=TradeCloseRequest(symbol="EURUSD", close_all=True), __cli_raw=True)
         self.mt5.positions_get.assert_called_with(symbol="EURUSD")
 
         # Test close all
-        trade_close(request=TradeCloseRequest(), __cli_raw=True)
+        trade_close(request=TradeCloseRequest(close_all=True), __cli_raw=True)
         self.mt5.positions_get.assert_called_with()
 
     def test_trading_close_pending(self):
@@ -275,11 +275,11 @@ class TestMergedTools(unittest.TestCase):
         self.mt5.orders_get.assert_called_with(ticket=456)
 
         # Test cancel by symbol
-        trade_close(request=TradeCloseRequest(symbol="EURUSD"), __cli_raw=True)
+        trade_close(request=TradeCloseRequest(symbol="EURUSD", close_all=True), __cli_raw=True)
         self.mt5.orders_get.assert_called_with(symbol="EURUSD")
 
         # Test cancel all
-        trade_close(request=TradeCloseRequest(), __cli_raw=True)
+        trade_close(request=TradeCloseRequest(close_all=True), __cli_raw=True)
         self.mt5.orders_get.assert_called_with()
 
 if __name__ == '__main__':

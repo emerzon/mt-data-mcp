@@ -241,6 +241,74 @@ def _coerce_kwargs_for_callable(func: Any, kwargs: Dict[str, Any]) -> Dict[str, 
     return kwargs
 
 
+def _request_model_signature_fields(func: Any) -> List[inspect.Parameter]:
+    """Flatten a single request-model parameter into top-level keyword params."""
+    try:
+        sig = _get_runtime_signature(func)
+    except Exception:
+        return []
+
+    params = list(sig.parameters.values())
+    if len(params) != 1:
+        return []
+
+    request_param = params[0]
+    base_ann, _ = _unwrap_optional_annotation(request_param.annotation)
+    if not (isinstance(base_ann, type) and issubclass(base_ann, BaseModel)):
+        return []
+
+    model_fields = getattr(base_ann, "model_fields", None)
+    if isinstance(model_fields, dict):
+        flattened: List[inspect.Parameter] = []
+        for field_name, field in model_fields.items():
+            annotation = getattr(field, "annotation", inspect._empty)
+            is_required = bool(getattr(field, "is_required", lambda: False)())
+            default = inspect._empty if is_required else _signature_default_for_model_field(field)
+            flattened.append(
+                inspect.Parameter(
+                    field_name,
+                    kind=inspect.Parameter.KEYWORD_ONLY,
+                    default=default,
+                    annotation=annotation,
+                )
+            )
+        return flattened
+
+    legacy_fields = getattr(base_ann, "__fields__", None)
+    if isinstance(legacy_fields, dict):
+        flattened = []
+        for field_name, field in legacy_fields.items():
+            annotation = getattr(field, "outer_type_", getattr(field, "type_", inspect._empty))
+            is_required = bool(getattr(field, "required", False))
+            default = inspect._empty if is_required else _signature_default_for_model_field(field)
+            flattened.append(
+                inspect.Parameter(
+                    field_name,
+                    kind=inspect.Parameter.KEYWORD_ONLY,
+                    default=default,
+                    annotation=annotation,
+                )
+            )
+        return flattened
+
+    return []
+
+
+def _signature_default_for_model_field(field: Any) -> Any:
+    factory = getattr(field, "default_factory", None)
+    if callable(factory):
+        try:
+            return factory()
+        except Exception:
+            return None
+    default = getattr(field, "default", inspect._empty)
+    if default is inspect._empty:
+        return None
+    if type(default).__name__ == "PydanticUndefinedType":
+        return None
+    return default
+
+
 def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
     if _ORIG_TOOL_DECORATOR is None:
         def _noop(func):
@@ -255,6 +323,20 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
     dec = _ORIG_TOOL_DECORATOR(*dargs, **kwargs)
 
     def _sanitize_annotations(func):
+        flattened_params = _request_model_signature_fields(func)
+        if flattened_params:
+            cleaned = {
+                param.name: (
+                    param.annotation
+                    if param.annotation is not inspect._empty
+                    else object
+                )
+                for param in flattened_params
+            }
+            ann = _get_runtime_annotations(func)
+            if "return" in ann:
+                cleaned["return"] = ann["return"] if ann["return"] is not inspect._empty else object
+            return cleaned
         cleaned = {}
         ann = _get_runtime_annotations(func)
         sig = _get_runtime_signature(func)
@@ -339,10 +421,11 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
         try:
             cleaned = _sanitize_annotations(func)
             _wrapped.__annotations__ = cleaned
-            params = []
-            sig = _get_runtime_signature(func)
-            for name, param in sig.parameters.items():
-                params.append(param.replace(annotation=cleaned.get(name)))
+            params = _request_model_signature_fields(func)
+            if not params:
+                sig = _get_runtime_signature(func)
+                for name, param in sig.parameters.items():
+                    params.append(param.replace(annotation=cleaned.get(name)))
             return_ann = cleaned.get("return", inspect._empty)
             setattr(_wrapped, "__signature__", inspect.Signature(parameters=params, return_annotation=return_ann))
         except Exception:
