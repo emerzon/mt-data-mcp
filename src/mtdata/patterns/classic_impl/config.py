@@ -7,6 +7,10 @@ from ..common import PatternResultBase
 class ClassicDetectorConfig:
     # General
     max_bars: int = 1500
+    scan_historical: bool = False   # run prefix scan to find older right-edge patterns
+    scan_step_bars: int = 10        # prefix step when historical scan is enabled
+    scan_min_prefix_bars: int = 120 # minimum prefix size used for historical scans
+    scan_dedupe_overlap: float = 0.8  # overlap ratio used to merge repeated prefix hits
     # Pivot/zigzag parameters
     min_prominence_pct: float = 0.5  # peak/trough prominence in percent of price
     min_distance: int = 5            # minimum distance between pivots (bars)
@@ -20,6 +24,7 @@ class ClassicDetectorConfig:
     # Trendline/line-fit
     max_flat_slope: float = 1e-4     # absolute slope to consider line flat (price units per bar)
     min_r2: float = 0.6              # minimum R^2 for line fit confidence
+    max_pattern_pivots: int = 8      # max recent pivots used by line-based detectors
     # Levels tolerance (same-level checks)
     same_level_tol_pct: float = 0.4  # peaks/lows considered equal if within this percent
     # Pattern-specific
@@ -28,9 +33,26 @@ class ClassicDetectorConfig:
     max_consolidation_bars: int = 60 # for flags/pennants after pole
     min_pole_return_pct: float = 2.0 # minimum pole size (percent) before a flag/pennant
     breakout_lookahead: int = 8      # bars to consider breakout confirmation
+    cup_handle_min_window_bars: int = 120
+    cup_handle_max_window_bars: int = 300
+    cup_handle_min_depth_pct: float = 2.0
+    cup_handle_max_depth_pct: float = 35.0
+    cup_handle_handle_window_frac: float = 0.2
+    cup_handle_max_handle_pullback_pct: float = 12.0
+    cup_handle_confidence_base: float = 0.55
+    cup_handle_confidence_depth_weight: float = 0.25
+    cup_handle_confidence_symmetry_weight: float = 0.20
+    diamond_min_window_bars: int = 120
+    diamond_max_window_bars: int = 240
+    diamond_min_pivots_per_side: int = 2
+    diamond_min_boundary_r2: float = 0.2
+    diamond_min_width_ratio: float = 1.15
+    diamond_prior_pole_return_pct: float = 2.0
     convergence_fallback_scale: float = 1.2  # fallback widening factor when no past window exists
     channel_parallel_slope_ratio: float = 0.15  # relative slope spread tolerated for channels
+    channel_parallel_min_abs_tol: float = 1e-4  # absolute floor for near-horizontal channel slope spread
     pennant_parallel_slope_ratio: float = 0.2  # relative slope spread tolerated for flags/pennants
+    rounding_window_bars: int = 220
     # Confidence blending
     touch_weight: float = 0.35
     r2_weight: float = 0.35

@@ -2,9 +2,9 @@ import numpy as np
 from typing import Any, Dict, List, Optional
 from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
-    _fit_line, _fit_line_robust, _fit_lines_and_arrays, 
+    _detect_pivots_close, _fit_line, _fit_line_robust, _fit_lines_and_arrays, 
     _tol_abs_from_close, _level_close, _count_touches, _count_recent_touches,
-    _is_converging, _find_recent_breakout, _find_forward_level_breakout, 
+    _is_converging, _find_recent_breakout, 
     _result, _alias, _conf
 )
 
@@ -18,7 +18,7 @@ def _fit_line_bounded_shape(
     min_points: int,
 ) -> Optional[Dict[str, Any]]:
     n = c.size
-    k = min(8, peaks.size, troughs.size)
+    k = min(int(cfg.max_pattern_pivots), peaks.size, troughs.size)
     if k < min_points:
         return None
 
@@ -100,7 +100,7 @@ def detect_rectangles(
 ) -> List[ClassicPatternResult]:
     out: List[ClassicPatternResult] = []
     n = c.size
-    k = min(8, peaks.size, troughs.size)
+    k = min(int(cfg.max_pattern_pivots), peaks.size, troughs.size)
     if k < 3:
         return out
         
@@ -118,28 +118,30 @@ def detect_rectangles(
         geom_ok = 1.0
         conf = _conf(touches, 1.0, geom_ok, cfg)
         status = "forming"
-        
-        recent_i = n - 1
         top_line = np.full(n, top, dtype=float)
         bot_line = np.full(n, bot, dtype=float)
-        confirm_needed = max(1, int(cfg.completion_confirm_bars))
-        confirm_lookback = max(confirm_needed, int(cfg.completion_lookback_bars))
-        
-        recent_hits = _count_recent_touches(top_line, c, _tol_abs_from_close(c, cfg.same_level_tol_pct), confirm_lookback)
-        recent_hits += _count_recent_touches(bot_line, c, _tol_abs_from_close(c, cfg.same_level_tol_pct), confirm_lookback)
-        
-        if recent_hits >= confirm_needed:
+        tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
+        breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
+        bdir, bidx = _find_recent_breakout(c, upper=top_line, lower=bot_line, tol_abs=tol_abs, lookback_bars=breakout_look)
+
+        if bdir is not None and bidx is not None:
             status = "completed"
-            
+
         out.append(ClassicPatternResult(
             name="Rectangle",
             status=status,
             confidence=conf,
             start_index=int(min(peaks[-k], troughs[-k])),
-            end_index=int(max(peaks[-1], troughs[-1])),
+            end_index=int(bidx if bidx is not None else max(peaks[-1], troughs[-1])),
             start_time=float(t[int(min(peaks[-k], troughs[-k]))]) if t.size else None,
-            end_time=float(t[int(max(peaks[-1], troughs[-1]))]) if t.size else None,
-            details={"resistance": top, "support": bot, "touches": touches, "completion_touches_recent": int(recent_hits)},
+            end_time=float(t[int(bidx if bidx is not None else max(peaks[-1], troughs[-1]))]) if t.size else None,
+            details={
+                "resistance": top,
+                "support": bot,
+                "touches": touches,
+                "breakout_direction": bdir,
+                "breakout_index": int(bidx) if bidx is not None else None,
+            },
         ))
     return out
 
@@ -152,6 +154,9 @@ def detect_triangles(
 ) -> List[ClassicPatternResult]:
     shape = _fit_line_bounded_shape(c, peaks, troughs, cfg, min_points=4)
     if shape is None or not _is_converging(shape["top"], shape["bot"], shape["k"], shape["n"], cfg):
+        return []
+    same_sign = (shape["sh"] > 0 and shape["sl"] > 0) or (shape["sh"] < 0 and shape["sl"] < 0)
+    if same_sign:
         return []
     if shape["touches"] < cfg.min_channel_touches - 1:
         return []
@@ -192,13 +197,17 @@ def detect_broadening(
 ) -> List[ClassicPatternResult]:
     out: List[ClassicPatternResult] = []
     n = c.size
-    k = min(10, peaks.size, troughs.size)
+    k = min(max(4, int(cfg.max_pattern_pivots)), peaks.size, troughs.size)
     if k < 4:
         return out
         
     ih = peaks[-k:]; il = troughs[-k:]
-    sh, bh, r2h = _fit_line(ih.astype(float), c[ih])
-    sl, bl, r2l = _fit_line(il.astype(float), c[il])
+    if bool(cfg.use_robust_fit):
+        sh, bh, r2h = _fit_line_robust(ih.astype(float), c[ih], cfg)
+        sl, bl, r2l = _fit_line_robust(il.astype(float), c[il], cfg)
+    else:
+        sh, bh, r2h = _fit_line(ih.astype(float), c[ih])
+        sl, bl, r2l = _fit_line(il.astype(float), c[il])
     
     diverging = (sh > cfg.max_flat_slope and sl < -cfg.max_flat_slope)
     if diverging:
@@ -232,68 +241,145 @@ def detect_broadening(
 def detect_diamonds(
     c: np.ndarray,
     t: np.ndarray,
-    cfg: ClassicDetectorConfig
+    cfg: ClassicDetectorConfig,
+    high: Optional[np.ndarray] = None,
+    low: Optional[np.ndarray] = None,
 ) -> List[ClassicPatternResult]:
     out: List[ClassicPatternResult] = []
     n = c.size
-    W = min(240, n)
-    if W < 120:
+    W = min(int(cfg.diamond_max_window_bars), n)
+    if W < int(cfg.diamond_min_window_bars):
         return out
-        
+
     seg = c[-W:]
-    half = W // 2
-    left = seg[:half]; right = seg[half:]
-    
-    def width(a: np.ndarray) -> float:
-        return float(np.max(a) - np.min(a))
-        
-    expanding = width(left[:half//2]) < width(left[half//2:])
-    contracting = width(right[:half//2]) > width(right[half//2:])
-    
-    if expanding and contracting:
-        pole = min(60, max(10, W // 3))
-        if n > 2 * pole + 1:
-            ret = (c[-1 - pole] - c[-1 - 2*pole]) / max(1e-9, c[-1 - 2*pole]) * 100.0
-        else:
-            ret = 0.0
-            
-        name = "Continuation Diamond" if abs(ret) >= 2.0 else "Diamond"
-        status = "forming"
-        conf = 0.6
-        
-        right_hi = float(np.max(right)) if right.size else float(np.max(seg))
-        right_lo = float(np.min(right)) if right.size else float(np.min(seg))
-        tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
-        breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
-        
-        break_up = _find_forward_level_breakout(c, int(n - W + half), right_hi, "up", breakout_look, tol_abs)
-        break_dn = _find_forward_level_breakout(c, int(n - W + half), right_lo, "down", breakout_look, tol_abs)
-        
-        break_i: Optional[int] = None
-        break_dir: Optional[str] = None
-        
-        if break_up is not None and (break_dn is None or break_up <= break_dn):
-            break_i = int(break_up)
-            break_dir = "up"
-        elif break_dn is not None:
-            break_i = int(break_dn)
-            break_dir = "down"
-            
-        if break_i is not None:
-            status = "completed"
-            conf = min(1.0, conf + 0.08)
-            
-        out.append(_result(
-            name,
-            status,
-            conf,
-            int(n - W),
-            int(break_i if break_i is not None else (n - 1)),
-            t,
-            {
-                "prior_pole_return_pct": float(ret),
-                "breakout_direction": break_dir,
-                "breakout_index": int(break_i) if break_i is not None else None,
-            },
-        ))
+    seg_h = np.asarray(high[-W:], dtype=float) if high is not None and high.size >= W else seg
+    seg_l = np.asarray(low[-W:], dtype=float) if low is not None and low.size >= W else seg
+    peaks, troughs = _detect_pivots_close(seg, cfg, seg_h, seg_l)
+    min_side = max(2, int(cfg.diamond_min_pivots_per_side))
+    if peaks.size < (2 * min_side) or troughs.size < (2 * min_side):
+        return out
+
+    candidate_splits = sorted(
+        {
+            int(idx)
+            for idx in np.concatenate((peaks, troughs))
+            if int(W * 0.3) <= int(idx) <= int(W * 0.7)
+        }
+    )
+    if not candidate_splits:
+        return out
+
+    best: Optional[Dict[str, Any]] = None
+    min_slope = float(max(1e-6, cfg.max_flat_slope * 2.0))
+
+    def _fit_boundary(idxs: np.ndarray) -> tuple[float, float, float]:
+        xs = idxs.astype(float)
+        ys = seg[idxs]
+        if bool(cfg.use_robust_fit):
+            return _fit_line_robust(xs, ys, cfg)
+        return _fit_line(xs, ys)
+
+    for split in candidate_splits:
+        left_peaks = peaks[peaks < split]
+        right_peaks = peaks[peaks >= split]
+        left_troughs = troughs[troughs < split]
+        right_troughs = troughs[troughs >= split]
+        if min(left_peaks.size, right_peaks.size, left_troughs.size, right_troughs.size) < min_side:
+            continue
+
+        lh_slope, lh_intercept, lh_r2 = _fit_boundary(left_peaks)
+        ll_slope, ll_intercept, ll_r2 = _fit_boundary(left_troughs)
+        rh_slope, rh_intercept, rh_r2 = _fit_boundary(right_peaks)
+        rl_slope, rl_intercept, rl_r2 = _fit_boundary(right_troughs)
+
+        if not (
+            lh_slope > min_slope
+            and ll_slope < -min_slope
+            and rh_slope < -min_slope
+            and rl_slope > min_slope
+        ):
+            continue
+
+        min_r2 = min(float(lh_r2), float(ll_r2), float(rh_r2), float(rl_r2))
+        if min_r2 < float(cfg.diamond_min_boundary_r2):
+            continue
+
+        left_x = np.arange(0, split, dtype=float)
+        right_x = np.arange(split, W, dtype=float)
+        if left_x.size < 2 or right_x.size < 2:
+            continue
+        left_upper = lh_slope * left_x + lh_intercept
+        left_lower = ll_slope * left_x + ll_intercept
+        right_upper = rh_slope * right_x + rh_intercept
+        right_lower = rl_slope * right_x + rl_intercept
+
+        width_start = float(left_upper[0] - left_lower[0])
+        width_mid = float(min(left_upper[-1] - left_lower[-1], right_upper[0] - right_lower[0]))
+        width_end = float(right_upper[-1] - right_lower[-1])
+        if min(width_start, width_mid, width_end) <= 0.0:
+            continue
+        width_ratio = width_mid / max(width_start, width_end, 1e-9)
+        if width_ratio < float(cfg.diamond_min_width_ratio):
+            continue
+
+        geom_score = min(1.0, width_ratio / max(1e-9, float(cfg.diamond_min_width_ratio)))
+        candidate = {
+            "split": int(split),
+            "touches": int(left_peaks.size + right_peaks.size + left_troughs.size + right_troughs.size),
+            "min_r2": min_r2,
+            "geom_score": geom_score,
+            "upper": np.concatenate((left_upper, right_upper)),
+            "lower": np.concatenate((left_lower, right_lower)),
+            "lh_slope": float(lh_slope),
+            "ll_slope": float(ll_slope),
+            "rh_slope": float(rh_slope),
+            "rl_slope": float(rl_slope),
+            "width_ratio": float(width_ratio),
+        }
+        if best is None or (candidate["geom_score"], candidate["min_r2"], candidate["touches"]) > (
+            best["geom_score"],
+            best["min_r2"],
+            best["touches"],
+        ):
+            best = candidate
+
+    if best is None:
+        return out
+
+    pole = min(60, max(10, W // 3))
+    if n > 2 * pole + 1:
+        ret = (c[-1 - pole] - c[-1 - 2 * pole]) / max(1e-9, c[-1 - 2 * pole]) * 100.0
+    else:
+        ret = 0.0
+
+    name = "Continuation Diamond" if abs(ret) >= float(cfg.diamond_prior_pole_return_pct) else "Diamond"
+    conf = _conf(int(best["touches"]), float(best["min_r2"]), float(best["geom_score"]), cfg)
+    status = "forming"
+    tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
+    breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
+    bdir, bidx_local = _find_recent_breakout(seg, upper=best["upper"], lower=best["lower"], tol_abs=tol_abs, lookback_bars=breakout_look)
+
+    if bdir is not None and bidx_local is not None:
+        status = "completed"
+        conf = min(1.0, conf + 0.08)
+
+    out.append(_result(
+        name,
+        status,
+        conf,
+        int(n - W),
+        int((n - W + bidx_local) if bidx_local is not None else (n - 1)),
+        t,
+        {
+            "prior_pole_return_pct": float(ret),
+            "breakout_direction": bdir,
+            "breakout_index": int(n - W + bidx_local) if bidx_local is not None else None,
+            "diamond_split_index": int(n - W + best["split"]),
+            "width_ratio": float(best["width_ratio"]),
+            "upper_left_slope": float(best["lh_slope"]),
+            "lower_left_slope": float(best["ll_slope"]),
+            "upper_right_slope": float(best["rh_slope"]),
+            "lower_right_slope": float(best["rl_slope"]),
+        },
+    ))
     return out

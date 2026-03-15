@@ -1,4 +1,5 @@
 from __future__ import annotations
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -14,6 +15,12 @@ def _level_close(a: float, b: float, tol_pct: float) -> bool:
     if a == 0 or b == 0:
         return abs(a - b) <= 1e-12
     return abs((a - b) / ((abs(a) + abs(b)) / 2.0)) * 100.0 <= tol_pct
+
+
+@lru_cache(maxsize=1)
+def _get_ransac_regressor_cls():
+    from sklearn.linear_model import RANSACRegressor  # type: ignore
+    return RANSACRegressor
 
 
 def _fit_line(x: np.ndarray, y: np.ndarray) -> Tuple[float, float, float]:
@@ -32,20 +39,25 @@ def _fit_line(x: np.ndarray, y: np.ndarray) -> Tuple[float, float, float]:
 
 def _fit_line_robust(x: np.ndarray, y: np.ndarray, cfg: ClassicDetectorConfig) -> Tuple[float, float, float]:
     """Optionally fit a robust line via RANSAC; fallback to ordinary fit."""
+    if not cfg.use_robust_fit:
+        return _fit_line(x, y)
+    X = x.reshape(-1, 1).astype(float)
+    yv = y.astype(float)
+    if X.shape[0] < max(2, int(cfg.ransac_min_samples)):
+        return _fit_line(x, y)
+    med = float(np.median(np.abs(yv))) if yv.size else 1.0
+    resid = max(1e-9, float(cfg.ransac_residual_pct) * max(1.0, med))
     try:
-        if not cfg.use_robust_fit:
-            return _fit_line(x, y)
-        from sklearn.linear_model import RANSACRegressor  # type: ignore
-        X = x.reshape(-1, 1).astype(float)
-        yv = y.astype(float)
-        if X.shape[0] < max(2, int(cfg.ransac_min_samples)):
-            return _fit_line(x, y)
-        med = float(np.median(np.abs(yv))) if yv.size else 1.0
-        resid = max(1e-9, float(cfg.ransac_residual_pct) * max(1.0, med))
-        model = RANSACRegressor(min_samples=max(2, int(cfg.ransac_min_samples)),
-                                max_trials=max(10, int(cfg.ransac_max_trials)),
-                                residual_threshold=resid,
-                                random_state=0)
+        ransac_cls = _get_ransac_regressor_cls()
+    except ImportError:
+        return _fit_line(x, y)
+    try:
+        model = ransac_cls(
+            min_samples=max(2, int(cfg.ransac_min_samples)),
+            max_trials=max(10, int(cfg.ransac_max_trials)),
+            residual_threshold=resid,
+            random_state=0,
+        )
         model.fit(X, yv)
         est = model.estimator_
         slope = float(getattr(est, 'coef_', [0.0])[0])
@@ -55,7 +67,7 @@ def _fit_line_robust(x: np.ndarray, y: np.ndarray, cfg: ClassicDetectorConfig) -
         ss_tot = float(np.sum((yv - yv.mean()) ** 2)) if yv.size else 0.0
         r2 = 0.0 if ss_tot == 0 else max(0.0, 1.0 - ss_res / ss_tot)
         return slope, intercept, r2
-    except Exception:
+    except (AttributeError, TypeError, ValueError, RuntimeError):
         return _fit_line(x, y)
 
 
@@ -90,7 +102,7 @@ def _paa(a: np.ndarray, m: int) -> np.ndarray:
 def _dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
     try:
         return float(_ts_dtw(a.astype(float), b.astype(float)))
-    except Exception:
+    except (TypeError, ValueError, RuntimeError):
         return float('inf')
 
 
@@ -123,7 +135,7 @@ def _compute_atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: i
     win = max(2, int(period))
     try:
         atr = pd.Series(tr).rolling(win, min_periods=max(2, win // 2)).mean().to_numpy(dtype=float)
-    except Exception:
+    except (TypeError, ValueError):
         atr = tr.astype(float)
     return atr
 
@@ -182,7 +194,7 @@ def _detect_pivots_close(
     try:
         peaks, _ = find_peaks(src_hi, prominence=prom_abs, distance=min_dist)
         troughs, _ = find_peaks(-src_lo, prominence=prom_abs, distance=min_dist)
-    except Exception:
+    except ValueError:
         return np.array([], dtype=int), np.array([], dtype=int)
     return peaks.astype(int), troughs.astype(int)
 
@@ -203,7 +215,7 @@ def _build_time_array(df: pd.DataFrame) -> np.ndarray:
         return np.arange(len(df), dtype=float)
     try:
         return to_float_np(t)
-    except Exception:
+    except (TypeError, ValueError):
         return np.arange(len(df), dtype=float)
 
 
@@ -248,17 +260,13 @@ def _fit_lines_and_arrays(
     n: int,
     cfg: ClassicDetectorConfig,
 ):
-    # Using global lookup to allow monkeypatching in tests if needed
-    fit_func = globals().get('_fit_line_robust', _fit_line_robust)
-    
-    try:
+    fit_func = _fit_line_robust if bool(cfg.use_robust_fit) else _fit_line
+    if fit_func is _fit_line_robust:
         sh, bh, r2h = fit_func(ih.astype(float), c[ih], cfg)
-    except Exception:
-        sh, bh, r2h = _fit_line(ih.astype(float), c[ih])
-    try:
         sl, bl, r2l = fit_func(il.astype(float), c[il], cfg)
-    except Exception:
-        sl, bl, r2l = _fit_line(il.astype(float), c[il])
+    else:
+        sh, bh, r2h = fit_func(ih.astype(float), c[ih])
+        sl, bl, r2l = fit_func(il.astype(float), c[il])
     x = np.arange(n, dtype=float)
     upper = sh * x + bh
     lower = sl * x + bl
@@ -322,17 +330,21 @@ def _find_recent_breakout(
         return None, None
     lb = max(1, int(lookback_bars))
     start = max(0, n - lb)
+    last_dir: Optional[str] = None
+    last_idx: Optional[int] = None
     for i in range(start, n):
         px = float(close[i])
         if upper is not None and i < int(upper.size):
             up = float(upper[i])
             if np.isfinite(up) and px > (up + tol_abs):
-                return "up", int(i)
+                last_dir = "up"
+                last_idx = int(i)
         if lower is not None and i < int(lower.size):
             lo = float(lower[i])
             if np.isfinite(lo) and px < (lo - tol_abs):
-                return "down", int(i)
-    return None, None
+                last_dir = "down"
+                last_idx = int(i)
+    return last_dir, last_idx
 
 
 def _find_forward_level_breakout(
@@ -371,7 +383,7 @@ def _collect_calibration_points(cal_map: Any, name: str) -> List[Tuple[float, fl
             try:
                 x = float(k)
                 y = float(v)
-            except Exception:
+            except (TypeError, ValueError):
                 continue
             if np.isfinite(x) and np.isfinite(y):
                 points.append((max(0.0, min(1.0, x)), max(0.0, min(1.0, y))))
@@ -382,7 +394,7 @@ def _collect_calibration_points(cal_map: Any, name: str) -> List[Tuple[float, fl
             try:
                 x = float(item[0])
                 y = float(item[1])
-            except Exception:
+            except (TypeError, ValueError):
                 continue
             if np.isfinite(x) and np.isfinite(y):
                 points.append((max(0.0, min(1.0, x)), max(0.0, min(1.0, y))))

@@ -83,108 +83,104 @@ def detect_head_shoulders(
     breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
 
     for head_idx in peaks.tolist():
-        try:
-            head_price = float(c[head_idx])
-            ls_candidates = [pi for pi in peaks.tolist() if pi < head_idx]
-            rs_candidates = [pi for pi in peaks.tolist() if pi > head_idx]
-            if not ls_candidates or not rs_candidates:
-                continue
-            lsh = int(ls_candidates[-1]); rsh = int(rs_candidates[0])
-            ls_p = float(c[lsh]); rs_p = float(c[rsh])
-            regular = (ls_p < head_price) and (rs_p < head_price)
-            inverse = (ls_p > head_price) and (rs_p > head_price)
-            if not (regular or inverse):
-                continue
-            if not _level_close(ls_p, rs_p, tol_pct * 1.5):
-                continue
-            nl1_candidates = [ti for ti in troughs.tolist() if lsh < ti < head_idx]
-            nl2_candidates = [ti for ti in troughs.tolist() if head_idx < ti < rsh]
-            if not nl1_candidates or not nl2_candidates:
-                continue
-            nl1 = int(nl1_candidates[-1]); nl2 = int(nl2_candidates[0])
-            
-            if getattr(cfg, 'use_robust_fit', False):
-                slope, intercept, r2 = _fit_line_robust(
-                    np.array([nl1, nl2], dtype=float), np.array([c[nl1], c[nl2]], dtype=float), cfg
-                )
-            else:
-                slope, intercept, r2 = _fit_line(
-                    np.array([nl1, nl2], dtype=float), np.array([c[nl1], c[nl2]], dtype=float)
-                )
-                
-            left_span = head_idx - lsh; right_span = rsh - head_idx
-            span_ratio = left_span / float(max(1, right_span))
-            if not (0.5 <= span_ratio <= 2.0):
-                continue
-            sh_avg = (ls_p + rs_p) / 2.0
-            head_prom = (head_price - sh_avg) / abs(sh_avg) * 100.0 if sh_avg != 0 else 0.0
-            if regular and head_prom < max(1.0, tol_pct):
-                continue
-            if inverse and head_prom > -max(1.0, tol_pct):
-                continue
-                
-            status = 'forming'
-            name = 'Head and Shoulders' if regular else 'Inverse Head and Shoulders'
-            broke = False
-            end_i = int(rsh)
-            for k in range(1, breakout_look + 1):
-                i = rsh + k
-                if i >= n:
-                    break
-                neck_i = slope * i + intercept
-                px = float(c[i])
-                if regular and px < neck_i:
-                    status = 'completed'; broke = True; end_i = int(i); break
-                if inverse and px > neck_i:
-                    status = 'completed'; broke = True; end_i = int(i); break
-                    
-            sym_conf = max(0.0, 1.0 - abs(span_ratio - 1.0))
-            sh_sim_conf = max(0.0, 1.0 - (abs(ls_p - rs_p) / max(1e-9, abs(sh_avg))))
-            neck_penalty = max(0.0, 1.0 - min(1.0, abs(slope) / max(1e-6, cfg.max_flat_slope * 5.0)))
-            prom_conf = min(1.0, abs(head_prom) / (tol_pct * 2.0))
-            base_conf = 0.25 * sym_conf + 0.35 * sh_sim_conf + 0.2 * neck_penalty + 0.2 * prom_conf
-            if broke:
-                base_conf = min(1.0, base_conf + 0.1)
-                
-            # Optional DTW shape confirmation
-            if getattr(cfg, 'use_dtw_check', False):
-                seg_start = max(0, int(lsh))
-                seg_end = int(end_i if broke else rsh)
-                seg = c[seg_start: seg_end + 1].astype(float)
-                seg_n = _znorm(_paa(seg, int(getattr(cfg, 'dtw_paa_len', 80))))
-                tpl = _template_hs(len(seg_n), inverse=bool(inverse))
-                dist = _dtw_distance(seg_n, tpl)
-                maxd = float(getattr(cfg, 'dtw_max_dist', 0.6))
-                if not np.isfinite(dist):
-                    dist = maxd * 10.0
-                if dist > (2.0 * maxd):
-                    # too dissimilar; skip candidate
-                    continue
-                elif dist > maxd:
-                    base_conf *= 0.7
-                else:
-                    base_conf = min(1.0, base_conf + 0.1)
-                    
-            details = {
-                'left_shoulder': float(ls_p),
-                'right_shoulder': float(rs_p),
-                'head': float(head_price),
-                'neck_slope': float(slope),
-                'neck_intercept': float(intercept),
-                'neck_r2': float(r2),
-            }
-            out.append(ClassicPatternResult(
-                name=name,
-                status=status,
-                confidence=float(base_conf),
-                start_index=int(lsh),
-                end_index=end_i,
-                start_time=float(t[int(lsh)]) if t.size else None,
-                end_time=float(t[int(end_i)]) if t.size else None,
-                details=details,
-            ))
-        except Exception:
+        if head_idx < 0 or head_idx >= n:
             continue
+        head_price = float(c[head_idx])
+        ls_candidates = [pi for pi in peaks.tolist() if pi < head_idx]
+        rs_candidates = [pi for pi in peaks.tolist() if pi > head_idx]
+        if not ls_candidates or not rs_candidates:
+            continue
+        lsh = int(ls_candidates[-1]); rsh = int(rs_candidates[0])
+        if lsh < 0 or rsh >= n:
+            continue
+        ls_p = float(c[lsh]); rs_p = float(c[rsh])
+        regular = (ls_p < head_price) and (rs_p < head_price)
+        inverse = (ls_p > head_price) and (rs_p > head_price)
+        if not (regular or inverse):
+            continue
+        if not _level_close(ls_p, rs_p, tol_pct * 1.5):
+            continue
+        nl1_candidates = [ti for ti in troughs.tolist() if lsh < ti < head_idx]
+        nl2_candidates = [ti for ti in troughs.tolist() if head_idx < ti < rsh]
+        if not nl1_candidates or not nl2_candidates:
+            continue
+        nl1 = int(nl1_candidates[-1]); nl2 = int(nl2_candidates[0])
+        if nl1 < 0 or nl2 >= n:
+            continue
+
+        slope, intercept, r2 = _fit_line(
+            np.array([nl1, nl2], dtype=float), np.array([c[nl1], c[nl2]], dtype=float)
+        )
+
+        left_span = head_idx - lsh; right_span = rsh - head_idx
+        span_ratio = left_span / float(max(1, right_span))
+        if not (0.5 <= span_ratio <= 2.0):
+            continue
+        sh_avg = (ls_p + rs_p) / 2.0
+        head_prom = (head_price - sh_avg) / abs(sh_avg) * 100.0 if sh_avg != 0 else 0.0
+        if regular and head_prom < max(1.0, tol_pct):
+            continue
+        if inverse and head_prom > -max(1.0, tol_pct):
+            continue
+
+        status = 'forming'
+        name = 'Head and Shoulders' if regular else 'Inverse Head and Shoulders'
+        broke = False
+        end_i = int(rsh)
+        for k in range(1, breakout_look + 1):
+            i = rsh + k
+            if i >= n:
+                break
+            neck_i = slope * i + intercept
+            px = float(c[i])
+            if regular and px < neck_i:
+                status = 'completed'; broke = True; end_i = int(i); break
+            if inverse and px > neck_i:
+                status = 'completed'; broke = True; end_i = int(i); break
+
+        sym_conf = max(0.0, 1.0 - abs(span_ratio - 1.0))
+        sh_sim_conf = max(0.0, 1.0 - (abs(ls_p - rs_p) / max(1e-9, abs(sh_avg))))
+        neck_penalty = max(0.0, 1.0 - min(1.0, abs(slope) / max(1e-6, cfg.max_flat_slope * 5.0)))
+        prom_conf = min(1.0, abs(head_prom) / (tol_pct * 2.0))
+        base_conf = 0.25 * sym_conf + 0.35 * sh_sim_conf + 0.2 * neck_penalty + 0.2 * prom_conf
+        if broke:
+            base_conf = min(1.0, base_conf + 0.1)
+
+        if getattr(cfg, 'use_dtw_check', False):
+            seg_start = max(0, int(lsh))
+            seg_end = int(end_i if broke else rsh)
+            seg = c[seg_start: seg_end + 1].astype(float)
+            seg_n = _znorm(_paa(seg, int(getattr(cfg, 'dtw_paa_len', 80))))
+            tpl = _template_hs(len(seg_n), inverse=bool(inverse))
+            dist = _dtw_distance(seg_n, tpl)
+            maxd = float(getattr(cfg, 'dtw_max_dist', 0.6))
+            if not np.isfinite(dist):
+                dist = maxd * 10.0
+            if dist > (2.0 * maxd):
+                continue
+            if dist > maxd:
+                base_conf *= 0.7
+            else:
+                base_conf = min(1.0, base_conf + 0.1)
+
+        details = {
+            'left_shoulder': float(ls_p),
+            'right_shoulder': float(rs_p),
+            'head': float(head_price),
+            'neck_slope': float(slope),
+            'neck_intercept': float(intercept),
+            'neck_r2': float(r2),
+        }
+        out.append(ClassicPatternResult(
+            name=name,
+            status=status,
+            confidence=float(base_conf),
+            start_index=int(lsh),
+            end_index=end_i,
+            start_time=float(t[int(lsh)]) if t.size else None,
+            end_time=float(t[int(end_i)]) if t.size else None,
+            details=details,
+        ))
     return out
 
 def detect_rounding(
@@ -194,7 +190,7 @@ def detect_rounding(
 ) -> List[ClassicPatternResult]:
     out: List[ClassicPatternResult] = []
     n = c.size
-    W = min(220, n)
+    W = min(int(cfg.rounding_window_bars), n)
     if W < 100:
         return out
         
@@ -202,7 +198,7 @@ def detect_rounding(
     x = np.linspace(-1.0, 1.0, W)
     try:
         qa, qb, qc = np.polyfit(x, seg.astype(float), 2)
-    except Exception:
+    except (TypeError, ValueError, np.linalg.LinAlgError):
         return out
         
     if not (np.isfinite(qa) and np.isfinite(qb) and np.isfinite(qc)):

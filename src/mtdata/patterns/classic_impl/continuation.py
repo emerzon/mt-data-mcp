@@ -99,50 +99,77 @@ def detect_cup_handle(
 ) -> List[ClassicPatternResult]:
     out: List[ClassicPatternResult] = []
     n = c.size
-    W = min(300, n)
-    if W < 120:
+    W = min(int(cfg.cup_handle_max_window_bars), n)
+    if W < int(cfg.cup_handle_min_window_bars):
         return out
-        
+
     seg = c[-W:]
     i_min = int(np.argmin(seg))
-    i_max_left = int(np.argmax(seg[:i_min])) if i_min > 5 else 0
-    i_max_right = int(np.argmax(seg[i_min:])) + i_min if i_min < W - 5 else W - 1
-    left = seg[i_max_left]; bottom = seg[i_min]; right = seg[i_max_right]
-    
-    if left <= 0 or right <= 0:
+    if i_min <= 5 or i_min >= (W - 5):
         return out
-        
-    near_equal_rim = _level_close(left, right, cfg.same_level_tol_pct)
+
+    i_max_left = int(np.argmax(seg[:i_min])) if i_min > 5 else 0
+    left = seg[i_max_left]
+    bottom = seg[i_min]
+    if left <= 0:
+        return out
+
     depth_pct = (left - bottom) / left * 100.0 if left != 0 else 0.0
-    
-    # Handle: small pullback after right rim (last 20% segment)
-    tail = seg[int(W*0.8):]
-    handle_pullback = float(np.max(tail) - tail[-1]) / max(1e-9, np.max(tail)) * 100.0 if tail.size > 2 else 0.0
-    
-    if near_equal_rim and depth_pct > 2.0:
-        conf = min(1.0, 0.6 + 0.4 * (depth_pct / 20.0))
+    if not (float(cfg.cup_handle_min_depth_pct) <= depth_pct <= float(cfg.cup_handle_max_depth_pct)):
+        return out
+
+    handle_frac = float(max(0.05, min(0.5, cfg.cup_handle_handle_window_frac)))
+    handle_region_start = int(round(W * (1.0 - handle_frac)))
+    if handle_region_start <= i_min:
+        return out
+    i_max_right = int(np.argmax(seg[i_min:handle_region_start])) + i_min
+    right = seg[i_max_right]
+    if right <= 0:
+        return out
+    near_equal_rim = _level_close(left, right, cfg.same_level_tol_pct)
+    handle_start = max(int(i_max_right), handle_region_start)
+    tail = seg[handle_start:]
+    if tail.size < 3:
+        return out
+
+    rim = float(max(left, right))
+    handle_floor = float(np.min(tail[1:])) if tail.size > 1 else float(tail[-1])
+    handle_pullback = (rim - handle_floor) / max(1e-9, rim) * 100.0
+    if handle_pullback > float(cfg.cup_handle_max_handle_pullback_pct):
+        return out
+
+    if near_equal_rim:
+        rim_symmetry = max(0.0, 1.0 - abs(left - right) / max(1e-9, rim))
+        depth_score = min(1.0, depth_pct / max(1e-9, float(cfg.cup_handle_max_depth_pct)))
+        conf = min(
+            1.0,
+            float(cfg.cup_handle_confidence_base)
+            + float(cfg.cup_handle_confidence_depth_weight) * depth_score
+            + float(cfg.cup_handle_confidence_symmetry_weight) * rim_symmetry,
+        )
         status = "forming"
-        rim = float(max(left, right))
         tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
         breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
-        break_i = _find_forward_level_breakout(c, int(n - W + i_max_right), rim, "up", breakout_look, tol_abs)
-        
+        handle_anchor = max(int(i_max_right), handle_start)
+        break_i = _find_forward_level_breakout(c, int(n - W + handle_anchor), rim, "up", breakout_look, tol_abs)
+
         if break_i is not None:
             status = "completed"
             conf = min(1.0, conf + 0.08)
-            
+
         out.append(_result(
             "Cup and Handle",
             status,
             conf,
             int(n - W + i_max_left),
-            int(break_i if break_i is not None else (n - W + i_max_right)),
+            int(break_i if break_i is not None else (n - 1)),
             t,
             {
                 "left_rim": float(left),
                 "bottom": float(bottom),
                 "right_rim": float(right),
                 "handle_pullback_pct": float(handle_pullback),
+                "handle_start_index": int(n - W + handle_start),
                 "breakout_level": rim,
                 "breakout_index": int(break_i) if break_i is not None else None,
             },

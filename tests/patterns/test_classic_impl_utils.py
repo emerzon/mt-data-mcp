@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from mtdata.patterns.classic_impl.config import ClassicDetectorConfig
+import mtdata.patterns.classic_impl.utils as utils_mod
 from mtdata.patterns.classic_impl.utils import (
     _level_close,
     _fit_line,
@@ -19,6 +20,7 @@ from mtdata.patterns.classic_impl.utils import (
     _count_touches,
     _calibrate_confidence,
     _collect_calibration_points,
+    _find_recent_breakout,
 )
 
 
@@ -190,6 +192,18 @@ class TestDetectPivotsClose:
         assert peaks.size == 0
         assert troughs.size == 0
 
+    def test_unexpected_find_peaks_error_is_not_flattened(self, monkeypatch):
+        x = np.linspace(100.0, 110.0, 200)
+        cfg = ClassicDetectorConfig(
+            pivot_use_atr_adaptive_prominence=False,
+            pivot_use_atr_adaptive_distance=False,
+        )
+
+        monkeypatch.setattr(utils_mod, "find_peaks", lambda *_args, **_kwargs: (_ for _ in ()).throw(TypeError("boom")))
+
+        with pytest.raises(TypeError, match="boom"):
+            _detect_pivots_close(x, cfg)
+
 
 class TestIsConverging:
     def test_converging(self):
@@ -222,6 +236,15 @@ class TestCountTouches:
         troughs = np.array([30])
         count = _count_touches(upper, lower, peaks, troughs, c, 0.5)
         assert count >= 2
+
+
+class TestFindRecentBreakout:
+    def test_returns_most_recent_breakout(self):
+        close = np.array([100.0, 101.0, 99.0, 102.0])
+        upper = np.array([100.5, 100.5, 100.5, 100.5])
+        direction, idx = _find_recent_breakout(close, upper=upper, lookback_bars=4)
+        assert direction == "up"
+        assert idx == 3
 
 
 class TestCalibrateConfidence:

@@ -14,7 +14,13 @@ from src.mtdata.patterns.candlestick import (
     _is_candlestick_allowed,
     _normalize_candlestick_name,
 )
-from src.mtdata.patterns.classic import ClassicDetectorConfig, _fit_lines_and_arrays, _count_recent_touches, detect_classic_patterns
+from src.mtdata.patterns.classic import (
+    ClassicDetectorConfig,
+    ClassicPatternResult,
+    _fit_lines_and_arrays,
+    _count_recent_touches,
+    detect_classic_patterns,
+)
 import src.mtdata.patterns.candlestick as candlestick_mod
 import src.mtdata.patterns.classic as classic_mod
 from src.mtdata.utils.mt5 import MT5ConnectionError
@@ -601,6 +607,276 @@ def test_count_recent_touches_respects_lookback():
     assert _count_recent_touches(series, close, tol_abs=0.15, lookback_bars=3) == 3
 
 
+def test_detect_classic_patterns_historical_scan_finds_older_prefix_pattern(monkeypatch):
+    n = 220
+    df = pd.DataFrame({"time": np.arange(n, dtype=float), "close": np.linspace(100.0, 120.0, n)})
+
+    def _fake_rounding(c, t, cfg):
+        _ = cfg
+        if len(c) != 140:
+            return []
+        return [
+            ClassicPatternResult(
+                name="Rounding Bottom",
+                status="forming",
+                confidence=0.82,
+                start_index=100,
+                end_index=139,
+                start_time=float(t[100]),
+                end_time=float(t[139]),
+                details={},
+            )
+        ]
+
+    monkeypatch.setattr(classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (np.array([], dtype=int), np.array([], dtype=int)))
+    monkeypatch.setattr(classic_mod, "detect_rounding", _fake_rounding)
+
+    out_default = detect_classic_patterns(df, ClassicDetectorConfig(max_consolidation_bars=5))
+    out_scan = detect_classic_patterns(
+        df,
+        ClassicDetectorConfig(
+            max_consolidation_bars=5,
+            scan_historical=True,
+            scan_step_bars=10,
+            scan_min_prefix_bars=120,
+        ),
+    )
+
+    assert not any(p.name == "Rounding Bottom" for p in out_default)
+    match = next(p for p in out_scan if p.name == "Rounding Bottom")
+    assert match.status == "forming"
+    assert match.end_index == 139
+
+    out_scan_completed = detect_classic_patterns(
+        df,
+        ClassicDetectorConfig(
+            max_consolidation_bars=5,
+            scan_historical=True,
+            scan_step_bars=10,
+            scan_min_prefix_bars=120,
+            auto_complete_stale_forming=True,
+        ),
+    )
+    assert next(p for p in out_scan_completed if p.name == "Rounding Bottom").status == "completed"
+
+
+def test_detect_classic_patterns_surfaces_confidence_calibration_errors(monkeypatch):
+    n = 150
+    df = pd.DataFrame({"time": np.arange(n, dtype=float), "close": np.linspace(100.0, 110.0, n)})
+
+    monkeypatch.setattr(classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (np.array([], dtype=int), np.array([], dtype=int)))
+    monkeypatch.setattr(
+        classic_mod,
+        "detect_rounding",
+        lambda c, t, cfg: [
+            ClassicPatternResult(
+                name="Rounding Bottom",
+                status="forming",
+                confidence=0.7,
+                start_index=40,
+                end_index=149,
+                start_time=float(t[40]),
+                end_time=float(t[149]),
+                details={},
+            )
+        ],
+    )
+    monkeypatch.setattr(classic_mod, "_calibrate_confidence", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    with pytest.raises(RuntimeError, match="boom"):
+        detect_classic_patterns(df, ClassicDetectorConfig(max_consolidation_bars=5))
+
+
+def test_detect_cup_handle_respects_configurable_handle_pullback():
+    from src.mtdata.patterns.classic_impl.continuation import detect_cup_handle
+
+    n = 180
+    anchors = [(0, 100.0), (25, 100.0), (90, 82.0), (135, 100.0), (150, 98.0), (165, 95.0), (179, 101.0)]
+    close = np.full(n, 100.0, dtype=float)
+    for (a_i, a_v), (b_i, b_v) in zip(anchors, anchors[1:]):
+        close[a_i : b_i + 1] = np.linspace(a_v, b_v, b_i - a_i + 1)
+
+    strict_cfg = ClassicDetectorConfig(
+        cup_handle_max_handle_pullback_pct=4.0,
+        breakout_lookahead=40,
+        completion_lookback_bars=40,
+    )
+    relaxed_cfg = ClassicDetectorConfig(
+        cup_handle_max_handle_pullback_pct=6.0,
+        breakout_lookahead=40,
+        completion_lookback_bars=40,
+    )
+
+    out_strict = detect_cup_handle(close, np.arange(n, dtype=float), strict_cfg)
+    out_relaxed = detect_cup_handle(close, np.arange(n, dtype=float), relaxed_cfg)
+
+    assert out_strict == []
+    assert out_relaxed
+    assert out_relaxed[0].status == "completed"
+    assert out_relaxed[0].details["handle_pullback_pct"] == pytest.approx(5.0)
+
+
+def test_detect_triangles_skip_same_sign_converging_shapes(monkeypatch):
+    from src.mtdata.patterns.classic_impl import shapes
+
+    n = 150
+    peaks = np.array([30, 60, 90, 120], dtype=int)
+    troughs = np.array([20, 50, 80, 110], dtype=int)
+    close = np.linspace(100.0, 130.0, n)
+    top = np.linspace(112.0, 118.0, n)
+    bot = np.linspace(102.0, 106.0, n)
+    close[peaks] = top[peaks]
+    close[troughs] = bot[troughs]
+
+    monkeypatch.setattr(shapes, "_fit_lines_and_arrays", lambda *_args, **_kwargs: (0.04, 112.0, 0.9, 0.02, 102.0, 0.9, top, bot))
+    monkeypatch.setattr(shapes, "_is_converging", lambda *_args, **_kwargs: True)
+
+    tri = shapes.detect_triangles(close, peaks, troughs, np.arange(n, dtype=float), ClassicDetectorConfig(min_channel_touches=2))
+    wedge = shapes.detect_wedges(close, peaks, troughs, np.arange(n, dtype=float), ClassicDetectorConfig(min_channel_touches=2))
+
+    assert tri == []
+    assert wedge
+    assert wedge[0].name == "Rising Wedge"
+
+
+def test_detect_rectangles_mark_completed_on_breakout():
+    from src.mtdata.patterns.classic_impl.shapes import detect_rectangles
+
+    n = 120
+    close = np.full(n, 100.0, dtype=float)
+    peaks = np.array([20, 40, 60], dtype=int)
+    troughs = np.array([30, 50, 70], dtype=int)
+    close[peaks] = 105.0
+    close[troughs] = 95.0
+    close[-1] = 106.0
+
+    out = detect_rectangles(close, peaks, troughs, np.arange(n, dtype=float), ClassicDetectorConfig(min_channel_touches=2))
+
+    assert out
+    assert out[0].status == "completed"
+    assert out[0].details["breakout_direction"] == "up"
+
+
+def test_detect_trend_lines_extend_to_current_bar():
+    from src.mtdata.patterns.classic_impl.trend import detect_trend_lines
+
+    n = 140
+    close = np.linspace(100.0, 120.0, n)
+    peaks = np.array([20, 50, 80, 110], dtype=int)
+    troughs = np.array([10, 40, 70, 100], dtype=int)
+    close[peaks] = np.linspace(104.0, 118.0, peaks.size)
+    close[troughs] = np.linspace(98.0, 112.0, troughs.size)
+
+    out = detect_trend_lines(close, peaks, troughs, np.arange(n, dtype=float), ClassicDetectorConfig())
+
+    assert out
+    assert all(p.end_index == (n - 1) for p in out)
+
+
+def test_detect_channels_allow_small_absolute_slope_spread(monkeypatch):
+    from src.mtdata.patterns.classic_impl import trend
+
+    n = 160
+    close = np.linspace(100.0, 101.0, n)
+    peaks = np.array([30, 60, 90, 120, 150], dtype=int)
+    troughs = np.array([20, 50, 80, 110, 140], dtype=int)
+    upper = 110.0 + (2e-5 * np.arange(n, dtype=float))
+    lower = 100.0 + (9e-5 * np.arange(n, dtype=float))
+
+    monkeypatch.setattr(trend, "_fit_lines_and_arrays", lambda *_args, **_kwargs: (2e-5, 110.0, 0.95, 9e-5, 100.0, 0.95, upper, lower))
+    monkeypatch.setattr(trend, "_is_converging", lambda *_args, **_kwargs: False)
+
+    out = trend.detect_channels(
+        close,
+        peaks,
+        troughs,
+        np.arange(n, dtype=float),
+        ClassicDetectorConfig(min_channel_touches=2, channel_parallel_slope_ratio=0.15),
+    )
+
+    assert out
+    assert out[0].name == "Horizontal Channel"
+
+
+def test_detect_diamonds_respects_geometry_threshold(monkeypatch):
+    from src.mtdata.patterns.classic_impl import shapes
+
+    n = 200
+    close = np.linspace(100.0, 101.0, n)
+    close[-1] = 111.0
+    peaks = np.array([30, 60, 90, 130, 160], dtype=int)
+    troughs = np.array([20, 50, 100, 140, 170], dtype=int)
+
+    def _fake_fit(x, y):
+        _ = y
+        xs = tuple(int(v) for v in x.tolist())
+        if xs == tuple(peaks[peaks < 100].tolist()):
+            return 0.05, 102.0, 0.9
+        if xs == tuple(troughs[troughs < 100].tolist()):
+            return -0.05, 98.0, 0.9
+        if xs == tuple(peaks[peaks >= 100].tolist()):
+            return -0.05, 115.0, 0.9
+        if xs == tuple(troughs[troughs >= 100].tolist()):
+            return 0.05, 85.0, 0.9
+        return 0.0, 100.0, 0.0
+
+    monkeypatch.setattr(shapes, "_detect_pivots_close", lambda seg, cfg, *args: (peaks, troughs))
+    monkeypatch.setattr(shapes, "_fit_line", _fake_fit)
+
+    out_strict = shapes.detect_diamonds(
+        close,
+        np.arange(n, dtype=float),
+        ClassicDetectorConfig(
+            use_robust_fit=False,
+            diamond_min_boundary_r2=0.0,
+            diamond_min_width_ratio=1.5,
+            breakout_lookahead=40,
+            completion_lookback_bars=40,
+        ),
+    )
+    out_relaxed = shapes.detect_diamonds(
+        close,
+        np.arange(n, dtype=float),
+        ClassicDetectorConfig(
+            use_robust_fit=False,
+            diamond_min_boundary_r2=0.0,
+            diamond_min_width_ratio=1.2,
+            breakout_lookahead=40,
+            completion_lookback_bars=40,
+        ),
+    )
+
+    assert out_strict == []
+    assert out_relaxed
+    assert out_relaxed[0].status == "completed"
+    assert out_relaxed[0].details["diamond_split_index"] == 100
+
+
+def test_detect_diamonds_forward_high_low_arrays_to_pivot_detection(monkeypatch):
+    from src.mtdata.patterns.classic_impl import shapes
+
+    n = 150
+    close = np.linspace(100.0, 105.0, n)
+    high = close + 1.0
+    low = close - 1.0
+    captured = {}
+
+    def _fake_pivots(seg, cfg, seg_h, seg_l):
+        _ = seg
+        _ = cfg
+        captured["high"] = seg_h.copy()
+        captured["low"] = seg_l.copy()
+        return np.array([], dtype=int), np.array([], dtype=int)
+
+    monkeypatch.setattr(shapes, "_detect_pivots_close", _fake_pivots)
+
+    out = shapes.detect_diamonds(close, np.arange(n, dtype=float), ClassicDetectorConfig(), high, low)
+
+    assert out == []
+    assert np.array_equal(captured["high"], high[-n:])
+    assert np.array_equal(captured["low"], low[-n:])
+
+
 def test_detect_classic_patterns_disables_aliases_by_default(monkeypatch):
     n = 150
     x = np.linspace(0, 4 * np.pi, n)
@@ -909,7 +1185,8 @@ def test_detect_classic_converging_parallel_shape_excludes_channel(monkeypatch):
         ),
     )
     names = {p.name for p in out}
-    assert "Symmetrical Triangle" in names
+    assert "Falling Wedge" in names
+    assert "Symmetrical Triangle" not in names
     assert not any("Channel" in name for name in names)
 
 

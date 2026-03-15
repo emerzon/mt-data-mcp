@@ -21,7 +21,7 @@ def detect_trend_lines(
 
     for side, piv in (("high", peaks), ("low", troughs)):
         if piv.size >= max(3, cfg.min_touches):
-            k = min(8, piv.size)
+            k = min(int(cfg.max_pattern_pivots), piv.size)
             idxs = piv[-k:]
             xs = idxs.astype(float)
             ys = c[idxs]
@@ -50,7 +50,7 @@ def detect_trend_lines(
                 "line_level_recent": float(line_vals[recent_i]),
                 "completion_touches_recent": int(recent_touches),
             }
-            base_item = _result(name, status, conf, int(idxs[0]), int(idxs[-1]), t, details)
+            base_item = _result(name, status, conf, int(idxs[0]), int(n - 1), t, details)
             results.append(base_item)
             
             if tl_dir != 'Horizontal' and bool(cfg.include_aliases):
@@ -69,7 +69,7 @@ def detect_channels(
         return ch_results
         
     n = c.size
-    k = min(8, peaks.size, troughs.size)
+    k = min(int(cfg.max_pattern_pivots), peaks.size, troughs.size)
     ih = peaks[-k:]
     il = troughs[-k:]
     
@@ -77,8 +77,8 @@ def detect_channels(
     
     slope_diff = abs(sh - sl)
     approx_parallel = slope_diff <= max(
-        1e-4,
-        float(cfg.channel_parallel_slope_ratio) * max(abs(sh), abs(sl), cfg.max_flat_slope),
+        float(cfg.channel_parallel_min_abs_tol),
+        float(cfg.channel_parallel_slope_ratio) * max(abs(sh), abs(sl)),
     )
     converging = _is_converging(upper, lower, k, n, cfg)
     width = upper - lower

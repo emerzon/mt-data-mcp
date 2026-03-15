@@ -1,4 +1,5 @@
 from __future__ import annotations
+import copy
 from typing import List, Optional, Dict, Any
 import numpy as np
 import pandas as pd
@@ -32,20 +33,15 @@ __all__ = [
     "detect_classic_patterns",
 ]
 
-def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfig] = None) -> List[ClassicPatternResult]:
-    """Detect classic chart patterns on OHLCV DataFrame with 'time' and 'close' columns.
-
-    Returns a list of ClassicPatternResult with details and confidence.
-    """
-    if cfg is None:
-        cfg = ClassicDetectorConfig()
+def _prepare_classic_inputs(
+    df: pd.DataFrame,
+    cfg: ClassicDetectorConfig,
+) -> Optional[tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]]:
     if not isinstance(df, pd.DataFrame) or 'close' not in df.columns:
-        return []
-    
-    # Enforce max bars limit
+        return None
     if len(df) > cfg.max_bars:
         df = df.iloc[-cfg.max_bars:].copy()
-        
+
     t = _build_time_array(df)
     c = to_float_np(df['close'])
     h = to_float_np(df['high']) if 'high' in df.columns else c
@@ -56,8 +52,18 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         l = c
     n = c.size
     if n < 100:
-        return []
+        return None
+    return df, t, c, h, l, n
 
+
+def _detect_classic_patterns_once(
+    t: np.ndarray,
+    c: np.ndarray,
+    h: np.ndarray,
+    l: np.ndarray,
+    n: int,
+    cfg: ClassicDetectorConfig,
+) -> List[ClassicPatternResult]:
     try:
         peaks, troughs = _detect_pivots_close(c, cfg, h, l)
     except TypeError:
@@ -65,78 +71,153 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
         peaks, troughs = _detect_pivots_close(c, cfg)
 
     results: List[ClassicPatternResult] = []
-
-    # 1. Trend Patterns
     results.extend(detect_trend_lines(c, peaks, troughs, t, cfg))
     results.extend(detect_channels(c, peaks, troughs, t, cfg))
-
-    # 2. Shape Patterns
     results.extend(detect_rectangles(c, peaks, troughs, t, cfg))
     results.extend(detect_triangles(c, peaks, troughs, t, cfg))
     results.extend(detect_wedges(c, peaks, troughs, t, cfg))
     results.extend(detect_broadening(c, peaks, troughs, t, cfg))
-    results.extend(detect_diamonds(c, t, cfg))
-
-    # 3. Reversal Patterns
+    results.extend(detect_diamonds(c, t, cfg, h, l))
     results.extend(detect_tops_bottoms(c, peaks, troughs, t, cfg))
     results.extend(detect_head_shoulders(c, peaks, troughs, t, cfg))
     results.extend(detect_rounding(c, t, cfg))
-
-    # 4. Continuation Patterns
     results.extend(detect_flags_pennants(c, h, l, t, n, cfg))
     results.extend(detect_cup_handle(c, t, cfg))
+    return results
 
-    # Post-processing
-    
-    # Optional backward-compatible status aging.
-    if bool(cfg.auto_complete_stale_forming):
-        try:
-            recent_bars = 3
-            for i, r in enumerate(results):
-                try:
-                    if r.status == 'forming' and r.end_index < (n - recent_bars):
-                        results[i] = ClassicPatternResult(
-                            name=r.name,
-                            status='completed',
-                            confidence=r.confidence,
-                            start_index=r.start_index,
-                            end_index=r.end_index,
-                            start_time=r.start_time,
-                            end_time=r.end_time,
-                            details=r.details,
-                        )
-                except Exception:
-                    continue
-        except Exception:
-            pass
 
-    # Optional confidence calibration map from raw->empirical likelihood.
-    for r in results:
-        try:
-            raw_conf = float(r.confidence)
-            cal_conf = _calibrate_confidence(raw_conf, r.name, cfg)
-            if bool(getattr(cfg, "calibrate_confidence", False)):
-                if not isinstance(r.details, dict):
-                    r.details = {}
-                r.details["raw_confidence"] = float(raw_conf)
-                r.details["calibrated_confidence"] = float(cal_conf)
-            r.confidence = float(cal_conf)
-        except Exception:
+def _pattern_overlap_ratio(a: ClassicPatternResult, b: ClassicPatternResult) -> float:
+    lo = max(int(a.start_index), int(b.start_index))
+    hi = min(int(a.end_index), int(b.end_index))
+    if hi < lo:
+        return 0.0
+    inter = hi - lo + 1
+    union = max(int(a.end_index), int(b.end_index)) - min(int(a.start_index), int(b.start_index)) + 1
+    if union <= 0:
+        return 0.0
+    return float(inter) / float(union)
+
+
+def _prefer_pattern_candidate(
+    current: ClassicPatternResult,
+    candidate: ClassicPatternResult,
+) -> ClassicPatternResult:
+    current_rank = (
+        1 if str(current.status).lower() == "completed" else 0,
+        int(current.end_index),
+        float(current.confidence),
+    )
+    candidate_rank = (
+        1 if str(candidate.status).lower() == "completed" else 0,
+        int(candidate.end_index),
+        float(candidate.confidence),
+    )
+    return candidate if candidate_rank > current_rank else current
+
+
+def _merge_scanned_patterns(
+    existing: List[ClassicPatternResult],
+    new_results: List[ClassicPatternResult],
+    cfg: ClassicDetectorConfig,
+) -> List[ClassicPatternResult]:
+    overlap_min = float(max(0.0, min(1.0, getattr(cfg, "scan_dedupe_overlap", 0.8))))
+    merged = list(existing)
+    for candidate in new_results:
+        match_i: Optional[int] = None
+        for i, prior in enumerate(merged):
+            if prior.name != candidate.name:
+                continue
+            if _pattern_overlap_ratio(prior, candidate) < overlap_min:
+                continue
+            match_i = i
+            break
+        if match_i is None:
+            merged.append(candidate)
             continue
+        merged[match_i] = _prefer_pattern_candidate(merged[match_i], candidate)
+    return merged
 
-    # Lifecycle metadata used by downstream consumers.
+
+def _scan_classic_patterns(
+    df: pd.DataFrame,
+    cfg: ClassicDetectorConfig,
+) -> List[ClassicPatternResult]:
+    n_total = len(df)
+    step = max(1, int(getattr(cfg, "scan_step_bars", 10)))
+    min_prefix = max(100, int(getattr(cfg, "scan_min_prefix_bars", 120)))
+    prefix_ends = list(range(min_prefix, n_total + 1, step))
+    if not prefix_ends or prefix_ends[-1] != n_total:
+        prefix_ends.append(n_total)
+
+    scan_cfg = copy.deepcopy(cfg)
+    scan_cfg.scan_historical = False
+
+    merged: List[ClassicPatternResult] = []
+    for end in prefix_ends:
+        prepared = _prepare_classic_inputs(df.iloc[:end], scan_cfg)
+        if prepared is None:
+            continue
+        _, t, c, h, l, n = prepared
+        batch = _detect_classic_patterns_once(t, c, h, l, n, scan_cfg)
+        merged = _merge_scanned_patterns(merged, batch, cfg)
+    return merged
+
+
+def _postprocess_classic_results(
+    results: List[ClassicPatternResult],
+    cfg: ClassicDetectorConfig,
+    n: int,
+) -> List[ClassicPatternResult]:
+    if bool(cfg.auto_complete_stale_forming):
+        recent_bars = 3
+        for i, r in enumerate(results):
+            if r.status == 'forming' and r.end_index < (n - recent_bars):
+                results[i] = ClassicPatternResult(
+                    name=r.name,
+                    status='completed',
+                    confidence=r.confidence,
+                    start_index=r.start_index,
+                    end_index=r.end_index,
+                    start_time=r.start_time,
+                    end_time=r.end_time,
+                    details=r.details,
+                )
+
+    for r in results:
+        raw_conf = float(r.confidence)
+        cal_conf = _calibrate_confidence(raw_conf, r.name, cfg)
+        if not isinstance(r.details, dict):
+            r.details = {}
+        if bool(getattr(cfg, "calibrate_confidence", False)):
+            r.details["raw_confidence"] = float(raw_conf)
+            r.details["calibrated_confidence"] = float(cal_conf)
+        r.confidence = float(cal_conf)
+
     if bool(getattr(cfg, "include_lifecycle_metadata", True)):
         for r in results:
-            try:
-                if not isinstance(r.details, dict):
-                    r.details = {}
-                if r.status == "completed":
-                    r.details.setdefault("lifecycle_state", "confirmed")
-                else:
-                    r.details.setdefault("lifecycle_state", "forming")
-            except Exception:
-                continue
+            if not isinstance(r.details, dict):
+                r.details = {}
+            if r.status == "completed":
+                r.details.setdefault("lifecycle_state", "confirmed")
+            else:
+                r.details.setdefault("lifecycle_state", "forming")
 
-    # Sort results by end_index (recency) then confidence
     results.sort(key=lambda r: (r.end_index, r.confidence), reverse=True)
     return results
+
+
+def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfig] = None) -> List[ClassicPatternResult]:
+    """Detect classic chart patterns on OHLCV DataFrame with 'time' and 'close' columns."""
+    if cfg is None:
+        cfg = ClassicDetectorConfig()
+    prepared = _prepare_classic_inputs(df, cfg)
+    if prepared is None:
+        return []
+
+    _, t, c, h, l, n = prepared
+    if bool(getattr(cfg, "scan_historical", False)):
+        results = _scan_classic_patterns(prepared[0], cfg)
+    else:
+        results = _detect_classic_patterns_once(t, c, h, l, n, cfg)
+
+    return _postprocess_classic_results(results, cfg, n)
