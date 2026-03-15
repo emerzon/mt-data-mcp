@@ -231,14 +231,14 @@ class TestConsolidateOutputModes:
         res = _consolidate_payload(payload, "bocpd", "full")
         assert res["params_used"] == {"hazard_lambda": 100}
 
-    def test_summary_preserved(self):
+    def test_summary_removed_from_consolidated_outputs(self):
         payload = {
             "symbol": "X", "timeframe": "H1", "method": "bocpd",
             "times": ["T1"], "cp_prob": [0.0], "change_points": [],
             "summary": {"lookback": 10},
         }
         res = _consolidate_payload(payload, "bocpd", "full")
-        assert res["summary"] == {"lookback": 10}
+        assert "summary" not in res
 
 
 class TestConsolidateEdgeCases:
@@ -284,12 +284,15 @@ class TestSummaryOnlyPayload:
             "symbol": "EURUSD", "timeframe": "H1", "method": "bocpd",
             "target": "return", "success": True,
             "summary": {"x": 1}, "params_used": {"y": 2}, "threshold": 0.5,
+            "reliability": {"confidence": 0.7}, "tuning_hint": "hint",
             "times": [1, 2], "cp_prob": [0.1, 0.2],
         }
         res = _summary_only_payload(p)
         assert res["symbol"] == "EURUSD"
         assert "times" not in res
         assert "threshold" in res
+        assert res["reliability"] == {"confidence": 0.7}
+        assert res["tuning_hint"] == "hint"
 
     def test_missing_optional_keys(self):
         res = _summary_only_payload({"symbol": "X", "method": "hmm"})

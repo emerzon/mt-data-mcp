@@ -47,8 +47,8 @@ def test_regime_detect_defaults_to_compact_output() -> None:
         out = raw(symbol="EURUSD", timeframe="H1", limit=80, method="bocpd", threshold=0.5, lookback=20)
 
     assert out.get("success") is True
-    assert "summary" in out
-    assert out["summary"].get("lookback") == 20
+    assert "summary" not in out
+    assert "reliability" in out
     assert "regimes" in out
 
 
@@ -368,7 +368,7 @@ def test_bocpd_summary_contains_reliability_fields() -> None:
     assert "confidence" in summary
     assert "expected_false_alarm_rate" in summary
     assert "calibration_age_bars" in summary
-    rel = summary.get("reliability", {})
+    rel = out.get("reliability", {})
     assert "confidence" in rel
     assert "expected_false_alarm_rate" in rel
     assert "calibration_age_bars" in rel

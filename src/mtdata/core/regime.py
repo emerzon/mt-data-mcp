@@ -659,10 +659,13 @@ def _consolidate_payload(payload: Dict[str, Any], method: str, output_mode: str,
             "method": payload.get("method"),
             "success": True
         }
-        
-        # Copy summary if exists
-        if "summary" in payload:
-            new_payload["summary"] = payload["summary"]
+
+        if "threshold" in payload:
+            new_payload["threshold"] = payload["threshold"]
+        if "reliability" in payload:
+            new_payload["reliability"] = payload["reliability"]
+        if "tuning_hint" in payload:
+            new_payload["tuning_hint"] = payload["tuning_hint"]
             
         # Add consolidated table
         new_payload["regimes"] = final_segments
@@ -705,10 +708,14 @@ def _summary_only_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
     if "summary" in payload:
         out["summary"] = payload["summary"]
+    if "reliability" in payload:
+        out["reliability"] = payload["reliability"]
     if "params_used" in payload:
         out["params_used"] = payload["params_used"]
     if "threshold" in payload:
         out["threshold"] = payload["threshold"]
+    if "tuning_hint" in payload:
+        out["tuning_hint"] = payload["tuning_hint"]
     return out
 
 
@@ -1010,7 +1017,6 @@ def regime_detect(
                     "confidence": float(reliability.get("confidence", 0.0)),
                     "expected_false_alarm_rate": float(reliability.get("expected_false_alarm_rate", expected_fa_rate)),
                     "calibration_age_bars": int(reliability.get("calibration_age_bars", calibration_age_bars)),
-                    "reliability": reliability,
                 }
                 if tuning_hint is not None:
                     summary["tuning_hint"] = tuning_hint
