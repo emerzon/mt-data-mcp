@@ -334,6 +334,9 @@ def test_detect_candlestick_patterns_prefilters_methods_by_whitelist(monkeypatch
 
     assert res["success"] is True
     assert calls == ["cdl_alpha"]
+    assert res["min_strength"] == pytest.approx(0.95)
+    assert res["signal_cutoff"] == pytest.approx(95.0)
+    assert res["signal_scale"] == "pandas_ta_signal_x100"
 
 
 def test_extract_candlestick_rows_respects_start_index():
@@ -1127,7 +1130,39 @@ def test_detect_head_shoulders_fits_neckline_with_all_internal_troughs(monkeypat
 
     assert out
     assert captured["x"] == [2.0, 5.0, 6.0]
+    assert out[0].details["neckline_source"] == "troughs"
     assert out[0].details["neck_points"] == 3
+
+
+def test_detect_inverse_head_shoulders_uses_internal_peaks_for_neckline(monkeypatch):
+    from src.mtdata.patterns.classic_impl import reversal
+
+    captured = {}
+
+    def _fake_fit(x, y):
+        captured["x"] = x.tolist()
+        captured["y"] = y.tolist()
+        return 0.0, 105.0, 0.85
+
+    monkeypatch.setattr(reversal, "_fit_line", _fake_fit)
+
+    close = np.array([105.0, 110.0, 95.0, 100.0, 96.0, 111.0, 97.0], dtype=float)
+    peaks = np.array([1, 3, 3, 5], dtype=int)
+    troughs = np.array([2, 4], dtype=int)
+
+    out = reversal.detect_head_shoulders(
+        close,
+        peaks,
+        troughs,
+        np.arange(close.size, dtype=float),
+        ClassicDetectorConfig(same_level_tol_pct=2.0, use_dtw_check=False, use_robust_fit=False),
+    )
+
+    assert out
+    inverse = next(pattern for pattern in out if pattern.name == "Inverse Head and Shoulders")
+    assert captured["x"] == [3.0, 3.0]
+    assert inverse.details["neckline_source"] == "peaks"
+    assert inverse.details["neck_points"] == 2
 
 
 def test_dedupe_overlapping_head_shoulders_results():

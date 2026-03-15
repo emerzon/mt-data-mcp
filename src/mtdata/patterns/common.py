@@ -28,3 +28,14 @@ class PatternResultBase:
             return None
         value = float(arr[idx])
         return value if np.isfinite(value) else None
+
+
+def interval_overlap_ratio(a_start: int, a_end: int, b_start: int, b_end: int) -> float:
+    """Return the inclusive overlap ratio between two index intervals."""
+    lo = max(int(a_start), int(b_start))
+    hi = min(int(a_end), int(b_end))
+    inter = max(0, hi - lo + 1)
+    union = max(int(a_end), int(b_end)) - min(int(a_start), int(b_start)) + 1
+    if union <= 0:
+        return 0.0
+    return float(inter) / float(union)

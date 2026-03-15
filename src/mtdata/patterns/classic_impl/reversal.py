@@ -1,22 +1,12 @@
 import numpy as np
 from typing import List, Optional
-from ..common import PatternResultBase
+from ..common import PatternResultBase, interval_overlap_ratio as _interval_overlap_ratio
 from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
     _level_close, _tol_abs_from_close, _find_forward_level_breakout,
     _fit_line, _fit_line_robust, _result, 
     _template_hs, _znorm, _paa, _dtw_distance
 )
-
-
-def _interval_overlap_ratio(a_start: int, a_end: int, b_start: int, b_end: int) -> float:
-    lo = max(int(a_start), int(b_start))
-    hi = min(int(a_end), int(b_end))
-    inter = max(0, hi - lo + 1)
-    union = max(int(a_end), int(b_end)) - min(int(a_start), int(b_start)) + 1
-    if union <= 0:
-        return 0.0
-    return float(inter) / float(union)
 
 
 def _dedupe_overlapping_patterns(
@@ -165,7 +155,8 @@ def detect_head_shoulders(
         if nl1 < 0 or nl2 >= n:
             continue
 
-        neck_idxs = np.asarray([ti for ti in troughs.tolist() if lsh < ti < rsh], dtype=int)
+        neckline_source = troughs if regular else peaks
+        neck_idxs = np.asarray([idx for idx in neckline_source.tolist() if lsh < idx < rsh], dtype=int)
         if neck_idxs.size < 2:
             continue
         neck_x = neck_idxs.astype(float)
@@ -231,6 +222,7 @@ def detect_head_shoulders(
             'left_shoulder': float(ls_p),
             'right_shoulder': float(rs_p),
             'head': float(head_price),
+            'neckline_source': 'troughs' if regular else 'peaks',
             'neck_slope': float(slope),
             'neck_intercept': float(intercept),
             'neck_r2': float(r2),

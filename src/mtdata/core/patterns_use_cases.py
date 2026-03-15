@@ -226,6 +226,7 @@ def run_patterns_detect(
         combined_patterns: List[Dict[str, Any]] = []
         failed_timeframes: Dict[str, str] = {}
         series_by_timeframe: Dict[str, Dict[str, Any]] = {}
+        warnings_out: List[str] = []
 
         for tf in scanned_timeframes:
             df, err = fetch_pattern_data(request.symbol, tf, request.limit, request.denoise)
@@ -246,6 +247,10 @@ def run_patterns_detect(
                 "n_patterns": int(len(filtered)),
                 "patterns": filtered,
             }
+            tf_warnings = df.attrs.get("warnings")
+            if isinstance(tf_warnings, list) and tf_warnings:
+                finding_row["warnings"] = [str(w) for w in tf_warnings if str(w)]
+                warnings_out.extend(f"{tf}: {str(w)}" for w in tf_warnings if str(w))
             if int(len(filtered)) == 0:
                 finding_row["diagnostic"] = (
                     f"No valid Elliott Wave structures detected in {int(request.limit)} {tf} bars. "
@@ -300,6 +305,8 @@ def run_patterns_detect(
             )
         if failed_timeframes:
             resp["failed_timeframes"] = failed_timeframes
+        if warnings_out:
+            resp["warnings"] = warnings_out
         if request.include_series:
             resp["series_by_timeframe"] = series_by_timeframe
         if detail_value == "compact":

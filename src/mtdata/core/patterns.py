@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import math
 from typing import Any, Callable, Dict, Optional, List, Tuple, Literal
 import importlib
 import copy
@@ -6,7 +7,7 @@ import logging
 import pandas as pd
 import warnings
 
-from .constants import TIMEFRAME_MAP
+from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway, mt5_connection_error
 from .patterns_support import (
@@ -63,6 +64,30 @@ def _patterns_connection_error() -> Optional[Dict[str, Any]]:
     )
 
 
+def _should_drop_last_pattern_bar(
+    df: pd.DataFrame,
+    timeframe: str,
+    *,
+    now_utc: Optional[datetime] = None,
+) -> bool:
+    if len(df) < 2:
+        return False
+    seconds_per_bar = float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
+    if seconds_per_bar <= 0 or "time" not in df.columns:
+        return True
+    try:
+        last_open = float(pd.to_numeric(df["time"], errors="coerce").iloc[-1])
+    except Exception:
+        return True
+    if not math.isfinite(last_open):
+        return True
+    current_ts = float((now_utc or datetime.now(timezone.utc)).timestamp())
+    elapsed = current_ts - last_open
+    if elapsed < 0:
+        return True
+    return elapsed < seconds_per_bar
+
+
 def _fetch_pattern_data(
     symbol: str,
     timeframe: str,
@@ -102,10 +127,12 @@ def _fetch_pattern_data(
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             df['volume'] = df['tick_volume']
-    
-    # Drop the last (potentially incomplete) bar
-    if len(df) >= 2:
-        df = df.iloc[:-1]
+
+    warnings_out: List[str] = []
+
+    # Drop the last bar only when it is still open or cannot be validated.
+    if _should_drop_last_pattern_bar(df, timeframe, now_utc=utc_now):
+        df = df.iloc[:-1].copy()
     
     # Apply denoising if requested
     if denoise:
@@ -113,12 +140,17 @@ def _fetch_pattern_data(
             dn = _normalize_denoise_spec(denoise, default_when='pre_ti')
             if dn:
                 _apply_denoise_util(df, dn, default_when='pre_ti')
-        except Exception:
-            pass
+        except Exception as exc:
+            warning = f"Denoise failed for pattern detection on {symbol} {timeframe}; raw prices were used."
+            logger.warning(warning, exc_info=True)
+            warnings_out.append(f"{warning} {exc}")
     
     # Trim to requested limit
     if len(df) > int(limit):
         df = df.iloc[-int(limit):].copy()
+
+    if warnings_out:
+        df.attrs["warnings"] = list(warnings_out)
     
     return df, None
 
@@ -178,6 +210,9 @@ def _build_pattern_response(
             f"{_elliott_timeframe_suggestion(timeframe)} "
             "You can also increase lookback or focus on a clearer trending segment."
         )
+    warnings_out = df.attrs.get("warnings")
+    if isinstance(warnings_out, list) and warnings_out:
+        resp["warnings"] = [str(w) for w in warnings_out if str(w)]
     
     # Include series data if requested
     if include_series:

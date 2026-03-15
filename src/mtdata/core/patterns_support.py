@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from ..patterns.common import interval_overlap_ratio as _interval_overlap_ratio
 from ..utils.utils import _format_time_minimal, _safe_float, to_float_np as __to_float_np
 
 _STOCK_PATTERN_CODE_TO_NAME = {
@@ -760,17 +761,6 @@ def _parse_native_scale_factors(config: Optional[Dict[str, Any]]) -> List[float]
     if 1.0 not in [round(value, 4) for value in out]:
         out.insert(0, 1.0)
     return out
-
-
-def _interval_overlap_ratio(a_start: int, a_end: int, b_start: int, b_end: int) -> float:
-    lo = max(int(a_start), int(b_start))
-    hi = min(int(a_end), int(b_end))
-    inter = max(0, hi - lo + 1)
-    union = max(int(a_end), int(b_end)) - min(int(a_start), int(b_start)) + 1
-    if union <= 0:
-        return 0.0
-    return float(inter) / float(union)
-
 
 def _resolve_engine_weights(
     engines: List[str],

@@ -155,6 +155,19 @@ class TestClassifyWaves:
         labels, gmm, scaler, probs, imp = _classify_waves(features, ElliottWaveConfig())
         assert labels.size == 0
 
+    def test_respects_min_gmm_wave_floor(self):
+        rng = np.random.RandomState(7)
+        features = rng.randn(6, 3)
+        labels, gmm, scaler, probs, imp = _classify_waves(
+            features,
+            ElliottWaveConfig(min_gmm_waves=8),
+        )
+        assert labels.size == 0
+        assert gmm is None
+        assert scaler is None
+        assert probs is None
+        assert imp is None
+
     def test_enough_features(self):
         """Lines 280-284: successful GMM classification."""
         rng = np.random.RandomState(42)
@@ -367,6 +380,9 @@ class TestBuildResult:
         labels = [wp["label"] for wp in result.details["wave_points_labeled"]]
         assert labels == ["S", "A", "B", "C"]
         assert result.details["pattern_family"] == "correction"
+        assert result.details["sequence_direction"] == "bull"
+        assert result.details["prior_impulse_direction"] == "bear"
+        assert result.details["trend_context"] == "counter_trend"
         assert "correction_metrics" in result.details
 
     def test_impulse_labels(self):
@@ -382,6 +398,29 @@ class TestBuildResult:
         result = analyzer.build_result(scenario)
         labels = [wp["label"] for wp in result.details["wave_points_labeled"]]
         assert labels[0] == "W0"
+
+    def test_fallback_result_exposes_validated_wave_type(self):
+        c = _impulse_close()
+        t = np.arange(6, dtype=float) * 3600 + 1_700_000_000
+        analyzer = ElliottWaveAnalyzer(c, t, ElliottWaveConfig())
+        rule_eval = _evaluate_impulse_rules(c, [0, 1, 2, 3, 4, 5], bullish=True)
+        scenario = ElliottScenario(
+            pivots=[0, 1, 2, 3, 4, 5],
+            bullish=True,
+            confidence=0.4,
+            cls_score=0.5,
+            rule_eval=rule_eval,
+            threshold_used=0.5,
+            min_distance_used=1,
+            fallback_candidate=True,
+            wave_type="Candidate",
+            validated_wave_type="Impulse",
+        )
+
+        result = analyzer.build_result(scenario)
+
+        assert result.wave_type == "Candidate"
+        assert result.details["candidate_validates_as"] == "impulse"
 
 
 # ===== ElliottWaveAnalyzer.build_fallback (lines 623-651) ==================

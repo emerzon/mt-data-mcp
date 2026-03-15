@@ -694,6 +694,14 @@ class TestBuildPatternResponse:
         assert "series_close" in resp
         assert "series_epoch" in resp
 
+    def test_includes_dataframe_warnings(self):
+        df = _make_ohlcv_df(100)
+        df.attrs["warnings"] = ["sample warning"]
+
+        resp = self._call(df=df)
+
+        assert resp["warnings"] == ["sample warning"]
+
 
 # ── _build_stock_pattern_frame ───────────────────────────────────────────
 
@@ -877,6 +885,48 @@ class TestFetchPatternData:
         mock_rates.return_value = _make_rates_array(200)
         df, err = self._call("EURUSD", "H1", 100)
         assert err is None  # should still succeed
+
+    @patch("mtdata.core.patterns.mt5")
+    @patch("mtdata.core.patterns.datetime")
+    @patch("mtdata.core.patterns._mt5_copy_rates_from")
+    def test_keeps_last_closed_bar(self, mock_rates, mock_datetime, mock_mt5):
+        mock_mt5.symbol_info.return_value = MagicMock(visible=True)
+        mock_rates.return_value = _make_rates_array(200)
+        mock_datetime.now.return_value = datetime(2024, 1, 9, 8, 30, tzinfo=timezone.utc)
+
+        df, err = self._call("EURUSD", "H1", 100)
+
+        assert err is None
+        assert df is not None
+        assert int(df["time"].iloc[-1]) == int(mock_rates.return_value[-1].time)
+
+    @patch("mtdata.core.patterns.mt5")
+    @patch("mtdata.core.patterns.datetime")
+    @patch("mtdata.core.patterns._mt5_copy_rates_from")
+    def test_drops_last_open_bar(self, mock_rates, mock_datetime, mock_mt5):
+        mock_mt5.symbol_info.return_value = MagicMock(visible=True)
+        mock_rates.return_value = _make_rates_array(200)
+        mock_datetime.now.return_value = datetime(2024, 1, 9, 7, 30, tzinfo=timezone.utc)
+
+        df, err = self._call("EURUSD", "H1", 100)
+
+        assert err is None
+        assert df is not None
+        assert int(df["time"].iloc[-1]) == int(mock_rates.return_value[-2].time)
+
+    @patch("mtdata.core.patterns.mt5")
+    @patch("mtdata.core.patterns._apply_denoise_util", side_effect=RuntimeError("boom"))
+    @patch("mtdata.core.patterns._mt5_copy_rates_from")
+    def test_denoise_failure_is_exposed_as_warning(self, mock_rates, _mock_denoise, mock_mt5):
+        mock_mt5.symbol_info.return_value = MagicMock(visible=True)
+        mock_rates.return_value = _make_rates_array(200)
+
+        df, err = self._call("EURUSD", "H1", 100, denoise={"method": "ema"})
+
+        assert err is None
+        assert df is not None
+        assert "warnings" in df.attrs
+        assert any("raw prices were used" in str(w) for w in df.attrs["warnings"])
 
 
 # ── _format_elliott_patterns ─────────────────────────────────────────────

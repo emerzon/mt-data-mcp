@@ -26,6 +26,14 @@ _symbol_ready_guard: Any = None
 _CANDLESTICK_PATTERN_METHOD_CACHE: Optional[Tuple[str, ...]] = None
 _CANDLESTICK_PATTERN_METHOD_CACHE_KEY: Optional[str] = None
 _CANDLESTICK_PATTERN_METHOD_CACHE_LOCK = Lock()
+_ROBUST_CANDLESTICK_WHITELIST = {
+    'engulfing', 'harami', '3inside', '3outside', 'eveningstar', 'morningstar',
+    'darkcloudcover', 'piercing', 'inside', 'outside', 'hikkake'
+}
+_DEPRIORITIZED_CANDLESTICK_PATTERNS = {
+    'shortline', 'longline', 'spinningtop', 'highwave',
+    'marubozu', 'closingmarubozu', 'doji', 'gravestonedoji', 'longleggeddoji', 'rickshawman'
+}
 
 
 def _normalize_candlestick_name(pattern_name: str) -> str:
@@ -335,10 +343,6 @@ def detect_candlestick_patterns(
     if not pattern_methods:
         return {"error": "No candlestick pattern detectors (cdl_*) found in pandas_ta."}
 
-    _robust_whitelist = {
-        'engulfing', 'harami', '3inside', '3outside', 'eveningstar', 'morningstar',
-        'darkcloudcover', 'piercing', 'inside', 'outside', 'hikkake'
-    }
     parsed_whitelist: Optional[set[str]] = None
     if whitelist and isinstance(whitelist, str):
         try:
@@ -351,7 +355,7 @@ def detect_candlestick_patterns(
     pattern_methods = _filter_candlestick_pattern_methods(
         pattern_methods,
         robust_only=bool(robust_only),
-        robust_set=_robust_whitelist,
+        robust_set=_ROBUST_CANDLESTICK_WHITELIST,
         whitelist_set=parsed_whitelist,
     )
     if not pattern_methods:
@@ -391,34 +395,33 @@ def detect_candlestick_patterns(
     start_index = 0
     if last_n_val is not None and len(df) > last_n_val:
         start_index = int(len(df) - last_n_val)
-    _deprioritize = {
-        'shortline', 'longline', 'spinningtop', 'highwave',
-        'marubozu', 'closingmarubozu', 'doji', 'gravestonedoji', 'longleggeddoji', 'rickshawman'
-    }
-
     rows = _extract_candlestick_rows(
         df,
         temp,
         pattern_cols,
         threshold=thr,
         robust_only=bool(robust_only),
-        robust_set=_robust_whitelist,
+        robust_set=_ROBUST_CANDLESTICK_WHITELIST,
         whitelist_set=parsed_whitelist,
         min_gap=gap,
         top_k=k,
-        deprioritize=_deprioritize,
+        deprioritize=_DEPRIORITIZED_CANDLESTICK_PATTERNS,
         include_metrics=True,
         start_index=start_index,
     )
 
     headers = ["time", "pattern", "direction", "confidence", "price"]
     payload = _table_from_rows(headers, rows)
+    signal_cutoff = float(thr) * 100.0
     payload.update({
         "success": True,
         "symbol": symbol,
         "timeframe": timeframe,
         "candles": int(limit),
         "mode": "candlestick",
+        "min_strength": float(thr),
+        "signal_cutoff": float(signal_cutoff),
+        "signal_scale": "pandas_ta_signal_x100",
     })
     if last_n_val is not None:
         payload["last_n_bars"] = int(last_n_val)
