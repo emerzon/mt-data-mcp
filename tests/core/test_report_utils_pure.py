@@ -1177,8 +1177,8 @@ class TestRenderForecastSection:
     def test_with_forecast_timing_context(self):
         data = {
             "method": "theta",
-            "last_observation_time": "2026-03-02 18:00 UTC",
-            "forecast_start_time": "2026-03-02 19:00 UTC",
+            "last_observation_epoch": 1740948000.0,
+            "forecast_start_epoch": 1740951600.0,
             "forecast_anchor": "next_timeframe_bar_after_last_observation",
             "forecast_start_gap_bars": 1.0,
             "forecast_step_seconds": 3600,

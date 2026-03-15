@@ -455,8 +455,6 @@ def _collect_session_gaps(
                 {
                     "from": from_disp,
                     "to": to_disp,
-                    "from_epoch": prev_t,
-                    "to_epoch": curr_t,
                     "gap_seconds": gap_seconds,
                     "expected_bar_seconds": expected_bar_seconds,
                     "missing_bars_est": int(missing_bars_est),
@@ -1033,8 +1031,6 @@ def fetch_ticks(
                 "count": int(len(df_stats)),
                 "start": str(df_stats["time"].iloc[0]),
                 "end": str(df_stats["time"].iloc[-1]),
-                "start_epoch": start_epoch,
-                "end_epoch": end_epoch,
                 "duration_seconds": duration_seconds,
                 "tick_rate_per_second": tick_rate_per_second,
                 "timezone": timezone,

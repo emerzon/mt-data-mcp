@@ -3,12 +3,23 @@ from __future__ import annotations
 import logging
 import time
 import warnings
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from .execution_logging import log_operation_exception, run_logged_operation
 from .report_requests import ReportGenerateRequest
 
 logger = logging.getLogger(__name__)
+
+
+def _report_time_label(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value
+    try:
+        epoch = float(value)
+    except Exception:
+        return None
+    return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
 def _has_payload_error(payload: Any) -> bool:
@@ -274,8 +285,12 @@ def run_report_generate(
                                 )
                     summ.append(forecast_line)
                     timing_parts: List[str] = []
-                    last_obs = fc.get("last_observation_time")
-                    start_time = fc.get("forecast_start_time")
+                    last_obs = _report_time_label(
+                        fc.get("last_observation_time", fc.get("last_observation_epoch"))
+                    )
+                    start_time = _report_time_label(
+                        fc.get("forecast_start_time", fc.get("forecast_start_epoch"))
+                    )
                     anchor = fc.get("forecast_anchor")
                     if last_obs:
                         timing_parts.append(f"last_obs={last_obs}")

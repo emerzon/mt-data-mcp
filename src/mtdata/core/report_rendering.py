@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Tuple
 
 from .report_shared import (
@@ -16,6 +17,16 @@ from .report_shared import (
     _get_indicator_value,
     format_number,
 )
+
+
+def _report_time_label(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value
+    try:
+        epoch = float(value)
+    except Exception:
+        return None
+    return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
 def render_enhanced_report(report: Dict[str, Any]) -> str:
@@ -364,10 +375,16 @@ def _render_forecast_section(data: Any) -> List[str]:
     method = data.get("method")
     if method:
         lines.append(f"- Method: {method}")
-    if data.get("last_observation_time") is not None:
-        lines.append(f"- Last observation: {data.get('last_observation_time')}")
-    if data.get("forecast_start_time") is not None:
-        lines.append(f"- Forecast start: {data.get('forecast_start_time')}")
+    last_observation = _report_time_label(
+        data.get("last_observation_time", data.get("last_observation_epoch"))
+    )
+    forecast_start = _report_time_label(
+        data.get("forecast_start_time", data.get("forecast_start_epoch"))
+    )
+    if last_observation is not None:
+        lines.append(f"- Last observation: {last_observation}")
+    if forecast_start is not None:
+        lines.append(f"- Forecast start: {forecast_start}")
     if data.get("forecast_anchor") is not None:
         lines.append(f"- Forecast anchor: {data.get('forecast_anchor')}")
     if data.get("forecast_start_gap_bars") is not None:

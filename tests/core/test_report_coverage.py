@@ -550,8 +550,8 @@ class TestReportSummaryVolForecast:
     def test_forecast_timing_in_summary(self):
         sec = _make_full_sections()
         sec["forecast"].update({
-            "last_observation_time": "2026-03-02 18:00 UTC",
-            "forecast_start_time": "2026-03-02 19:00 UTC",
+            "last_observation_epoch": 1740948000.0,
+            "forecast_start_epoch": 1740951600.0,
             "forecast_anchor": "next_timeframe_bar_after_last_observation",
         })
         res = self._run_report(sec)

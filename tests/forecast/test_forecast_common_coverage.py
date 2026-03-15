@@ -577,7 +577,6 @@ class TestFormatForecastOutput:
         )
         assert result["last_observation_epoch"] == 1000.0
         assert result["forecast_start_epoch"] == 1300.0
-        assert result["forecast_start_gap_seconds"] == 300.0
         assert result["forecast_start_gap_bars"] == 1.0
         assert result["forecast_step_seconds"] == 300
         assert result["forecast_anchor"] == "next_timeframe_bar_after_last_observation"

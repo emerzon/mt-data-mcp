@@ -626,8 +626,8 @@ def _mock_forecast_data():
         "upper_price": 104.0,
         "trend": "up",
         "ci_alpha": 0.05,
-        "last_observation_time": "2026-03-02 18:00 UTC",
-        "forecast_start_time": "2026-03-02 19:00 UTC",
+        "last_observation_epoch": 1740948000.0,
+        "forecast_start_epoch": 1740951600.0,
         "forecast_anchor": "next_timeframe_bar_after_last_observation",
     }
 
@@ -965,8 +965,8 @@ class TestTemplateBasic:
         # If best method was found, forecast section should be populated
         assert "method" in forecast or "error" in forecast
         if "error" not in forecast:
-            assert forecast.get("last_observation_time")
-            assert forecast.get("forecast_start_time")
+            assert forecast.get("last_observation_epoch") is not None
+            assert forecast.get("forecast_start_epoch") is not None
             assert forecast.get("forecast_anchor")
 
     @patch(f"{_BASIC_MODULE}._get_raw_result")
