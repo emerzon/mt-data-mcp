@@ -246,6 +246,16 @@ def _tol_abs_from_close(close: np.ndarray, tol_pct: float) -> float:
     return abs(med) * (float(tol_pct) / 100.0)
 
 
+def _boundary_tol_abs(boundary: float, tol_abs: float, tol_pct: Optional[float] = None) -> float:
+    tol_floor = abs(float(tol_abs))
+    if tol_pct is None:
+        return tol_floor
+    pct = abs(float(tol_pct)) / 100.0
+    if pct <= 0.0 or not np.isfinite(boundary) or abs(boundary) <= 1e-12:
+        return tol_floor
+    return abs(boundary) * pct
+
+
 def _result(name: str, status: str, confidence: float,
             start_index: int, end_index: int,
             t: np.ndarray, details: Dict[str, Any]) -> ClassicPatternResult:
@@ -344,6 +354,7 @@ def _find_recent_breakout(
     upper: Optional[np.ndarray] = None,
     lower: Optional[np.ndarray] = None,
     tol_abs: float = 0.0,
+    tol_pct: Optional[float] = None,
     lookback_bars: int = 8,
 ) -> Tuple[Optional[str], Optional[int]]:
     n = int(close.size)
@@ -357,12 +368,14 @@ def _find_recent_breakout(
         px = float(close[i])
         if upper is not None and i < int(upper.size):
             up = float(upper[i])
-            if np.isfinite(up) and px > (up + tol_abs):
+            tol = _boundary_tol_abs(up, tol_abs, tol_pct)
+            if np.isfinite(up) and px > (up + tol):
                 last_dir = "up"
                 last_idx = int(i)
         if lower is not None and i < int(lower.size):
             lo = float(lower[i])
-            if np.isfinite(lo) and px < (lo - tol_abs):
+            tol = _boundary_tol_abs(lo, tol_abs, tol_pct)
+            if np.isfinite(lo) and px < (lo - tol):
                 last_dir = "down"
                 last_idx = int(i)
     return last_dir, last_idx
@@ -375,17 +388,19 @@ def _find_forward_level_breakout(
     direction: str,
     lookahead: int,
     tol_abs: float,
+    tol_pct: Optional[float] = None,
 ) -> Optional[int]:
     n = int(close.size)
     if n <= 0:
         return None
     lo = max(0, int(start_idx) + 1)
     hi = min(n, lo + max(1, int(lookahead)))
+    tol = _boundary_tol_abs(float(level), tol_abs, tol_pct)
     for i in range(lo, hi):
         px = float(close[i])
-        if direction == "up" and px > (float(level) + tol_abs):
+        if direction == "up" and px > (float(level) + tol):
             return int(i)
-        if direction == "down" and px < (float(level) - tol_abs):
+        if direction == "down" and px < (float(level) - tol):
             return int(i)
     return None
 

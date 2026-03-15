@@ -90,7 +90,15 @@ def detect_tops_bottoms(
                 neckline = float(np.min(c[start_i:end_i + 1])) if kind == "top" else float(np.max(c[start_i:end_i + 1]))
                 direction = "down" if kind == "top" else "up"
                 breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
-                break_i = _find_forward_level_breakout(c, end_i, neckline, direction, breakout_look, tol_abs)
+                break_i = _find_forward_level_breakout(
+                    c,
+                    end_i,
+                    neckline,
+                    direction,
+                    breakout_look,
+                    tol_abs,
+                    tol_pct=float(cfg.same_level_tol_pct),
+                )
                 if break_i is not None:
                     status = "completed"
                 out.append(ClassicPatternResult(

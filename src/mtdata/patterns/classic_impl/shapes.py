@@ -64,6 +64,7 @@ def _build_line_bounded_pattern_results(
         upper=shape["top"],
         lower=shape["bot"],
         tol_abs=shape["tol_abs"],
+        tol_pct=float(cfg.same_level_tol_pct),
         lookback_bars=breakout_look,
     )
 
@@ -93,6 +94,12 @@ def _build_line_bounded_pattern_results(
         results.append(_alias(base, alias_name, alias_scale))
     return results
 
+
+def _required_rectangle_side_matches(count: int) -> int:
+    if count <= 4:
+        return count
+    return max(count - 1, int(np.ceil(0.8 * count)))
+
 def detect_rectangles(
     c: np.ndarray,
     peaks: np.ndarray,
@@ -112,11 +119,13 @@ def detect_rectangles(
     if top <= bot:
         return out
         
-    equal_highs = np.mean([_level_close(v, top, cfg.same_level_tol_pct) for v in ph])
-    equal_lows = np.mean([_level_close(v, bot, cfg.same_level_tol_pct) for v in pl])
-    touches = int(np.round(equal_highs * ph.size + equal_lows * pl.size))
+    high_hits = int(np.sum([_level_close(v, top, cfg.same_level_tol_pct) for v in ph]))
+    low_hits = int(np.sum([_level_close(v, bot, cfg.same_level_tol_pct) for v in pl]))
+    touches = int(high_hits + low_hits)
+    required_high_hits = _required_rectangle_side_matches(int(ph.size))
+    required_low_hits = _required_rectangle_side_matches(int(pl.size))
     
-    if equal_highs > 0.6 and equal_lows > 0.6 and touches >= cfg.min_channel_touches - 1:
+    if high_hits >= required_high_hits and low_hits >= required_low_hits and touches >= cfg.min_channel_touches - 1:
         geom_ok = 1.0
         conf = _conf(touches, 1.0, geom_ok, cfg)
         status = "forming"
@@ -124,7 +133,14 @@ def detect_rectangles(
         bot_line = np.full(n, bot, dtype=float)
         tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
         breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
-        bdir, bidx = _find_recent_breakout(c, upper=top_line, lower=bot_line, tol_abs=tol_abs, lookback_bars=breakout_look)
+        bdir, bidx = _find_recent_breakout(
+            c,
+            upper=top_line,
+            lower=bot_line,
+            tol_abs=tol_abs,
+            tol_pct=float(cfg.same_level_tol_pct),
+            lookback_bars=breakout_look,
+        )
 
         if bdir is not None and bidx is not None:
             status = "completed"
@@ -141,6 +157,8 @@ def detect_rectangles(
                 "resistance": top,
                 "support": bot,
                 "touches": touches,
+                "matched_highs": high_hits,
+                "matched_lows": low_hits,
                 "breakout_direction": bdir,
                 "breakout_index": int(bidx) if bidx is not None else None,
             },
@@ -218,7 +236,14 @@ def detect_broadening(
         tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
         status = "forming"
         breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
-        bdir, bidx = _find_recent_breakout(c, upper=top, lower=bot, tol_abs=tol_abs, lookback_bars=breakout_look)
+        bdir, bidx = _find_recent_breakout(
+            c,
+            upper=top,
+            lower=bot,
+            tol_abs=tol_abs,
+            tol_pct=float(cfg.same_level_tol_pct),
+            lookback_bars=breakout_look,
+        )
         
         if bdir is not None and bidx is not None:
             status = "completed"
@@ -362,7 +387,14 @@ def detect_diamonds(
     status = "forming"
     tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
     breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
-    bdir, bidx_local = _find_recent_breakout(seg, upper=best["upper"], lower=best["lower"], tol_abs=tol_abs, lookback_bars=breakout_look)
+    bdir, bidx_local = _find_recent_breakout(
+        seg,
+        upper=best["upper"],
+        lower=best["lower"],
+        tol_abs=tol_abs,
+        tol_pct=float(cfg.same_level_tol_pct),
+        lookback_bars=breakout_look,
+    )
 
     if bdir is not None and bidx_local is not None:
         status = "completed"

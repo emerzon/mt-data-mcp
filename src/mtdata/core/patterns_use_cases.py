@@ -163,12 +163,6 @@ def run_patterns_detect(
             out_list = list(non_empty.get(only_engine, []))
 
         out_list = enrich_classic_patterns(out_list, df, cfg)
-        visible_rows = (
-            out_list
-            if request.include_completed
-            else [row for row in out_list if str(row.get("status", "")).lower() == "forming"]
-        )
-
         resp = build_pattern_response(
             request.symbol,
             tf_single,
@@ -186,7 +180,15 @@ def run_patterns_detect(
         resp["engine_findings"] = summarize_engine_findings(
             per_engine, engines, request.include_completed
         )
-        signal_summary = summarize_pattern_bias(visible_rows)
+        signal_summary = None
+        if detail_value == "compact":
+            summary = resp.get("summary")
+            if isinstance(summary, dict):
+                signal_summary = summary.get("signal_bias")
+        else:
+            rows = resp.get("patterns")
+            if isinstance(rows, list):
+                signal_summary = summarize_pattern_bias(rows)
         if signal_summary:
             resp["signal_summary"] = signal_summary
         if engine_errors:

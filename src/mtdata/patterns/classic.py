@@ -192,6 +192,10 @@ def _postprocess_classic_results(
             r.details["calibrated_confidence"] = float(cal_conf)
         r.confidence = float(cal_conf)
 
+    min_conf = float(max(0.0, min(1.0, getattr(cfg, "min_confidence", 0.0))))
+    if min_conf > 0.0:
+        results = [r for r in results if float(r.confidence) >= min_conf]
+
     if bool(getattr(cfg, "include_lifecycle_metadata", True)):
         for r in results:
             if not isinstance(r.details, dict):

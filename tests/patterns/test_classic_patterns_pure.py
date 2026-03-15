@@ -8,6 +8,10 @@ from mtdata.patterns.classic import (
     ClassicDetectorConfig,
     ClassicPatternResult,
 )
+from mtdata.patterns.classic import _postprocess_classic_results
+from mtdata.patterns.classic_impl.continuation import detect_flags_pennants
+from mtdata.patterns.classic_impl.shapes import detect_rectangles
+from mtdata.patterns.classic_impl.utils import _find_recent_breakout
 
 
 def _make_ohlcv(n=200, seed=42):
@@ -76,6 +80,104 @@ class TestDetectClassicPatterns:
         df = pd.DataFrame({"close": close, "time": np.arange(n, dtype=float)})
         results = detect_classic_patterns(df)
         assert isinstance(results, list)
+
+    def test_postprocess_filters_below_min_confidence(self):
+        cfg = ClassicDetectorConfig(min_confidence=0.3)
+        results = [
+            ClassicPatternResult(
+                name="Low Confidence",
+                status="forming",
+                confidence=0.29,
+                start_index=0,
+                end_index=10,
+                start_time=None,
+                end_time=None,
+                details={},
+            ),
+            ClassicPatternResult(
+                name="Keeps",
+                status="forming",
+                confidence=0.31,
+                start_index=1,
+                end_index=11,
+                start_time=None,
+                end_time=None,
+                details={},
+            ),
+        ]
+
+        out = _postprocess_classic_results(results, cfg, n=20)
+
+        assert [r.name for r in out] == ["Keeps"]
+
+    def test_detect_rectangles_rejects_multiple_side_outliers(self):
+        n = 140
+        close = np.full(n, 100.0, dtype=float)
+        peaks = np.array([20, 40, 60, 80, 100], dtype=int)
+        troughs = np.array([30, 50, 70, 90, 110], dtype=int)
+        close[peaks] = np.array([105.0, 105.0, 105.0, 108.0, 109.0], dtype=float)
+        close[troughs] = 95.0
+
+        out = detect_rectangles(
+            close,
+            peaks,
+            troughs,
+            np.arange(n, dtype=float),
+            ClassicDetectorConfig(min_channel_touches=2),
+        )
+
+        assert out == []
+
+    def test_find_recent_breakout_uses_boundary_relative_tolerance(self):
+        close = np.array([100.0, 100.0, 100.0, 200.5], dtype=float)
+        upper = np.array([100.0, 100.0, 100.0, 200.0], dtype=float)
+
+        direction, idx = _find_recent_breakout(
+            close,
+            upper=upper,
+            tol_abs=0.4,
+            tol_pct=0.4,
+            lookback_bars=2,
+        )
+
+        assert direction is None
+        assert idx is None
+
+    def test_detect_flags_pennants_rejects_slow_poles(self, monkeypatch):
+        from mtdata.patterns.classic_impl import continuation
+
+        n = 180
+        window = 60
+        close = np.full(n, 100.0, dtype=float)
+        seg = np.linspace(100.0, 104.0, window)
+        close[-window:] = seg
+
+        peaks = np.array([8, 18, 28, 38], dtype=int)
+        troughs = np.array([4, 14, 24, 34], dtype=int)
+        top = np.linspace(104.0, 103.2, window)
+        bot = np.linspace(102.0, 102.6, window)
+
+        monkeypatch.setattr(continuation, "_detect_pivots_close", lambda *_args, **_kwargs: (peaks, troughs))
+        monkeypatch.setattr(
+            continuation,
+            "_fit_lines_and_arrays",
+            lambda *_args, **_kwargs: (-0.03, 104.0, 0.9, 0.02, 102.0, 0.9, top.copy(), bot.copy()),
+        )
+
+        out = detect_flags_pennants(
+            close,
+            close + 0.1,
+            close - 0.1,
+            np.arange(n, dtype=float),
+            n,
+            ClassicDetectorConfig(
+                max_consolidation_bars=window,
+                min_pole_return_pct=3.0,
+                min_pole_slope_pct_per_bar=0.2,
+            ),
+        )
+
+        assert out == []
 
     def test_large_dataset_capped(self):
         """Max bars limit should be respected."""

@@ -34,15 +34,23 @@ def detect_flags_pennants(
     pole_base = float(c[pole_base_idx])
     seg_high = float(np.max(seg))
     seg_low = float(np.min(seg))
+    bull_tip_idx_local = int(np.argmax(seg))
+    bear_tip_idx_local = int(np.argmin(seg))
     bull_ret = (seg_high - pole_base) / max(1e-9, abs(pole_base)) * 100.0
     bear_ret = (seg_low - pole_base) / max(1e-9, abs(pole_base)) * 100.0
     if abs(bull_ret) >= abs(bear_ret):
         ret = float(bull_ret)
         pole_tip = float(seg_high)
+        pole_tip_idx_local = bull_tip_idx_local
     else:
         ret = float(bear_ret)
         pole_tip = float(seg_low)
+        pole_tip_idx_local = bear_tip_idx_local
     if abs(ret) < cfg.min_pole_return_pct:
+        return out
+    pole_bars = max(1, int((idx0 + pole_tip_idx_local) - pole_base_idx))
+    pole_slope_pct_per_bar = abs(ret) / float(pole_bars)
+    if pole_slope_pct_per_bar < float(max(0.0, getattr(cfg, "min_pole_slope_pct_per_bar", 0.0))):
         return out
 
     seg_h = h[-window:] if h.size >= window else seg
@@ -78,7 +86,14 @@ def detect_flags_pennants(
         status = "forming"
         tol_abs = _tol_abs_from_close(seg, cfg.same_level_tol_pct)
         breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
-        bdir, bidx_local = _find_recent_breakout(seg, upper=top, lower=bot, tol_abs=tol_abs, lookback_bars=breakout_look)
+        bdir, bidx_local = _find_recent_breakout(
+            seg,
+            upper=top,
+            lower=bot,
+            tol_abs=tol_abs,
+            tol_pct=float(cfg.same_level_tol_pct),
+            lookback_bars=breakout_look,
+        )
         expected = "up" if ret > 0 else "down"
         
         if bdir == expected and bidx_local is not None:
@@ -94,6 +109,8 @@ def detect_flags_pennants(
             t,
             {
                 "pole_return_pct": float(ret),
+                "pole_slope_pct_per_bar": float(pole_slope_pct_per_bar),
+                "pole_tip_index": int(idx0 + pole_tip_idx_local),
                 "pole_base_price": float(pole_base),
                 "pole_tip_price": float(pole_tip),
                 "top_slope": float(sh),
@@ -169,7 +186,15 @@ def detect_cup_handle(
         tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
         breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
         handle_anchor = max(int(i_max_right), handle_start)
-        break_i = _find_forward_level_breakout(c, int(n - W + handle_anchor), rim, "up", breakout_look, tol_abs)
+        break_i = _find_forward_level_breakout(
+            c,
+            int(n - W + handle_anchor),
+            rim,
+            "up",
+            breakout_look,
+            tol_abs,
+            tol_pct=float(cfg.same_level_tol_pct),
+        )
 
         if break_i is not None:
             status = "completed"

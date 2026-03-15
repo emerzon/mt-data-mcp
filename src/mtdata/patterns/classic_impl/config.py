@@ -25,6 +25,7 @@ class ClassicDetectorConfig:
     max_flat_slope: float = 1e-4     # absolute slope to consider line flat (price units per bar)
     min_r2: float = 0.6              # minimum R^2 for line fit confidence
     max_pattern_pivots: int = 8      # max recent pivots used by line-based detectors
+    min_confidence: float = 0.30     # global post-calibration floor for emitted classic patterns
     # Levels tolerance (same-level checks)
     same_level_tol_pct: float = 0.4  # peaks/lows considered equal if within this percent
     # Pattern-specific
@@ -32,6 +33,7 @@ class ClassicDetectorConfig:
     min_channel_touches: int = 4     # across both bounds
     max_consolidation_bars: int = 60 # for flags/pennants after pole
     min_pole_return_pct: float = 2.0 # minimum pole size (percent) before a flag/pennant
+    min_pole_slope_pct_per_bar: float = 0.15  # minimum pole steepness to reject slow drifts
     breakout_lookahead: int = 8      # bars to consider breakout confirmation
     cup_handle_min_window_bars: int = 120
     cup_handle_max_window_bars: int = 300
