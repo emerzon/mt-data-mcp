@@ -3,15 +3,25 @@ from typing import Any, Dict
 import logging
 
 from ._mcp_instance import mcp
-from .data_requests import DataFetchCandlesRequest, DataFetchTicksRequest, WaitCandleRequest
-from .data_use_cases import run_data_fetch_candles, run_data_fetch_ticks, run_wait_candle
+from .data_requests import (
+    DataFetchCandlesRequest,
+    DataFetchTicksRequest,
+    WaitCandleRequest,
+    WaitEventRequest,
+)
+from .data_use_cases import (
+    run_data_fetch_candles,
+    run_data_fetch_ticks,
+    run_wait_candle,
+    run_wait_event,
+)
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
 from ..services.data_service import fetch_candles, fetch_ticks
 from ..utils.mt5 import ensure_mt5_connection_or_raise
 
 # Explicitly define what should be exported for '*' imports
-__all__ = ['data_fetch_candles', 'data_fetch_ticks', 'wait_candle']
+__all__ = ['data_fetch_candles', 'data_fetch_ticks', 'wait_event', 'wait_candle']
 
 logger = logging.getLogger(__name__)
 
@@ -135,10 +145,42 @@ def data_fetch_ticks(
 
 
 @mcp.tool()
+def wait_event(
+    request: WaitEventRequest,
+) -> Dict[str, Any]:
+    """Wait for account or market events, optionally ending on candle-close boundaries.
+
+    `watch_for` holds the events to match, such as `order_filled`,
+    `position_opened`, `price_change`, or `volume_spike`.
+    If `watch_for` is omitted, the tool listens to all supported account events
+    by default, plus market events when `symbol` is available at the request
+    level. Pass `watch_for=[]` to disable watched events and use only `end_on`
+    boundaries.
+    `end_on` holds boundary conditions, currently `candle_close`, that stop the
+    wait if nothing else happens first.
+
+    Use `max_wait_seconds` as a hard safety cap for MCP clients. For market
+    movement events, windows are tick-based (`ticks`) or recent-duration-based
+    (`minutes`), and thresholds can be fixed (`fixed_pct`) or adaptive
+    (`ratio_to_baseline`, `zscore`) over recent tick activity.
+    """
+    return run_logged_operation(
+        logger,
+        operation="wait_event",
+        watch_for=len(request.watch_for or []),
+        end_on=len(request.end_on),
+        func=lambda: run_wait_event(
+            request,
+            gateway=get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
+        ),
+    )
+
+
+@mcp.tool()
 def wait_candle(
     request: WaitCandleRequest,
 ) -> Dict[str, Any]:
-    """Sleep until the next candle on `timeframe` is closed.
+    """Compatibility alias for waiting on a single candle-close boundary.
 
     This uses the configured MT5 server timezone or offset to align candle
     boundaries. For example, `timeframe="M5"` waits until the next M5 candle

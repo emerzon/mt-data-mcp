@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .schema import DenoiseSpec, IndicatorSpec, SimplifySpec, TimeframeLiteral
 
@@ -141,6 +141,22 @@ def _validate_non_negative(value: Optional[float], name: str) -> Optional[float]
     return value_f
 
 
+def _validate_positive_float(value: float, name: str) -> float:
+    value_f = float(value)
+    if value_f <= 0:
+        raise ValueError(f"{name} must be greater than 0.")
+    return value_f
+
+
+def _validate_optional_ticket(value: Optional[int], name: str) -> Optional[int]:
+    if value is None:
+        return None
+    value_i = int(value)
+    if value_i <= 0:
+        raise ValueError(f"{name} must be greater than 0.")
+    return value_i
+
+
 def _validate_indicator_entries(value: Any) -> Any:
     if value is None or not isinstance(value, list):
         return value
@@ -218,3 +234,184 @@ class WaitCandleRequest(BaseModel):
     @classmethod
     def _validate_max_wait_seconds(cls, value: Optional[float]) -> Optional[float]:
         return _validate_non_negative(value, "max_wait_seconds")
+
+
+class WaitEventWindow(BaseModel):
+    kind: Literal["minutes", "ticks"] = "minutes"
+    value: float = 5.0
+
+    @field_validator("value")
+    @classmethod
+    def _validate_value(cls, value: float) -> float:
+        return _validate_positive_float(value, "window.value")
+
+
+class _WaitAccountEventBase(BaseModel):
+    symbol: Optional[str] = None
+    order_ticket: Optional[int] = None
+    position_ticket: Optional[int] = None
+    magic: Optional[int] = None
+    side: Optional[Literal["buy", "sell"]] = None
+
+    @field_validator("order_ticket")
+    @classmethod
+    def _validate_order_ticket(cls, value: Optional[int]) -> Optional[int]:
+        return _validate_optional_ticket(value, "order_ticket")
+
+    @field_validator("position_ticket")
+    @classmethod
+    def _validate_position_ticket(cls, value: Optional[int]) -> Optional[int]:
+        return _validate_optional_ticket(value, "position_ticket")
+
+    @field_validator("side")
+    @classmethod
+    def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        text = str(value).strip().lower()
+        if text not in {"buy", "sell"}:
+            raise ValueError("side must be 'buy' or 'sell'.")
+        return text
+
+
+class CandleCloseEventSpec(BaseModel):
+    type: Literal["candle_close"] = "candle_close"
+    timeframe: Optional[TimeframeLiteral] = None
+    buffer_seconds: Optional[float] = None
+
+    @field_validator("buffer_seconds")
+    @classmethod
+    def _validate_buffer_seconds(cls, value: Optional[float]) -> Optional[float]:
+        return _validate_non_negative(value, "buffer_seconds")
+
+
+class OrderCreatedEventSpec(_WaitAccountEventBase):
+    type: Literal["order_created"] = "order_created"
+
+
+class OrderFilledEventSpec(_WaitAccountEventBase):
+    type: Literal["order_filled"] = "order_filled"
+
+
+class OrderCancelledEventSpec(_WaitAccountEventBase):
+    type: Literal["order_cancelled"] = "order_cancelled"
+
+
+class PositionOpenedEventSpec(_WaitAccountEventBase):
+    type: Literal["position_opened"] = "position_opened"
+
+
+class PositionClosedEventSpec(_WaitAccountEventBase):
+    type: Literal["position_closed"] = "position_closed"
+
+
+class TpHitEventSpec(_WaitAccountEventBase):
+    type: Literal["tp_hit"] = "tp_hit"
+
+
+class SlHitEventSpec(_WaitAccountEventBase):
+    type: Literal["sl_hit"] = "sl_hit"
+
+
+class PriceChangeEventSpec(BaseModel):
+    type: Literal["price_change"] = "price_change"
+    symbol: Optional[str] = None
+    window: WaitEventWindow = Field(default_factory=WaitEventWindow)
+    baseline_window: WaitEventWindow = Field(
+        default_factory=lambda: WaitEventWindow(kind="minutes", value=60.0)
+    )
+    price_source: Literal["auto", "bid", "ask", "mid", "last"] = "auto"
+    direction: Literal["up", "down", "either"] = "either"
+    threshold_mode: Literal["fixed_pct", "ratio_to_baseline", "zscore"] = "ratio_to_baseline"
+    threshold_value: float = 2.0
+
+    @field_validator("threshold_value")
+    @classmethod
+    def _validate_threshold_value(cls, value: float) -> float:
+        return _validate_positive_float(value, "threshold_value")
+
+
+class VolumeSpikeEventSpec(BaseModel):
+    type: Literal["volume_spike"] = "volume_spike"
+    symbol: Optional[str] = None
+    window: WaitEventWindow = Field(default_factory=WaitEventWindow)
+    baseline_window: WaitEventWindow = Field(
+        default_factory=lambda: WaitEventWindow(kind="minutes", value=60.0)
+    )
+    source: Literal["auto", "tick_count", "volume", "volume_real"] = "auto"
+    threshold_mode: Literal["ratio_to_baseline", "zscore"] = "ratio_to_baseline"
+    threshold_value: float = 2.0
+
+    @field_validator("threshold_value")
+    @classmethod
+    def _validate_threshold_value(cls, value: float) -> float:
+        return _validate_positive_float(value, "threshold_value")
+
+
+WaitWatchEventSpec = Annotated[
+    OrderCreatedEventSpec
+    | OrderFilledEventSpec
+    | OrderCancelledEventSpec
+    | PositionOpenedEventSpec
+    | PositionClosedEventSpec
+    | TpHitEventSpec
+    | SlHitEventSpec
+    | PriceChangeEventSpec
+    | VolumeSpikeEventSpec,
+    Field(discriminator="type"),
+]
+
+WaitBoundaryEventSpec = CandleCloseEventSpec
+
+
+class WaitEventRequest(BaseModel):
+    watch_for: Optional[List[WaitWatchEventSpec]] = None
+    end_on: List[WaitBoundaryEventSpec] = Field(default_factory=list)
+    symbol: Optional[str] = None
+    timeframe: Optional[TimeframeLiteral] = None
+    order_ticket: Optional[int] = None
+    position_ticket: Optional[int] = None
+    magic: Optional[int] = None
+    side: Optional[Literal["buy", "sell"]] = None
+    buffer_seconds: float = 1.0
+    poll_interval_seconds: float = 0.5
+    max_wait_seconds: Optional[float] = 600.0
+    accept_preexisting: bool = False
+
+    @field_validator("order_ticket")
+    @classmethod
+    def _validate_order_ticket(cls, value: Optional[int]) -> Optional[int]:
+        return _validate_optional_ticket(value, "order_ticket")
+
+    @field_validator("position_ticket")
+    @classmethod
+    def _validate_position_ticket(cls, value: Optional[int]) -> Optional[int]:
+        return _validate_optional_ticket(value, "position_ticket")
+
+    @field_validator("buffer_seconds")
+    @classmethod
+    def _validate_buffer_seconds(cls, value: float) -> float:
+        validated = _validate_non_negative(value, "buffer_seconds")
+        if validated is None:
+            raise ValueError("buffer_seconds must be greater than or equal to 0.")
+        return validated
+
+    @field_validator("poll_interval_seconds")
+    @classmethod
+    def _validate_poll_interval_seconds(cls, value: float) -> float:
+        return _validate_positive_float(value, "poll_interval_seconds")
+
+    @field_validator("max_wait_seconds")
+    @classmethod
+    def _validate_max_wait_seconds(cls, value: Optional[float]) -> Optional[float]:
+        return _validate_non_negative(value, "max_wait_seconds")
+
+    @field_validator("side")
+    @classmethod
+    def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        text = str(value).strip().lower()
+        if text not in {"buy", "sell"}:
+            raise ValueError("side must be 'buy' or 'sell'.")
+        return text

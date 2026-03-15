@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 from .mt5_gateway import mt5_connection_error
-from .data_requests import DataFetchCandlesRequest, DataFetchTicksRequest, WaitCandleRequest
+from .data_requests import (
+    DataFetchCandlesRequest,
+    DataFetchTicksRequest,
+    WaitCandleRequest,
+    WaitEventRequest,
+)
 from .execution_logging import run_logged_operation
 from .trading_time import _next_candle_wait_payload, _sleep_until_next_candle
+from .wait_events import run_wait_event_loop
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +77,31 @@ def run_wait_candle(
             request=request,
             sleep_impl=sleep_impl,
         ),
+    )
+
+
+def run_wait_event(
+    request: WaitEventRequest,
+    *,
+    gateway: Any,
+    sleep_impl: Any = time.sleep,
+    monotonic_impl: Any = time.monotonic,
+    now_utc_impl: Any = lambda: datetime.now(timezone.utc),
+) -> Dict[str, Any]:
+    return run_logged_operation(
+        logger,
+        operation="wait_event",
+        watch_for=len(request.watch_for or []),
+        end_on=len(request.end_on),
+        poll_interval_seconds=request.poll_interval_seconds,
+        func=lambda: _run_wait_event_impl(
+            request=request,
+            gateway=gateway,
+            sleep_impl=sleep_impl,
+            monotonic_impl=monotonic_impl,
+            now_utc_impl=now_utc_impl,
+        ),
+        success_eval=lambda result: "error" not in result,
     )
 
 
@@ -151,3 +183,35 @@ def _run_wait_candle_impl(
     )
     payload["success"] = True
     return payload
+
+
+def _run_wait_event_impl(
+    *,
+    request: WaitEventRequest,
+    gateway: Any,
+    sleep_impl: Any,
+    monotonic_impl: Any,
+    now_utc_impl: Any,
+) -> Dict[str, Any]:
+    try:
+        if _wait_event_needs_gateway(request):
+            connection_error = _ensure_gateway_connection(gateway)
+            if connection_error is not None:
+                return connection_error
+        return run_wait_event_loop(
+            request,
+            gateway=gateway,
+            sleep_impl=sleep_impl,
+            monotonic_impl=monotonic_impl,
+            now_utc_impl=now_utc_impl,
+        )
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+
+def _wait_event_needs_gateway(request: WaitEventRequest) -> bool:
+    if request.watch_for is None:
+        return True
+    if request.watch_for:
+        return True
+    return any(getattr(item, "type", None) != "candle_close" for item in request.end_on)
