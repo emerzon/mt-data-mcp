@@ -167,15 +167,22 @@ def wait_event(
             {"type": "sl_hit", "symbol": instrument},
         ],
     )
+    def _run() -> Dict[str, Any]:
+        result = run_wait_event(
+            request,
+            gateway=get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
+        )
+        if isinstance(result, dict):
+            result = dict(result)
+            result.pop("max_wait_seconds", None)
+        return result
+
     return run_logged_operation(
         logger,
         operation="wait_event",
         instrument=instrument,
         timeframe=timeframe,
-        func=lambda: run_wait_event(
-            request,
-            gateway=get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
-        ),
+        func=_run,
     )
 
 

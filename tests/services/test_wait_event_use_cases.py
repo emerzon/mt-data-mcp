@@ -108,6 +108,7 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
             "timeframe": request.timeframe,
             "watch_for_inferred": request.watch_for is None,
             "watch_for": list(request.watch_for or []),
+            "max_wait_seconds": request.max_wait_seconds,
         },
     )
     monkeypatch.setattr(core_data, "get_mt5_gateway", lambda ensure_connection_impl=None: object())
@@ -128,6 +129,7 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
         "tp_hit",
         "sl_hit",
     ]
+    assert "max_wait_seconds" not in result
 
 
 def test_run_wait_event_defers_boundary_only_when_cap_is_short(monkeypatch) -> None:
