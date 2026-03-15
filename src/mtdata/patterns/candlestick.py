@@ -6,6 +6,15 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from ..core.patterns_support import (
+    _config_bool,
+    _config_float,
+    _config_int,
+    _infer_market_regime,
+    _resolve_volume_series,
+    _round_value,
+    _volume_window_mean,
+)
 from .common import data_quality_warnings
 from ..shared.constants import TIMEFRAME_SECONDS
 from ..shared.validators import invalid_timeframe_error
@@ -300,6 +309,8 @@ def _extract_candlestick_rows(
                         start_time,
                         end_time,
                         int(span_bars),
+                        int(start_bar_idx),
+                        int(i),
                     ]
                 )
             else:
@@ -334,6 +345,7 @@ def detect_candlestick_patterns(
     whitelist: Optional[str],
     top_k: int,
     last_n_bars: Optional[int] = None,
+    config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     try:
         _ensure_candlestick_runtime()
@@ -462,8 +474,21 @@ def detect_candlestick_patterns(
         start_index=start_index,
     )
 
-    headers = ["time", "pattern", "direction", "confidence", "raw_signal", "price", "start_time", "end_time", "n_bars"]
+    headers = [
+        "time",
+        "pattern",
+        "direction",
+        "confidence",
+        "raw_signal",
+        "price",
+        "start_time",
+        "end_time",
+        "n_bars",
+        "start_index",
+        "end_index",
+    ]
     payload = _table_from_rows(headers, rows)
+    _enrich_candlestick_payload(payload, df, config)
     signal_cutoff = float(thr) * 100.0
     payload.update({
         "success": True,
@@ -482,3 +507,123 @@ def detect_candlestick_patterns(
     if not _use_ctz:
         payload["timezone"] = "UTC"
     return payload
+
+
+def _enrich_candlestick_payload(payload: Dict[str, Any], df: pd.DataFrame, config: Optional[Dict[str, Any]]) -> None:
+    rows = payload.get("data")
+    if not isinstance(rows, list) or not isinstance(df, pd.DataFrame) or len(df) <= 0:
+        return
+    regime_context = _infer_market_regime(df, config)
+    volume, volume_source = _resolve_volume_series(df)
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        _attach_candlestick_volume_confirmation(row, volume, volume_source, config)
+        _attach_candlestick_regime_context(row, regime_context, config)
+
+
+def _attach_candlestick_volume_confirmation(
+    row: Dict[str, Any],
+    volume: Optional[np.ndarray],
+    volume_source: Optional[str],
+    config: Optional[Dict[str, Any]],
+) -> None:
+    payload: Dict[str, Any] = {
+        "mode": "signal_window",
+        "status": "disabled" if not _config_bool(config, "use_volume_confirmation", True) else "unavailable",
+        "volume_source": volume_source,
+    }
+    if payload["status"] == "disabled":
+        row["volume_confirmation"] = payload
+        return
+    if volume is None or volume_source is None:
+        row["volume_confirmation"] = payload
+        return
+    try:
+        end_index = int(row.get("end_index"))
+        start_index = int(row.get("start_index"))
+    except Exception:
+        row["volume_confirmation"] = payload
+        return
+    breakout_bars = _config_int(config, "volume_confirm_breakout_bars", 2, minimum=1)
+    lookback_bars = _config_int(config, "volume_confirm_lookback_bars", 20, minimum=breakout_bars + 1)
+    min_ratio = _config_float(config, "volume_confirm_min_ratio", 1.10, minimum=1.0)
+    bonus = _config_float(config, "volume_confirm_bonus", 0.08, minimum=0.0)
+    penalty = _config_float(config, "volume_confirm_penalty", 0.06, minimum=0.0)
+    signal_start = max(int(start_index), int(end_index - breakout_bars + 1))
+    baseline_end = int(signal_start - 1)
+    baseline_start = max(0, int(baseline_end - lookback_bars + 1))
+    signal_avg = _volume_window_mean(volume, signal_start, end_index)
+    baseline_avg = _volume_window_mean(volume, baseline_start, baseline_end)
+    ratio = (
+        float(signal_avg) / float(baseline_avg)
+        if signal_avg is not None and baseline_avg is not None and baseline_avg > 0
+        else None
+    )
+    payload["lookback_bars"] = int(lookback_bars)
+    payload["breakout_bars"] = int(breakout_bars)
+    if baseline_avg is not None:
+        payload["baseline_avg_volume"] = _round_value(baseline_avg)
+    if signal_avg is not None:
+        payload["signal_avg_volume"] = _round_value(signal_avg)
+    if ratio is not None and np.isfinite(ratio):
+        payload["signal_to_baseline_ratio"] = _round_value(ratio)
+    confidence_delta = 0.0
+    if ratio is None:
+        payload["status"] = "unavailable"
+    else:
+        reject_ratio = (1.0 / float(min_ratio)) if min_ratio > 0 else 0.0
+        if ratio >= float(min_ratio):
+            payload["status"] = "confirmed"
+            confidence_delta = float(bonus)
+        elif ratio <= float(reject_ratio):
+            payload["status"] = "rejected"
+            confidence_delta = -float(penalty)
+        else:
+            payload["status"] = "neutral"
+    if abs(confidence_delta) > 1e-12:
+        payload["confidence_delta"] = _round_value(confidence_delta)
+        row["confidence"] = float(max(0.0, min(1.0, float(row.get("confidence", 0.0)) + confidence_delta)))
+    row["volume_confirmation"] = payload
+
+
+def _attach_candlestick_regime_context(
+    row: Dict[str, Any],
+    regime_context: Optional[Dict[str, Any]],
+    config: Optional[Dict[str, Any]],
+) -> None:
+    payload: Dict[str, Any] = {
+        "status": "disabled" if not _config_bool(config, "use_regime_context", True) else "unavailable",
+    }
+    if payload["status"] == "disabled":
+        row["regime_context"] = payload
+        return
+    if not isinstance(regime_context, dict):
+        row["regime_context"] = payload
+        return
+    payload.update(regime_context)
+    bias = str(row.get("direction") or "").strip().lower()
+    if bias not in {"bullish", "bearish"}:
+        payload["status"] = "not_directional"
+        row["regime_context"] = payload
+        return
+    payload["pattern_bias"] = bias
+    bonus = _config_float(config, "regime_alignment_bonus", 0.05, minimum=0.0)
+    penalty = _config_float(config, "regime_countertrend_penalty", 0.05, minimum=0.0)
+    confidence_delta = 0.0
+    if payload.get("state") == "trending" and payload.get("direction") in {"bullish", "bearish"}:
+        if bias == payload.get("direction"):
+            payload["status"] = "aligned"
+            payload["alignment"] = "aligned"
+            confidence_delta = float(bonus)
+        else:
+            payload["status"] = "countertrend"
+            payload["alignment"] = "countertrend"
+            confidence_delta = -float(penalty)
+    else:
+        payload["status"] = "context_only"
+        payload["alignment"] = "neutral"
+    if abs(confidence_delta) > 1e-12:
+        payload["confidence_delta"] = _round_value(confidence_delta)
+        row["confidence"] = float(max(0.0, min(1.0, float(row.get("confidence", 0.0)) + confidence_delta)))
+    row["regime_context"] = payload

@@ -4,7 +4,8 @@ from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
     _detect_pivots_close, _fit_lines_and_arrays, _is_converging,
     _find_recent_breakout, _find_forward_level_breakout, _tol_abs_from_close,
-    _level_close, _conf, _result, _alias, _count_recent_touches
+    _level_close, _conf, _result, _alias, _count_recent_touches,
+    _apply_breakout_confidence_bonus
 )
 
 def detect_flags_pennants(
@@ -110,7 +111,7 @@ def detect_flags_pennants(
         
         if bdir == expected and bidx_local is not None:
             status = "completed"
-            conf = min(1.0, conf + 0.08)
+            conf = _apply_breakout_confidence_bonus(conf, cfg)
             
         base = _result(
             titled,
@@ -222,7 +223,7 @@ def _detect_cup_handle_variant(
 
         if break_i is not None:
             status = "completed"
-            conf = min(1.0, conf + 0.08)
+            conf = _apply_breakout_confidence_bonus(conf, cfg)
 
         details: Dict[str, float | int | str] = {
             "left_rim": float(c[absolute_left_idx]),

@@ -6,7 +6,7 @@ from .utils import (
     _detect_pivots_close, _fit_line, _fit_line_robust, _fit_lines_and_arrays, 
     _tol_abs_from_close, _level_close, _count_touches, _count_recent_touches,
     _is_converging, _find_recent_breakout, 
-    _result, _alias, _conf
+    _result, _alias, _conf, _apply_breakout_confidence_bonus, _robust_level_center
 )
 
 
@@ -71,7 +71,7 @@ def _build_line_bounded_pattern_results(
 
     if bdir is not None and bidx is not None:
         status = "completed"
-        conf = min(1.0, conf + 0.08)
+        conf = _apply_breakout_confidence_bonus(conf, cfg)
 
     end_index = int(max(int(max(shape["ih"][-1], shape["il"][-1])), int(bidx) if bidx is not None else int(max(shape["ih"][-1], shape["il"][-1]))))
     base = _result(
@@ -116,8 +116,12 @@ def detect_rectangles(
         return out
         
     ph = c[peaks[-k:]]; pl = c[troughs[-k:]]
-    top = float(np.median(ph))
-    bot = float(np.median(pl))
+    top = _robust_level_center(ph, cfg)
+    bot = _robust_level_center(pl, cfg)
+    if top is None or bot is None:
+        return out
+    top = float(top)
+    bot = float(bot)
     if top <= bot:
         return out
         
@@ -146,6 +150,7 @@ def detect_rectangles(
 
         if bdir is not None and bidx is not None:
             status = "completed"
+            conf = _apply_breakout_confidence_bonus(conf, cfg)
 
         out.append(ClassicPatternResult(
             name="Rectangle",
@@ -252,7 +257,7 @@ def detect_broadening(
         
         if bdir is not None and bidx is not None:
             status = "completed"
-            conf = min(1.0, conf + 0.08)
+            conf = _apply_breakout_confidence_bonus(conf, cfg)
             
         out.append(_result(
             "Broadening Formation",
@@ -421,7 +426,7 @@ def detect_diamonds(
 
     if bdir is not None and bidx_local is not None:
         status = "completed"
-        conf = min(1.0, conf + 0.08)
+        conf = _apply_breakout_confidence_bonus(conf, cfg)
 
     out.append(_result(
         name,

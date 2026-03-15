@@ -51,7 +51,8 @@ def _prepare_classic_inputs(
     if l.size != c.size:
         l = c
     n = c.size
-    if n < 100:
+    min_input_bars = max(20, int(getattr(cfg, "min_input_bars", 100)))
+    if n < min_input_bars:
         return None
     return df, t, c, h, l, n
 
@@ -147,7 +148,7 @@ def _scan_classic_patterns(
 ) -> List[ClassicPatternResult]:
     n_total = int(c.size)
     step = max(1, int(getattr(cfg, "scan_step_bars", 10)))
-    min_prefix = max(100, int(getattr(cfg, "scan_min_prefix_bars", 120)))
+    min_prefix = max(int(getattr(cfg, "min_input_bars", 100)), int(getattr(cfg, "scan_min_prefix_bars", 120)))
     prefix_ends = list(range(min_prefix, n_total + 1, step))
     if not prefix_ends or prefix_ends[-1] != n_total:
         prefix_ends.append(n_total)
@@ -168,7 +169,7 @@ def _postprocess_classic_results(
     n: int,
 ) -> List[ClassicPatternResult]:
     if bool(cfg.auto_complete_stale_forming):
-        recent_bars = 3
+        recent_bars = max(1, int(getattr(cfg, "stale_completion_recent_bars", 3)))
         for i, r in enumerate(results):
             if r.status == 'forming' and r.end_index < (n - recent_bars):
                 results[i] = ClassicPatternResult(

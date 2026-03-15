@@ -5,7 +5,7 @@ from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
     _level_close, _tol_abs_from_close, _find_forward_level_breakout,
     _fit_line, _fit_line_robust, _result, 
-    _template_hs, _znorm, _paa, _dtw_distance
+    _template_hs_variants, _znorm, _paa, _dtw_distance, _apply_breakout_confidence_bonus
 )
 
 
@@ -104,7 +104,11 @@ def detect_tops_bottoms(
                 out.append(ClassicPatternResult(
                     name=name,
                     status=status,
-                    confidence=min(1.0, (0.5 + 0.1 * (len(cluster) - 2 + 2)) + (0.08 if break_i is not None else 0.0)),
+                    confidence=(
+                        _apply_breakout_confidence_bonus((0.5 + 0.1 * (len(cluster) - 2 + 2)), cfg)
+                        if break_i is not None
+                        else float(min(1.0, (0.5 + 0.1 * (len(cluster) - 2 + 2))))
+                    ),
                     start_index=start_i,
                     end_index=int(break_i if break_i is not None else end_i),
                     start_time=PatternResultBase.resolve_time(t, start_i),
@@ -231,8 +235,10 @@ def detect_head_shoulders(
             seg_end = int(end_i if broke else rsh)
             seg = c[seg_start: seg_end + 1].astype(float)
             seg_n = _znorm(_paa(seg, int(getattr(cfg, 'dtw_paa_len', 80))))
-            tpl = _template_hs(len(seg_n), inverse=bool(inverse))
-            dist = _dtw_distance(seg_n, tpl)
+            dist = min(
+                _dtw_distance(seg_n, tpl)
+                for tpl in _template_hs_variants(len(seg_n), inverse=bool(inverse))
+            )
             maxd = float(getattr(cfg, 'dtw_max_dist', 0.6))
             if not np.isfinite(dist):
                 dist = maxd * 10.0

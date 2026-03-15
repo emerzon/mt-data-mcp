@@ -25,6 +25,7 @@ from mtdata.patterns.classic_impl.utils import (
     _collect_calibration_points,
     _find_recent_breakout,
     _build_time_array,
+    _conf,
 )
 
 
@@ -233,6 +234,38 @@ class TestDetectPivotsClose:
 
         with pytest.raises(TypeError, match="boom"):
             _detect_pivots_close(x, cfg)
+
+    def test_fallback_local_extrema_recovers_when_find_peaks_undershoots(self, monkeypatch):
+        x = np.array([100.0, 102.0, 99.0, 103.0, 98.0, 104.0, 97.0] * 40, dtype=float)
+        cfg = ClassicDetectorConfig(
+            pivot_use_atr_adaptive_prominence=False,
+            pivot_use_atr_adaptive_distance=False,
+            min_prominence_pct=50.0,
+            min_distance=4,
+            pivot_enable_fallback=True,
+            pivot_fallback_order=2,
+        )
+
+        monkeypatch.setattr(utils_mod, "find_peaks", lambda *_args, **_kwargs: (np.array([], dtype=int), {}))
+
+        peaks, troughs = _detect_pivots_close(x, cfg)
+
+        assert peaks.size >= 2
+        assert troughs.size >= 2
+
+
+class TestConfidenceHelpers:
+    def test_conf_normalizes_non_unit_weights(self):
+        cfg = ClassicDetectorConfig(
+            touch_weight=2.0,
+            r2_weight=1.0,
+            geometry_weight=1.0,
+            min_touches=2,
+        )
+
+        conf = _conf(2, 1.0, 1.0, cfg)
+
+        assert conf == pytest.approx(1.0)
 
 
 class TestIsConverging:

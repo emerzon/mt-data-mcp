@@ -173,6 +173,11 @@ class TestSelectClassicEngines:
         engines, _ = self._call("stock_pattern", True)
         assert "native" in engines
 
+    def test_hidden_precise_engine_is_invalid(self):
+        engines, invalid = self._call("precise_patterns", False)
+        assert engines == ["native"]
+        assert "precise_patterns" in invalid
+
     def test_dedup(self):
         engines, _ = self._call("native,native", False)
         assert engines.count("native") == 1
@@ -898,6 +903,7 @@ class TestAvailableClassicEngines:
         result = _available_classic_engines()
         assert isinstance(result, tuple)
         assert "native" in result
+        assert "precise_patterns" not in result
 
 
 # ── _register_classic_engine ─────────────────────────────────────────────

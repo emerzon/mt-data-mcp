@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, Optional, List, Tuple, Literal
 import importlib
 import copy
 import logging
+import numpy as np
 import pandas as pd
 import warnings
 
@@ -51,6 +52,7 @@ from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5
 logger = logging.getLogger(__name__)
 
 _CLASSIC_ENGINE_ORDER = ("native", "stock_pattern", "precise_patterns")
+_HIDDEN_CLASSIC_ENGINES = frozenset({"precise_patterns"})
 _DEFAULT_ELLIOTT_SCAN_TIMEFRAMES = ("H1", "H4", "D1")
 ClassicEngineRunner = Callable[
     [str, pd.DataFrame, _ClassicCfg, Optional[Dict[str, Any]]],
@@ -326,7 +328,11 @@ def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[st
     for p in pats:
         try:
             start_date, end_date = _format_pattern_dates(p.start_time, p.end_time)
-            recent_bars = 3
+            raw_recent_bars = getattr(cfg, "recent_bars", 3)
+            if isinstance(raw_recent_bars, (int, float, np.integer, np.floating)) and not isinstance(raw_recent_bars, bool):
+                recent_bars = max(1, int(raw_recent_bars))
+            else:
+                recent_bars = 3
             status = 'forming' if int(p.end_index) >= int(n_bars - recent_bars) else 'completed'
 
             out_list.append(
@@ -386,8 +392,15 @@ def _register_classic_engine(name: str) -> Callable[[ClassicEngineRunner], Class
 
 
 def _available_classic_engines() -> Tuple[str, ...]:
-    ordered = [name for name in _CLASSIC_ENGINE_ORDER if name in _CLASSIC_ENGINE_REGISTRY]
-    ordered.extend(name for name in _CLASSIC_ENGINE_REGISTRY.keys() if name not in ordered)
+    ordered = [
+        name for name in _CLASSIC_ENGINE_ORDER
+        if name in _CLASSIC_ENGINE_REGISTRY and name not in _HIDDEN_CLASSIC_ENGINES
+    ]
+    ordered.extend(
+        name
+        for name in _CLASSIC_ENGINE_REGISTRY.keys()
+        if name not in ordered and name not in _HIDDEN_CLASSIC_ENGINES
+    )
     return tuple(ordered)
 
 
@@ -774,7 +787,7 @@ def patterns_detect(
         - calibrate_confidence, confidence_calibration_map, confidence_calibration_blend
 
     engine : str, optional (default="native")
-        Classic engine selection: "native", "stock_pattern", "precise_patterns",
+        Classic engine selection: "native", "stock_pattern",
         or comma-separated list when `ensemble=True`.
 
     ensemble : bool, optional (default=False)

@@ -705,6 +705,51 @@ class TestDetectElliottWaves:
         assert len(call_log) == 1
         assert len(results) == 1
 
+    def test_autotune_stops_after_repeated_similar_scenarios(self, monkeypatch):
+        df = _make_df(np.linspace(100.0, 120.0, 120))
+        cfg = ElliottWaveConfig(
+            autotune=True,
+            tune_thresholds=[0.2, 0.3, 0.4, 0.5],
+            tune_min_distance=[1],
+            include_fallback_candidate=False,
+            min_confidence=0.0,
+            autotune_skip_repeated_pivots=False,
+            autotune_early_stop_repeats=2,
+            autotune_scenario_overlap_ratio=0.95,
+        )
+        call_log = []
+
+        monkeypatch.setattr(
+            elliott_mod,
+            "_pivot_signature_for_settings",
+            lambda _close, threshold_pct, _min_distance: (0, 10, 20, 30, int(float(threshold_pct) * 100)),
+        )
+
+        def _fake_analyze(self, threshold_pct, min_distance):
+            _ = self
+            call_log.append((float(threshold_pct), int(min_distance)))
+            shift = int(round(float(threshold_pct) * 10.0))
+            return [
+                ElliottScenario(
+                    pivots=[0, 20 + shift, 40, 60],
+                    bullish=True,
+                    confidence=0.6,
+                    cls_score=0.5,
+                    rule_eval=ElliottRuleEvaluation(valid=True, fib_score=0.5, metrics={}),
+                    threshold_used=float(threshold_pct),
+                    min_distance_used=int(min_distance),
+                    wave_type="Correction",
+                )
+            ]
+
+        monkeypatch.setattr(elliott_mod.ElliottWaveAnalyzer, "analyze_once", _fake_analyze)
+
+        results = detect_elliott_waves(df, cfg)
+
+        assert len(call_log) < 4
+        assert results
+        assert all(result.wave_type == "Correction" for result in results)
+
     def test_autotune_filters_correction_overlap_with_impulse(self, monkeypatch):
         df = _make_df(np.linspace(100.0, 120.0, 80))
         cfg = ElliottWaveConfig(
@@ -793,6 +838,59 @@ class TestDetectElliottWaves:
         assert any(s.wave_type == "Impulse" for s in scenarios)
         assert not any(s.wave_type == "Correction" for s in scenarios)
 
+    def test_analyze_once_skips_near_matching_correction_subsequence_of_impulse(self, monkeypatch):
+        close = np.array([100.0, 120.0, 108.0, 150.0, 135.0, 158.0, 160.0], dtype=float)
+        t = np.arange(close.size, dtype=float) * 3600 + 1_700_000_000
+        analyzer = ElliottWaveAnalyzer(
+            close,
+            t,
+            ElliottWaveConfig(
+                autotune=False,
+                min_distance=1,
+                wave_min_len=1,
+                min_confidence=0.0,
+                pattern_types=["impulse", "correction"],
+                include_fallback_candidate=False,
+                correction_exclusion_bar_tolerance=1,
+                correction_exclusion_overlap_ratio=0.9,
+            ),
+        )
+
+        monkeypatch.setattr(
+            elliott_mod,
+            "_zigzag_pivots_indices",
+            lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5, 6], ["up"] * 7),
+        )
+        monkeypatch.setattr(
+            elliott_mod,
+            "_contiguous_pivot_slices",
+            lambda pivots, size: {
+                tuple(
+                    int(v + (1 if idx == len(pivots[:size]) - 1 else 0))
+                    for idx, v in enumerate(pivots[offset : offset + size])
+                )
+                for offset in range(len(pivots) - size + 1)
+            },
+        )
+
+        fake_gmm = type("FakeGMM", (), {"means_": np.array([[0.0, -0.1, 0.0], [0.0, 0.1, 0.0]])})()
+        monkeypatch.setattr(
+            elliott_mod,
+            "_classify_waves",
+            lambda features, config: (
+                np.arange(features.shape[0], dtype=int) % 2,
+                fake_gmm,
+                None,
+                np.full((features.shape[0], 2), 0.5, dtype=float),
+                1,
+            ),
+        )
+
+        scenarios = analyzer.analyze_once(1.0, 1)
+
+        assert any(s.wave_type == "Impulse" for s in scenarios)
+        assert not any(s.wave_type == "Correction" for s in scenarios)
+
     def test_analyze_once_uses_rule_score_when_classification_unavailable(self, monkeypatch):
         close = _impulse_close()
         t = np.arange(close.size, dtype=float) * 3600 + 1_700_000_000
@@ -822,6 +920,43 @@ class TestDetectElliottWaves:
         assert scenarios[0].classification_available is False
         assert scenarios[0].confidence == pytest.approx(scenarios[0].rule_eval.fib_score)
         assert scenarios[0].pivot_confirmations[-1] is False
+
+    def test_analyze_once_uses_configured_blend_weights(self, monkeypatch):
+        close = _impulse_close()
+        t = np.arange(close.size, dtype=float) * 3600 + 1_700_000_000
+        analyzer = ElliottWaveAnalyzer(
+            close,
+            t,
+            ElliottWaveConfig(
+                autotune=False,
+                min_distance=1,
+                wave_min_len=1,
+                min_confidence=0.0,
+                pattern_types=["impulse"],
+                include_fallback_candidate=False,
+                impulse_rule_weight=0.2,
+                impulse_cls_weight=0.8,
+            ),
+        )
+
+        monkeypatch.setattr(elliott_mod, "_zigzag_pivots_indices", lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5], ["up"] * 6))
+        monkeypatch.setattr(
+            elliott_mod,
+            "_classify_waves",
+            lambda features, config: (
+                np.arange(features.shape[0], dtype=int),
+                type("FakeGMM", (), {"means_": np.array([[0.0, -0.1, 0.0], [0.0, 0.1, 0.0]])})(),
+                None,
+                np.full((features.shape[0], 2), 0.75, dtype=float),
+                1,
+            ),
+        )
+
+        scenarios = analyzer.analyze_once(1.0, 1)
+
+        assert scenarios
+        expected = (0.2 * scenarios[0].rule_eval.fib_score) + (0.8 * scenarios[0].cls_score)
+        assert scenarios[0].confidence == pytest.approx(expected)
 
 
 # ===== _window_hit =========================================================

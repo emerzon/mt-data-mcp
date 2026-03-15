@@ -138,6 +138,25 @@ def _template_hs(L: int, inverse: bool = False) -> np.ndarray:
     return _znorm(y)
 
 
+def _template_hs_variants(L: int, inverse: bool = False) -> Tuple[np.ndarray, ...]:
+    L = max(20, int(L))
+    x = np.linspace(0, 1, L)
+    variants = (
+        ((0.25, 0.7, 0.01), (0.50, 1.0, 0.008), (0.75, 0.7, 0.01)),
+        ((0.23, 0.65, 0.012), (0.50, 1.0, 0.010), (0.77, 0.72, 0.012)),
+        ((0.28, 0.72, 0.014), (0.52, 1.0, 0.010), (0.74, 0.66, 0.014)),
+    )
+    out: List[np.ndarray] = []
+    for peaks in variants:
+        y = 0.0 * x
+        for center, height, variance in peaks:
+            y += float(height) * np.exp(-((x - float(center)) ** 2) / max(1e-6, float(variance)))
+        if inverse:
+            y = -y
+        out.append(_znorm(y))
+    return tuple(out)
+
+
 def _compute_atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int) -> np.ndarray:
     h = np.asarray(high, dtype=float)
     l = np.asarray(low, dtype=float)
@@ -214,7 +233,61 @@ def _detect_pivots_close(
         troughs, _ = find_peaks(-src_lo, prominence=prom_abs, distance=min_dist)
     except ValueError:
         return np.array([], dtype=int), np.array([], dtype=int)
+    if bool(getattr(cfg, "pivot_enable_fallback", True)):
+        need_peak_fallback = int(peaks.size) < int(max(0, getattr(cfg, "pivot_fallback_min_peaks", 2)))
+        need_trough_fallback = int(troughs.size) < int(max(0, getattr(cfg, "pivot_fallback_min_troughs", 2)))
+        if need_peak_fallback or need_trough_fallback:
+            order = max(2, int(getattr(cfg, "pivot_fallback_order", 2)))
+            if need_peak_fallback:
+                peaks = _fallback_local_extrema(src_hi, min_dist, order, prefer_high=True)
+            if need_trough_fallback:
+                troughs = _fallback_local_extrema(src_lo, min_dist, order, prefer_high=False)
     return peaks.astype(int), troughs.astype(int)
+
+
+def _fallback_local_extrema(
+    src: np.ndarray,
+    min_dist: int,
+    order: int,
+    *,
+    prefer_high: bool,
+) -> np.ndarray:
+    values = np.asarray(src, dtype=float)
+    n = int(values.size)
+    if n <= (2 * order + 1):
+        return np.asarray([], dtype=int)
+    candidates: List[int] = []
+    for idx in range(order, n - order):
+        center = float(values[idx])
+        if not np.isfinite(center):
+            continue
+        window = values[idx - order : idx + order + 1]
+        if not np.all(np.isfinite(window)):
+            continue
+        if prefer_high:
+            if center < float(np.max(window)):
+                continue
+            if int(np.sum(window == center)) > 1:
+                continue
+        else:
+            if center > float(np.min(window)):
+                continue
+            if int(np.sum(window == center)) > 1:
+                continue
+        candidates.append(int(idx))
+    if not candidates:
+        return np.asarray([], dtype=int)
+    reduced: List[int] = []
+    for idx in candidates:
+        if not reduced or (idx - reduced[-1]) >= int(min_dist):
+            reduced.append(int(idx))
+            continue
+        prev_idx = int(reduced[-1])
+        prev_val = float(values[prev_idx])
+        curr_val = float(values[idx])
+        better = idx if (curr_val > prev_val if prefer_high else curr_val < prev_val) else prev_idx
+        reduced[-1] = int(better)
+    return np.asarray(reduced, dtype=int)
 
 
 def _last_touch_indexes(bound_y: np.ndarray, idxs: np.ndarray, y: np.ndarray, tol: float) -> List[int]:
@@ -464,7 +537,59 @@ def _calibrate_confidence(raw: float, name: str, cfg: ClassicDetectorConfig) -> 
     return float(max(0.0, min(1.0, out)))
 
 def _conf(touches: int, r2: float, geom_ok: float, cfg: ClassicDetectorConfig) -> float:
-    a = min(1.0, touches / max(1, cfg.min_touches)) * cfg.touch_weight
-    b = max(0.0, min(1.0, r2)) * cfg.r2_weight
-    g = max(0.0, min(1.0, geom_ok)) * cfg.geometry_weight
-    return float(min(1.0, a + b + g))
+    raw_weights = np.asarray(
+        [
+            max(0.0, float(getattr(cfg, "touch_weight", 0.35))),
+            max(0.0, float(getattr(cfg, "r2_weight", 0.35))),
+            max(0.0, float(getattr(cfg, "geometry_weight", 0.30))),
+        ],
+        dtype=float,
+    )
+    total = float(np.sum(raw_weights))
+    if total <= 1e-12:
+        raw_weights = np.asarray([1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0], dtype=float)
+    else:
+        raw_weights = raw_weights / total
+    scores = np.asarray(
+        [
+            min(1.0, float(touches) / max(1, int(cfg.min_touches))),
+            max(0.0, min(1.0, float(r2))),
+            max(0.0, min(1.0, float(geom_ok))),
+        ],
+        dtype=float,
+    )
+    return float(min(1.0, max(0.0, float(np.dot(scores, raw_weights)))))
+
+
+def _apply_breakout_confidence_bonus(confidence: float, cfg: ClassicDetectorConfig) -> float:
+    bonus = max(0.0, float(getattr(cfg, "breakout_confidence_bonus", 0.08)))
+    return float(min(1.0, max(0.0, float(confidence)) + bonus))
+
+
+def _robust_level_center(values: np.ndarray, cfg: ClassicDetectorConfig) -> Optional[float]:
+    arr = np.asarray(values, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if arr.size <= 0:
+        return None
+    if arr.size < 3:
+        return float(np.median(arr))
+    median = float(np.median(arr))
+    deviations = np.abs(arr - median)
+    mad = float(np.median(deviations))
+    cutoff = float(max(1.0, getattr(cfg, "rectangle_outlier_zscore", 3.5)))
+    filtered = arr
+    if mad > 1e-9:
+        robust_z = deviations / max(1e-9, 1.4826 * mad)
+        kept = arr[robust_z <= cutoff]
+        if kept.size >= 2:
+            filtered = kept
+    else:
+        q1, q3 = np.quantile(arr, [0.25, 0.75])
+        iqr = float(q3 - q1)
+        if iqr > 1e-9:
+            lo = float(q1 - 1.5 * iqr)
+            hi = float(q3 + 1.5 * iqr)
+            kept = arr[(arr >= lo) & (arr <= hi)]
+            if kept.size >= 2:
+                filtered = kept
+    return float(np.median(filtered))

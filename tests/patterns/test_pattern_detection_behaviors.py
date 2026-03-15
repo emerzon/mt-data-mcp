@@ -231,7 +231,7 @@ def test_extract_candlestick_rows_includes_metrics_when_enabled():
         include_metrics=True,
     )
 
-    assert rows == [["T1", "Bullish ENGULFING", "bullish", 1.0, 100, 101.5, "T0", "T1", 2]]
+    assert rows == [["T1", "Bullish ENGULFING", "bullish", 1.0, 100, 101.5, "T0", "T1", 2, 0, 1]]
 
 
 @contextmanager
@@ -392,6 +392,66 @@ def test_detect_candlestick_patterns_exposes_raw_signal_and_quality_warning(monk
     assert any("repeated close prices" in warning for warning in res["warnings"])
 
 
+def test_detect_candlestick_patterns_adds_volume_and_regime_enrichment(monkeypatch):
+    class _FakeFrame(pd.DataFrame):
+        @property
+        def _constructor(self):
+            return _FakeFrame
+
+        @property
+        def ta(self):
+            frame = self
+
+            class _Accessor:
+                def cdl_alpha(self, append=True):
+                    _ = append
+                    frame["cdl_alpha"] = [0.0] * (len(frame) - 1) + [200.0]
+
+            return _Accessor()
+
+    monkeypatch.setattr(candlestick_mod, "_ensure_candlestick_runtime", lambda: None)
+    monkeypatch.setattr(candlestick_mod, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(candlestick_mod, "_symbol_ready_guard", _always_ready_guard)
+    monkeypatch.setattr(candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object()] * 5)
+    monkeypatch.setattr(candlestick_mod, "_get_candlestick_pattern_methods", lambda _temp: ["cdl_alpha"])
+
+    def _fake_rates_to_df(_rates):
+        rows = 25
+        return _FakeFrame(
+            {
+                "time": [1_700_000_000.0 + (3600.0 * i) for i in range(rows)],
+                "open": [100.0 + (0.3 * i) for i in range(rows)],
+                "high": [100.5 + (0.3 * i) for i in range(rows)],
+                "low": [99.8 + (0.3 * i) for i in range(rows)],
+                "close": [100.0 + (0.35 * i) for i in range(rows)],
+                "tick_volume": [100 + (3 * i) for i in range(rows - 1)] + [260],
+            }
+        )
+
+    monkeypatch.setattr(candlestick_mod, "_rates_to_df", _fake_rates_to_df)
+
+    res = candlestick_mod.detect_candlestick_patterns(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=20,
+        min_strength=0.95,
+        min_gap=0,
+        robust_only=False,
+        whitelist=None,
+        top_k=1,
+        config={
+            "use_volume_confirmation": True,
+            "use_regime_context": True,
+            "volume_confirm_min_ratio": 1.1,
+        },
+    )
+
+    row = res["data"][0]
+    assert row["volume_confirmation"]["status"] == "confirmed"
+    assert row["regime_context"]["status"] == "aligned"
+    assert row["end_index"] == 24
+
+
 def test_extract_candlestick_rows_respects_start_index():
     df = pd.DataFrame({"time": ["T0", "T1", "T2"], "close": [100.0, 101.0, 102.0]})
     temp = pd.DataFrame({"cdl_engulfing": [100.0, 100.0, 100.0]})
@@ -432,6 +492,27 @@ def test_patterns_detect_candlestick_passes_last_n_bars(monkeypatch):
 
     assert res.get("success") is True
     assert captured.get("last_n_bars") == 8
+
+
+def test_patterns_detect_candlestick_passes_config(monkeypatch):
+    captured = {}
+
+    def _fake_detect(**kwargs):
+        captured.update(kwargs)
+        return {"success": True, "patterns": []}
+
+    monkeypatch.setattr(core_patterns, "_detect_candlestick_patterns", _fake_detect)
+
+    patterns_detect(
+        symbol="EURUSD",
+        timeframe="H1",
+        mode="candlestick",
+        detail="full",
+        config={"use_volume_confirmation": False},
+        __cli_raw=True,
+    )
+
+    assert captured["config"] == {"use_volume_confirmation": False}
 
 
 def test_patterns_detect_candlestick_rejects_non_positive_last_n_bars():
@@ -1520,8 +1601,6 @@ def test_patterns_detect_classic_ensemble_merges_engine_outputs(monkeypatch, cap
                     "details": {"y": 2},
                 }
             ], None
-        if engine == "precise_patterns":
-            return [], "precise-patterns unavailable"
         return [], "unexpected"
 
     monkeypatch.setattr(core_patterns, "_run_classic_engine", _fake_engine)
@@ -1532,7 +1611,7 @@ def test_patterns_detect_classic_ensemble_merges_engine_outputs(monkeypatch, cap
             mode="classic",
             detail="full",
             timeframe="H1",
-            engine="native,stock_pattern,precise_patterns",
+            engine="native,stock_pattern",
             ensemble=True,
             include_completed=True,
             __cli_raw=True,
@@ -1543,9 +1622,30 @@ def test_patterns_detect_classic_ensemble_merges_engine_outputs(monkeypatch, cap
     assert res["n_patterns"] == 1
     assert res["patterns"][0]["support_count"] == 2
     assert set(res["patterns"][0]["source_engines"]) == {"native", "stock_pattern"}
-    assert "engine_errors" in res
-    assert "precise_patterns" in res["engine_errors"]
     assert "event=finish operation=patterns_detect success=True" in caplog.text
+
+
+def test_patterns_detect_rejects_hidden_precise_engine(monkeypatch):
+    df = pd.DataFrame(
+        {
+            "time": [1, 2, 3],
+            "close": [100.0, 101.0, 102.0],
+            "high": [100.5, 101.5, 102.5],
+            "low": [99.5, 100.5, 101.5],
+        }
+    )
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda *_args, **_kwargs: (df.copy(), None))
+
+    res = patterns_detect(
+        symbol="EURUSD",
+        mode="classic",
+        timeframe="H1",
+        engine="precise_patterns",
+        __cli_raw=True,
+    )
+
+    assert "error" in res
+    assert "Invalid classic engine" in str(res["error"])
 
 
 def test_patterns_detect_classic_adds_signal_summary_and_levels(monkeypatch):

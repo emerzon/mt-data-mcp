@@ -7,6 +7,7 @@ from ..common import PatternResultBase
 class ClassicDetectorConfig:
     # General
     max_bars: int = 1500
+    min_input_bars: int = 100
     scan_historical: bool = False   # run prefix scan to find older right-edge patterns
     scan_step_bars: int = 10        # prefix step when historical scan is enabled
     scan_min_prefix_bars: int = 120 # minimum prefix size used for historical scans
@@ -21,6 +22,10 @@ class ClassicDetectorConfig:
     pivot_atr_prominence_mult: float = 1.0
     pivot_atr_distance_mult: float = 0.2
     pivot_max_distance_scale: float = 3.0
+    pivot_enable_fallback: bool = True
+    pivot_fallback_order: int = 2
+    pivot_fallback_min_peaks: int = 2
+    pivot_fallback_min_troughs: int = 2
     # Trendline/line-fit
     max_flat_slope: float = 1e-4     # absolute slope to consider line flat (price units per bar)
     min_r2: float = 0.6              # minimum R^2 for line fit confidence
@@ -60,6 +65,8 @@ class ClassicDetectorConfig:
     pennant_parallel_slope_ratio: float = 0.2  # relative slope spread tolerated for flags/pennants
     rounding_window_bars: int = 220
     rounding_window_sizes: List[int] = field(default_factory=list)
+    breakout_confidence_bonus: float = 0.08
+    rectangle_outlier_zscore: float = 3.5
     # Confidence blending
     touch_weight: float = 0.35
     r2_weight: float = 0.35
@@ -91,6 +98,7 @@ class ClassicDetectorConfig:
     completion_confirm_bars: int = 2 # touches needed near the right edge to mark completed
     completion_lookback_bars: int = 5  # lookback window for completion confirmation
     auto_complete_stale_forming: bool = False  # backward-compat aging of old forming patterns
+    stale_completion_recent_bars: int = 3
     include_lifecycle_metadata: bool = True
     # Optional confidence calibration map:
     # { "default": {"0.40": 0.35, "0.70": 0.62, "0.90": 0.82},

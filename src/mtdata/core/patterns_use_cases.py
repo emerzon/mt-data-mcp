@@ -85,6 +85,7 @@ def run_patterns_detect(
             whitelist=request.whitelist,
             top_k=request.top_k,
             last_n_bars=last_n_bars_val,
+            config=request.config if isinstance(request.config, dict) else None,
         )
         if detail_value == "compact":
             return deps.compact_patterns_payload(out if isinstance(out, dict) else {"data": out})

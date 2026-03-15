@@ -30,18 +30,26 @@ class ElliottWaveConfig:
     volume_confirm_bonus: float = 0.06
     volume_confirm_penalty: float = 0.04
     impulse_fib_weights: List[float] = field(default_factory=lambda: [0.30, 0.35, 0.20, 0.15])
+    impulse_rule_weight: float = 0.65
+    impulse_cls_weight: float = 0.35
+    correction_rule_weight: float = 0.60
+    correction_cls_weight: float = 0.40
     use_regime_context: bool = True
     regime_window_bars: int = 160
     regime_trend_strength_threshold: float = 1.25
     regime_efficiency_trending_threshold: float = 0.35
     regime_alignment_bonus: float = 0.05
     regime_countertrend_penalty: float = 0.05
+    min_impulse_bars: int = 30
+    min_correction_bars: int = 20
 
     # Autotuning controls
     autotune: bool = True
     tune_thresholds: Optional[List[float]] = None
     tune_min_distance: Optional[List[int]] = None
     autotune_skip_repeated_pivots: bool = True
+    autotune_early_stop_repeats: int = 3
+    autotune_scenario_overlap_ratio: float = 0.9
     scan_timeframes: List[str] = field(default_factory=lambda: ["H1", "H4", "D1"])
     max_scan_timeframes: int = 3
 
@@ -51,6 +59,8 @@ class ElliottWaveConfig:
     include_fallback_candidate: bool = True
     recent_bars: int = 3
     correction_min_c_vs_a: float = 0.25
+    correction_exclusion_bar_tolerance: int = 1
+    correction_exclusion_overlap_ratio: float = 0.9
     pattern_types: List[str] = field(default_factory=lambda: ["impulse", "correction"])
 
 
@@ -350,7 +360,7 @@ def _classify_waves(
     features: np.ndarray,
     config: ElliottWaveConfig,
 ) -> Tuple[np.ndarray, Optional[GaussianMixture], Optional[StandardScaler], Optional[np.ndarray], Optional[int]]:
-    """Classify waves with GMM; return labels, model, scaler, probabilities and impulsive cluster id."""
+    """Classify waves with GMM; return cluster labels, model, scaler, probabilities and impulsive cluster id."""
 
     min_waves = max(int(config.gmm_components), int(max(1, getattr(config, "min_gmm_waves", 8))))
     if features.shape[0] < min_waves:
@@ -375,8 +385,7 @@ def _classify_waves(
         impulsive_cluster = _select_impulsive_cluster(gmm.means_)
         if impulsive_cluster is None:
             return np.array([]), None, None, None, None
-        wave_types = (labels == impulsive_cluster).astype(int)
-        return wave_types, gmm, scaler, probs, impulsive_cluster
+        return labels.astype(int), gmm, scaler, probs, impulsive_cluster
     except Exception:
         return np.array([]), None, None, None, None
 
@@ -482,8 +491,10 @@ def _impulse_rules_and_score(c: np.ndarray, piv: List[int], bullish: bool) -> Tu
 def _blend_confidence(rule_score: float, cls_score: float, *, classification_available: bool, rule_weight: float, cls_weight: float) -> float:
     if not classification_available:
         return float(min(1.0, max(0.0, rule_score)))
+    rule_weight = max(0.0, float(rule_weight))
+    cls_weight = max(0.0, float(cls_weight))
     total = float(max(1e-9, rule_weight + cls_weight))
-    blended = (float(rule_weight) * float(rule_score) + float(cls_weight) * float(cls_score)) / total
+    blended = (rule_weight * float(rule_score) + cls_weight * float(cls_score)) / total
     return float(min(1.0, max(0.0, blended)))
 
 
@@ -595,6 +606,66 @@ def _contiguous_pivot_slices(pivots: List[int], size: int) -> set[Tuple[int, ...
     return {tuple(int(v) for v in pivots[i : i + size]) for i in range(len(pivots) - size + 1)}
 
 
+def _pivot_sequence_is_near_match(
+    candidate: List[int],
+    reference: Tuple[int, ...],
+    *,
+    bar_tolerance: int,
+    overlap_ratio: float,
+) -> bool:
+    if len(candidate) != len(reference) or not candidate:
+        return False
+    if all(abs(int(a) - int(b)) <= int(bar_tolerance) for a, b in zip(candidate, reference)):
+        return True
+    overlap = max(
+        _interval_overlap_ratio(int(candidate[0]), int(candidate[-1]), int(reference[0]), int(reference[-1])),
+        _interval_coverage_ratio(int(candidate[0]), int(candidate[-1]), int(reference[0]), int(reference[-1])),
+    )
+    return bool(overlap >= float(overlap_ratio))
+
+
+def _scenario_signature(scenarios: List["ElliottScenario"]) -> Tuple[Tuple[str, bool, int, int, int], ...]:
+    entries = {
+        (
+            str(scenario.wave_type).lower(),
+            bool(scenario.bullish),
+            int(len(scenario.pivots)),
+            int(scenario.pivots[0]),
+            int(scenario.pivots[-1]),
+        )
+        for scenario in scenarios
+        if scenario.pivots
+    }
+    return tuple(sorted(entries))
+
+
+def _scenario_signatures_overlap(
+    current: Tuple[Tuple[str, bool, int, int, int], ...],
+    prior: Tuple[Tuple[str, bool, int, int, int], ...],
+    *,
+    overlap_ratio: float,
+) -> bool:
+    if not current or not prior or len(current) != len(prior):
+        return False
+    unmatched = list(prior)
+    for item in current:
+        match_index: Optional[int] = None
+        for idx, prior_item in enumerate(unmatched):
+            if item[:3] != prior_item[:3]:
+                continue
+            overlap = max(
+                _interval_overlap_ratio(int(item[3]), int(item[4]), int(prior_item[3]), int(prior_item[4])),
+                _interval_coverage_ratio(int(item[3]), int(item[4]), int(prior_item[3]), int(prior_item[4])),
+            )
+            if overlap >= float(overlap_ratio):
+                match_index = idx
+                break
+        if match_index is None:
+            return False
+        unmatched.pop(match_index)
+    return not unmatched
+
+
 def _elliott_result_key(result: ElliottWaveResult) -> Tuple[str, Tuple[int, ...]]:
     return str(result.wave_type), tuple(int(i) for i in result.wave_sequence)
 
@@ -695,7 +766,11 @@ class ElliottWaveAnalyzer:
         pattern_types = _normalize_pattern_types(self.config)
         total_waves = len(waves)
         min_wave_span = int(max(1, max(min_distance, self.config.wave_min_len)))
-        correction_exclusions: set[Tuple[int, ...]] = set()
+        correction_exclusions: List[Tuple[int, ...]] = []
+        correction_bar_tolerance = max(0, int(getattr(self.config, "correction_exclusion_bar_tolerance", 1)))
+        correction_overlap_ratio = float(
+            max(0.0, min(1.0, getattr(self.config, "correction_exclusion_overlap_ratio", 0.9)))
+        )
 
         if "impulse" in pattern_types:
             for k in range(0, total_waves - 4):
@@ -732,8 +807,8 @@ class ElliottWaveAnalyzer:
                     rule_eval.fib_score,
                     cls_score,
                     classification_available=classification_available,
-                    rule_weight=0.65,
-                    cls_weight=0.35,
+                    rule_weight=float(getattr(self.config, "impulse_rule_weight", 0.65)),
+                    cls_weight=float(getattr(self.config, "impulse_cls_weight", 0.35)),
                 )
                 if confidence < float(self.config.min_confidence):
                     continue
@@ -752,14 +827,22 @@ class ElliottWaveAnalyzer:
                         pivot_confirmations=pivot_confirmations,
                     )
                 )
-                correction_exclusions.update(_contiguous_pivot_slices(piv_seq, 4))
+                correction_exclusions.extend(_contiguous_pivot_slices(piv_seq, 4))
 
         if "correction" in pattern_types:
             for k in range(0, total_waves - 2):
                 piv_seq = [int(x) for x in piv_idx[k : k + 4]]
                 if len(piv_seq) < 4:
                     continue
-                if tuple(piv_seq) in correction_exclusions:
+                if any(
+                    _pivot_sequence_is_near_match(
+                        piv_seq,
+                        excluded,
+                        bar_tolerance=correction_bar_tolerance,
+                        overlap_ratio=correction_overlap_ratio,
+                    )
+                    for excluded in correction_exclusions
+                ):
                     continue
 
                 if any((piv_seq[j + 1] - piv_seq[j]) < min_wave_span for j in range(3)):
@@ -796,8 +879,8 @@ class ElliottWaveAnalyzer:
                     rule_eval.fib_score,
                     cls_score,
                     classification_available=classification_available,
-                    rule_weight=0.60,
-                    cls_weight=0.40,
+                    rule_weight=float(getattr(self.config, "correction_rule_weight", 0.60)),
+                    cls_weight=float(getattr(self.config, "correction_cls_weight", 0.40)),
                 )
                 if confidence < float(self.config.min_confidence):
                     continue
@@ -986,7 +1069,11 @@ def detect_elliott_waves(df: pd.DataFrame, config: Optional[ElliottWaveConfig] =
     n = int(c.size)
     pattern_types = _normalize_pattern_types(config)
     min_pattern_pivots = 6 if "impulse" in pattern_types else 4
-    min_floor = 30 if min_pattern_pivots == 6 else 20
+    min_floor = (
+        int(getattr(config, "min_impulse_bars", 30))
+        if min_pattern_pivots == 6
+        else int(getattr(config, "min_correction_bars", 20))
+    )
     min_required = max(min_pattern_pivots * max(1, int(config.min_distance)), min_floor)
     if n < min_required:
         return []
@@ -1009,6 +1096,11 @@ def detect_elliott_waves(df: pd.DataFrame, config: Optional[ElliottWaveConfig] =
         )
 
         seen_pivot_signatures: set[Tuple[int, ...]] = set()
+        prior_scenario_signature: Tuple[Tuple[str, bool, int, int, int], ...] = tuple()
+        repeated_scenario_runs = 0
+        stop_after_repeats = max(0, int(getattr(config, "autotune_early_stop_repeats", 3)))
+        scenario_overlap_ratio = float(max(0.0, min(1.0, getattr(config, "autotune_scenario_overlap_ratio", 0.9))))
+        stop_autotune = False
         for thr_val in thr_list:
             try:
                 thr_f = float(thr_val)
@@ -1027,9 +1119,25 @@ def detect_elliott_waves(df: pd.DataFrame, config: Optional[ElliottWaveConfig] =
                         seen_pivot_signatures.add(signature)
 
                 scenarios = analyzer.analyze_once(thr_f, md_i)
+                if stop_after_repeats > 0:
+                    current_signature = _scenario_signature(scenarios)
+                    if current_signature and _scenario_signatures_overlap(
+                        current_signature,
+                        prior_scenario_signature,
+                        overlap_ratio=scenario_overlap_ratio,
+                    ):
+                        repeated_scenario_runs += 1
+                    else:
+                        repeated_scenario_runs = 0
+                    prior_scenario_signature = current_signature
                 for scenario in scenarios:
                     result = analyzer.build_result(scenario)
                     _upsert_elliott_result(results_by_key, result)
+                if stop_after_repeats > 0 and repeated_scenario_runs >= stop_after_repeats:
+                    stop_autotune = True
+                    break
+            if stop_autotune:
+                break
     else:
         thr = float(config.swing_threshold_pct if config.swing_threshold_pct is not None else config.min_prominence_pct)
         scenarios = analyzer.analyze_once(thr, int(max(1, config.min_distance)))
