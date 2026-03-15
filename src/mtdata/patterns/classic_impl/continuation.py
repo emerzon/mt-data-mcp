@@ -1,5 +1,5 @@
 import numpy as np
-from typing import List, Optional
+from typing import Dict, List, Optional
 from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
     _detect_pivots_close, _fit_lines_and_arrays, _is_converging,
@@ -127,51 +127,57 @@ def detect_flags_pennants(
 
     return out
 
-def detect_cup_handle(
+def _detect_cup_handle_variant(
     c: np.ndarray,
     t: np.ndarray,
-    cfg: ClassicDetectorConfig
-) -> List[ClassicPatternResult]:
-    out: List[ClassicPatternResult] = []
+    cfg: ClassicDetectorConfig,
+    *,
+    invert: bool,
+) -> Optional[ClassicPatternResult]:
     n = c.size
     W = min(int(cfg.cup_handle_max_window_bars), n)
     if W < int(cfg.cup_handle_min_window_bars):
-        return out
+        return None
 
-    seg = c[-W:]
+    if invert:
+        ceiling = float(np.nanmax(c)) if c.size else 0.0
+        work = (ceiling - c) + 1.0
+    else:
+        work = c
+    seg = work[-W:]
     i_min = int(np.argmin(seg))
     if i_min <= 5 or i_min >= (W - 5):
-        return out
+        return None
 
     i_max_left = int(np.argmax(seg[:i_min])) if i_min > 5 else 0
     left = seg[i_max_left]
     bottom = seg[i_min]
     if left <= 0:
-        return out
+        return None
 
     depth_pct = (left - bottom) / left * 100.0 if left != 0 else 0.0
     if not (float(cfg.cup_handle_min_depth_pct) <= depth_pct <= float(cfg.cup_handle_max_depth_pct)):
-        return out
+        return None
 
     handle_frac = float(max(0.05, min(0.5, cfg.cup_handle_handle_window_frac)))
     handle_region_start = int(round(W * (1.0 - handle_frac)))
     if handle_region_start <= i_min:
-        return out
+        return None
     i_max_right = int(np.argmax(seg[i_min:handle_region_start])) + i_min
     right = seg[i_max_right]
     if right <= 0:
-        return out
+        return None
     near_equal_rim = _level_close(left, right, cfg.same_level_tol_pct)
     handle_start = max(int(i_max_right), handle_region_start)
     tail = seg[handle_start:]
     if tail.size < 3:
-        return out
+        return None
 
     rim = float(max(left, right))
     handle_floor = float(np.min(tail[1:])) if tail.size > 1 else float(tail[-1])
     handle_pullback = (rim - handle_floor) / max(1e-9, rim) * 100.0
     if handle_pullback > float(cfg.cup_handle_max_handle_pullback_pct):
-        return out
+        return None
 
     if near_equal_rim:
         rim_symmetry = max(0.0, 1.0 - abs(left - right) / max(1e-9, rim))
@@ -186,11 +192,16 @@ def detect_cup_handle(
         tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
         breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
         handle_anchor = max(int(i_max_right), handle_start)
+        absolute_left_idx = int(n - W + i_max_left)
+        absolute_bottom_idx = int(n - W + i_min)
+        absolute_right_idx = int(n - W + i_max_right)
+        expected = "down" if invert else "up"
+        breakout_level = float(min(c[absolute_left_idx], c[absolute_right_idx])) if invert else float(max(c[absolute_left_idx], c[absolute_right_idx]))
         break_i = _find_forward_level_breakout(
             c,
             int(n - W + handle_anchor),
-            rim,
-            "up",
+            breakout_level,
+            expected,
             breakout_look,
             tol_abs,
             tol_pct=float(cfg.same_level_tol_pct),
@@ -200,21 +211,45 @@ def detect_cup_handle(
             status = "completed"
             conf = min(1.0, conf + 0.08)
 
-        out.append(_result(
-            "Cup and Handle",
+        details: Dict[str, float | int | str] = {
+            "left_rim": float(c[absolute_left_idx]),
+            "right_rim": float(c[absolute_right_idx]),
+            "cup_extreme": float(c[absolute_bottom_idx]),
+            "handle_pullback_pct": float(handle_pullback),
+            "handle_start_index": int(n - W + handle_start),
+            "breakout_level": breakout_level,
+            "breakout_index": int(break_i) if break_i is not None else None,
+            "breakout_direction": expected,
+            "bias": "bearish" if invert else "bullish",
+            "cup_extreme_kind": "top" if invert else "bottom",
+        }
+        if not invert:
+            details["bottom"] = float(c[absolute_bottom_idx])
+        else:
+            details["top"] = float(c[absolute_bottom_idx])
+
+        return _result(
+            "Inverted Cup and Handle" if invert else "Cup and Handle",
             status,
             conf,
             int(n - W + i_max_left),
             int(break_i if break_i is not None else (n - 1)),
             t,
-            {
-                "left_rim": float(left),
-                "bottom": float(bottom),
-                "right_rim": float(right),
-                "handle_pullback_pct": float(handle_pullback),
-                "handle_start_index": int(n - W + handle_start),
-                "breakout_level": rim,
-                "breakout_index": int(break_i) if break_i is not None else None,
-            },
-        ))
+            details,
+        )
+    return None
+
+
+def detect_cup_handle(
+    c: np.ndarray,
+    t: np.ndarray,
+    cfg: ClassicDetectorConfig
+) -> List[ClassicPatternResult]:
+    out: List[ClassicPatternResult] = []
+    bullish = _detect_cup_handle_variant(c, t, cfg, invert=False)
+    bearish = _detect_cup_handle_variant(c, t, cfg, invert=True)
+    if bullish is not None:
+        out.append(bullish)
+    if bearish is not None:
+        out.append(bearish)
     return out

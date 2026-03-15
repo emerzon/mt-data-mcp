@@ -136,13 +136,17 @@ def detect_head_shoulders(
         
     tol_pct = float(cfg.same_level_tol_pct)
     breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
+    peak_cap = int(getattr(cfg, "head_shoulders_max_peak_candidates", 0))
+    if peak_cap <= 0:
+        peak_cap = max(6, int(cfg.max_pattern_pivots) * 2)
+    peak_candidates = peaks[-peak_cap:] if peaks.size > peak_cap else peaks
 
-    for head_idx in peaks.tolist():
+    for head_idx in peak_candidates.tolist():
         if head_idx < 0 or head_idx >= n:
             continue
         head_price = float(c[head_idx])
-        ls_candidates = [pi for pi in peaks.tolist() if pi < head_idx]
-        rs_candidates = [pi for pi in peaks.tolist() if pi > head_idx]
+        ls_candidates = [pi for pi in peak_candidates.tolist() if pi < head_idx]
+        rs_candidates = [pi for pi in peak_candidates.tolist() if pi > head_idx]
         if not ls_candidates or not rs_candidates:
             continue
         lsh = int(ls_candidates[-1]); rsh = int(rs_candidates[0])
@@ -255,50 +259,54 @@ def detect_rounding(
 ) -> List[ClassicPatternResult]:
     out: List[ClassicPatternResult] = []
     n = c.size
-    W = min(int(cfg.rounding_window_bars), n)
-    if W < 100:
-        return out
-        
-    seg = c[-W:]
-    x = np.linspace(-1.0, 1.0, W)
-    try:
-        qa, qb, qc = np.polyfit(x, seg.astype(float), 2)
-    except (TypeError, ValueError, np.linalg.LinAlgError):
-        return out
-        
-    if not (np.isfinite(qa) and np.isfinite(qb) and np.isfinite(qc)):
-        return out
-        
-    # Vertex in central region.
-    if abs(float(qa)) <= 1e-12:
-        return out
-    xv = -float(qb) / (2.0 * float(qa))
-    if not (-0.55 <= xv <= 0.55):
-        return out
-        
-    edge_n = max(6, W // 10)
-    left_edge = float(np.mean(seg[:edge_n]))
-    right_edge = float(np.mean(seg[-edge_n:]))
-    if not _level_close(left_edge, right_edge, cfg.same_level_tol_pct * 2.0):
+    configured_windows = [int(v) for v in getattr(cfg, "rounding_window_sizes", []) if int(v) > 0]
+    candidate_windows = configured_windows or [100, 150, int(cfg.rounding_window_bars), 300]
+    valid_windows = sorted({min(int(w), n) for w in candidate_windows if min(int(w), n) >= 100})
+    if not valid_windows:
         return out
 
-    peak = float(np.max(seg))
-    trough = float(np.min(seg))
-    amp_pct = abs(peak - trough) / max(1e-9, abs((peak + trough) / 2.0)) * 100.0
-    if amp_pct < 2.0:
-        return out
+    best: Optional[ClassicPatternResult] = None
+    best_rank = (-1.0, -1.0, -1.0)
+    for W in valid_windows:
+        seg = c[-W:]
+        x = np.linspace(-1.0, 1.0, W)
+        try:
+            qa, qb, qc = np.polyfit(x, seg.astype(float), 2)
+        except (TypeError, ValueError, np.linalg.LinAlgError):
+            continue
 
-    tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
-    if qa > 0:
-        name = "Rounding Bottom"
-        status = "completed" if float(c[-1]) > (max(left_edge, right_edge) + tol_abs) else "forming"
-    else:
-        name = "Rounding Top"
-        status = "completed" if float(c[-1]) < (min(left_edge, right_edge) - tol_abs) else "forming"
-        
-    conf = min(1.0, 0.5 + 0.3 * min(1.0, amp_pct / 12.0))
-    out.append(
-        _result(
+        if not (np.isfinite(qa) and np.isfinite(qb) and np.isfinite(qc)):
+            continue
+        if abs(float(qa)) <= 1e-12:
+            continue
+        xv = -float(qb) / (2.0 * float(qa))
+        if not (-0.55 <= xv <= 0.55):
+            continue
+
+        edge_n = max(6, W // 10)
+        left_edge = float(np.mean(seg[:edge_n]))
+        right_edge = float(np.mean(seg[-edge_n:]))
+        if not _level_close(left_edge, right_edge, cfg.same_level_tol_pct * 2.0):
+            continue
+
+        peak = float(np.max(seg))
+        trough = float(np.min(seg))
+        amp_pct = abs(peak - trough) / max(1e-9, abs((peak + trough) / 2.0)) * 100.0
+        if amp_pct < 2.0:
+            continue
+
+        tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
+        if qa > 0:
+            name = "Rounding Bottom"
+            status = "completed" if float(c[-1]) > (max(left_edge, right_edge) + tol_abs) else "forming"
+            bias = "bullish"
+        else:
+            name = "Rounding Top"
+            status = "completed" if float(c[-1]) < (min(left_edge, right_edge) - tol_abs) else "forming"
+            bias = "bearish"
+
+        conf = min(1.0, 0.5 + 0.3 * min(1.0, amp_pct / 12.0))
+        candidate = _result(
             name,
             status,
             conf,
@@ -312,7 +320,13 @@ def detect_rounding(
                 "left_edge": left_edge,
                 "right_edge": right_edge,
                 "amplitude_pct": float(amp_pct),
+                "window_bars": int(W),
+                "bias": bias,
             },
         )
-    )
-    return out
+        rank = (float(candidate.confidence), float(amp_pct), -abs(float(xv)))
+        if best is None or rank > best_rank:
+            best = candidate
+            best_rank = rank
+
+    return [best] if best is not None else out

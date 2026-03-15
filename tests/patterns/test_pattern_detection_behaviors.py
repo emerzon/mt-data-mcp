@@ -862,6 +862,32 @@ def test_detect_cup_handle_respects_configurable_handle_pullback():
     assert out_relaxed[0].details["handle_pullback_pct"] == pytest.approx(5.0)
 
 
+def test_detect_inverted_cup_handle_detects_bearish_variant():
+    from src.mtdata.patterns.classic_impl.continuation import detect_cup_handle
+
+    n = 180
+    anchors = [(0, 100.0), (25, 100.0), (90, 118.0), (135, 100.0), (150, 102.0), (165, 105.0), (179, 99.0)]
+    close = np.full(n, 100.0, dtype=float)
+    for (a_i, a_v), (b_i, b_v) in zip(anchors, anchors[1:]):
+        close[a_i : b_i + 1] = np.linspace(a_v, b_v, b_i - a_i + 1)
+
+        out = detect_cup_handle(
+            close,
+            np.arange(n, dtype=float),
+            ClassicDetectorConfig(
+                breakout_lookahead=40,
+                completion_lookback_bars=40,
+                cup_handle_max_depth_pct=100.0,
+                cup_handle_max_handle_pullback_pct=30.0,
+            ),
+        )
+
+    inverted = next(pattern for pattern in out if pattern.name == "Inverted Cup and Handle")
+    assert inverted.details["breakout_direction"] == "down"
+    assert inverted.details["bias"] == "bearish"
+    assert inverted.status == "completed"
+
+
 def test_detect_triangles_skip_same_sign_converging_shapes(monkeypatch):
     from src.mtdata.patterns.classic_impl import shapes
 
@@ -1014,6 +1040,7 @@ def test_detect_diamonds_respects_geometry_threshold(monkeypatch):
     assert out_relaxed
     assert out_relaxed[0].status == "completed"
     assert out_relaxed[0].details["diamond_split_index"] == 100
+    assert out_relaxed[0].details["prior_pole_span_bars"] > 0
     assert 0.0 < out_relaxed[0].details["geometry_score"] < 1.0
 
 
@@ -1163,6 +1190,35 @@ def test_detect_inverse_head_shoulders_uses_internal_peaks_for_neckline(monkeypa
     assert captured["x"] == [3.0, 3.0]
     assert inverse.details["neckline_source"] == "peaks"
     assert inverse.details["neck_points"] == 2
+
+
+def test_detect_rounding_tries_multiple_windows(monkeypatch):
+    from src.mtdata.patterns.classic_impl import reversal
+
+    n = 260
+    close = np.linspace(100.0, 110.0, n)
+    called = []
+
+    def _fake_polyfit(x, y, deg):
+        _ = y
+        _ = deg
+        called.append(len(x))
+        if len(x) == 100:
+            return np.array([0.6, 0.0, 95.0], dtype=float)
+        raise np.linalg.LinAlgError("skip other windows")
+
+    monkeypatch.setattr(reversal.np, "polyfit", _fake_polyfit)
+    monkeypatch.setattr(reversal, "_level_close", lambda *_args, **_kwargs: True)
+
+    out = reversal.detect_rounding(
+        close,
+        np.arange(n, dtype=float),
+        ClassicDetectorConfig(rounding_window_bars=220, rounding_window_sizes=[100, 220]),
+    )
+
+    assert called == [100, 220] or called == [220, 100]
+    assert out
+    assert out[0].details["window_bars"] == 100
 
 
 def test_dedupe_overlapping_head_shoulders_results():

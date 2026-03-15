@@ -376,9 +376,13 @@ def detect_diamonds(
     if best is None:
         return out
 
-    pole = min(60, max(10, W // 3))
-    if n > 2 * pole + 1:
-        ret = (c[-1 - pole] - c[-1 - 2 * pole]) / max(1e-9, c[-1 - 2 * pole]) * 100.0
+    start_idx = int(n - W)
+    pole_span = max(5, min(int(best["split"]), max(5, W // 2)))
+    pole_start_idx = max(0, start_idx - pole_span)
+    if start_idx > pole_start_idx and start_idx < n:
+        pole_base = float(c[pole_start_idx])
+        pole_tip = float(c[start_idx])
+        ret = (pole_tip - pole_base) / max(1e-9, abs(pole_base)) * 100.0
     else:
         ret = 0.0
 
@@ -409,6 +413,7 @@ def detect_diamonds(
         t,
         {
             "prior_pole_return_pct": float(ret),
+            "prior_pole_span_bars": int(pole_span),
             "breakout_direction": bdir,
             "breakout_index": int(n - W + bidx_local) if bidx_local is not None else None,
             "diamond_split_index": int(n - W + best["split"]),

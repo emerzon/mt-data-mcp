@@ -26,6 +26,7 @@ class ClassicDetectorConfig:
     min_r2: float = 0.6              # minimum R^2 for line fit confidence
     max_pattern_pivots: int = 8      # max recent pivots used by line-based detectors
     min_confidence: float = 0.30     # global post-calibration floor for emitted classic patterns
+    head_shoulders_max_peak_candidates: int = 0  # 0 => derive from max_pattern_pivots * 2
     # Levels tolerance (same-level checks)
     same_level_tol_pct: float = 0.4  # peaks/lows considered equal if within this percent
     # Pattern-specific
@@ -58,6 +59,7 @@ class ClassicDetectorConfig:
     channel_parallel_min_abs_tol: float = 1e-4  # absolute floor for near-horizontal channel slope spread
     pennant_parallel_slope_ratio: float = 0.2  # relative slope spread tolerated for flags/pennants
     rounding_window_bars: int = 220
+    rounding_window_sizes: List[int] = field(default_factory=list)
     # Confidence blending
     touch_weight: float = 0.35
     r2_weight: float = 0.35
