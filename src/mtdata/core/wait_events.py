@@ -455,13 +455,13 @@ def _build_baseline(gateway: Any, watch_for: List[Dict[str, Any]]) -> Dict[str, 
     baseline: Dict[str, Any] = {}
     if any(item["type"] == "order_created" for item in watch_for):
         baseline["orders"] = _coerce_rows(gateway.orders_get())
-    if any(item["type"] == "position_opened" for item in watch_for):
+    if any(item["type"] in {"position_opened", "position_closed"} for item in watch_for):
         baseline["positions"] = _coerce_rows(gateway.positions_get())
     return baseline
 
 
 def _watchers_need_current_state(watch_for: List[Dict[str, Any]]) -> bool:
-    return any(item["type"] in {"order_created", "position_opened"} for item in watch_for)
+    return any(item["type"] in {"order_created", "position_opened", "position_closed"} for item in watch_for)
 
 
 def _find_preexisting_match(
@@ -476,7 +476,7 @@ def _find_preexisting_match(
             for row in rows:
                 if _matches_account_filters(row, spec, gateway=gateway):
                     return _format_account_match(spec["type"], row, gateway=gateway)
-        elif spec["type"] == "position_opened":
+        elif spec["type"] in {"position_opened", "position_closed"}:
             rows = baseline.get("positions") or _coerce_rows(gateway.positions_get())
             for row in rows:
                 if _matches_account_filters(row, spec, gateway=gateway):
@@ -501,7 +501,7 @@ def _collect_snapshot(
     if any(item["type"] == "order_created" for item in watch_for):
         snapshot["orders"] = _coerce_rows(gateway.orders_get())
 
-    if any(item["type"] == "position_opened" for item in watch_for):
+    if any(item["type"] in {"position_opened", "position_closed"} for item in watch_for):
         snapshot["positions"] = _coerce_rows(gateway.positions_get())
 
     if any(
@@ -651,6 +651,19 @@ def _evaluate_watch_events(
         elif event_type == "position_closed":
             for row in snapshot.get("history_deals", []):
                 if not _is_deal_entry_out(row, gateway=gateway):
+                    continue
+                if _matches_account_filters(row, spec, gateway=gateway):
+                    return _format_account_match(event_type, row, gateway=gateway)
+            current_positions = snapshot.get("positions", [])
+            baseline_positions = snapshot.get("baseline", {}).get("positions", [])
+            current_tickets = {
+                _row_int(row, "ticket")
+                for row in current_positions
+                if _row_int(row, "ticket") is not None
+            }
+            for row in baseline_positions:
+                ticket = _row_int(row, "ticket")
+                if ticket is not None and ticket in current_tickets:
                     continue
                 if _matches_account_filters(row, spec, gateway=gateway):
                     return _format_account_match(event_type, row, gateway=gateway)
@@ -1036,8 +1049,8 @@ def _is_deal_entry_out(row: Any, *, gateway: Any) -> bool:
     return _row_enum_matches(
         row,
         "entry",
-        text_patterns=("deal_entry_out", "entry_out", " out"),
-        numeric_constants=("DEAL_ENTRY_OUT", "ENTRY_OUT"),
+        text_patterns=("deal_entry_out", "deal_entry_out_by", "entry_out", "entry_out_by", " out"),
+        numeric_constants=("DEAL_ENTRY_OUT", "DEAL_ENTRY_OUT_BY", "DEAL_ENTRY_INOUT", "ENTRY_OUT"),
         gateway=gateway,
     )
 

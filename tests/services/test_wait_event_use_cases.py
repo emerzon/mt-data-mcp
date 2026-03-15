@@ -34,6 +34,8 @@ class SequenceGateway:
     DEAL_TYPE_SELL = 1
     DEAL_ENTRY_IN = 0
     DEAL_ENTRY_OUT = 1
+    DEAL_ENTRY_INOUT = 2
+    DEAL_ENTRY_OUT_BY = 3
     DEAL_REASON_TP = 5
     DEAL_REASON_SL = 6
     ORDER_STATE_CANCELED = 4
@@ -105,6 +107,7 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
             "symbol": request.symbol,
             "timeframe": request.timeframe,
             "watch_for_inferred": request.watch_for is None,
+            "watch_for": list(request.watch_for or []),
         },
     )
     monkeypatch.setattr(core_data, "get_mt5_gateway", lambda ensure_connection_impl=None: object())
@@ -118,7 +121,13 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     assert result["success"] is True
     assert result["symbol"] == "BTCUSD"
     assert result["timeframe"] == "M1"
-    assert result["watch_for_inferred"] is True
+    assert result["watch_for_inferred"] is False
+    assert [item.type for item in result["watch_for"]] == [
+        "position_opened",
+        "position_closed",
+        "tp_hit",
+        "sl_hit",
+    ]
 
 
 def test_run_wait_event_defers_boundary_only_when_cap_is_short(monkeypatch) -> None:
@@ -406,3 +415,60 @@ def test_run_wait_event_matches_volume_spike() -> None:
     assert result["status"] == "matched"
     assert result["matched_event"]["type"] == "volume_spike"
     assert result["matched_event"]["observed"]["ratio"] > 4.0
+
+
+def test_run_wait_event_matches_position_closed_from_history_out_by() -> None:
+    gateway = SequenceGateway(
+        positions_seq=[
+            [{"ticket": 9001, "symbol": "BTCUSD", "type": "buy"}],
+            [{"ticket": 9001, "symbol": "BTCUSD", "type": "buy"}],
+        ],
+        history_deals_seq=[
+            [],
+            [{"ticket": 3001, "position_id": 9001, "symbol": "BTCUSD", "entry": 3, "type": "sell"}],
+        ],
+    )
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[{"type": "position_closed", "symbol": "BTCUSD"}],
+            poll_interval_seconds=1.0,
+            max_wait_seconds=5.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "matched"
+    assert result["matched_event"]["type"] == "position_closed"
+    assert result["matched_event"]["observed"]["position_ticket"] == 9001
+
+
+def test_run_wait_event_matches_position_closed_when_position_disappears() -> None:
+    gateway = SequenceGateway(
+        positions_seq=[
+            [{"ticket": 9002, "symbol": "BTCUSD", "type": "buy"}],
+            [],
+        ],
+        history_deals_seq=[[], []],
+    )
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[{"type": "position_closed", "symbol": "BTCUSD"}],
+            poll_interval_seconds=1.0,
+            max_wait_seconds=5.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "matched"
+    assert result["matched_event"]["type"] == "position_closed"
+    assert result["matched_event"]["observed"]["ticket"] == 9002

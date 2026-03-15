@@ -150,13 +150,23 @@ def wait_event(
     instrument: str,
     timeframe: TimeframeLiteral = "M1",
 ) -> Dict[str, Any]:
-    """Wait for default events on an instrument until the next timeframe boundary.
+    """Wait for position lifecycle events on an instrument until the next timeframe boundary.
 
-    The tool watches the standard event set for the instrument, including
-    `position_opened`, and stops at the next candle close for `timeframe` if no
-    watched event happens first.
+    The public tool focuses on position state changes for the instrument:
+    `position_opened`, `position_closed`, `tp_hit`, and `sl_hit`.
+    It stops at the next candle close for `timeframe` if no watched event
+    happens first.
     """
-    request = WaitEventRequest(symbol=instrument, timeframe=timeframe)
+    request = WaitEventRequest(
+        symbol=instrument,
+        timeframe=timeframe,
+        watch_for=[
+            {"type": "position_opened", "symbol": instrument},
+            {"type": "position_closed", "symbol": instrument},
+            {"type": "tp_hit", "symbol": instrument},
+            {"type": "sl_hit", "symbol": instrument},
+        ],
+    )
     return run_logged_operation(
         logger,
         operation="wait_event",
