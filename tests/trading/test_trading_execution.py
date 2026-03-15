@@ -84,10 +84,10 @@ def test_place_market_order_success(mock_mt5):
         comment="Test Buy",
         deviation=10
     )
-    
+
     assert "error" not in res
     assert res["retcode"] == mock_mt5.TRADE_RETCODE_DONE
-    assert res["sl_tp_modified"] is True
+    assert res["sl_tp_result"]["status"] == "applied"
     
     # Check that order_send was called twice (once for deal, once for modifying SL/TP since TRADE_ACTION_DEAL doesn't take SL/TP natively)
     assert mock_mt5.order_send.call_count == 2

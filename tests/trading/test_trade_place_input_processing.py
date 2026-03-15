@@ -180,8 +180,7 @@ def test_trade_place_require_sl_tp_flags_unprotected_market_fill() -> None:
         "mtdata.core.trading._place_market_order",
         return_value={
             "retcode": 10009,
-            "sl_tp_requested": True,
-            "sl_tp_apply_status": "failed",
+            "sl_tp_result": {"status": "failed", "requested": {"sl": 64000.0, "tp": 68000.0}},
         },
     ):
         out = trade_place(
@@ -204,8 +203,7 @@ def test_trade_place_defaults_to_failing_unprotected_market_fill() -> None:
         "mtdata.core.trading._place_market_order",
         return_value={
             "retcode": 10009,
-            "sl_tp_requested": True,
-            "sl_tp_apply_status": "failed",
+            "sl_tp_result": {"status": "failed", "requested": {"sl": 64000.0, "tp": 68000.0}},
             "position_ticket": 456,
         },
     ):
@@ -228,8 +226,7 @@ def test_trade_place_auto_close_attempts_recovery_on_sl_tp_fail() -> None:
         "mtdata.core.trading._place_market_order",
         return_value={
             "retcode": 10009,
-            "sl_tp_requested": True,
-            "sl_tp_apply_status": "failed",
+            "sl_tp_result": {"status": "failed", "requested": {"sl": 64000.0, "tp": 68000.0}},
             "position_ticket": 789,
         },
     ), patch(
@@ -256,9 +253,11 @@ def test_trade_place_preserves_fallback_protection_status_and_warning() -> None:
         "mtdata.core.trading._place_market_order",
         return_value={
             "retcode": 10009,
-            "sl_tp_requested": True,
-            "sl_tp_apply_status": "applied",
-            "sl_tp_fallback_used": True,
+            "sl_tp_result": {
+                "status": "applied",
+                "requested": {"sl": 64000.0, "tp": 68000.0},
+                "fallback_used": True,
+            },
             "protection_status": "protected_after_fallback",
             "warnings": [
                 "TP/SL protection required a post-fill fallback modification. Verify the live position is protected."

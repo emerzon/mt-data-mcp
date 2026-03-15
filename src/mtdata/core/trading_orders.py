@@ -46,6 +46,61 @@ def _invalid_comment_error_text(result: Any, last_error: Any) -> Optional[str]:
     return None
 
 
+def _compact_sl_tp_levels(
+    *,
+    sl: Optional[float],
+    tp: Optional[float],
+) -> Optional[Dict[str, float]]:
+    levels: Dict[str, float] = {}
+    if sl is not None:
+        levels["sl"] = float(sl)
+    if tp is not None:
+        levels["tp"] = float(tp)
+    return levels or None
+
+
+def _build_sl_tp_result(
+    *,
+    requested_sl: Optional[float],
+    requested_tp: Optional[float],
+    applied_sl: Optional[float],
+    applied_tp: Optional[float],
+    status: str,
+    error: Optional[str],
+    broker_adjusted: bool,
+    adjustment: Optional[Dict[str, Any]],
+    attempts: int,
+    last_retcode: Any,
+    last_comment: Any,
+    fallback_used: bool,
+    fallback_result: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    out: Dict[str, Any] = {"status": status}
+    requested = _compact_sl_tp_levels(sl=requested_sl, tp=requested_tp)
+    applied = _compact_sl_tp_levels(sl=applied_sl, tp=applied_tp)
+    if requested is not None:
+        out["requested"] = requested
+    if applied is not None:
+        out["applied"] = applied
+    if error is not None:
+        out["error"] = error
+    if broker_adjusted:
+        out["broker_adjusted"] = True
+    if adjustment:
+        out["adjustment"] = adjustment
+    if attempts > 0:
+        out["attempts"] = int(attempts)
+    if last_retcode is not None:
+        out["last_retcode"] = last_retcode
+    if last_comment is not None:
+        out["last_comment"] = last_comment
+    if fallback_used:
+        out["fallback_used"] = True
+    if fallback_result is not None:
+        out["fallback_result"] = fallback_result
+    return out
+
+
 def _send_order_with_comment_fallback(
     mt5: Any,
     request: Dict[str, Any],
@@ -279,7 +334,6 @@ def _place_market_order(
                     position_ticket_candidates.append(cand)
             position_ticket = order_ticket
             position_ticket_resolution: Optional[Dict[str, Any]] = None
-            sl_tp_modified = False
             sl_tp_error = None
             sl_tp_requested = bool(norm_sl is not None or norm_tp is not None)
             sl_tp_apply_status = "not_requested"
@@ -356,7 +410,6 @@ def _place_market_order(
                                 time.sleep(0.35)
 
                         if modify_result and getattr(modify_result, "retcode", None) == mt5.TRADE_RETCODE_DONE:
-                            sl_tp_modified = True
                             sl_tp_apply_status = "applied"
                             try:
                                 positions_after = mt5.positions_get(ticket=position_ticket)
@@ -410,7 +463,6 @@ def _place_market_order(
                                     fallback_out = {"error": f"Fallback modify call failed: {str(ex)}"}
                                 sl_tp_fallback_result = fallback_out if isinstance(fallback_out, dict) else {"result": fallback_out}
                                 if isinstance(fallback_out, dict) and bool(fallback_out.get("success")):
-                                    sl_tp_modified = True
                                     sl_tp_apply_status = "applied"
                                     sl_applied = fallback_out.get("applied_sl")
                                     tp_applied = fallback_out.get("applied_tp")
@@ -507,21 +559,21 @@ def _place_market_order(
                 "position_ticket": position_ticket,
                 "position_ticket_candidates": position_ticket_candidates or None,
                 "position_ticket_resolution": position_ticket_resolution,
-                "sl": norm_sl,
-                "tp": norm_tp,
-                "sl_tp_requested": sl_tp_requested,
-                "sl_tp_apply_status": sl_tp_apply_status,
-                "sl_tp_modified": sl_tp_modified,
-                "sl_applied": sl_applied,
-                "tp_applied": tp_applied,
-                "sl_tp_broker_adjusted": sl_tp_broker_adjusted,
-                "sl_tp_adjustment": sl_tp_adjustment or None,
-                "sl_tp_error": sl_tp_error,
-                "sl_tp_attempts": sl_tp_attempts,
-                "sl_tp_last_retcode": sl_tp_last_retcode,
-                "sl_tp_last_comment": sl_tp_last_comment,
-                "sl_tp_fallback_used": sl_tp_fallback_used,
-                "sl_tp_fallback_result": sl_tp_fallback_result,
+                "sl_tp_result": _build_sl_tp_result(
+                    requested_sl=norm_sl,
+                    requested_tp=norm_tp,
+                    applied_sl=sl_applied,
+                    applied_tp=tp_applied,
+                    status=sl_tp_apply_status,
+                    error=sl_tp_error,
+                    broker_adjusted=sl_tp_broker_adjusted,
+                    adjustment=sl_tp_adjustment or None,
+                    attempts=sl_tp_attempts,
+                    last_retcode=sl_tp_last_retcode,
+                    last_comment=sl_tp_last_comment,
+                    fallback_used=sl_tp_fallback_used,
+                    fallback_result=sl_tp_fallback_result,
+                ),
             }
             if comment_sanitization:
                 out["comment_sanitization"] = comment_sanitization
