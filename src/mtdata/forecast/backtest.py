@@ -463,13 +463,6 @@ def forecast_backtest(
 
         return {
             "success": True,
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "horizon": int(horizon),
-            "steps": int(steps),
-            "spacing": int(spacing),
-            "methods": methods,
-            "denoise_used": _dn_used,
             "slippage_bps": float(slippage_bps),
             "trade_threshold": float(trade_threshold or 0.0),
             "detail": detail_mode,

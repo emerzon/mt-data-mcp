@@ -193,9 +193,7 @@ class TestLabelsTripleBarrier:
     def test_params_used_in_output(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
         result = _get_raw_fn()("EURUSD", tp_pct=1.0, sl_pct=1.0, horizon=5)
-        assert "params_used" in result
-        assert result["params_used"]["tp_pct"] == 1.0
-        assert result["params_used"]["sl_pct"] == 1.0
+        assert "params_used" not in result
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")

@@ -331,7 +331,6 @@ def forecast_barrier_hit_probabilities(
             "sl_hit_prob_by_t": [float(v) for v in sl_any_curve],
             "time_to_tp_bars": tp_stats,
             "time_to_sl_bars": sl_stats,
-            "params_used": {k: p[k] for k in p if k in {"n_sims", "seed", "n_states", "p", "q", "block_size", "kappa", "theta", "xi", "rho", "v0", "jump_lambda", "jump_mu", "jump_sigma", "jump_threshold", "lambda"}},
         }
         if method_requested != method_key:
             out["method_requested"] = method_requested

@@ -78,10 +78,19 @@ def labels_triple_barrier(
             t_entry: List[str] = []
             tp_times: List[Optional[str]] = []
             sl_times: List[Optional[str]] = []
+            barrier_kwargs = _build_barrier_kwargs_from(
+                {
+                    "tp_abs": tp_abs,
+                    "sl_abs": sl_abs,
+                    "tp_pct": tp_pct,
+                    "sl_pct": sl_pct,
+                    "tp_pips": tp_pips,
+                    "sl_pips": sl_pips,
+                }
+            )
 
             for i in range(0, N - int(horizon) - 1):
                 p0 = float(closes[i])
-                barrier_kwargs = _build_barrier_kwargs_from(locals())
                 tp, sl = _resolve_barrier_prices(
                     price=p0,
                     direction="long",
@@ -140,10 +149,6 @@ def labels_triple_barrier(
                 "holding_bars": hold,
                 "tp_time": tp_times,
                 "sl_time": sl_times,
-                "params_used": {
-                    "tp_abs": tp_abs, "sl_abs": sl_abs, "tp_pct": tp_pct, "sl_pct": sl_pct, "tp_pips": tp_pips, "sl_pips": sl_pips,
-                    "label_on": label_on,
-                }
             }
             if output_mode in ('summary','compact'):
                 import numpy as _np
