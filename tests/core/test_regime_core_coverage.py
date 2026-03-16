@@ -35,7 +35,7 @@ def _time_fmt_stub(epoch):
 # _consolidate_payload tests
 # ---------------------------------------------------------------------------
 
-from mtdata.core.regime import _consolidate_payload, _summary_only_payload
+from mtdata.core.regime import _consolidate_payload, _smooth_short_state_runs, _summary_only_payload
 
 
 class TestConsolidatePayloadBOCPD:
@@ -148,6 +148,16 @@ class TestConsolidatePayloadHMM:
         res = _consolidate_payload(payload, "clustering", "full")
         assert len(res["regimes"]) == 2
 
+    def test_clustering_skips_undefined_states(self):
+        payload = {
+            "symbol": "X", "timeframe": "H1", "method": "clustering",
+            "times": ["T1", "T2", "T3"],
+            "state": [-1, 2, 2],
+            "state_probabilities": [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
+        }
+        res = _consolidate_payload(payload, "clustering", "full")
+        assert res["regimes"] == [{"start": "T2", "end": "T3", "bars": 2, "regime": 2, "avg_conf": 1.0}]
+
     def test_state_not_list_fallback(self):
         payload = {
             "symbol": "X", "timeframe": "H1", "method": "hmm",
@@ -258,6 +268,7 @@ class TestConsolidateEdgeCases:
         }
         res = _consolidate_payload(payload, "hmm", "full")
         assert "consolidation_error" in res
+        assert res["success"] is False
 
     def test_probs_none_entries(self):
         """Prob list with None entries uses 0.0 fallback."""
@@ -838,3 +849,24 @@ class TestRegimeDetectEdgeCases:
             res = fn("EURUSD", limit=50, method="bocpd",
                       denoise={"method": "ema", "params": {"alpha": 0.2}})
         assert isinstance(res, dict)
+
+    @patch(_FMT, side_effect=_time_fmt_stub)
+    @patch(_DENOISE, return_value="close")
+    @patch(_FETCH)
+    def test_empty_after_finite_filter_returns_error(self, mock_fetch, mock_denoise, mock_fmt):
+        df = pd.DataFrame({
+            "time": np.arange(12, dtype=float) * 3600 + 1_700_000_000,
+            "close": [1.0] + [np.nan] * 11,
+        })
+        mock_fetch.return_value = df
+        fn = _get_regime_detect()
+        res = fn("EURUSD", limit=12, method="bocpd", target="return")
+        assert res["error"] == "Insufficient finite observations after filter"
+
+
+class TestSmoothShortStateRuns:
+    def test_iteration_cap_is_reported(self):
+        state = np.tile(np.array([0, 1], dtype=int), 150)
+        _, _, meta = _smooth_short_state_runs(state, probs=None, min_regime_bars=3)
+        assert meta["iteration_cap"] == 128
+        assert meta["iterations_run"] <= meta["iteration_cap"]

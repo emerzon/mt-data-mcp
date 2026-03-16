@@ -44,6 +44,35 @@ def _http_error(
     return HTTPException(status_code=status_code, detail=payload)
 
 
+def _raise_history_fetch_error(exc: Exception) -> None:
+    if isinstance(exc, MT5ConnectionError):
+        raise _http_error(
+            503,
+            str(exc),
+            code="history_mt5_unavailable",
+            operation="get_history",
+        )
+    if isinstance(exc, (ValueError, TypeError, KeyError)):
+        raise _http_error(
+            400,
+            f"history fetch failed: {exc}",
+            code="history_fetch_failed",
+            operation="get_history",
+        )
+    logger.exception("transport=web_api operation=get_history unhandled_exception")
+    raise _http_error(
+        500,
+        "History fetch failed.",
+        code="history_fetch_internal_error",
+        operation="get_history",
+    )
+
+
+def _raise_internal_handler_error(*, operation: str, code: str, message: str) -> None:
+    logger.exception("transport=web_api operation=%s unhandled_exception", operation)
+    raise _http_error(500, message, code=code, operation=operation)
+
+
 def _require_mt5_connection() -> None:
     mt5 = get_default_mt5_gateway()
     try:
@@ -287,8 +316,17 @@ def get_history_response(
                     )
         except HTTPException:
             raise
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "transport=web_api operation=get_history denoise_validation_failed error=%s",
+                exc,
+            )
+            raise _http_error(
+                500,
+                "Denoise method validation failed.",
+                code="denoise_validation_failed",
+                operation="get_history",
+            )
 
         spec_input: Dict[str, Any] = {
             "method": denoise_method_val,
@@ -353,7 +391,7 @@ def get_history_response(
             time_as_epoch=True,
         )
     except Exception as exc:
-        raise _http_error(400, f"history fetch failed: {exc}", code="history_fetch_failed", operation="get_history")
+        _raise_history_fetch_error(exc)
 
     if not isinstance(result, dict):
         raise _http_error(500, "Unexpected history payload", code="history_payload_invalid", operation="get_history")
@@ -649,23 +687,54 @@ def post_forecast_price_response(*, body: ForecastPriceBody, forecast_generate_u
 
 
 def post_forecast_volatility_response(*, body: ForecastVolBody, forecast_vol_impl: Callable[..., Any]) -> Dict[str, Any]:
-    result = forecast_vol_impl(
-        symbol=body.symbol,
-        timeframe=body.timeframe,  # type: ignore[arg-type]
-        horizon=body.horizon,
-        method=body.method,  # type: ignore[arg-type]
-        proxy=body.proxy,  # type: ignore[arg-type]
-        params=body.params,
-        as_of=body.as_of,
-        denoise=body.denoise,
-    )
+    try:
+        result = forecast_vol_impl(
+            symbol=body.symbol,
+            timeframe=body.timeframe,  # type: ignore[arg-type]
+            horizon=body.horizon,
+            method=body.method,  # type: ignore[arg-type]
+            proxy=body.proxy,  # type: ignore[arg-type]
+            params=body.params,
+            as_of=body.as_of,
+            denoise=body.denoise,
+        )
+    except HTTPException:
+        raise
+    except ForecastError as exc:
+        raise _http_error(400, str(exc), code="forecast_volatility_error", operation="post_forecast_volatility")
+    except MT5ConnectionError as exc:
+        raise _http_error(
+            503,
+            str(exc),
+            code="forecast_volatility_mt5_unavailable",
+            operation="post_forecast_volatility",
+        )
+    except Exception:
+        _raise_internal_handler_error(
+            operation="post_forecast_volatility",
+            code="forecast_volatility_internal_error",
+            message="Forecast volatility computation failed.",
+        )
     if isinstance(result, dict) and result.get("error"):
         raise _http_error(400, str(result["error"]), code="forecast_volatility_error", operation="post_forecast_volatility")
     return result
 
 
 def post_backtest_response(*, body: BacktestBody, backtest_use_case: Callable[..., Any]) -> Dict[str, Any]:
-    result = backtest_use_case(body.to_domain_request())
+    try:
+        result = backtest_use_case(body.to_domain_request())
+    except HTTPException:
+        raise
+    except ForecastError as exc:
+        raise _http_error(400, str(exc), code="backtest_error", operation="post_backtest")
+    except MT5ConnectionError as exc:
+        raise _http_error(503, str(exc), code="backtest_mt5_unavailable", operation="post_backtest")
+    except Exception:
+        _raise_internal_handler_error(
+            operation="post_backtest",
+            code="backtest_internal_error",
+            message="Backtest computation failed.",
+        )
     if isinstance(result, dict) and result.get("error"):
         raise _http_error(400, str(result["error"]), code="backtest_error", operation="post_backtest")
     return result

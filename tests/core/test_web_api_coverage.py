@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from pydantic import ValidationError
 
+from mtdata.bootstrap.runtime import WebApiRuntimeSettings
 from mtdata.core import web_api
 from mtdata.core.web_api import (
     _call_tool_raw,
@@ -20,7 +21,9 @@ from mtdata.core.web_api import (
     BacktestBody,
     app,
 )
+from mtdata.core.web_api_runtime import create_web_api_app, mount_webui
 from mtdata.forecast.exceptions import ForecastError
+from mtdata.utils.mt5 import MT5ConnectionError
 
 from fastapi.testclient import TestClient
 
@@ -162,6 +165,45 @@ class TestPydanticModels:
         )
         assert body.methods == ["theta", "arima"]
         assert body.to_domain_request().quantity == "price"
+
+
+class TestWebApiSecurity:
+    def test_remote_requests_require_token_or_loopback(self, monkeypatch):
+        monkeypatch.delenv("WEBAPI_AUTH_TOKEN", raising=False)
+        with patch("mtdata.core.web_api._is_local_api_client", return_value=False):
+            resp = _client.get("/api/timeframes")
+        assert resp.status_code == 403
+        assert resp.json()["detail"]["error_code"] == "web_api_remote_forbidden"
+
+    def test_configured_token_requires_auth_header(self, monkeypatch):
+        monkeypatch.setenv("WEBAPI_AUTH_TOKEN", "secret")
+        resp = _client.get("/api/timeframes")
+        assert resp.status_code == 401
+        assert resp.headers["www-authenticate"] == "Bearer"
+        assert resp.json()["detail"]["error_code"] == "web_api_auth_required"
+
+    def test_bearer_token_allows_request(self, monkeypatch):
+        monkeypatch.setenv("WEBAPI_AUTH_TOKEN", "secret")
+        resp = _client.get("/api/timeframes", headers={"Authorization": "Bearer secret"})
+        assert resp.status_code == 200
+
+    def test_x_api_key_allows_request(self, monkeypatch):
+        monkeypatch.setenv("WEBAPI_AUTH_TOKEN", "secret")
+        resp = _client.get("/api/timeframes", headers={"X-API-Key": "secret"})
+        assert resp.status_code == 200
+
+
+class TestWebApiRuntimeHelpers:
+    def test_create_web_api_app_rejects_wildcard_origins(self):
+        with pytest.raises(ValueError, match="CORS_ORIGINS"):
+            create_web_api_app(settings=WebApiRuntimeSettings(cors_origins=("*",)))
+
+    def test_mount_webui_logs_warning(self, caplog):
+        runtime = WebApiRuntimeSettings(webui_directory="missing-dist")
+        runtime_app = create_web_api_app(settings=runtime)
+        with caplog.at_level("WARNING"):
+            mount_webui(runtime_app, settings=runtime)
+        assert any("Skipping Web UI mount" in record.message for record in caplog.records)
 
 
 # ===========================================================================
@@ -491,7 +533,17 @@ class TestGetHistory:
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
              patch("mtdata.core.web_api._fetch_candles_impl", side_effect=RuntimeError("fail")):
             resp = _client.get("/api/history", params={"symbol": "EURUSD"})
-        assert resp.status_code == 400
+        assert resp.status_code == 500
+        detail = resp.json()["detail"]
+        assert detail["error_code"] == "history_fetch_internal_error"
+        assert detail["error"] == "History fetch failed."
+
+    def test_fetch_mt5_exception(self):
+        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
+             patch("mtdata.core.web_api._fetch_candles_impl", side_effect=MT5ConnectionError("mt5 unavailable")):
+            resp = _client.get("/api/history", params={"symbol": "EURUSD"})
+        assert resp.status_code == 503
+        assert resp.json()["detail"]["error_code"] == "history_mt5_unavailable"
 
     def test_non_dict_result(self):
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
@@ -546,6 +598,13 @@ class TestGetHistory:
              patch("mtdata.core.web_api._get_denoise_methods", return_value=dn_methods):
             resp = _client.get("/api/history", params={"symbol": "EURUSD", "denoise_method": "wavelet"})
         assert resp.status_code == 400
+
+    def test_denoise_metadata_failure_is_not_swallowed(self):
+        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
+             patch("mtdata.core.web_api._get_denoise_methods", side_effect=RuntimeError("bad metadata")):
+            resp = _client.get("/api/history", params={"symbol": "EURUSD", "denoise_method": "wavelet"})
+        assert resp.status_code == 500
+        assert resp.json()["detail"]["error_code"] == "denoise_validation_failed"
 
     def test_denoise_json_extra_params_no_params_key(self):
         """When JSON dict has no 'params' key, non-reserved keys become params."""
@@ -817,6 +876,14 @@ class TestPostForecastVolatility:
             resp = _client.post("/api/forecast/volatility", json={"symbol": "EURUSD"})
         assert resp.status_code == 400
 
+    def test_internal_exception_is_sanitized(self):
+        with patch("mtdata.core.web_api._forecast_vol_impl", side_effect=RuntimeError("engine exploded")):
+            resp = _client.post("/api/forecast/volatility", json={"symbol": "EURUSD"})
+        assert resp.status_code == 500
+        detail = resp.json()["detail"]
+        assert detail["error_code"] == "forecast_volatility_internal_error"
+        assert "engine exploded" not in detail["error"]
+
     def test_passes_all_params(self):
         with patch("mtdata.core.web_api._forecast_vol_impl", return_value={}) as mock_fv:
             _client.post("/api/forecast/volatility", json={
@@ -846,6 +913,14 @@ class TestPostBacktest:
         with patch("mtdata.core.web_api._run_forecast_backtest_impl", return_value={"error": "fail"}):
             resp = _client.post("/api/backtest", json={"symbol": "EURUSD"})
         assert resp.status_code == 400
+
+    def test_internal_exception_is_sanitized(self):
+        with patch("mtdata.core.web_api._run_forecast_backtest_impl", side_effect=RuntimeError("secret trace")):
+            resp = _client.post("/api/backtest", json={"symbol": "EURUSD"})
+        assert resp.status_code == 500
+        detail = resp.json()["detail"]
+        assert detail["error_code"] == "backtest_internal_error"
+        assert "secret trace" not in detail["error"]
 
     def test_passes_all_params(self):
         with patch("mtdata.core.web_api._run_forecast_backtest_impl", return_value={}) as mock_bt:

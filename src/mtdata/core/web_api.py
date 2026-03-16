@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import hmac
+import logging
 from importlib.util import find_spec as _find_spec
 from typing import Any, Dict, Optional
 
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from ..bootstrap.runtime import is_loopback_host, load_web_api_runtime_settings
+from .error_envelope import build_http_error_detail
 from .config import load_environment
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 
 from .constants import TIMEFRAME_MAP
 from .mt5_gateway import get_web_api_mt5_gateway
@@ -49,8 +55,65 @@ from .config import mt5_config
 
 API_PREFIXES = ("/api", "/api/v1")
 
+logger = logging.getLogger(__name__)
+_bearer_auth = HTTPBearer(auto_error=False)
+
+
+def _raise_auth_error(status_code: int, message: str, *, code: str, headers: Optional[Dict[str, str]] = None) -> None:
+    payload = build_http_error_detail(message, code=code, operation="web_api_auth")
+    logger.warning(
+        "transport=web_api operation=%s request_id=%s status=%s error=%s",
+        "web_api_auth",
+        payload["request_id"],
+        status_code,
+        payload["error"],
+    )
+    raise HTTPException(status_code=status_code, detail=payload, headers=headers)
+
+
+def _is_local_api_client(request: Request) -> bool:
+    client_host = getattr(getattr(request, "client", None), "host", None)
+    client_text = str(client_host or "").strip().lower()
+    return client_text == "testclient" or is_loopback_host(client_text)
+
+
+def _require_api_access(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_auth),
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+) -> None:
+    runtime = load_web_api_runtime_settings()
+    configured_token = str(runtime.auth_token or "").strip()
+    supplied_token = None
+    if isinstance(credentials, HTTPAuthorizationCredentials):
+        scheme = str(credentials.scheme or "").strip().lower()
+        token = str(credentials.credentials or "").strip()
+        if scheme == "bearer" and token:
+            supplied_token = token
+    if not supplied_token and isinstance(x_api_key, str) and x_api_key.strip():
+        supplied_token = x_api_key.strip()
+
+    if configured_token:
+        if supplied_token and hmac.compare_digest(supplied_token, configured_token):
+            return
+        _raise_auth_error(
+            401,
+            "Missing or invalid API token.",
+            code="web_api_auth_required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if _is_local_api_client(request):
+        return
+
+    _raise_auth_error(
+        403,
+        "Remote API access requires WEBAPI_AUTH_TOKEN.",
+        code="web_api_remote_forbidden",
+    )
+
 app = create_web_api_app()
-api_router = APIRouter()
+api_router = APIRouter(dependencies=[Depends(_require_api_access)])
 
 
 def _list_sktime_forecasters() -> Dict[str, Any]:

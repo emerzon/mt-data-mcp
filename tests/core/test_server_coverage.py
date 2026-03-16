@@ -24,11 +24,12 @@ class TestMcpRuntimeSettings:
 
         monkeypatch.delenv("MCP_TRANSPORT", raising=False)
         monkeypatch.delenv("FASTMCP_HOST", raising=False)
+        monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
         monkeypatch.delenv("FASTMCP_PORT", raising=False)
         settings = load_mcp_runtime_settings()
 
         assert settings.transport == "sse"
-        assert settings.host == "0.0.0.0"
+        assert settings.host == "127.0.0.1"
         assert settings.port == 8000
 
     def test_load_from_env(self, monkeypatch):
@@ -36,6 +37,7 @@ class TestMcpRuntimeSettings:
 
         monkeypatch.setenv("MCP_TRANSPORT", "streamable-http")
         monkeypatch.setenv("FASTMCP_HOST", "1.2.3.4")
+        monkeypatch.setenv("FASTMCP_ALLOW_REMOTE", "1")
         monkeypatch.setenv("FASTMCP_PORT", "9999")
         monkeypatch.setenv("FASTMCP_LOG_LEVEL", "DEBUG")
         monkeypatch.setenv("FASTMCP_MOUNT_PATH", "/api")
@@ -51,8 +53,18 @@ class TestMcpRuntimeSettings:
         from mtdata.bootstrap.runtime import load_mcp_runtime_settings
 
         monkeypatch.setenv("MCP_TRANSPORT", "grpc")
+        monkeypatch.delenv("FASTMCP_HOST", raising=False)
+        monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
         settings = load_mcp_runtime_settings()
         assert settings.transport == "sse"
+
+    def test_non_loopback_host_requires_explicit_remote_flag(self, monkeypatch):
+        from mtdata.bootstrap.runtime import load_mcp_runtime_settings
+
+        monkeypatch.setenv("FASTMCP_HOST", "0.0.0.0")
+        monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
+        with pytest.raises(ValueError, match="FASTMCP_ALLOW_REMOTE"):
+            load_mcp_runtime_settings()
 
     def test_apply_to_mcp_settings(self):
         from mtdata.bootstrap.runtime import McpRuntimeSettings, apply_mcp_runtime_settings
@@ -78,6 +90,35 @@ class TestMcpRuntimeSettings:
         assert mcp.settings.mount_path == "/x"
         assert mcp.settings.sse_path == "/events"
         assert mcp.settings.message_path == "/message"
+
+
+class TestWebApiRuntimeSettings:
+    def test_remote_bind_requires_auth_token(self, monkeypatch):
+        from mtdata.bootstrap.runtime import load_web_api_runtime_settings
+
+        monkeypatch.setenv("WEBAPI_HOST", "0.0.0.0")
+        monkeypatch.setenv("WEBAPI_ALLOW_REMOTE", "1")
+        monkeypatch.delenv("WEBAPI_AUTH_TOKEN", raising=False)
+        with pytest.raises(ValueError, match="WEBAPI_AUTH_TOKEN"):
+            load_web_api_runtime_settings()
+
+    def test_remote_bind_with_auth_token(self, monkeypatch):
+        from mtdata.bootstrap.runtime import load_web_api_runtime_settings
+
+        monkeypatch.setenv("WEBAPI_HOST", "0.0.0.0")
+        monkeypatch.setenv("WEBAPI_ALLOW_REMOTE", "1")
+        monkeypatch.setenv("WEBAPI_AUTH_TOKEN", "secret")
+        settings = load_web_api_runtime_settings()
+
+        assert settings.host == "0.0.0.0"
+        assert settings.auth_token == "secret"
+
+    def test_cors_wildcard_is_rejected(self, monkeypatch):
+        from mtdata.bootstrap.runtime import load_web_api_runtime_settings
+
+        monkeypatch.setenv("CORS_ORIGINS", "*")
+        with pytest.raises(ValueError, match="CORS_ORIGINS"):
+            load_web_api_runtime_settings()
 
 
 # ── _unwrap_optional_annotation ───────────────────────────────────────────
@@ -488,6 +529,8 @@ class TestResolveTransport:
 
     def test_default_sse(self, monkeypatch):
         monkeypatch.delenv("MCP_TRANSPORT", raising=False)
+        monkeypatch.delenv("FASTMCP_HOST", raising=False)
+        monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
         monkeypatch.delenv("FASTMCP_MOUNT_PATH", raising=False)
         t, mp = self._call()
         assert t == "sse"
@@ -495,24 +538,32 @@ class TestResolveTransport:
 
     def test_env_stdio(self, monkeypatch):
         monkeypatch.setenv("MCP_TRANSPORT", "stdio")
+        monkeypatch.delenv("FASTMCP_HOST", raising=False)
+        monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
         monkeypatch.delenv("FASTMCP_MOUNT_PATH", raising=False)
         t, mp = self._call()
         assert t == "stdio"
 
     def test_env_streamable_http(self, monkeypatch):
         monkeypatch.setenv("MCP_TRANSPORT", "streamable-http")
+        monkeypatch.delenv("FASTMCP_HOST", raising=False)
+        monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
         monkeypatch.delenv("FASTMCP_MOUNT_PATH", raising=False)
         t, _ = self._call()
         assert t == "streamable-http"
 
     def test_invalid_falls_back_to_default(self, monkeypatch):
         monkeypatch.setenv("MCP_TRANSPORT", "grpc")
+        monkeypatch.delenv("FASTMCP_HOST", raising=False)
+        monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
         monkeypatch.delenv("FASTMCP_MOUNT_PATH", raising=False)
         t, _ = self._call()
         assert t == "sse"
 
     def test_mount_path_returned(self, monkeypatch):
         monkeypatch.setenv("MCP_TRANSPORT", "sse")
+        monkeypatch.delenv("FASTMCP_HOST", raising=False)
+        monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
         monkeypatch.setenv("FASTMCP_MOUNT_PATH", "/mcp")
         _, mp = self._call()
         assert mp == "/mcp"
@@ -664,6 +715,8 @@ class TestMainEntryPoints:
     @patch("mtdata.core.server.mcp")
     def test_main_invokes_run(self, mock_mcp, mock_bootstrap, monkeypatch):
         monkeypatch.delenv("MCP_TRANSPORT", raising=False)
+        monkeypatch.delenv("FASTMCP_HOST", raising=False)
+        monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
         mock_mcp.settings = MagicMock()
         mock_mcp.settings.host = "0.0.0.0"
         mock_mcp.settings.log_level = "INFO"
@@ -698,6 +751,8 @@ class TestMainEntryPoints:
     @patch("mtdata.core.server.mcp")
     def test_main_no_settings(self, mock_mcp, mock_bootstrap, monkeypatch):
         monkeypatch.delenv("MCP_TRANSPORT", raising=False)
+        monkeypatch.delenv("FASTMCP_HOST", raising=False)
+        monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
         mock_mcp.settings = None
         mock_mcp.run = MagicMock()
         from mtdata.core.server import main
@@ -710,6 +765,8 @@ class TestMainEntryPoints:
     @patch("mtdata.core.server.mcp")
     def test_main_no_run_fn(self, mock_mcp, mock_bootstrap, monkeypatch):
         monkeypatch.delenv("MCP_TRANSPORT", raising=False)
+        monkeypatch.delenv("FASTMCP_HOST", raising=False)
+        monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
         mock_mcp.settings = None
         mock_mcp.run = None
         from mtdata.core.server import main

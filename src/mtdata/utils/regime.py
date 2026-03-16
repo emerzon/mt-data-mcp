@@ -37,8 +37,11 @@ def _student_t_logpdf(x: np.ndarray, mu: np.ndarray, lam: np.ndarray, alpha: np.
 
     nu = 2.0 * alpha
     # scale^2
-    s2 = beta * (lam + 1.0) / (alpha * lam)
-    scale = np.sqrt(np.clip(s2, 1e-12, None))
+    with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+        s2 = beta * (lam + 1.0) / (alpha * lam)
+    max_float = np.finfo(float).max
+    s2 = np.nan_to_num(s2, nan=max_float, posinf=max_float, neginf=1e-12)
+    scale = np.sqrt(np.clip(s2, 1e-12, max_float))
     dof = np.clip(nu, 1e-12, None)
     return np.asarray(_student_t.logpdf(x, df=dof, loc=mu, scale=scale), dtype=float)
 

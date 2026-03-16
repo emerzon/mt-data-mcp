@@ -6,7 +6,14 @@ The `mtdata` Web API exposes forecasting, analysis, and data fetching capabiliti
 
 ## Authentication
 
-The API currently runs locally and does not enforce authentication. Ensure the server is only accessible from trusted networks (binds to `127.0.0.1` by default).
+By default the API binds to `127.0.0.1` and permits loopback clients without a token.
+
+If you want remote access, set `WEBAPI_ALLOW_REMOTE=1`, use a non-loopback `WEBAPI_HOST`, and provide `WEBAPI_AUTH_TOKEN`. When a token is configured, clients must send either:
+
+- `Authorization: Bearer <token>`
+- `X-API-Key: <token>`
+
+Credentialed CORS requests require explicit origins. `CORS_ORIGINS=*` is rejected.
 
 ## Endpoints
 
@@ -178,9 +185,12 @@ uvicorn src.mtdata.core.web_api:app --host 127.0.0.1 --port 8000
 
 Control the server host and port via environment variables:
 
-- `MTDATA_WEBUI_HOST`: Bind address (default `127.0.0.1`).
-- `MTDATA_WEBUI_PORT`: Listen port (default `8000`).
-- `MTDATA_WEBUI_RELOAD`: Set to `1` to enable auto-reload (dev only).
+- `WEBAPI_HOST`: Bind address (default `127.0.0.1`).
+- `WEBAPI_PORT`: Listen port (default `8000`).
+- `WEBAPI_ALLOW_REMOTE`: Set to `1` to allow non-loopback binds.
+- `WEBAPI_AUTH_TOKEN`: Bearer/API key token required for authenticated API access.
+- `CORS_ORIGINS`: Comma-separated list of explicit allowed origins.
+- `WEBUI_DIST_DIR`: Override the built SPA directory (default `webui/dist`).
 
 ---
 

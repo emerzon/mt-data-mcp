@@ -802,7 +802,7 @@ class ElliottWaveAnalyzer:
                 )
                 pivot_confirmations = [True] * len(piv_seq)
                 if piv_seq and int(piv_seq[-1]) == int(piv_idx[-1]):
-                    pivot_confirmations[-1] = False
+                    pivot_confirmations = [False] * len(piv_seq)
                 confidence = _blend_confidence(
                     rule_eval.fib_score,
                     cls_score,
@@ -874,7 +874,7 @@ class ElliottWaveAnalyzer:
                 )
                 pivot_confirmations = [True] * len(piv_seq)
                 if piv_seq and int(piv_seq[-1]) == int(piv_idx[-1]):
-                    pivot_confirmations[-1] = False
+                    pivot_confirmations = [False] * len(piv_seq)
                 confidence = _blend_confidence(
                     rule_eval.fib_score,
                     cls_score,
@@ -945,6 +945,7 @@ class ElliottWaveAnalyzer:
             "fallback_candidate": bool(scenario.fallback_candidate),
             "synthetic_terminal_pivot": bool(scenario.synthetic_terminal_pivot),
             "classification_available": bool(scenario.classification_available),
+            "pattern_confirmed": bool(all(scenario.pivot_confirmations)) if isinstance(scenario.pivot_confirmations, list) else True,
             "has_unconfirmed_terminal_pivot": bool(
                 isinstance(scenario.pivot_confirmations, list)
                 and len(scenario.pivot_confirmations) > 0

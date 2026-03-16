@@ -416,11 +416,11 @@ def _collect_session_gaps(
     *,
     timeframe: TimeframeLiteral,
     use_client_tz: bool,
-) -> List[Dict[str, Any]]:
+) -> Tuple[List[Dict[str, Any]], Optional[str]]:
     session_gaps: List[Dict[str, Any]] = []
     expected_bar_seconds = float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
     if expected_bar_seconds <= 0 or '__epoch' not in df.columns or len(df) <= 1:
-        return session_gaps
+        return session_gaps, None
 
     try:
         epochs = pd.to_numeric(df['__epoch'], errors='coerce').to_numpy(dtype=float)
@@ -461,10 +461,11 @@ def _collect_session_gaps(
                     "context": gap_context,
                 }
             )
-    except Exception:
-        return []
+    except Exception as exc:
+        logger.warning("Session gap diagnostics unavailable: %s", exc)
+        return session_gaps, "Session gap diagnostics unavailable."
 
-    return session_gaps
+    return session_gaps, None
 
 
 def _format_candle_times(
@@ -677,7 +678,7 @@ def fetch_candles(
 
         # Detect large time discontinuities (e.g., closed session windows) and
         # surface them explicitly so users can interpret forecast/analysis gaps.
-        session_gaps = _collect_session_gaps(df, timeframe=timeframe, use_client_tz=_use_ctz)
+        session_gaps, session_gap_warning = _collect_session_gaps(df, timeframe=timeframe, use_client_tz=_use_ctz)
         expected_bar_seconds = float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
 
         # Reformat time consistently across rows for display, unless caller
@@ -765,6 +766,8 @@ def fetch_candles(
                 },
             },
         })
+        if session_gap_warning:
+            payload["meta"]["diagnostics"]["session_gaps"]["warning"] = session_gap_warning
         if not _use_ctz:
             payload["timezone"] = "UTC"
         if simplify_meta is not None:
@@ -795,6 +798,12 @@ def fetch_candles(
                 )
             except Exception:
                 pass
+            payload['warnings'] = warns
+        elif session_gap_warning:
+            warns = payload.get('warnings')
+            if not isinstance(warns, list):
+                warns = []
+            warns.append(session_gap_warning)
             payload['warnings'] = warns
         return payload
     except Exception as e:

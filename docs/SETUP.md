@@ -201,7 +201,8 @@ After editable install, these entry points are available:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MCP_TRANSPORT` | `sse` | Transport mode: `sse`, `stdio`, `streamable-http` |
-| `FASTMCP_HOST` | `0.0.0.0` | Bind address |
+| `FASTMCP_HOST` | `127.0.0.1` | Bind address |
+| `FASTMCP_ALLOW_REMOTE` | `0` | Set to `1` to allow non-loopback binds such as `0.0.0.0` |
 | `FASTMCP_PORT` | `8000` | Listen port |
 | `FASTMCP_MOUNT_PATH` | `/` | Mount path |
 | `FASTMCP_SSE_PATH` | `/sse` | SSE event stream path |
@@ -228,9 +229,12 @@ mtdata-webapi
 Starts a FastAPI server with a React UI at `http://localhost:8000`.
 
 Web UI / API configuration:
-- `MTDATA_WEBUI_HOST` (default `127.0.0.1`)
-- `MTDATA_WEBUI_PORT` (default `8000`)
-- `MTDATA_WEBUI_RELOAD=1` for auto-reload (dev only)
+- `WEBAPI_HOST` (default `127.0.0.1`)
+- `WEBAPI_PORT` (default `8000`)
+- `WEBAPI_ALLOW_REMOTE=1` to permit a non-loopback bind
+- `WEBAPI_AUTH_TOKEN` to require `Authorization: Bearer <token>` or `X-API-Key: <token>` on API requests
+- `CORS_ORIGINS` with explicit origins only (wildcard `*` is rejected when credentials are enabled)
+- `WEBUI_DIST_DIR` to override the built UI directory
 
 See [WEB_API.md](WEB_API.md) for endpoint details.
 

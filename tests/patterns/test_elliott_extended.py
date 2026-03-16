@@ -420,6 +420,7 @@ class TestBuildResult:
         result = analyzer.build_result(scenario)
 
         assert result.details["classification_available"] is False
+        assert result.details["pattern_confirmed"] is False
         assert result.details["has_unconfirmed_terminal_pivot"] is True
         assert result.details["wave_points_labeled"][-1]["is_confirmed"] is False
 
@@ -919,7 +920,7 @@ class TestDetectElliottWaves:
         assert scenarios
         assert scenarios[0].classification_available is False
         assert scenarios[0].confidence == pytest.approx(scenarios[0].rule_eval.fib_score)
-        assert scenarios[0].pivot_confirmations[-1] is False
+        assert not any(scenarios[0].pivot_confirmations)
 
     def test_analyze_once_uses_configured_blend_weights(self, monkeypatch):
         close = _impulse_close()

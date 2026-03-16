@@ -33,6 +33,8 @@ _CRYPTO_SYMBOL_HINTS = (
     "MATIC",
 )
 
+_MAX_SHORT_STATE_SMOOTHING_PASSES = 128
+
 
 def _regime_connection_error() -> Optional[Dict[str, Any]]:
     return mt5_connection_error(
@@ -96,12 +98,14 @@ def _smooth_short_state_runs(
         }
 
     changed = False
-    max_iters = max(1, int(state_arr.size))
-    for _ in range(max_iters):
+    iteration_cap = min(max(1, int(state_arr.size)), _MAX_SHORT_STATE_SMOOTHING_PASSES)
+    iterations_run = 0
+    for _ in range(iteration_cap):
         runs = _state_runs(state_arr)
         short_runs = [idx for idx, run in enumerate(runs) if int(run["length"]) < min_bars]
         if not short_runs:
             break
+        iterations_run += 1
         pass_changed = False
         for idx in short_runs:
             run = runs[idx]
@@ -166,6 +170,8 @@ def _smooth_short_state_runs(
         "smoothing_applied": bool(changed),
         "transitions_before": int(transitions_before),
         "transitions_after": int(transitions_after),
+        "iterations_run": int(iterations_run),
+        "iteration_cap": int(iteration_cap),
     }
 
 
@@ -586,6 +592,21 @@ def _consolidate_payload(payload: Dict[str, Any], method: str, output_mode: str,
             # Fallback if creation failed
             return payload
 
+        filtered_entries = []
+        for idx, state in enumerate(states):
+            try:
+                state_value = int(state)
+            except Exception:
+                state_value = None
+            if state_value is None or state_value < 0:
+                continue
+            prob_value = probs[idx] if idx < len(probs) else None
+            filtered_entries.append((times[idx], state_value, prob_value))
+        if filtered_entries and len(filtered_entries) != len(times):
+            times = [entry[0] for entry in filtered_entries]
+            states = [entry[1] for entry in filtered_entries]
+            probs = [entry[2] for entry in filtered_entries]
+
         # Consolidate
         # Loop through
         curr_start = times[0]
@@ -694,6 +715,7 @@ def _consolidate_payload(payload: Dict[str, Any], method: str, output_mode: str,
     except Exception as e:
         # Fallback to original payload on error
         payload["consolidation_error"] = str(e)
+        payload["success"] = False
         return payload
 
 
@@ -806,6 +828,9 @@ def regime_detect(
         else:
             x = y[np.isfinite(y)]
             t = times[: x.size]
+
+        if x.size < 2:
+            return _finish({"error": "Insufficient finite observations after filter"})
 
         # format times
         t_fmt = [_format_time_minimal(tt) for tt in t]

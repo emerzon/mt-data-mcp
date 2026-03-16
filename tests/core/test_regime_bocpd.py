@@ -38,6 +38,16 @@ class TestStudentTLogpdf:
         result = _student_t_logpdf(0.0, 0.0, 1.0, 1.0, 1.0)
         assert np.isfinite(result)
 
+    def test_zero_alpha_or_lambda_stays_finite(self):
+        result = _student_t_logpdf(
+            np.array([0.0, 0.0]),
+            np.array([0.0, 0.0]),
+            np.array([0.0, 1.0]),
+            np.array([1.0, 0.0]),
+            np.array([1.0, 1.0]),
+        )
+        assert np.all(np.isfinite(result))
+
 
 class TestBocpdGaussian:
     def test_empty_input(self):

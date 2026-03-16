@@ -664,6 +664,35 @@ class TestFetchCandles(unittest.TestCase):
         self.assertTrue(any('session gap' in w.lower() for w in result['warnings']))
         self.assertTrue(any('example gap' in w.lower() for w in result['warnings']))
 
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch("mtdata.services.data_service._collect_session_gaps", return_value=([], "Session gap diagnostics unavailable."))
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_session_gap_diagnostic_failure_is_surfaced(
+        self,
+        mock_collect,
+        mock_warmup,
+        mock_ctz,
+        mock_info,
+        mock_from,
+        mock_cfg,
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10)
+
+        result = fetch_candles('EURUSD', limit=5)
+
+        self.assertTrue(result.get('success'))
+        self.assertIn('warnings', result)
+        self.assertIn("Session gap diagnostics unavailable.", result['warnings'])
+        self.assertEqual(
+            result['meta']['diagnostics']['session_gaps']['warning'],
+            "Session gap diagnostics unavailable.",
+        )
+
     # -- Error paths ---------------------------------------------------------
 
     def test_invalid_timeframe(self):
