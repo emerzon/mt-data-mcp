@@ -93,15 +93,18 @@ def load_mcp_runtime_settings(
     transport_override: Optional[str] = None,
     default_transport: TransportLiteral = "sse",
 ) -> McpRuntimeSettings:
+    transport = _normalize_transport(transport_override or os.getenv("MCP_TRANSPORT"), default=default_transport)
     allow_remote = _get_bool_env("FASTMCP_ALLOW_REMOTE", False)
-    host = _require_explicit_remote_bind(
-        (os.getenv("FASTMCP_HOST", "127.0.0.1").strip() or "127.0.0.1"),
-        allow_remote=allow_remote,
-        host_env="FASTMCP_HOST",
-        allow_remote_env="FASTMCP_ALLOW_REMOTE",
-    )
+    host = (os.getenv("FASTMCP_HOST", "127.0.0.1").strip() or "127.0.0.1")
+    if transport != "stdio":
+        host = _require_explicit_remote_bind(
+            host,
+            allow_remote=allow_remote,
+            host_env="FASTMCP_HOST",
+            allow_remote_env="FASTMCP_ALLOW_REMOTE",
+        )
     return McpRuntimeSettings(
-        transport=_normalize_transport(transport_override or os.getenv("MCP_TRANSPORT"), default=default_transport),
+        transport=transport,
         host=host,
         port=_get_int_env("FASTMCP_PORT", 8000),
         log_level=(os.getenv("FASTMCP_LOG_LEVEL", "INFO").strip() or "INFO"),

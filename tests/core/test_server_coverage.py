@@ -66,6 +66,16 @@ class TestMcpRuntimeSettings:
         with pytest.raises(ValueError, match="FASTMCP_ALLOW_REMOTE"):
             load_mcp_runtime_settings()
 
+    def test_stdio_skips_remote_bind_guard(self, monkeypatch):
+        from mtdata.bootstrap.runtime import load_mcp_runtime_settings
+
+        monkeypatch.setenv("FASTMCP_HOST", "0.0.0.0")
+        monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
+        settings = load_mcp_runtime_settings(transport_override="stdio")
+
+        assert settings.transport == "stdio"
+        assert settings.host == "0.0.0.0"
+
     def test_apply_to_mcp_settings(self):
         from mtdata.bootstrap.runtime import McpRuntimeSettings, apply_mcp_runtime_settings
 
@@ -543,6 +553,15 @@ class TestResolveTransport:
         monkeypatch.delenv("FASTMCP_MOUNT_PATH", raising=False)
         t, mp = self._call()
         assert t == "stdio"
+
+    def test_env_stdio_ignores_remote_bind_guard(self, monkeypatch):
+        monkeypatch.setenv("MCP_TRANSPORT", "stdio")
+        monkeypatch.setenv("FASTMCP_HOST", "0.0.0.0")
+        monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
+        monkeypatch.delenv("FASTMCP_MOUNT_PATH", raising=False)
+        t, mp = self._call()
+        assert t == "stdio"
+        assert mp is None
 
     def test_env_streamable_http(self, monkeypatch):
         monkeypatch.setenv("MCP_TRANSPORT", "streamable-http")
