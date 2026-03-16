@@ -1,4 +1,3 @@
-from mtdata.core import data as core_data
 from mtdata.core.data_requests import WaitCandleRequest
 from mtdata.core.data_use_cases import run_wait_candle
 
@@ -38,32 +37,6 @@ def test_run_wait_candle_returns_success(monkeypatch) -> None:
     assert result["success"] is True
     assert result["sleep_seconds"] == 12.5
     assert result["status"] == "completed"
-
-
-def test_wait_candle_logs_finish_event(monkeypatch, caplog) -> None:
-    monkeypatch.setattr(
-        core_data,
-        "run_wait_candle",
-        lambda request: {
-            "success": True,
-            "timeframe": request.timeframe,
-            "buffer_seconds": request.buffer_seconds,
-            "sleep_seconds": 1.0,
-        },
-    )
-
-    raw = getattr(core_data.wait_candle, "__wrapped__", core_data.wait_candle)
-    request = WaitCandleRequest(timeframe="M5", buffer_seconds=0.25)
-    with caplog.at_level("INFO", logger=core_data.logger.name):
-        result = raw(request)
-
-    assert result["success"] is True
-    assert any(
-        "event=finish operation=wait_candle success=True" in record.message
-        for record in caplog.records
-    )
-
-
 def test_run_wait_candle_defers_when_wait_exceeds_cap(monkeypatch) -> None:
     monkeypatch.setattr(
         "mtdata.core.data_use_cases._next_candle_wait_payload",

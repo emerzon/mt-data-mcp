@@ -6,14 +6,12 @@ from ._mcp_instance import mcp
 from .data_requests import (
     DataFetchCandlesRequest,
     DataFetchTicksRequest,
-    WaitCandleRequest,
     WaitEventRequest,
 )
 from .schema import TimeframeLiteral
 from .data_use_cases import (
     run_data_fetch_candles,
     run_data_fetch_ticks,
-    run_wait_candle,
     run_wait_event,
 )
 from .execution_logging import run_logged_operation
@@ -22,7 +20,7 @@ from ..services.data_service import fetch_candles, fetch_ticks
 from ..utils.mt5 import ensure_mt5_connection_or_raise
 
 # Explicitly define what should be exported for '*' imports
-__all__ = ['data_fetch_candles', 'data_fetch_ticks', 'wait_event', 'wait_candle']
+__all__ = ['data_fetch_candles', 'data_fetch_ticks', 'wait_event']
 
 logger = logging.getLogger(__name__)
 
@@ -183,27 +181,4 @@ def wait_event(
         instrument=instrument,
         timeframe=timeframe,
         func=_run,
-    )
-
-
-@mcp.tool()
-def wait_candle(
-    request: WaitCandleRequest,
-) -> Dict[str, Any]:
-    """Compatibility alias for waiting on a single candle-close boundary.
-
-    This uses the configured MT5 server timezone or offset to align candle
-    boundaries. For example, `timeframe="M5"` waits until the next M5 candle
-    close, then applies the optional `buffer_seconds`.
-
-    To stay compatible with MCP clients that impose tool-call timeouts, the tool
-    only blocks up to `max_wait_seconds` by default. If the remaining wait is
-    longer, it returns timing metadata immediately instead of sleeping.
-    """
-    return run_logged_operation(
-        logger,
-        operation="wait_candle",
-        timeframe=request.timeframe,
-        buffer_seconds=request.buffer_seconds,
-        func=lambda: run_wait_candle(request),
     )
