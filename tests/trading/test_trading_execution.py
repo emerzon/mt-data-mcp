@@ -438,3 +438,185 @@ def test_place_market_order_accepts_injected_gateway():
     assert "error" not in res
     ensure_connection.assert_called_once_with()
     assert adapter.order_send.call_count == 2
+
+
+def test_place_market_order_retries_fill_modes_when_first_mode_fails(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.order_send.side_effect = [
+        MagicMock(
+            retcode=10030,
+            deal=0,
+            order=0,
+            volume=0.1,
+            price=1.05010,
+            bid=1.05000,
+            ask=1.05010,
+            comment="IOC rejected",
+            request_id=700,
+        ),
+        MagicMock(
+            retcode=10009,
+            deal=123,
+            order=456,
+            volume=0.1,
+            price=1.05010,
+            bid=1.05000,
+            ask=1.05010,
+            comment="",
+            request_id=701,
+        ),
+    ]
+
+    res = _place_market_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+    )
+
+    assert "error" not in res
+    assert res["type_filling_used"] == mock_mt5.ORDER_FILLING_FOK
+    assert len(res["fill_mode_attempts"]) == 2
+    first_req = mock_mt5.order_send.call_args_list[0].args[0]
+    second_req = mock_mt5.order_send.call_args_list[1].args[0]
+    assert first_req["type_filling"] == mock_mt5.ORDER_FILLING_IOC
+    assert second_req["type_filling"] == mock_mt5.ORDER_FILLING_FOK
+
+
+def test_place_pending_order_retries_fill_modes_when_first_mode_fails(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.order_send.side_effect = [
+        MagicMock(
+            retcode=10030,
+            deal=0,
+            order=0,
+            volume=0.1,
+            price=1.04000,
+            bid=1.05000,
+            ask=1.05010,
+            comment="IOC rejected",
+            request_id=800,
+        ),
+        MagicMock(
+            retcode=10009,
+            deal=0,
+            order=456,
+            volume=0.1,
+            price=1.04000,
+            bid=1.05000,
+            ask=1.05010,
+            comment="",
+            request_id=801,
+        ),
+    ]
+
+    res = _place_pending_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY_LIMIT",
+        price=1.04000,
+    )
+
+    assert "error" not in res
+    assert res["type_filling_used"] == mock_mt5.ORDER_FILLING_FOK
+    assert len(res["fill_mode_attempts"]) == 2
+    first_req = mock_mt5.order_send.call_args_list[0].args[0]
+    second_req = mock_mt5.order_send.call_args_list[1].args[0]
+    assert first_req["type_filling"] == mock_mt5.ORDER_FILLING_IOC
+    assert second_req["type_filling"] == mock_mt5.ORDER_FILLING_FOK
+
+
+def test_place_market_order_retries_fill_modes_when_first_mode_fails(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.order_send.side_effect = [
+        MagicMock(
+            retcode=10030,
+            deal=0,
+            order=0,
+            volume=0.1,
+            price=1.05010,
+            bid=1.05000,
+            ask=1.05010,
+            comment="IOC rejected",
+            request_id=700,
+        ),
+        MagicMock(
+            retcode=10009,
+            deal=123,
+            order=456,
+            volume=0.1,
+            price=1.05010,
+            bid=1.05000,
+            ask=1.05010,
+            comment="",
+            request_id=701,
+        ),
+    ]
+
+    res = _place_market_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+    )
+
+    assert "error" not in res
+    assert res["type_filling_used"] == mock_mt5.ORDER_FILLING_FOK
+    assert len(res["fill_mode_attempts"]) == 2
+    first_req = mock_mt5.order_send.call_args_list[0].args[0]
+    second_req = mock_mt5.order_send.call_args_list[1].args[0]
+    assert first_req["type_filling"] == mock_mt5.ORDER_FILLING_IOC
+    assert second_req["type_filling"] == mock_mt5.ORDER_FILLING_FOK
+
+
+def test_place_pending_order_retries_fill_modes_when_first_mode_fails(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.order_send.side_effect = [
+        MagicMock(
+            retcode=10030,
+            deal=0,
+            order=0,
+            volume=0.1,
+            price=1.04000,
+            bid=1.05000,
+            ask=1.05010,
+            comment="IOC rejected",
+            request_id=800,
+        ),
+        MagicMock(
+            retcode=10009,
+            deal=0,
+            order=456,
+            volume=0.1,
+            price=1.04000,
+            bid=1.05000,
+            ask=1.05010,
+            comment="",
+            request_id=801,
+        ),
+    ]
+
+    res = _place_pending_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY_LIMIT",
+        price=1.04000,
+    )
+
+    assert "error" not in res
+    assert res["type_filling_used"] == mock_mt5.ORDER_FILLING_FOK
+    assert len(res["fill_mode_attempts"]) == 2
+    first_req = mock_mt5.order_send.call_args_list[0].args[0]
+    second_req = mock_mt5.order_send.call_args_list[1].args[0]
+    assert first_req["type_filling"] == mock_mt5.ORDER_FILLING_IOC
+    assert second_req["type_filling"] == mock_mt5.ORDER_FILLING_FOK

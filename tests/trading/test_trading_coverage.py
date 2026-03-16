@@ -1123,6 +1123,8 @@ class TestPlaceMarketOrder:
         assert sl_tp_result.get("requested") == {"sl": pytest.approx(1.09)}
         assert sl_tp_result.get("status") == "failed"
         assert sl_tp_result.get("applied") is None
+        assert result.get("position_ticket") is None
+        assert result.get("position_ticket_candidates") == [1]
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_sl_tp_not_requested_state_is_explicit(self):
@@ -1450,6 +1452,30 @@ class TestClosePositions:
         assert result["attempted_count"] == 1
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_profit_only_includes_breakeven_positions(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position(ticket=3, profit=0.0)]
+        mt5.symbol_info_tick.return_value = _tick()
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _close_positions
+        result = _close_positions(profit_only=True)
+        assert result["attempted_count"] == 1
+        assert result["results"][0]["ticket"] == 3
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_loss_only_includes_breakeven_positions(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position(ticket=4, profit=0.0)]
+        mt5.symbol_info_tick.return_value = _tick()
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _close_positions
+        result = _close_positions(loss_only=True)
+        assert result["attempted_count"] == 1
+        assert result["results"][0]["ticket"] == 4
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_tick_failure_for_position(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
@@ -1715,6 +1741,34 @@ class TestModifyPosition:
         result = _modify_position(ticket=1, stop_loss=1.08)
         assert "error" in result
 
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_only_tp_change_does_not_revalidate_existing_sl(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position(sl=1.10495, tp=1.12)]
+        symbol_info = _sym()
+        symbol_info.trade_stops_level = 30
+        symbol_info.trade_freeze_level = 0
+        mt5.symbol_info.return_value = symbol_info
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _modify_position
+        result = _modify_position(ticket=1, take_profit=1.13)
+        assert result.get("success") is True
+        request = mt5.order_send.call_args.args[0]
+        assert request["sl"] == pytest.approx(1.10495)
+        assert request["tp"] == pytest.approx(1.13)
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_digits_none_uses_safe_default_when_modifying_position(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position()]
+        mt5.symbol_info.return_value = _sym(point=0.0, digits=None)
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _modify_position
+        result = _modify_position(ticket=1, stop_loss=1.08001)
+        assert result.get("success") is True
+
 
 # ===================================================================
 #  _modify_pending_order (MT5 mocked)
@@ -1727,6 +1781,12 @@ class TestModifyPendingOrder:
         mt5.TRADE_RETCODE_DONE = 10009
         mt5.ORDER_TIME_GTC = 0
         mt5.ORDER_TIME_SPECIFIED = 2
+        mt5.ORDER_TYPE_BUY_LIMIT = 2
+        mt5.ORDER_TYPE_SELL_LIMIT = 3
+        mt5.ORDER_TYPE_BUY_STOP = 4
+        mt5.ORDER_TYPE_SELL_STOP = 5
+        mt5.symbol_info.return_value = _sym()
+        mt5.symbol_info_tick.return_value = _tick()
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_order_not_found(self):
@@ -1780,6 +1840,34 @@ class TestModifyPendingOrder:
         _modify_pending_order(ticket=100, price=1.095)
         call_args = mt5.order_send.call_args[0][0]
         assert call_args.get("expiration") == 1717200000
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_normalizes_pending_modify_prices(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = [_pending_order(price_open=1.0945, sl=1.0845, tp=1.1145)]
+        mt5.symbol_info.return_value = _sym(point=0.0001, digits=4)
+        mt5.symbol_info_tick.return_value = _tick(bid=1.1000, ask=1.1002)
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _modify_pending_order
+        result = _modify_pending_order(ticket=100, price=1.09456, stop_loss=1.08456, take_profit=1.11456)
+        assert result.get("success") is True
+        call_args = mt5.order_send.call_args[0][0]
+        assert call_args["price"] == pytest.approx(1.0946)
+        assert call_args["sl"] == pytest.approx(1.0846)
+        assert call_args["tp"] == pytest.approx(1.1146)
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_pending_modify_rejects_invalid_take_profit_side(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = [_pending_order(type_=3, price_open=1.1050, sl=1.1100, tp=1.0950)]
+        mt5.symbol_info.return_value = _sym()
+        mt5.symbol_info_tick.return_value = _tick(bid=1.1000, ask=1.1002)
+        from mtdata.core.trading import _modify_pending_order
+        result = _modify_pending_order(ticket=100, take_profit=1.1100)
+        assert "error" in result
+        assert "take_profit must be below entry for SELL orders" in result["error"]
 
 
 # ===================================================================

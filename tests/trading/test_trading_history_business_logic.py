@@ -312,6 +312,24 @@ def test_trade_history_filters_deals_by_position_ticket() -> None:
     assert out[0]["ticket"] == 2
 
 
+def test_trade_history_without_range_uses_full_history_start() -> None:
+    mt5, prev = _install_mock_mt5()
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol"])
+    mt5.history_deals_get.return_value = [
+        Deal(ticket=1, time=1700000000, symbol="EURUSD")
+    ]
+
+    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+        out = trade_history(history_kind="deals", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert isinstance(out, list)
+    from_dt, to_dt = mt5.history_deals_get.call_args.args[:2]
+    assert from_dt.year == 1970
+    assert to_dt >= from_dt
+
+
 def test_trade_history_rejects_start_with_minutes_back() -> None:
     out = trade_history(
         history_kind="deals",

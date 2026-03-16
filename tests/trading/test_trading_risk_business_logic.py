@@ -223,3 +223,37 @@ def test_trade_risk_analyze_logs_finish_event(caplog) -> None:
         "event=finish operation=trade_risk_analyze success=True" in record.message
         for record in caplog.records
     )
+
+
+def test_trade_risk_analyze_reports_calculation_failures() -> None:
+    mt5 = MagicMock()
+    prev = sys.modules.get("MetaTrader5")
+    sys.modules["MetaTrader5"] = mt5
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = [
+        SimpleNamespace(
+            ticket=7,
+            symbol="EURUSD",
+            type=0,
+            volume=0.1,
+            price_open=100.0,
+            sl=90.0,
+            tp=110.0,
+        )
+    ]
+    mt5.symbol_info.return_value = SimpleNamespace(
+        trade_contract_size="bad",
+        point=1.0,
+        trade_tick_value=1.0,
+        trade_tick_size=1.0,
+    )
+
+    out = trade_risk_analyze(__cli_raw=True)
+
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert out["portfolio_risk"]["overall_risk_status"] == "incomplete"
+    assert out["portfolio_risk"]["positions_with_risk_calculation_failures"] == 1
+    assert len(out["risk_calculation_failures"]) == 1
+    assert out["risk_calculation_failures"][0]["ticket"] == 7

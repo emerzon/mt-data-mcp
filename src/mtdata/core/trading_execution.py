@@ -2,6 +2,7 @@
 
 import math
 import time
+import traceback
 from datetime import datetime, timezone
 from typing import Optional, Union, List, Dict, Any
 
@@ -13,33 +14,43 @@ from ..utils.mt5 import _mt5_epoch_to_utc
 from ..utils.mt5 import ensure_mt5_connection_or_raise
 
 
-def _safe_int_attr(obj: Any, name: str, default: int) -> int:
+def _safe_last_error(mt5: Any) -> Any:
     try:
-        value = getattr(obj, name)
+        if hasattr(mt5, "last_error"):
+            return mt5.last_error()
     except Exception:
-        return default
-    if isinstance(value, bool):
-        return default
-    if isinstance(value, (int, float)):
-        try:
-            fv = float(value)
-        except Exception:
-            return default
-        if not math.isfinite(fv) or not fv.is_integer():
-            return default
-        return int(fv)
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return default
-        try:
-            fv = float(text)
-        except Exception:
-            return default
-        if not math.isfinite(fv) or not fv.is_integer():
-            return default
-        return int(fv)
-    return default
+        return None
+    return None
+
+
+def _zero_price_requested(value: Optional[Union[int, float]]) -> bool:
+    if value is None or isinstance(value, bool):
+        return False
+    try:
+        return float(value) == 0.0
+    except Exception:
+        return False
+
+
+def _unexpected_operation_error(
+    operation: str,
+    exc: Exception,
+    *,
+    mt5: Any,
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "error": f"Unexpected error while {operation}",
+        "error_type": type(exc).__name__,
+        "error_detail": str(exc),
+        "traceback": traceback.format_exc(limit=5).strip(),
+    }
+    last_error = _safe_last_error(mt5)
+    if last_error is not None:
+        payload["last_error"] = last_error
+    if context:
+        payload["context"] = context
+    return payload
 
 
 def _modify_position(
@@ -75,39 +86,61 @@ def _modify_position(
                 return {"error": f"Failed to get symbol info for {position.symbol}"}
 
             point = float(symbol_info.point or 0.0) if hasattr(symbol_info, "point") else 0.0
-            digits = int(symbol_info.digits) if hasattr(symbol_info, "digits") else 5
+            digits = trading_validation._safe_int_attr(symbol_info, "digits", 5)
 
-            def _normalize_price(val: Optional[Union[int, float]]) -> Optional[float]:
-                """Normalize price to symbol precision."""
-                try:
-                    if val is None or val == 0:
-                        return None
-                    v = float(val)
-                    if not math.isfinite(v):
-                        return None
-                    if point and point > 0:
-                        # Align to symbol precision
-                        v = round(v / point) * point
-                    else:
-                        v = round(v, digits)
-                    return v
-                except Exception:
-                    return None
+            explicit_remove_sl = _zero_price_requested(stop_loss)
+            explicit_remove_tp = _zero_price_requested(take_profit)
+            requested_sl = (
+                None
+                if stop_loss is None or explicit_remove_sl
+                else trading_validation._normalize_price_for_symbol(stop_loss, point=point, digits=digits)
+            )
+            requested_tp = (
+                None
+                if take_profit is None or explicit_remove_tp
+                else trading_validation._normalize_price_for_symbol(take_profit, point=point, digits=digits)
+            )
+            if stop_loss is not None and not explicit_remove_sl and requested_sl is None:
+                return {"error": "stop_loss must be a positive finite price after symbol normalization."}
+            if take_profit is not None and not explicit_remove_tp and requested_tp is None:
+                return {"error": "take_profit must be a positive finite price after symbol normalization."}
 
             # Normalize SL/TP values
-            norm_sl = _normalize_price(stop_loss) if stop_loss is not None else (position.sl or 0.0)
-            norm_tp = _normalize_price(take_profit) if take_profit is not None else (position.tp or 0.0)
+            existing_sl = trading_validation._normalize_price_for_symbol(
+                getattr(position, "sl", None),
+                point=point,
+                digits=digits,
+            )
+            existing_tp = trading_validation._normalize_price_for_symbol(
+                getattr(position, "tp", None),
+                point=point,
+                digits=digits,
+            )
+            norm_sl = (
+                0.0
+                if explicit_remove_sl
+                else (
+                    float(requested_sl)
+                    if stop_loss is not None
+                    else float(existing_sl or 0.0)
+                )
+            )
+            norm_tp = (
+                0.0
+                if explicit_remove_tp
+                else (
+                    float(requested_tp)
+                    if take_profit is not None
+                    else float(existing_tp or 0.0)
+                )
+            )
+            validate_sl = None if stop_loss is None or explicit_remove_sl else float(requested_sl)
+            validate_tp = None if take_profit is None or explicit_remove_tp else float(requested_tp)
 
-            # Ensure SL/TP values are 0.0 if they should be removed
-            if norm_sl is None:
-                norm_sl = 0.0
-            if norm_tp is None:
-                norm_tp = 0.0
-
-            position_type_buy = _safe_int_attr(
+            position_type_buy = trading_validation._safe_int_attr(
                 mt5,
                 "POSITION_TYPE_BUY",
-                _safe_int_attr(mt5, "ORDER_TYPE_BUY", 0),
+                trading_validation._safe_int_attr(mt5, "ORDER_TYPE_BUY", 0),
             )
             try:
                 side = "BUY" if int(getattr(position, "type", position_type_buy)) == int(position_type_buy) else "SELL"
@@ -120,8 +153,8 @@ def _modify_position(
                 symbol_info=symbol_info,
                 tick=tick,
                 side=side,
-                stop_loss=None if float(norm_sl) == 0.0 else float(norm_sl),
-                take_profit=None if float(norm_tp) == 0.0 else float(norm_tp),
+                stop_loss=validate_sl,
+                take_profit=validate_tp,
             )
             if live_protection_error is not None:
                 return live_protection_error
@@ -171,7 +204,12 @@ def _modify_position(
             }
 
         except Exception as e:
-            return {"error": str(e)}
+            return _unexpected_operation_error(
+                "modifying position",
+                e,
+                mt5=mt5,
+                context={"ticket": ticket},
+            )
 
     return _modify_position()
 
@@ -204,13 +242,103 @@ def _modify_pending_order(
 
             order = orders[0]
             normalized_expiration, expiration_specified = trading_time._normalize_pending_expiration(expiration)
+            symbol_info = mt5.symbol_info(order.symbol)
+            if symbol_info is None:
+                return {"error": f"Failed to get symbol info for {order.symbol}"}
+            tick = mt5.symbol_info_tick(order.symbol)
+            if tick is None:
+                return {"error": f"Failed to get current price for {order.symbol}"}
+            point = float(getattr(symbol_info, "point", 0.0) or 0.0)
+            digits = trading_validation._safe_int_attr(symbol_info, "digits", 5)
+
+            explicit_remove_sl = _zero_price_requested(stop_loss)
+            explicit_remove_tp = _zero_price_requested(take_profit)
+            normalized_price = trading_validation._normalize_price_for_symbol(
+                price if price is not None else getattr(order, "price_open", None),
+                point=point,
+                digits=digits,
+            )
+            if normalized_price is None:
+                return {"error": "price must be a positive finite number after symbol normalization."}
+
+            requested_sl = (
+                None
+                if stop_loss is None or explicit_remove_sl
+                else trading_validation._normalize_price_for_symbol(stop_loss, point=point, digits=digits)
+            )
+            requested_tp = (
+                None
+                if take_profit is None or explicit_remove_tp
+                else trading_validation._normalize_price_for_symbol(take_profit, point=point, digits=digits)
+            )
+            if stop_loss is not None and not explicit_remove_sl and requested_sl is None:
+                return {"error": "stop_loss must be a positive finite price after symbol normalization."}
+            if take_profit is not None and not explicit_remove_tp and requested_tp is None:
+                return {"error": "take_profit must be a positive finite price after symbol normalization."}
+
+            existing_sl = trading_validation._normalize_price_for_symbol(
+                getattr(order, "sl", None),
+                point=point,
+                digits=digits,
+            )
+            existing_tp = trading_validation._normalize_price_for_symbol(
+                getattr(order, "tp", None),
+                point=point,
+                digits=digits,
+            )
+            request_sl = (
+                0.0
+                if explicit_remove_sl
+                else (
+                    float(requested_sl)
+                    if stop_loss is not None
+                    else float(existing_sl or 0.0)
+                )
+            )
+            request_tp = (
+                0.0
+                if explicit_remove_tp
+                else (
+                    float(requested_tp)
+                    if take_profit is not None
+                    else float(existing_tp or 0.0)
+                )
+            )
+
+            bid = float(getattr(tick, "bid", 0.0) or 0.0)
+            ask = float(getattr(tick, "ask", 0.0) or 0.0)
+            order_type_value = trading_validation._safe_int_attr(order, "type", -1)
+            buy_limit = trading_validation._safe_int_attr(mt5, "ORDER_TYPE_BUY_LIMIT", 2)
+            buy_stop = trading_validation._safe_int_attr(mt5, "ORDER_TYPE_BUY_STOP", 4)
+            sell_limit = trading_validation._safe_int_attr(mt5, "ORDER_TYPE_SELL_LIMIT", 3)
+            sell_stop = trading_validation._safe_int_attr(mt5, "ORDER_TYPE_SELL_STOP", 5)
+            buy_types = {buy_limit, buy_stop}
+            sell_types = {sell_limit, sell_stop}
+            if order_type_value == buy_limit and not (normalized_price < ask):
+                return {"error": f"Price must be below ask for BUY_LIMIT. price={normalized_price}, ask={ask}"}
+            if order_type_value == buy_stop and not (normalized_price > ask):
+                return {"error": f"Price must be above ask for BUY_STOP. price={normalized_price}, ask={ask}"}
+            if order_type_value == sell_limit and not (normalized_price > bid):
+                return {"error": f"Price must be above bid for SELL_LIMIT. price={normalized_price}, bid={bid}"}
+            if order_type_value == sell_stop and not (normalized_price < bid):
+                return {"error": f"Price must be below bid for SELL_STOP. price={normalized_price}, bid={bid}"}
+            if request_sl > 0.0:
+                if order_type_value in buy_types and request_sl >= normalized_price:
+                    return {"error": f"stop_loss must be below entry for BUY orders. sl={request_sl}, price={normalized_price}"}
+                if order_type_value in sell_types and request_sl <= normalized_price:
+                    return {"error": f"stop_loss must be above entry for SELL orders. sl={request_sl}, price={normalized_price}"}
+            if request_tp > 0.0:
+                if order_type_value in buy_types and request_tp <= normalized_price:
+                    return {"error": f"take_profit must be above entry for BUY orders. tp={request_tp}, price={normalized_price}"}
+                if order_type_value in sell_types and request_tp >= normalized_price:
+                    return {"error": f"take_profit must be below entry for SELL orders. tp={request_tp}, price={normalized_price}"}
 
             request = {
                 "action": mt5.TRADE_ACTION_MODIFY,
                 "order": ticket_id,
-                "price": price if price is not None else order.price_open,
-                "sl": stop_loss if stop_loss is not None else order.sl,
-                "tp": take_profit if take_profit is not None else order.tp,
+                "price": float(normalized_price),
+                "sl": request_sl,
+                "tp": request_tp,
                 "magic": 234000,
                 "comment": trading_comments._normalize_trade_comment(comment, default="MCP modify pending order"),
             }
@@ -267,7 +395,12 @@ def _modify_pending_order(
             }
 
         except Exception as e:
-            return {"error": str(e)}
+            return _unexpected_operation_error(
+                "modifying pending order",
+                e,
+                mt5=mt5,
+                context={"ticket": ticket},
+            )
 
     return _modify_pending_order()
 
@@ -312,9 +445,9 @@ def _close_positions(
             # 2. Filter positions
             to_close = []
             for pos in positions:
-                if profit_only and pos.profit <= 0:
+                if profit_only and pos.profit < 0:
                     continue
-                if loss_only and pos.profit >= 0:
+                if loss_only and pos.profit > 0:
                     continue
                 to_close.append(pos)
 

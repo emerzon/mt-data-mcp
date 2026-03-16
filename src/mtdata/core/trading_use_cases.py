@@ -671,7 +671,7 @@ def run_trade_history(
                 if not from_dt:
                     return {"error": "Invalid start time."}
             else:
-                from_dt = datetime(2020, 1, 1)
+                from_dt = datetime(1970, 1, 1)
 
             if from_dt > to_dt:
                 return {"error": "start must be before end."}
@@ -930,6 +930,7 @@ def run_trade_risk_analyze(
                 positions = []
 
             position_risks: List[Dict[str, Any]] = []
+            risk_calculation_failures: List[Dict[str, Any]] = []
             total_risk_currency = 0.0
             positions_without_sl = 0
             total_notional_exposure = 0.0
@@ -938,6 +939,14 @@ def run_trade_risk_analyze(
                 try:
                     sym_info = gateway.symbol_info(pos.symbol)
                     if sym_info is None:
+                        risk_calculation_failures.append(
+                            {
+                                "ticket": getattr(pos, "ticket", None),
+                                "symbol": getattr(pos, "symbol", None),
+                                "error": f"Failed to get symbol info for {getattr(pos, 'symbol', None)}",
+                                "error_type": "SymbolInfoUnavailable",
+                            }
+                        )
                         continue
 
                     entry_price = float(pos.price_open)
@@ -1007,7 +1016,15 @@ def run_trade_risk_analyze(
                             "rr_ratio": round(rr_ratio, 2) if rr_ratio else None,
                         }
                     )
-                except Exception:
+                except Exception as exc:
+                    risk_calculation_failures.append(
+                        {
+                            "ticket": getattr(pos, "ticket", None),
+                            "symbol": getattr(pos, "symbol", None),
+                            "error": str(exc),
+                            "error_type": type(exc).__name__,
+                        }
+                    )
                     continue
 
             total_risk_pct = (total_risk_currency / equity) * 100.0 if equity > 0 else 0.0
@@ -1018,6 +1035,8 @@ def run_trade_risk_analyze(
             overall_risk_status = "defined"
             if positions_without_sl > 0:
                 overall_risk_status = "unlimited"
+            elif risk_calculation_failures:
+                overall_risk_status = "incomplete"
             elif total_risk_pct > 10:
                 overall_risk_status = "high"
             elif total_risk_pct > 5:
@@ -1034,14 +1053,22 @@ def run_trade_risk_analyze(
                     "total_risk_pct": round(total_risk_pct, 2),
                     "positions_count": len(position_risks),
                     "positions_without_sl": positions_without_sl,
+                    "positions_with_risk_calculation_failures": len(risk_calculation_failures),
                     "notional_exposure": round(total_notional_exposure, 2),
                     "notional_exposure_pct": round(notional_exposure_pct, 2),
                 },
                 "positions": position_risks,
             }
+            if risk_calculation_failures:
+                result["risk_calculation_failures"] = risk_calculation_failures
             if positions_without_sl > 0:
                 result["warning"] = (
                     f"{positions_without_sl} position(s) without stop loss - UNLIMITED RISK!"
+                )
+            elif risk_calculation_failures:
+                result["warning"] = (
+                    f"{len(risk_calculation_failures)} position(s) could not be evaluated for risk; "
+                    "portfolio risk is incomplete."
                 )
 
             if (

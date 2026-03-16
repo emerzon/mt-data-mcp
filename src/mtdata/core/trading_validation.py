@@ -168,6 +168,49 @@ def _validate_deviation(deviation: Union[int, float]) -> Tuple[Optional[int], Op
     return dev, None
 
 
+def _safe_int_attr(obj: Any, name: str, default: int) -> int:
+    """Safely coerce an object attribute to an integer fallback."""
+    try:
+        value = getattr(obj, name)
+    except Exception:
+        return default
+    if value is None or isinstance(value, bool):
+        return default
+    if not isinstance(value, (int, float, str)):
+        return default
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(numeric) or not numeric.is_integer():
+        return default
+    return int(numeric)
+
+
+def _normalize_price_for_symbol(
+    value: Optional[Union[int, float]],
+    *,
+    point: float,
+    digits: int,
+) -> Optional[float]:
+    """Normalize a price to symbol precision, rejecting zero/negative outputs."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(numeric) or numeric == 0.0:
+        return None
+    if point > 0:
+        numeric = round(numeric / point) * point
+    else:
+        numeric = round(numeric, digits)
+    if not math.isfinite(numeric) or numeric <= 0.0:
+        return None
+    return float(numeric)
+
+
 def _validate_live_protection_levels(
     *,
     symbol_info: Any,
