@@ -108,7 +108,10 @@ class StatsForecastMethod(ForecastMethod):
         ci_alpha = kwargs.get('ci_alpha', params.get('ci_alpha'))
         level = None
         if ci_alpha is not None:
-            level = [int((1 - float(ci_alpha)) * 100)]
+            alpha_val = float(ci_alpha)
+            if not 0.0 < alpha_val < 1.0:
+                raise ValueError("ci_alpha must be between 0 and 1")
+            level = [max(1, min(99, int(round((1.0 - alpha_val) * 100.0))))]
         
         try:
             with warnings.catch_warnings():
@@ -124,10 +127,11 @@ class StatsForecastMethod(ForecastMethod):
                 else:
                     Yf = sf.predict(h=int(horizon), level=level)
             
-            try:
-                Yf = Yf[Yf['unique_id'] == 'ts']
-            except Exception:
-                pass
+            if 'unique_id' not in Yf.columns:
+                raise RuntimeError("StatsForecast output missing unique_id column")
+            Yf = Yf[Yf['unique_id'] == 'ts']
+            if Yf.empty:
+                raise RuntimeError("StatsForecast output missing rows for unique_id='ts'")
             
             # Extract values
             f_vals = _extract_forecast_values(Yf, horizon, f"StatsForecast {self.name}")

@@ -38,10 +38,20 @@ _BASE_EXCLUDE_COLUMNS = {
     "tick_volume",
     "real_volume",
 }
+_TECHNICAL_INDICATOR_WARNING_ATTR = "_mtdata_technical_indicator_warning"
 
 def _pd_freq_from_timeframe(tf: str) -> str:
     """Convert an MT5 timeframe to a pandas frequency string."""
     return _pd_freq_from_timeframe_common(tf)
+
+
+def _safe_log_return_series(values: pd.Series) -> pd.Series:
+    numeric = pd.to_numeric(values, errors="coerce").astype(float)
+    prev = numeric.shift(1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio = numeric.where(numeric > 0.0) / prev.where(prev > 0.0)
+        out = np.log(ratio)
+    return pd.Series(out, index=numeric.index, dtype=float).replace([np.inf, -np.inf], np.nan)
 
 
 def _create_dimred_reducer(method: Any, params: Optional[Dict[str, Any]]) -> Any:
@@ -99,11 +109,11 @@ def _prepare_base_data(df: pd.DataFrame, quantity: str, base_col: str = "close")
     source_col = base_col if base_col in df.columns else "close"
 
     if quantity == "return":
-        df["__log_return"] = np.log(df[source_col] / df[source_col].shift(1))
+        df["__log_return"] = _safe_log_return_series(df[source_col])
         return "__log_return"
     if quantity == "volatility":
         if "__log_return" not in df.columns:
-            df["__log_return"] = np.log(df[source_col] / df[source_col].shift(1))
+            df["__log_return"] = _safe_log_return_series(df[source_col])
         df["__squared_return"] = df["__log_return"] ** 2
         return "__squared_return"
     return source_col
@@ -177,11 +187,14 @@ def _add_technical_indicators(
     if not ind_specs:
         return []
 
+    df.attrs.pop(_TECHNICAL_INDICATOR_WARNING_ATTR, None)
     try:
         specs = parse_ti_specs(str(ind_specs)) if isinstance(ind_specs, str) else ind_specs
         apply_ta_indicators(df, specs, default_when="pre_ti")
-    except Exception:
-        pass
+    except Exception as ex:
+        df.attrs[_TECHNICAL_INDICATOR_WARNING_ATTR] = (
+            f"Technical indicator request could not be applied: {ex}"
+        )
 
     return _collect_indicator_columns(df)
 
@@ -249,7 +262,7 @@ def _create_fourier_features(
 
     w = 2.0 * math.pi / float(max(1, period))
     idx_tr = np.arange(np.asarray(t_train).size, dtype=float)
-    idx_tf = np.arange(np.asarray(t_future).size, dtype=float)
+    idx_tf = float(idx_tr.size) + np.arange(np.asarray(t_future).size, dtype=float)
     return (
         [np.sin(w * idx_tr), np.cos(w * idx_tr)],
         [np.sin(w * idx_tf), np.cos(w * idx_tf)],
@@ -541,6 +554,9 @@ def prepare_features(
         parse_ti_specs=parse_ti_specs,
         apply_ta_indicators=apply_ta_indicators,
     )
+    indicator_warning = df.attrs.pop(_TECHNICAL_INDICATOR_WARNING_ATTR, None)
+    if indicator_warning:
+        feat_info.setdefault("warnings", []).append(str(indicator_warning))
     cal_train_df, cal_future, cal_cols = _build_calendar_features(df, fcfg, future_times)
 
     train_index = training_index if training_index is not None else df.index

@@ -110,7 +110,7 @@ def test_mlforecast_forecast_without_exog_uses_simple_fit_and_predict(monkeypatc
 
         def predict(self, h, X_df=None):
             calls["predict_x"] = X_df
-            return pd.DataFrame({"dummy_ml": [9.0]})
+            return pd.DataFrame({"unique_id": ["ts"], "dummy_ml": [9.0]})
 
     fake_ml_mod = ModuleType("mlforecast")
     fake_ml_mod.MLForecast = FakeMLForecast
@@ -155,6 +155,30 @@ def test_mlforecast_forecast_wraps_runtime_errors(monkeypatch):
     )
 
     with pytest.raises(RuntimeError, match="dummy_ml error: fit exploded"):
+        _DummyMLMethod().forecast(pd.Series([1.0, 2.0]), horizon=1, seasonality=0, params={})
+
+
+def test_mlforecast_forecast_requires_unique_id_rows(monkeypatch):
+    class FakeMLForecast:
+        def __init__(self, models, freq, lags):
+            pass
+
+        def fit(self, Y_df, X_df=None):
+            return None
+
+        def predict(self, h, X_df=None):
+            return pd.DataFrame({"dummy_ml": [9.0]})
+
+    fake_ml_mod = ModuleType("mlforecast")
+    fake_ml_mod.MLForecast = FakeMLForecast
+    monkeypatch.setitem(sys.modules, "mlforecast", fake_ml_mod)
+    monkeypatch.setattr(
+        common_mod,
+        "_create_training_dataframes",
+        lambda *args, **kwargs: (pd.DataFrame({"y": [1.0]}), None, None),
+    )
+
+    with pytest.raises(RuntimeError, match="dummy_ml error: mlforecast output missing unique_id column"):
         _DummyMLMethod().forecast(pd.Series([1.0, 2.0]), horizon=1, seasonality=0, params={})
 
 

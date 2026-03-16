@@ -66,7 +66,7 @@ class TestGetForecastMethodsDataSafe:
 class TestBarsPerYear:
     def test_h1(self):
         result = _bars_per_year("H1")
-        expected = (365.0 * 24 * 3600) / 3600
+        expected = 252.0 * 24.0
         assert abs(result - expected) < 1
 
     def test_invalid_timeframe(self):
@@ -267,6 +267,27 @@ class TestForecastBacktest:
                 methods=["ewma"], params_per_method={"ewma": {"proxy": "garman_klass"}},
             )
         assert isinstance(result, dict)
+
+    @patch("mtdata.forecast.backtest._fetch_history")
+    def test_volatility_realized_sigma_uses_rms_scaling(self, fetch):
+        df = _make_df(500)
+        fetch.return_value = df
+        with patch("mtdata.forecast.backtest.forecast_volatility") as fv:
+            fv.return_value = {"horizon_sigma_return": 0.03}
+            result = forecast_backtest(
+                "EURUSD",
+                timeframe="H1",
+                quantity="volatility",
+                methods=["ewma"],
+                horizon=3,
+            )
+        entry = result["results"]["ewma"]["details"][0]
+        from mtdata.utils.utils import _format_time_minimal
+
+        anchor_idx = next(i for i, ts in enumerate(df["time"]) if _format_time_minimal(float(ts)) == entry["anchor"])
+        act = df["close"].iloc[anchor_idx + 1: anchor_idx + 4].to_numpy(dtype=float)
+        realized = math.sqrt(np.mean(np.square(np.diff(np.log(act)))))
+        assert entry["realized_sigma"] == pytest.approx(realized)
 
     @patch("mtdata.forecast.backtest._fetch_history")
     def test_return_target_trading_logic(self, fetch):

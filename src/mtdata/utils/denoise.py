@@ -306,7 +306,10 @@ def _ssa_denoise(
     if components is None:
         r = min(2, len(s))
     elif isinstance(components, float) and 0 < components <= 1:
-        energy = np.cumsum(s ** 2) / np.sum(s ** 2)
+        total_energy = float(np.sum(s ** 2))
+        if not math.isfinite(total_energy) or total_energy <= 0.0:
+            return np.full(n, float(np.mean(x)), dtype=float)
+        energy = np.cumsum(s ** 2) / total_energy
         r = int(np.searchsorted(energy, components) + 1)
     else:
         r = int(components)
@@ -571,9 +574,13 @@ def _vmd_denoise(
                 idx_sel = idx_all
     if not idx_sel:
         idx_sel = idx_all
-    y = modes[idx_sel].sum(axis=0)
-    if len(y) != len(x) and modes.shape[0] == len(x):
-        y = modes[idx_sel].sum(axis=1)
+    y = np.asarray(modes[idx_sel].sum(axis=0), dtype=float).reshape(-1)
+    if y.size != len(x):
+        alt = np.asarray(modes[idx_sel].sum(axis=1), dtype=float).reshape(-1)
+        if alt.size == len(x):
+            y = alt
+    if y.size != len(x):
+        return x
     return y
 
 

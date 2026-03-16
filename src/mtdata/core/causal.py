@@ -230,8 +230,18 @@ def _build_overlap_frame(
     return pd.concat(aligned_map, axis=1, join="inner").tail(limit)
 
 
-def _pair_overlap_symbols(pair_key: str) -> tuple[str, str]:
-    left, _, right = str(pair_key).partition("-")
+def _pair_overlap_symbols(pair_key: str, symbols: List[str] | None = None) -> tuple[str, str]:
+    text = str(pair_key)
+    if symbols:
+        ordered = sorted({str(symbol) for symbol in symbols if symbol}, key=len, reverse=True)
+        for left in ordered:
+            prefix = f"{left}-"
+            if not text.startswith(prefix):
+                continue
+            right = text[len(prefix):]
+            if right in ordered:
+                return left, right
+    left, _, right = text.partition("-")
     return left, right
 
 
@@ -241,13 +251,13 @@ def _select_prune_symbol(
     *,
     bottleneck_pair: str,
 ) -> str | None:
-    candidates = [symbol for symbol in _pair_overlap_symbols(bottleneck_pair) if symbol in symbols]
+    candidates = [symbol for symbol in _pair_overlap_symbols(bottleneck_pair, symbols) if symbol in symbols]
     if len(candidates) < 2:
         return None
     anchor = symbols[0] if symbols else None
     totals: Dict[str, int] = {symbol: 0 for symbol in candidates}
     for pair_key, overlap_rows in pair_overlaps.items():
-        pair_symbols = _pair_overlap_symbols(pair_key)
+        pair_symbols = _pair_overlap_symbols(pair_key, symbols)
         for symbol in candidates:
             if symbol in pair_symbols:
                 totals[symbol] += int(overlap_rows)
@@ -610,6 +620,7 @@ def causal_discover_signals(
         rows: List[Dict[str, object]] = []
         pair_attempts = 0
         pair_success = 0
+        pair_failures: List[Dict[str, Any]] = []
         for effect in transformed.columns:
             for cause in transformed.columns:
                 if effect == cause:
@@ -622,7 +633,17 @@ def causal_discover_signals(
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore", category=FutureWarning)
                         tests = grangercausalitytests(subset[[effect, cause]], maxlag=max_lag, verbose=False)
-                except Exception:
+                except Exception as ex:
+                    if len(pair_failures) < 10:
+                        pair_failures.append(
+                            {
+                                "effect": effect,
+                                "cause": cause,
+                                "samples": int(len(subset)),
+                                "error": str(ex),
+                                "error_type": type(ex).__name__,
+                            }
+                        )
                     continue
                 pair_success += 1
                 best_lag = None
@@ -653,7 +674,13 @@ def causal_discover_signals(
             "samples_aligned": int(len(transformed)),
             "pairs_attempted": int(pair_attempts),
             "pairs_tested": int(pair_success),
+            "pairs_failed": int(max(pair_attempts - pair_success, 0)),
         })
+        if pair_failures:
+            meta["pair_failures"] = pair_failures
+            warnings_out.append(
+                f"{max(pair_attempts - pair_success, 0)} pairwise Granger tests failed; see meta['pair_failures']."
+            )
         data: Dict[str, Any] = {
             "links": rows_sorted,
             "count_links": int(len(rows_sorted)),

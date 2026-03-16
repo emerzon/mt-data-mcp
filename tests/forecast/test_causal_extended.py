@@ -14,6 +14,7 @@ from mtdata.core.causal import (
     _parse_symbols,
     _expand_symbols_for_group,
     _fetch_series,
+    _pair_overlap_symbols,
     _transform_frame,
     _standardize_frame,
     _format_summary,
@@ -25,6 +26,10 @@ from mtdata.utils.mt5 import MT5ConnectionError
 @pytest.fixture(autouse=True)
 def _skip_mt5_connection(monkeypatch):
     monkeypatch.setattr(causal_mod, "ensure_mt5_connection_or_raise", lambda: None)
+
+
+def test_pair_overlap_symbols_handles_hyphenated_symbols():
+    assert _pair_overlap_symbols("BTC-USD-ETH-USD", ["BTC-USD", "ETH-USD"]) == ("BTC-USD", "ETH-USD")
 
 
 # ---------------------------------------------------------------------------
@@ -395,3 +400,27 @@ class TestCausalDiscoverSignals:
             "event=finish operation=causal_discover_signals success=True" in record.message
             for record in caplog.records
         )
+
+    @patch("statsmodels.tsa.stattools.grangercausalitytests")
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_granger_failures_are_surfaced_in_metadata(self, mock_fetch, mock_granger):
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        base = np.linspace(1.0, 2.0, 80)
+        series_map = {
+            "A": pd.Series(base, index=idx),
+            "B": pd.Series(base * 1.01 + 0.001, index=idx),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_granger.side_effect = RuntimeError("singular matrix")
+
+        result = self._unwrapped()("A,B", max_lag=2, transform="diff", normalize=False)
+
+        assert result["success"] is True
+        assert result["meta"]["pairs_failed"] >= 1
+        assert result["meta"]["pair_failures"][0]["error_type"] == "RuntimeError"
+        assert "warnings" in result

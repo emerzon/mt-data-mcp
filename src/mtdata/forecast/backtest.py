@@ -233,6 +233,8 @@ def forecast_backtest(
             else:
                 actual = closes[idx + 1: idx + 1 + int(horizon)].tolist()
             ts = times[idx + 1: idx + 1 + int(horizon)].tolist()
+            if len(actual) != int(horizon) or len(ts) != int(horizon):
+                continue
             actual_windows[idx] = (actual, ts)
         if not actual_windows:
             return {"error": "No valid validation windows found"}
@@ -296,7 +298,11 @@ def forecast_backtest(
                     # Compute realized horizon sigma from ground truth prices
                     act = np.array(truth, dtype=float)
                     r_act = _log_returns_from_prices(act) if act.size >= 2 else np.array([], dtype=float)
-                    realized_sigma = float(np.sqrt(np.sum(np.clip(r_act, -1e6, 1e6)**2))) if r_act.size > 0 else float('nan')
+                    realized_sigma = (
+                        float(np.sqrt(np.mean(np.square(np.clip(r_act, -1e6, 1e6)))))
+                        if r_act.size > 0
+                        else float('nan')
+                    )
                     pred_sigma = float(r.get('horizon_sigma_return', float('nan')))
                     mae = float(abs(pred_sigma - realized_sigma)) if np.isfinite(pred_sigma) and np.isfinite(realized_sigma) else float('nan')
                     rmse = mae

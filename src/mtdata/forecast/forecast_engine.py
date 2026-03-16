@@ -74,6 +74,58 @@ _ENSEMBLE_BASE_METHODS = (
 logger = logging.getLogger(__name__)
 
 
+def _clear_ensemble_dispatch_error() -> None:
+    try:
+        setattr(_ensemble_dispatch_method, "_last_error", None)
+    except Exception:
+        pass
+
+
+def _record_ensemble_dispatch_error(method_name: str, exc: BaseException) -> None:
+    try:
+        setattr(
+            _ensemble_dispatch_method,
+            "_last_error",
+            {
+                "method": str(method_name),
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+            },
+        )
+    except Exception:
+        pass
+
+
+def _consume_ensemble_dispatch_error() -> Optional[Dict[str, Any]]:
+    try:
+        error = getattr(_ensemble_dispatch_method, "_last_error", None)
+    except Exception:
+        return None
+    _clear_ensemble_dispatch_error()
+    return dict(error) if isinstance(error, dict) else None
+
+
+def _append_ensemble_failure(
+    failures: Optional[List[Dict[str, Any]]],
+    *,
+    method_name: str,
+    anchor_index: int,
+    error_detail: Optional[Dict[str, Any]],
+) -> None:
+    if failures is None or len(failures) >= 12:
+        return
+    payload: Dict[str, Any] = {
+        "stage": "cv",
+        "method": str(method_name),
+        "anchor_index": int(anchor_index),
+    }
+    if isinstance(error_detail, dict):
+        for key, value in error_detail.items():
+            if value is not None:
+                payload[str(key)] = value
+    failures.append(payload)
+
+
 def _normalize_weights(weights: Any, size: int) -> Optional[np.ndarray]:
     if weights is None:
         return None
@@ -109,13 +161,14 @@ def _ensemble_dispatch_method(
     m = str(method_name).lower().strip()
     # Allow any registered method in ensemble if it supports what we need
     # But for safety/speed, we might restrict to fast methods or check registry
-    
+    _clear_ensemble_dispatch_error()
     method_params = dict(params or {})
     try:
         forecaster = ForecastRegistry.get(m)
         res = forecaster.forecast(series, horizon, seasonality or 1, method_params)
         return res.forecast
-    except Exception:
+    except Exception as ex:
+        _record_ensemble_dispatch_error(m, ex)
         return None
 
 
@@ -127,6 +180,7 @@ def _prepare_ensemble_cv(
     params_map: Dict[str, Dict[str, Any]],
     cv_points: int,
     min_train: int,
+    failure_sink: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Collect walk-forward one-step predictions for ensemble weighting."""
 
@@ -143,22 +197,54 @@ def _prepare_ensemble_cv(
 
     rows: List[List[float]] = []
     targets: List[float] = []
+    horizon_i = int(horizon)
     for idx in candidate_idx:
         train = series.iloc[:idx]
         if len(train) < min_train:
             continue
-        row: List[float] = []
+        row_forecasts: List[np.ndarray] = []
         success = True
         for m in methods:
             fc = _ensemble_dispatch_method(m, train, horizon, seasonality, params_map.get(m, {}))
-            if fc is None or fc.size == 0 or not math.isfinite(float(fc[0])):
+            if fc is None:
+                _append_ensemble_failure(
+                    failure_sink,
+                    method_name=m,
+                    anchor_index=idx,
+                    error_detail=_consume_ensemble_dispatch_error()
+                    or {"error": "Component forecast unavailable", "error_type": "forecast_unavailable"},
+                )
                 success = False
                 break
-            row.append(float(fc[0]))
+            try:
+                fc_arr = np.asarray(fc, dtype=float).reshape(-1)
+            except Exception as ex:
+                _append_ensemble_failure(
+                    failure_sink,
+                    method_name=m,
+                    anchor_index=idx,
+                    error_detail={"error": str(ex), "error_type": type(ex).__name__},
+                )
+                success = False
+                break
+            if fc_arr.size < horizon_i or not np.all(np.isfinite(fc_arr[:horizon_i])):
+                _append_ensemble_failure(
+                    failure_sink,
+                    method_name=m,
+                    anchor_index=idx,
+                    error_detail={"error": "Forecast output was too short or non-finite", "error_type": "invalid_forecast"},
+                )
+                success = False
+                break
+            row_forecasts.append(fc_arr[:horizon_i])
         if not success:
             continue
-        rows.append(row)
-        targets.append(float(series.iloc[idx]))
+        target_slice = np.asarray(series.iloc[idx: idx + horizon_i], dtype=float).reshape(-1)
+        if target_slice.size < horizon_i or not np.all(np.isfinite(target_slice)):
+            continue
+        for step_idx in range(horizon_i):
+            rows.append([float(forecast[step_idx]) for forecast in row_forecasts])
+            targets.append(float(target_slice[step_idx]))
 
     if not rows:
         return np.empty((0, len(methods))), np.empty((0,))
@@ -284,14 +370,15 @@ def _prepare_feature_context(
     target_series: pd.Series,
     dimred_method: Optional[str],
     dimred_params: Optional[Dict[str, Any]],
-) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Dict[str, Any]]:
     """Prepare training and future exogenous features if requested."""
     X = exog_used
     future_exog = exog_future
+    feat_info: Dict[str, Any] = {}
     if X is None and features:
         future_times = next_times_from_last(float(df['time'].iloc[-1]), int(tf_secs), int(horizon))
         try:
-            X, built_future_exog, _feat_info = _forecast_preprocessing.prepare_features(
+            X, built_future_exog, feat_info = _forecast_preprocessing.prepare_features(
                 df,
                 features,
                 future_times,
@@ -304,10 +391,10 @@ def _prepare_feature_context(
             )
         except Exception as exc:
             logger.debug("Feature preparation failed: %s", exc)
-            X, built_future_exog, _feat_info = None, None, {'error': f"feature_build_error: {str(exc)}"}
+            X, built_future_exog, feat_info = None, None, {'error': f"feature_build_error: {str(exc)}"}
         if future_exog is None:
             future_exog = built_future_exog
-    return X, future_exog
+    return X, future_exog, feat_info
 
 
 def _build_engine_diagnostics(
@@ -650,7 +737,7 @@ def forecast_engine(
             return {"error": f"Not enough valid data points in column '{base_col}'"}
 
         # Prepare feature matrices if applicable (only if exog_used not provided).
-        X, future_exog = _prepare_feature_context(
+        X, future_exog, feature_info = _prepare_feature_context(
             df=df,
             features=features,
             exog_used=exog_used,
@@ -675,6 +762,8 @@ def forecast_engine(
             base_col=base_col,
             target_series=target_series,
         )
+        if feature_info:
+            engine_diagnostics["feature_preparation"] = feature_info
         broker_time_check_result: Optional[Dict[str, Any]] = None
         broker_time_check_enabled = bool(getattr(mt5_config, "broker_time_check_enabled", False))
         broker_time_check_ttl_seconds = int(getattr(mt5_config, "broker_time_check_ttl_seconds", 60))

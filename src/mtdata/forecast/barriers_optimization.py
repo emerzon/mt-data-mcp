@@ -1152,7 +1152,7 @@ def forecast_barrier_optimize(
             rets = rets[np.isfinite(rets)]
             if rets.size > vol_window_val:
                 rets = rets[-vol_window_val:]
-            vol_per_bar = float(np.std(rets)) if rets.size else 0.0
+            vol_per_bar = float(np.std(rets, ddof=1)) if rets.size > 1 else 0.0
             vol_horizon = vol_per_bar * np.sqrt(horizon_val)
 
             # Convert to percentage space for baseline

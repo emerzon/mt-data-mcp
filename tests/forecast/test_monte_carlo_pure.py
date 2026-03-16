@@ -198,6 +198,12 @@ class TestSimulateGbmMc:
         result = simulate_gbm_mc(self._prices(), horizon=20, n_sims=30, seed=7)
         assert np.all(result["price_paths"] > 0)
 
+    def test_sigma_uses_sample_standard_deviation(self):
+        prices = np.array([100.0, 101.0, 103.0, 102.0, 104.0], dtype=float)
+        result = simulate_gbm_mc(prices, horizon=2, n_sims=4, seed=1)
+        expected = np.std(np.diff(np.log(prices)), ddof=1) + 1e-12
+        assert result["sigma"] == pytest.approx(expected)
+
 
 class TestSimulateHmmMc:
     def _prices(self, n=200, seed=42):
@@ -347,3 +353,7 @@ class TestGbmBarrierUpcrossProb:
     def test_reasonable_prob(self):
         p = gbm_single_barrier_upcross_prob(100.0, 110.0, 0.05, 0.2, 1.0)
         assert 0.0 < p < 1.0
+
+    def test_extreme_drift_overflow_saturates_high_probability(self):
+        p = gbm_single_barrier_upcross_prob(100.0, 101.0, 25.0, 0.01, 1.0)
+        assert 0.9 <= p <= 1.0

@@ -388,15 +388,16 @@ class ARIMAMethod(ETSArimaMethod):
             order = (p, d, q)
 
         if params.get('seasonal_order') is not None:
-            seasonal_order = params.get('seasonal_order')
+            seasonal_order = tuple(int(v) for v in params.get('seasonal_order'))
         else:
             P = int(params.get('P', 0))
             D = int(params.get('D', 0))
             Q = int(params.get('Q', 0))
             seasonal_order = (P, D, Q, int(seasonality or 0))
+            if seasonal and seasonality > 1 and P == 0 and D == 0 and Q == 0:
+                seasonal_order = (0, 1, 1, int(seasonality))
         if seasonal and seasonality > 1 and seasonal_order == (0, 0, 0, 0):
-             # Auto-guess seasonal order if not provided but requested
-             seasonal_order = (0, 1, 1, seasonality)
+            seasonal_order = (0, 1, 1, int(seasonality))
              
         trend = params.get('trend', 'c')
         ci_alpha = kwargs.get('ci_alpha', params.get('alpha', 0.05))
@@ -443,20 +444,21 @@ class ARIMAMethod(ETSArimaMethod):
         f_vals = np.asarray(pm, dtype=float)
         
         ci = None
+        metadata: Optional[Dict[str, Any]] = None
         try:
             _alpha = float(ci_alpha) if ci_alpha is not None else 0.05
             ci_df = pred.conf_int(alpha=_alpha)
             ci_arr = np.asarray(ci_df)
             if ci_arr.ndim == 2 and ci_arr.shape[1] >= 2:
                 ci = (ci_arr[:, 0], ci_arr[:, 1])
-        except Exception:
-            pass
+        except Exception as ex:
+            metadata = {"ci_warning": f"Failed to compute confidence intervals: {ex}"}
             
         params_used = {"order": tuple(order), "seasonal_order": tuple(seasonal_order), "trend": str(trend)}
         if exog_u is not None:
             params_used["exog"] = {"n_features": int(exog_u.shape[1])}
             
-        return ForecastResult(forecast=f_vals, ci_values=ci, params_used=params_used)
+        return ForecastResult(forecast=f_vals, ci_values=ci, params_used=params_used, metadata=metadata)
 
 @ForecastRegistry.register("sarima")
 class SARIMAMethod(ARIMAMethod):

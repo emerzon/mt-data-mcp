@@ -40,7 +40,7 @@ def test_volatility_metadata_and_helper_functions(monkeypatch):
     assert "arch" in by_name["garch"]["requires"]
     assert by_name["theta"]["available"] is True
 
-    assert vol._bars_per_year("H1") > 8000
+    assert vol._bars_per_year("H1") == 6048.0
     assert math.isnan(vol._bars_per_year("BAD"))
 
     assert vol._kernel_weight("bartlett", 1, 4) > 0

@@ -767,6 +767,10 @@ class TestSsaDenoise:
         y = _ssa_denoise(NOISY_SIGNAL, window=N + 10, components=2)
         np.testing.assert_array_equal(y, NOISY_SIGNAL)
 
+    def test_zero_energy_ratio_returns_finite_output(self):
+        y = _ssa_denoise(np.zeros(20, dtype=float), window=5, components=0.9)
+        np.testing.assert_array_equal(y, np.zeros(20, dtype=float))
+
 
 class TestL1TrendFilter:
     def test_basic(self):
@@ -830,6 +834,23 @@ class TestVmdDenoise:
                          init=1, tol=1e-7, keep_modes=None, drop_modes=None,
                          keep_ratio=0.9)
         _check_basic(y, N)
+
+    def test_transposed_mode_fallback_uses_matching_axis(self, monkeypatch):
+        import mtdata.utils.denoise as denoise_mod
+
+        monkeypatch.setattr(
+            denoise_mod,
+            "_VMD",
+            lambda *args, **kwargs: (
+                np.vstack([np.linspace(0.0, 1.0, 8), np.linspace(1.0, 2.0, 8)]).T,
+                None,
+                None,
+            ),
+        )
+        x = np.linspace(1.0, 2.0, 8)
+        y = _vmd_denoise(x, alpha=2000.0, tau=0.0, k=2, dc=0, init=1, tol=1e-7, keep_modes=[0], drop_modes=None, keep_ratio=None)
+        assert len(y) == len(x)
+        assert np.all(np.isfinite(y))
 
 
 # ======================================================================

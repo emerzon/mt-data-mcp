@@ -381,11 +381,11 @@ def test_sarima_auto_seasonal_order_when_missing(monkeypatch):
     )
     assert np.allclose(out_default.forecast, [1.0])
     assert np.allclose(out_auto.forecast, [1.0])
-    assert tuple(calls[0]) == (0, 0, 0, 6)
+    assert tuple(calls[0]) == (0, 1, 1, 6)
     assert tuple(calls[1]) == (0, 1, 1, 6)
 
 
-def test_arima_conf_int_errors_are_ignored(monkeypatch):
+def test_arima_conf_int_errors_are_reported_in_metadata(monkeypatch):
     class FakePred:
         predicted_mean = np.array([3.0], dtype=float)
 
@@ -409,6 +409,7 @@ def test_arima_conf_int_errors_are_ignored(monkeypatch):
     out = ea.ARIMAMethod().forecast(pd.Series([1.0, 2.0, 3.0]), horizon=1, seasonality=0, params={})
     assert np.allclose(out.forecast, [3.0])
     assert out.ci_values is None
+    assert out.metadata == {"ci_warning": "Failed to compute confidence intervals: no ci"}
 
 
 def test_legacy_wrappers_route_to_registry(monkeypatch):

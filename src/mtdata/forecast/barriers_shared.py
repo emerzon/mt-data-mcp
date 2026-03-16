@@ -105,30 +105,39 @@ def _scale_price_paths_to_reference(
 
 
 def _sort_candidate_results(res_list: List[Dict[str, Any]], objective_val: str) -> None:
+    def _metric(key: str, *, descending: bool) -> Any:
+        default = float("-inf") if descending else float("inf")
+
+        def _resolve(row: Dict[str, Any]) -> float:
+            value = _safe_float(row.get(key))
+            return default if value is None else float(value)
+
+        return _resolve
+
     if objective_val == 'edge':
-        res_list.sort(key=lambda x: x['edge'], reverse=True)
+        res_list.sort(key=_metric('edge', descending=True), reverse=True)
     elif objective_val == 'ev':
-        res_list.sort(key=lambda x: x['ev'], reverse=True)
+        res_list.sort(key=_metric('ev', descending=True), reverse=True)
     elif objective_val == 'ev_cond':
-        res_list.sort(key=lambda x: x['ev_cond'], reverse=True)
+        res_list.sort(key=_metric('ev_cond', descending=True), reverse=True)
     elif objective_val == 'ev_per_bar':
-        res_list.sort(key=lambda x: x['ev_per_bar'], reverse=True)
+        res_list.sort(key=_metric('ev_per_bar', descending=True), reverse=True)
     elif objective_val == 'kelly':
-        res_list.sort(key=lambda x: x['kelly'], reverse=True)
+        res_list.sort(key=_metric('kelly', descending=True), reverse=True)
     elif objective_val == 'kelly_cond':
-        res_list.sort(key=lambda x: x['kelly_cond'], reverse=True)
+        res_list.sort(key=_metric('kelly_cond', descending=True), reverse=True)
     elif objective_val == 'prob_tp_first':
-        res_list.sort(key=lambda x: x['prob_tp_first'], reverse=True)
+        res_list.sort(key=_metric('prob_tp_first', descending=True), reverse=True)
     elif objective_val == 'prob_resolve':
-        res_list.sort(key=lambda x: x['prob_resolve'], reverse=True)
+        res_list.sort(key=_metric('prob_resolve', descending=True), reverse=True)
     elif objective_val == 'profit_factor':
-        res_list.sort(key=lambda x: x['profit_factor'], reverse=True)
+        res_list.sort(key=_metric('profit_factor', descending=True), reverse=True)
     elif objective_val == 'min_loss_prob':
-        res_list.sort(key=lambda x: x['prob_loss'])
+        res_list.sort(key=_metric('prob_loss', descending=False))
     elif objective_val == 'utility':
-        res_list.sort(key=lambda x: x['utility'], reverse=True)
+        res_list.sort(key=_metric('utility', descending=True), reverse=True)
     else:
-        res_list.sort(key=lambda x: x['ev'], reverse=True)
+        res_list.sort(key=_metric('ev', descending=True), reverse=True)
 
 
 def _annotate_candidate_metrics(row: Optional[Dict[str, Any]], cost_per_trade: float = 0.0) -> Optional[Dict[str, Any]]:

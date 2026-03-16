@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional, Tuple
+import inspect
 import math
 import numpy as np
 import pandas as pd
 
 from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
+
+_FAILURE_DETAIL_LIMIT = 12
 
 
 def _normalize_weights_default(weights: Any, size: int) -> Optional[np.ndarray]:
@@ -32,6 +35,78 @@ def _normalize_weights_default(weights: Any, size: int) -> Optional[np.ndarray]:
     return arr / total
 
 
+def _clear_dispatch_error(dispatch_method: Any) -> None:
+    try:
+        setattr(dispatch_method, "_last_error", None)
+    except Exception:
+        pass
+
+
+def _record_dispatch_error(dispatch_method: Any, method_name: str, exc: BaseException) -> None:
+    try:
+        setattr(
+            dispatch_method,
+            "_last_error",
+            {
+                "method": str(method_name),
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+            },
+        )
+    except Exception:
+        pass
+
+
+def _consume_dispatch_error(dispatch_method: Any) -> Optional[Dict[str, Any]]:
+    try:
+        error = getattr(dispatch_method, "_last_error", None)
+    except Exception:
+        return None
+    _clear_dispatch_error(dispatch_method)
+    return dict(error) if isinstance(error, dict) else None
+
+
+def _append_failure(
+    failures: Optional[List[Dict[str, Any]]],
+    *,
+    stage: str,
+    method_name: str,
+    error_detail: Optional[Dict[str, Any]] = None,
+    anchor_index: Optional[int] = None,
+) -> None:
+    if failures is None or len(failures) >= _FAILURE_DETAIL_LIMIT:
+        return
+    payload: Dict[str, Any] = {
+        "stage": str(stage),
+        "method": str(method_name),
+    }
+    if anchor_index is not None:
+        payload["anchor_index"] = int(anchor_index)
+    if isinstance(error_detail, dict):
+        for key, value in error_detail.items():
+            if value is not None:
+                payload[str(key)] = value
+    failures.append(payload)
+
+
+def _stabilized_bma_weights(rmse: np.ndarray) -> Optional[np.ndarray]:
+    rmse_arr = np.asarray(rmse, dtype=float).reshape(-1)
+    if rmse_arr.size == 0 or not np.all(np.isfinite(rmse_arr)):
+        return None
+    rmse_safe = np.maximum(rmse_arr, 1e-8)
+    scale = float(np.median(rmse_safe))
+    if not math.isfinite(scale) or scale <= 0.0:
+        scale = float(np.mean(rmse_safe))
+    scale = max(scale, 1e-8)
+    log_weights = -0.5 * np.square(rmse_safe / scale)
+    log_weights = log_weights - float(np.max(log_weights))
+    weights = np.exp(log_weights)
+    total = float(np.sum(weights))
+    if not np.isfinite(total) or total <= 0.0:
+        return None
+    return weights / total
+
+
 def _ensemble_dispatch_method_default(
     method_name: str,
     series: pd.Series,
@@ -40,11 +115,13 @@ def _ensemble_dispatch_method_default(
     params: Optional[Dict[str, Any]],
 ) -> Optional[np.ndarray]:
     method_l = str(method_name).lower().strip()
+    _clear_dispatch_error(_ensemble_dispatch_method_default)
     try:
         forecaster = ForecastRegistry.get(method_l)
         res = forecaster.forecast(series, horizon, seasonality or 1, dict(params or {}))
         return res.forecast
-    except Exception:
+    except Exception as ex:
+        _record_dispatch_error(_ensemble_dispatch_method_default, method_l, ex)
         return None
 
 
@@ -57,6 +134,7 @@ def _prepare_ensemble_cv_default(
     cv_points: int,
     min_train: int,
     dispatch_method: Callable[[str, pd.Series, int, Optional[int], Optional[Dict[str, Any]]], Optional[np.ndarray]],
+    failure_sink: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     n = len(series)
     if n <= max(min_train, horizon + 2):
@@ -71,22 +149,57 @@ def _prepare_ensemble_cv_default(
 
     rows: List[List[float]] = []
     targets: List[float] = []
+    horizon_i = int(horizon)
     for idx in candidate_idx:
         train = series.iloc[:idx]
         if len(train) < min_train:
             continue
-        row: List[float] = []
+        row_forecasts: List[np.ndarray] = []
         success = True
         for method_name in methods:
             fc = dispatch_method(method_name, train, horizon, seasonality, params_map.get(method_name, {}))
-            if fc is None or fc.size == 0 or not math.isfinite(float(fc[0])):
+            if fc is None:
+                _append_failure(
+                    failure_sink,
+                    stage="cv",
+                    method_name=method_name,
+                    anchor_index=idx,
+                    error_detail=_consume_dispatch_error(dispatch_method)
+                    or {"error": "Component forecast unavailable", "error_type": "forecast_unavailable"},
+                )
                 success = False
                 break
-            row.append(float(fc[0]))
+            try:
+                fc_arr = np.asarray(fc, dtype=float).reshape(-1)
+            except Exception as ex:
+                _append_failure(
+                    failure_sink,
+                    stage="cv",
+                    method_name=method_name,
+                    anchor_index=idx,
+                    error_detail={"error": str(ex), "error_type": type(ex).__name__},
+                )
+                success = False
+                break
+            if fc_arr.size < horizon_i or not np.all(np.isfinite(fc_arr[:horizon_i])):
+                _append_failure(
+                    failure_sink,
+                    stage="cv",
+                    method_name=method_name,
+                    anchor_index=idx,
+                    error_detail={"error": "Forecast output was too short or non-finite", "error_type": "invalid_forecast"},
+                )
+                success = False
+                break
+            row_forecasts.append(fc_arr[:horizon_i])
         if not success:
             continue
-        rows.append(row)
-        targets.append(float(series.iloc[idx]))
+        target_slice = np.asarray(series.iloc[idx: idx + horizon_i], dtype=float).reshape(-1)
+        if target_slice.size < horizon_i or not np.all(np.isfinite(target_slice)):
+            continue
+        for step_idx in range(horizon_i):
+            rows.append([float(forecast[step_idx]) for forecast in row_forecasts])
+            targets.append(float(target_slice[step_idx]))
 
     if not rows:
         return np.empty((0, len(methods))), np.empty((0,))
@@ -133,6 +246,9 @@ class EnsembleMethod(ForecastMethod):
         if not callable(dispatch_method):
             dispatch_method = _ensemble_dispatch_method_default
 
+        cv_failures: List[Dict[str, Any]] = []
+        component_failures: List[Dict[str, Any]] = []
+
         prepare_cv = kwargs.get("prepare_ensemble_cv")
         if not callable(prepare_cv):
             def _prepare(series_in, methods, horizon_in, seasonality_in, params_map, cv_points, min_train):
@@ -145,6 +261,7 @@ class EnsembleMethod(ForecastMethod):
                     cv_points,
                     min_train,
                     dispatch_method,
+                    failure_sink=cv_failures,
                 )
             prepare_cv = _prepare
 
@@ -203,16 +320,28 @@ class EnsembleMethod(ForecastMethod):
         coeffs = None
         cv_rows = 0
         if mode in ('bma', 'stacking'):
-            X_cv, y_cv = prepare_cv(series, base_methods, horizon, seasonality, params_map, cv_points, min_train)
+            prepare_kwargs: Dict[str, Any] = {}
+            try:
+                if "failure_sink" in inspect.signature(prepare_cv).parameters:
+                    prepare_kwargs["failure_sink"] = cv_failures
+            except (TypeError, ValueError):
+                pass
+            X_cv, y_cv = prepare_cv(
+                series,
+                base_methods,
+                horizon,
+                seasonality,
+                params_map,
+                cv_points,
+                min_train,
+                **prepare_kwargs,
+            )
             cv_rows = int(len(y_cv))
             if X_cv.shape[0] >= max(3, len(base_methods)):
                 if mode == 'bma':
                     errors = X_cv - y_cv[:, None]
                     rmse = np.sqrt(np.mean(np.square(errors), axis=0))
-                    min_rmse = float(np.min(rmse))
-                    weights_vec = np.exp(-0.5 * (rmse - min_rmse) / (min_rmse + 1e-12))
-                    total = float(np.sum(weights_vec))
-                    weights_vec = (weights_vec / total) if total > 0 else None
+                    weights_vec = _stabilized_bma_weights(rmse)
                 else:
                     X_aug = np.column_stack([np.ones(X_cv.shape[0]), X_cv])
                     beta, *_ = np.linalg.lstsq(X_aug, y_cv, rcond=None)
@@ -226,10 +355,35 @@ class EnsembleMethod(ForecastMethod):
         component_forecasts: List[np.ndarray] = []
         for method_name in base_methods:
             fc = dispatch_method(method_name, series, horizon, seasonality, params_map.get(method_name, {}))
-            if fc is None or fc.size == 0:
+            if fc is None:
+                _append_failure(
+                    component_failures,
+                    stage="component",
+                    method_name=method_name,
+                    error_detail=_consume_dispatch_error(dispatch_method)
+                    or {"error": "Component forecast unavailable", "error_type": "forecast_unavailable"},
+                )
+                continue
+            try:
+                fc_arr = np.asarray(fc, dtype=float).reshape(-1)
+            except Exception as ex:
+                _append_failure(
+                    component_failures,
+                    stage="component",
+                    method_name=method_name,
+                    error_detail={"error": str(ex), "error_type": type(ex).__name__},
+                )
+                continue
+            if fc_arr.size < int(horizon) or not np.all(np.isfinite(fc_arr[: int(horizon)])):
+                _append_failure(
+                    component_failures,
+                    stage="component",
+                    method_name=method_name,
+                    error_detail={"error": "Forecast output was too short or non-finite", "error_type": "invalid_forecast"},
+                )
                 continue
             component_methods.append(method_name)
-            component_forecasts.append(fc)
+            component_forecasts.append(fc_arr[: int(horizon)])
 
         if not component_forecasts:
             raise ValueError("Ensemble failed: no component forecasts")
@@ -271,6 +425,10 @@ class EnsembleMethod(ForecastMethod):
             ensemble_meta['cv_rmse'] = [float(value) for value in rmse.tolist()]
         if effective_mode == 'stacking':
             ensemble_meta['intercept'] = float(ensemble_intercept)
+        if cv_failures:
+            ensemble_meta['cv_failures'] = cv_failures
+        if component_failures:
+            ensemble_meta['component_failures'] = component_failures
         if expose_components:
             ensemble_meta['components'] = {
                 method_name: [float(value) for value in forecast.tolist()]

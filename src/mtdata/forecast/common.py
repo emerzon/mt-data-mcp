@@ -123,10 +123,17 @@ def default_seasonality(timeframe: str) -> int:
 def bars_per_year(timeframe: str) -> float:
     """Approximate number of bars per year for a timeframe."""
     try:
-        secs = TIMEFRAME_SECONDS.get(str(timeframe))
+        tf = str(timeframe).upper().strip()
+        secs = TIMEFRAME_SECONDS.get(tf)
         if not secs or secs <= 0:
             return float("nan")
-        return float((365.0 * 24.0 * 3600.0) / float(secs))
+        if tf == "MN1":
+            return 12.0
+        if tf == "W1":
+            return 52.0
+        if float(secs) >= 86400.0:
+            return float((252.0 * 86400.0) / float(secs))
+        return float((252.0 * 24.0 * 3600.0) / float(secs))
     except Exception:
         return float("nan")
 

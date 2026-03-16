@@ -166,7 +166,7 @@ class TestAddTechnicalIndicators:
         assert "rsi_14" in cols
 
     def test_specs_exception_graceful(self):
-        """Lines 196-197: exception during parse → pass."""
+        """Indicator parse/apply failures should be surfaced through attrs."""
         df = _make_df(10)
         cols = _add_technical_indicators(
             df, {"indicators": "bad"},
@@ -174,6 +174,13 @@ class TestAddTechnicalIndicators:
             apply_ta_indicators=MagicMock(),
         )
         assert isinstance(cols, list)
+        assert any("Technical indicator request could not be applied" in str(v) for v in df.attrs.values())
+
+    def test_fourier_future_continues_phase(self):
+        tr, tf, cols = _create_fourier_features("fourier:4", np.arange(4), np.arange(2))
+        assert cols == ["fx_sin_4", "fx_cos_4"]
+        assert tf[0][0] == pytest.approx(0.0)
+        assert tf[1][0] == pytest.approx(1.0)
 
 
 # ===== _apply_features_and_target_spec (lines 221-229, 241-245) ===========
@@ -536,6 +543,20 @@ class TestPrepareFeatures:
             parse_kv_or_json=lambda x: x,
         )
         assert tr.shape[1] > 2
+
+    def test_indicator_warning_surfaced_in_feature_info(self):
+        df = _make_df(20)
+        ft = [float(df["time"].iloc[-1]) + 3600 * i for i in range(1, 3)]
+        _, _, info = prepare_features(
+            df,
+            {"indicators": "bad"},
+            ft,
+            2,
+            parse_kv_or_json=lambda x: x,
+            parse_ti_specs=MagicMock(side_effect=RuntimeError("boom")),
+        )
+        assert "warnings" in info
+        assert "Technical indicator request could not be applied" in info["warnings"][0]
 
 
 # ===== apply_preprocessing (lines 612-623) ================================

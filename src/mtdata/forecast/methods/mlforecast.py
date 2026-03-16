@@ -84,10 +84,11 @@ class MLForecastMethod(ForecastMethod):
             else:
                 Yf = mlf.predict(h=int(horizon))
             
-            try:
-                Yf = Yf[Yf['unique_id'] == 'ts']
-            except Exception:
-                pass
+            if 'unique_id' not in Yf.columns:
+                raise RuntimeError("mlforecast output missing unique_id column")
+            Yf = Yf[Yf['unique_id'] == 'ts']
+            if Yf.empty:
+                raise RuntimeError("mlforecast output missing rows for unique_id='ts'")
             
             f_vals = _extract_forecast_values(Yf, horizon, self.name)
             

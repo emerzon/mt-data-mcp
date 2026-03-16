@@ -69,6 +69,7 @@ def forecast_barrier_hit_probabilities(
         if direction_error:
             return {"error": direction_error}
         p = _parse_kv_or_json(params)
+        warnings_out: List[str] = []
         # Fetch enough history for calibration
         need = int(max(300, horizon_val + 100))
         df = _fetch_history(symbol, timeframe, need, as_of=None)
@@ -117,8 +118,8 @@ def forecast_barrier_hit_probabilities(
                 added = _apply_denoise_util(df, denoise, default_when='pre_ti')
                 if f"{base_col}_dn" in added:
                     base_col = f"{base_col}_dn"
-            except Exception:
-                pass
+            except Exception as ex:
+                warnings_out.append(f"Denoise request failed; using raw close prices instead: {ex}")
         prices = df[base_col].astype(float).to_numpy()
 
         # Simulate paths
@@ -341,7 +342,9 @@ def forecast_barrier_hit_probabilities(
             out["bridge_correction"] = True
         if 'model_summary' in sim:
             out['model_summary'] = str(sim['model_summary'])
-            
+        if warnings_out:
+            out["warnings"] = warnings_out
+             
         return out
     except (KeyError, AttributeError, IndexError):
         raise

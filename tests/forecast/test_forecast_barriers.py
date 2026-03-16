@@ -11,6 +11,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from mtdata.forecast.barriers import forecast_barrier_hit_probabilities, forecast_barrier_closed_form, forecast_barrier_optimize
+from mtdata.forecast.barriers_shared import _sort_candidate_results
 from mtdata.forecast.monte_carlo import gbm_single_barrier_upcross_prob
 
 _BARRIER_PROB_ROOT = "mtdata.forecast.barriers_probabilities"
@@ -137,6 +138,26 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertAlmostEqual(result["last_price"], 1.0, places=8)
         self.assertAlmostEqual(result["last_price_close"], 1.0, places=8)
         self.assertEqual(result["last_price_source"], "close")
+
+    def test_forecast_barrier_hit_probabilities_surfaces_denoise_warning(self):
+        self._set_flat_history(1.0, bars=200)
+        paths = self._sample_paths()
+        with patch(f'{_BARRIER_PROB_ROOT}._simulate_gbm_mc') as mock_sim, \
+             patch("mtdata.utils.denoise._apply_denoise", side_effect=RuntimeError("bad denoise")):
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_hit_probabilities(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                tp_pct=0.5,
+                sl_pct=0.5,
+                denoise={"method": "wavelet"},
+            )
+        self.assertTrue(result["success"])
+        self.assertIn("warnings", result)
+        self.assertIn("using raw close prices instead", result["warnings"][0])
 
     def test_forecast_barrier_bootstrap(self):
         result = forecast_barrier_hit_probabilities(
@@ -1590,6 +1611,16 @@ class TestTier1EnsembleDegradation(_BarrierModulePatchMixin, unittest.TestCase):
         else:
             msg = f"{n_failed} ensemble member(s) failed."
         self.assertIn("caution", msg)
+
+
+def test_sort_candidate_results_handles_missing_values():
+    rows = [
+        {"tp": 1.0, "sl": 1.0, "ev": None},
+        {"tp": 2.0, "sl": 1.0, "ev": 0.2},
+        {"tp": 3.0, "sl": 1.0},
+    ]
+    _sort_candidate_results(rows, "ev")
+    assert rows[0]["tp"] == 2.0
 
 
 if __name__ == '__main__':

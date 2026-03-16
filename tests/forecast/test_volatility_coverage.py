@@ -158,14 +158,14 @@ class TestGetVolatilityMethodsData:
 
 class TestBarsPerYear:
     @pytest.mark.parametrize("tf,expected", [
-        ("M1", 525600.0),
-        ("M5", 105120.0),
-        ("M15", 35040.0),
-        ("H1", 8760.0),
-        ("H4", 2190.0),
-        ("D1", 365.0),
-        ("W1", 365.0 * 24.0 * 3600.0 / 604800.0),
-        ("MN1", 365.0 * 24.0 * 3600.0 / 2592000.0),
+        ("M1", 362880.0),
+        ("M5", 72576.0),
+        ("M15", 24192.0),
+        ("H1", 6048.0),
+        ("H4", 1512.0),
+        ("D1", 252.0),
+        ("W1", 52.0),
+        ("MN1", 12.0),
     ])
     def test_known_timeframes(self, tf, expected):
         assert _bars_per_year(tf) == pytest.approx(expected)

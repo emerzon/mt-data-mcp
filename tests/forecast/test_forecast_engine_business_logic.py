@@ -170,6 +170,52 @@ def test_prepare_ensemble_cv_uses_valid_rows_only(monkeypatch):
     assert y.shape[0] == 3
 
 
+def test_prepare_ensemble_cv_uses_all_horizon_steps(monkeypatch):
+    series = pd.Series(np.arange(1.0, 11.0))
+
+    def fake_dispatch(method_name, train, horizon, seasonality, params):
+        base = float(train.iloc[-1])
+        return np.array([base + 1.0, base + 2.0], dtype=float)
+
+    monkeypatch.setattr(fe, "_ensemble_dispatch_method", fake_dispatch)
+
+    x, y = fe._prepare_ensemble_cv(
+        series=series,
+        methods=["naive", "theta"],
+        horizon=2,
+        seasonality=1,
+        params_map={},
+        cv_points=2,
+        min_train=3,
+    )
+
+    assert x.shape == (4, 2)
+    assert y.tolist() == [7.0, 8.0, 8.0, 9.0]
+
+
+def test_prepare_ensemble_cv_uses_all_horizon_steps(monkeypatch):
+    series = pd.Series(np.arange(1.0, 11.0))
+
+    def fake_dispatch(method_name, train, horizon, seasonality, params):
+        base = float(train.iloc[-1])
+        return np.array([base + 1.0, base + 2.0], dtype=float)
+
+    monkeypatch.setattr(fe, "_ensemble_dispatch_method", fake_dispatch)
+
+    x, y = fe._prepare_ensemble_cv(
+        series=series,
+        methods=["naive", "theta"],
+        horizon=2,
+        seasonality=1,
+        params_map={},
+        cv_points=2,
+        min_train=3,
+    )
+
+    assert x.shape == (4, 2)
+    assert y.tolist() == [7.0, 8.0, 8.0, 9.0]
+
+
 def test_forecast_engine_validation_and_top_level_errors(monkeypatch):
     monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})

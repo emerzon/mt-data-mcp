@@ -588,21 +588,21 @@ class TestFormatForecastOutput:
 class TestBarsPerYear:
     def test_m1(self):
         bpy = _bars_per_year("M1")
-        expected = 365 * 24 * 60
+        expected = 252 * 24 * 60
         assert abs(bpy - expected) < 1
 
     def test_h1(self):
         bpy = _bars_per_year("H1")
-        expected = 365 * 24
+        expected = 252 * 24
         assert abs(bpy - expected) < 1
 
     def test_d1(self):
         bpy = _bars_per_year("D1")
-        assert abs(bpy - 365.0) < 1
+        assert abs(bpy - 252.0) < 1
 
     def test_w1(self):
         bpy = _bars_per_year("W1")
-        expected = 365.0 * 24 * 3600 / 604800
+        expected = 52.0
         np.testing.assert_allclose(bpy, expected, rtol=1e-6)
 
     def test_invalid_timeframe(self):
@@ -611,7 +611,7 @@ class TestBarsPerYear:
 
     def test_mn1(self):
         bpy = _bars_per_year("MN1")
-        assert bpy > 10  # ~12.something
+        assert bpy == 12.0
 
 
 # ===================================================================
@@ -692,6 +692,15 @@ class TestPrepareBaseData:
         col = _prepare_base_data(df, "return", "close")
         assert col == "__log_return"
         assert "__log_return" in df.columns
+
+    def test_return_drops_non_positive_prices_to_nan(self):
+        df = pd.DataFrame({"close": [100.0, 0.0, 101.0, -1.0, 102.0], "time": np.arange(5)})
+        col = _prepare_base_data(df, "return", "close")
+        assert col == "__log_return"
+        assert math.isnan(df["__log_return"].iloc[1])
+        assert math.isnan(df["__log_return"].iloc[2])
+        assert math.isnan(df["__log_return"].iloc[3])
+        assert math.isnan(df["__log_return"].iloc[4])
 
     def test_volatility_creates_squared_return(self):
         df = self._make_df()

@@ -303,7 +303,7 @@ def simulate_gbm_mc(
     if rets.size < 2:
         raise ValueError("Not enough returns for GBM calibration")
     mu = float(np.mean(rets))
-    sigma = float(np.std(rets) + 1e-12)
+    sigma = float(np.std(rets, ddof=1) + 1e-12)
     last_price = float(prices[-1])
     sims_i = int(n_sims)
     horizon_i = int(horizon)
@@ -713,8 +713,13 @@ def gbm_single_barrier_upcross_prob(
     srt = sigma_f * math.sqrt(T_f)
     z1 = (x0 - a + m * T_f) / srt
     z2 = (x0 - a - m * T_f) / srt
-    term = math.exp(2.0 * m * (a - x0) / (sigma_f * sigma_f))
-    p = float(norm.cdf(z1) + term * norm.cdf(z2))
+    log_term = 2.0 * m * (a - x0) / (sigma_f * sigma_f)
+    log_second_term = float(log_term + norm.logcdf(z2))
+    if log_second_term <= -745.0:
+        second_term = 0.0
+    else:
+        second_term = math.exp(min(log_second_term, 709.0))
+    p = float(norm.cdf(z1) + second_term)
     if not math.isfinite(p):
-        return 0.0
+        return 1.0 if log_term > 0.0 else float(min(1.0, max(0.0, norm.cdf(z1))))
     return float(min(1.0, max(0.0, p)))
