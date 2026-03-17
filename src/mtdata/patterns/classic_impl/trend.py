@@ -1,11 +1,28 @@
 import numpy as np
-from typing import List, Optional
+from typing import List
 from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
     _fit_line, _fit_line_robust, _tol_abs_from_close, _last_touch_indexes,
     _count_recent_touches, _result, _alias, _fit_lines_and_arrays,
-    _is_converging, _count_touches, _conf
+    _is_converging, _count_touches, _conf, _find_recent_breakout
 )
+
+
+def _channel_width_expansion_ratio(
+    width: np.ndarray,
+    k: int,
+    n: int,
+) -> float:
+    if width.size == 0:
+        return 0.0
+    last = max(5, int(k))
+    recent = float(np.mean(width[-last:])) if width.size >= last else float(np.mean(width))
+    past_win = max(20, 2 * int(k))
+    prev_win = width[-past_win:-last] if n > past_win else width[:max(1, width.size // 2)]
+    past = float(np.mean(prev_win)) if prev_win.size > 0 else recent
+    if not np.isfinite(recent) or not np.isfinite(past) or abs(past) <= 1e-9:
+        return 0.0
+    return float((recent - past) / abs(past))
 
 def detect_trend_lines(
     c: np.ndarray,
@@ -38,9 +55,34 @@ def detect_trend_lines(
             
             recent_i = n - 1
             recent_touches = _count_recent_touches(line_vals, c, tol_abs, confirm_lookback)
+            breakout_direction = None
+            breakout_index = None
+            if side == "high":
+                breakout_direction, breakout_index = _find_recent_breakout(
+                    c,
+                    upper=line_vals,
+                    tol_abs=tol_abs,
+                    tol_pct=float(cfg.same_level_tol_pct),
+                    lookback_bars=confirm_lookback,
+                )
+                if breakout_direction == "up":
+                    status = "completed"
+            else:
+                breakout_direction, breakout_index = _find_recent_breakout(
+                    c,
+                    lower=line_vals,
+                    tol_abs=tol_abs,
+                    tol_pct=float(cfg.same_level_tol_pct),
+                    lookback_bars=confirm_lookback,
+                )
+                if breakout_direction == "down":
+                    status = "completed"
+            end_i = int(breakout_index if breakout_index is not None else (n - 1))
             if recent_touches >= confirm_needed:
-                status = "completed"
-            
+                conf = min(1.0, float(conf) + 0.02)
+            if breakout_index is not None:
+                conf = min(1.0, float(conf) + 0.06)
+
             details = {
                 "side": side,
                 "slope": float(slope),
@@ -48,10 +90,12 @@ def detect_trend_lines(
                 "r2": float(r2),
                 "touches": int(touches),
                 "line_level_recent": float(line_vals[recent_i]),
-                "completion_touches_recent": int(recent_touches),
+                "touches_recent": int(recent_touches),
+                "breakout_direction": breakout_direction,
+                "breakout_index": int(breakout_index) if breakout_index is not None else None,
                 "bias": "bullish" if tl_dir == "Ascending" else "bearish" if tl_dir == "Descending" else "neutral",
             }
-            base_item = _result(name, status, conf, int(idxs[0]), int(n - 1), t, details)
+            base_item = _result(name, status, conf, int(idxs[0]), end_i, t, details)
             results.append(base_item)
             
             if tl_dir != 'Horizontal' and bool(cfg.include_aliases):
@@ -85,6 +129,8 @@ def detect_channels(
     width = upper - lower
     width_ok = float(np.std(width[-k:]) / (np.mean(width[-k:]) + 1e-9))
     geom_ok = 1.0 - min(1.0, max(0.0, width_ok))
+    width_expansion_ratio = _channel_width_expansion_ratio(width, k, n)
+    widening = width_expansion_ratio > float(cfg.channel_max_width_expansion_ratio)
     
     touches = 0
     tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
@@ -98,7 +144,7 @@ def detect_channels(
     elif abs(sh) <= cfg.max_flat_slope and abs(sl) <= cfg.max_flat_slope:
         name = "Horizontal Channel"
         
-    if approx_parallel and not converging and touches >= cfg.min_channel_touches:
+    if approx_parallel and not converging and not widening and touches >= cfg.min_channel_touches:
         conf = _conf(touches, min(r2h, r2l), geom_ok, cfg)
         status = "forming"
         recent_i = n - 1
@@ -106,8 +152,21 @@ def detect_channels(
         confirm_lookback = max(confirm_needed, int(cfg.completion_lookback_bars))
         
         recent_hits = _count_recent_touches(upper, c, tol_abs, confirm_lookback) + _count_recent_touches(lower, c, tol_abs, confirm_lookback)
-        if recent_hits >= confirm_needed:
+        breakout_direction, breakout_index = _find_recent_breakout(
+            c,
+            upper=upper,
+            lower=lower,
+            tol_abs=tol_abs,
+            tol_pct=float(cfg.same_level_tol_pct),
+            lookback_bars=confirm_lookback,
+        )
+        if breakout_index is not None:
             status = "completed"
+        if recent_hits >= confirm_needed:
+            conf = min(1.0, float(conf) + 0.02)
+        if breakout_index is not None:
+            conf = min(1.0, float(conf) + 0.06)
+        end_i = int(breakout_index if breakout_index is not None else max(ih[-1], il[-1]))
             
         details = {
             "upper_slope": float(sh),
@@ -117,10 +176,13 @@ def detect_channels(
             "r2_upper": float(r2h),
             "r2_lower": float(r2l),
             "channel_width_recent": float(width[recent_i]),
-            "completion_touches_recent": int(recent_hits),
+            "channel_width_expansion_ratio": float(width_expansion_ratio),
+            "touches_recent": int(recent_hits),
+            "breakout_direction": breakout_direction,
+            "breakout_index": int(breakout_index) if breakout_index is not None else None,
             "bias": "bullish" if name == "Ascending Channel" else "bearish" if name == "Descending Channel" else "neutral",
         }
-        base = _result(name, status, conf, int(min(ih[0], il[0])), int(max(ih[-1], il[-1])), t, details)
+        base = _result(name, status, conf, int(min(ih[0], il[0])), end_i, t, details)
         ch_results.append(base)
         
         if bool(cfg.include_aliases):

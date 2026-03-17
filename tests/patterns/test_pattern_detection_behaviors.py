@@ -1328,6 +1328,146 @@ def test_detect_channels_allow_small_absolute_slope_spread(monkeypatch):
     assert out[0].name == "Horizontal Channel"
 
 
+def test_detect_channels_reject_widening_parallel_structure(monkeypatch):
+    from src.mtdata.patterns.classic_impl import trend
+
+    n = 60
+    x = np.arange(n, dtype=float)
+    upper = 110.0 + (0.470 * x)
+    lower = 100.0 + (0.400 * x)
+    close = (upper + lower) / 2.0
+    peaks = np.array([10, 20, 30, 40, 50], dtype=int)
+    troughs = np.array([5, 15, 25, 35, 45], dtype=int)
+
+    monkeypatch.setattr(
+        trend,
+        "_fit_lines_and_arrays",
+        lambda *_args, **_kwargs: (0.470, 110.0, 0.95, 0.400, 100.0, 0.95, upper.copy(), lower.copy()),
+    )
+    monkeypatch.setattr(trend, "_is_converging", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(trend, "_count_touches", lambda *_args, **_kwargs: 6)
+
+    out = trend.detect_channels(
+        close,
+        peaks,
+        troughs,
+        np.arange(n, dtype=float),
+        ClassicDetectorConfig(min_channel_touches=2),
+    )
+
+    assert out == []
+
+
+def test_detect_trend_lines_require_breakout_for_completed_status(monkeypatch):
+    from src.mtdata.patterns.classic_impl import trend
+
+    n = 40
+    peaks = np.array([5, 15, 25], dtype=int)
+    troughs = np.array([10, 20, 30], dtype=int)
+
+    def _fake_fit(x, _y):
+        xs = tuple(int(v) for v in x.tolist())
+        if xs == tuple(peaks.tolist()):
+            return 0.0, 110.0, 0.95
+        return 0.0, 100.0, 0.95
+
+    monkeypatch.setattr(trend, "_fit_line", _fake_fit)
+    monkeypatch.setattr(trend, "_last_touch_indexes", lambda _line, idxs, _c, _tol: idxs.tolist())
+
+    cfg = ClassicDetectorConfig(
+        use_robust_fit=False,
+        same_level_tol_pct=0.1,
+        completion_lookback_bars=4,
+        completion_confirm_bars=2,
+    )
+
+    close_forming = np.full(n, 100.0, dtype=float)
+    close_forming[-4:] = np.array([100.02, 99.98, 100.01, 100.0], dtype=float)
+    out_forming = trend.detect_trend_lines(
+        close_forming,
+        peaks,
+        troughs,
+        np.arange(n, dtype=float),
+        cfg,
+    )
+    support_forming = next(pattern for pattern in out_forming if pattern.details["side"] == "low")
+
+    assert support_forming.status == "forming"
+    assert support_forming.details["touches_recent"] == 4
+    assert support_forming.details["breakout_index"] is None
+
+    close_break = close_forming.copy()
+    close_break[-1] = 99.0
+    out_break = trend.detect_trend_lines(
+        close_break,
+        peaks,
+        troughs,
+        np.arange(n, dtype=float),
+        cfg,
+    )
+    support_break = next(pattern for pattern in out_break if pattern.details["side"] == "low")
+
+    assert support_break.status == "completed"
+    assert support_break.end_index == n - 1
+    assert support_break.details["breakout_direction"] == "down"
+    assert support_break.details["breakout_index"] == n - 1
+
+
+def test_detect_channels_require_breakout_for_completed_status(monkeypatch):
+    from src.mtdata.patterns.classic_impl import trend
+
+    n = 60
+    peaks = np.array([10, 20, 30, 40, 50], dtype=int)
+    troughs = np.array([5, 15, 25, 35, 45], dtype=int)
+    upper = np.full(n, 105.0, dtype=float)
+    lower = np.full(n, 95.0, dtype=float)
+
+    monkeypatch.setattr(
+        trend,
+        "_fit_lines_and_arrays",
+        lambda *_args, **_kwargs: (0.0, 105.0, 0.95, 0.0, 95.0, 0.95, upper.copy(), lower.copy()),
+    )
+    monkeypatch.setattr(trend, "_is_converging", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(trend, "_count_touches", lambda *_args, **_kwargs: 6)
+
+    cfg = ClassicDetectorConfig(
+        min_channel_touches=2,
+        same_level_tol_pct=0.1,
+        completion_lookback_bars=4,
+        completion_confirm_bars=2,
+    )
+
+    close_forming = np.full(n, 100.0, dtype=float)
+    close_forming[-4:] = np.array([105.0, 95.0, 100.0, 104.95], dtype=float)
+    out_forming = trend.detect_channels(
+        close_forming,
+        peaks,
+        troughs,
+        np.arange(n, dtype=float),
+        cfg,
+    )
+
+    assert out_forming
+    assert out_forming[0].status == "forming"
+    assert out_forming[0].details["touches_recent"] == 3
+    assert out_forming[0].details["breakout_index"] is None
+
+    close_break = close_forming.copy()
+    close_break[-1] = 106.0
+    out_break = trend.detect_channels(
+        close_break,
+        peaks,
+        troughs,
+        np.arange(n, dtype=float),
+        cfg,
+    )
+
+    assert out_break[0].status == "completed"
+    assert out_break[0].end_index == n - 1
+    assert out_break[0].details["breakout_direction"] == "up"
+    assert out_break[0].details["breakout_index"] == n - 1
+
+
 def test_detect_diamonds_respects_geometry_threshold(monkeypatch):
     from src.mtdata.patterns.classic_impl import shapes
 

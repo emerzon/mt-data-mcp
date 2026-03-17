@@ -62,6 +62,7 @@ class ClassicDetectorConfig:
     convergence_fallback_scale: float = 1.2  # fallback widening factor when no past window exists
     channel_parallel_slope_ratio: float = 0.15  # relative slope spread tolerated for channels
     channel_parallel_min_abs_tol: float = 1e-4  # absolute floor for near-horizontal channel slope spread
+    channel_max_width_expansion_ratio: float = 0.05  # tolerated channel-width widening over the recent window
     pennant_parallel_slope_ratio: float = 0.2  # relative slope spread tolerated for flags/pennants
     pennant_min_convergence_ratio: float = 0.05  # minimum width contraction required to classify as pennant
     rounding_window_bars: int = 220
