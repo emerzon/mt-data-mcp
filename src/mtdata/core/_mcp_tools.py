@@ -261,7 +261,15 @@ def _request_model_signature_fields(func: Any) -> List[inspect.Parameter]:
     if isinstance(model_fields, dict):
         flattened: List[inspect.Parameter] = []
         for field_name, field in model_fields.items():
-            annotation = getattr(field, "annotation", inspect._empty)
+            annotation = inspect._empty
+            rebuild_annotation = getattr(field, "rebuild_annotation", None)
+            if callable(rebuild_annotation):
+                try:
+                    annotation = rebuild_annotation()
+                except Exception:
+                    annotation = inspect._empty
+            if annotation is inspect._empty:
+                annotation = getattr(field, "annotation", inspect._empty)
             is_required = bool(getattr(field, "is_required", lambda: False)())
             default = inspect._empty if is_required else _signature_default_for_model_field(field)
             flattened.append(

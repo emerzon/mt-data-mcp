@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Annotated, Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, Field, field_validator, model_validator
 
 from .schema import DenoiseSpec, IndicatorSpec, SimplifySpec, TimeframeLiteral
 
@@ -176,6 +176,16 @@ def _validate_indicator_entries(value: Any) -> Any:
     return validated
 
 
+IndicatorSpecsInput = Annotated[
+    Optional[List[IndicatorSpec]],
+    BeforeValidator(
+        _normalize_indicator_specs,
+        json_schema_input_type=Optional[Union[str, List[IndicatorSpec]]],
+    ),
+    AfterValidator(_validate_indicator_entries),
+]
+
+
 class DataFetchCandlesRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
@@ -183,19 +193,9 @@ class DataFetchCandlesRequest(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     ohlcv: Optional[str] = None
-    indicators: Optional[List[IndicatorSpec]] = None
+    indicators: IndicatorSpecsInput = None
     denoise: Optional[DenoiseSpec] = None
     simplify: Optional[SimplifySpec] = None
-
-    @field_validator("indicators", mode="before")
-    @classmethod
-    def _coerce_indicators(cls, value: Any) -> Any:
-        return _normalize_indicator_specs(value)
-
-    @field_validator("indicators")
-    @classmethod
-    def _validate_indicators(cls, value: Any) -> Any:
-        return _validate_indicator_entries(value)
 
     @field_validator("limit")
     @classmethod

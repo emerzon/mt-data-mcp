@@ -75,7 +75,10 @@ def test_attach_schemas_to_tools_patches_indicator_and_data_refs(monkeypatch) ->
     )
 
     params = tool_obj.schema["parameters"]["properties"]
-    assert params["indicators"] == {"type": "array", "items": {"$ref": "#/$defs/IndicatorSpec"}}
+    indicator_any_of = params["indicators"]["anyOf"]
+    assert {"type": "array", "items": {"$ref": "#/$defs/IndicatorSpec"}} in indicator_any_of
+    assert any(option.get("type") == "string" for option in indicator_any_of)
+    assert {"type": "null"} in indicator_any_of
     assert params["denoise"] == {"anyOf": [{"$ref": "#/$defs/DenoiseSpec"}, {"type": "null"}]}
     assert params["simplify"] == {"anyOf": [{"$ref": "#/$defs/SimplifySpec"}, {"type": "null"}]}
 

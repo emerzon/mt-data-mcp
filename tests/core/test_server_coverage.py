@@ -497,6 +497,24 @@ class TestCoerceKwargsForCallable:
             {"name": "macd", "params": [12.0, 26.0, 9.0]},
         ]
 
+    def test_request_model_signature_fields_preserve_indicator_string_coercion(self):
+        from pydantic import TypeAdapter
+
+        from mtdata.core._mcp_tools import _request_model_signature_fields
+        from mtdata.core.data_requests import DataFetchCandlesRequest
+
+        def fn(request: DataFetchCandlesRequest): ...
+
+        params = _request_model_signature_fields(fn)
+        indicators_param = next(param for param in params if param.name == "indicators")
+
+        value = TypeAdapter(indicators_param.annotation).validate_python("ema(20),rsi(14),macd(12,26,9)")
+        assert value == [
+            {"name": "ema", "params": [20.0]},
+            {"name": "rsi", "params": [14.0]},
+            {"name": "macd", "params": [12.0, 26.0, 9.0]},
+        ]
+
     def test_handles_bad_signature_gracefully(self):
         kw = {"a": "1"}
         result = self._call("not_a_callable", kw)

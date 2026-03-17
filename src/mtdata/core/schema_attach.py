@@ -149,7 +149,16 @@ def _patch_indicators_describe_schema(schema: Dict[str, Any]) -> None:
 def _patch_data_fetch_candles_schema(schema: Dict[str, Any]) -> None:
     params, required_params = _schema_params(schema)
     if "indicators" in params:
-        params["indicators"] = {"type": "array", "items": {"$ref": "#/$defs/IndicatorSpec"}}
+        indicator_options = [
+            {
+                "type": "string",
+                "description": "Compact indicator spec like 'rsi(14),ema(20),macd(12,26,9)'.",
+            },
+            {"type": "array", "items": {"$ref": "#/$defs/IndicatorSpec"}},
+        ]
+        if "indicators" not in required_params:
+            indicator_options.append({"type": "null"})
+        params["indicators"] = {"anyOf": indicator_options}
     _set_ref(params, required_params, "denoise", "#/$defs/DenoiseSpec", allow_null=True)
     _set_ref(params, required_params, "simplify", "#/$defs/SimplifySpec", allow_null=True)
 
