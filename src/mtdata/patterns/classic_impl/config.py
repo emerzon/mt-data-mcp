@@ -46,6 +46,7 @@ class ClassicDetectorConfig:
     cup_handle_min_depth_pct: float = 2.0
     cup_handle_max_depth_pct: float = 35.0
     cup_handle_handle_window_frac: float = 0.2
+    cup_handle_max_rim_mismatch_pct: float = 6.0
     cup_handle_max_handle_pullback_pct: float = 12.0
     cup_handle_confidence_base: float = 0.55
     cup_handle_confidence_depth_weight: float = 0.25

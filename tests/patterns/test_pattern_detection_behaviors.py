@@ -1199,6 +1199,41 @@ def test_detect_cup_handle_respects_configurable_handle_pullback():
     assert out_relaxed[0].details["handle_pullback_pct"] == pytest.approx(5.0)
 
 
+def test_detect_cup_handle_scores_rim_mismatch_instead_of_hard_reject():
+    from src.mtdata.patterns.classic_impl.continuation import detect_cup_handle
+
+    n = 180
+    anchors = [(0, 100.0), (25, 100.0), (90, 82.0), (135, 104.0), (150, 102.0), (165, 99.0), (179, 106.0)]
+    close = np.full(n, 100.0, dtype=float)
+    for (a_i, a_v), (b_i, b_v) in zip(anchors, anchors[1:]):
+        close[a_i : b_i + 1] = np.linspace(a_v, b_v, b_i - a_i + 1)
+
+    strict_cfg = ClassicDetectorConfig(
+        cup_handle_max_rim_mismatch_pct=2.0,
+        cup_handle_max_handle_pullback_pct=6.0,
+        breakout_lookahead=40,
+        completion_lookback_bars=40,
+        same_level_tol_pct=0.5,
+    )
+    relaxed_cfg = ClassicDetectorConfig(
+        cup_handle_max_rim_mismatch_pct=6.0,
+        cup_handle_max_handle_pullback_pct=6.0,
+        breakout_lookahead=40,
+        completion_lookback_bars=40,
+        same_level_tol_pct=0.5,
+    )
+
+    out_strict = detect_cup_handle(close, np.arange(n, dtype=float), strict_cfg)
+    out_relaxed = detect_cup_handle(close, np.arange(n, dtype=float), relaxed_cfg)
+
+    assert out_strict == []
+    assert out_relaxed
+    assert out_relaxed[0].status == "completed"
+    assert out_relaxed[0].details["near_equal_rim"] == "no"
+    assert out_relaxed[0].details["rim_mismatch_pct"] == pytest.approx(3.8461538461538463)
+    assert 0.0 < out_relaxed[0].details["rim_symmetry"] < 1.0
+
+
 def test_detect_inverted_cup_handle_detects_bearish_variant():
     from src.mtdata.patterns.classic_impl.continuation import detect_cup_handle
 

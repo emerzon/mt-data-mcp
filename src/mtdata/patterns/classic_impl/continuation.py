@@ -195,76 +195,86 @@ def _detect_cup_handle_variant(
     if right <= 0:
         return None
     near_equal_rim = _level_close(left, right, cfg.same_level_tol_pct)
+    rim = float(max(left, right))
+    rim_mismatch_pct = abs(float(left) - float(right)) / max(1e-9, rim) * 100.0
+    max_rim_mismatch_pct = float(
+        max(
+            float(cfg.same_level_tol_pct),
+            getattr(cfg, "cup_handle_max_rim_mismatch_pct", 6.0),
+        )
+    )
+    if rim_mismatch_pct > max_rim_mismatch_pct:
+        return None
     handle_start = max(int(i_max_right), handle_region_start)
     tail = seg[handle_start:]
     if tail.size < 3:
         return None
 
-    rim = float(max(left, right))
     handle_floor = float(np.min(tail[1:])) if tail.size > 1 else float(tail[-1])
     handle_pullback = (rim - handle_floor) / max(1e-9, rim) * 100.0
     if handle_pullback > float(cfg.cup_handle_max_handle_pullback_pct):
         return None
 
-    if near_equal_rim:
-        rim_symmetry = max(0.0, 1.0 - abs(left - right) / max(1e-9, rim))
-        depth_score = min(1.0, depth_pct / max(1e-9, float(cfg.cup_handle_max_depth_pct)))
-        conf = min(
-            1.0,
-            float(cfg.cup_handle_confidence_base)
-            + float(cfg.cup_handle_confidence_depth_weight) * depth_score
-            + float(cfg.cup_handle_confidence_symmetry_weight) * rim_symmetry,
-        )
-        status = "forming"
-        tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
-        breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
-        handle_anchor = max(int(i_max_right), handle_start)
-        absolute_left_idx = int(n - W + i_max_left)
-        absolute_bottom_idx = int(n - W + i_min)
-        absolute_right_idx = int(n - W + i_max_right)
-        expected = "down" if invert else "up"
-        breakout_level = float(min(c[absolute_left_idx], c[absolute_right_idx])) if invert else float(max(c[absolute_left_idx], c[absolute_right_idx]))
-        break_i = _find_forward_level_breakout(
-            c,
-            int(n - W + handle_anchor),
-            breakout_level,
-            expected,
-            breakout_look,
-            tol_abs,
-            tol_pct=float(cfg.same_level_tol_pct),
-        )
+    rim_symmetry = max(0.0, 1.0 - abs(left - right) / max(1e-9, rim))
+    depth_score = min(1.0, depth_pct / max(1e-9, float(cfg.cup_handle_max_depth_pct)))
+    conf = min(
+        1.0,
+        float(cfg.cup_handle_confidence_base)
+        + float(cfg.cup_handle_confidence_depth_weight) * depth_score
+        + float(cfg.cup_handle_confidence_symmetry_weight) * rim_symmetry,
+    )
+    status = "forming"
+    tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
+    breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
+    handle_anchor = max(int(i_max_right), handle_start)
+    absolute_left_idx = int(n - W + i_max_left)
+    absolute_bottom_idx = int(n - W + i_min)
+    absolute_right_idx = int(n - W + i_max_right)
+    expected = "down" if invert else "up"
+    breakout_level = float(min(c[absolute_left_idx], c[absolute_right_idx])) if invert else float(max(c[absolute_left_idx], c[absolute_right_idx]))
+    break_i = _find_forward_level_breakout(
+        c,
+        int(n - W + handle_anchor),
+        breakout_level,
+        expected,
+        breakout_look,
+        tol_abs,
+        tol_pct=float(cfg.same_level_tol_pct),
+    )
 
-        if break_i is not None:
-            status = "completed"
-            conf = _apply_breakout_confidence_bonus(conf, cfg)
+    if break_i is not None:
+        status = "completed"
+        conf = _apply_breakout_confidence_bonus(conf, cfg)
 
-        details: Dict[str, float | int | str] = {
-            "left_rim": float(c[absolute_left_idx]),
-            "right_rim": float(c[absolute_right_idx]),
-            "cup_extreme": float(c[absolute_bottom_idx]),
-            "handle_pullback_pct": float(handle_pullback),
-            "handle_start_index": int(n - W + handle_start),
-            "breakout_level": breakout_level,
-            "breakout_index": int(break_i) if break_i is not None else None,
-            "breakout_direction": expected,
-            "bias": "bearish" if invert else "bullish",
-            "cup_extreme_kind": "top" if invert else "bottom",
-        }
-        if not invert:
-            details["bottom"] = float(c[absolute_bottom_idx])
-        else:
-            details["top"] = float(c[absolute_bottom_idx])
+    details: Dict[str, float | int | str] = {
+        "left_rim": float(c[absolute_left_idx]),
+        "right_rim": float(c[absolute_right_idx]),
+        "cup_extreme": float(c[absolute_bottom_idx]),
+        "rim_mismatch_pct": float(rim_mismatch_pct),
+        "rim_symmetry": float(rim_symmetry),
+        "near_equal_rim": "yes" if near_equal_rim else "no",
+        "handle_pullback_pct": float(handle_pullback),
+        "handle_start_index": int(n - W + handle_start),
+        "breakout_level": breakout_level,
+        "breakout_index": int(break_i) if break_i is not None else None,
+        "breakout_direction": expected,
+        "bias": "bearish" if invert else "bullish",
+        "cup_extreme_kind": "top" if invert else "bottom",
+    }
+    if not invert:
+        details["bottom"] = float(c[absolute_bottom_idx])
+    else:
+        details["top"] = float(c[absolute_bottom_idx])
 
-        return _result(
-            "Inverted Cup and Handle" if invert else "Cup and Handle",
-            status,
-            conf,
-            int(n - W + i_max_left),
-            int(break_i if break_i is not None else (n - 1)),
-            t,
-            details,
-        )
-    return None
+    return _result(
+        "Inverted Cup and Handle" if invert else "Cup and Handle",
+        status,
+        conf,
+        int(n - W + i_max_left),
+        int(break_i if break_i is not None else (n - 1)),
+        t,
+        details,
+    )
 
 
 def detect_cup_handle(
