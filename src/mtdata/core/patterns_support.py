@@ -49,6 +49,88 @@ def _pattern_label(row: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _elliott_preview_sort_key(row: Dict[str, Any]) -> Tuple[float, float, str]:
+    conf = _safe_float(row.get("confidence")) or 0.0
+    end_idx = _safe_float(row.get("end_index"))
+    label = _pattern_label(row) or ""
+    return (float(conf), float(end_idx) if end_idx is not None else float("-inf"), label)
+
+
+def _elliott_completed_preview(
+    patterns: List[Dict[str, Any]],
+    *,
+    timeframe: Optional[str] = None,
+    limit: int = 3,
+) -> List[Dict[str, Any]]:
+    if int(limit) <= 0:
+        return []
+    completed_rows = [
+        row
+        for row in patterns
+        if isinstance(row, dict) and str(row.get("status", "")).strip().lower() == "completed"
+    ]
+    preview: List[Dict[str, Any]] = []
+    for row in sorted(completed_rows, key=_elliott_preview_sort_key, reverse=True)[: int(limit)]:
+        item: Dict[str, Any] = {}
+        tf_value = timeframe if timeframe not in (None, "") else row.get("timeframe")
+        if tf_value not in (None, ""):
+            item["timeframe"] = tf_value
+        label = _pattern_label(row)
+        if label:
+            item["pattern"] = label
+        for key in ("status", "confidence", "start_date", "end_date", "start_index", "end_index"):
+            value = row.get(key)
+            if value not in (None, ""):
+                item[key] = value
+        details = row.get("details")
+        if isinstance(details, dict):
+            direction = details.get("sequence_direction")
+            if direction in (None, ""):
+                direction = details.get("trend")
+            if direction not in (None, ""):
+                item["direction"] = direction
+            if "pattern_confirmed" in details:
+                item["pattern_confirmed"] = bool(details.get("pattern_confirmed"))
+            if "has_unconfirmed_terminal_pivot" in details:
+                item["has_unconfirmed_terminal_pivot"] = bool(details.get("has_unconfirmed_terminal_pivot"))
+        if not item:
+            item = dict(row)
+        preview.append(item)
+    return preview
+
+
+def _elliott_hidden_completed_note(
+    completed_hidden: int,
+    preview: Optional[List[Dict[str, Any]]] = None,
+) -> str:
+    strongest_text = ""
+    if isinstance(preview, list) and preview:
+        strongest = preview[0]
+        parts: List[str] = []
+        timeframe = strongest.get("timeframe")
+        if timeframe not in (None, ""):
+            parts.append(str(timeframe))
+        pattern = strongest.get("pattern")
+        if pattern not in (None, ""):
+            parts.append(str(pattern))
+        direction = strongest.get("direction")
+        if direction not in (None, ""):
+            parts.append(str(direction))
+        strongest_text = " ".join(parts).strip()
+        start_date = strongest.get("start_date")
+        end_date = strongest.get("end_date")
+        if start_date not in (None, "") and end_date not in (None, ""):
+            strongest_text = f"{strongest_text} {start_date} -> {end_date}".strip()
+        conf = _safe_float(strongest.get("confidence"))
+        if conf is not None:
+            strongest_text = f"{strongest_text} (confidence {float(conf):.2f})".strip()
+    note = f"{int(completed_hidden)} completed pattern(s) hidden; "
+    if strongest_text:
+        note += f"strongest hidden count: {strongest_text}; "
+    note += "set include_completed=true to include them."
+    return note
+
+
 def _normalize_pattern_bias(value: Any) -> Optional[str]:
     s = str(value or "").strip().lower()
     if not s:
@@ -301,7 +383,7 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         value = payload.get(key)
         if value not in (None, "", [], {}):
             compact[key] = value
-    for key in ("warnings", "note", "completed_patterns_hidden"):
+    for key in ("warnings", "note", "completed_patterns_hidden", "completed_patterns_preview"):
         value = payload.get(key)
         if value not in (None, "", [], {}):
             compact[key] = value

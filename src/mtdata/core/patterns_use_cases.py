@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from .patterns_support import _elliott_completed_preview, _elliott_hidden_completed_note
 from .patterns_requests import PatternsDetectRequest
 
 
@@ -236,6 +237,7 @@ def run_patterns_detect(
         series_by_timeframe: Dict[str, Dict[str, Any]] = {}
         warnings_out: List[str] = []
         completed_hidden_total = 0
+        hidden_completed_rows_total: List[Dict[str, Any]] = []
 
         for tf in scanned_timeframes:
             df, err = deps.fetch_pattern_data(request.symbol, tf, request.limit, request.denoise)
@@ -255,6 +257,13 @@ def run_patterns_detect(
                 sum(1 for d in tf_patterns if str(d.get("status", "")).lower() == "completed")
             )
             completed_hidden_total += int(completed_hidden)
+            hidden_completed_rows = [
+                {**dict(d), "timeframe": tf}
+                for d in tf_patterns
+                if str(d.get("status", "")).lower() == "completed"
+            ]
+            completed_preview = _elliott_completed_preview(hidden_completed_rows)
+            hidden_completed_rows_total.extend(hidden_completed_rows)
             finding_row: Dict[str, Any] = {
                 "timeframe": tf,
                 "n_patterns": int(len(filtered)),
@@ -262,15 +271,25 @@ def run_patterns_detect(
             }
             if completed_hidden > 0:
                 finding_row["completed_patterns_hidden"] = int(completed_hidden)
+                if completed_preview:
+                    finding_row["completed_patterns_preview"] = completed_preview
+                finding_row["note"] = _elliott_hidden_completed_note(completed_hidden, completed_preview)
             tf_warnings = df.attrs.get("warnings")
             if isinstance(tf_warnings, list) and tf_warnings:
                 finding_row["warnings"] = [str(w) for w in tf_warnings if str(w)]
                 warnings_out.extend(f"{tf}: {str(w)}" for w in tf_warnings if str(w))
             if int(len(filtered)) == 0:
-                finding_row["diagnostic"] = (
-                    f"No valid Elliott Wave structures detected in {int(request.limit)} {tf} bars. "
-                    f"{deps.elliott_timeframe_suggestion(tf)}"
-                )
+                if completed_hidden > 0:
+                    finding_row["diagnostic"] = (
+                        f"No forming Elliott Wave structures detected in {int(request.limit)} {tf} bars. "
+                        f"{int(completed_hidden)} completed structure(s) were detected but hidden by default. "
+                        f"{deps.elliott_timeframe_suggestion(tf)}"
+                    )
+                else:
+                    finding_row["diagnostic"] = (
+                        f"No valid Elliott Wave structures detected in {int(request.limit)} {tf} bars. "
+                        f"{deps.elliott_timeframe_suggestion(tf)}"
+                    )
             findings.append(finding_row)
 
             for row in filtered:
@@ -314,16 +333,23 @@ def run_patterns_detect(
             "n_patterns": int(len(combined_patterns)),
         }
         if int(len(combined_patterns)) == 0:
-            resp["diagnostic"] = (
-                "No valid Elliott Wave structures were detected across scanned timeframes. "
-                "Try increasing lookback or focusing on higher-structure windows like H4/D1."
-            )
+            if completed_hidden_total > 0:
+                resp["diagnostic"] = (
+                    "No forming Elliott Wave structures were detected across scanned timeframes. "
+                    f"{int(completed_hidden_total)} completed structure(s) were detected but hidden by default. "
+                    "Try increasing lookback or focusing on higher-structure windows like H4/D1."
+                )
+            else:
+                resp["diagnostic"] = (
+                    "No valid Elliott Wave structures were detected across scanned timeframes. "
+                    "Try increasing lookback or focusing on higher-structure windows like H4/D1."
+                )
         if completed_hidden_total > 0:
             resp["completed_patterns_hidden"] = int(completed_hidden_total)
-            resp["note"] = (
-                f"{int(completed_hidden_total)} completed pattern(s) hidden; "
-                "set include_completed=true to include them."
-            )
+            completed_preview_total = _elliott_completed_preview(hidden_completed_rows_total)
+            if completed_preview_total:
+                resp["completed_patterns_preview"] = completed_preview_total
+            resp["note"] = _elliott_hidden_completed_note(completed_hidden_total, completed_preview_total)
         if failed_timeframes:
             resp["failed_timeframes"] = failed_timeframes
         if warnings_out:

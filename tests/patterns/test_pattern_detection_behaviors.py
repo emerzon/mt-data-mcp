@@ -832,6 +832,97 @@ def test_build_pattern_response_include_completed_filter_behavior():
     assert with_completed["n_patterns"] == 2
 
 
+def test_build_pattern_response_elliott_hidden_completed_preview_is_truthful():
+    df = pd.DataFrame({"time": [1, 2, 3, 4], "close": [10.0, 11.0, 12.0, 13.0]})
+    patterns = [
+        {
+            "wave_type": "Correction",
+            "status": "completed",
+            "confidence": 0.71,
+            "start_index": 0,
+            "end_index": 1,
+            "start_date": "2026-03-01 00:00",
+            "end_date": "2026-03-02 00:00",
+            "details": {"trend": "bear", "pattern_confirmed": True, "has_unconfirmed_terminal_pivot": False},
+        },
+        {
+            "wave_type": "Impulse",
+            "status": "completed",
+            "confidence": 0.82,
+            "start_index": 1,
+            "end_index": 3,
+            "start_date": "2026-03-02 00:00",
+            "end_date": "2026-03-04 00:00",
+            "details": {"trend": "bull", "pattern_confirmed": True, "has_unconfirmed_terminal_pivot": False},
+        },
+    ]
+
+    res = _build_pattern_response(
+        "EURUSD",
+        "H4",
+        100,
+        "elliott",
+        patterns,
+        include_completed=False,
+        include_series=False,
+        series_time="string",
+        df=df,
+    )
+
+    assert res["n_patterns"] == 0
+    assert res["completed_patterns_hidden"] == 2
+    assert "No forming Elliott Wave structures detected" in res["diagnostic"]
+    assert "No valid Elliott Wave structures detected" not in res["diagnostic"]
+    assert res["completed_patterns_preview"][0]["pattern"] == "Impulse"
+    assert res["completed_patterns_preview"][0]["timeframe"] == "H4"
+    assert "strongest hidden count" in res["note"]
+    assert "include_completed=true" in res["note"]
+
+
+def test_build_pattern_response_elliott_compact_keeps_hidden_completed_preview():
+    df = pd.DataFrame({"time": [1, 2, 3, 4], "close": [10.0, 11.0, 12.0, 13.0]})
+    patterns = [
+        {
+            "wave_type": "Impulse",
+            "status": "forming",
+            "confidence": 0.55,
+            "start_index": 1,
+            "end_index": 3,
+            "start_date": "2026-03-02 00:00",
+            "end_date": "2026-03-04 00:00",
+            "details": {"trend": "bull"},
+        },
+        {
+            "wave_type": "Correction",
+            "status": "completed",
+            "confidence": 0.77,
+            "start_index": 0,
+            "end_index": 1,
+            "start_date": "2026-03-01 00:00",
+            "end_date": "2026-03-02 00:00",
+            "details": {"trend": "bear", "pattern_confirmed": True},
+        },
+    ]
+
+    compact = _build_pattern_response(
+        "EURUSD",
+        "H4",
+        100,
+        "elliott",
+        patterns,
+        include_completed=False,
+        include_series=False,
+        series_time="string",
+        df=df,
+        detail="compact",
+    )
+
+    assert compact["n_patterns"] == 1
+    assert compact["completed_patterns_hidden"] == 1
+    assert compact["completed_patterns_preview"][0]["pattern"] == "Correction"
+    assert compact["completed_patterns_preview"][0]["timeframe"] == "H4"
+
+
 def test_build_pattern_response_compact_detail_returns_summary():
     df = pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 11.0, 12.0]})
     patterns = [
@@ -1108,6 +1199,96 @@ def test_patterns_detect_elliott_with_explicit_timeframe_uses_single_output(monk
     assert res["timeframe"] == "H1"
     assert "findings" not in res
     assert res["n_patterns"] == 1
+
+
+def test_patterns_detect_elliott_with_explicit_timeframe_hidden_completed_is_truthful(monkeypatch):
+    df = pd.DataFrame(
+        {
+            "time": [1, 2, 3, 4, 5, 6],
+            "close": [10.0, 11.0, 12.0, 13.0, 14.0, 15.0],
+            "tick_volume": [100, 100, 100, 100, 100, 100],
+        }
+    )
+
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda symbol, timeframe, limit, denoise: (df.copy(), None))
+
+    def _fake_detect(_df, _cfg):
+        return [
+            SimpleNamespace(
+                wave_type="Impulse",
+                confidence=0.81,
+                start_index=0,
+                end_index=1,
+                start_time=1.0,
+                end_time=2.0,
+                details={"trend": "bull", "pattern_confirmed": True, "has_unconfirmed_terminal_pivot": False},
+            )
+        ]
+
+    monkeypatch.setattr(core_patterns, "_detect_elliott_waves", _fake_detect)
+
+    res = patterns_detect(
+        symbol="EURUSD",
+        mode="elliott",
+        detail="full",
+        timeframe="H1",
+        limit=100,
+        include_completed=False,
+        __cli_raw=True,
+    )
+
+    assert res["success"] is True
+    assert res["n_patterns"] == 0
+    assert res["completed_patterns_hidden"] == 1
+    assert "No forming Elliott Wave structures detected" in res["diagnostic"]
+    assert "completed_patterns_preview" in res
+    assert res["completed_patterns_preview"][0]["pattern"] == "Impulse"
+
+
+def test_patterns_detect_elliott_scan_hidden_completed_is_truthful(monkeypatch):
+    monkeypatch.setattr(core_patterns, "TIMEFRAME_MAP", {"M1": 1, "H1": 2, "H4": 3, "D1": 4})
+
+    df = pd.DataFrame(
+        {
+            "time": [1, 2, 3, 4, 5, 6],
+            "close": [10.0, 11.0, 12.0, 13.0, 14.0, 15.0],
+            "tick_volume": [100, 100, 100, 100, 100, 100],
+        }
+    )
+
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda symbol, timeframe, limit, denoise: (df.copy(), None))
+
+    def _fake_detect(_df, _cfg):
+        return [
+            SimpleNamespace(
+                wave_type="Correction",
+                confidence=0.79,
+                start_index=0,
+                end_index=1,
+                start_time=1.0,
+                end_time=2.0,
+                details={"trend": "bear", "pattern_confirmed": True, "has_unconfirmed_terminal_pivot": False},
+            )
+        ]
+
+    monkeypatch.setattr(core_patterns, "_detect_elliott_waves", _fake_detect)
+
+    res = patterns_detect(
+        symbol="EURUSD",
+        mode="elliott",
+        detail="full",
+        timeframe=None,
+        include_completed=False,
+        __cli_raw=True,
+    )
+
+    assert res["success"] is True
+    assert res["n_patterns"] == 0
+    assert res["completed_patterns_hidden"] == 3
+    assert "No forming Elliott Wave structures were detected across scanned timeframes." in res["diagnostic"]
+    assert len(res["completed_patterns_preview"]) == 3
+    assert {item["timeframe"] for item in res["completed_patterns_preview"]} == {"H1", "H4", "D1"}
+    assert all("No forming Elliott Wave structures detected" in row["diagnostic"] for row in res["findings"])
 
 
 def test_count_recent_touches_respects_lookback():

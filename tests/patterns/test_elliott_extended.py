@@ -5,6 +5,8 @@ import pytest
 import mtdata.patterns.elliott as elliott_mod
 
 from mtdata.patterns.elliott import (
+    _apply_confirmation_confidence_adjustments,
+    _filter_nested_results,
     ElliottWaveConfig,
     ElliottWaveResult,
     ElliottRuleEvaluation,
@@ -383,6 +385,100 @@ class TestResultSortKey:
         assert [r.wave_type for r in ordered] == ["Correction", "Impulse", "Impulse"]
         assert ordered[1].wave_sequence == [1, 3, 5, 7, 9, 10]
 
+    def test_prefers_confirmed_longer_structures_before_shorter_counts(self):
+        results = [
+            ElliottWaveResult(
+                wave_type="Correction",
+                wave_sequence=[0, 10, 20, 30],
+                confidence=0.95,
+                start_index=0,
+                end_index=30,
+                start_time=None,
+                end_time=None,
+                details={"pattern_confirmed": True, "trend": "bull"},
+            ),
+            ElliottWaveResult(
+                wave_type="Impulse",
+                wave_sequence=[0, 25, 50, 75, 100, 125],
+                confidence=0.8,
+                start_index=0,
+                end_index=125,
+                start_time=None,
+                end_time=None,
+                details={"pattern_confirmed": True, "trend": "bull"},
+            ),
+        ]
+
+        ordered = sorted(results, key=_result_sort_key)
+
+        assert ordered[0].wave_type == "Impulse"
+
+    def test_prefers_confirmed_patterns_over_unconfirmed_when_span_matches(self):
+        results = [
+            ElliottWaveResult(
+                wave_type="Impulse",
+                wave_sequence=[0, 1, 2, 3, 4, 5],
+                confidence=0.9,
+                start_index=0,
+                end_index=50,
+                start_time=None,
+                end_time=None,
+                details={"pattern_confirmed": False, "trend": "bull"},
+            ),
+            ElliottWaveResult(
+                wave_type="Impulse",
+                wave_sequence=[0, 2, 4, 6, 8, 10],
+                confidence=0.8,
+                start_index=0,
+                end_index=50,
+                start_time=None,
+                end_time=None,
+                details={"pattern_confirmed": True, "trend": "bull"},
+            ),
+        ]
+
+        ordered = sorted(results, key=_result_sort_key)
+
+        assert ordered[0].details["pattern_confirmed"] is True
+
+    def test_filter_nested_results_discards_shorter_same_type_same_direction(self):
+        results = [
+            ElliottWaveResult(
+                wave_type="Impulse",
+                wave_sequence=[0, 25, 50, 75, 100, 125],
+                confidence=0.8,
+                start_index=0,
+                end_index=125,
+                start_time=None,
+                end_time=None,
+                details={"pattern_confirmed": True, "trend": "bull"},
+            ),
+            ElliottWaveResult(
+                wave_type="Impulse",
+                wave_sequence=[10, 20, 30, 40, 50, 60],
+                confidence=0.91,
+                start_index=10,
+                end_index=60,
+                start_time=None,
+                end_time=None,
+                details={"pattern_confirmed": True, "trend": "bull"},
+            ),
+            ElliottWaveResult(
+                wave_type="Correction",
+                wave_sequence=[10, 20, 30, 40],
+                confidence=0.97,
+                start_index=10,
+                end_index=40,
+                start_time=None,
+                end_time=None,
+                details={"pattern_confirmed": True, "trend": "bear"},
+            ),
+        ]
+
+        filtered = _filter_nested_results(results)
+
+        assert [r.wave_type for r in filtered] == ["Impulse", "Correction"]
+
 
 # ===== ElliottWaveAnalyzer.build_result (lines 576-577) ====================
 
@@ -430,6 +526,7 @@ class TestBuildResult:
             pivots=[0, 1, 2, 3, 4, 5],
             bullish=True,
             confidence=0.7,
+            base_confidence=0.92,
             cls_score=0.5,
             rule_eval=rule_eval,
             threshold_used=1.0,
@@ -437,6 +534,10 @@ class TestBuildResult:
             wave_type="Impulse",
             classification_available=False,
             pivot_confirmations=[True, True, True, True, True, False],
+            confidence_adjustments={
+                "unconfirmed_pattern_penalty": 0.12,
+                "unconfirmed_terminal_pivot_penalty": 0.10,
+            },
         )
 
         result = analyzer.build_result(scenario)
@@ -444,6 +545,8 @@ class TestBuildResult:
         assert result.details["classification_available"] is False
         assert result.details["pattern_confirmed"] is False
         assert result.details["has_unconfirmed_terminal_pivot"] is True
+        assert result.details["base_confidence"] == pytest.approx(0.92)
+        assert result.details["confidence_adjustments"]["unconfirmed_pattern_penalty"] == pytest.approx(0.12)
         assert result.details["wave_points_labeled"][-1]["is_confirmed"] is False
 
     def test_fallback_result_exposes_validated_wave_type(self):
@@ -490,6 +593,35 @@ class TestBuildResult:
         assert "wave5_targets" in result.details
         assert result.details["wave5_targets"]["zone_high"] >= result.details["wave5_targets"]["zone_low"]
         assert result.details["wave5_targets"]["equal_wave1"] == pytest.approx(rule_eval.metrics["wave5_target_equal_wave1"])
+
+    def test_impulse_result_can_use_wick_aware_pivot_prices(self):
+        c = _impulse_close()
+        h = np.array([101.0, 123.0, 110.0, 155.0, 136.0, 165.0], dtype=float)
+        l = np.array([97.0, 118.0, 105.0, 149.0, 130.0, 159.0], dtype=float)
+        t = np.arange(6, dtype=float) * 3600 + 1_700_000_000
+        analyzer = ElliottWaveAnalyzer(c, t, ElliottWaveConfig(pivot_price_source="hybrid"), high=h, low=l)
+        rule_eval = _evaluate_impulse_rules(c, [0, 1, 2, 3, 4, 5], bullish=True)
+        scenario = ElliottScenario(
+            pivots=[0, 1, 2, 3, 4, 5],
+            bullish=True,
+            confidence=0.7,
+            cls_score=0.6,
+            rule_eval=rule_eval,
+            threshold_used=1.0,
+            min_distance_used=1,
+            wave_type="Impulse",
+        )
+
+        result = analyzer.build_result(scenario)
+
+        expected_prices = [97.0, 123.0, 105.0, 155.0, 130.0, 165.0]
+        assert result.details["wave_points"] == pytest.approx(expected_prices)
+        assert [point["price"] for point in result.details["wave_points_labeled"]] == pytest.approx(expected_prices)
+        assert result.details["invalidation_level"] == pytest.approx(97.0)
+        assert result.details["pivot_price_source"] == "hybrid"
+        assert result.details["rule_price_source"] == "close"
+        assert result.details["wave5_targets"]["equal_wave1"] == pytest.approx(156.0)
+        assert result.details["wave5_targets"]["wave3_0_618"] == pytest.approx(160.9)
 
 
 # ===== ElliottWaveAnalyzer.build_fallback (lines 623-651) ==================
@@ -941,7 +1073,14 @@ class TestDetectElliottWaves:
 
         assert scenarios
         assert scenarios[0].classification_available is False
-        assert scenarios[0].confidence == pytest.approx(scenarios[0].rule_eval.fib_score)
+        expected, adjustments = _apply_confirmation_confidence_adjustments(
+            scenarios[0].rule_eval.fib_score,
+            scenarios[0].pivot_confirmations,
+            analyzer.config,
+        )
+        assert scenarios[0].confidence == pytest.approx(expected)
+        assert scenarios[0].base_confidence == pytest.approx(scenarios[0].rule_eval.fib_score)
+        assert scenarios[0].confidence_adjustments == adjustments
         assert not any(scenarios[0].pivot_confirmations)
 
     def test_analyze_once_uses_configured_blend_weights(self, monkeypatch):
@@ -979,7 +1118,32 @@ class TestDetectElliottWaves:
 
         assert scenarios
         expected = (0.2 * scenarios[0].rule_eval.fib_score) + (0.8 * scenarios[0].cls_score)
-        assert scenarios[0].confidence == pytest.approx(expected)
+        adjusted, adjustments = _apply_confirmation_confidence_adjustments(
+            expected,
+            scenarios[0].pivot_confirmations,
+            analyzer.config,
+        )
+        assert scenarios[0].base_confidence == pytest.approx(expected)
+        assert scenarios[0].confidence == pytest.approx(adjusted)
+        assert scenarios[0].confidence_adjustments == adjustments
+
+    def test_apply_confirmation_confidence_adjustments_caps_unconfirmed_terminal(self):
+        cfg = ElliottWaveConfig(
+            unconfirmed_pattern_penalty=0.12,
+            unconfirmed_terminal_pivot_penalty=0.10,
+            unconfirmed_terminal_pivot_confidence_cap=0.72,
+        )
+
+        adjusted, adjustments = _apply_confirmation_confidence_adjustments(
+            0.98,
+            [True, True, True, False],
+            cfg,
+        )
+
+        assert adjusted == pytest.approx(0.72)
+        assert adjustments["unconfirmed_pattern_penalty"] == pytest.approx(0.12)
+        assert adjustments["unconfirmed_terminal_pivot_penalty"] == pytest.approx(0.10)
+        assert adjustments["unconfirmed_terminal_pivot_confidence_cap"] == pytest.approx(0.72)
 
     def test_analyze_once_classifies_with_prefix_only(self, monkeypatch):
         close = np.array([100.0, 120.0, 108.0, 150.0, 135.0, 160.0, 148.0], dtype=float)

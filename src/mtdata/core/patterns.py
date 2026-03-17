@@ -15,6 +15,8 @@ from .patterns_support import (
     _STOCK_PATTERN_UTILS_CACHE,
     _build_stock_pattern_frame,
     _compact_patterns_payload,
+    _elliott_completed_preview,
+    _elliott_hidden_completed_note,
     _enrich_classic_patterns,
     _enrich_elliott_patterns,
     _estimate_classic_bars_to_completion,
@@ -276,6 +278,11 @@ def _build_pattern_response(
     completed_hidden = 0 if include_completed else int(
         sum(1 for d in patterns if str(d.get("status", "")).lower() == "completed")
     )
+    elliott_preview = (
+        _elliott_completed_preview(patterns, timeframe=timeframe)
+        if str(mode).lower() == "elliott" and completed_hidden > 0
+        else []
+    )
     
     resp: Dict[str, Any] = {
         "success": True,
@@ -288,16 +295,30 @@ def _build_pattern_response(
     }
     if completed_hidden > 0:
         resp["completed_patterns_hidden"] = int(completed_hidden)
+        if elliott_preview:
+            resp["completed_patterns_preview"] = elliott_preview
         resp["note"] = (
-            f"{int(completed_hidden)} completed pattern(s) hidden; "
-            "set include_completed=true to include them."
+            _elliott_hidden_completed_note(completed_hidden, elliott_preview)
+            if str(mode).lower() == "elliott"
+            else (
+                f"{int(completed_hidden)} completed pattern(s) hidden; "
+                "set include_completed=true to include them."
+            )
         )
     if str(mode).lower() == "elliott" and int(len(filtered)) == 0:
-        resp["diagnostic"] = (
-            f"No valid Elliott Wave structures detected in {int(limit)} {timeframe} bars. "
-            f"{_elliott_timeframe_suggestion(timeframe)} "
-            "You can also increase lookback or focus on a clearer trending segment."
-        )
+        if completed_hidden > 0:
+            resp["diagnostic"] = (
+                f"No forming Elliott Wave structures detected in {int(limit)} {timeframe} bars. "
+                f"{int(completed_hidden)} completed structure(s) were detected but hidden by default. "
+                f"{_elliott_timeframe_suggestion(timeframe)} "
+                "You can also increase lookback or focus on a clearer trending segment."
+            )
+        else:
+            resp["diagnostic"] = (
+                f"No valid Elliott Wave structures detected in {int(limit)} {timeframe} bars. "
+                f"{_elliott_timeframe_suggestion(timeframe)} "
+                "You can also increase lookback or focus on a clearer trending segment."
+            )
     warnings_out = df.attrs.get("warnings")
     if isinstance(warnings_out, list) and warnings_out:
         resp["warnings"] = [str(w) for w in warnings_out if str(w)]
