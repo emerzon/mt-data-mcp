@@ -1152,6 +1152,44 @@ def test_detect_triangles_skip_same_sign_converging_shapes(monkeypatch):
     assert wedge[0].name == "Rising Wedge"
 
 
+def test_detect_flags_prefers_flag_when_convergence_is_only_noise(monkeypatch):
+    from src.mtdata.patterns.classic_impl import continuation
+
+    n = 160
+    window = 30
+    close = np.full(n, 100.0, dtype=float)
+    close[-window:] = np.linspace(104.0, 103.0, window)
+    high = close + 0.1
+    low = close - 0.1
+    peaks = np.array([5, 12, 19, 26], dtype=int)
+    troughs = np.array([3, 10, 17, 24], dtype=int)
+    top = np.linspace(104.0, 103.01, window)
+    bot = np.linspace(102.0, 101.02, window)
+
+    monkeypatch.setattr(continuation, "_detect_pivots_close", lambda *_args, **_kwargs: (peaks, troughs))
+    monkeypatch.setattr(
+        continuation,
+        "_fit_lines_and_arrays",
+        lambda *_args, **_kwargs: (-0.03, 104.0, 0.9, -0.029, 102.0, 0.9, top.copy(), bot.copy()),
+    )
+
+    out = continuation.detect_flags_pennants(
+        close,
+        high,
+        low,
+        np.arange(n, dtype=float),
+        n,
+        ClassicDetectorConfig(
+            max_consolidation_bars=window,
+            min_pole_return_pct=2.0,
+            pennant_min_convergence_ratio=0.05,
+        ),
+    )
+
+    assert out
+    assert out[0].name == "Bull Flag"
+
+
 def test_detect_rectangles_mark_completed_on_breakout():
     from src.mtdata.patterns.classic_impl.shapes import detect_rectangles
 

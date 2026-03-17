@@ -81,7 +81,8 @@ def detect_flags_pennants(
     sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(peaks2, troughs2, seg, seg.size, cfg)
     dist_recent = float(np.mean((top - bot)[-max(5, seg.size//4):]))
     dist_past = float(np.mean((top - bot)[:max(5, seg.size//4)]))
-    converging = dist_recent < dist_past
+    min_convergence_ratio = float(max(0.0, min(0.95, getattr(cfg, "pennant_min_convergence_ratio", 0.05))))
+    converging = dist_past > 0.0 and dist_recent <= (dist_past * (1.0 - min_convergence_ratio))
     parallel = abs(sh - sl) <= max(
         1e-4,
         float(cfg.pennant_parallel_slope_ratio) * max(abs(sh), abs(sl), cfg.max_flat_slope),

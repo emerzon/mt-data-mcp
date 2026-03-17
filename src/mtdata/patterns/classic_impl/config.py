@@ -63,6 +63,7 @@ class ClassicDetectorConfig:
     channel_parallel_slope_ratio: float = 0.15  # relative slope spread tolerated for channels
     channel_parallel_min_abs_tol: float = 1e-4  # absolute floor for near-horizontal channel slope spread
     pennant_parallel_slope_ratio: float = 0.2  # relative slope spread tolerated for flags/pennants
+    pennant_min_convergence_ratio: float = 0.05  # minimum width contraction required to classify as pennant
     rounding_window_bars: int = 220
     rounding_window_sizes: List[int] = field(default_factory=list)
     breakout_confidence_bonus: float = 0.08

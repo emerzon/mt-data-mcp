@@ -216,6 +216,15 @@ class TestDetectPivotsClose:
         assert len(peaks) > 0
         assert len(troughs) > 0
 
+    def test_short_window_can_still_find_pivots(self):
+        x = np.sin(np.linspace(0, 4 * np.pi, 24)) * 3 + 100
+        cfg = ClassicDetectorConfig(min_distance=3)
+
+        peaks, troughs = _detect_pivots_close(x, cfg)
+
+        assert peaks.size > 0
+        assert troughs.size > 0
+
     def test_too_short(self):
         x = np.array([100.0, 101.0, 99.0])
         cfg = ClassicDetectorConfig()

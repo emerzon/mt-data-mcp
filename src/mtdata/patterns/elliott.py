@@ -426,7 +426,7 @@ def _evaluate_impulse_rules(
     violations: List[str] = []
 
     if not all((L[i] > 0) if expected[i] > 0 else (L[i] < 0) for i in range(5)):
-        violations.append("alternation_failed")
+        violations.append("direction_sequence_invalid")
 
     # Rule 2: Wave 2 does not retrace beyond start of wave 1.
     if bullish and w[2] <= w[0]:
@@ -520,7 +520,7 @@ def _evaluate_correction_rules(
     violations: List[str] = []
 
     if not all((L[i] > 0) if expected[i] > 0 else (L[i] < 0) for i in range(3)):
-        violations.append("alternation_failed")
+        violations.append("direction_sequence_invalid")
 
     # B should not fully retrace wave A start in a standard zigzag interpretation.
     if bullish and w[2] <= w[0]:

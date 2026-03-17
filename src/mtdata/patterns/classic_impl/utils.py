@@ -211,7 +211,7 @@ def _detect_pivots_close(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Return arrays of peak and trough indices using close or optional high/low arrays."""
     x = np.asarray(close, dtype=float)
-    if x.size < max(50, cfg.min_distance * 3):
+    if x.size < max(5, int(cfg.min_distance) * 3):
         return np.array([], dtype=int), np.array([], dtype=int)
 
     hi = np.asarray(high, dtype=float) if high is not None else x

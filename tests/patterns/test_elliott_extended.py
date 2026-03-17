@@ -261,6 +261,12 @@ class TestEvaluateImpulseRules:
         assert ev.valid
         assert ev.fib_score >= 0
 
+    def test_direction_label_is_not_named_alternation(self):
+        c = np.array([100, 120, 130, 110, 140, 160], dtype=float)
+        ev = _evaluate_impulse_rules(c, [0, 1, 2, 3, 4, 5], bullish=True)
+        assert "direction_sequence_invalid" in ev.violations
+        assert "alternation_failed" not in ev.violations
+
     def test_wrong_pivot_count(self):
         c = np.array([100, 120, 110], dtype=float)
         ev = _evaluate_impulse_rules(c, [0, 1, 2], bullish=True)
@@ -314,6 +320,12 @@ class TestEvaluateCorrectionRules:
         c = _correction_close()
         ev = _evaluate_correction_rules(c, [0, 1, 2, 3], bullish=True)
         assert isinstance(ev.fib_score, float)
+
+    def test_direction_label_is_not_named_alternation(self):
+        c = np.array([100, 115, 120, 105], dtype=float)
+        ev = _evaluate_correction_rules(c, [0, 1, 2, 3], bullish=True)
+        assert "direction_sequence_invalid" in ev.violations
+        assert "alternation_failed" not in ev.violations
 
     def test_wrong_count(self):
         ev = _evaluate_correction_rules(np.array([1, 2, 3], dtype=float), [0, 1, 2], True)
