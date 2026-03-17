@@ -513,6 +513,23 @@ def test_detect_candlestick_patterns_adds_volume_and_regime_enrichment(monkeypat
     assert row["end_index"] == 24
 
 
+def test_attach_candlestick_volume_confirmation_uses_full_multibar_signal_window():
+    row = {"start_index": 20, "end_index": 22, "confidence": 0.4}
+    volume = np.full(30, 100.0, dtype=float)
+    volume[20:23] = np.array([220.0, 90.0, 90.0], dtype=float)
+
+    candlestick_mod._attach_candlestick_volume_confirmation(
+        row,
+        volume,
+        "tick_volume",
+        {"use_volume_confirmation": True, "volume_confirm_min_ratio": 1.1},
+    )
+
+    assert row["volume_confirmation"]["status"] == "confirmed"
+    assert row["volume_confirmation"]["signal_avg_volume"] > 130.0
+    assert row["volume_confirmation"]["signal_to_baseline_ratio"] > 1.1
+
+
 def test_extract_candlestick_rows_respects_start_index():
     df = pd.DataFrame({"time": ["T0", "T1", "T2"], "close": [100.0, 101.0, 102.0]})
     temp = pd.DataFrame({"cdl_engulfing": [100.0, 100.0, 100.0]})
@@ -608,16 +625,26 @@ def test_detect_classic_uses_singular_pennant_name(monkeypatch):
     )
 
     def _fake_pivots(c, cfg, *args):
-        if len(c) == window:
-            return seg_peaks, seg_troughs
+        n_local = len(c)
+        if n_local >= 20:
+            return np.array([2, 7, 13, n_local - 4], dtype=int), np.array([4, 10, 16, n_local - 2], dtype=int)
         return np.array([], dtype=int), np.array([], dtype=int)
 
     from src.mtdata.patterns.classic_impl import continuation
     monkeypatch.setattr(continuation, "_detect_pivots_close", _fake_pivots)
 
     def _fake_fit_lines(ih, il, c, n, cfg):
-        if n == window:
-            return -0.07, 150.0, 0.9, 0.05, 144.0, 0.9, top.copy(), bot.copy()
+        if n >= 20:
+            return (
+                -0.07,
+                150.0,
+                0.9,
+                0.05,
+                144.0,
+                0.9,
+                np.linspace(150.0, 148.0, n),
+                np.linspace(144.0, 145.5, n),
+            )
         x = np.arange(n, dtype=float)
         return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, x.copy(), x.copy()
 
@@ -1143,6 +1170,36 @@ def test_detect_classic_patterns_historical_scan_finds_older_prefix_pattern(monk
     assert next(p for p in out_scan_completed if p.name == "Rounding Bottom").status == "completed"
 
 
+def test_detect_classic_patterns_historical_scan_reuses_global_pivots(monkeypatch):
+    n = 220
+    df = pd.DataFrame({"time": np.arange(n, dtype=float), "close": np.linspace(100.0, 120.0, n)})
+    calls = {"count": 0}
+
+    def _fake_pivots(c, cfg, *args):
+        _ = c
+        _ = cfg
+        _ = args
+        calls["count"] += 1
+        return np.array([], dtype=int), np.array([], dtype=int)
+
+    monkeypatch.setattr(classic_mod, "_detect_pivots_close", _fake_pivots)
+    monkeypatch.setattr(classic_mod, "detect_diamonds", lambda *args, **kwargs: [])
+    monkeypatch.setattr(classic_mod, "detect_flags_pennants", lambda *args, **kwargs: [])
+
+    out = detect_classic_patterns(
+        df,
+        ClassicDetectorConfig(
+            max_consolidation_bars=5,
+            scan_historical=True,
+            scan_step_bars=10,
+            scan_min_prefix_bars=120,
+        ),
+    )
+
+    assert out == []
+    assert calls["count"] == 1
+
+
 def test_detect_classic_patterns_surfaces_confidence_calibration_errors(monkeypatch):
     n = 150
     df = pd.DataFrame({"time": np.arange(n, dtype=float), "close": np.linspace(100.0, 110.0, n)})
@@ -1283,6 +1340,34 @@ def test_detect_triangles_skip_same_sign_converging_shapes(monkeypatch):
     assert wedge[0].name == "Rising Wedge"
 
 
+def test_detect_triangles_reject_crossed_boundaries(monkeypatch):
+    from src.mtdata.patterns.classic_impl import shapes
+
+    n = 150
+    peaks = np.array([30, 60, 90, 120], dtype=int)
+    troughs = np.array([20, 50, 80, 110], dtype=int)
+    close = np.linspace(100.0, 130.0, n)
+    top = np.linspace(112.0, 98.0, n)
+    bot = np.linspace(102.0, 104.0, n)
+
+    monkeypatch.setattr(
+        shapes,
+        "_fit_lines_and_arrays",
+        lambda *_args, **_kwargs: (-0.09, 112.0, 0.9, 0.013, 102.0, 0.9, top.copy(), bot.copy()),
+    )
+    monkeypatch.setattr(shapes, "_is_converging", lambda *_args, **_kwargs: True)
+
+    out = shapes.detect_triangles(
+        close,
+        peaks,
+        troughs,
+        np.arange(n, dtype=float),
+        ClassicDetectorConfig(min_channel_touches=2),
+    )
+
+    assert out == []
+
+
 def test_detect_flags_prefers_flag_when_convergence_is_only_noise(monkeypatch):
     from src.mtdata.patterns.classic_impl import continuation
 
@@ -1319,6 +1404,59 @@ def test_detect_flags_prefers_flag_when_convergence_is_only_noise(monkeypatch):
 
     assert out
     assert out[0].name == "Bull Flag"
+
+
+def test_detect_flags_pennants_excludes_pole_from_consolidation_fit(monkeypatch):
+    from src.mtdata.patterns.classic_impl import continuation
+
+    n = 130
+    window = 30
+    close = np.full(n, 98.0, dtype=float)
+    close[-window:] = np.concatenate(
+        (
+            np.linspace(100.0, 110.0, 10),
+            np.linspace(109.5, 106.0, 20),
+        )
+    )
+    high = close + 0.1
+    low = close - 0.1
+    captured = {}
+
+    def _fake_pivots(seg, cfg, *args):
+        _ = cfg
+        _ = args
+        captured["seg"] = seg.copy()
+        return np.array([2, 7, 12, 17], dtype=int), np.array([4, 9, 14, 19], dtype=int)
+
+    monkeypatch.setattr(continuation, "_detect_pivots_close", _fake_pivots)
+    monkeypatch.setattr(
+        continuation,
+        "_fit_lines_and_arrays",
+        lambda *_args, **_kwargs: (
+            -0.08,
+            110.0,
+            0.9,
+            -0.05,
+            107.0,
+            0.9,
+            np.linspace(110.0, 106.5, 21),
+            np.linspace(107.5, 104.5, 21),
+        ),
+    )
+
+    out = continuation.detect_flags_pennants(
+        close,
+        high,
+        low,
+        np.arange(n, dtype=float),
+        n,
+        ClassicDetectorConfig(max_consolidation_bars=window, min_pole_return_pct=5.0),
+    )
+
+    assert out
+    assert captured["seg"].size == 21
+    assert captured["seg"][0] == pytest.approx(110.0)
+    assert out[0].details["consolidation_start_index"] == (n - window + 9)
 
 
 def test_detect_rectangles_mark_completed_on_breakout():
@@ -1423,6 +1561,36 @@ def test_detect_channels_reject_widening_parallel_structure(monkeypatch):
         troughs,
         np.arange(n, dtype=float),
         ClassicDetectorConfig(min_channel_touches=2),
+    )
+
+    assert out == []
+
+
+def test_detect_channels_reject_crossed_boundaries(monkeypatch):
+    from src.mtdata.patterns.classic_impl import trend
+
+    n = 60
+    x = np.arange(n, dtype=float)
+    upper = 110.0 - (0.08 * x)
+    lower = 100.0 + (0.10 * x)
+    close = (upper + lower) / 2.0
+    peaks = np.array([10, 20, 30, 40, 50], dtype=int)
+    troughs = np.array([5, 15, 25, 35, 45], dtype=int)
+
+    monkeypatch.setattr(
+        trend,
+        "_fit_lines_and_arrays",
+        lambda *_args, **_kwargs: (-0.08, 110.0, 0.95, 0.10, 100.0, 0.95, upper.copy(), lower.copy()),
+    )
+    monkeypatch.setattr(trend, "_is_converging", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(trend, "_count_touches", lambda *_args, **_kwargs: 6)
+
+    out = trend.detect_channels(
+        close,
+        peaks,
+        troughs,
+        np.arange(n, dtype=float),
+        ClassicDetectorConfig(min_channel_touches=2, channel_parallel_slope_ratio=2.0),
     )
 
     assert out == []
@@ -1636,9 +1804,9 @@ def test_detect_diamonds_accepts_asymmetric_split_with_stricter_default_r2(monke
         if xs == tuple(troughs[troughs < 50].tolist()):
             return -0.05, 98.0, 0.75
         if xs == tuple(peaks[peaks >= 50].tolist()):
-            return -0.10, 120.0, 0.75
+            return -0.02, 105.5, 0.75
         if xs == tuple(troughs[troughs >= 50].tolist()):
-            return 0.10, 80.0, 0.75
+            return 0.02, 94.5, 0.75
         return 0.0, 100.0, 0.0
 
     monkeypatch.setattr(shapes, "_detect_pivots_close", lambda seg, cfg, *args: (peaks, troughs))
@@ -1656,6 +1824,44 @@ def test_detect_diamonds_accepts_asymmetric_split_with_stricter_default_r2(monke
 
     assert out
     assert out[0].details["diamond_split_index"] in {49, 50}
+
+
+def test_detect_diamonds_reject_disjoint_split_boundaries(monkeypatch):
+    from src.mtdata.patterns.classic_impl import shapes
+
+    n = 200
+    close = np.linspace(100.0, 101.0, n)
+    peaks = np.array([30, 60, 90, 130, 160], dtype=int)
+    troughs = np.array([20, 50, 100, 140, 170], dtype=int)
+
+    def _fake_fit(x, y):
+        _ = y
+        xs = tuple(int(v) for v in x.tolist())
+        if xs == tuple(peaks[peaks < 100].tolist()):
+            return 0.05, 102.0, 0.9
+        if xs == tuple(troughs[troughs < 100].tolist()):
+            return -0.05, 98.0, 0.9
+        if xs == tuple(peaks[peaks >= 100].tolist()):
+            return -0.05, 130.0, 0.9
+        if xs == tuple(troughs[troughs >= 100].tolist()):
+            return 0.05, 70.0, 0.9
+        return 0.0, 100.0, 0.0
+
+    monkeypatch.setattr(shapes, "_detect_pivots_close", lambda seg, cfg, *args: (peaks, troughs))
+    monkeypatch.setattr(shapes, "_fit_line", _fake_fit)
+
+    out = shapes.detect_diamonds(
+        close,
+        np.arange(n, dtype=float),
+        ClassicDetectorConfig(
+            use_robust_fit=False,
+            diamond_min_boundary_r2=0.0,
+            breakout_lookahead=40,
+            completion_lookback_bars=40,
+        ),
+    )
+
+    assert out == []
 
 
 def test_detect_tops_bottoms_merges_connected_same_level_cluster():

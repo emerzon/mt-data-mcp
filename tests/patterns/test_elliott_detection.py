@@ -44,7 +44,7 @@ def test_zigzag_pretrend_uses_running_extrema_before_trend_is_set():
     piv_idx, piv_dir = _zigzag_pivots_indices(close, 3.0)
 
     assert piv_idx == [1, 3]
-    assert piv_dir == ["down", "down"]
+    assert piv_dir == ["up", "down"]
 
 
 def test_wave_min_len_filters_short_leg_sequences():

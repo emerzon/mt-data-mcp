@@ -4,7 +4,8 @@ from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
     _fit_line, _fit_line_robust, _tol_abs_from_close, _last_touch_indexes,
     _count_recent_touches, _result, _alias, _fit_lines_and_arrays,
-    _is_converging, _count_touches, _conf, _find_recent_breakout
+    _is_converging, _count_touches, _conf, _find_recent_breakout,
+    _boundaries_are_ordered,
 )
 
 
@@ -119,6 +120,9 @@ def detect_channels(
     il = troughs[-k:]
     
     sh, bh, r2h, sl, bl, r2l, upper, lower = _fit_lines_and_arrays(ih, il, c, n, cfg)
+    channel_start = int(min(ih[0], il[0]))
+    if not _boundaries_are_ordered(upper, lower, start_idx=channel_start, end_idx=n - 1):
+        return ch_results
     
     slope_diff = abs(sh - sl)
     approx_parallel = slope_diff <= max(

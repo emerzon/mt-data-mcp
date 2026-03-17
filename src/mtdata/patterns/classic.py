@@ -64,12 +64,19 @@ def _detect_classic_patterns_once(
     l: np.ndarray,
     n: int,
     cfg: ClassicDetectorConfig,
+    *,
+    peaks: Optional[np.ndarray] = None,
+    troughs: Optional[np.ndarray] = None,
 ) -> List[ClassicPatternResult]:
-    try:
-        peaks, troughs = _detect_pivots_close(c, cfg, h, l)
-    except TypeError:
-        # Keep compatibility with monkeypatched tests that still use the old 2-arg signature.
-        peaks, troughs = _detect_pivots_close(c, cfg)
+    if peaks is None or troughs is None:
+        try:
+            peaks, troughs = _detect_pivots_close(c, cfg, h, l)
+        except TypeError:
+            # Keep compatibility with monkeypatched tests that still use the old 2-arg signature.
+            peaks, troughs = _detect_pivots_close(c, cfg)
+    else:
+        peaks = np.asarray(peaks, dtype=int)
+        troughs = np.asarray(troughs, dtype=int)
 
     results: List[ClassicPatternResult] = []
     results.extend(detect_trend_lines(c, peaks, troughs, t, cfg))
@@ -155,10 +162,27 @@ def _scan_classic_patterns(
 
     scan_cfg = copy.deepcopy(cfg)
     scan_cfg.scan_historical = False
+    try:
+        full_peaks, full_troughs = _detect_pivots_close(c, scan_cfg, h, l)
+    except TypeError:
+        full_peaks, full_troughs = _detect_pivots_close(c, scan_cfg)
+    full_peaks = np.asarray(full_peaks, dtype=int)
+    full_troughs = np.asarray(full_troughs, dtype=int)
+    pivot_confirm_gap = max(2, int(getattr(scan_cfg, "min_distance", 5)))
 
     merged: List[ClassicPatternResult] = []
     for end in prefix_ends:
-        batch = _detect_classic_patterns_once(t[:end], c[:end], h[:end], l[:end], int(end), scan_cfg)
+        pivot_cutoff = max(0, int(end) - pivot_confirm_gap)
+        batch = _detect_classic_patterns_once(
+            t[:end],
+            c[:end],
+            h[:end],
+            l[:end],
+            int(end),
+            scan_cfg,
+            peaks=full_peaks[full_peaks < pivot_cutoff],
+            troughs=full_troughs[full_troughs < pivot_cutoff],
+        )
         merged = _merge_scanned_patterns(merged, batch, cfg)
     return merged
 

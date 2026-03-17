@@ -6,7 +6,8 @@ from .utils import (
     _detect_pivots_close, _fit_line, _fit_line_robust, _fit_lines_and_arrays, 
     _tol_abs_from_close, _level_close, _count_touches, _count_recent_touches,
     _is_converging, _find_recent_breakout, 
-    _result, _alias, _conf, _apply_breakout_confidence_bonus, _robust_level_center
+    _result, _alias, _conf, _apply_breakout_confidence_bonus, _robust_level_center,
+    _boundaries_are_ordered,
 )
 
 
@@ -26,6 +27,9 @@ def _fit_line_bounded_shape(
     ih = peaks[-k:]
     il = troughs[-k:]
     sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(ih, il, c, n, cfg)
+    start_idx = int(min(ih[0], il[0]))
+    if not _boundaries_are_ordered(top, bot, start_idx=start_idx, end_idx=n - 1):
+        return None
     tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
     touches = _count_touches(top, bot, ih, il, c, tol_abs)
     return {
@@ -42,6 +46,7 @@ def _fit_line_bounded_shape(
         "r2l": r2l,
         "top": top,
         "bot": bot,
+        "start_index": start_idx,
         "tol_abs": tol_abs,
         "touches": touches,
     }
@@ -243,6 +248,9 @@ def detect_broadening(
         x = np.arange(n, dtype=float)
         top = sh * x + bh
         bot = sl * x + bl
+        start_idx = int(min(ih[0], il[0]))
+        if not _boundaries_are_ordered(top, bot, start_idx=start_idx, end_idx=n - 1):
+            return out
         tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
         status = "forming"
         breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
@@ -363,11 +371,21 @@ def detect_diamonds(
         left_lower = ll_slope * left_x + ll_intercept
         right_upper = rh_slope * right_x + rh_intercept
         right_lower = rl_slope * right_x + rl_intercept
+        upper = np.concatenate((left_upper, right_upper))
+        lower = np.concatenate((left_lower, right_lower))
+        if not _boundaries_are_ordered(upper, lower, start_idx=0, end_idx=W - 1):
+            continue
 
         width_start = float(left_upper[0] - left_lower[0])
         width_mid = float(min(left_upper[-1] - left_lower[-1], right_upper[0] - right_lower[0]))
         width_end = float(right_upper[-1] - right_lower[-1])
         if min(width_start, width_mid, width_end) <= 0.0:
+            continue
+        split_gap_ratio = max(
+            abs(float(left_upper[-1]) - float(right_upper[0])),
+            abs(float(left_lower[-1]) - float(right_lower[0])),
+        ) / max(width_mid, 1e-9)
+        if split_gap_ratio > float(getattr(cfg, "diamond_max_split_gap_ratio", 0.35)):
             continue
         width_ratio = width_mid / max(width_start, width_end, 1e-9)
         if width_ratio < float(cfg.diamond_min_width_ratio):
@@ -382,13 +400,14 @@ def detect_diamonds(
             "touches": int(left_peaks.size + right_peaks.size + left_troughs.size + right_troughs.size),
             "min_r2": min_r2,
             "geom_score": geom_score,
-            "upper": np.concatenate((left_upper, right_upper)),
-            "lower": np.concatenate((left_lower, right_lower)),
+            "upper": upper,
+            "lower": lower,
             "lh_slope": float(lh_slope),
             "ll_slope": float(ll_slope),
             "rh_slope": float(rh_slope),
             "rl_slope": float(rl_slope),
             "width_ratio": float(width_ratio),
+            "split_gap_ratio": float(split_gap_ratio),
         }
         if best is None or (candidate["geom_score"], candidate["min_r2"], candidate["touches"]) > (
             best["geom_score"],
@@ -442,6 +461,7 @@ def detect_diamonds(
             "breakout_index": int(n - W + bidx_local) if bidx_local is not None else None,
             "diamond_split_index": int(n - W + best["split"]),
             "width_ratio": float(best["width_ratio"]),
+            "split_gap_ratio": float(best["split_gap_ratio"]),
             "geometry_score": float(best["geom_score"]),
             "upper_left_slope": float(best["lh_slope"]),
             "lower_left_slope": float(best["ll_slope"]),

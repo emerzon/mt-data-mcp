@@ -377,6 +377,29 @@ def _fit_lines_and_arrays(
     return sh, bh, r2h, sl, bl, r2l, upper, lower
 
 
+def _boundaries_are_ordered(
+    upper: np.ndarray,
+    lower: np.ndarray,
+    *,
+    start_idx: int = 0,
+    end_idx: Optional[int] = None,
+    min_gap: float = 0.0,
+) -> bool:
+    up = np.asarray(upper, dtype=float)
+    lo = np.asarray(lower, dtype=float)
+    n = min(up.size, lo.size)
+    if n <= 0:
+        return False
+    start = max(0, int(start_idx))
+    stop = n if end_idx is None else min(n, int(end_idx) + 1)
+    if stop <= start:
+        return False
+    span = up[start:stop] - lo[start:stop]
+    if span.size == 0 or not np.all(np.isfinite(span)):
+        return False
+    return bool(np.all(span > max(1e-9, float(min_gap))))
+
+
 def _count_touches(upper: np.ndarray, lower: np.ndarray,
                    peak_idxs: np.ndarray, trough_idxs: np.ndarray,
                    c: np.ndarray, tol_abs: float) -> int:

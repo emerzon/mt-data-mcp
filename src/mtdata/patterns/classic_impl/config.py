@@ -57,6 +57,7 @@ class ClassicDetectorConfig:
     diamond_min_boundary_r2: float = 0.6
     diamond_min_width_ratio: float = 1.15
     diamond_target_width_ratio: float = 1.5
+    diamond_max_split_gap_ratio: float = 0.35
     diamond_split_min_frac: float = 0.25
     diamond_split_max_frac: float = 0.75
     diamond_prior_pole_return_pct: float = 2.0

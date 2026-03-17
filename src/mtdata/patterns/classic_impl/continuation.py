@@ -69,19 +69,25 @@ def detect_flags_pennants(
 
     seg_h = h[-window:] if h.size >= window else seg
     seg_l = l[-window:] if l.size >= window else seg
+    consolidation_offset = int(max(0, min(seg.size - 1, pole_tip_idx_local)))
+    consolidation_seg = seg[consolidation_offset:]
+    if consolidation_seg.size < 10:
+        return out
+    consolidation_h = seg_h[consolidation_offset:]
+    consolidation_l = seg_l[consolidation_offset:]
     
     try:
-        peaks2, troughs2 = _detect_pivots_close(seg, cfg, seg_h, seg_l)
+        peaks2, troughs2 = _detect_pivots_close(consolidation_seg, cfg, consolidation_h, consolidation_l)
     except TypeError:
-        peaks2, troughs2 = _detect_pivots_close(seg, cfg)
+        peaks2, troughs2 = _detect_pivots_close(consolidation_seg, cfg)
 
     if peaks2.size < 2 or troughs2.size < 2:
         return out
 
     # build local arrays for consolidation region
-    sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(peaks2, troughs2, seg, seg.size, cfg)
-    dist_recent = float(np.mean((top - bot)[-max(5, seg.size//4):]))
-    dist_past = float(np.mean((top - bot)[:max(5, seg.size//4)]))
+    sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(peaks2, troughs2, consolidation_seg, consolidation_seg.size, cfg)
+    dist_recent = float(np.mean((top - bot)[-max(5, consolidation_seg.size//4):]))
+    dist_past = float(np.mean((top - bot)[:max(5, consolidation_seg.size//4)]))
     min_convergence_ratio = float(max(0.0, min(0.95, getattr(cfg, "pennant_min_convergence_ratio", 0.05))))
     converging = dist_past > 0.0 and dist_recent <= (dist_past * (1.0 - min_convergence_ratio))
     parallel = abs(sh - sl) <= max(
@@ -108,10 +114,10 @@ def detect_flags_pennants(
         conf = _conf(4, min(r2h, r2l), 1.0, cfg)
         titled = ("Bull " + name) if ret > 0 else ("Bear " + name)
         status = "forming"
-        tol_abs = _tol_abs_from_close(seg, cfg.same_level_tol_pct)
+        tol_abs = _tol_abs_from_close(consolidation_seg, cfg.same_level_tol_pct)
         breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
         bdir, bidx_local = _find_recent_breakout(
-            seg,
+            consolidation_seg,
             upper=top,
             lower=bot,
             tol_abs=tol_abs,
@@ -128,21 +134,23 @@ def detect_flags_pennants(
             titled,
             status,
             conf,
-            int(idx0 + (peaks2[0] if peaks2.size else 0)),
-            int(idx0 + bidx_local) if bidx_local is not None else n - 1,
+            int(idx0 + consolidation_offset),
+            int(idx0 + consolidation_offset + bidx_local) if bidx_local is not None else n - 1,
             t,
             {
                 "pole_return_pct": float(ret),
                 "pole_slope_pct_per_bar": float(pole_slope_pct_per_bar),
                 "pole_slope_price_per_bar": float(pole_slope_price_per_bar),
                 "pole_tip_index": int(idx0 + pole_tip_idx_local),
+                "consolidation_start_index": int(idx0 + consolidation_offset),
+                "consolidation_bars": int(consolidation_seg.size),
                 "pole_base_price": float(pole_base),
                 "pole_tip_price": float(pole_tip),
                 "top_slope": float(sh),
                 "bottom_slope": float(sl),
                 "consolidation_slope": float(consolidation_slope),
                 "breakout_direction": bdir,
-                "breakout_index": int(idx0 + bidx_local) if bidx_local is not None else None,
+                "breakout_index": int(idx0 + consolidation_offset + bidx_local) if bidx_local is not None else None,
                 "breakout_expected": expected,
                 "bias": "bullish" if ret > 0 else "bearish",
             },

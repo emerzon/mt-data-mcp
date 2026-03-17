@@ -23,7 +23,7 @@ class ElliottWaveConfig:
     # New options
     swing_threshold_pct: Optional[float] = None  # ZigZag swing threshold in percent
     gmm_components: int = 2  # Impulsive vs corrective clusters
-    min_gmm_waves: int = 8
+    min_gmm_waves: int = 12
     wave_min_len: int = 3
     use_volume_confirmation: bool = True
     volume_confirm_min_ratio: float = 1.05
@@ -120,7 +120,7 @@ def _zigzag_pivots_indices(close: np.ndarray, threshold_pct: float) -> Tuple[Lis
         return [], []
 
     piv_idx: List[int] = []
-    piv_dir: List[str] = []  # "up" or "down" for the swing ending at the pivot
+    piv_dir: List[str] = []  # "up" for a peak and "down" for a trough
 
     pivot_i = 0
     pivot_p = float(close[0])
@@ -131,6 +131,13 @@ def _zigzag_pivots_indices(close: np.ndarray, threshold_pct: float) -> Tuple[Lis
     pre_high_p = float(close[0])
     pre_low_i = 0
     pre_low_p = float(close[0])
+
+    def _pivot_direction_for_trend(next_trend: Optional[str]) -> str:
+        if next_trend == "up":
+            return "down"
+        if next_trend == "down":
+            return "up"
+        return "flat"
 
     for i in range(1, n):
         p = float(close[i])
@@ -180,7 +187,7 @@ def _zigzag_pivots_indices(close: np.ndarray, threshold_pct: float) -> Tuple[Lis
             last_ext_i = i
             last_ext_p = p
             piv_idx.append(pivot_i)
-            piv_dir.append(trend)
+            piv_dir.append(_pivot_direction_for_trend(trend))
 
         if trend == "up":
             if p > last_ext_p:
@@ -362,7 +369,17 @@ def _classify_waves(
 ) -> Tuple[np.ndarray, Optional[GaussianMixture], Optional[StandardScaler], Optional[np.ndarray], Optional[int]]:
     """Classify waves with GMM; return cluster labels, model, scaler, probabilities and impulsive cluster id."""
 
-    min_waves = max(int(config.gmm_components), int(max(1, getattr(config, "min_gmm_waves", 8))))
+    feature_count = int(features.shape[1]) if features.ndim == 2 and features.size else 0
+    statistical_floor = max(
+        int(config.gmm_components),
+        int(max(1, feature_count)) * 4,
+        int(config.gmm_components) * int(max(1, feature_count)) * 2,
+    )
+    min_waves = max(
+        int(config.gmm_components),
+        int(max(1, getattr(config, "min_gmm_waves", 12))),
+        statistical_floor,
+    )
     if features.shape[0] < min_waves:
         return np.array([]), None, None, None, None
 

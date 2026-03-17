@@ -168,6 +168,16 @@ class TestClassifyWaves:
         assert probs is None
         assert imp is None
 
+    def test_default_floor_requires_statistically_stable_sample(self):
+        rng = np.random.RandomState(11)
+        features = rng.randn(10, 3)
+        labels, gmm, scaler, probs, imp = _classify_waves(features, ElliottWaveConfig())
+        assert labels.size == 0
+        assert gmm is None
+        assert scaler is None
+        assert probs is None
+        assert imp is None
+
     def test_enough_features(self):
         """Lines 280-284: successful GMM classification."""
         rng = np.random.RandomState(42)
