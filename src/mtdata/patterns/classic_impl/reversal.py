@@ -154,70 +154,56 @@ def detect_head_shoulders(
         
     tol_pct = float(cfg.same_level_tol_pct)
     breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
-    peak_cap = int(getattr(cfg, "head_shoulders_max_peak_candidates", 0))
-    if peak_cap <= 0:
-        peak_cap = max(6, int(cfg.max_pattern_pivots) * 2)
-    peak_candidates = peaks[-peak_cap:] if peaks.size > peak_cap else peaks
+    pivot_cap = int(getattr(cfg, "head_shoulders_max_peak_candidates", 0))
+    if pivot_cap <= 0:
+        pivot_cap = max(6, int(cfg.max_pattern_pivots) * 2)
+    peak_candidates = peaks[-pivot_cap:] if peaks.size > pivot_cap else peaks
+    trough_candidates = troughs[-pivot_cap:] if troughs.size > pivot_cap else troughs
+    peak_list = [int(v) for v in peak_candidates.tolist()]
+    trough_list = [int(v) for v in trough_candidates.tolist()]
 
-    for head_idx in peak_candidates.tolist():
-        if head_idx < 0 or head_idx >= n:
-            continue
+    def _append_pattern(
+        *,
+        head_idx: int,
+        lsh: int,
+        rsh: int,
+        regular: bool,
+        neck_idxs: np.ndarray,
+        validation_source: List[int],
+    ) -> None:
+        if neck_idxs.size < 2:
+            return
         head_price = float(c[head_idx])
-        ls_candidates = [pi for pi in peak_candidates.tolist() if pi < head_idx]
-        rs_candidates = [pi for pi in peak_candidates.tolist() if pi > head_idx]
-        if not ls_candidates or not rs_candidates:
-            continue
-        lsh = int(ls_candidates[-1]); rsh = int(rs_candidates[0])
-        if lsh < 0 or rsh >= n:
-            continue
-        ls_p = float(c[lsh]); rs_p = float(c[rsh])
-        regular = (ls_p < head_price) and (rs_p < head_price)
-        inverse = (ls_p > head_price) and (rs_p > head_price)
-        if not (regular or inverse):
-            continue
-        if not _level_close(ls_p, rs_p, tol_pct * 1.5):
-            continue
-        nl1_candidates = [ti for ti in troughs.tolist() if lsh < ti < head_idx]
-        nl2_candidates = [ti for ti in troughs.tolist() if head_idx < ti < rsh]
-        if not nl1_candidates or not nl2_candidates:
-            continue
-        nl1 = int(nl1_candidates[-1]); nl2 = int(nl2_candidates[0])
-        if nl1 < 0 or nl2 >= n:
-            continue
-
-        if regular:
-            neck_idxs = np.asarray([nl1, nl2], dtype=int)
-            validation_source = troughs
-            neck_x = neck_idxs.astype(float)
-            neck_y = c[neck_idxs]
-            slope, intercept, r2 = _fit_line(neck_x, neck_y)
-            neck_idx_set = {int(v) for v in neck_idxs.tolist()}
-            neck_validation_points = int(
-                sum(
-                    1
-                    for idx in validation_source.tolist()
-                    if lsh < int(idx) < rsh and int(idx) not in neck_idx_set
-                )
+        ls_p = float(c[lsh])
+        rs_p = float(c[rsh])
+        neck_x = neck_idxs.astype(float)
+        neck_y = c[neck_idxs]
+        slope, intercept, r2 = _fit_line(neck_x, neck_y)
+        neck_idx_set = {int(v) for v in neck_idxs.tolist()}
+        neck_validation_points = int(
+            sum(
+                1
+                for idx in validation_source
+                if lsh < int(idx) < rsh and int(idx) not in neck_idx_set
             )
-        else:
-            neck_idxs = np.asarray([idx for idx in peaks.tolist() if lsh < idx < rsh], dtype=int)
-            if neck_idxs.size < 2:
-                continue
-            neck_x = neck_idxs.astype(float)
-            neck_y = c[neck_idxs]
-            slope, intercept, r2 = _fit_line(neck_x, neck_y)
-            neck_validation_points = 0
+        )
 
-        left_span = head_idx - lsh; right_span = rsh - head_idx
+        left_span = head_idx - lsh
+        right_span = rsh - head_idx
         span_ratio = left_span / float(max(1, right_span))
         if not (0.5 <= span_ratio <= 2.0):
-            continue
+            return
+
         sh_avg = (ls_p + rs_p) / 2.0
-        head_prom = (head_price - sh_avg) / abs(sh_avg) * 100.0 if sh_avg != 0 else 0.0
-        if regular and head_prom < max(1.0, tol_pct):
-            continue
-        if inverse and head_prom > -max(1.0, tol_pct):
-            continue
+        if sh_avg == 0.0:
+            return
+        head_prom = (
+            (head_price - sh_avg) / abs(sh_avg) * 100.0
+            if regular
+            else (sh_avg - head_price) / abs(sh_avg) * 100.0
+        )
+        if head_prom < max(1.0, tol_pct):
+            return
 
         status = 'forming'
         name = 'Head and Shoulders' if regular else 'Inverse Head and Shoulders'
@@ -231,7 +217,7 @@ def detect_head_shoulders(
             px = float(c[i])
             if regular and px < neck_i:
                 status = 'completed'; broke = True; end_i = int(i); break
-            if inverse and px > neck_i:
+            if (not regular) and px > neck_i:
                 status = 'completed'; broke = True; end_i = int(i); break
 
         sym_conf = max(0.0, 1.0 - abs(span_ratio - 1.0))
@@ -242,7 +228,7 @@ def detect_head_shoulders(
             point_count=int(neck_idxs.size),
             cfg=cfg,
         )
-        prom_conf = min(1.0, abs(head_prom) / (tol_pct * 2.0))
+        prom_conf = min(1.0, head_prom / (tol_pct * 2.0))
         base_conf = 0.25 * sym_conf + 0.35 * sh_sim_conf + 0.2 * neck_quality + 0.2 * prom_conf
         if broke:
             base_conf = min(1.0, base_conf + 0.1)
@@ -254,13 +240,13 @@ def detect_head_shoulders(
             seg_n = _znorm(_paa(seg, int(getattr(cfg, 'dtw_paa_len', 80))))
             dist = min(
                 _dtw_distance(seg_n, tpl)
-                for tpl in _template_hs_variants(len(seg_n), inverse=bool(inverse))
+                for tpl in _template_hs_variants(len(seg_n), inverse=not regular)
             )
             maxd = float(getattr(cfg, 'dtw_max_dist', 0.6))
             if not np.isfinite(dist):
                 dist = maxd * 10.0
             if dist > (2.0 * maxd):
-                continue
+                return
             if dist > maxd:
                 base_conf *= 0.7
             else:
@@ -288,6 +274,70 @@ def detect_head_shoulders(
             end_time=PatternResultBase.resolve_time(t, int(end_i)),
             details=details,
         ))
+
+    for head_idx in peak_list:
+        if head_idx < 0 or head_idx >= n:
+            continue
+        ls_candidates = [pi for pi in peak_list if pi < head_idx]
+        rs_candidates = [pi for pi in peak_list if pi > head_idx]
+        if not ls_candidates or not rs_candidates:
+            continue
+        lsh = int(ls_candidates[-1])
+        rsh = int(rs_candidates[0])
+        if lsh < 0 or rsh >= n:
+            continue
+        head_price = float(c[head_idx])
+        ls_p = float(c[lsh])
+        rs_p = float(c[rsh])
+        if not ((ls_p < head_price) and (rs_p < head_price)):
+            continue
+        if not _level_close(ls_p, rs_p, tol_pct * 1.5):
+            continue
+        nl1_candidates = [ti for ti in trough_list if lsh < ti < head_idx]
+        nl2_candidates = [ti for ti in trough_list if head_idx < ti < rsh]
+        if not nl1_candidates or not nl2_candidates:
+            continue
+        neck_idxs = np.asarray([int(nl1_candidates[-1]), int(nl2_candidates[0])], dtype=int)
+        _append_pattern(
+            head_idx=int(head_idx),
+            lsh=int(lsh),
+            rsh=int(rsh),
+            regular=True,
+            neck_idxs=neck_idxs,
+            validation_source=trough_list,
+        )
+
+    for head_idx in trough_list:
+        if head_idx < 0 or head_idx >= n:
+            continue
+        ls_candidates = [ti for ti in trough_list if ti < head_idx]
+        rs_candidates = [ti for ti in trough_list if ti > head_idx]
+        if not ls_candidates or not rs_candidates:
+            continue
+        lsh = int(ls_candidates[-1])
+        rsh = int(rs_candidates[0])
+        if lsh < 0 or rsh >= n:
+            continue
+        head_price = float(c[head_idx])
+        ls_p = float(c[lsh])
+        rs_p = float(c[rsh])
+        if not ((ls_p > head_price) and (rs_p > head_price)):
+            continue
+        if not _level_close(ls_p, rs_p, tol_pct * 1.5):
+            continue
+        nl1_candidates = [pi for pi in peak_list if lsh < pi < head_idx]
+        nl2_candidates = [pi for pi in peak_list if head_idx < pi < rsh]
+        if not nl1_candidates or not nl2_candidates:
+            continue
+        neck_idxs = np.asarray([int(nl1_candidates[-1]), int(nl2_candidates[0])], dtype=int)
+        _append_pattern(
+            head_idx=int(head_idx),
+            lsh=int(lsh),
+            rsh=int(rsh),
+            regular=False,
+            neck_idxs=neck_idxs,
+            validation_source=peak_list,
+        )
     return _dedupe_overlapping_patterns(out)
 
 def detect_rounding(

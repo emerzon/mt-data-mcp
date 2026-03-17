@@ -1502,7 +1502,7 @@ def test_detect_head_shoulders_fits_neckline_with_reaction_troughs(monkeypatch):
     assert out[0].details["neck_validation_points"] == 1
 
 
-def test_detect_inverse_head_shoulders_uses_internal_peaks_for_neckline(monkeypatch):
+def test_detect_inverse_head_shoulders_uses_reaction_peaks_for_neckline(monkeypatch):
     from src.mtdata.patterns.classic_impl import reversal
 
     captured = {}
@@ -1514,9 +1514,9 @@ def test_detect_inverse_head_shoulders_uses_internal_peaks_for_neckline(monkeypa
 
     monkeypatch.setattr(reversal, "_fit_line", _fake_fit)
 
-    close = np.array([105.0, 110.0, 95.0, 100.0, 96.0, 111.0, 97.0], dtype=float)
-    peaks = np.array([1, 3, 3, 5], dtype=int)
-    troughs = np.array([2, 4], dtype=int)
+    close = np.array([104.0, 95.0, 103.0, 90.0, 102.0, 96.0, 108.0], dtype=float)
+    peaks = np.array([0, 2, 4, 6], dtype=int)
+    troughs = np.array([1, 3, 5], dtype=int)
 
     out = reversal.detect_head_shoulders(
         close,
@@ -1528,7 +1528,7 @@ def test_detect_inverse_head_shoulders_uses_internal_peaks_for_neckline(monkeypa
 
     assert out
     inverse = next(pattern for pattern in out if pattern.name == "Inverse Head and Shoulders")
-    assert captured["x"] == [3.0, 3.0]
+    assert captured["x"] == [2.0, 4.0]
     assert inverse.details["neckline_source"] == "peaks"
     assert inverse.details["neck_points"] == 2
 
