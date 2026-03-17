@@ -668,6 +668,41 @@ def test_detect_flags_pennants_measure_pole_from_tip_not_last_bar(monkeypatch):
     assert out[0].details["pole_tip_price"] == pytest.approx(106.0)
 
 
+def test_detect_flags_pennants_reject_protrend_consolidation(monkeypatch):
+    from src.mtdata.patterns.classic_impl import continuation
+
+    n = 120
+    window = 30
+    close = np.full(n, 102.0, dtype=float)
+    close[75:90] = np.linspace(100.0, 106.0, 15)
+    seg = np.linspace(103.5, 105.8, window)
+    seg[0] = 106.0
+    close[-window:] = seg
+
+    peaks = np.array([4, 11, 18, 25], dtype=int)
+    troughs = np.array([2, 9, 16, 23], dtype=int)
+    top = np.linspace(104.0, 105.6, window)
+    bot = np.linspace(102.0, 103.6, window)
+
+    monkeypatch.setattr(continuation, "_detect_pivots_close", lambda *_args, **_kwargs: (peaks, troughs))
+    monkeypatch.setattr(
+        continuation,
+        "_fit_lines_and_arrays",
+        lambda *_args, **_kwargs: (0.06, 104.0, 0.9, 0.06, 102.0, 0.9, top.copy(), bot.copy()),
+    )
+
+    out = continuation.detect_flags_pennants(
+        close,
+        close + 0.2,
+        close - 0.2,
+        np.arange(n, dtype=float),
+        n,
+        ClassicDetectorConfig(max_consolidation_bars=window, min_pole_return_pct=4.0),
+    )
+
+    assert out == []
+
+
 def test_detect_classic_channel_parallel_ratio_uses_config(monkeypatch):
     n = 150
     close = np.linspace(100.0, 120.0, n)

@@ -65,6 +65,7 @@ class ClassicDetectorConfig:
     channel_max_width_expansion_ratio: float = 0.05  # tolerated channel-width widening over the recent window
     pennant_parallel_slope_ratio: float = 0.2  # relative slope spread tolerated for flags/pennants
     pennant_min_convergence_ratio: float = 0.05  # minimum width contraction required to classify as pennant
+    flag_max_with_trend_slope_ratio: float = 0.15  # tolerated consolidation drift in the pole direction
     rounding_window_bars: int = 220
     rounding_window_sizes: List[int] = field(default_factory=list)
     breakout_confidence_bonus: float = 0.08

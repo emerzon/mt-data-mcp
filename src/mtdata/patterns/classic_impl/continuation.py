@@ -65,6 +65,7 @@ def detect_flags_pennants(
     pole_slope_pct_per_bar = abs(ret) / float(pole_bars)
     if pole_slope_pct_per_bar < float(max(0.0, getattr(cfg, "min_pole_slope_pct_per_bar", 0.0))):
         return out
+    pole_slope_price_per_bar = (pole_tip - pole_base) / float(pole_bars)
 
     seg_h = h[-window:] if h.size >= window else seg
     seg_l = l[-window:] if l.size >= window else seg
@@ -87,6 +88,15 @@ def detect_flags_pennants(
         1e-4,
         float(cfg.pennant_parallel_slope_ratio) * max(abs(sh), abs(sl), cfg.max_flat_slope),
     )
+    consolidation_slope = 0.5 * (float(sh) + float(sl))
+    max_with_trend_slope = max(
+        float(cfg.max_flat_slope),
+        abs(float(pole_slope_price_per_bar)) * float(max(0.0, getattr(cfg, "flag_max_with_trend_slope_ratio", 0.15))),
+    )
+    if (ret > 0.0 and consolidation_slope >= max_with_trend_slope) or (
+        ret < 0.0 and consolidation_slope <= -max_with_trend_slope
+    ):
+        return out
     
     name = None
     if converging:
@@ -124,11 +134,13 @@ def detect_flags_pennants(
             {
                 "pole_return_pct": float(ret),
                 "pole_slope_pct_per_bar": float(pole_slope_pct_per_bar),
+                "pole_slope_price_per_bar": float(pole_slope_price_per_bar),
                 "pole_tip_index": int(idx0 + pole_tip_idx_local),
                 "pole_base_price": float(pole_base),
                 "pole_tip_price": float(pole_tip),
                 "top_slope": float(sh),
                 "bottom_slope": float(sl),
+                "consolidation_slope": float(consolidation_slope),
                 "breakout_direction": bdir,
                 "breakout_index": int(idx0 + bidx_local) if bidx_local is not None else None,
                 "breakout_expected": expected,
