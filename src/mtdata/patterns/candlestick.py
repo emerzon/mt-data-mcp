@@ -98,6 +98,42 @@ def _parse_min_strength(min_strength: float) -> float:
     return thr
 
 
+def _candlestick_base_strength(
+    pattern_name: str,
+    *,
+    robust_set: set[str],
+    deprioritize: set[str],
+) -> float:
+    normalized = _normalize_candlestick_name(pattern_name)
+    base = 0.75
+    if normalized in robust_set:
+        base += 0.15
+    if normalized in deprioritize:
+        base -= 0.20
+    return float(max(0.0, min(1.0, base)))
+
+
+def _candlestick_strength_score(
+    pattern_name: str,
+    raw_signal: float,
+    *,
+    robust_set: set[str],
+    deprioritize: set[str],
+) -> float:
+    raw = abs(float(raw_signal))
+    if not np.isfinite(raw) or raw <= 0.0:
+        return 0.0
+    span_bars = _candlestick_span_bars(pattern_name)
+    base = _candlestick_base_strength(
+        pattern_name,
+        robust_set=robust_set,
+        deprioritize=deprioritize,
+    )
+    span_bonus = min(0.10, 0.05 * max(0, span_bars - 1))
+    raw_signal_bonus = min(0.20, 0.20 * max(0.0, raw - 100.0) / 100.0)
+    return float(max(0.0, min(1.0, base + span_bonus + raw_signal_bonus)))
+
+
 def _candlestick_span_bars(pattern_name: str) -> int:
     return int(_CANDLESTICK_PATTERN_BAR_SPANS.get(_normalize_candlestick_name(pattern_name), 1))
 
@@ -243,7 +279,19 @@ def _extract_candlestick_rows(
     except Exception:
         values = temp_tail.loc[:, pattern_cols].to_numpy(dtype=float, copy=True)
 
-    active_mask = np.isfinite(values) & (np.abs(values) >= float(threshold) * 100.0)
+    strength_values = np.zeros_like(values, dtype=float)
+    for col_idx, name in enumerate(base_names.tolist()):
+        base_strength = _candlestick_base_strength(
+            str(name),
+            robust_set=robust_set,
+            deprioritize=deprioritize,
+        )
+        span_bars = _candlestick_span_bars(str(name))
+        span_bonus = min(0.10, 0.05 * max(0, span_bars - 1))
+        raw_bonus = np.clip((np.abs(values[:, col_idx]) - 100.0) / 100.0, 0.0, 1.0) * 0.20
+        strength_values[:, col_idx] = np.clip(base_strength + span_bonus + raw_bonus, 0.0, 1.0)
+
+    active_mask = np.isfinite(values) & (np.abs(values) > 0.0) & (strength_values >= float(threshold))
     if not bool(np.any(active_mask)):
         return []
 
@@ -277,7 +325,12 @@ def _extract_candlestick_rows(
         pool_idx = hit_idx[non_dep_mask[hit_idx]]
         if pool_idx.size == 0:
             pool_idx = hit_idx
-        order = np.argsort(-np.abs(values[i, pool_idx]), kind="mergesort")[:k]
+        order = np.lexsort(
+            (
+                -np.abs(values[i, pool_idx]),
+                -strength_values[i, pool_idx],
+            )
+        )[:k]
         chosen_idx = pool_idx[order]
         t_val = str(time_vals[i])
         for col_idx in chosen_idx.tolist():
@@ -291,7 +344,7 @@ def _extract_candlestick_rows(
                 start_time = str(time_vals[start_bar_idx])
                 end_time = str(time_vals[i])
                 direction = "bullish" if value > 0 else "bearish"
-                strength = float(max(0.0, min(1.0, abs(value) / 100.0)))
+                strength = float(strength_values[i, col_idx])
                 raw_signal: Any
                 if abs(value - round(value)) <= 1e-9:
                     raw_signal = int(round(value))
@@ -489,7 +542,6 @@ def detect_candlestick_patterns(
     ]
     payload = _table_from_rows(headers, rows)
     _enrich_candlestick_payload(payload, df, config)
-    signal_cutoff = float(thr) * 100.0
     payload.update({
         "success": True,
         "symbol": symbol,
@@ -497,7 +549,7 @@ def detect_candlestick_patterns(
         "candles": int(limit),
         "mode": "candlestick",
         "min_strength": float(thr),
-        "signal_cutoff": float(signal_cutoff),
+        "strength_scale": "semantic_pattern_conviction_v2",
         "signal_scale": "pandas_ta_signal_x100",
     })
     if warnings_out:

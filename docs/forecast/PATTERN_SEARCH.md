@@ -73,7 +73,7 @@ mtdata-cli patterns_detect EURUSD --timeframe H1 --mode classic --limit 500
 | `--limit` | 500 | Bars to analyze |
 | `--robust-only` | false | Only return high-confidence patterns |
 | `--whitelist` | — | Comma-separated list of specific patterns |
-| `--min-strength` | — | Minimum pattern strength score |
+| `--min-strength` | — | Minimum semantic candlestick conviction score (0.0-1.0) |
 
 ### Filtering Patterns
 

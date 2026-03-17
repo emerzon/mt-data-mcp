@@ -6,6 +6,7 @@ import pytest
 from mtdata.patterns.candlestick import (
     _normalize_candlestick_name,
     _parse_min_strength,
+    _candlestick_strength_score,
     _is_candlestick_allowed,
     _extract_candlestick_rows,
     _discover_candlestick_pattern_methods,
@@ -54,6 +55,43 @@ class TestParseMinStrength:
     def test_invalid_type(self):
         with pytest.raises(ValueError):
             _parse_min_strength("not_a_number")
+
+
+class TestCandlestickStrengthScore:
+    def test_robust_multibar_pattern_scores_higher_than_deprioritized_single_bar(self):
+        engulfing = _candlestick_strength_score(
+            "cdl_engulfing",
+            100.0,
+            robust_set={"engulfing"},
+            deprioritize={"doji"},
+        )
+        doji = _candlestick_strength_score(
+            "cdl_doji",
+            100.0,
+            robust_set={"engulfing"},
+            deprioritize={"doji"},
+        )
+
+        assert engulfing == pytest.approx(0.95)
+        assert doji == pytest.approx(0.55)
+        assert engulfing > doji
+
+    def test_larger_raw_signal_receives_bonus(self):
+        base = _candlestick_strength_score(
+            "cdl_alpha",
+            100.0,
+            robust_set=set(),
+            deprioritize=set(),
+        )
+        boosted = _candlestick_strength_score(
+            "cdl_alpha",
+            200.0,
+            robust_set=set(),
+            deprioritize=set(),
+        )
+
+        assert base == pytest.approx(0.75)
+        assert boosted == pytest.approx(0.95)
 
 
 class TestIsCandlestickAllowed:
@@ -158,6 +196,30 @@ class TestExtractCandlestickRows:
         assert rows[0][6] == "2024-01-02"
         assert rows[0][7] == "2024-01-04"
         assert rows[0][8] == 3
+
+    def test_threshold_uses_semantic_strength_not_raw_signal_only(self):
+        df_tail = pd.DataFrame({"time": ["T0", "T1"]})
+        temp_tail = pd.DataFrame(
+            {
+                "cdl_doji": [0.0, 100.0],
+                "cdl_engulfing": [0.0, 100.0],
+            }
+        )
+
+        rows = _extract_candlestick_rows(
+            df_tail,
+            temp_tail,
+            ["cdl_doji", "cdl_engulfing"],
+            threshold=0.90,
+            robust_only=False,
+            robust_set={"engulfing"},
+            whitelist_set=None,
+            min_gap=0,
+            top_k=5,
+            deprioritize={"doji"},
+        )
+
+        assert rows == [["T1", "Bullish ENGULFING"]]
 
 
 class TestCandlestickSpanBars:
