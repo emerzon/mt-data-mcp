@@ -596,8 +596,8 @@ def test_detect_classic_uses_singular_pennant_name(monkeypatch):
     seg_peaks = np.array([6, 13, 20, 27], dtype=int)
     seg_troughs = np.array([4, 11, 18, 25], dtype=int)
 
-    top = np.linspace(148.0, 150.0, window)
-    bot = np.linspace(144.0, 149.0, window)
+    top = np.linspace(150.0, 148.0, window)
+    bot = np.linspace(144.0, 145.5, window)
     seg[:] = (top + bot) / 2.0
     seg[seg_peaks] = top[seg_peaks]
     seg[seg_troughs] = bot[seg_troughs]
@@ -617,7 +617,7 @@ def test_detect_classic_uses_singular_pennant_name(monkeypatch):
 
     def _fake_fit_lines(ih, il, c, n, cfg):
         if n == window:
-            return 0.07, 148.0, 0.9, 0.17, 144.0, 0.9, top.copy(), bot.copy()
+            return -0.07, 150.0, 0.9, 0.05, 144.0, 0.9, top.copy(), bot.copy()
         x = np.arange(n, dtype=float)
         return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, x.copy(), x.copy()
 
