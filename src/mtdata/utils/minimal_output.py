@@ -46,6 +46,16 @@ def _format_number_fixed(num: float) -> str:
     return _format_float(num, DISPLAY_MAX_DECIMALS)
 
 
+def _stringify_nonfinite_number(num: float) -> str:
+    if math.isnan(num):
+        return "nan"
+    if num > 0:
+        return "inf"
+    if num < 0:
+        return "-inf"
+    return "nan"
+
+
 def _stringify_scalar(value: Any) -> str:
     if value is None:
         return "null"
@@ -186,7 +196,7 @@ def _stringify_for_toon(
         return format_number(value)
     if isinstance(value, float):
         if not math.isfinite(value):
-            return format_number(value)
+            return _stringify_nonfinite_number(value)
         return format_number(value) if simplify_numbers else _format_number_fixed(value)
     return _quote_if_needed(str(value), delimiter)
 
@@ -208,7 +218,7 @@ def _stringify_for_toon_value(
         except Exception:
             return _quote_if_needed(str(value), delimiter)
         if not math.isfinite(num):
-            return format_number(num)
+            return _stringify_nonfinite_number(num)
         if not simplify_numbers:
             return _format_number_fixed(num)
         if decimals is None:
@@ -466,6 +476,58 @@ def _normalize_forecast_payload(payload: Dict[str, Any], verbose: bool = True) -
         return None
 
 
+def _normalize_triple_barrier_payload(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Convert triple-barrier column arrays into a single tabular block."""
+    entries = payload.get("entries")
+    labels = payload.get("labels")
+    holding_bars = payload.get("holding_bars")
+    if not isinstance(entries, list) or not isinstance(labels, list) or not isinstance(holding_bars, list):
+        return None
+    if any(isinstance(item, dict) for item in labels):
+        return None
+
+    n = min(len(entries), len(labels), len(holding_bars))
+    if n <= 0:
+        return None
+
+    tp_times_raw = payload.get("tp_time")
+    sl_times_raw = payload.get("sl_time")
+    tp_times = list(tp_times_raw) if isinstance(tp_times_raw, list) else []
+    sl_times = list(sl_times_raw) if isinstance(sl_times_raw, list) else []
+
+    rows: List[Dict[str, Any]] = []
+    for idx in range(n):
+        row: Dict[str, Any] = {
+            "entry": entries[idx],
+            "label": labels[idx],
+            "holding_bars": holding_bars[idx],
+        }
+        if "tp_time" in payload:
+            row["tp_time"] = tp_times[idx] if idx < len(tp_times) else None
+        if "sl_time" in payload:
+            row["sl_time"] = sl_times[idx] if idx < len(sl_times) else None
+        rows.append(row)
+
+    out: Dict[str, Any] = {}
+    for key in ("success", "symbol", "timeframe", "horizon"):
+        value = payload.get(key)
+        if not _is_empty_value(value):
+            out[key] = value
+
+    out["labels"] = rows
+
+    summary = payload.get("summary")
+    if isinstance(summary, dict) and summary:
+        out["summary"] = summary
+
+    for key in ("params_used", "cli_meta"):
+        value = payload.get(key)
+        if not _is_empty_value(value):
+            out[key] = value
+
+    return out
+
+
 def _compact_forecast_ci(
     payload: Dict[str, Any],
     *,
@@ -683,9 +745,13 @@ def format_result_minimal(result: Any, verbose: bool = True, *, simplify_numbers
     try:
         normalized = result
         if isinstance(result, dict):
-            forecast_norm = _normalize_forecast_payload(result, verbose=verbose)
-            if forecast_norm is not None:
-                normalized = forecast_norm
+            triple_barrier_norm = _normalize_triple_barrier_payload(result)
+            if triple_barrier_norm is not None:
+                normalized = triple_barrier_norm
+            else:
+                forecast_norm = _normalize_forecast_payload(result, verbose=verbose)
+                if forecast_norm is not None:
+                    normalized = forecast_norm
         if isinstance(normalized, str):
             return normalized.strip()
         toon_text = _format_to_toon(normalized, simplify_numbers=simplify_numbers)
