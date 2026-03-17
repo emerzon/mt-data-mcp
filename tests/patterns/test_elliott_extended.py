@@ -971,6 +971,49 @@ class TestDetectElliottWaves:
         expected = (0.2 * scenarios[0].rule_eval.fib_score) + (0.8 * scenarios[0].cls_score)
         assert scenarios[0].confidence == pytest.approx(expected)
 
+    def test_analyze_once_classifies_with_prefix_only(self, monkeypatch):
+        close = np.array([100.0, 120.0, 108.0, 150.0, 135.0, 160.0, 148.0], dtype=float)
+        t = np.arange(close.size, dtype=float) * 3600 + 1_700_000_000
+        analyzer = ElliottWaveAnalyzer(
+            close,
+            t,
+            ElliottWaveConfig(
+                autotune=False,
+                min_distance=1,
+                wave_min_len=1,
+                min_confidence=0.0,
+                pattern_types=["impulse"],
+                include_fallback_candidate=False,
+            ),
+        )
+
+        monkeypatch.setattr(
+            elliott_mod,
+            "_zigzag_pivots_indices",
+            lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5, 6], ["up"] * 7),
+        )
+        monkeypatch.setattr(
+            elliott_mod,
+            "_evaluate_impulse_rules",
+            lambda *args, **kwargs: ElliottRuleEvaluation(valid=True, fib_score=0.5, metrics={}, violations=[]),
+        )
+
+        seen_feature_lengths = []
+
+        def _fake_classify(features, config):
+            _ = config
+            seen_feature_lengths.append(int(features.shape[0]))
+            probs = np.full((features.shape[0], 2), 0.75, dtype=float)
+            fake_gmm = type("FakeGMM", (), {"means_": np.array([[0.0, -0.1, 0.0], [0.0, 0.1, 0.0]])})()
+            return np.zeros(features.shape[0], dtype=int), fake_gmm, None, probs, 1
+
+        monkeypatch.setattr(elliott_mod, "_classify_waves", _fake_classify)
+
+        scenarios = analyzer.analyze_once(1.0, 1)
+
+        assert scenarios
+        assert seen_feature_lengths == [5, 6]
+
 
 # ===== _window_hit =========================================================
 

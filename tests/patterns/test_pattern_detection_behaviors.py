@@ -1472,6 +1472,20 @@ def test_detect_inverse_head_shoulders_uses_internal_peaks_for_neckline(monkeypa
     assert inverse.details["neck_points"] == 2
 
 
+def test_head_shoulders_two_point_neckline_does_not_get_free_r2_boost():
+    from src.mtdata.patterns.classic_impl import reversal
+
+    cfg = ClassicDetectorConfig(max_flat_slope=1e-4)
+    quality = reversal._neckline_quality_score(
+        slope=cfg.max_flat_slope * 2.5,
+        r2=1.0,
+        point_count=2,
+        cfg=cfg,
+    )
+
+    assert quality == pytest.approx(0.5)
+
+
 def test_detect_rounding_tries_multiple_windows(monkeypatch):
     from src.mtdata.patterns.classic_impl import reversal
 

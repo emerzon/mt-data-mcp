@@ -591,6 +591,38 @@ def _classification_score_window(
     return float(min(1.0, max(0.0, cls_score)))
 
 
+def _classify_waves_through_index(
+    features: np.ndarray,
+    config: ElliottWaveConfig,
+    wave_index_map: Dict[int, int],
+    through_wave_idx: int,
+    *,
+    cache: Optional[Dict[int, Tuple[Optional[np.ndarray], Optional[np.ndarray], bool]]] = None,
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], bool]:
+    through_key = int(through_wave_idx)
+    if through_key in wave_index_map:
+        max_row = int(wave_index_map[through_key])
+    else:
+        eligible_rows = [int(row) for wave_idx, row in wave_index_map.items() if int(wave_idx) <= through_key]
+        if not eligible_rows:
+            return None, None, False
+        max_row = max(eligible_rows)
+
+    if max_row < 0:
+        return None, None, False
+    if cache is not None and max_row in cache:
+        return cache[max_row]
+
+    prefix_features = features[: max_row + 1]
+    _, gmm, _, probs, _ = _classify_waves(prefix_features, config)
+    cluster_means = gmm.means_ if gmm is not None else None
+    classification_available = probs is not None and cluster_means is not None
+    result = (probs, cluster_means, classification_available)
+    if cache is not None:
+        cache[max_row] = result
+    return result
+
+
 def _result_sort_key(result: ElliottWaveResult) -> Tuple[float, int, str, Tuple[int, ...]]:
     return (
         -float(result.confidence),
@@ -758,10 +790,6 @@ class ElliottWaveAnalyzer:
         if features.shape[0] == 0:
             return []
 
-        _, gmm, _, probs, _ = _classify_waves(features, self.config)
-        cluster_means = gmm.means_ if gmm is not None else None
-        classification_available = probs is not None and cluster_means is not None
-
         out: List[ElliottScenario] = []
         pattern_types = _normalize_pattern_types(self.config)
         total_waves = len(waves)
@@ -771,6 +799,7 @@ class ElliottWaveAnalyzer:
         correction_overlap_ratio = float(
             max(0.0, min(1.0, getattr(self.config, "correction_exclusion_overlap_ratio", 0.9)))
         )
+        classification_cache: Dict[int, Tuple[Optional[np.ndarray], Optional[np.ndarray], bool]] = {}
 
         if "impulse" in pattern_types:
             for k in range(0, total_waves - 4):
@@ -790,6 +819,13 @@ class ElliottWaveAnalyzer:
                 if not rule_eval.valid:
                     continue
 
+                probs, cluster_means, classification_available = _classify_waves_through_index(
+                    features,
+                    self.config,
+                    wave_index_map,
+                    through_wave_idx=int(k + 4),
+                    cache=classification_cache,
+                )
                 cls_score = _classification_score_window(
                     probs,
                     cluster_means,
@@ -862,6 +898,13 @@ class ElliottWaveAnalyzer:
                 if not rule_eval.valid:
                     continue
 
+                probs, cluster_means, classification_available = _classify_waves_through_index(
+                    features,
+                    self.config,
+                    wave_index_map,
+                    through_wave_idx=int(k + 2),
+                    cache=classification_cache,
+                )
                 cls_score = _classification_score_window(
                     probs,
                     cluster_means,

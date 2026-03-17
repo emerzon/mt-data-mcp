@@ -66,6 +66,19 @@ def _level_components(vals: np.ndarray, tol_pct: float) -> List[List[int]]:
         components.append(component)
     return components
 
+
+def _neckline_quality_score(
+    *,
+    slope: float,
+    r2: float,
+    point_count: int,
+    cfg: ClassicDetectorConfig,
+) -> float:
+    neck_penalty = max(0.0, 1.0 - min(1.0, abs(float(slope)) / max(1e-6, cfg.max_flat_slope * 5.0)))
+    if int(point_count) <= 2:
+        return float(neck_penalty)
+    return float(0.5 * neck_penalty + 0.5 * max(0.0, min(1.0, float(r2))))
+
 def detect_tops_bottoms(
     c: np.ndarray,
     peaks: np.ndarray,
@@ -223,8 +236,12 @@ def detect_head_shoulders(
 
         sym_conf = max(0.0, 1.0 - abs(span_ratio - 1.0))
         sh_sim_conf = max(0.0, 1.0 - (abs(ls_p - rs_p) / max(1e-9, abs(sh_avg))))
-        neck_penalty = max(0.0, 1.0 - min(1.0, abs(slope) / max(1e-6, cfg.max_flat_slope * 5.0)))
-        neck_quality = 0.5 * neck_penalty + 0.5 * max(0.0, min(1.0, float(r2)))
+        neck_quality = _neckline_quality_score(
+            slope=float(slope),
+            r2=float(r2),
+            point_count=int(neck_idxs.size),
+            cfg=cfg,
+        )
         prom_conf = min(1.0, abs(head_prom) / (tol_pct * 2.0))
         base_conf = 0.25 * sym_conf + 0.35 * sh_sim_conf + 0.2 * neck_quality + 0.2 * prom_conf
         if broke:
