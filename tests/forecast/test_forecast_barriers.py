@@ -863,6 +863,10 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             self.assertAlmostEqual(entry["prob_sl_first"], 0.5, places=7)
             expected_ev = 0.5 * entry["tp"] - 0.5 * entry["sl"]
             self.assertAlmostEqual(entry["ev"], expected_ev, places=7)
+            expected_kelly = entry["prob_tp_first"] - (entry["prob_sl_first"] / entry["rr"])
+            self.assertAlmostEqual(entry["kelly"], expected_kelly, places=7)
+            self.assertAlmostEqual(entry["ev_cond"], expected_ev, places=7)
+            self.assertAlmostEqual(entry["kelly_cond"], expected_kelly, places=7)
 
     def test_forecast_barrier_hit_probabilities_rejects_non_positive_horizon(self):
         result = forecast_barrier_hit_probabilities(

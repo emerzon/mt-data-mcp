@@ -159,6 +159,33 @@ def _headers_from_dicts(items: Iterable[Dict[str, Any]]) -> List[str]:
     return headers
 
 
+def _dedupe_text_list(values: Iterable[Any]) -> List[str]:
+    out: List[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+    return out
+
+
+def _resolve_tool_name(result: Any, tool_name: Optional[str]) -> str:
+    if isinstance(tool_name, str) and tool_name.strip():
+        return tool_name.strip()
+    if isinstance(result, dict):
+        cli_meta = result.get("cli_meta")
+        if isinstance(cli_meta, dict):
+            command = str(cli_meta.get("command") or "").strip()
+            if command:
+                return command
+        operation = str(result.get("operation") or "").strip()
+        if operation:
+            return operation
+    return ""
+
+
 def _column_decimals(headers: List[str], rows: List[Dict[str, Any]]) -> Dict[str, int]:
     col_decimals: Dict[str, int] = {}
     for h in headers:
@@ -413,10 +440,17 @@ def _normalize_forecast_payload(payload: Dict[str, Any], verbose: bool = True) -
         except Exception:
             pass
 
-        headers = ['time', 'forecast']
-        if lower and upper:
-            headers += ['lower', 'upper']
+        include_interval_columns = bool(lower and upper)
+        usable_qcols: List[str] = []
         for q in qcols:
+            qarr = qmap.get(q) if isinstance(qmap, dict) else None  # type: ignore[assignment]
+            if isinstance(qarr, list) and qarr:
+                usable_qcols.append(q)
+
+        headers = ['time', 'forecast']
+        if include_interval_columns:
+            headers += ['lower', 'upper']
+        for q in usable_qcols:
             headers.append(f"q{q}")
         rows: List[Dict[str, Any]] = []
         for i in range(n):
@@ -431,9 +465,9 @@ def _normalize_forecast_payload(payload: Dict[str, Any], verbose: bool = True) -
                 'time': times[i],
                 'forecast': val,
             }
-            if lower and upper and i < len(lower) and i < len(upper):
-                low_val = lower[i]
-                up_val = upper[i]
+            if include_interval_columns:
+                low_val = lower[i] if i < len(lower) else None
+                up_val = upper[i] if i < len(upper) else None
                 if digits is not None:
                     try:
                         if isinstance(low_val, (int, float)): low_val = f"{float(low_val):.{digits}f}"
@@ -442,16 +476,17 @@ def _normalize_forecast_payload(payload: Dict[str, Any], verbose: bool = True) -
                         pass
                 row['lower'] = low_val
                 row['upper'] = up_val
-            for q in qcols:
+            for q in usable_qcols:
                 qarr = qmap.get(q) if isinstance(qmap, dict) else None  # type: ignore[assignment]
-                if isinstance(qarr, list) and i < len(qarr):
-                    q_val = qarr[i]
-                    if digits is not None and isinstance(q_val, (int, float)):
-                        try:
-                            q_val = f"{float(q_val):.{digits}f}"
-                        except Exception:
-                            pass
-                    row[f"q{q}"] = q_val
+                if not isinstance(qarr, list):
+                    continue
+                q_val = qarr[i] if i < len(qarr) else None
+                if digits is not None and isinstance(q_val, (int, float)):
+                    try:
+                        q_val = f"{float(q_val):.{digits}f}"
+                    except Exception:
+                        pass
+                row[f"q{q}"] = q_val
             rows.append(row)
 
         out: Dict[str, Any] = {}
@@ -524,6 +559,234 @@ def _normalize_triple_barrier_payload(payload: Dict[str, Any]) -> Optional[Dict[
         value = payload.get(key)
         if not _is_empty_value(value):
             out[key] = value
+
+    return out
+
+
+def _extract_sl_tp_levels(levels: Any) -> tuple[Optional[Any], Optional[Any]]:
+    if not isinstance(levels, dict):
+        return None, None
+    return levels.get("sl"), levels.get("tp")
+
+
+def _is_informational_trade_warning(message: str) -> bool:
+    lowered = str(message).strip().lower()
+    if not lowered:
+        return False
+    return any(
+        marker in lowered
+        for marker in (
+            "comment sanitized",
+            "comment truncated",
+            "broker rejected the comment field",
+        )
+    )
+
+
+def _compact_trade_warnings(warnings: Any, *, verbose: bool) -> List[str]:
+    if not isinstance(warnings, list):
+        return []
+    cleaned = _dedupe_text_list(warnings)
+    if verbose:
+        return cleaned
+    actionable = [msg for msg in cleaned if not _is_informational_trade_warning(msg)]
+    if not actionable:
+        return []
+    critical = [
+        msg for msg in actionable
+        if any(
+            marker in msg.lower()
+            for marker in (
+                "critical:",
+                "trade_modify",
+                "close the position",
+                "verify the live position is protected",
+                "auto-close failed",
+                "unprotected",
+                "fallback modification",
+            )
+        )
+    ]
+    if critical:
+        return critical[:1]
+    return actionable[:1]
+
+
+def _maybe_add_trade_key(
+    out: Dict[str, Any],
+    key: str,
+    value: Any,
+    *,
+    skip_zero: bool = False,
+) -> None:
+    if _is_empty_value(value):
+        return
+    if skip_zero:
+        try:
+            if float(value) == 0.0:
+                return
+        except Exception:
+            pass
+    out[key] = value
+
+
+def _compact_trade_row(row: Dict[str, Any], *, verbose: bool) -> Optional[Dict[str, Any]]:
+    out: Dict[str, Any] = {}
+    _maybe_add_trade_key(out, "ticket", row.get("ticket"), skip_zero=True)
+    _maybe_add_trade_key(out, "error", row.get("error"))
+    _maybe_add_trade_key(out, "retcode_name", row.get("retcode_name"))
+    if "retcode_name" not in out:
+        _maybe_add_trade_key(out, "retcode", row.get("retcode"))
+    _maybe_add_trade_key(out, "order", row.get("order"), skip_zero=True)
+    _maybe_add_trade_key(out, "deal", row.get("deal"), skip_zero=True)
+    _maybe_add_trade_key(out, "volume", row.get("volume"))
+    _maybe_add_trade_key(out, "requested_volume", row.get("requested_volume"))
+    _maybe_add_trade_key(out, "price", row.get("close_price"))
+    if "price" not in out:
+        _maybe_add_trade_key(out, "price", row.get("applied_price"))
+    if "price" not in out:
+        _maybe_add_trade_key(out, "price", row.get("price"))
+    _maybe_add_trade_key(out, "pnl", row.get("pnl"))
+    _maybe_add_trade_key(out, "remaining_volume", row.get("position_volume_remaining_estimate"))
+    _maybe_add_trade_key(out, "message", row.get("message"))
+
+    if verbose:
+        diagnostics: Dict[str, Any] = {}
+        for key in ("comment", "attempts", "last_error", "open_price", "pnl_price_delta", "duration_seconds"):
+            value = row.get(key)
+            if not _is_empty_value(value):
+                diagnostics[key] = value
+        if diagnostics:
+            out["diagnostics"] = diagnostics
+    return out or None
+
+
+def _normalize_trade_payload(
+    payload: Dict[str, Any],
+    *,
+    verbose: bool,
+    tool_name: str,
+) -> Optional[Dict[str, Any]]:
+    trade_tools = {"trade_place", "trade_modify", "trade_close"}
+    trade_markers = {
+        "retcode_name",
+        "checked_scopes",
+        "protection_status",
+        "sl_tp_result",
+        "comment_sanitization",
+        "comment_truncation",
+        "comment_fallback",
+        "fill_mode_attempts",
+        "closed_count",
+        "cancelled_count",
+    }
+    if tool_name not in trade_tools and not trade_markers.intersection(payload.keys()):
+        return None
+
+    out: Dict[str, Any] = {}
+    if "error" in payload and not _is_empty_value(payload.get("error")):
+        out["error"] = payload.get("error")
+        _maybe_add_trade_key(out, "checked_scopes", payload.get("checked_scopes"))
+        _maybe_add_trade_key(out, "message", payload.get("message"))
+        warnings_out = _compact_trade_warnings(payload.get("warnings"), verbose=verbose)
+        if warnings_out:
+            out["warnings"] = warnings_out
+        return out
+
+    success_value = payload.get("success")
+    if isinstance(success_value, bool):
+        out["success"] = success_value
+    elif "retcode_name" in payload or "retcode" in payload or "order" in payload or "deal" in payload:
+        out["success"] = True
+
+    if "results" in payload and isinstance(payload.get("results"), list):
+        for key in ("closed_count", "cancelled_count", "attempted_count", "message", "no_action"):
+            _maybe_add_trade_key(out, key, payload.get(key))
+        rows: List[Dict[str, Any]] = []
+        for row in payload.get("results", []):
+            if not isinstance(row, dict):
+                continue
+            compacted = _compact_trade_row(row, verbose=verbose)
+            if compacted:
+                rows.append(compacted)
+        if rows or payload.get("results") == []:
+            out["results"] = rows
+        return out
+
+    _maybe_add_trade_key(out, "retcode_name", payload.get("retcode_name"))
+    if "retcode_name" not in out:
+        _maybe_add_trade_key(out, "retcode", payload.get("retcode"))
+    _maybe_add_trade_key(out, "order", payload.get("order"), skip_zero=True)
+    _maybe_add_trade_key(out, "deal", payload.get("deal"), skip_zero=True)
+    _maybe_add_trade_key(out, "ticket", payload.get("position_ticket"), skip_zero=True)
+    if "ticket" not in out:
+        _maybe_add_trade_key(out, "ticket", payload.get("ticket"), skip_zero=True)
+    _maybe_add_trade_key(out, "volume", payload.get("volume"))
+    _maybe_add_trade_key(out, "price", payload.get("requested_price"))
+    if "price" not in out:
+        _maybe_add_trade_key(out, "price", payload.get("applied_price"))
+    if "price" not in out:
+        _maybe_add_trade_key(out, "price", payload.get("close_price"))
+    if "price" not in out:
+        _maybe_add_trade_key(out, "price", payload.get("price"), skip_zero=True)
+
+    requested_sl = payload.get("requested_sl")
+    requested_tp = payload.get("requested_tp")
+    applied_sl = payload.get("applied_sl")
+    applied_tp = payload.get("applied_tp")
+    protection_error = None
+    sl_tp_result = payload.get("sl_tp_result")
+    if isinstance(sl_tp_result, dict):
+        sl_req, tp_req = _extract_sl_tp_levels(sl_tp_result.get("requested"))
+        sl_applied, tp_applied = _extract_sl_tp_levels(sl_tp_result.get("applied"))
+        requested_sl = requested_sl if requested_sl is not None else sl_req
+        requested_tp = requested_tp if requested_tp is not None else tp_req
+        applied_sl = applied_sl if applied_sl is not None else sl_applied
+        applied_tp = applied_tp if applied_tp is not None else tp_applied
+        if str(sl_tp_result.get("status") or "").strip().lower() == "failed":
+            protection_error = sl_tp_result.get("error")
+    _maybe_add_trade_key(out, "requested_sl", requested_sl)
+    _maybe_add_trade_key(out, "requested_tp", requested_tp)
+    _maybe_add_trade_key(out, "applied_sl", applied_sl)
+    _maybe_add_trade_key(out, "applied_tp", applied_tp)
+    _maybe_add_trade_key(out, "requested_expiration", payload.get("requested_expiration"))
+    _maybe_add_trade_key(out, "applied_expiration", payload.get("applied_expiration"))
+    _maybe_add_trade_key(out, "protection_status", payload.get("protection_status"))
+    _maybe_add_trade_key(out, "protection_error", protection_error)
+    _maybe_add_trade_key(out, "pnl", payload.get("pnl"))
+    _maybe_add_trade_key(out, "remaining_volume", payload.get("position_volume_remaining_estimate"))
+    _maybe_add_trade_key(out, "no_action", payload.get("no_action"))
+    _maybe_add_trade_key(out, "message", payload.get("message"))
+
+    warnings_out = _compact_trade_warnings(payload.get("warnings"), verbose=verbose)
+    if warnings_out:
+        out["warnings"] = warnings_out
+
+    if verbose:
+        diagnostics: Dict[str, Any] = {}
+        for key in (
+            "retcode",
+            "comment",
+            "request_id",
+            "bid",
+            "ask",
+            "type_filling_used",
+            "position_ticket_candidates",
+            "position_ticket_resolution",
+            "ticket_requested",
+            "ticket_resolution",
+            "comment_sanitization",
+            "comment_truncation",
+            "comment_fallback",
+            "fill_mode_attempts",
+            "sl_tp_result",
+            "auto_close_result",
+        ):
+            value = payload.get(key)
+            if not _is_empty_value(value):
+                diagnostics[key] = value
+        if diagnostics:
+            out["diagnostics"] = diagnostics
 
     return out
 
@@ -738,20 +1001,35 @@ def _format_to_toon(
     return f"{ind}{_stringify_for_toon(value, delimiter)}".rstrip()
 
 
-def format_result_minimal(result: Any, verbose: bool = True, *, simplify_numbers: bool = True) -> str:
+def format_result_minimal(
+    result: Any,
+    verbose: bool = True,
+    *,
+    simplify_numbers: bool = True,
+    tool_name: Optional[str] = None,
+) -> str:
     """Render tool outputs as TOON text."""
     if result is None:
         return ""
     try:
         normalized = result
         if isinstance(result, dict):
-            triple_barrier_norm = _normalize_triple_barrier_payload(result)
-            if triple_barrier_norm is not None:
-                normalized = triple_barrier_norm
+            resolved_tool_name = _resolve_tool_name(result, tool_name)
+            trade_norm = _normalize_trade_payload(
+                result,
+                verbose=verbose,
+                tool_name=resolved_tool_name,
+            )
+            if trade_norm is not None:
+                normalized = trade_norm
             else:
-                forecast_norm = _normalize_forecast_payload(result, verbose=verbose)
-                if forecast_norm is not None:
-                    normalized = forecast_norm
+                triple_barrier_norm = _normalize_triple_barrier_payload(result)
+                if triple_barrier_norm is not None:
+                    normalized = triple_barrier_norm
+                else:
+                    forecast_norm = _normalize_forecast_payload(result, verbose=verbose)
+                    if forecast_norm is not None:
+                        normalized = forecast_norm
         if isinstance(normalized, str):
             return normalized.strip()
         toon_text = _format_to_toon(normalized, simplify_numbers=simplify_numbers)

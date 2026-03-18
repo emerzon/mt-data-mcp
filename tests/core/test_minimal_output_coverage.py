@@ -9,6 +9,7 @@ from mtdata.utils.minimal_output import (
     _stringify_cell,
     _compact_forecast_ci,
     _normalize_forecast_payload,
+    _normalize_trade_payload,
     _normalize_triple_barrier_payload,
     format_table_toon,
     _encode_inline_array,
@@ -136,6 +137,19 @@ class TestNormalizeForecastPayload:
         assert "lower" in result["forecast"][0]
         assert "upper" in result["forecast"][0]
 
+    def test_with_short_ci_bounds_fills_missing_cells(self):
+        payload = {
+            "times": ["t1", "t2", "t3"],
+            "forecast_price": [100.0, 101.0, 102.0],
+            "lower_price": [98.0, 99.0, 100.0],
+            "upper_price": [102.0, 103.0],
+        }
+        result = _normalize_forecast_payload(payload)
+        assert result is not None
+        assert result["forecast"][2]["lower"] == 100.0
+        assert "upper" in result["forecast"][2]
+        assert result["forecast"][2]["upper"] is None
+
     def test_with_digits(self):
         payload = {
             "times": ["t1"],
@@ -159,6 +173,23 @@ class TestNormalizeForecastPayload:
         assert result is not None
         assert "q0.1" in result["forecast"][0]
         assert "q0.9" in result["forecast"][0]
+
+    def test_with_short_quantiles_fills_missing_cells(self):
+        payload = {
+            "times": ["t1", "t2", "t3"],
+            "forecast_price": [100.0, 101.0, 102.0],
+            "forecast_quantiles": {
+                "0.1": [95.0, 96.0, 97.0],
+                "0.9": [105.0, 106.0],
+                "bad": "skip-me",
+            },
+        }
+        result = _normalize_forecast_payload(payload)
+        assert result is not None
+        assert result["forecast"][2]["q0.1"] == 97.0
+        assert "q0.9" in result["forecast"][2]
+        assert result["forecast"][2]["q0.9"] is None
+        assert "qbad" not in result["forecast"][0]
 
     def test_no_times_returns_none(self):
         assert _normalize_forecast_payload({"forecast_price": [1.0]}) is None
@@ -346,6 +377,32 @@ class TestNormalizeTripleBarrierPayload:
                 "counts": {"pos": 1, "neg": 0, "neut": 1},
             },
         }
+
+
+class TestNormalizeTradePayload:
+    def test_results_branch_does_not_fallback_to_raw_rows(self):
+        payload = {
+            "success": True,
+            "results": [
+                {
+                    "ticket": 0,
+                    "message": " ",
+                    "internal_only": "secret",
+                }
+            ],
+            "internal_root": "secret",
+        }
+        result = _normalize_trade_payload(payload, verbose=False, tool_name="trade_close")
+        assert result == {"success": True}
+
+    def test_main_trade_path_does_not_fallback_to_raw_payload(self):
+        payload = {
+            "ticket": 0,
+            "message": "",
+            "internal_only": "secret",
+        }
+        result = _normalize_trade_payload(payload, verbose=False, tool_name="trade_close")
+        assert result == {}
 
 
 class TestCompactForecastCi:
@@ -613,6 +670,90 @@ class TestFormatResultMinimal:
         assert not any(line.startswith("entries[") for line in lines)
         assert not any(line.startswith("holding_bars[") for line in lines)
         assert not any(line.startswith("tp_time[") for line in lines)
+
+    def test_trade_place_default_view_hides_comment_diagnostics(self):
+        payload = {
+            "success": True,
+            "retcode": 10009,
+            "retcode_name": "TRADE_RETCODE_DONE",
+            "deal": 0,
+            "order": 4384151941,
+            "volume": 0.01,
+            "price": 0,
+            "bid": 0.8634,
+            "ask": 0.8635,
+            "requested_price": 0.8634,
+            "requested_sl": 0.8652,
+            "requested_tp": 0.8615,
+            "comment": "Request executed",
+            "request_id": 3109214586,
+            "type_filling_used": 1,
+            "comment_sanitization": {
+                "requested": "Auto: Bearish setup, S/T breakdown",
+                "applied": "Auto Bearish setup S T breakdow",
+            },
+            "comment_truncation": {
+                "requested": "Auto: Bearish setup, S/T breakdown",
+                "applied": "Auto Bearish setup S T breakdow",
+                "max_length": 31,
+            },
+            "comment_fallback": {
+                "used": True,
+                "strategy": "minimal",
+            },
+            "fill_mode_attempts": [
+                {"type_filling": 1, "retcode": 10009, "retcode_name": "TRADE_RETCODE_DONE"},
+            ],
+            "warnings": [
+                "Comment sanitized for broker compatibility: 'Auto Bearish setup S T breakdow'",
+                "Comment truncated to 31 characters: 'Auto Bearish setup S T breakdow'",
+                "Broker rejected the comment field; pending order was retried with a minimal MT5-safe comment.",
+            ],
+        }
+        result = format_result_minimal(
+            payload,
+            verbose=False,
+            tool_name="trade_place",
+            simplify_numbers=False,
+        )
+        lines = result.splitlines()
+        assert "success: true" in lines
+        assert "retcode_name: TRADE_RETCODE_DONE" in lines
+        assert "order: 4384151941" in lines
+        assert "price: 0.8634" in lines
+        assert "requested_sl: 0.8652" in lines
+        assert "requested_tp: 0.8615" in lines
+        assert not any("comment_sanitization" in line for line in lines)
+        assert not any("comment_truncation" in line for line in lines)
+        assert not any("comment_fallback" in line for line in lines)
+        assert not any("fill_mode_attempts" in line for line in lines)
+        assert not any("request_id" in line for line in lines)
+        assert not any("type_filling_used" in line for line in lines)
+        assert not any("bid:" in line for line in lines)
+        assert not any("ask:" in line for line in lines)
+        assert not any("warnings" in line for line in lines)
+
+    def test_trade_place_default_view_keeps_only_actionable_warning(self):
+        payload = {
+            "retcode_name": "TRADE_RETCODE_DONE",
+            "order": 123,
+            "position_ticket": 456,
+            "protection_status": "unprotected_position",
+            "sl_tp_result": {
+                "status": "failed",
+                "requested": {"sl": 64000.0, "tp": 68000.0},
+                "error": "Failed to set TP/SL",
+            },
+            "warnings": [
+                "Comment sanitized for broker compatibility: 'AUTO CLOSE'",
+                "CRITICAL: Order executed without applied TP/SL protection. Run trade_modify 456 now, or close the position.",
+                "Broker rejected the comment field; order was retried with a minimal MT5-safe comment.",
+            ],
+        }
+        result = format_result_minimal(payload, verbose=False, tool_name="trade_place")
+        assert "CRITICAL: Order executed without applied TP/SL protection." in result
+        assert "Comment sanitized" not in result
+        assert "Broker rejected the comment field" not in result
 
 
 class TestFormatComplexValue:

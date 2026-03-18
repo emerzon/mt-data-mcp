@@ -1301,6 +1301,8 @@ def forecast_barrier_optimize(
                 # 50/50 tie splitting to match forecast_barrier_hit_probabilities.
                 prob_tp_first = (n_wins + 0.5 * n_ties) / sims_total
                 prob_sl_first = (n_losses + 0.5 * n_ties) / sims_total
+                effective_prob_win = prob_tp_first
+                effective_prob_loss = prob_sl_first
 
                 risk = sl_unit
                 reward = tp_unit
@@ -1312,9 +1314,9 @@ def forecast_barrier_optimize(
                     continue
 
                 # Resolve tie paths by splitting expected outcome 50/50.
-                ev_gross = (prob_win + 0.5 * prob_tie) * reward - (prob_loss + 0.5 * prob_tie) * risk
+                ev_gross = effective_prob_win * reward - effective_prob_loss * risk
                 if has_trading_costs:
-                    ev_val = (prob_win + 0.5 * prob_tie) * (reward - ev_deduct_cost) - (prob_loss + 0.5 * prob_tie) * (risk + ev_deduct_cost)
+                    ev_val = effective_prob_win * (reward - ev_deduct_cost) - effective_prob_loss * (risk + ev_deduct_cost)
                 else:
                     ev_val = ev_gross
                 edge = prob_win - prob_loss
@@ -1325,13 +1327,13 @@ def forecast_barrier_optimize(
 
                 kelly_val = 0.0
                 if rr > 0:
-                    kelly_val = prob_win - (prob_loss / rr)
+                    kelly_val = effective_prob_win - (effective_prob_loss / rr)
 
                 # Conditional metrics (ignore neutral paths)
-                active = prob_win + prob_loss
+                active = effective_prob_win + effective_prob_loss
                 if active > 0:
-                    prob_win_c = prob_win / active
-                    prob_loss_c = prob_loss / active
+                    prob_win_c = effective_prob_win / active
+                    prob_loss_c = effective_prob_loss / active
                     ev_cond = prob_win_c * reward - prob_loss_c * risk
                     kelly_cond = prob_win_c - (prob_loss_c / rr if rr > 0 else 0.0)
                 else:
