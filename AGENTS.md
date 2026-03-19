@@ -6,7 +6,7 @@
 
 ## OVERVIEW
 
-MetaTrader 5 research/automation toolkit exposing 51+ MCP tools for forecasting, regime detection, pattern recognition, signal processing, and trading. Python 3.14 backend (MCP server + CLI + FastAPI web API) with React/Vite frontend. ~88k Python LOC, ~3.4k TypeScript LOC.
+MetaTrader 5 research/automation toolkit exposing 52+ MCP tools for forecasting, regime detection, pattern recognition, signal processing, and trading. Python 3.14 backend (MCP server + CLI + FastAPI web API) with React/Vite frontend. ~88k Python LOC, ~3.4k TypeScript LOC.
 
 ## STRUCTURE
 
@@ -14,7 +14,7 @@ MetaTrader 5 research/automation toolkit exposing 51+ MCP tools for forecasting,
 mtdata/
 ├── src/mtdata/
 │   ├── bootstrap/    # Runtime init, settings, tool registration (4 files)
-│   ├── core/         # 51 MCP tools, CLI, server, web API, all API-facing logic (56 files)
+│   ├── core/         # 52 MCP tools, CLI, server, web API, all API-facing logic (56 files)
 │   ├── forecast/     # Forecasting engines, backtests, methods registry (34 files)
 │   │   └── methods/  # Individual model implementations (12 files)
 │   ├── patterns/     # Chart/candlestick/Elliott wave detection (12 files)

@@ -27,7 +27,7 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 
 | Category | What It Does | Key Tools |
 |----------|--------------|-----------|
-| **Data** | Fetch candles, ticks, market depth from MT5 | `data_fetch_candles`, `data_fetch_ticks`, `market_depth_fetch`, `market_ticker` |
+| **Data** | Fetch candles, ticks, market depth, and ranked market scans from MT5 | `data_fetch_candles`, `data_fetch_ticks`, `market_depth_fetch`, `market_ticker`, `symbols_top_markets` |
 | **Forecasting** | Predict price paths with classical, ML, or foundation models | `forecast_generate`, `forecast_backtest_run` |
 | **Volatility** | Estimate future price movement magnitude | `forecast_volatility_estimate` |
 | **Regimes** | Detect trending, ranging, or crisis market states | `regime_detect` |
@@ -53,6 +53,9 @@ pip install -r requirements.txt
 
 # Verify MT5 connection (lists symbols from the running terminal)
 mtdata-cli symbols_list --limit 5
+
+# Scan the current MT5 watchlist for top markets
+mtdata-cli symbols_top_markets --rank-by all --limit 5 --timeframe H1
 
 # Fetch recent candles
 mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 50
@@ -116,7 +119,7 @@ MT5_TIME_OFFSET_MINUTES=0  # Adjust if broker server time differs from UTC
 ```
 mtdata/
 ├── src/mtdata/
-│   ├── core/           # Tool registry, schemas, server logic, all 51 MCP tools
+│   ├── core/           # Tool registry, schemas, server logic, all 52 MCP tools
 │   ├── forecast/       # Forecasting methods, engines, and method registry
 │   ├── patterns/       # Pattern detection algorithms
 │   ├── services/       # MT5 data access, Finviz, options data

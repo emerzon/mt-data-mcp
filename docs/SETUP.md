@@ -271,7 +271,7 @@ mtdata/
 ├── pyproject.toml      # Package configuration
 ├── .env                # Local configuration (create this)
 ├── src/mtdata/
-│   ├── core/           # Tool registry, server, CLI logic, all 51 MCP tools
+│   ├── core/           # Tool registry, server, CLI logic, all 52 MCP tools
 │   ├── forecast/       # Forecasting methods
 │   ├── patterns/       # Pattern detection
 │   ├── services/       # MT5 data access, Finviz, options data
