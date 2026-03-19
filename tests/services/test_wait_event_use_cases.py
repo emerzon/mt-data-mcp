@@ -98,6 +98,19 @@ class SequenceGateway:
         return seq[idx]
 
 
+class ReplayHistoryGateway(SequenceGateway):
+    def __init__(self, *, replay_deals=None, replay_orders=None, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.replay_deals = list(replay_deals or [])
+        self.replay_orders = list(replay_orders or [])
+
+    def history_orders_get(self, dt_from, dt_to, **kwargs):
+        return list(self.replay_orders)
+
+    def history_deals_get(self, dt_from, dt_to, **kwargs):
+        return list(self.replay_deals)
+
+
 def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     monkeypatch.setattr(
         core_data,
@@ -447,6 +460,68 @@ def test_run_wait_event_matches_position_closed_from_history_out_by() -> None:
     assert result["status"] == "matched"
     assert result["matched_event"]["type"] == "position_closed"
     assert result["matched_event"]["observed"]["position_ticket"] == 9001
+
+
+def test_run_wait_event_ignores_replayed_preexisting_deal_history() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    gateway = ReplayHistoryGateway(
+        positions_seq=[[], [], []],
+        replay_deals=[
+            {
+                "ticket": 3001,
+                "position_id": 9001,
+                "symbol": "BTCUSD",
+                "entry": 3,
+                "type": "sell",
+                "time": int(clock.now_utc().timestamp()),
+            }
+        ],
+    )
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[{"type": "position_closed", "symbol": "BTCUSD"}],
+            poll_interval_seconds=0.1,
+            max_wait_seconds=0.2,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "timeout"
+    assert result["matched_event"] is None
+
+
+def test_run_wait_event_ignores_replayed_preexisting_order_history() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    gateway = ReplayHistoryGateway(
+        replay_orders=[
+            {
+                "ticket": 7001,
+                "symbol": "EURUSD",
+                "state": 4,
+                "type": "buy",
+                "time_setup": int(clock.now_utc().timestamp()),
+            }
+        ],
+    )
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[{"type": "order_cancelled", "symbol": "EURUSD"}],
+            poll_interval_seconds=0.1,
+            max_wait_seconds=0.2,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "timeout"
+    assert result["matched_event"] is None
 
 
 def test_run_wait_event_matches_position_closed_when_position_disappears() -> None:

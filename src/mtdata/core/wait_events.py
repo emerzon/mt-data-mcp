@@ -26,6 +26,7 @@ _MARKET_BOOTSTRAP_MIN_SECONDS = 60.0
 _MARKET_BOOTSTRAP_MAX_SECONDS = 14400.0
 _MARKET_ESTIMATED_SECONDS_PER_TICK = 2.0
 _MARKET_BUFFER_EXTRA_TICKS = 32
+_ACCOUNT_HISTORY_SEED_LOOKBACK_SECONDS = 5.0
 
 
 def run_wait_event_loop(
@@ -59,6 +60,14 @@ def run_wait_event_loop(
             sleep_impl=sleep_impl,
             now_utc=started_at_utc,
         )
+
+    history_state = _build_account_history_state(
+        gateway=gateway,
+        watch_for=watch_for,
+        started_at_utc=started_at_utc,
+    )
+    if isinstance(history_state, dict) and "error" in history_state:
+        return history_state
 
     baseline = _build_baseline(gateway, watch_for) if _watchers_need_current_state(watch_for) else {}
     market_state = _build_market_state(
@@ -100,6 +109,7 @@ def run_wait_event_loop(
             gateway=gateway,
             watch_for=watch_for,
             baseline=baseline,
+            history_state=history_state,
             market_state=market_state,
             started_at_utc=started_at_utc,
             observed_at_utc=observed_at_utc,
@@ -464,6 +474,67 @@ def _watchers_need_current_state(watch_for: List[Dict[str, Any]]) -> bool:
     return any(item["type"] in {"order_created", "position_opened", "position_closed"} for item in watch_for)
 
 
+def _watchers_need_history_deals(watch_for: List[Dict[str, Any]]) -> bool:
+    return any(
+        item["type"] in {"order_filled", "position_opened", "position_closed", "tp_hit", "sl_hit"}
+        for item in watch_for
+    )
+
+
+def _watchers_need_history_orders(watch_for: List[Dict[str, Any]]) -> bool:
+    return any(item["type"] == "order_cancelled" for item in watch_for)
+
+
+def _build_account_history_state(
+    *,
+    gateway: Any,
+    watch_for: List[Dict[str, Any]],
+    started_at_utc: datetime,
+) -> Dict[str, Any]:
+    state: Dict[str, Any] = {}
+    if _watchers_need_history_deals(watch_for):
+        seeded = _seed_account_history_keys(
+            fetch_impl=gateway.history_deals_get,
+            started_at_utc=started_at_utc,
+            row_kind="deal",
+            label="deal history",
+        )
+        if isinstance(seeded, dict) and "error" in seeded:
+            return seeded
+        state["history_deals"] = {"seen_keys": seeded}
+    if _watchers_need_history_orders(watch_for):
+        seeded = _seed_account_history_keys(
+            fetch_impl=gateway.history_orders_get,
+            started_at_utc=started_at_utc,
+            row_kind="order",
+            label="order history",
+        )
+        if isinstance(seeded, dict) and "error" in seeded:
+            return seeded
+        state["history_orders"] = {"seen_keys": seeded}
+    return state
+
+
+def _seed_account_history_keys(
+    *,
+    fetch_impl: Any,
+    started_at_utc: datetime,
+    row_kind: str,
+    label: str,
+) -> set[tuple[Any, ...]] | Dict[str, Any]:
+    seed_from_utc = started_at_utc - timedelta(seconds=_ACCOUNT_HISTORY_SEED_LOOKBACK_SECONDS)
+    try:
+        rows = fetch_impl(seed_from_utc, started_at_utc)
+    except Exception as exc:
+        return {"error": f"Failed to fetch {label}: {exc}"}
+    seen_keys: set[tuple[Any, ...]] = set()
+    for row in _coerce_rows(rows):
+        row_key = _account_history_row_key(row, row_kind=row_kind)
+        if row_key is not None:
+            seen_keys.add(row_key)
+    return seen_keys
+
+
 def _find_preexisting_match(
     *,
     watch_for: List[Dict[str, Any]],
@@ -489,6 +560,7 @@ def _collect_snapshot(
     gateway: Any,
     watch_for: List[Dict[str, Any]],
     baseline: Dict[str, Any],
+    history_state: Dict[str, Any],
     market_state: Dict[str, Any],
     started_at_utc: datetime,
     observed_at_utc: datetime,
@@ -504,16 +576,31 @@ def _collect_snapshot(
     if any(item["type"] in {"position_opened", "position_closed"} for item in watch_for):
         snapshot["positions"] = _coerce_rows(gateway.positions_get())
 
-    if any(
-        item["type"] in {"order_filled", "position_opened", "position_closed", "tp_hit", "sl_hit"}
-        for item in watch_for
-    ):
-        rows = gateway.history_deals_get(started_at_utc, observed_at_utc)
-        snapshot["history_deals"] = _coerce_rows(rows)
+    if _watchers_need_history_deals(watch_for):
+        rows = _collect_new_account_history_rows(
+            fetch_impl=gateway.history_deals_get,
+            started_at_utc=started_at_utc,
+            observed_at_utc=observed_at_utc,
+            state=history_state.setdefault("history_deals", {}),
+            row_kind="deal",
+            label="deal history",
+        )
+        if isinstance(rows, dict) and "error" in rows:
+            return rows
+        snapshot["history_deals"] = rows
 
-    if any(item["type"] == "order_cancelled" for item in watch_for):
-        rows = gateway.history_orders_get(started_at_utc, observed_at_utc)
-        snapshot["history_orders"] = _coerce_rows(rows)
+    if _watchers_need_history_orders(watch_for):
+        rows = _collect_new_account_history_rows(
+            fetch_impl=gateway.history_orders_get,
+            started_at_utc=started_at_utc,
+            observed_at_utc=observed_at_utc,
+            state=history_state.setdefault("history_orders", {}),
+            row_kind="order",
+            label="order history",
+        )
+        if isinstance(rows, dict) and "error" in rows:
+            return rows
+        snapshot["history_orders"] = rows
 
     market_specs = [
         item for item in watch_for if item["type"] in {"price_change", "volume_spike"}
@@ -534,6 +621,38 @@ def _collect_snapshot(
         snapshot["market_data"] = market_data
 
     return snapshot
+
+
+def _collect_new_account_history_rows(
+    *,
+    fetch_impl: Any,
+    started_at_utc: datetime,
+    observed_at_utc: datetime,
+    state: Dict[str, Any],
+    row_kind: str,
+    label: str,
+) -> List[Any] | Dict[str, Any]:
+    try:
+        rows = _coerce_rows(fetch_impl(started_at_utc, observed_at_utc))
+    except Exception as exc:
+        return {"error": f"Failed to fetch {label}: {exc}"}
+
+    seen_keys = state.setdefault("seen_keys", set())
+    started_at_millis = _datetime_epoch_millis(started_at_utc)
+    fresh_rows: List[Any] = []
+    for row in rows:
+        row_key = _account_history_row_key(row, row_kind=row_kind)
+        if row_key is not None and row_key in seen_keys:
+            continue
+        row_time_millis = _row_event_time_millis(row)
+        if row_time_millis is not None and row_time_millis < started_at_millis:
+            if row_key is not None:
+                seen_keys.add(row_key)
+            continue
+        if row_key is not None:
+            seen_keys.add(row_key)
+        fresh_rows.append(row)
+    return fresh_rows
 
 
 def _build_market_state(
@@ -1653,6 +1772,57 @@ def _first_int(*values: Optional[int]) -> Optional[int]:
         if value is not None:
             return int(value)
     return None
+
+
+def _datetime_epoch_millis(value: datetime) -> int:
+    return int(round(_normalize_utc_datetime(value).timestamp() * 1000.0))
+
+
+def _row_event_time_millis(row: Any) -> Optional[int]:
+    for key in ("time_msc", "time_done_msc", "time_setup_msc", "time_update_msc"):
+        value = _row_int(row, key)
+        if value is not None:
+            return int(value)
+    for key in ("time", "time_done", "time_setup", "time_update"):
+        value = _row_value(row, key)
+        if value is None:
+            continue
+        dt = _normalize_optional_utc_datetime(value)
+        if dt is not None:
+            return _datetime_epoch_millis(dt)
+    return None
+
+
+def _account_history_row_key(row: Any, *, row_kind: str) -> Optional[tuple[Any, ...]]:
+    ticket = _row_int(row, "ticket")
+    order_ticket = _first_int(
+        _row_int(row, "order"),
+        _row_int(row, "order_ticket"),
+    )
+    position_ticket = _first_int(
+        _row_int(row, "position_id"),
+        _row_int(row, "position"),
+        _row_int(row, "position_by_id"),
+    )
+    time_millis = _row_event_time_millis(row)
+    symbol = str(_row_value(row, "symbol") or "").upper().strip() or None
+    entry = _row_value(row, "entry")
+    state = _row_value(row, "state")
+    side = _row_value(row, "type")
+    key = (
+        str(row_kind),
+        ticket,
+        order_ticket,
+        position_ticket,
+        time_millis,
+        symbol,
+        None if entry is None else str(entry),
+        None if state is None else str(state),
+        None if side is None else str(side),
+    )
+    if not any(value is not None for value in key[1:]):
+        return None
+    return key
 
 
 def _row_time_iso(row: Any) -> Optional[str]:
