@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 import math
@@ -422,7 +423,12 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
                         if s:
                             return s
                 simplify_numbers = not str(fname).startswith("trade_")
-                return _fmt_min(out, simplify_numbers=simplify_numbers)
+                return _fmt_min(
+                    out,
+                    verbose=False,
+                    simplify_numbers=simplify_numbers,
+                    tool_name=fname,
+                )
             except Exception:
                 return str(out) if out is not None else ""
 
@@ -439,7 +445,21 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
         except Exception:
             pass
 
-        res = dec(_wrapped)
+        # Register an async wrapper with FastMCP so sync tool execution does not
+        # block the event loop while the underlying work runs in a worker thread.
+        @_wraps(func)
+        async def _async_wrapped(*a, **kw):
+            return await asyncio.to_thread(_wrapped, *a, **kw)
+
+        try:
+            _async_wrapped.__annotations__ = getattr(_wrapped, "__annotations__", {})
+            _sig = getattr(_wrapped, "__signature__", None)
+            if _sig is not None:
+                _async_wrapped.__signature__ = _sig
+        except Exception:
+            pass
+
+        res = dec(_async_wrapped)
         name = getattr(func, "__name__", None)
         if name:
             _TOOL_REGISTRY[str(name)] = _wrapped

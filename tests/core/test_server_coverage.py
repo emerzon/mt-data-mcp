@@ -663,6 +663,7 @@ class TestRecordingToolDecorator:
 
     def test_wrapped_function_adds_error_metadata(self):
         import mtdata.core.server as srv
+        from mtdata.core._mcp_tools import _TOOL_REGISTRY
 
         original = srv._ORIG_TOOL_DECORATOR
         try:
@@ -672,7 +673,8 @@ class TestRecordingToolDecorator:
             def boom():
                 raise RuntimeError("boom")
 
-            wrapped = dec(boom)
+            dec(boom)
+            wrapped = _TOOL_REGISTRY["boom"]
             result = wrapped(__cli_raw=True)
 
             assert result["error"] == "boom"
@@ -684,9 +686,51 @@ class TestRecordingToolDecorator:
         finally:
             srv._ORIG_TOOL_DECORATOR = original
 
+    def test_wrapped_function_uses_compact_default_text_view(self):
+        import mtdata.core.server as srv
+        from mtdata.core._mcp_tools import _TOOL_REGISTRY
+
+        original = srv._ORIG_TOOL_DECORATOR
+        try:
+            srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = srv._recording_tool_decorator()
+
+            def trade_place():
+                return {
+                    "success": True,
+                    "retcode_name": "TRADE_RETCODE_DONE",
+                    "order": 4384151941,
+                    "requested_price": 0.8634,
+                    "comment_sanitization": {"requested": "x", "applied": "x"},
+                    "fill_mode_attempts": [
+                        {
+                            "type_filling": 1,
+                            "retcode_name": "TRADE_RETCODE_DONE",
+                        }
+                    ],
+                    "warnings": [
+                        "Comment sanitized for broker compatibility: 'x'",
+                        "Broker rejected the comment field; pending order was retried with a minimal MT5-safe comment.",
+                    ],
+                }
+
+            dec(trade_place)
+            wrapped = _TOOL_REGISTRY["trade_place"]
+            result = wrapped()
+
+            assert "retcode_name: TRADE_RETCODE_DONE" in result
+            assert "order: 4384151941" in result
+            assert "price: 0.8634" in result
+            assert "comment_sanitization" not in result
+            assert "fill_mode_attempts" not in result
+            assert "warnings" not in result
+        finally:
+            srv._ORIG_TOOL_DECORATOR = original
+
     def test_flattens_request_model_signature_for_mcp_and_keeps_nested_request_compat(self):
         import mtdata.core.server as srv
         from mtdata.core.data_requests import WaitEventRequest
+        from mtdata.core._mcp_tools import _TOOL_REGISTRY
 
         original = srv._ORIG_TOOL_DECORATOR
         calls = []
@@ -702,7 +746,8 @@ class TestRecordingToolDecorator:
                     "poll_interval_seconds": request.poll_interval_seconds,
                 }
 
-            wrapped = dec(sample_tool)
+            dec(sample_tool)
+            wrapped = _TOOL_REGISTRY["sample_tool"]
             sig = inspect.signature(wrapped)
 
             assert "request" not in sig.parameters

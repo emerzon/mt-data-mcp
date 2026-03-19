@@ -108,7 +108,12 @@ def _format_result_for_cli(result: Any, *, fmt: str, verbose: bool, cmd_name: st
         return result
     simplify_numbers = not str(cmd_name or "").startswith("trade_")
     try:
-        return _shared_minimal(result, verbose=verbose, simplify_numbers=simplify_numbers)
+        return _shared_minimal(
+            result,
+            verbose=verbose,
+            simplify_numbers=simplify_numbers,
+            tool_name=cmd_name,
+        )
     except TypeError:
         return _format_result_minimal(result, verbose=verbose)
 
