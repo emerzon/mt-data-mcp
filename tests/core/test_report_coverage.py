@@ -453,6 +453,12 @@ class TestReportSummaryContext:
         res = self._run_report(sec)
         assert any("mixed" in s for s in res.get("summary", []))
 
+    def test_trend_skipped_when_close_missing(self):
+        sec = _make_full_sections()
+        sec["context"]["last_snapshot"]["close"] = None
+        res = self._run_report(sec)
+        assert not any("trend:" in s for s in res.get("summary", []))
+
     def test_rsi_in_summary(self):
         sec = _make_full_sections()
         res = self._run_report(sec)

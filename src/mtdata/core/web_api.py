@@ -287,6 +287,11 @@ def health() -> Dict[str, Any]:
     return {"service": "mtdata-webui", "status": "ok"}
 
 
+@app.get("/health")
+def health_root() -> Dict[str, Any]:
+    return health()
+
+
 @app.get("/")
 def root() -> Dict[str, Any]:
     return health()

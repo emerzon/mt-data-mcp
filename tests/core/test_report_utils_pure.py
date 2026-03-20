@@ -6,6 +6,7 @@ Every test is deterministic – no MT5, no network, no side effects.
 import math
 import re
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 import pytest
 
@@ -42,6 +43,7 @@ from mtdata.core.report_utils import (
     attach_multi_timeframes,
     apply_market_gates,
     format_number,
+    market_snapshot,
     merge_params,
     now_utc_iso,
     parse_table_tail,
@@ -496,6 +498,23 @@ class TestApplyMarketGates:
     def test_no_spread_data(self):
         result = apply_market_gates({}, {"spread_max_ticks": 5.0})
         assert result == {}
+
+
+class TestMarketSnapshot:
+    @patch("mtdata.core.report_utils._get_pip_size", return_value=0.00001)
+    def test_spread_pips_uses_true_pip_units(self, mock_pip):
+        with patch(
+            "mtdata.core.market_depth.market_depth_fetch",
+            new=lambda *args, **kwargs: {
+                "success": True,
+                "type": "tick_data",
+                "data": {"bid": 1.23450, "ask": 1.23465},
+            },
+        ):
+            snap = market_snapshot("EURUSD")
+
+        assert snap["spread_ticks"] == pytest.approx(15.0)
+        assert snap["spread_pips"] == pytest.approx(1.5)
 
 
 # ---------------------------------------------------------------------------
@@ -1097,6 +1116,21 @@ class TestRenderPivotMultiSection:
         data = {"H1": {"levels": []}}
         lines = _render_pivot_multi_section(data)
         assert lines == ["## Multi-Timeframe Pivots"]
+
+    def test_renders_all_configured_methods(self):
+        data = {
+            "H4": {
+                "methods": [{"method": "classic"}, {"method": "fibonacci"}],
+                "levels": [{"level": "R1", "classic": 1.25, "fibonacci": 1.30}],
+            },
+        }
+
+        lines = _render_pivot_multi_section(data)
+        text = "\n".join(lines)
+
+        assert "Classic" in text
+        assert "Fibonacci" in text
+        assert "1.3" in text
 
 
 # ---------------------------------------------------------------------------

@@ -19,10 +19,7 @@ from .report_shared import (
 
 
 def now_utc_iso() -> str:
-    try:
-        return datetime.now(timezone.utc).strftime(TIME_DISPLAY_FORMAT)
-    except Exception:
-        return datetime.now(timezone.utc).strftime(TIME_DISPLAY_FORMAT)
+    return datetime.now(timezone.utc).strftime(TIME_DISPLAY_FORMAT)
 
 
 def parse_table_tail(data: Any, tail: int = 1) -> List[Dict[str, Any]]:
@@ -279,19 +276,40 @@ def market_snapshot(symbol: str, timezone: str = 'UTC') -> Dict[str, Any]:
                 except Exception:
                     total_sell_vol = None
         tick_size = _get_pip_size(symbol)
+        pip_size = None
+        if tick_size is not None:
+            try:
+                tick_size = float(tick_size)
+            except Exception:
+                tick_size = None
+        if tick_size is not None and tick_size > 0:
+            pip_size = tick_size
+            if math.isclose(tick_size, 0.00001, rel_tol=0.0, abs_tol=1e-12) or math.isclose(
+                tick_size,
+                0.001,
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            ):
+                pip_size = tick_size * 10.0
         spread_ticks = None
         if tick_size and spread is not None:
             try:
                 spread_ticks = float(spread) / float(tick_size) if tick_size > 0 else None
             except Exception:
                 spread_ticks = None
+        spread_pips = None
+        if pip_size and spread is not None:
+            try:
+                spread_pips = float(spread) / float(pip_size) if pip_size > 0 else None
+            except Exception:
+                spread_pips = None
         return {
             'bid': bid,
             'ask': ask,
             'spread': spread,
             'tick_size': tick_size,
             'spread_ticks': spread_ticks,
-            'spread_pips': spread_ticks,
+            'spread_pips': spread_pips,
             'dom_top_buy_vol': top_buy_vol,
             'dom_top_sell_vol': top_sell_vol,
             'dom_total_buy_vol': total_buy_vol,

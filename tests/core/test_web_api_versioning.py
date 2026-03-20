@@ -27,6 +27,13 @@ def test_health_available_on_versioned_route() -> None:
     assert response.json() == {"service": "mtdata-webui", "status": "ok"}
 
 
+def test_health_available_on_root_route() -> None:
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"service": "mtdata-webui", "status": "ok"}
+
+
 def test_history_available_on_versioned_route() -> None:
     payload = {
         "success": True,

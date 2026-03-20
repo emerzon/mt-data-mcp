@@ -371,15 +371,15 @@ class TestSymbolsDescribe:
         assert "description" not in res["symbol"]
 
     @patch(f"{_MT5}.symbol_info")
-    def test_skip_zero_numeric(self, mock_info):
+    def test_keeps_zero_numeric(self, mock_info):
         info = MagicMock()
         info.__dir__ = lambda self: ["name", "trade_mode"]
         info.name = "X"
-        info.trade_mode = 0  # skipped
+        info.trade_mode = 0
         mock_info.return_value = info
         fn = _get_symbols_describe()
         res = fn("X")
-        assert "trade_mode" not in res["symbol"]
+        assert res["symbol"]["trade_mode"] == 0
 
     @patch(f"{_MT5}.symbol_info")
     def test_decodes_enum_fields_with_labels(self, mock_info):

@@ -313,19 +313,38 @@ def _render_pivot_multi_section(data: Any) -> List[str]:
         levels = piv.get("levels")
         if not isinstance(levels, list) or not levels:
             continue
+        methods = []
+        method_meta = piv.get("methods")
+        if isinstance(method_meta, list):
+            for item in method_meta:
+                if isinstance(item, dict):
+                    name = item.get("method")
+                    if name and name not in methods:
+                        methods.append(str(name))
+        if not methods:
+            for row in levels:
+                if isinstance(row, dict):
+                    for key in row.keys():
+                        if key != "level" and key not in methods:
+                            methods.append(key)
+        if not methods:
+            continue
         rows: List[List[str]] = []
         for row in levels:
             if not isinstance(row, dict):
                 continue
             level = str(row.get("level") or "").upper()
-            piv_val = row.get("classic") or row.get("Classic") or None
-            rows.append([level, format_number(piv_val)])
+            row_vals = [level or "n/a"]
+            for method in methods:
+                value = row.get(method)
+                row_vals.append(format_number(value) if value is not None else None)
+            rows.append(row_vals)
         if rows:
             lines.append(f"### {tf}")
             context_line = _build_pivot_context_line(piv)
             if context_line:
                 lines.append(context_line)
-            lines.extend(_format_table(["Level", "Classic"], rows, name="levels"))
+            lines.extend(_format_table(["Level"] + [m.title() for m in methods], rows, name="levels"))
             lines.append("")
     return [line for line in lines if line != ""]
 

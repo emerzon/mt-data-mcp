@@ -217,8 +217,6 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
                     continue
                 if isinstance(value, str) and value == "":
                     continue
-                if isinstance(value, (int, float)) and value == 0:
-                    continue
                 if attr == "time":
                     try:
                         epoch = float(value)

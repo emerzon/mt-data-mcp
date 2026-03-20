@@ -167,7 +167,7 @@ def run_report_generate(
                 rsi = get_indicator_value(last, "RSI_14")
                 if price is not None:
                     summ.append(f"close={format_number(price)}")
-                if ema20 is not None and ema50 is not None:
+                if price is not None and ema20 is not None and ema50 is not None:
                     trend_note = (
                         "trend: above EMAs"
                         if float(price or 0) > float(ema20) > float(ema50)
