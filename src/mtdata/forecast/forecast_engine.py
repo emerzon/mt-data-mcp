@@ -536,6 +536,9 @@ def _format_forecast_output(
     """Format forecast output with proper structure."""
     # Generate future time indices
     future_epochs = next_times_from_last(last_epoch, tf_secs, horizon)
+    fmt_time = _format_time_minimal_local if _use_client_tz() else _format_time_minimal
+    forecast_times = [fmt_time(float(epoch)) for epoch in future_epochs]
+    last_observation_time = fmt_time(float(last_epoch))
 
     # Build base result
     forecast_start_epoch = float(future_epochs[0]) if future_epochs else None
@@ -550,11 +553,14 @@ def _format_forecast_output(
         "horizon": horizon,
         "base_col": base_col,
         "last_observation_epoch": float(last_epoch),
+        "last_observation_time": last_observation_time,
         "forecast_start_epoch": forecast_start_epoch,
+        "forecast_start_time": forecast_times[0] if forecast_times else None,
         "forecast_start_gap_bars": forecast_start_gap_bars,
         "forecast_anchor": "next_timeframe_bar_after_last_observation",
         "forecast_step_seconds": int(tf_secs),
         "forecast_epoch": future_epochs,
+        "forecast_time": forecast_times,
     }
 
     # Choose which arrays to expose

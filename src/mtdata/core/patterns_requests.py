@@ -13,7 +13,7 @@ class PatternsDetectRequest(BaseModel):
     mode: str = "candlestick"
     detail: str = "compact"
     limit: int = 1000
-    min_strength: float = 0.95
+    min_strength: float = 0.90
     min_gap: int = 3
     robust_only: bool = True
     whitelist: Optional[str] = None

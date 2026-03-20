@@ -26,6 +26,8 @@ from .trading_requests import (
 )
 
 logger = logging.getLogger(__name__)
+_DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS = 7
+_TRADE_HISTORY_RANGE_HINT = "Try narrowing the range with --minutes-back, --days, --start, or --end."
 
 
 def _sl_tp_result_details(result: Dict[str, Any]) -> tuple[bool, str, bool]:
@@ -628,6 +630,7 @@ def run_trade_history(
             use_client_tz_value = use_client_tz()
             fmt_time = format_time_minimal_local if use_client_tz_value else format_time_minimal
             trigger_pattern = re.compile(r"\[(sl|tp)\s+([+-]?\d+(?:\.\d+)?)\]", re.IGNORECASE)
+            default_window_label: Optional[str] = None
 
             def _normalize_time_col(df: "pd.DataFrame", col: str) -> Optional["pd.Series"]:
                 if col not in df.columns:
@@ -676,7 +679,8 @@ def run_trade_history(
                 if not from_dt:
                     return {"error": "Invalid start time."}
             else:
-                from_dt = datetime(1970, 1, 1)
+                from_dt = to_dt - timedelta(days=_DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS)
+                default_window_label = f"the last {_DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS} days"
 
             if from_dt > to_dt:
                 return {"error": "start must be before end."}
@@ -768,14 +772,33 @@ def run_trade_history(
                         return False
                 return True
 
+            def _history_fetch_error(kind_label: str, exc: Exception) -> Dict[str, str]:
+                detail = str(exc).strip()
+                if "exception set" in detail.lower():
+                    return {"error": f"Failed to fetch {kind_label} history from MT5. {_TRADE_HISTORY_RANGE_HINT}"}
+                if detail:
+                    return {"error": f"Failed to fetch {kind_label} history from MT5: {detail}"}
+                return {"error": f"Failed to fetch {kind_label} history from MT5."}
+
+            def _empty_history_message(kind_label: str) -> Dict[str, str]:
+                message = f"No {kind_label} found"
+                if request.symbol:
+                    message += f" for {request.symbol}"
+                if default_window_label:
+                    message += f" in {default_window_label}"
+                return {"message": message}
+
             if kind == "deals":
-                rows = (
-                    gateway.history_deals_get(from_dt, to_dt, symbol=request.symbol)
-                    if request.symbol
-                    else gateway.history_deals_get(from_dt, to_dt)
-                )
+                try:
+                    rows = (
+                        gateway.history_deals_get(from_dt, to_dt, symbol=request.symbol)
+                        if request.symbol
+                        else gateway.history_deals_get(from_dt, to_dt)
+                    )
+                except Exception as exc:
+                    return _history_fetch_error("deal", exc)
                 if rows is None or len(rows) == 0:
-                    return {"message": "No deals found"}
+                    return _empty_history_message("deals")
                 df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
                 if request.symbol and "symbol" in df.columns:
                     df = df.loc[
@@ -789,13 +812,7 @@ def run_trade_history(
                     columns=("position_id", "position_by_id"),
                 )
                 if len(df) == 0:
-                    return {
-                        "message": (
-                            f"No deals found for {request.symbol}"
-                            if request.symbol
-                            else "No deals found"
-                        )
-                    }
+                    return _empty_history_message("deals")
                 sort_src = _normalize_time_col(df, "time")
                 _decode_enum_column(df, "type", "DEAL_TYPE_")
                 _decode_enum_column(df, "entry", "DEAL_ENTRY_")
@@ -822,13 +839,16 @@ def run_trade_history(
                     if noise_col in df.columns and _is_non_informative_series(df[noise_col]):
                         df = df.drop(columns=[noise_col])
             else:
-                rows = (
-                    gateway.history_orders_get(from_dt, to_dt, symbol=request.symbol)
-                    if request.symbol
-                    else gateway.history_orders_get(from_dt, to_dt)
-                )
+                try:
+                    rows = (
+                        gateway.history_orders_get(from_dt, to_dt, symbol=request.symbol)
+                        if request.symbol
+                        else gateway.history_orders_get(from_dt, to_dt)
+                    )
+                except Exception as exc:
+                    return _history_fetch_error("order", exc)
                 if rows is None or len(rows) == 0:
-                    return {"message": "No orders found"}
+                    return _empty_history_message("orders")
                 df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
                 if request.symbol and "symbol" in df.columns:
                     df = df.loc[
@@ -841,13 +861,7 @@ def run_trade_history(
                     columns=("position_id", "position_by_id"),
                 )
                 if len(df) == 0:
-                    return {
-                        "message": (
-                            f"No orders found for {request.symbol}"
-                            if request.symbol
-                            else "No orders found"
-                        )
-                    }
+                    return _empty_history_message("orders")
                 sort_src = _normalize_time_col(df, "time_setup")
                 if sort_src is None:
                     sort_src = _normalize_time_col(df, "time")

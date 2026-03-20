@@ -150,6 +150,33 @@ def _build_indicator_documentation(target: Dict[str, Any]) -> Dict[str, Any]:
         "sources": sources,
     }
 
+
+def _indicator_search_rank(item: Dict[str, Any], query: str) -> tuple[int, str] | None:
+    q = str(query or "").strip().lower()
+    if not q:
+        return None
+
+    name = str(item.get("name") or "").strip().lower()
+    aliases = [
+        str(alias).strip().lower()
+        for alias in (item.get("aliases") or [])
+        if str(alias).strip()
+    ]
+
+    if name == q:
+        return (0, name)
+    if q in aliases:
+        return (1, name)
+    if name.startswith(q):
+        return (2, name)
+    if any(alias.startswith(q) for alias in aliases):
+        return (3, name)
+    if q in name:
+        return (4, name)
+    if any(q in alias for alias in aliases):
+        return (5, name)
+    return None
+
 @mcp.tool()
 def indicators_list(
     search_term: Optional[str] = None,
@@ -168,21 +195,21 @@ def indicators_list(
                 detail_mode = "compact"
             detailed = detail_mode == "full"
             items = _list_ta_indicators(detailed=detailed)
+            search_active = False
             if search_term:
                 q = search_term.strip().lower()
-                filtered = []
+                ranked = []
                 for it in items:
-                    name = it.get('name', '').lower()
-                    desc = (it.get('description') or '').lower()
-                    cat = (it.get('category') or '').lower()
-                    aliases = [str(alias).strip().lower() for alias in (it.get("aliases") or []) if str(alias).strip()]
-                    if q in name or q in desc or q in cat or any(q in alias for alias in aliases):
-                        filtered.append(it)
-                items = filtered
+                    rank = _indicator_search_rank(it, q)
+                    if rank is not None:
+                        ranked.append((rank, it))
+                items = [it for _rank, it in sorted(ranked, key=lambda pair: pair[0])]
+                search_active = True
             if category:
                 cat_q = category.strip().lower()
                 items = [it for it in items if (it.get('category') or '').lower() == cat_q]
-            items.sort(key=lambda x: (x.get('category') or '', x.get('name') or ''))
+            if not search_active:
+                items.sort(key=lambda x: (x.get('category') or '', x.get('name') or ''))
             total_matches = len(items)
             limit_value = None
             try:

@@ -7,9 +7,9 @@ from mtdata.core.market_depth import market_depth_fetch, market_ticker
 from mtdata.utils.mt5 import MT5ConnectionError
 
 
-def _raw_market_depth_fetch(symbol: str, spread: bool = False):
+def _raw_market_depth_fetch(symbol: str, spread: bool = False, compact: bool = False):
     # Bypass @mcp.tool wrapper.
-    return market_depth_fetch.__wrapped__(symbol, spread=spread)
+    return market_depth_fetch.__wrapped__(symbol, spread=spread, compact=compact)
 
 
 def _raw_market_ticker(symbol: str):
@@ -118,6 +118,26 @@ def test_market_depth_tick_fallback_includes_spread_metrics_when_requested() -> 
     assert abs(out["data"]["spread_pct"] - (100.0 / 100.5)) < 1e-12
     assert out["data"]["spread_usd"] == 100.0
     assert out["capabilities"]["spread_overlay_applied"] is True
+
+
+def test_market_depth_compact_mode_fails_fast_without_dom() -> None:
+    tick = SimpleNamespace(
+        bid=100.0,
+        ask=101.0,
+        last=100.5,
+        volume=5,
+        time=1700000000,
+    )
+    with patch("mtdata.core.market_depth.mt5") as mt5:
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(digits=2, point=0.01)
+        mt5.market_book_get.return_value = []
+        mt5.symbol_info_tick.return_value = tick
+
+        out = _raw_market_depth_fetch("BTCUSD", compact=True)
+
+    assert out["error"] == "DOM not available for BTCUSD. Use market_ticker for bid/ask snapshot instead."
+    assert out["recommended_alternative"] == "market_ticker"
 
 
 def test_market_depth_full_depth_includes_spread_metrics_when_requested() -> None:

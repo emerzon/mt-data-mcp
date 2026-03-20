@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -8,6 +9,7 @@ import pandas as pd
 from mtdata.forecast.interface import ForecastResult
 from mtdata.forecast import forecast_engine as fe
 from mtdata.forecast import forecast_preprocessing as fp
+from mtdata.utils.utils import _format_time_minimal
 
 
 def _df(n: int = 20) -> pd.DataFrame:
@@ -72,26 +74,32 @@ def test_preprocessing_helpers_and_output_format():
     forecast_values = np.array([0.01, 0.02, -0.01], dtype=float)
     reconstructed = np.array([101.0, 103.0, 102.0], dtype=float)
     ci = np.array([[0.0, 0.01, -0.02], [0.02, 0.03, 0.00]], dtype=float)
-    res = fe._format_forecast_output(
-        forecast_values=forecast_values,
-        last_epoch=float(df["time"].iloc[-1]),
-        tf_secs=3600,
-        horizon=3,
-        base_col="close",
-        df=df,
-        ci_alpha=0.1,
-        ci_values=ci,
-        method="naive",
-        quantity="return",
-        denoise_used=False,
-        metadata={"meta": 1},
-        digits=5,
-        forecast_return_values=forecast_values,
-        reconstructed_prices=reconstructed,
-    )
+    with patch("mtdata.forecast.forecast_engine._use_client_tz", return_value=False):
+        res = fe._format_forecast_output(
+            forecast_values=forecast_values,
+            last_epoch=float(df["time"].iloc[-1]),
+            tf_secs=3600,
+            horizon=3,
+            base_col="close",
+            df=df,
+            ci_alpha=0.1,
+            ci_values=ci,
+            method="naive",
+            quantity="return",
+            denoise_used=False,
+            metadata={"meta": 1},
+            digits=5,
+            forecast_return_values=forecast_values,
+            reconstructed_prices=reconstructed,
+        )
     assert res["success"] is True
     assert res["forecast_return"] == [0.01, 0.02, -0.01]
     assert res["forecast_price"] == [101.0, 103.0, 102.0]
+    assert res["forecast_time"] == [
+        _format_time_minimal(float(df["time"].iloc[-1]) + 3600.0),
+        _format_time_minimal(float(df["time"].iloc[-1]) + 7200.0),
+        _format_time_minimal(float(df["time"].iloc[-1]) + 10800.0),
+    ]
     assert "forecast" not in res
     assert res["ci_alpha"] == 0.1
     assert res["ci_status"] == "available"
@@ -106,19 +114,20 @@ def test_preprocessing_helpers_and_output_format():
     assert res["digits"] == 5
     assert res["meta"] == 1
 
-    no_ci = fe._format_forecast_output(
-        forecast_values=np.array([101.0, 102.0], dtype=float),
-        last_epoch=float(df["time"].iloc[-1]),
-        tf_secs=3600,
-        horizon=2,
-        base_col="close",
-        df=df,
-        ci_alpha=0.05,
-        ci_values=None,
-        method="theta",
-        quantity="price",
-        denoise_used=False,
-    )
+    with patch("mtdata.forecast.forecast_engine._use_client_tz", return_value=False):
+        no_ci = fe._format_forecast_output(
+            forecast_values=np.array([101.0, 102.0], dtype=float),
+            last_epoch=float(df["time"].iloc[-1]),
+            tf_secs=3600,
+            horizon=2,
+            base_col="close",
+            df=df,
+            ci_alpha=0.05,
+            ci_values=None,
+            method="theta",
+            quantity="price",
+            denoise_used=False,
+        )
     assert no_ci["ci_status"] == "unavailable"
     assert no_ci["ci_alpha"] == 0.05
     assert "ci_unavailable" not in no_ci

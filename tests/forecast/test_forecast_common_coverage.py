@@ -31,6 +31,7 @@ from mtdata.forecast.backtest import (
     _bars_per_year,
     _compute_performance_metrics,
 )
+from mtdata.utils.utils import _format_time_minimal
 from mtdata.forecast.forecast_preprocessing import (
     _prepare_base_data,
     _process_include_specification,
@@ -482,18 +483,23 @@ class TestFormatForecastOutput:
 
     def test_basic_price_output(self):
         vals = np.array([101.0, 102.0, 103.0])
-        result = _format_forecast_output(
-            forecast_values=vals, last_epoch=1000.0, tf_secs=3600,
-            horizon=3, base_col="close", df=self._make_df(),
-            ci_alpha=None, ci_values=None, method="theta",
-            quantity="price", denoise_used=False,
-        )
+        with patch("mtdata.forecast.forecast_engine._use_client_tz", return_value=False):
+            result = _format_forecast_output(
+                forecast_values=vals, last_epoch=1000.0, tf_secs=3600,
+                horizon=3, base_col="close", df=self._make_df(),
+                ci_alpha=None, ci_values=None, method="theta",
+                quantity="price", denoise_used=False,
+            )
         assert result["success"] is True
         assert result["method"] == "theta"
         assert result["horizon"] == 3
         assert len(result["forecast_price"]) == 3
         assert len(result["forecast_epoch"]) == 3
-        assert "forecast_time" not in result
+        assert result["forecast_time"] == [
+            _format_time_minimal(4600.0),
+            _format_time_minimal(8200.0),
+            _format_time_minimal(11800.0),
+        ]
         assert "last_epoch" not in result
 
     def test_return_quantity(self):
@@ -569,14 +575,17 @@ class TestFormatForecastOutput:
 
     def test_forecast_time_anchor_metadata_is_explicit(self):
         vals = np.array([1.0, 2.0])
-        result = _format_forecast_output(
-            forecast_values=vals, last_epoch=1000.0, tf_secs=300,
-            horizon=2, base_col="close", df=self._make_df(),
-            ci_alpha=None, ci_values=None, method="naive",
-            quantity="price", denoise_used=False,
-        )
+        with patch("mtdata.forecast.forecast_engine._use_client_tz", return_value=False):
+            result = _format_forecast_output(
+                forecast_values=vals, last_epoch=1000.0, tf_secs=300,
+                horizon=2, base_col="close", df=self._make_df(),
+                ci_alpha=None, ci_values=None, method="naive",
+                quantity="price", denoise_used=False,
+            )
         assert result["last_observation_epoch"] == 1000.0
         assert result["forecast_start_epoch"] == 1300.0
+        assert result["last_observation_time"] == _format_time_minimal(1000.0)
+        assert result["forecast_start_time"] == _format_time_minimal(1300.0)
         assert result["forecast_start_gap_bars"] == 1.0
         assert result["forecast_step_seconds"] == 300
         assert result["forecast_anchor"] == "next_timeframe_bar_after_last_observation"

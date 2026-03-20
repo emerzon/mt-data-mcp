@@ -5,6 +5,8 @@ import inspect
 import threading
 from typing import Any
 
+from pydantic import BaseModel
+
 
 def unwrap_tool_callable(func: Any) -> Any:
     raw = getattr(func, "__wrapped__", None)
@@ -37,14 +39,54 @@ def resolve_sync_tool_result(result: Any) -> Any:
     return state.get("result")
 
 
+def _coerce_tool_kwargs(target: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
+    coerced = dict(kwargs)
+    if not coerced:
+        return coerced
+    try:
+        sig = inspect.signature(target)
+        annotations = inspect.get_annotations(target, eval_str=True)
+        params = list(sig.parameters.values())
+        if len(params) == 1:
+            request_param = params[0]
+            request_type = annotations.get(request_param.name, request_param.annotation)
+            if (
+                request_param.name not in coerced
+                and isinstance(request_type, type)
+                and issubclass(request_type, BaseModel)
+            ):
+                model_fields = getattr(request_type, "model_fields", None)
+                if isinstance(model_fields, dict):
+                    field_names = set(model_fields.keys())
+                else:
+                    legacy_fields = getattr(request_type, "__fields__", None)
+                    field_names = set(legacy_fields.keys()) if isinstance(legacy_fields, dict) else set()
+                payload = {key: coerced.pop(key) for key in list(coerced.keys()) if key in field_names}
+                if payload:
+                    model_validate = getattr(request_type, "model_validate", None)
+                    coerced[request_param.name] = (
+                        model_validate(payload) if callable(model_validate) else request_type.parse_obj(payload)
+                    )
+    except Exception:
+        pass
+    try:
+        from ._mcp_tools import _coerce_kwargs_for_callable
+
+        _coerce_kwargs_for_callable(target, coerced)
+    except Exception:
+        pass
+    return coerced
+
+
 def call_tool_sync_raw(func: Any, *args: Any, cli_raw: bool = False, **kwargs: Any) -> Any:
     target = unwrap_tool_callable(func)
+    coerced_kwargs = _coerce_tool_kwargs(target, kwargs)
     if not cli_raw:
-        return resolve_sync_tool_result(target(*args, **kwargs))
+        return resolve_sync_tool_result(target(*args, **coerced_kwargs))
 
-    raw_kwargs = dict(kwargs)
+    raw_kwargs = dict(coerced_kwargs)
     raw_kwargs["__cli_raw"] = True
     try:
         return resolve_sync_tool_result(target(*args, **raw_kwargs))
     except TypeError:
-        return resolve_sync_tool_result(target(*args, **kwargs))
+        return resolve_sync_tool_result(target(*args, **coerced_kwargs))

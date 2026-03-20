@@ -738,7 +738,7 @@ def patterns_detect(
     
     Candlestick Mode Parameters:
     ----------------------------
-    min_strength : float, optional (default=0.95)
+    min_strength : float, optional (default=0.90)
         Minimum semantic conviction threshold (0.0 to 1.0). This filters on a
         normalized candlestick strength score that combines pattern reliability,
         multi-bar span, and any raw detector bonus rather than raw pandas_ta

@@ -451,6 +451,26 @@ Values below 30 often indicate oversold conditions.
         assert out["data"][0]["aliases"] == "bb, bollinger_bands"
         assert "Bollinger Bands" in out["data"][0]["description"]
 
+    def test_indicators_list_search_matches_names_and_aliases_only(self, monkeypatch):
+        from mtdata.core import indicators as core_indicators
+
+        monkeypatch.setattr(
+            core_indicators,
+            "_list_ta_indicators",
+            lambda detailed=False: [
+                {"name": "rsi", "category": "momentum", "description": "Relative Strength Index", "aliases": []},
+                {"name": "lrsi", "category": "momentum", "description": "Laguerre RSI", "aliases": []},
+                {"name": "stochrsi", "category": "momentum", "description": "Stochastic RSI", "aliases": []},
+                {"name": "obv", "category": "volume", "description": "Volume tool that references RSI in docs", "aliases": []},
+            ],
+        )
+
+        raw_list = getattr(core_indicators.indicators_list, "__wrapped__", core_indicators.indicators_list)
+        out = raw_list(search_term="rsi", detail="full")
+
+        assert out["success"] is True
+        assert [row["name"] for row in out["data"]] == ["rsi", "lrsi", "stochrsi"]
+
     def test_indicators_describe_accepts_aliases(self, monkeypatch):
         from mtdata.core import indicators as core_indicators
 

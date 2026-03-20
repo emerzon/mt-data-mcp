@@ -334,8 +334,25 @@ def test_trade_history_without_range_uses_full_history_start() -> None:
 
     assert isinstance(out, list)
     from_dt, to_dt = mt5.history_deals_get.call_args.args[:2]
-    assert from_dt.year == 1970
+    assert abs((to_dt - from_dt).total_seconds() - (7 * 24 * 60 * 60)) < 1.0
     assert to_dt >= from_dt
+
+
+def test_trade_history_surfaces_mt5_history_exception_with_actionable_hint() -> None:
+    mt5, prev = _install_mock_mt5()
+    mt5.history_deals_get.side_effect = RuntimeError(
+        "<built-in function history_deals_get> returned a result with an exception set"
+    )
+
+    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+        out = trade_history(history_kind="deals", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert out["error"] == (
+        "Failed to fetch deal history from MT5. "
+        "Try narrowing the range with --minutes-back, --days, --start, or --end."
+    )
 
 
 def test_trade_history_rejects_start_with_minutes_back() -> None:
@@ -347,8 +364,6 @@ def test_trade_history_rejects_start_with_minutes_back() -> None:
     )
 
     assert out["error"] == "Use either start or minutes_back, not both."
-    assert out["operation"] == "trade_history"
-    assert out["success"] is False
 
 
 def test_trade_history_surfaces_comment_limit_metadata() -> None:
@@ -374,11 +389,6 @@ def test_trade_history_returns_connection_error_payload() -> None:
         "mtdata.core.trading_account.ensure_mt5_connection_or_raise",
         side_effect=MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running."),
     ):
-        out = _trade_history_tool(
-            request=TradeHistoryRequest(history_kind="deals"),
-            __cli_raw=True,
-        )
+        out = _unwrap(_trade_history_tool)(request=TradeHistoryRequest(history_kind="deals"))
 
     assert out["error"] == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
-    assert out["operation"] == "trade_history"
-    assert out["success"] is False

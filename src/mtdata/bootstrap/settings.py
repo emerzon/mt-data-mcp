@@ -2,6 +2,7 @@
 
 import logging
 import os
+import warnings
 from typing import Optional
 
 try:
@@ -11,6 +12,39 @@ except Exception:
 
 _WARNED_SERVER_TZ = False
 _ENV_LOADED = False
+
+
+def _suppress_noisy_third_party_logs() -> None:
+    os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+    for logger_name, level in (
+        ("numba.cuda.cudadrv.driver", logging.WARNING),
+        ("torch.distributed", logging.ERROR),
+        ("torch._dynamo", logging.ERROR),
+        ("lightning", logging.ERROR),
+        ("pytorch_lightning", logging.ERROR),
+    ):
+        try:
+            noisy_logger = logging.getLogger(logger_name)
+            noisy_logger.setLevel(level)
+            noisy_logger.propagate = False
+        except Exception:
+            pass
+    try:
+        warnings.filterwarnings(
+            "ignore",
+            message=r".*Redirects are currently not supported in Windows or MacOs.*",
+            category=UserWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            category=ImportWarning,
+            module=r"umap(\..*)?$",
+        )
+    except Exception:
+        pass
+
+
+_suppress_noisy_third_party_logs()
 
 
 def _env_bool(name: str, default: bool = False) -> bool:

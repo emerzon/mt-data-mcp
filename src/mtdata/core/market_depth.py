@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 @mcp.tool()
-def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
+def market_depth_fetch(symbol: str, spread: bool = False, compact: bool = False) -> Dict[str, Any]:
     """Return DOM if available; otherwise current bid/ask snapshot for `symbol`.
 
     Parameters: symbol
@@ -129,6 +129,11 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
             tick = mt5_gateway.symbol_info_tick(symbol)
             if tick is None:
                 return {"error": f"Failed to get tick data for {symbol}"}
+            if compact:
+                return {
+                    "error": f"DOM not available for {symbol}. Use market_ticker for bid/ask snapshot instead.",
+                    "recommended_alternative": "market_ticker",
+                }
 
             out = {
                 "success": True,
@@ -178,6 +183,7 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
         operation="market_depth_fetch",
         symbol=symbol,
         spread=spread,
+        compact=compact,
         func=_run,
     )
 
