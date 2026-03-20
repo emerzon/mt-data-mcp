@@ -1362,11 +1362,21 @@ def forecast_barrier_optimize(
                 elif prob_win > 0:
                     profit_factor = 1e9
 
+                net_reward = reward - ev_deduct_cost if has_trading_costs else reward
+                net_risk = risk + ev_deduct_cost if has_trading_costs else risk
                 reward_frac = 0.0
                 risk_frac = 0.0
-                if last_price > 0:
+                if mode_val == 'pct':
+                    reward_frac = net_reward / 100.0
+                    risk_frac = net_risk / 100.0
+                elif last_price > 0 and pip_size:
+                    unit_to_return = float(pip_size) / float(last_price)
+                    reward_frac = net_reward * unit_to_return
+                    risk_frac = net_risk * unit_to_return
+                elif last_price > 0:
                     reward_frac = abs(tp_p - last_price) / last_price
                     risk_frac = abs(sl_p - last_price) / last_price
+                reward_frac = max(reward_frac, -0.999)
                 if risk_frac >= 1.0:
                     risk_frac = 0.999
                 utility_val = (prob_win * math.log1p(reward_frac)) + (prob_loss * math.log1p(-risk_frac))

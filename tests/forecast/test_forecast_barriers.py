@@ -1251,6 +1251,42 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
             ev_net = float(best["ev_net"])
             self.assertGreaterEqual(ev_gross, ev_net)
 
+    def test_cost_adjusted_utility_changes_when_trading_costs_are_applied(self):
+        dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
+        prices = np.full(500, 1.0)
+        self._set_barrier_history(pd.DataFrame({'time': dates, 'close': prices}))
+        paths = np.array([
+            [1.006, 1.008, 1.010],
+            [1.006, 1.008, 1.010],
+            [1.006, 1.008, 1.010],
+            [0.994, 0.992, 0.990],
+            [0.994, 0.992, 0.990],
+        ])
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            no_cost = forecast_barrier_optimize(
+                symbol="EURUSD", timeframe="H1", horizon=3,
+                method="mc_gbm", direction="long", mode="pct",
+                tp_min=0.5, tp_max=0.5, tp_steps=1,
+                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                objective="utility",
+            )
+            with_cost = forecast_barrier_optimize(
+                symbol="EURUSD", timeframe="H1", horizon=3,
+                method="mc_gbm", direction="long", mode="pct",
+                tp_min=0.5, tp_max=0.5, tp_steps=1,
+                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                objective="utility",
+                params={"spread_pct": 0.45, "min_barrier_multiplier": 0.0},
+            )
+
+        self.assertTrue(no_cost.get("success"))
+        self.assertTrue(with_cost.get("success"))
+        self.assertGreater(
+            float(no_cost["best"]["utility"]),
+            float(with_cost["best"]["utility"]),
+        )
+
     def test_ensemble_preserves_cost_adjusted_viability_metrics(self):
         self._set_barrier_history(pd.DataFrame({
             'time': pd.date_range(start='2023-01-01', periods=500, freq='h'),
