@@ -236,6 +236,18 @@ class TestDenoiseSeriesDispatch:
         result = _denoise_series(s, method="ema", params={"alpha": 0.2})
         _check_basic(result.values, N)
 
+    def test_ema_zero_phase_reuses_alpha_for_backward_pass(self):
+        s = _make_series(NOISY_SIGNAL)
+        alpha = 0.2
+
+        result = _denoise_series(s, method="ema", params={"alpha": alpha}, causality="zero_phase")
+
+        forward = pd.Series(NOISY_SIGNAL).ewm(alpha=alpha, adjust=False).mean().to_numpy()
+        backward = pd.Series(forward[::-1]).ewm(alpha=alpha, adjust=False).mean().to_numpy()[::-1]
+        expected = 0.5 * (forward + backward)
+
+        np.testing.assert_allclose(result.to_numpy(), expected)
+
     def test_sma(self):
         s = _make_series(NOISY_SIGNAL)
         result = _denoise_series(s, method="sma", params={"window": 10})

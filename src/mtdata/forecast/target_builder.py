@@ -39,8 +39,10 @@ def build_target_series(
     
     if not target_spec or not isinstance(target_spec, dict):
         if str(quantity).strip().lower() == 'return':
-            y = np.log(df[base_col].astype(float).to_numpy())
-            y = np.diff(y, prepend=y[0])
+            log_prices = np.log(np.maximum(df[base_col].astype(float).to_numpy(), 1e-12))
+            y = np.full(log_prices.shape, np.nan, dtype=float)
+            if log_prices.size > 1:
+                y[1:] = np.diff(log_prices)
             target_info = {'mode': 'return', 'base': base_col, 'transform': 'log_return'}
         else:
             y = df[base_col].astype(float).to_numpy()
@@ -86,13 +88,15 @@ def build_target_series(
         prev = np.roll(y_base, k)
         with np.errstate(divide='ignore', invalid='ignore'):
             y = (y_base - prev) / np.where(np.abs(prev) > 1e-12, prev, 1.0)
-        y[:k] = 0.0
+        y = y.astype(float, copy=False)
+        y[:k] = np.nan
         target_info['transform'] = f'return(k={k})'
     elif transform == 'log_return':
         prev = np.roll(y_base, k)
         with np.errstate(divide='ignore', invalid='ignore'):
             y = np.log(np.maximum(y_base, 1e-12)) - np.log(np.maximum(prev, 1e-12))
-        y[:k] = 0.0
+        y = y.astype(float, copy=False)
+        y[:k] = np.nan
         target_info['transform'] = f'log_return(k={k})'
     elif transform == 'log':
         y = np.log(np.maximum(y_base, 1e-12))
@@ -100,7 +104,8 @@ def build_target_series(
     elif transform == 'diff':
         prev = np.roll(y_base, k)
         y = y_base - prev
-        y[:k] = 0.0
+        y = y.astype(float, copy=False)
+        y[:k] = np.nan
         target_info['transform'] = f'diff(k={k})'
     elif transform in ('pct_change', 'pct'):
         prev = np.roll(y_base, k)
@@ -108,7 +113,8 @@ def build_target_series(
             y = (y_base - prev) / np.where(np.abs(prev) > 1e-12, prev, 1.0)
         if transform == 'pct':
             y = 100.0 * y
-        y[:k] = 0.0
+        y = y.astype(float, copy=False)
+        y[:k] = np.nan
         target_info['transform'] = f'pct_change(k={k})'
     else:
         y = y_base

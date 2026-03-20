@@ -466,6 +466,22 @@ class TestChronosBoltMethod:
         finally:
             _FakePipeline.predict_quantiles = orig
 
+    def test_forecast_pads_short_chronos_outputs_to_requested_horizon(self):
+        orig = _FakePipeline.predict_quantiles
+
+        def _pq(self_pipe, ctx, prediction_length=10, quantile_levels=None, **kw):
+            short_h = max(1, int(prediction_length) - 2)
+            n_q = len(quantile_levels) if quantile_levels else 1
+            return _FakeTensor(np.ones((1, short_h, n_q))), _FakeTensor(np.arange(short_h, dtype=float).reshape(1, short_h))
+
+        _FakePipeline.predict_quantiles = _pq
+        try:
+            res = self.method.forecast(_series(), horizon=5, seasonality=1, params={"quantiles": [0.5]})
+            assert len(res.forecast) == 5
+            assert res.forecast.tolist() == [0.0, 1.0, 2.0, 2.0, 2.0]
+        finally:
+            _FakePipeline.predict_quantiles = orig
+
     def test_import_error_raises(self):
         """When chronos not importable, RuntimeError is raised."""
         saved = sys.modules.get("chronos")

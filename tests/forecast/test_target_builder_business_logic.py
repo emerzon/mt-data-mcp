@@ -44,6 +44,8 @@ def test_build_target_series_legacy_price_and_return():
 
     y_ret, info_ret = tb.build_target_series(df, base_col="close", target_spec=None, quantity="return")
     assert y_ret.shape[0] == 5
+    assert np.isnan(y_ret[0])
+    assert np.isfinite(y_ret[1:]).all()
     assert info_ret == {"mode": "return", "base": "close", "transform": "log_return"}
 
 
@@ -71,6 +73,7 @@ def test_build_target_series_custom_with_indicators_and_transforms(monkeypatch):
         target_spec={"base": "close", "transform": "log_return", "k": 1},
     )
     assert y_log.shape[0] == len(df)
+    assert np.isnan(y_log[0])
     assert info_log["transform"] == "log_return(k=1)"
 
     y_pct, info_pct = tb.build_target_series(
@@ -79,7 +82,8 @@ def test_build_target_series_custom_with_indicators_and_transforms(monkeypatch):
         target_spec={"base": "close", "transform": "pct_change", "k": 2},
     )
     assert y_pct.shape[0] == len(df)
-    assert np.isfinite(y_pct).all()
+    assert np.isnan(y_pct[:2]).all()
+    assert np.isfinite(y_pct[2:]).all()
     assert info_pct["transform"] == "pct_change(k=2)"
 
     y_alias, info_alias = tb.build_target_series(

@@ -51,15 +51,17 @@ def _extract_forecast_values(Yf: Any, fh: int, method_name: str = "forecast") ->
     # Find the prediction column
     pred_col = None
     try:
-        # First try standard prediction column
-        if 'y' in Yf.columns:
-            pred_col = 'y'
-        else:
-            # Look for other prediction columns
-            for c in list(Yf.columns):
-                if c not in ('unique_id', 'ds', 'y'):
-                    pred_col = c
+        pred_candidates = [c for c in list(Yf.columns) if c not in ('unique_id', 'ds', 'y')]
+        if pred_candidates:
+            preferred = ('y_hat', 'mean', 'median', 'pred', 'forecast')
+            for name in preferred:
+                if name in pred_candidates:
+                    pred_col = name
                     break
+            if pred_col is None:
+                pred_col = pred_candidates[0]
+        elif 'y' in Yf.columns:
+            pred_col = 'y'
     except Exception:
         pass
     

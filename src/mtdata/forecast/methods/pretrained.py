@@ -268,13 +268,13 @@ class ChronosBoltMethod(PretrainedMethod):
                 mean_np = np.asarray(mean_tensor.detach().cpu().numpy(), dtype=float)
                 if mean_np.ndim == 2:
                     mean_np = mean_np[0]
-                f_vals = mean_np
+                f_vals = adjust_forecast_length(mean_np, int(horizon), "chronos2")
             else:
                 # mean_tensor from predict(); accept either (H,) or (B, H)
                 f_np = np.asarray(mean_tensor.detach().cpu().numpy(), dtype=float)
                 if f_np.ndim == 2:
                     f_np = f_np[0]
-                f_vals = f_np
+                f_vals = adjust_forecast_length(f_np, int(horizon), "chronos2")
 
             params_used = build_params_used(
                 {'model_name': model_name, 'device_map': effective_device_map, 'pipeline': pipe_name},

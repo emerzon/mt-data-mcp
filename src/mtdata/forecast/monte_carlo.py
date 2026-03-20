@@ -604,14 +604,27 @@ def simulate_bootstrap_mc(
     block_size = max(1, int(block_size))
     CircularBlockBootstrap = _load_circular_block_bootstrap()
     bs = CircularBlockBootstrap(block_size, rets, seed=seed)
-    sim_rets = np.zeros((int(n_sims), int(horizon)), dtype=float)
+    horizon_i = int(horizon)
+    sims_i = int(n_sims)
+    sampled_paths: list[np.ndarray] = []
     for s_idx, boot in enumerate(bs.bootstrap(int(n_sims))):
+        if s_idx >= sims_i:
+            break
         sample = np.asarray(boot[0][0], dtype=float).reshape(-1)
-        if sample.size < int(horizon):
-            reps = int(np.ceil(int(horizon) / max(1, sample.size)))
+        if sample.size < horizon_i:
+            reps = int(np.ceil(horizon_i / max(1, sample.size)))
             sample = np.tile(sample, reps)
-        sim_rets[s_idx] = sample[: int(horizon)]
-    
+        sampled_paths.append(sample[:horizon_i].astype(float, copy=False))
+    if not sampled_paths:
+        raise RuntimeError("Bootstrap simulation produced no return paths")
+    if len(sampled_paths) < sims_i:
+        rng = np.random.RandomState(seed)
+        existing = np.asarray(sampled_paths, dtype=float)
+        extra_idx = rng.choice(existing.shape[0], size=(sims_i - len(sampled_paths)), replace=True)
+        for idx in extra_idx.tolist():
+            sampled_paths.append(existing[int(idx)].copy())
+    sim_rets = np.asarray(sampled_paths[:sims_i], dtype=float)
+
     # Reconstruct prices
     last_price = float(prices[-1])
     cum_rets = np.cumsum(sim_rets, axis=1)

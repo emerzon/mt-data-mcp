@@ -45,13 +45,14 @@ def forecast_neural(
 
     # Hyperparameters with defaults and safety caps
     h = int(fh)
+    available_context = int(max(1, (n - h) if n > h else n))
     input_size = None
     if params.get('input_size') is not None:
         requested = int(params['input_size'])
-        input_size = int(min(requested, max(8, (n - h) if n > h else n)))
+        input_size = int(max(1, min(requested, available_context)))
     else:
         base = max(64, (int(m) * 3) if m and int(m) > 0 else 96)
-        input_size = int(min(n, base))
+        input_size = int(max(1, min(available_context, base)))
     steps = int(params.get('max_steps', params.get('max_epochs', 50)))
     batch_size = int(params.get('batch_size', 32))
     lr = params.get('learning_rate', None)

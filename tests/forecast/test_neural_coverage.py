@@ -190,7 +190,24 @@ class TestForecastNeural:
             method="nhits", series=np.linspace(100, 110, 100),
             fh=12, timeframe="H1", n=100, m=0, params={}, Y_df=Y_df,
         )
-        assert pu["input_size"] == 96  # fallback when m=0
+        assert pu["input_size"] == 88  # fallback now reserves room for the forecast horizon
+
+    @patch("mtdata.forecast.methods.neural._nf_setup_and_predict")
+    @patch("mtdata.forecast.methods.neural._edge_pad_to_length", side_effect=lambda v, l: v[:l] if len(v) >= l else np.pad(v, (0, l - len(v)), mode="edge"))
+    def test_auto_input_size_reserves_horizon(self, pad_mock, predict_mock):
+        predict_mock.return_value = _make_Yf(12)
+        Y_df = pd.DataFrame({"unique_id": ["ts"] * 100, "ds": list(range(100)), "y": np.linspace(100, 110, 100)})
+        _vals, pu = forecast_neural(
+            method="nhits",
+            series=np.linspace(100, 110, 100),
+            fh=12,
+            timeframe="H1",
+            n=100,
+            m=0,
+            params={},
+            Y_df=Y_df,
+        )
+        assert pu["input_size"] == 88
 
 
 # ── NeuralForecastMethod and subclasses  (lines 90-177) ─────────────────────
