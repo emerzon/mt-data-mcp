@@ -36,6 +36,7 @@ from .barriers_shared import (
     _candidate_status_reason,
     _get_live_reference_price,
     _least_negative_ref,
+    _resolve_reference_prices,
     _safe_float,
     _scale_price_paths_to_reference,
     _sort_candidate_results,
@@ -456,19 +457,20 @@ def forecast_barrier_optimize(
         df = _fetch_history(symbol, timeframe, need, as_of=None)
         if len(df) < 10:
             return {"error": "Insufficient history for simulation"}
-        last_price_close = float(df['close'].astype(float).iloc[-1])
-        last_price = float(last_price_close)
-        last_price_source = "close"
         use_live_price_raw = params_dict.get('use_live_price', params_dict.get('live_price', True))
         if isinstance(use_live_price_raw, str):
             use_live_price = use_live_price_raw.strip().lower() not in {"0", "false", "no", "off"}
         else:
             use_live_price = bool(use_live_price_raw)
-        if use_live_price:
-            live_price, live_source = _get_live_reference_price(symbol, direction_norm)
-            if live_price is not None and np.isfinite(live_price) and float(live_price) > 0.0:
-                last_price = float(live_price)
-                last_price_source = str(live_source or "live_tick")
+        last_price_close, last_price, last_price_source, _price_warning, price_error = _resolve_reference_prices(
+            df['close'].astype(float).to_numpy(),
+            symbol=symbol,
+            direction=direction_norm,
+            use_live_price=use_live_price,
+            live_price_getter=_get_live_reference_price,
+        )
+        if price_error:
+            return {"error": price_error}
 
         pip_size = _get_pip_size(symbol)
         if mode_val == 'pips' and (pip_size is None or pip_size <= 0):

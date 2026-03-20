@@ -465,6 +465,32 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertIsInstance(result["best"], dict)
         self.assertIn("ev", result["best"])
 
+    def test_optimize_rejects_non_finite_trailing_close_without_live_reference(self):
+        df = self.df.copy()
+        df.loc[df.index[-1], "close"] = np.nan
+        self._set_barrier_history(df)
+        result = forecast_barrier_optimize(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=4,
+            method="mc_gbm",
+            direction="long",
+            mode="pct",
+            tp_min=0.5,
+            tp_max=0.5,
+            tp_steps=1,
+            sl_min=0.5,
+            sl_max=0.5,
+            sl_steps=1,
+            params={"optimizer": "grid", "n_sims": 50, "n_seeds": 1, "use_live_price": False},
+            return_grid=False,
+            output="summary",
+        )
+        self.assertEqual(
+            result.get("error"),
+            "Latest close is non-finite; refresh history or enable a live reference price.",
+        )
+
     def test_forecast_barrier_optimize_ensemble_selects_real_member_candidate(self):
         self._set_flat_history(1.0)
         gbm_paths = np.array([
@@ -1460,6 +1486,26 @@ class TestTier1StructuredErrorHandling(_BarrierModulePatchMixin, unittest.TestCa
         self.assertIn("error", result)
         self.assertIn("error_type", result)
         self.assertIn("traceback_summary", result)
+
+    def test_probabilities_reject_non_finite_trailing_close_without_live_reference(self):
+        dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
+        prices = np.full(500, 1.0)
+        prices[-1] = np.nan
+        self._set_barrier_history(pd.DataFrame({'time': dates, 'close': prices}))
+        with patch(f'{_BARRIER_PROB_ROOT}._get_live_reference_price', return_value=(None, None)):
+            result = forecast_barrier_hit_probabilities(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=10,
+                method="mc_gbm",
+                direction="long",
+                tp_pct=0.5,
+                sl_pct=0.5,
+            )
+        self.assertEqual(
+            result.get("error"),
+            "Latest close is non-finite; refresh history or enable a live reference price.",
+        )
 
     def test_probabilities_bad_seed_type_returns_structured_error(self):
         result = forecast_barrier_hit_probabilities(

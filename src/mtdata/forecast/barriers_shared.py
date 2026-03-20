@@ -542,3 +542,35 @@ def _get_live_reference_price(symbol: str, direction: str) -> Tuple[Optional[flo
     return None, None
 
 
+def _resolve_reference_prices(
+    close_values: Any,
+    *,
+    symbol: str,
+    direction: str,
+    use_live_price: bool = True,
+    live_price_getter: Any = None,
+) -> Tuple[Optional[float], Optional[float], Optional[str], Optional[str], Optional[str]]:
+    closes = np.asarray(close_values, dtype=float)
+    if closes.size == 0:
+        return None, None, None, None, "Latest close is non-finite; refresh history or enable a live reference price."
+
+    trailing_close = _safe_float(closes[-1])
+    finite_closes = closes[np.isfinite(closes)]
+    history_anchor = _safe_float(finite_closes[-1]) if finite_closes.size else None
+    if history_anchor is None or history_anchor <= 0.0:
+        return None, None, None, None, "Latest close is non-finite; refresh history or enable a live reference price."
+
+    if use_live_price:
+        getter = live_price_getter if callable(live_price_getter) else _get_live_reference_price
+        live_price, live_source = getter(symbol, direction)
+        if live_price is not None and np.isfinite(live_price) and float(live_price) > 0.0:
+            warning = None
+            if trailing_close is None or trailing_close <= 0.0:
+                warning = "Latest close is non-finite; using the last finite historical close as the simulation anchor."
+            return float(history_anchor), float(live_price), str(live_source or "live_tick"), warning, None
+
+    if trailing_close is None or trailing_close <= 0.0:
+        return None, None, None, None, "Latest close is non-finite; refresh history or enable a live reference price."
+    return float(trailing_close), float(trailing_close), "close", None, None
+
+

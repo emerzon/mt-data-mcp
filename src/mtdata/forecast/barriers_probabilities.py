@@ -29,6 +29,7 @@ from .barriers_shared import (
     _binomial_wilson_95,
     _brownian_bridge_hits,
     _get_live_reference_price,
+    _resolve_reference_prices,
     _scale_price_paths_to_reference,
 )
 
@@ -76,13 +77,17 @@ def forecast_barrier_hit_probabilities(
         if len(df) < 10:
             return {"error": "Insufficient history for simulation"}
         # Current price baseline
-        last_price_close = float(df['close'].astype(float).iloc[-1])
-        last_price = float(last_price_close)
-        last_price_source = "close"
-        live_price, live_source = _get_live_reference_price(symbol, direction_norm)
-        if live_price is not None and np.isfinite(live_price) and float(live_price) > 0.0:
-            last_price = float(live_price)
-            last_price_source = str(live_source or "live_tick")
+        last_price_close, last_price, last_price_source, price_warning, price_error = _resolve_reference_prices(
+            df['close'].astype(float).to_numpy(),
+            symbol=symbol,
+            direction=direction_norm,
+            use_live_price=True,
+            live_price_getter=_get_live_reference_price,
+        )
+        if price_error:
+            return {"error": price_error}
+        if price_warning:
+            warnings_out.append(price_warning)
         pip_size = _get_pip_size(symbol)
 
         # Compute absolute TP/SL prices with explicit trade direction
