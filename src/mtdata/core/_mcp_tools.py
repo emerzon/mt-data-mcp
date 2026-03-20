@@ -450,16 +450,21 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
         # A generous timeout prevents indefinite hangs when the underlying MT5
         # COM bridge deadlocks under concurrent access.
         _TOOL_TIMEOUT_SECONDS = 120
+        # Tools that legitimately block for extended periods (e.g. wait_event
+        # polling for price targets) must not be killed by the safety timeout.
+        _NO_TIMEOUT_TOOLS = frozenset({"wait_event"})
 
         @_wraps(func)
         async def _async_wrapped(*a, **kw):
+            _tool_name = getattr(func, "__name__", "tool")
+            if _tool_name in _NO_TIMEOUT_TOOLS:
+                return await asyncio.to_thread(_wrapped, *a, **kw)
             try:
                 return await asyncio.wait_for(
                     asyncio.to_thread(_wrapped, *a, **kw),
                     timeout=_TOOL_TIMEOUT_SECONDS,
                 )
             except asyncio.TimeoutError:
-                _tool_name = getattr(func, "__name__", "tool")
                 return f"error: {_tool_name} timed out after {_TOOL_TIMEOUT_SECONDS}s"
 
         try:
