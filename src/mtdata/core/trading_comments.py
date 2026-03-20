@@ -34,11 +34,15 @@ def _normalize_trade_comment(comment: Optional[str], *, default: str, suffix: st
     try:
         if len(full) > _MT5_COMMENT_MAX_LENGTH:
             if suffix_text:
-                allowed_base = _MT5_COMMENT_MAX_LENGTH - len(suffix_text)
+                suffix_kept = suffix_text[:_MT5_COMMENT_MAX_LENGTH]
+                allowed_base = _MT5_COMMENT_MAX_LENGTH - len(suffix_kept)
+                if allowed_base <= 0 and base:
+                    allowed_base = 1
+                    suffix_kept = suffix_kept[: _MT5_COMMENT_MAX_LENGTH - allowed_base]
                 if allowed_base > 0:
-                    full = f"{base[:allowed_base]}{suffix_text}"
+                    full = f"{base[:allowed_base]}{suffix_kept}"
                 else:
-                    full = base[:_MT5_COMMENT_MAX_LENGTH]
+                    full = suffix_kept
             else:
                 full = base[:_MT5_COMMENT_MAX_LENGTH]
     except Exception:
@@ -100,5 +104,5 @@ def _comment_row_metadata(comment: Any) -> Dict[str, Any]:
     return {
         "comment_visible_length": len(text),
         "comment_max_length": _MT5_COMMENT_MAX_LENGTH,
-        "comment_may_be_truncated": True,
+        "comment_may_be_truncated": len(text) >= _MT5_COMMENT_MAX_LENGTH,
     }

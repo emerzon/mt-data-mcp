@@ -61,7 +61,7 @@ from mtdata.core.trading import (
     trade_account_info,
     trade_risk_analyze as _trade_risk_analyze_tool,
 )
-from mtdata.core.trading_comments import _normalize_trade_comment
+from mtdata.core.trading_comments import _comment_row_metadata, _normalize_trade_comment
 from mtdata.core.trading_requests import (
     TradeCloseRequest,
     TradeModifyRequest,
@@ -537,7 +537,14 @@ class TestNormalizeTradeComment:
 
     def test_very_long_suffix(self):
         result = _normalize_trade_comment("b", default="x", suffix="S" * 40)
-        assert len(result) <= 31
+        assert result == "b" + ("S" * 30)
+
+    def test_comment_row_metadata_marks_only_limit_length_as_truncated(self):
+        short_meta = _comment_row_metadata("audit short")
+        exact_limit_meta = _comment_row_metadata("x" * 31)
+
+        assert short_meta["comment_may_be_truncated"] is False
+        assert exact_limit_meta["comment_may_be_truncated"] is True
 
 
 # ===================================================================

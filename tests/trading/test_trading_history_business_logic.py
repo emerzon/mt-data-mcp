@@ -12,13 +12,21 @@ from mtdata.utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc
 from mtdata.utils.utils import _format_time_minimal
 
 
+def _unwrap(fn):
+    while hasattr(fn, "__wrapped__"):
+        fn = fn.__wrapped__
+    return fn
+
+
 def trade_history(**kwargs):
     raw_output = bool(kwargs.pop("__cli_raw", False))
     request = kwargs.pop("request", None)
     if request is None:
         request = TradeHistoryRequest(**kwargs)
     with patch("mtdata.core.trading_account.ensure_mt5_connection_or_raise", return_value=None):
-        return _trade_history_tool(request=request, __cli_raw=raw_output)
+        if raw_output:
+            return _unwrap(_trade_history_tool)(request=request)
+        return _trade_history_tool(request=request, __cli_raw=False)
 
 
 def _install_mock_mt5() -> tuple[MagicMock, object]:
@@ -358,7 +366,7 @@ def test_trade_history_surfaces_comment_limit_metadata() -> None:
     assert isinstance(out, list)
     assert out[0]["comment_max_length"] == 31
     assert out[0]["comment_visible_length"] == len("audit short")
-    assert out[0]["comment_may_be_truncated"] is True
+    assert out[0]["comment_may_be_truncated"] is False
 
 
 def test_trade_history_returns_connection_error_payload() -> None:
