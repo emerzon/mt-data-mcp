@@ -134,15 +134,8 @@ def _fetch_rates_with_warmup(
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
         expected_end_ts = _utc_epoch_seconds(to_date)
 
-        # We need to fetch 'candles' bars ending at 'to_date'.
-        # Since we can't easily query by count backwards from a date in MT5 (without pos),
-        # we estimate a start date far enough back to cover the requested candles (plus warmup).
-        # We multiply by 2.0 to account for weekends/gaps (7/5 = 1.4, plus buffers).
-        estimated_seconds_needed = int(seconds_per_bar * (candles + warmup_bars) * 2.0)
-        from_date_est = to_date - timedelta(seconds=estimated_seconds_needed)
-
         def _fetch():
-            return _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_est, to_date)
+            return _mt5_copy_rates_from(symbol, mt5_timeframe, to_date, candles + warmup_bars)
 
     else:
         utc_now = datetime.now(dt_timezone.utc)
@@ -179,6 +172,21 @@ def _build_rates_df(rates: Any, use_client_tz: bool) -> pd.DataFrame:
             warnings.simplefilter("ignore")
             df['volume'] = df['tick_volume']
     return df
+
+
+def _tick_field_value(tick: Any, name: str) -> Any:
+    try:
+        return tick[name]
+    except Exception:
+        pass
+    try:
+        return getattr(tick, name)
+    except Exception:
+        pass
+    try:
+        return tick.get(name)
+    except Exception:
+        return None
 
 
 def _trim_df_to_target(
@@ -874,13 +882,25 @@ def fetch_ticks(
             else:
                 # Get recent ticks from current time (now)
                 to_date = datetime.now(dt_timezone.utc)
-                from_date = to_date - timedelta(days=TICKS_LOOKBACK_DAYS)  # look back a configurable window
                 ticks = None
-                for _ in range(FETCH_RETRY_ATTEMPTS):
-                    ticks = _mt5_copy_ticks_range(symbol, from_date, to_date, mt5.COPY_TICKS_ALL)
-                    if ticks is not None and len(ticks) > 0:
+                lookback_days = max(1, int(TICKS_LOOKBACK_DAYS))
+                max_lookback_days = max(lookback_days, 30)
+                current_lookback_days = lookback_days
+                while current_lookback_days <= max_lookback_days:
+                    from_date = to_date - timedelta(days=current_lookback_days)
+                    ticks_candidate = None
+                    for _ in range(FETCH_RETRY_ATTEMPTS):
+                        ticks_candidate = _mt5_copy_ticks_range(symbol, from_date, to_date, mt5.COPY_TICKS_ALL)
+                        if ticks_candidate is not None and len(ticks_candidate) > 0:
+                            break
+                        time.sleep(FETCH_RETRY_DELAY)
+                    if ticks_candidate is not None and len(ticks_candidate) > 0:
+                        ticks = ticks_candidate
+                        if not effective_limit or len(ticks_candidate) >= effective_limit:
+                            break
+                    if current_lookback_days == max_lookback_days:
                         break
-                    time.sleep(FETCH_RETRY_DELAY)
+                    current_lookback_days = min(max_lookback_days, current_lookback_days * 2)
                 if ticks is not None and effective_limit and len(ticks) > effective_limit:
                     ticks = ticks[-effective_limit:]  # Get the last ticks
         # visibility handled by _symbol_ready_guard
@@ -895,19 +915,22 @@ def fetch_ticks(
         if output_mode not in ("summary", "stats", "rows", "raw", "ticks"):
             return {"error": f"Invalid output mode: {output}. Use 'summary', 'stats', or 'rows'."}
 
+        def _tick_field(tick: Any, name: str) -> Any:
+            return _tick_field_value(tick, name)
+
         # Check which optional columns have meaningful data (for row output)
-        lasts = [float(tick["last"]) for tick in ticks]
-        flags = [int(tick["flags"]) for tick in ticks]
+        lasts = [float(_tick_field(tick, "last") or 0.0) for tick in ticks]
+        flags = [int(_tick_field(tick, "flags") or 0) for tick in ticks]
         volume_field_exists = True
         try:
-            volumes = [float(tick["volume"]) for tick in ticks]
+            volumes = [float(_tick_field(tick, "volume")) for tick in ticks]
         except Exception:
             volumes = []
             volume_field_exists = False
 
         volume_real_field_exists = True
         try:
-            volumes_real = [float(tick["volume_real"]) for tick in ticks]
+            volumes_real = [float(_tick_field(tick, "volume_real")) for tick in ticks]
         except Exception:
             volumes_real = []
             volume_real_field_exists = False
@@ -929,31 +952,13 @@ def fetch_ticks(
         # Build data rows with matching columns and escape properly
         # Choose a consistent time format for all rows (strip year if constant)
         # Low-level tick fetch helpers already normalize MT5 times to UTC.
-        _epochs = [float(t["time"]) for t in ticks]
+        _epochs = [float(_tick_field(t, "time")) for t in ticks]
         client_tz = _resolve_client_tz()
         _use_ctz = client_tz is not None
         if not _use_ctz:
             fmt = _time_format_from_epochs(_epochs)
             fmt = _maybe_strip_year(fmt, _epochs)
             fmt = _style_time_format(fmt)
-        # Build a DataFrame of ticks to support non-select simplify modes
-        def _tick_field(t, name: str):
-            try:
-                # numpy.void structured array element
-                return t[name]
-            except Exception:
-                pass
-            try:
-                # namedtuple-like from symbol_info_tick
-                return getattr(t, name)
-            except Exception:
-                pass
-            try:
-                # dict-like
-                return t.get(name)
-            except Exception:
-                return None
-
         df_ticks = pd.DataFrame({
             "__epoch": _epochs,
             "bid": [float(_tick_field(t, "bid")) for t in ticks],
@@ -1280,13 +1285,13 @@ def fetch_ticks(
                 time_str = _format_time_minimal_local(_epochs[i])
             else:
                 time_str = datetime.fromtimestamp(_epochs[i], tz=dt_timezone.utc).strftime(fmt)
-            values = [time_str, float(tick['bid']), float(tick['ask'])]
+            values = [time_str, float(_tick_field(tick, "bid")), float(_tick_field(tick, "ask"))]
             if has_last:
-                values.append(float(tick['last']))
+                values.append(float(_tick_field(tick, "last")))
             if has_volume:
-                values.append(float(tick['volume']))
+                values.append(float(_tick_field(tick, "volume")))
             if has_flags:
-                values.append(int(tick['flags']))
+                values.append(int(_tick_field(tick, "flags")))
             rows.append(values)
 
         payload = _table_from_rows(headers, rows)

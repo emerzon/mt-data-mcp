@@ -9,6 +9,7 @@ from unittest.mock import patch, MagicMock, PropertyMock
 from contextlib import contextmanager
 from typing import Any, Iterator, Tuple, Optional
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 import sys
 import os
@@ -217,20 +218,21 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         self.assertIsNone(result)
         self.assertIn('Unable to determine', err)
 
-    @patch(_RATES_RANGE)
+    @patch(_RATES_FROM)
     @patch(_PARSE_START)
-    def test_end_only(self, mock_parse, mock_range):
+    def test_end_only(self, mock_parse, mock_from):
         """Only end_datetime provided."""
         t2 = datetime(2025, 1, 2, tzinfo=_UTC)
         mock_parse.return_value = t2
         rates = _make_rates(5, base_ts=t2.timestamp())
-        mock_range.return_value = rates
+        mock_from.return_value = rates
         result, err = _fetch_rates_with_warmup(
             'EURUSD', 16385, 'H1', 5, 0, None, '2025-01-02',
             retry=False, sanity_check=False,
         )
         self.assertIsNone(err)
-        self.assertIsNotNone(result)
+        self.assertEqual(result, rates)
+        mock_from.assert_called_once_with('EURUSD', 16385, t2, 5)
 
     @patch(_PARSE_START)
     def test_end_only_invalid(self, mock_parse):
@@ -1011,14 +1013,14 @@ class TestFetchCandles(unittest.TestCase):
         self.assertTrue(result.get('success'))
 
     @patch(_MT5_CONFIG)
-    @patch(_RATES_RANGE)
+    @patch(_RATES_FROM)
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_end_only(self, mock_warmup, mock_ctz, mock_info, mock_range, mock_cfg):
+    def test_end_only(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
         mock_cfg.get_time_offset_seconds.return_value = 0
-        mock_range.return_value = _make_rates(20)
+        mock_from.return_value = _make_rates(20)
         result = fetch_candles('EURUSD', limit=5, end='2025-01-02')
         self.assertTrue(result.get('success'))
 
@@ -1050,6 +1052,20 @@ class TestFetchTicks(unittest.TestCase):
         self.assertTrue(result.get('success'))
         self.assertEqual(result['count'], 5)
         self.assertEqual(result.get('timezone'), 'UTC')
+
+    @patch(f'{_DS}.FETCH_RETRY_DELAY', 0)
+    @patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 1)
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_recent_ticks_expand_lookback_until_limit_is_met(self, mock_ctz, mock_info, mock_ticks):
+        mock_ticks.side_effect = [_make_ticks(2), _make_ticks(10)]
+        result = fetch_ticks('EURUSD', limit=5, output='rows')
+
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['count'], 5)
+        self.assertEqual(mock_ticks.call_count, 2)
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
@@ -1129,6 +1145,30 @@ class TestFetchTicks(unittest.TestCase):
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=5, output='rows')
         self.assertTrue(result.get('success'))
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_namedtuple_like_ticks_are_supported_for_row_output(self, mock_ctz, mock_info, mock_ticks):
+        ticks = [
+            SimpleNamespace(
+                time=_NOW_TS + i,
+                bid=1.1000 + i * 0.0001,
+                ask=1.1002 + i * 0.0001,
+                last=1.1001 + i * 0.0001,
+                volume=1.0,
+                flags=0,
+                volume_real=0.0,
+            )
+            for i in range(5)
+        ]
+        mock_ticks.return_value = ticks
+
+        result = fetch_ticks('EURUSD', limit=5, output='rows')
+
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['count'], 5)
 
     # -- With start/end dates ------------------------------------------------
 
