@@ -124,19 +124,24 @@ def _zigzag_pivots_indices(close: np.ndarray, threshold_pct: float) -> Tuple[Lis
     n = int(close.size)
     if n <= 1:
         return [], []
+    finite_idx = np.flatnonzero(np.isfinite(close))
+    if finite_idx.size <= 1:
+        return [], []
+    start_i = int(finite_idx[0])
+    start_p = float(close[start_i])
 
     piv_idx: List[int] = []
     piv_dir: List[str] = []  # "up" for a peak and "down" for a trough
 
-    pivot_i = 0
-    pivot_p = float(close[0])
+    pivot_i = start_i
+    pivot_p = start_p
     trend: Optional[str] = None
-    last_ext_i = 0
-    last_ext_p = float(close[0])
-    pre_high_i = 0
-    pre_high_p = float(close[0])
-    pre_low_i = 0
-    pre_low_p = float(close[0])
+    last_ext_i = start_i
+    last_ext_p = start_p
+    pre_high_i = start_i
+    pre_high_p = start_p
+    pre_low_i = start_i
+    pre_low_p = start_p
 
     def _pivot_direction_for_trend(next_trend: Optional[str]) -> str:
         if next_trend == "up":
@@ -145,7 +150,7 @@ def _zigzag_pivots_indices(close: np.ndarray, threshold_pct: float) -> Tuple[Lis
             return "up"
         return "flat"
 
-    for i in range(1, n):
+    for i in range(start_i + 1, n):
         p = float(close[i])
         if not np.isfinite(p):
             continue

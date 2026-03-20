@@ -264,15 +264,31 @@ def _fallback_local_extrema(
         window = values[idx - order : idx + order + 1]
         if not np.all(np.isfinite(window)):
             continue
+        plateau_tol = max(1e-12, abs(center) * 1e-12)
+        plateau_left = idx
+        while plateau_left > 0 and np.isfinite(values[plateau_left - 1]) and np.isclose(
+            values[plateau_left - 1],
+            center,
+            rtol=0.0,
+            atol=plateau_tol,
+        ):
+            plateau_left -= 1
+        plateau_right = idx
+        while plateau_right < (n - 1) and np.isfinite(values[plateau_right + 1]) and np.isclose(
+            values[plateau_right + 1],
+            center,
+            rtol=0.0,
+            atol=plateau_tol,
+        ):
+            plateau_right += 1
+        if plateau_left != plateau_right:
+            if int((plateau_left + plateau_right) // 2) != int(idx):
+                continue
         if prefer_high:
             if center < float(np.max(window)):
                 continue
-            if int(np.sum(window == center)) > 1:
-                continue
         else:
             if center > float(np.min(window)):
-                continue
-            if int(np.sum(window == center)) > 1:
                 continue
         candidates.append(int(idx))
     if not candidates:

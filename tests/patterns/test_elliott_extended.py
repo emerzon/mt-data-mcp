@@ -108,6 +108,13 @@ class TestZigzagPivotsExtended:
         piv, dirs = _zigzag_pivots_indices(close, 3.0)
         assert all(np.isfinite(close[i]) or i == 0 for i in piv)
 
+    def test_leading_nan_anchors_on_first_finite_price(self):
+        close = np.array([np.nan, np.nan, 100.0, 95.0, 110.0, 90.0], dtype=float)
+        piv, dirs = _zigzag_pivots_indices(close, 3.0)
+        assert piv
+        assert all(i >= 2 for i in piv)
+        assert len(piv) == len(dirs)
+
     def test_long_zigzag(self):
         close = _trending_close(100, seed=0)
         piv, dirs = _zigzag_pivots_indices(close, 2.0)
