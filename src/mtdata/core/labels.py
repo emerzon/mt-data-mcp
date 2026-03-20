@@ -89,7 +89,7 @@ def labels_triple_barrier(
                 }
             )
 
-            for i in range(0, N - int(horizon) - 1):
+            for i in range(0, N - int(horizon)):
                 p0 = float(closes[i])
                 tp, sl = _resolve_barrier_prices(
                     price=p0,

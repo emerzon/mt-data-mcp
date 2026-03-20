@@ -182,6 +182,17 @@ class TestLabelsTripleBarrier:
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_minimum_history_keeps_last_valid_entry_bar(self, mock_hist, mock_den, mock_pip):
+        mock_hist.return_value = _make_flat_df(5)
+        result = _get_raw_fn()("EURUSD", tp_pct=5.0, sl_pct=5.0, horizon=3)
+
+        assert result["success"] is True
+        assert len(result["labels"]) == 2
+        assert len(result["entries"]) == 2
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history", side_effect=Exception("MT5 down"))
     def test_exception_returns_error(self, mock_hist, mock_den, mock_pip):
         result = _get_raw_fn()("EURUSD", tp_pct=1.0, sl_pct=1.0, horizon=5)

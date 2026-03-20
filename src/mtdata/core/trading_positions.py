@@ -58,6 +58,15 @@ def _position_ticket_fields(position: Any) -> Dict[str, int]:
     return out
 
 
+def _resolved_position_ticket(position: Any, *, fallback: Optional[int] = None) -> Optional[int]:
+    fields = _position_ticket_fields(position)
+    for field in ("ticket", "identifier", "position_id", "position", "order", "deal"):
+        ticket = fields.get(field)
+        if ticket is not None:
+            return ticket
+    return trading_validation._safe_int_ticket(fallback)
+
+
 def _select_position_candidate(
     rows: List[Any],
     *,
@@ -120,7 +129,7 @@ def _resolve_open_position(
             mt5=mt5,
         )
         if picked is not None:
-            resolved = trading_validation._safe_int_ticket(getattr(picked, "ticket", None)) or candidate
+            resolved = _resolved_position_ticket(picked, fallback=candidate)
             return picked, resolved, {"method": "positions_get(ticket)", "candidate": candidate}
 
     try:
@@ -140,7 +149,7 @@ def _resolve_open_position(
         if exact_matches:
             exact_matches.sort(key=lambda item: _position_sort_key(item[0]), reverse=True)
             pos, field, matched_value = exact_matches[0]
-            resolved = trading_validation._safe_int_ticket(getattr(pos, "ticket", None))
+            resolved = _resolved_position_ticket(pos, fallback=matched_value)
             return pos, resolved, {
                 "method": "positions_get(fallback_exact)",
                 "matched_field": field,
@@ -156,7 +165,7 @@ def _resolve_open_position(
     )
     if picked is None:
         return None, None, {"method": "positions_get(fallback_heuristic)", "candidate_ids": candidate_ids, "matched": False}
-    resolved = trading_validation._safe_int_ticket(getattr(picked, "ticket", None))
+    resolved = _resolved_position_ticket(picked)
     return picked, resolved, {"method": "positions_get(fallback_heuristic)"}
 
 
