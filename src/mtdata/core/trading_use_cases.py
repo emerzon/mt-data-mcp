@@ -1000,6 +1000,14 @@ def run_trade_risk_analyze(
                                 rr_ratio = reward_currency / risk_currency
                     elif sl_price:
                         risk_status = "undefined"
+                        risk_calculation_failures.append(
+                            {
+                                "ticket": getattr(pos, "ticket", None),
+                                "symbol": getattr(pos, "symbol", None),
+                                "error": "Stop-loss is set but symbol tick metadata is invalid.",
+                                "error_type": "InvalidTickConfiguration",
+                            }
+                        )
                     else:
                         positions_without_sl += 1
                         risk_status = "unlimited"

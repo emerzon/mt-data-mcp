@@ -182,9 +182,11 @@ def _modify_position(
                 "position": resolved_ticket,
                 "sl": norm_sl,
                 "tp": norm_tp,
-                "magic": 234000,
                 "comment": trading_comments._normalize_trade_comment(comment, default="MCP modify position"),
             }
+            request_magic = trading_validation._safe_int_ticket(getattr(position, "magic", None))
+            if request_magic is not None:
+                request["magic"] = request_magic
 
             result = mt5.order_send(request)
             if result is None:
@@ -344,9 +346,11 @@ def _modify_pending_order(
                 "price": float(normalized_price),
                 "sl": request_sl,
                 "tp": request_tp,
-                "magic": 234000,
                 "comment": trading_comments._normalize_trade_comment(comment, default="MCP modify pending order"),
             }
+            request_magic = trading_validation._safe_int_ticket(getattr(order, "magic", None))
+            if request_magic is not None:
+                request["magic"] = request_magic
 
             if expiration_specified:
                 if normalized_expiration is None:
@@ -871,9 +875,13 @@ def _cancel_pending(
             if ticket is not None and len(results) == 1:
                 return results[0]
             success_count = 0
+            done_codes = {
+                int(getattr(mt5, "TRADE_RETCODE_DONE", 10009)),
+                int(getattr(mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010)),
+            }
             for item in results:
                 try:
-                    if int(item.get("retcode")) == int(mt5.TRADE_RETCODE_DONE):
+                    if int(item.get("retcode")) in done_codes:
                         success_count += 1
                 except Exception:
                     continue

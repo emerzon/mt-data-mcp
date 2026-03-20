@@ -433,13 +433,15 @@ def _place_market_order(
                             "position": position_ticket,
                             "sl": 0.0 if norm_sl is None else float(norm_sl),
                             "tp": 0.0 if norm_tp is None else float(norm_tp),
-                            "magic": 234000,
                             "comment": trading_comments._normalize_trade_comment(
                                 comment,
                                 default=request_comment,
                                 suffix=" - set TP/SL",
                             ),
                         }
+                        modify_magic = trading_validation._safe_int_ticket(getattr(position_obj, "magic", None))
+                        if modify_magic is not None:
+                            modify_request["magic"] = modify_magic
                         modify_result = None
                         max_modify_attempts = 5
                         for modify_try in range(max_modify_attempts):
