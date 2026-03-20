@@ -318,6 +318,21 @@ class TestFindRecentBreakout:
         assert direction == "up"
         assert idx == 3
 
+    def test_ignores_ambiguous_bar_after_boundaries_cross(self):
+        close = np.array([100.0, 102.0, 101.0])
+        upper = np.array([101.5, 101.5, 100.0])
+        lower = np.array([98.5, 98.5, 102.0])
+
+        direction, idx = _find_recent_breakout(
+            close,
+            upper=upper,
+            lower=lower,
+            lookback_bars=3,
+        )
+
+        assert direction == "up"
+        assert idx == 1
+
 
 class TestBuildTimeArray:
     def test_missing_time_column_returns_empty_array(self):

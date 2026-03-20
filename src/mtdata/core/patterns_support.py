@@ -440,10 +440,20 @@ def _close_price_at_index(df: pd.DataFrame, end_index: Any) -> Optional[float]:
     return float(last) if last is not None and np.isfinite(last) else None
 
 
-def _config_bool(config: Any, key: str, default: bool) -> bool:
+def _config_value(config: Any, key: str) -> tuple[bool, Any]:
+    if isinstance(config, dict):
+        if key in config:
+            return True, config.get(key)
+        return False, None
     try:
-        value = getattr(config, key)
+        return True, getattr(config, key)
     except Exception:
+        return False, None
+
+
+def _config_bool(config: Any, key: str, default: bool) -> bool:
+    found, value = _config_value(config, key)
+    if not found:
         return bool(default)
     if value is None:
         return bool(default)
@@ -461,18 +471,26 @@ def _config_bool(config: Any, key: str, default: bool) -> bool:
 
 
 def _config_int(config: Any, key: str, default: int, *, minimum: int = 0) -> int:
-    try:
-        value = int(getattr(config, key))
-    except Exception:
+    found, value_raw = _config_value(config, key)
+    if not found:
         value = int(default)
+    else:
+        try:
+            value = int(value_raw)
+        except Exception:
+            value = int(default)
     return max(int(minimum), int(value))
 
 
 def _config_float(config: Any, key: str, default: float, *, minimum: float = 0.0) -> float:
-    try:
-        value = float(getattr(config, key))
-    except Exception:
+    found, value_raw = _config_value(config, key)
+    if not found:
         value = float(default)
+    else:
+        try:
+            value = float(value_raw)
+        except Exception:
+            value = float(default)
     if not np.isfinite(value):
         value = float(default)
     return float(max(float(minimum), value))

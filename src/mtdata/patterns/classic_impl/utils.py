@@ -462,18 +462,26 @@ def _find_recent_breakout(
     last_idx: Optional[int] = None
     for i in range(start, n):
         px = float(close[i])
+        breach_up = False
+        breach_down = False
         if upper is not None and i < int(upper.size):
             up = float(upper[i])
             tol = _boundary_tol_abs(up, tol_abs, tol_pct)
             if np.isfinite(up) and px > (up + tol):
-                last_dir = "up"
-                last_idx = int(i)
+                breach_up = True
         if lower is not None and i < int(lower.size):
             lo = float(lower[i])
             tol = _boundary_tol_abs(lo, tol_abs, tol_pct)
             if np.isfinite(lo) and px < (lo - tol):
-                last_dir = "down"
-                last_idx = int(i)
+                breach_down = True
+        if breach_up and breach_down:
+            continue
+        if breach_up:
+            last_dir = "up"
+            last_idx = int(i)
+        elif breach_down:
+            last_dir = "down"
+            last_idx = int(i)
     return last_dir, last_idx
 
 

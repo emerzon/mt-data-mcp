@@ -23,6 +23,7 @@ from src.mtdata.patterns.classic import (
 )
 import src.mtdata.patterns.candlestick as candlestick_mod
 import src.mtdata.patterns.classic as classic_mod
+import src.mtdata.core.patterns_support as patterns_support_mod
 from src.mtdata.utils.mt5 import MT5ConnectionError
 
 
@@ -591,6 +592,37 @@ def test_patterns_detect_candlestick_passes_config(monkeypatch):
     )
 
     assert captured["config"] == {"use_volume_confirmation": False}
+
+
+def test_patterns_support_config_helpers_read_dict_values():
+    config = {
+        "use_volume_confirmation": False,
+        "volume_confirm_breakout_bars": 4,
+        "volume_confirm_min_ratio": 1.35,
+    }
+
+    assert patterns_support_mod._config_bool(config, "use_volume_confirmation", True) is False
+    assert patterns_support_mod._config_int(config, "volume_confirm_breakout_bars", 2) == 4
+    assert patterns_support_mod._config_float(config, "volume_confirm_min_ratio", 1.1) == pytest.approx(1.35)
+
+
+def test_candlestick_volume_confirmation_respects_dict_disable():
+    row = {"start_index": 0, "end_index": 1, "confidence": 0.5}
+
+    candlestick_mod._attach_candlestick_volume_confirmation(
+        row,
+        np.array([100.0, 110.0, 120.0], dtype=float),
+        "volume",
+        {"use_volume_confirmation": False},
+    )
+
+    assert row["volume_confirmation"]["status"] == "disabled"
+
+
+def test_candlestick_bar_spans_keep_three_bar_patterns_aligned():
+    assert candlestick_mod._CANDLESTICK_PATTERN_BAR_SPANS["2crows"] == 3
+    assert candlestick_mod._CANDLESTICK_PATTERN_BAR_SPANS["hikkake"] == 3
+    assert candlestick_mod._CANDLESTICK_PATTERN_BAR_SPANS["hikkakemod"] == 3
 
 
 def test_patterns_detect_candlestick_rejects_non_positive_last_n_bars():
@@ -1519,6 +1551,37 @@ def test_detect_triangles_skip_same_sign_converging_shapes(monkeypatch):
     assert tri == []
     assert wedge
     assert wedge[0].name == "Rising Wedge"
+
+
+def test_detect_triangles_allows_near_flat_boundary_with_same_sign_slopes(monkeypatch):
+    from src.mtdata.patterns.classic_impl import shapes
+
+    n = 150
+    peaks = np.array([30, 60, 90, 120], dtype=int)
+    troughs = np.array([20, 50, 80, 110], dtype=int)
+    close = np.linspace(100.0, 130.0, n)
+    top = np.linspace(112.0, 114.0, n)
+    bot = np.linspace(102.0, 112.0, n)
+    close[peaks] = top[peaks]
+    close[troughs] = bot[troughs]
+
+    monkeypatch.setattr(
+        shapes,
+        "_fit_lines_and_arrays",
+        lambda *_args, **_kwargs: (0.01, 112.0, 0.9, 0.08, 102.0, 0.9, top, bot),
+    )
+    monkeypatch.setattr(shapes, "_is_converging", lambda *_args, **_kwargs: True)
+
+    tri = shapes.detect_triangles(
+        close,
+        peaks,
+        troughs,
+        np.arange(n, dtype=float),
+        ClassicDetectorConfig(min_channel_touches=2, max_flat_slope=0.02),
+    )
+
+    assert tri
+    assert tri[0].name == "Ascending Triangle"
 
 
 def test_detect_triangles_reject_crossed_boundaries(monkeypatch):

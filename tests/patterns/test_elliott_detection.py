@@ -18,6 +18,13 @@ def test_impulse_rule_rejects_wave3_shortest():
     assert isinstance(metrics, dict)
 
 
+def test_impulse_rule_allows_wave3_to_tie_longest_non_shortest_wave():
+    close = np.array([100.0, 120.0, 110.0, 130.0, 121.0, 146.0], dtype=float)
+    valid, _score, _metrics = _impulse_rules_and_score(close, [0, 1, 2, 3, 4, 5], bullish=True)
+
+    assert valid is True
+
+
 def test_detect_elliott_waves_returns_candidate_for_fallback():
     df = pd.DataFrame({"close": np.linspace(100.0, 150.0, 120)})
     cfg = ElliottWaveConfig(

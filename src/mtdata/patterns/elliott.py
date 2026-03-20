@@ -458,7 +458,7 @@ def _evaluate_impulse_rules(
         violations.append("wave2_over_retrace")
 
     # Rule 3: Wave 3 is not the shortest among waves 1, 3, 5.
-    if absL[2] <= min(absL[0], absL[4]):
+    if absL[2] < min(absL[0], absL[4]):
         violations.append("wave3_shortest")
 
     # Rule 4: Wave 4 does not overlap Wave 1 territory.
@@ -1024,7 +1024,7 @@ class ElliottWaveAnalyzer:
                 )
                 pivot_confirmations = [True] * len(piv_seq)
                 if piv_seq and int(piv_seq[-1]) == int(piv_idx[-1]):
-                    pivot_confirmations = [False] * len(piv_seq)
+                    pivot_confirmations[-1] = False
                 base_confidence = _blend_confidence(
                     rule_eval.fib_score,
                     cls_score,
@@ -1110,7 +1110,7 @@ class ElliottWaveAnalyzer:
                 )
                 pivot_confirmations = [True] * len(piv_seq)
                 if piv_seq and int(piv_seq[-1]) == int(piv_idx[-1]):
-                    pivot_confirmations = [False] * len(piv_seq)
+                    pivot_confirmations[-1] = False
                 base_confidence = _blend_confidence(
                     rule_eval.fib_score,
                     cls_score,

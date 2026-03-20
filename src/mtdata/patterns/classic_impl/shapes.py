@@ -189,7 +189,13 @@ def detect_triangles(
     if shape is None or not _is_converging(shape["top"], shape["bot"], shape["k"], shape["n"], cfg):
         return []
     same_sign = (shape["sh"] > 0 and shape["sl"] > 0) or (shape["sh"] < 0 and shape["sl"] < 0)
-    if same_sign:
+    flat_top = abs(shape["sh"]) <= cfg.max_flat_slope
+    flat_bottom = abs(shape["sl"]) <= cfg.max_flat_slope
+    can_be_flat_triangle = (
+        (flat_top and shape["sl"] > cfg.max_flat_slope)
+        or (flat_bottom and shape["sh"] < -cfg.max_flat_slope)
+    )
+    if same_sign and not can_be_flat_triangle:
         return []
     if shape["touches"] < cfg.min_channel_touches - 1:
         return []

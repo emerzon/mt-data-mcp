@@ -1081,7 +1081,8 @@ class TestDetectElliottWaves:
         assert scenarios[0].confidence == pytest.approx(expected)
         assert scenarios[0].base_confidence == pytest.approx(scenarios[0].rule_eval.fib_score)
         assert scenarios[0].confidence_adjustments == adjustments
-        assert not any(scenarios[0].pivot_confirmations)
+        assert scenarios[0].pivot_confirmations[:-1] == [True] * (len(scenarios[0].pivot_confirmations) - 1)
+        assert scenarios[0].pivot_confirmations[-1] is False
 
     def test_analyze_once_uses_configured_blend_weights(self, monkeypatch):
         close = _impulse_close()

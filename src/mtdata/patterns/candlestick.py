@@ -43,14 +43,14 @@ _ROBUST_CANDLESTICK_WHITELIST = {
     'darkcloudcover', 'piercing', 'inside', 'outside', 'hikkake'
 }
 _CANDLESTICK_PATTERN_BAR_SPANS = {
-    '2crows': 2,
+    '2crows': 3,
     'counterattack': 2,
     'darkcloudcover': 2,
     'engulfing': 2,
     'harami': 2,
     'haramicross': 2,
-    'hikkake': 2,
-    'hikkakemod': 2,
+    'hikkake': 3,
+    'hikkakemod': 3,
     'inside': 2,
     'outside': 2,
     'piercing': 2,
