@@ -80,7 +80,7 @@ def _require_mt5_connection() -> None:
         mt5.ensure_connection()
     except MT5ConnectionError as exc:
         raise _http_error(
-            500,
+            503,
             str(exc),
             code="mt5_connection_error",
             operation="require_mt5_connection",

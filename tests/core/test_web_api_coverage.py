@@ -206,6 +206,22 @@ class TestWebApiRuntimeHelpers:
         assert any("Skipping Web UI mount" in record.message for record in caplog.records)
 
 
+class TestWebApiHandlers:
+    def test_require_mt5_connection_uses_503_for_mt5_outage(self):
+        from fastapi import HTTPException
+        from mtdata.core import web_api_handlers
+
+        gateway = MagicMock()
+        gateway.ensure_connection.side_effect = MT5ConnectionError("MT5 unavailable")
+
+        with patch("mtdata.core.web_api_handlers.get_default_mt5_gateway", return_value=gateway):
+            with pytest.raises(HTTPException) as exc_info:
+                web_api_handlers._require_mt5_connection()
+
+        assert exc_info.value.status_code == 503
+        assert exc_info.value.detail["error_code"] == "mt5_connection_error"
+
+
 # ===========================================================================
 # GET /api/timeframes
 # ===========================================================================

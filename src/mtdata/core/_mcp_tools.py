@@ -465,7 +465,12 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
                     timeout=_TOOL_TIMEOUT_SECONDS,
                 )
             except asyncio.TimeoutError:
-                return f"error: {_tool_name} timed out after {_TOOL_TIMEOUT_SECONDS}s"
+                return build_error_payload(
+                    f"{_tool_name} timed out after {_TOOL_TIMEOUT_SECONDS}s",
+                    code="tool_timeout",
+                    operation=_tool_name,
+                    details={"tool": _tool_name, "timeout_seconds": _TOOL_TIMEOUT_SECONDS},
+                )
 
         try:
             _async_wrapped.__annotations__ = getattr(_wrapped, "__annotations__", {})

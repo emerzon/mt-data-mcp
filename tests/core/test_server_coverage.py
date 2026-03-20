@@ -727,6 +727,34 @@ class TestRecordingToolDecorator:
         finally:
             srv._ORIG_TOOL_DECORATOR = original
 
+    def test_async_wrapped_timeout_returns_structured_error_payload(self):
+        import asyncio
+        import mtdata.core.server as srv
+
+        original = srv._ORIG_TOOL_DECORATOR
+        try:
+            srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = srv._recording_tool_decorator()
+
+            def slow_tool():
+                return {"success": True}
+
+            wrapped = dec(slow_tool)
+            async def _raise_timeout(coro, timeout):
+                if hasattr(coro, "close"):
+                    coro.close()
+                raise asyncio.TimeoutError
+
+            with patch("mtdata.core._mcp_tools.asyncio.wait_for", side_effect=_raise_timeout):
+                result = asyncio.run(wrapped())
+
+            assert result["success"] is False
+            assert result["error_code"] == "tool_timeout"
+            assert result["operation"] == "slow_tool"
+            assert result["details"]["timeout_seconds"] == 120
+        finally:
+            srv._ORIG_TOOL_DECORATOR = original
+
     def test_flattens_request_model_signature_for_mcp_and_keeps_nested_request_compat(self):
         import mtdata.core.server as srv
         from mtdata.core.data_requests import WaitEventRequest
