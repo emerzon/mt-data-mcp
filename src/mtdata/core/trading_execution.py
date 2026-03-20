@@ -27,9 +27,32 @@ def _zero_price_requested(value: Optional[Union[int, float]]) -> bool:
     if value is None or isinstance(value, bool):
         return False
     try:
-        return float(value) == 0.0
+        numeric = float(value)
     except Exception:
         return False
+    return math.isfinite(numeric) and math.isclose(numeric, 0.0, abs_tol=1e-9)
+
+
+def _resolve_position_side(position: Any, mt5: Any) -> Optional[str]:
+    position_type_buy = trading_validation._safe_int_attr(
+        mt5,
+        "POSITION_TYPE_BUY",
+        trading_validation._safe_int_attr(mt5, "ORDER_TYPE_BUY", 0),
+    )
+    position_type_sell = trading_validation._safe_int_attr(
+        mt5,
+        "POSITION_TYPE_SELL",
+        trading_validation._safe_int_attr(mt5, "ORDER_TYPE_SELL", 1),
+    )
+    try:
+        position_type = int(getattr(position, "type"))
+    except Exception:
+        return None
+    if position_type == int(position_type_buy):
+        return "BUY"
+    if position_type == int(position_type_sell):
+        return "SELL"
+    return None
 
 
 def _unexpected_operation_error(
@@ -137,15 +160,9 @@ def _modify_position(
             validate_sl = None if stop_loss is None or explicit_remove_sl else float(requested_sl)
             validate_tp = None if take_profit is None or explicit_remove_tp else float(requested_tp)
 
-            position_type_buy = trading_validation._safe_int_attr(
-                mt5,
-                "POSITION_TYPE_BUY",
-                trading_validation._safe_int_attr(mt5, "ORDER_TYPE_BUY", 0),
-            )
-            try:
-                side = "BUY" if int(getattr(position, "type", position_type_buy)) == int(position_type_buy) else "SELL"
-            except Exception:
-                side = "BUY"
+            side = _resolve_position_side(position, mt5)
+            if side is None:
+                return {"error": "Unable to determine position side for protection validation."}
             tick = mt5.symbol_info_tick(position.symbol)
             if tick is None:
                 return {"error": f"Failed to get current price for {position.symbol}"}
@@ -436,10 +453,13 @@ def _close_positions(
             # 2. Filter positions
             to_close = []
             for pos in positions:
+                position_profit: Optional[float]
                 try:
                     position_profit = float(getattr(pos, "profit", 0.0) or 0.0)
                 except Exception:
-                    position_profit = 0.0
+                    position_profit = None
+                if position_profit is None and (profit_only or loss_only):
+                    continue
                 if profit_only and position_profit <= 0.0:
                     continue
                 if loss_only and position_profit >= 0.0:

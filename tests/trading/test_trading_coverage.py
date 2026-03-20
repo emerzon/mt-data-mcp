@@ -1474,6 +1474,35 @@ class TestClosePositions:
         assert result["message"] == "No positions matched criteria"
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_profit_only_skips_positions_with_unreadable_profit(self):
+        class _BrokenProfitPosition:
+            ticket = 7
+            symbol = "EURUSD"
+            type = 0
+            volume = 0.01
+            price_current = 1.105
+            price_open = 1.1
+            comment = ""
+            magic = 234000
+            time = 1700000000
+            time_update = 1700000000
+            swap = 0.0
+
+            @property
+            def profit(self):
+                raise RuntimeError("bad profit")
+
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_BrokenProfitPosition(), _position(ticket=8, profit=50.0)]
+        mt5.symbol_info_tick.return_value = _tick()
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _close_positions
+        result = _close_positions(profit_only=True)
+        assert result["attempted_count"] == 1
+        assert mt5.order_send.call_count == 1
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_conflicting_profit_and_loss_filters_rejected(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
@@ -1775,6 +1804,41 @@ class TestModifyPosition:
         from mtdata.core.trading import _modify_position
         result = _modify_position(ticket=1, stop_loss=1.08001)
         assert result.get("success") is True
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_returns_error_when_position_side_cannot_be_resolved(self):
+        class _BrokenTypePosition:
+            ticket = 1
+            symbol = "EURUSD"
+            sl = 1.09
+            tp = 1.12
+
+            @property
+            def type(self):
+                raise RuntimeError("boom")
+
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_BrokenTypePosition()]
+        mt5.symbol_info.return_value = _sym()
+        from mtdata.core.trading import _modify_position
+        result = _modify_position(ticket=1, stop_loss=1.08)
+        assert result["error"] == "Unable to determine position side for protection validation."
+        mt5.order_send.assert_not_called()
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_tiny_stop_loss_is_treated_as_explicit_remove(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position(sl=1.09, tp=1.12)]
+        mt5.symbol_info.return_value = _sym()
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _modify_position
+        result = _modify_position(ticket=1, stop_loss=1e-12)
+        assert result.get("success") is True
+        request = mt5.order_send.call_args.args[0]
+        assert request["sl"] == 0.0
+        assert request["tp"] == pytest.approx(1.12)
 
 
 # ===================================================================
