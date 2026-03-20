@@ -4,6 +4,7 @@ import inspect
 from datetime import datetime, timedelta, timezone
 
 from mtdata.core import data as core_data
+from mtdata.core import wait_events as wait_events_mod
 from mtdata.core.data_requests import WaitEventRequest
 from mtdata.core.data_use_cases import run_wait_event
 
@@ -261,6 +262,104 @@ def test_run_wait_event_infers_candle_boundary_from_request_timeframe(monkeypatc
     assert result["event"] == "candle_close"
     assert result["boundary_event"]["type"] == "candle_close"
     assert result["boundary_event"]["timeframe"] == "M1"
+
+
+def test_seed_account_history_keys_converts_window_to_server_naive(monkeypatch) -> None:
+    calls = []
+
+    monkeypatch.setattr(
+        wait_events_mod,
+        "_to_server_naive_dt",
+        lambda dt: (dt - timedelta(hours=2)).replace(tzinfo=None),
+    )
+
+    def fetch_impl(dt_from, dt_to):
+        calls.append((dt_from, dt_to))
+        return []
+
+    started = datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
+    seen = wait_events_mod._seed_account_history_keys(
+        fetch_impl=fetch_impl,
+        started_at_utc=started,
+        row_kind="deal",
+        label="deal history",
+    )
+
+    assert seen == set()
+    assert calls == [
+        (
+            datetime(2026, 3, 15, 9, 59, 55),
+            datetime(2026, 3, 15, 10, 0, 0),
+        )
+    ]
+
+
+def test_fetch_market_ticks_range_converts_window_to_server_naive(monkeypatch) -> None:
+    captured = {}
+
+    monkeypatch.setattr(
+        wait_events_mod,
+        "_to_server_naive_dt",
+        lambda dt: (dt - timedelta(hours=3)).replace(tzinfo=None),
+    )
+
+    class Gateway:
+        COPY_TICKS_ALL = 0
+
+        def symbol_select(self, symbol, visible=True):
+            return True
+
+        def copy_ticks_range(self, symbol, dt_from, dt_to, flags):
+            captured["args"] = (symbol, dt_from, dt_to, flags)
+            return []
+
+    out = wait_events_mod._fetch_market_ticks_range(
+        gateway=Gateway(),
+        symbol="EURUSD",
+        from_dt_utc=datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc),
+        to_dt_utc=datetime(2026, 3, 15, 12, 5, 0, tzinfo=timezone.utc),
+    )
+
+    assert out == []
+    assert captured["args"] == (
+        "EURUSD",
+        datetime(2026, 3, 15, 9, 0, 0),
+        datetime(2026, 3, 15, 9, 5, 0),
+        0,
+    )
+
+
+def test_normalize_tick_rows_keeps_epoch_and_time_msc_on_same_utc_basis(monkeypatch) -> None:
+    monkeypatch.setattr(wait_events_mod, "_mt5_epoch_to_utc", lambda value: float(value) - 7200.0)
+
+    rows = [
+        {
+            "time": 7201.0,
+            "time_msc": 7201500,
+            "bid": 1.1,
+            "ask": 1.2,
+            "last": 1.15,
+            "volume": 0.0,
+            "volume_real": 0.0,
+            "flags": 0,
+        }
+    ]
+
+    normalized = wait_events_mod._normalize_tick_rows(rows)
+
+    assert normalized == [
+        {
+            "epoch": 1.0,
+            "time_msc": 1500,
+            "bid": 1.1,
+            "ask": 1.2,
+            "last": 1.15,
+            "volume": 0.0,
+            "volume_real": 0.0,
+            "flags": 0,
+            "key": (1500, 1.1, 1.2, 1.15, 0.0, 0.0, 0),
+        }
+    ]
 
 
 def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(monkeypatch) -> None:

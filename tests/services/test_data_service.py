@@ -25,8 +25,9 @@ def _mock_symbol_ready_guard(*args: Any, **kwargs: Any) -> Iterator[Tuple[None, 
 class TestDataService(unittest.TestCase):
     
     @patch('mtdata.services.data_service._mt5_copy_rates_from')
+    @patch('mtdata.services.data_service._mt5_epoch_to_utc', side_effect=AssertionError("unexpected extra UTC conversion"))
     @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
-    def test_fetch_candles_basic(self, mock_copy_rates):
+    def test_fetch_candles_basic(self, _mock_epoch_to_utc, mock_copy_rates):
         
         # Mock rates data
         now = datetime.now(timezone.utc)
@@ -78,10 +79,34 @@ class TestDataService(unittest.TestCase):
         self.assertTrue(result.get('success'))
         data = result.get('data') or []
         self.assertTrue(all(isinstance(row.get('time'), (int, float)) for row in data))
+
+    @patch('mtdata.services.data_service._mt5_copy_rates_from')
+    @patch('mtdata.services.data_service._mt5_epoch_to_utc', side_effect=AssertionError("unexpected extra UTC conversion"))
+    @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
+    def test_fetch_candles_does_not_double_convert_normalized_times(self, _mock_epoch_to_utc, mock_copy_rates):
+        rates = [
+            {
+                'time': 1704067200.0,
+                'open': 1.1, 'high': 1.2, 'low': 1.0, 'close': 1.15,
+                'tick_volume': 100, 'real_volume': 0, 'spread': 1,
+            },
+            {
+                'time': 1704067260.0,
+                'open': 1.15, 'high': 1.25, 'low': 1.05, 'close': 1.2,
+                'tick_volume': 120, 'real_volume': 0, 'spread': 1,
+            },
+        ]
+        mock_copy_rates.return_value = rates
+
+        result = fetch_candles(symbol="EURUSD", limit=2, time_as_epoch=True)
+
+        self.assertTrue(result.get("success"))
+        self.assertEqual([row["time"] for row in result.get("data", [])], [1704067200.0, 1704067260.0])
         
     @patch('mtdata.services.data_service._mt5_copy_ticks_range')
+    @patch('mtdata.services.data_service._mt5_epoch_to_utc', side_effect=AssertionError("unexpected extra UTC conversion"))
     @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
-    def test_fetch_ticks_basic(self, mock_copy_ticks):
+    def test_fetch_ticks_basic(self, _mock_epoch_to_utc, mock_copy_ticks):
         
         # Mock ticks data
         now = datetime.now(timezone.utc)
@@ -101,6 +126,39 @@ class TestDataService(unittest.TestCase):
         self.assertIsInstance(result, dict)
         self.assertTrue(result.get('success'))
         self.assertEqual(result.get('count'), 5)
+
+    @patch('mtdata.services.data_service._mt5_copy_ticks_range')
+    @patch('mtdata.services.data_service._mt5_epoch_to_utc', side_effect=AssertionError("unexpected extra UTC conversion"))
+    @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
+    def test_fetch_ticks_does_not_double_convert_normalized_times(self, _mock_epoch_to_utc, mock_copy_ticks):
+        ticks = [
+            {
+                'time': 1704067200.0,
+                'bid': 1.1,
+                'ask': 1.1001,
+                'last': 1.1,
+                'volume': 1.0,
+                'time_msc': 1704067200000.0,
+                'flags': 0,
+                'volume_real': 0.0,
+            },
+            {
+                'time': 1704067201.0,
+                'bid': 1.1001,
+                'ask': 1.1002,
+                'last': 1.10015,
+                'volume': 1.0,
+                'time_msc': 1704067201000.0,
+                'flags': 0,
+                'volume_real': 0.0,
+            },
+        ]
+        mock_copy_ticks.return_value = ticks
+
+        result = fetch_ticks(symbol="EURUSD", limit=2, output="summary")
+
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("count"), 2)
 
     @patch('mtdata.services.data_service._mt5_copy_ticks_range')
     @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)

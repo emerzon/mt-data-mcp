@@ -20,7 +20,7 @@ from .data_requests import (
     WaitEventWindow,
 )
 from .trading_time import _next_candle_wait_payload, _sleep_until_next_candle
-from ..utils.mt5 import _mt5_epoch_to_utc
+from ..utils.mt5 import _mt5_epoch_to_utc, _to_server_naive_dt
 
 _MARKET_BOOTSTRAP_MIN_SECONDS = 60.0
 _MARKET_BOOTSTRAP_MAX_SECONDS = 14400.0
@@ -524,7 +524,10 @@ def _seed_account_history_keys(
 ) -> set[tuple[Any, ...]] | Dict[str, Any]:
     seed_from_utc = started_at_utc - timedelta(seconds=_ACCOUNT_HISTORY_SEED_LOOKBACK_SECONDS)
     try:
-        rows = fetch_impl(seed_from_utc, started_at_utc)
+        rows = fetch_impl(
+            _to_server_naive_dt(seed_from_utc),
+            _to_server_naive_dt(started_at_utc),
+        )
     except Exception as exc:
         return {"error": f"Failed to fetch {label}: {exc}"}
     seen_keys: set[tuple[Any, ...]] = set()
@@ -633,7 +636,12 @@ def _collect_new_account_history_rows(
     label: str,
 ) -> List[Any] | Dict[str, Any]:
     try:
-        rows = _coerce_rows(fetch_impl(started_at_utc, observed_at_utc))
+        rows = _coerce_rows(
+            fetch_impl(
+                _to_server_naive_dt(started_at_utc),
+                _to_server_naive_dt(observed_at_utc),
+            )
+        )
     except Exception as exc:
         return {"error": f"Failed to fetch {label}: {exc}"}
 
@@ -1040,7 +1048,12 @@ def _fetch_market_ticks_range(
             except Exception:
                 pass
         flags = getattr(gateway, "COPY_TICKS_ALL", 0)
-        rows = gateway.copy_ticks_range(symbol, from_dt_utc, to_dt_utc, flags)
+        rows = gateway.copy_ticks_range(
+            symbol,
+            _to_server_naive_dt(from_dt_utc),
+            _to_server_naive_dt(to_dt_utc),
+            flags,
+        )
     except Exception as exc:
         return {"error": f"Failed to fetch tick data for {symbol}: {exc}"}
     return _normalize_tick_rows(rows)
@@ -1691,10 +1704,17 @@ def _tick_epoch(row: Any) -> Optional[float]:
         return None
 
 
+def _mt5_millis_to_utc(value_millis: float) -> int:
+    try:
+        return int(round(float(_mt5_epoch_to_utc(float(value_millis) / 1000.0)) * 1000.0))
+    except Exception:
+        return int(round(float(value_millis)))
+
+
 def _tick_time_msc(row: Any, *, fallback_epoch: float) -> int:
     value = _tick_int(row, "time_msc")
     if value is not None:
-        return value
+        return _mt5_millis_to_utc(value)
     return int(round(float(fallback_epoch) * 1000.0))
 
 
@@ -1782,7 +1802,7 @@ def _row_event_time_millis(row: Any) -> Optional[int]:
     for key in ("time_msc", "time_done_msc", "time_setup_msc", "time_update_msc"):
         value = _row_int(row, key)
         if value is not None:
-            return int(value)
+            return _mt5_millis_to_utc(value)
     for key in ("time", "time_done", "time_setup", "time_update"):
         value = _row_value(row, key)
         if value is None:

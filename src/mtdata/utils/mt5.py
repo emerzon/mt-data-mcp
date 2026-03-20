@@ -209,16 +209,15 @@ def _mt5_epoch_to_utc(epoch_seconds: float) -> float:
 
 
 def _rates_to_df(rates: Any):
-    """Convert raw MT5 rates into a DataFrame with UTC epoch seconds in 'time'."""
+    """Convert MT5 rates into a DataFrame.
+
+    Low-level MT5 copy helpers already normalize timestamps to UTC before
+    returning structured arrays, so this function should avoid re-normalizing
+    the same values a second time.
+    """
     import pandas as pd
 
-    df = pd.DataFrame(rates)
-    try:
-        if 'time' in df.columns:
-            df['time'] = df['time'].astype(float).apply(_mt5_epoch_to_utc)
-    except Exception:
-        pass
-    return df
+    return pd.DataFrame(rates)
 
 
 def _to_server_naive_dt(dt: datetime) -> datetime:

@@ -928,8 +928,8 @@ def fetch_ticks(
         
         # Build data rows with matching columns and escape properly
         # Choose a consistent time format for all rows (strip year if constant)
-        # Normalize tick times to UTC
-        _epochs = [_mt5_epoch_to_utc(float(t["time"])) for t in ticks]
+        # Low-level tick fetch helpers already normalize MT5 times to UTC.
+        _epochs = [float(t["time"]) for t in ticks]
         client_tz = _resolve_client_tz()
         _use_ctz = client_tz is not None
         if not _use_ctz:
