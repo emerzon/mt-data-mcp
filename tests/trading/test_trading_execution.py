@@ -316,6 +316,72 @@ def test_place_pending_order_implicit_types(mock_mt5):
     assert req["type"] == mock_mt5.ORDER_TYPE_SELL_STOP
 
 
+def test_place_pending_order_rejects_price_at_market_for_auto_side(mock_mt5):
+    res = _place_pending_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        price=1.05010,
+    )
+
+    assert "error" in res
+    assert "price is at market for BUY pending order" in res["error"]
+    mock_mt5.order_send.assert_not_called()
+
+
+def test_place_pending_order_rejects_entry_inside_broker_stop_distance(mock_mt5):
+    mock_mt5.symbol_info.return_value = MagicMock(
+        visible=True,
+        point=0.00001,
+        digits=5,
+        trade_calc_mode=0,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+        trade_stops_level=30,
+        trade_freeze_level=0,
+    )
+
+    res = _place_pending_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY_LIMIT",
+        price=1.04995,
+    )
+
+    assert "error" in res
+    assert "pending entry is too close" in res["error"]
+    assert "min_distance_points=30" in res["error"]
+    mock_mt5.order_send.assert_not_called()
+
+
+def test_place_pending_order_rejects_stop_loss_inside_broker_stop_distance(mock_mt5):
+    mock_mt5.symbol_info.return_value = MagicMock(
+        visible=True,
+        point=0.00001,
+        digits=5,
+        trade_calc_mode=0,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+        trade_stops_level=30,
+        trade_freeze_level=0,
+    )
+
+    res = _place_pending_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY_LIMIT",
+        price=1.04000,
+        stop_loss=1.03990,
+    )
+
+    assert "error" in res
+    assert "stop_loss is too close to entry for BUY pending orders" in res["error"]
+    assert "min_distance_points=30" in res["error"]
+    mock_mt5.order_send.assert_not_called()
+
+
 def test_place_pending_order_blocks_on_trade_preflight(mock_mt5):
     mock_mt5.account_info.return_value = MagicMock(
         trade_allowed=True,

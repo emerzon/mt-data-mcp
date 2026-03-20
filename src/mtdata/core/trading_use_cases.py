@@ -430,6 +430,11 @@ def run_trade_close(
         out["no_action"] = True
         return out
 
+    if request.profit_only and request.loss_only:
+        return _finish({
+            "error": "profit_only and loss_only cannot both be true."
+        }, scope="positions")
+
     if request.volume is not None:
         if request.ticket is None:
             return _finish({

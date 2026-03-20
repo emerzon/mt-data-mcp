@@ -38,8 +38,8 @@ def _position_sort_key(position: Any) -> float:
 def _position_side_matches(position: Any, side: Optional[str], mt5: Any) -> bool:
     if side not in {"BUY", "SELL"}:
         return True
-    expected_buy = getattr(mt5, "ORDER_TYPE_BUY", getattr(mt5, "POSITION_TYPE_BUY", None))
-    expected_sell = getattr(mt5, "ORDER_TYPE_SELL", getattr(mt5, "POSITION_TYPE_SELL", None))
+    expected_buy = getattr(mt5, "POSITION_TYPE_BUY", getattr(mt5, "ORDER_TYPE_BUY", None))
+    expected_sell = getattr(mt5, "POSITION_TYPE_SELL", getattr(mt5, "ORDER_TYPE_SELL", None))
     expected = expected_buy if side == "BUY" else expected_sell
     if expected is None:
         return True

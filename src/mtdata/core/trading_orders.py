@@ -273,9 +273,9 @@ def _place_market_order(
                 else None
             )
             if stop_loss not in (None, 0) and norm_sl is None:
-                return {"error": "stop_loss must be a positive finite price after symbol normalization."}
+                return {"error": "stop_loss must be a non-zero finite price after symbol normalization."}
             if take_profit not in (None, 0) and norm_tp is None:
-                return {"error": "take_profit must be a positive finite price after symbol normalization."}
+                return {"error": "take_profit must be a non-zero finite price after symbol normalization."}
 
             # Validate against a recent quote, then refresh again right before send.
             validate_tick = mt5.symbol_info_tick(symbol)
@@ -724,7 +724,23 @@ def _place_pending_order(
 
             norm_price = trading_validation._normalize_price_for_symbol(price, point=point, digits=digits)
             if norm_price is None:
-                return {"error": "price must be a positive finite number after symbol normalization."}
+                return {"error": "price must be a non-zero finite number after symbol normalization."}
+            price_tol = point * 0.1 if point > 0 else 1e-9
+
+            if t == "BUY" and abs(norm_price - ask) <= price_tol:
+                return {
+                    "error": (
+                        "price is at market for BUY pending order. "
+                        f"price={norm_price}, ask={ask}. Use a market order or move price away from ask."
+                    )
+                }
+            if t == "SELL" and abs(norm_price - bid) <= price_tol:
+                return {
+                    "error": (
+                        "price is at market for SELL pending order. "
+                        f"price={norm_price}, bid={bid}. Use a market order or move price away from bid."
+                    )
+                }
 
             order_type_value = None
             if t in explicit_map:
@@ -751,32 +767,22 @@ def _place_pending_order(
                 else None
             )
             if stop_loss not in (None, 0) and norm_sl is None:
-                return {"error": "stop_loss must be a positive finite price after symbol normalization."}
+                return {"error": "stop_loss must be a non-zero finite price after symbol normalization."}
             if take_profit not in (None, 0) and norm_tp is None:
-                return {"error": "take_profit must be a positive finite price after symbol normalization."}
-
-            if order_type_value == mt5.ORDER_TYPE_BUY_LIMIT and not (norm_price < ask):
-                return {"error": f"Price must be below ask for BUY_LIMIT. price={norm_price}, ask={ask}"}
-            if order_type_value == mt5.ORDER_TYPE_BUY_STOP and not (norm_price > ask):
-                return {"error": f"Price must be above ask for BUY_STOP. price={norm_price}, ask={ask}"}
-            if order_type_value == mt5.ORDER_TYPE_SELL_LIMIT and not (norm_price > bid):
-                return {"error": f"Price must be above bid for SELL_LIMIT. price={norm_price}, bid={bid}"}
-            if order_type_value == mt5.ORDER_TYPE_SELL_STOP and not (norm_price < bid):
-                return {"error": f"Price must be below bid for SELL_STOP. price={norm_price}, bid={bid}"}
+                return {"error": "take_profit must be a non-zero finite price after symbol normalization."}
 
             normalized_expiration, expiration_specified = trading_time._normalize_pending_expiration(expiration)
-
-            # SL/TP sanity relative to entry
-            if norm_sl is not None:
-                if order_type_value in (mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP) and norm_sl >= norm_price:
-                    return {"error": f"stop_loss must be below entry for BUY orders. sl={norm_sl}, price={norm_price}"}
-                if order_type_value in (mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP) and norm_sl <= norm_price:
-                    return {"error": f"stop_loss must be above entry for SELL orders. sl={norm_sl}, price={norm_price}"}
-            if norm_tp is not None:
-                if order_type_value in (mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP) and norm_tp <= norm_price:
-                    return {"error": f"take_profit must be above entry for BUY orders. tp={norm_tp}, price={norm_price}"}
-                if order_type_value in (mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP) and norm_tp >= norm_price:
-                    return {"error": f"take_profit must be below entry for SELL orders. tp={norm_tp}, price={norm_price}"}
+            pending_level_error = trading_validation._validate_pending_order_levels(
+                symbol_info=symbol_info,
+                tick=current_price,
+                order_type_value=order_type_value,
+                price=float(norm_price),
+                stop_loss=None if norm_sl is None else float(norm_sl),
+                take_profit=None if norm_tp is None else float(norm_tp),
+                mt5=mt5,
+            )
+            if pending_level_error is not None:
+                return pending_level_error
 
             request_comment = trading_comments._normalize_trade_comment(comment, default="MCP pending order")
             comment_sanitization = trading_comments._comment_sanitization_info(comment, request_comment)

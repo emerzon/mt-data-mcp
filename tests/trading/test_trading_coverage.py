@@ -1452,7 +1452,7 @@ class TestClosePositions:
         assert result["attempted_count"] == 1
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
-    def test_profit_only_includes_breakeven_positions(self):
+    def test_profit_only_excludes_breakeven_positions(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
         mt5.positions_get.return_value = [_position(ticket=3, profit=0.0)]
@@ -1460,11 +1460,10 @@ class TestClosePositions:
         mt5.order_send.return_value = _order_result()
         from mtdata.core.trading import _close_positions
         result = _close_positions(profit_only=True)
-        assert result["attempted_count"] == 1
-        assert result["results"][0]["ticket"] == 3
+        assert result["message"] == "No positions matched criteria"
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
-    def test_loss_only_includes_breakeven_positions(self):
+    def test_loss_only_excludes_breakeven_positions(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
         mt5.positions_get.return_value = [_position(ticket=4, profit=0.0)]
@@ -1472,8 +1471,16 @@ class TestClosePositions:
         mt5.order_send.return_value = _order_result()
         from mtdata.core.trading import _close_positions
         result = _close_positions(loss_only=True)
-        assert result["attempted_count"] == 1
-        assert result["results"][0]["ticket"] == 4
+        assert result["message"] == "No positions matched criteria"
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_conflicting_profit_and_loss_filters_rejected(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position(ticket=5, profit=10.0)]
+        from mtdata.core.trading import _close_positions
+        result = _close_positions(profit_only=True, loss_only=True)
+        assert result["error"] == "profit_only and loss_only cannot both be true."
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_tick_failure_for_position(self):
@@ -1842,6 +1849,20 @@ class TestModifyPendingOrder:
         assert call_args.get("expiration") == 1717200000
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_modify_request_includes_symbol_type_and_volume(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = [_pending_order(symbol="EURUSD", type_=2, volume=0.07)]
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _modify_pending_order
+        result = _modify_pending_order(ticket=100, price=1.095)
+        assert result.get("success") is True
+        call_args = mt5.order_send.call_args[0][0]
+        assert call_args["symbol"] == "EURUSD"
+        assert call_args["type"] == mt5.ORDER_TYPE_BUY_LIMIT
+        assert call_args["volume"] == pytest.approx(0.07)
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_normalizes_pending_modify_prices(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
@@ -1868,6 +1889,21 @@ class TestModifyPendingOrder:
         result = _modify_pending_order(ticket=100, take_profit=1.1100)
         assert "error" in result
         assert "take_profit must be below entry for SELL orders" in result["error"]
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_pending_modify_rejects_entry_inside_broker_stop_distance(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = [_pending_order(type_=2, price_open=1.0950, sl=1.0850, tp=1.1150)]
+        mt5.symbol_info.return_value = _sym(point=0.00001, digits=5)
+        mt5.symbol_info.return_value.trade_stops_level = 30
+        mt5.symbol_info.return_value.trade_freeze_level = 0
+        mt5.symbol_info_tick.return_value = _tick(bid=1.1000, ask=1.1002)
+        from mtdata.core.trading import _modify_pending_order
+        result = _modify_pending_order(ticket=100, price=1.1000)
+        assert "error" in result
+        assert "pending entry is too close" in result["error"]
+        assert "min_distance_points=30" in result["error"]
 
 
 # ===================================================================

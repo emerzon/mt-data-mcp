@@ -1,12 +1,15 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
-from mtdata.core.trading_requests import TradePlaceRequest
-from mtdata.core.trading_use_cases import run_trade_place
+from mtdata.core.trading_requests import TradeCloseRequest, TradePlaceRequest
+from mtdata.core.trading_use_cases import run_trade_close, run_trade_place
 from mtdata.core.trading_comments import _comment_sanitization_info, _normalize_trade_comment
 from mtdata.core.trading_time import _server_time_naive_to_mt5_timestamp
 from mtdata.core.trading_validation import (
     _normalize_order_type_input,
+    _normalize_price_for_symbol,
+    _validate_live_protection_levels,
     _validate_deviation,
     _validate_volume,
 )
@@ -49,6 +52,42 @@ def test_validate_deviation_rejects_negative_and_non_numeric():
     value, error = _validate_deviation("abc")
     assert value is None
     assert error == "deviation must be numeric"
+
+
+def test_normalize_price_for_symbol_accepts_negative_non_zero_values():
+    normalized = _normalize_price_for_symbol(-37.634, point=0.01, digits=2)
+    assert normalized == -37.63
+
+
+def test_validate_live_protection_levels_accepts_negative_quotes():
+    symbol_info = SimpleNamespace(point=0.01, trade_stops_level=0, trade_freeze_level=0)
+    tick = SimpleNamespace(bid=-37.64, ask=-37.63)
+
+    result = _validate_live_protection_levels(
+        symbol_info=symbol_info,
+        tick=tick,
+        side="BUY",
+        stop_loss=-37.80,
+        take_profit=-37.20,
+    )
+
+    assert result is None
+
+
+def test_run_trade_close_rejects_conflicting_profit_and_loss_filters():
+    request = TradeCloseRequest(close_all=True, profit_only=True, loss_only=True)
+    close_positions = MagicMock()
+    cancel_pending = MagicMock()
+
+    result = run_trade_close(
+        request,
+        close_positions=close_positions,
+        cancel_pending=cancel_pending,
+    )
+
+    assert result["error"] == "profit_only and loss_only cannot both be true."
+    close_positions.assert_not_called()
+    cancel_pending.assert_not_called()
 
 
 def test_normalize_trade_comment_applies_default_and_suffix_length_caps():

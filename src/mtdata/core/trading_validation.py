@@ -193,7 +193,7 @@ def _normalize_price_for_symbol(
     point: float,
     digits: int,
 ) -> Optional[float]:
-    """Normalize a price to symbol precision, rejecting zero/negative outputs."""
+    """Normalize a price to symbol precision, rejecting zero and non-finite outputs."""
     if value is None or isinstance(value, bool):
         return None
     try:
@@ -206,38 +206,12 @@ def _normalize_price_for_symbol(
         numeric = round(numeric / point) * point
     else:
         numeric = round(numeric, digits)
-    if not math.isfinite(numeric) or numeric <= 0.0:
+    if not math.isfinite(numeric) or numeric == 0.0:
         return None
     return float(numeric)
 
 
-def _validate_live_protection_levels(
-    *,
-    symbol_info: Any,
-    tick: Any,
-    side: str,
-    stop_loss: Optional[float],
-    take_profit: Optional[float],
-) -> Optional[Dict[str, Any]]:
-    """Validate live SL/TP attachment against current quotes and broker distances."""
-    side_norm = str(side).upper().strip()
-    if side_norm not in {"BUY", "SELL"}:
-        return None
-
-    try:
-        bid = float(getattr(tick, "bid", float("nan")) or float("nan"))
-    except Exception:
-        bid = float("nan")
-    try:
-        ask = float(getattr(tick, "ask", float("nan")) or float("nan"))
-    except Exception:
-        ask = float("nan")
-    if not math.isfinite(bid) or bid <= 0 or not math.isfinite(ask) or ask <= 0:
-        return {"error": "Failed to get valid current bid/ask for SL/TP validation."}
-
-    reference_price = bid if side_norm == "BUY" else ask
-    reference_label = "bid" if side_norm == "BUY" else "ask"
-
+def _broker_distance_metadata(symbol_info: Any) -> Dict[str, float]:
     try:
         point = float(getattr(symbol_info, "point", 0.0) or 0.0)
     except Exception:
@@ -261,7 +235,246 @@ def _validate_live_protection_levels(
 
     min_distance_points = max(stops_level_points, freeze_level_points)
     min_distance_price = float(min_distance_points) * point if point > 0 else 0.0
-    tol = point * 0.1 if point > 0 else 1e-9
+    price_tolerance = point * 0.1 if point > 0 else 1e-9
+
+    return {
+        "point": point,
+        "trade_stops_level": stops_level_points,
+        "trade_freeze_level": freeze_level_points,
+        "min_distance_points": min_distance_points,
+        "min_distance_price": min_distance_price,
+        "price_tolerance": price_tolerance,
+    }
+
+
+def _validate_pending_order_levels(
+    *,
+    symbol_info: Any,
+    tick: Any,
+    order_type_value: int,
+    price: float,
+    stop_loss: Optional[float],
+    take_profit: Optional[float],
+    mt5: Any,
+) -> Optional[Dict[str, Any]]:
+    """Validate pending entry and protection levels against quotes and broker distances."""
+    try:
+        bid = float(getattr(tick, "bid", float("nan")) or float("nan"))
+    except Exception:
+        bid = float("nan")
+    try:
+        ask = float(getattr(tick, "ask", float("nan")) or float("nan"))
+    except Exception:
+        ask = float("nan")
+    if not math.isfinite(bid) or not math.isfinite(ask):
+        return {"error": "Failed to get valid current bid/ask for pending-order validation."}
+
+    distance = _broker_distance_metadata(symbol_info)
+    min_distance_points = int(distance["min_distance_points"])
+    min_distance_price = float(distance["min_distance_price"])
+    tol = float(distance["price_tolerance"])
+
+    buy_limit = _safe_int_attr(mt5, "ORDER_TYPE_BUY_LIMIT", 2)
+    sell_limit = _safe_int_attr(mt5, "ORDER_TYPE_SELL_LIMIT", 3)
+    buy_stop = _safe_int_attr(mt5, "ORDER_TYPE_BUY_STOP", 4)
+    sell_stop = _safe_int_attr(mt5, "ORDER_TYPE_SELL_STOP", 5)
+
+    order_labels = {
+        buy_limit: "BUY_LIMIT",
+        sell_limit: "SELL_LIMIT",
+        buy_stop: "BUY_STOP",
+        sell_stop: "SELL_STOP",
+    }
+    order_label = order_labels.get(int(order_type_value), str(order_type_value))
+    buy_types = {buy_limit, buy_stop}
+    sell_types = {sell_limit, sell_stop}
+
+    def _metadata() -> Dict[str, Any]:
+        return {
+            "order_type": order_label,
+            "price": price,
+            "bid": bid,
+            "ask": ask,
+            "trade_stops_level": int(distance["trade_stops_level"]),
+            "trade_freeze_level": int(distance["trade_freeze_level"]),
+            "min_distance_points": min_distance_points,
+            "min_distance_price": min_distance_price,
+        }
+
+    if order_type_value == buy_limit:
+        if price >= (ask - tol):
+            if abs(price - ask) <= tol:
+                return {
+                    "error": (
+                        "price is at market for BUY_LIMIT. "
+                        f"price={price}, ask={ask}. Use a market order or choose a price below ask."
+                    ),
+                    **_metadata(),
+                }
+            return {"error": f"Price must be below ask for BUY_LIMIT. price={price}, ask={ask}", **_metadata()}
+        if min_distance_price > 0 and (ask - price) < (min_distance_price - tol):
+            return {
+                "error": (
+                    "pending entry is too close to the live ask for BUY_LIMIT. "
+                    f"price={price}, ask={ask}, min_distance_points={min_distance_points}"
+                ),
+                **_metadata(),
+            }
+    elif order_type_value == buy_stop:
+        if price <= (ask + tol):
+            if abs(price - ask) <= tol:
+                return {
+                    "error": (
+                        "price is at market for BUY_STOP. "
+                        f"price={price}, ask={ask}. Use a market order or choose a price above ask."
+                    ),
+                    **_metadata(),
+                }
+            return {"error": f"Price must be above ask for BUY_STOP. price={price}, ask={ask}", **_metadata()}
+        if min_distance_price > 0 and (price - ask) < (min_distance_price - tol):
+            return {
+                "error": (
+                    "pending entry is too close to the live ask for BUY_STOP. "
+                    f"price={price}, ask={ask}, min_distance_points={min_distance_points}"
+                ),
+                **_metadata(),
+            }
+    elif order_type_value == sell_limit:
+        if price <= (bid + tol):
+            if abs(price - bid) <= tol:
+                return {
+                    "error": (
+                        "price is at market for SELL_LIMIT. "
+                        f"price={price}, bid={bid}. Use a market order or choose a price above bid."
+                    ),
+                    **_metadata(),
+                }
+            return {"error": f"Price must be above bid for SELL_LIMIT. price={price}, bid={bid}", **_metadata()}
+        if min_distance_price > 0 and (price - bid) < (min_distance_price - tol):
+            return {
+                "error": (
+                    "pending entry is too close to the live bid for SELL_LIMIT. "
+                    f"price={price}, bid={bid}, min_distance_points={min_distance_points}"
+                ),
+                **_metadata(),
+            }
+    elif order_type_value == sell_stop:
+        if price >= (bid - tol):
+            if abs(price - bid) <= tol:
+                return {
+                    "error": (
+                        "price is at market for SELL_STOP. "
+                        f"price={price}, bid={bid}. Use a market order or choose a price below bid."
+                    ),
+                    **_metadata(),
+                }
+            return {"error": f"Price must be below bid for SELL_STOP. price={price}, bid={bid}", **_metadata()}
+        if min_distance_price > 0 and (bid - price) < (min_distance_price - tol):
+            return {
+                "error": (
+                    "pending entry is too close to the live bid for SELL_STOP. "
+                    f"price={price}, bid={bid}, min_distance_points={min_distance_points}"
+                ),
+                **_metadata(),
+            }
+    else:
+        return {"error": f"Unsupported pending order type {order_type_value}.", **_metadata()}
+
+    if stop_loss is not None:
+        sl = float(stop_loss)
+        if order_type_value in buy_types:
+            if sl >= (price - tol):
+                return {
+                    "error": f"stop_loss must be below entry for BUY orders. sl={sl}, price={price}",
+                    **_metadata(),
+                }
+            if min_distance_price > 0 and (price - sl) < (min_distance_price - tol):
+                return {
+                    "error": (
+                        "stop_loss is too close to entry for BUY pending orders. "
+                        f"sl={sl}, price={price}, min_distance_points={min_distance_points}"
+                    ),
+                    **_metadata(),
+                }
+        elif order_type_value in sell_types:
+            if sl <= (price + tol):
+                return {
+                    "error": f"stop_loss must be above entry for SELL orders. sl={sl}, price={price}",
+                    **_metadata(),
+                }
+            if min_distance_price > 0 and (sl - price) < (min_distance_price - tol):
+                return {
+                    "error": (
+                        "stop_loss is too close to entry for SELL pending orders. "
+                        f"sl={sl}, price={price}, min_distance_points={min_distance_points}"
+                    ),
+                    **_metadata(),
+                }
+
+    if take_profit is not None:
+        tp = float(take_profit)
+        if order_type_value in buy_types:
+            if tp <= (price + tol):
+                return {
+                    "error": f"take_profit must be above entry for BUY orders. tp={tp}, price={price}",
+                    **_metadata(),
+                }
+            if min_distance_price > 0 and (tp - price) < (min_distance_price - tol):
+                return {
+                    "error": (
+                        "take_profit is too close to entry for BUY pending orders. "
+                        f"tp={tp}, price={price}, min_distance_points={min_distance_points}"
+                    ),
+                    **_metadata(),
+                }
+        elif order_type_value in sell_types:
+            if tp >= (price - tol):
+                return {
+                    "error": f"take_profit must be below entry for SELL orders. tp={tp}, price={price}",
+                    **_metadata(),
+                }
+            if min_distance_price > 0 and (price - tp) < (min_distance_price - tol):
+                return {
+                    "error": (
+                        "take_profit is too close to entry for SELL pending orders. "
+                        f"tp={tp}, price={price}, min_distance_points={min_distance_points}"
+                    ),
+                    **_metadata(),
+                }
+
+    return None
+
+
+def _validate_live_protection_levels(
+    *,
+    symbol_info: Any,
+    tick: Any,
+    side: str,
+    stop_loss: Optional[float],
+    take_profit: Optional[float],
+) -> Optional[Dict[str, Any]]:
+    """Validate live SL/TP attachment against current quotes and broker distances."""
+    side_norm = str(side).upper().strip()
+    if side_norm not in {"BUY", "SELL"}:
+        return None
+
+    try:
+        bid = float(getattr(tick, "bid", float("nan")) or float("nan"))
+    except Exception:
+        bid = float("nan")
+    try:
+        ask = float(getattr(tick, "ask", float("nan")) or float("nan"))
+    except Exception:
+        ask = float("nan")
+    if not math.isfinite(bid) or not math.isfinite(ask):
+        return {"error": "Failed to get valid current bid/ask for SL/TP validation."}
+
+    reference_price = bid if side_norm == "BUY" else ask
+    reference_label = "bid" if side_norm == "BUY" else "ask"
+    distance = _broker_distance_metadata(symbol_info)
+    min_distance_points = int(distance["min_distance_points"])
+    min_distance_price = float(distance["min_distance_price"])
+    tol = float(distance["price_tolerance"])
 
     def _metadata() -> Dict[str, Any]:
         return {
@@ -270,8 +483,8 @@ def _validate_live_protection_levels(
             "ask": ask,
             "reference_price": reference_price,
             "reference_label": reference_label,
-            "trade_stops_level": stops_level_points,
-            "trade_freeze_level": freeze_level_points,
+            "trade_stops_level": int(distance["trade_stops_level"]),
+            "trade_freeze_level": int(distance["trade_freeze_level"]),
             "min_distance_points": min_distance_points,
             "min_distance_price": min_distance_price,
         }
