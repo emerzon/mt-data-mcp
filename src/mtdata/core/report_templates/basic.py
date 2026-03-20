@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional, List
 from math import isfinite
 from ..schema import DenoiseSpec
 from ..report_utils import now_utc_iso, parse_table_tail, pick_best_forecast_method, summarize_barrier_grid, attach_multi_timeframes
+from ..tool_calling import call_tool_sync_raw
 from ...utils.utils import _safe_float
 
 
@@ -27,13 +28,7 @@ _TREND_REGIME_LABELS = {
 def _get_raw_result(func: Any, *args: Any, **kwargs: Any) -> Dict[str, Any]:
     """Call function and return raw dict, handling both wrapped and unwrapped cases."""
     try:
-        if '__cli_raw' not in kwargs:
-            kwargs['__cli_raw'] = True
-        try:
-            result = func(*args, **kwargs)
-        except TypeError:
-            kwargs.pop('__cli_raw', None)
-            result = func(*args, **kwargs)
+        result = call_tool_sync_raw(func, *args, cli_raw=True, **kwargs)
         
         # If it returns a dict, use it directly
         if isinstance(result, dict):

@@ -726,6 +726,18 @@ class TestGetPivots:
         assert resp.status_code == 200
         assert len(resp.json()["levels"]) == 3
 
+    def test_typeerror_fallback_resolves_async_original(self):
+        raw_fn = MagicMock(side_effect=TypeError("wrong args"))
+
+        async def async_pivot(**_kwargs):
+            return self._pivot_result()
+
+        with patch("mtdata.core.web_api._call_tool_raw", return_value=raw_fn), \
+             patch("mtdata.core.web_api.pivot_compute_points", new=async_pivot):
+            resp = _client.get("/api/pivots", params={"symbol": "EURUSD", "method": "classic"})
+        assert resp.status_code == 200
+        assert len(resp.json()["levels"]) == 3
+
     def test_generic_exception(self):
         raw_fn = MagicMock(side_effect=ValueError("boom"))
         with patch("mtdata.core.web_api._call_tool_raw", return_value=raw_fn):

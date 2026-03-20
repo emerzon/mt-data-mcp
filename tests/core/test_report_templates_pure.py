@@ -472,6 +472,13 @@ class TestGetRawResult:
         result = _get_raw_result(fn, symbol="X")
         assert result == {"data": [1, 2, 3]}
 
+    def test_coroutine_result_is_resolved(self):
+        async def fn(**kwargs):
+            return {"ok": kwargs.get("symbol")}
+
+        result = _get_raw_result(fn, symbol="X")
+        assert result == {"ok": "X"}
+
     def test_string_result_parsed(self):
         fn = MagicMock(return_value="symbol: TEST\nprice: 42\n")
         result = _get_raw_result(fn, symbol="X")

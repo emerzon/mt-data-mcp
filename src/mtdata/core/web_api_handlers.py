@@ -14,6 +14,7 @@ from ..utils.mt5 import MT5ConnectionError
 from .runtime_metadata import build_runtime_timezone_meta
 from .error_envelope import build_http_error_detail
 from .mt5_gateway import get_default_mt5_gateway
+from .tool_calling import resolve_sync_tool_result
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
 
 logger = logging.getLogger(__name__)
@@ -429,9 +430,9 @@ def get_pivots_response(
 ) -> Dict[str, Any]:
     tool = call_tool_raw(pivot_tool)
     try:
-        result = tool(symbol=symbol, timeframe=timeframe)
+        result = resolve_sync_tool_result(tool(symbol=symbol, timeframe=timeframe))
     except TypeError:
-        result = pivot_tool(symbol=symbol, timeframe=timeframe)
+        result = resolve_sync_tool_result(pivot_tool(symbol=symbol, timeframe=timeframe))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"pivot compute failed: {exc}")
 

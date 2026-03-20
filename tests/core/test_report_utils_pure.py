@@ -42,6 +42,7 @@ from mtdata.core.report_utils import (
     _render_volatility_section,
     attach_multi_timeframes,
     apply_market_gates,
+    context_for_tf,
     format_number,
     market_snapshot,
     merge_params,
@@ -1031,6 +1032,43 @@ class TestAttachMultiTimeframes:
 
         trend_mtf = report["sections"]["context"]["trend_mtf"]["H1"]
         assert trend_mtf == {"s": [10], "v": 120, "q": 5}
+
+
+class TestContextForTf:
+    def test_uses_unwrapped_tool_when_wrapper_is_async(self, monkeypatch):
+        rows = [
+            {
+                "close": 101.25,
+                "EMA_20": 100.5,
+                "EMA_50": 99.5,
+                "RSI_14": 57.0,
+                "MACD_12_26_9": 0.12,
+            }
+        ]
+
+        def _raw_fetch(**kwargs):
+            assert kwargs.get("__cli_raw") is True
+            return {"data": rows}
+
+        async def _wrapped_fetch(**kwargs):
+            return {"error": f"wrapped call should not be used: {kwargs}"}
+
+        _wrapped_fetch.__wrapped__ = _raw_fetch
+
+        monkeypatch.setattr("mtdata.core.data.data_fetch_candles", _wrapped_fetch)
+        monkeypatch.setattr(
+            "mtdata.core.report_templates.basic._compute_compact_trend",
+            lambda _rows: {"s": [12], "v": 45, "q": 60},
+        )
+
+        result = context_for_tf("EURUSD", "H1", None, limit=20, tail=1)
+        assert result is not None
+        assert result["close"] == 101.25
+        assert result["EMA_20"] == 100.5
+        assert result["EMA_50"] == 99.5
+        assert result["RSI_14"] == 57.0
+        assert result["MACD"] == 0.12
+        assert result["trend_compact"] == {"s": [12], "v": 45, "q": 60}
 
 
 # ---------------------------------------------------------------------------

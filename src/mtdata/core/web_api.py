@@ -35,6 +35,7 @@ from .web_api_handlers import (
 )
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
 from .web_api_runtime import create_web_api_app, mount_webui, run_webapi
+from .tool_calling import unwrap_tool_callable
 from ..forecast.common import fetch_history as _fetch_history_impl
 from ..forecast.forecast import get_forecast_methods_data as _get_methods_impl
 from ..forecast.use_cases import (
@@ -138,8 +139,7 @@ def _list_sktime_forecasters() -> Dict[str, Any]:
 
 
 def _call_tool_raw(func: Any) -> Any:
-    raw = getattr(func, "__wrapped__", None)
-    return raw if callable(raw) else func
+    return unwrap_tool_callable(func)
 
 
 def _web_api_gateway():

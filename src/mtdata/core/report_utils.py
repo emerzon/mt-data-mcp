@@ -16,6 +16,7 @@ from .report_shared import (
     _indicator_key_variants,
     format_number,
 )
+from .tool_calling import call_tool_sync_raw
 
 
 def now_utc_iso() -> str:
@@ -345,7 +346,15 @@ def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]
     try:
         from .data import data_fetch_candles as _fetch_candles
         indicators = "ema(20),ema(50),ema(200),rsi(14),macd(12,26,9)"
-        res = _fetch_candles(symbol=symbol, timeframe=timeframe, limit=int(limit), indicators=indicators, denoise=denoise, __cli_raw=True)
+        res = call_tool_sync_raw(
+            _fetch_candles,
+            symbol=symbol,
+            timeframe=timeframe,
+            limit=int(limit),
+            indicators=indicators,
+            denoise=denoise,
+            cli_raw=True,
+        )
 
         if not isinstance(res, dict) or res.get('error'):
             return None
