@@ -148,7 +148,7 @@ class TestScreenStocks:
         mock_run.return_value = (None, 50)
         with patch.dict("sys.modules", {"finvizfinance.screener.overview": MagicMock()}):
             result = svc.screen_stocks(view="overview")
-        assert result["count"] == 0
+        assert result["error"] == "Failed to fetch screener results from Finviz."
 
     @patch("mtdata.services.finviz_service._apply_finvizfinance_timeout_patch")
     @patch("mtdata.services.finviz_service._run_screener_view")
