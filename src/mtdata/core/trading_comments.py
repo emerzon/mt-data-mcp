@@ -23,7 +23,9 @@ def _sanitize_trade_comment_text(value: Any) -> str:
     return text
 
 
-def _normalize_trade_comment(comment: Optional[str], *, default: str, suffix: str = "") -> str:
+def _normalize_trade_comment(
+    comment: Optional[str], *, default: str, suffix: str = ""
+) -> str:
     """Return an MT5-safe comment string."""
     base = _sanitize_trade_comment_text(comment)
     if not base:
@@ -46,11 +48,15 @@ def _normalize_trade_comment(comment: Optional[str], *, default: str, suffix: st
             else:
                 full = base[:_MT5_COMMENT_MAX_LENGTH]
     except Exception:
-        full = (_sanitize_trade_comment_text(default) or "MCP")[:_MT5_COMMENT_MAX_LENGTH]
+        full = (_sanitize_trade_comment_text(default) or "MCP")[
+            :_MT5_COMMENT_MAX_LENGTH
+        ]
     return full.strip()
 
 
-def _comment_sanitization_info(comment: Optional[str], applied_comment: str) -> Optional[Dict[str, Any]]:
+def _comment_sanitization_info(
+    comment: Optional[str], applied_comment: str
+) -> Optional[Dict[str, Any]]:
     """Return metadata when a user-supplied comment is sanitized."""
     if comment is None:
         return None
@@ -69,7 +75,9 @@ def _comment_sanitization_info(comment: Optional[str], applied_comment: str) -> 
     }
 
 
-def _comment_truncation_info(comment: Optional[str], applied_comment: str) -> Optional[Dict[str, Any]]:
+def _comment_truncation_info(
+    comment: Optional[str], applied_comment: str
+) -> Optional[Dict[str, Any]]:
     """Return metadata when a user-supplied comment is truncated."""
     if comment is None:
         return None

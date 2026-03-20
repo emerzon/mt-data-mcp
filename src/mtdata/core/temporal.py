@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, List, Literal, Tuple
 import logging
-import time
 
 import numpy as np
 import pandas as pd
@@ -11,7 +10,10 @@ from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
 from .schema import TimeframeLiteral
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..shared.validators import invalid_timeframe_error, unsupported_timeframe_seconds_error
+from ..shared.validators import (
+    invalid_timeframe_error,
+    unsupported_timeframe_seconds_error,
+)
 from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from,
@@ -35,8 +37,18 @@ logger = logging.getLogger(__name__)
 
 _DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 _MONTH_LABELS = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
 ]
 
 
@@ -101,13 +113,23 @@ def _parse_mapped_value(
 
 def _parse_weekday(value: Optional[str]) -> Optional[int]:
     mapping = {
-        "mon": 0, "monday": 0,
-        "tue": 1, "tues": 1, "tuesday": 1,
-        "wed": 2, "wednesday": 2,
-        "thu": 3, "thur": 3, "thurs": 3, "thursday": 3,
-        "fri": 4, "friday": 4,
-        "sat": 5, "saturday": 5,
-        "sun": 6, "sunday": 6,
+        "mon": 0,
+        "monday": 0,
+        "tue": 1,
+        "tues": 1,
+        "tuesday": 1,
+        "wed": 2,
+        "wednesday": 2,
+        "thu": 3,
+        "thur": 3,
+        "thurs": 3,
+        "thursday": 3,
+        "fri": 4,
+        "friday": 4,
+        "sat": 5,
+        "saturday": 5,
+        "sun": 6,
+        "sunday": 6,
     }
     return _parse_mapped_value(
         value,
@@ -120,18 +142,30 @@ def _parse_weekday(value: Optional[str]) -> Optional[int]:
 
 def _parse_month(value: Optional[str]) -> Optional[int]:
     mapping = {
-        "jan": 1, "january": 1,
-        "feb": 2, "february": 2,
-        "mar": 3, "march": 3,
-        "apr": 4, "april": 4,
+        "jan": 1,
+        "january": 1,
+        "feb": 2,
+        "february": 2,
+        "mar": 3,
+        "march": 3,
+        "apr": 4,
+        "april": 4,
         "may": 5,
-        "jun": 6, "june": 6,
-        "jul": 7, "july": 7,
-        "aug": 8, "august": 8,
-        "sep": 9, "sept": 9, "september": 9,
-        "oct": 10, "october": 10,
-        "nov": 11, "november": 11,
-        "dec": 12, "december": 12,
+        "jun": 6,
+        "june": 6,
+        "jul": 7,
+        "july": 7,
+        "aug": 8,
+        "august": 8,
+        "sep": 9,
+        "sept": 9,
+        "september": 9,
+        "oct": 10,
+        "october": 10,
+        "nov": 11,
+        "november": 11,
+        "dec": 12,
+        "december": 12,
     }
     return _parse_mapped_value(
         value,
@@ -163,7 +197,9 @@ def _parse_time_token(token: str) -> Optional[int]:
     return hour * 60 + minute
 
 
-def _parse_time_range(value: Optional[str]) -> Tuple[Optional[int], Optional[int], Optional[str]]:
+def _parse_time_range(
+    value: Optional[str],
+) -> Tuple[Optional[int], Optional[int], Optional[str]]:
     if value is None:
         return None, None, None
     text = str(value).strip().lower()
@@ -305,6 +341,7 @@ def temporal_analyze(
     Returns grouped averages for returns and volatility plus simple extras.
     Use group_by='all' for a single overall summary.
     """
+
     def _run() -> Dict[str, Any]:
         context: Dict[str, Any] = {
             "symbol": symbol,
@@ -368,9 +405,15 @@ def temporal_analyze(
 
             filters: Dict[str, Any] = {}
             if dow_val is not None:
-                filters["day_of_week"] = {"value": dow_val, "label": _DOW_LABELS[dow_val]}
+                filters["day_of_week"] = {
+                    "value": dow_val,
+                    "label": _DOW_LABELS[dow_val],
+                }
             if month_val is not None:
-                filters["month"] = {"value": month_val, "label": _MONTH_LABELS[month_val - 1]}
+                filters["month"] = {
+                    "value": month_val,
+                    "label": _MONTH_LABELS[month_val - 1],
+                }
             if tr_start is not None and tr_end is not None:
                 filters["time_range"] = {
                     "start": _time_label(tr_start),
@@ -404,12 +447,16 @@ def temporal_analyze(
 
             df = pd.DataFrame(rates)
             if df.empty:
-                return _error_response("No data available.", stage="fetch", context=context, bars=0)
+                return _error_response(
+                    "No data available.", stage="fetch", context=context, bars=0
+                )
 
             try:
                 df["__epoch"] = df["time"].astype(float).apply(_mt5_epoch_to_utc)
             except Exception:
-                return _error_response("Failed to normalize bar times.", stage="process", context=context)
+                return _error_response(
+                    "Failed to normalize bar times.", stage="process", context=context
+                )
 
             if not end:
                 tf_secs = TIMEFRAME_SECONDS.get(timeframe)
@@ -492,13 +539,17 @@ def temporal_analyze(
                 df["__group"] = df["__dt"].dt.weekday
                 for key, grp in df.groupby("__group", sort=True):
                     row = _stats_for_group(grp, volume_col)
-                    row["group"] = _DOW_LABELS[int(key)] if 0 <= int(key) <= 6 else str(key)
+                    row["group"] = (
+                        _DOW_LABELS[int(key)] if 0 <= int(key) <= 6 else str(key)
+                    )
                     row["group_key"] = int(key)
                     groups_out.append(row)
             elif group_norm == "month":
                 df["__group"] = df["__dt"].dt.month
                 for key, grp in df.groupby("__group", sort=True):
-                    label = _MONTH_LABELS[int(key) - 1] if 1 <= int(key) <= 12 else str(key)
+                    label = (
+                        _MONTH_LABELS[int(key) - 1] if 1 <= int(key) <= 12 else str(key)
+                    )
                     row = _stats_for_group(grp, volume_col)
                     row["group"] = label
                     row["group_key"] = int(key)
@@ -513,8 +564,16 @@ def temporal_analyze(
 
             start_epoch = float(df["__epoch"].iloc[0])
             end_epoch = float(df["__epoch"].iloc[-1])
-            start_str = _format_time_minimal_local(start_epoch) if use_client_tz else _format_time_minimal(start_epoch)
-            end_str = _format_time_minimal_local(end_epoch) if use_client_tz else _format_time_minimal(end_epoch)
+            start_str = (
+                _format_time_minimal_local(start_epoch)
+                if use_client_tz
+                else _format_time_minimal(start_epoch)
+            )
+            end_str = (
+                _format_time_minimal_local(end_epoch)
+                if use_client_tz
+                else _format_time_minimal(end_epoch)
+            )
 
             tz_name = "UTC"
             if use_client_tz:

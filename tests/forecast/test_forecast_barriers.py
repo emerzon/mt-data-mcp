@@ -1,3 +1,4 @@
+# ruff: noqa: E402, E731, E741, F811, F841
 import importlib.util
 import unittest
 import warnings
@@ -8,9 +9,13 @@ import sys
 import os
 
 # Add src to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
-from mtdata.forecast.barriers import forecast_barrier_hit_probabilities, forecast_barrier_closed_form, forecast_barrier_optimize
+from mtdata.forecast.barriers import (
+    forecast_barrier_hit_probabilities,
+    forecast_barrier_closed_form,
+    forecast_barrier_optimize,
+)
 from mtdata.forecast.barriers_shared import _sort_candidate_results
 from mtdata.forecast.monte_carlo import gbm_single_barrier_upcross_prob
 
@@ -42,27 +47,28 @@ class _BarrierModulePatchMixin:
 
 
 class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
-
     def setUp(self):
         self._start_barrier_module_patchers()
-        
+
         # Create dummy dataframe
-        dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
+        dates = pd.date_range(start="2023-01-01", periods=500, freq="h")
         prices = np.linspace(1.0, 1.1, 500) + np.random.normal(0, 0.001, 500)
-        self.df = pd.DataFrame({'time': dates, 'close': prices})
+        self.df = pd.DataFrame({"time": dates, "close": prices})
         self._set_barrier_history(self.df)
 
     def _set_flat_history(self, price: float = 1.0, bars: int = 200):
-        dates = pd.date_range(start='2023-01-01', periods=bars, freq='h')
+        dates = pd.date_range(start="2023-01-01", periods=bars, freq="h")
         closes = np.full(bars, float(price))
-        self._set_barrier_history(pd.DataFrame({'time': dates, 'close': closes}))
+        self._set_barrier_history(pd.DataFrame({"time": dates, "close": closes}))
 
     def _sample_paths(self):
-        return np.array([
-            [1.0, 1.01, 1.02, 1.03],
-            [1.0, 0.99, 0.98, 0.97],
-            [1.0, 1.002, 0.998, 1.006],
-        ])
+        return np.array(
+            [
+                [1.0, 1.01, 1.02, 1.03],
+                [1.0, 0.99, 0.98, 0.97],
+                [1.0, 1.002, 0.998, 1.006],
+            ]
+        )
 
     def tearDown(self):
         self._stop_barrier_module_patchers()
@@ -75,7 +81,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             method="mc_gbm",
             direction="long",
             tp_pct=0.5,
-            sl_pct=0.5
+            sl_pct=0.5,
         )
         self.assertIn("success", result)
         self.assertTrue(result["success"])
@@ -91,8 +97,13 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
     def test_forecast_barrier_hit_probabilities_prefers_live_tick_price(self):
         self._set_flat_history(1.0, bars=200)
         paths = self._sample_paths()
-        with patch(f'{_BARRIER_PROB_ROOT}._simulate_gbm_mc') as mock_sim, \
-             patch(f'{_BARRIER_PROB_ROOT}._get_live_reference_price', return_value=(1.2345, "live_tick_ask")):
+        with (
+            patch(f"{_BARRIER_PROB_ROOT}._simulate_gbm_mc") as mock_sim,
+            patch(
+                f"{_BARRIER_PROB_ROOT}._get_live_reference_price",
+                return_value=(1.2345, "live_tick_ask"),
+            ),
+        ):
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_hit_probabilities(
                 symbol="EURUSD",
@@ -122,8 +133,13 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
     def test_forecast_barrier_hit_probabilities_falls_back_to_close_price(self):
         self._set_flat_history(1.0, bars=200)
         paths = self._sample_paths()
-        with patch(f'{_BARRIER_PROB_ROOT}._simulate_gbm_mc') as mock_sim, \
-             patch(f'{_BARRIER_PROB_ROOT}._get_live_reference_price', return_value=(None, None)):
+        with (
+            patch(f"{_BARRIER_PROB_ROOT}._simulate_gbm_mc") as mock_sim,
+            patch(
+                f"{_BARRIER_PROB_ROOT}._get_live_reference_price",
+                return_value=(None, None),
+            ),
+        ):
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_hit_probabilities(
                 symbol="EURUSD",
@@ -142,8 +158,13 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
     def test_forecast_barrier_hit_probabilities_surfaces_denoise_warning(self):
         self._set_flat_history(1.0, bars=200)
         paths = self._sample_paths()
-        with patch(f'{_BARRIER_PROB_ROOT}._simulate_gbm_mc') as mock_sim, \
-             patch("mtdata.utils.denoise._apply_denoise", side_effect=RuntimeError("bad denoise")):
+        with (
+            patch(f"{_BARRIER_PROB_ROOT}._simulate_gbm_mc") as mock_sim,
+            patch(
+                "mtdata.utils.denoise._apply_denoise",
+                side_effect=RuntimeError("bad denoise"),
+            ),
+        ):
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_hit_probabilities(
                 symbol="EURUSD",
@@ -168,7 +189,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             direction="long",
             tp_pct=0.5,
             sl_pct=0.5,
-            params={"block_size": 5}
+            params={"block_size": 5},
         )
         self.assertIn("success", result)
         self.assertTrue(result["success"])
@@ -177,7 +198,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
     def test_forecast_barrier_garch(self):
         if importlib.util.find_spec("arch") is None:
             self.skipTest("arch package not installed")
-            
+
         result = forecast_barrier_hit_probabilities(
             symbol="EURUSD",
             timeframe="H1",
@@ -185,7 +206,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             method="garch",
             direction="long",
             tp_pct=0.5,
-            sl_pct=0.5
+            sl_pct=0.5,
         )
         self.assertIn("success", result)
         self.assertTrue(result["success"])
@@ -193,11 +214,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
 
     def test_forecast_barrier_closed_form(self):
         result = forecast_barrier_closed_form(
-            symbol="EURUSD",
-            timeframe="H1",
-            horizon=10,
-            direction="long",
-            barrier=1.2
+            symbol="EURUSD", timeframe="H1", horizon=10, direction="long", barrier=1.2
         )
         self.assertIn("success", result)
         self.assertTrue(result["success"])
@@ -256,9 +273,13 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             method="mc_gbm",
             direction="long",
             mode="pct",
-            tp_min=0.1, tp_max=0.5, tp_steps=3,
-            sl_min=0.1, sl_max=0.5, sl_steps=3,
-            objective="edge"
+            tp_min=0.1,
+            tp_max=0.5,
+            tp_steps=3,
+            sl_min=0.1,
+            sl_max=0.5,
+            sl_steps=3,
+            objective="edge",
         )
         self.assertIn("success", result)
         self.assertTrue(result["success"])
@@ -270,7 +291,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             self.skipTest("optuna package not installed")
         self._set_flat_history(1.0)
         paths = self._sample_paths()
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -279,8 +300,12 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 method="mc_gbm",
                 direction="long",
                 mode="pct",
-                tp_min=0.2, tp_max=1.0, tp_steps=3,
-                sl_min=0.2, sl_max=1.0, sl_steps=3,
+                tp_min=0.2,
+                tp_max=1.0,
+                tp_steps=3,
+                sl_min=0.2,
+                sl_max=1.0,
+                sl_steps=3,
                 objective="ev",
                 params={
                     "optimizer": "optuna",
@@ -305,7 +330,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             self.skipTest("optuna package not installed")
         self._set_flat_history(1.0)
         paths = self._sample_paths()
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -314,8 +339,12 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 method="mc_gbm",
                 direction="long",
                 mode="pct",
-                tp_min=0.2, tp_max=1.0, tp_steps=3,
-                sl_min=0.2, sl_max=1.0, sl_steps=3,
+                tp_min=0.2,
+                tp_max=1.0,
+                tp_steps=3,
+                sl_min=0.2,
+                sl_max=1.0,
+                sl_steps=3,
                 objective="ev",
                 params={
                     "optimizer": "optuna",
@@ -347,7 +376,10 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             self.skipTest("optuna package not installed")
         self._set_flat_history(1.0)
         paths = self._sample_paths()
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim, warnings.catch_warnings(record=True) as rec:
+        with (
+            patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim,
+            warnings.catch_warnings(record=True) as rec,
+        ):
             warnings.simplefilter("always")
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
@@ -357,8 +389,12 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 method="mc_gbm",
                 direction="long",
                 mode="pct",
-                tp_min=0.2, tp_max=1.0, tp_steps=3,
-                sl_min=0.2, sl_max=1.0, sl_steps=3,
+                tp_min=0.2,
+                tp_max=1.0,
+                tp_steps=3,
+                sl_min=0.2,
+                sl_max=1.0,
+                sl_steps=3,
                 objective="ev",
                 params={
                     "optimizer": "optuna",
@@ -372,15 +408,20 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             )
 
         self.assertTrue(result.get("success"))
-        self.assertFalse(any(
-            ("multivariate" in str(w.message).lower() and "experimental" in str(w.message).lower())
-            for w in rec
-        ))
+        self.assertFalse(
+            any(
+                (
+                    "multivariate" in str(w.message).lower()
+                    and "experimental" in str(w.message).lower()
+                )
+                for w in rec
+            )
+        )
 
     def test_forecast_barrier_optimize_fast_defaults_switch(self):
         self._set_flat_history(1.0)
         paths = self._sample_paths()
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -406,7 +447,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
     def test_forecast_barrier_optimize_search_profile_long(self):
         self._set_flat_history(1.0)
         paths = self._sample_paths()
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -432,9 +473,14 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
     def test_forecast_barrier_optimize_ensemble_method(self):
         self._set_flat_history(1.0)
         paths = self._sample_paths()
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_gbm, \
-             patch(f'{_BARRIER_OPT_ROOT}._simulate_bootstrap_mc') as mock_bootstrap, \
-             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(None, None)):
+        with (
+            patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_gbm,
+            patch(f"{_BARRIER_OPT_ROOT}._simulate_bootstrap_mc") as mock_bootstrap,
+            patch(
+                f"{_BARRIER_OPT_ROOT}._get_live_reference_price",
+                return_value=(None, None),
+            ),
+        ):
             mock_gbm.return_value = {"price_paths": paths}
             mock_bootstrap.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
@@ -444,8 +490,12 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 method="ensemble",
                 direction="long",
                 mode="pct",
-                tp_min=0.5, tp_max=0.5, tp_steps=1,
-                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
                 params={
                     "ensemble_methods": ["mc_gbm", "bootstrap"],
                     "ensemble_agg": "median",
@@ -482,7 +532,12 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             sl_min=0.5,
             sl_max=0.5,
             sl_steps=1,
-            params={"optimizer": "grid", "n_sims": 50, "n_seeds": 1, "use_live_price": False},
+            params={
+                "optimizer": "grid",
+                "n_sims": 50,
+                "n_seeds": 1,
+                "use_live_price": False,
+            },
             return_grid=False,
             output="summary",
         )
@@ -493,21 +548,30 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
 
     def test_forecast_barrier_optimize_ensemble_selects_real_member_candidate(self):
         self._set_flat_history(1.0)
-        gbm_paths = np.array([
-            [1.0030, 1.0010, 1.0010, 1.0010],
-            [1.0030, 1.0010, 1.0010, 1.0010],
-            [0.9970, 0.9960, 0.9950, 0.9940],
-            [1.0010, 1.0010, 1.0010, 1.0010],
-        ])
-        bootstrap_paths = np.array([
-            [1.0070, 1.0070, 1.0070, 1.0070],
-            [1.0070, 1.0070, 1.0070, 1.0070],
-            [0.9930, 0.9930, 0.9930, 0.9930],
-            [1.0070, 1.0070, 1.0070, 1.0070],
-        ])
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_gbm, \
-             patch(f'{_BARRIER_OPT_ROOT}._simulate_bootstrap_mc') as mock_bootstrap, \
-             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(None, None)):
+        gbm_paths = np.array(
+            [
+                [1.0030, 1.0010, 1.0010, 1.0010],
+                [1.0030, 1.0010, 1.0010, 1.0010],
+                [0.9970, 0.9960, 0.9950, 0.9940],
+                [1.0010, 1.0010, 1.0010, 1.0010],
+            ]
+        )
+        bootstrap_paths = np.array(
+            [
+                [1.0070, 1.0070, 1.0070, 1.0070],
+                [1.0070, 1.0070, 1.0070, 1.0070],
+                [0.9930, 0.9930, 0.9930, 0.9930],
+                [1.0070, 1.0070, 1.0070, 1.0070],
+            ]
+        )
+        with (
+            patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_gbm,
+            patch(f"{_BARRIER_OPT_ROOT}._simulate_bootstrap_mc") as mock_bootstrap,
+            patch(
+                f"{_BARRIER_OPT_ROOT}._get_live_reference_price",
+                return_value=(None, None),
+            ),
+        ):
             mock_gbm.return_value = {"price_paths": gbm_paths}
             mock_bootstrap.return_value = {"price_paths": bootstrap_paths}
             result = forecast_barrier_optimize(
@@ -517,8 +581,12 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 method="ensemble",
                 direction="long",
                 mode="pct",
-                tp_min=0.2, tp_max=0.6, tp_steps=2,
-                sl_min=0.2, sl_max=0.6, sl_steps=2,
+                tp_min=0.2,
+                tp_max=0.6,
+                tp_steps=2,
+                sl_min=0.2,
+                sl_max=0.6,
+                sl_steps=2,
                 objective="ev",
                 params={
                     "ensemble_methods": ["mc_gbm", "bootstrap"],
@@ -536,17 +604,28 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertEqual(result["ensemble"]["selected_member"]["method"], "bootstrap")
         aggregate = result["ensemble"].get("aggregate_metrics")
         self.assertIsInstance(aggregate, dict)
-        self.assertNotAlmostEqual(float(result["best"]["tp"]), float(aggregate["tp"]), places=8)
+        self.assertNotAlmostEqual(
+            float(result["best"]["tp"]), float(aggregate["tp"]), places=8
+        )
         selected_rows = [m for m in result["ensemble"]["members"] if m.get("selected")]
         self.assertEqual(len(selected_rows), 1)
-        self.assertAlmostEqual(float(selected_rows[0]["tp"]), float(result["best"]["tp"]), places=8)
-        self.assertAlmostEqual(float(selected_rows[0]["sl"]), float(result["best"]["sl"]), places=8)
+        self.assertAlmostEqual(
+            float(selected_rows[0]["tp"]), float(result["best"]["tp"]), places=8
+        )
+        self.assertAlmostEqual(
+            float(selected_rows[0]["sl"]), float(result["best"]["sl"]), places=8
+        )
 
     def test_forecast_barrier_optimize_prefers_live_reference_price(self):
         self._set_flat_history(1.0, bars=200)
         paths = self._sample_paths()
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim, \
-             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(1.2345, "live_tick_bid")):
+        with (
+            patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim,
+            patch(
+                f"{_BARRIER_OPT_ROOT}._get_live_reference_price",
+                return_value=(1.2345, "live_tick_bid"),
+            ),
+        ):
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -575,8 +654,13 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
     def test_forecast_barrier_optimize_reanchors_paths_to_live_reference_price(self):
         self._set_flat_history(1.0, bars=200)
         paths = self._sample_paths()
-        with patch(f'{_BARRIER_PROB_ROOT}._simulate_gbm_mc') as mock_sim, \
-             patch(f'{_BARRIER_PROB_ROOT}._get_live_reference_price', return_value=(1.2345, "live_tick_ask")):
+        with (
+            patch(f"{_BARRIER_PROB_ROOT}._simulate_gbm_mc") as mock_sim,
+            patch(
+                f"{_BARRIER_PROB_ROOT}._get_live_reference_price",
+                return_value=(1.2345, "live_tick_ask"),
+            ),
+        ):
             mock_sim.return_value = {"price_paths": paths}
             hit_probs = forecast_barrier_hit_probabilities(
                 symbol="EURUSD",
@@ -587,8 +671,13 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 tp_pct=0.5,
                 sl_pct=0.5,
             )
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim, \
-             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(1.2345, "live_tick_ask")):
+        with (
+            patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim,
+            patch(
+                f"{_BARRIER_OPT_ROOT}._get_live_reference_price",
+                return_value=(1.2345, "live_tick_ask"),
+            ),
+        ):
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -608,15 +697,24 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertTrue(hit_probs.get("success"))
         self.assertTrue(result.get("success"))
         best = result["best"]
-        self.assertAlmostEqual(best["prob_tp_first"], hit_probs["prob_tp_first"], places=8)
-        self.assertAlmostEqual(best["prob_sl_first"], hit_probs["prob_sl_first"], places=8)
+        self.assertAlmostEqual(
+            best["prob_tp_first"], hit_probs["prob_tp_first"], places=8
+        )
+        self.assertAlmostEqual(
+            best["prob_sl_first"], hit_probs["prob_sl_first"], places=8
+        )
         self.assertAlmostEqual(best["prob_no_hit"], hit_probs["prob_no_hit"], places=8)
 
     def test_forecast_barrier_optimize_filters_invalid_barrier_geometry(self):
         self._set_flat_history(1.0, bars=200)
         paths = self._sample_paths()
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim, \
-             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(None, None)):
+        with (
+            patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim,
+            patch(
+                f"{_BARRIER_OPT_ROOT}._get_live_reference_price",
+                return_value=(None, None),
+            ),
+        ):
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -642,12 +740,14 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
     def test_forecast_barrier_optimize_refine_and_metrics(self):
         # Deterministic paths to verify refine pass and ranking
         self._set_flat_history(1.0)
-        paths = np.array([
-            [1.0, 1.01, 1.02, 1.03],
-            [1.0, 0.99, 0.98, 0.97],
-            [1.0, 1.002, 0.998, 1.006],
-        ])
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+        paths = np.array(
+            [
+                [1.0, 1.01, 1.02, 1.03],
+                [1.0, 0.99, 0.98, 0.97],
+                [1.0, 1.002, 0.998, 1.006],
+            ]
+        )
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -656,8 +756,12 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 method="mc_gbm",
                 direction="long",
                 mode="pct",
-                tp_min=0.5, tp_max=1.0, tp_steps=2,
-                sl_min=0.5, sl_max=1.0, sl_steps=2,
+                tp_min=0.5,
+                tp_max=1.0,
+                tp_steps=2,
+                sl_min=0.5,
+                sl_max=1.0,
+                sl_steps=2,
                 objective="kelly",
                 refine=True,
                 refine_radius=0.4,
@@ -683,12 +787,14 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
 
     def test_forecast_barrier_optimize_summary_truncates_grid(self):
         self._set_flat_history(1.0)
-        paths = np.array([
-            [1.0, 1.01, 1.02, 1.03],
-            [1.0, 0.99, 0.98, 0.97],
-            [1.0, 1.002, 0.998, 1.006],
-        ])
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+        paths = np.array(
+            [
+                [1.0, 1.01, 1.02, 1.03],
+                [1.0, 0.99, 0.98, 0.97],
+                [1.0, 1.002, 0.998, 1.006],
+            ]
+        )
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -697,8 +803,12 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 method="mc_gbm",
                 direction="long",
                 mode="pct",
-                tp_min=0.5, tp_max=1.0, tp_steps=2,
-                sl_min=0.5, sl_max=1.0, sl_steps=2,
+                tp_min=0.5,
+                tp_max=1.0,
+                tp_steps=2,
+                sl_min=0.5,
+                sl_max=1.0,
+                sl_steps=2,
                 objective="edge",
                 refine=False,
                 output="summary",
@@ -713,12 +823,14 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
 
     def test_forecast_barrier_optimize_keeps_compact_results_with_full_grid(self):
         self._set_flat_history(1.0)
-        paths = np.array([
-            [1.0, 1.01, 1.02, 1.03],
-            [1.0, 0.99, 0.98, 0.97],
-            [1.0, 1.002, 0.998, 1.006],
-        ])
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+        paths = np.array(
+            [
+                [1.0, 1.01, 1.02, 1.03],
+                [1.0, 0.99, 0.98, 0.97],
+                [1.0, 1.002, 0.998, 1.006],
+            ]
+        )
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -727,8 +839,12 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 method="mc_gbm",
                 direction="long",
                 mode="pct",
-                tp_min=0.2, tp_max=1.4, tp_steps=4,
-                sl_min=0.2, sl_max=1.4, sl_steps=4,
+                tp_min=0.2,
+                tp_max=1.4,
+                tp_steps=4,
+                sl_min=0.2,
+                sl_max=1.4,
+                sl_steps=4,
                 objective="edge",
                 output="full",
                 return_grid=True,
@@ -742,7 +858,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
     def test_forecast_barrier_optimize_volatility_grid(self):
         self._set_flat_history(1.0)
         paths = self._sample_paths()
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -764,7 +880,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
     def test_forecast_barrier_optimize_ratio_grid(self):
         self._set_flat_history(1.0)
         paths = self._sample_paths()
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -792,7 +908,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
     def test_forecast_barrier_optimize_constraints(self):
         self._set_flat_history(1.0)
         paths = self._sample_paths()
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -801,8 +917,12 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 method="mc_gbm",
                 direction="long",
                 mode="pct",
-                tp_min=0.2, tp_max=0.2, tp_steps=1,
-                sl_min=2.0, sl_max=2.0, sl_steps=1,
+                tp_min=0.2,
+                tp_max=0.2,
+                tp_steps=1,
+                sl_min=2.0,
+                sl_max=2.0,
+                sl_steps=1,
                 objective="prob_resolve",
                 min_prob_win=0.5,
                 max_prob_no_hit=0.2,
@@ -821,7 +941,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
     def test_forecast_barrier_optimize_preset_grid(self):
         self._set_flat_history(1.0)
         paths = self._sample_paths()
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -841,7 +961,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
     def test_forecast_barrier_optimize_pips_mode(self):
         self._set_flat_history(1.0)
         paths = self._sample_paths()
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -850,8 +970,12 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 method="mc_gbm",
                 direction="long",
                 mode="pips",
-                tp_min=5.0, tp_max=10.0, tp_steps=2,
-                sl_min=5.0, sl_max=10.0, sl_steps=2,
+                tp_min=5.0,
+                tp_max=10.0,
+                tp_steps=2,
+                sl_min=5.0,
+                sl_max=10.0,
+                sl_steps=2,
                 return_grid=True,
             )
         self.assertTrue(result["success"])
@@ -862,8 +986,13 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         # Force TP and SL to coincide at zero so every path ties.
         self._set_flat_history(0.0)
         paths = np.zeros((3, 4))
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim, \
-             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(None, None)):
+        with (
+            patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim,
+            patch(
+                f"{_BARRIER_OPT_ROOT}._get_live_reference_price",
+                return_value=(None, None),
+            ),
+        ):
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -872,8 +1001,12 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 method="mc_gbm",
                 direction="long",
                 mode="pct",
-                tp_min=0.5, tp_max=1.0, tp_steps=2,
-                sl_min=0.5, sl_max=1.0, sl_steps=2,
+                tp_min=0.5,
+                tp_max=1.0,
+                tp_steps=2,
+                sl_min=0.5,
+                sl_max=1.0,
+                sl_steps=2,
                 objective="edge",
                 return_grid=True,
             )
@@ -881,7 +1014,12 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         grid = result.get("grid")
         self.assertTrue(grid)
         for entry in grid:
-            total = entry["prob_win"] + entry["prob_loss"] + entry["prob_tie"] + entry["prob_no_hit"]
+            total = (
+                entry["prob_win"]
+                + entry["prob_loss"]
+                + entry["prob_tie"]
+                + entry["prob_no_hit"]
+            )
             self.assertAlmostEqual(total, 1.0, places=7)
             self.assertAlmostEqual(entry["prob_tie"], 1.0, places=7)
             self.assertAlmostEqual(entry["prob_no_hit"], 0.0, places=7)
@@ -889,7 +1027,9 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             self.assertAlmostEqual(entry["prob_sl_first"], 0.5, places=7)
             expected_ev = 0.5 * entry["tp"] - 0.5 * entry["sl"]
             self.assertAlmostEqual(entry["ev"], expected_ev, places=7)
-            expected_kelly = entry["prob_tp_first"] - (entry["prob_sl_first"] / entry["rr"])
+            expected_kelly = entry["prob_tp_first"] - (
+                entry["prob_sl_first"] / entry["rr"]
+            )
             self.assertAlmostEqual(entry["kelly"], expected_kelly, places=7)
             self.assertAlmostEqual(entry["ev_cond"], expected_ev, places=7)
             self.assertAlmostEqual(entry["kelly_cond"], expected_kelly, places=7)
@@ -936,8 +1076,13 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
     def test_forecast_barrier_hit_probabilities_rejects_non_finite_barrier_input(self):
         self._set_flat_history(1.0, bars=200)
         paths = self._sample_paths()
-        with patch(f'{_BARRIER_PROB_ROOT}._simulate_gbm_mc') as mock_sim, \
-             patch(f'{_BARRIER_PROB_ROOT}._get_live_reference_price', return_value=(None, None)):
+        with (
+            patch(f"{_BARRIER_PROB_ROOT}._simulate_gbm_mc") as mock_sim,
+            patch(
+                f"{_BARRIER_PROB_ROOT}._get_live_reference_price",
+                return_value=(None, None),
+            ),
+        ):
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_hit_probabilities(
                 symbol="EURUSD",
@@ -993,14 +1138,16 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
 
     def test_forecast_barrier_optimize_warns_on_negative_ev_best(self):
         self._set_flat_history(1.0)
-        paths = np.array([
-            [1.0030, 1.0040, 1.0050],
-            [1.0030, 1.0020, 1.0010],
-            [1.0040, 1.0060, 1.0070],
-            [1.0030, 0.9900, 0.9800],
-            [0.9740, 0.9730, 0.9720],
-        ])
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+        paths = np.array(
+            [
+                [1.0030, 1.0040, 1.0050],
+                [1.0030, 1.0020, 1.0010],
+                [1.0040, 1.0060, 1.0070],
+                [1.0030, 0.9900, 0.9800],
+                [0.9740, 0.9730, 0.9720],
+            ]
+        )
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -1023,7 +1170,9 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertFalse(result.get("viable"))
         self.assertEqual(result.get("status"), "non_viable")
         self.assertTrue(result.get("no_action"))
-        self.assertEqual(result.get("status_reason"), "Selected candidate has negative EV.")
+        self.assertEqual(
+            result.get("status_reason"), "Selected candidate has negative EV."
+        )
         self.assertIsInstance(result.get("least_negative"), dict)
         self.assertEqual(result["least_negative"].get("ref"), "best")
         self.assertEqual(result["least_negative"].get("ev"), result["best"].get("ev"))
@@ -1032,12 +1181,14 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
 
     def test_forecast_barrier_optimize_flags_phantom_profit_risk(self):
         self._set_flat_history(1.0)
-        paths = np.array([
-            [1.0030, 1.0030, 1.0030],
-            [1.0005, 1.0005, 1.0005],
-            [0.9995, 0.9995, 0.9995],
-        ])
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+        paths = np.array(
+            [
+                [1.0030, 1.0030, 1.0030],
+                [1.0005, 1.0005, 1.0005],
+                [0.9995, 0.9995, 0.9995],
+            ]
+        )
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -1063,18 +1214,22 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertIn("unresolved paths", result.get("status_reason", "").lower())
         self.assertTrue(result["best"].get("phantom_profit_risk"))
         self.assertLess(float(result["best"]["edge_vs_breakeven"]), 0.0)
-        self.assertAlmostEqual(float(result["best"]["breakeven_win_rate"]), 1.0 / 1.1, places=6)
+        self.assertAlmostEqual(
+            float(result["best"]["breakeven_win_rate"]), 1.0 / 1.1, places=6
+        )
         self.assertTrue(result.get("ev_edge_conflict"))
         self.assertIn("unresolved", result.get("ev_edge_conflict_reason", "").lower())
         self.assertIn("selection_warnings", result)
 
     def test_forecast_barrier_optimize_guardrails_degenerate_objective(self):
         self._set_flat_history(1.0)
-        paths = np.vstack([
-            np.array([[1.0040, 1.0040, 1.0040]]),
-            np.full((9, 3), 1.0001),
-        ])
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+        paths = np.vstack(
+            [
+                np.array([[1.0040, 1.0040, 1.0040]]),
+                np.full((9, 3), 1.0001),
+            ]
+        )
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -1126,16 +1281,20 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertIsNone(result.get("least_negative"))
         self.assertIn("warning", result)
 
-    def test_forecast_barrier_optimize_viable_only_concise_limits_non_viable_output(self):
+    def test_forecast_barrier_optimize_viable_only_concise_limits_non_viable_output(
+        self,
+    ):
         self._set_flat_history(1.0)
-        paths = np.array([
-            [1.0030, 1.0040, 1.0050],
-            [1.0030, 1.0020, 1.0010],
-            [1.0040, 1.0060, 1.0070],
-            [1.0030, 0.9900, 0.9800],
-            [0.9740, 0.9730, 0.9720],
-        ])
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+        paths = np.array(
+            [
+                [1.0030, 1.0040, 1.0050],
+                [1.0030, 1.0020, 1.0010],
+                [1.0040, 1.0060, 1.0070],
+                [1.0030, 0.9900, 0.9800],
+                [0.9740, 0.9730, 0.9720],
+            ]
+        )
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -1174,9 +1333,9 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
 
     def setUp(self):
         self._start_barrier_module_patchers()
-        dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
+        dates = pd.date_range(start="2023-01-01", periods=500, freq="h")
         prices = np.linspace(1.0, 1.1, 500) + np.random.normal(0, 0.001, 500)
-        self.df = pd.DataFrame({'time': dates, 'close': prices})
+        self.df = pd.DataFrame({"time": dates, "close": prices})
         self._set_barrier_history(self.df)
 
     def tearDown(self):
@@ -1184,20 +1343,36 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
 
     def test_optimize_no_costs_has_no_trading_costs_key(self):
         result = forecast_barrier_optimize(
-            symbol="EURUSD", timeframe="H1", horizon=10,
-            method="mc_gbm", direction="long", mode="pct",
-            tp_min=0.5, tp_max=0.5, tp_steps=1,
-            sl_min=0.5, sl_max=0.5, sl_steps=1,
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=10,
+            method="mc_gbm",
+            direction="long",
+            mode="pct",
+            tp_min=0.5,
+            tp_max=0.5,
+            tp_steps=1,
+            sl_min=0.5,
+            sl_max=0.5,
+            sl_steps=1,
         )
         self.assertTrue(result.get("success"))
         self.assertNotIn("trading_costs", result)
 
     def test_optimize_with_spread_pct_produces_trading_costs(self):
         result = forecast_barrier_optimize(
-            symbol="EURUSD", timeframe="H1", horizon=10,
-            method="mc_gbm", direction="long", mode="pct",
-            tp_min=0.5, tp_max=0.5, tp_steps=1,
-            sl_min=0.5, sl_max=0.5, sl_steps=1,
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=10,
+            method="mc_gbm",
+            direction="long",
+            mode="pct",
+            tp_min=0.5,
+            tp_max=0.5,
+            tp_steps=1,
+            sl_min=0.5,
+            sl_max=0.5,
+            sl_steps=1,
             params={"spread_pct": 0.02},
         )
         self.assertTrue(result.get("success"))
@@ -1209,10 +1384,18 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
 
     def test_optimize_with_spread_pips_produces_trading_costs(self):
         result = forecast_barrier_optimize(
-            symbol="EURUSD", timeframe="H1", horizon=10,
-            method="mc_gbm", direction="long", mode="pips",
-            tp_min=50, tp_max=50, tp_steps=1,
-            sl_min=50, sl_max=50, sl_steps=1,
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=10,
+            method="mc_gbm",
+            direction="long",
+            mode="pips",
+            tp_min=50,
+            tp_max=50,
+            tp_steps=1,
+            sl_min=50,
+            sl_max=50,
+            sl_steps=1,
             params={"spread_pips": 2.0},
         )
         self.assertTrue(result.get("success"))
@@ -1223,23 +1406,33 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
 
     def test_cost_adjusted_ev_fields(self):
         """When costs present, ev_gross and ev_net should appear in best candidate."""
-        dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
+        dates = pd.date_range(start="2023-01-01", periods=500, freq="h")
         prices = np.full(500, 1.0)
-        self._set_barrier_history(pd.DataFrame({'time': dates, 'close': prices}))
-        paths = np.array([
-            [1.006, 1.008, 1.010],
-            [1.006, 1.008, 1.010],
-            [1.006, 1.008, 1.010],
-            [0.994, 0.992, 0.990],
-            [0.994, 0.992, 0.990],
-        ])
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+        self._set_barrier_history(pd.DataFrame({"time": dates, "close": prices}))
+        paths = np.array(
+            [
+                [1.006, 1.008, 1.010],
+                [1.006, 1.008, 1.010],
+                [1.006, 1.008, 1.010],
+                [0.994, 0.992, 0.990],
+                [0.994, 0.992, 0.990],
+            ]
+        )
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
-                symbol="EURUSD", timeframe="H1", horizon=3,
-                method="mc_gbm", direction="long", mode="pct",
-                tp_min=0.5, tp_max=0.5, tp_steps=1,
-                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=3,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
                 params={"spread_pct": 0.05},
             )
         self.assertTrue(result.get("success"))
@@ -1252,30 +1445,48 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
             self.assertGreaterEqual(ev_gross, ev_net)
 
     def test_cost_adjusted_utility_changes_when_trading_costs_are_applied(self):
-        dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
+        dates = pd.date_range(start="2023-01-01", periods=500, freq="h")
         prices = np.full(500, 1.0)
-        self._set_barrier_history(pd.DataFrame({'time': dates, 'close': prices}))
-        paths = np.array([
-            [1.006, 1.008, 1.010],
-            [1.006, 1.008, 1.010],
-            [1.006, 1.008, 1.010],
-            [0.994, 0.992, 0.990],
-            [0.994, 0.992, 0.990],
-        ])
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+        self._set_barrier_history(pd.DataFrame({"time": dates, "close": prices}))
+        paths = np.array(
+            [
+                [1.006, 1.008, 1.010],
+                [1.006, 1.008, 1.010],
+                [1.006, 1.008, 1.010],
+                [0.994, 0.992, 0.990],
+                [0.994, 0.992, 0.990],
+            ]
+        )
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
             mock_sim.return_value = {"price_paths": paths}
             no_cost = forecast_barrier_optimize(
-                symbol="EURUSD", timeframe="H1", horizon=3,
-                method="mc_gbm", direction="long", mode="pct",
-                tp_min=0.5, tp_max=0.5, tp_steps=1,
-                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=3,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
                 objective="utility",
             )
             with_cost = forecast_barrier_optimize(
-                symbol="EURUSD", timeframe="H1", horizon=3,
-                method="mc_gbm", direction="long", mode="pct",
-                tp_min=0.5, tp_max=0.5, tp_steps=1,
-                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=3,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
                 objective="utility",
                 params={"spread_pct": 0.45, "min_barrier_multiplier": 0.0},
             )
@@ -1288,20 +1499,31 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
         )
 
     def test_ensemble_preserves_cost_adjusted_viability_metrics(self):
-        self._set_barrier_history(pd.DataFrame({
-            'time': pd.date_range(start='2023-01-01', periods=500, freq='h'),
-            'close': np.full(500, 1.0),
-        }))
-        paths = np.array([
-            [1.0070, 1.0070, 1.0070],
-            [1.0070, 1.0070, 1.0070],
-            [1.0010, 1.0010, 1.0010],
-            [1.0010, 1.0010, 1.0010],
-            [1.0010, 1.0010, 1.0010],
-        ])
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_gbm, \
-             patch(f'{_BARRIER_OPT_ROOT}._simulate_bootstrap_mc') as mock_bootstrap, \
-             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(None, None)):
+        self._set_barrier_history(
+            pd.DataFrame(
+                {
+                    "time": pd.date_range(start="2023-01-01", periods=500, freq="h"),
+                    "close": np.full(500, 1.0),
+                }
+            )
+        )
+        paths = np.array(
+            [
+                [1.0070, 1.0070, 1.0070],
+                [1.0070, 1.0070, 1.0070],
+                [1.0010, 1.0010, 1.0010],
+                [1.0010, 1.0010, 1.0010],
+                [1.0010, 1.0010, 1.0010],
+            ]
+        )
+        with (
+            patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_gbm,
+            patch(f"{_BARRIER_OPT_ROOT}._simulate_bootstrap_mc") as mock_bootstrap,
+            patch(
+                f"{_BARRIER_OPT_ROOT}._get_live_reference_price",
+                return_value=(None, None),
+            ),
+        ):
             mock_gbm.return_value = {"price_paths": paths}
             mock_bootstrap.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
@@ -1342,7 +1564,15 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
     def test_breakeven_win_rate_net_computed_with_costs(self):
         """breakeven_win_rate_net should be computed and > gross breakeven when costs present."""
         from mtdata.forecast.barriers_shared import _annotate_candidate_metrics
-        row = {"tp": 0.5, "sl": 0.5, "rr": 1.0, "prob_win": 0.55, "prob_loss": 0.45, "prob_no_hit": 0.0}
+
+        row = {
+            "tp": 0.5,
+            "sl": 0.5,
+            "rr": 1.0,
+            "prob_win": 0.55,
+            "prob_loss": 0.45,
+            "prob_no_hit": 0.0,
+        }
         _annotate_candidate_metrics(row, cost_per_trade=0.05)
         self.assertIn("breakeven_win_rate_net", row)
         net_be = float(row["breakeven_win_rate_net"])
@@ -1351,14 +1581,30 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
 
     def test_breakeven_win_rate_net_absent_without_costs(self):
         from mtdata.forecast.barriers_shared import _annotate_candidate_metrics
-        row = {"tp": 0.5, "sl": 0.5, "rr": 1.0, "prob_win": 0.55, "prob_loss": 0.45, "prob_no_hit": 0.0}
+
+        row = {
+            "tp": 0.5,
+            "sl": 0.5,
+            "rr": 1.0,
+            "prob_win": 0.55,
+            "prob_loss": 0.45,
+            "prob_no_hit": 0.0,
+        }
         _annotate_candidate_metrics(row, cost_per_trade=0.0)
         self.assertNotIn("breakeven_win_rate_net", row)
 
     def test_breakeven_win_rate_net_is_1_when_cost_exceeds_tp(self):
         """If cost >= tp, net reward <= 0, breakeven_win_rate_net should be 1.0."""
         from mtdata.forecast.barriers_shared import _annotate_candidate_metrics
-        row = {"tp": 0.05, "sl": 0.5, "rr": 0.1, "prob_win": 0.6, "prob_loss": 0.4, "prob_no_hit": 0.0}
+
+        row = {
+            "tp": 0.05,
+            "sl": 0.5,
+            "rr": 0.1,
+            "prob_win": 0.6,
+            "prob_loss": 0.4,
+            "prob_no_hit": 0.0,
+        }
         _annotate_candidate_metrics(row, cost_per_trade=0.05)
         self.assertAlmostEqual(row["breakeven_win_rate_net"], 1.0)
 
@@ -1368,9 +1614,14 @@ class TestTier1StatisticalSignificance(unittest.TestCase):
 
     def test_low_confidence_flagged_for_wide_ci(self):
         from mtdata.forecast.barriers_shared import _annotate_candidate_metrics
+
         row = {
-            "tp": 0.5, "sl": 0.5, "rr": 1.0,
-            "prob_win": 0.5, "prob_loss": 0.5, "prob_no_hit": 0.0,
+            "tp": 0.5,
+            "sl": 0.5,
+            "rr": 1.0,
+            "prob_win": 0.5,
+            "prob_loss": 0.5,
+            "prob_no_hit": 0.0,
             "prob_win_ci95": {"low": 0.30, "high": 0.70},
         }
         _annotate_candidate_metrics(row)
@@ -1379,9 +1630,14 @@ class TestTier1StatisticalSignificance(unittest.TestCase):
 
     def test_low_confidence_not_flagged_for_narrow_ci(self):
         from mtdata.forecast.barriers_shared import _annotate_candidate_metrics
+
         row = {
-            "tp": 0.5, "sl": 0.5, "rr": 1.0,
-            "prob_win": 0.5, "prob_loss": 0.5, "prob_no_hit": 0.0,
+            "tp": 0.5,
+            "sl": 0.5,
+            "rr": 1.0,
+            "prob_win": 0.5,
+            "prob_loss": 0.5,
+            "prob_no_hit": 0.0,
             "prob_win_ci95": {"low": 0.47, "high": 0.53},
         }
         _annotate_candidate_metrics(row)
@@ -1389,11 +1645,18 @@ class TestTier1StatisticalSignificance(unittest.TestCase):
 
     def test_min_sims_recommended_in_diagnostics(self):
         from mtdata.forecast.barriers_shared import _build_selection_diagnostics
+
         row = {
-            "tp": 0.5, "sl": 0.5, "rr": 1.0,
-            "prob_win": 0.5, "prob_loss": 0.5, "prob_no_hit": 0.0,
+            "tp": 0.5,
+            "sl": 0.5,
+            "rr": 1.0,
+            "prob_win": 0.5,
+            "prob_loss": 0.5,
+            "prob_no_hit": 0.0,
             "prob_win_ci95": {"low": 0.30, "high": 0.70},
-            "ev": 0.01, "edge": 0.01, "kelly": 0.01,
+            "ev": 0.01,
+            "edge": 0.01,
+            "kelly": 0.01,
         }
         diag = _build_selection_diagnostics(row)
         self.assertTrue(diag.get("low_confidence"))
@@ -1404,11 +1667,18 @@ class TestTier1StatisticalSignificance(unittest.TestCase):
 
     def test_no_confidence_warning_for_narrow_ci(self):
         from mtdata.forecast.barriers_shared import _build_selection_diagnostics
+
         row = {
-            "tp": 0.5, "sl": 0.5, "rr": 1.0,
-            "prob_win": 0.55, "prob_loss": 0.45, "prob_no_hit": 0.0,
+            "tp": 0.5,
+            "sl": 0.5,
+            "rr": 1.0,
+            "prob_win": 0.55,
+            "prob_loss": 0.45,
+            "prob_no_hit": 0.0,
             "prob_win_ci95": {"low": 0.52, "high": 0.58},
-            "ev": 0.01, "edge": 0.01, "kelly": 0.01,
+            "ev": 0.01,
+            "edge": 0.01,
+            "kelly": 0.01,
         }
         diag = _build_selection_diagnostics(row)
         self.assertNotIn("confidence_warning", diag)
@@ -1420,21 +1690,32 @@ class TestTier1StructuredErrorHandling(_BarrierModulePatchMixin, unittest.TestCa
 
     def setUp(self):
         self._start_barrier_module_patchers()
-        dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
+        dates = pd.date_range(start="2023-01-01", periods=500, freq="h")
         prices = np.full(500, 1.0)
-        self._set_barrier_history(pd.DataFrame({'time': dates, 'close': prices}))
+        self._set_barrier_history(pd.DataFrame({"time": dates, "close": prices}))
 
     def tearDown(self):
         self._stop_barrier_module_patchers()
 
     def test_simulation_value_error_returns_structured_error(self):
         """ValueError in simulation → descriptive error dict, not crash."""
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc', side_effect=ValueError("negative drift")):
+        with patch(
+            f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc",
+            side_effect=ValueError("negative drift"),
+        ):
             result = forecast_barrier_optimize(
-                symbol="EURUSD", timeframe="H1", horizon=10,
-                method="mc_gbm", direction="long", mode="pct",
-                tp_min=0.5, tp_max=0.5, tp_steps=1,
-                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=10,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
             )
         self.assertIn("error", result)
         self.assertIn("simulation_failure", result.get("error_type", ""))
@@ -1442,46 +1723,88 @@ class TestTier1StructuredErrorHandling(_BarrierModulePatchMixin, unittest.TestCa
         self.assertIn("traceback_summary", result)
 
     def test_simulation_runtime_error_returns_structured_error(self):
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc', side_effect=RuntimeError("singular matrix")):
+        with patch(
+            f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc",
+            side_effect=RuntimeError("singular matrix"),
+        ):
             result = forecast_barrier_optimize(
-                symbol="EURUSD", timeframe="H1", horizon=10,
-                method="mc_gbm", direction="long", mode="pct",
-                tp_min=0.5, tp_max=0.5, tp_steps=1,
-                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=10,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
             )
         self.assertIn("error", result)
         self.assertEqual(result.get("error_type"), "simulation_failure")
 
     def test_simulation_linalg_error_returns_structured_error(self):
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc', side_effect=np.linalg.LinAlgError("SVD")):
+        with patch(
+            f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc",
+            side_effect=np.linalg.LinAlgError("SVD"),
+        ):
             result = forecast_barrier_optimize(
-                symbol="EURUSD", timeframe="H1", horizon=10,
-                method="mc_gbm", direction="long", mode="pct",
-                tp_min=0.5, tp_max=0.5, tp_steps=1,
-                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=10,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
             )
         self.assertIn("error", result)
         self.assertEqual(result.get("error_type"), "simulation_failure")
 
     def test_programming_error_propagates_not_caught(self):
         """KeyError, TypeError, etc. should propagate (not be swallowed)."""
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc', side_effect=KeyError("missing_key")):
+        with patch(
+            f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc", side_effect=KeyError("missing_key")
+        ):
             with self.assertRaises(KeyError):
                 forecast_barrier_optimize(
-                    symbol="EURUSD", timeframe="H1", horizon=10,
-                    method="mc_gbm", direction="long", mode="pct",
-                    tp_min=0.5, tp_max=0.5, tp_steps=1,
-                    sl_min=0.5, sl_max=0.5, sl_steps=1,
+                    symbol="EURUSD",
+                    timeframe="H1",
+                    horizon=10,
+                    method="mc_gbm",
+                    direction="long",
+                    mode="pct",
+                    tp_min=0.5,
+                    tp_max=0.5,
+                    tp_steps=1,
+                    sl_min=0.5,
+                    sl_max=0.5,
+                    sl_steps=1,
                 )
 
     def test_outer_except_includes_error_type_and_traceback(self):
         """Non-programming exceptions caught by outer handler include error_type."""
-        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc', side_effect=OSError("disk full")):
+        with patch(
+            f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc", side_effect=OSError("disk full")
+        ):
             result = forecast_barrier_optimize(
-                symbol="EURUSD", timeframe="H1", horizon=10,
-                method="mc_gbm", direction="long", mode="pct",
-                tp_min=0.5, tp_max=0.5, tp_steps=1,
-                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=10,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
             )
         self.assertIn("error", result)
         self.assertEqual(result.get("error_type"), "OSError")
@@ -1489,10 +1812,18 @@ class TestTier1StructuredErrorHandling(_BarrierModulePatchMixin, unittest.TestCa
 
     def test_optimize_bad_seed_type_returns_structured_error(self):
         result = forecast_barrier_optimize(
-            symbol="EURUSD", timeframe="H1", horizon=10,
-            method="mc_gbm", direction="long", mode="pct",
-            tp_min=0.5, tp_max=0.5, tp_steps=1,
-            sl_min=0.5, sl_max=0.5, sl_steps=1,
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=10,
+            method="mc_gbm",
+            direction="long",
+            mode="pct",
+            tp_min=0.5,
+            tp_max=0.5,
+            tp_steps=1,
+            sl_min=0.5,
+            sl_max=0.5,
+            sl_steps=1,
             params={"seed": [1]},
         )
         self.assertIn("error", result)
@@ -1501,11 +1832,18 @@ class TestTier1StructuredErrorHandling(_BarrierModulePatchMixin, unittest.TestCa
 
     def test_probabilities_simulation_error_returns_structured(self):
         """barriers_probabilities: simulation ValueError → structured error."""
-        with patch(f'{_BARRIER_PROB_ROOT}._simulate_gbm_mc', side_effect=ValueError("bad input")):
+        with patch(
+            f"{_BARRIER_PROB_ROOT}._simulate_gbm_mc",
+            side_effect=ValueError("bad input"),
+        ):
             result = forecast_barrier_hit_probabilities(
-                symbol="EURUSD", timeframe="H1", horizon=10,
-                method="mc_gbm", direction="long",
-                tp_pct=0.5, sl_pct=0.5,
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=10,
+                method="mc_gbm",
+                direction="long",
+                tp_pct=0.5,
+                sl_pct=0.5,
             )
         self.assertIn("error", result)
         self.assertIn("simulation_failure", result.get("error_type", ""))
@@ -1513,22 +1851,32 @@ class TestTier1StructuredErrorHandling(_BarrierModulePatchMixin, unittest.TestCa
 
     def test_probabilities_outer_except_structured(self):
         """barriers_probabilities: outer handler includes error_type and traceback."""
-        with patch(f'{_BARRIER_PROB_ROOT}._simulate_gbm_mc', side_effect=OSError("network")):
+        with patch(
+            f"{_BARRIER_PROB_ROOT}._simulate_gbm_mc", side_effect=OSError("network")
+        ):
             result = forecast_barrier_hit_probabilities(
-                symbol="EURUSD", timeframe="H1", horizon=10,
-                method="mc_gbm", direction="long",
-                tp_pct=0.5, sl_pct=0.5,
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=10,
+                method="mc_gbm",
+                direction="long",
+                tp_pct=0.5,
+                sl_pct=0.5,
             )
         self.assertIn("error", result)
         self.assertIn("error_type", result)
         self.assertIn("traceback_summary", result)
 
-    def test_probabilities_reject_non_finite_trailing_close_without_live_reference(self):
-        dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
+    def test_probabilities_reject_non_finite_trailing_close_without_live_reference(
+        self,
+    ):
+        dates = pd.date_range(start="2023-01-01", periods=500, freq="h")
         prices = np.full(500, 1.0)
         prices[-1] = np.nan
-        self._set_barrier_history(pd.DataFrame({'time': dates, 'close': prices}))
-        with patch(f'{_BARRIER_PROB_ROOT}._get_live_reference_price', return_value=(None, None)):
+        self._set_barrier_history(pd.DataFrame({"time": dates, "close": prices}))
+        with patch(
+            f"{_BARRIER_PROB_ROOT}._get_live_reference_price", return_value=(None, None)
+        ):
             result = forecast_barrier_hit_probabilities(
                 symbol="EURUSD",
                 timeframe="H1",
@@ -1545,9 +1893,13 @@ class TestTier1StructuredErrorHandling(_BarrierModulePatchMixin, unittest.TestCa
 
     def test_probabilities_bad_seed_type_returns_structured_error(self):
         result = forecast_barrier_hit_probabilities(
-            symbol="EURUSD", timeframe="H1", horizon=10,
-            method="mc_gbm", direction="long",
-            tp_pct=0.5, sl_pct=0.5,
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=10,
+            method="mc_gbm",
+            direction="long",
+            tp_pct=0.5,
+            sl_pct=0.5,
             params={"seed": [1]},
         )
         self.assertIn("error", result)
@@ -1569,12 +1921,19 @@ class TestTier1StructuredErrorHandling(_BarrierModulePatchMixin, unittest.TestCa
         self.assertIn("traceback_summary", result)
 
     def test_probabilities_programming_error_propagates(self):
-        with patch(f'{_BARRIER_PROB_ROOT}._simulate_gbm_mc', side_effect=KeyError("missing_key")):
+        with patch(
+            f"{_BARRIER_PROB_ROOT}._simulate_gbm_mc",
+            side_effect=KeyError("missing_key"),
+        ):
             with self.assertRaises(KeyError):
                 forecast_barrier_hit_probabilities(
-                    symbol="EURUSD", timeframe="H1", horizon=10,
-                    method="mc_gbm", direction="long",
-                    tp_pct=0.5, sl_pct=0.5,
+                    symbol="EURUSD",
+                    timeframe="H1",
+                    horizon=10,
+                    method="mc_gbm",
+                    direction="long",
+                    tp_pct=0.5,
+                    sl_pct=0.5,
                 )
 
 
@@ -1583,9 +1942,9 @@ class TestTier1EnsembleDegradation(_BarrierModulePatchMixin, unittest.TestCase):
 
     def setUp(self):
         self._start_barrier_module_patchers()
-        dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
+        dates = pd.date_range(start="2023-01-01", periods=500, freq="h")
         prices = np.linspace(1.0, 1.1, 500) + np.random.normal(0, 0.001, 500)
-        self.df = pd.DataFrame({'time': dates, 'close': prices})
+        self.df = pd.DataFrame({"time": dates, "close": prices})
         self._set_barrier_history(self.df)
 
     def tearDown(self):
@@ -1599,34 +1958,53 @@ class TestTier1EnsembleDegradation(_BarrierModulePatchMixin, unittest.TestCase):
             "last_price": 1.05,
             "last_price_close": 1.05,
             "best": {
-                "tp": 0.5, "sl": 0.5, "rr": 1.0,
-                "tp_price": 1.055, "sl_price": 1.045,
-                "prob_win": 0.55, "prob_loss": 0.40, "prob_no_hit": 0.05,
-                "prob_tp_first": 0.55, "prob_sl_first": 0.40,
-                "prob_tie": 0.0, "prob_resolve": 0.95,
-                "ev": ev, "ev_cond": ev, "edge": 0.05,
-                "breakeven_win_rate": 0.5, "edge_vs_breakeven": 0.05,
-                "kelly": 0.1, "kelly_cond": 0.1,
-                "ev_per_bar": ev / 10, "profit_factor": 1.1, "utility": 0.01,
-                "t_hit_tp_median": 5, "t_hit_sl_median": 4,
-                "t_hit_resolve_mean": 5, "t_hit_resolve_median": 4,
+                "tp": 0.5,
+                "sl": 0.5,
+                "rr": 1.0,
+                "tp_price": 1.055,
+                "sl_price": 1.045,
+                "prob_win": 0.55,
+                "prob_loss": 0.40,
+                "prob_no_hit": 0.05,
+                "prob_tp_first": 0.55,
+                "prob_sl_first": 0.40,
+                "prob_tie": 0.0,
+                "prob_resolve": 0.95,
+                "ev": ev,
+                "ev_cond": ev,
+                "edge": 0.05,
+                "breakeven_win_rate": 0.5,
+                "edge_vs_breakeven": 0.05,
+                "kelly": 0.1,
+                "kelly_cond": 0.1,
+                "ev_per_bar": ev / 10,
+                "profit_factor": 1.1,
+                "utility": 0.01,
+                "t_hit_tp_median": 5,
+                "t_hit_sl_median": 4,
+                "t_hit_resolve_mean": 5,
+                "t_hit_resolve_median": 4,
             },
         }
 
     def test_ensemble_all_succeed_confidence_high(self):
         """All members succeed → confidence=high, degraded=False."""
-        methods = ['mc_gbm', 'garch']
+        methods = ["mc_gbm", "garch"]
         outputs = {m: self._make_member_output(m) for m in methods}
-        with patch('mtdata.forecast.barriers.forecast_barrier_optimize') as mock_opt:
+        with patch("mtdata.forecast.barriers.forecast_barrier_optimize") as mock_opt:
+
             def _side_effect(*args, **kwargs):
-                m = kwargs.get('method', args[3] if len(args) > 3 else 'mc_gbm')
+                m = kwargs.get("method", args[3] if len(args) > 3 else "mc_gbm")
                 return outputs.get(m, {"error": "fail"})
+
             mock_opt.side_effect = _side_effect
         n_total = 4
         n_succeeded = 4
         n_failed = 0
         ensemble_degraded = n_failed > n_total / 2
-        ensemble_confidence = "high" if n_failed == 0 else ("medium" if n_succeeded > n_failed else "low")
+        ensemble_confidence = (
+            "high" if n_failed == 0 else ("medium" if n_succeeded > n_failed else "low")
+        )
         self.assertFalse(ensemble_degraded)
         self.assertEqual(ensemble_confidence, "high")
 
@@ -1636,7 +2014,9 @@ class TestTier1EnsembleDegradation(_BarrierModulePatchMixin, unittest.TestCase):
         n_succeeded = 3
         n_failed = 1
         ensemble_degraded = n_failed > n_total / 2
-        ensemble_confidence = "high" if n_failed == 0 else ("medium" if n_succeeded > n_failed else "low")
+        ensemble_confidence = (
+            "high" if n_failed == 0 else ("medium" if n_succeeded > n_failed else "low")
+        )
         self.assertFalse(ensemble_degraded)
         self.assertEqual(ensemble_confidence, "medium")
 
@@ -1646,7 +2026,9 @@ class TestTier1EnsembleDegradation(_BarrierModulePatchMixin, unittest.TestCase):
         n_succeeded = 1
         n_failed = 3
         ensemble_degraded = n_failed > n_total / 2
-        ensemble_confidence = "high" if n_failed == 0 else ("medium" if n_succeeded > n_failed else "low")
+        ensemble_confidence = (
+            "high" if n_failed == 0 else ("medium" if n_succeeded > n_failed else "low")
+        )
         self.assertTrue(ensemble_degraded)
         self.assertEqual(ensemble_confidence, "low")
 
@@ -1656,7 +2038,9 @@ class TestTier1EnsembleDegradation(_BarrierModulePatchMixin, unittest.TestCase):
         n_succeeded = 2
         n_failed = 2
         ensemble_degraded = n_failed > n_total / 2
-        ensemble_confidence = "high" if n_failed == 0 else ("medium" if n_succeeded > n_failed else "low")
+        ensemble_confidence = (
+            "high" if n_failed == 0 else ("medium" if n_succeeded > n_failed else "low")
+        )
         self.assertFalse(ensemble_degraded)
         self.assertEqual(ensemble_confidence, "low")
 
@@ -1709,5 +2093,5 @@ def test_sort_candidate_results_handles_missing_values():
     assert rows[0]["tp"] == 2.0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

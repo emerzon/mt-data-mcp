@@ -10,14 +10,27 @@ import pytest
 
 # Ensure MetaTrader5 mock is available
 _mt5_mock = MagicMock()
-_mt5_mock.TIMEFRAME_M1 = 1; _mt5_mock.TIMEFRAME_M2 = 2; _mt5_mock.TIMEFRAME_M3 = 3
-_mt5_mock.TIMEFRAME_M4 = 4; _mt5_mock.TIMEFRAME_M5 = 5; _mt5_mock.TIMEFRAME_M6 = 6
-_mt5_mock.TIMEFRAME_M10 = 10; _mt5_mock.TIMEFRAME_M12 = 12; _mt5_mock.TIMEFRAME_M15 = 15
-_mt5_mock.TIMEFRAME_M20 = 20; _mt5_mock.TIMEFRAME_M30 = 30
-_mt5_mock.TIMEFRAME_H1 = 16385; _mt5_mock.TIMEFRAME_H2 = 16386; _mt5_mock.TIMEFRAME_H3 = 16387
-_mt5_mock.TIMEFRAME_H4 = 16388; _mt5_mock.TIMEFRAME_H6 = 16390; _mt5_mock.TIMEFRAME_H8 = 16392
-_mt5_mock.TIMEFRAME_H12 = 16396; _mt5_mock.TIMEFRAME_D1 = 16408
-_mt5_mock.TIMEFRAME_W1 = 32769; _mt5_mock.TIMEFRAME_MN1 = 49153
+_mt5_mock.TIMEFRAME_M1 = 1
+_mt5_mock.TIMEFRAME_M2 = 2
+_mt5_mock.TIMEFRAME_M3 = 3
+_mt5_mock.TIMEFRAME_M4 = 4
+_mt5_mock.TIMEFRAME_M5 = 5
+_mt5_mock.TIMEFRAME_M6 = 6
+_mt5_mock.TIMEFRAME_M10 = 10
+_mt5_mock.TIMEFRAME_M12 = 12
+_mt5_mock.TIMEFRAME_M15 = 15
+_mt5_mock.TIMEFRAME_M20 = 20
+_mt5_mock.TIMEFRAME_M30 = 30
+_mt5_mock.TIMEFRAME_H1 = 16385
+_mt5_mock.TIMEFRAME_H2 = 16386
+_mt5_mock.TIMEFRAME_H3 = 16387
+_mt5_mock.TIMEFRAME_H4 = 16388
+_mt5_mock.TIMEFRAME_H6 = 16390
+_mt5_mock.TIMEFRAME_H8 = 16392
+_mt5_mock.TIMEFRAME_H12 = 16396
+_mt5_mock.TIMEFRAME_D1 = 16408
+_mt5_mock.TIMEFRAME_W1 = 32769
+_mt5_mock.TIMEFRAME_MN1 = 49153
 sys.modules["MetaTrader5"] = _mt5_mock
 
 from mtdata.forecast.backtest import (
@@ -30,14 +43,17 @@ from mtdata.forecast.backtest import (
 
 # ── Helper to build a fake df ────────────────────────────────────────────────
 
+
 def _make_df(n: int, base_time: float = 1700000000.0, base_close: float = 100.0):
     """Create a simple DataFrame with 'time' and 'close' columns."""
+# ruff: noqa: E402
     times = [base_time + i * 3600 for i in range(n)]
     closes = [base_close + i * 0.5 for i in range(n)]
     return pd.DataFrame({"time": times, "close": closes})
 
 
 # ── _get_forecast_methods_data_safe  (lines 22-29 fallback) ──────────────────
+
 
 class TestGetForecastMethodsDataSafe:
     def test_returns_dict(self):
@@ -46,10 +62,10 @@ class TestGetForecastMethodsDataSafe:
         assert "methods" in result
 
     def test_fallback_on_mock(self):
-        with patch("mtdata.forecast.backtest._get_forecast_methods_data_safe") as mock_fn:
-            mock_fn.return_value = {
-                "methods": [{"method": "naive", "available": True}]
-            }
+        with patch(
+            "mtdata.forecast.backtest._get_forecast_methods_data_safe"
+        ) as mock_fn:
+            mock_fn.return_value = {"methods": [{"method": "naive", "available": True}]}
             r = mock_fn()
             assert "methods" in r
 
@@ -62,6 +78,7 @@ class TestGetForecastMethodsDataSafe:
 
 
 # ── _bars_per_year  (lines 40-48) ────────────────────────────────────────────
+
 
 class TestBarsPerYear:
     def test_h1(self):
@@ -79,6 +96,7 @@ class TestBarsPerYear:
 
 
 # ── _compute_performance_metrics  (lines 55-117) ────────────────────────────
+
 
 class TestComputePerformanceMetrics:
     def test_empty_returns(self):
@@ -128,6 +146,7 @@ class TestComputePerformanceMetrics:
 
 
 # ── forecast_backtest  (lines 120-435) ───────────────────────────────────────
+
 
 class TestForecastBacktest:
     def test_invalid_timeframe(self):
@@ -183,6 +202,7 @@ class TestForecastBacktest:
         df = _make_df(500)
         fetch.return_value = df
         from mtdata.utils.utils import _format_time_minimal
+
         anchor_time = _format_time_minimal(float(df["time"].iloc[100]))
         with patch("mtdata.forecast.backtest.forecast") as fc:
             fc.return_value = {"forecast_price": [101.0] * 12}
@@ -239,9 +259,14 @@ class TestForecastBacktest:
         fetch.return_value = _make_df(500)
         with patch("mtdata.forecast.backtest.forecast") as fc:
             fc.return_value = {"forecast_price": [101.0] * 12}
-            with patch("mtdata.forecast.backtest._normalize_denoise_spec", return_value={"method": "wavelet"}):
+            with patch(
+                "mtdata.forecast.backtest._normalize_denoise_spec",
+                return_value={"method": "wavelet"},
+            ):
                 result = forecast_backtest(
-                    "EURUSD", timeframe="H1", methods=["naive"],
+                    "EURUSD",
+                    timeframe="H1",
+                    methods=["naive"],
                     denoise={"method": "wavelet"},
                 )
         assert isinstance(result, dict)
@@ -252,8 +277,11 @@ class TestForecastBacktest:
         with patch("mtdata.forecast.backtest.forecast") as fc:
             fc.return_value = {"forecast_price": [200.0] * 12}
             result = forecast_backtest(
-                "EURUSD", timeframe="H1", methods=["naive"],
-                slippage_bps=10.0, trade_threshold=0.001,
+                "EURUSD",
+                timeframe="H1",
+                methods=["naive"],
+                slippage_bps=10.0,
+                trade_threshold=0.001,
             )
         assert isinstance(result, dict)
 
@@ -263,8 +291,11 @@ class TestForecastBacktest:
         with patch("mtdata.forecast.backtest.forecast_volatility") as fv:
             fv.return_value = {"horizon_sigma_return": 0.03}
             result = forecast_backtest(
-                "EURUSD", timeframe="H1", quantity="volatility",
-                methods=["ewma"], params_per_method={"ewma": {"proxy": "garman_klass"}},
+                "EURUSD",
+                timeframe="H1",
+                quantity="volatility",
+                methods=["ewma"],
+                params_per_method={"ewma": {"proxy": "garman_klass"}},
             )
         assert isinstance(result, dict)
 
@@ -284,8 +315,12 @@ class TestForecastBacktest:
         entry = result["results"]["ewma"]["details"][0]
         from mtdata.utils.utils import _format_time_minimal
 
-        anchor_idx = next(i for i, ts in enumerate(df["time"]) if _format_time_minimal(float(ts)) == entry["anchor"])
-        act = df["close"].iloc[anchor_idx + 1: anchor_idx + 4].to_numpy(dtype=float)
+        anchor_idx = next(
+            i
+            for i, ts in enumerate(df["time"])
+            if _format_time_minimal(float(ts)) == entry["anchor"]
+        )
+        act = df["close"].iloc[anchor_idx + 1 : anchor_idx + 4].to_numpy(dtype=float)
         realized = math.sqrt(np.mean(np.square(np.diff(np.log(act)))))
         assert entry["realized_sigma"] == pytest.approx(realized)
 
@@ -298,8 +333,11 @@ class TestForecastBacktest:
         with patch("mtdata.forecast.backtest.forecast") as fc:
             fc.return_value = {"forecast_return": [0.01] * 12}
             result = forecast_backtest(
-                "EURUSD", timeframe="H1", quantity="return",
-                methods=["naive"], slippage_bps=5.0,
+                "EURUSD",
+                timeframe="H1",
+                quantity="return",
+                methods=["naive"],
+                slippage_bps=5.0,
             )
         assert isinstance(result, dict)
 
@@ -311,7 +349,9 @@ class TestForecastBacktest:
             # Return large negative forecast to trigger short
             fc.return_value = {"forecast_price": [50.0] * 12}
             result = forecast_backtest(
-                "EURUSD", timeframe="H1", methods=["naive"],
+                "EURUSD",
+                timeframe="H1",
+                methods=["naive"],
                 trade_threshold=0.0,
             )
         assert isinstance(result, dict)
@@ -324,7 +364,9 @@ class TestForecastBacktest:
             # Forecast same as current -> flat
             fc.return_value = {"forecast_price": [float(df["close"].iloc[-13])] * 12}
             result = forecast_backtest(
-                "EURUSD", timeframe="H1", methods=["naive"],
+                "EURUSD",
+                timeframe="H1",
+                methods=["naive"],
                 trade_threshold=999.0,  # large threshold forces flat
             )
         assert isinstance(result, dict)
@@ -335,7 +377,9 @@ class TestForecastBacktest:
         with patch("mtdata.forecast.backtest.forecast") as fc:
             fc.return_value = {"forecast_price": [101.0] * 12}
             result = forecast_backtest(
-                "EURUSD", timeframe="H1", methods=["naive", "drift"],
+                "EURUSD",
+                timeframe="H1",
+                methods=["naive", "drift"],
                 params_per_method={"naive": {"k": 1}},
                 params={"global_key": True},
             )
@@ -362,8 +406,11 @@ class TestForecastBacktest:
         with patch("mtdata.forecast.backtest.forecast") as fc:
             fc.return_value = {"forecast_price": [101.0] * 12}
             result = forecast_backtest(
-                "EURUSD", timeframe="H1", methods=["naive"],
+                "EURUSD",
+                timeframe="H1",
+                methods=["naive"],
                 features={"correlated_symbols": ["GBPUSD"]},
-                dimred_method="pca", dimred_params={"n_components": 3},
+                dimred_method="pca",
+                dimred_params={"n_components": 3},
             )
         assert isinstance(result, dict)

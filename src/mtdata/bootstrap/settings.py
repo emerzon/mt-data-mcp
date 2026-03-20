@@ -47,6 +47,7 @@ def load_environment(*, force: bool = False) -> bool:
             pass
     return loaded
 
+
 class MT5Config:
     """MetaTrader5 connection configuration."""
 
@@ -68,14 +69,20 @@ class MT5Config:
         self.server = os.getenv("MT5_SERVER")
         self.timeout = int(os.getenv("MT5_TIMEOUT", "30"))
         self.server_tz_name = os.getenv("MT5_SERVER_TZ")  # e.g., "Europe/Lisbon"
-        self.client_tz_name = os.getenv("CLIENT_TZ") or os.getenv("MT5_CLIENT_TZ")  # e.g., "America/New_York"
+        self.client_tz_name = os.getenv("CLIENT_TZ") or os.getenv(
+            "MT5_CLIENT_TZ"
+        )  # e.g., "America/New_York"
         try:
             self.time_offset_minutes = int(os.getenv("MT5_TIME_OFFSET_MINUTES", "0"))
         except Exception:
             self.time_offset_minutes = 0
-        self.broker_time_check_enabled = _env_bool("MTDATA_BROKER_TIME_CHECK", default=False)
+        self.broker_time_check_enabled = _env_bool(
+            "MTDATA_BROKER_TIME_CHECK", default=False
+        )
         try:
-            self.broker_time_check_ttl_seconds = max(0, int(os.getenv("MTDATA_BROKER_TIME_CHECK_TTL_SECONDS", "60")))
+            self.broker_time_check_ttl_seconds = max(
+                0, int(os.getenv("MTDATA_BROKER_TIME_CHECK_TTL_SECONDS", "60"))
+            )
         except Exception:
             self.broker_time_check_ttl_seconds = 60
         if warn_if_timezone_missing:
@@ -98,15 +105,15 @@ class MT5Config:
     def get_login(self) -> Optional[int]:
         """Get login as integer if available"""
         return int(self.login) if self.login else None
-    
+
     def get_password(self) -> Optional[str]:
         """Get password"""
         return self.password
-    
+
     def get_server(self) -> Optional[str]:
         """Get server name"""
         return self.server
-    
+
     def has_credentials(self) -> bool:
         """Check if all credentials are available"""
         return all([self.login, self.password, self.server])
@@ -121,17 +128,18 @@ class MT5Config:
         # 1. Prefer explicit offset in minutes (if set)
         if self.time_offset_minutes != 0:
             return int(self.time_offset_minutes) * 60
-            
+
         # 2. Derive from MT5_SERVER_TZ if available
         if self.server_tz_name and pytz:
             try:
                 from datetime import datetime
+
                 tz = pytz.timezone(self.server_tz_name)
                 # Calculate current offset (aware of DST)
                 return int(datetime.now(tz).utcoffset().total_seconds())
             except Exception:
                 pass
-                
+
         return 0
 
     def get_server_tz(self):
@@ -151,6 +159,7 @@ class MT5Config:
         except Exception:
             return None
         return None
+
 
 # Global configuration instance. Entry points call `load_environment()` explicitly.
 mt5_config = MT5Config(warn_if_timezone_missing=False)

@@ -8,8 +8,8 @@ Covers:
 
 Every test is deterministic – no MT5, no network, no side effects.
 """
+# ruff: noqa: E402, E731, E741, F811, F841
 
-import math
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -32,15 +32,21 @@ from mtdata.core.report import _report_error_text, _report_error_payload
 # Synthetic candle helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_rows(n=30, base=100.0, step=0.1):
     return [
-        {"close": base + i * step, "high": base + 1 + i * step,
-         "low": base - 1 + i * step, "tick_volume": 1000}
+        {
+            "close": base + i * step,
+            "high": base + 1 + i * step,
+            "low": base - 1 + i * step,
+            "tick_volume": 1000,
+        }
         for i in range(n)
     ]
 
 
 # ===== _safe_float ==========================================================
+
 
 class TestSafeFloat:
     def test_int(self):
@@ -81,6 +87,7 @@ class TestSafeFloat:
 
 
 # ===== _ema =================================================================
+
 
 class TestEma:
     def test_empty(self):
@@ -125,6 +132,7 @@ class TestEma:
 
 # ===== _compute_tr ===========================================================
 
+
 class TestComputeTr:
     def test_empty(self):
         assert _compute_tr([], [], []) == []
@@ -161,6 +169,7 @@ class TestComputeTr:
 
 
 # ===== _linreg_slope_r2 =====================================================
+
 
 class TestLinregSlopeR2:
     def test_too_short(self):
@@ -209,6 +218,7 @@ class TestLinregSlopeR2:
 
 # ===== _percentile_rank =====================================================
 
+
 class TestPercentileRank:
     def test_empty_list(self):
         assert _percentile_rank([], 5.0) == 0
@@ -244,6 +254,7 @@ class TestPercentileRank:
 
 # ===== _compute_compact_trend ===============================================
 
+
 class TestComputeCompactTrend:
     def test_none_for_too_few_rows(self):
         assert _compute_compact_trend([]) is None
@@ -253,60 +264,67 @@ class TestComputeCompactTrend:
         rows = _make_rows(30)
         result = _compute_compact_trend(rows)
         assert result is not None
-        for key in ('s', 'r', 'v', 'q', 'g', 'h', 'l'):
+        for key in ("s", "r", "v", "q", "g", "h", "l"):
             assert key in result
 
     def test_slopes_list_length(self):
         rows = _make_rows(60)
         result = _compute_compact_trend(rows)
         assert result is not None
-        assert len(result['s']) == 3  # windows [5, 20, 60]
-        assert len(result['r']) == 3
+        assert len(result["s"]) == 3  # windows [5, 20, 60]
+        assert len(result["r"]) == 3
 
     def test_uptrend_positive_slopes(self):
         rows = _make_rows(30, base=100, step=0.5)
         result = _compute_compact_trend(rows)
         assert result is not None
         # Short-term slope should be positive for uptrend
-        assert result['s'][0] > 0
+        assert result["s"][0] > 0
 
     def test_downtrend_negative_slopes(self):
         rows = [
-            {"close": 200 - i * 0.5, "high": 201 - i * 0.5,
-             "low": 199 - i * 0.5, "tick_volume": 1000}
+            {
+                "close": 200 - i * 0.5,
+                "high": 201 - i * 0.5,
+                "low": 199 - i * 0.5,
+                "tick_volume": 1000,
+            }
             for i in range(30)
         ]
         result = _compute_compact_trend(rows)
         assert result is not None
-        assert result['s'][0] < 0
+        assert result["s"][0] < 0
 
     def test_volatility_positive(self):
         rows = _make_rows(30)
         result = _compute_compact_trend(rows)
         assert result is not None
-        assert result['v'] >= 0
+        assert result["v"] >= 0
 
     def test_squeeze_percentile_range(self):
         rows = _make_rows(80)
         result = _compute_compact_trend(rows)
         assert result is not None
-        assert 0 <= result['q'] <= 100
+        assert 0 <= result["q"] <= 100
 
     def test_regime_code_range(self):
         rows = _make_rows(30)
         result = _compute_compact_trend(rows)
         assert result is not None
-        assert result['g'] in (0, 1, 2, 3, 4)
+        assert result["g"] in (0, 1, 2, 3, 4)
 
     def test_h_l_non_negative(self):
         rows = _make_rows(30)
         result = _compute_compact_trend(rows)
         assert result is not None
-        assert result['h'] >= 0
-        assert result['l'] >= 0
+        assert result["h"] >= 0
+        assert result["l"] >= 0
 
     def test_none_close_handled(self):
-        rows = [{"close": None, "high": 101, "low": 99, "tick_volume": 100} for _ in range(10)]
+        rows = [
+            {"close": None, "high": 101, "low": 99, "tick_volume": 100}
+            for _ in range(10)
+        ]
         result = _compute_compact_trend(rows)
         assert result is not None  # Should not crash
 
@@ -319,19 +337,22 @@ class TestComputeCompactTrend:
         rows = _make_rows(200, base=50, step=0.01)
         result = _compute_compact_trend(rows)
         assert result is not None
-        assert len(result['s']) == 3
+        assert len(result["s"]) == 3
 
     def test_flat_market_regime_zero(self):
         # Flat market: all same close
-        rows = [{"close": 100.0, "high": 100.1, "low": 99.9, "tick_volume": 500}
-                for _ in range(30)]
+        rows = [
+            {"close": 100.0, "high": 100.1, "low": 99.9, "tick_volume": 500}
+            for _ in range(30)
+        ]
         result = _compute_compact_trend(rows)
         assert result is not None
         # Flat market should have regime 0 (range)
-        assert result['g'] == 0
+        assert result["g"] == 0
 
 
 # ===== _parse_value ==========================================================
+
 
 class TestParseValue:
     def test_int(self):
@@ -376,6 +397,7 @@ class TestParseValue:
 
 # ===== _parse_table_data =====================================================
 
+
 class TestParseTableData:
     def test_empty(self):
         assert _parse_table_data([]) is None
@@ -418,6 +440,7 @@ class TestParseTableData:
 
 
 # ===== _parse_formatted_output ===============================================
+
 
 class TestParseFormattedOutput:
     def test_simple_kv(self):
@@ -466,6 +489,7 @@ class TestParseFormattedOutput:
 
 # ===== _get_raw_result =======================================================
 
+
 class TestGetRawResult:
     def test_dict_passthrough(self):
         fn = MagicMock(return_value={"data": [1, 2, 3]})
@@ -503,6 +527,7 @@ class TestGetRawResult:
             if "__cli_raw" in kwargs:
                 raise TypeError("unexpected kwarg")
             return {"ok": True}
+
         result = _get_raw_result(strict_fn, x=1)
         assert result == {"ok": True}
 
@@ -514,6 +539,7 @@ class TestGetRawResult:
 
 
 # ===== _report_error_text / _report_error_payload ============================
+
 
 class TestReportErrorText:
     def test_normal_message(self):
@@ -572,17 +598,19 @@ def _mock_candle_data(n=40):
     """Return a dict that data_fetch_candles would return."""
     rows = []
     for i in range(n):
-        rows.append({
-            "time": f"2024-01-{(i%28)+1:02d}T00:00:00",
-            "open": 100.0 + i * 0.1,
-            "high": 101.0 + i * 0.1,
-            "low": 99.0 + i * 0.1,
-            "close": 100.05 + i * 0.1,
-            "tick_volume": 1000 + i,
-            "EMA_20": 100.0 + i * 0.08,
-            "EMA_50": 100.0 + i * 0.05,
-            "RSI_14": 55.0 + i * 0.1,
-        })
+        rows.append(
+            {
+                "time": f"2024-01-{(i % 28) + 1:02d}T00:00:00",
+                "open": 100.0 + i * 0.1,
+                "high": 101.0 + i * 0.1,
+                "low": 99.0 + i * 0.1,
+                "close": 100.05 + i * 0.1,
+                "tick_volume": 1000 + i,
+                "EMA_20": 100.0 + i * 0.08,
+                "EMA_50": 100.0 + i * 0.05,
+                "RSI_14": 55.0 + i * 0.1,
+            }
+        )
     return {"rows": rows, "count": n}
 
 
@@ -665,18 +693,32 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
     def test_basic_report_structure(
-        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
-        mock_now, mock_raw,
+        self,
+        mock_mtf,
+        mock_sum_bar,
+        mock_pick,
+        mock_tail,
+        mock_now,
+        mock_raw,
     ):
         candle_rows = _mock_candle_data()["rows"]
         mock_tail.return_value = candle_rows[-40:]
-        mock_pick.return_value = ("ema", {"avg_rmse": 0.01, "avg_mae": 0.008,
-                                          "avg_directional_accuracy": 0.65,
-                                          "successful_tests": 20})
-        mock_sum_bar.return_value = {"best": {"tp": 1.0, "sl": 0.5, "edge": 0.3}, "top": []}
+        mock_pick.return_value = (
+            "ema",
+            {
+                "avg_rmse": 0.01,
+                "avg_mae": 0.008,
+                "avg_directional_accuracy": 0.65,
+                "successful_tests": 20,
+            },
+        )
+        mock_sum_bar.return_value = {
+            "best": {"tp": 1.0, "sl": 0.5, "edge": 0.3},
+            "top": [],
+        }
 
         def raw_side_effect(func, *args, **kwargs):
-            name = func.__name__ if hasattr(func, '__name__') else str(func)
+            name = func.__name__ if hasattr(func, "__name__") else str(func)
             if "candle" in name.lower() or "data_fetch" in name.lower():
                 return _mock_candle_data()
             if "pivot" in name.lower():
@@ -696,6 +738,7 @@ class TestTemplateBasic:
         mock_raw.side_effect = raw_side_effect
 
         from mtdata.core.report_templates.basic import template_basic
+
         report = template_basic("EURUSD", 12, None, None)
 
         assert isinstance(report, dict)
@@ -712,8 +755,13 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
     def test_basic_context_includes_trend_compact_legend(
-        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
-        mock_now, mock_raw,
+        self,
+        mock_mtf,
+        mock_sum_bar,
+        mock_pick,
+        mock_tail,
+        mock_now,
+        mock_raw,
     ):
         candle_rows = _mock_candle_data()["rows"]
         mock_tail.return_value = candle_rows[-40:]
@@ -738,6 +786,7 @@ class TestTemplateBasic:
         mock_raw.side_effect = raw_side_effect
 
         from mtdata.core.report_templates.basic import template_basic
+
         report = template_basic("EURUSD", 12, None, None)
 
         ctx = report["sections"].get("context", {})
@@ -754,13 +803,18 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
     def test_basic_error_in_candle_fetch(
-        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
-        mock_now, mock_raw,
+        self,
+        mock_mtf,
+        mock_sum_bar,
+        mock_pick,
+        mock_tail,
+        mock_now,
+        mock_raw,
     ):
         mock_sum_bar.return_value = {"best": {"tp": 1.0, "sl": 0.5, "edge": 0.3}}
 
         def raw_side_effect(func, *args, **kwargs):
-            name = func.__name__ if hasattr(func, '__name__') else str(func)
+            name = func.__name__ if hasattr(func, "__name__") else str(func)
             if "candle" in name.lower() or "data_fetch" in name.lower():
                 return {"error": "MT5 not connected"}
             if "pivot" in name.lower():
@@ -778,6 +832,7 @@ class TestTemplateBasic:
         mock_raw.side_effect = raw_side_effect
 
         from mtdata.core.report_templates.basic import template_basic
+
         report = template_basic("EURUSD", 12, None, None)
 
         assert "error" in report["sections"]["context"]
@@ -789,8 +844,13 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
     def test_basic_all_errors(
-        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
-        mock_now, mock_raw,
+        self,
+        mock_mtf,
+        mock_sum_bar,
+        mock_pick,
+        mock_tail,
+        mock_now,
+        mock_raw,
     ):
         mock_tail.return_value = []
         mock_sum_bar.return_value = {"best": {}}
@@ -798,6 +858,7 @@ class TestTemplateBasic:
         mock_raw.return_value = {"error": "everything broke"}
 
         from mtdata.core.report_templates.basic import template_basic
+
         report = template_basic("EURUSD", 12, None, {})
 
         assert isinstance(report, dict)
@@ -810,20 +871,31 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
     def test_basic_custom_params(
-        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
-        mock_now, mock_raw,
+        self,
+        mock_mtf,
+        mock_sum_bar,
+        mock_pick,
+        mock_tail,
+        mock_now,
+        mock_raw,
     ):
         mock_tail.return_value = _mock_candle_data()["rows"][-10:]
         mock_sum_bar.return_value = {"best": {"tp": 1.0, "sl": 0.5, "edge": 0.3}}
         mock_raw.return_value = _mock_candle_data()
 
         from mtdata.core.report_templates.basic import template_basic
-        report = template_basic("BTCUSD", 24, None, {
-            "timeframe": "H4",
-            "context_limit": 100,
-            "context_tail": 20,
-            "backtest_steps": 10,
-        })
+
+        report = template_basic(
+            "BTCUSD",
+            24,
+            None,
+            {
+                "timeframe": "H4",
+                "context_limit": 100,
+                "context_tail": 20,
+                "backtest_steps": 10,
+            },
+        )
 
         assert report["meta"]["timeframe"] == "H4"
         assert report["meta"]["horizon"] == 24
@@ -835,8 +907,13 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
     def test_basic_volatility_section_populated(
-        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
-        mock_now, mock_raw,
+        self,
+        mock_mtf,
+        mock_sum_bar,
+        mock_pick,
+        mock_tail,
+        mock_now,
+        mock_raw,
     ):
         mock_tail.return_value = _mock_candle_data()["rows"]
         mock_pick.return_value = None
@@ -845,6 +922,7 @@ class TestTemplateBasic:
         mock_raw.return_value = _mock_vol_data()
 
         from mtdata.core.report_templates.basic import template_basic
+
         report = template_basic("EURUSD", 12, None, {})
 
         vol = report["sections"].get("volatility", {})
@@ -858,14 +936,19 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
     def test_basic_barriers_both_errors(
-        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
-        mock_now, mock_raw,
+        self,
+        mock_mtf,
+        mock_sum_bar,
+        mock_pick,
+        mock_tail,
+        mock_now,
+        mock_raw,
     ):
         mock_tail.return_value = _mock_candle_data()["rows"]
         mock_pick.return_value = None
 
         def raw_side_effect(func, *args, **kwargs):
-            name = func.__name__ if hasattr(func, '__name__') else str(func)
+            name = func.__name__ if hasattr(func, "__name__") else str(func)
             if "barrier" in name.lower():
                 return {"error": "no barrier"}
             return _mock_vol_data()
@@ -873,6 +956,7 @@ class TestTemplateBasic:
         mock_raw.side_effect = raw_side_effect
 
         from mtdata.core.report_templates.basic import template_basic
+
         report = template_basic("EURUSD", 12, None, {})
 
         barriers = report["sections"].get("barriers", {})
@@ -885,8 +969,13 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
     def test_basic_barriers_elevates_conflict_caution_to_section_level(
-        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
-        mock_now, mock_raw,
+        self,
+        mock_mtf,
+        mock_sum_bar,
+        mock_pick,
+        mock_tail,
+        mock_now,
+        mock_raw,
     ):
         mock_tail.return_value = _mock_candle_data()["rows"]
         mock_sum_bar.side_effect = [
@@ -917,6 +1006,7 @@ class TestTemplateBasic:
         mock_raw.side_effect = raw_side_effect
 
         from mtdata.core.report_templates.basic import template_basic
+
         report = template_basic("EURUSD", 12, None, {})
 
         barriers = report["sections"].get("barriers", {})
@@ -932,21 +1022,32 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
     def test_basic_forecast_when_best_found(
-        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
-        mock_now, mock_raw,
+        self,
+        mock_mtf,
+        mock_sum_bar,
+        mock_pick,
+        mock_tail,
+        mock_now,
+        mock_raw,
     ):
         candle_rows = _mock_candle_data()["rows"]
         mock_tail.return_value = candle_rows
-        mock_pick.return_value = ("ema", {"avg_rmse": 0.01, "avg_mae": 0.008,
-                                          "avg_directional_accuracy": 0.65,
-                                          "successful_tests": 20})
+        mock_pick.return_value = (
+            "ema",
+            {
+                "avg_rmse": 0.01,
+                "avg_mae": 0.008,
+                "avg_directional_accuracy": 0.65,
+                "successful_tests": 20,
+            },
+        )
         mock_sum_bar.return_value = {"best": {"tp": 1, "sl": 0.5, "edge": 0.3}}
 
         call_count = [0]
 
         def raw_side_effect(func, *args, **kwargs):
             call_count[0] += 1
-            name = func.__name__ if hasattr(func, '__name__') else str(func)
+            name = func.__name__ if hasattr(func, "__name__") else str(func)
             if "candle" in name.lower() or "data_fetch" in name.lower():
                 return _mock_candle_data()
             if "pivot" in name.lower():
@@ -966,6 +1067,7 @@ class TestTemplateBasic:
         mock_raw.side_effect = raw_side_effect
 
         from mtdata.core.report_templates.basic import template_basic
+
         report = template_basic("EURUSD", 12, None, {})
 
         forecast = report["sections"].get("forecast", {})
@@ -983,18 +1085,28 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
     def test_basic_applies_min_directional_accuracy_threshold(
-        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
-        mock_now, mock_raw,
+        self,
+        mock_mtf,
+        mock_sum_bar,
+        mock_pick,
+        mock_tail,
+        mock_now,
+        mock_raw,
     ):
         mock_tail.return_value = _mock_candle_data()["rows"]
         mock_pick.return_value = (
             "ema",
-            {"avg_rmse": 0.01, "avg_mae": 0.008, "avg_directional_accuracy": 0.65, "successful_tests": 20},
+            {
+                "avg_rmse": 0.01,
+                "avg_mae": 0.008,
+                "avg_directional_accuracy": 0.65,
+                "successful_tests": 20,
+            },
         )
         mock_sum_bar.return_value = {"best": {"tp": 1, "sl": 0.5, "edge": 0.3}}
 
         def raw_side_effect(func, *args, **kwargs):
-            name = func.__name__ if hasattr(func, '__name__') else str(func)
+            name = func.__name__ if hasattr(func, "__name__") else str(func)
             if "candle" in name.lower() or "data_fetch" in name.lower():
                 return _mock_candle_data()
             if "pivot" in name.lower():
@@ -1014,6 +1126,7 @@ class TestTemplateBasic:
         mock_raw.side_effect = raw_side_effect
 
         from mtdata.core.report_templates.basic import template_basic
+
         report = template_basic(
             "EURUSD",
             12,
@@ -1033,19 +1146,29 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
     def test_basic_falls_back_when_best_forecast_is_degenerate(
-        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
-        mock_now, mock_raw,
+        self,
+        mock_mtf,
+        mock_sum_bar,
+        mock_pick,
+        mock_tail,
+        mock_now,
+        mock_raw,
     ):
         candle_rows = _mock_candle_data()["rows"]
         mock_tail.return_value = candle_rows
         mock_pick.return_value = (
             "sf_autoarima",
-            {"avg_rmse": 0.9, "avg_mae": 0.7, "avg_directional_accuracy": 0.2, "successful_tests": 20},
+            {
+                "avg_rmse": 0.9,
+                "avg_mae": 0.7,
+                "avg_directional_accuracy": 0.2,
+                "successful_tests": 20,
+            },
         )
         mock_sum_bar.return_value = {"best": {"tp": 1, "sl": 0.5, "edge": 0.3}}
 
         def raw_side_effect(func, *args, **kwargs):
-            name = func.__name__ if hasattr(func, '__name__') else str(func)
+            name = func.__name__ if hasattr(func, "__name__") else str(func)
             if "candle" in name.lower() or "data_fetch" in name.lower():
                 return _mock_candle_data()
             if "pivot" in name.lower():
@@ -1085,12 +1208,16 @@ class TestTemplateBasic:
         mock_raw.side_effect = raw_side_effect
 
         from mtdata.core.report_templates.basic import template_basic
+
         report = template_basic("EURUSD", 12, None, {})
 
         forecast = report["sections"].get("forecast", {})
         assert forecast.get("method") == "naive"
         assert forecast.get("fallback_from") == "sf_autoarima"
-        assert any("degenerate" in str(v).lower() for v in forecast.get("selection_warnings", []))
+        assert any(
+            "degenerate" in str(v).lower()
+            for v in forecast.get("selection_warnings", [])
+        )
         assert report.get("fallback_applied") is True
         assert report.get("original_method") == "sf_autoarima"
         assert report.get("fallback_method") == "naive"
@@ -1112,14 +1239,19 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
     def test_basic_patterns_section(
-        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
-        mock_now, mock_raw,
+        self,
+        mock_mtf,
+        mock_sum_bar,
+        mock_pick,
+        mock_tail,
+        mock_now,
+        mock_raw,
     ):
         mock_tail.return_value = _mock_candle_data()["rows"]
         mock_sum_bar.return_value = {"best": {}}
 
         def raw_side_effect(func, *args, **kwargs):
-            name = func.__name__ if hasattr(func, '__name__') else str(func)
+            name = func.__name__ if hasattr(func, "__name__") else str(func)
             if "pattern" in name.lower():
                 return _mock_patterns_data()
             return _mock_vol_data()
@@ -1127,6 +1259,7 @@ class TestTemplateBasic:
         mock_raw.side_effect = raw_side_effect
 
         from mtdata.core.report_templates.basic import template_basic
+
         report = template_basic("EURUSD", 12, None, {})
 
         pats = report["sections"].get("patterns", {})
@@ -1151,6 +1284,7 @@ class TestTemplateAdvanced:
         mock_raw.return_value = {"summary": "regime info"}
 
         from mtdata.core.report_templates.advanced import template_advanced
+
         report = template_advanced("EURUSD", 12, None, {})
 
         assert isinstance(report, dict)
@@ -1169,6 +1303,7 @@ class TestTemplateAdvanced:
         }
 
         from mtdata.core.report_templates.advanced import template_advanced
+
         report = template_advanced("EURUSD", 12, None, {})
 
         har = report["sections"].get("volatility_har_rv", {})
@@ -1185,7 +1320,7 @@ class TestTemplateAdvanced:
         }
 
         def raw_se(func, *args, **kwargs):
-            name = func.__name__ if hasattr(func, '__name__') else str(func)
+            name = func.__name__ if hasattr(func, "__name__") else str(func)
             if "conformal" in name.lower():
                 return {
                     "lower_price": 1.20,
@@ -1198,6 +1333,7 @@ class TestTemplateAdvanced:
         mock_raw.side_effect = raw_se
 
         from mtdata.core.report_templates.advanced import template_advanced
+
         report = template_advanced("EURUSD", 12, None, {})
 
         conf = report["sections"].get("forecast_conformal", {})
@@ -1213,6 +1349,7 @@ class TestTemplateAdvanced:
         mock_raw.return_value = {"summary": "ok"}
 
         from mtdata.core.report_templates.advanced import template_advanced
+
         report = template_advanced("EURUSD", 12, None, {})
 
         assert "forecast_conformal" not in report.get("sections", {})
@@ -1223,6 +1360,7 @@ class TestTemplateAdvanced:
         mock_basic.return_value = "some error string"
 
         from mtdata.core.report_templates.advanced import template_advanced
+
         report = template_advanced("EURUSD", 12, None, {})
 
         assert "error" in report
@@ -1233,6 +1371,7 @@ class TestTemplateAdvanced:
         mock_basic.return_value = 12345
 
         from mtdata.core.report_templates.advanced import template_advanced
+
         report = template_advanced("EURUSD", 12, None, {})
 
         assert "error" in report
@@ -1247,6 +1386,7 @@ class TestTemplateAdvanced:
         mock_raw.return_value = {"error": "HAR failed"}
 
         from mtdata.core.report_templates.advanced import template_advanced
+
         report = template_advanced("EURUSD", 12, None, {})
 
         har = report["sections"].get("volatility_har_rv", {})
@@ -1263,7 +1403,7 @@ class TestTemplateAdvanced:
         }
 
         def raw_se(func, *args, **kwargs):
-            name = func.__name__ if hasattr(func, '__name__') else str(func)
+            name = func.__name__ if hasattr(func, "__name__") else str(func)
             if "conformal" in name.lower():
                 return {"error": "conformal failed"}
             return {"summary": "ok"}
@@ -1271,6 +1411,7 @@ class TestTemplateAdvanced:
         mock_raw.side_effect = raw_se
 
         from mtdata.core.report_templates.advanced import template_advanced
+
         report = template_advanced("EURUSD", 12, None, {})
 
         conf = report["sections"].get("forecast_conformal", {})
@@ -1297,6 +1438,7 @@ class TestTemplateScalping:
         }
 
         from mtdata.core.report_templates.scalping import template_scalping
+
         report = template_scalping("EURUSD", 8, None, {})
 
         assert isinstance(report, dict)
@@ -1306,12 +1448,15 @@ class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.market_snapshot")
     @patch(f"{_SCALP_MODULE}.merge_params")
     @patch(f"{_SCALP_MODULE}._get_pip_size", return_value=0.01)
-    def test_scalping_default_timeframe_m5(self, mock_pip, mock_merge, mock_snap, mock_build):
+    def test_scalping_default_timeframe_m5(
+        self, mock_pip, mock_merge, mock_snap, mock_build
+    ):
         mock_merge.return_value = {"mode": "pips"}
         mock_snap.return_value = {"bid": 1.23, "ask": 1.24}
         mock_build.return_value = {"meta": {}, "sections": {}}
 
         from mtdata.core.report_templates.scalping import template_scalping
+
         template_scalping("EURUSD", 8, None, {})
 
         # merge_params result should have timeframe set to M5
@@ -1324,14 +1469,19 @@ class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.market_snapshot")
     @patch(f"{_SCALP_MODULE}.merge_params")
     @patch(f"{_SCALP_MODULE}._get_pip_size", return_value=1.0)
-    def test_scalping_high_price_adjusts_pip_levels(self, mock_pip, mock_merge, mock_snap, mock_build):
+    def test_scalping_high_price_adjusts_pip_levels(
+        self, mock_pip, mock_merge, mock_snap, mock_build
+    ):
         mock_merge.return_value = {"mode": "pips"}
         mock_snap.return_value = {
-            "bid": 30000.0, "ask": 30002.0, "spread_ticks": 200,
+            "bid": 30000.0,
+            "ask": 30002.0,
+            "spread_ticks": 200,
         }
         mock_build.return_value = {"meta": {}, "sections": {}}
 
         from mtdata.core.report_templates.scalping import template_scalping
+
         template_scalping("BTCUSD", 8, None, {})
 
         assert mock_build.called
@@ -1340,12 +1490,15 @@ class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.market_snapshot")
     @patch(f"{_SCALP_MODULE}.merge_params")
     @patch(f"{_SCALP_MODULE}._get_pip_size", return_value=0.01)
-    def test_scalping_pct_mode_no_adjustment(self, mock_pip, mock_merge, mock_snap, mock_build):
+    def test_scalping_pct_mode_no_adjustment(
+        self, mock_pip, mock_merge, mock_snap, mock_build
+    ):
         mock_merge.return_value = {"mode": "pct"}
         mock_snap.return_value = {"bid": 1.23, "ask": 1.24}
         mock_build.return_value = {"meta": {}, "sections": {}}
 
         from mtdata.core.report_templates.scalping import template_scalping
+
         template_scalping("EURUSD", 8, None, {})
 
         assert mock_build.called
@@ -1354,12 +1507,15 @@ class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.market_snapshot")
     @patch(f"{_SCALP_MODULE}.merge_params")
     @patch(f"{_SCALP_MODULE}._get_pip_size", return_value=0.01)
-    def test_scalping_snapshot_error_still_runs(self, mock_pip, mock_merge, mock_snap, mock_build):
+    def test_scalping_snapshot_error_still_runs(
+        self, mock_pip, mock_merge, mock_snap, mock_build
+    ):
         mock_merge.return_value = {"mode": "pips"}
         mock_snap.return_value = {"error": "MT5 offline"}
         mock_build.return_value = {"meta": {}, "sections": {}}
 
         from mtdata.core.report_templates.scalping import template_scalping
+
         report = template_scalping("EURUSD", 8, None, {})
 
         assert mock_build.called
@@ -1368,18 +1524,22 @@ class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.market_snapshot")
     @patch(f"{_SCALP_MODULE}.merge_params")
     @patch(f"{_SCALP_MODULE}._get_pip_size", return_value=1.0)
-    def test_scalping_no_spread_ticks_uses_price_based(self, mock_pip, mock_merge, mock_snap, mock_build):
+    def test_scalping_no_spread_ticks_uses_price_based(
+        self, mock_pip, mock_merge, mock_snap, mock_build
+    ):
         mock_merge.return_value = {"mode": "pips"}
         mock_snap.return_value = {"bid": 2000.0, "ask": 2001.0}
         mock_build.return_value = {"meta": {}, "sections": {}}
 
         from mtdata.core.report_templates.scalping import template_scalping
+
         template_scalping("XAUUSD", 8, None, {})
 
         assert mock_build.called
 
 
 # ===== Edge cases and additional coverage ====================================
+
 
 class TestSafeFloatEdge:
     def test_bool_true(self):

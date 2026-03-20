@@ -9,13 +9,23 @@ def test_method_metadata_lookup_helpers(monkeypatch):
             {
                 "method": "theta",
                 "requires": ["numpy", "statsmodels"],
-                "supports": {"price": True, "return": True, "volatility": False, "ci": False},
+                "supports": {
+                    "price": True,
+                    "return": True,
+                    "volatility": False,
+                    "ci": False,
+                },
                 "params": [{"name": "seasonality", "type": "int"}],
             },
             {
                 "method": "mlf_rf",
                 "requires": ["mlforecast", "scikit-learn"],
-                "supports": {"price": True, "return": False, "volatility": False, "ci": False},
+                "supports": {
+                    "price": True,
+                    "return": False,
+                    "volatility": False,
+                    "ci": False,
+                },
                 "params": [{"name": "n_estimators", "type": "int"}],
             },
         ],
@@ -32,7 +42,12 @@ def test_method_metadata_lookup_helpers(monkeypatch):
     assert fm.get_method_requirements("mlf_rf") == ["mlforecast", "scikit-learn"]
     assert fm.get_method_requirements("none") == []
     assert fm.get_method_supports("theta")["price"] is True
-    assert fm.get_method_supports("none") == {"price": False, "return": False, "volatility": False, "ci": False}
+    assert fm.get_method_supports("none") == {
+        "price": False,
+        "return": False,
+        "volatility": False,
+        "ci": False,
+    }
 
 
 def test_validate_method_params_type_rules(monkeypatch):

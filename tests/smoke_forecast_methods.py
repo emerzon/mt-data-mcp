@@ -30,7 +30,9 @@ for _mod in (
         pass
 
 
-def _run_method(method: str, series: pd.Series, horizon: int, seasonality: int) -> Tuple[bool, str]:
+def _run_method(
+    method: str, series: pd.Series, horizon: int, seasonality: int
+) -> Tuple[bool, str]:
     try:
         params = {}
         if method == "statsforecast":
@@ -45,7 +47,11 @@ def _run_method(method: str, series: pd.Series, horizon: int, seasonality: int) 
             params=params,
             ci_alpha=0.1,
         )
-        first = float(res.forecast[0]) if getattr(res, "forecast", None) is not None and len(res.forecast) else float("nan")
+        first = (
+            float(res.forecast[0])
+            if getattr(res, "forecast", None) is not None and len(res.forecast)
+            else float("nan")
+        )
         return True, f"{method}: ok (first={first:.6g})"
     except Exception as ex:
         return False, f"{method}: err ({type(ex).__name__}) {ex}"

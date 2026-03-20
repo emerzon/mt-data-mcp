@@ -1,8 +1,7 @@
 """Tests for src/mtdata/forecast/forecast_preprocessing.py — pure preprocessing helpers."""
-import math
+
 import numpy as np
 import pandas as pd
-import pytest
 
 from mtdata.forecast.forecast_preprocessing import (
     _process_include_specification,
@@ -16,14 +15,16 @@ from mtdata.forecast.forecast_preprocessing import (
 
 def _make_ohlcv_df(n: int = 10) -> pd.DataFrame:
     """Create a minimal OHLCV DataFrame for testing."""
-    return pd.DataFrame({
-        "time": np.arange(n, dtype=float) * 3600,
-        "open": np.random.default_rng(0).uniform(1.0, 2.0, n),
-        "high": np.random.default_rng(1).uniform(1.0, 2.0, n),
-        "low": np.random.default_rng(2).uniform(1.0, 2.0, n),
-        "close": np.random.default_rng(3).uniform(1.0, 2.0, n),
-        "volume": np.random.default_rng(4).integers(100, 1000, n),
-    })
+    return pd.DataFrame(
+        {
+            "time": np.arange(n, dtype=float) * 3600,
+            "open": np.random.default_rng(0).uniform(1.0, 2.0, n),
+            "high": np.random.default_rng(1).uniform(1.0, 2.0, n),
+            "low": np.random.default_rng(2).uniform(1.0, 2.0, n),
+            "close": np.random.default_rng(3).uniform(1.0, 2.0, n),
+            "volume": np.random.default_rng(4).integers(100, 1000, n),
+        }
+    )
 
 
 class TestProcessIncludeSpecification:
@@ -48,7 +49,9 @@ class TestProcessIncludeSpecification:
 
     def test_excludes_time_and_close(self):
         df = _make_ohlcv_df()
-        cols = _process_include_specification(df, {"include": ["time", "close", "open"]})
+        cols = _process_include_specification(
+            df, {"include": ["time", "close", "open"]}
+        )
         assert "time" not in cols
         assert "close" not in cols
         assert "open" in cols
@@ -69,7 +72,9 @@ class TestCreateFourierFeatures:
     def test_basic(self):
         t_train = np.arange(24, dtype=float)
         t_future = np.arange(24, 30, dtype=float)
-        tr_feats, tf_feats, col_names = _create_fourier_features("fourier:24", t_train, t_future)
+        tr_feats, tf_feats, col_names = _create_fourier_features(
+            "fourier:24", t_train, t_future
+        )
         assert len(tr_feats) == 2  # sin and cos
         assert len(tf_feats) == 2
         assert len(col_names) == 2
@@ -81,7 +86,9 @@ class TestCreateFourierFeatures:
     def test_default_period_on_bad_spec(self):
         t_train = np.arange(10, dtype=float)
         t_future = np.arange(5, dtype=float)
-        tr_feats, tf_feats, col_names = _create_fourier_features("fourier:abc", t_train, t_future)
+        tr_feats, tf_feats, col_names = _create_fourier_features(
+            "fourier:abc", t_train, t_future
+        )
         assert "fx_sin_24" in col_names  # defaults to period 24
 
 
@@ -114,8 +121,13 @@ class TestBuildFeatureArrays:
     def test_with_columns(self):
         df = _make_ohlcv_df(20)
         exog_used, exog_future = _build_feature_arrays(
-            df, include_cols=["open", "high"], ti_cols=[], 
-            cal_train=None, cal_future=None, cal_cols=[], n=5
+            df,
+            include_cols=["open", "high"],
+            ti_cols=[],
+            cal_train=None,
+            cal_future=None,
+            cal_cols=[],
+            n=5,
         )
         assert exog_used is not None
         assert exog_used.shape == (20, 2)
@@ -124,8 +136,13 @@ class TestBuildFeatureArrays:
     def test_no_features(self):
         df = _make_ohlcv_df(10)
         exog_used, exog_future = _build_feature_arrays(
-            df, include_cols=[], ti_cols=[], 
-            cal_train=None, cal_future=None, cal_cols=[], n=5
+            df,
+            include_cols=[],
+            ti_cols=[],
+            cal_train=None,
+            cal_future=None,
+            cal_cols=[],
+            n=5,
         )
         assert exog_used is None
         assert exog_future is None
@@ -135,8 +152,13 @@ class TestBuildFeatureArrays:
         cal_train = np.random.default_rng(0).random((10, 2))
         cal_future = np.random.default_rng(1).random((5, 2))
         exog_used, exog_future = _build_feature_arrays(
-            df, include_cols=[], ti_cols=[],
-            cal_train=cal_train, cal_future=cal_future, cal_cols=["a", "b"], n=5
+            df,
+            include_cols=[],
+            ti_cols=[],
+            cal_train=cal_train,
+            cal_future=cal_future,
+            cal_cols=["a", "b"],
+            n=5,
         )
         assert exog_used is not None
         assert exog_used.shape == (10, 2)
@@ -146,8 +168,13 @@ class TestBuildFeatureArrays:
         cal_train = np.ones((10, 1))
         cal_future = np.ones((5, 1))
         exog_used, exog_future = _build_feature_arrays(
-            df, include_cols=["open"], ti_cols=[],
-            cal_train=cal_train, cal_future=cal_future, cal_cols=["cal1"], n=5
+            df,
+            include_cols=["open"],
+            ti_cols=[],
+            cal_train=cal_train,
+            cal_future=cal_future,
+            cal_cols=["cal1"],
+            n=5,
         )
         assert exog_used.shape == (10, 2)  # open + cal1
         assert exog_future.shape == (5, 2)

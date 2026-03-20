@@ -1,18 +1,11 @@
 """Extended coverage tests for utils/dimred.py targeting uncovered lines."""
-from unittest.mock import MagicMock, patch, PropertyMock
+
+from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
 from mtdata.utils.dimred import (
-    DimReducer,
     NoneReducer,
-    PCAReducer,
-    SVDReducer,
-    TSNEReducer,
-    LaplacianReducer,
-    IsomapReducer,
-    KPCAReducer,
-    SparsePCAReducer,
     create_reducer,
     list_dimred_methods,
 )
@@ -24,12 +17,14 @@ def _data(n=60, d=5, seed=7):
 
 # ===== DiffusionMapsReducer (lines 205-243) ================================
 
+
 class TestDiffusionMapsReducerInit:
     """Lines 204-218: __init__ with various params."""
 
     def test_missing_pydiffmap_raises(self):
         with patch("mtdata.utils.dimred._DMap", None):
             from mtdata.utils.dimred import DiffusionMapsReducer
+
             with pytest.raises(RuntimeError, match="pydiffmap"):
                 DiffusionMapsReducer(n_components=2)
 
@@ -40,6 +35,7 @@ class TestDiffusionMapsReducerInit:
         mock_dmap_mod.DiffusionMap.return_value = mock_model
         with patch("mtdata.utils.dimred._DMap", mock_dmap_mod):
             from mtdata.utils.dimred import DiffusionMapsReducer
+
             r = DiffusionMapsReducer(n_components=3, alpha=0.7, epsilon=1.5, k=10)
             assert r.n_components == 3
             assert r.alpha == 0.7
@@ -50,6 +46,7 @@ class TestDiffusionMapsReducerInit:
         mock_dmap_mod = MagicMock()
         with patch("mtdata.utils.dimred._DMap", mock_dmap_mod):
             from mtdata.utils.dimred import DiffusionMapsReducer
+
             r = DiffusionMapsReducer(n_components=2, alpha=0.5, epsilon=None, k=None)
             info = r.info()
             assert info["method"] == "diffusion"
@@ -66,6 +63,7 @@ class TestDiffusionMapsReducerFitTransform:
         mock_dmap_mod.DiffusionMap.return_value = mock_model
         with patch("mtdata.utils.dimred._DMap", mock_dmap_mod):
             from mtdata.utils.dimred import DiffusionMapsReducer
+
             return DiffusionMapsReducer(n_components=2), mock_model
 
     def test_fit(self):
@@ -118,10 +116,12 @@ class TestDiffusionMapsReducerFitTransform:
 
 # ===== UMAPReducer (lines 269-277) =========================================
 
+
 class TestUMAPReducerInit:
     def test_missing_umap_raises(self):
         with patch("mtdata.utils.dimred._UMAP", None):
             from mtdata.utils.dimred import UMAPReducer
+
             with pytest.raises(RuntimeError, match="umap-learn"):
                 UMAPReducer(n_components=2)
 
@@ -129,6 +129,7 @@ class TestUMAPReducerInit:
         mock_umap = MagicMock()
         with patch("mtdata.utils.dimred._UMAP", mock_umap):
             from mtdata.utils.dimred import UMAPReducer
+
             r = UMAPReducer(n_components=3, n_neighbors=10, min_dist=0.2)
             info = r.info()
             assert info["method"] == "umap"
@@ -139,6 +140,7 @@ class TestUMAPReducerInit:
 
 # ===== TSNEReducer (lines 280-314) =========================================
 
+
 class TestTSNEReducerExtended:
     """Cover all TSNEReducer methods without hitting deprecated param issue."""
 
@@ -147,6 +149,7 @@ class TestTSNEReducerExtended:
         mock_tsne_cls = MagicMock()
         with patch("mtdata.utils.dimred._SKTSNE", mock_tsne_cls):
             from mtdata.utils.dimred import TSNEReducer
+
             r = TSNEReducer(n_components=2, perplexity=10.0, n_iter=300)
             assert r.supports_transform() is False
 
@@ -155,6 +158,7 @@ class TestTSNEReducerExtended:
         mock_tsne_cls = MagicMock()
         with patch("mtdata.utils.dimred._SKTSNE", mock_tsne_cls):
             from mtdata.utils.dimred import TSNEReducer
+
             r = TSNEReducer(n_components=2)
             assert r.fit(_data()) is r
 
@@ -163,6 +167,7 @@ class TestTSNEReducerExtended:
         mock_tsne_cls = MagicMock()
         with patch("mtdata.utils.dimred._SKTSNE", mock_tsne_cls):
             from mtdata.utils.dimred import TSNEReducer
+
             r = TSNEReducer(n_components=2)
             with pytest.raises(RuntimeError, match="does not support"):
                 r.transform(_data())
@@ -175,6 +180,7 @@ class TestTSNEReducerExtended:
         mock_tsne_cls.return_value = mock_model
         with patch("mtdata.utils.dimred._SKTSNE", mock_tsne_cls):
             from mtdata.utils.dimred import TSNEReducer
+
             r = TSNEReducer(n_components=2)
             out = r.fit_transform(_data())
             assert out.shape == (60, 2)
@@ -184,7 +190,10 @@ class TestTSNEReducerExtended:
         mock_tsne_cls = MagicMock()
         with patch("mtdata.utils.dimred._SKTSNE", mock_tsne_cls):
             from mtdata.utils.dimred import TSNEReducer
-            r = TSNEReducer(n_components=2, perplexity=15.0, learning_rate=100.0, n_iter=500)
+
+            r = TSNEReducer(
+                n_components=2, perplexity=15.0, learning_rate=100.0, n_iter=500
+            )
             info = r.info()
             assert info["method"] == "tsne"
             assert info["perplexity"] == 15.0
@@ -196,11 +205,13 @@ class TestTSNEReducerExtended:
         """Line 285."""
         with patch("mtdata.utils.dimred._SKTSNE", None):
             from mtdata.utils.dimred import TSNEReducer
+
             with pytest.raises(RuntimeError, match="scikit-learn"):
                 TSNEReducer(n_components=2)
 
 
 # ===== DreamsCNEReducer (lines 339-429) ====================================
+
 
 class TestDreamsCNEReducerInit:
     """Lines 339-354: __init__."""
@@ -208,6 +219,7 @@ class TestDreamsCNEReducerInit:
     def test_missing_cne_raises(self):
         with patch("mtdata.utils.dimred._CNE", None):
             from mtdata.utils.dimred import DreamsCNEReducer
+
             with pytest.raises(RuntimeError, match="DREAMS-CNE"):
                 DreamsCNEReducer()
 
@@ -215,11 +227,19 @@ class TestDreamsCNEReducerInit:
         mock_cne = MagicMock()
         with patch("mtdata.utils.dimred._CNE", mock_cne):
             from mtdata.utils.dimred import DreamsCNEReducer
+
             r = DreamsCNEReducer(
-                n_components=3, k=10, negative_samples=200,
-                n_epochs=100, batch_size=512, learning_rate=0.01,
-                parametric=False, device="cpu",
-                regularizer=False, reg_lambda=1e-3, reg_scaling="std",
+                n_components=3,
+                k=10,
+                negative_samples=200,
+                n_epochs=100,
+                batch_size=512,
+                learning_rate=0.01,
+                parametric=False,
+                device="cpu",
+                regularizer=False,
+                reg_lambda=1e-3,
+                reg_scaling="std",
                 seed=42,
             )
             assert r.n_components == 3
@@ -234,9 +254,12 @@ class TestDreamsCNEReducerMethods:
         mock_cne = MagicMock()
         with patch("mtdata.utils.dimred._CNE", mock_cne):
             from mtdata.utils.dimred import DreamsCNEReducer
+
             r = DreamsCNEReducer(
-                n_components=2, parametric=parametric,
-                regularizer=regularizer, reg_embedding=None,
+                n_components=2,
+                parametric=parametric,
+                regularizer=regularizer,
+                reg_embedding=None,
             )
         r._cne_mod = mock_cne
         return r, mock_cne
@@ -282,6 +305,7 @@ class TestDreamsCNEReducerMethods:
         mock_cne.CNE.return_value = mock_embedder
         with patch("mtdata.utils.dimred._CNE", mock_cne):
             from mtdata.utils.dimred import DreamsCNEReducer
+
             r = DreamsCNEReducer(n_components=2, parametric=True, regularizer=False)
             out = r.fit_transform(_data())
         assert out.shape == (60, 2)
@@ -298,12 +322,15 @@ class TestDreamsCNEReducerMethods:
 
 # ===== create_reducer factory (lines 480-553) ==============================
 
+
 class TestCreateReducerExtended:
     def test_umap(self):
         """Lines 480-484."""
         mock_umap = MagicMock()
         with patch("mtdata.utils.dimred._UMAP", mock_umap):
-            r, p = create_reducer("umap", {"n_components": 3, "n_neighbors": 10, "min_dist": 0.05})
+            r, p = create_reducer(
+                "umap", {"n_components": 3, "n_neighbors": 10, "min_dist": 0.05}
+            )
             assert p["method"] == "umap"
             assert p["n_components"] == 3
 
@@ -311,7 +338,9 @@ class TestCreateReducerExtended:
         """Lines 485-493."""
         mock_dmap = MagicMock()
         with patch("mtdata.utils.dimred._DMap", mock_dmap):
-            r, p = create_reducer("diffusion", {"n_components": 3, "alpha": 0.7, "epsilon": 1.5, "k": 8})
+            r, p = create_reducer(
+                "diffusion", {"n_components": 3, "alpha": 0.7, "epsilon": 1.5, "k": 8}
+            )
             assert p["method"] == "diffusion"
             assert p["n_components"] == 3
             assert p["epsilon"] == 1.5
@@ -329,12 +358,22 @@ class TestCreateReducerExtended:
         """Lines 494-522."""
         mock_cne = MagicMock()
         with patch("mtdata.utils.dimred._CNE", mock_cne):
-            r, p = create_reducer("dreams_cne", {
-                "n_components": 3, "k": 10, "negative_samples": 100,
-                "n_epochs": 50, "batch_size": 512, "learning_rate": 0.005,
-                "parametric": True, "device": "cpu",
-                "regularizer": False, "reg_lambda": 1e-3, "reg_scaling": "std",
-            })
+            r, p = create_reducer(
+                "dreams_cne",
+                {
+                    "n_components": 3,
+                    "k": 10,
+                    "negative_samples": 100,
+                    "n_epochs": 50,
+                    "batch_size": 512,
+                    "learning_rate": 0.005,
+                    "parametric": True,
+                    "device": "cpu",
+                    "regularizer": False,
+                    "reg_lambda": 1e-3,
+                    "reg_scaling": "std",
+                },
+            )
             assert p["method"] == "dreams_cne"
 
     def test_dreams_cne_missing_raises(self):
@@ -360,7 +399,15 @@ class TestCreateReducerExtended:
         """Lines 542-548."""
         mock_tsne = MagicMock()
         with patch("mtdata.utils.dimred._SKTSNE", mock_tsne):
-            r, p = create_reducer("tsne", {"n_components": 3, "perplexity": 20.0, "learning_rate": 150.0, "n_iter": 800})
+            r, p = create_reducer(
+                "tsne",
+                {
+                    "n_components": 3,
+                    "perplexity": 20.0,
+                    "learning_rate": 150.0,
+                    "n_iter": 800,
+                },
+            )
             assert p["method"] == "tsne"
             assert p["n_components"] == 3
 
@@ -373,12 +420,28 @@ class TestCreateReducerExtended:
 
 # ===== list_dimred_methods (lines 565-585) =================================
 
+
 class TestListDimredMethodsExtended:
     def test_all_methods_present(self):
         methods = list_dimred_methods()
-        expected = {"none", "pca", "svd", "spca", "kpca", "isomap", "laplacian",
-                    "umap", "diffusion", "tsne", "lda", "dreams_cne",
-                    "dreams_cne_fast", "deep_diffusion_maps", "dreams", "pcc"}
+        expected = {
+            "none",
+            "pca",
+            "svd",
+            "spca",
+            "kpca",
+            "isomap",
+            "laplacian",
+            "umap",
+            "diffusion",
+            "tsne",
+            "lda",
+            "dreams_cne",
+            "dreams_cne_fast",
+            "deep_diffusion_maps",
+            "dreams",
+            "pcc",
+        }
         assert expected.issubset(set(methods.keys()))
 
     def test_unavailable_methods(self):

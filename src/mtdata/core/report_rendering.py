@@ -79,17 +79,21 @@ def _render_sections_status(data: Any) -> List[str]:
     if not isinstance(summary, dict) or not isinstance(sections, dict):
         return []
     lines = ["## Section Status"]
-    summary_row = [[
-        str(int(summary.get("ok", 0))),
-        str(int(summary.get("partial", 0))),
-        str(int(summary.get("error", 0))),
-    ]]
+    summary_row = [
+        [
+            str(int(summary.get("ok", 0))),
+            str(int(summary.get("partial", 0))),
+            str(int(summary.get("error", 0))),
+        ]
+    ]
     lines.extend(_format_table(["OK", "Partial", "Error"], summary_row, name="summary"))
     section_rows: List[List[str]] = []
     for name in sorted(sections.keys()):
         section_rows.append([str(name), str(sections[name])])
     if section_rows:
-        lines.extend(_format_table(["Section", "Status"], section_rows, name="sections"))
+        lines.extend(
+            _format_table(["Section", "Status"], section_rows, name="sections")
+        )
     return lines
 
 
@@ -106,7 +110,9 @@ def _render_context_section(data: Any) -> List[str]:
     tf_ref = data.get("timeframe")
     if tf_ref:
         metrics.append(["Timeframe", str(tf_ref)])
-    snap = data.get("last_snapshot") if isinstance(data.get("last_snapshot"), dict) else {}
+    snap = (
+        data.get("last_snapshot") if isinstance(data.get("last_snapshot"), dict) else {}
+    )
     price = snap.get("close")
     if price is not None:
         metrics.append(["Close", _format_decimal(price, 5)])
@@ -117,7 +123,12 @@ def _render_context_section(data: Any) -> List[str]:
         p_val = _as_float(price)
         e20 = _as_float(ema20)
         e50 = _as_float(ema50)
-        if not (p_val is not None and e20 is not None and e50 is not None and p_val > e20 > e50):
+        if not (
+            p_val is not None
+            and e20 is not None
+            and e50 is not None
+            and p_val > e20 > e50
+        ):
             trend_state = "Mixed slope"
         metrics.append(
             [
@@ -138,7 +149,11 @@ def _render_context_section(data: Any) -> List[str]:
             metrics.append(["RSI(14)", f"{_format_decimal(rsi, 2)} ({tag})"])
         else:
             metrics.append(["RSI(14)", _format_decimal(rsi, 2)])
-    trend = data.get("trend_compact") if isinstance(data.get("trend_compact"), dict) else None
+    trend = (
+        data.get("trend_compact")
+        if isinstance(data.get("trend_compact"), dict)
+        else None
+    )
     if trend:
         slopes = trend.get("s") or []
         if slopes:
@@ -154,7 +169,13 @@ def _render_context_section(data: Any) -> List[str]:
         squeeze = trend.get("q")
         if squeeze is not None:
             metrics.append(["Squeeze percentile", f"{int(squeeze)}%"])
-        regime_map = {0: "neutral", 1: "uptrend", 2: "downtrend", 3: "breakout up", 4: "breakout down"}
+        regime_map = {
+            0: "neutral",
+            1: "uptrend",
+            2: "downtrend",
+            3: "breakout up",
+            4: "breakout down",
+        }
         regime = trend.get("g")
         if regime in regime_map:
             metrics.append(["Regime signal", regime_map[int(regime)]])
@@ -183,7 +204,11 @@ def _render_contexts_multi_section(data: Any) -> List[str]:
         snap = data[tf]
         if not isinstance(snap, dict):
             continue
-        trend = snap.get("trend_compact") if isinstance(snap.get("trend_compact"), dict) else None
+        trend = (
+            snap.get("trend_compact")
+            if isinstance(snap.get("trend_compact"), dict)
+            else None
+        )
         slope_val = None
         atr_bps = None
         if trend:
@@ -300,7 +325,11 @@ def _build_pivot_context_line(data: Dict[str, Any]) -> str | None:
 def _render_pivot_multi_section(data: Any) -> List[str]:
     if not isinstance(data, dict):
         return []
-    base_tf = str(data.get("__base_timeframe__", "")).upper() if "__base_timeframe__" in data else ""
+    base_tf = (
+        str(data.get("__base_timeframe__", "")).upper()
+        if "__base_timeframe__" in data
+        else ""
+    )
     lines = ["## Multi-Timeframe Pivots"]
     for tf in sorted(data.keys()):
         if str(tf).startswith("__"):
@@ -344,7 +373,11 @@ def _render_pivot_multi_section(data: Any) -> List[str]:
             context_line = _build_pivot_context_line(piv)
             if context_line:
                 lines.append(context_line)
-            lines.extend(_format_table(["Level"] + [m.title() for m in methods], rows, name="levels"))
+            lines.extend(
+                _format_table(
+                    ["Level"] + [m.title() for m in methods], rows, name="levels"
+                )
+            )
             lines.append("")
     return [line for line in lines if line != ""]
 
@@ -378,7 +411,9 @@ def _render_volatility_section(data: Any) -> List[str]:
             val = row.get(method)
             line.append(format_number(val) if val is not None else "n/a")
         if "avg" in row:
-            line.append(format_number(row.get("avg")) if row.get("avg") is not None else "n/a")
+            line.append(
+                format_number(row.get("avg")) if row.get("avg") is not None else "n/a"
+            )
         rows.append(line)
     if not rows:
         return []
@@ -407,16 +442,22 @@ def _render_forecast_section(data: Any) -> List[str]:
     if data.get("forecast_anchor") is not None:
         lines.append(f"- Forecast anchor: {data.get('forecast_anchor')}")
     if data.get("forecast_start_gap_bars") is not None:
-        lines.append(f"- Forecast start gap (bars): {format_number(data.get('forecast_start_gap_bars'))}")
+        lines.append(
+            f"- Forecast start gap (bars): {format_number(data.get('forecast_start_gap_bars'))}"
+        )
     if data.get("forecast_step_seconds") is not None:
-        lines.append(f"- Forecast step seconds: {format_number(data.get('forecast_step_seconds'))}")
+        lines.append(
+            f"- Forecast step seconds: {format_number(data.get('forecast_step_seconds'))}"
+        )
     if data.get("forecast_price") is not None:
         series_preview = _format_series_preview(data.get("forecast_price"), decimals=6)
         if series_preview is not None:
             lines.append(f"- Forecast price: {series_preview}")
         else:
             lines.append(f"- Forecast price: {format_number(data['forecast_price'])}")
-    is_return = str(data.get("quantity", "")).lower() == "return" or isinstance(data.get("forecast_return"), list)
+    is_return = str(data.get("quantity", "")).lower() == "return" or isinstance(
+        data.get("forecast_return"), list
+    )
     if is_return:
         lower = data.get("lower_return", data.get("lower"))
         upper = data.get("upper_return", data.get("upper"))
@@ -426,11 +467,21 @@ def _render_forecast_section(data: Any) -> List[str]:
     interval_label = "Return interval" if is_return else "Interval"
     if lower is not None or upper is not None:
         if isinstance(lower, list) or isinstance(upper, list):
-            low_preview = _format_series_preview(lower, decimals=6) if isinstance(lower, list) else format_number(lower)
-            up_preview = _format_series_preview(upper, decimals=6) if isinstance(upper, list) else format_number(upper)
+            low_preview = (
+                _format_series_preview(lower, decimals=6)
+                if isinstance(lower, list)
+                else format_number(lower)
+            )
+            up_preview = (
+                _format_series_preview(upper, decimals=6)
+                if isinstance(upper, list)
+                else format_number(upper)
+            )
             lines.append(f"- {interval_label}: {low_preview} to {up_preview}")
         else:
-            lines.append(f"- {interval_label}: {format_number(lower)} to {format_number(upper)}")
+            lines.append(
+                f"- {interval_label}: {format_number(lower)} to {format_number(upper)}"
+            )
     if data.get("trend"):
         lines.append(f"- Trend: {data['trend']}")
     if data.get("ci_alpha") is not None:
@@ -484,8 +535,13 @@ def _render_barriers_section(data: Any) -> List[str]:
                 try:
                     ev_val = float(best.get("ev"))
                     edge_val = float(best.get("edge"))
-                    conflict_flag = math.isfinite(ev_val) and math.isfinite(edge_val) and (
-                        (ev_val > 0.0 and edge_val < 0.0) or (ev_val < 0.0 and edge_val > 0.0)
+                    conflict_flag = (
+                        math.isfinite(ev_val)
+                        and math.isfinite(edge_val)
+                        and (
+                            (ev_val > 0.0 and edge_val < 0.0)
+                            or (ev_val < 0.0 and edge_val > 0.0)
+                        )
                     )
                 except (TypeError, ValueError):
                     conflict_flag = False
@@ -509,7 +565,9 @@ def _render_barriers_section(data: Any) -> List[str]:
         if rows:
             lines.extend(_format_table(headers, rows, name="candidates"))
             if negative_edge:
-                lines.append("- Warning: best candidate has negative edge (expected value).")
+                lines.append(
+                    "- Warning: best candidate has negative edge (expected value)."
+                )
             for direction in conflict_dirs:
                 lines.append(
                     f"- CAUTION ({direction}): EV and edge have opposite signs; reward/risk skew may mask low win probability."
@@ -539,12 +597,28 @@ def _render_barriers_section(data: Any) -> List[str]:
             try:
                 ev_val = float(best.get("ev"))
                 edge_val = float(best.get("edge"))
-                ev_edge_conflict = math.isfinite(ev_val) and math.isfinite(edge_val) and (
-                    (ev_val > 0.0 and edge_val < 0.0) or (ev_val < 0.0 and edge_val > 0.0)
+                ev_edge_conflict = (
+                    math.isfinite(ev_val)
+                    and math.isfinite(edge_val)
+                    and (
+                        (ev_val > 0.0 and edge_val < 0.0)
+                        or (ev_val < 0.0 and edge_val > 0.0)
+                    )
                 )
             except (TypeError, ValueError):
                 ev_edge_conflict = False
-        headers = ["TP %", "SL %", "TP lvl", "SL lvl", "Edge", "Kelly", "EV", "TP hit %", "SL hit %", "No-hit %"]
+        headers = [
+            "TP %",
+            "SL %",
+            "TP lvl",
+            "SL lvl",
+            "Edge",
+            "Kelly",
+            "EV",
+            "TP hit %",
+            "SL hit %",
+            "No-hit %",
+        ]
         row = [
             _format_decimal(best.get("tp"), 3),
             _format_decimal(best.get("sl"), 3),
@@ -559,9 +633,13 @@ def _render_barriers_section(data: Any) -> List[str]:
         ]
         lines.extend(_format_table(headers, [row], name="best"))
         if negative_edge:
-            lines.append("- Warning: best candidate has negative edge (expected value).")
+            lines.append(
+                "- Warning: best candidate has negative edge (expected value)."
+            )
         if ev_edge_conflict:
-            lines.append("- CAUTION: EV and edge have opposite signs; reward/risk skew may mask low win probability.")
+            lines.append(
+                "- CAUTION: EV and edge have opposite signs; reward/risk skew may mask low win probability."
+            )
     top = data.get("top")
     if isinstance(top, list) and top:
         headers = ["Rank", "TP %", "SL %", "Edge", "Kelly", "EV"]
@@ -611,7 +689,9 @@ def _render_market_section(data: Any) -> List[str]:
         buy = depth.get("total_buy")
         sell = depth.get("total_sell")
         if buy is not None or sell is not None:
-            entries.append(f"- DOM volume (buy/sell): {format_number(buy)} / {format_number(sell)}")
+            entries.append(
+                f"- DOM volume (buy/sell): {format_number(buy)} / {format_number(sell)}"
+            )
     if not entries:
         return []
     lines.extend(entries)
@@ -638,7 +718,11 @@ def _render_backtest_section(data: Any) -> List[str]:
             ]
         )
     lines = ["## Backtest Ranking"]
-    lines.extend(_format_table(["Method", "RMSE", "MAE", "DirAcc", "Tests"], rows, name="results"))
+    lines.extend(
+        _format_table(
+            ["Method", "RMSE", "MAE", "DirAcc", "Tests"], rows, name="results"
+        )
+    )
     return lines
 
 
@@ -745,7 +829,9 @@ def _render_forecast_conformal_section(data: Any) -> List[str]:
     lines = ["## Conformal Intervals"]
     if data.get("method"):
         lines.append(f"- Method: {data['method']}")
-    is_return = str(data.get("quantity", "")).lower() == "return" or isinstance(data.get("forecast_return"), list)
+    is_return = str(data.get("quantity", "")).lower() == "return" or isinstance(
+        data.get("forecast_return"), list
+    )
     if is_return:
         lower = data.get("lower_return", data.get("lower"))
         upper = data.get("upper_return", data.get("upper"))
@@ -755,11 +841,21 @@ def _render_forecast_conformal_section(data: Any) -> List[str]:
     interval_label = "Return interval" if is_return else "Interval"
     if lower is not None or upper is not None:
         if isinstance(lower, list) or isinstance(upper, list):
-            low_preview = _format_series_preview(lower, decimals=6) if isinstance(lower, list) else format_number(lower)
-            up_preview = _format_series_preview(upper, decimals=6) if isinstance(upper, list) else format_number(upper)
+            low_preview = (
+                _format_series_preview(lower, decimals=6)
+                if isinstance(lower, list)
+                else format_number(lower)
+            )
+            up_preview = (
+                _format_series_preview(upper, decimals=6)
+                if isinstance(upper, list)
+                else format_number(upper)
+            )
             lines.append(f"- {interval_label}: {low_preview} to {up_preview}")
         else:
-            lines.append(f"- {interval_label}: {format_number(lower)} to {format_number(upper)}")
+            lines.append(
+                f"- {interval_label}: {format_number(lower)} to {format_number(upper)}"
+            )
     per_step = data.get("per_step_q")
     if isinstance(per_step, list) and per_step:
         sliced = per_step[: min(5, len(per_step))]
@@ -780,7 +876,10 @@ def _render_forecast_conformal_section(data: Any) -> List[str]:
                 return "null"
             return format_number(num)
 
-        formatted = [f"q{idx}={_format_quantile_value(item)}" for idx, item in enumerate(sliced, start=1)]
+        formatted = [
+            f"q{idx}={_format_quantile_value(item)}"
+            for idx, item in enumerate(sliced, start=1)
+        ]
         lines.append(f"- First step quantiles: {', '.join(formatted)}")
     if data.get("ci_alpha") is not None:
         lines.append(f"- CI alpha: {format_number(data['ci_alpha'])}")
@@ -799,7 +898,10 @@ def _render_generic_section(name: str, payload: Any) -> List[str]:
                 preview = ", ".join(str(item) for item in list(val)[:5])
                 lines.append(f"- {key}: {preview}{'...' if len(val) > 5 else ''}")
             elif isinstance(val, dict):
-                nested = ", ".join(f"{nested_key}={nested_val}" for nested_key, nested_val in list(val.items())[:5])
+                nested = ", ".join(
+                    f"{nested_key}={nested_val}"
+                    for nested_key, nested_val in list(val.items())[:5]
+                )
                 lines.append(f"- {key}: {nested}{'...' if len(val) > 5 else ''}")
             else:
                 lines.append(f"- {key}: {format_number(val)}")

@@ -23,11 +23,15 @@ def trade_risk_analyze(**kwargs):
     request = kwargs.pop("request", None)
     if request is None:
         request = TradeRiskAnalyzeRequest(**kwargs)
-    with patch("mtdata.core.trading_risk.ensure_mt5_connection_or_raise", return_value=None):
+    with patch(
+        "mtdata.core.trading_risk.ensure_mt5_connection_or_raise", return_value=None
+    ):
         return _trade_risk_analyze_tool(request=request, __cli_raw=raw_output)
 
 
-def _make_symbol_info(*, volume_min: float = 0.1, volume_step: float = 0.1, volume_max: float = 10.0):
+def _make_symbol_info(
+    *, volume_min: float = 0.1, volume_step: float = 0.1, volume_max: float = 10.0
+):
     return SimpleNamespace(
         trade_contract_size=1.0,
         point=1.0,
@@ -73,7 +77,9 @@ def test_trade_risk_analyze_warns_when_min_volume_forces_overshoot() -> None:
     sys.modules["MetaTrader5"] = mt5
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = []
-    mt5.symbol_info.return_value = _make_symbol_info(volume_min=0.1, volume_step=0.1, volume_max=10.0)
+    mt5.symbol_info.return_value = _make_symbol_info(
+        volume_min=0.1, volume_step=0.1, volume_max=10.0
+    )
 
     out = trade_risk_analyze(
         symbol="EURUSD",
@@ -95,7 +101,9 @@ def test_trade_risk_analyze_warns_when_min_volume_forces_overshoot() -> None:
     assert "position_sizing_warning" in out
     assert "risk_alert" in out
     assert out["risk_alert"]["code"] == "risk_overshoot_after_volume_constraints"
-    assert any("minimum trade volume" in note.lower() for note in sizing["sizing_notes"])
+    assert any(
+        "minimum trade volume" in note.lower() for note in sizing["sizing_notes"]
+    )
 
 
 def test_trade_risk_analyze_accepts_explicit_short_direction() -> None:
@@ -145,7 +153,10 @@ def test_trade_risk_analyze_rejects_wrong_side_stop_for_short_trade() -> None:
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
-    assert out["position_sizing_error"] == "For short trades, proposed_sl must be above proposed_entry."
+    assert (
+        out["position_sizing_error"]
+        == "For short trades, proposed_sl must be above proposed_entry."
+    )
     assert "position_sizing" not in out
 
 
@@ -169,21 +180,29 @@ def test_trade_risk_analyze_rejects_wrong_side_take_profit_for_long_trade() -> N
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
-    assert out["position_sizing_error"] == "For long trades, proposed_tp must be above proposed_entry."
+    assert (
+        out["position_sizing_error"]
+        == "For long trades, proposed_tp must be above proposed_entry."
+    )
     assert "position_sizing" not in out
 
 
 def test_trade_risk_analyze_returns_connection_error_payload() -> None:
     with patch(
         "mtdata.core.trading_risk.ensure_mt5_connection_or_raise",
-        side_effect=MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running."),
+        side_effect=MT5ConnectionError(
+            "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+        ),
     ):
         out = _trade_risk_analyze_tool(
             request=TradeRiskAnalyzeRequest(),
             __cli_raw=True,
         )
 
-    assert out["error"] == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+    assert (
+        out["error"]
+        == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+    )
     assert out["operation"] == "trade_risk_analyze"
     assert out["success"] is False
 
@@ -211,11 +230,17 @@ def test_run_trade_risk_analyze_logs_finish_event(caplog) -> None:
 def test_trade_risk_analyze_logs_finish_event(caplog) -> None:
     raw = _unwrap(_trade_risk_analyze_tool)
 
-    with patch.object(core_trading_risk, "create_trading_gateway", return_value=object()), patch.object(
-        core_trading_risk,
-        "run_trade_risk_analyze",
-        return_value={"success": True, "positions": []},
-    ), caplog.at_level(logging.INFO, logger=core_trading_risk.logger.name):
+    with (
+        patch.object(
+            core_trading_risk, "create_trading_gateway", return_value=object()
+        ),
+        patch.object(
+            core_trading_risk,
+            "run_trade_risk_analyze",
+            return_value={"success": True, "positions": []},
+        ),
+        caplog.at_level(logging.INFO, logger=core_trading_risk.logger.name),
+    ):
         out = raw(TradeRiskAnalyzeRequest(symbol="EURUSD"))
 
     assert out["success"] is True
@@ -259,7 +284,9 @@ def test_trade_risk_analyze_reports_calculation_failures() -> None:
     assert out["risk_calculation_failures"][0]["ticket"] == 7
 
 
-def test_trade_risk_analyze_flags_invalid_tick_configuration_with_existing_stop_loss() -> None:
+def test_trade_risk_analyze_flags_invalid_tick_configuration_with_existing_stop_loss() -> (
+    None
+):
     mt5 = MagicMock()
     prev = sys.modules.get("MetaTrader5")
     sys.modules["MetaTrader5"] = mt5
@@ -283,7 +310,9 @@ def test_trade_risk_analyze_flags_invalid_tick_configuration_with_existing_stop_
     )
 
     raw = _unwrap(_trade_risk_analyze_tool)
-    with patch("mtdata.core.trading_risk.ensure_mt5_connection_or_raise", return_value=None):
+    with patch(
+        "mtdata.core.trading_risk.ensure_mt5_connection_or_raise", return_value=None
+    ):
         out = raw(request=TradeRiskAnalyzeRequest())
 
     if prev is not None:
@@ -294,4 +323,6 @@ def test_trade_risk_analyze_flags_invalid_tick_configuration_with_existing_stop_
     assert out["portfolio_risk"]["positions_with_risk_calculation_failures"] == 1
     assert out["positions"][0]["risk_status"] == "undefined"
     assert out["risk_calculation_failures"][0]["ticket"] == 8
-    assert out["risk_calculation_failures"][0]["error_type"] == "InvalidTickConfiguration"
+    assert (
+        out["risk_calculation_failures"][0]["error_type"] == "InvalidTickConfiguration"
+    )

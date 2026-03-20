@@ -54,7 +54,9 @@ def run_patterns_detect(
     deps: PatternsDetectDeps,
 ) -> Dict[str, Any]:
     tf_norm: Optional[str] = (
-        str(request.timeframe).strip().upper() if request.timeframe is not None else None
+        str(request.timeframe).strip().upper()
+        if request.timeframe is not None
+        else None
     )
     if not tf_norm:
         tf_norm = None
@@ -89,7 +91,9 @@ def run_patterns_detect(
             config=request.config if isinstance(request.config, dict) else None,
         )
         if detail_value == "compact":
-            return deps.compact_patterns_payload(out if isinstance(out, dict) else {"data": out})
+            return deps.compact_patterns_payload(
+                out if isinstance(out, dict) else {"data": out}
+            )
         return out
 
     if mode_value == "classic":
@@ -101,10 +105,14 @@ def run_patterns_detect(
         )
         if unknown_cfg:
             return {"error": f"Invalid config key(s): {sorted(unknown_cfg)}"}
-        df, err = deps.fetch_pattern_data(request.symbol, tf_single, request.limit, request.denoise)
+        df, err = deps.fetch_pattern_data(
+            request.symbol, tf_single, request.limit, request.denoise
+        )
         if err:
             return err
-        engines, invalid_engines = deps.select_classic_engines(request.engine, request.ensemble)
+        engines, invalid_engines = deps.select_classic_engines(
+            request.engine, request.ensemble
+        )
         if invalid_engines:
             return {
                 "error": (
@@ -123,7 +131,9 @@ def run_patterns_detect(
                 engine_errors[eng] = eng_err
             per_engine[eng] = patt_rows
 
-        non_empty = {engine_name: rows for engine_name, rows in per_engine.items() if rows}
+        non_empty = {
+            engine_name: rows for engine_name, rows in per_engine.items() if rows
+        }
         if not non_empty:
             if engine_errors and len(engine_errors) == len(engines):
                 return {
@@ -143,7 +153,11 @@ def run_patterns_detect(
                 df,
                 detail=detail_value,
             )
-            resp["engine"] = "ensemble" if (bool(request.ensemble) or len(engines) > 1) else engines[0]
+            resp["engine"] = (
+                "ensemble"
+                if (bool(request.ensemble) or len(engines) > 1)
+                else engines[0]
+            )
             resp["engines_run"] = engines
             resp["engine_findings"] = deps.summarize_engine_findings(
                 per_engine, engines, request.include_completed
@@ -212,7 +226,9 @@ def run_patterns_detect(
             return {"error": f"Invalid config key(s): {sorted(unknown_cfg)}"}
 
         if tf_norm:
-            df, err = deps.fetch_pattern_data(request.symbol, tf_norm, request.limit, request.denoise)
+            df, err = deps.fetch_pattern_data(
+                request.symbol, tf_norm, request.limit, request.denoise
+            )
             if err:
                 return err
 
@@ -240,7 +256,9 @@ def run_patterns_detect(
         hidden_completed_rows_total: List[Dict[str, Any]] = []
 
         for tf in scanned_timeframes:
-            df, err = deps.fetch_pattern_data(request.symbol, tf, request.limit, request.denoise)
+            df, err = deps.fetch_pattern_data(
+                request.symbol, tf, request.limit, request.denoise
+            )
             if err:
                 failed_timeframes[tf] = str(err.get("error", "Unknown error"))
                 continue
@@ -250,11 +268,21 @@ def run_patterns_detect(
                 tf_patterns
                 if request.include_completed
                 else [
-                    d for d in tf_patterns if str(d.get("status", "")).lower() == "forming"
+                    d
+                    for d in tf_patterns
+                    if str(d.get("status", "")).lower() == "forming"
                 ]
             )
-            completed_hidden = 0 if request.include_completed else int(
-                sum(1 for d in tf_patterns if str(d.get("status", "")).lower() == "completed")
+            completed_hidden = (
+                0
+                if request.include_completed
+                else int(
+                    sum(
+                        1
+                        for d in tf_patterns
+                        if str(d.get("status", "")).lower() == "completed"
+                    )
+                )
             )
             completed_hidden_total += int(completed_hidden)
             hidden_completed_rows = [
@@ -273,7 +301,9 @@ def run_patterns_detect(
                 finding_row["completed_patterns_hidden"] = int(completed_hidden)
                 if completed_preview:
                     finding_row["completed_patterns_preview"] = completed_preview
-                finding_row["note"] = _elliott_hidden_completed_note(completed_hidden, completed_preview)
+                finding_row["note"] = _elliott_hidden_completed_note(
+                    completed_hidden, completed_preview
+                )
             tf_warnings = df.attrs.get("warnings")
             if isinstance(tf_warnings, list) and tf_warnings:
                 finding_row["warnings"] = [str(w) for w in tf_warnings if str(w)]
@@ -299,7 +329,9 @@ def run_patterns_detect(
 
             if request.include_series:
                 series_payload: Dict[str, Any] = {
-                    "series_close": [float(v) for v in deps.to_float_np(df.get("close")).tolist()]
+                    "series_close": [
+                        float(v) for v in deps.to_float_np(df.get("close")).tolist()
+                    ]
                 }
                 if "time" in df.columns:
                     if str(request.series_time).lower() == "epoch":
@@ -346,10 +378,14 @@ def run_patterns_detect(
                 )
         if completed_hidden_total > 0:
             resp["completed_patterns_hidden"] = int(completed_hidden_total)
-            completed_preview_total = _elliott_completed_preview(hidden_completed_rows_total)
+            completed_preview_total = _elliott_completed_preview(
+                hidden_completed_rows_total
+            )
             if completed_preview_total:
                 resp["completed_patterns_preview"] = completed_preview_total
-            resp["note"] = _elliott_hidden_completed_note(completed_hidden_total, completed_preview_total)
+            resp["note"] = _elliott_hidden_completed_note(
+                completed_hidden_total, completed_preview_total
+            )
         if failed_timeframes:
             resp["failed_timeframes"] = failed_timeframes
         if warnings_out:
@@ -360,4 +396,6 @@ def run_patterns_detect(
             return deps.compact_patterns_payload(resp)
         return resp
 
-    return {"error": f"Unknown mode: {request.mode}. Use candlestick, classic/chart, or elliott."}
+    return {
+        "error": f"Unknown mode: {request.mode}. Use candlestick, classic/chart, or elliott."
+    }

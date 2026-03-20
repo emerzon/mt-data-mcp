@@ -1,4 +1,5 @@
 """Tests for patterns/classic_impl/utils.py — pure math helpers (no MT5)."""
+
 from types import SimpleNamespace
 
 import numpy as np
@@ -18,7 +19,6 @@ from mtdata.patterns.classic_impl.utils import (
     _compute_atr,
     _pivot_thresholds,
     _detect_pivots_close,
-    _tol_abs_from_close,
     _is_converging,
     _count_touches,
     _calibrate_confidence,
@@ -239,12 +239,18 @@ class TestDetectPivotsClose:
             pivot_use_atr_adaptive_distance=False,
         )
 
-        monkeypatch.setattr(utils_mod, "find_peaks", lambda *_args, **_kwargs: (_ for _ in ()).throw(TypeError("boom")))
+        monkeypatch.setattr(
+            utils_mod,
+            "find_peaks",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(TypeError("boom")),
+        )
 
         with pytest.raises(TypeError, match="boom"):
             _detect_pivots_close(x, cfg)
 
-    def test_fallback_local_extrema_recovers_when_find_peaks_undershoots(self, monkeypatch):
+    def test_fallback_local_extrema_recovers_when_find_peaks_undershoots(
+        self, monkeypatch
+    ):
         x = np.array([100.0, 102.0, 99.0, 103.0, 98.0, 104.0, 97.0] * 40, dtype=float)
         cfg = ClassicDetectorConfig(
             pivot_use_atr_adaptive_prominence=False,
@@ -255,7 +261,11 @@ class TestDetectPivotsClose:
             pivot_fallback_order=2,
         )
 
-        monkeypatch.setattr(utils_mod, "find_peaks", lambda *_args, **_kwargs: (np.array([], dtype=int), {}))
+        monkeypatch.setattr(
+            utils_mod,
+            "find_peaks",
+            lambda *_args, **_kwargs: (np.array([], dtype=int), {}),
+        )
 
         peaks, troughs = _detect_pivots_close(x, cfg)
 
@@ -384,3 +394,4 @@ class TestCollectCalibrationPoints:
         m = {"default": {"0.5": 0.4, "0.8": 0.7}}
         result = _collect_calibration_points(m, "nonexistent")
         assert len(result) == 2
+# ruff: noqa: E402, E731, E741, F811, F841

@@ -6,10 +6,10 @@ from .swing import template_swing
 from .position import template_position
 
 __all__ = [
-    'template_basic',
-    'template_advanced',
-    'template_scalping',
-    'template_intraday',
-    'template_swing',
-    'template_position',
+    "template_basic",
+    "template_advanced",
+    "template_scalping",
+    "template_intraday",
+    "template_swing",
+    "template_position",
 ]

@@ -43,9 +43,17 @@ def mount_webui(
     """Mount the built SPA when present; ignore missing build artifacts."""
     runtime = settings or load_web_api_runtime_settings()
     try:
-        app.mount("/app", StaticFiles(directory=directory or runtime.webui_directory, html=True), name="webui")
+        app.mount(
+            "/app",
+            StaticFiles(directory=directory or runtime.webui_directory, html=True),
+            name="webui",
+        )
     except Exception as exc:
-        logger.warning("Skipping Web UI mount for %s: %s", directory or runtime.webui_directory, exc)
+        logger.warning(
+            "Skipping Web UI mount for %s: %s",
+            directory or runtime.webui_directory,
+            exc,
+        )
 
 
 def run_webapi(app: FastAPI, settings: WebApiRuntimeSettings | None = None) -> None:

@@ -6,7 +6,9 @@ from types import SimpleNamespace
 from mtdata.core import schema_attach as schema_attach_mod
 
 
-def _attach_tool_schema(monkeypatch, tool_name: str, base_schema: dict, *, shared_enums: dict | None = None):
+def _attach_tool_schema(
+    monkeypatch, tool_name: str, base_schema: dict, *, shared_enums: dict | None = None
+):
     def tool_func():
         return None
 
@@ -14,10 +16,22 @@ def _attach_tool_schema(monkeypatch, tool_name: str, base_schema: dict, *, share
     tool_obj = SimpleNamespace(func=tool_func)
     apply_calls: list[dict] = []
 
-    monkeypatch.setattr(schema_attach_mod, "get_mcp_registry", lambda _mcp: {tool_name: tool_obj})
-    monkeypatch.setattr(schema_attach_mod, "_get_function_info", lambda func: {"name": tool_name, "parameters": []})
-    monkeypatch.setattr(schema_attach_mod, "_build_minimal_schema", lambda info: deepcopy(base_schema))
-    monkeypatch.setattr(schema_attach_mod, "_enrich_schema_with_shared_defs", lambda schema, info: schema)
+    monkeypatch.setattr(
+        schema_attach_mod, "get_mcp_registry", lambda _mcp: {tool_name: tool_obj}
+    )
+    monkeypatch.setattr(
+        schema_attach_mod,
+        "_get_function_info",
+        lambda func: {"name": tool_name, "parameters": []},
+    )
+    monkeypatch.setattr(
+        schema_attach_mod, "_build_minimal_schema", lambda info: deepcopy(base_schema)
+    )
+    monkeypatch.setattr(
+        schema_attach_mod,
+        "_enrich_schema_with_shared_defs",
+        lambda schema, info: schema,
+    )
     monkeypatch.setattr(
         schema_attach_mod,
         "_complex_defs",
@@ -27,7 +41,11 @@ def _attach_tool_schema(monkeypatch, tool_name: str, base_schema: dict, *, share
             "SimplifySpec": {"type": "object"},
         },
     )
-    monkeypatch.setattr(schema_attach_mod, "_apply_param_hints", lambda schema: apply_calls.append(deepcopy(schema)))
+    monkeypatch.setattr(
+        schema_attach_mod,
+        "_apply_param_hints",
+        lambda schema: apply_calls.append(deepcopy(schema)),
+    )
 
     schema_attach_mod.attach_schemas_to_tools(object(), shared_enums or {})
     return tool_obj, tool_func, apply_calls
@@ -52,7 +70,9 @@ def test_attach_schemas_to_tools_patches_forecast_generate(monkeypatch) -> None:
     schema = tool_obj.schema
     params = schema["parameters"]["properties"]
     assert params["quantity"] == {"$ref": "#/$defs/QuantitySpec"}
-    assert params["denoise"] == {"anyOf": [{"$ref": "#/$defs/DenoiseSpec"}, {"type": "null"}]}
+    assert params["denoise"] == {
+        "anyOf": [{"$ref": "#/$defs/DenoiseSpec"}, {"type": "null"}]
+    }
     assert params["params"] == {"type": "object", "additionalProperties": True}
     assert tool_func.schema == schema
     assert len(apply_calls) == 1
@@ -76,11 +96,18 @@ def test_attach_schemas_to_tools_patches_indicator_and_data_refs(monkeypatch) ->
 
     params = tool_obj.schema["parameters"]["properties"]
     indicator_any_of = params["indicators"]["anyOf"]
-    assert {"type": "array", "items": {"$ref": "#/$defs/IndicatorSpec"}} in indicator_any_of
+    assert {
+        "type": "array",
+        "items": {"$ref": "#/$defs/IndicatorSpec"},
+    } in indicator_any_of
     assert any(option.get("type") == "string" for option in indicator_any_of)
     assert {"type": "null"} in indicator_any_of
-    assert params["denoise"] == {"anyOf": [{"$ref": "#/$defs/DenoiseSpec"}, {"type": "null"}]}
-    assert params["simplify"] == {"anyOf": [{"$ref": "#/$defs/SimplifySpec"}, {"type": "null"}]}
+    assert params["denoise"] == {
+        "anyOf": [{"$ref": "#/$defs/DenoiseSpec"}, {"type": "null"}]
+    }
+    assert params["simplify"] == {
+        "anyOf": [{"$ref": "#/$defs/SimplifySpec"}, {"type": "null"}]
+    }
 
     indicator_obj, _indicator_func, _apply_calls = _attach_tool_schema(
         monkeypatch,

@@ -37,6 +37,8 @@ def test_run_wait_candle_returns_success(monkeypatch) -> None:
     assert result["success"] is True
     assert result["sleep_seconds"] == 12.5
     assert result["status"] == "completed"
+
+
 def test_run_wait_candle_defers_when_wait_exceeds_cap(monkeypatch) -> None:
     monkeypatch.setattr(
         "mtdata.core.data_use_cases._next_candle_wait_payload",

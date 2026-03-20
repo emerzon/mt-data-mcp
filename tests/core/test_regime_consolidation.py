@@ -1,5 +1,4 @@
 """Tests for core/regime.py — pure consolidation helpers (no MT5)."""
-import pytest
 
 from mtdata.core.regime import (
     _consolidate_payload,

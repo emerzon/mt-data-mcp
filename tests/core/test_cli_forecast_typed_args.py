@@ -30,10 +30,16 @@ class TestForecastTypedArgs:
         mock_fn.__name__ = "forecast_generate"
         mock_fn.__doc__ = "Generate forecasts."
         mock_discover.return_value = {
-            "forecast_generate": {"func": mock_fn, "meta": {"description": "Generate forecasts"}},
+            "forecast_generate": {
+                "func": mock_fn,
+                "meta": {"description": "Generate forecasts"},
+            },
         }
 
-        with patch("sys.argv", ["cli.py", "forecast_generate", "BTCUSD", "--denoise"]), pytest.raises(SystemExit):
+        with (
+            patch("sys.argv", ["cli.py", "forecast_generate", "BTCUSD", "--denoise"]),
+            pytest.raises(SystemExit),
+        ):
             main()
 
         err = capsys.readouterr().err
@@ -48,10 +54,23 @@ class TestForecastTypedArgs:
         mock_fn.__name__ = "forecast_generate"
         mock_fn.__doc__ = "Generate forecasts."
         mock_discover.return_value = {
-            "forecast_generate": {"func": mock_fn, "meta": {"description": "Generate forecasts"}},
+            "forecast_generate": {
+                "func": mock_fn,
+                "meta": {"description": "Generate forecasts"},
+            },
         }
 
-        with patch("sys.argv", ["cli.py", "forecast_generate", "BTCUSD", "--denoise", "--set", "denoise.method=ema"]):
+        with patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "forecast_generate",
+                "BTCUSD",
+                "--denoise",
+                "--set",
+                "denoise.method=ema",
+            ],
+        ):
             result = main()
 
         assert result == 0

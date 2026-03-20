@@ -20,12 +20,16 @@ DEFAULT_METHOD_SUPPORTS: Dict[str, bool] = {
 
 # Import availability checkers
 try:
-    _SM_ETS_AVAILABLE = _importlib_util.find_spec("statsmodels.tsa.holtwinters") is not None
+    _SM_ETS_AVAILABLE = (
+        _importlib_util.find_spec("statsmodels.tsa.holtwinters") is not None
+    )
 except Exception:
     _SM_ETS_AVAILABLE = False
 
 try:
-    _SM_SARIMAX_AVAILABLE = _importlib_util.find_spec("statsmodels.tsa.statespace.sarimax") is not None
+    _SM_SARIMAX_AVAILABLE = (
+        _importlib_util.find_spec("statsmodels.tsa.statespace.sarimax") is not None
+    )
 except Exception:
     _SM_SARIMAX_AVAILABLE = False
 
@@ -112,8 +116,6 @@ def get_forecast_methods_data() -> Dict[str, Any]:
     }
 
 
-
-
 def _extract_description(cls: Any, fallback: str) -> str:
     doc = getattr(cls, "__doc__", None)
     if isinstance(doc, str):
@@ -132,7 +134,10 @@ def _check_chronos_runtime_support() -> Tuple[bool, List[str]]:
     except Exception:
         return False, ["chronos-forecasting"]
 
-    if not any(hasattr(chronos_mod, attr) for attr in ("Chronos2Pipeline", "ChronosBoltPipeline", "ChronosPipeline")):
+    if not any(
+        hasattr(chronos_mod, attr)
+        for attr in ("Chronos2Pipeline", "ChronosBoltPipeline", "ChronosPipeline")
+    ):
         reqs.append("chronos pipeline API")
 
     # Some incompatible chronos versions import but fail at runtime due missing internals.
@@ -151,32 +156,45 @@ def _check_requirements(method: str, requires: List[str]) -> Tuple[bool, List[st
     reqs = list(requires or [])
 
     # Check availability based on method type and runtime flags.
-    if method in ("ses", "holt", "holt_winters_add", "holt_winters_mul", "ets") and not _SM_ETS_AVAILABLE:
-        available = False; reqs.append("statsmodels")
+    if (
+        method in ("ses", "holt", "holt_winters_add", "holt_winters_mul", "ets")
+        and not _SM_ETS_AVAILABLE
+    ):
+        available = False
+        reqs.append("statsmodels")
     if method in ("arima", "sarima") and not _SM_SARIMAX_AVAILABLE:
-        available = False; reqs.append("statsmodels")
+        available = False
+        reqs.append("statsmodels")
     if method == "statsforecast" and not _SF_AVAILABLE:
-        available = False; reqs.append("statsforecast")
+        available = False
+        reqs.append("statsforecast")
     if method == "mlforecast" and not _MLF_AVAILABLE:
-        available = False; reqs.append("mlforecast")
+        available = False
+        reqs.append("mlforecast")
     if method == "mlf_rf" and not _MLF_AVAILABLE:
-        available = False; reqs.append("mlforecast, scikit-learn")
+        available = False
+        reqs.append("mlforecast, scikit-learn")
     if method == "mlf_lightgbm" and (not _MLF_AVAILABLE or not _LGB_AVAILABLE):
-        available = False; reqs.append("mlforecast, lightgbm")
+        available = False
+        reqs.append("mlforecast, lightgbm")
     if method in ("chronos_bolt", "chronos2"):
         if not _CHRONOS_AVAILABLE:
-            available = False; reqs.append("chronos-forecasting")
+            available = False
+            reqs.append("chronos-forecasting")
         else:
             chronos_ok, chronos_reqs = _check_chronos_runtime_support()
             if not chronos_ok:
                 available = False
                 reqs.extend(chronos_reqs)
     if method == "timesfm" and not _TIMESFM_AVAILABLE:
-        available = False; reqs.append("timesfm")
+        available = False
+        reqs.append("timesfm")
     if method == "lag_llama" and not _LAG_LLAMA_AVAILABLE:
-        available = False; reqs.append("lag-llama, gluonts, torch")
+        available = False
+        reqs.append("lag-llama, gluonts, torch")
     if method == "sktime" and not _SKTIME_AVAILABLE:
-        available = False; reqs.append("sktime")
+        available = False
+        reqs.append("sktime")
 
     module_name_overrides = {
         "scikit-learn": "sklearn",
@@ -229,13 +247,41 @@ def _ensemble_metadata() -> Dict[str, Any]:
         "requires": [],
         "description": "Adaptive ensemble with averaging, Bayesian model averaging, or stacking.",
         "params": [
-            {"name": "methods", "type": "list", "description": "Methods to ensemble (default: naive,theta,fourier_ols)"},
-            {"name": "mode", "type": "str", "description": "average|bma|stacking (default: average)"},
-            {"name": "weights", "type": "list", "description": "Manual weights when mode=average"},
-            {"name": "cv_points", "type": "int", "description": "Walk-forward anchors for weighting (default: 2*len(methods))"},
-            {"name": "min_train_size", "type": "int", "description": "Minimum history per CV anchor (default: max(30, horizon*3))"},
-            {"name": "method_params", "type": "dict", "description": "Per-method parameter overrides"},
-            {"name": "expose_components", "type": "bool", "description": "Include component forecasts in response (default: True)"},
+            {
+                "name": "methods",
+                "type": "list",
+                "description": "Methods to ensemble (default: naive,theta,fourier_ols)",
+            },
+            {
+                "name": "mode",
+                "type": "str",
+                "description": "average|bma|stacking (default: average)",
+            },
+            {
+                "name": "weights",
+                "type": "list",
+                "description": "Manual weights when mode=average",
+            },
+            {
+                "name": "cv_points",
+                "type": "int",
+                "description": "Walk-forward anchors for weighting (default: 2*len(methods))",
+            },
+            {
+                "name": "min_train_size",
+                "type": "int",
+                "description": "Minimum history per CV anchor (default: max(30, horizon*3))",
+            },
+            {
+                "name": "method_params",
+                "type": "dict",
+                "description": "Per-method parameter overrides",
+            },
+            {
+                "name": "expose_components",
+                "type": "bool",
+                "description": "Include component forecasts in response (default: True)",
+            },
         ],
         "supports": {"price": True, "return": True, "volatility": True, "ci": False},
     }
@@ -243,14 +289,14 @@ def _ensemble_metadata() -> Dict[str, Any]:
 
 # Availability flags that can be imported by other modules
 __all__ = [
-    'get_forecast_methods_data',
-    '_SM_ETS_AVAILABLE',
-    '_SM_SARIMAX_AVAILABLE',
-    '_NF_AVAILABLE',
-    '_MLF_AVAILABLE',
-    '_SF_AVAILABLE',
-    '_LGB_AVAILABLE',
-    '_CHRONOS_AVAILABLE',
-    '_TIMESFM_AVAILABLE',
-    '_LAG_LLAMA_AVAILABLE',
+    "get_forecast_methods_data",
+    "_SM_ETS_AVAILABLE",
+    "_SM_SARIMAX_AVAILABLE",
+    "_NF_AVAILABLE",
+    "_MLF_AVAILABLE",
+    "_SF_AVAILABLE",
+    "_LGB_AVAILABLE",
+    "_CHRONOS_AVAILABLE",
+    "_TIMESFM_AVAILABLE",
+    "_LAG_LLAMA_AVAILABLE",
 ]

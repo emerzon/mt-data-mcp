@@ -12,32 +12,44 @@ def template_scalping(
     params: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     user_keys = set(params.keys()) if isinstance(params, dict) else set()
-    p = merge_params(params, {
-        'context_limit': 400,
-        'context_tail': 60,
-        'backtest_steps': 20,
-        'backtest_spacing': 10,
-        'backtest_rmse_tolerance': 0.10,
-        'patterns_limit': 200,
-        'mode': 'pips',
-        'grid_style': 'fixed',
-        'tp_min': 2.0, 'tp_max': 15.0, 'tp_steps': 6,
-        'sl_min': 4.0, 'sl_max': 30.0, 'sl_steps': 7,
-        'top_k': 5,
-        # Barrier optimization defaults
-        'objective': 'ev',
-        'params': {'spread_bps': 1.0, 'slippage_bps': 0.5, 'rr_min': 0.7, 'rr_max': 1.6},
-    })
+    p = merge_params(
+        params,
+        {
+            "context_limit": 400,
+            "context_tail": 60,
+            "backtest_steps": 20,
+            "backtest_spacing": 10,
+            "backtest_rmse_tolerance": 0.10,
+            "patterns_limit": 200,
+            "mode": "pips",
+            "grid_style": "fixed",
+            "tp_min": 2.0,
+            "tp_max": 15.0,
+            "tp_steps": 6,
+            "sl_min": 4.0,
+            "sl_max": 30.0,
+            "sl_steps": 7,
+            "top_k": 5,
+            # Barrier optimization defaults
+            "objective": "ev",
+            "params": {
+                "spread_bps": 1.0,
+                "slippage_bps": 0.5,
+                "rr_min": 0.7,
+                "rr_max": 1.6,
+            },
+        },
+    )
     # Choose default timeframe for scalping if not provided
-    if 'timeframe' not in p:
-        p['timeframe'] = 'M5'
+    if "timeframe" not in p:
+        p["timeframe"] = "M5"
     snap = market_snapshot(symbol)
-    if str(p.get('mode', '')).lower() == 'pips':
+    if str(p.get("mode", "")).lower() == "pips":
         last_price = None
         spread_ticks = None
-        if isinstance(snap, dict) and not snap.get('error'):
-            bid = snap.get('bid')
-            ask = snap.get('ask')
+        if isinstance(snap, dict) and not snap.get("error"):
+            bid = snap.get("bid")
+            ask = snap.get("ask")
             try:
                 if bid is not None and ask is not None:
                     last_price = (float(bid) + float(ask)) / 2.0
@@ -48,11 +60,16 @@ def template_scalping(
             except Exception:
                 last_price = None
             try:
-                spread_ticks = float(snap.get('spread_ticks')) if snap.get('spread_ticks') is not None else None
+                spread_ticks = (
+                    float(snap.get("spread_ticks"))
+                    if snap.get("spread_ticks") is not None
+                    else None
+                )
             except Exception:
                 spread_ticks = None
         tick_size = _get_pip_size(symbol)
         if last_price and tick_size and last_price > 1000:
+
             def _set_default(key: str, value: float) -> None:
                 if key in user_keys:
                     return
@@ -69,9 +86,17 @@ def template_scalping(
                 sl_min_ticks = (last_price * 0.00015) / tick_size
                 sl_max_ticks = (last_price * 0.0010) / tick_size
 
-            _set_default('tp_min', tp_min_ticks)
-            _set_default('tp_max', tp_max_ticks)
-            _set_default('sl_min', sl_min_ticks)
-            _set_default('sl_max', sl_max_ticks)
+            _set_default("tp_min", tp_min_ticks)
+            _set_default("tp_max", tp_max_ticks)
+            _set_default("sl_min", sl_min_ticks)
+            _set_default("sl_max", sl_max_ticks)
 
-    return build_report_with_market(symbol, horizon, denoise, p, default_extra=['M1','M5','M15','D1'], default_pivots=['D1'], snapshot=snap)
+    return build_report_with_market(
+        symbol,
+        horizon,
+        denoise,
+        p,
+        default_extra=["M1", "M5", "M15", "D1"],
+        default_pivots=["D1"],
+        snapshot=snap,
+    )

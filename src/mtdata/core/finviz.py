@@ -64,20 +64,20 @@ def _run_logged_tool(
 def finviz_fundamentals(symbol: str) -> Dict[str, Any]:
     """
     Get fundamental data for a US stock symbol.
-    
+
     Returns metrics like P/E, EPS, market cap, sector, industry, dividend yield,
     52-week range, analyst recommendations, and more.
-    
+
     Parameters
     ----------
     symbol : str
         Stock ticker symbol (e.g., AAPL, MSFT, GOOGL)
-    
+
     Returns
     -------
     dict
         Fundamental metrics for the stock
-    
+
     Example
     -------
     >>> finviz_fundamentals("AAPL")
@@ -94,12 +94,12 @@ def finviz_fundamentals(symbol: str) -> Dict[str, Any]:
 def finviz_description(symbol: str) -> Dict[str, Any]:
     """
     Get company business description for a US stock.
-    
+
     Parameters
     ----------
     symbol : str
         Stock ticker symbol (e.g., AAPL, TSLA)
-    
+
     Returns
     -------
     dict
@@ -113,11 +113,13 @@ def finviz_description(symbol: str) -> Dict[str, Any]:
 
 
 @mcp.tool()
-def finviz_news(symbol: Optional[str] = None, limit: int = 20, page: int = 1) -> Dict[str, Any]:
+def finviz_news(
+    symbol: Optional[str] = None, limit: int = 20, page: int = 1
+) -> Dict[str, Any]:
     """
     Get latest news. If symbol provided, returns stock-specific news.
     If no symbol, returns general market news.
-    
+
     Parameters
     ----------
     symbol : str, optional
@@ -126,7 +128,7 @@ def finviz_news(symbol: Optional[str] = None, limit: int = 20, page: int = 1) ->
         Max news items per page (default 20)
     page : int
         Page number for pagination (default 1)
-    
+
     Returns
     -------
     dict
@@ -154,10 +156,10 @@ def finviz_news(symbol: Optional[str] = None, limit: int = 20, page: int = 1) ->
 def finviz_insider(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any]:
     """
     Get insider trading activity for a US stock.
-    
+
     Returns recent insider buys/sells with owner name, relationship,
     transaction type, shares, value, and date.
-    
+
     Parameters
     ----------
     symbol : str
@@ -166,7 +168,7 @@ def finviz_insider(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any
         Max trades per page (default 20)
     page : int
         Page number for pagination (default 1)
-    
+
     Returns
     -------
     dict
@@ -183,15 +185,15 @@ def finviz_insider(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any
 def finviz_ratings(symbol: str) -> Dict[str, Any]:
     """
     Get analyst ratings for a US stock.
-    
+
     Returns ratings history with date, analyst firm, rating action,
     rating, and price target.
-    
+
     Parameters
     ----------
     symbol : str
         Stock ticker symbol
-    
+
     Returns
     -------
     dict
@@ -208,12 +210,12 @@ def finviz_ratings(symbol: str) -> Dict[str, Any]:
 def finviz_peers(symbol: str) -> Dict[str, Any]:
     """
     Get peer companies for a US stock.
-    
+
     Parameters
     ----------
     symbol : str
         Stock ticker symbol
-    
+
     Returns
     -------
     dict
@@ -232,18 +234,20 @@ def finviz_screen(
     order: Optional[str] = None,
     limit: int = 50,
     page: int = 1,
-    view: Literal["overview", "valuation", "financial", "ownership", "performance", "technical"] = "overview",
+    view: Literal[
+        "overview", "valuation", "financial", "ownership", "performance", "technical"
+    ] = "overview",
 ) -> Dict[str, Any]:
     """
     Screen stocks using Finviz screener with filters.
-    
+
     Parameters
     ----------
     filters : str, optional
         JSON string of filter dict, e.g. '{"Exchange": "NASDAQ", "Sector": "Technology"}'
         Common filters: Exchange, Index, Sector, Industry, Country, Market Cap.,
         P/E, Forward P/E, PEG, P/S, P/B, Dividend Yield, EPS growth this year,
-        Return on Equity, Current Ratio, Analyst Recom., RSI (14), 
+        Return on Equity, Current Ratio, Analyst Recom., RSI (14),
         50-Day Simple Moving Average, Average Volume, Price, Beta
     order : str, optional
         Sort order, e.g. "-marketcap" (descending), "price" (ascending)
@@ -253,20 +257,20 @@ def finviz_screen(
         Page number for pagination (default 1)
     view : str
         Data view: overview, valuation, financial, ownership, performance, technical
-    
+
     Returns
     -------
     dict
         List of stocks matching filters
-    
+
     Examples
     --------
     Screen for tech stocks on NASDAQ:
     >>> finviz_screen(filters='{"Exchange": "NASDAQ", "Sector": "Technology"}')
-    
+
     Screen for undervalued large caps:
     >>> finviz_screen(filters='{"Market Cap.": "Large ($10bln to $200bln)", "P/E": "Under 15"}')
-    
+
     Screen for high dividend stocks:
     >>> finviz_screen(filters='{"Dividend Yield": "Over 5%"}', view="valuation")
     """
@@ -280,7 +284,9 @@ def finviz_screen(
             except (json.JSONDecodeError, TypeError):
                 return {"error": f"Invalid filters JSON: {filters}"}
 
-        return screen_stocks(filters=filters_dict, order=order, limit=limit, page=page, view=view)
+        return screen_stocks(
+            filters=filters_dict, order=order, limit=limit, page=page, view=view
+        )
 
     return _run_logged_tool("finviz_screen", fields, _run)
 
@@ -293,7 +299,7 @@ def finviz_market_news(
 ) -> Dict[str, Any]:
     """
     Get general financial market news from Finviz.
-    
+
     Parameters
     ----------
     news_type : str
@@ -302,7 +308,7 @@ def finviz_market_news(
         Max items per page (default 20)
     page : int
         Page number for pagination (default 1)
-    
+
     Returns
     -------
     dict
@@ -317,13 +323,15 @@ def finviz_market_news(
 
 @mcp.tool()
 def finviz_insider_activity(
-    option: Literal["latest", "top week", "top owner trade", "insider buy", "insider sale"] = "latest",
+    option: Literal[
+        "latest", "top week", "top owner trade", "insider buy", "insider sale"
+    ] = "latest",
     limit: int = 50,
     page: int = 1,
 ) -> Dict[str, Any]:
     """
     Get general insider trading activity across the market.
-    
+
     Parameters
     ----------
     option : str
@@ -337,7 +345,7 @@ def finviz_insider_activity(
         Max items per page (default 50)
     page : int
         Page number for pagination (default 1)
-    
+
     Returns
     -------
     dict
@@ -354,10 +362,10 @@ def finviz_insider_activity(
 def finviz_forex() -> Dict[str, Any]:
     """
     Get forex currency pairs performance from Finviz.
-    
+
     Returns performance data for major currency pairs including
     daily change, weekly change, and other metrics.
-    
+
     Returns
     -------
     dict
@@ -370,10 +378,10 @@ def finviz_forex() -> Dict[str, Any]:
 def finviz_crypto() -> Dict[str, Any]:
     """
     Get cryptocurrency performance from Finviz.
-    
+
     Returns performance data for major cryptocurrencies including
     price, daily change, volume, and market cap.
-    
+
     Returns
     -------
     dict
@@ -386,10 +394,10 @@ def finviz_crypto() -> Dict[str, Any]:
 def finviz_futures() -> Dict[str, Any]:
     """
     Get futures market performance from Finviz.
-    
+
     Returns performance data for major futures contracts including
     commodities, indices, bonds, and currencies.
-    
+
     Returns
     -------
     dict
@@ -475,28 +483,42 @@ def finviz_calendar(
             cal = cal.rstrip("/").split("/")[-1]
 
         if cal == "economic":
-            return get_economic_calendar(impact=impact, limit=limit, page=page, date_from=date_from, date_to=date_to)
+            return get_economic_calendar(
+                impact=impact,
+                limit=limit,
+                page=page,
+                date_from=date_from,
+                date_to=date_to,
+            )
         if cal == "earnings":
-            return get_earnings_calendar_api(limit=limit, page=page, date_from=date_from, date_to=date_to)
+            return get_earnings_calendar_api(
+                limit=limit, page=page, date_from=date_from, date_to=date_to
+            )
         if cal == "dividends":
-            return get_dividends_calendar_api(limit=limit, page=page, date_from=date_from, date_to=date_to)
-        return {"error": f"Unsupported calendar '{calendar}'. Expected economic, earnings, or dividends."}
+            return get_dividends_calendar_api(
+                limit=limit, page=page, date_from=date_from, date_to=date_to
+            )
+        return {
+            "error": f"Unsupported calendar '{calendar}'. Expected economic, earnings, or dividends."
+        }
 
     return _run_logged_tool("finviz_calendar", fields, _run)
 
 
 @mcp.tool()
 def finviz_earnings(
-    period: Literal["This Week", "Next Week", "Previous Week", "This Month"] = "This Week",
+    period: Literal[
+        "This Week", "Next Week", "Previous Week", "This Month"
+    ] = "This Week",
     limit: int = 50,
     page: int = 1,
 ) -> Dict[str, Any]:
     """
     Get upcoming earnings calendar from Finviz.
-    
+
     Returns scheduled earnings announcements with date, time,
     ticker, and expected EPS.
-    
+
     Parameters
     ----------
     period : str
@@ -505,7 +527,7 @@ def finviz_earnings(
         Max items per page (default 50)
     page : int
         Page number for pagination (default 1)
-    
+
     Returns
     -------
     dict

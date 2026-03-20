@@ -1,7 +1,7 @@
 """Tests for core/causal.py — pure helper functions (no MT5)."""
+
 import numpy as np
 import pandas as pd
-import pytest
 
 from mtdata.core.causal import (
     _parse_symbols,
@@ -13,7 +13,11 @@ from mtdata.core.causal import (
 
 class TestParseSymbols:
     def test_comma_separated(self):
-        assert _parse_symbols("EURUSD, GBPUSD, USDJPY") == ["EURUSD", "GBPUSD", "USDJPY"]
+        assert _parse_symbols("EURUSD, GBPUSD, USDJPY") == [
+            "EURUSD",
+            "GBPUSD",
+            "USDJPY",
+        ]
 
     def test_semicolon_separated(self):
         assert _parse_symbols("EURUSD;GBPUSD") == ["EURUSD", "GBPUSD"]
@@ -33,7 +37,9 @@ class TestParseSymbols:
 
 class TestTransformFrame:
     def _df(self):
-        return pd.DataFrame({"A": [100.0, 110.0, 121.0, 133.1], "B": [50.0, 55.0, 60.5, 66.55]})
+        return pd.DataFrame(
+            {"A": [100.0, 110.0, 121.0, 133.1], "B": [50.0, 55.0, 60.5, 66.55]}
+        )
 
     def test_log_return(self):
         result = _transform_frame(self._df(), "log_return")
@@ -92,17 +98,33 @@ class TestFormatSummary:
 
     def test_with_rows(self):
         rows = [
-            {"effect": "EURUSD", "cause": "GBPUSD", "lag": 3, "p_value": 0.01, "samples": 100},
-            {"effect": "EURUSD", "cause": "USDJPY", "lag": 2, "p_value": 0.20, "samples": 100},
+            {
+                "effect": "EURUSD",
+                "cause": "GBPUSD",
+                "lag": 3,
+                "p_value": 0.01,
+                "samples": 100,
+            },
+            {
+                "effect": "EURUSD",
+                "cause": "USDJPY",
+                "lag": 2,
+                "p_value": 0.20,
+                "samples": 100,
+            },
         ]
-        result = _format_summary(rows, ["EURUSD", "GBPUSD", "USDJPY"], "log_return", 0.05)
+        result = _format_summary(
+            rows, ["EURUSD", "GBPUSD", "USDJPY"], "log_return", 0.05
+        )
         assert "causal" in result
         assert "no-link" in result
         assert "EURUSD <- GBPUSD" in result
 
     def test_group_hint(self):
         rows = [{"effect": "A", "cause": "B", "lag": 1, "p_value": 0.01, "samples": 50}]
-        result = _format_summary(rows, ["A", "B"], "diff", 0.05, group_hint="Forex\\Major")
+        result = _format_summary(
+            rows, ["A", "B"], "diff", 0.05, group_hint="Forex\\Major"
+        )
         assert "Forex\\Major" in result
 
     def test_sorted_by_pvalue(self):
@@ -115,3 +137,4 @@ class TestFormatSummary:
         data_lines = [l for l in lines if "<-" in l and "Effect" not in l and "|" in l]
         # First data line should be the one with lower p-value
         assert "C <- D" in data_lines[0]
+# ruff: noqa: E402, E731, E741, F811, F841

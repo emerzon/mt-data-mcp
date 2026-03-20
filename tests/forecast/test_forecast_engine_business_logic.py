@@ -1,3 +1,4 @@
+# ruff: noqa: E402, E731, E741, F811, F841
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -33,16 +34,52 @@ def test_normalize_weights_and_lookback_helpers():
     assert fe._normalize_weights([1], 2) is None
     assert fe._normalize_weights([-1, 0], 2) is None
 
-    assert fe._calculate_lookback_bars("theta", horizon=4, lookback=10, seasonality=24, timeframe="H1") == 12
-    assert fe._calculate_lookback_bars("analog", horizon=4, lookback=None, seasonality=24, timeframe="H1") >= 100
-    assert fe._calculate_lookback_bars(
-        "analog", horizon=4, lookback=None, seasonality=24, timeframe="H1", params={"window_size": 256}
-    ) >= 258
-    assert fe._calculate_lookback_bars(
-        "analog", horizon=4, lookback=10, seasonality=24, timeframe="H1", params={"window_size": 256}
-    ) >= 258
-    assert fe._calculate_lookback_bars("seasonal_naive", horizon=4, lookback=None, seasonality=12, timeframe="H1") == 36
-    assert fe._calculate_lookback_bars("fourier_ols", horizon=4, lookback=None, seasonality=24, timeframe="H1") >= 300
+    assert (
+        fe._calculate_lookback_bars(
+            "theta", horizon=4, lookback=10, seasonality=24, timeframe="H1"
+        )
+        == 12
+    )
+    assert (
+        fe._calculate_lookback_bars(
+            "analog", horizon=4, lookback=None, seasonality=24, timeframe="H1"
+        )
+        >= 100
+    )
+    assert (
+        fe._calculate_lookback_bars(
+            "analog",
+            horizon=4,
+            lookback=None,
+            seasonality=24,
+            timeframe="H1",
+            params={"window_size": 256},
+        )
+        >= 258
+    )
+    assert (
+        fe._calculate_lookback_bars(
+            "analog",
+            horizon=4,
+            lookback=10,
+            seasonality=24,
+            timeframe="H1",
+            params={"window_size": 256},
+        )
+        >= 258
+    )
+    assert (
+        fe._calculate_lookback_bars(
+            "seasonal_naive", horizon=4, lookback=None, seasonality=12, timeframe="H1"
+        )
+        == 36
+    )
+    assert (
+        fe._calculate_lookback_bars(
+            "fourier_ols", horizon=4, lookback=None, seasonality=24, timeframe="H1"
+        )
+        >= 300
+    )
 
 
 def test_preprocessing_helpers_and_output_format():
@@ -62,8 +99,12 @@ def test_preprocessing_helpers_and_output_format():
         features={"ti": "ema:10"},
         target_spec={"column": "ema_10", "transform": "log"},
         base_col="close",
-        parse_ti_specs=lambda spec: calls.__setitem__("parse", calls["parse"] + 1) or [{"s": spec}],
-        apply_ta_indicators=lambda data, spec: calls.__setitem__("apply", calls["apply"] + 1) or ["ema_10"],
+        parse_ti_specs=lambda spec: calls.__setitem__("parse", calls["parse"] + 1)
+        or [{"s": spec}],
+        apply_ta_indicators=lambda data, spec: calls.__setitem__(
+            "apply", calls["apply"] + 1
+        )
+        or ["ema_10"],
     )
     assert out_col == "__target_ema_10"
     assert calls["parse"] == 1
@@ -222,23 +263,43 @@ def test_forecast_engine_validation_and_top_level_errors(monkeypatch):
     monkeypatch.setattr(fe, "_get_available_methods", lambda: ("naive", "ensemble"))
     monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
 
-    assert "Invalid timeframe" in fe.forecast_engine(symbol="EURUSD", timeframe="BAD")["error"]
+    assert (
+        "Invalid timeframe"
+        in fe.forecast_engine(symbol="EURUSD", timeframe="BAD")["error"]
+    )
 
     monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {})
-    assert fe.forecast_engine(symbol="EURUSD", timeframe="H1")["error"] == "Unsupported timeframe seconds for H1"
+    assert (
+        fe.forecast_engine(symbol="EURUSD", timeframe="H1")["error"]
+        == "Unsupported timeframe seconds for H1"
+    )
     monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
 
-    assert "Invalid method" in fe.forecast_engine(symbol="EURUSD", timeframe="H1", method="theta")["error"]
-    assert fe.forecast_engine(symbol="EURUSD", timeframe="H1", method="naive", quantity="volatility")["error"] == "Use forecast_volatility for volatility models"
+    assert (
+        "Invalid method"
+        in fe.forecast_engine(symbol="EURUSD", timeframe="H1", method="theta")["error"]
+    )
+    assert (
+        fe.forecast_engine(
+            symbol="EURUSD", timeframe="H1", method="naive", quantity="volatility"
+        )["error"]
+        == "Use forecast_volatility for volatility models"
+    )
 
-    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: (_ for _ in ()).throw(ValueError("bad params")))
+    monkeypatch.setattr(
+        fe,
+        "_parse_kv_or_json",
+        lambda v: (_ for _ in ()).throw(ValueError("bad params")),
+    )
     out = fe.forecast_engine(symbol="EURUSD", timeframe="H1", method="naive")
     assert out["error"].startswith("Forecast engine failed: bad params")
 
 
 def test_forecast_engine_prefetched_non_ensemble_success_and_failures(monkeypatch):
     class GoodForecaster:
-        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+        def forecast(
+            self, series, horizon, seasonality, params, exog_future=None, **kwargs
+        ):
             return ForecastResult(
                 forecast=np.array([0.01, 0.02], dtype=float),
                 ci_values=(np.array([0.0, 0.0]), np.array([0.1, 0.1])),
@@ -266,8 +327,14 @@ def test_forecast_engine_prefetched_non_ensemble_success_and_failures(monkeypatc
     monkeypatch.setattr(fe, "_get_available_methods", lambda: ("naive", "ensemble"))
     monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
     monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
-    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: SimpleNamespace(digits=5))
-    monkeypatch.setattr(fe, "_fetch_history", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("should not fetch")))
+    monkeypatch.setattr(
+        fe, "get_symbol_info_cached", lambda symbol: SimpleNamespace(digits=5)
+    )
+    monkeypatch.setattr(
+        fe,
+        "_fetch_history",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("should not fetch")),
+    )
 
     out = fe.forecast_engine(
         symbol="EURUSD",
@@ -294,11 +361,15 @@ def test_forecast_engine_prefetched_non_ensemble_success_and_failures(monkeypatc
     assert out["diagnostics"]["lookback_bars_fetched"] >= 20
 
     FakeRegistry.current = NoneForecaster
-    out = fe.forecast_engine(symbol="EURUSD", timeframe="H1", method="naive", prefetched_df=_df(20))
+    out = fe.forecast_engine(
+        symbol="EURUSD", timeframe="H1", method="naive", prefetched_df=_df(20)
+    )
     assert out["error"] == "Method 'naive' returned no forecast values"
 
     FakeRegistry.current = ErrorForecaster
-    out = fe.forecast_engine(symbol="EURUSD", timeframe="H1", method="naive", prefetched_df=_df(20))
+    out = fe.forecast_engine(
+        symbol="EURUSD", timeframe="H1", method="naive", prefetched_df=_df(20)
+    )
     assert out["error"].startswith("Forecast method 'naive' failed: method exploded")
 
 
@@ -306,7 +377,9 @@ def test_forecast_engine_preserves_prefetched_denoised_base_column(monkeypatch):
     captured = {}
 
     class CaptureForecaster:
-        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+        def forecast(
+            self, series, horizon, seasonality, params, exog_future=None, **kwargs
+        ):
             captured["series_name"] = series.name
             captured["last_value"] = float(series.iloc[-1])
             return ForecastResult(
@@ -352,7 +425,9 @@ def test_forecast_engine_builds_exog_and_aligns_for_returns(monkeypatch):
     captured = {}
 
     class CaptureForecaster:
-        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+        def forecast(
+            self, series, horizon, seasonality, params, exog_future=None, **kwargs
+        ):
             captured["series_len"] = len(series)
             captured["exog_used"] = kwargs.get("exog_used")
             captured["exog_future"] = exog_future
@@ -381,7 +456,10 @@ def test_forecast_engine_builds_exog_and_aligns_for_returns(monkeypatch):
         horizon=5,
         quantity="return",
         params={"alpha": 1},
-        features={"include": "open,high low", "future_covariates": "hour,dow,fourier:24,is_weekend"},
+        features={
+            "include": "open,high low",
+            "future_covariates": "hour,dow,fourier:24,is_weekend",
+        },
         prefetched_df=_df(30),
     )
 
@@ -395,7 +473,9 @@ def test_forecast_engine_dimred_failure_falls_back_to_raw_features(monkeypatch):
     captured = {}
 
     class CaptureForecaster:
-        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+        def forecast(
+            self, series, horizon, seasonality, params, exog_future=None, **kwargs
+        ):
             captured["exog_used"] = kwargs.get("exog_used")
             captured["exog_future"] = exog_future
             return ForecastResult(
@@ -415,7 +495,11 @@ def test_forecast_engine_dimred_failure_falls_back_to_raw_features(monkeypatch):
     monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
     monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
     monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
-    monkeypatch.setattr(fp, "_create_dimred_reducer", lambda method, params: (_ for _ in ()).throw(RuntimeError("dimred failed")))
+    monkeypatch.setattr(
+        fp,
+        "_create_dimred_reducer",
+        lambda method, params: (_ for _ in ()).throw(RuntimeError("dimred failed")),
+    )
 
     out = fe.forecast_engine(
         symbol="EURUSD",
@@ -436,7 +520,9 @@ def test_forecast_engine_forwards_ci_alpha_in_params_and_kwargs(monkeypatch):
     captured = {}
 
     class CaptureForecaster:
-        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+        def forecast(
+            self, series, horizon, seasonality, params, exog_future=None, **kwargs
+        ):
             captured["params"] = dict(params)
             captured["kwargs"] = dict(kwargs)
             return ForecastResult(
@@ -456,7 +542,9 @@ def test_forecast_engine_forwards_ci_alpha_in_params_and_kwargs(monkeypatch):
     monkeypatch.setattr(fe, "_get_available_methods", lambda: ("naive",))
     monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
     monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
-    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: SimpleNamespace(digits=5))
+    monkeypatch.setattr(
+        fe, "get_symbol_info_cached", lambda symbol: SimpleNamespace(digits=5)
+    )
 
     out = fe.forecast_engine(
         symbol="EURUSD",
@@ -472,9 +560,13 @@ def test_forecast_engine_forwards_ci_alpha_in_params_and_kwargs(monkeypatch):
     assert captured["kwargs"]["ci_alpha"] == 0.1
 
 
-def test_forecast_engine_warns_when_ci_requested_but_method_has_no_intervals(monkeypatch):
+def test_forecast_engine_warns_when_ci_requested_but_method_has_no_intervals(
+    monkeypatch,
+):
     class NoCIForecaster:
-        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+        def forecast(
+            self, series, horizon, seasonality, params, exog_future=None, **kwargs
+        ):
             return ForecastResult(
                 forecast=np.array([1.0], dtype=float),
                 ci_values=None,
@@ -523,7 +615,9 @@ def test_forecast_engine_injects_context_for_analog(monkeypatch):
     captured = {}
 
     class CaptureForecaster:
-        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+        def forecast(
+            self, series, horizon, seasonality, params, exog_future=None, **kwargs
+        ):
             captured["params"] = dict(params)
             captured["kwargs"] = dict(kwargs)
             return ForecastResult(
@@ -570,7 +664,9 @@ def test_forecast_engine_injects_denoise_context_for_analog(monkeypatch):
     captured = {}
 
     class CaptureForecaster:
-        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+        def forecast(
+            self, series, horizon, seasonality, params, exog_future=None, **kwargs
+        ):
             captured["params"] = dict(params)
             captured["kwargs"] = dict(kwargs)
             return ForecastResult(
@@ -613,7 +709,9 @@ def test_forecast_engine_injects_denoise_context_for_analog(monkeypatch):
     assert captured["kwargs"]["history_denoise_spec"]["method"] == "ema"
 
 
-def test_forecast_engine_analog_rejects_prefetched_history_shorter_than_window(monkeypatch):
+def test_forecast_engine_analog_rejects_prefetched_history_shorter_than_window(
+    monkeypatch,
+):
     monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
     monkeypatch.setattr(fe, "_get_available_methods", lambda: ("analog",))
@@ -638,7 +736,9 @@ def test_forecast_engine_analog_rejects_prefetched_history_shorter_than_window(m
         prefetched_df=_df(20),
     )
 
-    assert out["error"].startswith("Forecast method 'analog' failed: Analog method requires at least 32 price points")
+    assert out["error"].startswith(
+        "Forecast method 'analog' failed: Analog method requires at least 32 price points"
+    )
 
 
 def test_forecast_engine_adds_broker_time_check_for_live_data(monkeypatch):
@@ -672,7 +772,9 @@ def test_forecast_engine_adds_broker_time_check_for_live_data(monkeypatch):
     monkeypatch.setattr(
         fe,
         "mt5_config",
-        SimpleNamespace(broker_time_check_enabled=True, broker_time_check_ttl_seconds=45),
+        SimpleNamespace(
+            broker_time_check_enabled=True, broker_time_check_ttl_seconds=45
+        ),
     )
 
     out = fe.forecast_engine(
@@ -710,7 +812,9 @@ def test_forecast_engine_surfaces_broker_time_misalignment_warning(monkeypatch):
     monkeypatch.setattr(
         fe,
         "mt5_config",
-        SimpleNamespace(broker_time_check_enabled=True, broker_time_check_ttl_seconds=60),
+        SimpleNamespace(
+            broker_time_check_enabled=True, broker_time_check_ttl_seconds=60
+        ),
     )
     monkeypatch.setattr(
         fe,
@@ -759,7 +863,9 @@ def test_forecast_engine_keeps_stale_broker_time_check_diagnostic_only(monkeypat
     monkeypatch.setattr(
         fe,
         "mt5_config",
-        SimpleNamespace(broker_time_check_enabled=True, broker_time_check_ttl_seconds=60),
+        SimpleNamespace(
+            broker_time_check_enabled=True, broker_time_check_ttl_seconds=60
+        ),
     )
     monkeypatch.setattr(
         fe,
@@ -813,7 +919,9 @@ def test_forecast_engine_skips_broker_time_check_for_prefetched_and_asof(monkeyp
     monkeypatch.setattr(
         fe,
         "mt5_config",
-        SimpleNamespace(broker_time_check_enabled=True, broker_time_check_ttl_seconds=60),
+        SimpleNamespace(
+            broker_time_check_enabled=True, broker_time_check_ttl_seconds=60
+        ),
     )
 
     out_prefetched = fe.forecast_engine(
@@ -857,13 +965,21 @@ def test_forecast_engine_target_spec_and_data_validity_errors(monkeypatch):
     monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
     monkeypatch.setattr(fe, "_fetch_history", lambda *args, **kwargs: _df(10))
 
-    monkeypatch.setattr(fe, "build_target_series", lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("bad spec")))
-    out = fe.forecast_engine(symbol="EURUSD", timeframe="H1", method="naive", target_spec={"x": 1})
+    monkeypatch.setattr(
+        fe,
+        "build_target_series",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("bad spec")),
+    )
+    out = fe.forecast_engine(
+        symbol="EURUSD", timeframe="H1", method="naive", target_spec={"x": 1}
+    )
     assert out["error"] == "Invalid target_spec: bad spec"
 
     dshort = _df(5)
     dshort["close"] = np.nan
-    out = fe.forecast_engine(symbol="EURUSD", timeframe="H1", method="naive", prefetched_df=dshort)
+    out = fe.forecast_engine(
+        symbol="EURUSD", timeframe="H1", method="naive", prefetched_df=dshort
+    )
     assert "Not enough valid data points" in out["error"]
 
 
@@ -871,7 +987,9 @@ def test_forecast_engine_target_spec_column_alias_is_applied(monkeypatch):
     captured = {}
 
     class CaptureForecaster:
-        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+        def forecast(
+            self, series, horizon, seasonality, params, exog_future=None, **kwargs
+        ):
             captured["last_value"] = float(series.iloc[-1])
             return ForecastResult(
                 forecast=np.array([float(series.iloc[-1])], dtype=float),
@@ -908,7 +1026,9 @@ def test_forecast_engine_target_spec_column_alias_is_applied(monkeypatch):
 def test_forecast_engine_ensemble_paths(monkeypatch):
     monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
-    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("ensemble", "naive", "theta"))
+    monkeypatch.setattr(
+        fe, "_get_available_methods", lambda: ("ensemble", "naive", "theta")
+    )
     monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
     monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
 
@@ -920,7 +1040,11 @@ def test_forecast_engine_ensemble_paths(monkeypatch):
         return None
 
     monkeypatch.setattr(fe, "_ensemble_dispatch_method", fake_dispatch)
-    monkeypatch.setattr(fe, "_prepare_ensemble_cv", lambda *args, **kwargs: (np.empty((0, 2)), np.empty((0,))))
+    monkeypatch.setattr(
+        fe,
+        "_prepare_ensemble_cv",
+        lambda *args, **kwargs: (np.empty((0, 2)), np.empty((0,))),
+    )
 
     out = fe.forecast_engine(
         symbol="EURUSD",

@@ -12,7 +12,9 @@ from src.mtdata.patterns.elliott import (
 def test_impulse_rule_rejects_wave3_shortest():
     # W3 is intentionally shorter than both W1 and W5.
     close = np.array([100.0, 130.0, 120.0, 132.0, 131.0, 171.0], dtype=float)
-    valid, score, metrics = _impulse_rules_and_score(close, [0, 1, 2, 3, 4, 5], bullish=True)
+    valid, score, metrics = _impulse_rules_and_score(
+        close, [0, 1, 2, 3, 4, 5], bullish=True
+    )
     assert valid is False
     assert float(score) >= 0.0
     assert isinstance(metrics, dict)
@@ -20,7 +22,9 @@ def test_impulse_rule_rejects_wave3_shortest():
 
 def test_impulse_rule_allows_wave3_to_tie_longest_non_shortest_wave():
     close = np.array([100.0, 120.0, 110.0, 130.0, 121.0, 146.0], dtype=float)
-    valid, _score, _metrics = _impulse_rules_and_score(close, [0, 1, 2, 3, 4, 5], bullish=True)
+    valid, _score, _metrics = _impulse_rules_and_score(
+        close, [0, 1, 2, 3, 4, 5], bullish=True
+    )
 
     assert valid is True
 
@@ -42,7 +46,9 @@ def test_detect_elliott_waves_returns_candidate_for_fallback():
     assert len(results[0].wave_sequence) < 6
     assert results[0].start_time is None
     assert results[0].end_time is None
-    assert all(point["time"] is None for point in results[0].details["wave_points_labeled"])
+    assert all(
+        point["time"] is None for point in results[0].details["wave_points_labeled"]
+    )
 
 
 def test_zigzag_pretrend_uses_running_extrema_before_trend_is_set():

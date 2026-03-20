@@ -47,7 +47,9 @@ class TestCliListParsing(unittest.TestCase):
         }
 
         command = cli.create_command_function(func_info, cmd_name="dummy")
-        args = argparse.Namespace(methods="arima,theta,mc_gbm", json=True, verbose=False)
+        args = argparse.Namespace(
+            methods="arima,theta,mc_gbm", json=True, verbose=False
+        )
 
         with redirect_stdout(io.StringIO()):
             command(args)

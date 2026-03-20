@@ -2,10 +2,10 @@
 
 Covers lines 25-273 by mocking MT5 calls and _symbol_ready_guard.
 """
-import math
+# ruff: noqa: E402, E731, E741, F811, F841
+
 import numpy as np
-import pytest
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import patch, MagicMock
 from contextlib import contextmanager
 from typing import Any, Dict
 
@@ -14,11 +14,20 @@ from typing import Any, Dict
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_rate(open_=1.1000, high=1.1050, low=1.0950, close=1.1020, time_=1_700_000_000.0):
+
+def _make_rate(
+    open_=1.1000, high=1.1050, low=1.0950, close=1.1020, time_=1_700_000_000.0
+):
     """Return a dict mimicking a structured MT5 rate row."""
     return {
-        "open": open_, "high": high, "low": low, "close": close,
-        "time": time_, "tick_volume": 100, "spread": 10, "real_volume": 0,
+        "open": open_,
+        "high": high,
+        "low": low,
+        "close": close,
+        "time": time_,
+        "tick_volume": 100,
+        "spread": 10,
+        "real_volume": 0,
     }
 
 
@@ -38,9 +47,11 @@ def _make_tick(time_val=1_700_000_000.0):
 @contextmanager
 def _mock_symbol_guard(error=None, info=None):
     """Context manager that replaces _symbol_ready_guard."""
+
     @contextmanager
     def _guard(symbol):
         yield error, info
+
     with patch("mtdata.core.pivot._symbol_ready_guard", _guard):
         yield
 
@@ -48,12 +59,15 @@ def _mock_symbol_guard(error=None, info=None):
 # Unwrap the decorated function
 def _get_pivot_fn():
     from mtdata.core.pivot import pivot_compute_points
+
     raw = pivot_compute_points
     while hasattr(raw, "__wrapped__"):
         raw = raw.__wrapped__
 
     def _call(*args, **kwargs):
-        with patch("mtdata.core.pivot.ensure_mt5_connection_or_raise", return_value=None):
+        with patch(
+            "mtdata.core.pivot.ensure_mt5_connection_or_raise", return_value=None
+        ):
             return raw(*args, **kwargs)
 
     return _call
@@ -71,7 +85,6 @@ _COPY_RATES = "mtdata.core.pivot._mt5_copy_rates_from"
 
 
 class TestPivotInvalidInputs:
-
     def test_invalid_timeframe(self):
         fn = _get_pivot_fn()
         with patch(_TF_MAP_PATCH, {"D1": 1}):
@@ -81,8 +94,10 @@ class TestPivotInvalidInputs:
 
     def test_unsupported_timeframe_seconds(self):
         fn = _get_pivot_fn()
-        with patch(_TF_MAP_PATCH, {"D1": 1, "X": 99}), \
-             patch(_TF_SECS_PATCH, {"D1": 86400}):
+        with (
+            patch(_TF_MAP_PATCH, {"D1": 1, "X": 99}),
+            patch(_TF_SECS_PATCH, {"D1": 86400}),
+        ):
             res = fn("EURUSD", timeframe="X")
         assert "error" in res
         assert "Unsupported timeframe" in res["error"]
@@ -97,15 +112,17 @@ def test_pivot_compute_points_logs_finish_event(caplog):
         yield None, info
 
     rates = np.array([_make_rate(time_=100.0), _make_rate(time_=200.0)])
-    with patch(_TF_MAP_PATCH, {"D1": 1}), \
-         patch(_TF_SECS_PATCH, {"D1": 86400}), \
-         patch(_GUARD, _guard), \
-         patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()), \
-         patch(_EPOCH, side_effect=lambda x: float(x)), \
-         patch(_COPY_RATES, return_value=rates), \
-         patch(_USE_CTZ, return_value=False), \
-         patch(_FMT, side_effect=lambda x: f"T{int(x)}"), \
-         caplog.at_level("INFO", logger="mtdata.core.pivot"):
+    with (
+        patch(_TF_MAP_PATCH, {"D1": 1}),
+        patch(_TF_SECS_PATCH, {"D1": 86400}),
+        patch(_GUARD, _guard),
+        patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()),
+        patch(_EPOCH, side_effect=lambda x: float(x)),
+        patch(_COPY_RATES, return_value=rates),
+        patch(_USE_CTZ, return_value=False),
+        patch(_FMT, side_effect=lambda x: f"T{int(x)}"),
+        caplog.at_level("INFO", logger="mtdata.core.pivot"),
+    ):
         res = fn("EURUSD", timeframe="D1")
 
     assert res["success"] is True
@@ -116,18 +133,18 @@ def test_pivot_compute_points_logs_finish_event(caplog):
 
 
 class TestPivotSymbolGuardError:
-
     def test_symbol_error(self):
         fn = _get_pivot_fn()
-        with patch(_TF_MAP_PATCH, {"D1": 1}), \
-             patch(_TF_SECS_PATCH, {"D1": 86400}), \
-             _mock_symbol_guard(error="Symbol not found"):
+        with (
+            patch(_TF_MAP_PATCH, {"D1": 1}),
+            patch(_TF_SECS_PATCH, {"D1": 86400}),
+            _mock_symbol_guard(error="Symbol not found"),
+        ):
             res = fn("BADSY", timeframe="D1")
         assert res["error"] == "Symbol not found"
 
 
 class TestPivotNoRates:
-
     def test_rates_none(self):
         fn = _get_pivot_fn()
         info = _make_symbol_info()
@@ -136,13 +153,15 @@ class TestPivotNoRates:
         def _guard(symbol):
             yield None, info
 
-        with patch(_TF_MAP_PATCH, {"D1": 1}), \
-             patch(_TF_SECS_PATCH, {"D1": 86400}), \
-             patch(_GUARD, _guard), \
-             patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()), \
-             patch(_EPOCH, side_effect=lambda x: x), \
-             patch(_COPY_RATES, return_value=None), \
-             patch(f"{_MT5}.last_error", return_value=(0, "no data")):
+        with (
+            patch(_TF_MAP_PATCH, {"D1": 1}),
+            patch(_TF_SECS_PATCH, {"D1": 86400}),
+            patch(_GUARD, _guard),
+            patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()),
+            patch(_EPOCH, side_effect=lambda x: x),
+            patch(_COPY_RATES, return_value=None),
+            patch(f"{_MT5}.last_error", return_value=(0, "no data")),
+        ):
             res = fn("EURUSD", timeframe="D1")
         assert "error" in res
 
@@ -154,19 +173,20 @@ class TestPivotNoRates:
         def _guard(symbol):
             yield None, info
 
-        with patch(_TF_MAP_PATCH, {"D1": 1}), \
-             patch(_TF_SECS_PATCH, {"D1": 86400}), \
-             patch(_GUARD, _guard), \
-             patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()), \
-             patch(_EPOCH, side_effect=lambda x: x), \
-             patch(_COPY_RATES, return_value=np.array([])), \
-             patch(f"{_MT5}.last_error", return_value=(0, "")):
+        with (
+            patch(_TF_MAP_PATCH, {"D1": 1}),
+            patch(_TF_SECS_PATCH, {"D1": 86400}),
+            patch(_GUARD, _guard),
+            patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()),
+            patch(_EPOCH, side_effect=lambda x: x),
+            patch(_COPY_RATES, return_value=np.array([])),
+            patch(f"{_MT5}.last_error", return_value=(0, "")),
+        ):
             res = fn("EURUSD", timeframe="D1")
         assert "error" in res
 
 
 class TestPivotSingleBar:
-
     def _run(self, rate, now_ts, tf_secs=86400):
         fn = _get_pivot_fn()
         info = _make_symbol_info()
@@ -176,14 +196,16 @@ class TestPivotSingleBar:
             yield None, info
 
         rates = np.array([rate])
-        with patch(_TF_MAP_PATCH, {"D1": 1}), \
-             patch(_TF_SECS_PATCH, {"D1": tf_secs}), \
-             patch(_GUARD, _guard), \
-             patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick(now_ts)), \
-             patch(_EPOCH, side_effect=lambda x: float(x)), \
-             patch(_COPY_RATES, return_value=rates), \
-             patch(_USE_CTZ, return_value=False), \
-             patch(_FMT, side_effect=lambda x: f"T{int(x)}"):
+        with (
+            patch(_TF_MAP_PATCH, {"D1": 1}),
+            patch(_TF_SECS_PATCH, {"D1": tf_secs}),
+            patch(_GUARD, _guard),
+            patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick(now_ts)),
+            patch(_EPOCH, side_effect=lambda x: float(x)),
+            patch(_COPY_RATES, return_value=rates),
+            patch(_USE_CTZ, return_value=False),
+            patch(_FMT, side_effect=lambda x: f"T{int(x)}"),
+        ):
             return fn("EURUSD", timeframe="D1")
 
     def test_completed_single_bar(self):
@@ -212,15 +234,17 @@ class TestPivotHappyPath:
             yield None, info
 
         rates = np.array(rates_list)
-        with patch(_TF_MAP_PATCH, {"D1": 1}), \
-             patch(_TF_SECS_PATCH, {"D1": 86400}), \
-             patch(_GUARD, _guard), \
-             patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()), \
-             patch(_EPOCH, side_effect=lambda x: float(x)), \
-             patch(_COPY_RATES, return_value=rates), \
-             patch(_USE_CTZ, return_value=use_ctz), \
-             patch(_FMT, side_effect=lambda x: f"T{int(x)}"), \
-             patch(_FMT_LOCAL, side_effect=lambda x: f"L{int(x)}"):
+        with (
+            patch(_TF_MAP_PATCH, {"D1": 1}),
+            patch(_TF_SECS_PATCH, {"D1": 86400}),
+            patch(_GUARD, _guard),
+            patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()),
+            patch(_EPOCH, side_effect=lambda x: float(x)),
+            patch(_COPY_RATES, return_value=rates),
+            patch(_USE_CTZ, return_value=use_ctz),
+            patch(_FMT, side_effect=lambda x: f"T{int(x)}"),
+            patch(_FMT_LOCAL, side_effect=lambda x: f"L{int(x)}"),
+        ):
             return fn("EURUSD", timeframe="D1")
 
     def test_classic_levels(self):
@@ -282,9 +306,15 @@ class TestPivotHappyPath:
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
         res = self._run(r, use_ctz=False)
         assert res["calculation_basis"]["source_bar"] == "last completed D1 bar"
-        assert res["calculation_basis"]["session_boundary"] == "MT5 broker/session calendar"
+        assert (
+            res["calculation_basis"]["session_boundary"]
+            == "MT5 broker/session calendar"
+        )
         assert res["calculation_basis"]["display_timezone"] == "UTC"
-        assert res["levels_note"] == "null cells mean that pivot method does not define that level."
+        assert (
+            res["levels_note"]
+            == "null cells mean that pivot method does not define that level."
+        )
 
     def test_symbol_timeframe_in_response(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
@@ -298,8 +328,10 @@ class TestPivotMethods:
 
     def _levels(self, H, L, C, O):
         """Run pivot and return levels_by_method dict."""
-        r = [_make_rate(open_=O, high=H, low=L, close=C, time_=100.0),
-             _make_rate(time_=200.0)]
+        r = [
+            _make_rate(open_=O, high=H, low=L, close=C, time_=100.0),
+            _make_rate(time_=200.0),
+        ]
         fn = _get_pivot_fn()
         info = _make_symbol_info(digits=10)
 
@@ -307,14 +339,16 @@ class TestPivotMethods:
         def _guard(symbol):
             yield None, info
 
-        with patch(_TF_MAP_PATCH, {"D1": 1}), \
-             patch(_TF_SECS_PATCH, {"D1": 86400}), \
-             patch(_GUARD, _guard), \
-             patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()), \
-             patch(_EPOCH, side_effect=lambda x: float(x)), \
-             patch(_COPY_RATES, return_value=np.array(r)), \
-             patch(_USE_CTZ, return_value=False), \
-             patch(_FMT, side_effect=lambda x: f"T{int(x)}"):
+        with (
+            patch(_TF_MAP_PATCH, {"D1": 1}),
+            patch(_TF_SECS_PATCH, {"D1": 86400}),
+            patch(_GUARD, _guard),
+            patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()),
+            patch(_EPOCH, side_effect=lambda x: float(x)),
+            patch(_COPY_RATES, return_value=np.array(r)),
+            patch(_USE_CTZ, return_value=False),
+            patch(_FMT, side_effect=lambda x: f"T{int(x)}"),
+        ):
             res = fn("EURUSD", timeframe="D1")
         # Convert levels list into a dict: method -> {level -> value}
         by_method: Dict[str, Dict[str, Any]] = {}
@@ -380,7 +414,6 @@ class TestPivotMethods:
 
 
 class TestPivotNanPrices:
-
     def test_nan_high(self):
         fn = _get_pivot_fn()
         info = _make_symbol_info()
@@ -392,21 +425,22 @@ class TestPivotNanPrices:
             yield None, info
 
         rates = [rate, _make_rate(time_=200.0)]
-        with patch(_TF_MAP_PATCH, {"D1": 1}), \
-             patch(_TF_SECS_PATCH, {"D1": 86400}), \
-             patch(_GUARD, _guard), \
-             patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()), \
-             patch(_EPOCH, side_effect=lambda x: float(x)), \
-             patch(_COPY_RATES, return_value=np.array(rates)), \
-             patch(_USE_CTZ, return_value=False), \
-             patch(_FMT, side_effect=lambda x: str(x)):
+        with (
+            patch(_TF_MAP_PATCH, {"D1": 1}),
+            patch(_TF_SECS_PATCH, {"D1": 86400}),
+            patch(_GUARD, _guard),
+            patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()),
+            patch(_EPOCH, side_effect=lambda x: float(x)),
+            patch(_COPY_RATES, return_value=np.array(rates)),
+            patch(_USE_CTZ, return_value=False),
+            patch(_FMT, side_effect=lambda x: str(x)),
+        ):
             res = fn("EURUSD", timeframe="D1")
         # Should error because H is NaN
         assert "error" in res
 
 
 class TestPivotTickFallback:
-
     def test_tick_none(self):
         """When symbol_info_tick returns None, fallback to utcnow."""
         fn = _get_pivot_fn()
@@ -417,32 +451,34 @@ class TestPivotTickFallback:
             yield None, info
 
         rates = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
-        with patch(_TF_MAP_PATCH, {"D1": 1}), \
-             patch(_TF_SECS_PATCH, {"D1": 86400}), \
-             patch(_GUARD, _guard), \
-             patch(f"{_MT5}.symbol_info_tick", return_value=None), \
-             patch(_EPOCH, side_effect=lambda x: float(x)), \
-             patch(_COPY_RATES, return_value=np.array(rates)), \
-             patch(_USE_CTZ, return_value=False), \
-             patch(_FMT, side_effect=lambda x: f"T{int(x)}"):
+        with (
+            patch(_TF_MAP_PATCH, {"D1": 1}),
+            patch(_TF_SECS_PATCH, {"D1": 86400}),
+            patch(_GUARD, _guard),
+            patch(f"{_MT5}.symbol_info_tick", return_value=None),
+            patch(_EPOCH, side_effect=lambda x: float(x)),
+            patch(_COPY_RATES, return_value=np.array(rates)),
+            patch(_USE_CTZ, return_value=False),
+            patch(_FMT, side_effect=lambda x: f"T{int(x)}"),
+        ):
             res = fn("EURUSD", timeframe="D1")
         assert res.get("success") is True
 
 
 class TestPivotException:
-
     def test_general_exception(self):
         fn = _get_pivot_fn()
-        with patch(_TF_MAP_PATCH, {"D1": 1}), \
-             patch(_TF_SECS_PATCH, {"D1": 86400}), \
-             patch(_GUARD, side_effect=RuntimeError("boom")):
+        with (
+            patch(_TF_MAP_PATCH, {"D1": 1}),
+            patch(_TF_SECS_PATCH, {"D1": 86400}),
+            patch(_GUARD, side_effect=RuntimeError("boom")),
+        ):
             res = fn("EURUSD", timeframe="D1")
         assert "error" in res
         assert "Error computing pivot" in res["error"]
 
 
 class TestPivotInfoNone:
-
     def test_info_none_digits_default(self):
         """When _info_before is None, digits should default to 0."""
         fn = _get_pivot_fn()
@@ -452,20 +488,21 @@ class TestPivotInfoNone:
             yield None, None  # info is None
 
         rates = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
-        with patch(_TF_MAP_PATCH, {"D1": 1}), \
-             patch(_TF_SECS_PATCH, {"D1": 86400}), \
-             patch(_GUARD, _guard), \
-             patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()), \
-             patch(_EPOCH, side_effect=lambda x: float(x)), \
-             patch(_COPY_RATES, return_value=np.array(rates)), \
-             patch(_USE_CTZ, return_value=False), \
-             patch(_FMT, side_effect=lambda x: f"T{int(x)}"):
+        with (
+            patch(_TF_MAP_PATCH, {"D1": 1}),
+            patch(_TF_SECS_PATCH, {"D1": 86400}),
+            patch(_GUARD, _guard),
+            patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()),
+            patch(_EPOCH, side_effect=lambda x: float(x)),
+            patch(_COPY_RATES, return_value=np.array(rates)),
+            patch(_USE_CTZ, return_value=False),
+            patch(_FMT, side_effect=lambda x: f"T{int(x)}"),
+        ):
             res = fn("EURUSD", timeframe="D1")
         assert res.get("success") is True
 
 
 class TestPivotLevelOrdering:
-
     def test_resistances_before_supports(self):
         """R levels should appear before PP, which appears before S levels."""
         fn = _get_pivot_fn()
@@ -476,14 +513,16 @@ class TestPivotLevelOrdering:
             yield None, info
 
         rates = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
-        with patch(_TF_MAP_PATCH, {"D1": 1}), \
-             patch(_TF_SECS_PATCH, {"D1": 86400}), \
-             patch(_GUARD, _guard), \
-             patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()), \
-             patch(_EPOCH, side_effect=lambda x: float(x)), \
-             patch(_COPY_RATES, return_value=np.array(rates)), \
-             patch(_USE_CTZ, return_value=False), \
-             patch(_FMT, side_effect=lambda x: f"T{int(x)}"):
+        with (
+            patch(_TF_MAP_PATCH, {"D1": 1}),
+            patch(_TF_SECS_PATCH, {"D1": 86400}),
+            patch(_GUARD, _guard),
+            patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()),
+            patch(_EPOCH, side_effect=lambda x: float(x)),
+            patch(_COPY_RATES, return_value=np.array(rates)),
+            patch(_USE_CTZ, return_value=False),
+            patch(_FMT, side_effect=lambda x: f"T{int(x)}"),
+        ):
             res = fn("EURUSD", timeframe="D1")
 
         levels = [lv["level"] for lv in res["levels"]]

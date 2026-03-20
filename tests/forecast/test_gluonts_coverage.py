@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 import pandas as pd
@@ -13,6 +13,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Stub gluonts and related packages
 # ---------------------------------------------------------------------------
+
 
 def _make_module(name, attrs=None):
     mod = types.ModuleType(name)
@@ -29,6 +30,8 @@ class _FakeListDataset(list):
 
 class _FakeForecastObj:
     """Minimal forecast object returned by GluonTS predictors."""
+# ruff: noqa: E402
+
     def __init__(self, h=10):
         self.mean = np.ones(h) * 42.0
         self.samples = np.ones((20, h)) * 42.0
@@ -60,19 +63,42 @@ class _FakePredictor:
 # --- Build mock module tree -----------------------------------------------
 _gluonts = _make_module("gluonts")
 _gluonts_dataset = _make_module("gluonts.dataset")
-_gluonts_dataset_common = _make_module("gluonts.dataset.common", {"ListDataset": _FakeListDataset})
-_gluonts_torch = _make_module("gluonts.torch", {"DeepAREstimator": _FakeEstimator, "SimpleFeedForwardEstimator": _FakeEstimator})
+_gluonts_dataset_common = _make_module(
+    "gluonts.dataset.common", {"ListDataset": _FakeListDataset}
+)
+_gluonts_torch = _make_module(
+    "gluonts.torch",
+    {"DeepAREstimator": _FakeEstimator, "SimpleFeedForwardEstimator": _FakeEstimator},
+)
 _gluonts_torch_model = _make_module("gluonts.torch.model")
-_gluonts_torch_model_deepar = _make_module("gluonts.torch.model.deepar", {"DeepAREstimator": _FakeEstimator})
-_gluonts_torch_model_sff = _make_module("gluonts.torch.model.simple_feedforward", {"SimpleFeedForwardEstimator": _FakeEstimator})
-_gluonts_torch_model_tft = _make_module("gluonts.torch.model.tft", {"TemporalFusionTransformerEstimator": _FakeEstimator})
-_gluonts_torch_model_wavenet = _make_module("gluonts.torch.model.wavenet", {"WaveNetEstimator": _FakeEstimator})
-_gluonts_torch_model_deep_npts = _make_module("gluonts.torch.model.deep_npts", {"DeepNPTSEstimator": _FakeEstimator})
+_gluonts_torch_model_deepar = _make_module(
+    "gluonts.torch.model.deepar", {"DeepAREstimator": _FakeEstimator}
+)
+_gluonts_torch_model_sff = _make_module(
+    "gluonts.torch.model.simple_feedforward",
+    {"SimpleFeedForwardEstimator": _FakeEstimator},
+)
+_gluonts_torch_model_tft = _make_module(
+    "gluonts.torch.model.tft", {"TemporalFusionTransformerEstimator": _FakeEstimator}
+)
+_gluonts_torch_model_wavenet = _make_module(
+    "gluonts.torch.model.wavenet", {"WaveNetEstimator": _FakeEstimator}
+)
+_gluonts_torch_model_deep_npts = _make_module(
+    "gluonts.torch.model.deep_npts", {"DeepNPTSEstimator": _FakeEstimator}
+)
 _gluonts_torch_model_mqf2 = _make_module("gluonts.torch.model.mqf2")
-_gluonts_torch_model_mqf2_est = _make_module("gluonts.torch.model.mqf2.estimator", {"MQF2Estimator": _FakeEstimator, "MQF2MultiHorizonEstimator": _FakeEstimator})
+_gluonts_torch_model_mqf2_est = _make_module(
+    "gluonts.torch.model.mqf2.estimator",
+    {"MQF2Estimator": _FakeEstimator, "MQF2MultiHorizonEstimator": _FakeEstimator},
+)
 _gluonts_model = _make_module("gluonts.model")
-_gluonts_model_prophet = _make_module("gluonts.model.prophet", {"ProphetPredictor": _FakePredictor})
-_gluonts_model_npts = _make_module("gluonts.model.npts", {"NPTSPredictor": _FakePredictor})
+_gluonts_model_prophet = _make_module(
+    "gluonts.model.prophet", {"ProphetPredictor": _FakePredictor}
+)
+_gluonts_model_npts = _make_module(
+    "gluonts.model.npts", {"NPTSPredictor": _FakePredictor}
+)
 
 _STUBS = {
     "gluonts": _gluonts,
@@ -128,14 +154,18 @@ def _restore_sys_modules():
             sys.modules.pop(name, None)
         else:
             sys.modules[name] = orig
+
+
 from mtdata.forecast.interface import ForecastResult
 
 # ===========================================================================
 # Helpers
 # ===========================================================================
 
+
 def _arr(n=100):
     return np.random.rand(n) * 100 + 50
+
 
 def _series(n=100):
     return pd.Series(_arr(n), name="price")
@@ -144,6 +174,7 @@ def _series(n=100):
 # ===========================================================================
 # _build_list_dataset
 # ===========================================================================
+
 
 class TestBuildListDataset:
     def test_basic(self):
@@ -162,6 +193,7 @@ class TestBuildListDataset:
 # ===========================================================================
 # _extract_forecast_arrays
 # ===========================================================================
+
 
 class TestExtractForecastArrays:
     def test_with_mean(self):
@@ -202,8 +234,10 @@ class TestExtractForecastArrays:
     def test_none_when_all_fail(self):
         class _NoAttrs:
             """Object with no mean, no quantile, no samples."""
+
             def quantile(self, q):
                 raise RuntimeError
+
         f = _NoAttrs()
         vals, fq = _extract_forecast_arrays(f, 10, None)
         assert vals is None
@@ -229,6 +263,7 @@ class TestExtractForecastArrays:
 # forecast_gt_deepar
 # ===========================================================================
 
+
 class TestForecastGtDeepAR:
     def test_basic(self):
         f, fq, pu, err = forecast_gt_deepar(series=_arr(), fh=10, params={}, n=100)
@@ -237,12 +272,22 @@ class TestForecastGtDeepAR:
         assert len(f) == 10
 
     def test_with_quantiles(self):
-        f, fq, pu, err = forecast_gt_deepar(series=_arr(), fh=10, params={"quantiles": [0.1, 0.9]}, n=100)
+        f, fq, pu, err = forecast_gt_deepar(
+            series=_arr(), fh=10, params={"quantiles": [0.1, 0.9]}, n=100
+        )
         assert fq is not None
 
     def test_custom_params(self):
-        p = {"context_length": 32, "freq": "D", "train_epochs": 2, "batch_size": 16,
-             "learning_rate": 0.01, "hidden_size": 20, "num_layers": 1, "dropout": 0.2}
+        p = {
+            "context_length": 32,
+            "freq": "D",
+            "train_epochs": 2,
+            "batch_size": 16,
+            "learning_rate": 0.01,
+            "hidden_size": 20,
+            "num_layers": 1,
+            "dropout": 0.2,
+        }
         f, fq, pu, err = forecast_gt_deepar(series=_arr(), fh=5, params=p, n=100)
         assert err is None
         assert pu["context_length"] == 32
@@ -271,9 +316,12 @@ class TestForecastGtDeepAR:
 # forecast_gt_sfeedforward
 # ===========================================================================
 
+
 class TestForecastGtSFF:
     def test_basic(self):
-        f, fq, pu, err = forecast_gt_sfeedforward(series=_arr(), fh=10, params={}, n=100)
+        f, fq, pu, err = forecast_gt_sfeedforward(
+            series=_arr(), fh=10, params={}, n=100
+        )
         assert err is None
         assert f is not None
 
@@ -287,7 +335,9 @@ class TestForecastGtSFF:
         orig = _FakeEstimator.predict
         _FakeEstimator.predict = lambda self, ds: iter([])
         try:
-            f, fq, pu, err = forecast_gt_sfeedforward(series=_arr(), fh=5, params={}, n=100)
+            f, fq, pu, err = forecast_gt_sfeedforward(
+                series=_arr(), fh=5, params={}, n=100
+            )
             assert "no forecasts" in err
         finally:
             _FakeEstimator.predict = orig
@@ -297,6 +347,7 @@ class TestForecastGtSFF:
 # forecast_gt_prophet
 # ===========================================================================
 
+
 class TestForecastGtProphet:
     def test_basic(self):
         f, fq, pu, err = forecast_gt_prophet(series=_arr(), fh=10, params={}, n=100)
@@ -304,7 +355,9 @@ class TestForecastGtProphet:
         assert f is not None
 
     def test_with_prophet_params(self):
-        p = {"prophet_params": {"growth": "linear", "seasonality_mode": "multiplicative"}}
+        p = {
+            "prophet_params": {"growth": "linear", "seasonality_mode": "multiplicative"}
+        }
         f, fq, pu, err = forecast_gt_prophet(series=_arr(), fh=5, params=p, n=100)
         assert err is None
         assert pu["prophet_params"]["growth"] == "linear"
@@ -328,6 +381,7 @@ class TestForecastGtProphet:
 # forecast_gt_tft
 # ===========================================================================
 
+
 class TestForecastGtTFT:
     def test_basic(self):
         f, fq, pu, err = forecast_gt_tft(series=_arr(), fh=10, params={}, n=100)
@@ -343,6 +397,7 @@ class TestForecastGtTFT:
 # ===========================================================================
 # forecast_gt_wavenet
 # ===========================================================================
+
 
 class TestForecastGtWaveNet:
     def test_basic(self):
@@ -365,6 +420,7 @@ class TestForecastGtWaveNet:
 # forecast_gt_deepnpts
 # ===========================================================================
 
+
 class TestForecastGtDeepNPTS:
     def test_basic(self):
         f, fq, pu, err = forecast_gt_deepnpts(series=_arr(), fh=10, params={}, n=100)
@@ -380,13 +436,16 @@ class TestForecastGtDeepNPTS:
 # forecast_gt_mqf2
 # ===========================================================================
 
+
 class TestForecastGtMQF2:
     def test_basic(self):
         f, fq, pu, err = forecast_gt_mqf2(series=_arr(), fh=10, params={}, n=100)
         assert err is None
 
     def test_with_quantiles(self):
-        f, fq, pu, err = forecast_gt_mqf2(series=_arr(), fh=10, params={"quantiles": [0.25, 0.75]}, n=100)
+        f, fq, pu, err = forecast_gt_mqf2(
+            series=_arr(), fh=10, params={"quantiles": [0.25, 0.75]}, n=100
+        )
         assert err is None
 
     def test_custom_params(self):
@@ -398,6 +457,7 @@ class TestForecastGtMQF2:
 # ===========================================================================
 # forecast_gt_npts
 # ===========================================================================
+
 
 class TestForecastGtNPTS:
     def test_basic(self):
@@ -437,6 +497,7 @@ class TestForecastGtNPTS:
 # ===========================================================================
 # GluonTSExtraMethod.forecast (lines 567-593)
 # ===========================================================================
+
 
 class TestGluonTSExtraMethodForecast:
     def test_gt_deepar_via_class(self):
@@ -485,6 +546,7 @@ class TestGluonTSExtraMethodForecast:
             @property
             def name(self):
                 return "unknown_method"
+
         with pytest.raises(RuntimeError, match="Unsupported"):
             _Bad().forecast(_series(), horizon=5, seasonality=1, params={})
 
@@ -512,7 +574,9 @@ class TestGluonTSExtraMethodForecast:
 
     def test_metadata_with_quantiles(self):
         m = GTDeepARMethod()
-        res = m.forecast(_series(), horizon=10, seasonality=1, params={"quantiles": [0.1, 0.5, 0.9]})
+        res = m.forecast(
+            _series(), horizon=10, seasonality=1, params={"quantiles": [0.1, 0.5, 0.9]}
+        )
         assert res.metadata is not None
         assert "quantiles" in res.metadata
 
@@ -520,6 +584,7 @@ class TestGluonTSExtraMethodForecast:
 # ===========================================================================
 # Registered class properties
 # ===========================================================================
+
 
 class TestRegisteredClassProperties:
     def test_deepar_name(self):

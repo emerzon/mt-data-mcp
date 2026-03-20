@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Monte Carlo simulation utilities, including a Gaussian-HMM regime model.
 
 This module provides two primary helpers:
@@ -15,10 +13,13 @@ This module relies on numpy/pandas plus sklearn (GaussianMixture), hmmlearn
 (Gaussian HMM), and arch (bootstrap/GARCH).
 """
 
+from __future__ import annotations
+
 from typing import Dict, Tuple, Optional
 import numpy as np
 import warnings
 from sklearn.mixture import GaussianMixture
+
 try:
     from sklearn.exceptions import ConvergenceWarning as _SklearnConvergenceWarning
 except Exception:  # pragma: no cover - defensive fallback
@@ -72,7 +73,11 @@ def _safe_log(x: np.ndarray, eps: float = 1e-12) -> np.ndarray:
 
 
 def fit_gaussian_mixture_1d(
-    x: np.ndarray, n_states: int = 2, max_iter: int = 50, tol: float = 1e-6, seed: Optional[int] = 42
+    x: np.ndarray,
+    n_states: int = 2,
+    max_iter: int = 50,
+    tol: float = 1e-6,
+    seed: Optional[int] = 42,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
     """Fit a 1D Gaussian mixture and return (weights, means, sigmas, gamma, ll).
 
@@ -95,12 +100,14 @@ def fit_gaussian_mixture_1d(
         sigma = np.array([float(np.std(x)) + 1e-6])
         w = np.array([1.0])
         gamma = np.ones((N, 1), dtype=float)
-        ll = float(-0.5 * N * (np.log(2.0 * np.pi) + 2.0 * np.log(max(sigma[0], 1e-12))))
+        ll = float(
+            -0.5 * N * (np.log(2.0 * np.pi) + 2.0 * np.log(max(sigma[0], 1e-12)))
+        )
         return w, mu, sigma, gamma, ll
 
     model = GaussianMixture(
         n_components=K,
-        covariance_type='diag',
+        covariance_type="diag",
         reg_covar=1e-12,
         max_iter=int(max_iter),
         tol=float(tol),
@@ -114,7 +121,9 @@ def fit_gaussian_mixture_1d(
     gamma = np.asarray(model.predict_proba(x2), dtype=float)
     w = np.asarray(model.weights_, dtype=float).reshape(-1)
     mu = np.asarray(model.means_, dtype=float).reshape(-1)
-    sigma = np.sqrt(np.clip(np.asarray(model.covariances_, dtype=float).reshape(-1), 1e-12, None))
+    sigma = np.sqrt(
+        np.clip(np.asarray(model.covariances_, dtype=float).reshape(-1), 1e-12, None)
+    )
     ll = float(model.score(x2) * N)
 
     order = np.argsort(mu)
@@ -143,7 +152,7 @@ def _fit_hmmlearn_gaussian_hmm_1d(
 
     model = GaussianHMM(
         n_components=K,
-        covariance_type='diag',
+        covariance_type="diag",
         n_iter=int(max_iter),
         tol=float(tol),
         random_state=seed,
@@ -183,7 +192,13 @@ def estimate_transition_matrix_from_gamma(gamma: np.ndarray) -> np.ndarray:
     return _normalize_transition_matrix(counts)
 
 
-def simulate_markov_chain(A: np.ndarray, init: np.ndarray, steps: int, sims: int, rng: Optional[np.random.RandomState] = None) -> np.ndarray:
+def simulate_markov_chain(
+    A: np.ndarray,
+    init: np.ndarray,
+    steps: int,
+    sims: int,
+    rng: Optional[np.random.RandomState] = None,
+) -> np.ndarray:
     """Simulate discrete Markov states.
 
     Returns array of shape (sims, steps) with state indices [0..K-1].
@@ -252,12 +267,14 @@ def simulate_hmm_mc(
     K = mu.shape[0]
 
     # Simulate state paths
-    states = simulate_markov_chain(A, init, steps=int(horizon), sims=int(n_sims), rng=rng)
+    states = simulate_markov_chain(
+        A, init, steps=int(horizon), sims=int(n_sims), rng=rng
+    )
 
     # Sample returns conditional on states
     ret_paths = np.zeros_like(states, dtype=float)
     for k in range(K):
-        idx = (states == k)
+        idx = states == k
         n_k = int(np.sum(idx))
         if n_k > 0:
             ret_paths[idx] = rng.normal(loc=mu[k], scale=max(sigma[k], 1e-12), size=n_k)
@@ -271,14 +288,14 @@ def simulate_hmm_mc(
         price_paths[:, t] = cur
 
     return {
-        'price_paths': price_paths,
-        'return_paths': ret_paths,
-        'state_paths': states,
-        'mu': mu,
-        'sigma': sigma,
-        'trans': A,
-        'init': init,
-        'model_type': "gaussian_hmm_baum_welch",
+        "price_paths": price_paths,
+        "return_paths": ret_paths,
+        "state_paths": states,
+        "mu": mu,
+        "sigma": sigma,
+        "trans": A,
+        "init": init,
+        "model_type": "gaussian_hmm_baum_welch",
     }
 
 
@@ -321,10 +338,10 @@ def simulate_gbm_mc(
         cur = cur * np.exp(ret_paths[:, t])
         price_paths[:, t] = cur
     return {
-        'price_paths': price_paths,
-        'return_paths': ret_paths,
-        'mu': float(mu),
-        'sigma': float(sigma),
+        "price_paths": price_paths,
+        "return_paths": ret_paths,
+        "mu": float(mu),
+        "sigma": float(sigma),
     }
 
 
@@ -357,7 +374,11 @@ def simulate_heston_mc(
     ret_var = max(ret_var, 1e-10)
 
     theta_val = float(theta) if theta is not None else ret_var
-    v0_val = float(v0) if v0 is not None else float(np.var(rets[-50:], ddof=1) if rets.size >= 50 else ret_var)
+    v0_val = (
+        float(v0)
+        if v0 is not None
+        else float(np.var(rets[-50:], ddof=1) if rets.size >= 50 else ret_var)
+    )
     rv = np.clip(rets * rets, 1e-12, None)
     kappa_emp = 2.0
     if rv.size >= 3:
@@ -414,7 +435,10 @@ def simulate_heston_mc(
         z2 = rho_val * z1 + np.sqrt(max(1.0 - rho_val * rho_val, 0.0)) * z2
 
         v_pos = np.clip(v, 0.0, None)
-        dv = kappa_val * (theta_val - v_pos) * dt + xi_val * np.sqrt(v_pos) * sqrt_dt * z2
+        dv = (
+            kappa_val * (theta_val - v_pos) * dt
+            + xi_val * np.sqrt(v_pos) * sqrt_dt * z2
+        )
         v = np.clip(v_pos + dv, 1e-10, None)
 
         ret = (mu - 0.5 * v_pos) * dt + np.sqrt(v_pos) * sqrt_dt * z1
@@ -425,16 +449,16 @@ def simulate_heston_mc(
         vol_paths[:, t] = v
 
     return {
-        'price_paths': price_paths,
-        'return_paths': ret_paths,
-        'vol_paths': vol_paths,
-        'params': {
-            'mu': mu,
-            'kappa': kappa_val,
-            'theta': theta_val,
-            'xi': xi_val,
-            'rho': rho_val,
-            'v0': v0_val,
+        "price_paths": price_paths,
+        "return_paths": ret_paths,
+        "vol_paths": vol_paths,
+        "params": {
+            "mu": mu,
+            "kappa": kappa_val,
+            "theta": theta_val,
+            "xi": xi_val,
+            "rho": rho_val,
+            "v0": v0_val,
         },
     }
 
@@ -468,13 +492,25 @@ def simulate_jump_diffusion_mc(
     jump_mask = np.abs(rets - mu) > (float(jump_threshold) * sigma)
     jump_rets = rets[jump_mask]
     jump_freq = float(jump_rets.size) / float(max(1, rets.size))
-    lambda_val = float(jump_lambda) if jump_lambda is not None else float(np.clip(jump_freq, 0.0, 1.0))
+    lambda_val = (
+        float(jump_lambda)
+        if jump_lambda is not None
+        else float(np.clip(jump_freq, 0.0, 1.0))
+    )
     if jump_rets.size >= 3:
         mu_j = float(jump_mu) if jump_mu is not None else float(np.mean(jump_rets))
-        sigma_j = float(jump_sigma) if jump_sigma is not None else float(np.std(jump_rets, ddof=1))
+        sigma_j = (
+            float(jump_sigma)
+            if jump_sigma is not None
+            else float(np.std(jump_rets, ddof=1))
+        )
     else:
         mu_j = float(jump_mu) if jump_mu is not None else 0.0
-        sigma_j = float(jump_sigma) if jump_sigma is not None else float(max(0.5 * sigma, 1e-6))
+        sigma_j = (
+            float(jump_sigma)
+            if jump_sigma is not None
+            else float(max(0.5 * sigma, 1e-6))
+        )
 
     k = np.exp(mu_j + 0.5 * sigma_j * sigma_j) - 1.0
     drift = mu - lambda_val * k
@@ -489,22 +525,24 @@ def simulate_jump_diffusion_mc(
     for t in range(int(horizon)):
         z = rng.normal(size=int(n_sims))
         n_j = rng.poisson(lam=lambda_val * dt, size=int(n_sims))
-        jump = mu_j * n_j + sigma_j * np.sqrt(n_j.astype(float)) * rng.normal(size=int(n_sims))
+        jump = mu_j * n_j + sigma_j * np.sqrt(n_j.astype(float)) * rng.normal(
+            size=int(n_sims)
+        )
         ret = drift * dt + sigma * sqrt_dt * z + jump
         cur = cur * np.exp(ret)
         ret_paths[:, t] = ret
         price_paths[:, t] = cur
 
     return {
-        'price_paths': price_paths,
-        'return_paths': ret_paths,
-        'params': {
-            'mu': mu,
-            'sigma': sigma,
-            'jump_lambda': lambda_val,
-            'jump_mu': mu_j,
-            'jump_sigma': sigma_j,
-            'jump_threshold': float(jump_threshold),
+        "price_paths": price_paths,
+        "return_paths": ret_paths,
+        "params": {
+            "mu": mu,
+            "sigma": sigma,
+            "jump_lambda": lambda_val,
+            "jump_mu": mu_j,
+            "jump_sigma": sigma_j,
+            "jump_threshold": float(jump_threshold),
         },
     }
 
@@ -518,7 +556,7 @@ def simulate_garch_mc(
     q_order: int = 1,
 ) -> Dict[str, np.ndarray]:
     """Fit GARCH(p,q) model and simulate forward paths.
-    
+
     Requires 'arch' package.
     """
     try:
@@ -530,53 +568,55 @@ def simulate_garch_mc(
     prices = prices[np.isfinite(prices)]
     if prices.size < 50:  # GARCH needs decent history
         raise ValueError("Not enough prices for GARCH calibration (need > 50)")
-    
+
     rets = np.diff(_safe_log(prices))
     rets = rets[np.isfinite(rets)]
-    
+
     # Scale returns for numerical stability (common practice with GARCH)
     scale = 100.0
     rets_scaled = rets * scale
-    
+
     # Fit GARCH(p,q)
     # Use Mean='Zero' assuming daily drift is negligible compared to vol for short horizons,
     # or 'Constant' to capture drift. Let's use Constant.
-    am = arch_model(rets_scaled, vol='Garch', p=p_order, q=q_order, dist='Normal', mean='Constant')
-    
+    am = arch_model(
+        rets_scaled, vol="Garch", p=p_order, q=q_order, dist="Normal", mean="Constant"
+    )
+
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         # disp='off' prevents printing convergence info
-        res = am.fit(disp='off', show_warning=False)
-    
+        res = am.fit(disp="off", show_warning=False)
+
     # Forecast via simulation
     # 'simulations' arg is number of paths
     sim_rng = np.random.RandomState(int(seed) if seed is not None else 42)
     forecasts = res.forecast(
         horizon=horizon,
-        method='simulation',
+        method="simulation",
         simulations=n_sims,
         rng=sim_rng.standard_normal,
         random_state=sim_rng,
         reindex=False,
     )
-    
+
     # Get simulated paths (1, n_sims, horizon) -> (n_sims, horizon)
     # forecasts.simulations.values contains the simulated returns
     sim_rets_scaled = forecasts.simulations.values[-1]
-    
+
     # Unscale
     sim_rets = sim_rets_scaled / scale
-    
+
     # Reconstruct prices
     last_price = float(prices[-1])
     # cumsum of log returns
     cum_rets = np.cumsum(sim_rets, axis=1)
     price_paths = last_price * np.exp(cum_rets)
-    
+
     return {
-        'price_paths': price_paths,
-        'return_paths': sim_rets,
-        'model_summary': str(res.summary()),
+        "price_paths": price_paths,
+        "return_paths": sim_rets,
+        "model_summary": str(res.summary()),
     }
 
 
@@ -585,7 +625,7 @@ def simulate_bootstrap_mc(
     horizon: int,
     n_sims: int = 500,
     seed: Optional[int] = 42,
-    block_size: Optional[int] = None
+    block_size: Optional[int] = None,
 ) -> Dict[str, np.ndarray]:
     """Circular Block Bootstrap simulation."""
     prices = np.asarray(prices, dtype=float)
@@ -593,14 +633,14 @@ def simulate_bootstrap_mc(
     rets = np.diff(_safe_log(prices))
     rets = rets[np.isfinite(rets)]
     n = len(rets)
-    
+
     if n < 10:
         raise ValueError("Not enough returns for bootstrapping")
-    
+
     if block_size is None:
         # Politis & White rule of thumb approx n^(1/3)
-        block_size = int(max(1, n ** (1.0/3.0)))
-    
+        block_size = int(max(1, n ** (1.0 / 3.0)))
+
     block_size = max(1, int(block_size))
     CircularBlockBootstrap = _load_circular_block_bootstrap()
     bs = CircularBlockBootstrap(block_size, rets, seed=seed)
@@ -620,7 +660,9 @@ def simulate_bootstrap_mc(
     if len(sampled_paths) < sims_i:
         rng = np.random.RandomState(seed)
         existing = np.asarray(sampled_paths, dtype=float)
-        extra_idx = rng.choice(existing.shape[0], size=(sims_i - len(sampled_paths)), replace=True)
+        extra_idx = rng.choice(
+            existing.shape[0], size=(sims_i - len(sampled_paths)), replace=True
+        )
         for idx in extra_idx.tolist():
             sampled_paths.append(existing[int(idx)].copy())
     sim_rets = np.asarray(sampled_paths[:sims_i], dtype=float)
@@ -629,11 +671,11 @@ def simulate_bootstrap_mc(
     last_price = float(prices[-1])
     cum_rets = np.cumsum(sim_rets, axis=1)
     price_paths = last_price * np.exp(cum_rets)
-    
+
     return {
-        'price_paths': price_paths,
-        'return_paths': sim_rets,
-        'block_size': np.array(block_size) # store as array for consistency
+        "price_paths": price_paths,
+        "return_paths": sim_rets,
+        "block_size": np.array(block_size),  # store as array for consistency
     }
 
 
@@ -654,19 +696,21 @@ def summarize_paths(
     price_lower = np.nanquantile(price_paths, q_lo, axis=0)
     price_upper = np.nanquantile(price_paths, q_hi, axis=0)
     out: Dict[str, np.ndarray] = {
-        'price_mean': price_mean,
-        'price_lower': price_lower,
-        'price_upper': price_upper,
+        "price_mean": price_mean,
+        "price_lower": price_lower,
+        "price_upper": price_upper,
     }
     if return_paths is not None:
         ret_mean = np.nanmean(return_paths, axis=0)
         ret_lower = np.nanquantile(return_paths, q_lo, axis=0)
         ret_upper = np.nanquantile(return_paths, q_hi, axis=0)
-        out.update({
-            'return_mean': ret_mean,
-            'return_lower': ret_lower,
-            'return_upper': ret_upper,
-        })
+        out.update(
+            {
+                "return_mean": ret_mean,
+                "return_lower": ret_lower,
+                "return_upper": ret_upper,
+            }
+        )
     return out
 
 

@@ -1,20 +1,24 @@
 import pandas as pd
+
 try:
     from mtdata.utils.denoise import _denoise_series
+
     print("Import successful")
 except ImportError as e:
     print(f"Import failed: {e}")
     exit(1)
 
+
 def test_denoise_series_none():
     s = pd.Series([1, 2, 3, 4, 5])
-    result = _denoise_series(s, method='none')
+    result = _denoise_series(s, method="none")
     pd.testing.assert_series_equal(s, result)
     print("test_denoise_series_none passed")
 
+
 def test_denoise_series_sma():
     s = pd.Series([1, 2, 3, 4, 5])
-    result = _denoise_series(s, method='sma', params={'window': 3})
+    result = _denoise_series(s, method="sma", params={"window": 3})
     print(f"SMA result: {result.values}")
     # Expected: [?, 2.0, 3.0, 4.0, ?] depending on padding
     # utils.denoise: rolling(window=window, center=True, min_periods=1).mean()
@@ -27,12 +31,14 @@ def test_denoise_series_sma():
     assert result.iloc[2] == 3.0
     print("test_denoise_series_sma passed")
 
+
 def test_denoise_series_ema():
     s = pd.Series([1, 2, 3, 4, 5])
-    result = _denoise_series(s, method='ema', params={'span': 3})
+    result = _denoise_series(s, method="ema", params={"span": 3})
     assert len(result) == 5
     assert isinstance(result, pd.Series)
     print("test_denoise_series_ema passed")
+
 
 if __name__ == "__main__":
     try:

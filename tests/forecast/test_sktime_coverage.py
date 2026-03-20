@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import importlib
 import sys
 import types
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock
 
 import numpy as np
 import pandas as pd
@@ -14,6 +13,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Stub sktime before importing the module under test
 # ---------------------------------------------------------------------------
+
 
 def _make_module(name, attrs=None):
     mod = types.ModuleType(name)
@@ -24,6 +24,8 @@ def _make_module(name, attrs=None):
 
 class _FakeForecaster:
     """Mock sktime forecaster that supports fit/predict/predict_interval."""
+# ruff: noqa: E402
+
     def __init__(self, **kw):
         self._kw = kw
         self._fitted = False
@@ -39,10 +41,12 @@ class _FakeForecaster:
     def predict_interval(self, fh, X=None, coverage=0.9):
         h = len(fh)
         idx = pd.RangeIndex(h)
-        cols = pd.MultiIndex.from_tuples([
-            ("y", coverage, "lower"),
-            ("y", coverage, "upper"),
-        ])
+        cols = pd.MultiIndex.from_tuples(
+            [
+                ("y", coverage, "lower"),
+                ("y", coverage, "upper"),
+            ]
+        )
         data = np.column_stack([np.ones(h) * 40.0, np.ones(h) * 44.0])
         return pd.DataFrame(data, index=idx, columns=cols)
 
@@ -62,9 +66,15 @@ class _FakeAutoETS(_FakeForecaster):
 # Build sktime stub modules
 _sktime = _make_module("sktime")
 _sktime_forecasting = _make_module("sktime.forecasting")
-_sktime_forecasting_theta = _make_module("sktime.forecasting.theta", {"ThetaForecaster": _FakeThetaForecaster})
-_sktime_forecasting_naive = _make_module("sktime.forecasting.naive", {"NaiveForecaster": _FakeNaiveForecaster})
-_sktime_forecasting_ets = _make_module("sktime.forecasting.ets", {"AutoETS": _FakeAutoETS})
+_sktime_forecasting_theta = _make_module(
+    "sktime.forecasting.theta", {"ThetaForecaster": _FakeThetaForecaster}
+)
+_sktime_forecasting_naive = _make_module(
+    "sktime.forecasting.naive", {"NaiveForecaster": _FakeNaiveForecaster}
+)
+_sktime_forecasting_ets = _make_module(
+    "sktime.forecasting.ets", {"AutoETS": _FakeAutoETS}
+)
 
 _STUBS = {
     "sktime": _sktime,
@@ -81,11 +91,11 @@ for name, mod in _STUBS.items():
 
 # Patch _HAS_SKTIME before importing sktime module
 import mtdata.forecast.methods.sktime as _sktime_mod
+
 _orig_has_sktime = _sktime_mod._HAS_SKTIME
 _sktime_mod._HAS_SKTIME = True
 
 from mtdata.forecast.methods.sktime import (
-    SktimeMethod,
     GenericSktimeMethod,
     SktThetaMethod,
     SktNaiveMethod,
@@ -109,6 +119,7 @@ def _restore_sys_modules():
 # Helpers
 # ===========================================================================
 
+
 def _series(n=100, freq=None, name="y"):
     if freq:
         idx = pd.date_range("2020-01-01", periods=n, freq=freq)
@@ -119,6 +130,7 @@ def _series(n=100, freq=None, name="y"):
 # ===========================================================================
 # SktimeMethod base properties
 # ===========================================================================
+
 
 class TestSktimeMethodProperties:
     def test_category(self):
@@ -137,6 +149,7 @@ class TestSktimeMethodProperties:
 # GenericSktimeMethod._get_estimator (lines 196-227)
 # ===========================================================================
 
+
 class TestGenericSktimeGetEstimator:
     def test_default_estimator(self):
         m = GenericSktimeMethod()
@@ -145,14 +158,17 @@ class TestGenericSktimeGetEstimator:
 
     def test_explicit_estimator_path(self):
         m = GenericSktimeMethod()
-        est = m._get_estimator(12, {"estimator": "sktime.forecasting.naive.NaiveForecaster"})
+        est = m._get_estimator(
+            12, {"estimator": "sktime.forecasting.naive.NaiveForecaster"}
+        )
         assert isinstance(est, _FakeNaiveForecaster)
 
     def test_sp_injection(self):
         """sp should be injected if estimator accepts it."""
-        import inspect
         # Patch signature to accept sp
-        _FakeThetaForecaster.__init__ = lambda self, sp=1, **kw: _FakeForecaster.__init__(self, sp=sp, **kw)
+        _FakeThetaForecaster.__init__ = (
+            lambda self, sp=1, **kw: _FakeForecaster.__init__(self, sp=sp, **kw)
+        )
         try:
             m = GenericSktimeMethod()
             est = m._get_estimator(12, {})
@@ -174,6 +190,7 @@ class TestGenericSktimeGetEstimator:
 # ===========================================================================
 # SktimeMethod.forecast (lines 37-181)
 # ===========================================================================
+
 
 class TestSktimeMethodForecast:
     def test_has_sktime_false(self):
@@ -205,7 +222,9 @@ class TestSktimeMethodForecast:
 
     def test_forecast_no_freq_fallback(self):
         """DatetimeIndex without freq -> infer -> fallback to reset_index."""
-        idx = pd.DatetimeIndex(["2020-01-01", "2020-01-03", "2020-01-07", "2020-01-10"] * 10)
+        idx = pd.DatetimeIndex(
+            ["2020-01-01", "2020-01-03", "2020-01-07", "2020-01-10"] * 10
+        )
         s = pd.Series(np.random.rand(40), index=idx)
         m = GenericSktimeMethod()
         res = m.forecast(s, horizon=5, seasonality=1, params={})
@@ -216,22 +235,31 @@ class TestSktimeMethodForecast:
         X = np.random.rand(100, 2)
         X_fut = np.random.rand(5, 2)
         m = GenericSktimeMethod()
-        res = m.forecast(s, horizon=5, seasonality=1, params={}, exog_used=X, exog_future=X_fut)
+        res = m.forecast(
+            s, horizon=5, seasonality=1, params={}, exog_used=X, exog_future=X_fut
+        )
         assert res.forecast is not None
 
     def test_forecast_exog_in_params(self):
         s = _series()
         m = GenericSktimeMethod()
-        res = m.forecast(s, horizon=5, seasonality=1, params={
-            "exog_used": np.random.rand(100, 2),
-            "exog_future": np.random.rand(5, 2),
-        })
+        res = m.forecast(
+            s,
+            horizon=5,
+            seasonality=1,
+            params={
+                "exog_used": np.random.rand(100, 2),
+                "exog_future": np.random.rand(5, 2),
+            },
+        )
         assert res.forecast is not None
 
     def test_forecast_dataframe_output(self):
         """When estimator.predict returns DataFrame."""
         orig_predict = _FakeThetaForecaster.predict
-        _FakeThetaForecaster.predict = lambda self, fh, X=None: pd.DataFrame({"y": np.ones(len(fh)) * 42.0})
+        _FakeThetaForecaster.predict = lambda self, fh, X=None: pd.DataFrame(
+            {"y": np.ones(len(fh)) * 42.0}
+        )
         try:
             m = GenericSktimeMethod()
             res = m.forecast(_series(), horizon=5, seasonality=1, params={})
@@ -266,10 +294,14 @@ class TestSktimeMethodForecast:
     def test_forecast_ci_exception_ignored(self):
         """predict_interval exception -> ci_values = None."""
         orig = _FakeThetaForecaster.predict_interval
-        _FakeThetaForecaster.predict_interval = MagicMock(side_effect=RuntimeError("no CI"))
+        _FakeThetaForecaster.predict_interval = MagicMock(
+            side_effect=RuntimeError("no CI")
+        )
         try:
             m = GenericSktimeMethod()
-            res = m.forecast(_series(), horizon=5, seasonality=12, params={"ci_alpha": 0.1})
+            res = m.forecast(
+                _series(), horizon=5, seasonality=12, params={"ci_alpha": 0.1}
+            )
             assert res.ci_values is None
         finally:
             _FakeThetaForecaster.predict_interval = orig
@@ -287,7 +319,9 @@ class TestSktimeMethodForecast:
 
     def test_params_used(self):
         m = GenericSktimeMethod()
-        res = m.forecast(_series(), horizon=5, seasonality=12, params={"some_key": "val"})
+        res = m.forecast(
+            _series(), horizon=5, seasonality=12, params={"some_key": "val"}
+        )
         assert res.params_used["seasonality"] == 12
         assert res.params_used["some_key"] == "val"
 
@@ -302,6 +336,7 @@ class TestSktimeMethodForecast:
 # ===========================================================================
 # SktThetaMethod (lines 230-241)
 # ===========================================================================
+
 
 class TestSktThetaMethod:
     def test_name(self):
@@ -321,6 +356,7 @@ class TestSktThetaMethod:
 # ===========================================================================
 # SktNaiveMethod (lines 244-256)
 # ===========================================================================
+
 
 class TestSktNaiveMethod:
     def test_name(self):
@@ -346,6 +382,7 @@ class TestSktNaiveMethod:
 # ===========================================================================
 # SktAutoETSMethod (lines 259-270)
 # ===========================================================================
+
 
 class TestSktAutoETSMethod:
     def test_name(self):

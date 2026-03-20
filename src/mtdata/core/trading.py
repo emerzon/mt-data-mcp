@@ -5,12 +5,14 @@ import logging
 from ._mcp_instance import mcp
 from . import trading_time, trading_validation
 from .execution_logging import run_logged_operation
-from .trading_account import trade_account_info, trade_history
-from .trading_execution import _cancel_pending, _close_positions, _modify_pending_order, _modify_position
+from .trading_execution import (
+    _cancel_pending,
+    _close_positions,
+    _modify_pending_order,
+    _modify_position,
+)
 from .trading_orders import _place_market_order, _place_pending_order
-from .trading_positions import trade_get_open, trade_get_pending
 from .trading_requests import TradeCloseRequest, TradeModifyRequest, TradePlaceRequest
-from .trading_risk import trade_risk_analyze
 from .trading_use_cases import run_trade_close, run_trade_modify, run_trade_place
 
 logger = logging.getLogger(__name__)

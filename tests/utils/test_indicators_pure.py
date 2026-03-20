@@ -7,8 +7,6 @@ Covers:
   - mtdata.core.schema        (schema validation/parsing)
 """
 
-import math
-import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Literal, Union
@@ -87,14 +85,16 @@ def _make_ohlcv_df(n: int = 100) -> pd.DataFrame:
     open_ = close + RS.uniform(-1.0, 1.0, n)
     volume = RS.randint(100, 10000, n).astype(float)
     time_vals = np.arange(n) * 3600 + 1_600_000_000
-    return pd.DataFrame({
-        "time": time_vals,
-        "open": open_,
-        "high": high,
-        "low": low,
-        "close": close,
-        "volume": volume,
-    })
+    return pd.DataFrame(
+        {
+            "time": time_vals,
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": volume,
+        }
+    )
 
 
 # ===================================================================
@@ -276,6 +276,7 @@ class TestCoreIndicatorsWrappers:
     def test_try_number_delegation(self):
         """core.indicators._try_number delegates to indicators_docs; verify import path."""
         from mtdata.core.indicators import _try_number as core_try
+
         try:
             assert core_try("42") == 42
             assert core_try("3.14") == pytest.approx(3.14)
@@ -286,6 +287,7 @@ class TestCoreIndicatorsWrappers:
     def test_clean_help_text_delegation(self):
         """core.indicators._clean_help_text delegates to indicators_docs."""
         from mtdata.core.indicators import _clean_help_text as core_clean
+
         try:
             assert core_clean("") == ""
             assert core_clean(None) == ""  # type: ignore[arg-type]
@@ -320,7 +322,11 @@ Values above 70 often indicate overbought conditions.
             ],
         )
 
-        raw_describe = getattr(core_indicators.indicators_describe, "__wrapped__", core_indicators.indicators_describe)
+        raw_describe = getattr(
+            core_indicators.indicators_describe,
+            "__wrapped__",
+            core_indicators.indicators_describe,
+        )
         out = raw_describe("rsi")
         assert out["success"] is True
         indicator = out["indicator"]
@@ -333,7 +339,9 @@ Values above 70 often indicate overbought conditions.
         assert params["length"]["description"] == "Window length."
         assert params["scalar"]["description"] == "Optional scalar multiplier."
 
-    def test_indicators_describe_cleans_signature_and_preserves_multiline_docs(self, monkeypatch):
+    def test_indicators_describe_cleans_signature_and_preserves_multiline_docs(
+        self, monkeypatch
+    ):
         from mtdata.core import indicators as core_indicators
 
         sample_doc = """Python Library Documentation: function rsi in module pandas_ta_classic.momentum.rsi
@@ -362,7 +370,11 @@ Values below 30 often indicate oversold conditions.
             ],
         )
 
-        raw_describe = getattr(core_indicators.indicators_describe, "__wrapped__", core_indicators.indicators_describe)
+        raw_describe = getattr(
+            core_indicators.indicators_describe,
+            "__wrapped__",
+            core_indicators.indicators_describe,
+        )
         out = raw_describe("rsi")
         indicator = out["indicator"]
         docs = indicator["documentation"]
@@ -370,7 +382,9 @@ Values below 30 often indicate oversold conditions.
 
         assert "pandas_ta_classic" not in indicator["description"]
         assert "rsi(" not in indicator["description"]
-        assert "Useful for overbought and oversold analysis." in indicator["description"]
+        assert (
+            "Useful for overbought and oversold analysis." in indicator["description"]
+        )
         assert docs["interpretation"] == (
             "Values above 70 often indicate overbought conditions.\n"
             "Values below 30 often indicate oversold conditions."
@@ -395,13 +409,18 @@ Values below 30 often indicate oversold conditions.
             ],
         )
 
-        raw_describe = getattr(core_indicators.indicators_describe, "__wrapped__", core_indicators.indicators_describe)
+        raw_describe = getattr(
+            core_indicators.indicators_describe,
+            "__wrapped__",
+            core_indicators.indicators_describe,
+        )
         with caplog.at_level(logging.INFO, logger=core_indicators.logger.name):
             out = raw_describe("rsi")
 
         assert out["success"] is True
         assert any(
-            "event=finish" in record.message and "operation=indicators_describe" in record.message
+            "event=finish" in record.message
+            and "operation=indicators_describe" in record.message
             for record in caplog.records
         )
 
@@ -417,7 +436,11 @@ Values below 30 often indicate oversold conditions.
             ],
         )
 
-        raw_list = getattr(core_indicators.indicators_list, "__wrapped__", core_indicators.indicators_list)
+        raw_list = getattr(
+            core_indicators.indicators_list,
+            "__wrapped__",
+            core_indicators.indicators_list,
+        )
         out = raw_list(category="momentum", limit=25)
 
         assert out["success"] is True
@@ -425,9 +448,13 @@ Values below 30 often indicate oversold conditions.
         assert out["total_count"] == 30
         assert out["more_available"] == 5
         assert out["truncated"] is True
-        assert out["show_all_hint"] == "Increase --limit to view more matching indicators."
+        assert (
+            out["show_all_hint"] == "Increase --limit to view more matching indicators."
+        )
 
-    def test_indicators_list_full_detail_includes_aliases_and_descriptions(self, monkeypatch):
+    def test_indicators_list_full_detail_includes_aliases_and_descriptions(
+        self, monkeypatch
+    ):
         from mtdata.core import indicators as core_indicators
 
         monkeypatch.setattr(
@@ -443,7 +470,11 @@ Values below 30 often indicate oversold conditions.
             ],
         )
 
-        raw_list = getattr(core_indicators.indicators_list, "__wrapped__", core_indicators.indicators_list)
+        raw_list = getattr(
+            core_indicators.indicators_list,
+            "__wrapped__",
+            core_indicators.indicators_list,
+        )
         out = raw_list(search_term="bb", detail="full")
 
         assert out["success"] is True
@@ -468,7 +499,11 @@ Values below 30 often indicate oversold conditions.
             ],
         )
 
-        raw_describe = getattr(core_indicators.indicators_describe, "__wrapped__", core_indicators.indicators_describe)
+        raw_describe = getattr(
+            core_indicators.indicators_describe,
+            "__wrapped__",
+            core_indicators.indicators_describe,
+        )
         out = raw_describe("bb")
 
         assert out["success"] is True
@@ -828,7 +863,9 @@ class TestComplexDefs:
     def test_volatility_params_schema_matches_typed_dict_keys(self):
         defs = complex_defs()
 
-        assert set(defs["VolatilityParams"]["properties"]) == set(VolatilityParams.__annotations__)
+        assert set(defs["VolatilityParams"]["properties"]) == set(
+            VolatilityParams.__annotations__
+        )
 
 
 class TestEnsureDefs:
@@ -853,39 +890,66 @@ class TestParametersObj:
         assert "properties" in params
 
     def test_returns_existing(self):
-        schema = {"parameters": {"type": "object", "properties": {"a": {"type": "string"}}}}
+        schema = {
+            "parameters": {"type": "object", "properties": {"a": {"type": "string"}}}
+        }
         params = _parameters_obj(schema)
         assert "a" in params["properties"]
 
 
 class TestApplyParamHints:
     def test_adds_description(self):
-        schema = {"parameters": {"type": "object", "properties": {
-            "symbol": {"type": "string"},
-        }}}
+        schema = {
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string"},
+                },
+            }
+        }
         apply_param_hints(schema)
-        assert schema["parameters"]["properties"]["symbol"]["description"] == PARAM_HINTS["symbol"]
+        assert (
+            schema["parameters"]["properties"]["symbol"]["description"]
+            == PARAM_HINTS["symbol"]
+        )
 
     def test_no_overwrite_existing_description(self):
-        schema = {"parameters": {"type": "object", "properties": {
-            "symbol": {"type": "string", "description": "custom"},
-        }}}
+        schema = {
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string", "description": "custom"},
+                },
+            }
+        }
         apply_param_hints(schema)
         assert schema["parameters"]["properties"]["symbol"]["description"] == "custom"
 
 
 class TestApplyTimeframeRef:
     def test_replaces_timeframe_prop(self):
-        schema = {"parameters": {"type": "object", "properties": {
-            "timeframe": {"type": "string"},
-        }}}
+        schema = {
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "timeframe": {"type": "string"},
+                },
+            }
+        }
         apply_timeframe_ref(schema)
-        assert schema["parameters"]["properties"]["timeframe"] == {"$ref": "#/$defs/TimeframeSpec"}
+        assert schema["parameters"]["properties"]["timeframe"] == {
+            "$ref": "#/$defs/TimeframeSpec"
+        }
 
     def test_ignores_non_timeframe(self):
-        schema = {"parameters": {"type": "object", "properties": {
-            "symbol": {"type": "string"},
-        }}}
+        schema = {
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string"},
+                },
+            }
+        }
         apply_timeframe_ref(schema)
         assert schema["parameters"]["properties"]["symbol"] == {"type": "string"}
 
@@ -976,11 +1040,13 @@ class TestIsTypedDictType:
     def test_regular_class_false(self):
         class Foo:
             pass
+
         assert _is_typed_dict_type(Foo) is False
 
     def test_typed_dict_true(self):
         class Bar(TypedDict):
             name: str
+
         assert _is_typed_dict_type(Bar) is True
 
 
@@ -1007,13 +1073,20 @@ class TestBuildMinimalSchema:
 
 class TestEnrichSchemaWithSharedDefs:
     def test_empty_schema_builds_from_func_info(self):
-        func_info = {"params": [{"name": "x", "required": True, "type": str, "default": None}]}
+        func_info = {
+            "params": [{"name": "x", "required": True, "type": str, "default": None}]
+        }
         schema = enrich_schema_with_shared_defs({}, func_info)
         assert "$defs" in schema
         assert "x" in schema["parameters"]["properties"]
 
     def test_existing_schema_gets_defs(self):
-        schema = {"parameters": {"type": "object", "properties": {"timeframe": {"type": "string"}}}}
+        schema = {
+            "parameters": {
+                "type": "object",
+                "properties": {"timeframe": {"type": "string"}},
+            }
+        }
         enriched = enrich_schema_with_shared_defs(schema, {"params": []})
         assert "$defs" in enriched
         tf_prop = enriched["parameters"]["properties"]["timeframe"]
@@ -1057,6 +1130,7 @@ class TestGetFunctionInfo:
     def test_no_params(self):
         def noop():
             pass
+
         info = get_function_info(noop)
         assert info["params"] == []
 
@@ -1064,6 +1138,7 @@ class TestGetFunctionInfo:
         class Foo:
             def bar(self, x: int) -> None:
                 pass
+
         info = get_function_info(Foo.bar)
         names = [p["name"] for p in info["params"]]
         assert "self" not in names

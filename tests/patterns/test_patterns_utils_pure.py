@@ -21,6 +21,7 @@ RS = np.random.RandomState(42)
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_series(n: int = 200, seed: int = 42) -> np.ndarray:
     return np.cumsum(np.random.RandomState(seed).randn(n)) + 100.0
 
@@ -114,6 +115,7 @@ def _build_test_index(
 # _minmax_scale_row tests
 # ===================================================================
 
+
 class TestMinmaxScaleRow:
     def test_basic_scaling(self):
         row = np.array([2.0, 4.0, 6.0, 8.0, 10.0])
@@ -182,6 +184,7 @@ class TestMinmaxScaleRow:
 # _apply_scale_vector tests
 # ===================================================================
 
+
 class TestApplyScaleVector:
     def test_minmax_basic(self):
         x = np.array([2.0, 4.0, 6.0])
@@ -230,6 +233,7 @@ class TestApplyScaleVector:
 # _apply_metric_vector tests
 # ===================================================================
 
+
 class TestApplyMetricVector:
     def test_euclidean_passthrough(self):
         x = np.array([1.0, 2.0, 3.0], dtype=np.float32)
@@ -276,11 +280,13 @@ class TestApplyMetricVector:
 # _mass_distance_profile tests (stumpy-dependent)
 # ===================================================================
 
+
 class TestMassDistanceProfile:
     @pytest.fixture(autouse=True)
     def _require_stumpy(self):
         pytest.importorskip("stumpy")
         from mtdata.utils.patterns import _mass_distance_profile
+
         self._mass = _mass_distance_profile
 
     def test_output_length(self):
@@ -341,6 +347,7 @@ class TestMassDistanceProfile:
 # PatternIndex construction and search tests
 # ===================================================================
 
+
 class TestPatternIndexSearch:
     def test_search_returns_correct_shapes(self):
         pi = _build_test_index()
@@ -395,6 +402,7 @@ class TestPatternIndexSearch:
 # PatternIndex._profile_search tests
 # ===================================================================
 
+
 class TestProfileSearch:
     @pytest.fixture(autouse=True)
     def _require_stumpy(self):
@@ -429,6 +437,7 @@ class TestProfileSearch:
 # ===================================================================
 # PatternIndex._ncc_max tests
 # ===================================================================
+
 
 class TestNccMax:
     def setup_method(self):
@@ -473,6 +482,7 @@ class TestNccMax:
 # ===================================================================
 # PatternIndex.refine_matches tests
 # ===================================================================
+
 
 class TestRefineMatches:
     def setup_method(self):
@@ -530,6 +540,7 @@ class TestRefineMatches:
 # PatternIndex DTW/SoftDTW refine_matches tests
 # ===================================================================
 
+
 class TestRefineMatchesDTW:
     def setup_method(self):
         self.pi = _build_test_index()
@@ -548,8 +559,12 @@ class TestRefineMatchesDTW:
         pytest.importorskip("tslearn")
         idxs, dists = self.pi.search(self.query, top_k=10)
         new_idxs, new_scores = self.pi.refine_matches(
-            self.query, idxs, dists, top_k=3,
-            shape_metric="dtw", dtw_band_frac=0.2,
+            self.query,
+            idxs,
+            dists,
+            top_k=3,
+            shape_metric="dtw",
+            dtw_band_frac=0.2,
         )
         assert new_idxs.shape == (3,)
 
@@ -557,8 +572,12 @@ class TestRefineMatchesDTW:
         pytest.importorskip("tslearn")
         idxs, dists = self.pi.search(self.query, top_k=10)
         new_idxs, new_scores = self.pi.refine_matches(
-            self.query, idxs, dists, top_k=5,
-            shape_metric="softdtw", soft_dtw_gamma=1.0,
+            self.query,
+            idxs,
+            dists,
+            top_k=5,
+            shape_metric="softdtw",
+            soft_dtw_gamma=1.0,
         )
         assert new_idxs.shape == (5,)
 
@@ -566,6 +585,7 @@ class TestRefineMatchesDTW:
 # ===================================================================
 # PatternIndex accessor / lookup tests
 # ===================================================================
+
 
 class TestPatternIndexAccessors:
     def setup_method(self):
@@ -610,6 +630,7 @@ class TestPatternIndexAccessors:
 # PatternIndex._scaled_window tests
 # ===================================================================
 
+
 class TestScaledWindow:
     def test_minmax_scaled_window(self):
         pi = _build_test_index(scale="minmax")
@@ -635,6 +656,7 @@ class TestScaledWindow:
 # PatternIndex count helpers
 # ===================================================================
 
+
 class TestCountHelpers:
     def test_bars_per_symbol(self):
         pi = _build_test_index()
@@ -657,6 +679,7 @@ class TestCountHelpers:
 # ===================================================================
 # PatternIndex data access
 # ===================================================================
+
 
 class TestDataAccess:
     def setup_method(self):
@@ -691,7 +714,11 @@ class TestDataAccess:
 
     def test_get_symbol_returns_negative_prices(self):
         # Log of negative -> NaN -> filtered out, possibly None
-        neg = {"SYM": np.array([-1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0, -10.0])}
+        neg = {
+            "SYM": np.array(
+                [-1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0, -10.0]
+            )
+        }
         pi = _build_test_index(symbols=neg, window_size=3, future_size=0, scale="none")
         ret = pi.get_symbol_returns("SYM")
         # All log-returns are nan from negative prices
@@ -701,6 +728,7 @@ class TestDataAccess:
 # ===================================================================
 # PatternIndex init attribute tests
 # ===================================================================
+
 
 class TestPatternIndexInit:
     def test_attributes(self):

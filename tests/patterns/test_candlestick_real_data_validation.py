@@ -1,3 +1,4 @@
+# ruff: noqa: E402, E731, E741, F811, F841
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -23,8 +24,18 @@ def _manual_pattern_sign(
 ) -> int:
     if i <= 0:
         return 0
-    op, hp, lp, cp = float(o.iloc[i - 1]), float(h.iloc[i - 1]), float(l.iloc[i - 1]), float(c.iloc[i - 1])
-    oc, hc, lc, cc = float(o.iloc[i]), float(h.iloc[i]), float(l.iloc[i]), float(c.iloc[i])
+    op, hp, lp, cp = (
+        float(o.iloc[i - 1]),
+        float(h.iloc[i - 1]),
+        float(l.iloc[i - 1]),
+        float(c.iloc[i - 1]),
+    )
+    oc, hc, lc, cc = (
+        float(o.iloc[i]),
+        float(h.iloc[i]),
+        float(l.iloc[i]),
+        float(c.iloc[i]),
+    )
     nm = str(pattern).strip().lower()
 
     if nm == "inside":
@@ -84,7 +95,9 @@ def test_candlestick_patterns_are_present_on_real_data(monkeypatch):
     limit = min(1000, len(rates))
     rates_slice = rates[-limit:]
 
-    monkeypatch.setattr(candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: rates_slice)
+    monkeypatch.setattr(
+        candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: rates_slice
+    )
     monkeypatch.setattr(candlestick_mod, "_symbol_ready_guard", _always_ready_guard)
     monkeypatch.setattr(candlestick_mod, "_use_client_tz", lambda: False)
 
@@ -113,7 +126,9 @@ def test_candlestick_patterns_are_present_on_real_data(monkeypatch):
     }
 
     rows = res.get("data", [])
-    assert rows, "No patterns found in snapshot; validation did not exercise pattern checks"
+    assert rows, (
+        "No patterns found in snapshot; validation did not exercise pattern checks"
+    )
 
     failures = []
     for row in rows:
@@ -140,6 +155,8 @@ def test_candlestick_patterns_are_present_on_real_data(monkeypatch):
                 f"{ts} {label}: manual={manual_side}, detector={expected_side}"
             )
 
-    assert not failures, "Detected patterns failed real-ohlc validation:\n" + "\n".join(failures[:10])
+    assert not failures, "Detected patterns failed real-ohlc validation:\n" + "\n".join(
+        failures[:10]
+    )
 
     mt5.shutdown()

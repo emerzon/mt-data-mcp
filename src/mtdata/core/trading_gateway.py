@@ -33,7 +33,9 @@ class MT5TradingGateway(MT5Gateway):
         terminal_info: Any = None,
     ) -> Dict[str, Any]:
         if self.build_trade_preflight_impl is None:
-            raise RuntimeError("build_trade_preflight is not configured for this gateway")
+            raise RuntimeError(
+                "build_trade_preflight is not configured for this gateway"
+            )
         return self.build_trade_preflight_impl(
             self.adapter,
             account_info=account_info,

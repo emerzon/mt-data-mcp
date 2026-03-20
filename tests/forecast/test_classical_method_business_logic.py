@@ -31,7 +31,9 @@ def test_naive_and_drift_forecasts_return_expected_values():
     assert np.allclose(drift.forecast, [17.5, 20.0, 22.5])
     assert drift.params_used == {"slope": 2.5}
 
-    single = cl.DriftMethod().forecast(pd.Series([5.0]), horizon=2, seasonality=0, params={})
+    single = cl.DriftMethod().forecast(
+        pd.Series([5.0]), horizon=2, seasonality=0, params={}
+    )
     assert np.allclose(single.forecast, [5.0, 5.0])
     assert single.params_used == {"slope": 0.0}
 
@@ -43,7 +45,9 @@ def test_seasonal_naive_validation_and_repeating_pattern():
     with pytest.raises(ValueError, match="Insufficient data"):
         method.forecast(pd.Series([1.0, 2.0]), horizon=1, seasonality=0, params={})
 
-    out = method.forecast(pd.Series([1.0, 2.0, 3.0, 4.0]), horizon=5, seasonality=2, params={})
+    out = method.forecast(
+        pd.Series([1.0, 2.0, 3.0, 4.0]), horizon=5, seasonality=2, params={}
+    )
     assert np.allclose(out.forecast, [3.0, 4.0, 3.0, 4.0, 3.0])
     assert out.params_used == {"m": 2}
 
@@ -70,11 +74,15 @@ def test_fourier_ols_default_and_custom_params():
     assert default.forecast.shape == (3,)
     assert np.issubdtype(default.forecast.dtype, np.floating)
 
-    no_seasonality = method.forecast(series, horizon=2, seasonality=0, params={"terms": None, "trend": False})
+    no_seasonality = method.forecast(
+        series, horizon=2, seasonality=0, params={"terms": None, "trend": False}
+    )
     assert no_seasonality.params_used == {"m": 0, "K": 2, "trend": False}
     assert no_seasonality.forecast.shape == (2,)
 
-    custom = method.forecast(series, horizon=2, seasonality=24, params={"terms": 1, "trend": True})
+    custom = method.forecast(
+        series, horizon=2, seasonality=24, params={"terms": 1, "trend": True}
+    )
     assert custom.params_used == {"m": 24, "K": 1, "trend": True}
     assert custom.forecast.shape == (2,)
 
@@ -96,7 +104,10 @@ def test_classical_legacy_wrappers_route_to_registry(monkeypatch):
                     "params": params,
                 }
             )
-            return ForecastResult(forecast=np.array([99.0], dtype=float), params_used={"method": self.name})
+            return ForecastResult(
+                forecast=np.array([99.0], dtype=float),
+                params_used={"method": self.name},
+            )
 
     class FakeRegistry:
         @staticmethod
@@ -109,7 +120,9 @@ def test_classical_legacy_wrappers_route_to_registry(monkeypatch):
     drift_f, drift_p = cl.forecast_drift(np.array([1.0, 2.0]), fh=1, n=5)
     seas_f, seas_p = cl.forecast_seasonal_naive(np.array([1.0, 2.0]), fh=1, m=12)
     theta_f, theta_p = cl.forecast_theta(np.array([1.0, 2.0]), fh=1, alpha=0.4)
-    fou_f, fou_p = cl.forecast_fourier_ols(np.array([1.0, 2.0]), fh=1, m=12, K=2, trend=False)
+    fou_f, fou_p = cl.forecast_fourier_ols(
+        np.array([1.0, 2.0]), fh=1, m=12, K=2, trend=False
+    )
 
     assert np.allclose(naive_f, [99.0])
     assert naive_p == {"method": "naive"}

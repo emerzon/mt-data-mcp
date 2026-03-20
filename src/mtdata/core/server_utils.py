@@ -1,4 +1,5 @@
 """Server utilities and helper functions."""
+
 from typing import Any, Dict, Optional
 
 

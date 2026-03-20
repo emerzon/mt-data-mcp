@@ -16,12 +16,16 @@ from mtdata.utils.utils import _format_time_minimal
 
 
 @contextmanager
-def _mock_symbol_ready_guard(*args: Any, **kwargs: Any) -> Iterator[Tuple[None, MagicMock]]:
+def _mock_symbol_ready_guard(
+    *args: Any, **kwargs: Any
+) -> Iterator[Tuple[None, MagicMock]]:
     yield None, MagicMock()
 
 
 @contextmanager
-def _mock_symbol_ready_guard_digits(*args: Any, **kwargs: Any) -> Iterator[Tuple[None, MagicMock]]:
+def _mock_symbol_ready_guard_digits(
+    *args: Any, **kwargs: Any
+) -> Iterator[Tuple[None, MagicMock]]:
     info = MagicMock()
     info.digits = 2
     yield None, info
@@ -51,13 +55,19 @@ def test_backtest_vol_proxy_not_mutated_across_anchors() -> None:
     times = np.arange(1700000000, 1700000000 + 80 * 3600, 3600, dtype=float)
     close = np.linspace(100.0, 120.0, 80, dtype=float)
     df = pd.DataFrame({"time": times, "close": close})
-    anchors = [_format_time_minimal(float(times[60])), _format_time_minimal(float(times[65]))]
+    anchors = [
+        _format_time_minimal(float(times[60])),
+        _format_time_minimal(float(times[65])),
+    ]
     params_per_method = {"ewma": {"proxy": "abs_return"}}
 
-    with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
-        "mtdata.forecast.backtest.forecast_volatility",
-        return_value={"horizon_sigma_return": 0.1},
-    ) as mock_vol:
+    with (
+        patch("mtdata.forecast.backtest._fetch_history", return_value=df),
+        patch(
+            "mtdata.forecast.backtest.forecast_volatility",
+            return_value={"horizon_sigma_return": 0.1},
+        ) as mock_vol,
+    ):
         res = forecast_backtest(
             symbol="EURUSD",
             timeframe="H1",
@@ -76,7 +86,9 @@ def test_backtest_vol_proxy_not_mutated_across_anchors() -> None:
 
 @patch("mtdata.services.data_service._symbol_ready_guard", _mock_symbol_ready_guard)
 @patch("mtdata.services.data_service._mt5_copy_ticks_range")
-def test_fetch_ticks_select_simplify_mode_no_nameerror(mock_copy_ticks: MagicMock) -> None:
+def test_fetch_ticks_select_simplify_mode_no_nameerror(
+    mock_copy_ticks: MagicMock,
+) -> None:
     now = datetime.now(timezone.utc)
     ticks = []
     for i in range(12):
@@ -105,9 +117,13 @@ def test_fetch_ticks_select_simplify_mode_no_nameerror(mock_copy_ticks: MagicMoc
     assert "error" not in res
 
 
-@patch("mtdata.services.data_service._symbol_ready_guard", _mock_symbol_ready_guard_digits)
+@patch(
+    "mtdata.services.data_service._symbol_ready_guard", _mock_symbol_ready_guard_digits
+)
 @patch("mtdata.services.data_service._mt5_copy_ticks_range")
-def test_fetch_ticks_summary_adds_precision_display_stats(mock_copy_ticks: MagicMock) -> None:
+def test_fetch_ticks_summary_adds_precision_display_stats(
+    mock_copy_ticks: MagicMock,
+) -> None:
     now = datetime.now(timezone.utc)
     ticks = []
     for i in range(5):

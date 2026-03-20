@@ -1,4 +1,3 @@
-
 from datetime import datetime, timedelta, timezone as dt_timezone
 import logging
 import math
@@ -14,10 +13,18 @@ import time
 # Imports from core (schema, constants)
 from ..shared.schema import TimeframeLiteral, IndicatorSpec, DenoiseSpec, SimplifySpec
 from ..shared.constants import (
-    TIMEFRAME_MAP, TIMEFRAME_SECONDS, FETCH_RETRY_ATTEMPTS, FETCH_RETRY_DELAY,
-    SANITY_BARS_TOLERANCE, TI_NAN_WARMUP_FACTOR, TI_NAN_WARMUP_MIN_ADD,
-    SIMPLIFY_DEFAULT_METHOD, SIMPLIFY_DEFAULT_MODE, SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT, TICKS_LOOKBACK_DAYS,
-    DEFAULT_ROW_LIMIT
+    TIMEFRAME_MAP,
+    TIMEFRAME_SECONDS,
+    FETCH_RETRY_ATTEMPTS,
+    FETCH_RETRY_DELAY,
+    SANITY_BARS_TOLERANCE,
+    TI_NAN_WARMUP_FACTOR,
+    TI_NAN_WARMUP_MIN_ADD,
+    SIMPLIFY_DEFAULT_METHOD,
+    SIMPLIFY_DEFAULT_MODE,
+    SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT,
+    TICKS_LOOKBACK_DAYS,
+    DEFAULT_ROW_LIMIT,
 )
 from ..bootstrap.settings import mt5_config
 from ..core.runtime_metadata import build_runtime_timezone_meta
@@ -25,15 +32,28 @@ from ..shared.validators import invalid_timeframe_error
 
 # Imports from utils
 from ..utils.mt5 import (
-    _mt5_copy_rates_from, _mt5_copy_rates_range, _mt5_copy_ticks_from,
-    _mt5_copy_ticks_range, _mt5_epoch_to_utc, _rates_to_df, _symbol_ready_guard,
-    get_symbol_info_cached, mt5
+    _mt5_copy_rates_from,
+    _mt5_copy_rates_range,
+    _mt5_copy_ticks_from,
+    _mt5_copy_ticks_range,
+    _rates_to_df,
+    _symbol_ready_guard,
+    get_symbol_info_cached,
+    mt5,
 )
 from ..utils.utils import (
-    _table_from_rows, _format_time_minimal, _format_time_minimal_local,
-    _resolve_client_tz, _time_format_from_epochs, _maybe_strip_year,
-    _style_time_format, _format_numeric_rows_from_df, _parse_start_datetime,    
-    _coerce_scalar, _normalize_ohlcv_arg, _utc_epoch_seconds
+    _table_from_rows,
+    _format_time_minimal,
+    _format_time_minimal_local,
+    _resolve_client_tz,
+    _time_format_from_epochs,
+    _maybe_strip_year,
+    _style_time_format,
+    _format_numeric_rows_from_df,
+    _parse_start_datetime,
+    _coerce_scalar,
+    _normalize_ohlcv_arg,
+    _utc_epoch_seconds,
 )
 from ..utils.indicators import (
     _estimate_warmup_bars_util,
@@ -41,7 +61,10 @@ from ..utils.indicators import (
     _find_unknown_ta_indicators_util,
     _parse_ti_specs,
 )
-from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
+from ..utils.denoise import (
+    _apply_denoise as _apply_denoise_util,
+    normalize_denoise_spec as _normalize_denoise_spec,
+)
 
 # Simplify entrypoint and helpers.
 from ..utils.simplify import (
@@ -50,6 +73,7 @@ from ..utils.simplify import (
     _select_indices_for_timeseries,
     _simplify_dataframe_rows_ext,
 )
+
 logger = logging.getLogger(__name__)
 
 
@@ -103,39 +127,58 @@ def _fetch_rates_with_warmup(
         from_date = _parse_start_datetime(start_datetime)
         to_date = _parse_start_datetime(end_datetime)
         if not from_date or not to_date:
-            return None, "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."
+            return (
+                None,
+                "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'.",
+            )
         if from_date > to_date:
             return None, "start_datetime must be before end_datetime"
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
-        from_date_internal = from_date - timedelta(seconds=seconds_per_bar * warmup_bars)
+        from_date_internal = from_date - timedelta(
+            seconds=seconds_per_bar * warmup_bars
+        )
         expected_end_ts = _utc_epoch_seconds(to_date)
 
         def _fetch():
-            return _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date)
+            return _mt5_copy_rates_range(
+                symbol, mt5_timeframe, from_date_internal, to_date
+            )
 
     elif start_datetime:
         from_date = _parse_start_datetime(start_datetime)
         if not from_date:
-            return None, "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."
+            return (
+                None,
+                "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'.",
+            )
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe)
         if not seconds_per_bar:
             return None, f"Unable to determine timeframe seconds for {timeframe}"
         to_date = from_date + timedelta(seconds=seconds_per_bar * (candles + 2))
-        from_date_internal = from_date - timedelta(seconds=seconds_per_bar * warmup_bars)
+        from_date_internal = from_date - timedelta(
+            seconds=seconds_per_bar * warmup_bars
+        )
         expected_end_ts = _utc_epoch_seconds(to_date)
 
         def _fetch():
-            return _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date)
+            return _mt5_copy_rates_range(
+                symbol, mt5_timeframe, from_date_internal, to_date
+            )
 
     elif end_datetime:
         to_date = _parse_start_datetime(end_datetime)
         if not to_date:
-            return None, "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."
+            return (
+                None,
+                "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'.",
+            )
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
         expected_end_ts = _utc_epoch_seconds(to_date)
 
         def _fetch():
-            return _mt5_copy_rates_from(symbol, mt5_timeframe, to_date, candles + warmup_bars)
+            return _mt5_copy_rates_from(
+                symbol, mt5_timeframe, to_date, candles + warmup_bars
+            )
 
     else:
         utc_now = datetime.now(dt_timezone.utc)
@@ -143,7 +186,9 @@ def _fetch_rates_with_warmup(
         expected_end_ts = _utc_epoch_seconds(utc_now)
 
         def _fetch():
-            return _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, candles + warmup_bars)
+            return _mt5_copy_rates_from(
+                symbol, mt5_timeframe, utc_now, candles + warmup_bars
+            )
 
     attempts = FETCH_RETRY_ATTEMPTS if retry else 1
     rates = None
@@ -163,14 +208,16 @@ def _fetch_rates_with_warmup(
 def _build_rates_df(rates: Any, use_client_tz: bool) -> pd.DataFrame:
     """Normalize raw MT5 rates into a DataFrame with epoch and display time columns."""
     df = _rates_to_df(rates)
-    df['__epoch'] = df['time']
+    df["__epoch"] = df["time"]
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        df["time"] = df["time"].apply(_format_time_minimal_local if use_client_tz else _format_time_minimal)
-    if 'volume' not in df.columns and 'tick_volume' in df.columns:
+        df["time"] = df["time"].apply(
+            _format_time_minimal_local if use_client_tz else _format_time_minimal
+        )
+    if "volume" not in df.columns and "tick_volume" in df.columns:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            df['volume'] = df['tick_volume']
+            df["volume"] = df["tick_volume"]
     return df
 
 
@@ -205,14 +252,14 @@ def _trim_df_to_target(
             return out.copy() if copy_rows else out
         target_from = _utc_epoch_seconds(from_dt)
         target_to = _utc_epoch_seconds(to_dt)
-        out = df.loc[(df['__epoch'] >= target_from) & (df['__epoch'] <= target_to)]
+        out = df.loc[(df["__epoch"] >= target_from) & (df["__epoch"] <= target_to)]
     elif start_datetime:
         from_dt = _parse_start_datetime(start_datetime)
         if not from_dt:
             out = df.iloc[0:0]
             return out.copy() if copy_rows else out
         target_from = _utc_epoch_seconds(from_dt)
-        out = df.loc[df['__epoch'] >= target_from]
+        out = df.loc[df["__epoch"] >= target_from]
         if len(out) > candles:
             out = out.iloc[:candles]
     elif end_datetime:
@@ -221,7 +268,7 @@ def _trim_df_to_target(
             out = df.iloc[0:0]
             return out.copy() if copy_rows else out
         target_to = _utc_epoch_seconds(to_dt)
-        out = df.loc[df['__epoch'] <= target_to]
+        out = df.loc[df["__epoch"] <= target_to]
         if len(out) > candles:
             out = out.iloc[-candles:]
     else:
@@ -229,7 +276,9 @@ def _trim_df_to_target(
     return out.copy() if copy_rows else out
 
 
-def _normalize_indicator_spec(indicators: Optional[List[IndicatorSpec]]) -> Optional[str]:
+def _normalize_indicator_spec(
+    indicators: Optional[List[IndicatorSpec]],
+) -> Optional[str]:
     """Normalize indicator input into the compact internal string format."""
     if indicators is None:
         return None
@@ -237,8 +286,8 @@ def _normalize_indicator_spec(indicators: Optional[List[IndicatorSpec]]) -> Opti
     source: Any = indicators
     if isinstance(source, str):
         payload = source.strip()
-        if (payload.startswith('[') and payload.endswith(']')) or (
-            payload.startswith('{') and payload.endswith('}')
+        if (payload.startswith("[") and payload.endswith("]")) or (
+            payload.startswith("{") and payload.endswith("}")
         ):
             try:
                 source = json.loads(payload)
@@ -248,11 +297,13 @@ def _normalize_indicator_spec(indicators: Optional[List[IndicatorSpec]]) -> Opti
     if isinstance(source, (list, tuple)):
         parts: List[str] = []
         for item in source:
-            if isinstance(item, dict) and 'name' in item:
-                name = str(item.get('name'))
-                params = item.get('params') or []
+            if isinstance(item, dict) and "name" in item:
+                name = str(item.get("name"))
+                params = item.get("params") or []
                 if isinstance(params, (list, tuple)) and len(params) > 0:
-                    args_str = ",".join(str(_coerce_scalar(str(param))) for param in params)
+                    args_str = ",".join(
+                        str(_coerce_scalar(str(param))) for param in params
+                    )
                     parts.append(f"{name}({args_str})")
                 else:
                     parts.append(name)
@@ -274,8 +325,12 @@ def _build_candle_headers(rates: Any, ohlcv: Optional[str]) -> List[str]:
     tick_volumes = [int(rate["tick_volume"]) for rate in rates]
     real_volumes = [int(rate["real_volume"]) for rate in rates]
 
-    has_tick_volume = len(set(tick_volumes)) > 1 or any(value != 0 for value in tick_volumes)
-    has_real_volume = len(set(real_volumes)) > 1 or any(value != 0 for value in real_volumes)
+    has_tick_volume = len(set(tick_volumes)) > 1 or any(
+        value != 0 for value in tick_volumes
+    )
+    has_real_volume = len(set(real_volumes)) > 1 or any(
+        value != 0 for value in real_volumes
+    )
     requested = _normalize_ohlcv_arg(ohlcv)
 
     headers = ["time"]
@@ -313,13 +368,15 @@ def _append_denoise_application(
         denoise_meta = dict(source_spec or {})
         denoise_apps.append(
             {
-                'method': str(denoise_meta.get('method', 'none')).lower(),
-                'when': str(denoise_meta.get('when', default_when)).lower(),
-                'causality': str(denoise_meta.get('causality', default_causality)),
-                'keep_original': bool(denoise_meta.get('keep_original', default_keep_original)),
-                'columns': denoise_meta.get('columns', 'close'),
-                'params': denoise_meta.get('params') or {},
-                'added_columns': added_columns,
+                "method": str(denoise_meta.get("method", "none")).lower(),
+                "when": str(denoise_meta.get("when", default_when)).lower(),
+                "causality": str(denoise_meta.get("causality", default_causality)),
+                "keep_original": bool(
+                    denoise_meta.get("keep_original", default_keep_original)
+                ),
+                "columns": denoise_meta.get("columns", "close"),
+                "params": denoise_meta.get("params") or {},
+                "added_columns": added_columns,
             }
         )
     except Exception:
@@ -335,17 +392,17 @@ def _apply_pre_ti_denoise(
     if not denoise:
         return
 
-    normalized = _normalize_denoise_spec(denoise, default_when='pre_ti')
+    normalized = _normalize_denoise_spec(denoise, default_when="pre_ti")
     added_columns: List[str] = []
-    if normalized and str(normalized.get('when', 'pre_ti')).lower() == 'pre_ti':
-        added_columns = _apply_denoise_util(df, normalized, default_when='pre_ti')
+    if normalized and str(normalized.get("when", "pre_ti")).lower() == "pre_ti":
+        added_columns = _apply_denoise_util(df, normalized, default_when="pre_ti")
         _extend_unique_headers(headers, added_columns)
 
     _append_denoise_application(
         denoise_apps,
         denoise,
-        default_when='pre_ti',
-        default_causality='causal',
+        default_when="pre_ti",
+        default_causality="causal",
         default_keep_original=False,
         added_columns=added_columns,
     )
@@ -365,13 +422,13 @@ def _apply_indicator_stage(
     _extend_unique_headers(headers, ti_cols)
 
     if denoise and ti_cols:
-        dn_base = _normalize_denoise_spec(denoise, default_when='post_ti')
-        if dn_base and bool(dn_base.get('apply_to_ti') or dn_base.get('ti')):
+        dn_base = _normalize_denoise_spec(denoise, default_when="post_ti")
+        if dn_base and bool(dn_base.get("apply_to_ti") or dn_base.get("ti")):
             dn_ti = dict(dn_base)
-            dn_ti['columns'] = list(ti_cols)
-            dn_ti.setdefault('when', 'post_ti')
-            dn_ti.setdefault('keep_original', False)
-            _apply_denoise_util(df, dn_ti, default_when='post_ti')
+            dn_ti["columns"] = list(ti_cols)
+            dn_ti.setdefault("when", "post_ti")
+            dn_ti.setdefault("keep_original", False)
+            _apply_denoise_util(df, dn_ti, default_when="post_ti")
 
     return ti_cols
 
@@ -385,17 +442,17 @@ def _apply_post_ti_denoise(
     if not denoise:
         return
 
-    normalized = _normalize_denoise_spec(denoise, default_when='post_ti')
+    normalized = _normalize_denoise_spec(denoise, default_when="post_ti")
     added_columns: List[str] = []
-    if normalized and str(normalized.get('when', 'post_ti')).lower() == 'post_ti':
-        added_columns = _apply_denoise_util(df, normalized, default_when='post_ti')
+    if normalized and str(normalized.get("when", "post_ti")).lower() == "post_ti":
+        added_columns = _apply_denoise_util(df, normalized, default_when="post_ti")
         _extend_unique_headers(headers, added_columns)
 
     _append_denoise_application(
         denoise_apps,
         normalized,
-        default_when='post_ti',
-        default_causality='zero_phase',
+        default_when="post_ti",
+        default_causality="zero_phase",
         default_keep_original=True,
         added_columns=added_columns,
     )
@@ -412,9 +469,9 @@ def _rebuild_candle_indicator_window(
     """Rebuild the warmup window and re-run the pre-indicator stages."""
     df = _build_rates_df(rates, use_client_tz)
     if denoise:
-        normalized = _normalize_denoise_spec(denoise, default_when='pre_ti')
-        if normalized and str(normalized.get('when', 'pre_ti')).lower() == 'pre_ti':
-            _apply_denoise_util(df, normalized, default_when='pre_ti')
+        normalized = _normalize_denoise_spec(denoise, default_when="pre_ti")
+        if normalized and str(normalized.get("when", "pre_ti")).lower() == "pre_ti":
+            _apply_denoise_util(df, normalized, default_when="pre_ti")
     ti_cols = _apply_indicator_stage(df, headers, ti_spec, denoise)
     return df, ti_cols
 
@@ -427,11 +484,11 @@ def _collect_session_gaps(
 ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
     session_gaps: List[Dict[str, Any]] = []
     expected_bar_seconds = float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
-    if expected_bar_seconds <= 0 or '__epoch' not in df.columns or len(df) <= 1:
+    if expected_bar_seconds <= 0 or "__epoch" not in df.columns or len(df) <= 1:
         return session_gaps, None
 
     try:
-        epochs = pd.to_numeric(df['__epoch'], errors='coerce').to_numpy(dtype=float)
+        epochs = pd.to_numeric(df["__epoch"], errors="coerce").to_numpy(dtype=float)
         threshold = expected_bar_seconds * 1.5
         for index in range(1, len(epochs)):
             prev_t = float(epochs[index - 1])
@@ -450,7 +507,9 @@ def _collect_session_gaps(
                 from_disp = _format_time_minimal(prev_t)
                 to_disp = _format_time_minimal(curr_t)
 
-            missing_bars_est = max(1, int(round(gap_seconds / expected_bar_seconds)) - 1)
+            missing_bars_est = max(
+                1, int(round(gap_seconds / expected_bar_seconds)) - 1
+            )
             prev_dt = datetime.fromtimestamp(prev_t, tz=dt_timezone.utc)
             curr_dt = datetime.fromtimestamp(curr_t, tz=dt_timezone.utc)
             crosses_weekend = (
@@ -458,7 +517,9 @@ def _collect_session_gaps(
                 or curr_dt.weekday() >= 5
                 or ((curr_t - prev_t) >= (36.0 * 3600.0))
             )
-            gap_context = "weekend/session break" if crosses_weekend else "session break"
+            gap_context = (
+                "weekend/session break" if crosses_weekend else "session break"
+            )
             session_gaps.append(
                 {
                     "from": from_disp,
@@ -484,33 +545,35 @@ def _format_candle_times(
     use_client_tz: bool,
     client_tz: Any,
 ) -> None:
-    if 'time' not in headers or len(df) <= 0:
+    if "time" not in headers or len(df) <= 0:
         return
 
-    epochs_list = df['__epoch'].tolist()
+    epochs_list = df["__epoch"].tolist()
     if time_as_epoch:
-        df['time'] = [float(value) for value in epochs_list]
-        df.__dict__['_tz_used_name'] = 'UTC'
+        df["time"] = [float(value) for value in epochs_list]
+        df.__dict__["_tz_used_name"] = "UTC"
         return
 
     fmt = _time_format_from_epochs(epochs_list)
     fmt = _maybe_strip_year(fmt, epochs_list)
     fmt = _style_time_format(fmt)
-    tz_used_name = 'UTC'
+    tz_used_name = "UTC"
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         if use_client_tz:
-            tz_used_name = getattr(client_tz, 'zone', None) or str(client_tz)
-            df['time'] = [
-                datetime.fromtimestamp(value, tz=dt_timezone.utc).astimezone(client_tz).strftime(fmt)
+            tz_used_name = getattr(client_tz, "zone", None) or str(client_tz)
+            df["time"] = [
+                datetime.fromtimestamp(value, tz=dt_timezone.utc)
+                .astimezone(client_tz)
+                .strftime(fmt)
                 for value in epochs_list
             ]
         else:
-            df['time'] = [
+            df["time"] = [
                 datetime.fromtimestamp(value, tz=dt_timezone.utc).strftime(fmt)
                 for value in epochs_list
             ]
-    df.__dict__['_tz_used_name'] = tz_used_name
+    df.__dict__["_tz_used_name"] = tz_used_name
 
 
 def _normalize_simplify_spec(
@@ -523,7 +586,9 @@ def _normalize_simplify_spec(
         return None
 
     simplify_eff = dict(simplify)
-    simplify_eff['mode'] = str(simplify_eff.get('mode', SIMPLIFY_DEFAULT_MODE)).lower().strip()
+    simplify_eff["mode"] = (
+        str(simplify_eff.get("mode", SIMPLIFY_DEFAULT_MODE)).lower().strip()
+    )
     has_points = any(
         key in simplify_eff and simplify_eff[key] is not None
         for key in ("points", "target_points", "max_points", "ratio")
@@ -532,10 +597,14 @@ def _normalize_simplify_spec(
         return simplify_eff
 
     try:
-        default_pts = max(3, int(round(int(limit) * SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT)))
+        default_pts = max(
+            3, int(round(int(limit) * SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT))
+        )
     except Exception:
-        default_pts = max(3, int(round(fallback_rows * SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT)))
-    simplify_eff['points'] = default_pts
+        default_pts = max(
+            3, int(round(fallback_rows * SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT))
+        )
+    simplify_eff["points"] = default_pts
     return simplify_eff
 
 
@@ -576,7 +645,7 @@ def fetch_candles(
         if timeframe not in TIMEFRAME_MAP:
             return {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
         mt5_timeframe = TIMEFRAME_MAP[timeframe]
-        
+
         # Ensure symbol is ready; remember original visibility to restore later
         _info_before = get_symbol_info_cached(symbol)
         with _symbol_ready_guard(symbol, info_before=_info_before) as (err, _info):
@@ -613,16 +682,18 @@ def fetch_candles(
             if rates_error:
                 return {"error": rates_error}
         # visibility handled by _symbol_ready_guard
-        
+
         if rates is None:
-            return {"error": _describe_rate_fetch_error(symbol, info_before=_info_before)}
+            return {
+                "error": _describe_rate_fetch_error(symbol, info_before=_info_before)
+            }
 
         # Generate tabular format with dynamic column filtering
         if len(rates) == 0:
             return {"error": "No data available"}
         raw_bars_fetched = int(len(rates))
         headers = _build_candle_headers(rates, ohlcv)
-        
+
         # Construct DataFrame to support indicators and consistent output
         client_tz = _resolve_client_tz()
         _use_ctz = client_tz is not None
@@ -634,7 +705,9 @@ def fetch_candles(
         ti_cols = _apply_indicator_stage(df, headers, ti_spec, denoise)
 
         # Filter out warmup region to return the intended target window only
-        df = _trim_df_to_target(df, start_datetime, end_datetime, candles, copy_rows=True)
+        df = _trim_df_to_target(
+            df, start_datetime, end_datetime, candles, copy_rows=True
+        )
         rows_after_target_trim = int(len(df))
         warmup_retry_meta: Dict[str, Any] = {
             "applied": False,
@@ -646,7 +719,10 @@ def fetch_candles(
             try:
                 if df[ti_cols].isna().any().any():
                     # Increase warmup and refetch once
-                    warmup_bars_retry = max(int(warmup_bars * TI_NAN_WARMUP_FACTOR), warmup_bars + TI_NAN_WARMUP_MIN_ADD)
+                    warmup_bars_retry = max(
+                        int(warmup_bars * TI_NAN_WARMUP_FACTOR),
+                        warmup_bars + TI_NAN_WARMUP_MIN_ADD,
+                    )
                     rates_retry, _ = _fetch_rates_with_warmup(
                         symbol,
                         mt5_timeframe,
@@ -661,7 +737,9 @@ def fetch_candles(
                     warmup_retry_meta = {
                         "applied": True,
                         "warmup_bars": int(warmup_bars_retry),
-                        "raw_bars_fetched": int(len(rates_retry)) if rates_retry is not None else 0,
+                        "raw_bars_fetched": int(len(rates_retry))
+                        if rates_retry is not None
+                        else 0,
                     }
                     # Rebuild df and indicators with the larger window
                     if rates_retry is not None and len(rates_retry) > 0:
@@ -673,7 +751,9 @@ def fetch_candles(
                             headers=headers,
                         )
                         # Re-trim to target window
-                        df = _trim_df_to_target(df, start_datetime, end_datetime, candles, copy_rows=False)
+                        df = _trim_df_to_target(
+                            df, start_datetime, end_datetime, candles, copy_rows=False
+                        )
                         rows_after_target_trim = int(len(df))
             except Exception:
                 pass
@@ -686,7 +766,9 @@ def fetch_candles(
 
         # Detect large time discontinuities (e.g., closed session windows) and
         # surface them explicitly so users can interpret forecast/analysis gaps.
-        session_gaps, session_gap_warning = _collect_session_gaps(df, timeframe=timeframe, use_client_tz=_use_ctz)
+        session_gaps, session_gap_warning = _collect_session_gaps(
+            df, timeframe=timeframe, use_client_tz=_use_ctz
+        )
         expected_bar_seconds = float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
 
         # Reformat time consistently across rows for display, unless caller
@@ -701,11 +783,19 @@ def fetch_candles(
 
         # Optionally reduce number of rows for readability/output size
         original_rows = len(df)
-        simplify_eff = _normalize_simplify_spec(simplify, limit=limit, fallback_rows=original_rows)
-        df, simplify_meta = _simplify_dataframe_rows_ext(df, headers, simplify_eff if simplify_eff is not None else simplify)
+        simplify_eff = _normalize_simplify_spec(
+            simplify, limit=limit, fallback_rows=original_rows
+        )
+        df, simplify_meta = _simplify_dataframe_rows_ext(
+            df, headers, simplify_eff if simplify_eff is not None else simplify
+        )
         # If simplify changed representation, respect returned headers
-        if simplify_meta is not None and 'headers' in simplify_meta and isinstance(simplify_meta['headers'], list):
-            headers = [h for h in simplify_meta['headers'] if isinstance(h, str)]
+        if (
+            simplify_meta is not None
+            and "headers" in simplify_meta
+            and isinstance(simplify_meta["headers"], list)
+        ):
+            headers = [h for h in simplify_meta["headers"] if isinstance(h, str)]
 
         # Assemble rows from (possibly reduced) DataFrame for selected headers
         rows = _format_numeric_rows_from_df(df, headers, stringify=False)
@@ -721,72 +811,80 @@ def fetch_candles(
                         row["time"] = float(row["time"])
                     except Exception:
                         pass
-        
+
         # Determine if the last candle is open or closed
         last_candle_open = False
-        if len(df) > 0 and '__epoch' in df.columns:
-            last_epoch = float(df['__epoch'].iloc[-1])
+        if len(df) > 0 and "__epoch" in df.columns:
+            last_epoch = float(df["__epoch"].iloc[-1])
             seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 3600)
             current_time = _utc_epoch_seconds(datetime.now(dt_timezone.utc))
-            
+
             # A candle is "open" if current time is within its timeframe window
             time_since_candle_start = current_time - last_epoch
             last_candle_open = 0 <= time_since_candle_start < seconds_per_bar
-        
+
         timezone_meta_input: Dict[str, Any] = dict(payload)
         if not _use_ctz:
             timezone_meta_input["timezone"] = "UTC"
 
-        payload.update({
-            "success": True,
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "candles": len(df),
-            "last_candle_open": last_candle_open,
-            "meta": {
-                "runtime": {
-                    "timezone": build_runtime_timezone_meta(
-                        timezone_meta_input,
-                        mt5_config=mt5_config,
-                        include_local=False,
-                        include_now=False,
-                    ),
+        payload.update(
+            {
+                "success": True,
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "candles": len(df),
+                "last_candle_open": last_candle_open,
+                "meta": {
+                    "runtime": {
+                        "timezone": build_runtime_timezone_meta(
+                            timezone_meta_input,
+                            mt5_config=mt5_config,
+                            include_local=False,
+                            include_now=False,
+                        ),
+                    },
+                    "diagnostics": {
+                        "query": {
+                            "mode": query_mode,
+                            "latency_ms": query_latency_ms,
+                            "requested_bars": int(candles),
+                            "warmup_bars": int(warmup_bars),
+                            "raw_bars_fetched": raw_bars_fetched,
+                            "rows_after_target_trim": rows_after_target_trim,
+                            "cache_status": "unknown",
+                            "warmup_retry": warmup_retry_meta,
+                        },
+                        "indicators": {
+                            "requested": bool(ti_spec),
+                            "spec": str(ti_spec or ""),
+                            "added_columns": ti_added_cols,
+                        },
+                        "session_gaps": {
+                            "expected_bar_seconds": float(expected_bar_seconds)
+                            if expected_bar_seconds > 0
+                            else None,
+                        },
+                    },
                 },
-                "diagnostics": {
-                    "query": {
-                        "mode": query_mode,
-                        "latency_ms": query_latency_ms,
-                        "requested_bars": int(candles),
-                        "warmup_bars": int(warmup_bars),
-                        "raw_bars_fetched": raw_bars_fetched,
-                        "rows_after_target_trim": rows_after_target_trim,
-                        "cache_status": "unknown",
-                        "warmup_retry": warmup_retry_meta,
-                    },
-                    "indicators": {
-                        "requested": bool(ti_spec),
-                        "spec": str(ti_spec or ""),
-                        "added_columns": ti_added_cols,
-                    },
-                    "session_gaps": {
-                        "expected_bar_seconds": float(expected_bar_seconds) if expected_bar_seconds > 0 else None,
-                    },
-                },
-            },
-        })
+            }
+        )
         if session_gap_warning:
-            payload["meta"]["diagnostics"]["session_gaps"]["warning"] = session_gap_warning
+            payload["meta"]["diagnostics"]["session_gaps"]["warning"] = (
+                session_gap_warning
+            )
         if not _use_ctz:
             payload["timezone"] = "UTC"
         if simplify_meta is not None:
             payload["simplified"] = True
-            payload["simplify"] = _public_simplify_meta(simplify_meta) or {"applied": True}
+            payload["simplify"] = _public_simplify_meta(simplify_meta) or {
+                "applied": True
+            }
         # Attach denoise applications metadata if any
         if denoise_apps:
-            payload['denoise'] = {'applications': denoise_apps}
+            payload["denoise"] = {"applications": denoise_apps}
         if session_gaps:
-            payload['session_gaps'] = session_gaps
-            warns = payload.get('warnings')
+            payload["session_gaps"] = session_gaps
+            warns = payload.get("warnings")
             if not isinstance(warns, list):
                 warns = []
             warns.append(
@@ -806,16 +904,17 @@ def fetch_candles(
                 )
             except Exception:
                 pass
-            payload['warnings'] = warns
+            payload["warnings"] = warns
         elif session_gap_warning:
-            warns = payload.get('warnings')
+            warns = payload.get("warnings")
             if not isinstance(warns, list):
                 warns = []
             warns.append(session_gap_warning)
-            payload['warnings'] = warns
+            payload["warnings"] = warns
         return payload
     except Exception as e:
         return {"error": f"Error getting rates: {str(e)}"}
+
 
 def fetch_ticks(
     symbol: str,
@@ -859,23 +958,35 @@ def fetch_ticks(
             if start:
                 from_date = _parse_start_datetime(start)
                 if not from_date:
-                    return {"error": "Invalid date format. Try examples like '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00', '2 days ago'."}
+                    return {
+                        "error": "Invalid date format. Try examples like '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00', '2 days ago'."
+                    }
                 if end:
                     to_date = _parse_start_datetime(end)
                     if not to_date:
-                        return {"error": "Invalid 'end' date format. Try '2025-08-29 14:30' or 'yesterday 18:00'."}
+                        return {
+                            "error": "Invalid 'end' date format. Try '2025-08-29 14:30' or 'yesterday 18:00'."
+                        }
                     ticks = None
                     for _ in range(FETCH_RETRY_ATTEMPTS):
-                        ticks = _mt5_copy_ticks_range(symbol, from_date, to_date, mt5.COPY_TICKS_ALL)
+                        ticks = _mt5_copy_ticks_range(
+                            symbol, from_date, to_date, mt5.COPY_TICKS_ALL
+                        )
                         if ticks is not None and len(ticks) > 0:
                             break
                         time.sleep(FETCH_RETRY_DELAY)
-                    if ticks is not None and effective_limit and len(ticks) > effective_limit:
+                    if (
+                        ticks is not None
+                        and effective_limit
+                        and len(ticks) > effective_limit
+                    ):
                         ticks = ticks[-effective_limit:]
                 else:
                     ticks = None
                     for _ in range(FETCH_RETRY_ATTEMPTS):
-                        ticks = _mt5_copy_ticks_from(symbol, from_date, effective_limit, mt5.COPY_TICKS_ALL)
+                        ticks = _mt5_copy_ticks_from(
+                            symbol, from_date, effective_limit, mt5.COPY_TICKS_ALL
+                        )
                         if ticks is not None and len(ticks) > 0:
                             break
                         time.sleep(FETCH_RETRY_DELAY)
@@ -890,30 +1001,43 @@ def fetch_ticks(
                     from_date = to_date - timedelta(days=current_lookback_days)
                     ticks_candidate = None
                     for _ in range(FETCH_RETRY_ATTEMPTS):
-                        ticks_candidate = _mt5_copy_ticks_range(symbol, from_date, to_date, mt5.COPY_TICKS_ALL)
+                        ticks_candidate = _mt5_copy_ticks_range(
+                            symbol, from_date, to_date, mt5.COPY_TICKS_ALL
+                        )
                         if ticks_candidate is not None and len(ticks_candidate) > 0:
                             break
                         time.sleep(FETCH_RETRY_DELAY)
                     if ticks_candidate is not None and len(ticks_candidate) > 0:
                         ticks = ticks_candidate
-                        if not effective_limit or len(ticks_candidate) >= effective_limit:
+                        if (
+                            not effective_limit
+                            or len(ticks_candidate) >= effective_limit
+                        ):
                             break
                     if current_lookback_days == max_lookback_days:
                         break
-                    current_lookback_days = min(max_lookback_days, current_lookback_days * 2)
-                if ticks is not None and effective_limit and len(ticks) > effective_limit:
+                    current_lookback_days = min(
+                        max_lookback_days, current_lookback_days * 2
+                    )
+                if (
+                    ticks is not None
+                    and effective_limit
+                    and len(ticks) > effective_limit
+                ):
                     ticks = ticks[-effective_limit:]  # Get the last ticks
         # visibility handled by _symbol_ready_guard
-        
+
         if ticks is None:
             return {"error": f"Failed to get ticks for {symbol}: {mt5.last_error()}"}
-        
+
         # Generate tabular format with dynamic column filtering
         if len(ticks) == 0:
             return {"error": "No tick data available"}
 
         if output_mode not in ("summary", "stats", "rows", "raw", "ticks"):
-            return {"error": f"Invalid output mode: {output}. Use 'summary', 'stats', or 'rows'."}
+            return {
+                "error": f"Invalid output mode: {output}. Use 'summary', 'stats', or 'rows'."
+            }
 
         def _tick_field(tick: Any, name: str) -> Any:
             return _tick_field_value(tick, name)
@@ -936,10 +1060,14 @@ def fetch_ticks(
             volume_real_field_exists = False
 
         has_last = len(set(lasts)) > 1 or any(v != 0 for v in lasts)
-        has_volume = volume_field_exists and (len(set(volumes)) > 1 or any(v != 0 for v in volumes))
+        has_volume = volume_field_exists and (
+            len(set(volumes)) > 1 or any(v != 0 for v in volumes)
+        )
         has_flags = len(set(flags)) > 1 or any(v != 0 for v in flags)
-        has_real_volume = volume_real_field_exists and any(math.isfinite(v) and v != 0.0 for v in volumes_real)
-        
+        has_real_volume = volume_real_field_exists and any(
+            math.isfinite(v) and v != 0.0 for v in volumes_real
+        )
+
         # Build header dynamically (time, bid, ask are always included)
         headers = ["time", "bid", "ask"]
         if has_last:
@@ -948,7 +1076,7 @@ def fetch_ticks(
             headers.append("volume")
         if has_flags:
             headers.append("flags")
-        
+
         # Build data rows with matching columns and escape properly
         # Choose a consistent time format for all rows (strip year if constant)
         # Low-level tick fetch helpers already normalize MT5 times to UTC.
@@ -959,11 +1087,13 @@ def fetch_ticks(
             fmt = _time_format_from_epochs(_epochs)
             fmt = _maybe_strip_year(fmt, _epochs)
             fmt = _style_time_format(fmt)
-        df_ticks = pd.DataFrame({
-            "__epoch": _epochs,
-            "bid": [float(_tick_field(t, "bid")) for t in ticks],
-            "ask": [float(_tick_field(t, "ask")) for t in ticks],
-        })
+        df_ticks = pd.DataFrame(
+            {
+                "__epoch": _epochs,
+                "bid": [float(_tick_field(t, "bid")) for t in ticks],
+                "ask": [float(_tick_field(t, "ask")) for t in ticks],
+            }
+        )
         if has_last:
             df_ticks["last"] = [float(_tick_field(t, "last")) for t in ticks]
         if has_volume:
@@ -972,12 +1102,11 @@ def fetch_ticks(
             df_ticks["flags"] = [int(_tick_field(t, "flags")) for t in ticks]
         # Add display time column
         if _use_ctz:
-            df_ticks["time"] = [
-                _format_time_minimal_local(e) for e in _epochs
-            ]
+            df_ticks["time"] = [_format_time_minimal_local(e) for e in _epochs]
         else:
             df_ticks["time"] = [
-                datetime.fromtimestamp(e, tz=dt_timezone.utc).strftime(fmt) for e in _epochs
+                datetime.fromtimestamp(e, tz=dt_timezone.utc).strftime(fmt)
+                for e in _epochs
             ]
 
         if output_mode in ("summary", "stats"):
@@ -998,7 +1127,9 @@ def fetch_ticks(
                 stderr = float(std / math.sqrt(n)) if n > 0 else float("nan")
                 kurtosis = float(vals.kurtosis()) if n >= 4 else float("nan")
                 change = float(last - first)
-                change_pct = float((change / first) * 100.0) if first != 0.0 else float("nan")
+                change_pct = (
+                    float((change / first) * 100.0) if first != 0.0 else float("nan")
+                )
                 out = {
                     "first": first,
                     "last": last,
@@ -1022,13 +1153,15 @@ def fetch_ticks(
 
             df_stats = df_ticks.copy()
             df_stats["mid"] = (df_stats["bid"] + df_stats["ask"]) / 2.0
-            df_stats["spread"] = (df_stats["ask"] - df_stats["bid"])
+            df_stats["spread"] = df_stats["ask"] - df_stats["bid"]
 
             start_epoch = float(df_stats["__epoch"].iloc[0])
             end_epoch = float(df_stats["__epoch"].iloc[-1])
             duration_seconds = float(max(0.0, end_epoch - start_epoch))
             tick_rate_per_second = (
-                float(len(df_stats) / duration_seconds) if duration_seconds > 0 else None
+                float(len(df_stats) / duration_seconds)
+                if duration_seconds > 0
+                else None
             )
 
             timezone = "UTC"
@@ -1052,7 +1185,9 @@ def fetch_ticks(
                     "bid": _series_stats(df_stats["bid"], total_count=len(df_stats)),
                     "ask": _series_stats(df_stats["ask"], total_count=len(df_stats)),
                     "mid": _series_stats(df_stats["mid"], total_count=len(df_stats)),
-                    "spread": _series_stats(df_stats["spread"], total_count=len(df_stats)),
+                    "spread": _series_stats(
+                        df_stats["spread"], total_count=len(df_stats)
+                    ),
                 },
             }
             if duration_seconds <= 0:
@@ -1062,7 +1197,11 @@ def fetch_ticks(
                 try:
                     spread_first = float(spread_stats.get("first"))
                     spread_change_pct = spread_stats.get("change_pct")
-                    spread_change_pct_f = float(spread_change_pct) if spread_change_pct is not None else float("nan")
+                    spread_change_pct_f = (
+                        float(spread_change_pct)
+                        if spread_change_pct is not None
+                        else float("nan")
+                    )
                     if spread_first == 0.0 and not math.isfinite(spread_change_pct_f):
                         spread_stats["change_pct"] = None
                         out["spread_change_pct_note"] = "first spread was zero"
@@ -1071,7 +1210,9 @@ def fetch_ticks(
             if price_digits > 0:
                 out["price_precision"] = int(price_digits)
             if has_last:
-                out["stats"]["last"] = _series_stats(df_stats["last"], total_count=len(df_stats))
+                out["stats"]["last"] = _series_stats(
+                    df_stats["last"], total_count=len(df_stats)
+                )
 
             volume_kind = "tick_volume"
             vol_vals = pd.Series([1.0] * int(len(df_stats)), dtype=float)
@@ -1087,16 +1228,21 @@ def fetch_ticks(
                     "kind": volume_kind,
                     "sum": vol_sum,
                     "per_second": (
-                        float(vol_sum / duration_seconds) if duration_seconds > 0 else None
+                        float(vol_sum / duration_seconds)
+                        if duration_seconds > 0
+                        else None
                     ),
                     "per_tick": float(vol_sum / float(len(df_stats) or 1)),
-                    "nonzero_share": float(vol_nonzero_count) / float(len(df_stats) or 1),
+                    "nonzero_share": float(vol_nonzero_count)
+                    / float(len(df_stats) or 1),
                 }
                 try:
                     mean_v = float(vol_vals_num.mean())
                     std_v = float(vol_vals_num.std(ddof=0))
                     vol_out["cv"] = (
-                        float(std_v / mean_v) if (mean_v != 0.0 and not math.isnan(mean_v)) else float("nan")
+                        float(std_v / mean_v)
+                        if (mean_v != 0.0 and not math.isnan(mean_v))
+                        else float("nan")
                     )
                 except Exception:
                     pass
@@ -1105,7 +1251,11 @@ def fetch_ticks(
                     try:
                         top_n = min(10, int(len(vol_vals_num)))
                         if top_n > 0:
-                            vol_top = vol_vals_num.fillna(0.0).sort_values(ascending=False).iloc[:top_n]
+                            vol_top = (
+                                vol_vals_num.fillna(0.0)
+                                .sort_values(ascending=False)
+                                .iloc[:top_n]
+                            )
                             vol_out["top10_share"] = float(vol_top.sum() / vol_sum)
                     except Exception:
                         pass
@@ -1113,14 +1263,20 @@ def fetch_ticks(
                         q95 = float(vol_vals_num.quantile(0.95))
                         spikes = vol_vals_num[vol_vals_num >= q95]
                         vol_out["spike95_count"] = int(spikes.shape[0])
-                        vol_out["spike95_share"] = float(spikes.fillna(0.0).sum() / vol_sum)
+                        vol_out["spike95_share"] = float(
+                            spikes.fillna(0.0).sum() / vol_sum
+                        )
                     except Exception:
                         pass
                     try:
                         w = vol_vals_num.fillna(0.0)
-                        vol_out["vwap_mid"] = float((df_stats["mid"] * w).sum() / vol_sum)
+                        vol_out["vwap_mid"] = float(
+                            (df_stats["mid"] * w).sum() / vol_sum
+                        )
                         if has_last:
-                            vol_out["vwap_last"] = float((df_stats["last"] * w).sum() / vol_sum)
+                            vol_out["vwap_last"] = float(
+                                (df_stats["last"] * w).sum() / vol_sum
+                            )
                     except Exception:
                         pass
 
@@ -1143,13 +1299,17 @@ def fetch_ticks(
                             first_mean = float(vol_vals_num.iloc[:half].mean())
                             second_mean = float(vol_vals_num.iloc[half:].mean())
                             vol_out["half_ratio"] = (
-                                float(second_mean / first_mean) if first_mean != 0.0 else float("nan")
+                                float(second_mean / first_mean)
+                                if first_mean != 0.0
+                                else float("nan")
                             )
                     except Exception:
                         pass
 
                 if detailed_stats:
-                    vol_out["dist"] = _series_stats(vol_vals_num, total_count=len(df_stats))
+                    vol_out["dist"] = _series_stats(
+                        vol_vals_num, total_count=len(df_stats)
+                    )
                 out["stats"]["volume"] = vol_out
             else:
                 out["stats"]["volume"] = (
@@ -1166,25 +1326,42 @@ def fetch_ticks(
 
         # If simplify mode requests approximation or resampling, use shared path
         original_count = len(df_ticks)
-        simplify_eff = _normalize_simplify_spec(simplify, limit=limit, fallback_rows=original_count)
+        simplify_eff = _normalize_simplify_spec(
+            simplify, limit=limit, fallback_rows=original_count
+        )
         simplify_present = (simplify_eff is not None) or (simplify is not None)
         simplify_used = simplify_eff if simplify_eff is not None else simplify
-        _mode = str((simplify_used or {}).get('mode', SIMPLIFY_DEFAULT_MODE)).lower().strip() if simplify_present else SIMPLIFY_DEFAULT_MODE
-        if simplify_present and _mode in ('approximate', 'resample'):
-            df_out, simplify_meta = _simplify_dataframe_rows_ext(df_ticks, headers, simplify_used)
+        _mode = (
+            str((simplify_used or {}).get("mode", SIMPLIFY_DEFAULT_MODE))
+            .lower()
+            .strip()
+            if simplify_present
+            else SIMPLIFY_DEFAULT_MODE
+        )
+        if simplify_present and _mode in ("approximate", "resample"):
+            df_out, simplify_meta = _simplify_dataframe_rows_ext(
+                df_ticks, headers, simplify_used
+            )
             rows = _format_numeric_rows_from_df(df_out, headers, stringify=False)
             payload = _table_from_rows(headers, rows)
-            payload.update({
-                "success": True,
-                "symbol": symbol,
-                "count": len(rows),
-            })
+            payload.update(
+                {
+                    "success": True,
+                    "symbol": symbol,
+                    "count": len(rows),
+                }
+            )
             if not _use_ctz:
                 payload["timezone"] = "UTC"
             if simplify_meta is not None and original_count > len(rows):
                 payload["simplified"] = True
                 meta = dict(simplify_meta)
-                meta["columns"] = [c for c in ["bid","ask"] + (["last"] if has_last else []) + (["volume"] if has_volume else [])]
+                meta["columns"] = [
+                    c
+                    for c in ["bid", "ask"]
+                    + (["last"] if has_last else [])
+                    + (["volume"] if has_volume else [])
+                ]
                 payload["simplify"] = meta
             return payload
         # Optional simplification based on a chosen y-series
@@ -1195,11 +1372,11 @@ def fetch_ticks(
         if simplify_present and original_count > 3:
             try:
                 # Always represent all available numeric columns (bid/ask/(last)/(volume))
-                cols: List[str] = ['bid', 'ask']
+                cols: List[str] = ["bid", "ask"]
                 if has_last:
-                    cols.append('last')
+                    cols.append("last")
                 if has_volume:
-                    cols.append('volume')
+                    cols.append("volume")
                 n_out = _choose_simplify_points(original_count, simplify_used)
                 per = max(3, int(round(n_out / max(1, len(cols)))))
                 idx_set: set = set([0, original_count - 1])
@@ -1212,10 +1389,12 @@ def fetch_ticks(
                         try:
                             series.append(float(v))
                         except Exception:
-                            series.append(float('nan'))
+                            series.append(float("nan"))
                     sub_spec = dict(simplify)
-                    sub_spec['points'] = per
-                    idxs, method_used, params_meta = _select_indices_for_timeseries(_epochs, series, sub_spec)
+                    sub_spec["points"] = per
+                    idxs, method_used, params_meta = _select_indices_for_timeseries(
+                        _epochs, series, sub_spec
+                    )
                     method_used_overall = method_used
                     for i in idxs:
                         if 0 <= int(i) < original_count:
@@ -1256,7 +1435,9 @@ def fetch_ticks(
                     comp.append(s)
                 if len(union_idxs) > n_out:
                     refined = _lttb_select_indices(_epochs, comp, n_out)
-                    select_indices = sorted(set(int(i) for i in refined if 0 <= i < original_count))
+                    select_indices = sorted(
+                        set(int(i) for i in refined if 0 <= i < original_count)
+                    )
                 elif len(union_idxs) < n_out:
                     refined = _lttb_select_indices(_epochs, comp, n_out)
                     merged = sorted(set(union_idxs).union(refined))
@@ -1273,7 +1454,12 @@ def fetch_ticks(
                         select_indices = merged
                 else:
                     select_indices = union_idxs
-                _simp_method_used = method_used_overall or str((simplify_used or {}).get('method', SIMPLIFY_DEFAULT_METHOD)).lower()
+                _simp_method_used = (
+                    method_used_overall
+                    or str(
+                        (simplify_used or {}).get("method", SIMPLIFY_DEFAULT_METHOD)
+                    ).lower()
+                )
                 _simp_params_meta = params_accum
             except Exception:
                 select_indices = list(range(original_count))
@@ -1284,8 +1470,14 @@ def fetch_ticks(
             if _use_ctz:
                 time_str = _format_time_minimal_local(_epochs[i])
             else:
-                time_str = datetime.fromtimestamp(_epochs[i], tz=dt_timezone.utc).strftime(fmt)
-            values = [time_str, float(_tick_field(tick, "bid")), float(_tick_field(tick, "ask"))]
+                time_str = datetime.fromtimestamp(
+                    _epochs[i], tz=dt_timezone.utc
+                ).strftime(fmt)
+            values = [
+                time_str,
+                float(_tick_field(tick, "bid")),
+                float(_tick_field(tick, "ask")),
+            ]
             if has_last:
                 values.append(float(_tick_field(tick, "last")))
             if has_volume:
@@ -1295,20 +1487,32 @@ def fetch_ticks(
             rows.append(values)
 
         payload = _table_from_rows(headers, rows)
-        payload.update({
-            "success": True,
-            "symbol": symbol,
-            "count": len(rows),
-        })
+        payload.update(
+            {
+                "success": True,
+                "symbol": symbol,
+                "count": len(rows),
+            }
+        )
         if not _use_ctz:
             payload["timezone"] = "UTC"
         if simplify_present and original_count > len(rows):
             payload["simplified"] = True
             meta = {
-                "method": (_simp_method_used or str((simplify_used or {}).get('method', SIMPLIFY_DEFAULT_METHOD)).lower()),
+                "method": (
+                    _simp_method_used
+                    or str(
+                        (simplify_used or {}).get("method", SIMPLIFY_DEFAULT_METHOD)
+                    ).lower()
+                ),
                 "original_rows": original_count,
                 "multi_column": True,
-                "columns": [c for c in ["bid","ask"] + (["last"] if has_last else []) + (["volume"] if has_volume else [])],
+                "columns": [
+                    c
+                    for c in ["bid", "ask"]
+                    + (["last"] if has_last else [])
+                    + (["volume"] if has_volume else [])
+                ],
             }
             try:
                 if _simp_params_meta:
@@ -1324,4 +1528,3 @@ def fetch_ticks(
         return payload
     except Exception as e:
         return {"error": f"Error getting ticks: {str(e)}"}
-

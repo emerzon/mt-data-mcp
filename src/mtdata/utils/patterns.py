@@ -43,7 +43,9 @@ def _minmax_scale_row(x: np.ndarray) -> np.ndarray:
     return y.astype(np.float32, copy=False)
 
 
-def _mass_distance_profile(query: np.ndarray, series: np.ndarray, *, eps: float = 1e-12) -> np.ndarray:
+def _mass_distance_profile(
+    query: np.ndarray, series: np.ndarray, *, eps: float = 1e-12
+) -> np.ndarray:
     """Compute z-normalized sliding distances using stumpy MASS.
 
     Returns an array of length len(series) - len(query) + 1. Non-finite windows are mapped to inf.
@@ -69,7 +71,7 @@ def _mass_distance_profile(query: np.ndarray, series: np.ndarray, *, eps: float 
 class _SeriesStore:
     symbol: str
     time_epoch: np.ndarray  # float64 UTC epoch seconds, ascending
-    close: np.ndarray       # float64, ascending
+    close: np.ndarray  # float64, ascending
 
 
 @dataclass
@@ -123,21 +125,32 @@ class PatternIndex:
         self.tree = tree
         self.X = X
         self.start_end_idx = start_end_idx  # shape (N,2)
-        self.labels = labels                 # shape (N,)
-        self._series = series               # list aligned with label indices
+        self.labels = labels  # shape (N,)
+        self._series = series  # list aligned with label indices
         self.scale = (scale or "minmax").lower()
         self.metric = (metric or "euclidean").lower()
         # Back-compat: keep PCA fields, while new reducer API is used going forward
         self.pca_components = int(pca_components) if pca_components else None
         self._pca = pca_model
-        self.dimred_method = (dimred_method or ("pca" if self.pca_components else "none")).lower()
-        self.dimred_params = dict(dimred_params or ({} if not self.pca_components else {"n_components": int(self.pca_components)}))
+        self.dimred_method = (
+            dimred_method or ("pca" if self.pca_components else "none")
+        ).lower()
+        self.dimred_params = dict(
+            dimred_params
+            or (
+                {}
+                if not self.pca_components
+                else {"n_components": int(self.pca_components)}
+            )
+        )
         self._reducer = reducer  # type: ignore
         self.engine = (engine or "ckdtree").lower()
         self.max_bars_per_symbol = int(max_bars_per_symbol)
         self.build_metadata = dict(build_metadata or {})
 
-    def search(self, anchor_values: np.ndarray, top_k: int = 5) -> Tuple[np.ndarray, np.ndarray]:
+    def search(
+        self, anchor_values: np.ndarray, top_k: int = 5
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Query by a raw (unscaled) anchor window. Returns (indices, distances)."""
         v = np.asarray(anchor_values, dtype=float).ravel()
         if v.size != self.window_size:
@@ -150,8 +163,12 @@ class PatternIndex:
         # Dimensionality reduction (new API), falling back to PCA model if present
         if self._reducer is not None:
             if not self._reducer.supports_transform():
-                raise RuntimeError(f"Reducer '{self.dimred_method}' does not support transforming new samples")
-            q = np.asarray(self._reducer.transform(q.reshape(1, -1)), dtype=np.float32).ravel()
+                raise RuntimeError(
+                    f"Reducer '{self.dimred_method}' does not support transforming new samples"
+                )
+            q = np.asarray(
+                self._reducer.transform(q.reshape(1, -1)), dtype=np.float32
+            ).ravel()
         elif self._pca is not None:
             q = np.asarray(self._pca.transform(q.reshape(1, -1))[0], dtype=np.float32)
         # Metric post-process
@@ -159,7 +176,9 @@ class PatternIndex:
         k = min(int(top_k), len(self.X))
         if self.engine == "hnsw":
             # hnswlib with 'l2' space returns squared L2 distances; take sqrt to match cKDTree
-            labels, distances = self.tree.knn_query(q.reshape(1, -1).astype(np.float32), k=k)
+            labels, distances = self.tree.knn_query(
+                q.reshape(1, -1).astype(np.float32), k=k
+            )
             idxs = labels[0].astype(int)
             dists = np.sqrt(distances[0].astype(float))
             return idxs, dists
@@ -171,7 +190,9 @@ class PatternIndex:
                 dists = np.asarray([float(dists)])
             return idxs.astype(int), dists.astype(float)
 
-    def _profile_search(self, anchor_values: np.ndarray, top_k: int) -> Tuple[np.ndarray, np.ndarray]:
+    def _profile_search(
+        self, anchor_values: np.ndarray, top_k: int
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Sliding search using matrix profile / MASS style distances."""
         if self.scale not in ("zscore",):
             raise ValueError("matrix_profile/mass engines require scale='zscore'")
@@ -189,16 +210,25 @@ class PatternIndex:
             limit = n - (self.window_size + self.future_size) + 1
             if limit <= 0:
                 continue
-            series_slice = ser.close[: limit + self.window_size + max(self.future_size - 1, 0)]
+            series_slice = ser.close[
+                : limit + self.window_size + max(self.future_size - 1, 0)
+            ]
             if series_slice.size < m:
                 offset += max(limit, 0)
                 continue
 
             if self.engine == "matrix_profile":
                 if _stumpy is None:
-                    raise RuntimeError("matrix_profile engine requested but 'stumpy' is not installed")
+                    raise RuntimeError(
+                        "matrix_profile engine requested but 'stumpy' is not installed"
+                    )
                 # AB-join: distances from every subsequence in series_slice to the query subsequence
-                mp = _stumpy.stump(series_slice.astype(float), m, T_B=q.astype(float), ignore_trivial=False)
+                mp = _stumpy.stump(
+                    series_slice.astype(float),
+                    m,
+                    T_B=q.astype(float),
+                    ignore_trivial=False,
+                )
                 profile = np.asarray(mp[:, 0], dtype=float)
             else:
                 profile = _mass_distance_profile(q, series_slice)
@@ -216,7 +246,9 @@ class PatternIndex:
         order = np.argsort(np.asarray(dists_all, dtype=float))
         k = min(int(top_k), order.size)
         sel = order[:k]
-        return np.asarray([idxs_all[i] for i in sel], dtype=int), np.asarray([dists_all[i] for i in sel], dtype=float)
+        return np.asarray([idxs_all[i] for i in sel], dtype=int), np.asarray(
+            [dists_all[i] for i in sel], dtype=float
+        )
 
     def get_match_symbol(self, index: int) -> str:
         lbl = int(self.labels[int(index)])
@@ -255,6 +287,7 @@ class PatternIndex:
         n = int(min(a.size, b.size))
         if n <= 2:
             return 0.0
+
         # Z-normalize for correlation
         def znorm(x: np.ndarray) -> np.ndarray:
             xm = float(np.nanmean(x))
@@ -262,11 +295,12 @@ class PatternIndex:
             if not np.isfinite(xs) or xs <= 1e-12:
                 return np.zeros_like(x, dtype=float)
             return (x - xm) / xs
+
         a = znorm(a)
         b = znorm(b)
         L = int(max(0, max_lag))
         best = -1.0
-        numerators = correlate(a, b, mode='full', method='auto')
+        numerators = correlate(a, b, mode="full", method="auto")
         prefix_a = np.concatenate(([0.0], np.cumsum(a * a)))
         prefix_b = np.concatenate(([0.0], np.cumsum(b * b)))
 
@@ -316,7 +350,7 @@ class PatternIndex:
           - None/'none': no re-ranking
         """
         if shape_metric is None:
-            shape_metric = 'none'
+            shape_metric = "none"
         sm = str(shape_metric).lower().strip()
         if sm in ("", "none"):
             # No refinement; just truncate
@@ -330,40 +364,57 @@ class PatternIndex:
         for idx, _d in zip(idxs.tolist(), dists.tolist()):
             w = self.get_match_values(int(idx), include_future=False)
             w = self._scaled_window(w)
-            if sm == 'ncc':
+            if sm == "ncc":
                 corr = self._ncc_max(a, w, max_lag)
                 # Convert to distance-like score: lower is better
                 score = 1.0 - float(corr)
-            elif sm == 'affine':
+            elif sm == "affine":
                 # Fit alpha, beta minimizing ||a - (alpha*w + beta)||_2
                 aw = float(np.dot(a - np.mean(a), w - np.mean(w)))
                 ww = float(np.dot(w - np.mean(w), w - np.mean(w)))
                 alpha = (aw / ww) if (np.isfinite(ww) and ww > 1e-12) else 0.0
                 # Constrain alpha
-                alpha = max(float(affine_alpha_min), min(float(affine_alpha_max), float(alpha)))
+                alpha = max(
+                    float(affine_alpha_min), min(float(affine_alpha_max), float(alpha))
+                )
                 beta = float(np.mean(a) - alpha * np.mean(w))
                 resid = a - (alpha * w + beta)
                 rmse = float(np.sqrt(np.mean(resid * resid)))
                 # Optional penalty to discourage extreme scaling
                 score = rmse + float(affine_penalty) * abs(float(alpha) - 1.0)
-            elif sm in ('dtw', 'softdtw'):
+            elif sm in ("dtw", "softdtw"):
                 # Compute DTW/Soft-DTW distance; fallback to simple DP if libs unavailable
                 n = a.size
                 band = None
                 if dtw_band_frac is not None and dtw_band_frac > 0:
                     band = max(1, int(round(float(dtw_band_frac) * n)))
-                if sm == 'dtw':
+                if sm == "dtw":
                     try:
                         if band:
-                            score = float(_ts_dtw(a, w, global_constraint="sakoe_chiba", sakoe_chiba_radius=int(band)))
+                            score = float(
+                                _ts_dtw(
+                                    a,
+                                    w,
+                                    global_constraint="sakoe_chiba",
+                                    sakoe_chiba_radius=int(band),
+                                )
+                            )
                         else:
                             score = float(_ts_dtw(a, w))
                     except Exception:
                         score = float("inf")
                 else:  # softdtw
                     try:
-                        gamma = float(soft_dtw_gamma) if (soft_dtw_gamma is not None and soft_dtw_gamma > 0) else 1.0
-                        score = float(_ts_soft_dtw(a.reshape(1, -1), w.reshape(1, -1), gamma=gamma))
+                        gamma = (
+                            float(soft_dtw_gamma)
+                            if (soft_dtw_gamma is not None and soft_dtw_gamma > 0)
+                            else 1.0
+                        )
+                        score = float(
+                            _ts_soft_dtw(
+                                a.reshape(1, -1), w.reshape(1, -1), gamma=gamma
+                            )
+                        )
                     except Exception:
                         score = float("inf")
             else:
@@ -397,19 +448,21 @@ class PatternIndex:
                 return ser.close
         return None
 
-    def get_symbol_returns(self, symbol: str, lookback: int = 1000) -> Optional[np.ndarray]:
+    def get_symbol_returns(
+        self, symbol: str, lookback: int = 1000
+    ) -> Optional[np.ndarray]:
         arr = self.get_symbol_series(symbol)
         if arr is None or len(arr) < 3:
             return None
         # Simple log returns to stabilize scale
         x = np.asarray(arr, dtype=float)
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             ret = np.diff(np.log(x))
         ret = ret[np.isfinite(ret)]
         if ret.size <= 0:
             return None
         if lookback and lookback > 0 and ret.size > lookback:
-            ret = ret[-int(lookback):]
+            ret = ret[-int(lookback) :]
         return ret.astype(np.float32, copy=False)
 
 
@@ -454,13 +507,15 @@ def _fetch_symbol_df(
 
 def _coerce_time_epoch(values: Any) -> np.ndarray:
     ser = pd.Series(values)
-    numeric = pd.to_numeric(ser, errors='coerce')
+    numeric = pd.to_numeric(ser, errors="coerce")
     if numeric.notna().all():
         return numeric.to_numpy(dtype=float)
-    dt = pd.to_datetime(ser, utc=True, errors='coerce')
+    dt = pd.to_datetime(ser, utc=True, errors="coerce")
     if dt.isna().any():
-        raise ValueError("history DataFrame must provide numeric or datetime-convertible 'time' values")
-    return (dt.astype('int64') / 1_000_000_000.0).to_numpy(dtype=float)
+        raise ValueError(
+            "history DataFrame must provide numeric or datetime-convertible 'time' values"
+        )
+    return (dt.astype("int64") / 1_000_000_000.0).to_numpy(dtype=float)
 
 
 def _denoise_method_available(method: str) -> Tuple[bool, str]:
@@ -490,12 +545,16 @@ def _prepare_series(
 ) -> Tuple[Optional[_SeriesStore], _SeriesPrepareInfo]:
     """Prepare a symbol series from provided history or MT5 fetch."""
     using_provided_history = source_df is not None
-    data = source_df.copy() if source_df is not None else _fetch_symbol_df(
-        symbol,
-        timeframe,
-        max_bars,
-        as_of=as_of,
-        drop_last_live=drop_last_live,
+    data = (
+        source_df.copy()
+        if source_df is not None
+        else _fetch_symbol_df(
+            symbol,
+            timeframe,
+            max_bars,
+            as_of=as_of,
+            drop_last_live=drop_last_live,
+        )
     )
     info = _SeriesPrepareInfo(
         source="provided_history" if using_provided_history else "mt5_fetch",
@@ -505,19 +564,25 @@ def _prepare_series(
         denoise_requested=bool(denoise),
         provided_history=using_provided_history,
     )
-    if 'volume' not in data.columns and 'tick_volume' in data.columns:
-        data['volume'] = data['tick_volume']
+    if "volume" not in data.columns and "tick_volume" in data.columns:
+        data["volume"] = data["tick_volume"]
 
     series_col = str(source_base_col or "close").strip() or "close"
     if using_provided_history:
         if series_col not in data.columns:
-            info.denoise_error = f"provided history did not include requested base column '{series_col}'"
+            info.denoise_error = (
+                f"provided history did not include requested base column '{series_col}'"
+            )
             return None, info
         info.denoise_applied = bool(denoise) or series_col.endswith("_dn")
-        info.denoise_method = str((denoise or {}).get("method")) if isinstance(denoise, dict) else (str(denoise) if denoise else None)
+        info.denoise_method = (
+            str((denoise or {}).get("method"))
+            if isinstance(denoise, dict)
+            else (str(denoise) if denoise else None)
+        )
     else:
         series_col = "close"
-        normalized_denoise = _normalize_denoise_spec(denoise, default_when='pre_ti')
+        normalized_denoise = _normalize_denoise_spec(denoise, default_when="pre_ti")
         if normalized_denoise:
             method_name = str(normalized_denoise.get("method") or "").strip().lower()
             info.denoise_method = method_name or None
@@ -528,7 +593,11 @@ def _prepare_series(
             params = dict(normalized_denoise.get("params") or {})
             causality = str(
                 normalized_denoise.get("causality")
-                or ("causal" if str(normalized_denoise.get("when") or "pre_ti") == "pre_ti" else "zero_phase")
+                or (
+                    "causal"
+                    if str(normalized_denoise.get("when") or "pre_ti") == "pre_ti"
+                    else "zero_phase"
+                )
             )
             try:
                 data[series_col] = _apply_denoise_series(
@@ -539,11 +608,13 @@ def _prepare_series(
                 )
                 info.denoise_applied = True
             except Exception as exc:
-                info.denoise_error = f"failed to denoise '{series_col}' using '{method_name}': {exc}"
+                info.denoise_error = (
+                    f"failed to denoise '{series_col}' using '{method_name}': {exc}"
+                )
                 raise RuntimeError(info.denoise_error) from exc
 
     try:
-        t = _coerce_time_epoch(data['time'])
+        t = _coerce_time_epoch(data["time"])
         c = data[series_col].to_numpy(dtype=float)
         t, c = align_finite(t, c)
     except Exception:
@@ -645,7 +716,7 @@ def build_index(
         else:  # minmax
             mn = np.nanmin(w, axis=1, keepdims=True)
             mx = np.nanmax(w, axis=1, keepdims=True)
-            rng = (mx - mn)
+            rng = mx - mn
             rng[rng <= 1e-12] = 1.0
             X_scaled = ((w - mn) / rng).astype(np.float32)
         X_list.append(X_scaled)
@@ -659,14 +730,25 @@ def build_index(
     pca_model = None
     reducer: Optional[_DimReducer] = None
     # Back-compat: if pca_components provided, prefer PCA
-    effective_dimred_method = (dimred_method or ("pca" if (pca_components and int(pca_components) > 0) else "none"))
+    effective_dimred_method = dimred_method or (
+        "pca" if (pca_components and int(pca_components) > 0) else "none"
+    )
     effective_dimred_params: Dict[str, Any] = dict(dimred_params or {})
-    if (pca_components and int(pca_components) > 0) and (not dimred_method or str(dimred_method).lower() in ("", "none", "pca")):
+    if (pca_components and int(pca_components) > 0) and (
+        not dimred_method or str(dimred_method).lower() in ("", "none", "pca")
+    ):
         # Ensure components bound to window size
-        effective_dimred_params.setdefault("n_components", max(1, min(int(pca_components), int(X.shape[1]))))
+        effective_dimred_params.setdefault(
+            "n_components", max(1, min(int(pca_components), int(X.shape[1])))
+        )
         effective_dimred_method = "pca"
-    if effective_dimred_method and str(effective_dimred_method).lower() not in ("none", "false"):
-        reducer, info = _create_reducer(effective_dimred_method, effective_dimred_params)
+    if effective_dimred_method and str(effective_dimred_method).lower() not in (
+        "none",
+        "false",
+    ):
+        reducer, info = _create_reducer(
+            effective_dimred_method, effective_dimred_params
+        )
         # If reducer requires n_components, ensure it does not exceed window length
         try:
             if hasattr(reducer, "n_components"):
@@ -674,7 +756,9 @@ def build_index(
                 if nc > int(X.shape[1]):
                     # Recreate reducer with clipped components
                     effective_dimred_params["n_components"] = int(X.shape[1])
-                    reducer, info = _create_reducer(effective_dimred_method, effective_dimred_params)
+                    reducer, info = _create_reducer(
+                        effective_dimred_method, effective_dimred_params
+                    )
         except Exception:
             pass
         X = reducer.fit_transform(X)
@@ -702,9 +786,11 @@ def build_index(
         tree_obj = None  # search will bypass tree
     elif eng == "hnsw":
         if _HNSW is None:
-            raise RuntimeError("hnswlib not available; install hnswlib or use engine='ckdtree'")
+            raise RuntimeError(
+                "hnswlib not available; install hnswlib or use engine='ckdtree'"
+            )
         dim = int(X.shape[1])
-        index = _HNSW.Index(space='l2', dim=dim)
+        index = _HNSW.Index(space="l2", dim=dim)
         # Defaults tuned for good recall/speed tradeoff; can be parameterized later
         index.init_index(max_elements=int(X.shape[0]), ef_construction=200, M=16)
         index.add_items(X.astype(np.float32), np.arange(X.shape[0], dtype=np.int32))
@@ -729,7 +815,7 @@ def build_index(
         metric=(metric or "euclidean").lower(),
         pca_components=int(pca_components) if pca_components else None,
         pca_model=pca_model,
-        dimred_method=str(effective_dimred_method or 'none'),
+        dimred_method=str(effective_dimred_method or "none"),
         dimred_params=effective_dimred_params,
         reducer=reducer,
         engine=eng,
@@ -738,7 +824,9 @@ def build_index(
             "series_prepare_info": prepare_info_by_symbol,
             "bars_per_symbol": {ser.symbol: int(len(ser.close)) for ser in series},
             "windows_per_symbol": {
-                ser.symbol: max(0, int(len(ser.close)) - (int(window_size) + int(future_size)) + 1)
+                ser.symbol: max(
+                    0, int(len(ser.close)) - (int(window_size) + int(future_size)) + 1
+                )
                 for ser in series
             },
         },

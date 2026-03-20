@@ -20,27 +20,29 @@ _PRECISION_EXPORTS = (
 
 # Constants (centralize defaults instead of hardcoding inline)
 SERVICE_NAME = "MetaTrader5 Market Data Server"
-GROUP_SEARCH_THRESHOLD = 5   # threshold for treating a search as group vs symbol search
-TICKS_LOOKBACK_DAYS = 1      # lookback days for ticks when no start_datetime provided
-DATA_READY_TIMEOUT = 3.0     # seconds to wait for feed to become ready after selection
-DATA_POLL_INTERVAL = 0.2     # seconds between readiness polls
-FETCH_RETRY_ATTEMPTS = 3     # attempts to fetch data if none returned
-FETCH_RETRY_DELAY = 0.3      # delay between fetch retries
-SANITY_BARS_TOLERANCE = 3    # acceptable lag in bars when checking freshness
-TI_NAN_WARMUP_FACTOR = 2     # multiply warmup by this on retry
-TI_NAN_WARMUP_MIN_ADD = 50   # at least add this many bars on retry
+GROUP_SEARCH_THRESHOLD = 5  # threshold for treating a search as group vs symbol search
+TICKS_LOOKBACK_DAYS = 1  # lookback days for ticks when no start_datetime provided
+DATA_READY_TIMEOUT = 3.0  # seconds to wait for feed to become ready after selection
+DATA_POLL_INTERVAL = 0.2  # seconds between readiness polls
+FETCH_RETRY_ATTEMPTS = 3  # attempts to fetch data if none returned
+FETCH_RETRY_DELAY = 0.3  # delay between fetch retries
+SANITY_BARS_TOLERANCE = 3  # acceptable lag in bars when checking freshness
+TI_NAN_WARMUP_FACTOR = 2  # multiply warmup by this on retry
+TI_NAN_WARMUP_MIN_ADD = 50  # at least add this many bars on retry
 
 # Global parameter defaults
-DEFAULT_TIMEFRAME = "H1"     # default timeframe parameter  
+DEFAULT_TIMEFRAME = "H1"  # default timeframe parameter
 # Default output caps
-DEFAULT_ROW_LIMIT = 25       # default row limit for large/tabular outputs
+DEFAULT_ROW_LIMIT = 25  # default row limit for large/tabular outputs
 # Simplification defaults
 SIMPLIFY_DEFAULT_METHOD = "lttb"  # default simplify method when not specified
 SIMPLIFY_DEFAULT_MODE = "select"  # default simplify mode when not specified
-SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT = 0.10  # default points as a fraction of --limit/--count when unspecified
-SIMPLIFY_DEFAULT_RATIO = 0.25     # default ratio if no points/ratio provided
-SIMPLIFY_DEFAULT_MIN_POINTS = 100 # minimum target points for default simplify
-SIMPLIFY_DEFAULT_MAX_POINTS = 500 # maximum target points for default simplify
+SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT = (
+    0.10  # default points as a fraction of --limit/--count when unspecified
+)
+SIMPLIFY_DEFAULT_RATIO = 0.25  # default ratio if no points/ratio provided
+SIMPLIFY_DEFAULT_MIN_POINTS = 100  # minimum target points for default simplify
+SIMPLIFY_DEFAULT_MAX_POINTS = 500  # maximum target points for default simplify
 
 # Shared timeframe mapping (per MetaTrader5 docs)
 TIMEFRAME_MAP = {

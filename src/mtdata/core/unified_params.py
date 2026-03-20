@@ -9,6 +9,7 @@ from typing import Optional
 import argparse
 from .constants import DEFAULT_TIMEFRAME
 
+
 def add_global_args_to_parser(
     parser: argparse.ArgumentParser,
     exclude_params: Optional[list] = None,
@@ -16,11 +17,11 @@ def add_global_args_to_parser(
     suppress_defaults: bool = False,
 ) -> None:
     """Add all global parameters to an argument parser"""
-    
+
     exclude_params = exclude_params or []
-    
+
     # Timeframe
-    if 'timeframe' not in exclude_params:
+    if "timeframe" not in exclude_params:
         timeframe_kwargs = {
             "help": "Timeframe for market data (H1, M30, D1, etc.)",
         }
@@ -29,12 +30,12 @@ def add_global_args_to_parser(
         else:
             timeframe_kwargs["default"] = DEFAULT_TIMEFRAME
         parser.add_argument(
-            '--timeframe',
+            "--timeframe",
             **timeframe_kwargs,
         )
-    
+
     # Verbose flag
-    if 'verbose' not in exclude_params:
+    if "verbose" not in exclude_params:
         verbose_kwargs = {
             "action": "store_true",
             "help": "Show detailed metadata in output",
@@ -42,12 +43,12 @@ def add_global_args_to_parser(
         if suppress_defaults:
             verbose_kwargs["default"] = argparse.SUPPRESS
         parser.add_argument(
-            '--verbose',
+            "--verbose",
             **verbose_kwargs,
         )
 
     # Output format: formatted text by default, JSON when explicitly requested.
-    if 'json' not in exclude_params:
+    if "json" not in exclude_params:
         json_kwargs = {
             "action": "store_true",
             "dest": "json",
@@ -56,6 +57,6 @@ def add_global_args_to_parser(
         if suppress_defaults:
             json_kwargs["default"] = argparse.SUPPRESS
         parser.add_argument(
-            '--json',
+            "--json",
             **json_kwargs,
         )

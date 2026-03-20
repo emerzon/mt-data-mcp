@@ -27,7 +27,7 @@ def _safe_int(value: Any) -> Optional[int]:
 def _prettify_constant_name(name: str, prefix: str) -> str:
     raw = str(name)
     if raw.startswith(prefix):
-        raw = raw[len(prefix):]
+        raw = raw[len(prefix) :]
     if not raw:
         return raw
     tokens = [tok for tok in raw.split("_") if tok]

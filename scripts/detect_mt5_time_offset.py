@@ -34,7 +34,9 @@ def _initialize_mt5() -> bool:
         except ValueError:
             login_i = None
 
-        if login_i is not None and mt5.initialize(login=login_i, password=password, server=server):
+        if login_i is not None and mt5.initialize(
+            login=login_i, password=password, server=server
+        ):
             return True
 
     return bool(mt5.initialize())
@@ -60,9 +62,23 @@ def main() -> int:
             "Run this during active market hours so the tick time is current."
         )
     )
-    parser.add_argument("--symbol", default="EURUSD", help="Symbol to sample ticks from (default: EURUSD)")
-    parser.add_argument("--samples", type=int, default=15, help="Number of samples to take (default: 15)")
-    parser.add_argument("--sleep", type=float, default=0.2, help="Seconds between samples (default: 0.2)")
+    parser.add_argument(
+        "--symbol",
+        default="EURUSD",
+        help="Symbol to sample ticks from (default: EURUSD)",
+    )
+    parser.add_argument(
+        "--samples",
+        type=int,
+        default=15,
+        help="Number of samples to take (default: 15)",
+    )
+    parser.add_argument(
+        "--sleep",
+        type=float,
+        default=0.2,
+        help="Seconds between samples (default: 0.2)",
+    )
     args = parser.parse_args()
 
     _try_load_dotenv()
@@ -70,7 +86,10 @@ def main() -> int:
     try:
         import MetaTrader5 as mt5  # type: ignore
     except Exception as exc:
-        print(f"ERROR: Could not import MetaTrader5. Is it installed? ({exc})", file=sys.stderr)
+        print(
+            f"ERROR: Could not import MetaTrader5. Is it installed? ({exc})",
+            file=sys.stderr,
+        )
         return 2
 
     if not _initialize_mt5():
@@ -118,14 +137,15 @@ def main() -> int:
     print(f"Recommended MT5_TIME_OFFSET_MINUTES={offset_minutes}")
     if abs(age_sec) > 60.0:
         print(
-            f"WARNING: After applying the offset, the last tick looks ~{age_sec/60.0:.1f} minutes old.\n"
+            f"WARNING: After applying the offset, the last tick looks ~{age_sec / 60.0:.1f} minutes old.\n"
             "This estimate may be unreliable if markets are closed or the symbol is inactive."
         )
     print()
-    print("Tip: If your broker uses daylight saving time, prefer MT5_SERVER_TZ=<IANA name> for DST-aware conversion.")
+    print(
+        "Tip: If your broker uses daylight saving time, prefer MT5_SERVER_TZ=<IANA name> for DST-aware conversion."
+    )
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

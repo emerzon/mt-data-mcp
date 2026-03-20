@@ -28,9 +28,18 @@ def test_resolve_alias_base_variants_and_missing_inputs():
         "close": np.array([2.0, 3.0]),
     }
 
-    assert np.allclose(tb.resolve_alias_base(arrs, "typical"), np.array([(3.0 + 0.5 + 2.0) / 3.0, (4.0 + 1.5 + 3.0) / 3.0]))
-    assert np.allclose(tb.resolve_alias_base(arrs, "hl2"), np.array([(3.0 + 0.5) / 2.0, (4.0 + 1.5) / 2.0]))
-    assert np.allclose(tb.resolve_alias_base(arrs, "ohlc4"), np.array([(1.0 + 3.0 + 0.5 + 2.0) / 4.0, (2.0 + 4.0 + 1.5 + 3.0) / 4.0]))
+    assert np.allclose(
+        tb.resolve_alias_base(arrs, "typical"),
+        np.array([(3.0 + 0.5 + 2.0) / 3.0, (4.0 + 1.5 + 3.0) / 3.0]),
+    )
+    assert np.allclose(
+        tb.resolve_alias_base(arrs, "hl2"),
+        np.array([(3.0 + 0.5) / 2.0, (4.0 + 1.5) / 2.0]),
+    )
+    assert np.allclose(
+        tb.resolve_alias_base(arrs, "ohlc4"),
+        np.array([(1.0 + 3.0 + 0.5 + 2.0) / 4.0, (2.0 + 4.0 + 1.5 + 3.0) / 4.0]),
+    )
     assert tb.resolve_alias_base({"high": arrs["high"]}, "hl2") is None
     assert tb.resolve_alias_base(arrs, "unknown") is None
 
@@ -38,11 +47,15 @@ def test_resolve_alias_base_variants_and_missing_inputs():
 def test_build_target_series_legacy_price_and_return():
     df = _ohlc_df(5)
 
-    y_price, info_price = tb.build_target_series(df, base_col="close", target_spec=None, quantity="price")
+    y_price, info_price = tb.build_target_series(
+        df, base_col="close", target_spec=None, quantity="price"
+    )
     assert np.allclose(y_price, df["close"].to_numpy())
     assert info_price == {"mode": "price", "base": "close", "transform": "none"}
 
-    y_ret, info_ret = tb.build_target_series(df, base_col="close", target_spec=None, quantity="return")
+    y_ret, info_ret = tb.build_target_series(
+        df, base_col="close", target_spec=None, quantity="return"
+    )
     assert y_ret.shape[0] == 5
     assert np.isnan(y_ret[0])
     assert np.isfinite(y_ret[1:]).all()
@@ -53,13 +66,26 @@ def test_build_target_series_custom_with_indicators_and_transforms(monkeypatch):
     df = _ohlc_df(8)
     calls = {"parse": 0, "apply": 0}
 
-    monkeypatch.setattr(tb, "_parse_ti_specs_util", lambda spec: calls.__setitem__("parse", calls["parse"] + 1) or [{"ti": spec}])
-    monkeypatch.setattr(tb, "_apply_ta_indicators_util", lambda *args, **kwargs: calls.__setitem__("apply", calls["apply"] + 1))
+    monkeypatch.setattr(
+        tb,
+        "_parse_ti_specs_util",
+        lambda spec: calls.__setitem__("parse", calls["parse"] + 1) or [{"ti": spec}],
+    )
+    monkeypatch.setattr(
+        tb,
+        "_apply_ta_indicators_util",
+        lambda *args, **kwargs: calls.__setitem__("apply", calls["apply"] + 1),
+    )
 
     y_diff, info_diff = tb.build_target_series(
         df,
         base_col="close",
-        target_spec={"base": "close", "transform": "diff", "k": 1, "indicators": "sma:close:5"},
+        target_spec={
+            "base": "close",
+            "transform": "diff",
+            "k": 1,
+            "indicators": "sma:close:5",
+        },
     )
     assert y_diff.shape[0] == len(df)
     assert info_diff["mode"] == "custom"
@@ -114,7 +140,9 @@ def test_aggregate_horizon_target_passthrough_modes():
     assert info == {"agg": "last", "normalize": "none"}
 
     for agg in ("mean", "sum", "slope", "vol", "unknown"):
-        out, info = tb.aggregate_horizon_target(y, horizon=2, agg_spec=agg, normalize="per_bar")
+        out, info = tb.aggregate_horizon_target(
+            y, horizon=2, agg_spec=agg, normalize="per_bar"
+        )
         assert np.allclose(out, y)
         assert info["agg"] == agg
         assert info["normalize"] == "per_bar"

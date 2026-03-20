@@ -1,5 +1,4 @@
 """Tests for utils/minimal_output.py — TOON formatting helpers."""
-import pytest
 
 from mtdata.utils.minimal_output import (
     _build_forecast_meta,
@@ -298,11 +297,26 @@ class TestNormalizeForecastPayload:
         }
         result = _normalize_forecast_payload(payload, verbose=True)
         assert result["meta"]["tool"] == "forecast_generate"
-        assert result["meta"]["runtime"]["timezone"]["output"]["tz"]["hint"] == "US/Central"
-        assert result["meta"]["runtime"]["timezone"]["server"]["tz"]["configured"] == "Europe/Nicosia"
-        assert result["meta"]["runtime"]["timezone"]["utc"]["now"] == "2026-03-08T16:10:00+00:00"
-        assert result["meta"]["runtime"]["timezone"]["server"]["now"] == "2026-03-08T18:10:00+02:00"
-        assert result["meta"]["runtime"]["timezone"]["client"]["now"] == "2026-03-08T10:10:00-06:00"
+        assert (
+            result["meta"]["runtime"]["timezone"]["output"]["tz"]["hint"]
+            == "US/Central"
+        )
+        assert (
+            result["meta"]["runtime"]["timezone"]["server"]["tz"]["configured"]
+            == "Europe/Nicosia"
+        )
+        assert (
+            result["meta"]["runtime"]["timezone"]["utc"]["now"]
+            == "2026-03-08T16:10:00+00:00"
+        )
+        assert (
+            result["meta"]["runtime"]["timezone"]["server"]["now"]
+            == "2026-03-08T18:10:00+02:00"
+        )
+        assert (
+            result["meta"]["runtime"]["timezone"]["client"]["now"]
+            == "2026-03-08T10:10:00-06:00"
+        )
         assert result["meta"]["cli"]["local_tz"] == "Central Daylight Time"
 
     def test_ci_warnings_preserved_in_non_verbose_output(self):
@@ -392,7 +406,9 @@ class TestNormalizeTradePayload:
             ],
             "internal_root": "secret",
         }
-        result = _normalize_trade_payload(payload, verbose=False, tool_name="trade_close")
+        result = _normalize_trade_payload(
+            payload, verbose=False, tool_name="trade_close"
+        )
         assert result == {"success": True}
 
     def test_main_trade_path_does_not_fallback_to_raw_payload(self):
@@ -401,7 +417,9 @@ class TestNormalizeTradePayload:
             "message": "",
             "internal_only": "secret",
         }
-        result = _normalize_trade_payload(payload, verbose=False, tool_name="trade_close")
+        result = _normalize_trade_payload(
+            payload, verbose=False, tool_name="trade_close"
+        )
         assert result == {}
 
 
@@ -498,8 +516,12 @@ class TestBuildForecastMeta:
             },
         }
         result = _build_forecast_meta(payload)
-        assert result["runtime"]["timezone"]["server"]["tz"] == {"configured": "Europe/Nicosia"}
-        assert result["runtime"]["timezone"]["client"]["tz"] == {"configured": "US/Central"}
+        assert result["runtime"]["timezone"]["server"]["tz"] == {
+            "configured": "Europe/Nicosia"
+        }
+        assert result["runtime"]["timezone"]["client"]["tz"] == {
+            "configured": "US/Central"
+        }
 
     def test_keeps_resolved_timezone_when_it_differs(self):
         payload = {
@@ -571,36 +593,38 @@ class TestFormatToToon:
         assert result == "output.tz.hint: US/Central"
 
     def test_root_dict_keys_remain_top_level(self):
-        result = _format_to_toon({
-            "meta": {
-                "tool": "forecast_generate",
-                "domain": {"method": "analog"},
-                "runtime": {
-                    "timezone": {
-                        "output": {"tz": {"hint": "US/Central"}},
-                        "utc": {"now": "2026-03-08T16:10:00+00:00"},
-                        "server": {
-                            "tz": {"configured": "Europe/Nicosia"},
-                            "now": "2026-03-08T18:10:00+02:00",
+        result = _format_to_toon(
+            {
+                "meta": {
+                    "tool": "forecast_generate",
+                    "domain": {"method": "analog"},
+                    "runtime": {
+                        "timezone": {
+                            "output": {"tz": {"hint": "US/Central"}},
+                            "utc": {"now": "2026-03-08T16:10:00+00:00"},
+                            "server": {
+                                "tz": {"configured": "Europe/Nicosia"},
+                                "now": "2026-03-08T18:10:00+02:00",
+                            },
+                            "client": {"now": "2026-03-08T10:10:00-06:00"},
                         },
-                        "client": {"now": "2026-03-08T10:10:00-06:00"},
                     },
+                    "cli": {"local_tz": "Central Daylight Time"},
                 },
-                "cli": {"local_tz": "Central Daylight Time"},
-            },
-            "forecast": [{"time": "t1", "forecast": 1.0}],
-        })
+                "forecast": [{"time": "t1", "forecast": 1.0}],
+            }
+        )
         lines = result.splitlines()
         assert lines[0] == "meta:"
         assert lines[1] == "  tool: forecast_generate"
         assert "  domain.method: analog" in lines
         assert "  runtime.timezone:" in lines
         assert "    output.tz.hint: US/Central" in lines
-        assert "    utc.now: \"2026-03-08T16:10:00+00:00\"" in lines
+        assert '    utc.now: "2026-03-08T16:10:00+00:00"' in lines
         assert "    server:" in lines
         assert "      tz.configured: Europe/Nicosia" in lines
-        assert "      now: \"2026-03-08T18:10:00+02:00\"" in lines
-        assert "    client.now: \"2026-03-08T10:10:00-06:00\"" in lines
+        assert '      now: "2026-03-08T18:10:00+02:00"' in lines
+        assert '    client.now: "2026-03-08T10:10:00-06:00"' in lines
         assert "  cli.local_tz: Central Daylight Time" in lines
         assert "forecast[1]{time,forecast}:" in lines
 
@@ -640,16 +664,20 @@ class TestFormatResultMinimal:
         assert "    params.window_size: 64" in lines
         assert "  runtime.timezone:" in lines
         assert "    output.tz.hint: US/Central" in lines
-        assert "    utc.now: \"2026-03-08T16:10:00+00:00\"" in lines
+        assert '    utc.now: "2026-03-08T16:10:00+00:00"' in lines
         assert "      tz.configured: Europe/Nicosia" in lines
         assert "        tz.resolved: Europe/Nicosia" not in lines
-        assert "      now: \"2026-03-08T18:10:00+02:00\"" in lines
-        assert "    client.now: \"2026-03-08T10:10:00-06:00\"" in lines
+        assert '      now: "2026-03-08T18:10:00+02:00"' in lines
+        assert '    client.now: "2026-03-08T10:10:00-06:00"' in lines
         assert "  cli.local_tz: Central Daylight Time" in lines
         assert "forecast[1]{time,forecast}:" in lines
         assert lines.index("  runtime.timezone:") > lines.index("  domain:")
-        assert lines.index("  cli.local_tz: Central Daylight Time") > lines.index("  runtime.timezone:")
-        assert lines.index("forecast[1]{time,forecast}:") > lines.index("  cli.local_tz: Central Daylight Time")
+        assert lines.index("  cli.local_tz: Central Daylight Time") > lines.index(
+            "  runtime.timezone:"
+        )
+        assert lines.index("forecast[1]{time,forecast}:") > lines.index(
+            "  cli.local_tz: Central Daylight Time"
+        )
 
     def test_triple_barrier_output_renders_as_single_table(self):
         payload = {
@@ -666,7 +694,7 @@ class TestFormatResultMinimal:
         result = format_result_minimal(payload, verbose=True)
         lines = result.splitlines()
         assert "labels[2]{entry,label,holding_bars,tp_time,sl_time}:" in lines
-        assert "  \"2026-03-17 00:00\",1,2,\"2026-03-17 02:00\",null" in lines
+        assert '  "2026-03-17 00:00",1,2,"2026-03-17 02:00",null' in lines
         assert not any(line.startswith("entries[") for line in lines)
         assert not any(line.startswith("holding_bars[") for line in lines)
         assert not any(line.startswith("tp_time[") for line in lines)
@@ -702,7 +730,11 @@ class TestFormatResultMinimal:
                 "strategy": "minimal",
             },
             "fill_mode_attempts": [
-                {"type_filling": 1, "retcode": 10009, "retcode_name": "TRADE_RETCODE_DONE"},
+                {
+                    "type_filling": 1,
+                    "retcode": 10009,
+                    "retcode_name": "TRADE_RETCODE_DONE",
+                },
             ],
             "warnings": [
                 "Comment sanitized for broker compatibility: 'Auto Bearish setup S T breakdow'",

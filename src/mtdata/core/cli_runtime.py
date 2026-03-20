@@ -1,11 +1,13 @@
 import json
 import re
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, get_args, get_origin
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, get_args
 
 from pydantic import ValidationError
 
 
-def parse_kv_string(s: str, *, debug: Callable[[str], None]) -> Optional[Dict[str, Any]]:
+def parse_kv_string(
+    s: str, *, debug: Callable[[str], None]
+) -> Optional[Dict[str, Any]]:
     """Parse 'k=v,k2=v2' or JSON into a dict."""
     try:
         from ..utils.utils import parse_kv_or_json
@@ -111,7 +113,11 @@ def coerce_cli_scalar(v: str) -> Any:
         return False
     if sl in ("null", "none"):
         return None
-    if s[0] in ("{", "[", '"') or sl in ("true", "false", "null") or s.replace(".", "", 1).isdigit():
+    if (
+        s[0] in ("{", "[", '"')
+        or sl in ("true", "false", "null")
+        or s.replace(".", "", 1).isdigit()
+    ):
         try:
             return json.loads(s)
         except Exception:
@@ -149,7 +155,9 @@ def parse_set_overrides(
     return out
 
 
-def merge_dict(dst: Optional[Dict[str, Any]], src: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def merge_dict(
+    dst: Optional[Dict[str, Any]], src: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
     merged = dict(dst or {})
     for key, value in (src or {}).items():
         merged[key] = value
@@ -172,14 +180,19 @@ def create_command_function(
     def _build_cli_error(message: str) -> Dict[str, Any]:
         return {"error": str(message).strip() or "Invalid command input."}
 
-    def _literal_choices_for_param(param: Optional[Dict[str, Any]]) -> Optional[List[str]]:
+    def _literal_choices_for_param(
+        param: Optional[Dict[str, Any]],
+    ) -> Optional[List[str]]:
         if not isinstance(param, dict):
             return None
         try:
             ptype, origin = unwrap_optional_type(param.get("type"))
         except Exception:
             return None
-        if origin is Literal or str(origin) in {"typing.Literal", "<class 'typing.Literal'>"}:
+        if origin is Literal or str(origin) in {
+            "typing.Literal",
+            "<class 'typing.Literal'>",
+        }:
             choices = [str(value) for value in get_args(ptype) if value is not None]
             return choices or None
         return None
@@ -188,7 +201,9 @@ def create_command_function(
         if isinstance(token, dict):
             params = token.get("params")
             if isinstance(params, dict):
-                raise ValueError("'params' must be a list of numbers, e.g., [14], not a dict.")
+                raise ValueError(
+                    "'params' must be a list of numbers, e.g., [14], not a dict."
+                )
             return dict(token)
         if token is None:
             raise ValueError("Indicator entries cannot be null.")
@@ -202,7 +217,9 @@ def create_command_function(
                 except Exception as exc:
                     raise ValueError(f"Invalid indicator JSON: {exc}") from exc
                 if not isinstance(parsed, dict):
-                    raise ValueError("Indicator JSON entries must be objects with 'name' and optional 'params'.")
+                    raise ValueError(
+                        "Indicator JSON entries must be objects with 'name' and optional 'params'."
+                    )
                 return _normalize_indicator_token(parsed)
             match = re.fullmatch(r"([A-Za-z0-9_]+)(?:\((.*)\))?", stripped)
             if not match:
@@ -253,7 +270,11 @@ def create_command_function(
         for item in errors:
             loc = ".".join(str(part) for part in item.get("loc", ()))
             msg = str(item.get("msg") or "Invalid value.")
-            if "indicators" in loc and "params" in loc and ("list" in msg.lower() or "valid list" in msg.lower()):
+            if (
+                "indicators" in loc
+                and "params" in loc
+                and ("list" in msg.lower() or "valid list" in msg.lower())
+            ):
                 return "'params' must be a list of numbers, e.g., [14], not a dict."
             if loc:
                 messages.append(f"{loc}: {msg}")
@@ -268,7 +289,7 @@ def create_command_function(
             param_name = param["name"]
             arg_value = getattr(args, param_name, param["default"])
 
-            if param.get("type") == bool and isinstance(arg_value, str):
+            if param.get("type") is bool and isinstance(arg_value, str):
                 if arg_value.lower() == "true":
                     arg_value = True
                 elif arg_value.lower() == "false":
@@ -279,13 +300,15 @@ def create_command_function(
                 base_type, origin = unwrap_optional_type(ptype)
 
                 is_typed_dict = is_typed_dict_type(base_type)
-                is_mapping = (base_type in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
+                is_mapping = (
+                    (base_type in (dict, Dict))
+                    or (origin in (dict, Dict))
+                    or is_typed_dict
+                )
                 is_list_like = origin in (list, tuple)
-                inner_type = get_args(base_type)[0] if origin in (list, tuple) and get_args(base_type) else None
             except Exception:
                 is_mapping = False
                 is_list_like = False
-                inner_type = None
 
             if is_mapping and arg_value == "__PRESENT__":
                 arg_value = {}
@@ -295,7 +318,9 @@ def create_command_function(
                     try:
                         arg_value = _normalize_indicator_specs(arg_value)
                     except ValueError as exc:
-                        render_cli_result(_build_cli_error(str(exc)), args=args, cmd_name=cmd_name)
+                        render_cli_result(
+                            _build_cli_error(str(exc)), args=args, cmd_name=cmd_name
+                        )
                         return 1
             if is_mapping:
                 if isinstance(arg_value, str) and arg_value.strip():
@@ -331,7 +356,14 @@ def create_command_function(
             message = f"Missing required argument(s): {missing_text}."
             if len(missing_required) == 1:
                 missing_name = missing_required[0]
-                param_def = next((param for param in func_info["params"] if param.get("name") == missing_name), None)
+                param_def = next(
+                    (
+                        param
+                        for param in func_info["params"]
+                        if param.get("name") == missing_name
+                    ),
+                    None,
+                )
                 choices = _literal_choices_for_param(param_def)
                 if choices:
                     message = f"Missing required argument '{missing_name}'. Valid values: {', '.join(choices)}."

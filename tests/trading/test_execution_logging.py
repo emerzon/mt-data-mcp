@@ -27,7 +27,10 @@ def test_run_logged_operation_logs_finish_event(caplog):
 
 
 def test_run_logged_operation_logs_exception_and_reraises(caplog):
-    with caplog.at_level(logging.ERROR, logger="mtdata.test.exec"), pytest.raises(RuntimeError, match="boom"):
+    with (
+        caplog.at_level(logging.ERROR, logger="mtdata.test.exec"),
+        pytest.raises(RuntimeError, match="boom"),
+    ):
         run_logged_operation(
             logging.getLogger("mtdata.test.exec"),
             operation="sample_fail",
@@ -78,8 +81,14 @@ def test_nested_different_operations_still_log_both_finish_events(caplog):
         )
 
     assert result["success"] is True
-    assert any("event=finish operation=outer_op success=True" in record.message for record in caplog.records)
-    assert any("event=finish operation=inner_op success=True" in record.message for record in caplog.records)
+    assert any(
+        "event=finish operation=outer_op success=True" in record.message
+        for record in caplog.records
+    )
+    assert any(
+        "event=finish operation=inner_op success=True" in record.message
+        for record in caplog.records
+    )
 
 
 def test_manual_nested_same_operation_logs_single_finish_event(caplog):
@@ -90,8 +99,12 @@ def test_manual_nested_same_operation_logs_single_finish_event(caplog):
     with caplog.at_level(logging.INFO, logger="mtdata.test.exec"):
         log_operation_start(logger, operation="manual_op")
         log_operation_start(logger, operation="manual_op")
-        log_operation_finish(logger, operation="manual_op", started_at=inner_started, success=True)
-        log_operation_finish(logger, operation="manual_op", started_at=outer_started, success=True)
+        log_operation_finish(
+            logger, operation="manual_op", started_at=inner_started, success=True
+        )
+        log_operation_finish(
+            logger, operation="manual_op", started_at=outer_started, success=True
+        )
 
     finish_records = [
         record

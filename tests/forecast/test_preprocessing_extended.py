@@ -1,5 +1,5 @@
 """Extended coverage tests for forecast/forecast_preprocessing.py targeting uncovered lines."""
-import math
+
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -8,9 +8,7 @@ import pytest
 
 from mtdata.forecast.forecast_preprocessing import (
     _create_dimred_reducer,
-    _prepare_base_data,
     _coerce_feature_config,
-    _process_include_specification,
     _collect_indicator_columns,
     _add_technical_indicators,
     _apply_features_and_target_spec,
@@ -20,7 +18,6 @@ from mtdata.forecast.forecast_preprocessing import (
     _build_calendar_features,
     _build_feature_arrays,
     _reduce_feature_frame,
-    _apply_dimensionality_reduction,
     prepare_features,
     apply_preprocessing,
 )
@@ -32,21 +29,25 @@ from mtdata.forecast.forecast_preprocessing import (
 def _make_df(n=50, seed=42):
     rng = np.random.RandomState(seed)
     epoch_start = 1_700_000_000
-    return pd.DataFrame({
-        "time": np.arange(epoch_start, epoch_start + n * 3600, 3600, dtype=float),
-        "open": rng.uniform(1.0, 2.0, n),
-        "high": rng.uniform(2.0, 3.0, n),
-        "low": rng.uniform(0.5, 1.0, n),
-        "close": rng.uniform(1.0, 2.0, n),
-        "volume": rng.randint(100, 1000, n).astype(float),
-        "tick_volume": rng.randint(10, 100, n).astype(float),
-    })
+    return pd.DataFrame(
+        {
+            "time": np.arange(epoch_start, epoch_start + n * 3600, 3600, dtype=float),
+            "open": rng.uniform(1.0, 2.0, n),
+            "high": rng.uniform(2.0, 3.0, n),
+            "low": rng.uniform(0.5, 1.0, n),
+            "close": rng.uniform(1.0, 2.0, n),
+            "volume": rng.randint(100, 1000, n).astype(float),
+            "tick_volume": rng.randint(10, 100, n).astype(float),
+        }
+    )
 
 
 # ===== _create_dimred_reducer (lines 67-77, 91, 98) =======================
 
+
 class TestCreateDimredReducerPCA:
     """Line 67-70: PCA branch."""
+# ruff: noqa: E402, E731, E741, F811, F841
 
     def test_pca_default(self):
         reducer, meta = _create_dimred_reducer("pca", None)
@@ -107,6 +108,7 @@ class TestCreateDimredReducerSelectKBest:
 
 # ===== _coerce_feature_config (lines 134-138) =============================
 
+
 class TestCoerceFeatureConfig:
     def test_none_input(self):
         assert _coerce_feature_config(None) == {}
@@ -116,8 +118,10 @@ class TestCoerceFeatureConfig:
 
     def test_string_parse_error_returns_empty(self):
         """Line 136-137: parse raises → return {}."""
+
         def bad_parse(x):
             raise ValueError("nope")
+
         assert _coerce_feature_config("bad", parse_kv_or_json=bad_parse) == {}
 
     def test_string_parse_non_dict_returns_empty(self):
@@ -125,10 +129,13 @@ class TestCoerceFeatureConfig:
         assert _coerce_feature_config("x", parse_kv_or_json=lambda x: [1, 2]) == {}
 
     def test_string_parse_success(self):
-        assert _coerce_feature_config("a", parse_kv_or_json=lambda x: {"a": 1}) == {"a": 1}
+        assert _coerce_feature_config("a", parse_kv_or_json=lambda x: {"a": 1}) == {
+            "a": 1
+        }
 
 
 # ===== _collect_indicator_columns (lines 174-175) =========================
+
 
 class TestCollectIndicatorColumns:
     def test_excludes_base_and_dunder(self):
@@ -147,6 +154,7 @@ class TestCollectIndicatorColumns:
 
 # ===== _add_technical_indicators (lines 193-199) ==========================
 
+
 class TestAddTechnicalIndicators:
     def test_no_specs_returns_empty(self):
         df = _make_df(10)
@@ -159,7 +167,8 @@ class TestAddTechnicalIndicators:
         mock_parse = MagicMock(return_value=["rsi"])
         mock_apply = MagicMock(return_value=None)
         cols = _add_technical_indicators(
-            df, {"ti": "rsi"},
+            df,
+            {"ti": "rsi"},
             parse_ti_specs=mock_parse,
             apply_ta_indicators=mock_apply,
         )
@@ -169,12 +178,16 @@ class TestAddTechnicalIndicators:
         """Indicator parse/apply failures should be surfaced through attrs."""
         df = _make_df(10)
         cols = _add_technical_indicators(
-            df, {"indicators": "bad"},
+            df,
+            {"indicators": "bad"},
             parse_ti_specs=MagicMock(side_effect=RuntimeError),
             apply_ta_indicators=MagicMock(),
         )
         assert isinstance(cols, list)
-        assert any("Technical indicator request could not be applied" in str(v) for v in df.attrs.values())
+        assert any(
+            "Technical indicator request could not be applied" in str(v)
+            for v in df.attrs.values()
+        )
 
     def test_fourier_future_continues_phase(self):
         tr, tf, cols = _create_fourier_features("fourier:4", np.arange(4), np.arange(2))
@@ -185,6 +198,7 @@ class TestAddTechnicalIndicators:
 
 # ===== _apply_features_and_target_spec (lines 221-229, 241-245) ===========
 
+
 class TestApplyFeaturesAndTargetSpec:
     def _df(self):
         df = _make_df(20)
@@ -194,25 +208,33 @@ class TestApplyFeaturesAndTargetSpec:
     def test_target_log_transform(self):
         """Line 237-239."""
         df = self._df()
-        col = _apply_features_and_target_spec(df, None, {"column": "close", "transform": "log"}, "close")
+        col = _apply_features_and_target_spec(
+            df, None, {"column": "close", "transform": "log"}, "close"
+        )
         assert col == "__target_close"
         assert "__target_close" in df.columns
 
     def test_target_diff_transform(self):
         """Lines 240-242."""
         df = self._df()
-        col = _apply_features_and_target_spec(df, None, {"column": "close", "transform": "diff"}, "close")
+        col = _apply_features_and_target_spec(
+            df, None, {"column": "close", "transform": "diff"}, "close"
+        )
         assert col == "__target_close"
 
     def test_target_pct_transform(self):
         """Lines 243-245."""
         df = self._df()
-        col = _apply_features_and_target_spec(df, None, {"column": "close", "transform": "pct"}, "close")
+        col = _apply_features_and_target_spec(
+            df, None, {"column": "close", "transform": "pct"}, "close"
+        )
         assert col == "__target_close"
 
     def test_target_pct_change_alias(self):
         df = self._df()
-        col = _apply_features_and_target_spec(df, None, {"column": "close", "transform": "pct_change"}, "close")
+        col = _apply_features_and_target_spec(
+            df, None, {"column": "close", "transform": "pct_change"}, "close"
+        )
         assert col == "__target_close"
 
     def test_ti_with_target_column_override(self):
@@ -234,13 +256,18 @@ class TestApplyFeaturesAndTargetSpec:
         """Lines 226-227: TypeError branch in apply."""
         df = self._df()
         call_count = [0]
+
         def flaky_apply(df_, spec, **kw):
             call_count[0] += 1
             if call_count[0] == 1:
                 raise TypeError("old sig")
             return ["rsi"]
+
         col = _apply_features_and_target_spec(
-            df, {"ti": "rsi"}, None, "close",
+            df,
+            {"ti": "rsi"},
+            None,
+            "close",
             parse_ti_specs=MagicMock(return_value=["rsi"]),
             apply_ta_indicators=flaky_apply,
         )
@@ -250,7 +277,10 @@ class TestApplyFeaturesAndTargetSpec:
         """Lines 228-229: generic Exception branch."""
         df = self._df()
         col = _apply_features_and_target_spec(
-            df, {"ti": "rsi"}, None, "close",
+            df,
+            {"ti": "rsi"},
+            None,
+            "close",
             parse_ti_specs=MagicMock(return_value=["rsi"]),
             apply_ta_indicators=MagicMock(side_effect=RuntimeError("boom")),
         )
@@ -269,6 +299,7 @@ class TestApplyFeaturesAndTargetSpec:
 
 
 # ===== _create_hour_features / _create_dow_features (282-283, 295-296) ====
+
 
 class TestHourDowFeatures:
     def test_hour_features_valid(self):
@@ -295,13 +326,16 @@ class TestHourDowFeatures:
 
 # ===== _build_calendar_features (lines 311-314, 324-330, 349-408, 413-429)
 
+
 class TestBuildCalendarFeatures:
     def _df_with_time(self, n=20):
         epoch = 1_700_000_000
-        return pd.DataFrame({
-            "time": np.arange(epoch, epoch + n * 3600, 3600, dtype=float),
-            "close": np.random.RandomState(0).uniform(1, 2, n),
-        })
+        return pd.DataFrame(
+            {
+                "time": np.arange(epoch, epoch + n * 3600, 3600, dtype=float),
+                "close": np.random.RandomState(0).uniform(1, 2, n),
+            }
+        )
 
     def test_no_future_covariates(self):
         df = self._df_with_time()
@@ -312,7 +346,9 @@ class TestBuildCalendarFeatures:
         """Lines 340-345: fourier:N token."""
         df = self._df_with_time()
         ft = [float(df["time"].iloc[-1]) + 3600 * i for i in range(1, 6)]
-        cal, fut, cols = _build_calendar_features(df, {"future_covariates": "fourier:12"}, ft)
+        cal, fut, cols = _build_calendar_features(
+            df, {"future_covariates": "fourier:12"}, ft
+        )
         assert cal is not None
         assert "fx_sin_12" in cols and "fx_cos_12" in cols
 
@@ -376,7 +412,9 @@ class TestBuildCalendarFeatures:
         """Lines 409-412."""
         df = self._df_with_time()
         ft = [float(df["time"].iloc[-1]) + 3600 * i for i in range(1, 6)]
-        _, _, cols = _build_calendar_features(df, {"future_covariates": "is_weekend"}, ft)
+        _, _, cols = _build_calendar_features(
+            df, {"future_covariates": "is_weekend"}, ft
+        )
         assert "is_weekend" in cols
 
     def test_is_holiday_token_no_holidays_lib(self):
@@ -384,7 +422,9 @@ class TestBuildCalendarFeatures:
         df = self._df_with_time()
         ft = [float(df["time"].iloc[-1]) + 3600 * i for i in range(1, 6)]
         with patch.dict("sys.modules", {"holidays": None}):
-            cal, fut, cols = _build_calendar_features(df, {"future_covariates": "is_holiday"}, ft)
+            cal, fut, cols = _build_calendar_features(
+                df, {"future_covariates": "is_holiday"}, ft
+            )
         # Should gracefully handle missing holidays lib
         assert isinstance(cols, list)
 
@@ -392,7 +432,9 @@ class TestBuildCalendarFeatures:
         """Lines 311-312: list/tuple future_covariates."""
         df = self._df_with_time()
         ft = [float(df["time"].iloc[-1]) + 3600 * i for i in range(1, 6)]
-        _, _, cols = _build_calendar_features(df, {"future_covariates": ["hour", "dow"]}, ft)
+        _, _, cols = _build_calendar_features(
+            df, {"future_covariates": ["hour", "dow"]}, ft
+        )
         assert "hr_sin" in cols and "dow_sin" in cols
 
     def test_empty_tokens_returns_none(self):
@@ -405,15 +447,23 @@ class TestBuildCalendarFeatures:
         """Test alternate token names."""
         df = self._df_with_time()
         ft = [float(df["time"].iloc[-1]) + 3600 * i for i in range(1, 6)]
-        for alias, expected in [("hr", "hr_sin"), ("wday", "dow_sin"), ("mo", "mo_sin"),
-                                 ("dom", "dom_sin"), ("dayofyear", "doy_sin"),
-                                 ("woy", "woy_sin"), ("min", "min_sin"),
-                                 ("minute_of_day", "mod_sin"), ("weekend", "is_weekend")]:
+        for alias, expected in [
+            ("hr", "hr_sin"),
+            ("wday", "dow_sin"),
+            ("mo", "mo_sin"),
+            ("dom", "dom_sin"),
+            ("dayofyear", "doy_sin"),
+            ("woy", "woy_sin"),
+            ("min", "min_sin"),
+            ("minute_of_day", "mod_sin"),
+            ("weekend", "is_weekend"),
+        ]:
             _, _, cols = _build_calendar_features(df, {"future_covariates": alias}, ft)
             assert expected in cols, f"alias {alias!r} should produce {expected}"
 
 
 # ===== _build_feature_arrays (lines 446-476) ==============================
+
 
 class TestBuildFeatureArrays:
     def test_no_cols_no_cal(self):
@@ -446,7 +496,9 @@ class TestBuildFeatureArrays:
         df = _make_df(10)
         cal_tr = np.ones((10, 2))
         cal_tf = np.ones((3, 2))
-        tr, tf = _build_feature_arrays(df, ["open"], [], cal_tr, cal_tf, ["c1", "c2"], 3)
+        tr, tf = _build_feature_arrays(
+            df, ["open"], [], cal_tr, cal_tf, ["c1", "c2"], 3
+        )
         assert tr.shape == (10, 3)
 
     def test_missing_col_skipped(self):
@@ -457,6 +509,7 @@ class TestBuildFeatureArrays:
 
 
 # ===== _reduce_feature_frame (lines 499, 508-509) =========================
+
 
 class TestReduceFeatureFrame:
     def test_no_method_passthrough(self):
@@ -478,9 +531,11 @@ class TestReduceFeatureFrame:
 
     def test_1d_result_reshape(self):
         """Line 498-499: 1D result → reshape."""
+
         class _1DReducer:
             def fit_transform(self, X):
                 return np.ones(X.shape[0])
+
         factory = lambda m, p: (_1DReducer(), {})
         X = pd.DataFrame(np.random.randn(10, 3))
         out, info = _reduce_feature_frame(X, "custom", None, reducer_factory=factory)
@@ -488,9 +543,11 @@ class TestReduceFeatureFrame:
 
     def test_dimred_params_fallback(self):
         """Lines 508-509: meta empty but dimred_params provided."""
+
         class _PassReducer:
             def fit_transform(self, X):
                 return X
+
         factory = lambda m, p: (_PassReducer(), {})
         X = pd.DataFrame(np.random.randn(10, 3))
         _, info = _reduce_feature_frame(X, "x", {"k": 5}, reducer_factory=factory)
@@ -498,9 +555,11 @@ class TestReduceFeatureFrame:
 
     def test_reducer_exception_fallback(self):
         """Lines 495-496: reducer raises → return cleaned X."""
+
         class _BadReducer:
             def fit_transform(self, X):
                 raise ValueError("fail")
+
         factory = lambda m, p: (_BadReducer(), {})
         X = pd.DataFrame(np.random.randn(10, 3))
         out, info = _reduce_feature_frame(X, "bad", None, reducer_factory=factory)
@@ -508,6 +567,7 @@ class TestReduceFeatureFrame:
 
 
 # ===== prepare_features (lines 548, 580, 588, 594) ========================
+
 
 class TestPrepareFeatures:
     def test_empty_config(self):
@@ -519,8 +579,9 @@ class TestPrepareFeatures:
     def test_ohlcv_features(self):
         df = _make_df(20)
         ft = [float(df["time"].iloc[-1]) + 3600 * i for i in range(1, 4)]
-        tr, tf, info = prepare_features(df, {"include": "ohlcv"}, ft, 3,
-                                         parse_kv_or_json=lambda x: x)
+        tr, tf, info = prepare_features(
+            df, {"include": "ohlcv"}, ft, 3, parse_kv_or_json=lambda x: x
+        )
         assert tr is not None
         assert tf.shape[0] == 3
 
@@ -529,7 +590,10 @@ class TestPrepareFeatures:
         df = _make_df(20)
         ft = [float(df["time"].iloc[-1]) + 3600 * i for i in range(1, 4)]
         tr, tf, info = prepare_features(
-            df, {"future_covariates": "hour"}, ft, 3,
+            df,
+            {"future_covariates": "hour"},
+            ft,
+            3,
             parse_kv_or_json=lambda x: x,
         )
         assert tr is not None
@@ -539,7 +603,10 @@ class TestPrepareFeatures:
         df = _make_df(20)
         ft = [float(df["time"].iloc[-1]) + 3600 * i for i in range(1, 4)]
         tr, tf, info = prepare_features(
-            df, {"include": "ohlcv", "future_covariates": "hour"}, ft, 3,
+            df,
+            {"include": "ohlcv", "future_covariates": "hour"},
+            ft,
+            3,
             parse_kv_or_json=lambda x: x,
         )
         assert tr.shape[1] > 2
@@ -561,6 +628,7 @@ class TestPrepareFeatures:
 
 # ===== apply_preprocessing (lines 612-623) ================================
 
+
 class TestApplyPreprocessing:
     def test_no_denoise(self):
         df = _make_df(20)
@@ -569,30 +637,57 @@ class TestApplyPreprocessing:
     def test_denoise_success(self):
         """Lines 612-622: denoise applied and _dn column returned."""
         df = _make_df(20)
-        with patch("mtdata.forecast.forecast_preprocessing._normalize_denoise_spec", return_value={"method": "ema"}), \
-             patch("mtdata.forecast.forecast_preprocessing._apply_denoise", return_value=["close_dn"]):
+        with (
+            patch(
+                "mtdata.forecast.forecast_preprocessing._normalize_denoise_spec",
+                return_value={"method": "ema"},
+            ),
+            patch(
+                "mtdata.forecast.forecast_preprocessing._apply_denoise",
+                return_value=["close_dn"],
+            ),
+        ):
             col = apply_preprocessing(df, "price", "close", {"method": "ema"})
         assert col == "close_dn"
 
     def test_denoise_normalize_exception(self):
         """Lines 615-616: normalize raises."""
         df = _make_df(20)
-        with patch("mtdata.forecast.forecast_preprocessing._normalize_denoise_spec", side_effect=RuntimeError):
+        with patch(
+            "mtdata.forecast.forecast_preprocessing._normalize_denoise_spec",
+            side_effect=RuntimeError,
+        ):
             col = apply_preprocessing(df, "price", "close", {"method": "bad"})
         assert col == "close"
 
     def test_denoise_apply_exception(self):
         """Lines 619-620: apply raises."""
         df = _make_df(20)
-        with patch("mtdata.forecast.forecast_preprocessing._normalize_denoise_spec", return_value={"m": "x"}), \
-             patch("mtdata.forecast.forecast_preprocessing._apply_denoise", side_effect=RuntimeError):
+        with (
+            patch(
+                "mtdata.forecast.forecast_preprocessing._normalize_denoise_spec",
+                return_value={"m": "x"},
+            ),
+            patch(
+                "mtdata.forecast.forecast_preprocessing._apply_denoise",
+                side_effect=RuntimeError,
+            ),
+        ):
             col = apply_preprocessing(df, "price", "close", {"method": "ema"})
         assert col == "close"
 
     def test_denoise_no_dn_column(self):
         """Line 621: _dn column not in added list."""
         df = _make_df(20)
-        with patch("mtdata.forecast.forecast_preprocessing._normalize_denoise_spec", return_value={"m": "x"}), \
-             patch("mtdata.forecast.forecast_preprocessing._apply_denoise", return_value=["other_dn"]):
+        with (
+            patch(
+                "mtdata.forecast.forecast_preprocessing._normalize_denoise_spec",
+                return_value={"m": "x"},
+            ),
+            patch(
+                "mtdata.forecast.forecast_preprocessing._apply_denoise",
+                return_value=["other_dn"],
+            ),
+        ):
             col = apply_preprocessing(df, "price", "close", {"method": "ema"})
         assert col == "close"

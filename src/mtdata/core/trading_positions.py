@@ -9,10 +9,10 @@ from typing import Any, Dict, List, Optional, Tuple
 from ._mcp_instance import mcp
 from . import trading_comments, trading_validation
 from .execution_logging import run_logged_operation
-from .trading_gateway import MT5TradingGateway, create_trading_gateway
+from .trading_gateway import create_trading_gateway
 from .trading_requests import TradeGetOpenRequest, TradeGetPendingRequest
 from .trading_use_cases import run_trade_get_open, run_trade_get_pending
-from ..utils.mt5 import _mt5_epoch_to_utc, ensure_mt5_connection_or_raise
+from ..utils.mt5 import _mt5_epoch_to_utc
 from ..utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
@@ -38,8 +38,12 @@ def _position_sort_key(position: Any) -> float:
 def _position_side_matches(position: Any, side: Optional[str], mt5: Any) -> bool:
     if side not in {"BUY", "SELL"}:
         return True
-    expected_buy = getattr(mt5, "POSITION_TYPE_BUY", getattr(mt5, "ORDER_TYPE_BUY", None))
-    expected_sell = getattr(mt5, "POSITION_TYPE_SELL", getattr(mt5, "ORDER_TYPE_SELL", None))
+    expected_buy = getattr(
+        mt5, "POSITION_TYPE_BUY", getattr(mt5, "ORDER_TYPE_BUY", None)
+    )
+    expected_sell = getattr(
+        mt5, "POSITION_TYPE_SELL", getattr(mt5, "ORDER_TYPE_SELL", None)
+    )
     expected = expected_buy if side == "BUY" else expected_sell
     if expected is None:
         return True
@@ -58,7 +62,9 @@ def _position_ticket_fields(position: Any) -> Dict[str, int]:
     return out
 
 
-def _resolved_position_ticket(position: Any, *, fallback: Optional[int] = None) -> Optional[int]:
+def _resolved_position_ticket(
+    position: Any, *, fallback: Optional[int] = None
+) -> Optional[int]:
     fields = _position_ticket_fields(position)
     for field in ("ticket", "identifier", "position_id", "position", "order", "deal"):
         ticket = fields.get(field)
@@ -80,17 +86,26 @@ def _select_position_candidate(
     candidates = list(rows)
     if symbol:
         symbol_upper = str(symbol).upper()
-        symbol_filtered = [pos for pos in candidates if str(getattr(pos, "symbol", "")).upper() == symbol_upper]
+        symbol_filtered = [
+            pos
+            for pos in candidates
+            if str(getattr(pos, "symbol", "")).upper() == symbol_upper
+        ]
         if symbol_filtered:
             candidates = symbol_filtered
-    side_filtered = [pos for pos in candidates if _position_side_matches(pos, side, mt5)]
+    side_filtered = [
+        pos for pos in candidates if _position_side_matches(pos, side, mt5)
+    ]
     if side_filtered:
         candidates = side_filtered
     if volume is not None:
         volume_filtered: List[Any] = []
         for pos in candidates:
             try:
-                if abs(float(getattr(pos, "volume", float("nan"))) - float(volume)) <= 1e-9:
+                if (
+                    abs(float(getattr(pos, "volume", float("nan"))) - float(volume))
+                    <= 1e-9
+                ):
                     volume_filtered.append(pos)
             except Exception:
                 continue
@@ -130,15 +145,29 @@ def _resolve_open_position(
         )
         if picked is not None:
             resolved = _resolved_position_ticket(picked, fallback=candidate)
-            return picked, resolved, {"method": "positions_get(ticket)", "candidate": candidate}
+            return (
+                picked,
+                resolved,
+                {"method": "positions_get(ticket)", "candidate": candidate},
+            )
 
     try:
-        rows_fallback = mt5.positions_get(symbol=symbol) if symbol else mt5.positions_get()
+        rows_fallback = (
+            mt5.positions_get(symbol=symbol) if symbol else mt5.positions_get()
+        )
     except Exception:
         rows_fallback = None
     rows_list = list(rows_fallback) if rows_fallback else []
     if not rows_list:
-        return None, None, {"method": "positions_get", "candidate_ids": candidate_ids, "matched": False}
+        return (
+            None,
+            None,
+            {
+                "method": "positions_get",
+                "candidate_ids": candidate_ids,
+                "matched": False,
+            },
+        )
 
     exact_matches: List[Tuple[Any, str, int]] = []
     if candidate_ids:
@@ -147,14 +176,20 @@ def _resolve_open_position(
                 if value in candidate_ids:
                     exact_matches.append((pos, field, value))
         if exact_matches:
-            exact_matches.sort(key=lambda item: _position_sort_key(item[0]), reverse=True)
+            exact_matches.sort(
+                key=lambda item: _position_sort_key(item[0]), reverse=True
+            )
             pos, field, matched_value = exact_matches[0]
             resolved = _resolved_position_ticket(pos, fallback=matched_value)
-            return pos, resolved, {
-                "method": "positions_get(fallback_exact)",
-                "matched_field": field,
-                "matched_value": matched_value,
-            }
+            return (
+                pos,
+                resolved,
+                {
+                    "method": "positions_get(fallback_exact)",
+                    "matched_field": field,
+                    "matched_value": matched_value,
+                },
+            )
 
     picked = _select_position_candidate(
         rows_list,
@@ -164,7 +199,15 @@ def _resolve_open_position(
         mt5=mt5,
     )
     if picked is None:
-        return None, None, {"method": "positions_get(fallback_heuristic)", "candidate_ids": candidate_ids, "matched": False}
+        return (
+            None,
+            None,
+            {
+                "method": "positions_get(fallback_heuristic)",
+                "candidate_ids": candidate_ids,
+                "matched": False,
+            },
+        )
     resolved = _resolved_position_ticket(picked)
     return picked, resolved, {"method": "positions_get(fallback_heuristic)"}
 

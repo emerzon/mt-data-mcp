@@ -24,8 +24,9 @@ def test_market_depth_tick_fallback_includes_price_display() -> None:
         volume=12,
         time=1700000000,
     )
-    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
-        "mtdata.core.market_depth._use_client_tz", return_value=False
+    with (
+        patch("mtdata.core.market_depth.mt5") as mt5,
+        patch("mtdata.core.market_depth._use_client_tz", return_value=False),
     ):
         mt5.symbol_select.return_value = True
         mt5.symbol_info.return_value = SimpleNamespace(digits=2)
@@ -54,8 +55,9 @@ def test_market_depth_tick_fallback_hides_zero_last_display() -> None:
         volume=12,
         time=1700000000,
     )
-    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
-        "mtdata.core.market_depth._use_client_tz", return_value=False
+    with (
+        patch("mtdata.core.market_depth.mt5") as mt5,
+        patch("mtdata.core.market_depth._use_client_tz", return_value=False),
     ):
         mt5.symbol_select.return_value = True
         mt5.symbol_info.return_value = SimpleNamespace(digits=2)
@@ -98,8 +100,9 @@ def test_market_depth_tick_fallback_includes_spread_metrics_when_requested() -> 
         volume=5,
         time=1700000000,
     )
-    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
-        "mtdata.core.market_depth._use_client_tz", return_value=False
+    with (
+        patch("mtdata.core.market_depth.mt5") as mt5,
+        patch("mtdata.core.market_depth._use_client_tz", return_value=False),
     ):
         mt5.symbol_select.return_value = True
         mt5.symbol_info.return_value = SimpleNamespace(
@@ -151,8 +154,9 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
         volume=5,
         time=1700000000,
     )
-    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
-        "mtdata.core.market_depth._use_client_tz", return_value=False
+    with (
+        patch("mtdata.core.market_depth.mt5") as mt5,
+        patch("mtdata.core.market_depth._use_client_tz", return_value=False),
     ):
         mt5.symbol_select.return_value = True
         mt5.symbol_info.return_value = SimpleNamespace(
@@ -179,11 +183,15 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
 def test_market_depth_returns_connection_error_payload() -> None:
     with patch(
         "mtdata.core.market_depth.ensure_mt5_connection_or_raise",
-        side_effect=MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running."),
+        side_effect=MT5ConnectionError(
+            "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+        ),
     ):
         out = _raw_market_depth_fetch("BTCUSD")
 
-    assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
+    assert out == {
+        "error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+    }
 
 
 def test_market_ticker_logs_finish_event(caplog) -> None:
@@ -194,9 +202,11 @@ def test_market_ticker_logs_finish_event(caplog) -> None:
         volume=5,
         time=1700000000,
     )
-    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
-        "mtdata.core.market_depth._use_client_tz", return_value=False
-    ), caplog.at_level("INFO", logger="mtdata.core.market_depth"):
+    with (
+        patch("mtdata.core.market_depth.mt5") as mt5,
+        patch("mtdata.core.market_depth._use_client_tz", return_value=False),
+        caplog.at_level("INFO", logger="mtdata.core.market_depth"),
+    ):
         mt5.symbol_select.return_value = True
         mt5.symbol_info.return_value = SimpleNamespace(
             digits=2,

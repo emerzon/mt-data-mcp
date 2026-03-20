@@ -2,8 +2,7 @@
 
 import numpy as np
 import pandas as pd
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 # ---------------------------------------------------------------------------
@@ -13,29 +12,34 @@ from unittest.mock import patch, MagicMock
 
 def _make_df(n: int = 50, base: float = 1.1000, step: float = 0.0005):
     """Create a deterministic OHLC DataFrame with strictly increasing time."""
+# ruff: noqa: E402, E731, E741, F811, F841
     times = np.arange(0, n * 3600, 3600, dtype=float)
     closes = np.array([base + i * step for i in range(n)])
     highs = closes + 0.0010
     lows = closes - 0.0010
-    return pd.DataFrame({
-        "time": times,
-        "open": closes - 0.0002,
-        "high": highs,
-        "low": lows,
-        "close": closes,
-    })
+    return pd.DataFrame(
+        {
+            "time": times,
+            "open": closes - 0.0002,
+            "high": highs,
+            "low": lows,
+            "close": closes,
+        }
+    )
 
 
 def _make_flat_df(n: int = 50, price: float = 1.1000):
     """Flat price series — no barrier will be hit."""
     times = np.arange(0, n * 3600, 3600, dtype=float)
-    return pd.DataFrame({
-        "time": times,
-        "open": np.full(n, price),
-        "high": np.full(n, price + 0.00001),
-        "low": np.full(n, price - 0.00001),
-        "close": np.full(n, price),
-    })
+    return pd.DataFrame(
+        {
+            "time": times,
+            "open": np.full(n, price),
+            "high": np.full(n, price + 0.00001),
+            "low": np.full(n, price - 0.00001),
+            "close": np.full(n, price),
+        }
+    )
 
 
 _LABELS_MOD = "mtdata.core.labels"
@@ -44,10 +48,13 @@ _LABELS_MOD = "mtdata.core.labels"
 def _get_raw_fn():
     """Get the unwrapped labels_triple_barrier function (bypasses mcp.tool)."""
     from mtdata.core.labels import labels_triple_barrier
+
     raw = labels_triple_barrier.__wrapped__
 
     def _call(*args, **kwargs):
-        with patch("mtdata.core.labels.ensure_mt5_connection_or_raise", return_value=None):
+        with patch(
+            "mtdata.core.labels.ensure_mt5_connection_or_raise", return_value=None
+        ):
             return raw(*args, **kwargs)
 
     return _call
@@ -110,7 +117,9 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._fetch_history")
     def test_label_on_close(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
-        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=12, label_on="close")
+        result = _get_raw_fn()(
+            "EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=12, label_on="close"
+        )
         assert result["success"] is True
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
@@ -118,7 +127,9 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._fetch_history")
     def test_label_on_high_low(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
-        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=12, label_on="high_low")
+        result = _get_raw_fn()(
+            "EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=12, label_on="high_low"
+        )
         assert result["success"] is True
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
@@ -126,7 +137,9 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._fetch_history")
     def test_output_summary(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
-        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, output="summary")
+        result = _get_raw_fn()(
+            "EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, output="summary"
+        )
         assert result["success"] is True
         assert "summary" in result
         assert "counts" in result["summary"]
@@ -136,7 +149,9 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._fetch_history")
     def test_output_compact(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
-        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, output="compact", lookback=10)
+        result = _get_raw_fn()(
+            "EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, output="compact", lookback=10
+        )
         assert result["success"] is True
         assert "summary" in result
         assert len(result["labels"]) <= 10
@@ -146,7 +161,9 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._fetch_history")
     def test_output_full(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
-        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, output="full")
+        result = _get_raw_fn()(
+            "EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, output="full"
+        )
         assert result["success"] is True
         assert "entries" in result
 
@@ -155,7 +172,14 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._fetch_history")
     def test_summary_only_flag(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
-        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, output="compact", summary_only=True)
+        result = _get_raw_fn()(
+            "EURUSD",
+            tp_pct=0.5,
+            sl_pct=0.5,
+            horizon=5,
+            output="compact",
+            summary_only=True,
+        )
         assert result["success"] is True
         assert "summary" in result
         assert "entries" not in result
@@ -166,7 +190,9 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._fetch_history")
     def test_output_summary_only_alias(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
-        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, output="summary_only")
+        result = _get_raw_fn()(
+            "EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, output="summary_only"
+        )
         assert result["success"] is True
         assert "summary" in result
         assert "entries" not in result
@@ -183,7 +209,9 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
-    def test_minimum_history_keeps_last_valid_entry_bar(self, mock_hist, mock_den, mock_pip):
+    def test_minimum_history_keeps_last_valid_entry_bar(
+        self, mock_hist, mock_den, mock_pip
+    ):
         mock_hist.return_value = _make_flat_df(5)
         result = _get_raw_fn()("EURUSD", tp_pct=5.0, sl_pct=5.0, horizon=3)
 
@@ -221,7 +249,9 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._fetch_history")
     def test_summary_median_holding(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
-        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, output="summary")
+        result = _get_raw_fn()(
+            "EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, output="summary"
+        )
         assert "median_holding_bars" in result["summary"]
 
 

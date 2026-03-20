@@ -30,7 +30,13 @@ def test_statsforecast_forecast_rejects_invalid_ci_alpha(monkeypatch):
     )
 
     with pytest.raises(ValueError, match="ci_alpha must be between 0 and 1"):
-        _DummyStatsMethod().forecast(pd.Series([1.0, 2.0, 3.0]), horizon=1, seasonality=1, params={}, ci_alpha=1.0)
+        _DummyStatsMethod().forecast(
+            pd.Series([1.0, 2.0, 3.0]),
+            horizon=1,
+            seasonality=1,
+            params={},
+            ci_alpha=1.0,
+        )
 
 
 def test_statsforecast_forecast_requires_unique_id_rows(monkeypatch):
@@ -53,5 +59,10 @@ def test_statsforecast_forecast_requires_unique_id_rows(monkeypatch):
         lambda *args, **kwargs: (pd.DataFrame({"y": [1.0]}), None, None),
     )
 
-    with pytest.raises(RuntimeError, match="StatsForecast dummy_stats error: StatsForecast output missing unique_id column"):
-        _DummyStatsMethod().forecast(pd.Series([1.0, 2.0, 3.0]), horizon=1, seasonality=1, params={})
+    with pytest.raises(
+        RuntimeError,
+        match="StatsForecast dummy_stats error: StatsForecast output missing unique_id column",
+    ):
+        _DummyStatsMethod().forecast(
+            pd.Series([1.0, 2.0, 3.0]), horizon=1, seasonality=1, params={}
+        )

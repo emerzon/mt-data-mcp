@@ -1,7 +1,9 @@
 from mtdata.forecast import forecast_registry as fr
 
 
-def test_check_requirements_marks_mlf_rf_unavailable_and_normalizes_sklearn(monkeypatch):
+def test_check_requirements_marks_mlf_rf_unavailable_and_normalizes_sklearn(
+    monkeypatch,
+):
     checked_names = []
 
     def fake_find_spec(name):
@@ -57,7 +59,12 @@ def test_get_forecast_methods_data_assembles_categories_and_skips_broken(monkeyp
     class GoodMethod:
         """Good method summary."""
 
-        supports_features = {"price": True, "return": True, "volatility": False, "ci": True}
+        supports_features = {
+            "price": True,
+            "return": True,
+            "volatility": False,
+            "ci": True,
+        }
         required_packages = ["numpy>=1.0"]
         PARAMS = [{"name": "window", "type": "int"}]
         category = "Classic"
@@ -129,5 +136,8 @@ def test_find_method_definition_returns_match_and_none():
         ]
     }
 
-    assert fr._find_method_definition("theta", method_data) == {"method": "theta", "available": True}
+    assert fr._find_method_definition("theta", method_data) == {
+        "method": "theta",
+        "available": True,
+    }
     assert fr._find_method_definition("missing", method_data) is None

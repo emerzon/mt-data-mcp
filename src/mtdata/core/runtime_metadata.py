@@ -119,7 +119,11 @@ def build_runtime_timezone_meta(
     if isinstance(result, dict):
         output_timezone = _safe_tz_name(result.get("timezone"))
 
-    output_hint = str(output_timezone) if output_timezone else (client_tz_resolved or client_tz_config or "UTC")
+    output_hint = (
+        str(output_timezone)
+        if output_timezone
+        else (client_tz_resolved or client_tz_config or "UTC")
+    )
 
     server_source = "none"
     if server_tz_config:
@@ -133,24 +137,39 @@ def build_runtime_timezone_meta(
     except Exception:
         local_tz = None
 
-    server_tzinfo = _resolve_tzinfo(server_tz_obj) or _resolve_tzinfo(server_tz_resolved or server_tz_config)
-    client_tzinfo = _resolve_tzinfo(client_tz_obj) or _resolve_tzinfo(client_tz_resolved or client_tz_config)
+    server_tzinfo = _resolve_tzinfo(server_tz_obj) or _resolve_tzinfo(
+        server_tz_resolved or server_tz_config
+    )
+    client_tzinfo = _resolve_tzinfo(client_tz_obj) or _resolve_tzinfo(
+        client_tz_resolved or client_tz_config
+    )
 
     utc_now = _safe_now_iso(timezone.utc) if include_now else None
     server_now = None
     if include_now:
         if server_tzinfo is not None:
             server_now = _safe_now_iso(server_tzinfo)
-        elif server_source == "MT5_TIME_OFFSET_MINUTES" and server_offset_seconds is not None:
-            server_now = _safe_now_iso(timezone(timedelta(seconds=server_offset_seconds)))
+        elif (
+            server_source == "MT5_TIME_OFFSET_MINUTES"
+            and server_offset_seconds is not None
+        ):
+            server_now = _safe_now_iso(
+                timezone(timedelta(seconds=server_offset_seconds))
+            )
 
-    client_now = _safe_now_iso(client_tzinfo) if include_now and client_tzinfo is not None else None
+    client_now = (
+        _safe_now_iso(client_tzinfo)
+        if include_now and client_tzinfo is not None
+        else None
+    )
 
     server_tz_meta: Dict[str, Any] = {
         "configured": server_tz_config,
         "resolved": server_tz_resolved,
     }
-    if server_offset_seconds is not None and (server_source != "none" or server_offset_seconds != 0):
+    if server_offset_seconds is not None and (
+        server_source != "none" or server_offset_seconds != 0
+    ):
         server_tz_meta["offset_seconds"] = server_offset_seconds
 
     runtime_meta = {
@@ -162,7 +181,9 @@ def build_runtime_timezone_meta(
         },
         "utc": {
             "now": utc_now,
-        } if include_now else None,
+        }
+        if include_now
+        else None,
         "server": {
             "source": server_source,
             "tz": server_tz_meta,
@@ -179,6 +200,8 @@ def build_runtime_timezone_meta(
             "tz": {
                 "name": local_tz,
             },
-        } if include_local else None,
+        }
+        if include_local
+        else None,
     }
     return _prune_empty(runtime_meta)

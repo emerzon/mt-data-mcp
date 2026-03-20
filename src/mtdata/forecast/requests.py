@@ -33,7 +33,9 @@ class ForecastGenerateRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_target(cls, values: Any) -> Any:
-        return _reject_removed_field(values, field_name="target", replacement="quantity")
+        return _reject_removed_field(
+            values, field_name="target", replacement="quantity"
+        )
 
 
 class ForecastBacktestRequest(BaseModel):
@@ -57,7 +59,9 @@ class ForecastBacktestRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_target(cls, values: Any) -> Any:
-        return _reject_removed_field(values, field_name="target", replacement="quantity")
+        return _reject_removed_field(
+            values, field_name="target", replacement="quantity"
+        )
 
 
 class ForecastConformalIntervalsRequest(BaseModel):
@@ -142,7 +146,9 @@ class ForecastBarrierProbRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_mc_method(cls, values: Any) -> Any:
-        return _reject_removed_field(values, field_name="mc_method", replacement="method")
+        return _reject_removed_field(
+            values, field_name="mc_method", replacement="method"
+        )
 
 
 class ForecastBarrierOptimizeRequest(BaseModel):

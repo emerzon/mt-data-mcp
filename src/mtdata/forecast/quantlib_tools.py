@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """QuantLib-based pricing and calibration helpers."""
+
+from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 import datetime as _dt
@@ -42,8 +42,16 @@ def price_barrier_option_quantlib(
     except Exception:
         return {"error": "Invalid numeric input for barrier pricing"}
 
-    if not (spot_val > 0 and strike_val > 0 and barrier_val > 0 and maturity_val > 0 and vol > 0):
-        return {"error": "spot/strike/barrier/maturity_days/volatility must be positive"}
+    if not (
+        spot_val > 0
+        and strike_val > 0
+        and barrier_val > 0
+        and maturity_val > 0
+        and vol > 0
+    ):
+        return {
+            "error": "spot/strike/barrier/maturity_days/volatility must be positive"
+        }
 
     option_type_norm = str(option_type).strip().lower()
     barrier_type_norm = str(barrier_type).strip().lower()
@@ -57,7 +65,9 @@ def price_barrier_option_quantlib(
     if option_type_norm not in opt_map:
         return {"error": f"Invalid option_type: {option_type}. Use call|put."}
     if barrier_type_norm not in barrier_map:
-        return {"error": f"Invalid barrier_type: {barrier_type}. Use up_in|up_out|down_in|down_out."}
+        return {
+            "error": f"Invalid barrier_type: {barrier_type}. Use up_in|up_out|down_in|down_out."
+        }
 
     ql_today = ql.Date.todaysDate()
     ql.Settings.instance().evaluationDate = ql_today
@@ -77,9 +87,15 @@ def price_barrier_option_quantlib(
 
     def _price_with(spot_local: float, vol_local: float) -> float:
         spot_h = ql.QuoteHandle(ql.SimpleQuote(float(spot_local)))
-        rf_ts = ql.YieldTermStructureHandle(ql.FlatForward(ql_today, float(rf), day_count))
-        div_ts = ql.YieldTermStructureHandle(ql.FlatForward(ql_today, float(div), day_count))
-        vol_ts = ql.BlackVolTermStructureHandle(ql.BlackConstantVol(ql_today, calendar, float(vol_local), day_count))
+        rf_ts = ql.YieldTermStructureHandle(
+            ql.FlatForward(ql_today, float(rf), day_count)
+        )
+        div_ts = ql.YieldTermStructureHandle(
+            ql.FlatForward(ql_today, float(div), day_count)
+        )
+        vol_ts = ql.BlackVolTermStructureHandle(
+            ql.BlackConstantVol(ql_today, calendar, float(vol_local), day_count)
+        )
         process = ql.BlackScholesMertonProcess(spot_h, div_ts, rf_ts, vol_ts)
         barrier_opt.setPricingEngine(ql.AnalyticBarrierEngine(process))
         return float(barrier_opt.NPV())
@@ -172,12 +188,16 @@ def calibrate_heston_quantlib_from_options(
             continue
         strike = float(row.get("strike", float("nan")))
         iv = float(row.get("implied_volatility", float("nan")))
-        if not (np.isfinite(strike) and strike > 0 and np.isfinite(iv) and 0.01 <= iv <= 5.0):
+        if not (
+            np.isfinite(strike) and strike > 0 and np.isfinite(iv) and 0.01 <= iv <= 5.0
+        ):
             continue
         rows.append({"strike": strike, "iv": iv, "side": row.get("side")})
 
     if len(rows) < 5:
-        return {"error": "Need at least 5 contracts with valid implied volatility for Heston calibration."}
+        return {
+            "error": "Need at least 5 contracts with valid implied volatility for Heston calibration."
+        }
 
     rows.sort(key=lambda x: abs(float(x["strike"]) - spot_val))
     rows = rows[: max(5, int(max_contracts))]
@@ -195,8 +215,12 @@ def calibrate_heston_quantlib_from_options(
     ql.Settings.instance().evaluationDate = ql_today
     day_count = ql.Actual365Fixed()
     calendar = ql.UnitedStates(ql.UnitedStates.NYSE)
-    rf_ts = ql.YieldTermStructureHandle(ql.FlatForward(ql_today, float(risk_free_rate), day_count))
-    div_ts = ql.YieldTermStructureHandle(ql.FlatForward(ql_today, float(dividend_yield), day_count))
+    rf_ts = ql.YieldTermStructureHandle(
+        ql.FlatForward(ql_today, float(risk_free_rate), day_count)
+    )
+    div_ts = ql.YieldTermStructureHandle(
+        ql.FlatForward(ql_today, float(dividend_yield), day_count)
+    )
     spot_handle = ql.QuoteHandle(ql.SimpleQuote(float(spot_val)))
 
     ivs = np.asarray([float(r["iv"]) for r in rows], dtype=float)
@@ -206,7 +230,9 @@ def calibrate_heston_quantlib_from_options(
     sigma0 = float(max(0.05, np.std(ivs) * 2.0))
     rho0 = -0.5
 
-    process = ql.HestonProcess(rf_ts, div_ts, spot_handle, v0_0, kappa0, theta0, sigma0, rho0)
+    process = ql.HestonProcess(
+        rf_ts, div_ts, spot_handle, v0_0, kappa0, theta0, sigma0, rho0
+    )
     model = ql.HestonModel(process)
     engine = ql.AnalyticHestonEngine(model)
     helpers: List[Any] = []
@@ -254,4 +280,3 @@ def calibrate_heston_quantlib_from_options(
         "dividend_yield": float(dividend_yield),
         "sample_contracts": rows[:10],
     }
-

@@ -34,17 +34,29 @@ def test_regime_detect_defaults_to_compact_output() -> None:
     cp = np.zeros(79, dtype=float)
     cp[-2] = 0.9
 
-    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)), patch(
-        "mtdata.core.regime._resolve_denoise_base_col",
-        return_value="close",
-    ), patch(
-        "mtdata.core.regime._format_time_minimal",
-        side_effect=lambda x: f"T{x}",
-    ), patch(
-        "mtdata.utils.regime.bocpd_gaussian",
-        return_value={"cp_prob": cp},
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)),
+        patch(
+            "mtdata.core.regime._resolve_denoise_base_col",
+            return_value="close",
+        ),
+        patch(
+            "mtdata.core.regime._format_time_minimal",
+            side_effect=lambda x: f"T{x}",
+        ),
+        patch(
+            "mtdata.utils.regime.bocpd_gaussian",
+            return_value={"cp_prob": cp},
+        ),
     ):
-        out = raw(symbol="EURUSD", timeframe="H1", limit=80, method="bocpd", threshold=0.5, lookback=20)
+        out = raw(
+            symbol="EURUSD",
+            timeframe="H1",
+            limit=80,
+            method="bocpd",
+            threshold=0.5,
+            lookback=20,
+        )
 
     assert out.get("success") is True
     assert "summary" not in out
@@ -56,13 +68,17 @@ def test_regime_detect_returns_connection_error_payload(monkeypatch) -> None:
     raw = _unwrap(regime_detect)
 
     def fail_connection() -> None:
-        raise MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running.")
+        raise MT5ConnectionError(
+            "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+        )
 
     monkeypatch.setattr(regime_mod, "ensure_mt5_connection_or_raise", fail_connection)
 
     out = raw(symbol="EURUSD", timeframe="H1", limit=80, method="bocpd")
 
-    assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
+    assert out == {
+        "error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+    }
 
 
 def test_bocpd_uses_crypto_sensitive_auto_hazard_default() -> None:
@@ -74,17 +90,29 @@ def test_bocpd_uses_crypto_sensitive_auto_hazard_default() -> None:
         capture["max_run_length"] = int(max_run_length)
         return {"cp_prob": np.zeros_like(x, dtype=float)}
 
-    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)), patch(
-        "mtdata.core.regime._resolve_denoise_base_col",
-        return_value="close",
-    ), patch(
-        "mtdata.core.regime._format_time_minimal",
-        side_effect=lambda x: f"T{x}",
-    ), patch(
-        "mtdata.utils.regime.bocpd_gaussian",
-        side_effect=_fake_bocpd,
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)),
+        patch(
+            "mtdata.core.regime._resolve_denoise_base_col",
+            return_value="close",
+        ),
+        patch(
+            "mtdata.core.regime._format_time_minimal",
+            side_effect=lambda x: f"T{x}",
+        ),
+        patch(
+            "mtdata.utils.regime.bocpd_gaussian",
+            side_effect=_fake_bocpd,
+        ),
     ):
-        out = raw(symbol="BTCUSD", timeframe="H1", limit=80, method="bocpd", threshold=0.5, lookback=20)
+        out = raw(
+            symbol="BTCUSD",
+            timeframe="H1",
+            limit=80,
+            method="bocpd",
+            threshold=0.5,
+            lookback=20,
+        )
 
     params_used = out.get("params_used", {})
     auto_diag = params_used.get("auto_calibration", {})
@@ -109,15 +137,20 @@ def test_bocpd_hazard_lambda_param_override_is_preserved() -> None:
         capture["max_run_length"] = int(max_run_length)
         return {"cp_prob": np.zeros_like(x, dtype=float)}
 
-    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)), patch(
-        "mtdata.core.regime._resolve_denoise_base_col",
-        return_value="close",
-    ), patch(
-        "mtdata.core.regime._format_time_minimal",
-        side_effect=lambda x: f"T{x}",
-    ), patch(
-        "mtdata.utils.regime.bocpd_gaussian",
-        side_effect=_fake_bocpd,
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)),
+        patch(
+            "mtdata.core.regime._resolve_denoise_base_col",
+            return_value="close",
+        ),
+        patch(
+            "mtdata.core.regime._format_time_minimal",
+            side_effect=lambda x: f"T{x}",
+        ),
+        patch(
+            "mtdata.utils.regime.bocpd_gaussian",
+            side_effect=_fake_bocpd,
+        ),
     ):
         out = raw(
             symbol="BTCUSD",
@@ -139,15 +172,20 @@ def test_bocpd_cp_threshold_param_override_is_preserved() -> None:
     raw = _unwrap(regime_detect)
     cp = np.zeros(79, dtype=float)
 
-    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)), patch(
-        "mtdata.core.regime._resolve_denoise_base_col",
-        return_value="close",
-    ), patch(
-        "mtdata.core.regime._format_time_minimal",
-        side_effect=lambda x: f"T{x}",
-    ), patch(
-        "mtdata.utils.regime.bocpd_gaussian",
-        return_value={"cp_prob": cp},
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)),
+        patch(
+            "mtdata.core.regime._resolve_denoise_base_col",
+            return_value="close",
+        ),
+        patch(
+            "mtdata.core.regime._format_time_minimal",
+            side_effect=lambda x: f"T{x}",
+        ),
+        patch(
+            "mtdata.utils.regime.bocpd_gaussian",
+            return_value={"cp_prob": cp},
+        ),
     ):
         out = raw(
             symbol="BTCUSD",
@@ -168,15 +206,20 @@ def test_bocpd_hazard_mode_auto_calibrated_sets_sources_and_diagnostics() -> Non
     raw = _unwrap(regime_detect)
     cp = np.zeros(79, dtype=float)
 
-    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)), patch(
-        "mtdata.core.regime._resolve_denoise_base_col",
-        return_value="close",
-    ), patch(
-        "mtdata.core.regime._format_time_minimal",
-        side_effect=lambda x: f"T{x}",
-    ), patch(
-        "mtdata.utils.regime.bocpd_gaussian",
-        return_value={"cp_prob": cp},
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)),
+        patch(
+            "mtdata.core.regime._resolve_denoise_base_col",
+            return_value="close",
+        ),
+        patch(
+            "mtdata.core.regime._format_time_minimal",
+            side_effect=lambda x: f"T{x}",
+        ),
+        patch(
+            "mtdata.utils.regime.bocpd_gaussian",
+            return_value={"cp_prob": cp},
+        ),
     ):
         out = raw(
             symbol="BTCUSD",
@@ -201,15 +244,20 @@ def test_bocpd_hazard_lambda_override_beats_auto_calibrated_mode() -> None:
     raw = _unwrap(regime_detect)
     cp = np.zeros(79, dtype=float)
 
-    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)), patch(
-        "mtdata.core.regime._resolve_denoise_base_col",
-        return_value="close",
-    ), patch(
-        "mtdata.core.regime._format_time_minimal",
-        side_effect=lambda x: f"T{x}",
-    ), patch(
-        "mtdata.utils.regime.bocpd_gaussian",
-        return_value={"cp_prob": cp},
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)),
+        patch(
+            "mtdata.core.regime._resolve_denoise_base_col",
+            return_value="close",
+        ),
+        patch(
+            "mtdata.core.regime._format_time_minimal",
+            side_effect=lambda x: f"T{x}",
+        ),
+        patch(
+            "mtdata.utils.regime.bocpd_gaussian",
+            return_value={"cp_prob": cp},
+        ),
     ):
         out = raw(
             symbol="BTCUSD",
@@ -227,7 +275,9 @@ def test_bocpd_hazard_lambda_override_beats_auto_calibrated_mode() -> None:
     assert params_used.get("cp_threshold_source") == "auto_calibrated"
 
 
-def test_auto_calibrate_bocpd_params_significant_move_lowers_hazard_and_threshold() -> None:
+def test_auto_calibrate_bocpd_params_significant_move_lowers_hazard_and_threshold() -> (
+    None
+):
     rng = np.random.default_rng(7)
     returns = rng.normal(loc=-1.5e-4, scale=6.0e-4, size=240)
     hazard_lambda, cp_threshold, diagnostics = _auto_calibrate_bocpd_params(
@@ -246,11 +296,16 @@ def test_auto_calibrate_bocpd_params_significant_move_lowers_hazard_and_threshol
 
 def test_regime_detect_rejects_invalid_min_regime_bars() -> None:
     raw = _unwrap(regime_detect)
-    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)), patch(
-        "mtdata.core.regime._resolve_denoise_base_col",
-        return_value="close",
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)),
+        patch(
+            "mtdata.core.regime._resolve_denoise_base_col",
+            return_value="close",
+        ),
     ):
-        out = raw(symbol="EURUSD", timeframe="H1", limit=80, method="hmm", min_regime_bars=0)
+        out = raw(
+            symbol="EURUSD", timeframe="H1", limit=80, method="hmm", min_regime_bars=0
+        )
     assert "error" in out
     assert "min_regime_bars" in str(out["error"])
 
@@ -265,17 +320,29 @@ def test_bocpd_zero_change_points_includes_tuning_hint() -> None:
     raw = _unwrap(regime_detect)
     cp = np.zeros(79, dtype=float)
 
-    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)), patch(
-        "mtdata.core.regime._resolve_denoise_base_col",
-        return_value="close",
-    ), patch(
-        "mtdata.core.regime._format_time_minimal",
-        side_effect=lambda x: f"T{x}",
-    ), patch(
-        "mtdata.utils.regime.bocpd_gaussian",
-        return_value={"cp_prob": cp},
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)),
+        patch(
+            "mtdata.core.regime._resolve_denoise_base_col",
+            return_value="close",
+        ),
+        patch(
+            "mtdata.core.regime._format_time_minimal",
+            side_effect=lambda x: f"T{x}",
+        ),
+        patch(
+            "mtdata.utils.regime.bocpd_gaussian",
+            return_value={"cp_prob": cp},
+        ),
     ):
-        out = raw(symbol="BTCUSD", timeframe="H1", limit=80, method="bocpd", threshold=0.6, output="summary")
+        out = raw(
+            symbol="BTCUSD",
+            timeframe="H1",
+            limit=80,
+            method="bocpd",
+            threshold=0.6,
+            output="summary",
+        )
 
     summary = out.get("summary", {})
     assert summary.get("change_points_count") == 0
@@ -293,15 +360,20 @@ def test_bocpd_filters_last_bar_spike_with_strict_confirmation() -> None:
             cp[-1] = 0.9
         return {"cp_prob": cp}
 
-    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)), patch(
-        "mtdata.core.regime._resolve_denoise_base_col",
-        return_value="close",
-    ), patch(
-        "mtdata.core.regime._format_time_minimal",
-        side_effect=lambda x: f"T{x}",
-    ), patch(
-        "mtdata.utils.regime.bocpd_gaussian",
-        side_effect=_fake_bocpd,
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)),
+        patch(
+            "mtdata.core.regime._resolve_denoise_base_col",
+            return_value="close",
+        ),
+        patch(
+            "mtdata.core.regime._format_time_minimal",
+            side_effect=lambda x: f"T{x}",
+        ),
+        patch(
+            "mtdata.utils.regime.bocpd_gaussian",
+            side_effect=_fake_bocpd,
+        ),
     ):
         out = raw(
             symbol="EURUSD",
@@ -329,17 +401,24 @@ def test_bocpd_walkforward_threshold_calibration_metadata_is_exposed() -> None:
         cp = np.full(len(x), 0.01, dtype=float)
         return {"cp_prob": cp}
 
-    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)), patch(
-        "mtdata.core.regime._resolve_denoise_base_col",
-        return_value="close",
-    ), patch(
-        "mtdata.core.regime._format_time_minimal",
-        side_effect=lambda x: f"T{x}",
-    ), patch(
-        "mtdata.utils.regime.bocpd_gaussian",
-        side_effect=_fake_bocpd,
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)),
+        patch(
+            "mtdata.core.regime._resolve_denoise_base_col",
+            return_value="close",
+        ),
+        patch(
+            "mtdata.core.regime._format_time_minimal",
+            side_effect=lambda x: f"T{x}",
+        ),
+        patch(
+            "mtdata.utils.regime.bocpd_gaussian",
+            side_effect=_fake_bocpd,
+        ),
     ):
-        out = raw(symbol="BTCUSD", timeframe="H1", limit=220, method="bocpd", output="summary")
+        out = raw(
+            symbol="BTCUSD", timeframe="H1", limit=220, method="bocpd", output="summary"
+        )
 
     cal = out.get("params_used", {}).get("cp_threshold_calibration", {})
     assert cal.get("mode") == "walkforward_quantile"
@@ -352,17 +431,24 @@ def test_bocpd_summary_contains_reliability_fields() -> None:
     cp = np.zeros(219, dtype=float)
     cp[150] = 0.9
 
-    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)), patch(
-        "mtdata.core.regime._resolve_denoise_base_col",
-        return_value="close",
-    ), patch(
-        "mtdata.core.regime._format_time_minimal",
-        side_effect=lambda x: f"T{x}",
-    ), patch(
-        "mtdata.utils.regime.bocpd_gaussian",
-        return_value={"cp_prob": cp},
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)),
+        patch(
+            "mtdata.core.regime._resolve_denoise_base_col",
+            return_value="close",
+        ),
+        patch(
+            "mtdata.core.regime._format_time_minimal",
+            side_effect=lambda x: f"T{x}",
+        ),
+        patch(
+            "mtdata.utils.regime.bocpd_gaussian",
+            return_value={"cp_prob": cp},
+        ),
     ):
-        out = raw(symbol="EURUSD", timeframe="H1", limit=220, method="bocpd", output="summary")
+        out = raw(
+            symbol="EURUSD", timeframe="H1", limit=220, method="bocpd", output="summary"
+        )
 
     summary = out.get("summary", {})
     assert "confidence" in summary
@@ -384,26 +470,52 @@ def test_bocpd_calibrated_threshold_does_not_overreject_at_edge_by_default() -> 
             cp[-1] = 0.44
         return {"cp_prob": cp}
 
-    fake_auto = (168, 0.43, {"calibrated": True, "points": 219, "base_hazard_lambda": 250, "base_cp_threshold": 0.5})
-    fake_thr_cal = (0.43, {"mode": "walkforward_quantile", "calibrated": True, "points": 219, "target_false_alarm_rate": 0.02})
+    fake_auto = (
+        168,
+        0.43,
+        {
+            "calibrated": True,
+            "points": 219,
+            "base_hazard_lambda": 250,
+            "base_cp_threshold": 0.5,
+        },
+    )
+    fake_thr_cal = (
+        0.43,
+        {
+            "mode": "walkforward_quantile",
+            "calibrated": True,
+            "points": 219,
+            "target_false_alarm_rate": 0.02,
+        },
+    )
 
-    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)), patch(
-        "mtdata.core.regime._resolve_denoise_base_col",
-        return_value="close",
-    ), patch(
-        "mtdata.core.regime._format_time_minimal",
-        side_effect=lambda x: f"T{x}",
-    ), patch(
-        "mtdata.core.regime._auto_calibrate_bocpd_params",
-        return_value=fake_auto,
-    ), patch(
-        "mtdata.core.regime._walkforward_quantile_threshold_calibration",
-        return_value=fake_thr_cal,
-    ), patch(
-        "mtdata.utils.regime.bocpd_gaussian",
-        side_effect=_fake_bocpd,
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)),
+        patch(
+            "mtdata.core.regime._resolve_denoise_base_col",
+            return_value="close",
+        ),
+        patch(
+            "mtdata.core.regime._format_time_minimal",
+            side_effect=lambda x: f"T{x}",
+        ),
+        patch(
+            "mtdata.core.regime._auto_calibrate_bocpd_params",
+            return_value=fake_auto,
+        ),
+        patch(
+            "mtdata.core.regime._walkforward_quantile_threshold_calibration",
+            return_value=fake_thr_cal,
+        ),
+        patch(
+            "mtdata.utils.regime.bocpd_gaussian",
+            side_effect=_fake_bocpd,
+        ),
     ):
-        out = raw(symbol="EURUSD", timeframe="D1", limit=220, method="bocpd", output="summary")
+        out = raw(
+            symbol="EURUSD", timeframe="D1", limit=220, method="bocpd", output="summary"
+        )
 
     params_used = out.get("params_used", {})
     cp_filter = params_used.get("cp_filter", {})
@@ -423,26 +535,52 @@ def test_bocpd_default_cp_confirm_bars_is_live_mode_one() -> None:
             cp[-1] = 0.44
         return {"cp_prob": cp}
 
-    fake_auto = (168, 0.43, {"calibrated": True, "points": 219, "base_hazard_lambda": 250, "base_cp_threshold": 0.5})
-    fake_thr_cal = (0.43, {"mode": "walkforward_quantile", "calibrated": True, "points": 219, "target_false_alarm_rate": 0.02})
+    fake_auto = (
+        168,
+        0.43,
+        {
+            "calibrated": True,
+            "points": 219,
+            "base_hazard_lambda": 250,
+            "base_cp_threshold": 0.5,
+        },
+    )
+    fake_thr_cal = (
+        0.43,
+        {
+            "mode": "walkforward_quantile",
+            "calibrated": True,
+            "points": 219,
+            "target_false_alarm_rate": 0.02,
+        },
+    )
 
-    with patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)), patch(
-        "mtdata.core.regime._resolve_denoise_base_col",
-        return_value="close",
-    ), patch(
-        "mtdata.core.regime._format_time_minimal",
-        side_effect=lambda x: f"T{x}",
-    ), patch(
-        "mtdata.core.regime._auto_calibrate_bocpd_params",
-        return_value=fake_auto,
-    ), patch(
-        "mtdata.core.regime._walkforward_quantile_threshold_calibration",
-        return_value=fake_thr_cal,
-    ), patch(
-        "mtdata.utils.regime.bocpd_gaussian",
-        side_effect=_fake_bocpd,
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)),
+        patch(
+            "mtdata.core.regime._resolve_denoise_base_col",
+            return_value="close",
+        ),
+        patch(
+            "mtdata.core.regime._format_time_minimal",
+            side_effect=lambda x: f"T{x}",
+        ),
+        patch(
+            "mtdata.core.regime._auto_calibrate_bocpd_params",
+            return_value=fake_auto,
+        ),
+        patch(
+            "mtdata.core.regime._walkforward_quantile_threshold_calibration",
+            return_value=fake_thr_cal,
+        ),
+        patch(
+            "mtdata.utils.regime.bocpd_gaussian",
+            side_effect=_fake_bocpd,
+        ),
     ):
-        out = raw(symbol="EURUSD", timeframe="D1", limit=220, method="bocpd", output="summary")
+        out = raw(
+            symbol="EURUSD", timeframe="D1", limit=220, method="bocpd", output="summary"
+        )
 
     cp_filter = out.get("params_used", {}).get("cp_filter", {})
     assert int(cp_filter.get("confirm_bars", 0)) == 1

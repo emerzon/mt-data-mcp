@@ -2,7 +2,6 @@ from typing import Any, Dict, Optional, List, Literal, Tuple
 import logging
 
 from .mt5_gateway import get_mt5_gateway, mt5_connection_error
-from .schema import TimeframeLiteral, DenoiseSpec, ForecastMethodLiteral
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from ..forecast.forecast import forecast as _forecast_impl
@@ -82,6 +81,7 @@ def _run_forecast_operation(
         **fields,
     )
 
+
 @mcp.tool()
 def forecast_generate(request: ForecastGenerateRequest) -> Dict[str, Any]:
     """Generate forecasts for the next `horizon` bars using a selected method.
@@ -132,7 +132,9 @@ def forecast_backtest_run(request: ForecastBacktestRequest) -> Dict[str, Any]:
         horizon=request.horizon,
         detail=request.detail,
         require_connection=True,
-        func=lambda: run_forecast_backtest(request, backtest_impl=_forecast_backtest_impl),
+        func=lambda: run_forecast_backtest(
+            request, backtest_impl=_forecast_backtest_impl
+        ),
     )
 
 
@@ -171,12 +173,16 @@ def forecast_list_methods(
         detail=detail,
         limit=limit,
         search=search,
-        func=lambda: _forecast_list_methods_impl(detail=detail, limit=limit, search=search),
+        func=lambda: _forecast_list_methods_impl(
+            detail=detail, limit=limit, search=search
+        ),
     )
 
 
 @mcp.tool()
-def forecast_conformal_intervals(request: ForecastConformalIntervalsRequest) -> Dict[str, Any]:
+def forecast_conformal_intervals(
+    request: ForecastConformalIntervalsRequest,
+) -> Dict[str, Any]:
     """Conformalized forecast intervals via rolling-origin calibration.
 
     - Calibrates per-step absolute residual quantiles using `steps` historical anchors (spaced by `spacing`).
@@ -246,6 +252,7 @@ def forecast_options_expirations(
 ) -> Dict[str, Any]:
     """Fetch option expirations via Yahoo Finance; provider availability/auth can change."""
     from ..services.options_service import get_options_expirations as _impl
+
     return _run_forecast_operation(
         "forecast_options_expirations",
         symbol=symbol,
@@ -264,6 +271,7 @@ def forecast_options_chain(
 ) -> Dict[str, Any]:
     """Fetch option-chain snapshots via Yahoo Finance; provider availability/auth can change."""
     from ..services.options_service import get_options_chain as _impl
+
     return _run_forecast_operation(
         "forecast_options_chain",
         symbol=symbol,
@@ -296,6 +304,7 @@ def forecast_quantlib_barrier_price(
 ) -> Dict[str, Any]:
     """Price a barrier option using QuantLib."""
     from ..forecast.quantlib_tools import price_barrier_option_quantlib as _impl
+
     return _run_forecast_operation(
         "forecast_quantlib_barrier_price",
         option_type=option_type,
@@ -328,7 +337,10 @@ def forecast_quantlib_heston_calibrate(
     max_contracts: int = 25,
 ) -> Dict[str, Any]:
     """Calibrate Heston parameters from an option chain using QuantLib."""
-    from ..forecast.quantlib_tools import calibrate_heston_quantlib_from_options as _impl
+    from ..forecast.quantlib_tools import (
+        calibrate_heston_quantlib_from_options as _impl,
+    )
+
     return _run_forecast_operation(
         "forecast_quantlib_heston_calibrate",
         symbol=symbol,
@@ -353,26 +365,26 @@ def forecast_barrier_prob(
     request: ForecastBarrierProbRequest,
 ) -> Dict[str, Any]:
     """Calculate probability of price hitting TP/SL barriers using Monte Carlo or Closed Form methods.
-    
+
     **REQUIRED**: symbol parameter must be provided
-    
+
     Use Cases:
     ----------
     - Validate TP/SL levels before entering a trade
     - Assess probability of hitting profit target vs stop loss
     - Optimize barrier levels based on probability analysis
-    
+
     Parameters:
     -----------
     symbol : str (REQUIRED)
         Trading symbol to analyze (e.g., "EURUSD", "BTCUSD")
-    
+
     timeframe : str, optional (default="H1")
         Analysis timeframe: "M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"
-    
+
     horizon : int, optional (default=12)
         Number of bars to forecast ahead
-    
+
     method : str, optional (default="hmm_mc")
         Calculation method:
         - "hmm_mc": Hidden Markov Model Monte Carlo
@@ -387,36 +399,36 @@ def forecast_barrier_prob(
 
     direction : str, optional (default="long")
         Trade direction: "long" / "short"
-    
+
     tp_abs : float, optional
         Absolute take profit price level
-    
+
     sl_abs : float, optional
         Absolute stop loss price level
-    
+
     tp_pct : float, optional
         Take profit as percentage (e.g., 2.0 for 2%)
-    
+
     sl_pct : float, optional
         Stop loss as percentage
-    
+
     tp_pips : float, optional
         Take profit in ticks (trade_tick_size)
-    
+
     sl_pips : float, optional
         Stop loss in ticks (trade_tick_size)
-    
+
     Closed Form Parameters (method="closed_form"):
     ----------------------------------------------
     barrier : float, optional (default=0.0)
         Target barrier level
-    
+
     mu : float, optional
         Drift parameter (calculated if not provided)
-    
+
     sigma : float, optional
         Volatility parameter (calculated if not provided)
-    
+
     Returns:
     --------
     dict
@@ -425,7 +437,7 @@ def forecast_barrier_prob(
         - symbol: str
         - probabilities: dict with TP/SL hit probabilities
         - method_used: str
-    
+
     Examples:
     ---------
     # Check probability of hitting TP vs SL (Monte Carlo)
@@ -436,7 +448,7 @@ def forecast_barrier_prob(
         tp_abs=1.1100,
         sl_abs=1.0950
     )
-    
+
     # Use percentage-based barriers
     forecast_barrier_prob(
         symbol="EURUSD",
@@ -444,7 +456,7 @@ def forecast_barrier_prob(
         tp_pct=2.0,
         sl_pct=1.0
     )
-    
+
     # Closed form calculation (faster)
     forecast_barrier_prob(
         symbol="GBPUSD",
@@ -507,7 +519,15 @@ def _forecast_list_library_models_impl(
         except Exception:
             _METHODS = ()
 
-        excluded = {"statsforecast", "sktime", "mlforecast", "chronos2", "chronos_bolt", "timesfm", "lag_llama"}
+        excluded = {
+            "statsforecast",
+            "sktime",
+            "mlforecast",
+            "chronos2",
+            "chronos_bolt",
+            "timesfm",
+            "lag_llama",
+        }
         return {
             "library": lib,
             "models": sorted(m for m in _METHODS if m not in excluded),
@@ -532,7 +552,9 @@ def _forecast_list_library_models_impl(
                 continue
             if getattr(obj, "__module__", None) != getattr(_models, "__name__", None):
                 continue
-            if not any(callable(getattr(obj, a, None)) for a in ("fit", "forecast", "predict")):
+            if not any(
+                callable(getattr(obj, a, None)) for a in ("fit", "forecast", "predict")
+            ):
                 continue
             names.append(attr)
         return {
@@ -549,7 +571,7 @@ def _forecast_list_library_models_impl(
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library sktime --method theta",
                 "mtdata-cli forecast_generate SYMBOL --library sktime --method ThetaForecaster",
-                "mtdata-cli forecast_generate SYMBOL --library sktime --method sktime.forecasting.theta.ThetaForecaster --params \"sp=24\"",
+                'mtdata-cli forecast_generate SYMBOL --library sktime --method sktime.forecasting.theta.ThetaForecaster --params "sp=24"',
             ],
             "note": "The --method value is matched to the closest available forecaster name; you can also pass a dotted class path. Constructor kwargs go in --params (or use --set method.<k>=<v>).",
         }
@@ -590,12 +612,15 @@ def _forecast_list_library_models_impl(
             "library": lib,
             "note": "Use `--method <dotted sklearn/lightgbm regressor class>` plus optional constructor kwargs in --params (or use --set method.<k>=<v>).",
             "usage": [
-                "mtdata-cli forecast_generate SYMBOL --library mlforecast --method sklearn.ensemble.RandomForestRegressor --params \"n_estimators=200\"",
+                'mtdata-cli forecast_generate SYMBOL --library mlforecast --method sklearn.ensemble.RandomForestRegressor --params "n_estimators=200"',
                 "mtdata-cli forecast_generate SYMBOL --library native --method mlf_rf",
             ],
         }
 
-    return {"library": lib, "error": "Unsupported library (supported: native, statsforecast, sktime, pretrained, mlforecast)"}
+    return {
+        "library": lib,
+        "error": "Unsupported library (supported: native, statsforecast, sktime, pretrained, mlforecast)",
+    }
 
 
 def _forecast_list_methods_impl(
@@ -617,7 +642,9 @@ def _forecast_list_methods_impl(
             if limit_value <= 0:
                 return {"error": f"Invalid limit: {limit_value}. Must be >= 1."}
 
-        categories_raw = data.get("categories") if isinstance(data.get("categories"), dict) else {}
+        categories_raw = (
+            data.get("categories") if isinstance(data.get("categories"), dict) else {}
+        )
         method_to_category: Dict[str, str] = {}
         if isinstance(categories_raw, dict):
             for cat_name, names in categories_raw.items():
@@ -641,10 +668,14 @@ def _forecast_list_methods_impl(
             method_norm = str(method_name or "").strip()
             cat_norm = str(category or "").strip().lower()
             if method_norm.startswith("sf_") or cat_norm == "statsforecast":
-                concept = method_norm[3:] if method_norm.startswith("sf_") else method_norm
+                concept = (
+                    method_norm[3:] if method_norm.startswith("sf_") else method_norm
+                )
                 return "statsforecast", concept, f"statsforecast:{concept}"
             if method_norm.startswith("skt_") or cat_norm == "sktime":
-                concept = method_norm[4:] if method_norm.startswith("skt_") else method_norm
+                concept = (
+                    method_norm[4:] if method_norm.startswith("skt_") else method_norm
+                )
                 return "sktime", concept, f"sktime:{concept}"
             pretrained_names = {"chronos2", "chronos_bolt", "timesfm", "lag_llama"}
             if method_norm in pretrained_names or cat_norm == "pretrained":
@@ -718,7 +749,9 @@ def _forecast_list_methods_impl(
                 row["description"] = desc.splitlines()[0].strip()
             cat = method_to_category.get(method_name)
             row["category"] = cat or "other"
-            namespace, concept, method_id = _namespace_info(method_name, row["category"])
+            namespace, concept, method_id = _namespace_info(
+                method_name, row["category"]
+            )
             row["namespace"] = namespace
             row["concept"] = concept
             row["method_id"] = method_id
@@ -732,10 +765,14 @@ def _forecast_list_methods_impl(
         selected_methods: List[Dict[str, Any]] = []
         for category in sorted(by_category.keys()):
             rows = list(by_category.get(category, []))
-            rows.sort(key=lambda row: (not bool(row.get("available")), str(row.get("method"))))
+            rows.sort(
+                key=lambda row: (not bool(row.get("available")), str(row.get("method")))
+            )
             n_total = len(rows)
             n_available = int(sum(1 for row in rows if bool(row.get("available"))))
-            per_category_cap = 3 if category == "statsforecast" else (8 if category == "other" else 2)
+            per_category_cap = (
+                3 if category == "statsforecast" else (8 if category == "other" else 2)
+            )
             picks = rows[:per_category_cap]
             selected_methods.extend(picks)
             category_summary.append(

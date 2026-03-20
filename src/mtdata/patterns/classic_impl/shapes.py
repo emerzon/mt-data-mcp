@@ -3,10 +3,20 @@ from typing import Any, Dict, List, Optional
 from ..common import PatternResultBase
 from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
-    _detect_pivots_close, _fit_line, _fit_line_robust, _fit_lines_and_arrays, 
-    _tol_abs_from_close, _level_close, _count_touches, _count_recent_touches,
-    _is_converging, _find_recent_breakout, 
-    _result, _alias, _conf, _apply_breakout_confidence_bonus, _robust_level_center,
+    _detect_pivots_close,
+    _fit_line,
+    _fit_line_robust,
+    _fit_lines_and_arrays,
+    _tol_abs_from_close,
+    _level_close,
+    _count_touches,
+    _is_converging,
+    _find_recent_breakout,
+    _result,
+    _alias,
+    _conf,
+    _apply_breakout_confidence_bonus,
+    _robust_level_center,
     _boundaries_are_ordered,
 )
 
@@ -64,7 +74,9 @@ def _build_line_bounded_pattern_results(
 ) -> List[ClassicPatternResult]:
     conf = _conf(shape["touches"], min(shape["r2h"], shape["r2l"]), 1.0, cfg)
     status = "forming"
-    breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
+    breakout_look = max(
+        int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead))
+    )
     bdir, bidx = _find_recent_breakout(
         shape["c"],
         upper=shape["top"],
@@ -78,7 +90,14 @@ def _build_line_bounded_pattern_results(
         status = "completed"
         conf = _apply_breakout_confidence_bonus(conf, cfg)
 
-    end_index = int(max(int(max(shape["ih"][-1], shape["il"][-1])), int(bidx) if bidx is not None else int(max(shape["ih"][-1], shape["il"][-1]))))
+    end_index = int(
+        max(
+            int(max(shape["ih"][-1], shape["il"][-1])),
+            int(bidx)
+            if bidx is not None
+            else int(max(shape["ih"][-1], shape["il"][-1])),
+        )
+    )
     base = _result(
         name,
         status,
@@ -107,20 +126,22 @@ def _required_rectangle_side_matches(count: int) -> int:
         return count
     return max(count - 1, int(np.ceil(0.8 * count)))
 
+
 def detect_rectangles(
     c: np.ndarray,
     peaks: np.ndarray,
     troughs: np.ndarray,
     t: np.ndarray,
-    cfg: ClassicDetectorConfig
+    cfg: ClassicDetectorConfig,
 ) -> List[ClassicPatternResult]:
     out: List[ClassicPatternResult] = []
     n = c.size
     k = min(int(cfg.max_pattern_pivots), peaks.size, troughs.size)
     if k < 3:
         return out
-        
-    ph = c[peaks[-k:]]; pl = c[troughs[-k:]]
+
+    ph = c[peaks[-k:]]
+    pl = c[troughs[-k:]]
     top = _robust_level_center(ph, cfg)
     bot = _robust_level_center(pl, cfg)
     if top is None or bot is None:
@@ -129,21 +150,27 @@ def detect_rectangles(
     bot = float(bot)
     if top <= bot:
         return out
-        
+
     high_hits = int(np.sum([_level_close(v, top, cfg.same_level_tol_pct) for v in ph]))
     low_hits = int(np.sum([_level_close(v, bot, cfg.same_level_tol_pct) for v in pl]))
     touches = int(high_hits + low_hits)
     required_high_hits = _required_rectangle_side_matches(int(ph.size))
     required_low_hits = _required_rectangle_side_matches(int(pl.size))
-    
-    if high_hits >= required_high_hits and low_hits >= required_low_hits and touches >= cfg.min_channel_touches - 1:
+
+    if (
+        high_hits >= required_high_hits
+        and low_hits >= required_low_hits
+        and touches >= cfg.min_channel_touches - 1
+    ):
         geom_ok = 1.0
         conf = _conf(touches, 1.0, geom_ok, cfg)
         status = "forming"
         top_line = np.full(n, top, dtype=float)
         bot_line = np.full(n, bot, dtype=float)
         tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
-        breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
+        breakout_look = max(
+            int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead))
+        )
         bdir, bidx = _find_recent_breakout(
             c,
             upper=top_line,
@@ -157,43 +184,59 @@ def detect_rectangles(
             status = "completed"
             conf = _apply_breakout_confidence_bonus(conf, cfg)
 
-        out.append(ClassicPatternResult(
-            name="Rectangle",
-            status=status,
-            confidence=conf,
-            start_index=int(min(peaks[-k], troughs[-k])),
-            end_index=int(bidx if bidx is not None else max(peaks[-1], troughs[-1])),
-            start_time=PatternResultBase.resolve_time(t, int(min(peaks[-k], troughs[-k]))),
-            end_time=PatternResultBase.resolve_time(t, int(bidx if bidx is not None else max(peaks[-1], troughs[-1]))),
-            details={
-                "resistance": top,
-                "support": bot,
-                "touches": touches,
-                "matched_highs": high_hits,
-                "matched_lows": low_hits,
-                "breakout_direction": bdir,
-                "breakout_index": int(bidx) if bidx is not None else None,
-                "bias": "bullish" if bdir == "up" else "bearish" if bdir == "down" else "neutral",
-            },
-        ))
+        out.append(
+            ClassicPatternResult(
+                name="Rectangle",
+                status=status,
+                confidence=conf,
+                start_index=int(min(peaks[-k], troughs[-k])),
+                end_index=int(
+                    bidx if bidx is not None else max(peaks[-1], troughs[-1])
+                ),
+                start_time=PatternResultBase.resolve_time(
+                    t, int(min(peaks[-k], troughs[-k]))
+                ),
+                end_time=PatternResultBase.resolve_time(
+                    t, int(bidx if bidx is not None else max(peaks[-1], troughs[-1]))
+                ),
+                details={
+                    "resistance": top,
+                    "support": bot,
+                    "touches": touches,
+                    "matched_highs": high_hits,
+                    "matched_lows": low_hits,
+                    "breakout_direction": bdir,
+                    "breakout_index": int(bidx) if bidx is not None else None,
+                    "bias": "bullish"
+                    if bdir == "up"
+                    else "bearish"
+                    if bdir == "down"
+                    else "neutral",
+                },
+            )
+        )
     return out
+
 
 def detect_triangles(
     c: np.ndarray,
     peaks: np.ndarray,
     troughs: np.ndarray,
     t: np.ndarray,
-    cfg: ClassicDetectorConfig
+    cfg: ClassicDetectorConfig,
 ) -> List[ClassicPatternResult]:
     shape = _fit_line_bounded_shape(c, peaks, troughs, cfg, min_points=4)
-    if shape is None or not _is_converging(shape["top"], shape["bot"], shape["k"], shape["n"], cfg):
+    if shape is None or not _is_converging(
+        shape["top"], shape["bot"], shape["k"], shape["n"], cfg
+    ):
         return []
-    same_sign = (shape["sh"] > 0 and shape["sl"] > 0) or (shape["sh"] < 0 and shape["sl"] < 0)
+    same_sign = (shape["sh"] > 0 and shape["sl"] > 0) or (
+        shape["sh"] < 0 and shape["sl"] < 0
+    )
     flat_top = abs(shape["sh"]) <= cfg.max_flat_slope
     flat_bottom = abs(shape["sl"]) <= cfg.max_flat_slope
-    can_be_flat_triangle = (
-        (flat_top and shape["sl"] > cfg.max_flat_slope)
-        or (flat_bottom and shape["sh"] < -cfg.max_flat_slope)
+    can_be_flat_triangle = (flat_top and shape["sl"] > cfg.max_flat_slope) or (
+        flat_bottom and shape["sh"] < -cfg.max_flat_slope
     )
     if same_sign and not can_be_flat_triangle:
         return []
@@ -206,49 +249,64 @@ def detect_triangles(
         name = "Descending Triangle"
     else:
         name = "Symmetrical Triangle"
-    bias = "bullish" if name == "Ascending Triangle" else "bearish" if name == "Descending Triangle" else "neutral"
+    bias = (
+        "bullish"
+        if name == "Ascending Triangle"
+        else "bearish"
+        if name == "Descending Triangle"
+        else "neutral"
+    )
     return _build_line_bounded_pattern_results(name, shape, t, cfg, bias=bias)
+
 
 def detect_wedges(
     c: np.ndarray,
     peaks: np.ndarray,
     troughs: np.ndarray,
     t: np.ndarray,
-    cfg: ClassicDetectorConfig
+    cfg: ClassicDetectorConfig,
 ) -> List[ClassicPatternResult]:
     shape = _fit_line_bounded_shape(c, peaks, troughs, cfg, min_points=4)
-    if shape is None or not _is_converging(shape["top"], shape["bot"], shape["k"], shape["n"], cfg):
+    if shape is None or not _is_converging(
+        shape["top"], shape["bot"], shape["k"], shape["n"], cfg
+    ):
         return []
-    same_sign = (shape["sh"] > 0 and shape["sl"] > 0) or (shape["sh"] < 0 and shape["sl"] < 0)
+    same_sign = (shape["sh"] > 0 and shape["sl"] > 0) or (
+        shape["sh"] < 0 and shape["sl"] < 0
+    )
     if not same_sign or shape["touches"] < cfg.min_channel_touches - 1:
         return []
 
     name = "Rising Wedge" if shape["sh"] > 0 and shape["sl"] > 0 else "Falling Wedge"
     bias = "bearish" if name == "Rising Wedge" else "bullish"
-    return _build_line_bounded_pattern_results(name, shape, t, cfg, alias_name="Wedge", bias=bias)
+    return _build_line_bounded_pattern_results(
+        name, shape, t, cfg, alias_name="Wedge", bias=bias
+    )
+
 
 def detect_broadening(
     c: np.ndarray,
     peaks: np.ndarray,
     troughs: np.ndarray,
     t: np.ndarray,
-    cfg: ClassicDetectorConfig
+    cfg: ClassicDetectorConfig,
 ) -> List[ClassicPatternResult]:
     out: List[ClassicPatternResult] = []
     n = c.size
     k = min(max(4, int(cfg.max_pattern_pivots)), peaks.size, troughs.size)
     if k < 4:
         return out
-        
-    ih = peaks[-k:]; il = troughs[-k:]
+
+    ih = peaks[-k:]
+    il = troughs[-k:]
     if bool(cfg.use_robust_fit):
         sh, bh, r2h = _fit_line_robust(ih.astype(float), c[ih], cfg)
         sl, bl, r2l = _fit_line_robust(il.astype(float), c[il], cfg)
     else:
         sh, bh, r2h = _fit_line(ih.astype(float), c[ih])
         sl, bl, r2l = _fit_line(il.astype(float), c[il])
-    
-    diverging = (sh > cfg.max_flat_slope and sl < -cfg.max_flat_slope)
+
+    diverging = sh > cfg.max_flat_slope and sl < -cfg.max_flat_slope
     if diverging:
         conf = _conf(4, min(r2h, r2l), 1.0, cfg)
         x = np.arange(n, dtype=float)
@@ -259,7 +317,9 @@ def detect_broadening(
             return out
         tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
         status = "forming"
-        breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
+        breakout_look = max(
+            int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead))
+        )
         bdir, bidx = _find_recent_breakout(
             c,
             upper=top,
@@ -268,25 +328,41 @@ def detect_broadening(
             tol_pct=float(cfg.same_level_tol_pct),
             lookback_bars=breakout_look,
         )
-        
+
         if bdir is not None and bidx is not None:
             status = "completed"
             conf = _apply_breakout_confidence_bonus(conf, cfg)
-            
-        out.append(_result(
-            "Broadening Formation",
-            status,
-            conf,
-            int(min(ih[0], il[0])),
-            int(max(int(max(ih[-1], il[-1])), int(bidx) if bidx is not None else int(max(ih[-1], il[-1])))),
-            t,
-            {"top_slope": float(sh), "bottom_slope": float(sl),
-             "top_intercept": float(bh), "bottom_intercept": float(bl),
-             "breakout_direction": bdir,
-             "breakout_index": int(bidx) if bidx is not None else None,
-             "bias": "bullish" if bdir == "up" else "bearish" if bdir == "down" else "neutral"},
-        ))
+
+        out.append(
+            _result(
+                "Broadening Formation",
+                status,
+                conf,
+                int(min(ih[0], il[0])),
+                int(
+                    max(
+                        int(max(ih[-1], il[-1])),
+                        int(bidx) if bidx is not None else int(max(ih[-1], il[-1])),
+                    )
+                ),
+                t,
+                {
+                    "top_slope": float(sh),
+                    "bottom_slope": float(sl),
+                    "top_intercept": float(bh),
+                    "bottom_intercept": float(bl),
+                    "breakout_direction": bdir,
+                    "breakout_index": int(bidx) if bidx is not None else None,
+                    "bias": "bullish"
+                    if bdir == "up"
+                    else "bearish"
+                    if bdir == "down"
+                    else "neutral",
+                },
+            )
+        )
     return out
+
 
 def detect_diamonds(
     c: np.ndarray,
@@ -305,8 +381,14 @@ def detect_diamonds(
         return out
 
     seg = c[-W:]
-    seg_h = np.asarray(high[-W:], dtype=float) if high is not None and high.size >= W else seg
-    seg_l = np.asarray(low[-W:], dtype=float) if low is not None and low.size >= W else seg
+    seg_h = (
+        np.asarray(high[-W:], dtype=float)
+        if high is not None and high.size >= W
+        else seg
+    )
+    seg_l = (
+        np.asarray(low[-W:], dtype=float) if low is not None and low.size >= W else seg
+    )
     seg_start = int(n - W)
     local_peaks = None
     local_troughs = None
@@ -349,7 +431,12 @@ def detect_diamonds(
         right_peaks = peaks[peaks >= split]
         left_troughs = troughs[troughs < split]
         right_troughs = troughs[troughs >= split]
-        if min(left_peaks.size, right_peaks.size, left_troughs.size, right_troughs.size) < min_side:
+        if (
+            min(
+                left_peaks.size, right_peaks.size, left_troughs.size, right_troughs.size
+            )
+            < min_side
+        ):
             continue
 
         lh_slope, lh_intercept, lh_r2 = _fit_boundary(left_peaks)
@@ -383,7 +470,9 @@ def detect_diamonds(
             continue
 
         width_start = float(left_upper[0] - left_lower[0])
-        width_mid = float(min(left_upper[-1] - left_lower[-1], right_upper[0] - right_lower[0]))
+        width_mid = float(
+            min(left_upper[-1] - left_lower[-1], right_upper[0] - right_lower[0])
+        )
         width_end = float(right_upper[-1] - right_lower[-1])
         if min(width_start, width_mid, width_end) <= 0.0:
             continue
@@ -398,12 +487,19 @@ def detect_diamonds(
             continue
 
         min_ratio = float(cfg.diamond_min_width_ratio)
-        target_ratio = max(min_ratio + 1e-6, float(getattr(cfg, "diamond_target_width_ratio", 1.5)))
+        target_ratio = max(
+            min_ratio + 1e-6, float(getattr(cfg, "diamond_target_width_ratio", 1.5))
+        )
         geom_score = (width_ratio - min_ratio) / max(1e-9, target_ratio - min_ratio)
         geom_score = float(max(0.0, min(1.0, geom_score)))
         candidate = {
             "split": int(split),
-            "touches": int(left_peaks.size + right_peaks.size + left_troughs.size + right_troughs.size),
+            "touches": int(
+                left_peaks.size
+                + right_peaks.size
+                + left_troughs.size
+                + right_troughs.size
+            ),
             "min_r2": min_r2,
             "geom_score": geom_score,
             "upper": upper,
@@ -415,7 +511,11 @@ def detect_diamonds(
             "width_ratio": float(width_ratio),
             "split_gap_ratio": float(split_gap_ratio),
         }
-        if best is None or (candidate["geom_score"], candidate["min_r2"], candidate["touches"]) > (
+        if best is None or (
+            candidate["geom_score"],
+            candidate["min_r2"],
+            candidate["touches"],
+        ) > (
             best["geom_score"],
             best["min_r2"],
             best["touches"],
@@ -435,11 +535,19 @@ def detect_diamonds(
     else:
         ret = 0.0
 
-    name = "Continuation Diamond" if abs(ret) >= float(cfg.diamond_prior_pole_return_pct) else "Diamond"
-    conf = _conf(int(best["touches"]), float(best["min_r2"]), float(best["geom_score"]), cfg)
+    name = (
+        "Continuation Diamond"
+        if abs(ret) >= float(cfg.diamond_prior_pole_return_pct)
+        else "Diamond"
+    )
+    conf = _conf(
+        int(best["touches"]), float(best["min_r2"]), float(best["geom_score"]), cfg
+    )
     status = "forming"
     tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
-    breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
+    breakout_look = max(
+        int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead))
+    )
     bdir, bidx_local = _find_recent_breakout(
         seg,
         upper=best["upper"],
@@ -453,37 +561,41 @@ def detect_diamonds(
         status = "completed"
         conf = _apply_breakout_confidence_bonus(conf, cfg)
 
-    out.append(_result(
-        name,
-        status,
-        conf,
-        int(n - W),
-        int((n - W + bidx_local) if bidx_local is not None else (n - 1)),
-        t,
-        {
-            "prior_pole_return_pct": float(ret),
-            "prior_pole_span_bars": int(pole_span),
-            "breakout_direction": bdir,
-            "breakout_index": int(n - W + bidx_local) if bidx_local is not None else None,
-            "diamond_split_index": int(n - W + best["split"]),
-            "width_ratio": float(best["width_ratio"]),
-            "split_gap_ratio": float(best["split_gap_ratio"]),
-            "geometry_score": float(best["geom_score"]),
-            "upper_left_slope": float(best["lh_slope"]),
-            "lower_left_slope": float(best["ll_slope"]),
-            "upper_right_slope": float(best["rh_slope"]),
-            "lower_right_slope": float(best["rl_slope"]),
-            "bias": (
-                "bullish"
-                if bdir == "up"
-                else "bearish"
-                if bdir == "down"
-                else "bullish"
-                if abs(ret) >= float(cfg.diamond_prior_pole_return_pct) and ret > 0
-                else "bearish"
-                if abs(ret) >= float(cfg.diamond_prior_pole_return_pct) and ret < 0
-                else "neutral"
-            ),
-        },
-    ))
+    out.append(
+        _result(
+            name,
+            status,
+            conf,
+            int(n - W),
+            int((n - W + bidx_local) if bidx_local is not None else (n - 1)),
+            t,
+            {
+                "prior_pole_return_pct": float(ret),
+                "prior_pole_span_bars": int(pole_span),
+                "breakout_direction": bdir,
+                "breakout_index": int(n - W + bidx_local)
+                if bidx_local is not None
+                else None,
+                "diamond_split_index": int(n - W + best["split"]),
+                "width_ratio": float(best["width_ratio"]),
+                "split_gap_ratio": float(best["split_gap_ratio"]),
+                "geometry_score": float(best["geom_score"]),
+                "upper_left_slope": float(best["lh_slope"]),
+                "lower_left_slope": float(best["ll_slope"]),
+                "upper_right_slope": float(best["rh_slope"]),
+                "lower_right_slope": float(best["rl_slope"]),
+                "bias": (
+                    "bullish"
+                    if bdir == "up"
+                    else "bearish"
+                    if bdir == "down"
+                    else "bullish"
+                    if abs(ret) >= float(cfg.diamond_prior_pole_return_pct) and ret > 0
+                    else "bearish"
+                    if abs(ret) >= float(cfg.diamond_prior_pole_return_pct) and ret < 0
+                    else "neutral"
+                ),
+            },
+        )
+    )
     return out

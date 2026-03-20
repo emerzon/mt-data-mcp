@@ -113,14 +113,20 @@ _DEFAULT_SPACES_METHOD_SCOPED: Dict[str, Dict[str, Any]] = {
     "mlf_rf": {
         "n_estimators": {"type": "int", "min": 100, "max": 500},
         "max_depth": {"type": "categorical", "choices": [None, 5, 10, 15, 20]},
-        "rolling_agg": {"type": "categorical", "choices": ["mean", "min", "max", "std"]},
+        "rolling_agg": {
+            "type": "categorical",
+            "choices": ["mean", "min", "max", "std"],
+        },
     },
     "mlf_lightgbm": {
         "n_estimators": {"type": "int", "min": 100, "max": 500},
         "learning_rate": {"type": "float", "min": 0.01, "max": 0.2},
         "num_leaves": {"type": "int", "min": 15, "max": 63},
         "max_depth": {"type": "categorical", "choices": [-1, 6, 8, 12, 16]},
-        "rolling_agg": {"type": "categorical", "choices": ["mean", "min", "max", "std"]},
+        "rolling_agg": {
+            "type": "categorical",
+            "choices": ["mean", "min", "max", "std"],
+        },
     },
     # Transformer family (point forecasts use context length primarily)
     "chronos_bolt": {
@@ -140,7 +146,9 @@ _DEFAULT_SPACES_METHOD_SCOPED: Dict[str, Dict[str, Any]] = {
 }
 
 
-def default_search_space(method: Optional[str] = None, methods: Optional[List[str]] = None) -> Dict[str, Any]:
+def default_search_space(
+    method: Optional[str] = None, methods: Optional[List[str]] = None
+) -> Dict[str, Any]:
     """Return a sensible default search space.
 
     - Multiple methods: returns a method-scoped dict with sections for each listed method
@@ -149,7 +157,9 @@ def default_search_space(method: Optional[str] = None, methods: Optional[List[st
     - If neither provided, returns method-scoped defaults for a small common set.
     """
     if methods and isinstance(methods, (list, tuple)) and len(methods) > 0:
-        out: Dict[str, Any] = {"_shared": dict(_DEFAULT_SPACES_METHOD_SCOPED.get("_shared", {}))}
+        out: Dict[str, Any] = {
+            "_shared": dict(_DEFAULT_SPACES_METHOD_SCOPED.get("_shared", {}))
+        }
         for m in methods:
             if m in _DEFAULT_SPACES_METHOD_SCOPED:
                 out[m] = dict(_DEFAULT_SPACES_METHOD_SCOPED[m])
@@ -178,21 +188,22 @@ Metric = str
 
 def _is_flat_search_space(sp: Dict[str, Any]) -> bool:
     return any(
-        isinstance(v, dict) and ('type' in v or 'min' in v or 'max' in v or 'choices' in v)
+        isinstance(v, dict)
+        and ("type" in v or "min" in v or "max" in v or "choices" in v)
         for v in sp.values()
     )
 
 
 def _suggest_optuna_param(trial: Any, name: str, space: Dict[str, Any]) -> Any:
-    t = str(space.get('type', 'float')).lower()
-    if t == 'categorical':
-        choices = list(space.get('choices') or [])
+    t = str(space.get("type", "float")).lower()
+    if t == "categorical":
+        choices = list(space.get("choices") or [])
         if not choices:
             return None
         return trial.suggest_categorical(name, choices)
-    if t == 'int':
-        lo_raw = space.get('min', 0)
-        hi_raw = space.get('max', lo_raw)
+    if t == "int":
+        lo_raw = space.get("min", 0)
+        hi_raw = space.get("max", lo_raw)
         try:
             lo = int(lo_raw)
         except Exception:
@@ -204,8 +215,8 @@ def _suggest_optuna_param(trial: Any, name: str, space: Dict[str, Any]) -> Any:
         if lo > hi:
             lo, hi = hi, lo
         return int(trial.suggest_int(name, lo, hi))
-    lo_raw = space.get('min', 0.0)
-    hi_raw = space.get('max', None)
+    lo_raw = space.get("min", 0.0)
+    hi_raw = space.get("max", None)
     try:
         lo = float(lo_raw)
     except Exception:
@@ -218,7 +229,7 @@ def _suggest_optuna_param(trial: Any, name: str, space: Dict[str, Any]) -> Any:
         hi = max(lo, 1.0)
     if lo > hi:
         lo, hi = hi, lo
-    if bool(space.get('log', False)) and lo > 0.0 and hi > 0.0:
+    if bool(space.get("log", False)) and lo > 0.0 and hi > 0.0:
         return float(trial.suggest_float(name, lo, hi, log=True))
     return float(trial.suggest_float(name, lo, hi))
 
@@ -245,10 +256,17 @@ def _eval_candidate(
     mode: 'min' or 'max'. score is direction-consistent (lower is better if mode == 'min').
     """
     # Allow method gene inside candidate
-    sel_method = str(candidate_params.get('method')) if candidate_params.get('method') else (str(method) if method else None)
+    sel_method = (
+        str(candidate_params.get("method"))
+        if candidate_params.get("method")
+        else (str(method) if method else None)
+    )
     if not sel_method:
-        return (math.inf if mode == 'min' else -math.inf, {"error": "No method provided"})
-    cand_only = {k: v for k, v in candidate_params.items() if k != 'method'}
+        return (
+            math.inf if mode == "min" else -math.inf,
+            {"error": "No method provided"},
+        )
+    cand_only = {k: v for k, v in candidate_params.items() if k != "method"}
     res = _forecast_backtest(
         symbol=symbol,
         timeframe=timeframe,  # type: ignore
@@ -264,30 +282,33 @@ def _eval_candidate(
         trade_threshold=float(trade_threshold),
     )
     # Pull method aggregate
-    r = res.get('results', {}).get(sel_method) if isinstance(res, dict) else None
-    if not isinstance(r, dict) or not r.get('success'):
-        return (math.inf if mode == 'min' else -math.inf, res)
+    r = res.get("results", {}).get(sel_method) if isinstance(res, dict) else None
+    if not isinstance(r, dict) or not r.get("success"):
+        return (math.inf if mode == "min" else -math.inf, res)
     val = r.get(metric)
     try:
         score = float(val)
     except Exception:
         # Fallback to rmse/mae if metric missing
-        val2 = r.get('avg_rmse', r.get('avg_mae'))
+        val2 = r.get("avg_rmse", r.get("avg_mae"))
         try:
             score = float(val2)
         except Exception:
-            score = math.inf if mode == 'min' else -math.inf
-    return (score if mode == 'min' else -score, {'_sel_method': sel_method, **(res or {})})
+            score = math.inf if mode == "min" else -math.inf
+    return (
+        score if mode == "min" else -score,
+        {"_sel_method": sel_method, **(res or {})},
+    )
 
 
 def _sample_param(space: Dict[str, Any], rng: random.Random) -> Any:
-    t = str(space.get('type', 'float')).lower()
-    if t == 'categorical':
-        choices = space.get('choices') or []
+    t = str(space.get("type", "float")).lower()
+    if t == "categorical":
+        choices = space.get("choices") or []
         return rng.choice(list(choices)) if choices else None
-    if t == 'int':
-        lo_raw = space.get('min', 0)
-        hi_raw = space.get('max', lo_raw)
+    if t == "int":
+        lo_raw = space.get("min", 0)
+        hi_raw = space.get("max", lo_raw)
         try:
             lo = int(lo_raw)
         except Exception:
@@ -300,8 +321,8 @@ def _sample_param(space: Dict[str, Any], rng: random.Random) -> Any:
             lo, hi = hi, lo
         return rng.randint(lo, hi)
     # float (optionally log)
-    lo_raw = space.get('min', 0.0)
-    hi_raw = space.get('max', None)
+    lo_raw = space.get("min", 0.0)
+    hi_raw = space.get("max", None)
     try:
         lo = float(lo_raw)
     except Exception:
@@ -314,18 +335,22 @@ def _sample_param(space: Dict[str, Any], rng: random.Random) -> Any:
         hi = max(lo, 1.0)
     if lo > hi:
         lo, hi = hi, lo
-    if bool(space.get('log', False)) and lo > 0 and hi > 0:
+    if bool(space.get("log", False)) and lo > 0 and hi > 0:
         import math as _m
-        a = _m.log(lo); b = _m.log(hi)
+
+        a = _m.log(lo)
+        b = _m.log(hi)
         x = rng.random() * (b - a) + a
         return float(_m.exp(x))
     return rng.random() * (hi - lo) + lo
 
 
-def _mutate_value(value: Any, space: Dict[str, Any], rng: random.Random, strength: float = 0.2) -> Any:
-    t = str(space.get('type', 'float')).lower()
-    if t == 'categorical':
-        choices = list(space.get('choices') or [])
+def _mutate_value(
+    value: Any, space: Dict[str, Any], rng: random.Random, strength: float = 0.2
+) -> Any:
+    t = str(space.get("type", "float")).lower()
+    if t == "categorical":
+        choices = list(space.get("choices") or [])
         if not choices:
             return value
         if len(choices) == 1:
@@ -333,11 +358,13 @@ def _mutate_value(value: Any, space: Dict[str, Any], rng: random.Random, strengt
         # pick a different choice
         cand = [c for c in choices if c != value]
         return rng.choice(cand) if cand else value
-    if t == 'int':
-        lo_raw = space.get('min', value)
-        hi_raw = space.get('max', value)
+    if t == "int":
+        lo_raw = space.get("min", value)
+        hi_raw = space.get("max", value)
         try:
-            lo = int(lo_raw if lo_raw is not None else (value if value is not None else 0))
+            lo = int(
+                lo_raw if lo_raw is not None else (value if value is not None else 0)
+            )
         except Exception:
             lo = 0
         try:
@@ -349,10 +376,12 @@ def _mutate_value(value: Any, space: Dict[str, Any], rng: random.Random, strengt
         span = max(1, int(round((hi - lo) * strength)))
         return max(lo, min(hi, int(value) + rng.randint(-span, span)))
     # float
-    lo_raw = space.get('min', value)
-    hi_raw = space.get('max', value)
+    lo_raw = space.get("min", value)
+    hi_raw = space.get("max", value)
     try:
-        lo = float(lo_raw if lo_raw is not None else (value if value is not None else 0.0))
+        lo = float(
+            lo_raw if lo_raw is not None else (value if value is not None else 0.0)
+        )
     except Exception:
         lo = 0.0
     try:
@@ -385,8 +414,8 @@ def _crossover_for_method(
             except Exception:
                 child[k] = None
         # small blend for floats
-        t = str(spec.get('type', 'float')).lower()
-        if t not in ('categorical', 'int'):
+        t = str(spec.get("type", "float")).lower()
+        if t not in ("categorical", "int"):
             try:
                 fa = float(av if av is not None else _sample_param(spec or {}, rng))
                 fb = float(bv if bv is not None else _sample_param(spec or {}, rng))
@@ -406,13 +435,13 @@ def optuna_search_forecast_params(
     steps: int = 5,
     spacing: int = 20,
     search_space: Dict[str, Any] = {},
-    metric: Metric = 'avg_rmse',
-    mode: str = 'min',
+    metric: Metric = "avg_rmse",
+    mode: str = "min",
     n_trials: int = 40,
     timeout: Optional[float] = None,
     n_jobs: int = 1,
-    sampler: str = 'tpe',
-    pruner: str = 'median',
+    sampler: str = "tpe",
+    pruner: str = "median",
     seed: int = 42,
     study_name: Optional[str] = None,
     storage: Optional[str] = None,
@@ -425,13 +454,13 @@ def optuna_search_forecast_params(
     """Optuna search for best params for a forecast method under backtest."""
     import optuna
 
-    mode_val = str(mode or 'min').strip().lower()
-    if mode_val not in {'min', 'max'}:
-        mode_val = 'min'
+    mode_val = str(mode or "min").strip().lower()
+    if mode_val not in {"min", "max"}:
+        mode_val = "min"
 
     raw = dict(search_space or {})
     method_scoped = not _is_flat_search_space(raw)
-    shared_key = '_shared'
+    shared_key = "_shared"
     method_names_from_space: List[str] = []
     if method_scoped:
         method_names_from_space = [k for k in raw.keys() if k != shared_key]
@@ -439,7 +468,7 @@ def optuna_search_forecast_params(
     def _spaces_for(mname: Optional[str]) -> Dict[str, Any]:
         if not method_scoped:
             sp = dict(raw)
-            sp.pop('method', None)
+            sp.pop("method", None)
             return sp
         out: Dict[str, Any] = {}
         shared = raw.get(shared_key) if isinstance(raw.get(shared_key), dict) else {}
@@ -457,29 +486,29 @@ def optuna_search_forecast_params(
 
     has_method_gene = (
         (not method_scoped)
-        and ('method' in raw)
-        and isinstance(raw.get('method'), dict)
-        and str(raw['method'].get('type', 'categorical')).lower() == 'categorical'
+        and ("method" in raw)
+        and isinstance(raw.get("method"), dict)
+        and str(raw["method"].get("type", "categorical")).lower() == "categorical"
     )
 
-    sampler_name = str(sampler or 'tpe').strip().lower()
-    if sampler_name == 'random':
+    sampler_name = str(sampler or "tpe").strip().lower()
+    if sampler_name == "random":
         sampler_obj = optuna.samplers.RandomSampler(seed=int(seed))
-    elif sampler_name == 'cmaes':
+    elif sampler_name == "cmaes":
         sampler_obj = optuna.samplers.CmaEsSampler(seed=int(seed))
     else:
-        sampler_name = 'tpe'
+        sampler_name = "tpe"
         sampler_obj = optuna.samplers.TPESampler(seed=int(seed), multivariate=True)
 
-    pruner_name = str(pruner or 'median').strip().lower()
-    if pruner_name in {'none', 'off', 'disabled'}:
+    pruner_name = str(pruner or "median").strip().lower()
+    if pruner_name in {"none", "off", "disabled"}:
         pruner_obj = optuna.pruners.NopPruner()
-    elif pruner_name == 'hyperband':
+    elif pruner_name == "hyperband":
         pruner_obj = optuna.pruners.HyperbandPruner()
-    elif pruner_name == 'percentile':
+    elif pruner_name == "percentile":
         pruner_obj = optuna.pruners.PercentilePruner(50.0)
     else:
-        pruner_name = 'median'
+        pruner_name = "median"
         pruner_obj = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=0)
 
     storage_val: Optional[str]
@@ -496,7 +525,7 @@ def optuna_search_forecast_params(
         study_name_val = name_str or None
     load_if_exists = bool(storage_val and study_name_val)
 
-    direction = 'minimize' if mode_val == 'min' else 'maximize'
+    direction = "minimize" if mode_val == "min" else "maximize"
     study = optuna.create_study(
         direction=direction,
         sampler=sampler_obj,
@@ -512,7 +541,7 @@ def optuna_search_forecast_params(
     trial_candidates: Dict[int, Dict[str, Any]] = {}
     lock = threading.Lock()
 
-    best_score = math.inf if mode_val == 'min' else -math.inf
+    best_score = math.inf if mode_val == "min" else -math.inf
     best_params: Dict[str, Any] = {}
     best_result: Optional[Dict[str, Any]] = None
 
@@ -523,17 +552,17 @@ def optuna_search_forecast_params(
         sel_method = None
         if has_method_gene:
             try:
-                sel_method = _suggest_optuna_param(trial, 'method', raw['method'])
-                cand['method'] = sel_method
+                sel_method = _suggest_optuna_param(trial, "method", raw["method"])
+                cand["method"] = sel_method
             except Exception:
                 sel_method = None
         elif method_choices:
-            sel_method = trial.suggest_categorical('method', list(method_choices))
-            cand['method'] = sel_method
+            sel_method = trial.suggest_categorical("method", list(method_choices))
+            cand["method"] = sel_method
         else:
             sel_method = method
             if sel_method is not None:
-                cand['method'] = sel_method
+                cand["method"] = sel_method
 
         pspaces = _spaces_for(str(sel_method) if sel_method else None)
         for k, spec in pspaces.items():
@@ -556,25 +585,28 @@ def optuna_search_forecast_params(
             trade_threshold=float(trade_threshold),
         )
 
-        true_score = score if mode_val == 'min' else -score
+        true_score = score if mode_val == "min" else -score
         finite_score = float(true_score) if math.isfinite(true_score) else None
         objective_score = float(true_score)
         if not math.isfinite(objective_score):
-            objective_score = 1e18 if mode_val == 'min' else -1e18
+            objective_score = 1e18 if mode_val == "min" else -1e18
 
         with lock:
-            hist_row: Dict[str, Any] = {"trial": int(trial.number), "score": float(objective_score), "params": dict(cand)}
-            if isinstance(res, dict) and res.get('_sel_method'):
-                hist_row['method'] = res.get('_sel_method')
+            hist_row: Dict[str, Any] = {
+                "trial": int(trial.number),
+                "score": float(objective_score),
+                "params": dict(cand),
+            }
+            if isinstance(res, dict) and res.get("_sel_method"):
+                hist_row["method"] = res.get("_sel_method")
             history.append(hist_row)
             if isinstance(res, dict):
                 trial_results[int(trial.number)] = res
             trial_candidates[int(trial.number)] = dict(cand)
 
             if finite_score is not None:
-                better = (
-                    (mode_val == 'min' and finite_score < best_score)
-                    or (mode_val != 'min' and finite_score > best_score)
+                better = (mode_val == "min" and finite_score < best_score) or (
+                    mode_val != "min" and finite_score > best_score
                 )
                 if better:
                     best_score = finite_score
@@ -592,7 +624,9 @@ def optuna_search_forecast_params(
             timeout_val = None
     n_jobs_val = max(1, int(n_jobs))
     n_trials_val = max(1, int(n_trials))
-    study.optimize(_objective, n_trials=n_trials_val, timeout=timeout_val, n_jobs=n_jobs_val)
+    study.optimize(
+        _objective, n_trials=n_trials_val, timeout=timeout_val, n_jobs=n_jobs_val
+    )
 
     if not best_params and len(study.trials) > 0:
         try:
@@ -624,15 +658,22 @@ def optuna_search_forecast_params(
     if study_name_val:
         payload["study_name"] = study_name_val
     if best_result is not None:
-        sel = best_result.get('_sel_method') if isinstance(best_result, dict) else None
+        sel = best_result.get("_sel_method") if isinstance(best_result, dict) else None
         agg = None
         try:
-            agg = best_result.get('results', {}).get(sel) if isinstance(best_result, dict) else None
+            agg = (
+                best_result.get("results", {}).get(sel)
+                if isinstance(best_result, dict)
+                else None
+            )
         except Exception:
             agg = None
         payload["best_method"] = sel
         if isinstance(agg, dict):
-            payload["best_result_summary"] = {"horizon": agg.get('horizon'), "result": agg}
+            payload["best_result_summary"] = {
+                "horizon": agg.get("horizon"),
+                "result": agg,
+            }
     if history:
         payload["history_tail"] = history[-50:]
     return payload
@@ -648,8 +689,8 @@ def genetic_search_forecast_params(
     steps: int = 5,
     spacing: int = 20,
     search_space: Dict[str, Any] = {},
-    metric: Metric = 'avg_rmse',
-    mode: str = 'min',
+    metric: Metric = "avg_rmse",
+    mode: str = "min",
     population: int = 12,
     generations: int = 10,
     crossover_rate: float = 0.6,
@@ -672,10 +713,14 @@ def genetic_search_forecast_params(
 
     # Detect method-scoped search space vs flat
     def _is_flat(sp: Dict[str, Any]) -> bool:
-        return any(isinstance(v, dict) and ('type' in v or 'min' in v or 'max' in v or 'choices' in v) for v in sp.values())
+        return any(
+            isinstance(v, dict)
+            and ("type" in v or "min" in v or "max" in v or "choices" in v)
+            for v in sp.values()
+        )
 
     method_scoped = not _is_flat(raw)
-    shared_key = '_shared'
+    shared_key = "_shared"
     method_names_from_space: List[str] = []
     if method_scoped:
         method_names_from_space = [k for k in raw.keys() if k != shared_key]
@@ -685,7 +730,7 @@ def genetic_search_forecast_params(
         if not method_scoped:
             # Flat space; drop method gene if present
             sp = dict(raw)
-            sp.pop('method', None)
+            sp.pop("method", None)
             return sp
         # Merge shared + method-specific
         out: Dict[str, Any] = {}
@@ -704,7 +749,13 @@ def genetic_search_forecast_params(
         method_choices = list(method_names_from_space)
 
     # If there are method choices and no explicit 'method' gene in a flat space, we will sample it explicitly
-    has_method_gene = (not method_scoped) and ('method' in raw) and str(raw['method'].get('type', 'categorical')).lower() == 'categorical' if 'method' in raw and isinstance(raw['method'], dict) else False
+    has_method_gene = (
+        (not method_scoped)
+        and ("method" in raw)
+        and str(raw["method"].get("type", "categorical")).lower() == "categorical"
+        if "method" in raw and isinstance(raw["method"], dict)
+        else False
+    )
 
     # Initialize population
     pop: List[Dict[str, Any]] = []
@@ -714,13 +765,13 @@ def genetic_search_forecast_params(
         sel_method = None
         if has_method_gene:
             try:
-                sel_method = _sample_param(raw['method'], rng)
-                cand['method'] = sel_method
+                sel_method = _sample_param(raw["method"], rng)
+                cand["method"] = sel_method
             except Exception:
                 sel_method = None
         elif method_choices:
             sel_method = rng.choice(method_choices)
-            cand['method'] = sel_method
+            cand["method"] = sel_method
         else:
             sel_method = method  # fixed
         # Sample params for selected method
@@ -730,7 +781,7 @@ def genetic_search_forecast_params(
         pop.append(cand)
 
     history: List[Dict[str, Any]] = []
-    best_score = math.inf if mode == 'min' else -math.inf
+    best_score = math.inf if mode == "min" else -math.inf
     best_params: Dict[str, Any] = {}
     best_result: Optional[Dict[str, Any]] = None
 
@@ -754,20 +805,30 @@ def genetic_search_forecast_params(
                 trade_threshold=float(trade_threshold),
             )
             scored.append((score, cand))
-            hist_entry = {"generation": gen, "score": float(score), "params": dict(cand)}
-            if isinstance(res, dict) and res.get('_sel_method'):
-                hist_entry['method'] = res.get('_sel_method')
+            hist_entry = {
+                "generation": gen,
+                "score": float(score),
+                "params": dict(cand),
+            }
+            if isinstance(res, dict) and res.get("_sel_method"):
+                hist_entry["method"] = res.get("_sel_method")
             history.append(hist_entry)
             # Keep global best in true metric direction
-            true_score = score if mode == 'min' else -score
-            if (mode == 'min' and true_score < best_score) or (mode != 'min' and true_score > best_score):
+            true_score = score if mode == "min" else -score
+            if (mode == "min" and true_score < best_score) or (
+                mode != "min" and true_score > best_score
+            ):
                 best_score = true_score
                 best_params = dict(cand)
                 best_result = res if isinstance(res, dict) else None
 
         # Selection (elitism: top 2)
         scored.sort(key=lambda t: t[0])  # ascending in adjusted score
-        elites = [dict(scored[0][1]), dict(scored[1][1])] if len(scored) >= 2 else [dict(scored[0][1])]
+        elites = (
+            [dict(scored[0][1]), dict(scored[1][1])]
+            if len(scored) >= 2
+            else [dict(scored[0][1])]
+        )
 
         # Breed new population
         new_pop: List[Dict[str, Any]] = []
@@ -780,18 +841,24 @@ def genetic_search_forecast_params(
             child: Dict[str, Any] = {}
             if has_method_gene:
                 # crossover method gene from parents (random pick)
-                child_method = rng.choice([a.get('method'), b.get('method')])
-                child['method'] = child_method
+                child_method = rng.choice([a.get("method"), b.get("method")])
+                child["method"] = child_method
             elif method_choices:
-                child_method = rng.choice([a.get('method'), b.get('method')]) or rng.choice(method_choices)
-                child['method'] = child_method
+                child_method = rng.choice(
+                    [a.get("method"), b.get("method")]
+                ) or rng.choice(method_choices)
+                child["method"] = child_method
             else:
                 child_method = method
                 if child_method is not None:
-                    child['method'] = child_method
+                    child["method"] = child_method
             # Crossover parameters relevant to chosen method
             pspaces = _spaces_for(str(child_method) if child_method else None)
-            child.update(_crossover_for_method(a, b, pspaces, rng) if rng.random() < crossover_rate else {})
+            child.update(
+                _crossover_for_method(a, b, pspaces, rng)
+                if rng.random() < crossover_rate
+                else {}
+            )
             # Mutation for parameters of chosen method
             for k, spec in pspaces.items():
                 if rng.random() < mutation_rate:
@@ -810,15 +877,22 @@ def genetic_search_forecast_params(
         "history_count": len(history),
     }
     if best_result is not None:
-        sel = best_result.get('_sel_method') if isinstance(best_result, dict) else None
+        sel = best_result.get("_sel_method") if isinstance(best_result, dict) else None
         agg = None
         try:
-            agg = best_result.get('results', {}).get(sel) if isinstance(best_result, dict) else None
+            agg = (
+                best_result.get("results", {}).get(sel)
+                if isinstance(best_result, dict)
+                else None
+            )
         except Exception:
             agg = None
         payload["best_method"] = sel
         if isinstance(agg, dict):
-            payload["best_result_summary"] = {"horizon": agg.get('horizon'), "result": agg}
+            payload["best_result_summary"] = {
+                "horizon": agg.get("horizon"),
+                "result": agg,
+            }
     # Optional: compact history preview (keeps payload small)
     try:
         tail_n = 50

@@ -1,6 +1,5 @@
 """Tests for mtdata.core.temporal pure helper functions and temporal_analyze."""
 
-import math
 from contextlib import contextmanager
 from unittest.mock import patch, MagicMock
 
@@ -29,6 +28,7 @@ _raw_temporal_analyze = temporal_analyze.__wrapped__
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_rates(n=100, start_epoch=1704067200, interval=3600):
     """Create synthetic rates structured array similar to MT5 output.
 
@@ -44,11 +44,18 @@ def _make_rates(n=100, start_epoch=1704067200, interval=3600):
     real_vol = np.zeros(n, dtype=np.int64)
     spread = rng.randint(1, 20, size=n).astype(np.int32)
 
-    dtype = np.dtype([
-        ("time", "<i8"), ("open", "<f8"), ("high", "<f8"), ("low", "<f8"),
-        ("close", "<f8"), ("tick_volume", "<i8"), ("spread", "<i4"),
-        ("real_volume", "<i8"),
-    ])
+    dtype = np.dtype(
+        [
+            ("time", "<i8"),
+            ("open", "<f8"),
+            ("high", "<f8"),
+            ("low", "<f8"),
+            ("close", "<f8"),
+            ("tick_volume", "<i8"),
+            ("spread", "<i4"),
+            ("real_volume", "<i8"),
+        ]
+    )
     rates = np.empty(n, dtype=dtype)
     rates["time"] = times
     rates["open"] = open_
@@ -100,6 +107,7 @@ _P = "mtdata.core.temporal."
 # _error_response
 # ===================================================================
 
+
 class TestErrorResponse:
     def test_basic(self):
         r = _error_response("bad input", "validate")
@@ -137,13 +145,23 @@ class TestErrorResponse:
         assert "filters" not in r
 
     def test_all_optional_params(self):
-        r = _error_response("msg", "stg", context={"a": 1}, details="d", bars=5, filters={"f": 1})
-        assert set(r.keys()) == {"error", "stage", "context", "details", "bars", "filters"}
+        r = _error_response(
+            "msg", "stg", context={"a": 1}, details="d", bars=5, filters={"f": 1}
+        )
+        assert set(r.keys()) == {
+            "error",
+            "stage",
+            "context",
+            "details",
+            "bars",
+            "filters",
+        }
 
 
 # ===================================================================
 # _normalize_group_by
 # ===================================================================
+
 
 class TestNormalizeGroupBy:
     def test_none_returns_dow(self):
@@ -181,6 +199,7 @@ class TestNormalizeGroupBy:
 # _parse_weekday
 # ===================================================================
 
+
 class TestParseWeekday:
     def test_none_returns_none(self):
         assert _parse_weekday(None) is None
@@ -189,9 +208,18 @@ class TestParseWeekday:
         assert _parse_weekday("") is None
         assert _parse_weekday("  ") is None
 
-    @pytest.mark.parametrize("val,expected", [
-        ("0", 0), ("1", 1), ("2", 2), ("3", 3), ("4", 4), ("5", 5), ("6", 6),
-    ])
+    @pytest.mark.parametrize(
+        "val,expected",
+        [
+            ("0", 0),
+            ("1", 1),
+            ("2", 2),
+            ("3", 3),
+            ("4", 4),
+            ("5", 5),
+            ("6", 6),
+        ],
+    )
     def test_numeric_strings(self, val, expected):
         assert _parse_weekday(val) == expected
 
@@ -202,15 +230,28 @@ class TestParseWeekday:
         assert _parse_weekday("8") is None
         assert _parse_weekday("99") is None
 
-    @pytest.mark.parametrize("val,expected", [
-        ("monday", 0), ("mon", 0),
-        ("tuesday", 1), ("tue", 1), ("tues", 1),
-        ("wednesday", 2), ("wed", 2),
-        ("thursday", 3), ("thu", 3), ("thur", 3), ("thurs", 3),
-        ("friday", 4), ("fri", 4),
-        ("saturday", 5), ("sat", 5),
-        ("sunday", 6), ("sun", 6),
-    ])
+    @pytest.mark.parametrize(
+        "val,expected",
+        [
+            ("monday", 0),
+            ("mon", 0),
+            ("tuesday", 1),
+            ("tue", 1),
+            ("tues", 1),
+            ("wednesday", 2),
+            ("wed", 2),
+            ("thursday", 3),
+            ("thu", 3),
+            ("thur", 3),
+            ("thurs", 3),
+            ("friday", 4),
+            ("fri", 4),
+            ("saturday", 5),
+            ("sat", 5),
+            ("sunday", 6),
+            ("sun", 6),
+        ],
+    )
     def test_day_names(self, val, expected):
         assert _parse_weekday(val) == expected
 
@@ -229,6 +270,7 @@ class TestParseWeekday:
 # _parse_month
 # ===================================================================
 
+
 class TestParseMonth:
     def test_none_returns_none(self):
         assert _parse_month(None) is None
@@ -237,9 +279,14 @@ class TestParseMonth:
         assert _parse_month("") is None
         assert _parse_month("   ") is None
 
-    @pytest.mark.parametrize("val,expected", [
-        ("1", 1), ("6", 6), ("12", 12),
-    ])
+    @pytest.mark.parametrize(
+        "val,expected",
+        [
+            ("1", 1),
+            ("6", 6),
+            ("12", 12),
+        ],
+    )
     def test_numeric_strings(self, val, expected):
         assert _parse_month(val) == expected
 
@@ -247,20 +294,35 @@ class TestParseMonth:
         assert _parse_month("0") is None
         assert _parse_month("13") is None
 
-    @pytest.mark.parametrize("val,expected", [
-        ("jan", 1), ("january", 1),
-        ("feb", 2), ("february", 2),
-        ("mar", 3), ("march", 3),
-        ("apr", 4), ("april", 4),
-        ("may", 5),
-        ("jun", 6), ("june", 6),
-        ("jul", 7), ("july", 7),
-        ("aug", 8), ("august", 8),
-        ("sep", 9), ("sept", 9), ("september", 9),
-        ("oct", 10), ("october", 10),
-        ("nov", 11), ("november", 11),
-        ("dec", 12), ("december", 12),
-    ])
+    @pytest.mark.parametrize(
+        "val,expected",
+        [
+            ("jan", 1),
+            ("january", 1),
+            ("feb", 2),
+            ("february", 2),
+            ("mar", 3),
+            ("march", 3),
+            ("apr", 4),
+            ("april", 4),
+            ("may", 5),
+            ("jun", 6),
+            ("june", 6),
+            ("jul", 7),
+            ("july", 7),
+            ("aug", 8),
+            ("august", 8),
+            ("sep", 9),
+            ("sept", 9),
+            ("september", 9),
+            ("oct", 10),
+            ("october", 10),
+            ("nov", 11),
+            ("november", 11),
+            ("dec", 12),
+            ("december", 12),
+        ],
+    )
     def test_month_names(self, val, expected):
         assert _parse_month(val) == expected
 
@@ -278,6 +340,7 @@ class TestParseMonth:
 # ===================================================================
 # _parse_time_token
 # ===================================================================
+
 
 class TestParseTimeToken:
     def test_hour_only(self):
@@ -316,6 +379,7 @@ class TestParseTimeToken:
 # ===================================================================
 # _parse_time_range
 # ===================================================================
+
 
 class TestParseTimeRange:
     def test_none_returns_nones(self):
@@ -366,6 +430,7 @@ class TestParseTimeRange:
 # _time_label
 # ===================================================================
 
+
 class TestTimeLabel:
     def test_zero(self):
         assert _time_label(0) == "00:00"
@@ -386,6 +451,7 @@ class TestTimeLabel:
 # ===================================================================
 # _safe_float
 # ===================================================================
+
 
 class TestSafeFloat:
     def test_int(self):
@@ -431,6 +497,7 @@ class TestSafeFloat:
 # ===================================================================
 # _stats_for_group
 # ===================================================================
+
 
 class TestStatsForGroup:
     def _make_df(self, returns, volume=None, ranges=None, range_pcts=None):
@@ -508,6 +575,7 @@ class TestStatsForGroup:
 # temporal_analyze (integration with mocks)
 # ===================================================================
 
+
 def _apply_analyze_patches(func):
     """Stack all patches needed to call _raw_temporal_analyze without MT5.
 
@@ -545,9 +613,14 @@ class TestTemporalAnalyze:
 
     @_apply_analyze_patches
     def test_temporal_analyze_logs_finish_event(self, mock_fetch, caplog):
-        mock_fetch.return_value = (_make_rates(n=200, start_epoch=1704067200, interval=3600), None)
+        mock_fetch.return_value = (
+            _make_rates(n=200, start_epoch=1704067200, interval=3600),
+            None,
+        )
         with caplog.at_level("INFO", logger="mtdata.core.temporal"):
-            r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", limit=1000, group_by="dow")
+            r = _raw_temporal_analyze(
+                symbol="EURUSD", timeframe="H1", limit=1000, group_by="dow"
+            )
         assert r.get("success") is True
         assert any(
             "event=finish operation=temporal_analyze success=True" in record.message
@@ -644,13 +717,17 @@ class TestTemporalAnalyze:
 
     @_apply_analyze_patches
     def test_invalid_limit(self, mock_fetch, *_):
-        r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", limit=1, group_by="dow")
+        r = _raw_temporal_analyze(
+            symbol="EURUSD", timeframe="H1", limit=1, group_by="dow"
+        )
         assert "error" in r
         assert r["stage"] == "validate"
 
     @_apply_analyze_patches
     def test_invalid_group_by(self, mock_fetch, *_):
-        r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", limit=100, group_by="quarter")
+        r = _raw_temporal_analyze(
+            symbol="EURUSD", timeframe="H1", limit=100, group_by="quarter"
+        )
         assert "error" in r
 
     @_apply_analyze_patches

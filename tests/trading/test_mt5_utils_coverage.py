@@ -2,12 +2,10 @@
 
 import sys
 import types
-import time
-from datetime import datetime, timedelta, timezone
-from unittest.mock import patch, MagicMock, PropertyMock
+from datetime import datetime
+from unittest.mock import patch, MagicMock
 
 import numpy as np
-import pandas as pd
 import pytest
 
 # ── Provide a fake MetaTrader5 module before any project imports ──────────
@@ -36,6 +34,7 @@ _mt5_mock.TIMEFRAME_MN1 = 49153
 sys.modules["MetaTrader5"] = _mt5_mock
 
 import mtdata.utils.mt5 as _mt5_mod
+
 _mt5_mod.mt5 = _mt5_mock
 
 from mtdata.utils.mt5 import (
@@ -66,6 +65,7 @@ from mtdata.utils.mt5 import (
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def _make_tick(**kw):
     t = MagicMock()
     for k, v in kw.items():
@@ -74,6 +74,7 @@ def _make_tick(**kw):
 
 
 # ── get_symbol_info_cached  (lines 23-32) ────────────────────────────────────
+
 
 class TestGetSymbolInfoCached:
     def setup_method(self):
@@ -124,6 +125,7 @@ class TestMt5Adapter:
 
 # ── _mt5_epoch_to_utc  (lines 40-59) ─────────────────────────────────────────
 
+
 class TestMt5EpochToUtc:
     @patch("mtdata.utils.mt5.mt5_config")
     def test_no_tz_with_offset(self, cfg):
@@ -162,6 +164,7 @@ class TestMt5EpochToUtc:
 
 # ── _rates_to_df  (lines 62-72) ──────────────────────────────────────────────
 
+
 class TestRatesToDf:
     def test_with_time_column(self):
         rates = [{"time": 1000.0, "close": 1.1}, {"time": 2000.0, "close": 1.2}]
@@ -180,6 +183,7 @@ class TestRatesToDf:
 
 
 # ── _to_server_naive_dt  (lines 75-85) ───────────────────────────────────────
+
 
 class TestToServerNaiveDt:
     @patch("mtdata.utils.mt5.mt5_config")
@@ -208,6 +212,7 @@ class TestToServerNaiveDt:
 
 
 # ── _normalize_times_in_struct  (lines 88-102) ───────────────────────────────
+
 
 class TestNormalizeTimesInStruct:
     def test_none_input(self):
@@ -241,25 +246,40 @@ class TestNormalizeTimesInStruct:
 
 # ── MT5 copy wrappers  (lines 105-133) ───────────────────────────────────────
 
+
 class TestCopyWrappers:
     def test_copy_rates_from(self):
         _mt5_mock.copy_rates_from.return_value = None
-        with patch("mtdata.utils.mt5._to_server_naive_dt", return_value=datetime(2024, 1, 1)):
-            with patch("mtdata.utils.mt5._normalize_times_in_struct", return_value=None):
+        with patch(
+            "mtdata.utils.mt5._to_server_naive_dt", return_value=datetime(2024, 1, 1)
+        ):
+            with patch(
+                "mtdata.utils.mt5._normalize_times_in_struct", return_value=None
+            ):
                 result = _mt5_copy_rates_from("EURUSD", 1, datetime(2024, 1, 1), 100)
         assert result is None
 
     def test_copy_rates_range(self):
         _mt5_mock.copy_rates_range.return_value = None
-        with patch("mtdata.utils.mt5._to_server_naive_dt", return_value=datetime(2024, 1, 1)):
-            with patch("mtdata.utils.mt5._normalize_times_in_struct", return_value=None):
-                result = _mt5_copy_rates_range("EURUSD", 1, datetime(2024, 1, 1), datetime(2024, 1, 2))
+        with patch(
+            "mtdata.utils.mt5._to_server_naive_dt", return_value=datetime(2024, 1, 1)
+        ):
+            with patch(
+                "mtdata.utils.mt5._normalize_times_in_struct", return_value=None
+            ):
+                result = _mt5_copy_rates_range(
+                    "EURUSD", 1, datetime(2024, 1, 1), datetime(2024, 1, 2)
+                )
         assert result is None
 
     def test_copy_ticks_from(self):
         _mt5_mock.copy_ticks_from.return_value = None
-        with patch("mtdata.utils.mt5._to_server_naive_dt", return_value=datetime(2024, 1, 1)):
-            with patch("mtdata.utils.mt5._normalize_times_in_struct", return_value=None):
+        with patch(
+            "mtdata.utils.mt5._to_server_naive_dt", return_value=datetime(2024, 1, 1)
+        ):
+            with patch(
+                "mtdata.utils.mt5._normalize_times_in_struct", return_value=None
+            ):
                 result = _mt5_copy_ticks_from("EURUSD", datetime(2024, 1, 1), 100, 0)
         assert result is None
 
@@ -271,13 +291,20 @@ class TestCopyWrappers:
 
     def test_copy_ticks_range(self):
         _mt5_mock.copy_ticks_range.return_value = None
-        with patch("mtdata.utils.mt5._to_server_naive_dt", return_value=datetime(2024, 1, 1)):
-            with patch("mtdata.utils.mt5._normalize_times_in_struct", return_value=None):
-                result = _mt5_copy_ticks_range("EURUSD", datetime(2024, 1, 1), datetime(2024, 1, 2), 0)
+        with patch(
+            "mtdata.utils.mt5._to_server_naive_dt", return_value=datetime(2024, 1, 1)
+        ):
+            with patch(
+                "mtdata.utils.mt5._normalize_times_in_struct", return_value=None
+            ):
+                result = _mt5_copy_ticks_range(
+                    "EURUSD", datetime(2024, 1, 1), datetime(2024, 1, 2), 0
+                )
         assert result is None
 
 
 # ── MT5Connection  (lines 136-178) ───────────────────────────────────────────
+
 
 class TestMT5Connection:
     def test_initial_state(self):
@@ -378,6 +405,7 @@ class TestMT5Connection:
 
 # ── MT5Service  (lines 183-196) ──────────────────────────────────────────────
 
+
 class TestMT5Service:
     def test_default_connection(self):
         svc = MT5Service()
@@ -410,17 +438,22 @@ class TestEnsureMt5ConnectionOrRaise:
     def test_raises_when_service_returns_false(self):
         svc = MagicMock()
         svc.ensure_connected.return_value = False
-        with pytest.raises(MT5ConnectionError, match="Failed to connect to MetaTrader5"):
+        with pytest.raises(
+            MT5ConnectionError, match="Failed to connect to MetaTrader5"
+        ):
             ensure_mt5_connection_or_raise(service=svc)
 
     def test_wraps_unexpected_service_errors(self):
         svc = MagicMock()
         svc.ensure_connected.side_effect = RuntimeError("boom")
-        with pytest.raises(MT5ConnectionError, match="Failed to connect to MetaTrader5"):
+        with pytest.raises(
+            MT5ConnectionError, match="Failed to connect to MetaTrader5"
+        ):
             ensure_mt5_connection_or_raise(service=svc)
 
 
 # ── _ensure_symbol_ready  (lines 221-245) ────────────────────────────────────
+
 
 class TestEnsureSymbolReady:
     def test_select_fails(self):
@@ -463,6 +496,7 @@ class TestEnsureSymbolReady:
 
 # ── _symbol_ready_guard  (lines 248-264) ─────────────────────────────────────
 
+
 class TestSymbolReadyGuard:
     def test_guard_restores_visibility(self):
         info = MagicMock(visible=False)
@@ -482,11 +516,16 @@ class TestSymbolReadyGuard:
         with _symbol_ready_guard("EURUSD", info_before=info) as (err, inf):
             pass
         # symbol_select called with True for selection, but NOT False for restore
-        calls = [c for c in _mt5_mock.symbol_select.call_args_list if c == (("EURUSD", False),)]
+        calls = [
+            c
+            for c in _mt5_mock.symbol_select.call_args_list
+            if c == (("EURUSD", False),)
+        ]
         assert len(calls) == 0
 
 
 # ── estimate_server_offset  (lines 267-307) ──────────────────────────────────
+
 
 class TestEstimateServerOffset:
     @patch("mtdata.utils.mt5.mt5_connection")
@@ -552,7 +591,11 @@ class TestCachedMt5TimeAlignment:
 
         def fake_inspect(**kwargs):
             calls["count"] += 1
-            return {"status": "ok", "sequence": calls["count"], "symbol": kwargs["symbol"]}
+            return {
+                "status": "ok",
+                "sequence": calls["count"],
+                "symbol": kwargs["symbol"],
+            }
 
         monkeypatch.setattr(_mt5_mod, "inspect_mt5_time_alignment", fake_inspect)
         monkeypatch.setattr(_mt5_mod.time, "time", lambda: 120.0)
@@ -592,10 +635,16 @@ class TestInspectMt5TimeAlignment:
         cfg.get_time_offset_seconds.return_value = 7200
         cfg.server_tz_name = "Europe/Nicosia"
 
-        monkeypatch.setattr(_mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None)
+        monkeypatch.setattr(
+            _mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None
+        )
         monkeypatch.setattr(_mt5_mod, "_ensure_symbol_ready", lambda symbol: None)
         monkeypatch.setattr(_mt5_mod.time, "time", lambda: now)
-        monkeypatch.setattr(_mt5_mod.mt5, "symbol_info_tick", lambda symbol: MagicMock(time=now + 7200.0))
+        monkeypatch.setattr(
+            _mt5_mod.mt5,
+            "symbol_info_tick",
+            lambda symbol: MagicMock(time=now + 7200.0),
+        )
         monkeypatch.setattr(
             _mt5_mod,
             "_mt5_copy_rates_from_pos",
@@ -624,10 +673,16 @@ class TestInspectMt5TimeAlignment:
         cfg.get_server_tz.return_value = None
         cfg.get_time_offset_seconds.return_value = 7200
 
-        monkeypatch.setattr(_mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None)
+        monkeypatch.setattr(
+            _mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None
+        )
         monkeypatch.setattr(_mt5_mod, "_ensure_symbol_ready", lambda symbol: None)
         monkeypatch.setattr(_mt5_mod.time, "time", lambda: now)
-        monkeypatch.setattr(_mt5_mod.mt5, "symbol_info_tick", lambda symbol: MagicMock(time=now + 10800.0))
+        monkeypatch.setattr(
+            _mt5_mod.mt5,
+            "symbol_info_tick",
+            lambda symbol: MagicMock(time=now + 10800.0),
+        )
         monkeypatch.setattr(
             _mt5_mod,
             "_mt5_copy_rates_from_pos",
@@ -652,10 +707,16 @@ class TestInspectMt5TimeAlignment:
         cfg.get_server_tz.return_value = None
         cfg.get_time_offset_seconds.return_value = 7200
 
-        monkeypatch.setattr(_mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None)
+        monkeypatch.setattr(
+            _mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None
+        )
         monkeypatch.setattr(_mt5_mod, "_ensure_symbol_ready", lambda symbol: None)
         monkeypatch.setattr(_mt5_mod.time, "time", lambda: now)
-        monkeypatch.setattr(_mt5_mod.mt5, "symbol_info_tick", lambda symbol: MagicMock(time=now + 7200.0))
+        monkeypatch.setattr(
+            _mt5_mod.mt5,
+            "symbol_info_tick",
+            lambda symbol: MagicMock(time=now + 7200.0),
+        )
         monkeypatch.setattr(
             _mt5_mod,
             "_mt5_copy_rates_from_pos",
@@ -674,17 +735,25 @@ class TestInspectMt5TimeAlignment:
         assert result["offset_inference_reliable"] is True
 
     @patch("mtdata.utils.mt5.mt5_config")
-    def test_closed_market_tick_is_not_treated_as_timezone_mismatch(self, cfg, monkeypatch):
+    def test_closed_market_tick_is_not_treated_as_timezone_mismatch(
+        self, cfg, monkeypatch
+    ):
         now = 1_700_000_045.0
         current_bar = float((int(now) // 60) * 60)
         cfg.get_server_tz.return_value = None
         cfg.get_time_offset_seconds.return_value = 7200
 
-        monkeypatch.setattr(_mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None)
+        monkeypatch.setattr(
+            _mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None
+        )
         monkeypatch.setattr(_mt5_mod, "_ensure_symbol_ready", lambda symbol: None)
         monkeypatch.setattr(_mt5_mod.time, "time", lambda: now)
         # Simulate a Friday tick sampled on Sunday: unusable for offset inference.
-        monkeypatch.setattr(_mt5_mod.mt5, "symbol_info_tick", lambda symbol: MagicMock(time=now - 147600.0))
+        monkeypatch.setattr(
+            _mt5_mod.mt5,
+            "symbol_info_tick",
+            lambda symbol: MagicMock(time=now - 147600.0),
+        )
         monkeypatch.setattr(
             _mt5_mod,
             "_mt5_copy_rates_from_pos",
@@ -716,3 +785,5 @@ class TestInspectMt5TimeAlignment:
         assert result["status"] == "unavailable"
         assert result["reason"] == "connection_failed"
         assert result["error"] == "boom"
+# ruff: noqa: E402
+# ruff: noqa: E402, E731, E741, F811, F841

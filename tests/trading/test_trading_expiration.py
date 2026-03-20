@@ -14,7 +14,11 @@ from mtdata.core.trading_time import _normalize_pending_expiration, mt5_config
 
 def _with_clean_tz_config():
     """Temporarily clear tz/offset config for deterministic tests."""
-    original = (mt5_config.server_tz_name, mt5_config.client_tz_name, mt5_config.time_offset_minutes)
+    original = (
+        mt5_config.server_tz_name,
+        mt5_config.client_tz_name,
+        mt5_config.time_offset_minutes,
+    )
     mt5_config.server_tz_name = None
     mt5_config.client_tz_name = None
     mt5_config.time_offset_minutes = 0
@@ -22,7 +26,11 @@ def _with_clean_tz_config():
 
 
 def _restore_tz_config(original) -> None:
-    mt5_config.server_tz_name, mt5_config.client_tz_name, mt5_config.time_offset_minutes = original
+    (
+        mt5_config.server_tz_name,
+        mt5_config.client_tz_name,
+        mt5_config.time_offset_minutes,
+    ) = original
 
 
 def test_normalize_pending_expiration_datetime_returns_int_timestamp() -> None:

@@ -37,10 +37,14 @@ def test_mlforecast_base_metadata_on_concrete_method():
 def test_mlforecast_forecast_raises_runtime_on_import_error(monkeypatch):
     monkeypatch.setitem(sys.modules, "mlforecast", ModuleType("mlforecast"))
     with pytest.raises(RuntimeError, match="Failed to import mlforecast"):
-        _DummyMLMethod().forecast(pd.Series([1.0, 2.0, 3.0]), horizon=1, seasonality=0, params={})
+        _DummyMLMethod().forecast(
+            pd.Series([1.0, 2.0, 3.0]), horizon=1, seasonality=0, params={}
+        )
 
 
-def test_mlforecast_forecast_with_default_lags_exog_and_internal_param_filter(monkeypatch):
+def test_mlforecast_forecast_with_default_lags_exog_and_internal_param_filter(
+    monkeypatch,
+):
     calls = {}
 
     class FakeMLForecast:
@@ -66,7 +70,11 @@ def test_mlforecast_forecast_with_default_lags_exog_and_internal_param_filter(mo
     Y_df = pd.DataFrame({"unique_id": ["ts"], "ds": [1], "y": [1.0]})
     X_df = pd.DataFrame({"unique_id": ["ts"], "ds": [1], "x1": [9.0]})
     Xf_df = pd.DataFrame({"unique_id": ["ts"], "ds": [2], "x1": [10.0]})
-    monkeypatch.setattr(common_mod, "_create_training_dataframes", lambda *args, **kwargs: (Y_df, X_df, Xf_df))
+    monkeypatch.setattr(
+        common_mod,
+        "_create_training_dataframes",
+        lambda *args, **kwargs: (Y_df, X_df, Xf_df),
+    )
     monkeypatch.setattr(
         common_mod,
         "_extract_forecast_values",
@@ -121,7 +129,11 @@ def test_mlforecast_forecast_without_exog_uses_simple_fit_and_predict(monkeypatc
         "_create_training_dataframes",
         lambda *args, **kwargs: (pd.DataFrame({"y": [1.0]}), None, None),
     )
-    monkeypatch.setattr(common_mod, "_extract_forecast_values", lambda Yf, horizon, method_name: np.array([9.0], dtype=float))
+    monkeypatch.setattr(
+        common_mod,
+        "_extract_forecast_values",
+        lambda Yf, horizon, method_name: np.array([9.0], dtype=float),
+    )
 
     out = _DummyMLMethod().forecast(
         pd.Series([1.0, 2.0]),
@@ -155,7 +167,9 @@ def test_mlforecast_forecast_wraps_runtime_errors(monkeypatch):
     )
 
     with pytest.raises(RuntimeError, match="dummy_ml error: fit exploded"):
-        _DummyMLMethod().forecast(pd.Series([1.0, 2.0]), horizon=1, seasonality=0, params={})
+        _DummyMLMethod().forecast(
+            pd.Series([1.0, 2.0]), horizon=1, seasonality=0, params={}
+        )
 
 
 def test_mlforecast_forecast_requires_unique_id_rows(monkeypatch):
@@ -178,8 +192,12 @@ def test_mlforecast_forecast_requires_unique_id_rows(monkeypatch):
         lambda *args, **kwargs: (pd.DataFrame({"y": [1.0]}), None, None),
     )
 
-    with pytest.raises(RuntimeError, match="dummy_ml error: mlforecast output missing unique_id column"):
-        _DummyMLMethod().forecast(pd.Series([1.0, 2.0]), horizon=1, seasonality=0, params={})
+    with pytest.raises(
+        RuntimeError, match="dummy_ml error: mlforecast output missing unique_id column"
+    ):
+        _DummyMLMethod().forecast(
+            pd.Series([1.0, 2.0]), horizon=1, seasonality=0, params={}
+        )
 
 
 def test_mlforecast_random_forest_get_model(monkeypatch):
@@ -197,7 +215,11 @@ def test_mlforecast_random_forest_get_model(monkeypatch):
 
     model = mlm.MLFRandomForest()._get_model({"n_estimators": "55", "max_depth": 4})
     assert isinstance(model, FakeRF)
-    assert captured["kwargs"] == {"n_estimators": 55, "max_depth": 4, "random_state": 42}
+    assert captured["kwargs"] == {
+        "n_estimators": 55,
+        "max_depth": 4,
+        "random_state": 42,
+    }
     assert mlm.MLFRandomForest().required_packages == ["mlforecast", "scikit-learn"]
 
 
@@ -213,7 +235,12 @@ def test_mlforecast_lightgbm_get_model(monkeypatch):
     monkeypatch.setitem(sys.modules, "lightgbm", lgbm_mod)
 
     model = mlm.MLFLightGBM()._get_model(
-        {"n_estimators": "10", "learning_rate": "0.1", "num_leaves": "16", "max_depth": "6"}
+        {
+            "n_estimators": "10",
+            "learning_rate": "0.1",
+            "num_leaves": "16",
+            "max_depth": "6",
+        }
     )
     assert isinstance(model, FakeLGBM)
     assert captured["kwargs"] == {
@@ -244,7 +271,9 @@ def test_generic_mlforecast_model_import_validation_and_param_filtering(monkeypa
     fake_mod.FakeModel = FakeModel
     monkeypatch.setitem(sys.modules, "fake_models", fake_mod)
 
-    model = method._get_model({"model": "fake_models.FakeModel", "a": 5, "b": 6, "c": 7})
+    model = method._get_model(
+        {"model": "fake_models.FakeModel", "a": 5, "b": 6, "c": 7}
+    )
     assert isinstance(model, FakeModel)
     assert model.a == 5
     assert model.b == 6
@@ -268,7 +297,10 @@ def test_mlforecast_legacy_wrappers_route_to_registry(monkeypatch):
                     "kwargs": kwargs,
                 }
             )
-            return ForecastResult(forecast=np.array([5.0, 6.0], dtype=float), params_used={"method": self._name})
+            return ForecastResult(
+                forecast=np.array([5.0, 6.0], dtype=float),
+                params_used={"method": self._name},
+            )
 
     class FakeRegistry:
         @staticmethod

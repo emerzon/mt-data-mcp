@@ -32,7 +32,9 @@ def test_finviz_http_get_applies_default_timeout(monkeypatch):
 
     monkeypatch.setattr(svc, "_FINVIZ_HTTP_TIMEOUT", 7.5)
     monkeypatch.setattr(requests, "get", _fake_get)
-    _ = svc._finviz_http_get("https://example.test", headers={"A": "B"}, params={"x": 1})
+    _ = svc._finviz_http_get(
+        "https://example.test", headers={"A": "B"}, params={"x": 1}
+    )
 
     assert calls["url"] == "https://example.test"
     assert calls["timeout"] == 7.5
@@ -60,7 +62,9 @@ def test_screen_stocks_uses_bounded_screener_view(monkeypatch):
     monkeypatch.setattr(svc, "_FINVIZ_SCREENER_MAX_ROWS", 120)
     monkeypatch.setattr(svc, "_FINVIZ_PAGE_LIMIT_MAX", 500)
 
-    result = svc.screen_stocks(filters={"Sector": "Technology"}, limit=50, page=3, view="overview")
+    result = svc.screen_stocks(
+        filters={"Sector": "Technology"}, limit=50, page=3, view="overview"
+    )
 
     assert result.get("success") is True
     assert result.get("count") == 20

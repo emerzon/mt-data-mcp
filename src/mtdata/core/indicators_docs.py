@@ -2,6 +2,7 @@
 
 This module delegates to utils.indicators to avoid duplicate discovery logic.
 """
+
 from typing import Any, Dict, List
 
 from ..utils.indicators import (
@@ -22,7 +23,9 @@ def clean_help_text(text: str, func_name: str | None = None) -> str:
     return _clean_help_text_impl(text, func_name=func_name)
 
 
-def infer_defaults_from_doc(func_name: str, doc_text: str, params: List[Dict[str, Any]]):
+def infer_defaults_from_doc(
+    func_name: str, doc_text: str, params: List[Dict[str, Any]]
+):
     """Infer parameter defaults from docstring text."""
     return _infer_defaults_impl(func_name, doc_text, params)
 

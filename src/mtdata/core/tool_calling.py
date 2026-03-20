@@ -37,7 +37,9 @@ def resolve_sync_tool_result(result: Any) -> Any:
     return state.get("result")
 
 
-def call_tool_sync_raw(func: Any, *args: Any, cli_raw: bool = False, **kwargs: Any) -> Any:
+def call_tool_sync_raw(
+    func: Any, *args: Any, cli_raw: bool = False, **kwargs: Any
+) -> Any:
     target = unwrap_tool_callable(func)
     if not cli_raw:
         return resolve_sync_tool_result(target(*args, **kwargs))

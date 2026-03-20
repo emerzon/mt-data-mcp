@@ -1,7 +1,5 @@
 """Comprehensive tests for mtdata.utils.denoise module."""
 
-import math
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -47,6 +45,7 @@ RANDOM_WALK = np.cumsum(_rng2.normal(0, 1, N))
 
 def _smoothness(x: np.ndarray) -> float:
     """Variance of first differences – lower means smoother."""
+# ruff: noqa: E402, E731, E741, F811, F841
     return float(np.var(np.diff(x)))
 
 
@@ -59,6 +58,7 @@ def _check_basic(result, length: int) -> None:
 # ======================================================================
 # 1. normalize_denoise_spec
 # ======================================================================
+
 
 class TestNormalizeDenoiseSec:
     def test_string_ema(self):
@@ -208,6 +208,7 @@ class TestNormalizeDenoiseSec:
 # 2. _denoise_series – dispatch through pd.Series
 # ======================================================================
 
+
 def _make_series(arr: np.ndarray) -> pd.Series:
     return pd.Series(arr, dtype=float)
 
@@ -240,10 +241,19 @@ class TestDenoiseSeriesDispatch:
         s = _make_series(NOISY_SIGNAL)
         alpha = 0.2
 
-        result = _denoise_series(s, method="ema", params={"alpha": alpha}, causality="zero_phase")
+        result = _denoise_series(
+            s, method="ema", params={"alpha": alpha}, causality="zero_phase"
+        )
 
-        forward = pd.Series(NOISY_SIGNAL).ewm(alpha=alpha, adjust=False).mean().to_numpy()
-        backward = pd.Series(forward[::-1]).ewm(alpha=alpha, adjust=False).mean().to_numpy()[::-1]
+        forward = (
+            pd.Series(NOISY_SIGNAL).ewm(alpha=alpha, adjust=False).mean().to_numpy()
+        )
+        backward = (
+            pd.Series(forward[::-1])
+            .ewm(alpha=alpha, adjust=False)
+            .mean()
+            .to_numpy()[::-1]
+        )
         expected = 0.5 * (forward + backward)
 
         np.testing.assert_allclose(result.to_numpy(), expected)
@@ -273,14 +283,18 @@ class TestDenoiseSeriesDispatch:
 
     def test_whittaker(self):
         s = _make_series(NOISY_SIGNAL)
-        result = _denoise_series(s, method="whittaker", params={"lamb": 1000.0, "order": 2})
+        result = _denoise_series(
+            s, method="whittaker", params={"lamb": 1000.0, "order": 2}
+        )
         _check_basic(result.values, N)
         assert _smoothness(result.values) < _smoothness(NOISY_SIGNAL)
 
     def test_savgol(self):
         pytest.importorskip("scipy.signal")
         s = _make_series(NOISY_SIGNAL)
-        result = _denoise_series(s, method="savgol", params={"window": 11, "polyorder": 2})
+        result = _denoise_series(
+            s, method="savgol", params={"window": 11, "polyorder": 2}
+        )
         _check_basic(result.values, N)
         assert _smoothness(result.values) <= _smoothness(NOISY_SIGNAL)
 
@@ -294,18 +308,24 @@ class TestDenoiseSeriesDispatch:
     def test_butterworth(self):
         pytest.importorskip("scipy.signal")
         s = _make_series(NOISY_SIGNAL)
-        result = _denoise_series(s, method="butterworth", params={"cutoff": 0.1, "order": 4})
+        result = _denoise_series(
+            s, method="butterworth", params={"cutoff": 0.1, "order": 4}
+        )
         _check_basic(result.values, N)
         assert _smoothness(result.values) < _smoothness(NOISY_SIGNAL)
 
     def test_hampel(self):
         s = _make_series(NOISY_SIGNAL)
-        result = _denoise_series(s, method="hampel", params={"window": 7, "n_sigmas": 3.0})
+        result = _denoise_series(
+            s, method="hampel", params={"window": 7, "n_sigmas": 3.0}
+        )
         _check_basic(result.values, N)
 
     def test_bilateral(self):
         s = _make_series(NOISY_SIGNAL)
-        result = _denoise_series(s, method="bilateral", params={"sigma_s": 2.0, "sigma_r": 0.5})
+        result = _denoise_series(
+            s, method="bilateral", params={"sigma_s": 2.0, "sigma_r": 0.5}
+        )
         _check_basic(result.values, N)
 
     def test_kalman(self):
@@ -332,7 +352,9 @@ class TestDenoiseSeriesDispatch:
 
     def test_ssa(self):
         s = _make_series(NOISY_SIGNAL)
-        result = _denoise_series(s, method="ssa", params={"window": 30, "components": 2})
+        result = _denoise_series(
+            s, method="ssa", params={"window": 30, "components": 2}
+        )
         _check_basic(result.values, N)
         assert _smoothness(result.values) < _smoothness(NOISY_SIGNAL)
 
@@ -371,13 +393,17 @@ class TestDenoiseSeriesDispatch:
     def test_eemd(self):
         pytest.importorskip("PyEMD")
         s = _make_series(NOISY_SIGNAL)
-        result = _denoise_series(s, method="eemd", params={"trials": 10, "random_state": 42})
+        result = _denoise_series(
+            s, method="eemd", params={"trials": 10, "random_state": 42}
+        )
         _check_basic(result.values, N)
 
     def test_ceemdan(self):
         pytest.importorskip("PyEMD")
         s = _make_series(NOISY_SIGNAL)
-        result = _denoise_series(s, method="ceemdan", params={"trials": 10, "random_state": 42})
+        result = _denoise_series(
+            s, method="ceemdan", params={"trials": 10, "random_state": 42}
+        )
         _check_basic(result.values, N)
 
     def test_loess(self):
@@ -406,12 +432,16 @@ class TestDenoiseSeriesDispatch:
 
     def test_ema_causal(self):
         s = _make_series(NOISY_SIGNAL)
-        result = _denoise_series(s, method="ema", params={"span": 10}, causality="causal")
+        result = _denoise_series(
+            s, method="ema", params={"span": 10}, causality="causal"
+        )
         _check_basic(result.values, N)
 
     def test_sma_causal(self):
         s = _make_series(NOISY_SIGNAL)
-        result = _denoise_series(s, method="sma", params={"window": 10}, causality="causal")
+        result = _denoise_series(
+            s, method="sma", params={"window": 10}, causality="causal"
+        )
         _check_basic(result.values, N)
 
     def test_kalman_causal(self):
@@ -434,15 +464,18 @@ class TestDenoiseSeriesDispatch:
 # 3. _apply_denoise – DataFrame level
 # ======================================================================
 
+
 class TestApplyDenoise:
     def _make_df(self) -> pd.DataFrame:
-        return pd.DataFrame({
-            "close": NOISY_SIGNAL,
-            "open": NOISY_SIGNAL + 0.1,
-            "high": NOISY_SIGNAL + 0.5,
-            "low": NOISY_SIGNAL - 0.5,
-            "volume": np.abs(NOISY_SIGNAL) * 1000,
-        })
+        return pd.DataFrame(
+            {
+                "close": NOISY_SIGNAL,
+                "open": NOISY_SIGNAL + 0.1,
+                "high": NOISY_SIGNAL + 0.5,
+                "low": NOISY_SIGNAL - 0.5,
+                "volume": np.abs(NOISY_SIGNAL) * 1000,
+            }
+        )
 
     def test_none_spec_no_change(self):
         df = self._make_df()
@@ -461,7 +494,12 @@ class TestApplyDenoise:
 
     def test_ema_keep_original(self):
         df = self._make_df()
-        spec = {"method": "ema", "params": {"span": 10}, "columns": ["close"], "keep_original": True}
+        spec = {
+            "method": "ema",
+            "params": {"span": 10},
+            "columns": ["close"],
+            "keep_original": True,
+        }
         added = _apply_denoise(df, spec)
         assert "close_dn" in added
         assert "close_dn" in df.columns
@@ -470,33 +508,59 @@ class TestApplyDenoise:
     def test_ema_overwrite(self):
         df = self._make_df()
         original_close = df["close"].values.copy()
-        spec = {"method": "ema", "params": {"span": 10}, "columns": ["close"], "keep_original": False}
+        spec = {
+            "method": "ema",
+            "params": {"span": 10},
+            "columns": ["close"],
+            "keep_original": False,
+        }
         added = _apply_denoise(df, spec)
         assert added == []
         assert not np.array_equal(df["close"].values, original_close)
 
     def test_ohlcv_columns(self):
         df = self._make_df()
-        spec = {"method": "sma", "params": {"window": 5}, "columns": "ohlcv", "keep_original": True}
+        spec = {
+            "method": "sma",
+            "params": {"window": 5},
+            "columns": "ohlcv",
+            "keep_original": True,
+        }
         added = _apply_denoise(df, spec)
         for col in ("open_dn", "high_dn", "low_dn", "close_dn", "volume_dn"):
             assert col in added
 
     def test_custom_suffix(self):
         df = self._make_df()
-        spec = {"method": "sma", "params": {"window": 5}, "columns": ["close"], "keep_original": True, "suffix": "_smooth"}
+        spec = {
+            "method": "sma",
+            "params": {"window": 5},
+            "columns": ["close"],
+            "keep_original": True,
+            "suffix": "_smooth",
+        }
         added = _apply_denoise(df, spec)
         assert "close_smooth" in added
 
     def test_missing_column_skipped(self):
         df = self._make_df()
-        spec = {"method": "sma", "params": {"window": 5}, "columns": ["nonexistent"], "keep_original": True}
+        spec = {
+            "method": "sma",
+            "params": {"window": 5},
+            "columns": ["nonexistent"],
+            "keep_original": True,
+        }
         added = _apply_denoise(df, spec)
         assert added == []
 
     def test_all_columns(self):
         df = self._make_df()
-        spec = {"method": "sma", "params": {"window": 5}, "columns": "all", "keep_original": True}
+        spec = {
+            "method": "sma",
+            "params": {"window": 5},
+            "columns": "all",
+            "keep_original": True,
+        }
         added = _apply_denoise(df, spec)
         assert len(added) >= 4
 
@@ -504,6 +568,7 @@ class TestApplyDenoise:
 # ======================================================================
 # 4. _resolve_denoise_base_col
 # ======================================================================
+
 
 class TestResolveDenoisBaseCol:
     def test_no_denoise_returns_base(self):
@@ -518,14 +583,25 @@ class TestResolveDenoisBaseCol:
 
     def test_with_denoise_returns_dn_col(self):
         df = pd.DataFrame({"close": NOISY_SIGNAL})
-        spec = {"method": "sma", "params": {"window": 5}, "columns": ["close"], "keep_original": True, "suffix": "_dn"}
+        spec = {
+            "method": "sma",
+            "params": {"window": 5},
+            "columns": ["close"],
+            "keep_original": True,
+            "suffix": "_dn",
+        }
         result = _resolve_denoise_base_col(df, spec, default_when="post_ti")
         assert result == "close_dn"
         assert "close_dn" in df.columns
 
     def test_denoise_overwrites_returns_base(self):
         df = pd.DataFrame({"close": NOISY_SIGNAL})
-        spec = {"method": "sma", "params": {"window": 5}, "columns": ["close"], "keep_original": False}
+        spec = {
+            "method": "sma",
+            "params": {"window": 5},
+            "columns": ["close"],
+            "keep_original": False,
+        }
         result = _resolve_denoise_base_col(df, spec)
         assert result == "close"
 
@@ -533,6 +609,7 @@ class TestResolveDenoisBaseCol:
 # ======================================================================
 # 5. Individual algorithm functions
 # ======================================================================
+
 
 class TestHpFilter:
     def test_basic(self):
@@ -586,8 +663,13 @@ class TestKalmanFilter1d:
         assert _smoothness(y) < _smoothness(NOISY_SIGNAL)
 
     def test_with_initial_state(self):
-        y = _kalman_filter_1d(NOISY_SIGNAL, process_var=0.01, measurement_var=1.0,
-                              initial_state=0.0, initial_cov=1.0)
+        y = _kalman_filter_1d(
+            NOISY_SIGNAL,
+            process_var=0.01,
+            measurement_var=1.0,
+            initial_state=0.0,
+            initial_cov=1.0,
+        )
         _check_basic(y, N)
 
     def test_low_process_var_smooth(self):
@@ -599,33 +681,63 @@ class TestKalmanFilter1d:
 class TestButterworthFilter:
     def test_basic_lowpass(self):
         pytest.importorskip("scipy.signal")
-        y = _butterworth_filter(NOISY_SIGNAL, cutoff=0.1, order=4, btype="low",
-                                causality="zero_phase", padlen=None)
+        y = _butterworth_filter(
+            NOISY_SIGNAL,
+            cutoff=0.1,
+            order=4,
+            btype="low",
+            causality="zero_phase",
+            padlen=None,
+        )
         _check_basic(y, N)
         assert _smoothness(y) < _smoothness(NOISY_SIGNAL)
 
     def test_causal(self):
         pytest.importorskip("scipy.signal")
-        y = _butterworth_filter(NOISY_SIGNAL, cutoff=0.1, order=4, btype="low",
-                                causality="causal", padlen=None)
+        y = _butterworth_filter(
+            NOISY_SIGNAL,
+            cutoff=0.1,
+            order=4,
+            btype="low",
+            causality="causal",
+            padlen=None,
+        )
         _check_basic(y, N)
 
     def test_bandpass(self):
         pytest.importorskip("scipy.signal")
-        y = _butterworth_filter(NOISY_SIGNAL, cutoff=[0.05, 0.2], order=2, btype="bandpass",
-                                causality="zero_phase", padlen=None)
+        y = _butterworth_filter(
+            NOISY_SIGNAL,
+            cutoff=[0.05, 0.2],
+            order=2,
+            btype="bandpass",
+            causality="zero_phase",
+            padlen=None,
+        )
         _check_basic(y, N)
 
     def test_invalid_cutoff_returns_input(self):
         pytest.importorskip("scipy.signal")
-        y = _butterworth_filter(NOISY_SIGNAL, cutoff=0.6, order=4, btype="low",
-                                causality="zero_phase", padlen=None)
+        y = _butterworth_filter(
+            NOISY_SIGNAL,
+            cutoff=0.6,
+            order=4,
+            btype="low",
+            causality="zero_phase",
+            padlen=None,
+        )
         np.testing.assert_array_equal(y, NOISY_SIGNAL)
 
     def test_invalid_bandpass_returns_input(self):
         pytest.importorskip("scipy.signal")
-        y = _butterworth_filter(NOISY_SIGNAL, cutoff=[0.3, 0.1], order=2, btype="bandpass",
-                                causality="zero_phase", padlen=None)
+        y = _butterworth_filter(
+            NOISY_SIGNAL,
+            cutoff=[0.3, 0.1],
+            order=2,
+            btype="bandpass",
+            causality="zero_phase",
+            padlen=None,
+        )
         np.testing.assert_array_equal(y, NOISY_SIGNAL)
 
 
@@ -646,29 +758,39 @@ class TestHampelFilter:
         _check_basic(y, N)
 
     def test_short_array(self):
-        y = _hampel_filter(np.array([1.0, 2.0]), window=7, n_sigmas=3.0, causality="zero_phase")
+        y = _hampel_filter(
+            np.array([1.0, 2.0]), window=7, n_sigmas=3.0, causality="zero_phase"
+        )
         assert len(y) == 2
 
 
 class TestBilateralFilter1d:
     def test_basic(self):
-        y = _bilateral_filter_1d(NOISY_SIGNAL, sigma_s=2.0, sigma_r=0.5,
-                                 truncate=3.0, causality="zero_phase")
+        y = _bilateral_filter_1d(
+            NOISY_SIGNAL, sigma_s=2.0, sigma_r=0.5, truncate=3.0, causality="zero_phase"
+        )
         _check_basic(y, N)
 
     def test_causal(self):
-        y = _bilateral_filter_1d(NOISY_SIGNAL, sigma_s=2.0, sigma_r=0.5,
-                                 truncate=3.0, causality="causal")
+        y = _bilateral_filter_1d(
+            NOISY_SIGNAL, sigma_s=2.0, sigma_r=0.5, truncate=3.0, causality="causal"
+        )
         _check_basic(y, N)
 
     def test_zero_sigma_returns_input(self):
-        y = _bilateral_filter_1d(NOISY_SIGNAL, sigma_s=0.0, sigma_r=0.5,
-                                 truncate=3.0, causality="zero_phase")
+        y = _bilateral_filter_1d(
+            NOISY_SIGNAL, sigma_s=0.0, sigma_r=0.5, truncate=3.0, causality="zero_phase"
+        )
         np.testing.assert_array_equal(y, NOISY_SIGNAL)
 
     def test_short_array(self):
-        y = _bilateral_filter_1d(np.array([1.0, 2.0]), sigma_s=2.0, sigma_r=0.5,
-                                 truncate=3.0, causality="zero_phase")
+        y = _bilateral_filter_1d(
+            np.array([1.0, 2.0]),
+            sigma_s=2.0,
+            sigma_r=0.5,
+            truncate=3.0,
+            causality="zero_phase",
+        )
         assert len(y) == 2
 
 
@@ -714,18 +836,31 @@ class TestBetaIrlsMean:
 
 class TestBetaSmooth:
     def test_basic(self):
-        y = _beta_smooth(NOISY_SIGNAL, window=9, beta=1.3, n_iter=20, eps=1e-6,
-                         causality="zero_phase")
+        y = _beta_smooth(
+            NOISY_SIGNAL,
+            window=9,
+            beta=1.3,
+            n_iter=20,
+            eps=1e-6,
+            causality="zero_phase",
+        )
         _check_basic(y, N)
 
     def test_causal(self):
-        y = _beta_smooth(NOISY_SIGNAL, window=9, beta=1.3, n_iter=20, eps=1e-6,
-                         causality="causal")
+        y = _beta_smooth(
+            NOISY_SIGNAL, window=9, beta=1.3, n_iter=20, eps=1e-6, causality="causal"
+        )
         _check_basic(y, N)
 
     def test_short_array(self):
-        y = _beta_smooth(np.array([1.0, 2.0]), window=9, beta=1.3, n_iter=20, eps=1e-6,
-                         causality="zero_phase")
+        y = _beta_smooth(
+            np.array([1.0, 2.0]),
+            window=9,
+            beta=1.3,
+            n_iter=20,
+            eps=1e-6,
+            causality="zero_phase",
+        )
         assert len(y) == 2
 
 
@@ -753,7 +888,9 @@ class TestAdaptiveRlsFilter:
         _check_basic(y, N)
 
     def test_no_bias(self):
-        y = _adaptive_rls_filter(NOISY_SIGNAL, order=5, lam=0.99, delta=1.0, use_bias=False)
+        y = _adaptive_rls_filter(
+            NOISY_SIGNAL, order=5, lam=0.99, delta=1.0, use_bias=False
+        )
         _check_basic(y, N)
 
     def test_invalid_lambda_returns_input(self):
@@ -802,49 +939,89 @@ class TestL1TrendFilter:
 class TestWaveletPacketDenoise:
     def test_basic(self):
         pytest.importorskip("pywt")
-        y = _wavelet_packet_denoise(NOISY_SIGNAL, wavelet="db4", level=None,
-                                    threshold="auto", mode="soft", threshold_scale="auto")
+        y = _wavelet_packet_denoise(
+            NOISY_SIGNAL,
+            wavelet="db4",
+            level=None,
+            threshold="auto",
+            mode="soft",
+            threshold_scale="auto",
+        )
         _check_basic(y, N)
 
     def test_hard_mode(self):
         pytest.importorskip("pywt")
-        y = _wavelet_packet_denoise(NOISY_SIGNAL, wavelet="db4", level=2,
-                                    threshold="auto", mode="hard")
+        y = _wavelet_packet_denoise(
+            NOISY_SIGNAL, wavelet="db4", level=2, threshold="auto", mode="hard"
+        )
         _check_basic(y, N)
 
     def test_numeric_threshold(self):
         pytest.importorskip("pywt")
-        y = _wavelet_packet_denoise(NOISY_SIGNAL, wavelet="db4", level=2,
-                                    threshold=0.5, mode="soft")
+        y = _wavelet_packet_denoise(
+            NOISY_SIGNAL, wavelet="db4", level=2, threshold=0.5, mode="soft"
+        )
         _check_basic(y, N)
 
     def test_invalid_wavelet_returns_input(self):
         pytest.importorskip("pywt")
-        y = _wavelet_packet_denoise(NOISY_SIGNAL, wavelet="INVALID_WAVELET", level=2,
-                                    threshold="auto", mode="soft")
+        y = _wavelet_packet_denoise(
+            NOISY_SIGNAL,
+            wavelet="INVALID_WAVELET",
+            level=2,
+            threshold="auto",
+            mode="soft",
+        )
         np.testing.assert_array_equal(y, NOISY_SIGNAL)
 
 
 class TestVmdDenoise:
     def test_basic(self):
         pytest.importorskip("vmdpy")
-        y = _vmd_denoise(NOISY_SIGNAL, alpha=2000.0, tau=0.0, k=3, dc=0,
-                         init=1, tol=1e-7, keep_modes=None, drop_modes=[-1],
-                         keep_ratio=None)
+        y = _vmd_denoise(
+            NOISY_SIGNAL,
+            alpha=2000.0,
+            tau=0.0,
+            k=3,
+            dc=0,
+            init=1,
+            tol=1e-7,
+            keep_modes=None,
+            drop_modes=[-1],
+            keep_ratio=None,
+        )
         _check_basic(y, N)
 
     def test_keep_modes(self):
         pytest.importorskip("vmdpy")
-        y = _vmd_denoise(NOISY_SIGNAL, alpha=2000.0, tau=0.0, k=3, dc=0,
-                         init=1, tol=1e-7, keep_modes=[0, 1], drop_modes=None,
-                         keep_ratio=None)
+        y = _vmd_denoise(
+            NOISY_SIGNAL,
+            alpha=2000.0,
+            tau=0.0,
+            k=3,
+            dc=0,
+            init=1,
+            tol=1e-7,
+            keep_modes=[0, 1],
+            drop_modes=None,
+            keep_ratio=None,
+        )
         _check_basic(y, N)
 
     def test_keep_ratio(self):
         pytest.importorskip("vmdpy")
-        y = _vmd_denoise(NOISY_SIGNAL, alpha=2000.0, tau=0.0, k=3, dc=0,
-                         init=1, tol=1e-7, keep_modes=None, drop_modes=None,
-                         keep_ratio=0.9)
+        y = _vmd_denoise(
+            NOISY_SIGNAL,
+            alpha=2000.0,
+            tau=0.0,
+            k=3,
+            dc=0,
+            init=1,
+            tol=1e-7,
+            keep_modes=None,
+            drop_modes=None,
+            keep_ratio=0.9,
+        )
         _check_basic(y, N)
 
     def test_transposed_mode_fallback_uses_matching_axis(self, monkeypatch):
@@ -860,7 +1037,18 @@ class TestVmdDenoise:
             ),
         )
         x = np.linspace(1.0, 2.0, 8)
-        y = _vmd_denoise(x, alpha=2000.0, tau=0.0, k=2, dc=0, init=1, tol=1e-7, keep_modes=[0], drop_modes=None, keep_ratio=None)
+        y = _vmd_denoise(
+            x,
+            alpha=2000.0,
+            tau=0.0,
+            k=2,
+            dc=0,
+            init=1,
+            tol=1e-7,
+            keep_modes=[0],
+            drop_modes=None,
+            keep_ratio=None,
+        )
         assert len(y) == len(x)
         assert np.all(np.isfinite(y))
 
@@ -868,6 +1056,7 @@ class TestVmdDenoise:
 # ======================================================================
 # 6. get_denoise_methods_data
 # ======================================================================
+
 
 class TestGetDenoiseMethodsData:
     def test_returns_dict(self):
@@ -908,6 +1097,7 @@ class TestGetDenoiseMethodsData:
 # ======================================================================
 # 7. denoise_list_methods
 # ======================================================================
+
 
 class TestDenoiseListMethods:
     def test_returns_dict(self):

@@ -6,7 +6,6 @@ from copy import deepcopy
 import numpy as np
 import pandas as pd
 
-_logger = logging.getLogger(__name__)
 from skimage.restoration import denoise_tv_chambolle as _denoise_tv_chambolle
 
 try:
@@ -48,6 +47,11 @@ try:
     from vmdpy import VMD as _VMD  # type: ignore
 except Exception:
     _VMD = None  # optional
+
+
+_logger = logging.getLogger(__name__)
+
+
 def _hp_filter(x: np.ndarray, lamb: float) -> np.ndarray:
     if _sps is None or _sps_linalg is None:
         return x
@@ -262,7 +266,9 @@ def _wavelet_packet_denoise(
     level_val = int(level) if level is not None else max(1, min(3, max_level))
     if level_val < 1:
         return x
-    wp = _pywt.WaveletPacket(data=x, wavelet=wavelet, mode="periodization", maxlevel=level_val)
+    wp = _pywt.WaveletPacket(
+        data=x, wavelet=wavelet, mode="periodization", maxlevel=level_val
+    )
     nodes = wp.get_level(level_val, order="freq")
     if not nodes:
         return x
@@ -306,10 +312,10 @@ def _ssa_denoise(
     if components is None:
         r = min(2, len(s))
     elif isinstance(components, float) and 0 < components <= 1:
-        total_energy = float(np.sum(s ** 2))
+        total_energy = float(np.sum(s**2))
         if not math.isfinite(total_energy) or total_energy <= 0.0:
             return np.full(n, float(np.mean(x)), dtype=float)
-        energy = np.cumsum(s ** 2) / total_energy
+        energy = np.cumsum(s**2) / total_energy
         r = int(np.searchsorted(energy, components) + 1)
     else:
         r = int(components)
@@ -339,9 +345,16 @@ def _l1_trend_filter(
     if n < 4 or lamb <= 0:
         return x
     if _sps is not None and _sps_linalg is not None:
-        d = _sps.diags([np.ones(n - 2), -2 * np.ones(n - 2), np.ones(n - 2)], [0, 1, 2], shape=(n - 2, n), format="csc")
+        d = _sps.diags(
+            [np.ones(n - 2), -2 * np.ones(n - 2), np.ones(n - 2)],
+            [0, 1, 2],
+            shape=(n - 2, n),
+            format="csc",
+        )
         a = _sps.eye(n, format="csc") + float(rho) * (d.T @ d)
-        solver = _sps_linalg.factorized(a) if hasattr(_sps_linalg, "factorized") else None
+        solver = (
+            _sps_linalg.factorized(a) if hasattr(_sps_linalg, "factorized") else None
+        )
         z = np.zeros(n - 2, dtype=float)
         u = np.zeros(n - 2, dtype=float)
         y = x.copy()
@@ -510,7 +523,9 @@ def _vmd_denoise(
     if _VMD is None:
         return x
     k_val = max(1, int(k))
-    u, _, omega = _VMD(x, float(alpha), float(tau), k_val, int(dc), int(init), float(tol))
+    u, _, omega = _VMD(
+        x, float(alpha), float(tau), k_val, int(dc), int(init), float(tol)
+    )
     if u is None:
         return x
     modes = np.atleast_2d(u)
@@ -523,7 +538,11 @@ def _vmd_denoise(
     idx_all = list(range(modes.shape[0]))
     if omega is not None:
         omega_arr = np.asarray(omega)
-        if omega_arr.ndim > 1 and omega_arr.shape[0] != modes.shape[0] and omega_arr.shape[1] == modes.shape[0]:
+        if (
+            omega_arr.ndim > 1
+            and omega_arr.shape[0] != modes.shape[0]
+            and omega_arr.shape[1] == modes.shape[0]
+        ):
             omega_arr = omega_arr.T
         if omega_arr.ndim > 1 and omega_arr.shape[0] == modes.shape[0]:
             freq = omega_arr[:, -1]
@@ -547,7 +566,7 @@ def _vmd_denoise(
     else:
         if keep_ratio is not None and drop_modes is None:
             keep_ratio = max(0.0, min(float(keep_ratio), 1.0))
-            total_energy = float(np.sum(modes ** 2))
+            total_energy = float(np.sum(modes**2))
             if total_energy > 0:
                 cumulative = 0.0
                 keep = []
@@ -594,17 +613,24 @@ def _denoise_ema_series(
     params: Dict[str, Any],
     causality: str,
 ) -> pd.Series:
-    alpha = params.get('alpha')
-    span = params.get('span', 10)
+    alpha = params.get("alpha")
+    span = params.get("span", 10)
     if alpha is not None:
         y = pd.Series(x).ewm(alpha=float(alpha), adjust=False).mean().values
     else:
         y = pd.Series(x).ewm(span=int(span), adjust=False).mean().values
-    if causality == 'zero_phase':
+    if causality == "zero_phase":
         if alpha is not None:
-            y2 = pd.Series(y[::-1]).ewm(alpha=float(alpha), adjust=False).mean().values[::-1]
+            y2 = (
+                pd.Series(y[::-1])
+                .ewm(alpha=float(alpha), adjust=False)
+                .mean()
+                .values[::-1]
+            )
         else:
-            y2 = pd.Series(y[::-1]).ewm(span=int(span), adjust=False).mean().values[::-1]
+            y2 = (
+                pd.Series(y[::-1]).ewm(span=int(span), adjust=False).mean().values[::-1]
+            )
         y = 0.5 * (y + y2)
     return _series_like(s, y)
 
@@ -618,12 +644,12 @@ def _denoise_rolling_series(
     default_window: int,
     reducer: str,
 ) -> pd.Series:
-    window = max(1, int(params.get('window', default_window)))
+    window = max(1, int(params.get("window", default_window)))
     series = pd.Series(x)
     rolling_kwargs: Dict[str, Any] = {"window": window, "min_periods": 1}
-    if causality == 'zero_phase':
+    if causality == "zero_phase":
         rolling_kwargs["center"] = True
-    if reducer == 'mean':
+    if reducer == "mean":
         y = series.rolling(**rolling_kwargs).mean().values
     else:
         y = series.rolling(**rolling_kwargs).median().values
@@ -636,7 +662,9 @@ def _denoise_sma_series(
     params: Dict[str, Any],
     causality: str,
 ) -> pd.Series:
-    return _denoise_rolling_series(s, x, params, causality, default_window=10, reducer='mean')
+    return _denoise_rolling_series(
+        s, x, params, causality, default_window=10, reducer="mean"
+    )
 
 
 def _denoise_median_series(
@@ -645,7 +673,9 @@ def _denoise_median_series(
     params: Dict[str, Any],
     causality: str,
 ) -> pd.Series:
-    return _denoise_rolling_series(s, x, params, causality, default_window=7, reducer='median')
+    return _denoise_rolling_series(
+        s, x, params, causality, default_window=7, reducer="median"
+    )
 
 
 def _denoise_lowpass_fft_series(
@@ -655,11 +685,11 @@ def _denoise_lowpass_fft_series(
     causality: str,
 ) -> pd.Series:
     del causality
-    cutoff_ratio = float(params.get('cutoff_ratio', 0.1))
+    cutoff_ratio = float(params.get("cutoff_ratio", 0.1))
     X = np.fft.rfft(x)
     kmax = int(len(X) * cutoff_ratio)
     Y = np.zeros_like(X)
-    Y[:max(1, kmax)] = X[:max(1, kmax)]
+    Y[: max(1, kmax)] = X[: max(1, kmax)]
     y = np.fft.irfft(Y, n=len(x))
     return _series_like(s, y)
 
@@ -670,11 +700,13 @@ def _denoise_butterworth_series(
     params: Dict[str, Any],
     causality: str,
 ) -> pd.Series:
-    cutoff = params.get('cutoff', 0.1)
-    order = int(params.get('order', 4))
-    btype = str(params.get('btype', 'low'))
-    padlen = params.get('padlen')
-    y = _butterworth_filter(x, cutoff=cutoff, order=order, btype=btype, causality=causality, padlen=padlen)
+    cutoff = params.get("cutoff", 0.1)
+    order = int(params.get("order", 4))
+    btype = str(params.get("btype", "low"))
+    padlen = params.get("padlen")
+    y = _butterworth_filter(
+        x, cutoff=cutoff, order=order, btype=btype, causality=causality, padlen=padlen
+    )
     return _series_like(s, y)
 
 
@@ -685,7 +717,7 @@ def _denoise_hp_series(
     causality: str,
 ) -> pd.Series:
     del causality
-    lamb = params.get('lamb', params.get('lambda', 1600.0))
+    lamb = params.get("lamb", params.get("lambda", 1600.0))
     y = _hp_filter(x, float(lamb))
     return _series_like(s, y)
 
@@ -699,18 +731,20 @@ def _denoise_savgol_series(
     del causality
     if _savgol_filter is None:
         return s
-    window = int(params.get('window', 11))
+    window = int(params.get("window", 11))
     if window < 3:
         return s
     if window % 2 == 0:
         window += 1
-    polyorder = int(params.get('polyorder', 2))
+    polyorder = int(params.get("polyorder", 2))
     polyorder = max(0, min(polyorder, window - 1))
-    mode = str(params.get('mode', 'interp'))
+    mode = str(params.get("mode", "interp"))
     try:
         y = _savgol_filter(x, window_length=window, polyorder=polyorder, mode=mode)
     except Exception as exc:
-        _logger.warning("savgol_filter failed (window=%d, polyorder=%d): %s", window, polyorder, exc)
+        _logger.warning(
+            "savgol_filter failed (window=%d, polyorder=%d): %s", window, polyorder, exc
+        )
         return s
     return _series_like(s, y)
 
@@ -722,14 +756,14 @@ def _denoise_tv_series(
     causality: str,
 ) -> pd.Series:
     del causality
-    weight = params.get('weight', params.get('lambda', 'auto'))
-    if weight == 'auto' or weight is None:
+    weight = params.get("weight", params.get("lambda", "auto"))
+    if weight == "auto" or weight is None:
         scale = float(np.std(x))
         weight_val = 0.1 * scale if scale > 0 else 1.0
     else:
         weight_val = float(weight)
-    n_iter = int(params.get('n_iter', 50))
-    tol = float(params.get('tol', 1e-4))
+    n_iter = int(params.get("n_iter", 50))
+    tol = float(params.get("tol", 1e-4))
     y = _tv_denoise_1d(x, weight=weight_val, n_iter=n_iter, tol=tol)
     return _series_like(s, y)
 
@@ -740,19 +774,19 @@ def _denoise_kalman_series(
     params: Dict[str, Any],
     causality: str,
 ) -> pd.Series:
-    measurement_var = params.get('measurement_var', params.get('r', 'auto'))
-    process_var = params.get('process_var', params.get('q', 'auto'))
+    measurement_var = params.get("measurement_var", params.get("r", "auto"))
+    process_var = params.get("process_var", params.get("q", "auto"))
     series_var = float(np.var(x))
-    if measurement_var == 'auto' or measurement_var is None:
+    if measurement_var == "auto" or measurement_var is None:
         measurement_val = series_var if series_var > 0 else 1.0
     else:
         measurement_val = float(measurement_var)
-    if process_var == 'auto' or process_var is None:
+    if process_var == "auto" or process_var is None:
         process_val = measurement_val * 0.01
     else:
         process_val = float(process_var)
-    init_state = params.get('initial_state')
-    init_cov = params.get('initial_cov')
+    init_state = params.get("initial_state")
+    init_cov = params.get("initial_cov")
     y_fwd = _kalman_filter_1d(
         x,
         process_var=process_val,
@@ -760,7 +794,7 @@ def _denoise_kalman_series(
         initial_state=init_state,
         initial_cov=init_cov,
     )
-    if causality == 'zero_phase':
+    if causality == "zero_phase":
         bwd_initial_state = float(y_fwd[-1]) if y_fwd.size > 0 else init_state
         y_bwd = _kalman_filter_1d(
             x[::-1],
@@ -784,9 +818,9 @@ def _denoise_loess_series(
     del causality
     if _lowess is None:
         return s
-    frac = float(params.get('frac', 0.2))
-    it = int(params.get('it', 0))
-    delta = float(params.get('delta', 0.0))
+    frac = float(params.get("frac", 0.2))
+    it = int(params.get("it", 0))
+    delta = float(params.get("delta", 0.0))
     exog = np.arange(len(x), dtype=float)
     y = _lowess(x, exog, frac=frac, it=it, delta=delta, return_sorted=False)
     return _series_like(s, y)
@@ -801,16 +835,16 @@ def _denoise_stl_series(
     del causality
     if _STL is None:
         return s
-    period = params.get('period')
+    period = params.get("period")
     if period is None:
         return s
     period_val = int(period)
     if period_val < 2 or period_val >= len(x):
         return s
-    seasonal = params.get('seasonal')
-    trend = params.get('trend')
-    low_pass = params.get('low_pass')
-    robust = bool(params.get('robust', False))
+    seasonal = params.get("seasonal")
+    trend = params.get("trend")
+    low_pass = params.get("low_pass")
+    robust = bool(params.get("robust", False))
     stl_kwargs: Dict[str, Any] = {"period": period_val, "robust": robust}
     if seasonal is not None:
         stl_kwargs["seasonal"] = int(seasonal)
@@ -820,14 +854,14 @@ def _denoise_stl_series(
         stl_kwargs["low_pass"] = int(low_pass)
     stl = _STL(x, **stl_kwargs)
     res = stl.fit()
-    component = str(params.get('component', 'trend')).lower().strip()
-    if component == 'seasonal':
+    component = str(params.get("component", "trend")).lower().strip()
+    if component == "seasonal":
         y = res.seasonal
-    elif component == 'resid':
+    elif component == "resid":
         y = res.resid
-    elif component in ('trend+seasonal', 'trend_seasonal'):
+    elif component in ("trend+seasonal", "trend_seasonal"):
         y = res.trend + res.seasonal
-    elif component in ('trend+resid', 'trend_resid'):
+    elif component in ("trend+resid", "trend_resid"):
         y = res.trend + res.resid
     else:
         y = res.trend
@@ -841,8 +875,8 @@ def _denoise_whittaker_series(
     causality: str,
 ) -> pd.Series:
     del causality
-    lamb = params.get('lamb', params.get('lambda', 1000.0))
-    order = int(params.get('order', 2))
+    lamb = params.get("lamb", params.get("lambda", 1000.0))
+    order = int(params.get("order", 2))
     y = _whittaker_smooth(x, float(lamb), order=order)
     return _series_like(s, y)
 
@@ -856,11 +890,11 @@ def _denoise_gaussian_series(
     del causality
     if _gaussian_filter1d is None:
         return s
-    sigma = float(params.get('sigma', 2.0))
+    sigma = float(params.get("sigma", 2.0))
     if sigma <= 0:
         return s
-    truncate = float(params.get('truncate', 4.0))
-    mode = str(params.get('mode', 'nearest'))
+    truncate = float(params.get("truncate", 4.0))
+    mode = str(params.get("mode", "nearest"))
     y = _gaussian_filter1d(x, sigma=sigma, mode=mode, truncate=truncate)
     return _series_like(s, y)
 
@@ -871,8 +905,8 @@ def _denoise_hampel_series(
     params: Dict[str, Any],
     causality: str,
 ) -> pd.Series:
-    window = int(params.get('window', 7))
-    n_sigmas = float(params.get('n_sigmas', 3.0))
+    window = int(params.get("window", 7))
+    n_sigmas = float(params.get("n_sigmas", 3.0))
     y = _hampel_filter(x, window=window, n_sigmas=n_sigmas, causality=causality)
     return _series_like(s, y)
 
@@ -883,10 +917,12 @@ def _denoise_bilateral_series(
     params: Dict[str, Any],
     causality: str,
 ) -> pd.Series:
-    sigma_s = float(params.get('sigma_s', 2.0))
-    sigma_r = float(params.get('sigma_r', 0.5))
-    truncate = float(params.get('truncate', 3.0))
-    y = _bilateral_filter_1d(x, sigma_s=sigma_s, sigma_r=sigma_r, truncate=truncate, causality=causality)
+    sigma_s = float(params.get("sigma_s", 2.0))
+    sigma_r = float(params.get("sigma_r", 0.5))
+    truncate = float(params.get("truncate", 3.0))
+    y = _bilateral_filter_1d(
+        x, sigma_s=sigma_s, sigma_r=sigma_r, truncate=truncate, causality=causality
+    )
     return _series_like(s, y)
 
 
@@ -899,11 +935,11 @@ def _denoise_wavelet_packet_series(
     del causality
     if _pywt is None:
         return s
-    wavelet = str(params.get('wavelet', 'db4'))
-    level = params.get('level')
-    mode = str(params.get('mode', 'soft'))
-    thr = params.get('threshold', 'auto')
-    thr_scale = params.get('threshold_scale', 'auto')
+    wavelet = str(params.get("wavelet", "db4"))
+    level = params.get("level")
+    mode = str(params.get("mode", "soft"))
+    thr = params.get("threshold", "auto")
+    thr_scale = params.get("threshold_scale", "auto")
     y = _wavelet_packet_denoise(
         x,
         wavelet=wavelet,
@@ -922,8 +958,8 @@ def _denoise_ssa_series(
     causality: str,
 ) -> pd.Series:
     del causality
-    window = int(params.get('window', max(10, len(x) // 3)))
-    components = params.get('components')
+    window = int(params.get("window", max(10, len(x) // 3)))
+    components = params.get("components")
     y = _ssa_denoise(x, window=window, components=components)
     return _series_like(s, y)
 
@@ -935,11 +971,11 @@ def _denoise_l1_trend_series(
     causality: str,
 ) -> pd.Series:
     del causality
-    lamb_param = params.get('lamb', params.get('lambda', 'auto'))
-    n_iter = int(params.get('n_iter', 50))
-    rho_param = params.get('rho', 'auto')
-    rho = float(rho_param) if rho_param not in ('auto', None) else 1.0
-    if lamb_param in ('auto', None):
+    lamb_param = params.get("lamb", params.get("lambda", "auto"))
+    n_iter = int(params.get("n_iter", 50))
+    rho_param = params.get("rho", "auto")
+    rho = float(rho_param) if rho_param not in ("auto", None) else 1.0
+    if lamb_param in ("auto", None):
         mean = float(np.mean(x))
         std = float(np.std(x))
         if std <= 0:
@@ -961,16 +997,20 @@ def _denoise_lms_series(
     params: Dict[str, Any],
     causality: str,
 ) -> pd.Series:
-    order = int(params.get('order', 5))
-    mu_param = params.get('mu', 'auto')
-    mu = float(mu_param) if mu_param not in ('auto', None) else 0.5
+    order = int(params.get("order", 5))
+    mu_param = params.get("mu", "auto")
+    mu = float(mu_param) if mu_param not in ("auto", None) else 0.5
     mu = max(1e-4, min(mu, 1.5))
-    eps = float(params.get('eps', 1e-6))
-    leak = float(params.get('leak', 0.0))
-    bias = bool(params.get('bias', True))
-    y_fwd = _adaptive_lms_filter(x, order=order, mu=mu, eps=eps, leak=leak, use_bias=bias)
-    if causality == 'zero_phase':
-        y_bwd = _adaptive_lms_filter(x[::-1], order=order, mu=mu, eps=eps, leak=leak, use_bias=bias)[::-1]
+    eps = float(params.get("eps", 1e-6))
+    leak = float(params.get("leak", 0.0))
+    bias = bool(params.get("bias", True))
+    y_fwd = _adaptive_lms_filter(
+        x, order=order, mu=mu, eps=eps, leak=leak, use_bias=bias
+    )
+    if causality == "zero_phase":
+        y_bwd = _adaptive_lms_filter(
+            x[::-1], order=order, mu=mu, eps=eps, leak=leak, use_bias=bias
+        )[::-1]
         y = 0.5 * (y_fwd + y_bwd)
     else:
         y = y_fwd
@@ -983,15 +1023,17 @@ def _denoise_rls_series(
     params: Dict[str, Any],
     causality: str,
 ) -> pd.Series:
-    order = int(params.get('order', 5))
-    lam_param = params.get('lambda_', params.get('lam', 'auto'))
-    lam = float(lam_param) if lam_param not in ('auto', None) else 0.99
+    order = int(params.get("order", 5))
+    lam_param = params.get("lambda_", params.get("lam", "auto"))
+    lam = float(lam_param) if lam_param not in ("auto", None) else 0.99
     lam = max(0.9, min(lam, 0.999))
-    delta = float(params.get('delta', 1.0))
-    bias = bool(params.get('bias', True))
+    delta = float(params.get("delta", 1.0))
+    bias = bool(params.get("bias", True))
     y_fwd = _adaptive_rls_filter(x, order=order, lam=lam, delta=delta, use_bias=bias)
-    if causality == 'zero_phase':
-        y_bwd = _adaptive_rls_filter(x[::-1], order=order, lam=lam, delta=delta, use_bias=bias)[::-1]
+    if causality == "zero_phase":
+        y_bwd = _adaptive_rls_filter(
+            x[::-1], order=order, lam=lam, delta=delta, use_bias=bias
+        )[::-1]
         y = 0.5 * (y_fwd + y_bwd)
     else:
         y = y_fwd
@@ -1004,11 +1046,13 @@ def _denoise_beta_series(
     params: Dict[str, Any],
     causality: str,
 ) -> pd.Series:
-    window = int(params.get('window', 9))
-    beta = float(params.get('beta', 1.3))
-    n_iter = int(params.get('n_iter', 20))
-    eps = float(params.get('eps', 1e-6))
-    y = _beta_smooth(x, window=window, beta=beta, n_iter=n_iter, eps=eps, causality=causality)
+    window = int(params.get("window", 9))
+    beta = float(params.get("beta", 1.3))
+    n_iter = int(params.get("n_iter", 20))
+    eps = float(params.get("eps", 1e-6))
+    y = _beta_smooth(
+        x, window=window, beta=beta, n_iter=n_iter, eps=eps, causality=causality
+    )
     return _series_like(s, y)
 
 
@@ -1019,16 +1063,16 @@ def _denoise_vmd_series(
     causality: str,
 ) -> pd.Series:
     del causality
-    alpha = float(params.get('alpha', 2000.0))
-    tau = float(params.get('tau', 0.0))
-    k = int(params.get('k', params.get('K', 5)))
-    dc = int(params.get('dc', 0))
-    init = int(params.get('init', 1))
-    tol = float(params.get('tol', 1e-7))
-    keep_modes = params.get('keep_modes')
-    drop_modes = params.get('drop_modes')
-    keep_ratio = params.get('keep_ratio', 'auto')
-    if keep_ratio in ('auto', None):
+    alpha = float(params.get("alpha", 2000.0))
+    tau = float(params.get("tau", 0.0))
+    k = int(params.get("k", params.get("K", 5)))
+    dc = int(params.get("dc", 0))
+    init = int(params.get("init", 1))
+    tol = float(params.get("tol", 1e-7))
+    keep_modes = params.get("keep_modes")
+    drop_modes = params.get("drop_modes")
+    keep_ratio = params.get("keep_ratio", "auto")
+    if keep_ratio in ("auto", None):
         denom = float(np.std(x)) + 1e-12
         noise_level = float(np.std(np.diff(x))) / denom if denom > 0 else 0.0
         keep_ratio_val = 0.9 - 0.2 * min(1.0, noise_level)
@@ -1059,17 +1103,19 @@ def _denoise_wavelet_series(
     del causality
     if _pywt is None:
         return s
-    wavelet = str(params.get('wavelet', 'db4'))
-    level = params.get('level')
-    mode = str(params.get('mode', 'soft'))
-    coeffs = _pywt.wavedec(x, wavelet, mode='periodization', level=level)
+    wavelet = str(params.get("wavelet", "db4"))
+    level = params.get("level")
+    mode = str(params.get("mode", "soft"))
+    coeffs = _pywt.wavedec(x, wavelet, mode="periodization", level=level)
     sigma = np.median(np.abs(coeffs[-1])) / 0.6745 if len(coeffs) > 1 else np.std(x)
-    thr = params.get('threshold', 'auto')
-    thr_val = float(sigma * np.sqrt(2 * np.log(len(x)))) if thr == 'auto' else float(thr)
+    thr = params.get("threshold", "auto")
+    thr_val = (
+        float(sigma * np.sqrt(2 * np.log(len(x)))) if thr == "auto" else float(thr)
+    )
     new_coeffs = [coeffs[0]]
     for c in coeffs[1:]:
         new_coeffs.append(_pywt.threshold(c, thr_val, mode=mode))
-    y = _pywt.waverec(new_coeffs, wavelet, mode='periodization')[: len(x)]
+    y = _pywt.waverec(new_coeffs, wavelet, mode="periodization")[: len(x)]
     return _series_like(s, y)
 
 
@@ -1085,18 +1131,18 @@ def _denoise_emd_family_series(
     if not any(component is not None for component in (_EMD, _EEMD, _CEEMDAN)):
         return s
     xnp = np.asarray(x, dtype=float)
-    max_imfs = params.get('max_imfs', 'auto')
-    if isinstance(max_imfs, str) and max_imfs == 'auto':
+    max_imfs = params.get("max_imfs", "auto")
+    if isinstance(max_imfs, str) and max_imfs == "auto":
         k = int(max(2, min(10, round(math.log2(len(xnp))))))
     else:
         k = int(max_imfs)
-    if method == 'emd' and _EMD is not None:
+    if method == "emd" and _EMD is not None:
         emd = _EMD()
         imfs = emd.emd(xnp, max_imf=k)
-    elif method == 'eemd' and _EEMD is not None:
-        noise_strength = float(params.get('noise_strength', 0.2))
-        trials = int(params.get('trials', 100))
-        random_state = params.get('random_state')
+    elif method == "eemd" and _EEMD is not None:
+        noise_strength = float(params.get("noise_strength", 0.2))
+        trials = int(params.get("trials", 100))
+        random_state = params.get("random_state")
         eemd = _EEMD(trials=trials, noise_strength=noise_strength)
         if random_state is not None:
             eemd.random_state = int(random_state)
@@ -1104,9 +1150,9 @@ def _denoise_emd_family_series(
     else:
         if _CEEMDAN is None:
             return s
-        noise_strength = float(params.get('noise_strength', 0.2))
-        trials = int(params.get('trials', 100))
-        random_state = params.get('random_state')
+        noise_strength = float(params.get("noise_strength", 0.2))
+        trials = int(params.get("trials", 100))
+        random_state = params.get("random_state")
         ce = _CEEMDAN(trials=trials, noise_strength=noise_strength)
         if random_state is not None:
             ce.random_state = int(random_state)
@@ -1114,8 +1160,8 @@ def _denoise_emd_family_series(
     imfs = np.atleast_2d(imfs)
     resid = xnp - imfs.sum(axis=0)
     k_all = list(range(imfs.shape[0]))
-    keep_imfs = params.get('keep_imfs')
-    drop_imfs = params.get('drop_imfs', [0])
+    keep_imfs = params.get("keep_imfs")
+    drop_imfs = params.get("drop_imfs", [0])
     if isinstance(keep_imfs, (list, tuple)) and len(keep_imfs) > 0:
         k_sel = [idx for idx in keep_imfs if 0 <= int(idx) < imfs.shape[0]]
     elif isinstance(drop_imfs, (list, tuple)) and len(drop_imfs) > 0:
@@ -1133,7 +1179,7 @@ def _denoise_emd_series(
     params: Dict[str, Any],
     causality: str,
 ) -> pd.Series:
-    return _denoise_emd_family_series(s, x, params, causality, method='emd')
+    return _denoise_emd_family_series(s, x, params, causality, method="emd")
 
 
 def _denoise_eemd_series(
@@ -1142,7 +1188,7 @@ def _denoise_eemd_series(
     params: Dict[str, Any],
     causality: str,
 ) -> pd.Series:
-    return _denoise_emd_family_series(s, x, params, causality, method='eemd')
+    return _denoise_emd_family_series(s, x, params, causality, method="eemd")
 
 
 def _denoise_ceemdan_series(
@@ -1151,51 +1197,52 @@ def _denoise_ceemdan_series(
     params: Dict[str, Any],
     causality: str,
 ) -> pd.Series:
-    return _denoise_emd_family_series(s, x, params, causality, method='ceemdan')
+    return _denoise_emd_family_series(s, x, params, causality, method="ceemdan")
 
 
 _DENOISE_METHOD_HANDLERS = {
-    'ema': _denoise_ema_series,
-    'sma': _denoise_sma_series,
-    'median': _denoise_median_series,
-    'lowpass_fft': _denoise_lowpass_fft_series,
-    'butterworth': _denoise_butterworth_series,
-    'hp': _denoise_hp_series,
-    'savgol': _denoise_savgol_series,
-    'tv': _denoise_tv_series,
-    'kalman': _denoise_kalman_series,
-    'loess': _denoise_loess_series,
-    'stl': _denoise_stl_series,
-    'whittaker': _denoise_whittaker_series,
-    'gaussian': _denoise_gaussian_series,
-    'hampel': _denoise_hampel_series,
-    'bilateral': _denoise_bilateral_series,
-    'wavelet_packet': _denoise_wavelet_packet_series,
-    'ssa': _denoise_ssa_series,
-    'l1_trend': _denoise_l1_trend_series,
-    'lms': _denoise_lms_series,
-    'rls': _denoise_rls_series,
-    'beta': _denoise_beta_series,
-    'vmd': _denoise_vmd_series,
-    'wavelet': _denoise_wavelet_series,
-    'emd': _denoise_emd_series,
-    'eemd': _denoise_eemd_series,
-    'ceemdan': _denoise_ceemdan_series,
+    "ema": _denoise_ema_series,
+    "sma": _denoise_sma_series,
+    "median": _denoise_median_series,
+    "lowpass_fft": _denoise_lowpass_fft_series,
+    "butterworth": _denoise_butterworth_series,
+    "hp": _denoise_hp_series,
+    "savgol": _denoise_savgol_series,
+    "tv": _denoise_tv_series,
+    "kalman": _denoise_kalman_series,
+    "loess": _denoise_loess_series,
+    "stl": _denoise_stl_series,
+    "whittaker": _denoise_whittaker_series,
+    "gaussian": _denoise_gaussian_series,
+    "hampel": _denoise_hampel_series,
+    "bilateral": _denoise_bilateral_series,
+    "wavelet_packet": _denoise_wavelet_packet_series,
+    "ssa": _denoise_ssa_series,
+    "l1_trend": _denoise_l1_trend_series,
+    "lms": _denoise_lms_series,
+    "rls": _denoise_rls_series,
+    "beta": _denoise_beta_series,
+    "vmd": _denoise_vmd_series,
+    "wavelet": _denoise_wavelet_series,
+    "emd": _denoise_emd_series,
+    "eemd": _denoise_eemd_series,
+    "ceemdan": _denoise_ceemdan_series,
 }
+
 
 def _denoise_series(
     s: pd.Series,
-    method: str = 'none',
+    method: str = "none",
     params: Optional[Dict[str, Any]] = None,
-    causality: str = 'zero_phase',
+    causality: str = "zero_phase",
 ) -> pd.Series:
     if params is None:
         params = {}
-    method = (method or 'none').lower().strip()
+    method = (method or "none").lower().strip()
     n = len(s)
     if n < 3:
         return s
-    if method == 'none':
+    if method == "none":
         return s
     handler = _DENOISE_METHOD_HANDLERS.get(method)
     if handler is None:
@@ -1207,53 +1254,64 @@ def _denoise_series(
 def _apply_denoise(
     df: pd.DataFrame,
     spec: Optional[Dict[str, Any]],
-    default_when: str = 'post_ti',
+    default_when: str = "post_ti",
 ) -> List[str]:
     added_cols: List[str] = []
     if not spec or not isinstance(spec, dict):
         return added_cols
-    method = str(spec.get('method', 'none')).lower()
-    if method == 'none':
+    method = str(spec.get("method", "none")).lower()
+    if method == "none":
         return added_cols
-    params = spec.get('params') or {}
-    cols = spec.get('columns') or 'ohlcv'
+    params = spec.get("params") or {}
+    cols = spec.get("columns") or "ohlcv"
     # Normalize columns selection
     if isinstance(cols, str):
         key = cols.strip().lower()
-        if key in ('ohlcv', 'ohlc', 'price'):
+        if key in ("ohlcv", "ohlc", "price"):
             # Map to price + volume columns present
             selected = []
-            for name in ('open', 'high', 'low', 'close'):
+            for name in ("open", "high", "low", "close"):
                 if name in df.columns:
                     selected.append(name)
             # Prefer real volume, else tick_volume
-            if 'volume' in df.columns:
-                selected.append('volume')
-            elif 'tick_volume' in df.columns:
-                selected.append('tick_volume')
-            cols = selected if selected else ['close']
-        elif key in ('all', '*', 'numeric'):
+            if "volume" in df.columns:
+                selected.append("volume")
+            elif "tick_volume" in df.columns:
+                selected.append("tick_volume")
+            cols = selected if selected else ["close"]
+        elif key in ("all", "*", "numeric"):
             try:
                 cols = [
-                    c for c in df.columns
-                    if c != 'time' and not str(c).startswith('_') and pd.api.types.is_numeric_dtype(df[c])
+                    c
+                    for c in df.columns
+                    if c != "time"
+                    and not str(c).startswith("_")
+                    and pd.api.types.is_numeric_dtype(df[c])
                 ]
             except Exception:
-                cols = ['close']
+                cols = ["close"]
         else:
             # Support comma/space-separated list in CLI shorthand
-            parts = [p.strip() for p in cols.replace(',', ' ').split() if p.strip()]
-            cols = parts if parts else ['close']
-    when = str(spec.get('when') or default_when)
-    causality = str(spec.get('causality') or ('causal' if when == 'pre_ti' else 'zero_phase'))
-    keep_original = bool(spec.get('keep_original')) if 'keep_original' in spec else (when != 'pre_ti')
-    suffix = str(spec.get('suffix') or '_dn')
+            parts = [p.strip() for p in cols.replace(",", " ").split() if p.strip()]
+            cols = parts if parts else ["close"]
+    when = str(spec.get("when") or default_when)
+    causality = str(
+        spec.get("causality") or ("causal" if when == "pre_ti" else "zero_phase")
+    )
+    keep_original = (
+        bool(spec.get("keep_original"))
+        if "keep_original" in spec
+        else (when != "pre_ti")
+    )
+    suffix = str(spec.get("suffix") or "_dn")
 
     for col in cols:
         if col not in df.columns:
             continue
         try:
-            y = _denoise_series(df[col], method=method, params=params, causality=causality)
+            y = _denoise_series(
+                df[col], method=method, params=params, causality=causality
+            )
         except Exception:
             continue
         if keep_original:
@@ -1295,24 +1353,64 @@ _DENOISE_METHOD_DEFAULT_PARAMS: Dict[str, Dict[str, Any]] = {
     "hp": {"lamb": 1600.0},
     "savgol": {"window": 11, "polyorder": 2, "mode": "interp"},
     "tv": {"weight": "auto", "n_iter": 50, "tol": 1e-4},
-    "kalman": {"process_var": "auto", "measurement_var": "auto", "initial_state": None, "initial_cov": None},
+    "kalman": {
+        "process_var": "auto",
+        "measurement_var": "auto",
+        "initial_state": None,
+        "initial_cov": None,
+    },
     "hampel": {"window": 7, "n_sigmas": 3.0},
     "bilateral": {"sigma_s": 2.0, "sigma_r": 0.5, "truncate": 3.0},
-    "wavelet_packet": {"wavelet": "db4", "level": None, "threshold": "auto", "mode": "soft", "threshold_scale": "auto"},
+    "wavelet_packet": {
+        "wavelet": "db4",
+        "level": None,
+        "threshold": "auto",
+        "mode": "soft",
+        "threshold_scale": "auto",
+    },
     "ssa": {"window": 10, "components": 2},
     "l1_trend": {"lamb": "auto", "n_iter": 50, "rho": "auto"},
     "lms": {"order": 5, "mu": "auto", "eps": 1e-6, "leak": 0.0, "bias": True},
     "rls": {"order": 5, "lambda_": "auto", "delta": 1.0, "bias": True},
     "beta": {"window": 9, "beta": 1.3, "n_iter": 20, "eps": 1e-6},
-    "vmd": {"alpha": 2000.0, "tau": 0.0, "k": 5, "dc": 0, "init": 1, "tol": 1e-7, "keep_modes": None, "drop_modes": None, "keep_ratio": "auto"},
+    "vmd": {
+        "alpha": 2000.0,
+        "tau": 0.0,
+        "k": 5,
+        "dc": 0,
+        "init": 1,
+        "tol": 1e-7,
+        "keep_modes": None,
+        "drop_modes": None,
+        "keep_ratio": "auto",
+    },
     "loess": {"frac": 0.2, "it": 0, "delta": 0.0},
-    "stl": {"period": None, "seasonal": None, "trend": None, "low_pass": None, "robust": False, "component": "trend"},
+    "stl": {
+        "period": None,
+        "seasonal": None,
+        "trend": None,
+        "low_pass": None,
+        "robust": False,
+        "component": "trend",
+    },
     "whittaker": {"lamb": 1000.0, "order": 2},
     "gaussian": {"sigma": 2.0, "truncate": 4.0, "mode": "nearest"},
     "wavelet": {"wavelet": "db4", "level": None, "threshold": "auto", "mode": "soft"},
     "emd": {"drop_imfs": [0], "keep_imfs": None, "max_imfs": "auto"},
-    "eemd": {"drop_imfs": [0], "keep_imfs": None, "max_imfs": "auto", "noise_strength": 0.2, "trials": 100},
-    "ceemdan": {"drop_imfs": [0], "keep_imfs": None, "max_imfs": "auto", "noise_strength": 0.2, "trials": 100},
+    "eemd": {
+        "drop_imfs": [0],
+        "keep_imfs": None,
+        "max_imfs": "auto",
+        "noise_strength": 0.2,
+        "trials": 100,
+    },
+    "ceemdan": {
+        "drop_imfs": [0],
+        "keep_imfs": None,
+        "max_imfs": "auto",
+        "noise_strength": 0.2,
+        "trials": 100,
+    },
 }
 
 
@@ -1324,186 +1422,773 @@ def _denoise_base_defaults(default_when: str = "pre_ti") -> Dict[str, Any]:
 
 def get_denoise_methods_data() -> Dict[str, Any]:
     def avail_requires(name: str) -> Tuple[bool, str]:
-        if name == 'wavelet':
-            return (_pywt is not None, 'PyWavelets')
-        if name in ('emd', 'eemd', 'ceemdan'):
-            return (any(x is not None for x in (_EMD, _EEMD, _CEEMDAN)), 'EMD-signal')
-        if name in ('hp', 'whittaker'):
-            return (_sps is not None and _sps_linalg is not None, 'scipy.sparse')
-        if name == 'savgol':
-            return (_savgol_filter is not None, 'scipy.signal')
-        if name == 'butterworth':
-            return (_butter is not None, 'scipy.signal')
-        if name == 'gaussian':
-            return (_gaussian_filter1d is not None, 'scipy.ndimage')
-        if name == 'wavelet_packet':
-            return (_pywt is not None, 'PyWavelets')
-        if name == 'loess':
-            return (_lowess is not None, 'statsmodels')
-        if name == 'stl':
-            return (_STL is not None, 'statsmodels')
-        if name == 'vmd':
-            return (_VMD is not None, 'vmdpy')
-        return (True, '')
+        if name == "wavelet":
+            return (_pywt is not None, "PyWavelets")
+        if name in ("emd", "eemd", "ceemdan"):
+            return (any(x is not None for x in (_EMD, _EEMD, _CEEMDAN)), "EMD-signal")
+        if name in ("hp", "whittaker"):
+            return (_sps is not None and _sps_linalg is not None, "scipy.sparse")
+        if name == "savgol":
+            return (_savgol_filter is not None, "scipy.signal")
+        if name == "butterworth":
+            return (_butter is not None, "scipy.signal")
+        if name == "gaussian":
+            return (_gaussian_filter1d is not None, "scipy.ndimage")
+        if name == "wavelet_packet":
+            return (_pywt is not None, "PyWavelets")
+        if name == "loess":
+            return (_lowess is not None, "statsmodels")
+        if name == "stl":
+            return (_STL is not None, "statsmodels")
+        if name == "vmd":
+            return (_VMD is not None, "vmdpy")
+        return (True, "")
 
     methods: List[Dict[str, Any]] = []
     base_defaults = _denoise_base_defaults("pre_ti")
 
-    def add(method: str, description: str, params: List[Dict[str, Any]], supports: Dict[str, bool]):
+    def add(
+        method: str,
+        description: str,
+        params: List[Dict[str, Any]],
+        supports: Dict[str, bool],
+    ):
         available, requires = avail_requires(method)
-        methods.append({
-            "method": method,
-            "available": bool(available),
-            "requires": requires,
-            "description": description,
-            "params": params,
-            "supports": supports,
-            "defaults": base_defaults,
-        })
+        methods.append(
+            {
+                "method": method,
+                "available": bool(available),
+                "requires": requires,
+                "description": description,
+                "params": params,
+                "supports": supports,
+                "defaults": base_defaults,
+            }
+        )
 
     add("none", "No denoising (identity).", [], {"causal": True, "zero_phase": True})
-    add("ema", "Exponential moving average; causal by default; zero-phase via forward-backward pass.", [
-        {"name": "span", "type": "int", "default": 10, "description": "Smoothing span; alternative to alpha."},
-        {"name": "alpha", "type": "float", "default": None, "description": "Direct smoothing factor in (0,1]; overrides span if set."},
-    ], {"causal": True, "zero_phase": True})
-    add("sma", "Simple moving average; causal or zero-phase (centered convolution).", [
-        {"name": "window", "type": "int", "default": 10, "description": "Window length in samples."},
-    ], {"causal": True, "zero_phase": True})
-    add("median", "Rolling median; robust to spikes; causal or zero-phase (centered).", [
-        {"name": "window", "type": "int", "default": 7, "description": "Window length in samples (odd recommended)."},
-    ], {"causal": True, "zero_phase": True})
-    add("lowpass_fft", "Zero-phase low-pass filtering in frequency domain; parameterized by cutoff ratio.", [
-        {"name": "cutoff_ratio", "type": "float", "default": 0.1, "description": "Cutoff as fraction of Nyquist (0, 0.5]."},
-    ], {"causal": False, "zero_phase": True})
-    add("butterworth", "Butterworth IIR low-pass/band-pass with optional zero-phase filtering.", [
-        {"name": "cutoff", "type": "float|float[]", "default": 0.1, "description": "Normalized cutoff (0,0.5); list of two for band-pass."},
-        {"name": "order", "type": "int", "default": 4, "description": "Filter order."},
-        {"name": "btype", "type": "str", "default": "low", "description": "low|high|bandpass|bandstop."},
-        {"name": "padlen", "type": "int|null", "default": None, "description": "Optional padding for filtfilt."},
-    ], {"causal": True, "zero_phase": True})
-    add("hp", "Hodrick-Prescott filter for trend-cycle decomposition; returns trend component.", [
-        {"name": "lamb", "type": "float", "default": 1600.0, "description": "Smoothing strength (alias: lambda)."},
-    ], {"causal": False, "zero_phase": True})
-    add("savgol", "Savitzky-Golay smoothing that preserves local extrema better than SMA.", [
-        {"name": "window", "type": "int", "default": 11, "description": "Odd window length."},
-        {"name": "polyorder", "type": "int", "default": 2, "description": "Polynomial order (< window)."},
-        {"name": "mode", "type": "str", "default": "interp", "description": "Edge handling mode passed to scipy.signal.savgol_filter."},
-    ], {"causal": False, "zero_phase": True})
-    add("tv", "Total variation denoising; preserves edges/levels while removing noise.", [
-        {"name": "weight", "type": "float|\"auto\"", "default": "auto", "description": "Regularization weight (alias: lambda)."},
-        {"name": "n_iter", "type": "int", "default": 50, "description": "Max iterations for TV solver."},
-        {"name": "tol", "type": "float", "default": 1e-4, "description": "Convergence tolerance."},
-    ], {"causal": False, "zero_phase": True})
-    add("kalman", "1D Kalman filter for adaptive trend tracking on non-stationary series.", [
-        {"name": "process_var", "type": "float|\"auto\"", "default": "auto", "description": "Process noise variance (alias: q)."},
-        {"name": "measurement_var", "type": "float|\"auto\"", "default": "auto", "description": "Measurement noise variance (alias: r)."},
-        {"name": "initial_state", "type": "float|null", "default": None, "description": "Initial state estimate."},
-        {"name": "initial_cov", "type": "float|null", "default": None, "description": "Initial covariance estimate."},
-    ], {"causal": True, "zero_phase": True})
-    add("hampel", "Hampel filter for outlier suppression using rolling MAD.", [
-        {"name": "window", "type": "int", "default": 7, "description": "Window length in samples."},
-        {"name": "n_sigmas", "type": "float", "default": 3.0, "description": "Outlier threshold in MAD sigmas."},
-    ], {"causal": True, "zero_phase": True})
-    add("bilateral", "Bilateral filter preserving edges by combining distance + value kernels.", [
-        {"name": "sigma_s", "type": "float", "default": 2.0, "description": "Spatial sigma (samples)."},
-        {"name": "sigma_r", "type": "float", "default": 0.5, "description": "Range sigma (value units)."},
-        {"name": "truncate", "type": "float", "default": 3.0, "description": "Kernel radius in sigmas."},
-    ], {"causal": True, "zero_phase": True})
-    add("wavelet_packet", "Wavelet packet denoising for finer band control than standard wavelets.", [
-        {"name": "wavelet", "type": "str", "default": "db4", "description": "Wavelet family, e.g., 'db4', 'sym5'."},
-        {"name": "level", "type": "int|null", "default": None, "description": "Packet level; auto if omitted."},
-        {"name": "threshold", "type": "float|\"auto\"", "default": "auto", "description": "Shrinkage threshold; 'auto' uses universal threshold."},
-        {"name": "mode", "type": "str", "default": "soft", "description": "Shrinkage mode: 'soft' or 'hard'."},
-        {"name": "threshold_scale", "type": "float|\"auto\"", "default": "auto", "description": "Scale factor for threshold; 'auto' adapts to noise ratio."},
-    ], {"causal": False, "zero_phase": True})
-    add("ssa", "Singular Spectrum Analysis denoising with low-rank reconstruction.", [
-        {"name": "window", "type": "int", "default": 10, "description": "SSA window length."},
-        {"name": "components", "type": "int|float|null", "default": 2, "description": "Rank or energy ratio (0-1] to retain."},
-    ], {"causal": False, "zero_phase": True})
-    add("l1_trend", "L1 trend filtering for piecewise-linear trend extraction.", [
-        {"name": "lamb", "type": "float|\"auto\"", "default": "auto", "description": "L1 penalty (alias: lambda); 'auto' scales by series std and length."},
-        {"name": "n_iter", "type": "int", "default": 50, "description": "ADMM iterations."},
-        {"name": "rho", "type": "float|\"auto\"", "default": "auto", "description": "ADMM rho parameter."},
-    ], {"causal": False, "zero_phase": True})
-    add("lms", "Adaptive LMS filter for regime-aware smoothing.", [
-        {"name": "order", "type": "int", "default": 5, "description": "Filter length."},
-        {"name": "mu", "type": "float|\"auto\"", "default": "auto", "description": "LMS step size; 'auto' uses normalized LMS."},
-        {"name": "eps", "type": "float", "default": 1e-6, "description": "Stability epsilon for NLMS."},
-        {"name": "leak", "type": "float", "default": 0.0, "description": "Leakage factor to prevent drift."},
-        {"name": "bias", "type": "bool", "default": True, "description": "Include bias term for scale preservation."},
-    ], {"causal": True, "zero_phase": True})
-    add("rls", "Adaptive RLS filter for faster tracking under changing volatility.", [
-        {"name": "order", "type": "int", "default": 5, "description": "Filter length."},
-        {"name": "lambda_", "type": "float|\"auto\"", "default": "auto", "description": "Forgetting factor (alias: lam)."},
-        {"name": "delta", "type": "float", "default": 1.0, "description": "Diagonal loading for initial covariance."},
-        {"name": "bias", "type": "bool", "default": True, "description": "Include bias term for scale preservation."},
-    ], {"causal": True, "zero_phase": True})
-    add("beta", "Robust beta-IRLS smoothing using fractional-power residuals.", [
-        {"name": "window", "type": "int", "default": 9, "description": "Window length in samples."},
-        {"name": "beta", "type": "float", "default": 1.3, "description": "Robustness exponent (<2 downweights outliers)."},
-        {"name": "n_iter", "type": "int", "default": 20, "description": "IRLS iterations per window."},
-        {"name": "eps", "type": "float", "default": 1e-6, "description": "Stability epsilon for weights."},
-    ], {"causal": True, "zero_phase": True})
-    add("vmd", "Variational Mode Decomposition; reconstruct after dropping modes.", [
-        {"name": "alpha", "type": "float", "default": 2000.0, "description": "Bandwidth constraint."},
-        {"name": "tau", "type": "float", "default": 0.0, "description": "Noise tolerance (0 for pure VMD)."},
-        {"name": "k", "type": "int", "default": 5, "description": "Number of modes."},
-        {"name": "dc", "type": "int", "default": 0, "description": "Include DC component (0/1)."},
-        {"name": "init", "type": "int", "default": 1, "description": "Initialization mode (0/1/2)."},
-        {"name": "tol", "type": "float", "default": 1e-7, "description": "Convergence tolerance."},
-        {"name": "keep_modes", "type": "int[]", "default": None, "description": "Explicit list of modes to keep."},
-        {"name": "drop_modes", "type": "int[]", "default": None, "description": "Modes to drop (overrides keep_ratio)."},
-        {"name": "keep_ratio", "type": "float|\"auto\"", "default": "auto", "description": "Energy ratio to keep using lowest-frequency modes."},
-    ], {"causal": False, "zero_phase": True})
-    add("loess", "LOESS/LOWESS local regression smoothing for local trend estimation.", [
-        {"name": "frac", "type": "float", "default": 0.2, "description": "Fraction of data used in each local fit."},
-        {"name": "it", "type": "int", "default": 0, "description": "Robustifying iterations (0 for none)."},
-        {"name": "delta", "type": "float", "default": 0.0, "description": "Distance within which to use linear interpolation."},
-    ], {"causal": False, "zero_phase": True})
-    add("stl", "Seasonal-Trend decomposition (STL); returns selected component (default trend).", [
-        {"name": "period", "type": "int", "default": None, "description": "Seasonal period (required unless index has an inferred frequency)."},
-        {"name": "seasonal", "type": "int|null", "default": None, "description": "Seasonal smoothing length."},
-        {"name": "trend", "type": "int|null", "default": None, "description": "Trend smoothing length."},
-        {"name": "low_pass", "type": "int|null", "default": None, "description": "Low-pass filter length."},
-        {"name": "robust", "type": "bool", "default": False, "description": "Enable robust fitting to outliers."},
-        {"name": "component", "type": "str", "default": "trend", "description": "trend|seasonal|resid|trend+seasonal|trend+resid."},
-    ], {"causal": False, "zero_phase": True})
-    add("whittaker", "Whittaker smoother with penalized differences (B-spline-like).", [
-        {"name": "lamb", "type": "float", "default": 1000.0, "description": "Smoothing strength (alias: lambda)."},
-        {"name": "order", "type": "int", "default": 2, "description": "Difference order (1 or 2 typical)."},
-    ], {"causal": False, "zero_phase": True})
-    add("gaussian", "Gaussian kernel smoothing (Nadaraya-Watson style).", [
-        {"name": "sigma", "type": "float", "default": 2.0, "description": "Gaussian stddev in samples."},
-        {"name": "truncate", "type": "float", "default": 4.0, "description": "Kernel truncation radius in sigmas."},
-        {"name": "mode", "type": "str", "default": "nearest", "description": "Edge handling mode for scipy.ndimage.gaussian_filter1d."},
-    ], {"causal": False, "zero_phase": True})
-    add("wavelet", "Wavelet shrinkage denoising using PyWavelets; preserves sharp changes better than linear filters.", [
-        {"name": "wavelet", "type": "str", "default": "db4", "description": "Wavelet family, e.g., 'db4', 'sym5'."},
-        {"name": "level", "type": "int|null", "default": None, "description": "Decomposition level; auto if omitted."},
-        {"name": "threshold", "type": "float|\"auto\"", "default": "auto", "description": "Shrinkage threshold; 'auto' uses universal threshold."},
-        {"name": "mode", "type": "str", "default": "soft", "description": "Shrinkage mode: 'soft' or 'hard'."},
-    ], {"causal": False, "zero_phase": True})
-    add("emd", "Empirical Mode Decomposition; reconstruct after dropping high-frequency IMFs.", [
-        {"name": "drop_imfs", "type": "int[]", "default": [0], "description": "IMF indices to drop (0 is highest frequency)."},
-        {"name": "keep_imfs", "type": "int[]", "default": None, "description": "Explicit list of IMFs to keep; overrides drop_imfs."},
-        {"name": "max_imfs", "type": "int|\"auto\"", "default": "auto", "description": "Max IMFs; 'auto' ≈ log2(n), capped to [2,10]."},
-    ], {"causal": False, "zero_phase": True})
-    add("eemd", "Ensemble EMD; averages decompositions with added noise for robustness.", [
-        {"name": "drop_imfs", "type": "int[]", "default": [0], "description": "IMF indices to drop (0 is highest frequency)."},
-        {"name": "keep_imfs", "type": "int[]", "default": None, "description": "Explicit list of IMFs to keep; overrides drop_imfs."},
-        {"name": "max_imfs", "type": "int|\"auto\"", "default": "auto", "description": "Max IMFs; 'auto' ≈ log2(n), capped to [2,10]."},
-        {"name": "noise_strength", "type": "float", "default": 0.2, "description": "Relative noise amplitude used in ensembles."},
-        {"name": "trials", "type": "int", "default": 100, "description": "Number of ensemble trials."},
-        {"name": "random_state", "type": "int", "default": None, "description": "Random seed for reproducibility."},
-    ], {"causal": False, "zero_phase": True})
-    add("ceemdan", "Complementary EEMD with adaptive noise; improved reconstruction quality.", [
-        {"name": "drop_imfs", "type": "int[]", "default": [0], "description": "IMF indices to drop (0 is highest frequency)."},
-        {"name": "keep_imfs", "type": "int[]", "default": None, "description": "Explicit list of IMFs to keep; overrides drop_imfs."},
-        {"name": "max_imfs", "type": "int|\"auto\"", "default": "auto", "description": "Max IMFs; 'auto' ≈ log2(n), capped to [2,10]."},
-        {"name": "noise_strength", "type": "float", "default": 0.2, "description": "Relative noise amplitude used in decomposition."},
-        {"name": "trials", "type": "int", "default": 100, "description": "Used if falling back to EEMD implementation."},
-        {"name": "random_state", "type": "int", "default": None, "description": "Random seed for reproducibility."},
-    ], {"causal": False, "zero_phase": True})
+    add(
+        "ema",
+        "Exponential moving average; causal by default; zero-phase via forward-backward pass.",
+        [
+            {
+                "name": "span",
+                "type": "int",
+                "default": 10,
+                "description": "Smoothing span; alternative to alpha.",
+            },
+            {
+                "name": "alpha",
+                "type": "float",
+                "default": None,
+                "description": "Direct smoothing factor in (0,1]; overrides span if set.",
+            },
+        ],
+        {"causal": True, "zero_phase": True},
+    )
+    add(
+        "sma",
+        "Simple moving average; causal or zero-phase (centered convolution).",
+        [
+            {
+                "name": "window",
+                "type": "int",
+                "default": 10,
+                "description": "Window length in samples.",
+            },
+        ],
+        {"causal": True, "zero_phase": True},
+    )
+    add(
+        "median",
+        "Rolling median; robust to spikes; causal or zero-phase (centered).",
+        [
+            {
+                "name": "window",
+                "type": "int",
+                "default": 7,
+                "description": "Window length in samples (odd recommended).",
+            },
+        ],
+        {"causal": True, "zero_phase": True},
+    )
+    add(
+        "lowpass_fft",
+        "Zero-phase low-pass filtering in frequency domain; parameterized by cutoff ratio.",
+        [
+            {
+                "name": "cutoff_ratio",
+                "type": "float",
+                "default": 0.1,
+                "description": "Cutoff as fraction of Nyquist (0, 0.5].",
+            },
+        ],
+        {"causal": False, "zero_phase": True},
+    )
+    add(
+        "butterworth",
+        "Butterworth IIR low-pass/band-pass with optional zero-phase filtering.",
+        [
+            {
+                "name": "cutoff",
+                "type": "float|float[]",
+                "default": 0.1,
+                "description": "Normalized cutoff (0,0.5); list of two for band-pass.",
+            },
+            {
+                "name": "order",
+                "type": "int",
+                "default": 4,
+                "description": "Filter order.",
+            },
+            {
+                "name": "btype",
+                "type": "str",
+                "default": "low",
+                "description": "low|high|bandpass|bandstop.",
+            },
+            {
+                "name": "padlen",
+                "type": "int|null",
+                "default": None,
+                "description": "Optional padding for filtfilt.",
+            },
+        ],
+        {"causal": True, "zero_phase": True},
+    )
+    add(
+        "hp",
+        "Hodrick-Prescott filter for trend-cycle decomposition; returns trend component.",
+        [
+            {
+                "name": "lamb",
+                "type": "float",
+                "default": 1600.0,
+                "description": "Smoothing strength (alias: lambda).",
+            },
+        ],
+        {"causal": False, "zero_phase": True},
+    )
+    add(
+        "savgol",
+        "Savitzky-Golay smoothing that preserves local extrema better than SMA.",
+        [
+            {
+                "name": "window",
+                "type": "int",
+                "default": 11,
+                "description": "Odd window length.",
+            },
+            {
+                "name": "polyorder",
+                "type": "int",
+                "default": 2,
+                "description": "Polynomial order (< window).",
+            },
+            {
+                "name": "mode",
+                "type": "str",
+                "default": "interp",
+                "description": "Edge handling mode passed to scipy.signal.savgol_filter.",
+            },
+        ],
+        {"causal": False, "zero_phase": True},
+    )
+    add(
+        "tv",
+        "Total variation denoising; preserves edges/levels while removing noise.",
+        [
+            {
+                "name": "weight",
+                "type": 'float|"auto"',
+                "default": "auto",
+                "description": "Regularization weight (alias: lambda).",
+            },
+            {
+                "name": "n_iter",
+                "type": "int",
+                "default": 50,
+                "description": "Max iterations for TV solver.",
+            },
+            {
+                "name": "tol",
+                "type": "float",
+                "default": 1e-4,
+                "description": "Convergence tolerance.",
+            },
+        ],
+        {"causal": False, "zero_phase": True},
+    )
+    add(
+        "kalman",
+        "1D Kalman filter for adaptive trend tracking on non-stationary series.",
+        [
+            {
+                "name": "process_var",
+                "type": 'float|"auto"',
+                "default": "auto",
+                "description": "Process noise variance (alias: q).",
+            },
+            {
+                "name": "measurement_var",
+                "type": 'float|"auto"',
+                "default": "auto",
+                "description": "Measurement noise variance (alias: r).",
+            },
+            {
+                "name": "initial_state",
+                "type": "float|null",
+                "default": None,
+                "description": "Initial state estimate.",
+            },
+            {
+                "name": "initial_cov",
+                "type": "float|null",
+                "default": None,
+                "description": "Initial covariance estimate.",
+            },
+        ],
+        {"causal": True, "zero_phase": True},
+    )
+    add(
+        "hampel",
+        "Hampel filter for outlier suppression using rolling MAD.",
+        [
+            {
+                "name": "window",
+                "type": "int",
+                "default": 7,
+                "description": "Window length in samples.",
+            },
+            {
+                "name": "n_sigmas",
+                "type": "float",
+                "default": 3.0,
+                "description": "Outlier threshold in MAD sigmas.",
+            },
+        ],
+        {"causal": True, "zero_phase": True},
+    )
+    add(
+        "bilateral",
+        "Bilateral filter preserving edges by combining distance + value kernels.",
+        [
+            {
+                "name": "sigma_s",
+                "type": "float",
+                "default": 2.0,
+                "description": "Spatial sigma (samples).",
+            },
+            {
+                "name": "sigma_r",
+                "type": "float",
+                "default": 0.5,
+                "description": "Range sigma (value units).",
+            },
+            {
+                "name": "truncate",
+                "type": "float",
+                "default": 3.0,
+                "description": "Kernel radius in sigmas.",
+            },
+        ],
+        {"causal": True, "zero_phase": True},
+    )
+    add(
+        "wavelet_packet",
+        "Wavelet packet denoising for finer band control than standard wavelets.",
+        [
+            {
+                "name": "wavelet",
+                "type": "str",
+                "default": "db4",
+                "description": "Wavelet family, e.g., 'db4', 'sym5'.",
+            },
+            {
+                "name": "level",
+                "type": "int|null",
+                "default": None,
+                "description": "Packet level; auto if omitted.",
+            },
+            {
+                "name": "threshold",
+                "type": 'float|"auto"',
+                "default": "auto",
+                "description": "Shrinkage threshold; 'auto' uses universal threshold.",
+            },
+            {
+                "name": "mode",
+                "type": "str",
+                "default": "soft",
+                "description": "Shrinkage mode: 'soft' or 'hard'.",
+            },
+            {
+                "name": "threshold_scale",
+                "type": 'float|"auto"',
+                "default": "auto",
+                "description": "Scale factor for threshold; 'auto' adapts to noise ratio.",
+            },
+        ],
+        {"causal": False, "zero_phase": True},
+    )
+    add(
+        "ssa",
+        "Singular Spectrum Analysis denoising with low-rank reconstruction.",
+        [
+            {
+                "name": "window",
+                "type": "int",
+                "default": 10,
+                "description": "SSA window length.",
+            },
+            {
+                "name": "components",
+                "type": "int|float|null",
+                "default": 2,
+                "description": "Rank or energy ratio (0-1] to retain.",
+            },
+        ],
+        {"causal": False, "zero_phase": True},
+    )
+    add(
+        "l1_trend",
+        "L1 trend filtering for piecewise-linear trend extraction.",
+        [
+            {
+                "name": "lamb",
+                "type": 'float|"auto"',
+                "default": "auto",
+                "description": "L1 penalty (alias: lambda); 'auto' scales by series std and length.",
+            },
+            {
+                "name": "n_iter",
+                "type": "int",
+                "default": 50,
+                "description": "ADMM iterations.",
+            },
+            {
+                "name": "rho",
+                "type": 'float|"auto"',
+                "default": "auto",
+                "description": "ADMM rho parameter.",
+            },
+        ],
+        {"causal": False, "zero_phase": True},
+    )
+    add(
+        "lms",
+        "Adaptive LMS filter for regime-aware smoothing.",
+        [
+            {
+                "name": "order",
+                "type": "int",
+                "default": 5,
+                "description": "Filter length.",
+            },
+            {
+                "name": "mu",
+                "type": 'float|"auto"',
+                "default": "auto",
+                "description": "LMS step size; 'auto' uses normalized LMS.",
+            },
+            {
+                "name": "eps",
+                "type": "float",
+                "default": 1e-6,
+                "description": "Stability epsilon for NLMS.",
+            },
+            {
+                "name": "leak",
+                "type": "float",
+                "default": 0.0,
+                "description": "Leakage factor to prevent drift.",
+            },
+            {
+                "name": "bias",
+                "type": "bool",
+                "default": True,
+                "description": "Include bias term for scale preservation.",
+            },
+        ],
+        {"causal": True, "zero_phase": True},
+    )
+    add(
+        "rls",
+        "Adaptive RLS filter for faster tracking under changing volatility.",
+        [
+            {
+                "name": "order",
+                "type": "int",
+                "default": 5,
+                "description": "Filter length.",
+            },
+            {
+                "name": "lambda_",
+                "type": 'float|"auto"',
+                "default": "auto",
+                "description": "Forgetting factor (alias: lam).",
+            },
+            {
+                "name": "delta",
+                "type": "float",
+                "default": 1.0,
+                "description": "Diagonal loading for initial covariance.",
+            },
+            {
+                "name": "bias",
+                "type": "bool",
+                "default": True,
+                "description": "Include bias term for scale preservation.",
+            },
+        ],
+        {"causal": True, "zero_phase": True},
+    )
+    add(
+        "beta",
+        "Robust beta-IRLS smoothing using fractional-power residuals.",
+        [
+            {
+                "name": "window",
+                "type": "int",
+                "default": 9,
+                "description": "Window length in samples.",
+            },
+            {
+                "name": "beta",
+                "type": "float",
+                "default": 1.3,
+                "description": "Robustness exponent (<2 downweights outliers).",
+            },
+            {
+                "name": "n_iter",
+                "type": "int",
+                "default": 20,
+                "description": "IRLS iterations per window.",
+            },
+            {
+                "name": "eps",
+                "type": "float",
+                "default": 1e-6,
+                "description": "Stability epsilon for weights.",
+            },
+        ],
+        {"causal": True, "zero_phase": True},
+    )
+    add(
+        "vmd",
+        "Variational Mode Decomposition; reconstruct after dropping modes.",
+        [
+            {
+                "name": "alpha",
+                "type": "float",
+                "default": 2000.0,
+                "description": "Bandwidth constraint.",
+            },
+            {
+                "name": "tau",
+                "type": "float",
+                "default": 0.0,
+                "description": "Noise tolerance (0 for pure VMD).",
+            },
+            {
+                "name": "k",
+                "type": "int",
+                "default": 5,
+                "description": "Number of modes.",
+            },
+            {
+                "name": "dc",
+                "type": "int",
+                "default": 0,
+                "description": "Include DC component (0/1).",
+            },
+            {
+                "name": "init",
+                "type": "int",
+                "default": 1,
+                "description": "Initialization mode (0/1/2).",
+            },
+            {
+                "name": "tol",
+                "type": "float",
+                "default": 1e-7,
+                "description": "Convergence tolerance.",
+            },
+            {
+                "name": "keep_modes",
+                "type": "int[]",
+                "default": None,
+                "description": "Explicit list of modes to keep.",
+            },
+            {
+                "name": "drop_modes",
+                "type": "int[]",
+                "default": None,
+                "description": "Modes to drop (overrides keep_ratio).",
+            },
+            {
+                "name": "keep_ratio",
+                "type": 'float|"auto"',
+                "default": "auto",
+                "description": "Energy ratio to keep using lowest-frequency modes.",
+            },
+        ],
+        {"causal": False, "zero_phase": True},
+    )
+    add(
+        "loess",
+        "LOESS/LOWESS local regression smoothing for local trend estimation.",
+        [
+            {
+                "name": "frac",
+                "type": "float",
+                "default": 0.2,
+                "description": "Fraction of data used in each local fit.",
+            },
+            {
+                "name": "it",
+                "type": "int",
+                "default": 0,
+                "description": "Robustifying iterations (0 for none).",
+            },
+            {
+                "name": "delta",
+                "type": "float",
+                "default": 0.0,
+                "description": "Distance within which to use linear interpolation.",
+            },
+        ],
+        {"causal": False, "zero_phase": True},
+    )
+    add(
+        "stl",
+        "Seasonal-Trend decomposition (STL); returns selected component (default trend).",
+        [
+            {
+                "name": "period",
+                "type": "int",
+                "default": None,
+                "description": "Seasonal period (required unless index has an inferred frequency).",
+            },
+            {
+                "name": "seasonal",
+                "type": "int|null",
+                "default": None,
+                "description": "Seasonal smoothing length.",
+            },
+            {
+                "name": "trend",
+                "type": "int|null",
+                "default": None,
+                "description": "Trend smoothing length.",
+            },
+            {
+                "name": "low_pass",
+                "type": "int|null",
+                "default": None,
+                "description": "Low-pass filter length.",
+            },
+            {
+                "name": "robust",
+                "type": "bool",
+                "default": False,
+                "description": "Enable robust fitting to outliers.",
+            },
+            {
+                "name": "component",
+                "type": "str",
+                "default": "trend",
+                "description": "trend|seasonal|resid|trend+seasonal|trend+resid.",
+            },
+        ],
+        {"causal": False, "zero_phase": True},
+    )
+    add(
+        "whittaker",
+        "Whittaker smoother with penalized differences (B-spline-like).",
+        [
+            {
+                "name": "lamb",
+                "type": "float",
+                "default": 1000.0,
+                "description": "Smoothing strength (alias: lambda).",
+            },
+            {
+                "name": "order",
+                "type": "int",
+                "default": 2,
+                "description": "Difference order (1 or 2 typical).",
+            },
+        ],
+        {"causal": False, "zero_phase": True},
+    )
+    add(
+        "gaussian",
+        "Gaussian kernel smoothing (Nadaraya-Watson style).",
+        [
+            {
+                "name": "sigma",
+                "type": "float",
+                "default": 2.0,
+                "description": "Gaussian stddev in samples.",
+            },
+            {
+                "name": "truncate",
+                "type": "float",
+                "default": 4.0,
+                "description": "Kernel truncation radius in sigmas.",
+            },
+            {
+                "name": "mode",
+                "type": "str",
+                "default": "nearest",
+                "description": "Edge handling mode for scipy.ndimage.gaussian_filter1d.",
+            },
+        ],
+        {"causal": False, "zero_phase": True},
+    )
+    add(
+        "wavelet",
+        "Wavelet shrinkage denoising using PyWavelets; preserves sharp changes better than linear filters.",
+        [
+            {
+                "name": "wavelet",
+                "type": "str",
+                "default": "db4",
+                "description": "Wavelet family, e.g., 'db4', 'sym5'.",
+            },
+            {
+                "name": "level",
+                "type": "int|null",
+                "default": None,
+                "description": "Decomposition level; auto if omitted.",
+            },
+            {
+                "name": "threshold",
+                "type": 'float|"auto"',
+                "default": "auto",
+                "description": "Shrinkage threshold; 'auto' uses universal threshold.",
+            },
+            {
+                "name": "mode",
+                "type": "str",
+                "default": "soft",
+                "description": "Shrinkage mode: 'soft' or 'hard'.",
+            },
+        ],
+        {"causal": False, "zero_phase": True},
+    )
+    add(
+        "emd",
+        "Empirical Mode Decomposition; reconstruct after dropping high-frequency IMFs.",
+        [
+            {
+                "name": "drop_imfs",
+                "type": "int[]",
+                "default": [0],
+                "description": "IMF indices to drop (0 is highest frequency).",
+            },
+            {
+                "name": "keep_imfs",
+                "type": "int[]",
+                "default": None,
+                "description": "Explicit list of IMFs to keep; overrides drop_imfs.",
+            },
+            {
+                "name": "max_imfs",
+                "type": 'int|"auto"',
+                "default": "auto",
+                "description": "Max IMFs; 'auto' ≈ log2(n), capped to [2,10].",
+            },
+        ],
+        {"causal": False, "zero_phase": True},
+    )
+    add(
+        "eemd",
+        "Ensemble EMD; averages decompositions with added noise for robustness.",
+        [
+            {
+                "name": "drop_imfs",
+                "type": "int[]",
+                "default": [0],
+                "description": "IMF indices to drop (0 is highest frequency).",
+            },
+            {
+                "name": "keep_imfs",
+                "type": "int[]",
+                "default": None,
+                "description": "Explicit list of IMFs to keep; overrides drop_imfs.",
+            },
+            {
+                "name": "max_imfs",
+                "type": 'int|"auto"',
+                "default": "auto",
+                "description": "Max IMFs; 'auto' ≈ log2(n), capped to [2,10].",
+            },
+            {
+                "name": "noise_strength",
+                "type": "float",
+                "default": 0.2,
+                "description": "Relative noise amplitude used in ensembles.",
+            },
+            {
+                "name": "trials",
+                "type": "int",
+                "default": 100,
+                "description": "Number of ensemble trials.",
+            },
+            {
+                "name": "random_state",
+                "type": "int",
+                "default": None,
+                "description": "Random seed for reproducibility.",
+            },
+        ],
+        {"causal": False, "zero_phase": True},
+    )
+    add(
+        "ceemdan",
+        "Complementary EEMD with adaptive noise; improved reconstruction quality.",
+        [
+            {
+                "name": "drop_imfs",
+                "type": "int[]",
+                "default": [0],
+                "description": "IMF indices to drop (0 is highest frequency).",
+            },
+            {
+                "name": "keep_imfs",
+                "type": "int[]",
+                "default": None,
+                "description": "Explicit list of IMFs to keep; overrides drop_imfs.",
+            },
+            {
+                "name": "max_imfs",
+                "type": 'int|"auto"',
+                "default": "auto",
+                "description": "Max IMFs; 'auto' ≈ log2(n), capped to [2,10].",
+            },
+            {
+                "name": "noise_strength",
+                "type": "float",
+                "default": 0.2,
+                "description": "Relative noise amplitude used in decomposition.",
+            },
+            {
+                "name": "trials",
+                "type": "int",
+                "default": 100,
+                "description": "Used if falling back to EEMD implementation.",
+            },
+            {
+                "name": "random_state",
+                "type": "int",
+                "default": None,
+                "description": "Random seed for reproducibility.",
+            },
+        ],
+        {"causal": False, "zero_phase": True},
+    )
 
     return {"success": True, "schema_version": 1, "methods": methods}
 
@@ -1516,7 +2201,9 @@ def denoise_list_methods() -> Dict[str, Any]:
         return {"error": f"Error listing denoise methods: {e}"}
 
 
-def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[Dict[str, Any]]:
+def normalize_denoise_spec(
+    spec: Any, default_when: str = "pre_ti"
+) -> Optional[Dict[str, Any]]:
     """Normalize a denoise spec. Accepts dict-like or a method name string.
 
     Returns a dict with keys: method, params, columns, when, causality, keep_original, suffix.
@@ -1528,19 +2215,19 @@ def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[
         out = dict(base)
         out.update({k: v for k, v in spec.items() if v is not None})
         # Normalize columns field to list
-        cols = out.get('columns')
+        cols = out.get("columns")
         if isinstance(cols, str):
-            parts = [p.strip() for p in cols.replace(',', ' ').split() if p.strip()]
-            out['columns'] = parts if parts else ['close']
-        if 'params' not in out or out['params'] is None:
-            out['params'] = {}
+            parts = [p.strip() for p in cols.replace(",", " ").split() if p.strip()]
+            out["columns"] = parts if parts else ["close"]
+        if "params" not in out or out["params"] is None:
+            out["params"] = {}
         return out
     # String method name
     try:
         method = str(spec).strip().lower()
     except Exception:
         return None
-    if method == '' or method == 'none':
+    if method == "" or method == "none":
         return None
     params = deepcopy(_DENOISE_METHOD_DEFAULT_PARAMS.get(method))
     if params is None:

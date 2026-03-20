@@ -1,7 +1,7 @@
 """Tests for patterns/classic.py — detect_classic_patterns with synthetic data."""
+
 import numpy as np
 import pandas as pd
-import pytest
 
 from mtdata.patterns.classic import (
     detect_classic_patterns,
@@ -22,14 +22,16 @@ def _make_ohlcv(n=200, seed=42):
     low = close - rng.uniform(0.1, 1.0, n)
     open_ = close + rng.normal(0, 0.2, n)
     volume = rng.uniform(1000, 5000, n)
-    return pd.DataFrame({
-        "time": np.arange(n, dtype=float),
-        "open": open_,
-        "high": high,
-        "low": low,
-        "close": close,
-        "tick_volume": volume,
-    })
+    return pd.DataFrame(
+        {
+            "time": np.arange(n, dtype=float),
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "tick_volume": volume,
+        }
+    )
 
 
 class TestDetectClassicPatterns:
@@ -157,11 +159,24 @@ class TestDetectClassicPatterns:
         top = np.linspace(104.0, 103.2, window)
         bot = np.linspace(102.0, 102.6, window)
 
-        monkeypatch.setattr(continuation, "_detect_pivots_close", lambda *_args, **_kwargs: (peaks, troughs))
+        monkeypatch.setattr(
+            continuation,
+            "_detect_pivots_close",
+            lambda *_args, **_kwargs: (peaks, troughs),
+        )
         monkeypatch.setattr(
             continuation,
             "_fit_lines_and_arrays",
-            lambda *_args, **_kwargs: (-0.03, 104.0, 0.9, 0.02, 102.0, 0.9, top.copy(), bot.copy()),
+            lambda *_args, **_kwargs: (
+                -0.03,
+                104.0,
+                0.9,
+                0.02,
+                102.0,
+                0.9,
+                top.copy(),
+                bot.copy(),
+            ),
         )
 
         out = detect_flags_pennants(

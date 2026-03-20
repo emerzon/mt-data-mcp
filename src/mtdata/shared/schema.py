@@ -4,9 +4,22 @@ Shared JSON schema helpers for CLI/server tool inputs.
 Provides reusable $defs such as TimeframeSpec and helpers to apply them
 to per-tool parameter schemas.
 """
+
 import inspect
 import types
-from typing import Dict, Any, Optional, List, Tuple, Literal, Union, get_type_hints, get_origin, get_args, is_typeddict
+from typing import (
+    Dict,
+    Any,
+    Optional,
+    List,
+    Tuple,
+    Literal,
+    Union,
+    get_type_hints,
+    get_origin,
+    get_args,
+    is_typeddict,
+)
 from typing_extensions import TypedDict
 
 try:
@@ -34,7 +47,7 @@ PARAM_HINTS = {
     "ohlcv": "OHLCV column selector (e.g. 'close', 'high,low').",
     "indicators": "Indicators as compact specs like 'rsi(14),macd(12,26,9)' or JSON like '[{\"name\":\"rsi\",\"params\":[14]}]'. Bare names such as 'rsi' are also accepted.",
     "denoise": "Denoise preset or JSON spec.",
-    "simplify": "Simplify preset or JSON spec. Examples: '--simplify select', '--simplify \"{\"\"mode\"\":\"\"select\"\",\"\"method\"\":\"\"lttb\"\",\"\"ratio\"\":0.2}\"', or '--simplify select --simplify-params \"ratio=0.2\"'.",
+    "simplify": 'Simplify preset or JSON spec. Examples: \'--simplify select\', \'--simplify "{""mode"":""select"",""method"":""lttb"",""ratio"":0.2}"\', or \'--simplify select --simplify-params "ratio=0.2"\'.',
     "method": "Method/algorithm for this tool. For forecast methods, run forecast_list_methods to browse valid names.",
     "mode": "Mode for this tool.",
     "engine": "Detection engine or comma-separated engines (for ensemble mode).",
@@ -86,7 +99,7 @@ PARAM_HINTS = {
     "require_sl_tp": "For market orders, require both stop_loss and take_profit and fail if protection cannot be attached. Defaults to true.",
     "auto_close_on_sl_tp_fail": "If a filled market order cannot attach TP/SL, immediately try to close the unprotected position. Defaults to false.",
     "ticket": "Ticket/order ID.",
-    "expiration": "Expiration time (dateparser string, UTC epoch seconds, or GTC token).",
+    "pending_expiration": "Expiration time (dateparser string, UTC epoch seconds, or GTC token).",
     "profit_only": "Close only profitable positions when true.",
     "loss_only": "Close only losing positions when true.",
     "position_ticket": "Filter history rows by the linked position ticket.",
@@ -160,7 +173,7 @@ PARAM_HINTS = {
     "profile": "Alias for search_profile in params payloads.",
     "ensemble_methods": "Comma-list or array of member simulators for method=ensemble.",
     "ensemble_agg": "Ensemble aggregation: median or weighted_mean.",
-    "ensemble_weights": "Optional JSON method->weight map for weighted_mean aggregation.",
+    "ensemble_method_weights": "Optional JSON method->weight map for weighted_mean aggregation.",
     "optuna_pareto": "Enable Optuna multi-objective Pareto optimization.",
     "optuna_pareto_objectives": "JSON metric->direction map for Pareto optimization.",
     "pareto_limit": "Maximum number of Pareto-front rows returned.",
@@ -190,7 +203,8 @@ _TIMEFRAME_CHOICES = tuple(sorted(TIMEFRAME_MAP.keys()))
 TimeframeLiteral = Literal[_TIMEFRAME_CHOICES]  # type: ignore
 
 # Build a Literal for single OHLCV letters; the parameter will be a list of these
-OhlcvCharLiteral = Literal['O', 'H', 'L', 'C', 'V']  # type: ignore
+OhlcvCharLiteral = Literal["O", "H", "L", "C", "V"]  # type: ignore
+
 
 # ---- Technical Indicators (dynamic discovery and application) ----
 def _load_indicator_doc_choices(
@@ -209,7 +223,11 @@ def _load_indicator_doc_choices(
         return [], []
 
     categories = sorted(
-        {it.get("category") for it in docs if isinstance(it, dict) and it.get("category")}
+        {
+            it.get("category")
+            for it in docs
+            if isinstance(it, dict) and it.get("category")
+        }
     )
     names = sorted(
         {it.get("name") for it in docs if isinstance(it, dict) and it.get("name")}
@@ -230,44 +248,47 @@ if _INDICATOR_NAME_CHOICES:
 else:
     IndicatorNameLiteral = str  # fallback
 
+
 class IndicatorSpec(TypedDict, total=False):
     """Structured TI spec: name with optional numeric params.
 
     Note: 'name' accepts any string to allow compact forms like "rsi(20)".
     """
+
     name: str
     params: List[float]
+
 
 # ---- Denoising (spec + application) ----
 # Allowed denoising methods for first phase (no extra dependencies)
 _DENOISE_METHODS = (
-    "none",        # no-op
-    "ema",         # exponential moving average
-    "sma",         # simple moving average
-    "median",      # rolling median
-    "lowpass_fft", # zero-phase FFT low-pass
-    "butterworth", # Butterworth IIR filter
-    "hp",          # Hodrick-Prescott trend filter
-    "savgol",      # Savitzky-Golay smoothing
-    "tv",          # total variation denoising
-    "kalman",      # 1D Kalman filter smoothing
-    "hampel",      # Hampel outlier filter
-    "bilateral",   # bilateral smoothing
-    "wavelet_packet", # wavelet packet denoise
-    "ssa",         # singular spectrum analysis
-    "l1_trend",    # L1 trend filtering
-    "lms",         # adaptive LMS filter
-    "rls",         # adaptive RLS filter
-    "beta",        # beta-IRLS smoothing
-    "vmd",         # variational mode decomposition
-    "loess",       # LOESS/LOWESS smoothing
-    "stl",         # seasonal-trend decomposition
-    "whittaker",   # Whittaker smoothing
-    "gaussian",    # Gaussian kernel smoothing
-    "wavelet",     # wavelet shrinkage (PyWavelets optional)
-    "emd",         # empirical mode decomposition (PyEMD optional)
-    "eemd",        # ensemble EMD (PyEMD optional)
-    "ceemdan",     # complementary EEMD with adaptive noise (PyEMD optional)    
+    "none",  # no-op
+    "ema",  # exponential moving average
+    "sma",  # simple moving average
+    "median",  # rolling median
+    "lowpass_fft",  # zero-phase FFT low-pass
+    "butterworth",  # Butterworth IIR filter
+    "hp",  # Hodrick-Prescott trend filter
+    "savgol",  # Savitzky-Golay smoothing
+    "tv",  # total variation denoising
+    "kalman",  # 1D Kalman filter smoothing
+    "hampel",  # Hampel outlier filter
+    "bilateral",  # bilateral smoothing
+    "wavelet_packet",  # wavelet packet denoise
+    "ssa",  # singular spectrum analysis
+    "l1_trend",  # L1 trend filtering
+    "lms",  # adaptive LMS filter
+    "rls",  # adaptive RLS filter
+    "beta",  # beta-IRLS smoothing
+    "vmd",  # variational mode decomposition
+    "loess",  # LOESS/LOWESS smoothing
+    "stl",  # seasonal-trend decomposition
+    "whittaker",  # Whittaker smoothing
+    "gaussian",  # Gaussian kernel smoothing
+    "wavelet",  # wavelet shrinkage (PyWavelets optional)
+    "emd",  # empirical mode decomposition (PyEMD optional)
+    "eemd",  # ensemble EMD (PyEMD optional)
+    "ceemdan",  # complementary EEMD with adaptive noise (PyEMD optional)
 )
 
 try:
@@ -275,27 +296,27 @@ try:
 except Exception:
     DenoiseMethodLiteral = str  # fallback for typing
 
+
 class DenoiseSpec(TypedDict, total=False):
     method: DenoiseMethodLiteral  # type: ignore
     params: Dict[str, Any]
     columns: List[str]
-    when: Literal['pre_ti', 'post_ti']  # type: ignore
-    causality: Literal['causal', 'zero_phase']  # type: ignore
+    when: Literal["pre_ti", "post_ti"]  # type: ignore
+    causality: Literal["causal", "zero_phase"]  # type: ignore
     keep_original: bool
     suffix: str
 
+
 # ---- Simplify (schema for MCP) ----
 _SIMPLIFY_MODES = (
-    'select',        # pick representative existing rows
-    'approximate',   # aggregate between selected rows
-    'resample',      # time-bucket aggregation
-    'encode',        # compact encodings (envelope, delta)
-    'segment',       # swing points (e.g., ZigZag)
-    'symbolic',      # SAX symbolic representation
+    "select",  # pick representative existing rows
+    "approximate",  # aggregate between selected rows
+    "resample",  # time-bucket aggregation
+    "encode",  # compact encodings (envelope, delta)
+    "segment",  # swing points (e.g., ZigZag)
+    "symbolic",  # SAX symbolic representation
 )
-_SIMPLIFY_METHODS = (
-    'lttb', 'rdp', 'pla', 'apca'
-)
+_SIMPLIFY_METHODS = ("lttb", "rdp", "pla", "apca")
 try:
     SimplifyModeLiteral = Literal[_SIMPLIFY_MODES]  # type: ignore
 except Exception:
@@ -305,11 +326,12 @@ try:
 except Exception:
     SimplifyMethodLiteral = str
 try:
-    EncodeSchemaLiteral = Literal['envelope','delta']  # type: ignore
-    SymbolicSchemaLiteral = Literal['sax']  # type: ignore
+    EncodeSchemaLiteral = Literal["envelope", "delta"]  # type: ignore
+    SymbolicSchemaLiteral = Literal["sax"]  # type: ignore
 except Exception:
     EncodeSchemaLiteral = str
     SymbolicSchemaLiteral = str
+
 
 class SimplifySpec(TypedDict, total=False):
     # Common
@@ -331,12 +353,13 @@ class SimplifySpec(TypedDict, total=False):
     scale: float
     zero_char: str
     # Segment specifics
-    algo: Literal['zigzag','zz']  # type: ignore
+    algo: Literal["zigzag", "zz"]  # type: ignore
     threshold_pct: float
     value_col: str
     # Symbolic specifics
     paa: int
     znorm: bool
+
 
 # Volatility params (concise)
 class VolatilityParams(TypedDict, total=False):
@@ -348,8 +371,9 @@ class VolatilityParams(TypedDict, total=False):
     window: int
     # GARCH
     fit_bars: int
-    mean: Literal['Zero','Constant']  # type: ignore
-    dist: Literal['normal']  # type: ignore
+    mean: Literal["Zero", "Constant"]  # type: ignore
+    dist: Literal["normal"]  # type: ignore
+
 
 # ---- Pivot Point methods (enums) ----
 _PIVOT_METHODS = (
@@ -406,10 +430,17 @@ _FALLBACK_FORECAST_METHODS: Tuple[str, ...] = (
 )
 
 try:
-    from mtdata.forecast.forecast_registry import get_forecast_methods_data as _get_forecast_methods_data
+    from mtdata.forecast.forecast_registry import (
+        get_forecast_methods_data as _get_forecast_methods_data,
+    )
+
     _method_data = _get_forecast_methods_data()
-    _derived = [m.get("method") for m in _method_data.get("methods", []) if m.get("method")]
-    _FORECAST_METHODS: Tuple[str, ...] = tuple(_derived) if _derived else _FALLBACK_FORECAST_METHODS
+    _derived = [
+        m.get("method") for m in _method_data.get("methods", []) if m.get("method")
+    ]
+    _FORECAST_METHODS: Tuple[str, ...] = (
+        tuple(_derived) if _derived else _FALLBACK_FORECAST_METHODS
+    )
 except Exception:
     _FORECAST_METHODS = _FALLBACK_FORECAST_METHODS
 
@@ -425,7 +456,6 @@ try:
     ForecastMethodLiteral = Literal[_FORECAST_METHODS]  # type: ignore
 except Exception:
     ForecastMethodLiteral = str  # fallback for typing
-
 
 
 def shared_defs() -> Dict[str, Any]:
@@ -462,7 +492,11 @@ def complex_defs() -> Dict[str, Any]:
             "type": "object",
             "properties": {
                 "method": {"$ref": "#/$defs/DenoiseMethod"},
-                "params": {"type": "object", "description": "Method-specific overrides", "additionalProperties": True},
+                "params": {
+                    "type": "object",
+                    "description": "Method-specific overrides",
+                    "additionalProperties": True,
+                },
                 "columns": {"type": "array", "items": {"type": "string"}},
                 "when": {"$ref": "#/$defs/WhenSpec"},
                 "causality": {"$ref": "#/$defs/CausalitySpec"},
@@ -484,16 +518,18 @@ def complex_defs() -> Dict[str, Any]:
                 "max_error": {"type": "number"},
                 "segments": {"type": "integer"},
                 "bucket_seconds": {"type": "integer"},
-                "schema": {"oneOf": [
-                    {"$ref": "#/$defs/EncodeSchema"},
-                    {"$ref": "#/$defs/SymbolicSchema"}
-                ]},
+                "schema": {
+                    "oneOf": [
+                        {"$ref": "#/$defs/EncodeSchema"},
+                        {"$ref": "#/$defs/SymbolicSchema"},
+                    ]
+                },
                 "bits": {"type": "integer"},
                 "as_chars": {"type": "boolean"},
                 "alphabet": {"type": "string"},
                 "scale": {"type": "number"},
                 "zero_char": {"type": "string"},
-                "algo": {"type": "string", "enum": ["zigzag","zz"]},
+                "algo": {"type": "string", "enum": ["zigzag", "zz"]},
                 "threshold_pct": {"type": "number"},
                 "value_col": {"type": "string"},
                 "paa": {"type": "integer"},
@@ -506,7 +542,10 @@ def complex_defs() -> Dict[str, Any]:
             "type": "object",
             "properties": {
                 "halflife": {"type": ["number", "null"]},
-                "lambda_": {"type": ["number", "null"], "description": "EWMA smoothing weight"},
+                "lambda_": {
+                    "type": ["number", "null"],
+                    "description": "EWMA smoothing weight",
+                },
                 "lookback": {"type": "integer"},
                 "window": {"type": "integer"},
                 "fit_bars": {"type": "integer"},
@@ -529,9 +568,6 @@ def _ensure_defs(schema: Dict[str, Any]) -> Dict[str, Any]:
     return schema
 
 
-
-
-
 def apply_param_hints(schema: Dict[str, Any]) -> Dict[str, Any]:
     params_obj = _parameters_obj(schema)
     props = params_obj.get("properties", {}) if isinstance(params_obj, dict) else {}
@@ -542,6 +578,7 @@ def apply_param_hints(schema: Dict[str, Any]) -> Dict[str, Any]:
         if hint and not prop.get("description"):
             prop["description"] = hint
     return schema
+
 
 def _parameters_obj(schema: Dict[str, Any]) -> Dict[str, Any]:
     """Get or create the OpenAI/MCP-style parameters object inside a schema."""
@@ -565,7 +602,6 @@ def apply_timeframe_ref(schema: Dict[str, Any]) -> Dict[str, Any]:
         if key in props and isinstance(props.get(key), dict):
             props[key] = {"$ref": "#/$defs/TimeframeSpec"}
     return schema
-
 
 
 def _allow_null(schema: Dict[str, Any]) -> Dict[str, Any]:
@@ -594,14 +630,18 @@ _TYPED_DICT_REFS = {
     "VolatilityParams": "#/$defs/VolatilityParams",
 }
 
-_ANNOTATION_VALUE_FORMAT = getattr(getattr(annotationlib, "Format", None), "VALUE", None)
+_ANNOTATION_VALUE_FORMAT = getattr(
+    getattr(annotationlib, "Format", None), "VALUE", None
+)
 
 
 def _get_runtime_signature(obj: Any) -> inspect.Signature:
     """Resolve a signature with evaluated annotations when available."""
     if _ANNOTATION_VALUE_FORMAT is not None:
         try:
-            return inspect.signature(obj, eval_str=True, annotation_format=_ANNOTATION_VALUE_FORMAT)
+            return inspect.signature(
+                obj, eval_str=True, annotation_format=_ANNOTATION_VALUE_FORMAT
+            )
         except Exception:
             pass
     return inspect.signature(obj)
@@ -611,7 +651,9 @@ def _get_runtime_annotations(obj: Any) -> Dict[str, Any]:
     """Resolve runtime annotations using the 3.14 annotation API when available."""
     if annotationlib is not None and _ANNOTATION_VALUE_FORMAT is not None:
         try:
-            resolved = annotationlib.get_annotations(obj, eval_str=True, format=_ANNOTATION_VALUE_FORMAT)
+            resolved = annotationlib.get_annotations(
+                obj, eval_str=True, format=_ANNOTATION_VALUE_FORMAT
+            )
             if isinstance(resolved, dict):
                 return resolved
         except Exception:
@@ -713,13 +755,16 @@ def _type_hint_to_schema(type_hint: Any) -> Dict[str, Any]:
             return {"$ref": ref}
     return {"type": "string"}
 
+
 def build_minimal_schema(func_info: Dict[str, Any]) -> Dict[str, Any]:
     """Build a minimal parameters schema from a discovered function description.
 
     - Only includes parameter names and required flags.
     - Applies TimeframeSpec $ref to known timeframe param names.
     """
-    schema: Dict[str, Any] = {"parameters": {"type": "object", "properties": {}, "required": []}}
+    schema: Dict[str, Any] = {
+        "parameters": {"type": "object", "properties": {}, "required": []}
+    }
     props = schema["parameters"]["properties"]
     req = schema["parameters"]["required"]
     for p in func_info.get("params", []):
@@ -745,7 +790,9 @@ def build_minimal_schema(func_info: Dict[str, Any]) -> Dict[str, Any]:
     return schema
 
 
-def enrich_schema_with_shared_defs(schema: Dict[str, Any], func_info: Dict[str, Any]) -> Dict[str, Any]:
+def enrich_schema_with_shared_defs(
+    schema: Dict[str, Any], func_info: Dict[str, Any]
+) -> Dict[str, Any]:
     """Ensure schema has $defs and timeframe refs. If empty, build minimal one."""
     if not isinstance(schema, dict) or not schema:
         schema = build_minimal_schema(func_info)
@@ -754,8 +801,6 @@ def enrich_schema_with_shared_defs(schema: Dict[str, Any], func_info: Dict[str, 
     apply_timeframe_ref(schema)
     apply_param_hints(schema)
     return schema
-
-
 
 
 def get_shared_enum_lists() -> Dict[str, List[str]]:
@@ -788,17 +833,22 @@ def get_function_info(func: Any) -> Dict[str, Any]:
     for name, param in sig.parameters.items():
         if name in ("self", "cls"):
             continue
-        if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+        if param.kind in (
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        ):
             continue
         annotation = type_hints.get(name, param.annotation)
         if annotation is inspect._empty:
             annotation = None
-        params.append({
-            "name": name,
-            "required": param.default == inspect._empty,  # type: ignore[attr-defined]
-            "default": None if param.default == inspect._empty else param.default,  # type: ignore[attr-defined]
-            "type": annotation,
-        })
+        params.append(
+            {
+                "name": name,
+                "required": param.default == inspect._empty,  # type: ignore[attr-defined]
+                "default": None if param.default == inspect._empty else param.default,  # type: ignore[attr-defined]
+                "type": annotation,
+            }
+        )
 
     return {
         "name": getattr(target, "__name__", ""),

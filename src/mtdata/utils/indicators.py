@@ -4,6 +4,7 @@ import inspect
 import pydoc
 import re
 import pandas as pd
+
 try:
     import pandas_ta as pta  # preferred module name
 except ModuleNotFoundError:  # fallback for alternate distribution import
@@ -30,15 +31,23 @@ def _normalize_ta_indicator_name(name: str) -> str:
 
 def _indicator_aliases(name: str) -> List[str]:
     canonical = _normalize_ta_indicator_name(name)
-    return sorted(alias for alias, target in _INDICATOR_ALIASES.items() if target == canonical and alias != canonical)
+    return sorted(
+        alias
+        for alias, target in _INDICATOR_ALIASES.items()
+        if target == canonical and alias != canonical
+    )
 
 
 def clean_help_text(text: str, func_name: Optional[str] = None) -> str:
     if not isinstance(text, str):
-        return ''
-    cleaned = re.sub(r'.\x08', '', text)
+        return ""
+    cleaned = re.sub(r".\x08", "", text)
     lines = [ln.rstrip() for ln in cleaned.splitlines()]
-    sig_re = re.compile(rf"^\s*{re.escape(func_name)}\s*\(.*\)") if func_name else re.compile(r"^\s*\w+\s*\(.*\)")
+    sig_re = (
+        re.compile(rf"^\s*{re.escape(func_name)}\s*\(.*\)")
+        if func_name
+        else re.compile(r"^\s*\w+\s*\(.*\)")
+    )
     start = 0
     for i, ln in enumerate(lines):
         if sig_re.match(ln):
@@ -54,7 +63,7 @@ def clean_help_text(text: str, func_name: Optional[str] = None) -> str:
 
 def _try_number(s: str):
     try:
-        if '.' in s:
+        if "." in s:
             return float(s)
         return int(s)
     except Exception:
@@ -75,37 +84,48 @@ def _parse_ti_number(token: str) -> int | float | None:
     return int(val) if val.is_integer() else val
 
 
-def infer_defaults_from_doc(func_name: str, doc_text: str, params: List[Dict[str, Any]]):
+def infer_defaults_from_doc(
+    func_name: str, doc_text: str, params: List[Dict[str, Any]]
+):
     if not doc_text:
         return
-    text = re.sub(r'.\x08', '', doc_text)
+    text = re.sub(r".\x08", "", doc_text)
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     sig_line = None
     for ln in lines:
-        if ln.startswith(func_name + '(') or re.match(rf"^\s*{re.escape(func_name)}\s*\(.*\)", ln):
+        if ln.startswith(func_name + "(") or re.match(
+            rf"^\s*{re.escape(func_name)}\s*\(.*\)", ln
+        ):
             sig_line = ln
             break
     if sig_line:
-        inside = sig_line[sig_line.find('(') + 1 : sig_line.rfind(')')] if '(' in sig_line and ')' in sig_line else ''
-        for part in re.split(r'[\s,]+', inside):
-            if '=' in part:
-                k, v = part.split('=', 1)
+        inside = (
+            sig_line[sig_line.find("(") + 1 : sig_line.rfind(")")]
+            if "(" in sig_line and ")" in sig_line
+            else ""
+        )
+        for part in re.split(r"[\s,]+", inside):
+            if "=" in part:
+                k, v = part.split("=", 1)
                 k = k.strip()
-                v = v.strip().strip(',)')
+                v = v.strip().strip(",)")
                 num = _try_number(v)
                 if num is not None:
                     for p in params:
-                        if p.get('name') == k and 'default' not in p:
-                            p['default'] = num
+                        if p.get("name") == k and "default" not in p:
+                            p["default"] = num
     for p in params:
-        if 'default' in p:
+        if "default" in p:
             continue
-        k = p.get('name')
+        k = p.get("name")
         if not k:
             continue
-        m = re.search(rf"{re.escape(k)}[^\n]*?(?:Default|default)\s*:?[\s]*([0-9]+(?:\.[0-9]+)?)", text)
+        m = re.search(
+            rf"{re.escape(k)}[^\n]*?(?:Default|default)\s*:?[\s]*([0-9]+(?:\.[0-9]+)?)",
+            text,
+        )
         if m:
-            p['default'] = _try_number(m.group(1))
+            p["default"] = _try_number(m.group(1))
 
 
 def list_ta_indicators(*, detailed: bool = False) -> List[Dict[str, Any]]:
@@ -114,18 +134,25 @@ def list_ta_indicators(*, detailed: bool = False) -> List[Dict[str, Any]]:
     seen = set()
 
     categories = [
-        'candles', 'momentum', 'overlap', 'performance', 'statistics',
-        'trend', 'volatility', 'volume', 'cycles'
+        "candles",
+        "momentum",
+        "overlap",
+        "performance",
+        "statistics",
+        "trend",
+        "volatility",
+        "volume",
+        "cycles",
     ]
 
     for category in categories:
         try:
             cat_module = getattr(pta, category, None)
-            if not cat_module or not hasattr(cat_module, '__file__'):
+            if not cat_module or not hasattr(cat_module, "__file__"):
                 continue
 
             for func_name in dir(cat_module):
-                if func_name.startswith('_'):
+                if func_name.startswith("_"):
                     continue
                 func = getattr(cat_module, func_name, None)
                 if not callable(func):
@@ -142,7 +169,10 @@ def list_ta_indicators(*, detailed: bool = False) -> List[Dict[str, Any]]:
                 for p in sig.parameters.values():
                     if p.name in {"open", "high", "low", "close", "volume"}:
                         continue
-                    if p.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                    if p.kind in (
+                        inspect.Parameter.VAR_POSITIONAL,
+                        inspect.Parameter.VAR_KEYWORD,
+                    ):
                         continue
                     entry: Dict[str, Any] = {"name": p.name}
                     if p.default is not inspect._empty and p.default is not None:
@@ -168,13 +198,15 @@ def list_ta_indicators(*, detailed: bool = False) -> List[Dict[str, Any]]:
                     except Exception:
                         desc = ""
 
-                items.append({
-                    "name": name,
-                    "params": params,
-                    "description": desc,
-                    "category": category,
-                    "aliases": _indicator_aliases(name),
-                })
+                items.append(
+                    {
+                        "name": name,
+                        "params": params,
+                        "description": desc,
+                        "category": category,
+                        "aliases": _indicator_aliases(name),
+                    }
+                )
         except Exception:
             continue
     items.sort(key=lambda x: x["name"])
@@ -186,7 +218,9 @@ def _list_ta_indicators() -> List[Dict[str, Any]]:
     return list_ta_indicators(detailed=False)
 
 
-def _parse_ti_specs(spec: str) -> List[Tuple[str, List[int | float], Dict[str, int | float]]]:
+def _parse_ti_specs(
+    spec: str,
+) -> List[Tuple[str, List[int | float], Dict[str, int | float]]]:
     """Parse a compact indicator spec string into [(name, args, kwargs)].
 
     Splits top-level by comma, respecting parentheses so nested commas in
@@ -201,20 +235,20 @@ def _parse_ti_specs(spec: str) -> List[Tuple[str, List[int | float], Dict[str, i
     buf: List[str] = []
     depth = 0
     for ch in text:
-        if ch == '(':
+        if ch == "(":
             depth += 1
             buf.append(ch)
-        elif ch == ')':
+        elif ch == ")":
             depth = max(0, depth - 1)
             buf.append(ch)
-        elif ch == ',' and depth == 0:
-            token = ''.join(buf).strip()
+        elif ch == "," and depth == 0:
+            token = "".join(buf).strip()
             if token:
                 parts.append(token)
             buf = []
         else:
             buf.append(ch)
-    last = ''.join(buf).strip()
+    last = "".join(buf).strip()
     if last:
         parts.append(last)
 
@@ -226,16 +260,16 @@ def _parse_ti_specs(spec: str) -> List[Tuple[str, List[int | float], Dict[str, i
         name = part
         args: List[int | float] = []
         kwargs: Dict[str, int | float] = {}
-        if '(' in part and part.endswith(')'):
-            name = part[: part.index('(')].strip()
-            inside = part[part.index('(') + 1 : -1]
+        if "(" in part and part.endswith(")"):
+            name = part[: part.index("(")].strip()
+            inside = part[part.index("(") + 1 : -1]
             # Split inside by commas (no nested parens expected here)
-            for tok in inside.split(','):
-                tok = tok.strip().strip('\"\'')
+            for tok in inside.split(","):
+                tok = tok.strip().strip("\"'")
                 if not tok:
                     continue
-                if '=' in tok:
-                    k, v = tok.split('=', 1)
+                if "=" in tok:
+                    k, v = tok.split("=", 1)
                     k = k.strip()
                     v = v.strip()
                     num = _parse_ti_number(v)
@@ -247,10 +281,11 @@ def _parse_ti_specs(spec: str) -> List[Tuple[str, List[int | float], Dict[str, i
                         args.append(num)
         # Flex: detect trailing number in name (EMA21 -> length=21)
         import re
+
         m = re.search(r"(.*?)[_\-]?([0-9]{1,3})$", name)
-        if m and str(m.group(1) or "").strip() and not args and 'length' not in kwargs:
+        if m and str(m.group(1) or "").strip() and not args and "length" not in kwargs:
             try:
-                kwargs['length'] = int(m.group(2))
+                kwargs["length"] = int(m.group(2))
                 name = m.group(1)
             except Exception:
                 pass
@@ -282,10 +317,10 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:
     original_index = df.index
     if not isinstance(df.index, pd.DatetimeIndex):
         try:
-            df.index = pd.to_datetime(df['time'], unit='s', utc=True)
+            df.index = pd.to_datetime(df["time"], unit="s", utc=True)
         except Exception:
             try:
-                df.index = pd.to_datetime(df['time'])
+                df.index = pd.to_datetime(df["time"])
             except Exception:
                 pass
     before = set(df.columns)
@@ -302,26 +337,33 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:
             call_kwargs = dict(kwargs)
             call_args = []
             # Provide price/series inputs
-            if 'close' in params and 'close' in df.columns:
+            if "close" in params and "close" in df.columns:
                 # Use positional for 'close' to prevent numeric args binding to it
-                call_args.append(df['close'])
-                call_kwargs.pop('close', None)
+                call_args.append(df["close"])
+                call_kwargs.pop("close", None)
             # Additional series as keywords if accepted
-            if 'open' in params and 'open' not in call_kwargs and 'open' in df.columns:
-                call_kwargs['open'] = df['open']
-            if 'high' in params and 'high' not in call_kwargs and 'high' in df.columns:
-                call_kwargs['high'] = df['high']
-            if 'low' in params and 'low' not in call_kwargs and 'low' in df.columns:
-                call_kwargs['low'] = df['low']
-            if 'volume' in params and 'volume' not in call_kwargs and 'volume' in df.columns:
-                call_kwargs['volume'] = df['volume']
+            if "open" in params and "open" not in call_kwargs and "open" in df.columns:
+                call_kwargs["open"] = df["open"]
+            if "high" in params and "high" not in call_kwargs and "high" in df.columns:
+                call_kwargs["high"] = df["high"]
+            if "low" in params and "low" not in call_kwargs and "low" in df.columns:
+                call_kwargs["low"] = df["low"]
+            if (
+                "volume" in params
+                and "volume" not in call_kwargs
+                and "volume" in df.columns
+            ):
+                call_kwargs["volume"] = df["volume"]
 
             # Generic mapping: map provided numeric args to function parameters in declared order
             # Skip series parameters and any already supplied in call_kwargs
-            series_names = {'open', 'high', 'low', 'close', 'volume'}
+            series_names = {"open", "high", "low", "close", "volume"}
             ordered_param_names = []
             for pname, p in params.items():
-                if p.kind in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL):
+                if p.kind in (
+                    inspect.Parameter.VAR_KEYWORD,
+                    inspect.Parameter.VAR_POSITIONAL,
+                ):
                     continue
                 if pname in series_names:
                     continue
@@ -349,8 +391,8 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:
                     try:
                         # Fallback: keyword-only attempt including close
                         kw_only = dict(call_kwargs)
-                        if 'close' in params and 'close' in df.columns:
-                            kw_only['close'] = df['close']
+                        if "close" in params and "close" in df.columns:
+                            kw_only["close"] = df["close"]
                         out = func(**kw_only)
                     except Exception:
                         out = None
@@ -369,6 +411,7 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:
         df.index = original_index
     return added_cols
 
+
 # Backwards-compat alias
 _apply_ta_indicators_util = _apply_ta_indicators
 _find_unknown_ta_indicators_util = _find_unknown_ta_indicators
@@ -381,6 +424,7 @@ def _estimate_warmup_bars(ti_spec: Optional[str]) -> int:
     specs = _parse_ti_specs(ti_spec)
     for name, args, kwargs in specs:
         lname = _normalize_ta_indicator_name(name)
+
         def geti(key, default):
             if key in kwargs:
                 try:
@@ -393,6 +437,7 @@ def _estimate_warmup_bars(ti_spec: Optional[str]) -> int:
                 except Exception:
                     return default
             return default
+
         warm = 0
         if lname in ("sma", "ema", "rsi"):
             warm = geti("length", 14)
@@ -423,6 +468,7 @@ def _estimate_warmup_bars(ti_spec: Optional[str]) -> int:
             max_warmup = warm
     scaled = max(int(max_warmup * 3), 50) if max_warmup > 0 else 0
     return scaled
+
 
 # Backwards-compat alias
 _estimate_warmup_bars_util = _estimate_warmup_bars

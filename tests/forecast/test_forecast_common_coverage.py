@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -151,13 +150,21 @@ class TestLogReturnsFromPrices:
 # ===================================================================
 class TestExtractForecastValues:
     def test_y_column(self):
-        df = pd.DataFrame({"unique_id": ["ts"] * 5, "ds": range(5), "y": [1.0, 2.0, 3.0, 4.0, 5.0]})
+        df = pd.DataFrame(
+            {"unique_id": ["ts"] * 5, "ds": range(5), "y": [1.0, 2.0, 3.0, 4.0, 5.0]}
+        )
         result = _extract_forecast_values(df, fh=3)
         assert result.shape == (3,)
         np.testing.assert_array_equal(result, [1.0, 2.0, 3.0])
 
     def test_non_y_prediction_column(self):
-        df = pd.DataFrame({"unique_id": ["ts"] * 4, "ds": range(4), "MyModel": [10.0, 20.0, 30.0, 40.0]})
+        df = pd.DataFrame(
+            {
+                "unique_id": ["ts"] * 4,
+                "ds": range(4),
+                "MyModel": [10.0, 20.0, 30.0, 40.0],
+            }
+        )
         result = _extract_forecast_values(df, fh=4)
         np.testing.assert_array_equal(result, [10.0, 20.0, 30.0, 40.0])
 
@@ -200,7 +207,9 @@ class TestCreateTrainingDataframes:
         series = np.array([1.0, 2.0, 3.0])
         exog = RS.randn(3, 2)
         exog_f = RS.randn(2, 2)
-        Y_df, X_df, Xf_df = _create_training_dataframes(series, fh=2, exog_used=exog, exog_future=exog_f)
+        Y_df, X_df, Xf_df = _create_training_dataframes(
+            series, fh=2, exog_used=exog, exog_future=exog_f
+        )
         assert X_df is not None
         assert "x0" in X_df.columns and "x1" in X_df.columns
         assert len(X_df) == 3
@@ -296,11 +305,21 @@ class TestNextTimesFromLast:
 # 7. pd_freq_from_timeframe
 # ===================================================================
 class TestPdFreqFromTimeframe:
-    @pytest.mark.parametrize("tf,expected", [
-        ("M1", "1min"), ("M5", "5min"), ("M15", "15min"), ("M30", "30min"),
-        ("H1", "1h"), ("H4", "4h"), ("H12", "12h"),
-        ("D1", "1d"), ("W1", "1w"), ("MN1", "MS"),
-    ])
+    @pytest.mark.parametrize(
+        "tf,expected",
+        [
+            ("M1", "1min"),
+            ("M5", "5min"),
+            ("M15", "15min"),
+            ("M30", "30min"),
+            ("H1", "1h"),
+            ("H4", "4h"),
+            ("H12", "12h"),
+            ("D1", "1d"),
+            ("W1", "1w"),
+            ("MN1", "MS"),
+        ],
+    )
     def test_known_mappings(self, tf, expected):
         assert pd_freq_from_timeframe(tf) == expected
 
@@ -334,10 +353,19 @@ class TestFetchHistory:
         times = np.arange(1000, 1060, 1, dtype=float)
         mock_rates.return_value = np.array(
             [(t, 1.1, 1.2, 1.0, 1.15, 100, 0, 0) for t in times],
-            dtype=[("time", "f8"), ("open", "f8"), ("high", "f8"), ("low", "f8"),
-                   ("close", "f8"), ("tick_volume", "i8"), ("spread", "i4"), ("real_volume", "i8")],
+            dtype=[
+                ("time", "f8"),
+                ("open", "f8"),
+                ("high", "f8"),
+                ("low", "f8"),
+                ("close", "f8"),
+                ("tick_volume", "i8"),
+                ("spread", "i4"),
+                ("real_volume", "i8"),
+            ],
         )
         from mtdata.forecast.common import fetch_history
+
         df = fetch_history("EURUSD", "H1", 50)
         assert isinstance(df, pd.DataFrame)
         # drop_last_live removes the last bar by default
@@ -351,15 +379,25 @@ class TestFetchHistory:
         times = np.arange(1000, 1010, 1, dtype=float)
         mock_rates.return_value = np.array(
             [(t, 1.1, 1.2, 1.0, 1.15, 100, 0, 0) for t in times],
-            dtype=[("time", "f8"), ("open", "f8"), ("high", "f8"), ("low", "f8"),
-                   ("close", "f8"), ("tick_volume", "i8"), ("spread", "i4"), ("real_volume", "i8")],
+            dtype=[
+                ("time", "f8"),
+                ("open", "f8"),
+                ("high", "f8"),
+                ("low", "f8"),
+                ("close", "f8"),
+                ("tick_volume", "i8"),
+                ("spread", "i4"),
+                ("real_volume", "i8"),
+            ],
         )
         from mtdata.forecast.common import fetch_history
+
         df = fetch_history("EURUSD", "H1", 10, drop_last_live=False)
         assert len(df) == 10
 
     def test_invalid_timeframe_raises(self):
         from mtdata.forecast.common import fetch_history
+
         with pytest.raises(RuntimeError, match="Invalid timeframe"):
             fetch_history("EURUSD", "INVALID_TF", 50)
 
@@ -371,6 +409,7 @@ class TestFetchHistory:
         mock_info.return_value = MagicMock(visible=True)
         mock_mt5.last_error.return_value = (0, "No data")
         from mtdata.forecast.common import fetch_history
+
         with pytest.raises(RuntimeError, match="Failed to get rates"):
             fetch_history("EURUSD", "H1", 50)
 
@@ -437,7 +476,9 @@ class TestCalculateLookbackBars:
         assert result >= 100
 
     def test_analog_respects_window_size_param(self):
-        result = _calculate_lookback_bars("analog", 12, None, 24, "H1", params={"window_size": 256})
+        result = _calculate_lookback_bars(
+            "analog", 12, None, 24, "H1", params={"window_size": 256}
+        )
         assert result >= 258
 
     def test_seasonal_naive(self):
@@ -475,18 +516,27 @@ class TestCalculateLookbackBars:
 # ===================================================================
 class TestFormatForecastOutput:
     def _make_df(self, n=10):
-        return pd.DataFrame({
-            "time": np.arange(n, dtype=float),
-            "close": RS.randn(n) + 100,
-        })
+        return pd.DataFrame(
+            {
+                "time": np.arange(n, dtype=float),
+                "close": RS.randn(n) + 100,
+            }
+        )
 
     def test_basic_price_output(self):
         vals = np.array([101.0, 102.0, 103.0])
         result = _format_forecast_output(
-            forecast_values=vals, last_epoch=1000.0, tf_secs=3600,
-            horizon=3, base_col="close", df=self._make_df(),
-            ci_alpha=None, ci_values=None, method="theta",
-            quantity="price", denoise_used=False,
+            forecast_values=vals,
+            last_epoch=1000.0,
+            tf_secs=3600,
+            horizon=3,
+            base_col="close",
+            df=self._make_df(),
+            ci_alpha=None,
+            ci_values=None,
+            method="theta",
+            quantity="price",
+            denoise_used=False,
         )
         assert result["success"] is True
         assert result["method"] == "theta"
@@ -499,10 +549,17 @@ class TestFormatForecastOutput:
     def test_return_quantity(self):
         vals = np.array([0.01, -0.02])
         result = _format_forecast_output(
-            forecast_values=vals, last_epoch=1000.0, tf_secs=60,
-            horizon=2, base_col="close", df=self._make_df(),
-            ci_alpha=None, ci_values=None, method="naive",
-            quantity="return", denoise_used=False,
+            forecast_values=vals,
+            last_epoch=1000.0,
+            tf_secs=60,
+            horizon=2,
+            base_col="close",
+            df=self._make_df(),
+            ci_alpha=None,
+            ci_values=None,
+            method="naive",
+            quantity="return",
+            denoise_used=False,
         )
         assert "forecast_return" in result
         assert len(result["forecast_return"]) == 2
@@ -511,10 +568,17 @@ class TestFormatForecastOutput:
         vals = np.array([100.0, 101.0])
         ci = np.array([[99.0, 100.0], [101.0, 102.0]])
         result = _format_forecast_output(
-            forecast_values=vals, last_epoch=0.0, tf_secs=3600,
-            horizon=2, base_col="close", df=self._make_df(),
-            ci_alpha=0.05, ci_values=ci, method="theta",
-            quantity="price", denoise_used=False,
+            forecast_values=vals,
+            last_epoch=0.0,
+            tf_secs=3600,
+            horizon=2,
+            base_col="close",
+            df=self._make_df(),
+            ci_alpha=0.05,
+            ci_values=ci,
+            method="theta",
+            quantity="price",
+            denoise_used=False,
         )
         assert result["ci_alpha"] == 0.05
         assert "lower_price" in result
@@ -523,10 +587,17 @@ class TestFormatForecastOutput:
     def test_metadata_included(self):
         vals = np.array([1.0])
         result = _format_forecast_output(
-            forecast_values=vals, last_epoch=0.0, tf_secs=60,
-            horizon=1, base_col="close", df=self._make_df(),
-            ci_alpha=None, ci_values=None, method="drift",
-            quantity="price", denoise_used=True,
+            forecast_values=vals,
+            last_epoch=0.0,
+            tf_secs=60,
+            horizon=1,
+            base_col="close",
+            df=self._make_df(),
+            ci_alpha=None,
+            ci_values=None,
+            method="drift",
+            quantity="price",
+            denoise_used=True,
             metadata={"custom_key": "custom_value"},
         )
         assert result["denoise_applied"] is True
@@ -535,10 +606,18 @@ class TestFormatForecastOutput:
     def test_digits_included(self):
         vals = np.array([1.0])
         result = _format_forecast_output(
-            forecast_values=vals, last_epoch=0.0, tf_secs=60,
-            horizon=1, base_col="close", df=self._make_df(),
-            ci_alpha=None, ci_values=None, method="naive",
-            quantity="price", denoise_used=False, digits=5,
+            forecast_values=vals,
+            last_epoch=0.0,
+            tf_secs=60,
+            horizon=1,
+            base_col="close",
+            df=self._make_df(),
+            ci_alpha=None,
+            ci_values=None,
+            method="naive",
+            quantity="price",
+            denoise_used=False,
+            digits=5,
         )
         assert result["digits"] == 5
 
@@ -546,10 +625,17 @@ class TestFormatForecastOutput:
         ret_vals = np.array([0.01, 0.02])
         recon = np.array([101.0, 103.0])
         result = _format_forecast_output(
-            forecast_values=ret_vals, last_epoch=0.0, tf_secs=60,
-            horizon=2, base_col="close", df=self._make_df(),
-            ci_alpha=None, ci_values=None, method="theta",
-            quantity="return", denoise_used=False,
+            forecast_values=ret_vals,
+            last_epoch=0.0,
+            tf_secs=60,
+            horizon=2,
+            base_col="close",
+            df=self._make_df(),
+            ci_alpha=None,
+            ci_values=None,
+            method="theta",
+            quantity="return",
+            denoise_used=False,
             forecast_return_values=ret_vals,
             reconstructed_prices=recon,
         )
@@ -560,20 +646,34 @@ class TestFormatForecastOutput:
     def test_future_epochs_correct(self):
         vals = np.array([1.0, 2.0, 3.0])
         result = _format_forecast_output(
-            forecast_values=vals, last_epoch=1000.0, tf_secs=60,
-            horizon=3, base_col="close", df=self._make_df(),
-            ci_alpha=None, ci_values=None, method="naive",
-            quantity="price", denoise_used=False,
+            forecast_values=vals,
+            last_epoch=1000.0,
+            tf_secs=60,
+            horizon=3,
+            base_col="close",
+            df=self._make_df(),
+            ci_alpha=None,
+            ci_values=None,
+            method="naive",
+            quantity="price",
+            denoise_used=False,
         )
         assert result["forecast_epoch"] == [1060.0, 1120.0, 1180.0]
 
     def test_forecast_time_anchor_metadata_is_explicit(self):
         vals = np.array([1.0, 2.0])
         result = _format_forecast_output(
-            forecast_values=vals, last_epoch=1000.0, tf_secs=300,
-            horizon=2, base_col="close", df=self._make_df(),
-            ci_alpha=None, ci_values=None, method="naive",
-            quantity="price", denoise_used=False,
+            forecast_values=vals,
+            last_epoch=1000.0,
+            tf_secs=300,
+            horizon=2,
+            base_col="close",
+            df=self._make_df(),
+            ci_alpha=None,
+            ci_values=None,
+            method="naive",
+            quantity="price",
+            denoise_used=False,
         )
         assert result["last_observation_epoch"] == 1000.0
         assert result["forecast_start_epoch"] == 1300.0
@@ -694,7 +794,9 @@ class TestPrepareBaseData:
         assert "__log_return" in df.columns
 
     def test_return_drops_non_positive_prices_to_nan(self):
-        df = pd.DataFrame({"close": [100.0, 0.0, 101.0, -1.0, 102.0], "time": np.arange(5)})
+        df = pd.DataFrame(
+            {"close": [100.0, 0.0, 101.0, -1.0, 102.0], "time": np.arange(5)}
+        )
         col = _prepare_base_data(df, "return", "close")
         assert col == "__log_return"
         assert math.isnan(df["__log_return"].iloc[1])
@@ -726,15 +828,17 @@ class TestPrepareBaseData:
 # ===================================================================
 class TestProcessIncludeSpecification:
     def _make_df(self):
-        return pd.DataFrame({
-            "time": [1, 2, 3],
-            "open": [1.0, 2.0, 3.0],
-            "high": [1.1, 2.1, 3.1],
-            "low": [0.9, 1.9, 2.9],
-            "close": [1.05, 2.05, 3.05],
-            "volume": [100, 200, 300],
-            "tick_volume": [50, 60, 70],
-        })
+        return pd.DataFrame(
+            {
+                "time": [1, 2, 3],
+                "open": [1.0, 2.0, 3.0],
+                "high": [1.1, 2.1, 3.1],
+                "low": [0.9, 1.9, 2.9],
+                "close": [1.05, 2.05, 3.05],
+                "volume": [100, 200, 300],
+                "tick_volume": [50, 60, 70],
+            }
+        )
 
     def test_ohlcv_default(self):
         df = self._make_df()
@@ -744,7 +848,7 @@ class TestProcessIncludeSpecification:
         assert "low" in cols
         assert "volume" in cols
         assert "close" not in cols  # close is excluded
-        assert "time" not in cols   # time is excluded
+        assert "time" not in cols  # time is excluded
 
     def test_explicit_columns(self):
         df = self._make_df()
@@ -787,11 +891,18 @@ class TestProcessIncludeSpecification:
 # ===================================================================
 class TestCollectIndicatorColumns:
     def test_basic(self):
-        df = pd.DataFrame({
-            "time": [1, 2], "open": [1.0, 2.0], "high": [1.1, 2.1],
-            "low": [0.9, 1.9], "close": [1.05, 2.05], "volume": [100, 200],
-            "rsi_14": [50.0, 60.0], "sma_20": [1.0, 2.0],
-        })
+        df = pd.DataFrame(
+            {
+                "time": [1, 2],
+                "open": [1.0, 2.0],
+                "high": [1.1, 2.1],
+                "low": [0.9, 1.9],
+                "close": [1.05, 2.05],
+                "volume": [100, 200],
+                "rsi_14": [50.0, 60.0],
+                "sma_20": [1.0, 2.0],
+            }
+        )
         cols = _collect_indicator_columns(df)
         assert "rsi_14" in cols
         assert "sma_20" in cols
@@ -799,17 +910,27 @@ class TestCollectIndicatorColumns:
         assert "time" not in cols
 
     def test_excludes_dunder_columns(self):
-        df = pd.DataFrame({
-            "time": [1], "close": [1.0], "__log_return": [0.01], "indicator": [5.0],
-        })
+        df = pd.DataFrame(
+            {
+                "time": [1],
+                "close": [1.0],
+                "__log_return": [0.01],
+                "indicator": [5.0],
+            }
+        )
         cols = _collect_indicator_columns(df)
         assert "__log_return" not in cols
         assert "indicator" in cols
 
     def test_excludes_string_columns(self):
-        df = pd.DataFrame({
-            "time": [1], "close": [1.0], "label": ["buy"], "rsi": [50.0],
-        })
+        df = pd.DataFrame(
+            {
+                "time": [1],
+                "close": [1.0],
+                "label": ["buy"],
+                "rsi": [50.0],
+            }
+        )
         cols = _collect_indicator_columns(df)
         assert "label" not in cols
         assert "rsi" in cols
@@ -820,7 +941,9 @@ class TestCollectIndicatorColumns:
         assert cols == []
 
     def test_tick_volume_excluded(self):
-        df = pd.DataFrame({"tick_volume": [1, 2], "real_volume": [3, 4], "my_ind": [5.0, 6.0]})
+        df = pd.DataFrame(
+            {"tick_volume": [1, 2], "real_volume": [3, 4], "my_ind": [5.0, 6.0]}
+        )
         cols = _collect_indicator_columns(df)
         assert "tick_volume" not in cols
         assert "real_volume" not in cols
@@ -834,7 +957,9 @@ class TestCreateFourierFeatures:
     def test_basic(self):
         t_train = np.arange(10, dtype=float) * 3600
         t_future = np.arange(3, dtype=float) * 3600 + 10 * 3600
-        tr_feats, tf_feats, cols = _create_fourier_features("fourier:24", t_train, t_future)
+        tr_feats, tf_feats, cols = _create_fourier_features(
+            "fourier:24", t_train, t_future
+        )
         assert len(tr_feats) == 2  # sin and cos
         assert len(tf_feats) == 2
         assert len(cols) == 2
@@ -874,7 +999,9 @@ class TestCreateHourFeatures:
     def test_basic(self):
         # Specific epoch seconds for known UTC hours
         epoch_midnight = 1704067200.0  # 2024-01-01 00:00:00 UTC
-        t_train = np.array([epoch_midnight, epoch_midnight + 3600, epoch_midnight + 7200])
+        t_train = np.array(
+            [epoch_midnight, epoch_midnight + 3600, epoch_midnight + 7200]
+        )
         t_future = np.array([epoch_midnight + 10800])
         hrs_tr, hrs_tf = _create_hour_features(t_train, t_future)
         assert hrs_tr is not None

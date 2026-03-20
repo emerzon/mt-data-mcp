@@ -108,7 +108,9 @@ def _resolve_sktime_forecaster(method: str) -> Optional[Tuple[str, str]]:
     if starts:
         return sorted(starts, key=lambda item: len(item[0]))[0]
 
-    contains = [value for key, value in norm_map.items() if query_norm and query_norm in key]
+    contains = [
+        value for key, value in norm_map.items() if query_norm and query_norm in key
+    ]
     if contains:
         return sorted(contains, key=lambda item: len(item[0]))[0]
 
@@ -139,7 +141,9 @@ def run_forecast_generate(
             method=method or None,
         )
 
-    def _finish(result: Dict[str, Any], *, resolved_method: Optional[str] = None) -> Dict[str, Any]:
+    def _finish(
+        result: Dict[str, Any], *, resolved_method: Optional[str] = None
+    ) -> Dict[str, Any]:
         if log_events:
             log_operation_finish(
                 logger,
@@ -460,7 +464,9 @@ def _resolve_tuning_search_space(
     if not search_space:
         if isinstance(request.methods, (list, tuple)) and len(request.methods) > 0:
             return None, _default_search_space(method=None, methods=request.methods)
-        return method_for_search, _default_search_space(method=method_for_search, methods=None)
+        return method_for_search, _default_search_space(
+            method=method_for_search, methods=None
+        )
     if isinstance(request.methods, (list, tuple)) and len(request.methods) > 0:
         method_for_search = None
     return method_for_search, search_space
@@ -560,7 +566,9 @@ def run_forecast_tune_optuna(
             n_jobs=int(request.n_jobs),
             sampler=str(request.sampler),
             pruner=str(request.pruner),
-            study_name=str(request.study_name) if request.study_name is not None else None,
+            study_name=str(request.study_name)
+            if request.study_name is not None
+            else None,
             storage=str(request.storage) if request.storage is not None else None,
             seed=int(request.seed),
             trade_threshold=float(request.trade_threshold),

@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 import numpy as np
-import pandas as pd
 import pytest
 
 from mtdata.forecast.volatility import (
@@ -33,14 +32,24 @@ MOD = "mtdata.forecast.volatility"
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_rates(n=200, base_price=1.1000, seed=42):
     """Generate fake OHLC rates as a numpy structured array."""
+# ruff: noqa: E402, E731, E741, F811, F841
+# ruff: noqa: E402
     rng = np.random.RandomState(seed)
-    dt = np.dtype([
-        ("time", "<i8"), ("open", "<f8"), ("high", "<f8"),
-        ("low", "<f8"), ("close", "<f8"), ("tick_volume", "<i8"),
-        ("spread", "<i8"), ("real_volume", "<i8"),
-    ])
+    dt = np.dtype(
+        [
+            ("time", "<i8"),
+            ("open", "<f8"),
+            ("high", "<f8"),
+            ("low", "<f8"),
+            ("close", "<f8"),
+            ("tick_volume", "<i8"),
+            ("spread", "<i8"),
+            ("real_volume", "<i8"),
+        ]
+    )
     rates = np.empty(n, dtype=dt)
     t0 = int(datetime(2024, 1, 1, tzinfo=timezone.utc).timestamp())
     price = base_price
@@ -65,23 +74,29 @@ _SENTINEL = object()
 
 
 @contextmanager
-def _mock_vol_env(n_bars=2000, ensure_err=None, rates_return=_SENTINEL,
-                  rates_side_effect=None):
+def _mock_vol_env(
+    n_bars=2000, ensure_err=None, rates_return=_SENTINEL, rates_side_effect=None
+):
     """Patch MT5 utilities for forecast_volatility tests."""
     rates = _make_rates(n_bars) if rates_return is _SENTINEL else rates_return
     mock_info = MagicMock(visible=True)
     mock_tick = MagicMock()
     mock_tick.time = 1704067200.0
 
-    copy_kw = ({"side_effect": rates_side_effect} if rates_side_effect
-               else {"return_value": rates})
+    copy_kw = (
+        {"side_effect": rates_side_effect}
+        if rates_side_effect
+        else {"return_value": rates}
+    )
 
     with (
         patch(f"{MOD}._ensure_symbol_ready", return_value=ensure_err) as m_ensure,
         patch(f"{MOD}._mt5_copy_rates_from", **copy_kw) as m_copy,
         patch(f"{MOD}._mt5_epoch_to_utc", return_value=1704067200.0),
-        patch(f"{MOD}._parse_start_datetime",
-              return_value=datetime(2024, 1, 1, tzinfo=timezone.utc)),
+        patch(
+            f"{MOD}._parse_start_datetime",
+            return_value=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        ),
         patch(f"{MOD}.mt5") as m_mt5,
     ):
         m_mt5.symbol_info.return_value = mock_info
@@ -93,6 +108,7 @@ def _mock_vol_env(n_bars=2000, ensure_err=None, rates_return=_SENTINEL,
 # ===================================================================
 # get_volatility_methods_data
 # ===================================================================
+
 
 class TestGetVolatilityMethodsData:
     def test_returns_dict_with_methods_key(self):
@@ -124,8 +140,15 @@ class TestGetVolatilityMethodsData:
 
     def test_garch_variants_present(self):
         names = [m["method"] for m in get_volatility_methods_data()["methods"]]
-        for g in ("garch", "egarch", "gjr_garch", "garch_t", "egarch_t",
-                  "gjr_garch_t", "figarch"):
+        for g in (
+            "garch",
+            "egarch",
+            "gjr_garch",
+            "garch_t",
+            "egarch_t",
+            "gjr_garch_t",
+            "figarch",
+        ):
             assert g in names
 
     def test_all_methods_have_required_fields(self):
@@ -156,17 +179,21 @@ class TestGetVolatilityMethodsData:
 # _bars_per_year
 # ===================================================================
 
+
 class TestBarsPerYear:
-    @pytest.mark.parametrize("tf,expected", [
-        ("M1", 362880.0),
-        ("M5", 72576.0),
-        ("M15", 24192.0),
-        ("H1", 6048.0),
-        ("H4", 1512.0),
-        ("D1", 252.0),
-        ("W1", 52.0),
-        ("MN1", 12.0),
-    ])
+    @pytest.mark.parametrize(
+        "tf,expected",
+        [
+            ("M1", 362880.0),
+            ("M5", 72576.0),
+            ("M15", 24192.0),
+            ("H1", 6048.0),
+            ("H4", 1512.0),
+            ("D1", 252.0),
+            ("W1", 52.0),
+            ("MN1", 12.0),
+        ],
+    )
     def test_known_timeframes(self, tf, expected):
         assert _bars_per_year(tf) == pytest.approx(expected)
 
@@ -180,6 +207,7 @@ class TestBarsPerYear:
 # ===================================================================
 # _parkinson_sigma_sq
 # ===================================================================
+
 
 class TestParkinsonSigmaSq:
     def test_constant_price_zero_variance(self):
@@ -224,6 +252,7 @@ class TestParkinsonSigmaSq:
 # _garman_klass_sigma_sq
 # ===================================================================
 
+
 class TestGarmanKlassSigmaSq:
     def test_constant_price_zero_variance(self):
         p = np.array([1.0, 1.0, 1.0])
@@ -240,8 +269,10 @@ class TestGarmanKlassSigmaSq:
 
     def test_single_element(self):
         result = _garman_klass_sigma_sq(
-            np.array([1.05]), np.array([1.10]),
-            np.array([1.00]), np.array([1.07]),
+            np.array([1.05]),
+            np.array([1.10]),
+            np.array([1.00]),
+            np.array([1.07]),
         )
         assert result.shape == (1,)
         assert result[0] >= 0
@@ -277,6 +308,7 @@ class TestGarmanKlassSigmaSq:
 # _rogers_satchell_sigma_sq
 # ===================================================================
 
+
 class TestRogersSatchellSigmaSq:
     def test_constant_price_near_zero(self):
         p = np.array([1.0, 1.0, 1.0])
@@ -293,8 +325,10 @@ class TestRogersSatchellSigmaSq:
 
     def test_single_element(self):
         result = _rogers_satchell_sigma_sq(
-            np.array([1.05]), np.array([1.10]),
-            np.array([1.00]), np.array([1.07]),
+            np.array([1.05]),
+            np.array([1.10]),
+            np.array([1.00]),
+            np.array([1.07]),
         )
         assert result.shape == (1,)
 
@@ -328,6 +362,7 @@ class TestRogersSatchellSigmaSq:
 # ===================================================================
 # _kernel_weight
 # ===================================================================
+
 
 class TestKernelWeight:
     # Bartlett / triangular
@@ -384,6 +419,7 @@ class TestKernelWeight:
 # _realized_kernel_variance
 # ===================================================================
 
+
 class TestRealizedKernelVariance:
     def test_simple_returns(self):
         rng = np.random.RandomState(10)
@@ -429,8 +465,9 @@ class TestRealizedKernelVariance:
         assert math.isfinite(rk) and rk >= 0
 
     def test_nan_in_returns_filtered(self):
-        r = np.array([0.01, np.nan, -0.01, 0.005, np.nan, 0.003, -0.002,
-                       0.01, -0.005, 0.002])
+        r = np.array(
+            [0.01, np.nan, -0.01, 0.005, np.nan, 0.003, -0.002, 0.01, -0.005, 0.002]
+        )
         rk = _realized_kernel_variance(r)
         assert math.isfinite(rk)
 
@@ -438,6 +475,7 @@ class TestRealizedKernelVariance:
 # ===================================================================
 # forecast_volatility – validation / error paths
 # ===================================================================
+
 
 class TestForecastVolatilityValidation:
     def test_invalid_timeframe(self):
@@ -484,7 +522,8 @@ class TestForecastVolatilityValidation:
     def test_general_method_unsupported_proxy(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 5, method="theta", proxy="bad_proxy")
+                "EURUSD", "H1", 5, method="theta", proxy="bad_proxy"
+            )
             assert "error" in result
             assert "Unsupported proxy" in result["error"]
 
@@ -492,6 +531,7 @@ class TestForecastVolatilityValidation:
 # ===================================================================
 # forecast_volatility – EWMA (first code path)
 # ===================================================================
+
 
 class TestForecastVolatilityEWMA:
     def test_ewma_success_default(self):
@@ -504,8 +544,12 @@ class TestForecastVolatilityEWMA:
         with _mock_vol_env():
             result = forecast_volatility("EURUSD", "H1", 1, method="ewma")
             assert result.get("success") is True
-            for key in ("sigma_bar_return", "sigma_annual_return",
-                        "horizon_sigma_return", "horizon_sigma_annual"):
+            for key in (
+                "sigma_bar_return",
+                "sigma_annual_return",
+                "horizon_sigma_return",
+                "horizon_sigma_annual",
+            ):
                 assert key in result
                 assert isinstance(result[key], float)
                 assert math.isfinite(result[key])
@@ -513,8 +557,8 @@ class TestForecastVolatilityEWMA:
     def test_ewma_custom_lambda(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 1, method="ewma",
-                params={"lambda_": 0.97})
+                "EURUSD", "H1", 1, method="ewma", params={"lambda_": 0.97}
+            )
             assert result.get("success") is True
             assert result["params_used"]["lambda_"] == pytest.approx(0.97)
             assert result["params_used"]["lambda_source"] == "lambda_"
@@ -524,8 +568,8 @@ class TestForecastVolatilityEWMA:
     def test_ewma_custom_halflife(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 1, method="ewma",
-                params={"halflife": 30})
+                "EURUSD", "H1", 1, method="ewma", params={"halflife": 30}
+            )
             assert result.get("success") is True
             assert result["params_used"]["lambda_source"] == "halflife"
             assert result["params_used"]["halflife"] == pytest.approx(30.0)
@@ -549,51 +593,79 @@ class TestForecastVolatilityEWMA:
 # forecast_volatility – range-based methods (first code path)
 # ===================================================================
 
+
 class TestForecastVolatilityRangeBased:
-    @pytest.mark.parametrize("method", [
-        "parkinson", "gk", "rs", "yang_zhang", "rolling_std",
-    ])
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "parkinson",
+            "gk",
+            "rs",
+            "yang_zhang",
+            "rolling_std",
+        ],
+    )
     def test_success(self, method):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 1, method=method, params={"window": 20})
+                "EURUSD", "H1", 1, method=method, params={"window": 20}
+            )
             assert result.get("success") is True
             assert result["method"] == method
 
-    @pytest.mark.parametrize("method", [
-        "parkinson", "gk", "rs", "yang_zhang", "rolling_std",
-    ])
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "parkinson",
+            "gk",
+            "rs",
+            "yang_zhang",
+            "rolling_std",
+        ],
+    )
     def test_sigma_positive(self, method):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 1, method=method, params={"window": 20})
+                "EURUSD", "H1", 1, method=method, params={"window": 20}
+            )
             assert result.get("success") is True
             assert result["sigma_bar_return"] >= 0
             assert math.isfinite(result["sigma_bar_return"])
 
-    @pytest.mark.parametrize("method", [
-        "parkinson", "gk", "rs", "yang_zhang", "rolling_std",
-    ])
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "parkinson",
+            "gk",
+            "rs",
+            "yang_zhang",
+            "rolling_std",
+        ],
+    )
     def test_horizon_scaling(self, method):
         with _mock_vol_env():
             r1 = forecast_volatility(
-                "EURUSD", "H1", 1, method=method, params={"window": 20})
+                "EURUSD", "H1", 1, method=method, params={"window": 20}
+            )
             r5 = forecast_volatility(
-                "EURUSD", "H1", 5, method=method, params={"window": 20})
+                "EURUSD", "H1", 5, method=method, params={"window": 20}
+            )
             if r1.get("success") and r5.get("success"):
                 assert r5["horizon_sigma_return"] >= r1["horizon_sigma_return"]
 
     def test_custom_window(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 1, method="parkinson", params={"window": 50})
+                "EURUSD", "H1", 1, method="parkinson", params={"window": 50}
+            )
             assert result.get("success") is True
             assert result["params_used"]["window"] == 50
 
     def test_output_has_required_fields(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 3, method="gk", params={"window": 20})
+                "EURUSD", "H1", 3, method="gk", params={"window": 20}
+            )
             assert result.get("success") is True
             assert result["symbol"] == "EURUSD"
             assert result["timeframe"] == "H1"
@@ -604,19 +676,23 @@ class TestForecastVolatilityRangeBased:
 # forecast_volatility – realized kernel (first code path)
 # ===================================================================
 
+
 class TestForecastVolatilityRealizedKernel:
     def test_success_default(self):
         with _mock_vol_env():
-            result = forecast_volatility(
-                "EURUSD", "H1", 1, method="realized_kernel")
+            result = forecast_volatility("EURUSD", "H1", 1, method="realized_kernel")
             assert result.get("success") is True
             assert result["method"] == "realized_kernel"
 
     def test_custom_kernel_and_window(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 1, method="realized_kernel",
-                params={"window": 100, "kernel": "bartlett"})
+                "EURUSD",
+                "H1",
+                1,
+                method="realized_kernel",
+                params={"window": 100, "kernel": "bartlett"},
+            )
             assert result.get("success") is True
             assert result["params_used"]["kernel"] == "bartlett"
             assert result["params_used"]["window"] == 100
@@ -624,15 +700,14 @@ class TestForecastVolatilityRealizedKernel:
     def test_custom_bandwidth(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 1, method="realized_kernel",
-                params={"bandwidth": 10})
+                "EURUSD", "H1", 1, method="realized_kernel", params={"bandwidth": 10}
+            )
             assert result.get("success") is True
             assert result["params_used"]["bandwidth"] == 10
 
     def test_sigma_finite_positive(self):
         with _mock_vol_env():
-            result = forecast_volatility(
-                "EURUSD", "H1", 1, method="realized_kernel")
+            result = forecast_volatility("EURUSD", "H1", 1, method="realized_kernel")
             assert result.get("success") is True
             assert result["sigma_bar_return"] > 0
             assert math.isfinite(result["sigma_annual_return"])
@@ -641,6 +716,7 @@ class TestForecastVolatilityRealizedKernel:
 # ===================================================================
 # forecast_volatility – GARCH family (first code path)
 # ===================================================================
+
 
 class TestForecastVolatilityGarch:
     def _mock_arch_model(self, horizon=3):
@@ -656,18 +732,25 @@ class TestForecastVolatilityGarch:
         mock_am.fit.return_value = mock_res
         return MagicMock(return_value=mock_am)
 
-    @pytest.mark.parametrize("method", [
-        "garch", "egarch", "gjr_garch", "garch_t", "egarch_t",
-        "gjr_garch_t", "figarch",
-    ])
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "garch",
+            "egarch",
+            "gjr_garch",
+            "garch_t",
+            "egarch_t",
+            "gjr_garch_t",
+            "figarch",
+        ],
+    )
     def test_garch_family_success(self, method):
         with _mock_vol_env():
             with (
                 patch(f"{MOD}._ARCH_AVAILABLE", True),
                 patch(f"{MOD}._arch_model", self._mock_arch_model(1)),
             ):
-                result = forecast_volatility(
-                    "EURUSD", "H1", 1, method=method)
+                result = forecast_volatility("EURUSD", "H1", 1, method=method)
                 assert result.get("success") is True
                 assert result["method"] == method
 
@@ -677,8 +760,7 @@ class TestForecastVolatilityGarch:
                 patch(f"{MOD}._ARCH_AVAILABLE", True),
                 patch(f"{MOD}._arch_model", self._mock_arch_model(3)),
             ):
-                result = forecast_volatility(
-                    "EURUSD", "H1", 3, method="garch")
+                result = forecast_volatility("EURUSD", "H1", 3, method="garch")
                 assert result.get("success") is True
                 assert "sigma_bar_return" in result
                 assert "sigma_annual_return" in result
@@ -691,8 +773,12 @@ class TestForecastVolatilityGarch:
                 patch(f"{MOD}._arch_model", self._mock_arch_model(1)),
             ):
                 result = forecast_volatility(
-                    "EURUSD", "H1", 1, method="garch",
-                    params={"p": 2, "q": 1, "dist": "studentst"})
+                    "EURUSD",
+                    "H1",
+                    1,
+                    method="garch",
+                    params={"p": 2, "q": 1, "dist": "studentst"},
+                )
                 assert result.get("success") is True
                 assert result["params_used"]["dist"] == "studentst"
 
@@ -706,8 +792,7 @@ class TestForecastVolatilityGarch:
                 patch(f"{MOD}._ARCH_AVAILABLE", True),
                 patch(f"{MOD}._arch_model", mock_am),
             ):
-                result = forecast_volatility(
-                    "EURUSD", "H1", 1, method="garch")
+                result = forecast_volatility("EURUSD", "H1", 1, method="garch")
                 assert "error" in result
 
 
@@ -715,23 +800,40 @@ class TestForecastVolatilityGarch:
 # forecast_volatility – HAR-RV (second code path)
 # ===================================================================
 
+
 class TestForecastVolatilityHarRV:
     def test_har_rv_success(self):
         rates = _make_rates(2000)
         with _mock_vol_env(rates_side_effect=lambda *a, **kw: rates):
             result = forecast_volatility(
-                "EURUSD", "H1", 5, method="har_rv",
-                params={"rv_timeframe": "H1", "days": 40,
-                        "window_w": 3, "window_m": 10})
+                "EURUSD",
+                "H1",
+                5,
+                method="har_rv",
+                params={
+                    "rv_timeframe": "H1",
+                    "days": 40,
+                    "window_w": 3,
+                    "window_m": 10,
+                },
+            )
             assert result.get("success") is True or "error" in result
 
     def test_har_rv_output_fields(self):
         rates = _make_rates(2000)
         with _mock_vol_env(rates_side_effect=lambda *a, **kw: rates):
             result = forecast_volatility(
-                "EURUSD", "H1", 5, method="har_rv",
-                params={"rv_timeframe": "H1", "days": 40,
-                        "window_w": 3, "window_m": 10})
+                "EURUSD",
+                "H1",
+                5,
+                method="har_rv",
+                params={
+                    "rv_timeframe": "H1",
+                    "days": 40,
+                    "window_w": 3,
+                    "window_m": 10,
+                },
+            )
             if result.get("success"):
                 assert result["method"] == "har_rv"
                 assert "sigma_bar_return" in result
@@ -741,8 +843,12 @@ class TestForecastVolatilityHarRV:
         small_rates = _make_rates(10)
         with _mock_vol_env(rates_side_effect=lambda *a, **kw: small_rates):
             result = forecast_volatility(
-                "EURUSD", "H1", 5, method="har_rv",
-                params={"rv_timeframe": "H1", "days": 40})
+                "EURUSD",
+                "H1",
+                5,
+                method="har_rv",
+                params={"rv_timeframe": "H1", "days": 40},
+            )
             assert "error" in result
 
 
@@ -750,12 +856,13 @@ class TestForecastVolatilityHarRV:
 # forecast_volatility – general methods (theta)
 # ===================================================================
 
+
 class TestForecastVolatilityGeneral:
     def test_theta_squared_return(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 5, method="theta",
-                proxy="squared_return")
+                "EURUSD", "H1", 5, method="theta", proxy="squared_return"
+            )
             assert result.get("success") is True
             assert result["method"] == "theta"
             assert result["proxy"] == "squared_return"
@@ -763,34 +870,43 @@ class TestForecastVolatilityGeneral:
     def test_theta_abs_return(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 5, method="theta",
-                proxy="abs_return")
+                "EURUSD", "H1", 5, method="theta", proxy="abs_return"
+            )
             assert result.get("success") is True
             assert result["proxy"] == "abs_return"
 
     def test_theta_log_r2(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 5, method="theta",
-                proxy="log_r2")
+                "EURUSD", "H1", 5, method="theta", proxy="log_r2"
+            )
             assert result.get("success") is True
             assert result["proxy"] == "log_r2"
 
     def test_theta_custom_alpha(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 5, method="theta",
-                proxy="squared_return", params={"alpha": 0.5})
+                "EURUSD",
+                "H1",
+                5,
+                method="theta",
+                proxy="squared_return",
+                params={"alpha": 0.5},
+            )
             assert result.get("success") is True
 
     def test_theta_output_structure(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 5, method="theta",
-                proxy="squared_return")
+                "EURUSD", "H1", 5, method="theta", proxy="squared_return"
+            )
             assert result.get("success") is True
-            for key in ("sigma_bar_return", "sigma_annual_return",
-                        "horizon_sigma_return", "horizon_sigma_annual"):
+            for key in (
+                "sigma_bar_return",
+                "sigma_annual_return",
+                "horizon_sigma_return",
+                "horizon_sigma_annual",
+            ):
                 assert key in result
                 assert math.isfinite(result[key])
 
@@ -798,31 +914,31 @@ class TestForecastVolatilityGeneral:
         with _mock_vol_env():
             with patch(f"{MOD}._SM_SARIMAX_AVAILABLE", False):
                 result = forecast_volatility(
-                    "EURUSD", "H1", 5, method="arima",
-                    proxy="squared_return")
+                    "EURUSD", "H1", 5, method="arima", proxy="squared_return"
+                )
                 assert "error" in result
 
     def test_sarima_without_statsmodels(self):
         with _mock_vol_env():
             with patch(f"{MOD}._SM_SARIMAX_AVAILABLE", False):
                 result = forecast_volatility(
-                    "EURUSD", "H1", 5, method="sarima",
-                    proxy="squared_return")
+                    "EURUSD", "H1", 5, method="sarima", proxy="squared_return"
+                )
                 assert "error" in result
 
     def test_ets_without_statsmodels(self):
         with _mock_vol_env():
             with patch(f"{MOD}._SM_ETS_AVAILABLE", False):
                 result = forecast_volatility(
-                    "EURUSD", "H1", 5, method="ets",
-                    proxy="squared_return")
+                    "EURUSD", "H1", 5, method="ets", proxy="squared_return"
+                )
                 assert "error" in result
 
     def test_general_insufficient_data(self):
         with _mock_vol_env(rates_return=_make_rates(4)):
             result = forecast_volatility(
-                "EURUSD", "H1", 5, method="theta",
-                proxy="squared_return")
+                "EURUSD", "H1", 5, method="theta", proxy="squared_return"
+            )
             assert "error" in result
 
 
@@ -830,39 +946,39 @@ class TestForecastVolatilityGeneral:
 # forecast_volatility – params parsing
 # ===================================================================
 
+
 class TestForecastVolatilityParamsParsing:
     def test_dict_params(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 1, method="ewma",
-                params={"lambda_": 0.95})
+                "EURUSD", "H1", 1, method="ewma", params={"lambda_": 0.95}
+            )
             assert result.get("success") is True
 
     def test_json_string_params(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 1, method="parkinson",
-                params='{"window": 30}')
+                "EURUSD", "H1", 1, method="parkinson", params='{"window": 30}'
+            )
             assert result.get("success") is True
 
     def test_kv_string_params(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 1, method="parkinson",
-                params="window=30")
+                "EURUSD", "H1", 1, method="parkinson", params="window=30"
+            )
             assert result.get("success") is True
 
     def test_none_params(self):
         with _mock_vol_env():
-            result = forecast_volatility(
-                "EURUSD", "H1", 1, method="ewma", params=None)
+            result = forecast_volatility("EURUSD", "H1", 1, method="ewma", params=None)
             assert result.get("success") is True
 
     def test_brace_kv_params(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 1, method="parkinson",
-                params="{window: 30}")
+                "EURUSD", "H1", 1, method="parkinson", params="{window: 30}"
+            )
             assert result.get("success") is True
 
 
@@ -870,12 +986,13 @@ class TestForecastVolatilityParamsParsing:
 # forecast_volatility – as_of
 # ===================================================================
 
+
 class TestForecastVolatilityAsOf:
     def test_as_of_valid(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 1, method="ewma",
-                as_of="2024-06-15")
+                "EURUSD", "H1", 1, method="ewma", as_of="2024-06-15"
+            )
             assert result.get("success") is True
 
     def test_as_of_drops_last_bar_only_without_as_of(self):
@@ -883,7 +1000,8 @@ class TestForecastVolatilityAsOf:
         with _mock_vol_env(n_bars=100) as env:
             r_no = forecast_volatility("EURUSD", "H1", 1, method="ewma")
             r_as = forecast_volatility(
-                "EURUSD", "H1", 1, method="ewma", as_of="2024-03-01")
+                "EURUSD", "H1", 1, method="ewma", as_of="2024-03-01"
+            )
             assert r_no.get("success") is True
             assert r_as.get("success") is True
 
@@ -892,22 +1010,25 @@ class TestForecastVolatilityAsOf:
 # forecast_volatility – denoise
 # ===================================================================
 
+
 class TestForecastVolatilityDenoise:
     def test_denoise_spec_passed(self):
         with _mock_vol_env():
-            with patch(f"{MOD}._apply_denoise") as mock_dn, \
-                 patch(f"{MOD}._normalize_denoise_spec",
-                       return_value={"method": "wavelet",
-                                     "columns": ["close"]}):
+            with (
+                patch(f"{MOD}._apply_denoise") as mock_dn,
+                patch(
+                    f"{MOD}._normalize_denoise_spec",
+                    return_value={"method": "wavelet", "columns": ["close"]},
+                ),
+            ):
                 result = forecast_volatility(
-                    "EURUSD", "H1", 1, method="ewma",
-                    denoise={"method": "wavelet"})
+                    "EURUSD", "H1", 1, method="ewma", denoise={"method": "wavelet"}
+                )
                 assert result.get("success") is True
 
     def test_no_denoise(self):
         with _mock_vol_env():
-            result = forecast_volatility(
-                "EURUSD", "H1", 1, method="ewma", denoise=None)
+            result = forecast_volatility("EURUSD", "H1", 1, method="ewma", denoise=None)
             assert result.get("success") is True
 
 
@@ -915,12 +1036,12 @@ class TestForecastVolatilityDenoise:
 # forecast_volatility – different timeframes
 # ===================================================================
 
+
 class TestForecastVolatilityTimeframes:
     @pytest.mark.parametrize("tf", ["M1", "M5", "M15", "H1", "H4", "D1"])
     def test_various_timeframes(self, tf):
         with _mock_vol_env():
-            result = forecast_volatility(
-                "EURUSD", tf, 1, method="ewma")
+            result = forecast_volatility("EURUSD", tf, 1, method="ewma")
             assert result.get("success") is True
             assert result["timeframe"] == tf
 
@@ -937,6 +1058,7 @@ class TestForecastVolatilityTimeframes:
 # ===================================================================
 # forecast_volatility – symbol visibility restore
 # ===================================================================
+
 
 class TestForecastVolatilityVisibility:
     def test_invisible_symbol_restored(self):
@@ -961,6 +1083,7 @@ class TestForecastVolatilityVisibility:
 # Additional edge-case tests
 # ===================================================================
 
+
 class TestForecastVolatilityEdgeCases:
     def test_horizon_one(self):
         with _mock_vol_env():
@@ -970,61 +1093,64 @@ class TestForecastVolatilityEdgeCases:
 
     def test_large_horizon(self):
         with _mock_vol_env():
-            result = forecast_volatility(
-                "EURUSD", "H1", 100, method="ewma")
+            result = forecast_volatility("EURUSD", "H1", 100, method="ewma")
             assert result.get("success") is True
             assert result["horizon"] == 100
 
     def test_rolling_std_uses_returns(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 1, method="rolling_std",
-                params={"window": 10})
+                "EURUSD", "H1", 1, method="rolling_std", params={"window": 10}
+            )
             assert result.get("success") is True
 
     def test_yang_zhang_complex_estimator(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 1, method="yang_zhang",
-                params={"window": 30})
+                "EURUSD", "H1", 1, method="yang_zhang", params={"window": 30}
+            )
             assert result.get("success") is True
             assert result["sigma_bar_return"] >= 0
 
     def test_realized_kernel_parzen(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 1, method="realized_kernel",
-                params={"kernel": "parzen", "window": 80})
+                "EURUSD",
+                "H1",
+                1,
+                method="realized_kernel",
+                params={"kernel": "parzen", "window": 80},
+            )
             assert result.get("success") is True
 
     def test_ewma_lookback_larger_than_data(self):
         """EWMA with lookback larger than available data uses all data."""
         with _mock_vol_env(n_bars=100):
             result = forecast_volatility(
-                "EURUSD", "H1", 1, method="ewma",
-                params={"lookback": 5000})
+                "EURUSD", "H1", 1, method="ewma", params={"lookback": 5000}
+            )
             assert result.get("success") is True
 
     def test_parkinson_small_window(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 1, method="parkinson",
-                params={"window": 5})
+                "EURUSD", "H1", 1, method="parkinson", params={"window": 5}
+            )
             assert result.get("success") is True
 
     def test_gk_with_horizon(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 10, method="gk",
-                params={"window": 20})
+                "EURUSD", "H1", 10, method="gk", params={"window": 20}
+            )
             assert result.get("success") is True
             assert result["horizon"] == 10
 
     def test_rs_with_horizon(self):
         with _mock_vol_env():
             result = forecast_volatility(
-                "EURUSD", "H1", 10, method="rs",
-                params={"window": 20})
+                "EURUSD", "H1", 10, method="rs", params={"window": 20}
+            )
             assert result.get("success") is True
 
     def test_multiple_sequential_calls(self):

@@ -16,7 +16,9 @@ def _unwrap(fn):
 
 def _call_patterns_detect(**kwargs):
     raw = _unwrap(patterns_detect)
-    with patch("mtdata.core.patterns.ensure_mt5_connection_or_raise", return_value=None):
+    with patch(
+        "mtdata.core.patterns.ensure_mt5_connection_or_raise", return_value=None
+    ):
         return raw(request=PatternsDetectRequest(**kwargs))
 
 
@@ -34,12 +36,19 @@ def _sample_df() -> pd.DataFrame:
 
 
 def test_patterns_detect_chart_alias_routes_to_classic_mode() -> None:
-    with patch("mtdata.core.patterns._fetch_pattern_data", return_value=(_sample_df(), None)), patch(
-        "mtdata.core.patterns._select_classic_engines",
-        return_value=(["native"], []),
-    ), patch(
-        "mtdata.core.patterns._run_classic_engine",
-        return_value=([{"pattern": "double_top", "status": "forming"}], None),
+    with (
+        patch(
+            "mtdata.core.patterns._fetch_pattern_data",
+            return_value=(_sample_df(), None),
+        ),
+        patch(
+            "mtdata.core.patterns._select_classic_engines",
+            return_value=(["native"], []),
+        ),
+        patch(
+            "mtdata.core.patterns._run_classic_engine",
+            return_value=([{"pattern": "double_top", "status": "forming"}], None),
+        ),
     ):
         out = _call_patterns_detect(symbol="EURUSD", mode="chart", timeframe="H1")
 

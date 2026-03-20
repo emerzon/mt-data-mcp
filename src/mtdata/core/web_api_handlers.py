@@ -143,7 +143,11 @@ def get_methods_response(*, get_methods_impl: Callable[[], Any]) -> Dict[str, An
             if name == "timesfm":
                 ok = _has("timesfm")
                 if ok:
-                    ok = _has("timesfm.timesfm_2p5_torch") or _has("timesfm.timesfm_2p5") or ok
+                    ok = (
+                        _has("timesfm.timesfm_2p5_torch")
+                        or _has("timesfm.timesfm_2p5")
+                        or ok
+                    )
                 method["available"] = bool(ok)
                 if ok:
                     method["requires"] = []
@@ -169,21 +173,35 @@ def get_vol_methods_response(*, get_vol_methods: Callable[[], Any]) -> Dict[str,
     return data
 
 
-def get_denoise_methods_response(*, get_denoise_methods: Callable[[], Any]) -> Dict[str, Any]:
+def get_denoise_methods_response(
+    *, get_denoise_methods: Callable[[], Any]
+) -> Dict[str, Any]:
     data = get_denoise_methods()
     if isinstance(data, dict) and data.get("methods") is not None:
         return data
     return {"methods": []}
 
 
-def get_dimred_methods_response(*, list_dimred_methods: Callable[[], Dict[str, Any]]) -> Dict[str, Any]:
+def get_dimred_methods_response(
+    *, list_dimred_methods: Callable[[], Dict[str, Any]]
+) -> Dict[str, Any]:
     base = list_dimred_methods()
     param_suggestions: Dict[str, Any] = {
         "pca": [
-            {"name": "n_components", "type": "int", "default": 5, "description": "Target components (1..features)."},
+            {
+                "name": "n_components",
+                "type": "int",
+                "default": 5,
+                "description": "Target components (1..features).",
+            },
         ],
         "svd": [
-            {"name": "n_components", "type": "int", "default": 5, "description": "Target components for TruncatedSVD."},
+            {
+                "name": "n_components",
+                "type": "int",
+                "default": 5,
+                "description": "Target components for TruncatedSVD.",
+            },
         ],
         "spca": [{"name": "n_components", "type": "int", "default": 5}],
         "kpca": [
@@ -276,7 +294,12 @@ def get_wavelets_response() -> Dict[str, Any]:
                 flat = list(pywt.wavelist())  # type: ignore[attr-defined]
             except Exception:
                 flat = []
-    return {"available": True, "families": families, "wavelets": flat, "by_family": by_family}
+    return {
+        "available": True,
+        "families": families,
+        "wavelets": flat,
+        "by_family": by_family,
+    }
 
 
 def get_history_response(
@@ -296,7 +319,9 @@ def get_history_response(
     mt5_config: Any,
 ) -> Dict[str, Any]:
     _require_mt5_connection()
-    denoise_method_val = denoise_method.strip() if isinstance(denoise_method, str) else None
+    denoise_method_val = (
+        denoise_method.strip() if isinstance(denoise_method, str) else None
+    )
     denoise_params_val = denoise_params if isinstance(denoise_params, str) else None
 
     denoise_spec: Optional[Dict[str, Any]] = None
@@ -304,7 +329,10 @@ def get_history_response(
         try:
             meta = get_denoise_methods()
             if isinstance(meta, dict):
-                methods = {method.get("method"): method for method in (meta.get("methods") or [])}
+                methods = {
+                    method.get("method"): method
+                    for method in (meta.get("methods") or [])
+                }
                 method_meta = methods.get(denoise_method_val)
                 if not method_meta or not bool(method_meta.get("available", True)):
                     req = method_meta.get("requires") if method_meta else ""
@@ -345,15 +373,23 @@ def get_history_response(
                         spec_input["params"] = payload.pop("params") or {}
                     else:
                         reserved = {"columns", "when", "causality", "keep_original"}
-                        extra_params = {key: value for key, value in payload.items() if key not in reserved}
+                        extra_params = {
+                            key: value
+                            for key, value in payload.items()
+                            if key not in reserved
+                        }
                         if extra_params:
                             spec_input["params"] = extra_params
                     if "columns" in payload:
                         cols = payload["columns"]
                         if isinstance(cols, str):
-                            cols = [col.strip() for col in cols.split(",") if col.strip()]
+                            cols = [
+                                col.strip() for col in cols.split(",") if col.strip()
+                            ]
                         elif isinstance(cols, list):
-                            cols = [str(col).strip() for col in cols if str(col).strip()]
+                            cols = [
+                                str(col).strip() for col in cols if str(col).strip()
+                            ]
                         if cols:
                             spec_input["columns"] = cols
                     if "when" in payload:
@@ -372,7 +408,11 @@ def get_history_response(
                         key = key.strip()
                         value = value.strip()
                         try:
-                            params_dict[key] = float(value) if value.replace(".", "", 1).lstrip("-").isdigit() else value
+                            params_dict[key] = (
+                                float(value)
+                                if value.replace(".", "", 1).lstrip("-").isdigit()
+                                else value
+                            )
                         except Exception:
                             params_dict[key] = value
                 spec_input["params"] = params_dict
@@ -395,9 +435,19 @@ def get_history_response(
         _raise_history_fetch_error(exc)
 
     if not isinstance(result, dict):
-        raise _http_error(500, "Unexpected history payload", code="history_payload_invalid", operation="get_history")
+        raise _http_error(
+            500,
+            "Unexpected history payload",
+            code="history_payload_invalid",
+            operation="get_history",
+        )
     if result.get("error"):
-        raise _http_error(400, str(result["error"]), code="history_tool_error", operation="get_history")
+        raise _http_error(
+            400,
+            str(result["error"]),
+            code="history_tool_error",
+            operation="get_history",
+        )
 
     rows_raw = result.get("data")
     rows: List[Dict[str, Any]] = rows_raw if isinstance(rows_raw, list) else []
@@ -432,7 +482,9 @@ def get_pivots_response(
     try:
         result = resolve_sync_tool_result(tool(symbol=symbol, timeframe=timeframe))
     except TypeError:
-        result = resolve_sync_tool_result(pivot_tool(symbol=symbol, timeframe=timeframe))
+        result = resolve_sync_tool_result(
+            pivot_tool(symbol=symbol, timeframe=timeframe)
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"pivot compute failed: {exc}")
 
@@ -440,12 +492,16 @@ def get_pivots_response(
         try:
             result = json.loads(result)
         except Exception:
-            raise HTTPException(status_code=500, detail="Unexpected pivot output format")
+            raise HTTPException(
+                status_code=500, detail="Unexpected pivot output format"
+            )
 
     if isinstance(result, dict) and result.get("error"):
         raise HTTPException(status_code=400, detail=str(result["error"]))
     if not isinstance(result, dict):
-        raise HTTPException(status_code=500, detail="Pivot tool returned non-JSON payload")
+        raise HTTPException(
+            status_code=500, detail="Pivot tool returned non-JSON payload"
+        )
 
     levels = []
     method_key = str(method).lower().strip()
@@ -459,7 +515,9 @@ def get_pivots_response(
         except Exception:
             continue
     if not levels:
-        raise HTTPException(status_code=404, detail=f"No pivot levels for method {method}")
+        raise HTTPException(
+            status_code=404, detail=f"No pivot levels for method {method}"
+        )
     return {
         "levels": levels,
         "period": result.get("period"),
@@ -492,7 +550,10 @@ def get_support_resistance_response(
         missing_cols = ", ".join(missing)
         raise HTTPException(status_code=400, detail=f"Missing columns: {missing_cols}")
     if len(frame) < 3:
-        raise HTTPException(status_code=400, detail="Need at least 3 bars to compute support/resistance levels")
+        raise HTTPException(
+            status_code=400,
+            detail="Need at least 3 bars to compute support/resistance levels",
+        )
 
     times = frame["time"].tolist() if "time" in frame.columns else []
 
@@ -526,11 +587,15 @@ def get_support_resistance_response(
         if timestamp is None:
             return None
         try:
-            return datetime.fromtimestamp(float(timestamp), tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
+            return datetime.fromtimestamp(float(timestamp), tz=timezone.utc).strftime(
+                "%Y-%m-%d %H:%M"
+            )
         except Exception:
             return None
 
-    def _find_extrema(values: List[float], comparator: Callable[[float, float, float], bool]) -> List[int]:
+    def _find_extrema(
+        values: List[float], comparator: Callable[[float, float, float], bool]
+    ) -> List[int]:
         indices: List[int] = []
         for index in range(1, len(values) - 1):
             try:
@@ -545,9 +610,13 @@ def get_support_resistance_response(
 
     total_bars = len(highs)
 
-    def _cluster(indices: List[int], values: List[float], level_type: str, limit_per_type: int) -> List[Dict[str, Any]]:
+    def _cluster(
+        indices: List[int], values: List[float], level_type: str, limit_per_type: int
+    ) -> List[Dict[str, Any]]:
         clusters: List[Dict[str, Any]] = []
-        for index in sorted(indices, key=lambda item: values[item], reverse=(level_type == "resistance")):
+        for index in sorted(
+            indices, key=lambda item: values[item], reverse=(level_type == "resistance")
+        ):
             try:
                 value = float(values[index])
             except Exception:
@@ -559,14 +628,22 @@ def get_support_resistance_response(
                 if threshold <= 0:
                     threshold = tolerance_pct
                 if abs(ref - value) <= threshold:
-                    cluster["value"] = (cluster["value"] * cluster["touches"] + value) / (cluster["touches"] + 1)
+                    cluster["value"] = (
+                        cluster["value"] * cluster["touches"] + value
+                    ) / (cluster["touches"] + 1)
                     cluster["touches"] += 1
                     cluster["indices"].append(index)
                     timestamp = epochs[index] if index < len(epochs) else None
                     if timestamp is not None:
-                        if cluster["last_time"] is None or timestamp > cluster["last_time"]:
+                        if (
+                            cluster["last_time"] is None
+                            or timestamp > cluster["last_time"]
+                        ):
                             cluster["last_time"] = timestamp
-                        if cluster["first_time"] is None or timestamp < cluster["first_time"]:
+                        if (
+                            cluster["first_time"] is None
+                            or timestamp < cluster["first_time"]
+                        ):
                             cluster["first_time"] = timestamp
                     assigned = cluster
                     break
@@ -588,7 +665,11 @@ def get_support_resistance_response(
 
         def _sort_key(cluster: Dict[str, Any]) -> tuple[int, int, float]:
             last_index = max(cluster["indices"])
-            value_key = -float(cluster["value"]) if level_type == "support" else float(cluster["value"])
+            value_key = (
+                -float(cluster["value"])
+                if level_type == "support"
+                else float(cluster["value"])
+            )
             return (cluster["touches"], last_index, value_key)
 
         usable.sort(key=_sort_key, reverse=True)
@@ -597,7 +678,9 @@ def get_support_resistance_response(
             last_index = max(cluster["indices"])
             recency = 0.0
             if total_bars > 1:
-                recency = max(0.0, 1.0 - (total_bars - 1 - last_index) / float(total_bars))
+                recency = max(
+                    0.0, 1.0 - (total_bars - 1 - last_index) / float(total_bars)
+                )
             out.append(
                 {
                     "type": level_type,
@@ -610,8 +693,18 @@ def get_support_resistance_response(
             )
         return out
 
-    resistance_levels = _cluster(_find_extrema(highs, lambda c, p, n: c >= p and c >= n), highs, "resistance", max_levels)
-    support_levels = _cluster(_find_extrema(lows, lambda c, p, n: c <= p and c <= n), lows, "support", max_levels)
+    resistance_levels = _cluster(
+        _find_extrema(highs, lambda c, p, n: c >= p and c >= n),
+        highs,
+        "resistance",
+        max_levels,
+    )
+    support_levels = _cluster(
+        _find_extrema(lows, lambda c, p, n: c <= p and c <= n),
+        lows,
+        "support",
+        max_levels,
+    )
 
     def _first_valid(values: List[Optional[float]]) -> Optional[float]:
         for item in values:
@@ -633,7 +726,9 @@ def get_support_resistance_response(
 
     levels = resistance_levels + support_levels
     if not levels:
-        raise HTTPException(status_code=404, detail="No support/resistance levels detected")
+        raise HTTPException(
+            status_code=404, detail="No support/resistance levels detected"
+        )
 
     response: Dict[str, Any] = {
         "symbol": symbol,
@@ -662,11 +757,23 @@ def get_tick_response(
         if err:
             info = mt5.symbol_info(symbol)
             if info is None:
-                raise _http_error(404, f"Unknown symbol {symbol}", code="unknown_symbol", operation="get_tick")
-            raise _http_error(500, str(err), code="tick_symbol_ready_failed", operation="get_tick")
+                raise _http_error(
+                    404,
+                    f"Unknown symbol {symbol}",
+                    code="unknown_symbol",
+                    operation="get_tick",
+                )
+            raise _http_error(
+                500, str(err), code="tick_symbol_ready_failed", operation="get_tick"
+            )
         tick = mt5.symbol_info_tick(symbol)
     if tick is None:
-        raise _http_error(404, f"No tick data for {symbol}", code="tick_data_missing", operation="get_tick")
+        raise _http_error(
+            404,
+            f"No tick data for {symbol}",
+            code="tick_data_missing",
+            operation="get_tick",
+        )
     return {
         "symbol": symbol,
         "time": float(tick.time),
@@ -677,17 +784,28 @@ def get_tick_response(
     }
 
 
-def post_forecast_price_response(*, body: ForecastPriceBody, forecast_generate_use_case: Callable[..., Any]) -> Dict[str, Any]:
+def post_forecast_price_response(
+    *, body: ForecastPriceBody, forecast_generate_use_case: Callable[..., Any]
+) -> Dict[str, Any]:
     try:
         result = forecast_generate_use_case(body.to_domain_request())
     except ForecastError as exc:
-        raise _http_error(400, str(exc), code="forecast_error", operation="post_forecast_price")
+        raise _http_error(
+            400, str(exc), code="forecast_error", operation="post_forecast_price"
+        )
     if isinstance(result, dict) and result.get("error"):
-        raise _http_error(400, str(result["error"]), code="forecast_tool_error", operation="post_forecast_price")
+        raise _http_error(
+            400,
+            str(result["error"]),
+            code="forecast_tool_error",
+            operation="post_forecast_price",
+        )
     return result
 
 
-def post_forecast_volatility_response(*, body: ForecastVolBody, forecast_vol_impl: Callable[..., Any]) -> Dict[str, Any]:
+def post_forecast_volatility_response(
+    *, body: ForecastVolBody, forecast_vol_impl: Callable[..., Any]
+) -> Dict[str, Any]:
     try:
         result = forecast_vol_impl(
             symbol=body.symbol,
@@ -702,7 +820,12 @@ def post_forecast_volatility_response(*, body: ForecastVolBody, forecast_vol_imp
     except HTTPException:
         raise
     except ForecastError as exc:
-        raise _http_error(400, str(exc), code="forecast_volatility_error", operation="post_forecast_volatility")
+        raise _http_error(
+            400,
+            str(exc),
+            code="forecast_volatility_error",
+            operation="post_forecast_volatility",
+        )
     except MT5ConnectionError as exc:
         raise _http_error(
             503,
@@ -717,19 +840,30 @@ def post_forecast_volatility_response(*, body: ForecastVolBody, forecast_vol_imp
             message="Forecast volatility computation failed.",
         )
     if isinstance(result, dict) and result.get("error"):
-        raise _http_error(400, str(result["error"]), code="forecast_volatility_error", operation="post_forecast_volatility")
+        raise _http_error(
+            400,
+            str(result["error"]),
+            code="forecast_volatility_error",
+            operation="post_forecast_volatility",
+        )
     return result
 
 
-def post_backtest_response(*, body: BacktestBody, backtest_use_case: Callable[..., Any]) -> Dict[str, Any]:
+def post_backtest_response(
+    *, body: BacktestBody, backtest_use_case: Callable[..., Any]
+) -> Dict[str, Any]:
     try:
         result = backtest_use_case(body.to_domain_request())
     except HTTPException:
         raise
     except ForecastError as exc:
-        raise _http_error(400, str(exc), code="backtest_error", operation="post_backtest")
+        raise _http_error(
+            400, str(exc), code="backtest_error", operation="post_backtest"
+        )
     except MT5ConnectionError as exc:
-        raise _http_error(503, str(exc), code="backtest_mt5_unavailable", operation="post_backtest")
+        raise _http_error(
+            503, str(exc), code="backtest_mt5_unavailable", operation="post_backtest"
+        )
     except Exception:
         _raise_internal_handler_error(
             operation="post_backtest",
@@ -737,5 +871,7 @@ def post_backtest_response(*, body: BacktestBody, backtest_use_case: Callable[..
             message="Backtest computation failed.",
         )
     if isinstance(result, dict) and result.get("error"):
-        raise _http_error(400, str(result["error"]), code="backtest_error", operation="post_backtest")
+        raise _http_error(
+            400, str(result["error"]), code="backtest_error", operation="post_backtest"
+        )
     return result

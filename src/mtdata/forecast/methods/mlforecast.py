@@ -8,13 +8,14 @@ import pandas as pd
 from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 
+
 class MLForecastMethod(ForecastMethod):
     """Base class for MLForecast methods."""
-    
+
     @property
     def category(self) -> str:
         return "machine_learning"
-        
+
     @property
     def required_packages(self) -> List[str]:
         return ["mlforecast"]
@@ -27,13 +28,13 @@ class MLForecastMethod(ForecastMethod):
         raise NotImplementedError
 
     def forecast(
-        self, 
-        series: pd.Series, 
-        horizon: int, 
-        seasonality: int, 
-        params: Dict[str, Any], 
+        self,
+        series: pd.Series,
+        horizon: int,
+        seasonality: int,
+        params: Dict[str, Any],
         exog_future: Optional[pd.DataFrame] = None,
-        **kwargs
+        **kwargs,
     ) -> ForecastResult:
         try:
             from mlforecast import MLForecast
@@ -42,18 +43,22 @@ class MLForecastMethod(ForecastMethod):
 
         # Build single-series training dataframe
         from ..common import _create_training_dataframes, _extract_forecast_values
-        
-        exog_used = kwargs.get('exog_used')
+
+        exog_used = kwargs.get("exog_used")
         if exog_used is None:
-            exog_used = params.get('exog_used')
-        exog_future_arr = kwargs.get('exog_future')
+            exog_used = params.get("exog_used")
+        exog_future_arr = kwargs.get("exog_future")
         if exog_future_arr is None:
-            exog_future_arr = exog_future if exog_future is not None else params.get('exog_future')
-        
-        Y_df, X_df, Xf_df = _create_training_dataframes(series.values, horizon, exog_used, exog_future_arr)
+            exog_future_arr = (
+                exog_future if exog_future is not None else params.get("exog_future")
+            )
+
+        Y_df, X_df, Xf_df = _create_training_dataframes(
+            series.values, horizon, exog_used, exog_future_arr
+        )
 
         model = self._get_model(params)
-        lags = params.get('lags')
+        lags = params.get("lags")
         if not lags:
             # Provide a safe default lag set so the method works out-of-the-box.
             base = int(seasonality) if seasonality and int(seasonality) > 0 else 24
@@ -61,141 +66,203 @@ class MLForecastMethod(ForecastMethod):
             lags = list(range(1, max_lag + 1))
             params = dict(params or {})
             params["lags"] = lags
-        
+
         try:
             # Pass lags to constructor
             # Use freq=1 because _create_training_dataframes uses integer index
             mlf = MLForecast(models=[model], freq=1, lags=lags)
-            
+
             # rolling_agg support requires window_ops or similar, disabling for now to fix basic functionality
             # if rolling_agg in {'mean', 'min', 'max', 'std'} and lags:
             #     for w in sorted(set([x for x in lags if x and x > 1])):
             #         mlf = mlf.add_rolling_windows(rolling_features={rolling_agg: [w]})
-            
+
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 if X_df is not None:
                     mlf.fit(Y_df, X_df=X_df)
                 else:
                     mlf.fit(Y_df)
-            
+
             if Xf_df is not None:
                 Yf = mlf.predict(h=int(horizon), X_df=Xf_df)
             else:
                 Yf = mlf.predict(h=int(horizon))
-            
-            if 'unique_id' not in Yf.columns:
+
+            if "unique_id" not in Yf.columns:
                 raise RuntimeError("mlforecast output missing unique_id column")
-            Yf = Yf[Yf['unique_id'] == 'ts']
+            Yf = Yf[Yf["unique_id"] == "ts"]
             if Yf.empty:
                 raise RuntimeError("mlforecast output missing rows for unique_id='ts'")
-            
+
             f_vals = _extract_forecast_values(Yf, horizon, self.name)
-            
+
             # Filter out internal context params
-            internal_keys = {'symbol', 'timeframe', 'as_of', 'exog_used', 'exog_future'}
+            internal_keys = {"symbol", "timeframe", "as_of", "exog_used", "exog_future"}
             clean_params = {k: v for k, v in params.items() if k not in internal_keys}
-            
+
             return ForecastResult(
-                forecast=f_vals,
-                ci_values=None,
-                params_used=clean_params
+                forecast=f_vals, ci_values=None, params_used=clean_params
             )
-            
+
         except Exception as ex:
             raise RuntimeError(f"{self.name} error: {ex}")
+
 
 @ForecastRegistry.register("mlf_rf")
 class MLFRandomForest(MLForecastMethod):
     PARAMS: List[Dict[str, Any]] = [
-        {"name": "n_estimators", "type": "int", "description": "Number of trees (default: 200)."},
-        {"name": "max_depth", "type": "int|null", "description": "Maximum depth (default: None)."},
-        {"name": "lags", "type": "list", "description": "Lag features to use (auto if omitted)."},
-        {"name": "rolling_agg", "type": "str|null", "description": "Rolling agg (reserved)."},
+        {
+            "name": "n_estimators",
+            "type": "int",
+            "description": "Number of trees (default: 200).",
+        },
+        {
+            "name": "max_depth",
+            "type": "int|null",
+            "description": "Maximum depth (default: None).",
+        },
+        {
+            "name": "lags",
+            "type": "list",
+            "description": "Lag features to use (auto if omitted).",
+        },
+        {
+            "name": "rolling_agg",
+            "type": "str|null",
+            "description": "Rolling agg (reserved).",
+        },
     ]
 
     @property
     def name(self) -> str:
         return "mlf_rf"
-        
+
     @property
     def required_packages(self) -> List[str]:
         return ["mlforecast", "scikit-learn"]
 
     def _get_model(self, params: Dict[str, Any]):
         from sklearn.ensemble import RandomForestRegressor
-        n_estimators = int(params.get('n_estimators', 200))
-        max_depth = params.get('max_depth')
-        return RandomForestRegressor(n_estimators=n_estimators, max_depth=max_depth, random_state=42)
+
+        n_estimators = int(params.get("n_estimators", 200))
+        max_depth = params.get("max_depth")
+        return RandomForestRegressor(
+            n_estimators=n_estimators, max_depth=max_depth, random_state=42
+        )
+
 
 @ForecastRegistry.register("mlf_lightgbm")
 class MLFLightGBM(MLForecastMethod):
     PARAMS: List[Dict[str, Any]] = [
-        {"name": "n_estimators", "type": "int", "description": "Number of trees (default: 200)."},
-        {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 0.05)."},
-        {"name": "num_leaves", "type": "int", "description": "Number of leaves (default: 31)."},
-        {"name": "max_depth", "type": "int", "description": "Maximum depth (default: -1)."},
-        {"name": "lags", "type": "list", "description": "Lag features to use (auto if omitted)."},
-        {"name": "rolling_agg", "type": "str|null", "description": "Rolling agg (reserved)."},
+        {
+            "name": "n_estimators",
+            "type": "int",
+            "description": "Number of trees (default: 200).",
+        },
+        {
+            "name": "learning_rate",
+            "type": "float",
+            "description": "Learning rate (default: 0.05).",
+        },
+        {
+            "name": "num_leaves",
+            "type": "int",
+            "description": "Number of leaves (default: 31).",
+        },
+        {
+            "name": "max_depth",
+            "type": "int",
+            "description": "Maximum depth (default: -1).",
+        },
+        {
+            "name": "lags",
+            "type": "list",
+            "description": "Lag features to use (auto if omitted).",
+        },
+        {
+            "name": "rolling_agg",
+            "type": "str|null",
+            "description": "Rolling agg (reserved).",
+        },
     ]
 
     @property
     def name(self) -> str:
         return "mlf_lightgbm"
-        
+
     @property
     def required_packages(self) -> List[str]:
         return ["mlforecast", "lightgbm"]
 
     def _get_model(self, params: Dict[str, Any]):
         from lightgbm import LGBMRegressor
+
         return LGBMRegressor(
-            n_estimators=int(params.get('n_estimators', 200)),
-            learning_rate=float(params.get('learning_rate', 0.05)),
-            num_leaves=int(params.get('num_leaves', 31)),
-            max_depth=int(params.get('max_depth', -1)),
-            random_state=42
+            n_estimators=int(params.get("n_estimators", 200)),
+            learning_rate=float(params.get("learning_rate", 0.05)),
+            num_leaves=int(params.get("num_leaves", 31)),
+            max_depth=int(params.get("max_depth", -1)),
+            random_state=42,
         )
+
 
 @ForecastRegistry.register("mlforecast")
 class GenericMLForecastMethod(MLForecastMethod):
     """Generic wrapper for any MLForecast compatible model."""
 
     PARAMS: List[Dict[str, Any]] = [
-        {"name": "model", "type": "str", "description": "Dotted class path for ML model."},
-        {"name": "lags", "type": "list", "description": "Lag features to use (auto if omitted)."},
-        {"name": "rolling_agg", "type": "str|null", "description": "Rolling agg (reserved)."},
+        {
+            "name": "model",
+            "type": "str",
+            "description": "Dotted class path for ML model.",
+        },
+        {
+            "name": "lags",
+            "type": "list",
+            "description": "Lag features to use (auto if omitted).",
+        },
+        {
+            "name": "rolling_agg",
+            "type": "str|null",
+            "description": "Rolling agg (reserved).",
+        },
     ]
-    
+
     @property
     def name(self) -> str:
         return "mlforecast"
-        
+
     def _get_model(self, params: Dict[str, Any]):
-        model_path = params.get('model')
+        model_path = params.get("model")
         if not model_path:
-            raise ValueError("GenericMLForecastMethod requires 'model' (dotted path) in params")
-            
+            raise ValueError(
+                "GenericMLForecastMethod requires 'model' (dotted path) in params"
+            )
+
         # Import dynamically
         try:
-            module_path, class_name = model_path.rsplit('.', 1)
+            module_path, class_name = model_path.rsplit(".", 1)
             import importlib
+
             module = importlib.import_module(module_path)
             model_cls = getattr(module, class_name)
         except (ValueError, ImportError, AttributeError) as e:
-             raise ValueError(f"Could not import ML model '{model_path}': {e}")
-             
+            raise ValueError(f"Could not import ML model '{model_path}': {e}")
+
         # Filter params
         import inspect
+
         try:
             sig = inspect.signature(model_cls)
             valid_params = set(sig.parameters.keys())
         except ValueError:
             valid_params = set()
-            
+
         model_params = {k: v for k, v in params.items() if k in valid_params}
-        
+
         return model_cls(**model_params)
+
 
 # Backward compatibility wrappers
 def forecast_mlf_rf(
@@ -211,9 +278,12 @@ def forecast_mlf_rf(
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
     forecaster = ForecastRegistry.get("mlf_rf")
     s_pd = pd.Series(series)
-    params = {'lags': lags, 'rolling_agg': rolling_agg}
-    result = forecaster.forecast(s_pd, fh, 0, params, exog_used=exog_used, exog_future=exog_future)
+    params = {"lags": lags, "rolling_agg": rolling_agg}
+    result = forecaster.forecast(
+        s_pd, fh, 0, params, exog_used=exog_used, exog_future=exog_future
+    )
     return result.forecast, result.params_used
+
 
 def forecast_mlf_lightgbm(
     *,
@@ -233,12 +303,14 @@ def forecast_mlf_lightgbm(
     forecaster = ForecastRegistry.get("mlf_lightgbm")
     s_pd = pd.Series(series)
     params = {
-        'lags': lags, 
-        'rolling_agg': rolling_agg,
-        'n_estimators': n_estimators,
-        'learning_rate': learning_rate,
-        'num_leaves': num_leaves,
-        'max_depth': max_depth
+        "lags": lags,
+        "rolling_agg": rolling_agg,
+        "n_estimators": n_estimators,
+        "learning_rate": learning_rate,
+        "num_leaves": num_leaves,
+        "max_depth": max_depth,
     }
-    result = forecaster.forecast(s_pd, fh, 0, params, exog_used=exog_used, exog_future=exog_future)
+    result = forecaster.forecast(
+        s_pd, fh, 0, params, exog_used=exog_used, exog_future=exog_future
+    )
     return result.forecast, result.params_used

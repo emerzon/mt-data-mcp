@@ -1,9 +1,7 @@
 """Tests for core/causal.py — extended coverage for MT5-dependent functions (mocked)."""
 
-import math
-import time
 import warnings
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import patch, MagicMock
 
 import numpy as np
 import pandas as pd
@@ -11,12 +9,9 @@ import pytest
 
 from mtdata.core import causal as causal_mod
 from mtdata.core.causal import (
-    _parse_symbols,
     _expand_symbols_for_group,
     _fetch_series,
     _pair_overlap_symbols,
-    _transform_frame,
-    _standardize_frame,
     _format_summary,
     causal_discover_signals,
 )
@@ -29,7 +24,10 @@ def _skip_mt5_connection(monkeypatch):
 
 
 def test_pair_overlap_symbols_handles_hyphenated_symbols():
-    assert _pair_overlap_symbols("BTC-USD-ETH-USD", ["BTC-USD", "ETH-USD"]) == ("BTC-USD", "ETH-USD")
+    assert _pair_overlap_symbols("BTC-USD-ETH-USD", ["BTC-USD", "ETH-USD"]) == (
+        "BTC-USD",
+        "ETH-USD",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -72,8 +70,12 @@ class TestExpandSymbolsForGroup:
     @patch("mtdata.core.causal.mt5")
     def test_multiple_members(self, mock_mt5, mock_gp):
         mock_mt5.symbol_info.return_value = MagicMock()
-        s1 = MagicMock(); s1.name = "EURUSD"; s1.visible = True
-        s2 = MagicMock(); s2.name = "GBPUSD"; s2.visible = True
+        s1 = MagicMock()
+        s1.name = "EURUSD"
+        s1.visible = True
+        s2 = MagicMock()
+        s2.name = "GBPUSD"
+        s2.visible = True
         mock_mt5.symbols_get.return_value = [s1, s2]
         syms, err, gp = _expand_symbols_for_group("EURUSD")
         assert err is None
@@ -83,9 +85,15 @@ class TestExpandSymbolsForGroup:
     @patch("mtdata.core.causal.mt5")
     def test_invisible_non_anchor_skipped(self, mock_mt5, mock_gp):
         mock_mt5.symbol_info.return_value = MagicMock()
-        s1 = MagicMock(); s1.name = "EURUSD"; s1.visible = True
-        s2 = MagicMock(); s2.name = "GBPUSD"; s2.visible = False
-        s3 = MagicMock(); s3.name = "USDJPY"; s3.visible = True
+        s1 = MagicMock()
+        s1.name = "EURUSD"
+        s1.visible = True
+        s2 = MagicMock()
+        s2.name = "GBPUSD"
+        s2.visible = False
+        s3 = MagicMock()
+        s3.name = "USDJPY"
+        s3.visible = True
         mock_mt5.symbols_get.return_value = [s1, s2, s3]
         syms, err, gp = _expand_symbols_for_group("EURUSD")
         assert "GBPUSD" not in syms
@@ -95,8 +103,12 @@ class TestExpandSymbolsForGroup:
     @patch("mtdata.core.causal.mt5")
     def test_anchor_not_in_list_gets_inserted(self, mock_mt5, mock_gp):
         mock_mt5.symbol_info.return_value = MagicMock()
-        s1 = MagicMock(); s1.name = "GBPUSD"; s1.visible = True
-        s2 = MagicMock(); s2.name = "USDJPY"; s2.visible = True
+        s1 = MagicMock()
+        s1.name = "GBPUSD"
+        s1.visible = True
+        s2 = MagicMock()
+        s2.name = "USDJPY"
+        s2.visible = True
         mock_mt5.symbols_get.return_value = [s1, s2]
         syms, err, gp = _expand_symbols_for_group("EURUSD")
         assert syms[0] == "EURUSD"
@@ -133,10 +145,22 @@ class TestFetchSeries:
     @patch("mtdata.core.causal._mt5_copy_rates_from")
     @patch("mtdata.core.causal._ensure_symbol_ready", return_value=None)
     def test_success(self, mock_ensure, mock_copy):
-        data = np.array([(1000, 1.1, 1.2, 1.0, 1.15, 100, 10, 0),
-                         (2000, 1.15, 1.25, 1.05, 1.20, 200, 20, 0)],
-                        dtype=[("time", "i8"), ("open", "f8"), ("high", "f8"), ("low", "f8"),
-                               ("close", "f8"), ("tick_volume", "i8"), ("spread", "i4"), ("real_volume", "i8")])
+        data = np.array(
+            [
+                (1000, 1.1, 1.2, 1.0, 1.15, 100, 10, 0),
+                (2000, 1.15, 1.25, 1.05, 1.20, 200, 20, 0),
+            ],
+            dtype=[
+                ("time", "i8"),
+                ("open", "f8"),
+                ("high", "f8"),
+                ("low", "f8"),
+                ("close", "f8"),
+                ("tick_volume", "i8"),
+                ("spread", "i4"),
+                ("real_volume", "i8"),
+            ],
+        )
         mock_copy.return_value = data
         series, err = _fetch_series("EURUSD", None, 100)
         assert err is None
@@ -156,10 +180,30 @@ class TestFetchSeries:
     def test_truncates_excess_data(self, mock_ensure, mock_copy):
         times = list(range(1000, 1000 + 200))
         closes = [1.1 + i * 0.001 for i in range(200)]
-        data = np.array(list(zip(times, closes, closes, closes, closes,
-                                 [100]*200, [1]*200, [0]*200)),
-                        dtype=[("time", "i8"), ("open", "f8"), ("high", "f8"), ("low", "f8"),
-                               ("close", "f8"), ("tick_volume", "i8"), ("spread", "i4"), ("real_volume", "i8")])
+        data = np.array(
+            list(
+                zip(
+                    times,
+                    closes,
+                    closes,
+                    closes,
+                    closes,
+                    [100] * 200,
+                    [1] * 200,
+                    [0] * 200,
+                )
+            ),
+            dtype=[
+                ("time", "i8"),
+                ("open", "f8"),
+                ("high", "f8"),
+                ("low", "f8"),
+                ("close", "f8"),
+                ("tick_volume", "i8"),
+                ("spread", "i4"),
+                ("real_volume", "i8"),
+            ],
+        )
         mock_copy.return_value = data
         series, err = _fetch_series("EURUSD", None, 50)
         assert err is None
@@ -173,10 +217,14 @@ class TestFetchSeries:
 
 class TestFormatSummary:
     def test_empty_rows(self):
-        assert "No valid pairings" in _format_summary([], ["A", "B"], "log_return", 0.05)
+        assert "No valid pairings" in _format_summary(
+            [], ["A", "B"], "log_return", 0.05
+        )
 
     def test_causal_link(self):
-        rows = [{"effect": "B", "cause": "A", "lag": 2, "p_value": 0.01, "samples": 100}]
+        rows = [
+            {"effect": "B", "cause": "A", "lag": 2, "p_value": 0.01, "samples": 100}
+        ]
         text = _format_summary(rows, ["A", "B"], "log_return", 0.05)
         assert "causal" in text
         assert "B <- A" in text
@@ -188,7 +236,9 @@ class TestFormatSummary:
 
     def test_group_hint(self):
         rows = [{"effect": "B", "cause": "A", "lag": 1, "p_value": 0.02, "samples": 80}]
-        text = _format_summary(rows, ["A", "B"], "log_return", 0.05, group_hint="Forex\\Majors")
+        text = _format_summary(
+            rows, ["A", "B"], "log_return", 0.05, group_hint="Forex\\Majors"
+        )
         assert "Forex\\Majors" in text
 
     def test_sorting(self):
@@ -211,19 +261,25 @@ class TestFormatSummary:
 class TestCausalDiscoverSignals:
     def _unwrapped(self):
         fn = causal_discover_signals
-        while hasattr(fn, '__wrapped__'):
+        while hasattr(fn, "__wrapped__"):
             fn = fn.__wrapped__
         return fn
 
     def test_connection_error_payload(self, monkeypatch):
         def fail_connection():
-            raise MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running.")
+            raise MT5ConnectionError(
+                "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+            )
 
-        monkeypatch.setattr(causal_mod, "ensure_mt5_connection_or_raise", fail_connection)
+        monkeypatch.setattr(
+            causal_mod, "ensure_mt5_connection_or_raise", fail_connection
+        )
 
         result = self._unwrapped()("EURUSD,GBPUSD")
 
-        assert result == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
+        assert result == {
+            "error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+        }
 
     def test_empty_symbols(self):
         result = self._unwrapped()("")
@@ -231,7 +287,10 @@ class TestCausalDiscoverSignals:
         assert "Provide at least one symbol" in result["error"]
         assert result["error_code"] == "invalid_input"
 
-    @patch("mtdata.core.causal._expand_symbols_for_group", return_value=([], "Symbol X not found", None))
+    @patch(
+        "mtdata.core.causal._expand_symbols_for_group",
+        return_value=([], "Symbol X not found", None),
+    )
     def test_single_symbol_expand_error(self, mock_expand):
         result = self._unwrapped()("X")
         assert result["success"] is False
@@ -261,7 +320,9 @@ class TestCausalDiscoverSignals:
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
-        result = self._unwrapped()("BTCUSD,ETHUSD", max_lag=5, transform="diff", normalize=False)
+        result = self._unwrapped()(
+            "BTCUSD,ETHUSD", max_lag=5, transform="diff", normalize=False
+        )
 
         assert result["success"] is False
         assert result["error_code"] == "insufficient_overlap"
@@ -281,7 +342,9 @@ class TestCausalDiscoverSignals:
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")
-    def test_alignment_detail_includes_pair_bottleneck_when_samples_shrink(self, mock_fetch, mock_granger):
+    def test_alignment_detail_includes_pair_bottleneck_when_samples_shrink(
+        self, mock_fetch, mock_granger
+    ):
         idx_a = pd.date_range("2024-01-01", periods=100, freq="h")
         idx_b = pd.date_range("2024-01-01", periods=100, freq="h")
         idx_c = pd.date_range("2024-01-02", periods=100, freq="h")
@@ -300,7 +363,9 @@ class TestCausalDiscoverSignals:
             2: ({"ssr_ftest": (1.0, 0.4, 10, 1)}, None),
         }
 
-        result = self._unwrapped()("EURUSD,GBPUSD,USDJPY", max_lag=2, transform="diff", normalize=False)
+        result = self._unwrapped()(
+            "EURUSD,GBPUSD,USDJPY", max_lag=2, transform="diff", normalize=False
+        )
         assert result["success"] is True
         meta = result.get("meta", {})
         detail = meta.get("alignment_detail", {})
@@ -333,7 +398,9 @@ class TestCausalDiscoverSignals:
             2: ({"ssr_ftest": (1.0, 0.03, 10, 1)}, None),
         }
 
-        result = self._unwrapped()("EURUSD,GBPUSD,USDJPY", max_lag=2, transform="diff", normalize=False)
+        result = self._unwrapped()(
+            "EURUSD,GBPUSD,USDJPY", max_lag=2, transform="diff", normalize=False
+        )
 
         assert result["success"] is True
         assert result["meta"]["symbols_used"] == ["EURUSD", "GBPUSD"]
@@ -341,7 +408,10 @@ class TestCausalDiscoverSignals:
         assert result["meta"]["samples_aligned_raw_after_pruning"] == 80
         assert "pair_overlaps_after_pruning" in result["meta"]
         warnings_out = result.get("warnings", [])
-        assert any("Dropped USDJPY due to insufficient overlap" in warning for warning in warnings_out)
+        assert any(
+            "Dropped USDJPY due to insufficient overlap" in warning
+            for warning in warnings_out
+        )
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {})
     def test_invalid_timeframe(self):
@@ -372,6 +442,7 @@ class TestCausalDiscoverSignals:
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
+
         def _granger_side_effect(*args, **kwargs):
             warnings.warn("'verbose' is deprecated", FutureWarning)
             return {
@@ -381,12 +452,17 @@ class TestCausalDiscoverSignals:
 
         mock_granger.side_effect = _granger_side_effect
 
-        with warnings.catch_warnings(record=True) as records, caplog.at_level(
-            "INFO",
-            logger="mtdata.core.causal",
+        with (
+            warnings.catch_warnings(record=True) as records,
+            caplog.at_level(
+                "INFO",
+                logger="mtdata.core.causal",
+            ),
         ):
             warnings.simplefilter("always")
-            result = self._unwrapped()("A,B", max_lag=2, transform="diff", normalize=False)
+            result = self._unwrapped()(
+                "A,B", max_lag=2, transform="diff", normalize=False
+            )
 
         assert result["success"] is True
         assert "data" in result
@@ -397,7 +473,8 @@ class TestCausalDiscoverSignals:
         assert result["meta"]["pairs_tested"] >= 1
         assert not any("verbose" in str(w.message).lower() for w in records)
         assert any(
-            "event=finish operation=causal_discover_signals success=True" in record.message
+            "event=finish operation=causal_discover_signals success=True"
+            in record.message
             for record in caplog.records
         )
 
@@ -424,3 +501,4 @@ class TestCausalDiscoverSignals:
         assert result["meta"]["pairs_failed"] >= 1
         assert result["meta"]["pair_failures"][0]["error_type"] == "RuntimeError"
         assert "warnings" in result
+# ruff: noqa: E402, E731, E741, F811, F841

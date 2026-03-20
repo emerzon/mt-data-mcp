@@ -1,4 +1,5 @@
 """Tests for src/mtdata/core/server_utils.py"""
+
 from types import SimpleNamespace
 from mtdata.core.server_utils import get_mcp_registry
 

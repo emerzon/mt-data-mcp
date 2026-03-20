@@ -12,7 +12,11 @@ from typing import Any, Dict, List, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel
 
-from .error_envelope import build_error_payload, log_transport_exception, normalize_error_payload
+from .error_envelope import (
+    build_error_payload,
+    log_transport_exception,
+    normalize_error_payload,
+)
 from ..utils.utils import _coerce_scalar
 
 try:
@@ -23,14 +27,18 @@ except Exception:  # pragma: no cover - Python 3.14+ should provide this
 _ORIG_TOOL_DECORATOR: Any = None
 _TOOL_REGISTRY: Dict[str, Any] = {}
 _TOOL_OBJECT_REGISTRY: Dict[str, Any] = {}
-_ANNOTATION_VALUE_FORMAT = getattr(getattr(annotationlib, "Format", None), "VALUE", None)
+_ANNOTATION_VALUE_FORMAT = getattr(
+    getattr(annotationlib, "Format", None), "VALUE", None
+)
 
 
 def _get_runtime_signature(obj: Any) -> inspect.Signature:
     """Resolve a signature with evaluated annotations when available."""
     if _ANNOTATION_VALUE_FORMAT is not None:
         try:
-            return inspect.signature(obj, eval_str=True, annotation_format=_ANNOTATION_VALUE_FORMAT)
+            return inspect.signature(
+                obj, eval_str=True, annotation_format=_ANNOTATION_VALUE_FORMAT
+            )
         except Exception:
             pass
     return inspect.signature(obj)
@@ -40,7 +48,9 @@ def _get_runtime_annotations(obj: Any) -> Dict[str, Any]:
     """Resolve runtime annotations using the 3.14 annotation API when available."""
     if annotationlib is not None and _ANNOTATION_VALUE_FORMAT is not None:
         try:
-            resolved = annotationlib.get_annotations(obj, eval_str=True, format=_ANNOTATION_VALUE_FORMAT)
+            resolved = annotationlib.get_annotations(
+                obj, eval_str=True, format=_ANNOTATION_VALUE_FORMAT
+            )
             if isinstance(resolved, dict):
                 return resolved
         except Exception:
@@ -116,7 +126,9 @@ def _coerce_bool(value: Any, *, allow_none: bool, name: str) -> Any:
         if s in ("none", "null"):
             if allow_none:
                 return None
-            raise ValueError(f"Invalid value for '{name}': expected boolean, got {value!r}")
+            raise ValueError(
+                f"Invalid value for '{name}': expected boolean, got {value!r}"
+            )
         if s in ("true", "1", "yes", "y", "on"):
             return True
         if s in ("false", "0", "no", "n", "off"):
@@ -135,7 +147,9 @@ def _coerce_int(value: Any, *, allow_none: bool, name: str) -> Any:
         return value
     if isinstance(value, float):
         if not math.isfinite(value):
-            raise ValueError(f"Invalid value for '{name}': expected integer, got {value!r}")
+            raise ValueError(
+                f"Invalid value for '{name}': expected integer, got {value!r}"
+            )
         if value.is_integer():
             return int(value)
         raise ValueError(f"Invalid value for '{name}': expected integer, got {value!r}")
@@ -144,11 +158,17 @@ def _coerce_int(value: Any, *, allow_none: bool, name: str) -> Any:
         if s.lower() in ("none", "null"):
             if allow_none:
                 return None
-            raise ValueError(f"Invalid value for '{name}': expected integer, got {value!r}")
+            raise ValueError(
+                f"Invalid value for '{name}': expected integer, got {value!r}"
+            )
         coerced = _coerce_scalar(s)
         if isinstance(coerced, int) and not isinstance(coerced, bool):
             return coerced
-        if isinstance(coerced, float) and math.isfinite(coerced) and coerced.is_integer():
+        if (
+            isinstance(coerced, float)
+            and math.isfinite(coerced)
+            and coerced.is_integer()
+        ):
             return int(coerced)
     raise ValueError(f"Invalid value for '{name}': expected integer, got {value!r}")
 
@@ -163,19 +183,25 @@ def _coerce_float(value: Any, *, allow_none: bool, name: str) -> Any:
     if isinstance(value, (int, float)):
         out = float(value)
         if not math.isfinite(out):
-            raise ValueError(f"Invalid value for '{name}': expected number, got {value!r}")
+            raise ValueError(
+                f"Invalid value for '{name}': expected number, got {value!r}"
+            )
         return out
     if isinstance(value, str):
         s = value.strip()
         if s.lower() in ("none", "null"):
             if allow_none:
                 return None
-            raise ValueError(f"Invalid value for '{name}': expected number, got {value!r}")
+            raise ValueError(
+                f"Invalid value for '{name}': expected number, got {value!r}"
+            )
         coerced = _coerce_scalar(s)
         if isinstance(coerced, (int, float)) and not isinstance(coerced, bool):
             out = float(coerced)
             if not math.isfinite(out):
-                raise ValueError(f"Invalid value for '{name}': expected number, got {value!r}")
+                raise ValueError(
+                    f"Invalid value for '{name}': expected number, got {value!r}"
+                )
             return out
     raise ValueError(f"Invalid value for '{name}': expected number, got {value!r}")
 
@@ -199,12 +225,18 @@ def _coerce_kwargs_for_callable(func: Any, kwargs: Dict[str, Any]) -> Dict[str, 
                 field_names = set(model_fields.keys())
             else:
                 legacy_fields = getattr(base_ann, "__fields__", None)
-                field_names = set(legacy_fields.keys()) if isinstance(legacy_fields, dict) else set()
+                field_names = (
+                    set(legacy_fields.keys())
+                    if isinstance(legacy_fields, dict)
+                    else set()
+                )
         except Exception:
             field_names = set()
         if not field_names:
             continue
-        payload = {key: kwargs.pop(key) for key in list(kwargs.keys()) if key in field_names}
+        payload = {
+            key: kwargs.pop(key) for key in list(kwargs.keys()) if key in field_names
+        }
         if not payload and allow_none:
             continue
         if not payload and param.default is not inspect._empty:
@@ -222,11 +254,17 @@ def _coerce_kwargs_for_callable(func: Any, kwargs: Dict[str, Any]) -> Dict[str, 
             continue
         base_ann, allow_none = _unwrap_optional_annotation(ann)
         if base_ann is bool:
-            kwargs[param_name] = _coerce_bool(kwargs.get(param_name), allow_none=allow_none, name=param_name)
+            kwargs[param_name] = _coerce_bool(
+                kwargs.get(param_name), allow_none=allow_none, name=param_name
+            )
         elif base_ann is int:
-            kwargs[param_name] = _coerce_int(kwargs.get(param_name), allow_none=allow_none, name=param_name)
+            kwargs[param_name] = _coerce_int(
+                kwargs.get(param_name), allow_none=allow_none, name=param_name
+            )
         elif base_ann is float:
-            kwargs[param_name] = _coerce_float(kwargs.get(param_name), allow_none=allow_none, name=param_name)
+            kwargs[param_name] = _coerce_float(
+                kwargs.get(param_name), allow_none=allow_none, name=param_name
+            )
         elif isinstance(base_ann, type) and issubclass(base_ann, BaseModel):
             value = kwargs.get(param_name)
             if value is None and allow_none:
@@ -272,7 +310,11 @@ def _request_model_signature_fields(func: Any) -> List[inspect.Parameter]:
             if annotation is inspect._empty:
                 annotation = getattr(field, "annotation", inspect._empty)
             is_required = bool(getattr(field, "is_required", lambda: False)())
-            default = inspect._empty if is_required else _signature_default_for_model_field(field)
+            default = (
+                inspect._empty
+                if is_required
+                else _signature_default_for_model_field(field)
+            )
             flattened.append(
                 inspect.Parameter(
                     field_name,
@@ -287,9 +329,15 @@ def _request_model_signature_fields(func: Any) -> List[inspect.Parameter]:
     if isinstance(legacy_fields, dict):
         flattened = []
         for field_name, field in legacy_fields.items():
-            annotation = getattr(field, "outer_type_", getattr(field, "type_", inspect._empty))
+            annotation = getattr(
+                field, "outer_type_", getattr(field, "type_", inspect._empty)
+            )
             is_required = bool(getattr(field, "required", False))
-            default = inspect._empty if is_required else _signature_default_for_model_field(field)
+            default = (
+                inspect._empty
+                if is_required
+                else _signature_default_for_model_field(field)
+            )
             flattened.append(
                 inspect.Parameter(
                     field_name,
@@ -320,6 +368,7 @@ def _signature_default_for_model_field(field: Any) -> Any:
 
 def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
     if _ORIG_TOOL_DECORATOR is None:
+
         def _noop(func):
             _TOOL_REGISTRY[getattr(func, "__name__", "tool")] = func
             return func
@@ -344,7 +393,9 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
             }
             ann = _get_runtime_annotations(func)
             if "return" in ann:
-                cleaned["return"] = ann["return"] if ann["return"] is not inspect._empty else object
+                cleaned["return"] = (
+                    ann["return"] if ann["return"] is not inspect._empty else object
+                )
             return cleaned
         cleaned = {}
         ann = _get_runtime_annotations(func)
@@ -353,14 +404,21 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
             value = ann.get(name, param.annotation)
             cleaned[name] = value if isinstance(value, type) else object
         if "return" in ann:
-            cleaned["return"] = ann["return"] if isinstance(ann["return"], type) else object
+            cleaned["return"] = (
+                ann["return"] if isinstance(ann["return"], type) else object
+            )
         return cleaned
 
     def _wrap(func):
         try:
-            from ..utils.minimal_output import format_result_minimal as _fmt_min, to_methods_availability_toon as _fmt_methods
+            from ..utils.minimal_output import (
+                format_result_minimal as _fmt_min,
+                to_methods_availability_toon as _fmt_methods,
+            )
         except Exception:
-            _fmt_min = lambda x, **_: str(x) if x is not None else ""
+            def _fmt_min(x, **_):
+                return str(x) if x is not None else ""
+
             _fmt_methods = None
 
         @_wraps(func)
@@ -416,7 +474,10 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
 
             try:
                 fname = getattr(func, "__name__", "")
-                if fname in ("forecast_list_methods", "denoise_list_methods") and isinstance(out, dict):
+                if fname in (
+                    "forecast_list_methods",
+                    "denoise_list_methods",
+                ) and isinstance(out, dict):
                     methods_list = out.get("methods") or []
                     if _fmt_methods and isinstance(methods_list, list):
                         s = _fmt_methods(cast(List[Dict[str, Any]], methods_list))
@@ -441,7 +502,11 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
                 for name, param in sig.parameters.items():
                     params.append(param.replace(annotation=cleaned.get(name)))
             return_ann = cleaned.get("return", inspect._empty)
-            setattr(_wrapped, "__signature__", inspect.Signature(parameters=params, return_annotation=return_ann))
+            setattr(
+                _wrapped,
+                "__signature__",
+                inspect.Signature(parameters=params, return_annotation=return_ann),
+            )
         except Exception:
             pass
 
@@ -469,7 +534,10 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
                     f"{_tool_name} timed out after {_TOOL_TIMEOUT_SECONDS}s",
                     code="tool_timeout",
                     operation=_tool_name,
-                    details={"tool": _tool_name, "timeout_seconds": _TOOL_TIMEOUT_SECONDS},
+                    details={
+                        "tool": _tool_name,
+                        "timeout_seconds": _TOOL_TIMEOUT_SECONDS,
+                    },
                 )
 
         try:
