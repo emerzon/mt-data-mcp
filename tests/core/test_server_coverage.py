@@ -1,8 +1,11 @@
 """Tests for mtdata.core.server — server configuration, coercion helpers, tool decorator."""
 
 import inspect
-from typing import Optional
-from unittest.mock import MagicMock, patch
+import math
+import os
+import types
+from typing import Optional, Union
+from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
 
@@ -14,7 +17,6 @@ import pytest
 
 
 # ── bootstrap.runtime ─────────────────────────────────────────────────────
-
 
 class TestMcpRuntimeSettings:
     def test_load_defaults(self, monkeypatch):
@@ -75,10 +77,7 @@ class TestMcpRuntimeSettings:
         assert settings.host == "0.0.0.0"
 
     def test_apply_to_mcp_settings(self):
-        from mtdata.bootstrap.runtime import (
-            McpRuntimeSettings,
-            apply_mcp_runtime_settings,
-        )
+        from mtdata.bootstrap.runtime import McpRuntimeSettings, apply_mcp_runtime_settings
 
         mcp = MagicMock()
         mcp.settings = MagicMock()
@@ -134,11 +133,10 @@ class TestWebApiRuntimeSettings:
 
 # ── _unwrap_optional_annotation ───────────────────────────────────────────
 
-
 class TestUnwrapOptionalAnnotation:
+
     def _call(self, ann):
         from mtdata.core.server import _unwrap_optional_annotation
-
         return _unwrap_optional_annotation(ann)
 
     # --- string annotations ---
@@ -237,11 +235,10 @@ class TestUnwrapOptionalAnnotation:
 
 # ── _coerce_bool ──────────────────────────────────────────────────────────
 
-
 class TestCoerceBool:
+
     def _call(self, value, *, allow_none=False, name="x"):
         from mtdata.core.server import _coerce_bool
-
         return _coerce_bool(value, allow_none=allow_none, name=name)
 
     def test_true_passthrough(self):
@@ -293,11 +290,10 @@ class TestCoerceBool:
 
 # ── _coerce_int ───────────────────────────────────────────────────────────
 
-
 class TestCoerceInt:
+
     def _call(self, value, *, allow_none=False, name="x"):
         from mtdata.core.server import _coerce_int
-
         return _coerce_int(value, allow_none=allow_none, name=name)
 
     def test_int_passthrough(self):
@@ -358,11 +354,10 @@ class TestCoerceInt:
 
 # ── _coerce_float ─────────────────────────────────────────────────────────
 
-
 class TestCoerceFloat:
+
     def _call(self, value, *, allow_none=False, name="x"):
         from mtdata.core.server import _coerce_float
-
         return _coerce_float(value, allow_none=allow_none, name=name)
 
     def test_float_passthrough(self):
@@ -419,51 +414,44 @@ class TestCoerceFloat:
 
 # ── _coerce_kwargs_for_callable ───────────────────────────────────────────
 
-
 class TestCoerceKwargsForCallable:
+
     def _call(self, func, kwargs):
         from mtdata.core.server import _coerce_kwargs_for_callable
-
         return _coerce_kwargs_for_callable(func, kwargs)
 
     def test_coerces_bool_kwarg(self):
         def fn(flag: bool = False): ...
-
         kw = {"flag": "true"}
         self._call(fn, kw)
         assert kw["flag"] is True
 
     def test_coerces_int_kwarg(self):
         def fn(count: int = 0): ...
-
         kw = {"count": "42"}
         self._call(fn, kw)
         assert kw["count"] == 42
 
     def test_coerces_float_kwarg(self):
         def fn(rate: float = 0.0): ...
-
         kw = {"rate": "3.14"}
         self._call(fn, kw)
         assert kw["rate"] == 3.14
 
     def test_coerces_optional_int_kwarg(self):
         def fn(limit: Optional[int] = None): ...
-
         kw = {"limit": "none"}
         self._call(fn, kw)
         assert kw["limit"] is None
 
     def test_skips_missing_kwargs(self):
         def fn(a: int = 0, b: int = 0): ...
-
         kw = {"a": "5"}
         self._call(fn, kw)
         assert kw == {"a": 5}
 
     def test_skips_unannotated(self):
         def fn(x): ...
-
         kw = {"x": "hello"}
         self._call(fn, kw)
         assert kw["x"] == "hello"
@@ -520,9 +508,7 @@ class TestCoerceKwargsForCallable:
         params = _request_model_signature_fields(fn)
         indicators_param = next(param for param in params if param.name == "indicators")
 
-        value = TypeAdapter(indicators_param.annotation).validate_python(
-            "ema(20),rsi(14),macd(12,26,9)"
-        )
+        value = TypeAdapter(indicators_param.annotation).validate_python("ema(20),rsi(14),macd(12,26,9)")
         assert value == [
             {"name": "ema", "params": [20.0]},
             {"name": "rsi", "params": [14.0]},
@@ -537,31 +523,25 @@ class TestCoerceKwargsForCallable:
 
 # ── _get_runtime_signature / _get_runtime_annotations ─────────────────────
 
-
 class TestRuntimeHelpers:
+
     def test_get_runtime_signature_basic(self):
         from mtdata.core.server import _get_runtime_signature
-
         def fn(a: int, b: str = "x"): ...
-
         sig = _get_runtime_signature(fn)
         assert "a" in sig.parameters
         assert "b" in sig.parameters
 
     def test_get_runtime_annotations_basic(self):
         from mtdata.core.server import _get_runtime_annotations
-
         def fn(a: int, b: str = "x") -> bool: ...
-
         ann = _get_runtime_annotations(fn)
         assert ann.get("a") is int
         assert ann.get("return") is bool
 
     def test_get_runtime_annotations_no_annotations(self):
         from mtdata.core.server import _get_runtime_annotations
-
         def fn(): ...
-
         fn.__annotations__ = None  # type: ignore
         ann = _get_runtime_annotations(fn)
         assert ann == {} or ann is None or isinstance(ann, dict)
@@ -569,11 +549,10 @@ class TestRuntimeHelpers:
 
 # ── _resolve_transport ────────────────────────────────────────────────────
 
-
 class TestResolveTransport:
+
     def _call(self, default="sse"):
         from mtdata.core.server import _resolve_transport
-
         return _resolve_transport(default)
 
     def test_default_sse(self, monkeypatch):
@@ -629,12 +608,11 @@ class TestResolveTransport:
 
 # ── get_tool_registry / get_tool_functions ────────────────────────────────
 
-
 class TestToolRegistries:
+
     @patch("mtdata.core.server.bootstrap_tools")
     def test_get_tool_registry_returns_dict(self, mock_bootstrap):
         from mtdata.core.server import get_tool_registry
-
         result = get_tool_registry()
         assert isinstance(result, dict)
         mock_bootstrap.assert_called_once()
@@ -642,18 +620,12 @@ class TestToolRegistries:
     @patch("mtdata.core.server.bootstrap_tools")
     def test_get_tool_functions_returns_dict(self, mock_bootstrap):
         from mtdata.core.server import get_tool_functions
-
         result = get_tool_functions()
         assert isinstance(result, dict)
         mock_bootstrap.assert_called_once()
 
     def test_registries_are_copies(self):
-        from mtdata.core.server import (
-            get_tool_registry,
-            get_tool_functions,
-            _TOOL_REGISTRY,
-        )
-
+        from mtdata.core.server import get_tool_registry, get_tool_functions, _TOOL_REGISTRY
         r1 = get_tool_registry()
         r2 = get_tool_functions()
         # Mutating returned dict should not affect internal state
@@ -664,20 +636,16 @@ class TestToolRegistries:
 
 # ── _recording_tool_decorator ─────────────────────────────────────────────
 
-
 class TestRecordingToolDecorator:
+
     def test_noop_fallback_when_no_orig(self):
         from mtdata.core.server import _recording_tool_decorator, _TOOL_REGISTRY
         import mtdata.core.server as srv
-
         orig = srv._ORIG_TOOL_DECORATOR
         try:
             srv._ORIG_TOOL_DECORATOR = None
             dec = _recording_tool_decorator()
-
-            def dummy():
-                return 42
-
+            def dummy(): return 42
             result = dec(dummy)
             assert result is dummy
             assert "dummy" in _TOOL_REGISTRY
@@ -687,7 +655,6 @@ class TestRecordingToolDecorator:
     def test_wrapped_function_catches_exceptions(self):
         """Tool wrappers should catch exceptions and return error dicts."""
         from mtdata.core.server import _TOOL_REGISTRY
-
         # Find any registered tool and test __cli_raw exception handling
         for name, fn in _TOOL_REGISTRY.items():
             # The wrapper catches exceptions raised by the inner func
@@ -773,15 +740,12 @@ class TestRecordingToolDecorator:
                 return {"success": True}
 
             wrapped = dec(slow_tool)
-
             async def _raise_timeout(coro, timeout):
                 if hasattr(coro, "close"):
                     coro.close()
                 raise asyncio.TimeoutError
 
-            with patch(
-                "mtdata.core._mcp_tools.asyncio.wait_for", side_effect=_raise_timeout
-            ):
+            with patch("mtdata.core._mcp_tools.asyncio.wait_for", side_effect=_raise_timeout):
                 result = asyncio.run(wrapped())
 
             assert result["success"] is False
@@ -791,9 +755,7 @@ class TestRecordingToolDecorator:
         finally:
             srv._ORIG_TOOL_DECORATOR = original
 
-    def test_flattens_request_model_signature_for_mcp_and_keeps_nested_request_compat(
-        self,
-    ):
+    def test_flattens_request_model_signature_for_mcp_and_keeps_nested_request_compat(self):
         import mtdata.core.server as srv
         from mtdata.core.data_requests import WaitEventRequest
         from mtdata.core._mcp_tools import _TOOL_REGISTRY
@@ -846,20 +808,19 @@ class TestRecordingToolDecorator:
 
 # ── _disconnect_mt5 ──────────────────────────────────────────────────────
 
-
 class TestDisconnectMt5:
+
     @patch("mtdata.core.server.mt5_connection")
     def test_disconnect_called(self, mock_conn):
         from mtdata.core.server import _disconnect_mt5
-
         _disconnect_mt5()
         mock_conn.disconnect.assert_called_once()
 
 
 # ── main / main_stdio / main_sse ──────────────────────────────────────────
 
-
 class TestMainEntryPoints:
+
     @patch("mtdata.core.server.bootstrap_tools")
     @patch("mtdata.core.server.mcp")
     def test_main_invokes_run(self, mock_mcp, mock_bootstrap, monkeypatch):
@@ -875,28 +836,24 @@ class TestMainEntryPoints:
         mock_mcp.settings.message_path = "/message"
         mock_mcp.run = MagicMock()
         from mtdata.core.server import main
-
         main()
         mock_mcp.run.assert_called_once()
 
     @patch("mtdata.core.server.main")
     def test_main_stdio_forces_transport(self, mock_main, monkeypatch):
         from mtdata.core.server import main_stdio
-
         main_stdio()
         mock_main.assert_called_once_with(transport="stdio")
 
     @patch("mtdata.core.server.main")
     def test_main_sse_forces_transport(self, mock_main, monkeypatch):
         from mtdata.core.server import main_sse
-
         main_sse()
         mock_main.assert_called_once_with(transport="sse")
 
     @patch("mtdata.core.server.main")
     def test_main_streamable_http_forces_transport(self, mock_main, monkeypatch):
         from mtdata.core.server import main_streamable_http
-
         main_streamable_http()
         mock_main.assert_called_once_with(transport="streamable-http")
 
@@ -909,7 +866,6 @@ class TestMainEntryPoints:
         mock_mcp.settings = None
         mock_mcp.run = MagicMock()
         from mtdata.core.server import main
-
         main()
         mock_mcp.run.assert_called_once()
         mock_bootstrap.assert_called_once()
@@ -924,37 +880,31 @@ class TestMainEntryPoints:
         mock_mcp.settings = None
         mock_mcp.run = None
         from mtdata.core.server import main
-
         main()  # should not raise
         mock_bootstrap.assert_called_once()
 
 
 # ── mcp instance ──────────────────────────────────────────────────────────
 
-
 class TestMcpInstance:
+
     def test_mcp_exists(self):
         from mtdata.core.server import mcp
-
         assert mcp is not None
 
     def test_server_reexports_leaf_mcp_singleton(self):
         from mtdata.core._mcp_instance import mcp as leaf_mcp
         from mtdata.core.server import mcp as server_mcp
-
         assert server_mcp is leaf_mcp
 
     def test_mcp_has_tool_attr(self):
         from mtdata.core.server import mcp
-
         assert hasattr(mcp, "tool")
 
     def test_mcp_has_registry(self):
         from mtdata.core.server import mcp
-
         assert hasattr(mcp, "registry")
 
     def test_mcp_tools_is_dict(self):
         from mtdata.core.server import mcp
-
         assert isinstance(getattr(mcp, "tools", None), dict)

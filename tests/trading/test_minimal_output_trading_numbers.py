@@ -27,3 +27,4 @@ def test_trading_numbers_no_simplify_when_mixed_scales():
     fixed = format_result_minimal(rows, simplify_numbers=False)
     assert "1.37473" in fixed
     assert "0.15" in fixed
+

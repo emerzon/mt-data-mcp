@@ -1,4 +1,4 @@
-from typing import Callable, Literal
+from typing import Callable, Literal, Optional
 
 TransportName = Literal["stdio", "sse", "streamable-http"]
 
@@ -12,9 +12,7 @@ def run_transport_entrypoint(
     main_fn(transport=transport)
 
 
-def _make_transport_entrypoint(
-    transport: TransportName,
-) -> Callable[[Callable[..., None]], None]:
+def _make_transport_entrypoint(transport: TransportName) -> Callable[[Callable[..., None]], None]:
     def _entrypoint(main_fn: Callable[..., None]) -> None:
         run_transport_entrypoint(main_fn, transport=transport)
 

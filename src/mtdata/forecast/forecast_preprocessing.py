@@ -13,10 +13,7 @@ import math
 import numpy as np
 import pandas as pd
 
-from ..utils.denoise import (
-    _apply_denoise,
-    normalize_denoise_spec as _normalize_denoise_spec,
-)
+from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.indicators import (
     _apply_ta_indicators as _apply_ta_indicators_util,
     _parse_ti_specs as _parse_ti_specs_util,
@@ -43,7 +40,6 @@ _BASE_EXCLUDE_COLUMNS = {
 }
 _TECHNICAL_INDICATOR_WARNING_ATTR = "_mtdata_technical_indicator_warning"
 
-
 def _pd_freq_from_timeframe(tf: str) -> str:
     """Convert an MT5 timeframe to a pandas frequency string."""
     return _pd_freq_from_timeframe_common(tf)
@@ -55,9 +51,7 @@ def _safe_log_return_series(values: pd.Series) -> pd.Series:
     with np.errstate(divide="ignore", invalid="ignore"):
         ratio = numeric.where(numeric > 0.0) / prev.where(prev > 0.0)
         out = np.log(ratio)
-    return pd.Series(out, index=numeric.index, dtype=float).replace(
-        [np.inf, -np.inf], np.nan
-    )
+    return pd.Series(out, index=numeric.index, dtype=float).replace([np.inf, -np.inf], np.nan)
 
 
 def _create_dimred_reducer(method: Any, params: Optional[Dict[str, Any]]) -> Any:
@@ -77,9 +71,7 @@ def _create_dimred_reducer(method: Any, params: Optional[Dict[str, Any]]) -> Any
         except Exception as ex:
             raise RuntimeError(f"dimred dependencies missing: {ex}")
         n_components = p.get("n_components", 2)
-        return TSNE(n_components=n_components, random_state=42), {
-            "n_components": n_components
-        }
+        return TSNE(n_components=n_components, random_state=42), {"n_components": n_components}
     if m == "selectkbest":
         try:
             k = int(p.get("k", 5))
@@ -155,9 +147,7 @@ def _process_include_specification(df: pd.DataFrame, fcfg: Dict[str, Any]) -> Li
                 if col in df.columns:
                     include_cols.append(col)
         else:
-            toks = [
-                tok.strip() for tok in include.replace(",", " ").split() if tok.strip()
-            ]
+            toks = [tok.strip() for tok in include.replace(",", " ").split() if tok.strip()]
             for tok in toks:
                 if tok in df.columns and tok not in ("time", "close"):
                     include_cols.append(tok)
@@ -199,9 +189,7 @@ def _add_technical_indicators(
 
     df.attrs.pop(_TECHNICAL_INDICATOR_WARNING_ATTR, None)
     try:
-        specs = (
-            parse_ti_specs(str(ind_specs)) if isinstance(ind_specs, str) else ind_specs
-        )
+        specs = parse_ti_specs(str(ind_specs)) if isinstance(ind_specs, str) else ind_specs
         apply_ta_indicators(df, specs, default_when="pre_ti")
     except Exception as ex:
         df.attrs[_TECHNICAL_INDICATOR_WARNING_ATTR] = (
@@ -239,11 +227,7 @@ def _apply_features_and_target_spec(
                     ti_cols = apply_ta_indicators(df, ti_list, default_when="pre_ti")
                 except Exception:
                     ti_cols = []
-                if (
-                    target_spec
-                    and isinstance(target_spec, dict)
-                    and target_spec.get("column") in ti_cols
-                ):
+                if target_spec and isinstance(target_spec, dict) and target_spec.get("column") in ti_cols:
                     base_col = str(target_spec.get("column"))
 
     if target_spec and isinstance(target_spec, dict):
@@ -323,9 +307,7 @@ def _build_calendar_features(
 
     tokens: List[str] = []
     if isinstance(fut_cov, str):
-        tokens = [
-            tok.strip() for tok in fut_cov.replace(",", " ").split() if tok.strip()
-        ]
+        tokens = [tok.strip() for tok in fut_cov.replace(",", " ").split() if tok.strip()]
     elif isinstance(fut_cov, (list, tuple)):
         tokens = [str(tok).strip() for tok in fut_cov if str(tok).strip()]
     if not tokens:
@@ -338,16 +320,12 @@ def _build_calendar_features(
         nonlocal dt_train, dt_future
         if dt_train is None:
             try:
-                dt_train = pd.to_datetime(
-                    df["time"].astype(float).to_numpy(), unit="s", utc=True
-                )
+                dt_train = pd.to_datetime(df["time"].astype(float).to_numpy(), unit="s", utc=True)
             except Exception:
                 dt_train = pd.Index([])
         if dt_future is None:
             try:
-                dt_future = pd.to_datetime(
-                    np.asarray(future_times, dtype=float), unit="s", utc=True
-                )
+                dt_future = pd.to_datetime(np.asarray(future_times, dtype=float), unit="s", utc=True)
             except Exception:
                 dt_future = pd.Index([])
 
@@ -360,9 +338,7 @@ def _build_calendar_features(
     for tok in tokens:
         token = tok.lower()
         if token.startswith("fourier:"):
-            tr_feats, tf_feats, cols = _create_fourier_features(
-                token, t_train, t_future
-            )
+            tr_feats, tf_feats, cols = _create_fourier_features(token, t_train, t_future)
             tr_list.extend(tr_feats)
             tf_list.extend(tf_feats)
             cal_cols.extend(cols)
@@ -443,16 +419,8 @@ def _build_calendar_features(
                 years_tf = dt_future.year.unique()
                 all_years = np.unique(np.concatenate([years_tr, years_tf]))
                 hol_cal = holidays.CountryHoliday(country, years=all_years)
-                tr_list.append(
-                    np.array(
-                        [1.0 if d in hol_cal else 0.0 for d in dt_train], dtype=float
-                    )
-                )
-                tf_list.append(
-                    np.array(
-                        [1.0 if d in hol_cal else 0.0 for d in dt_future], dtype=float
-                    )
-                )
+                tr_list.append(np.array([1.0 if d in hol_cal else 0.0 for d in dt_train], dtype=float))
+                tf_list.append(np.array([1.0 if d in hol_cal else 0.0 for d in dt_future], dtype=float))
                 cal_cols.append("is_holiday")
             except Exception:
                 pass
@@ -503,16 +471,8 @@ def _build_feature_arrays(
     if not arrays_tr:
         return None, None
 
-    exog_used = (
-        np.column_stack(arrays_tr)
-        if len(arrays_tr) > 1
-        else arrays_tr[0].reshape(-1, 1)
-    )
-    exog_future = (
-        np.column_stack(arrays_tf)
-        if len(arrays_tf) > 1
-        else arrays_tf[0].reshape(-1, 1)
-    )
+    exog_used = np.column_stack(arrays_tr) if len(arrays_tr) > 1 else arrays_tr[0].reshape(-1, 1)
+    exog_future = np.column_stack(arrays_tf) if len(arrays_tf) > 1 else arrays_tf[0].reshape(-1, 1)
     return exog_used, exog_future
 
 
@@ -531,9 +491,7 @@ def _reduce_feature_frame(
     X_num = X_num.ffill().bfill()
     try:
         reducer, meta = reducer_factory(dimred_method, dimred_params)
-        arr = np.asarray(
-            reducer.fit_transform(X_num.to_numpy(dtype=float)), dtype=float
-        )
+        arr = np.asarray(reducer.fit_transform(X_num.to_numpy(dtype=float)), dtype=float)
     except Exception as exc:
         return X_num, {"dimred_error": str(exc)}
 
@@ -599,9 +557,7 @@ def prepare_features(
     indicator_warning = df.attrs.pop(_TECHNICAL_INDICATOR_WARNING_ATTR, None)
     if indicator_warning:
         feat_info.setdefault("warnings", []).append(str(indicator_warning))
-    cal_train_df, cal_future, cal_cols = _build_calendar_features(
-        df, fcfg, future_times
-    )
+    cal_train_df, cal_future, cal_cols = _build_calendar_features(df, fcfg, future_times)
 
     train_index = training_index if training_index is not None else df.index
     selected_cols = list(dict.fromkeys(include_cols + ti_cols))
@@ -643,9 +599,7 @@ def prepare_features(
                 exog_future_arr = np.hstack([exog_future_arr, cal_future])
 
     feat_info["selected_columns"] = selected_feature_names + cal_cols
-    feat_info["n_features"] = (
-        int(exog_train_arr.shape[1]) if exog_train_arr is not None else 0
-    )
+    feat_info["n_features"] = int(exog_train_arr.shape[1]) if exog_train_arr is not None else 0
     return exog_train_arr, exog_future_arr, feat_info
 
 
@@ -664,11 +618,7 @@ def apply_preprocessing(
         except Exception:
             denoise_spec = None
         try:
-            added = (
-                _apply_denoise(df, denoise_spec, default_when="pre_ti")
-                if denoise_spec
-                else []
-            )
+            added = _apply_denoise(df, denoise_spec, default_when="pre_ti") if denoise_spec else []
         except Exception:
             added = []
         if f"{base_col}_dn" in added:

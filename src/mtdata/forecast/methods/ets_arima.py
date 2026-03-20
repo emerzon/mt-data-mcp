@@ -9,47 +9,36 @@ from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 
 try:
-    from statsmodels.tsa.holtwinters import (
-        SimpleExpSmoothing as _SES,
-        ExponentialSmoothing as _ETS,
-    )  # type: ignore
-
+    from statsmodels.tsa.holtwinters import SimpleExpSmoothing as _SES, ExponentialSmoothing as _ETS  # type: ignore
     _SM_ETS_AVAILABLE = True
 except Exception:
     _SM_ETS_AVAILABLE = False
 
 try:
     from statsmodels.tsa.statespace.sarimax import SARIMAX as _SARIMAX  # type: ignore
-
     _SM_SARIMAX_AVAILABLE = True
 except Exception:
     _SM_SARIMAX_AVAILABLE = False
 
-
 class ETSArimaMethod(ForecastMethod):
     """Base class for ETS and ARIMA methods."""
-
+    
     @property
     def category(self) -> str:
         return "ets_arima"
-
+        
     @property
     def required_packages(self) -> List[str]:
         return ["statsmodels"]
-
+        
     @property
     def supports_features(self) -> Dict[str, bool]:
         return {"price": True, "return": True, "volatility": True, "ci": True}
 
-
 @ForecastRegistry.register("ses")
 class SESMethod(ETSArimaMethod):
     PARAMS: List[Dict[str, Any]] = [
-        {
-            "name": "alpha",
-            "type": "float|null",
-            "description": "Smoothing level (auto if omitted).",
-        },
+        {"name": "alpha", "type": "float|null", "description": "Smoothing level (auto if omitted)."},
     ]
 
     @property
@@ -57,61 +46,46 @@ class SESMethod(ETSArimaMethod):
         return "ses"
 
     def forecast(
-        self,
-        series: pd.Series,
-        horizon: int,
-        seasonality: int,
-        params: Dict[str, Any],
+        self, 
+        series: pd.Series, 
+        horizon: int, 
+        seasonality: int, 
+        params: Dict[str, Any], 
         exog_future: Optional[pd.DataFrame] = None,
-        **kwargs,
+        **kwargs
     ) -> ForecastResult:
         if not _SM_ETS_AVAILABLE:
             raise RuntimeError("SES requires statsmodels")
 
         vals = series.values
-        alpha = params.get("alpha")
-
+        alpha = params.get('alpha')
+        
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             if alpha is None:
-                res = _SES(vals, initialization_method="heuristic").fit(optimized=True)
+                res = _SES(vals, initialization_method='heuristic').fit(optimized=True)
             else:
-                res = _SES(vals, initialization_method="heuristic").fit(
-                    smoothing_level=float(alpha), optimized=False
-                )
-
+                res = _SES(vals, initialization_method='heuristic').fit(smoothing_level=float(alpha), optimized=False)
+                
         f_vals = np.asarray(res.forecast(int(horizon)), dtype=float)
-
+        
         # Recover effective alpha
         alpha_used = alpha
         try:
-            par = getattr(res, "params", None)
-            if par is not None and hasattr(par, "get"):
-                alpha_used = par.get("smoothing_level", alpha)
+            par = getattr(res, 'params', None)
+            if par is not None and hasattr(par, 'get'):
+                alpha_used = par.get('smoothing_level', alpha)
         except Exception:
             pass
-
+            
         return ForecastResult(forecast=f_vals, params_used={"alpha": alpha_used})
-
 
 @ForecastRegistry.register("holt")
 class HoltMethod(ETSArimaMethod):
     PARAMS: List[Dict[str, Any]] = [
-        {
-            "name": "alpha",
-            "type": "float|null",
-            "description": "Level smoothing (auto if omitted).",
-        },
-        {
-            "name": "beta",
-            "type": "float|null",
-            "description": "Trend smoothing (auto if omitted).",
-        },
-        {
-            "name": "damped",
-            "type": "bool",
-            "description": "Use damped trend (default: False).",
-        },
+        {"name": "alpha", "type": "float|null", "description": "Level smoothing (auto if omitted)."},
+        {"name": "beta", "type": "float|null", "description": "Trend smoothing (auto if omitted)."},
+        {"name": "damped", "type": "bool", "description": "Use damped trend (default: False)."},
     ]
 
     @property
@@ -119,30 +93,25 @@ class HoltMethod(ETSArimaMethod):
         return "holt"
 
     def forecast(
-        self,
-        series: pd.Series,
-        horizon: int,
-        seasonality: int,
-        params: Dict[str, Any],
+        self, 
+        series: pd.Series, 
+        horizon: int, 
+        seasonality: int, 
+        params: Dict[str, Any], 
         exog_future: Optional[pd.DataFrame] = None,
-        **kwargs,
+        **kwargs
     ) -> ForecastResult:
         if not _SM_ETS_AVAILABLE:
             raise RuntimeError("Holt requires statsmodels")
 
         vals = series.values
-        damped = bool(params.get("damped", False))
-        alpha = params.get("alpha")
-        beta = params.get("beta")
-
+        damped = bool(params.get('damped', False))
+        alpha = params.get('alpha')
+        beta = params.get('beta')
+        
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            model = _ETS(
-                vals,
-                trend="add",
-                damped_trend=damped,
-                initialization_method="heuristic",
-            )
+            model = _ETS(vals, trend='add', damped_trend=damped, initialization_method='heuristic')
             use_manual = alpha is not None or beta is not None
             if use_manual:
                 res = model.fit(
@@ -152,7 +121,7 @@ class HoltMethod(ETSArimaMethod):
                 )
             else:
                 res = model.fit(optimized=True)
-
+            
         f_vals = np.asarray(res.forecast(int(horizon)), dtype=float)
         params_used = {"damped": damped}
         if alpha is not None:
@@ -161,31 +130,14 @@ class HoltMethod(ETSArimaMethod):
             params_used["beta"] = float(beta)
         return ForecastResult(forecast=f_vals, params_used=params_used)
 
-
 @ForecastRegistry.register("holt_winters_add")
 class HoltWintersAddMethod(ETSArimaMethod):
     PARAMS: List[Dict[str, Any]] = [
         {"name": "seasonality", "type": "int", "description": "Seasonal period (m)."},
-        {
-            "name": "alpha",
-            "type": "float|null",
-            "description": "Level smoothing (auto if omitted).",
-        },
-        {
-            "name": "beta",
-            "type": "float|null",
-            "description": "Trend smoothing (auto if omitted).",
-        },
-        {
-            "name": "gamma",
-            "type": "float|null",
-            "description": "Seasonal smoothing (auto if omitted).",
-        },
-        {
-            "name": "damped",
-            "type": "bool",
-            "description": "Use damped trend (default: False).",
-        },
+        {"name": "alpha", "type": "float|null", "description": "Level smoothing (auto if omitted)."},
+        {"name": "beta", "type": "float|null", "description": "Trend smoothing (auto if omitted)."},
+        {"name": "gamma", "type": "float|null", "description": "Seasonal smoothing (auto if omitted)."},
+        {"name": "damped", "type": "bool", "description": "Use damped trend (default: False)."},
     ]
 
     @property
@@ -193,15 +145,15 @@ class HoltWintersAddMethod(ETSArimaMethod):
         return "holt_winters_add"
 
     def forecast(
-        self,
-        series: pd.Series,
-        horizon: int,
-        seasonality: int,
-        params: Dict[str, Any],
+        self, 
+        series: pd.Series, 
+        horizon: int, 
+        seasonality: int, 
+        params: Dict[str, Any], 
         exog_future: Optional[pd.DataFrame] = None,
-        **kwargs,
+        **kwargs
     ) -> ForecastResult:
-        return self._forecast_hw(series, horizon, seasonality, params, "add")
+        return self._forecast_hw(series, horizon, seasonality, params, 'add')
 
     def _forecast_hw(self, series, horizon, seasonality, params, seasonal_type):
         if not _SM_ETS_AVAILABLE:
@@ -210,23 +162,16 @@ class HoltWintersAddMethod(ETSArimaMethod):
         m = int(seasonality)
         if m <= 0:
             raise ValueError("Holt-Winters requires positive seasonality")
-
+            
         vals = series.values
-        damped = bool(params.get("damped", False))
-        alpha = params.get("alpha")
-        beta = params.get("beta")
-        gamma = params.get("gamma")
-
+        damped = bool(params.get('damped', False))
+        alpha = params.get('alpha')
+        beta = params.get('beta')
+        gamma = params.get('gamma')
+        
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            model = _ETS(
-                vals,
-                trend="add",
-                seasonal=seasonal_type,
-                seasonal_periods=m,
-                damped_trend=damped,
-                initialization_method="heuristic",
-            )
+            model = _ETS(vals, trend='add', seasonal=seasonal_type, seasonal_periods=m, damped_trend=damped, initialization_method='heuristic')
             use_manual = alpha is not None or beta is not None or gamma is not None
             if use_manual:
                 res = model.fit(
@@ -237,7 +182,7 @@ class HoltWintersAddMethod(ETSArimaMethod):
                 )
             else:
                 res = model.fit(optimized=True)
-
+            
         f_vals = np.asarray(res.forecast(int(horizon)), dtype=float)
         params_used = {"seasonal": seasonal_type, "m": m, "damped": damped}
         if alpha is not None:
@@ -248,7 +193,6 @@ class HoltWintersAddMethod(ETSArimaMethod):
             params_used["gamma"] = float(gamma)
         return ForecastResult(forecast=f_vals, params_used=params_used)
 
-
 @ForecastRegistry.register("holt_winters_mul")
 class HoltWintersMulMethod(HoltWintersAddMethod):
     PARAMS: List[Dict[str, Any]] = HoltWintersAddMethod.PARAMS
@@ -258,15 +202,15 @@ class HoltWintersMulMethod(HoltWintersAddMethod):
         return "holt_winters_mul"
 
     def forecast(
-        self,
-        series: pd.Series,
-        horizon: int,
-        seasonality: int,
-        params: Dict[str, Any],
+        self, 
+        series: pd.Series, 
+        horizon: int, 
+        seasonality: int, 
+        params: Dict[str, Any], 
         exog_future: Optional[pd.DataFrame] = None,
-        **kwargs,
+        **kwargs
     ) -> ForecastResult:
-        return self._forecast_hw(series, horizon, seasonality, params, "mul")
+        return self._forecast_hw(series, horizon, seasonality, params, 'mul')
 
 
 @ForecastRegistry.register("ets")
@@ -275,36 +219,16 @@ class ETSMethod(ETSArimaMethod):
 
     PARAMS: List[Dict[str, Any]] = [
         {"name": "seasonality", "type": "int", "description": "Seasonal period (m)."},
-        {
-            "name": "trend",
-            "type": "str|null",
-            "description": "Trend: add|mul|null (default: add).",
-        },
+        {"name": "trend", "type": "str|null", "description": "Trend: add|mul|null (default: add)."},
         {
             "name": "seasonal",
             "type": "str|null",
             "description": "Seasonal: add|mul|null|auto (default: auto).",
         },
-        {
-            "name": "damped",
-            "type": "bool",
-            "description": "Use damped trend (default: False).",
-        },
-        {
-            "name": "alpha",
-            "type": "float|null",
-            "description": "Level smoothing (auto if omitted).",
-        },
-        {
-            "name": "beta",
-            "type": "float|null",
-            "description": "Trend smoothing (auto if omitted).",
-        },
-        {
-            "name": "gamma",
-            "type": "float|null",
-            "description": "Seasonal smoothing (auto if omitted).",
-        },
+        {"name": "damped", "type": "bool", "description": "Use damped trend (default: False)."},
+        {"name": "alpha", "type": "float|null", "description": "Level smoothing (auto if omitted)."},
+        {"name": "beta", "type": "float|null", "description": "Trend smoothing (auto if omitted)."},
+        {"name": "gamma", "type": "float|null", "description": "Seasonal smoothing (auto if omitted)."},
     ]
 
     @property
@@ -335,7 +259,7 @@ class ETSMethod(ETSArimaMethod):
         seasonality: int,
         params: Dict[str, Any],
         exog_future: Optional[pd.DataFrame] = None,
-        **kwargs,
+        **kwargs
     ) -> ForecastResult:
         if not _SM_ETS_AVAILABLE:
             raise RuntimeError("ETS requires statsmodels")
@@ -344,9 +268,7 @@ class ETSMethod(ETSArimaMethod):
         m = int(seasonality or 0)
 
         trend = self._norm_component(params.get("trend", "add"))
-        seasonal_raw = self._norm_component(
-            params.get("seasonal", "auto"), allow_auto=True
-        )
+        seasonal_raw = self._norm_component(params.get("seasonal", "auto"), allow_auto=True)
         if seasonal_raw == "auto":
             seasonal = "add" if m >= 2 else None
         else:
@@ -436,82 +358,70 @@ class ARIMAMethod(ETSArimaMethod):
     @property
     def name(self) -> str:
         return "arima"
-
+        
     @property
     def category(self) -> str:
         return "arima"
 
     def forecast(
-        self,
-        series: pd.Series,
-        horizon: int,
-        seasonality: int,
-        params: Dict[str, Any],
+        self, 
+        series: pd.Series, 
+        horizon: int, 
+        seasonality: int, 
+        params: Dict[str, Any], 
         exog_future: Optional[pd.DataFrame] = None,
-        **kwargs,
+        **kwargs
     ) -> ForecastResult:
-        return self._forecast_sarimax(
-            series,
-            horizon,
-            seasonality,
-            params,
-            seasonal=False,
-            exog_future=exog_future,
-            **kwargs,
-        )
+        return self._forecast_sarimax(series, horizon, seasonality, params, seasonal=False, exog_future=exog_future, **kwargs)
 
-    def _forecast_sarimax(
-        self, series, horizon, seasonality, params, seasonal, exog_future=None, **kwargs
-    ):
+    def _forecast_sarimax(self, series, horizon, seasonality, params, seasonal, exog_future=None, **kwargs):
         if not _SM_SARIMAX_AVAILABLE:
             raise RuntimeError("SARIMAX requires statsmodels")
 
         vals = series.values.astype(float)
-        if params.get("order") is not None:
-            order = params.get("order")
+        if params.get('order') is not None:
+            order = params.get('order')
         else:
-            p = int(params.get("p", 1))
-            d = int(params.get("d", 1))
-            q = int(params.get("q", 1))
+            p = int(params.get('p', 1))
+            d = int(params.get('d', 1))
+            q = int(params.get('q', 1))
             order = (p, d, q)
 
-        if params.get("seasonal_order") is not None:
-            seasonal_order = tuple(int(v) for v in params.get("seasonal_order"))
+        if params.get('seasonal_order') is not None:
+            seasonal_order = tuple(int(v) for v in params.get('seasonal_order'))
         else:
-            P = int(params.get("P", 0))
-            D = int(params.get("D", 0))
-            Q = int(params.get("Q", 0))
+            P = int(params.get('P', 0))
+            D = int(params.get('D', 0))
+            Q = int(params.get('Q', 0))
             seasonal_order = (P, D, Q, int(seasonality or 0))
             if seasonal and seasonality > 1 and P == 0 and D == 0 and Q == 0:
                 seasonal_order = (0, 1, 1, int(seasonality))
         if seasonal and seasonality > 1 and seasonal_order == (0, 0, 0, 0):
             seasonal_order = (0, 1, 1, int(seasonality))
-
-        trend = params.get("trend", "c")
-        ci_alpha = kwargs.get("ci_alpha", params.get("alpha", 0.05))
-
-        exog_used = kwargs.get("exog_used")
+             
+        trend = params.get('trend', 'c')
+        ci_alpha = kwargs.get('ci_alpha', params.get('alpha', 0.05))
+        
+        exog_used = kwargs.get('exog_used')
         if exog_used is None:
-            exog_used = params.get("exog_used")
-        exog_future_arr = kwargs.get(
-            "exog_future"
-        )  # This might come from kwargs or explicit arg
+            exog_used = params.get('exog_used')
+        exog_future_arr = kwargs.get('exog_future')  # This might come from kwargs or explicit arg
         if exog_future_arr is None:
-            exog_future_arr = params.get("exog_future")
-
+            exog_future_arr = params.get('exog_future')
+        
         # If exog_future was passed as explicit arg, use it (it might be DataFrame)
         # The interface defines exog_future as Optional[pd.DataFrame]
         # But legacy wrapper passes numpy array.
         # We need to handle both.
-
+        
         exog_u = exog_used
         exog_f = exog_future_arr if exog_future_arr is not None else exog_future
-
+        
         if isinstance(exog_u, pd.DataFrame):
             exog_u = exog_u.values
         if isinstance(exog_f, pd.DataFrame):
             exog_f = exog_f.values
-
+            
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             model = _SARIMAX(
@@ -521,18 +431,18 @@ class ARIMAMethod(ETSArimaMethod):
                 trend=str(trend),
                 enforce_stationarity=True,
                 enforce_invertibility=True,
-                exog=exog_u,
+                exog=exog_u
             )
-            res = model.fit(method="lbfgs", disp=False, maxiter=100)
-
+            res = model.fit(method='lbfgs', disp=False, maxiter=100)
+            
             if exog_f is not None:
                 pred = res.get_forecast(steps=int(horizon), exog=exog_f)
             else:
                 pred = res.get_forecast(steps=int(horizon))
-
+                
         pm = pred.predicted_mean
         f_vals = np.asarray(pm, dtype=float)
-
+        
         ci = None
         metadata: Optional[Dict[str, Any]] = None
         try:
@@ -543,38 +453,23 @@ class ARIMAMethod(ETSArimaMethod):
                 ci = (ci_arr[:, 0], ci_arr[:, 1])
         except Exception as ex:
             metadata = {"ci_warning": f"Failed to compute confidence intervals: {ex}"}
-
-        params_used = {
-            "order": tuple(order),
-            "seasonal_order": tuple(seasonal_order),
-            "trend": str(trend),
-        }
+            
+        params_used = {"order": tuple(order), "seasonal_order": tuple(seasonal_order), "trend": str(trend)}
         if exog_u is not None:
             params_used["exog"] = {"n_features": int(exog_u.shape[1])}
-
-        return ForecastResult(
-            forecast=f_vals, ci_values=ci, params_used=params_used, metadata=metadata
-        )
-
+            
+        return ForecastResult(forecast=f_vals, ci_values=ci, params_used=params_used, metadata=metadata)
 
 @ForecastRegistry.register("sarima")
 class SARIMAMethod(ARIMAMethod):
     PARAMS: List[Dict[str, Any]] = [
         {"name": "order", "type": "tuple", "description": "(p,d,q) order (optional)."},
-        {
-            "name": "seasonal_order",
-            "type": "tuple",
-            "description": "(P,D,Q,m) order (optional).",
-        },
+        {"name": "seasonal_order", "type": "tuple", "description": "(P,D,Q,m) order (optional)."},
         {"name": "p", "type": "int", "description": "AR order (default: 1)."},
         {"name": "d", "type": "int", "description": "Differencing order (default: 1)."},
         {"name": "q", "type": "int", "description": "MA order (default: 1)."},
         {"name": "P", "type": "int", "description": "Seasonal AR order (default: 0)."},
-        {
-            "name": "D",
-            "type": "int",
-            "description": "Seasonal differencing order (default: 0).",
-        },
+        {"name": "D", "type": "int", "description": "Seasonal differencing order (default: 0)."},
         {"name": "Q", "type": "int", "description": "Seasonal MA order (default: 0)."},
         {"name": "seasonality", "type": "int", "description": "Seasonal period (m)."},
         {"name": "trend", "type": "str", "description": "Trend spec (default: c)."},
@@ -586,83 +481,62 @@ class SARIMAMethod(ARIMAMethod):
         return "sarima"
 
     def forecast(
-        self,
-        series: pd.Series,
-        horizon: int,
-        seasonality: int,
-        params: Dict[str, Any],
+        self, 
+        series: pd.Series, 
+        horizon: int, 
+        seasonality: int, 
+        params: Dict[str, Any], 
         exog_future: Optional[pd.DataFrame] = None,
-        **kwargs,
+        **kwargs
     ) -> ForecastResult:
-        return self._forecast_sarimax(
-            series,
-            horizon,
-            seasonality,
-            params,
-            seasonal=True,
-            exog_future=exog_future,
-            **kwargs,
-        )
+        return self._forecast_sarimax(series, horizon, seasonality, params, seasonal=True, exog_future=exog_future, **kwargs)
 
 
 # Backward compatibility wrappers
-def forecast_ses(
-    series: np.ndarray, fh: int, alpha: Optional[float] = None
-) -> Tuple[np.ndarray, Dict[str, Any], Optional[np.ndarray]]:
-    res = ForecastRegistry.get("ses").forecast(
-        pd.Series(series), fh, 0, {"alpha": alpha}
-    )
+def forecast_ses(series: np.ndarray, fh: int, alpha: Optional[float] = None) -> Tuple[np.ndarray, Dict[str, Any], Optional[np.ndarray]]:
+    res = ForecastRegistry.get("ses").forecast(pd.Series(series), fh, 0, {"alpha": alpha})
     # Note: original returned fitted values as 3rd element. New interface doesn't strictly require it but we can add to metadata if needed.
     # For now, returning None for fitted to match signature
     return res.forecast, res.params_used, None
 
-
-def forecast_holt(
-    series: np.ndarray, fh: int, damped: bool = True
-) -> Tuple[np.ndarray, Dict[str, Any], Optional[np.ndarray]]:
-    res = ForecastRegistry.get("holt").forecast(
-        pd.Series(series), fh, 0, {"damped": damped}
-    )
+def forecast_holt(series: np.ndarray, fh: int, damped: bool = True) -> Tuple[np.ndarray, Dict[str, Any], Optional[np.ndarray]]:
+    res = ForecastRegistry.get("holt").forecast(pd.Series(series), fh, 0, {"damped": damped})
     return res.forecast, res.params_used, None
 
-
-def forecast_holt_winters(
-    series: np.ndarray, fh: int, m: int, seasonal: str = "add"
-) -> Tuple[np.ndarray, Dict[str, Any], Optional[np.ndarray]]:
-    method_name = "holt_winters_add" if seasonal == "add" else "holt_winters_mul"
-    res = ForecastRegistry.get(method_name).forecast(
-        pd.Series(series), fh, m, {"damped": False}
-    )  # Original wrapper didn't expose damped param?
+def forecast_holt_winters(series: np.ndarray, fh: int, m: int, seasonal: str = 'add') -> Tuple[np.ndarray, Dict[str, Any], Optional[np.ndarray]]:
+    method_name = "holt_winters_add" if seasonal == 'add' else "holt_winters_mul"
+    res = ForecastRegistry.get(method_name).forecast(pd.Series(series), fh, m, {"damped": False}) # Original wrapper didn't expose damped param?
     return res.forecast, res.params_used, None
-
 
 def forecast_sarimax(
     series: np.ndarray,
     fh: int,
     order: Tuple[int, int, int],
     seasonal_order: Tuple[int, int, int, int] = (0, 0, 0, 0),
-    trend: str = "c",
+    trend: str = 'c',
     exog_used: Optional[np.ndarray] = None,
     exog_future: Optional[np.ndarray] = None,
     ci_alpha: Optional[float] = 0.05,
 ) -> Tuple[np.ndarray, Dict[str, Any], Optional[Tuple[np.ndarray, np.ndarray]]]:
+    
     # Determine if it's ARIMA or SARIMA based on seasonal_order
     method_name = "sarima" if sum(seasonal_order) > 0 else "arima"
-
+    
     params = {
         "order": order,
         "seasonal_order": seasonal_order,
         "trend": trend,
-        "alpha": ci_alpha,
+        "alpha": ci_alpha
     }
-
+    
     res = ForecastRegistry.get(method_name).forecast(
-        pd.Series(series),
-        fh,
-        seasonal_order[3] if len(seasonal_order) > 3 else 0,
-        params,
-        exog_used=exog_used,
-        exog_future=exog_future,
+        pd.Series(series), 
+        fh, 
+        seasonal_order[3] if len(seasonal_order) > 3 else 0, 
+        params, 
+        exog_used=exog_used, 
+        exog_future=exog_future
     )
-
+    
     return res.forecast, res.params_used, res.ci_values
+

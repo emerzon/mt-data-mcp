@@ -3,20 +3,19 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List
 from ..common import PatternResultBase
 
-
 @dataclass
 class ClassicDetectorConfig:
     # General
     max_bars: int = 1500
     min_input_bars: int = 100
-    scan_historical: bool = False  # run prefix scan to find older right-edge patterns
-    scan_step_bars: int = 10  # prefix step when historical scan is enabled
-    scan_min_prefix_bars: int = 120  # minimum prefix size used for historical scans
+    scan_historical: bool = False   # run prefix scan to find older right-edge patterns
+    scan_step_bars: int = 10        # prefix step when historical scan is enabled
+    scan_min_prefix_bars: int = 120 # minimum prefix size used for historical scans
     scan_dedupe_overlap: float = 0.8  # overlap ratio used to merge repeated prefix hits
     # Pivot/zigzag parameters
     min_prominence_pct: float = 0.5  # peak/trough prominence in percent of price
-    min_distance: int = 5  # minimum distance between pivots (bars)
-    pivot_use_hl: bool = True  # use high/low (when available) for pivot extraction
+    min_distance: int = 5            # minimum distance between pivots (bars)
+    pivot_use_hl: bool = True        # use high/low (when available) for pivot extraction
     pivot_use_atr_adaptive_prominence: bool = True
     pivot_use_atr_adaptive_distance: bool = True
     pivot_atr_period: int = 14
@@ -28,32 +27,20 @@ class ClassicDetectorConfig:
     pivot_fallback_min_peaks: int = 2
     pivot_fallback_min_troughs: int = 2
     # Trendline/line-fit
-    max_flat_slope: float = (
-        1e-4  # absolute slope to consider line flat (price units per bar)
-    )
-    min_r2: float = 0.6  # minimum R^2 for line fit confidence
-    max_pattern_pivots: int = 8  # max recent pivots used by line-based detectors
-    min_confidence: float = (
-        0.30  # global post-calibration floor for emitted classic patterns
-    )
-    head_shoulders_max_peak_candidates: int = (
-        0  # 0 => derive from max_pattern_pivots * 2
-    )
+    max_flat_slope: float = 1e-4     # absolute slope to consider line flat (price units per bar)
+    min_r2: float = 0.6              # minimum R^2 for line fit confidence
+    max_pattern_pivots: int = 8      # max recent pivots used by line-based detectors
+    min_confidence: float = 0.30     # global post-calibration floor for emitted classic patterns
+    head_shoulders_max_peak_candidates: int = 0  # 0 => derive from max_pattern_pivots * 2
     # Levels tolerance (same-level checks)
-    same_level_tol_pct: float = (
-        0.4  # peaks/lows considered equal if within this percent
-    )
+    same_level_tol_pct: float = 0.4  # peaks/lows considered equal if within this percent
     # Pattern-specific
-    min_touches: int = 2  # minimum touches to validate support/resistance boundary
-    min_channel_touches: int = 4  # across both bounds
-    max_consolidation_bars: int = 60  # for flags/pennants after pole
-    min_pole_return_pct: float = (
-        2.0  # minimum pole size (percent) before a flag/pennant
-    )
-    min_pole_slope_pct_per_bar: float = (
-        0.15  # minimum pole steepness to reject slow drifts
-    )
-    breakout_lookahead: int = 8  # bars to consider breakout confirmation
+    min_touches: int = 2             # minimum touches to validate support/resistance boundary
+    min_channel_touches: int = 4     # across both bounds
+    max_consolidation_bars: int = 60 # for flags/pennants after pole
+    min_pole_return_pct: float = 2.0 # minimum pole size (percent) before a flag/pennant
+    min_pole_slope_pct_per_bar: float = 0.15  # minimum pole steepness to reject slow drifts
+    breakout_lookahead: int = 8      # bars to consider breakout confirmation
     cup_handle_min_window_bars: int = 120
     cup_handle_max_window_bars: int = 300
     cup_handle_min_depth_pct: float = 2.0
@@ -74,27 +61,13 @@ class ClassicDetectorConfig:
     diamond_split_min_frac: float = 0.25
     diamond_split_max_frac: float = 0.75
     diamond_prior_pole_return_pct: float = 2.0
-    convergence_fallback_scale: float = (
-        1.2  # fallback widening factor when no past window exists
-    )
-    channel_parallel_slope_ratio: float = (
-        0.15  # relative slope spread tolerated for channels
-    )
-    channel_parallel_min_abs_tol: float = (
-        1e-4  # absolute floor for near-horizontal channel slope spread
-    )
-    channel_max_width_expansion_ratio: float = (
-        0.05  # tolerated channel-width widening over the recent window
-    )
-    pennant_parallel_slope_ratio: float = (
-        0.2  # relative slope spread tolerated for flags/pennants
-    )
-    pennant_min_convergence_ratio: float = (
-        0.05  # minimum width contraction required to classify as pennant
-    )
-    flag_max_with_trend_slope_ratio: float = (
-        0.15  # tolerated consolidation drift in the pole direction
-    )
+    convergence_fallback_scale: float = 1.2  # fallback widening factor when no past window exists
+    channel_parallel_slope_ratio: float = 0.15  # relative slope spread tolerated for channels
+    channel_parallel_min_abs_tol: float = 1e-4  # absolute floor for near-horizontal channel slope spread
+    channel_max_width_expansion_ratio: float = 0.05  # tolerated channel-width widening over the recent window
+    pennant_parallel_slope_ratio: float = 0.2  # relative slope spread tolerated for flags/pennants
+    pennant_min_convergence_ratio: float = 0.05  # minimum width contraction required to classify as pennant
+    flag_max_with_trend_slope_ratio: float = 0.15  # tolerated consolidation drift in the pole direction
     rounding_window_bars: int = 220
     rounding_window_sizes: List[int] = field(default_factory=list)
     breakout_confidence_bonus: float = 0.08
@@ -104,15 +77,13 @@ class ClassicDetectorConfig:
     r2_weight: float = 0.35
     geometry_weight: float = 0.30
     # Robust fitting and shape checks
-    use_robust_fit: bool = True  # use RANSAC for line fits when available
-    ransac_residual_pct: float = (
-        0.15  # residual threshold as fraction of baseline residual scale
-    )
+    use_robust_fit: bool = True     # use RANSAC for line fits when available
+    ransac_residual_pct: float = 0.15  # residual threshold as fraction of baseline residual scale
     ransac_min_samples: int = 2
     ransac_max_trials: int = 50
-    use_dtw_check: bool = True  # optional DTW shape confirmation for select patterns
-    dtw_paa_len: int = 80  # PAA downsampling length for DTW
-    dtw_max_dist: float = 0.6  # acceptance threshold after z-norm
+    use_dtw_check: bool = True      # optional DTW shape confirmation for select patterns
+    dtw_paa_len: int = 80            # PAA downsampling length for DTW
+    dtw_max_dist: float = 0.6        # acceptance threshold after z-norm
     # Volume confirmation
     use_volume_confirmation: bool = True
     volume_confirm_lookback_bars: int = 20
@@ -128,16 +99,10 @@ class ClassicDetectorConfig:
     regime_alignment_bonus: float = 0.05
     regime_countertrend_penalty: float = 0.05
     # Output/completion controls
-    include_aliases: bool = (
-        False  # include generic aliases like "Trend Line"/"Trend Channel"
-    )
-    completion_confirm_bars: int = (
-        2  # touches needed near the right edge to mark completed
-    )
+    include_aliases: bool = False    # include generic aliases like "Trend Line"/"Trend Channel"
+    completion_confirm_bars: int = 2 # touches needed near the right edge to mark completed
     completion_lookback_bars: int = 5  # lookback window for completion confirmation
-    auto_complete_stale_forming: bool = (
-        False  # backward-compat aging of old forming patterns
-    )
+    auto_complete_stale_forming: bool = False  # backward-compat aging of old forming patterns
     stale_completion_recent_bars: int = 3
     include_lifecycle_metadata: bool = True
     # Optional confidence calibration map:

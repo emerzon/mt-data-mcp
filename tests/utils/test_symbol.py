@@ -1,5 +1,4 @@
 """Tests for src/mtdata/utils/symbol.py"""
-
 from types import SimpleNamespace
 from mtdata.utils.symbol import _extract_group_path
 
@@ -34,9 +33,7 @@ class TestExtractGroupPath:
         assert _extract_group_path(sym) == "Unknown"
 
     def test_strips_symbol_suffix_variant_from_path(self):
-        sym = SimpleNamespace(
-            path="Stock CFD's\\NYSE\\24HR NYSE\\WMT.NYSE-24", name="WMT"
-        )
+        sym = SimpleNamespace(path="Stock CFD's\\NYSE\\24HR NYSE\\WMT.NYSE-24", name="WMT")
         assert _extract_group_path(sym) == "Stock CFD's\\NYSE\\24HR NYSE"
 
     def test_missing_attributes(self):

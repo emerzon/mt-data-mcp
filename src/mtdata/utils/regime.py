@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Regime and change-point utilities.
 
 Includes a lightweight Bayesian Online Change-Point Detection (BOCPD)
@@ -8,16 +10,12 @@ This file is self-contained (NumPy-only) and suitable for streaming or
 offline runs over a few thousand observations.
 """
 
-from __future__ import annotations
-
 from typing import Dict
 import numpy as np
 from scipy.stats import t as _student_t
 
 
-def _student_t_logpdf(
-    x: np.ndarray, mu: np.ndarray, lam: np.ndarray, alpha: np.ndarray, beta: np.ndarray
-) -> np.ndarray:
+def _student_t_logpdf(x: np.ndarray, mu: np.ndarray, lam: np.ndarray, alpha: np.ndarray, beta: np.ndarray) -> np.ndarray:
     """Log of Student-t predictive pdf for BOCPD with N-IG posterior.
 
     Parameters are arrays aligned over run lengths:
@@ -39,7 +37,7 @@ def _student_t_logpdf(
 
     nu = 2.0 * alpha
     # scale^2
-    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+    with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
         s2 = beta * (lam + 1.0) / (alpha * lam)
     max_float = np.finfo(float).max
     s2 = np.nan_to_num(s2, nan=max_float, posinf=max_float, neginf=1e-12)
@@ -73,11 +71,7 @@ def bocpd_gaussian(
     x = x[np.isfinite(x)]
     T = x.size
     if T == 0:
-        return {
-            "cp_prob": np.array([]),
-            "run_length_map": np.array([]),
-            "log_joint": np.zeros((0, 0)),
-        }
+        return {"cp_prob": np.array([]), "run_length_map": np.array([]), "log_joint": np.zeros((0, 0))}
 
     H = 1.0 / float(max(1, hazard_lambda))
     R = int(max(10, min(max_run_length, T)))
@@ -143,9 +137,7 @@ def bocpd_gaussian(
         kappa_new[1:] = kappa_prev + 1.0
         mu_new[1:] = (kappa_prev * mu_prev + xt) / kappa_new[1:]
         alpha_new[1:] = alpha_prev + 0.5
-        beta_new[1:] = (
-            beta_prev + 0.5 * (kappa_prev * (xt - mu_prev) ** 2) / kappa_new[1:]
-        )
+        beta_new[1:] = beta_prev + 0.5 * (kappa_prev * (xt - mu_prev) ** 2) / kappa_new[1:]
 
         mu, kappa, alpha, beta = mu_new, kappa_new, alpha_new, beta_new
 
@@ -154,3 +146,4 @@ def bocpd_gaussian(
         "cp_prob": cp_prob,
         "run_length_map": rl_map,
     }
+

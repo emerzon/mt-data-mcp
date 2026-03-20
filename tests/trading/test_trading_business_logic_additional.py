@@ -4,10 +4,7 @@ from unittest.mock import MagicMock
 
 from mtdata.core.trading_requests import TradeCloseRequest, TradePlaceRequest
 from mtdata.core.trading_use_cases import run_trade_close, run_trade_place
-from mtdata.core.trading_comments import (
-    _comment_sanitization_info,
-    _normalize_trade_comment,
-)
+from mtdata.core.trading_comments import _comment_sanitization_info, _normalize_trade_comment
 from mtdata.core.trading_time import _server_time_naive_to_mt5_timestamp
 from mtdata.core.trading_validation import (
     _normalize_order_type_input,
@@ -125,9 +122,7 @@ def test_comment_sanitization_info_reports_changes():
 
 
 def test_server_time_naive_to_mt5_timestamp_strips_timezone():
-    ts = _server_time_naive_to_mt5_timestamp(
-        datetime(1970, 1, 1, 0, 1, 0, tzinfo=timezone.utc)
-    )
+    ts = _server_time_naive_to_mt5_timestamp(datetime(1970, 1, 1, 0, 1, 0, tzinfo=timezone.utc))
     assert ts == 60
 
 

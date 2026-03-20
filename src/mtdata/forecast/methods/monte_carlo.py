@@ -31,27 +31,11 @@ def _series_looks_like_prices(series: pd.Series) -> bool:
 @ForecastRegistry.register("mc_gbm")
 class MonteCarloGBMMethod(ForecastMethod):
     PARAMS: List[Dict[str, Any]] = [
-        {
-            "name": "n_sims",
-            "type": "int",
-            "description": "Number of simulations (default: 500).",
-        },
+        {"name": "n_sims", "type": "int", "description": "Number of simulations (default: 500)."},
         {"name": "seed", "type": "int", "description": "Random seed (default: 42)."},
-        {
-            "name": "mu",
-            "type": "float|null",
-            "description": "Drift override (auto if omitted).",
-        },
-        {
-            "name": "sigma",
-            "type": "float|null",
-            "description": "Volatility override (auto if omitted).",
-        },
-        {
-            "name": "ci_alpha",
-            "type": "float|null",
-            "description": "CI alpha (default: 0.05).",
-        },
+        {"name": "mu", "type": "float|null", "description": "Drift override (auto if omitted)."},
+        {"name": "sigma", "type": "float|null", "description": "Volatility override (auto if omitted)."},
+        {"name": "ci_alpha", "type": "float|null", "description": "CI alpha (default: 0.05)."},
     ]
 
     @property
@@ -106,9 +90,7 @@ class MonteCarloGBMMethod(ForecastMethod):
             mu_override = params.get("mu", None)
             sigma_override = params.get("sigma", None)
             if mu_override is None and sigma_override is None:
-                sim = simulate_gbm_mc(
-                    prices=prices, horizon=fh, n_sims=n_sims, seed=seed
-                )
+                sim = simulate_gbm_mc(prices=prices, horizon=fh, n_sims=n_sims, seed=seed)
                 paths = np.asarray(sim["price_paths"], dtype=float)
                 point = np.median(paths, axis=0)
                 ci = None
@@ -122,17 +104,11 @@ class MonteCarloGBMMethod(ForecastMethod):
                 }
                 if ci_alpha is not None:
                     params_used["ci_alpha"] = float(ci_alpha)
-                return ForecastResult(
-                    forecast=point, ci_values=ci, params_used=params_used
-                )
+                return ForecastResult(forecast=point, ci_values=ci, params_used=params_used)
 
             rets = _log_returns_from_prices(prices)
             mu = float(mu_override) if mu_override is not None else float(np.mean(rets))
-            sigma = (
-                float(sigma_override)
-                if sigma_override is not None
-                else float(np.std(rets) + 1e-12)
-            )
+            sigma = float(sigma_override) if sigma_override is not None else float(np.std(rets) + 1e-12)
             rng = np.random.RandomState(seed)
             ret_paths = rng.normal(loc=mu, scale=max(sigma, 1e-12), size=(n_sims, fh))
             price_paths = np.zeros_like(ret_paths, dtype=float)
@@ -159,13 +135,7 @@ class MonteCarloGBMMethod(ForecastMethod):
         ci = None
         if isinstance(ci_alpha, (float, int)) and 0.0 < float(ci_alpha) < 1.0:
             ci = _ci_from_sims(ret_paths, float(ci_alpha))
-        params_used = {
-            "n_sims": n_sims,
-            "seed": seed,
-            "mu": mu,
-            "sigma": sigma,
-            "target": "return",
-        }
+        params_used = {"n_sims": n_sims, "seed": seed, "mu": mu, "sigma": sigma, "target": "return"}
         if ci_alpha is not None:
             params_used["ci_alpha"] = float(ci_alpha)
         return ForecastResult(forecast=point, ci_values=ci, params_used=params_used)
@@ -174,22 +144,10 @@ class MonteCarloGBMMethod(ForecastMethod):
 @ForecastRegistry.register("hmm_mc")
 class MonteCarloHMMMethod(ForecastMethod):
     PARAMS: List[Dict[str, Any]] = [
-        {
-            "name": "n_states",
-            "type": "int",
-            "description": "Number of regimes (default: 2).",
-        },
-        {
-            "name": "n_sims",
-            "type": "int",
-            "description": "Number of simulations (default: 500).",
-        },
+        {"name": "n_states", "type": "int", "description": "Number of regimes (default: 2)."},
+        {"name": "n_sims", "type": "int", "description": "Number of simulations (default: 500)."},
         {"name": "seed", "type": "int", "description": "Random seed (default: 42)."},
-        {
-            "name": "ci_alpha",
-            "type": "float|null",
-            "description": "CI alpha (default: 0.05).",
-        },
+        {"name": "ci_alpha", "type": "float|null", "description": "CI alpha (default: 0.05)."},
     ]
 
     @property
@@ -241,9 +199,7 @@ class MonteCarloHMMMethod(ForecastMethod):
             treat_as_price = _series_looks_like_prices(series)
 
         if treat_as_price:
-            sim = simulate_hmm_mc(
-                prices=x, horizon=fh, n_states=n_states, n_sims=n_sims, seed=seed
-            )
+            sim = simulate_hmm_mc(prices=x, horizon=fh, n_states=n_states, n_sims=n_sims, seed=seed)
             paths = np.asarray(sim["price_paths"], dtype=float)
             point = np.median(paths, axis=0)
             ci = None
@@ -253,14 +209,8 @@ class MonteCarloHMMMethod(ForecastMethod):
                 "n_sims": n_sims,
                 "seed": seed,
                 "n_states": n_states,
-                "mu": [
-                    float(v)
-                    for v in np.asarray(sim.get("mu", []), dtype=float).tolist()
-                ],
-                "sigma": [
-                    float(v)
-                    for v in np.asarray(sim.get("sigma", []), dtype=float).tolist()
-                ],
+                "mu": [float(v) for v in np.asarray(sim.get("mu", []), dtype=float).tolist()],
+                "sigma": [float(v) for v in np.asarray(sim.get("sigma", []), dtype=float).tolist()],
             }
             if ci_alpha is not None:
                 params_used["ci_alpha"] = float(ci_alpha)
@@ -269,9 +219,7 @@ class MonteCarloHMMMethod(ForecastMethod):
         # Return-series target: treat inputs as log-returns and build a pseudo price series.
         rets = x
         prices = np.exp(np.cumsum(np.concatenate(([0.0], rets))))
-        sim = simulate_hmm_mc(
-            prices=prices, horizon=fh, n_states=n_states, n_sims=n_sims, seed=seed
-        )
+        sim = simulate_hmm_mc(prices=prices, horizon=fh, n_states=n_states, n_sims=n_sims, seed=seed)
         ret_paths = np.asarray(sim["return_paths"], dtype=float)
         point = np.median(ret_paths, axis=0)
         ci = None
@@ -282,12 +230,8 @@ class MonteCarloHMMMethod(ForecastMethod):
             "seed": seed,
             "n_states": n_states,
             "target": "return",
-            "mu": [
-                float(v) for v in np.asarray(sim.get("mu", []), dtype=float).tolist()
-            ],
-            "sigma": [
-                float(v) for v in np.asarray(sim.get("sigma", []), dtype=float).tolist()
-            ],
+            "mu": [float(v) for v in np.asarray(sim.get("mu", []), dtype=float).tolist()],
+            "sigma": [float(v) for v in np.asarray(sim.get("sigma", []), dtype=float).tolist()],
         }
         if ci_alpha is not None:
             params_used["ci_alpha"] = float(ci_alpha)

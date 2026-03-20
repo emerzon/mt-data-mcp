@@ -298,49 +298,31 @@ class TestPickBestForecastMethod:
         return {"results": results}
 
     def test_single_method(self):
-        bt = self._bt(
-            {"ets": {"success": True, "avg_rmse": 0.5, "successful_tests": 3}}
-        )
+        bt = self._bt({"ets": {"success": True, "avg_rmse": 0.5, "successful_tests": 3}})
         name, res = pick_best_forecast_method(bt)
         assert name == "ets"
 
     def test_picks_lowest_rmse(self):
-        bt = self._bt(
-            {
-                "a": {"success": True, "avg_rmse": 1.0, "successful_tests": 1},
-                "b": {"success": True, "avg_rmse": 0.5, "successful_tests": 1},
-            }
-        )
+        bt = self._bt({
+            "a": {"success": True, "avg_rmse": 1.0, "successful_tests": 1},
+            "b": {"success": True, "avg_rmse": 0.5, "successful_tests": 1},
+        })
         name, _ = pick_best_forecast_method(bt)
         assert name == "b"
 
     def test_prefers_directional_accuracy(self):
-        bt = self._bt(
-            {
-                "a": {
-                    "success": True,
-                    "avg_rmse": 1.0,
-                    "avg_directional_accuracy": 0.8,
-                    "successful_tests": 1,
-                },
-                "b": {
-                    "success": True,
-                    "avg_rmse": 1.02,
-                    "avg_directional_accuracy": 0.9,
-                    "successful_tests": 1,
-                },
-            }
-        )
+        bt = self._bt({
+            "a": {"success": True, "avg_rmse": 1.0, "avg_directional_accuracy": 0.8, "successful_tests": 1},
+            "b": {"success": True, "avg_rmse": 1.02, "avg_directional_accuracy": 0.9, "successful_tests": 1},
+        })
         name, _ = pick_best_forecast_method(bt)
         assert name == "b"
 
     def test_ignores_failed(self):
-        bt = self._bt(
-            {
-                "good": {"success": True, "avg_rmse": 10.0, "successful_tests": 1},
-                "bad": {"success": False, "avg_rmse": 0.1, "successful_tests": 0},
-            }
-        )
+        bt = self._bt({
+            "good": {"success": True, "avg_rmse": 10.0, "successful_tests": 1},
+            "bad": {"success": False, "avg_rmse": 0.1, "successful_tests": 0},
+        })
         name, _ = pick_best_forecast_method(bt)
         assert name == "good"
 
@@ -357,76 +339,34 @@ class TestPickBestForecastMethod:
         assert pick_best_forecast_method("bad") is None
 
     def test_nan_rmse_skipped(self):
-        bt = self._bt(
-            {
-                "ok": {"success": True, "avg_rmse": 1.0, "successful_tests": 1},
-                "bad": {
-                    "success": True,
-                    "avg_rmse": float("nan"),
-                    "successful_tests": 1,
-                },
-            }
-        )
+        bt = self._bt({
+            "ok": {"success": True, "avg_rmse": 1.0, "successful_tests": 1},
+            "bad": {"success": True, "avg_rmse": float("nan"), "successful_tests": 1},
+        })
         name, _ = pick_best_forecast_method(bt)
         assert name == "ok"
 
     def test_tolerance_zero(self):
-        bt = self._bt(
-            {
-                "a": {
-                    "success": True,
-                    "avg_rmse": 1.0,
-                    "avg_directional_accuracy": 0.5,
-                    "successful_tests": 1,
-                },
-                "b": {
-                    "success": True,
-                    "avg_rmse": 1.01,
-                    "avg_directional_accuracy": 0.9,
-                    "successful_tests": 1,
-                },
-            }
-        )
+        bt = self._bt({
+            "a": {"success": True, "avg_rmse": 1.0, "avg_directional_accuracy": 0.5, "successful_tests": 1},
+            "b": {"success": True, "avg_rmse": 1.01, "avg_directional_accuracy": 0.9, "successful_tests": 1},
+        })
         name, _ = pick_best_forecast_method(bt, rmse_tolerance=0.0)
         assert name == "a"
 
     def test_min_directional_accuracy_filters_candidates(self):
-        bt = self._bt(
-            {
-                "a": {
-                    "success": True,
-                    "avg_rmse": 0.9,
-                    "avg_directional_accuracy": 0.45,
-                    "successful_tests": 5,
-                },
-                "b": {
-                    "success": True,
-                    "avg_rmse": 1.4,
-                    "avg_directional_accuracy": 0.60,
-                    "successful_tests": 5,
-                },
-            }
-        )
+        bt = self._bt({
+            "a": {"success": True, "avg_rmse": 0.9, "avg_directional_accuracy": 0.45, "successful_tests": 5},
+            "b": {"success": True, "avg_rmse": 1.4, "avg_directional_accuracy": 0.60, "successful_tests": 5},
+        })
         name, _ = pick_best_forecast_method(bt, min_directional_accuracy=0.5)
         assert name == "b"
 
     def test_min_directional_accuracy_returns_none_when_no_qualifying_methods(self):
-        bt = self._bt(
-            {
-                "a": {
-                    "success": True,
-                    "avg_rmse": 0.9,
-                    "avg_directional_accuracy": 0.45,
-                    "successful_tests": 5,
-                },
-                "b": {
-                    "success": True,
-                    "avg_rmse": 1.1,
-                    "avg_directional_accuracy": 0.49,
-                    "successful_tests": 5,
-                },
-            }
-        )
+        bt = self._bt({
+            "a": {"success": True, "avg_rmse": 0.9, "avg_directional_accuracy": 0.45, "successful_tests": 5},
+            "b": {"success": True, "avg_rmse": 1.1, "avg_directional_accuracy": 0.49, "successful_tests": 5},
+        })
         assert pick_best_forecast_method(bt, min_directional_accuracy=0.5) is None
 
 
@@ -436,32 +376,13 @@ class TestPickBestForecastMethod:
 class TestSummarizeBarrierGrid:
     def test_with_best_and_top(self):
         grid = {
-            "best": {
-                "tp": 1.0,
-                "sl": 0.5,
-                "edge": 0.1,
-                "kelly": 0.2,
-                "ev": 0.05,
-                "prob_tp_first": 0.6,
-                "prob_sl_first": 0.3,
-                "prob_no_hit": 0.1,
-                "median_time_to_tp": 5,
-                "tp_price": 1.1,
-                "sl_price": 0.9,
-            },
+            "best": {"tp": 1.0, "sl": 0.5, "edge": 0.1, "kelly": 0.2, "ev": 0.05,
+                      "prob_tp_first": 0.6, "prob_sl_first": 0.3, "prob_no_hit": 0.1,
+                      "median_time_to_tp": 5, "tp_price": 1.1, "sl_price": 0.9},
             "top": [
-                {
-                    "tp": 1.0,
-                    "sl": 0.5,
-                    "edge": 0.1,
-                    "kelly": 0.2,
-                    "ev": 0.05,
-                    "prob_tp_first": 0.6,
-                    "prob_sl_first": 0.3,
-                    "prob_no_hit": 0.1,
-                    "tp_price": 1.1,
-                    "sl_price": 0.9,
-                },
+                {"tp": 1.0, "sl": 0.5, "edge": 0.1, "kelly": 0.2, "ev": 0.05,
+                 "prob_tp_first": 0.6, "prob_sl_first": 0.3, "prob_no_hit": 0.1,
+                 "tp_price": 1.1, "sl_price": 0.9},
             ],
         }
         result = summarize_barrier_grid(grid)
@@ -610,10 +531,7 @@ class TestExtractBaseTimeframe:
         assert _extract_base_timeframe(report) == "M15"
 
     def test_meta_takes_priority(self):
-        report = {
-            "meta": {"timeframe": "h4"},
-            "sections": {"context": {"timeframe": "m1"}},
-        }
+        report = {"meta": {"timeframe": "h4"}, "sections": {"context": {"timeframe": "m1"}}}
         assert _extract_base_timeframe(report) == "H4"
 
     def test_missing(self):
@@ -935,9 +853,7 @@ class TestRenderEnhancedReport:
         assert render_enhanced_report({"sections": {}}) == ""
 
     def test_with_forecast_section(self):
-        report = {
-            "sections": {"forecast": {"method": "ets", "forecast_price": [1.0, 2.0]}}
-        }
+        report = {"sections": {"forecast": {"method": "ets", "forecast_price": [1.0, 2.0]}}}
         result = render_enhanced_report(report)
         assert "Forecast" in result
         assert "ets" in result
@@ -954,12 +870,10 @@ class TestRenderEnhancedReport:
         assert "Bad Section" not in result
 
     def test_multiple_sections(self):
-        report = {
-            "sections": {
-                "market": {"bid": 1.0, "ask": 1.1, "spread": 0.1},
-                "forecast": {"method": "arima"},
-            }
-        }
+        report = {"sections": {
+            "market": {"bid": 1.0, "ask": 1.1, "spread": 0.1},
+            "forecast": {"method": "arima"},
+        }}
         result = render_enhanced_report(report)
         assert "Market Snapshot" in result
         assert "Forecast" in result
@@ -1087,9 +1001,7 @@ class TestAttachMultiTimeframes:
         )
 
         report = {"sections": {"context": {}}}
-        attach_multi_timeframes(
-            report, "EURUSD", None, extra_timeframes=["H1"], pivot_timeframes=None
-        )
+        attach_multi_timeframes(report, "EURUSD", None, extra_timeframes=["H1"], pivot_timeframes=None)
 
         contexts = report["sections"]["contexts_multi"]["H1"]
         assert "trend_compact" not in contexts
@@ -1116,9 +1028,7 @@ class TestAttachMultiTimeframes:
         )
 
         report = {"sections": {"context": {}}}
-        attach_multi_timeframes(
-            report, "EURUSD", None, extra_timeframes=["H1"], pivot_timeframes=None
-        )
+        attach_multi_timeframes(report, "EURUSD", None, extra_timeframes=["H1"], pivot_timeframes=None)
 
         trend_mtf = report["sections"]["context"]["trend_mtf"]["H1"]
         assert trend_mtf == {"s": [10], "v": 120, "q": 5}
@@ -1365,16 +1275,9 @@ class TestRenderBarriersSection:
         data = {
             "direction": "long",
             "best": {
-                "tp": 1.0,
-                "sl": 0.5,
-                "tp_price": 1.1,
-                "sl_price": 0.9,
-                "edge": 0.05,
-                "kelly": 0.1,
-                "ev": 0.03,
-                "prob_tp_first": 0.6,
-                "prob_sl_first": 0.3,
-                "prob_no_hit": 0.1,
+                "tp": 1.0, "sl": 0.5, "tp_price": 1.1, "sl_price": 0.9,
+                "edge": 0.05, "kelly": 0.1, "ev": 0.03,
+                "prob_tp_first": 0.6, "prob_sl_first": 0.3, "prob_no_hit": 0.1,
             },
         }
         lines = _render_barriers_section(data)
@@ -1384,16 +1287,9 @@ class TestRenderBarriersSection:
 
     def test_long_short(self):
         best = {
-            "tp": 1.0,
-            "sl": 0.5,
-            "tp_price": 1.1,
-            "sl_price": 0.9,
-            "edge": 0.05,
-            "kelly": 0.1,
-            "ev": 0.03,
-            "prob_tp_first": 0.6,
-            "prob_sl_first": 0.3,
-            "prob_no_hit": 0.1,
+            "tp": 1.0, "sl": 0.5, "tp_price": 1.1, "sl_price": 0.9,
+            "edge": 0.05, "kelly": 0.1, "ev": 0.03,
+            "prob_tp_first": 0.6, "prob_sl_first": 0.3, "prob_no_hit": 0.1,
         }
         data = {"long": {"best": best}, "short": {"best": best}}
         lines = _render_barriers_section(data)
@@ -1405,14 +1301,8 @@ class TestRenderBarriersSection:
     def test_note_is_rendered(self):
         data = {
             "best": {
-                "tp": 1.0,
-                "sl": 0.5,
-                "edge": 0.1,
-                "kelly": 0.2,
-                "ev": 0.05,
-                "prob_tp_first": 0.6,
-                "prob_sl_first": 0.3,
-                "prob_no_hit": 0.1,
+                "tp": 1.0, "sl": 0.5, "edge": 0.1, "kelly": 0.2, "ev": 0.05,
+                "prob_tp_first": 0.6, "prob_sl_first": 0.3, "prob_no_hit": 0.1,
             },
             "note": "Independent run note",
         }
@@ -1423,14 +1313,8 @@ class TestRenderBarriersSection:
     def test_negative_edge_warning(self):
         data = {
             "best": {
-                "tp": 1.0,
-                "sl": 0.5,
-                "edge": -0.1,
-                "kelly": 0.0,
-                "ev": -0.05,
-                "prob_tp_first": 0.4,
-                "prob_sl_first": 0.5,
-                "prob_no_hit": 0.1,
+                "tp": 1.0, "sl": 0.5, "edge": -0.1, "kelly": 0.0, "ev": -0.05,
+                "prob_tp_first": 0.4, "prob_sl_first": 0.5, "prob_no_hit": 0.1,
             },
         }
         lines = _render_barriers_section(data)
@@ -1456,27 +1340,11 @@ class TestRenderBarriersSection:
 
     def test_with_top_runners(self):
         data = {
-            "best": {
-                "tp": 1.0,
-                "sl": 0.5,
-                "edge": 0.1,
-                "kelly": 0.2,
-                "ev": 0.05,
-                "prob_tp_first": 0.6,
-                "prob_sl_first": 0.3,
-                "prob_no_hit": 0.1,
-            },
+            "best": {"tp": 1.0, "sl": 0.5, "edge": 0.1, "kelly": 0.2, "ev": 0.05,
+                      "prob_tp_first": 0.6, "prob_sl_first": 0.3, "prob_no_hit": 0.1},
             "top": [
-                {
-                    "tp": 1.0,
-                    "sl": 0.5,
-                    "edge": 0.1,
-                    "kelly": 0.2,
-                    "ev": 0.05,
-                    "prob_tp_first": 0.6,
-                    "prob_sl_first": 0.3,
-                    "prob_no_hit": 0.1,
-                },
+                {"tp": 1.0, "sl": 0.5, "edge": 0.1, "kelly": 0.2, "ev": 0.05,
+                 "prob_tp_first": 0.6, "prob_sl_first": 0.3, "prob_no_hit": 0.1},
             ],
         }
         lines = _render_barriers_section(data)
@@ -1484,16 +1352,8 @@ class TestRenderBarriersSection:
         assert "Barrier Analytics" in text
 
     def test_pips_mode(self):
-        best = {
-            "tp": 50,
-            "sl": 25,
-            "edge": 0.1,
-            "kelly": 0.1,
-            "ev": 0.05,
-            "prob_tp_first": 0.6,
-            "prob_sl_first": 0.3,
-            "prob_no_hit": 0.1,
-        }
+        best = {"tp": 50, "sl": 25, "edge": 0.1, "kelly": 0.1, "ev": 0.05,
+                "prob_tp_first": 0.6, "prob_sl_first": 0.3, "prob_no_hit": 0.1}
         data = {"mode": "pips", "long": {"best": best}}
         lines = _render_barriers_section(data)
         text = "\n".join(lines)
@@ -1558,41 +1418,22 @@ class TestRenderBacktestSection:
         assert _render_backtest_section({"ranking": []}) == []
 
     def test_basic(self):
-        data = {
-            "ranking": [
-                {
-                    "method": "ets",
-                    "avg_rmse": 0.01,
-                    "avg_mae": 0.005,
-                    "avg_directional_accuracy": 0.7,
-                    "successful_tests": 5,
-                },
-            ]
-        }
+        data = {"ranking": [
+            {"method": "ets", "avg_rmse": 0.01, "avg_mae": 0.005,
+             "avg_directional_accuracy": 0.7, "successful_tests": 5},
+        ]}
         lines = _render_backtest_section(data)
         text = "\n".join(lines)
         assert "Backtest Ranking" in text
         assert "ets" in text
 
     def test_multiple_methods(self):
-        data = {
-            "ranking": [
-                {
-                    "method": "ets",
-                    "avg_rmse": 0.01,
-                    "avg_mae": 0.005,
-                    "avg_directional_accuracy": 0.7,
-                    "successful_tests": 5,
-                },
-                {
-                    "method": "arima",
-                    "avg_rmse": 0.02,
-                    "avg_mae": 0.01,
-                    "avg_directional_accuracy": 0.6,
-                    "successful_tests": 3,
-                },
-            ]
-        }
+        data = {"ranking": [
+            {"method": "ets", "avg_rmse": 0.01, "avg_mae": 0.005,
+             "avg_directional_accuracy": 0.7, "successful_tests": 5},
+            {"method": "arima", "avg_rmse": 0.02, "avg_mae": 0.01,
+             "avg_directional_accuracy": 0.6, "successful_tests": 3},
+        ]}
         lines = _render_backtest_section(data)
         text = "\n".join(lines)
         assert "ets" in text
@@ -1610,22 +1451,18 @@ class TestRenderPatternsSection:
         assert _render_patterns_section({"recent": []}) == []
 
     def test_basic(self):
-        data = {
-            "recent": [
-                {"pattern": "Doji", "direction": "neutral", "time": "2024-01-01 12:00"},
-            ]
-        }
+        data = {"recent": [
+            {"pattern": "Doji", "direction": "neutral", "time": "2024-01-01 12:00"},
+        ]}
         lines = _render_patterns_section(data)
         text = "\n".join(lines)
         assert "Recent Patterns" in text
         assert "Doji" in text
 
     def test_alternative_keys(self):
-        data = {
-            "recent": [
-                {"Pattern": "Hammer", "Direction": "bullish", "Time": "2024-01-01"},
-            ]
-        }
+        data = {"recent": [
+            {"Pattern": "Hammer", "Direction": "bullish", "Time": "2024-01-01"},
+        ]}
         lines = _render_patterns_section(data)
         text = "\n".join(lines)
         assert "Hammer" in text
@@ -1645,16 +1482,10 @@ class TestRenderRegimeSection:
         assert _render_regime_section("bad") == []
 
     def test_bocpd(self):
-        data = {
-            "bocpd": {
-                "summary": {
-                    "last_cp_prob": 0.1,
-                    "max_cp_prob": 0.5,
-                    "mean_cp_prob": 0.2,
-                    "change_points_count": 3,
-                }
-            }
-        }
+        data = {"bocpd": {"summary": {
+            "last_cp_prob": 0.1, "max_cp_prob": 0.5,
+            "mean_cp_prob": 0.2, "change_points_count": 3,
+        }}}
         lines = _render_regime_section(data)
         text = "\n".join(lines)
         assert "Regime Signals" in text
@@ -1662,15 +1493,11 @@ class TestRenderRegimeSection:
         assert "change_points=3" in text
 
     def test_hmm(self):
-        data = {
-            "hmm": {
-                "summary": {
-                    "last_state": 2,
-                    "state_shares": {"0": 0.3, "1": 0.7},
-                    "state_order_by_sigma": {"0": "low", "1": "high"},
-                }
-            }
-        }
+        data = {"hmm": {"summary": {
+            "last_state": 2,
+            "state_shares": {"0": 0.3, "1": 0.7},
+            "state_order_by_sigma": {"0": "low", "1": "high"},
+        }}}
         lines = _render_regime_section(data)
         text = "\n".join(lines)
         assert "HMM" in text
@@ -1877,35 +1704,20 @@ class TestFullReportRoundTrip:
                 "barriers": {
                     "direction": "long",
                     "best": {
-                        "tp": 0.5,
-                        "sl": 0.3,
-                        "tp_price": 1.09,
-                        "sl_price": 1.08,
-                        "edge": 0.12,
-                        "kelly": 0.15,
-                        "ev": 0.06,
-                        "prob_tp_first": 0.55,
-                        "prob_sl_first": 0.35,
-                        "prob_no_hit": 0.1,
+                        "tp": 0.5, "sl": 0.3, "tp_price": 1.09, "sl_price": 1.08,
+                        "edge": 0.12, "kelly": 0.15, "ev": 0.06,
+                        "prob_tp_first": 0.55, "prob_sl_first": 0.35, "prob_no_hit": 0.1,
                     },
                 },
                 "backtest": {
                     "ranking": [
-                        {
-                            "method": "ets",
-                            "avg_rmse": 0.001,
-                            "avg_mae": 0.0005,
-                            "avg_directional_accuracy": 0.72,
-                            "successful_tests": 10,
-                        },
+                        {"method": "ets", "avg_rmse": 0.001, "avg_mae": 0.0005,
+                         "avg_directional_accuracy": 0.72, "successful_tests": 10},
                     ],
                 },
                 "market": {
-                    "bid": 1.085,
-                    "ask": 1.0851,
-                    "spread": 0.0001,
-                    "tick_size": 0.00001,
-                    "spread_ticks": 10.0,
+                    "bid": 1.085, "ask": 1.0851, "spread": 0.0001,
+                    "tick_size": 0.00001, "spread_ticks": 10.0,
                 },
                 "execution_gates": {"spread_ok": True, "spread_ticks": 10.0},
                 "volatility": {
@@ -1913,18 +1725,10 @@ class TestFullReportRoundTrip:
                     "matrix": [{"horizon": 5, "garch": 0.01}],
                 },
                 "patterns": {
-                    "recent": [
-                        {
-                            "pattern": "Doji",
-                            "direction": "neutral",
-                            "time": "2024-01-01",
-                        }
-                    ],
+                    "recent": [{"pattern": "Doji", "direction": "neutral", "time": "2024-01-01"}],
                 },
                 "regime": {
-                    "bocpd": {
-                        "summary": {"last_cp_prob": 0.05, "change_points_count": 1}
-                    },
+                    "bocpd": {"summary": {"last_cp_prob": 0.05, "change_points_count": 1}},
                 },
                 "pivot": {
                     "timeframe": "D1",
@@ -1954,18 +1758,10 @@ class TestFullReportRoundTrip:
         report = self._make_full_report()
         result = render_enhanced_report(report)
         for heading in [
-            "Market Context",
-            "Forecast",
-            "Barrier Analytics",
-            "Market Snapshot",
-            "Backtest Ranking",
-            "Recent Patterns",
-            "Regime Signals",
-            "Pivot Levels",
-            "Volatility Snapshot",
-            "Execution Gates",
-            "HAR-RV",
-            "Conformal Intervals",
+            "Market Context", "Forecast", "Barrier Analytics",
+            "Market Snapshot", "Backtest Ranking", "Recent Patterns",
+            "Regime Signals", "Pivot Levels", "Volatility Snapshot",
+            "Execution Gates", "HAR-RV", "Conformal Intervals",
         ]:
             assert heading in result, f"Missing section: {heading}"
 

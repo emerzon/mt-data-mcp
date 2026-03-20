@@ -27,40 +27,23 @@ def test_finviz_news_rejects_pair_style_symbol_before_service_call() -> None:
 def test_get_stock_news_returns_clean_message_for_404_like_errors() -> None:
     class Boom:
         def __init__(self, *_args, **_kwargs):
-            raise RuntimeError(
-                "404 Client Error: Not Found for url: https://finviz.com/quote.ashx?t=BTCUSD"
-            )
+            raise RuntimeError("404 Client Error: Not Found for url: https://finviz.com/quote.ashx?t=BTCUSD")
 
-    with (
-        patch(
-            "mtdata.services.finviz_service._apply_finvizfinance_timeout_patch",
-            lambda: None,
-        ),
-        patch.dict(
-            "sys.modules",
-            {"finvizfinance.quote": type("Q", (), {"finvizfinance": Boom})},
-        ),
+    with patch("mtdata.services.finviz_service._apply_finvizfinance_timeout_patch", lambda: None), patch.dict(
+        "sys.modules",
+        {"finvizfinance.quote": type("Q", (), {"finvizfinance": Boom})},
     ):
         out = get_stock_news("BTCUSD", limit=5, page=1)
 
-    assert (
-        out["error"]
-        == "BTCUSD is not a Finviz-supported symbol. finviz_news only covers US equities."
-    )
+    assert out["error"] == "BTCUSD is not a Finviz-supported symbol. finviz_news only covers US equities."
 
 
 def test_finviz_news_logs_finish_event_for_success(caplog) -> None:
     raw = _unwrap(finviz_news)
 
-    with (
-        patch(
-            "mtdata.core.finviz.get_stock_news",
-            return_value={"success": True, "items": []},
-        ),
-        caplog.at_level(
-            logging.INFO,
-            logger=core_finviz.logger.name,
-        ),
+    with patch("mtdata.core.finviz.get_stock_news", return_value={"success": True, "items": []}), caplog.at_level(
+        logging.INFO,
+        logger=core_finviz.logger.name,
     ):
         out = raw(symbol="AAPL", limit=5, page=1)
 

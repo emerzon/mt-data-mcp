@@ -1,6 +1,6 @@
 """Tests for utils/regime.py — BOCPD and Student-t helpers."""
-
 import numpy as np
+import pytest
 
 from mtdata.utils.regime import bocpd_gaussian, _student_t_logpdf
 
@@ -85,13 +85,8 @@ class TestBocpdGaussian:
     def test_custom_params(self):
         x = np.random.RandomState(7).normal(0, 1, 30)
         result = bocpd_gaussian(
-            x,
-            hazard_lambda=10,
-            max_run_length=50,
-            mu0=0.0,
-            kappa0=0.5,
-            alpha0=2.0,
-            beta0=2.0,
+            x, hazard_lambda=10, max_run_length=50,
+            mu0=0.0, kappa0=0.5, alpha0=2.0, beta0=2.0,
         )
         assert result["cp_prob"].shape == (30,)
         assert all(result["cp_prob"] >= 0)

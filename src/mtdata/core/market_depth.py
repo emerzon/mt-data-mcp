@@ -1,3 +1,4 @@
+
 from typing import Any, Dict
 import logging
 import math
@@ -5,17 +6,8 @@ import time
 
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
-from ..utils.mt5 import (
-    MT5ConnectionError,
-    _mt5_epoch_to_utc,
-    ensure_mt5_connection_or_raise,
-    mt5,
-)
-from ..utils.utils import (
-    _format_time_minimal,
-    _format_time_minimal_local,
-    _use_client_tz,
-)
+from ..utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc, ensure_mt5_connection_or_raise, mt5
+from ..utils.utils import _format_time_minimal, _format_time_minimal_local, _use_client_tz
 from ._mcp_instance import mcp
 
 logger = logging.getLogger(__name__)
@@ -27,7 +19,6 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
 
     Parameters: symbol
     """
-
     def _run() -> Dict[str, Any]:
         try:
             mt5_gateway = get_mt5_gateway(
@@ -37,9 +28,7 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
             mt5_gateway.ensure_connection()
             started = time.perf_counter()
             if not mt5_gateway.symbol_select(symbol, True):
-                return {
-                    "error": f"Failed to select symbol {symbol}: {mt5_gateway.last_error()}"
-                }
+                return {"error": f"Failed to select symbol {symbol}: {mt5_gateway.last_error()}"}
 
             symbol_info = mt5_gateway.symbol_info(symbol)
             if symbol_info is None:
@@ -72,9 +61,7 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
                     "spread_points": spread_points,
                     "spread_pct": spread_pct,
                     "spread_usd": spread_usd,
-                    "pricing_basis": "per_1_lot_estimate"
-                    if spread_usd is not None
-                    else "quote_only",
+                    "pricing_basis": "per_1_lot_estimate" if spread_usd is not None else "quote_only",
                 }
 
             def _price_display(value: Any) -> Any:
@@ -128,25 +115,15 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
                     },
                 }
                 if spread and buy_orders and sell_orders:
-                    best_bid = max(
-                        float(row.get("price"))
-                        for row in buy_orders
-                        if row.get("price") is not None
-                    )
-                    best_ask = min(
-                        float(row.get("price"))
-                        for row in sell_orders
-                        if row.get("price") is not None
-                    )
+                    best_bid = max(float(row.get("price")) for row in buy_orders if row.get("price") is not None)
+                    best_ask = min(float(row.get("price")) for row in sell_orders if row.get("price") is not None)
                     spread_metrics = _compute_spread_metrics(best_bid, best_ask)
                     if spread_metrics is not None:
                         out["data"]["best_bid"] = best_bid
                         out["data"]["best_ask"] = best_ask
                         out["data"].update(spread_metrics)
                         out["capabilities"]["spread_overlay_applied"] = True
-                out["query_latency_ms"] = round(
-                    (time.perf_counter() - started) * 1000.0, 3
-                )
+                out["query_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
                 return out
 
             tick = mt5_gateway.symbol_info_tick(symbol)
@@ -169,9 +146,7 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
                     "ask": float(tick.ask) if tick.ask else None,
                     "last": float(tick.last) if tick.last else None,
                     "volume": int(tick.volume) if tick.volume else None,
-                    "time": int(_mt5_epoch_to_utc(float(tick.time)))
-                    if tick.time
-                    else None,
+                    "time": int(_mt5_epoch_to_utc(float(tick.time))) if tick.time else None,
                     "note": "Full market depth not available, showing current bid/ask snapshot.",
                     "recommended_alternative": "market_ticker",
                 },
@@ -186,13 +161,9 @@ def market_depth_fetch(symbol: str, spread: bool = False) -> Dict[str, Any]:
                     out["capabilities"]["spread_overlay_applied"] = True
             _use_ctz = _use_client_tz()
             if tick.time and _use_ctz:
-                out["data"]["time_display"] = _format_time_minimal_local(
-                    _mt5_epoch_to_utc(float(tick.time))
-                )
+                out["data"]["time_display"] = _format_time_minimal_local(_mt5_epoch_to_utc(float(tick.time)))
             elif tick.time:
-                out["data"]["time_display"] = _format_time_minimal(
-                    _mt5_epoch_to_utc(float(tick.time))
-                )
+                out["data"]["time_display"] = _format_time_minimal(_mt5_epoch_to_utc(float(tick.time)))
             if not _use_ctz:
                 out["timezone"] = "UTC"
             out["query_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
@@ -217,7 +188,6 @@ def market_ticker(symbol: str) -> Dict[str, Any]:
 
     Parameters: symbol
     """
-
     def _run() -> Dict[str, Any]:
         try:
             mt5_gateway = get_mt5_gateway(
@@ -227,9 +197,7 @@ def market_ticker(symbol: str) -> Dict[str, Any]:
             mt5_gateway.ensure_connection()
             started = time.perf_counter()
             if not mt5_gateway.symbol_select(symbol, True):
-                return {
-                    "error": f"Failed to select symbol {symbol}: {mt5_gateway.last_error()}"
-                }
+                return {"error": f"Failed to select symbol {symbol}: {mt5_gateway.last_error()}"}
 
             symbol_info = mt5_gateway.symbol_info(symbol)
             if symbol_info is None:

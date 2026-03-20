@@ -99,9 +99,7 @@ def _make_fake_quantlib():
         def NPV(self):
             if self._engine is None:
                 return 0.0
-            return max(
-                0.0, 0.01 * self._engine.process.spot + 0.1 * self._engine.process.vol
-            )
+            return max(0.0, 0.01 * self._engine.process.spot + 0.1 * self._engine.process.vol)
 
     class _HestonProcess:
         def __init__(self, *_args, **_kwargs):
@@ -143,17 +141,7 @@ def _make_fake_quantlib():
             self.unit = unit
 
     class _HestonModelHelper:
-        def __init__(
-            self,
-            _maturity,
-            _calendar,
-            spot,
-            strike,
-            iv_handle,
-            _rf_ts,
-            _div_ts,
-            _err_type,
-        ):
+        def __init__(self, _maturity, _calendar, spot, strike, iv_handle, _rf_ts, _div_ts, _err_type):
             self.spot = float(spot)
             self.strike = float(strike)
             self.iv = float(iv_handle.quote.value)

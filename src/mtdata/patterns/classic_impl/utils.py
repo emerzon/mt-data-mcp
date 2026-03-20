@@ -21,7 +21,6 @@ def _level_close(a: float, b: float, tol_pct: float) -> bool:
 @lru_cache(maxsize=1)
 def _get_ransac_regressor_cls():
     from sklearn.linear_model import RANSACRegressor  # type: ignore
-
     return RANSACRegressor
 
 
@@ -39,9 +38,7 @@ def _fit_line(x: np.ndarray, y: np.ndarray) -> Tuple[float, float, float]:
     return float(p[0]), float(p[1]), float(r2)
 
 
-def _ransac_residual_threshold(
-    x: np.ndarray, y: np.ndarray, cfg: ClassicDetectorConfig
-) -> float:
+def _ransac_residual_threshold(x: np.ndarray, y: np.ndarray, cfg: ClassicDetectorConfig) -> float:
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
     if x.size == 0 or y.size == 0:
@@ -58,9 +55,7 @@ def _ransac_residual_threshold(
     return max(1e-9, float(cfg.ransac_residual_pct) * max(1e-9, resid_scale))
 
 
-def _fit_line_robust(
-    x: np.ndarray, y: np.ndarray, cfg: ClassicDetectorConfig
-) -> Tuple[float, float, float]:
+def _fit_line_robust(x: np.ndarray, y: np.ndarray, cfg: ClassicDetectorConfig) -> Tuple[float, float, float]:
     """Optionally fit a robust line via RANSAC; fallback to ordinary fit."""
     if not cfg.use_robust_fit:
         return _fit_line(x, y)
@@ -82,8 +77,8 @@ def _fit_line_robust(
         )
         model.fit(X, yv)
         est = model.estimator_
-        slope = float(getattr(est, "coef_", [0.0])[0])
-        intercept = float(getattr(est, "intercept_", 0.0))
+        slope = float(getattr(est, 'coef_', [0.0])[0])
+        intercept = float(getattr(est, 'intercept_', 0.0))
         y_hat = slope * x + intercept
         ss_res = float(np.sum((yv - y_hat) ** 2))
         ss_tot = float(np.sum((yv - yv.mean()) ** 2)) if yv.size else 0.0
@@ -126,7 +121,7 @@ def _dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
     try:
         return float(_ts_dtw(a.astype(float), b.astype(float)))
     except (TypeError, ValueError, RuntimeError):
-        return float("inf")
+        return float('inf')
 
 
 def _template_hs(L: int, inverse: bool = False) -> np.ndarray:
@@ -155,39 +150,28 @@ def _template_hs_variants(L: int, inverse: bool = False) -> Tuple[np.ndarray, ..
     for peaks in variants:
         y = 0.0 * x
         for center, height, variance in peaks:
-            y += float(height) * np.exp(
-                -((x - float(center)) ** 2) / max(1e-6, float(variance))
-            )
+            y += float(height) * np.exp(-((x - float(center)) ** 2) / max(1e-6, float(variance)))
         if inverse:
             y = -y
         out.append(_znorm(y))
     return tuple(out)
 
 
-def _compute_atr(
-    high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int
-) -> np.ndarray:
+def _compute_atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int) -> np.ndarray:
     h = np.asarray(high, dtype=float)
-    low_vals = np.asarray(low, dtype=float)
+    l = np.asarray(low, dtype=float)
     c = np.asarray(close, dtype=float)
-    n = min(h.size, low_vals.size, c.size)
+    n = min(h.size, l.size, c.size)
     if n <= 0:
         return np.asarray([], dtype=float)
     h = h[:n]
-    low_vals = low_vals[:n]
+    l = l[:n]
     c = c[:n]
     prev_c = np.concatenate(([c[0]], c[:-1]))
-    tr = np.maximum(
-        h - low_vals, np.maximum(np.abs(h - prev_c), np.abs(low_vals - prev_c))
-    )
+    tr = np.maximum(h - l, np.maximum(np.abs(h - prev_c), np.abs(l - prev_c)))
     win = max(2, int(period))
     try:
-        atr = (
-            pd.Series(tr)
-            .rolling(win, min_periods=max(2, win // 2))
-            .mean()
-            .to_numpy(dtype=float)
-        )
+        atr = pd.Series(tr).rolling(win, min_periods=max(2, win // 2)).mean().to_numpy(dtype=float)
     except (TypeError, ValueError):
         atr = tr.astype(float)
     return atr
@@ -200,17 +184,11 @@ def _pivot_thresholds(
     cfg: ClassicDetectorConfig,
 ) -> Tuple[float, int]:
     x = np.asarray(close, dtype=float)
-    base = (
-        float(np.median(x))
-        if np.isfinite(np.median(x)) and np.median(x) > 1e-9
-        else float(np.mean(x))
-    )
+    base = float(np.median(x)) if np.isfinite(np.median(x)) and np.median(x) > 1e-9 else float(np.mean(x))
     prom_abs = abs(base) * (cfg.min_prominence_pct / 100.0)
     min_dist = max(2, int(cfg.min_distance))
 
-    if bool(cfg.pivot_use_atr_adaptive_prominence) or bool(
-        cfg.pivot_use_atr_adaptive_distance
-    ):
+    if bool(cfg.pivot_use_atr_adaptive_prominence) or bool(cfg.pivot_use_atr_adaptive_distance):
         atr = _compute_atr(high, low, x, int(cfg.pivot_atr_period))
         finite = atr[np.isfinite(atr)]
         if finite.size > 0:
@@ -220,9 +198,7 @@ def _pivot_thresholds(
             if bool(cfg.pivot_use_atr_adaptive_distance) and base > 1e-12:
                 atr_pct = abs(atr_med / base) * 100.0
                 scale = 1.0 + max(0.0, float(cfg.pivot_atr_distance_mult)) * atr_pct
-                scale = min(
-                    float(max(1.0, cfg.pivot_max_distance_scale)), max(1.0, scale)
-                )
+                scale = min(float(max(1.0, cfg.pivot_max_distance_scale)), max(1.0, scale))
                 min_dist = max(2, int(round(float(cfg.min_distance) * scale)))
     return float(max(1e-12, prom_abs)), int(min_dist)
 
@@ -258,22 +234,14 @@ def _detect_pivots_close(
     except ValueError:
         return np.array([], dtype=int), np.array([], dtype=int)
     if bool(getattr(cfg, "pivot_enable_fallback", True)):
-        need_peak_fallback = int(peaks.size) < int(
-            max(0, getattr(cfg, "pivot_fallback_min_peaks", 2))
-        )
-        need_trough_fallback = int(troughs.size) < int(
-            max(0, getattr(cfg, "pivot_fallback_min_troughs", 2))
-        )
+        need_peak_fallback = int(peaks.size) < int(max(0, getattr(cfg, "pivot_fallback_min_peaks", 2)))
+        need_trough_fallback = int(troughs.size) < int(max(0, getattr(cfg, "pivot_fallback_min_troughs", 2)))
         if need_peak_fallback or need_trough_fallback:
             order = max(2, int(getattr(cfg, "pivot_fallback_order", 2)))
             if need_peak_fallback:
-                peaks = _fallback_local_extrema(
-                    src_hi, min_dist, order, prefer_high=True
-                )
+                peaks = _fallback_local_extrema(src_hi, min_dist, order, prefer_high=True)
             if need_trough_fallback:
-                troughs = _fallback_local_extrema(
-                    src_lo, min_dist, order, prefer_high=False
-                )
+                troughs = _fallback_local_extrema(src_lo, min_dist, order, prefer_high=False)
     return peaks.astype(int), troughs.astype(int)
 
 
@@ -298,27 +266,19 @@ def _fallback_local_extrema(
             continue
         plateau_tol = max(1e-12, abs(center) * 1e-12)
         plateau_left = idx
-        while (
-            plateau_left > 0
-            and np.isfinite(values[plateau_left - 1])
-            and np.isclose(
-                values[plateau_left - 1],
-                center,
-                rtol=0.0,
-                atol=plateau_tol,
-            )
+        while plateau_left > 0 and np.isfinite(values[plateau_left - 1]) and np.isclose(
+            values[plateau_left - 1],
+            center,
+            rtol=0.0,
+            atol=plateau_tol,
         ):
             plateau_left -= 1
         plateau_right = idx
-        while (
-            plateau_right < (n - 1)
-            and np.isfinite(values[plateau_right + 1])
-            and np.isclose(
-                values[plateau_right + 1],
-                center,
-                rtol=0.0,
-                atol=plateau_tol,
-            )
+        while plateau_right < (n - 1) and np.isfinite(values[plateau_right + 1]) and np.isclose(
+            values[plateau_right + 1],
+            center,
+            rtol=0.0,
+            atol=plateau_tol,
         ):
             plateau_right += 1
         if plateau_left != plateau_right:
@@ -341,18 +301,12 @@ def _fallback_local_extrema(
         prev_idx = int(reduced[-1])
         prev_val = float(values[prev_idx])
         curr_val = float(values[idx])
-        better = (
-            idx
-            if (curr_val > prev_val if prefer_high else curr_val < prev_val)
-            else prev_idx
-        )
+        better = idx if (curr_val > prev_val if prefer_high else curr_val < prev_val) else prev_idx
         reduced[-1] = int(better)
     return np.asarray(reduced, dtype=int)
 
 
-def _last_touch_indexes(
-    bound_y: np.ndarray, idxs: np.ndarray, y: np.ndarray, tol: float
-) -> List[int]:
+def _last_touch_indexes(bound_y: np.ndarray, idxs: np.ndarray, y: np.ndarray, tol: float) -> List[int]:
     out: List[int] = []
     for i in idxs.tolist():
         if i < 0 or i >= y.size:
@@ -363,7 +317,7 @@ def _last_touch_indexes(
 
 
 def _build_time_array(df: pd.DataFrame) -> np.ndarray:
-    t = df.get("time")
+    t = df.get('time')
     if t is None:
         return np.asarray([], dtype=float)
     try:
@@ -381,9 +335,7 @@ def _tol_abs_from_close(close: np.ndarray, tol_pct: float) -> float:
     return abs(med) * (float(tol_pct) / 100.0)
 
 
-def _boundary_tol_abs(
-    boundary: float, tol_abs: float, tol_pct: Optional[float] = None
-) -> float:
+def _boundary_tol_abs(boundary: float, tol_abs: float, tol_pct: Optional[float] = None) -> float:
     tol_floor = abs(float(tol_abs))
     if tol_pct is None:
         return tol_floor
@@ -393,15 +345,9 @@ def _boundary_tol_abs(
     return abs(boundary) * pct
 
 
-def _result(
-    name: str,
-    status: str,
-    confidence: float,
-    start_index: int,
-    end_index: int,
-    t: np.ndarray,
-    details: Dict[str, Any],
-) -> ClassicPatternResult:
+def _result(name: str, status: str, confidence: float,
+            start_index: int, end_index: int,
+            t: np.ndarray, details: Dict[str, Any]) -> ClassicPatternResult:
     return ClassicPatternResult(
         name=name,
         status=status,
@@ -414,9 +360,7 @@ def _result(
     )
 
 
-def _alias(
-    base: ClassicPatternResult, name: str, conf_scale: float = 0.95
-) -> ClassicPatternResult:
+def _alias(base: ClassicPatternResult, name: str, conf_scale: float = 0.95) -> ClassicPatternResult:
     return ClassicPatternResult(
         name=name,
         status=base.status,
@@ -472,14 +416,9 @@ def _boundaries_are_ordered(
     return bool(np.all(span > max(1e-9, float(min_gap))))
 
 
-def _count_touches(
-    upper: np.ndarray,
-    lower: np.ndarray,
-    peak_idxs: np.ndarray,
-    trough_idxs: np.ndarray,
-    c: np.ndarray,
-    tol_abs: float,
-) -> int:
+def _count_touches(upper: np.ndarray, lower: np.ndarray,
+                   peak_idxs: np.ndarray, trough_idxs: np.ndarray,
+                   c: np.ndarray, tol_abs: float) -> int:
     touches = 0
     touches += len(_last_touch_indexes(upper, peak_idxs, c, tol_abs))
     touches += len(_last_touch_indexes(lower, trough_idxs, c, tol_abs))
@@ -516,12 +455,8 @@ def _is_converging(
     last = max(5, int(k))
     recent = float(np.mean(span[-last:])) if span.size >= last else float(np.mean(span))
     past_win = max(20, 2 * int(k))
-    prev_win = span[-past_win:-last] if n > past_win else span[: max(1, span.size // 2)]
-    past = (
-        float(np.mean(prev_win))
-        if prev_win.size > 0
-        else recent * float(cfg.convergence_fallback_scale)
-    )
+    prev_win = span[-past_win:-last] if n > past_win else span[:max(1, span.size // 2)]
+    past = float(np.mean(prev_win)) if prev_win.size > 0 else recent * float(cfg.convergence_fallback_scale)
     return bool(recent < past)
 
 
@@ -627,9 +562,7 @@ def _calibrate_confidence(raw: float, name: str, cfg: ClassicDetectorConfig) -> 
     conf = float(max(0.0, min(1.0, raw)))
     if not bool(getattr(cfg, "calibrate_confidence", False)):
         return conf
-    points = _collect_calibration_points(
-        getattr(cfg, "confidence_calibration_map", {}), name
-    )
+    points = _collect_calibration_points(getattr(cfg, "confidence_calibration_map", {}), name)
     if len(points) < 2:
         return conf
 
@@ -649,7 +582,6 @@ def _calibrate_confidence(raw: float, name: str, cfg: ClassicDetectorConfig) -> 
     blend = float(max(0.0, min(1.0, getattr(cfg, "confidence_calibration_blend", 1.0))))
     out = (1.0 - blend) * conf + blend * float(cal)
     return float(max(0.0, min(1.0, out)))
-
 
 def _conf(touches: int, r2: float, geom_ok: float, cfg: ClassicDetectorConfig) -> float:
     raw_weights = np.asarray(
@@ -676,16 +608,12 @@ def _conf(touches: int, r2: float, geom_ok: float, cfg: ClassicDetectorConfig) -
     return float(min(1.0, max(0.0, float(np.dot(scores, raw_weights)))))
 
 
-def _apply_breakout_confidence_bonus(
-    confidence: float, cfg: ClassicDetectorConfig
-) -> float:
+def _apply_breakout_confidence_bonus(confidence: float, cfg: ClassicDetectorConfig) -> float:
     bonus = max(0.0, float(getattr(cfg, "breakout_confidence_bonus", 0.08)))
     return float(min(1.0, max(0.0, float(confidence)) + bonus))
 
 
-def _robust_level_center(
-    values: np.ndarray, cfg: ClassicDetectorConfig
-) -> Optional[float]:
+def _robust_level_center(values: np.ndarray, cfg: ClassicDetectorConfig) -> Optional[float]:
     arr = np.asarray(values, dtype=float)
     arr = arr[np.isfinite(arr)]
     if arr.size <= 0:

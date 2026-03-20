@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, PropertyMock
 import numpy as np
 import pandas as pd
 import pytest
@@ -16,7 +16,6 @@ from mtdata.utils.patterns import PatternIndex, _SeriesStore
 # ===========================================================================
 # Helpers
 # ===========================================================================
-
 
 def _price_series(n=200, name="close"):
     vals = np.cumsum(np.random.randn(n)) + 100
@@ -34,21 +33,15 @@ def _make_mock_index(n_windows=120, window_size=64, horizon=10):
     base = np.cumsum(np.random.randn(full_len)) + 100
     series_len = n_windows + window_size + horizon - 1
 
-    idx.get_symbol_series = MagicMock(
-        return_value=np.cumsum(np.random.randn(max(series_len, window_size))) + 100
-    )
-    idx.search = MagicMock(
-        return_value=(
-            np.arange(min(25, n_windows)),
-            np.random.rand(min(25, n_windows)),
-        )
-    )
-    idx.refine_matches = MagicMock(
-        return_value=(
-            np.arange(min(10, n_windows)),
-            np.random.rand(min(10, n_windows)),
-        )
-    )
+    idx.get_symbol_series = MagicMock(return_value=np.cumsum(np.random.randn(max(series_len, window_size))) + 100)
+    idx.search = MagicMock(return_value=(
+        np.arange(min(25, n_windows)),
+        np.random.rand(min(25, n_windows)),
+    ))
+    idx.refine_matches = MagicMock(return_value=(
+        np.arange(min(10, n_windows)),
+        np.random.rand(min(10, n_windows)),
+    ))
     idx.get_match_values = MagicMock(return_value=base.copy())
     idx.get_match_times = MagicMock(return_value=np.arange(window_size, dtype=float))
     idx.get_match_symbol = MagicMock(return_value="EURUSD")
@@ -63,9 +56,7 @@ def _make_mock_index(n_windows=120, window_size=64, horizon=10):
     return idx
 
 
-def _make_real_index(
-    series: np.ndarray, *, window_size: int, horizon: int, scale: str = "zscore"
-) -> PatternIndex:
+def _make_real_index(series: np.ndarray, *, window_size: int, horizon: int, scale: str = "zscore") -> PatternIndex:
     values = np.asarray(series, dtype=float)
     n = values.size
     limit = n - (window_size + horizon) + 1
@@ -109,7 +100,6 @@ def _make_real_index(
 # AnalogMethod properties
 # ===========================================================================
 
-
 class TestAnalogMethodProperties:
     def test_name(self):
         assert AnalogMethod().name == "analog"
@@ -133,7 +123,6 @@ class TestAnalogMethodProperties:
 # _run_single_timeframe (lines 67-192)
 # ===========================================================================
 
-
 class TestRunSingleTimeframe:
     def setup_method(self):
         self.m = AnalogMethod()
@@ -142,10 +131,7 @@ class TestRunSingleTimeframe:
     def test_basic(self, mock_bi):
         mock_bi.return_value = _make_mock_index()
         futures, meta = self.m._run_single_timeframe(
-            "EURUSD",
-            "H1",
-            10,
-            {"window_size": 64, "top_k": 5},
+            "EURUSD", "H1", 10, {"window_size": 64, "top_k": 5},
             query_vector=np.random.rand(64),
         )
         assert len(futures) > 0
@@ -170,27 +156,18 @@ class TestRunSingleTimeframe:
     def test_query_vector_shorter_than_window(self, mock_bi):
         mock_bi.return_value = _make_mock_index()
         futures, meta = self.m._run_single_timeframe(
-            "EURUSD",
-            "H1",
-            10,
-            {"window_size": 64},
+            "EURUSD", "H1", 10, {"window_size": 64},
             query_vector=np.random.rand(30),
         )
         assert futures == []
         assert meta == []
-        assert (
-            self.m._get_timeframe_diagnostic("H1")["reason"]
-            == "insufficient_query_history"
-        )
+        assert self.m._get_timeframe_diagnostic("H1")["reason"] == "insufficient_query_history"
 
     @patch("mtdata.forecast.methods.analog.build_index")
     def test_query_vector_empty(self, mock_bi):
         mock_bi.return_value = _make_mock_index()
         futures, meta = self.m._run_single_timeframe(
-            "EURUSD",
-            "H1",
-            10,
-            {"window_size": 64},
+            "EURUSD", "H1", 10, {"window_size": 64},
             query_vector=np.array([]),
         )
         assert futures == []
@@ -199,10 +176,7 @@ class TestRunSingleTimeframe:
     def test_query_vector_longer_than_window(self, mock_bi):
         mock_bi.return_value = _make_mock_index()
         futures, meta = self.m._run_single_timeframe(
-            "EURUSD",
-            "H1",
-            10,
-            {"window_size": 64},
+            "EURUSD", "H1", 10, {"window_size": 64},
             query_vector=np.random.rand(200),
         )
         assert len(futures) > 0
@@ -210,9 +184,7 @@ class TestRunSingleTimeframe:
     @patch("mtdata.forecast.methods.analog.build_index")
     def test_no_query_vector_uses_internal(self, mock_bi):
         mock_bi.return_value = _make_mock_index()
-        futures, meta = self.m._run_single_timeframe(
-            "EURUSD", "H1", 10, {"window_size": 64}
-        )
+        futures, meta = self.m._run_single_timeframe("EURUSD", "H1", 10, {"window_size": 64})
         assert len(futures) > 0
 
     @patch("mtdata.forecast.methods.analog.build_index")
@@ -221,10 +193,7 @@ class TestRunSingleTimeframe:
         idx.get_symbol_series.return_value = np.ones(5)
         mock_bi.return_value = idx
         futures, meta = self.m._run_single_timeframe(
-            "EURUSD",
-            "H1",
-            10,
-            {"window_size": 64},
+            "EURUSD", "H1", 10, {"window_size": 64},
         )
         assert futures == []
 
@@ -234,10 +203,7 @@ class TestRunSingleTimeframe:
         idx.search.side_effect = RuntimeError("search fail")
         mock_bi.return_value = idx
         futures, meta = self.m._run_single_timeframe(
-            "EURUSD",
-            "H1",
-            10,
-            {},
+            "EURUSD", "H1", 10, {},
             query_vector=np.random.rand(64),
         )
         assert futures == []
@@ -249,10 +215,7 @@ class TestRunSingleTimeframe:
         idx.search.return_value = (np.array([8, 9, 7, 6, 5]), np.ones(5))
         mock_bi.return_value = idx
         futures, meta = self.m._run_single_timeframe(
-            "EURUSD",
-            "H1",
-            10,
-            {"window_size": 64, "top_k": 5},
+            "EURUSD", "H1", 10, {"window_size": 64, "top_k": 5},
             query_vector=np.random.rand(64),
         )
         # i >= n_windows - 5 => 5,6,7,8,9 all filtered
@@ -265,10 +228,7 @@ class TestRunSingleTimeframe:
         idx.refine_matches.side_effect = RuntimeError("refine fail")
         mock_bi.return_value = idx
         futures, meta = self.m._run_single_timeframe(
-            "EURUSD",
-            "H1",
-            10,
-            {},
+            "EURUSD", "H1", 10, {},
             query_vector=np.random.rand(64),
         )
         assert futures == []
@@ -280,10 +240,7 @@ class TestRunSingleTimeframe:
         idx.get_match_values.return_value = np.ones(50)  # shorter than window_size
         mock_bi.return_value = idx
         futures, meta = self.m._run_single_timeframe(
-            "EURUSD",
-            "H1",
-            10,
-            {"window_size": 64, "top_k": 5},
+            "EURUSD", "H1", 10, {"window_size": 64, "top_k": 5},
             query_vector=np.random.rand(64),
         )
         assert futures == []
@@ -298,10 +255,7 @@ class TestRunSingleTimeframe:
         idx.get_match_values.return_value = vals
         mock_bi.return_value = idx
         futures, meta = self.m._run_single_timeframe(
-            "EURUSD",
-            "H1",
-            10,
-            {"window_size": 64, "top_k": 5},
+            "EURUSD", "H1", 10, {"window_size": 64, "top_k": 5},
             query_vector=np.random.rand(64),
         )
         for f in futures:
@@ -315,10 +269,7 @@ class TestRunSingleTimeframe:
         idx.get_match_values.return_value = vals
         mock_bi.return_value = idx
         futures, meta = self.m._run_single_timeframe(
-            "EURUSD",
-            "H1",
-            10,
-            {"window_size": 64, "top_k": 5},
+            "EURUSD", "H1", 10, {"window_size": 64, "top_k": 5},
             query_vector=np.random.rand(64),
         )
         for f in futures:
@@ -328,9 +279,7 @@ class TestRunSingleTimeframe:
     def test_matrix_profile_engine(self, mock_bi):
         mock_bi.return_value = _make_mock_index()
         futures, meta = self.m._run_single_timeframe(
-            "EURUSD",
-            "H1",
-            10,
+            "EURUSD", "H1", 10,
             {"window_size": 64, "search_engine": "matrix_profile", "metric": "cosine"},
             query_vector=np.random.rand(64),
         )
@@ -341,9 +290,7 @@ class TestRunSingleTimeframe:
     def test_mass_engine(self, mock_bi):
         mock_bi.return_value = _make_mock_index()
         futures, meta = self.m._run_single_timeframe(
-            "EURUSD",
-            "H1",
-            10,
+            "EURUSD", "H1", 10,
             {"window_size": 64, "search_engine": "mass"},
             query_vector=np.random.rand(64),
         )
@@ -353,10 +300,7 @@ class TestRunSingleTimeframe:
     def test_meta_contains_expected_keys(self, mock_bi):
         mock_bi.return_value = _make_mock_index()
         futures, meta = self.m._run_single_timeframe(
-            "EURUSD",
-            "H1",
-            10,
-            {"window_size": 64, "top_k": 3},
+            "EURUSD", "H1", 10, {"window_size": 64, "top_k": 3},
             query_vector=np.random.rand(64),
         )
         for m_obj in meta:
@@ -367,18 +311,14 @@ class TestRunSingleTimeframe:
             assert "scale_factor" in m_obj
 
     @patch("mtdata.forecast.methods.analog.build_index")
-    def test_overlap_filter_excludes_recent_windows_using_real_index_geometry(
-        self, mock_bi
-    ):
+    def test_overlap_filter_excludes_recent_windows_using_real_index_geometry(self, mock_bi):
         window_size = 64
         horizon = 10
         series = np.linspace(100.0, 200.0, 200, dtype=float)
         idx = _make_real_index(series, window_size=window_size, horizon=horizon)
 
         def fake_search(anchor_values, top_k=5):
-            return np.array([126, 125, 62, 61], dtype=int), np.array(
-                [0.01, 0.02, 0.03, 0.04], dtype=float
-            )
+            return np.array([126, 125, 62, 61], dtype=int), np.array([0.01, 0.02, 0.03, 0.04], dtype=float)
 
         def fake_refine(anchor_values, valid_idxs, valid_dists, top_k, **kwargs):
             return valid_idxs[:top_k], valid_dists[:top_k]
@@ -397,9 +337,7 @@ class TestRunSingleTimeframe:
 
         assert len(futures) == 2
         assert [m_obj["index"] for m_obj in meta] == [62, 61]
-        assert (
-            self.m._get_timeframe_diagnostic("H1")["excluded_overlap_candidates"] == 2
-        )
+        assert self.m._get_timeframe_diagnostic("H1")["excluded_overlap_candidates"] == 2
 
     @patch("mtdata.forecast.methods.analog.build_index")
     def test_default_min_separation_deduplicates_adjacent_candidates(self, mock_bi):
@@ -409,9 +347,7 @@ class TestRunSingleTimeframe:
         idx = _make_real_index(series, window_size=window_size, horizon=horizon)
 
         def fake_search(anchor_values, top_k=5):
-            return np.array([62, 61, 20], dtype=int), np.array(
-                [0.01, 0.02, 0.03], dtype=float
-            )
+            return np.array([62, 61, 20], dtype=int), np.array([0.01, 0.02, 0.03], dtype=float)
 
         def fake_refine(anchor_values, valid_idxs, valid_dists, top_k, **kwargs):
             return valid_idxs[:top_k], valid_dists[:top_k]
@@ -430,10 +366,7 @@ class TestRunSingleTimeframe:
 
         assert len(futures) == 2
         assert [m_obj["index"] for m_obj in meta] == [62, 20]
-        assert (
-            self.m._get_timeframe_diagnostic("H1")["excluded_near_duplicate_candidates"]
-            >= 1
-        )
+        assert self.m._get_timeframe_diagnostic("H1")["excluded_near_duplicate_candidates"] >= 1
 
     @patch("mtdata.forecast.methods.analog.build_index")
     def test_denoise_spec_is_forwarded_to_index_build(self, mock_bi):
@@ -491,39 +424,25 @@ class TestRunSingleTimeframe:
     @patch("mtdata.forecast.methods.analog.build_index")
     def test_overlap_filter_does_not_exclude_other_symbol_candidates(self, mock_bi):
         idx = _make_mock_index(n_windows=20, window_size=8, horizon=2)
-        idx.search.return_value = (
-            np.array([19, 18], dtype=int),
-            np.array([0.01, 0.02], dtype=float),
+        idx.search.return_value = (np.array([19, 18], dtype=int), np.array([0.01, 0.02], dtype=float))
+        idx.refine_matches.side_effect = lambda anchor_values, valid_idxs, valid_dists, top_k, **kwargs: (
+            valid_idxs[:top_k],
+            valid_dists[:top_k],
         )
-        idx.refine_matches.side_effect = (
-            lambda anchor_values, valid_idxs, valid_dists, top_k, **kwargs: (
-                valid_idxs[:top_k],
-                valid_dists[:top_k],
-            )
-        )
-        idx.get_match_symbol.side_effect = (
-            lambda i: "GBPUSD" if int(i) == 19 else "EURUSD"
-        )
+        idx.get_match_symbol.side_effect = lambda i: "GBPUSD" if int(i) == 19 else "EURUSD"
         mock_bi.return_value = idx
 
         futures, meta = self.m._run_single_timeframe(
             "EURUSD",
             "H1",
             2,
-            {
-                "window_size": 8,
-                "top_k": 1,
-                "search_symbols": ["EURUSD", "GBPUSD"],
-                "min_separation": 0,
-            },
+            {"window_size": 8, "top_k": 1, "search_symbols": ["EURUSD", "GBPUSD"], "min_separation": 0},
             query_vector=np.random.rand(8),
         )
 
         assert len(futures) == 1
         assert meta[0]["symbol"] == "GBPUSD"
-        assert (
-            self.m._get_timeframe_diagnostic("H1")["excluded_overlap_candidates"] == 1
-        )
+        assert self.m._get_timeframe_diagnostic("H1")["excluded_overlap_candidates"] == 1
 
     @patch("mtdata.forecast.methods.analog.build_index")
     def test_search_expands_when_overlap_filters_initial_neighbors(self, mock_bi):
@@ -533,12 +452,8 @@ class TestRunSingleTimeframe:
         def fake_search(anchor_values, top_k=5):
             calls.append(int(top_k))
             if int(top_k) < 20:
-                return np.arange(19, 11, -1, dtype=int), np.linspace(
-                    0.01, 0.08, 8, dtype=float
-                )
-            return np.array([19, 18, 1, 0], dtype=int), np.array(
-                [0.01, 0.02, 0.03, 0.04], dtype=float
-            )
+                return np.arange(19, 11, -1, dtype=int), np.linspace(0.01, 0.08, 8, dtype=float)
+            return np.array([19, 18, 1, 0], dtype=int), np.array([0.01, 0.02, 0.03, 0.04], dtype=float)
 
         def fake_refine(anchor_values, valid_idxs, valid_dists, top_k, **kwargs):
             return valid_idxs[:top_k], valid_dists[:top_k]
@@ -565,58 +480,36 @@ class TestRunSingleTimeframe:
 # AnalogMethod.forecast (lines 194-361)
 # ===========================================================================
 
-
 class TestAnalogMethodForecast:
     def setup_method(self):
         self.m = AnalogMethod()
 
     def test_raises_on_empty_series(self):
         with pytest.raises(ValueError, match="price series only"):
-            self.m.forecast(
-                pd.Series([], dtype=float, name="close"),
-                horizon=10,
-                seasonality=1,
-                params={"symbol": "X", "timeframe": "H1"},
-            )
+            self.m.forecast(pd.Series([], dtype=float, name="close"), horizon=10, seasonality=1, params={"symbol": "X", "timeframe": "H1"})
 
     def test_raises_on_return_series(self):
         with pytest.raises(ValueError, match="price series only"):
-            self.m.forecast(
-                _price_series(name="__return"),
-                horizon=10,
-                seasonality=1,
-                params={"symbol": "X", "timeframe": "H1"},
-            )
+            self.m.forecast(_price_series(name="__return"), horizon=10, seasonality=1, params={"symbol": "X", "timeframe": "H1"})
 
     def test_raises_on_vol_series(self):
         with pytest.raises(ValueError, match="price series only"):
-            self.m.forecast(
-                _price_series(name="vol_series"),
-                horizon=10,
-                seasonality=1,
-                params={"symbol": "X", "timeframe": "H1"},
-            )
+            self.m.forecast(_price_series(name="vol_series"), horizon=10, seasonality=1, params={"symbol": "X", "timeframe": "H1"})
 
     def test_raises_missing_symbol(self):
         with pytest.raises(ValueError, match="symbol"):
-            self.m.forecast(
-                _price_series(), horizon=10, seasonality=1, params={"timeframe": "H1"}
-            )
+            self.m.forecast(_price_series(), horizon=10, seasonality=1, params={"timeframe": "H1"})
 
     def test_raises_missing_timeframe(self):
         with pytest.raises(ValueError, match="timeframe"):
-            self.m.forecast(
-                _price_series(), horizon=10, seasonality=1, params={"symbol": "EURUSD"}
-            )
+            self.m.forecast(_price_series(), horizon=10, seasonality=1, params={"symbol": "EURUSD"})
 
     @patch.object(AnalogMethod, "_run_single_timeframe")
     def test_primary_failure_raises(self, mock_run):
         mock_run.return_value = ([], [])
         with pytest.raises(RuntimeError, match="Primary analog search failed"):
             self.m.forecast(
-                _price_series(),
-                horizon=10,
-                seasonality=1,
+                _price_series(), horizon=10, seasonality=1,
                 params={"symbol": "EURUSD", "timeframe": "H1"},
             )
 
@@ -624,15 +517,10 @@ class TestAnalogMethodForecast:
     @patch.object(AnalogMethod, "_run_single_timeframe")
     def test_successful_forecast(self, mock_run):
         futures = [np.random.rand(10) * 100 + 50 for _ in range(5)]
-        meta = [
-            {"score": 0.1, "date": "2020-01-01", "index": i, "scale_factor": 1.0}
-            for i in range(5)
-        ]
+        meta = [{"score": 0.1, "date": "2020-01-01", "index": i, "scale_factor": 1.0} for i in range(5)]
         mock_run.return_value = (futures, meta)
         res = self.m.forecast(
-            _price_series(),
-            horizon=10,
-            seasonality=1,
+            _price_series(), horizon=10, seasonality=1,
             params={"symbol": "EURUSD", "timeframe": "H1"},
         )
         assert isinstance(res, ForecastResult)
@@ -643,15 +531,10 @@ class TestAnalogMethodForecast:
     @patch.object(AnalogMethod, "_run_single_timeframe")
     def test_ci_alpha_default(self, mock_run):
         futures = [np.random.rand(10) * 100 + 50 for _ in range(5)]
-        meta = [
-            {"score": 0.1, "date": "2020-01-01", "index": i, "scale_factor": 1.0}
-            for i in range(5)
-        ]
+        meta = [{"score": 0.1, "date": "2020-01-01", "index": i, "scale_factor": 1.0} for i in range(5)]
         mock_run.return_value = (futures, meta)
         res = self.m.forecast(
-            _price_series(),
-            horizon=10,
-            seasonality=1,
+            _price_series(), horizon=10, seasonality=1,
             params={"symbol": "EURUSD", "timeframe": "H1"},
         )
         assert res.params_used["ci_alpha"] == 0.05
@@ -660,15 +543,10 @@ class TestAnalogMethodForecast:
     @patch.object(AnalogMethod, "_run_single_timeframe")
     def test_ci_alpha_invalid(self, mock_run):
         futures = [np.random.rand(10) * 100 + 50 for _ in range(5)]
-        meta = [
-            {"score": 0.1, "date": "2020-01-01", "index": i, "scale_factor": 1.0}
-            for i in range(5)
-        ]
+        meta = [{"score": 0.1, "date": "2020-01-01", "index": i, "scale_factor": 1.0} for i in range(5)]
         mock_run.return_value = (futures, meta)
         res = self.m.forecast(
-            _price_series(),
-            horizon=10,
-            seasonality=1,
+            _price_series(), horizon=10, seasonality=1,
             params={"symbol": "EURUSD", "timeframe": "H1", "ci_alpha": 2.0},
         )
         assert res.params_used["ci_alpha"] == 0.05
@@ -677,20 +555,11 @@ class TestAnalogMethodForecast:
     @patch.object(AnalogMethod, "_run_single_timeframe")
     def test_secondary_timeframes(self, mock_run):
         futures = [np.random.rand(10) * 100 + 50 for _ in range(5)]
-        meta = [
-            {"score": 0.1, "date": "2020-01-01", "index": i, "scale_factor": 1.0}
-            for i in range(5)
-        ]
+        meta = [{"score": 0.1, "date": "2020-01-01", "index": i, "scale_factor": 1.0} for i in range(5)]
         mock_run.return_value = (futures, meta)
         res = self.m.forecast(
-            _price_series(),
-            horizon=10,
-            seasonality=1,
-            params={
-                "symbol": "EURUSD",
-                "timeframe": "H1",
-                "secondary_timeframes": "H4",
-            },
+            _price_series(), horizon=10, seasonality=1,
+            params={"symbol": "EURUSD", "timeframe": "H1", "secondary_timeframes": "H4"},
         )
         assert res.forecast is not None
 

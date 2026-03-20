@@ -5,12 +5,9 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, Literal, Optional, Tuple, Union
 
-from .trading_gateway import (
-    MT5TradingGateway,
-    create_trading_gateway,
-    trading_connection_error,
-)
+from .trading_gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from ..utils.utils import _coerce_finite_float, _coerce_scalar
+from ..utils.mt5 import ensure_mt5_connection_or_raise
 
 
 MarketOrderTypeLiteral = Literal["BUY", "SELL"]
@@ -79,9 +76,7 @@ def _normalize_order_type_input(order_type: Any) -> Tuple[Optional[str], Optiona
 
     scalar = _coerce_scalar(text)
     if isinstance(scalar, (int, float)) and not isinstance(scalar, bool):
-        if isinstance(scalar, float) and (
-            not math.isfinite(scalar) or not scalar.is_integer()
-        ):
+        if isinstance(scalar, float) and (not math.isfinite(scalar) or not scalar.is_integer()):
             return None, f"Unsupported order_type '{order_type}'."
         mapped = _ORDER_TYPE_NUMERIC_MAP.get(int(scalar))
         if mapped:
@@ -107,9 +102,7 @@ def _normalize_order_type_input(order_type: Any) -> Tuple[Optional[str], Optiona
     )
 
 
-def _validate_volume(
-    volume: Union[int, float], symbol_info: Any
-) -> Tuple[Optional[float], Optional[str]]:
+def _validate_volume(volume: Union[int, float], symbol_info: Any) -> Tuple[Optional[float], Optional[str]]:
     """Validate lot size against symbol constraints."""
     try:
         vol = float(volume)
@@ -164,9 +157,7 @@ def _validate_volume(
     return vol, None
 
 
-def _validate_deviation(
-    deviation: Union[int, float],
-) -> Tuple[Optional[int], Optional[str]]:
+def _validate_deviation(deviation: Union[int, float]) -> Tuple[Optional[int], Optional[str]]:
     """Validate/normalize MT5 deviation in points."""
     try:
         dev = int(float(deviation))
@@ -229,18 +220,14 @@ def _broker_distance_metadata(symbol_info: Any) -> Dict[str, float]:
         point = 0.0
 
     try:
-        stops_level_points = int(
-            float(getattr(symbol_info, "trade_stops_level", 0) or 0)
-        )
+        stops_level_points = int(float(getattr(symbol_info, "trade_stops_level", 0) or 0))
     except Exception:
         stops_level_points = 0
     if stops_level_points < 0:
         stops_level_points = 0
 
     try:
-        freeze_level_points = int(
-            float(getattr(symbol_info, "trade_freeze_level", 0) or 0)
-        )
+        freeze_level_points = int(float(getattr(symbol_info, "trade_freeze_level", 0) or 0))
     except Exception:
         freeze_level_points = 0
     if freeze_level_points < 0:
@@ -280,9 +267,7 @@ def _validate_pending_order_levels(
     except Exception:
         ask = float("nan")
     if not math.isfinite(bid) or not math.isfinite(ask):
-        return {
-            "error": "Failed to get valid current bid/ask for pending-order validation."
-        }
+        return {"error": "Failed to get valid current bid/ask for pending-order validation."}
 
     distance = _broker_distance_metadata(symbol_info)
     min_distance_points = int(distance["min_distance_points"])
@@ -326,10 +311,7 @@ def _validate_pending_order_levels(
                     ),
                     **_metadata(),
                 }
-            return {
-                "error": f"Price must be below ask for BUY_LIMIT. price={price}, ask={ask}",
-                **_metadata(),
-            }
+            return {"error": f"Price must be below ask for BUY_LIMIT. price={price}, ask={ask}", **_metadata()}
         if min_distance_price > 0 and (ask - price) < (min_distance_price - tol):
             return {
                 "error": (
@@ -348,10 +330,7 @@ def _validate_pending_order_levels(
                     ),
                     **_metadata(),
                 }
-            return {
-                "error": f"Price must be above ask for BUY_STOP. price={price}, ask={ask}",
-                **_metadata(),
-            }
+            return {"error": f"Price must be above ask for BUY_STOP. price={price}, ask={ask}", **_metadata()}
         if min_distance_price > 0 and (price - ask) < (min_distance_price - tol):
             return {
                 "error": (
@@ -370,10 +349,7 @@ def _validate_pending_order_levels(
                     ),
                     **_metadata(),
                 }
-            return {
-                "error": f"Price must be above bid for SELL_LIMIT. price={price}, bid={bid}",
-                **_metadata(),
-            }
+            return {"error": f"Price must be above bid for SELL_LIMIT. price={price}, bid={bid}", **_metadata()}
         if min_distance_price > 0 and (price - bid) < (min_distance_price - tol):
             return {
                 "error": (
@@ -392,10 +368,7 @@ def _validate_pending_order_levels(
                     ),
                     **_metadata(),
                 }
-            return {
-                "error": f"Price must be below bid for SELL_STOP. price={price}, bid={bid}",
-                **_metadata(),
-            }
+            return {"error": f"Price must be below bid for SELL_STOP. price={price}, bid={bid}", **_metadata()}
         if min_distance_price > 0 and (bid - price) < (min_distance_price - tol):
             return {
                 "error": (
@@ -405,10 +378,7 @@ def _validate_pending_order_levels(
                 **_metadata(),
             }
     else:
-        return {
-            "error": f"Unsupported pending order type {order_type_value}.",
-            **_metadata(),
-        }
+        return {"error": f"Unsupported pending order type {order_type_value}.", **_metadata()}
 
     if stop_loss is not None:
         sl = float(stop_loss)
@@ -530,9 +500,7 @@ def _validate_live_protection_levels(
                     ),
                     **_metadata(),
                 }
-            if min_distance_price > 0 and (reference_price - sl) < (
-                min_distance_price - tol
-            ):
+            if min_distance_price > 0 and (reference_price - sl) < (min_distance_price - tol):
                 return {
                     "error": (
                         "stop_loss is too close to the live bid for BUY positions. "
@@ -549,9 +517,7 @@ def _validate_live_protection_levels(
                     ),
                     **_metadata(),
                 }
-            if min_distance_price > 0 and (sl - reference_price) < (
-                min_distance_price - tol
-            ):
+            if min_distance_price > 0 and (sl - reference_price) < (min_distance_price - tol):
                 return {
                     "error": (
                         "stop_loss is too close to the live ask for SELL positions. "
@@ -571,9 +537,7 @@ def _validate_live_protection_levels(
                     ),
                     **_metadata(),
                 }
-            if min_distance_price > 0 and (tp - reference_price) < (
-                min_distance_price - tol
-            ):
+            if min_distance_price > 0 and (tp - reference_price) < (min_distance_price - tol):
                 return {
                     "error": (
                         "take_profit is too close to the live bid for BUY positions. "
@@ -590,9 +554,7 @@ def _validate_live_protection_levels(
                     ),
                     **_metadata(),
                 }
-            if min_distance_price > 0 and (reference_price - tp) < (
-                min_distance_price - tol
-            ):
+            if min_distance_price > 0 and (reference_price - tp) < (min_distance_price - tol):
                 return {
                     "error": (
                         "take_profit is too close to the live ask for SELL positions. "
@@ -640,9 +602,7 @@ def _prevalidate_trade_place_market_input(
     return None
 
 
-def _normalize_ticket_filter(
-    ticket: Any, *, name: str
-) -> Tuple[Optional[int], Optional[str]]:
+def _normalize_ticket_filter(ticket: Any, *, name: str) -> Tuple[Optional[int], Optional[str]]:
     if ticket in (None, ""):
         return None, None
     value = _coerce_finite_float(ticket)

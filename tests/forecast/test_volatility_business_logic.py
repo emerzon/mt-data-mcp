@@ -48,28 +48,14 @@ def test_volatility_metadata_and_helper_functions(monkeypatch):
     assert vol._kernel_weight("parzen", 1, 4) > 0
     assert vol._kernel_weight("tukey_hanning", 1, 4) > 0
 
-    assert math.isnan(
-        vol._realized_kernel_variance(np.array([0.1, 0.2]), bandwidth=None)
-    )
-    rk = vol._realized_kernel_variance(
-        np.array([0.1, -0.2, 0.05, 0.03, -0.01]), bandwidth=2, kernel="bartlett"
-    )
+    assert math.isnan(vol._realized_kernel_variance(np.array([0.1, 0.2]), bandwidth=None))
+    rk = vol._realized_kernel_variance(np.array([0.1, -0.2, 0.05, 0.03, -0.01]), bandwidth=2, kernel="bartlett")
     assert math.isfinite(rk)
     assert rk >= 0.0
 
     p = vol._parkinson_sigma_sq(np.array([2.0, 3.0]), np.array([1.0, 1.5]))
-    gk = vol._garman_klass_sigma_sq(
-        np.array([1.2, 2.0]),
-        np.array([2.0, 3.0]),
-        np.array([1.0, 1.5]),
-        np.array([1.8, 2.8]),
-    )
-    rs = vol._rogers_satchell_sigma_sq(
-        np.array([1.2, 2.0]),
-        np.array([2.0, 3.0]),
-        np.array([1.0, 1.5]),
-        np.array([1.8, 2.8]),
-    )
+    gk = vol._garman_klass_sigma_sq(np.array([1.2, 2.0]), np.array([2.0, 3.0]), np.array([1.0, 1.5]), np.array([1.8, 2.8]))
+    rs = vol._rogers_satchell_sigma_sq(np.array([1.2, 2.0]), np.array([2.0, 3.0]), np.array([1.0, 1.5]), np.array([1.8, 2.8]))
     assert np.all(np.isfinite(p))
     assert np.all(np.isfinite(gk))
     assert np.all(np.isfinite(rs))
@@ -94,27 +80,17 @@ def test_forecast_volatility_general_theta_and_proxy_errors(monkeypatch):
     monkeypatch.setattr(vol, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(vol, "TIMEFRAME_SECONDS", {"H1": 3600})
     monkeypatch.setattr(vol, "_ensure_symbol_ready", lambda _symbol: None)
-    monkeypatch.setattr(
-        vol, "_mt5_copy_rates_from", lambda *args, **kwargs: _rates(360)
-    )
-    monkeypatch.setattr(
-        vol.mt5, "symbol_info", lambda _symbol: SimpleNamespace(visible=False)
-    )
-    monkeypatch.setattr(
-        vol.mt5, "symbol_info_tick", lambda _symbol: SimpleNamespace(time=1_700_100_000)
-    )
+    monkeypatch.setattr(vol, "_mt5_copy_rates_from", lambda *args, **kwargs: _rates(360))
+    monkeypatch.setattr(vol.mt5, "symbol_info", lambda _symbol: SimpleNamespace(visible=False))
+    monkeypatch.setattr(vol.mt5, "symbol_info_tick", lambda _symbol: SimpleNamespace(time=1_700_100_000))
     monkeypatch.setattr(vol, "_mt5_epoch_to_utc", lambda t: float(t))
     monkeypatch.setattr(vol.mt5, "symbol_select", lambda _symbol, _visible: True)
     monkeypatch.setattr(vol.mt5, "last_error", lambda: (0, "ok"))
 
-    out = vol.forecast_volatility(
-        symbol="EURUSD", timeframe="H1", method="theta", proxy=None
-    )
+    out = vol.forecast_volatility(symbol="EURUSD", timeframe="H1", method="theta", proxy=None)
     assert "require 'proxy'" in out["error"]
 
-    out = vol.forecast_volatility(
-        symbol="EURUSD", timeframe="H1", method="theta", proxy="bad_proxy"
-    )  # type: ignore[arg-type]
+    out = vol.forecast_volatility(symbol="EURUSD", timeframe="H1", method="theta", proxy="bad_proxy")  # type: ignore[arg-type]
     assert "Unsupported proxy" in out["error"]
 
     out = vol.forecast_volatility(
@@ -134,17 +110,11 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     monkeypatch.setattr(vol, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(vol, "TIMEFRAME_SECONDS", {"H1": 3600})
     monkeypatch.setattr(vol, "_ensure_symbol_ready", lambda _symbol: None)
-    monkeypatch.setattr(
-        vol.mt5, "symbol_info", lambda _symbol: SimpleNamespace(visible=True)
-    )
-    monkeypatch.setattr(
-        vol.mt5, "symbol_info_tick", lambda _symbol: SimpleNamespace(time=1_700_100_000)
-    )
+    monkeypatch.setattr(vol.mt5, "symbol_info", lambda _symbol: SimpleNamespace(visible=True))
+    monkeypatch.setattr(vol.mt5, "symbol_info_tick", lambda _symbol: SimpleNamespace(time=1_700_100_000))
     monkeypatch.setattr(vol, "_mt5_epoch_to_utc", lambda t: float(t))
     monkeypatch.setattr(vol.mt5, "last_error", lambda: (0, "ok"))
-    monkeypatch.setattr(
-        vol, "_mt5_copy_rates_from", lambda *args, **kwargs: _rates(240)
-    )
+    monkeypatch.setattr(vol, "_mt5_copy_rates_from", lambda *args, **kwargs: _rates(240))
 
     out = vol.forecast_volatility(
         symbol="EURUSD",
@@ -186,22 +156,14 @@ def test_forecast_volatility_ensemble_aggregates_component_methods(monkeypatch):
     monkeypatch.setattr(vol, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(vol, "TIMEFRAME_SECONDS", {"H1": 3600})
     monkeypatch.setattr(vol, "_ensure_symbol_ready", lambda _symbol: None)
-    monkeypatch.setattr(
-        vol.mt5, "symbol_info", lambda _symbol: SimpleNamespace(visible=True)
-    )
-    monkeypatch.setattr(
-        vol.mt5, "symbol_info_tick", lambda _symbol: SimpleNamespace(time=1_700_100_000)
-    )
+    monkeypatch.setattr(vol.mt5, "symbol_info", lambda _symbol: SimpleNamespace(visible=True))
+    monkeypatch.setattr(vol.mt5, "symbol_info_tick", lambda _symbol: SimpleNamespace(time=1_700_100_000))
     monkeypatch.setattr(vol, "_mt5_epoch_to_utc", lambda t: float(t))
     monkeypatch.setattr(vol.mt5, "last_error", lambda: (0, "ok"))
-    monkeypatch.setattr(
-        vol, "_mt5_copy_rates_from", lambda *args, **kwargs: _rates(240)
-    )
+    monkeypatch.setattr(vol, "_mt5_copy_rates_from", lambda *args, **kwargs: _rates(240))
 
     ewma = vol.forecast_volatility(symbol="EURUSD", timeframe="H1", method="ewma")
-    rolling_std = vol.forecast_volatility(
-        symbol="EURUSD", timeframe="H1", method="rolling_std"
-    )
+    rolling_std = vol.forecast_volatility(symbol="EURUSD", timeframe="H1", method="rolling_std")
     ensemble = vol.forecast_volatility(
         symbol="EURUSD",
         timeframe="H1",
@@ -223,9 +185,5 @@ def test_forecast_volatility_ensemble_aggregates_component_methods(monkeypatch):
         (float(ewma["sigma_bar_return"]) + float(rolling_std["sigma_bar_return"])) / 2.0
     )
     assert ensemble["horizon_sigma_return"] == pytest.approx(
-        (
-            float(ewma["horizon_sigma_return"])
-            + float(rolling_std["horizon_sigma_return"])
-        )
-        / 2.0
+        (float(ewma["horizon_sigma_return"]) + float(rolling_std["horizon_sigma_return"])) / 2.0
     )

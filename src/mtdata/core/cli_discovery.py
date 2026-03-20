@@ -36,30 +36,15 @@ _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {
 
 
 _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
-    (
-        "data_fetch_candles",
-        "indicators",
-    ): "Technical indicators. Use names like rsi, bb, or compact specs like sma(20) and macd(12,26,9). Use parentheses for params, not sma,20.",
-    (
-        "forecast_barrier_optimize",
-        "method",
-    ): "Barrier simulation method: mc_gbm, mc_gbm_bb, hmm_mc, garch, bootstrap, heston, jump_diffusion, or auto.",
+    ("data_fetch_candles", "indicators"): "Technical indicators. Use names like rsi, bb, or compact specs like sma(20) and macd(12,26,9). Use parentheses for params, not sma,20.",
+    ("forecast_barrier_optimize", "method"): "Barrier simulation method: mc_gbm, mc_gbm_bb, hmm_mc, garch, bootstrap, heston, jump_diffusion, or auto.",
     ("forecast_quantlib_barrier_price", "option_type"): "Option side: call or put.",
     ("forecast_tune_optuna", "search_space"): "Optuna search space (JSON or k=v).",
-    (
-        "indicators_list",
-        "detail",
-    ): "Output detail: compact table or full rows with aliases and descriptions.",
+    ("indicators_list", "detail"): "Output detail: compact table or full rows with aliases and descriptions.",
     ("labels_triple_barrier", "output"): "Output mode: full, summary, or compact.",
     ("report_generate", "output"): "Output format: formatted text or markdown.",
-    (
-        "trade_modify",
-        "expiration",
-    ): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
-    (
-        "trade_place",
-        "expiration",
-    ): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
+    ("trade_modify", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
+    ("trade_place", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
 }
 
 _VOLATILITY_METHOD_LITERAL_MARKERS = {
@@ -120,9 +105,7 @@ def get_function_info(
     info["func"] = func
     info = flatten_request_model_param(info)
     if not info.get("doc"):
-        info["doc"] = (
-            f"Execute {info.get('name') or getattr(func, '__name__', 'function')}"
-        )
+        info["doc"] = f"Execute {info.get('name') or getattr(func, '__name__', 'function')}"
     for param in info.get("params", []):
         if param.get("type") is None:
             param["type"] = str
@@ -135,33 +118,19 @@ def apply_schema_overrides(
     tool: ToolInfo,
     func_info: Dict[str, Any],
     *,
-    enrich_schema_with_shared_defs: Callable[
-        [Dict[str, Any], Dict[str, Any]], Dict[str, Any]
-    ],
+    enrich_schema_with_shared_defs: Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]],
 ) -> Dict[str, Any]:
     """Apply JSON schema defaults and required flags to CLI parameter metadata."""
     meta = tool.setdefault("meta", {})
     schema = meta.get("schema") or {}
     schema = enrich_schema_with_shared_defs(schema, func_info)
     meta["schema"] = schema
-    params_obj = (
-        schema.get("parameters")
-        if isinstance(schema.get("parameters"), dict)
-        else schema
-    )
+    params_obj = schema.get("parameters") if isinstance(schema.get("parameters"), dict) else schema
     schema_props = params_obj.get("properties") if isinstance(params_obj, dict) else {}
-    schema_required = (
-        set(params_obj.get("required", [])) if isinstance(params_obj, dict) else set()
-    )
+    schema_required = set(params_obj.get("required", [])) if isinstance(params_obj, dict) else set()
     for param in func_info.get("params", []):
-        prop = (
-            schema_props.get(param["name"]) if isinstance(schema_props, dict) else None
-        )
-        if (
-            isinstance(prop, dict)
-            and "default" in prop
-            and param.get("default") is None
-        ):
+        prop = schema_props.get(param["name"]) if isinstance(schema_props, dict) else None
+        if isinstance(prop, dict) and "default" in prop and param.get("default") is None:
             param["default"] = prop["default"]
         if param["name"] in schema_required:
             param["required"] = True
@@ -199,11 +168,7 @@ def extract_metadata_from_tool_obj(tool_obj: Any) -> Dict[str, Any]:
         meta["schema"] = schema
         if not meta["description"] and isinstance(schema.get("description"), str):
             meta["description"] = schema.get("description")
-        params_obj = (
-            schema.get("parameters")
-            if isinstance(schema.get("parameters"), dict)
-            else schema
-        )
+        params_obj = schema.get("parameters") if isinstance(schema.get("parameters"), dict) else schema
         props = params_obj.get("properties") if isinstance(params_obj, dict) else None
         if isinstance(props, dict):
             for pname, pdef in props.items():
@@ -227,9 +192,7 @@ def discover_tools(
     """Discover CLI-visible tools from the bootstrap and MCP registries."""
     tools: Dict[str, ToolInfo] = {}
 
-    def _module_is_visible(
-        module_name: Any, allowed_modules: set[str], allowed_prefixes: tuple[str, ...]
-    ) -> bool:
+    def _module_is_visible(module_name: Any, allowed_modules: set[str], allowed_prefixes: tuple[str, ...]) -> bool:
         if not isinstance(module_name, str):
             return False
         if module_name in allowed_modules:
@@ -265,10 +228,7 @@ def discover_tools(
         for name, obj in registry.items():
             func = extract_function_from_tool_obj(obj)
             mod = getattr(func, "__module__", None) if func else None
-            if func and (
-                not module_names
-                or _module_is_visible(mod, module_names, module_prefixes)
-            ):
+            if func and (not module_names or _module_is_visible(mod, module_names, module_prefixes)):
                 meta = extract_metadata_from_tool_obj(obj)
                 tools[name] = {"func": func, "meta": meta}
 
@@ -292,10 +252,7 @@ def discover_tools(
                     continue
                 if name.endswith(("_wrapper",)):
                     continue
-                tools[name] = {
-                    "func": obj,
-                    "meta": {"description": None, "param_docs": {}},
-                }
+                tools[name] = {"func": obj, "meta": {"description": None, "param_docs": {}}}
 
     return tools
 
@@ -349,27 +306,14 @@ def resolve_param_kwargs(
     if param_docs and param["name"] in param_docs:
         desc = param_docs[param["name"]]
     hint = desc or param_hints.get(param["name"])
-    override_help = _COMMAND_PARAM_HELP_OVERRIDES.get(
-        (str(cmd_name or ""), str(param["name"]))
-    )
+    override_help = _COMMAND_PARAM_HELP_OVERRIDES.get((str(cmd_name or ""), str(param["name"])))
     if override_help:
         hint = override_help
-    kwargs = {
-        "help": _escape_argparse_help(hint) or f"{param['name']} parameter",
-        "dest": param["name"],
-    }
+    kwargs = {"help": _escape_argparse_help(hint) or f"{param['name']} parameter", "dest": param["name"]}
     is_mapping_type = False
 
     if param["name"] == "method" and (
-        (
-            cmd_name
-            in {
-                "forecast_generate",
-                "forecast_conformal_intervals",
-                "forecast_tune_genetic",
-                "forecast_tune_optuna",
-            }
-        )
+        (cmd_name in {"forecast_generate", "forecast_conformal_intervals", "forecast_tune_genetic", "forecast_tune_optuna"})
         or _is_forecast_method_literal(
             param.get("type"),
             is_literal_origin=is_literal_origin,
@@ -388,9 +332,7 @@ def resolve_param_kwargs(
             base_type, origin = unwrap_optional_type(ptype)
 
             is_typed_dict = is_typed_dict_type(base_type)
-            is_mapping_type = (
-                (base_type in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
-            )
+            is_mapping_type = (base_type in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
 
             kwargs["type"] = str
 
@@ -424,14 +366,10 @@ def resolve_param_kwargs(
             debug(f"Type resolution failed for param '{param['name']}': {exc}")
             kwargs["type"] = str
 
-    if not param["required"] and not (
-        param["type"] is bool and param["default"] is None
-    ):
+    if not param["required"] and not (param["type"] == bool and param["default"] is None):
         kwargs["default"] = param["default"]
 
-    choice_override = _COMMAND_PARAM_CHOICE_OVERRIDES.get(
-        (str(cmd_name or ""), str(param["name"]))
-    )
+    choice_override = _COMMAND_PARAM_CHOICE_OVERRIDES.get((str(cmd_name or ""), str(param["name"])))
     if choice_override:
         kwargs["choices"] = list(choice_override)
         kwargs["type"] = lambda value: str(value or "").strip().lower()
@@ -451,10 +389,7 @@ def add_dynamic_arguments(
     cmd_name: Optional[str] = None,
 ) -> None:
     """Add CLI arguments for an introspected function schema."""
-
-    def _extra_option_flags(
-        param_name: str, cmd_name_value: Optional[str]
-    ) -> tuple[str, ...]:
+    def _extra_option_flags(param_name: str, cmd_name_value: Optional[str]) -> tuple[str, ...]:
         extras: list[str] = []
         if param_name == "limit" and cmd_name_value in _BAR_LIMIT_ALIAS_COMMANDS:
             extras.append("--bars")
@@ -473,11 +408,7 @@ def add_dynamic_arguments(
             *_extra_option_flags(param["name"], cmd_name),
         )
 
-        param_names = {
-            p.get("name")
-            for p in (param_info.get("params") or [])
-            if isinstance(p, dict)
-        }
+        param_names = {p.get("name") for p in (param_info.get("params") or []) if isinstance(p, dict)}
         kwargs, is_mapping_type = resolve_param_kwargs(
             param,
             param_docs,
@@ -485,21 +416,14 @@ def add_dynamic_arguments(
             param_names=param_names,
         )
 
-        is_optional_bool = param.get("type") is bool and not param.get(
-            "required", False
-        )
+        is_optional_bool = param.get("type") is bool and not param.get("required", False)
         allow_optional_first_positional = (
             param == param_info["params"][0]
-            and (str(cmd_name or ""), str(param["name"]))
-            in _OPTIONAL_FIRST_POSITIONAL_PARAMS
+            and (str(cmd_name or ""), str(param["name"])) in _OPTIONAL_FIRST_POSITIONAL_PARAMS
         )
 
         if param["required"] and param == param_info["params"][0]:
-            positional_kwargs = {
-                k: v
-                for k, v in kwargs.items()
-                if k in ("help", "type", "choices", "metavar")
-            }
+            positional_kwargs = {k: v for k, v in kwargs.items() if k in ("help", "type", "choices", "metavar")}
             positional_kwargs["nargs"] = "?"
             positional_kwargs["default"] = argparse.SUPPRESS
             parser.add_argument(param["name"], **positional_kwargs)
@@ -507,11 +431,7 @@ def add_dynamic_arguments(
             hidden_alias_kwargs["help"] = argparse.SUPPRESS
             parser.add_argument(*option_flags, **hidden_alias_kwargs)
         elif allow_optional_first_positional:
-            positional_kwargs = {
-                k: v
-                for k, v in kwargs.items()
-                if k in ("help", "type", "choices", "metavar")
-            }
+            positional_kwargs = {k: v for k, v in kwargs.items() if k in ("help", "type", "choices", "metavar")}
             positional_kwargs["nargs"] = "?"
             positional_kwargs["default"] = argparse.SUPPRESS
             parser.add_argument(param["name"], **positional_kwargs)

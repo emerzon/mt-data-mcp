@@ -26,31 +26,16 @@ def test_default_search_space_modes():
 def test_sample_and_mutate_param_helpers():
     rng = random.Random(7)
 
-    assert tune._sample_param({"type": "categorical", "choices": ["a", "b"]}, rng) in {
-        "a",
-        "b",
-    }
+    assert tune._sample_param({"type": "categorical", "choices": ["a", "b"]}, rng) in {"a", "b"}
     assert tune._sample_param({"type": "categorical", "choices": []}, rng) is None
 
     assert tune._sample_param({"type": "int", "min": 5, "max": 3}, rng) in {3, 4, 5}
-    assert isinstance(
-        tune._sample_param({"type": "float", "min": 0.1, "max": 0.2, "log": True}, rng),
-        float,
-    )
+    assert isinstance(tune._sample_param({"type": "float", "min": 0.1, "max": 0.2, "log": True}, rng), float)
 
-    assert (
-        tune._mutate_value("a", {"type": "categorical", "choices": ["a", "b"]}, rng)
-        == "b"
-    )
-    assert (
-        tune._mutate_value("a", {"type": "categorical", "choices": ["a"]}, rng) == "a"
-    )
+    assert tune._mutate_value("a", {"type": "categorical", "choices": ["a", "b"]}, rng) == "b"
+    assert tune._mutate_value("a", {"type": "categorical", "choices": ["a"]}, rng) == "a"
     assert tune._mutate_value(5, {"type": "int", "min": 0, "max": 10}, rng) >= 0
-    assert (
-        0.0
-        <= tune._mutate_value(0.5, {"type": "float", "min": 0.0, "max": 1.0}, rng)
-        <= 1.0
-    )
+    assert 0.0 <= tune._mutate_value(0.5, {"type": "float", "min": 0.0, "max": 1.0}, rng) <= 1.0
 
 
 def test_crossover_for_method_blends_and_fills_none():
@@ -144,10 +129,7 @@ def test_genetic_search_method_scoped_and_flat_spaces(monkeypatch):
         score_val = float(cand.get("x", 1.0))
         return (
             score_val if kwargs["mode"] == "min" else -score_val,
-            {
-                "_sel_method": m,
-                "results": {m: {"horizon": kwargs["horizon"], "success": True}},
-            },
+            {"_sel_method": m, "results": {m: {"horizon": kwargs["horizon"], "success": True}}},
         )
 
     monkeypatch.setattr(tune, "_eval_candidate", fake_eval_candidate)
@@ -209,10 +191,7 @@ def test_optuna_search_method_scoped_and_flat_spaces(monkeypatch):
         base = x if m == "theta" else (x + 0.4)
         return (
             base if kwargs["mode"] == "min" else -base,
-            {
-                "_sel_method": m,
-                "results": {m: {"horizon": kwargs["horizon"], "success": True}},
-            },
+            {"_sel_method": m, "results": {m: {"horizon": kwargs["horizon"], "success": True}}},
         )
 
     monkeypatch.setattr(tune, "_eval_candidate", fake_eval_candidate)

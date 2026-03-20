@@ -51,9 +51,7 @@ def test_trade_account_info_includes_execution_preflight_fields() -> None:
     )
 
     raw = _unwrap(trade_account_info)
-    with patch(
-        "mtdata.core.trading_account.ensure_mt5_connection_or_raise", return_value=None
-    ):
+    with patch("mtdata.core.trading_account.ensure_mt5_connection_or_raise", return_value=None):
         out = raw()
 
     if prev is not None:
@@ -92,9 +90,7 @@ def test_trade_account_info_rounds_margin_level_for_display() -> None:
     )
 
     raw = _unwrap(trade_account_info)
-    with patch.object(
-        core_trading_account, "create_trading_gateway", return_value=gateway
-    ):
+    with patch.object(core_trading_account, "create_trading_gateway", return_value=gateway):
         out = raw()
 
     assert out["margin_level"] == 53231.43
@@ -105,15 +101,11 @@ def test_trade_account_info_returns_connection_error_payload() -> None:
 
     with patch(
         "mtdata.core.trading_account.ensure_mt5_connection_or_raise",
-        side_effect=MT5ConnectionError(
-            "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
-        ),
+        side_effect=MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running."),
     ):
         out = raw()
 
-    assert out == {
-        "error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
-    }
+    assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
 
 
 def test_trade_account_info_logs_finish_event(caplog) -> None:
@@ -148,14 +140,9 @@ def test_trade_account_info_logs_finish_event(caplog) -> None:
     )
 
     raw = _unwrap(trade_account_info)
-    with (
-        patch.object(
-            core_trading_account, "create_trading_gateway", return_value=gateway
-        ),
-        caplog.at_level(
-            logging.INFO,
-            logger=core_trading_account.logger.name,
-        ),
+    with patch.object(core_trading_account, "create_trading_gateway", return_value=gateway), caplog.at_level(
+        logging.INFO,
+        logger=core_trading_account.logger.name,
     ):
         out = raw()
 
@@ -169,21 +156,7 @@ def test_trade_account_info_logs_finish_event(caplog) -> None:
 def test_run_trade_get_open_logs_finish_event(caplog) -> None:
     Position = namedtuple(
         "Position",
-        [
-            "ticket",
-            "symbol",
-            "time_update",
-            "type",
-            "volume",
-            "price_open",
-            "sl",
-            "tp",
-            "price_current",
-            "swap",
-            "profit",
-            "comment",
-            "magic",
-        ],
+        ["ticket", "symbol", "time_update", "type", "volume", "price_open", "sl", "tp", "price_current", "swap", "profit", "comment", "magic"],
     )
     rows = [
         Position(
@@ -235,19 +208,7 @@ def test_run_trade_get_open_logs_finish_event(caplog) -> None:
 def test_run_trade_get_pending_logs_finish_event(caplog) -> None:
     Order = namedtuple(
         "Order",
-        [
-            "ticket",
-            "symbol",
-            "time_setup",
-            "type",
-            "volume",
-            "price_open",
-            "sl",
-            "tp",
-            "price_current",
-            "comment",
-            "magic",
-        ],
+        ["ticket", "symbol", "time_setup", "type", "volume", "price_open", "sl", "tp", "price_current", "comment", "magic"],
     )
     rows = [
         Order(
@@ -303,17 +264,11 @@ def test_run_trade_get_pending_logs_finish_event(caplog) -> None:
 def test_trade_get_open_logs_finish_event(caplog) -> None:
     raw = _unwrap(core_trading_positions.trade_get_open)
 
-    with (
-        patch.object(
-            core_trading_positions, "create_trading_gateway", return_value=object()
-        ),
-        patch.object(
-            core_trading_positions,
-            "run_trade_get_open",
-            return_value=[{"ticket": 1, "symbol": "EURUSD"}],
-        ),
-        caplog.at_level(logging.INFO, logger=core_trading_positions.logger.name),
-    ):
+    with patch.object(core_trading_positions, "create_trading_gateway", return_value=object()), patch.object(
+        core_trading_positions,
+        "run_trade_get_open",
+        return_value=[{"ticket": 1, "symbol": "EURUSD"}],
+    ), caplog.at_level(logging.INFO, logger=core_trading_positions.logger.name):
         out = raw(TradeGetOpenRequest(symbol="EURUSD", limit=10))
 
     assert out[0]["ticket"] == 1

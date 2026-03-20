@@ -5,11 +5,7 @@ import numpy as np
 import pandas as pd
 
 from ..patterns.common import interval_overlap_ratio as _interval_overlap_ratio
-from ..utils.utils import (
-    _format_time_minimal,
-    _safe_float,
-    to_float_np as __to_float_np,
-)
+from ..utils.utils import _format_time_minimal, _safe_float, to_float_np as __to_float_np
 
 _STOCK_PATTERN_CODE_TO_NAME = {
     "TRNG": "Triangle",
@@ -57,11 +53,7 @@ def _elliott_preview_sort_key(row: Dict[str, Any]) -> Tuple[float, float, str]:
     conf = _safe_float(row.get("confidence")) or 0.0
     end_idx = _safe_float(row.get("end_index"))
     label = _pattern_label(row) or ""
-    return (
-        float(conf),
-        float(end_idx) if end_idx is not None else float("-inf"),
-        label,
-    )
+    return (float(conf), float(end_idx) if end_idx is not None else float("-inf"), label)
 
 
 def _elliott_completed_preview(
@@ -75,13 +67,10 @@ def _elliott_completed_preview(
     completed_rows = [
         row
         for row in patterns
-        if isinstance(row, dict)
-        and str(row.get("status", "")).strip().lower() == "completed"
+        if isinstance(row, dict) and str(row.get("status", "")).strip().lower() == "completed"
     ]
     preview: List[Dict[str, Any]] = []
-    for row in sorted(completed_rows, key=_elliott_preview_sort_key, reverse=True)[
-        : int(limit)
-    ]:
+    for row in sorted(completed_rows, key=_elliott_preview_sort_key, reverse=True)[: int(limit)]:
         item: Dict[str, Any] = {}
         tf_value = timeframe if timeframe not in (None, "") else row.get("timeframe")
         if tf_value not in (None, ""):
@@ -89,14 +78,7 @@ def _elliott_completed_preview(
         label = _pattern_label(row)
         if label:
             item["pattern"] = label
-        for key in (
-            "status",
-            "confidence",
-            "start_date",
-            "end_date",
-            "start_index",
-            "end_index",
-        ):
+        for key in ("status", "confidence", "start_date", "end_date", "start_index", "end_index"):
             value = row.get(key)
             if value not in (None, ""):
                 item[key] = value
@@ -110,9 +92,7 @@ def _elliott_completed_preview(
             if "pattern_confirmed" in details:
                 item["pattern_confirmed"] = bool(details.get("pattern_confirmed"))
             if "has_unconfirmed_terminal_pivot" in details:
-                item["has_unconfirmed_terminal_pivot"] = bool(
-                    details.get("has_unconfirmed_terminal_pivot")
-                )
+                item["has_unconfirmed_terminal_pivot"] = bool(details.get("has_unconfirmed_terminal_pivot"))
         if not item:
             item = dict(row)
         preview.append(item)
@@ -216,16 +196,12 @@ def _summarize_pattern_bias(rows: List[Dict[str, Any]]) -> Optional[Dict[str, An
         if bias == "bullish":
             bullish_count += 1
             bullish_score += weight
-            if strongest_bullish is None or weight > float(
-                strongest_bullish.get("confidence", 0.0)
-            ):
+            if strongest_bullish is None or weight > float(strongest_bullish.get("confidence", 0.0)):
                 strongest_bullish = {"pattern": label, "confidence": float(weight)}
         elif bias == "bearish":
             bearish_count += 1
             bearish_score += weight
-            if strongest_bearish is None or weight > float(
-                strongest_bearish.get("confidence", 0.0)
-            ):
+            if strongest_bearish is None or weight > float(strongest_bearish.get("confidence", 0.0)):
                 strongest_bearish = {"pattern": label, "confidence": float(weight)}
         else:
             neutral_count += 1
@@ -235,9 +211,7 @@ def _summarize_pattern_bias(rows: List[Dict[str, Any]]) -> Optional[Dict[str, An
 
     directional_total = bullish_score + bearish_score
     net_score = bullish_score - bearish_score
-    net_conf = (
-        float(abs(net_score) / directional_total) if directional_total > 1e-9 else 0.0
-    )
+    net_conf = float(abs(net_score) / directional_total) if directional_total > 1e-9 else 0.0
     conflict = bool(bullish_count > 0 and bearish_count > 0)
     if directional_total <= 1e-9:
         net_bias = "neutral"
@@ -301,10 +275,7 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         return (end_idx if end_idx is not None else float(idx), conf, idx)
 
     preview_limit = 8
-    preview_rows = [
-        row
-        for _, row in sorted(indexed_rows, key=_sort_key, reverse=True)[:preview_limit]
-    ]
+    preview_rows = [row for _, row in sorted(indexed_rows, key=_sort_key, reverse=True)[:preview_limit]]
     recent_rows: List[Dict[str, Any]] = []
     for row in preview_rows:
         item: Dict[str, Any] = {}
@@ -339,9 +310,7 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     strongest_pattern: Optional[Dict[str, Any]] = None
     if preview_rows:
-        best = max(
-            preview_rows, key=lambda row: (_safe_float(row.get("confidence")) or 0.0)
-        )
+        best = max(preview_rows, key=lambda row: (_safe_float(row.get("confidence")) or 0.0))
         best_label = _pattern_label(best)
         strongest_pattern = {}
         if best_label:
@@ -382,18 +351,14 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if counts:
         summary["pattern_mix"] = [
             {"pattern": name, "count": count}
-            for name, count in sorted(
-                counts.items(), key=lambda item: (-item[1], item[0])
-            )[:5]
+            for name, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:5]
         ]
     if status_counts:
         summary["status_counts"] = status_counts
     if tf_counts:
         summary["timeframe_mix"] = [
             {"timeframe": timeframe, "count": count}
-            for timeframe, count in sorted(
-                tf_counts.items(), key=lambda item: (-item[1], item[0])
-            )
+            for timeframe, count in sorted(tf_counts.items(), key=lambda item: (-item[1], item[0]))
         ]
     signal_bias = _summarize_pattern_bias(rows)
     if signal_bias:
@@ -414,22 +379,11 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         compact["show_all_hint"] = "Use --detail full to show all detected patterns."
     compact["recent_patterns"] = recent_rows
 
-    for key in (
-        "engine",
-        "engines_run",
-        "engine_findings",
-        "engine_errors",
-        "scanned_timeframes",
-    ):
+    for key in ("engine", "engines_run", "engine_findings", "engine_errors", "scanned_timeframes"):
         value = payload.get(key)
         if value not in (None, "", [], {}):
             compact[key] = value
-    for key in (
-        "warnings",
-        "note",
-        "completed_patterns_hidden",
-        "completed_patterns_preview",
-    ):
+    for key in ("warnings", "note", "completed_patterns_hidden", "completed_patterns_preview"):
         value = payload.get(key)
         if value not in (None, "", [], {}):
             compact[key] = value
@@ -441,18 +395,11 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         for item in findings:
             if not isinstance(item, dict):
                 continue
-            tf_summary.append(
-                {
-                    "timeframe": item.get("timeframe"),
-                    "n_patterns": item.get("n_patterns"),
-                }
-            )
+            tf_summary.append({"timeframe": item.get("timeframe"), "n_patterns": item.get("n_patterns")})
         if tf_summary:
             compact["timeframe_findings"] = tf_summary
 
-    if isinstance(payload.get("failed_timeframes"), dict) and payload.get(
-        "failed_timeframes"
-    ):
+    if isinstance(payload.get("failed_timeframes"), dict) and payload.get("failed_timeframes"):
         compact["failed_timeframes"] = payload.get("failed_timeframes")
 
     if "series_close" in payload:
@@ -535,9 +482,7 @@ def _config_int(config: Any, key: str, default: int, *, minimum: int = 0) -> int
     return max(int(minimum), int(value))
 
 
-def _config_float(
-    config: Any, key: str, default: float, *, minimum: float = 0.0
-) -> float:
+def _config_float(config: Any, key: str, default: float, *, minimum: float = 0.0) -> float:
     found, value_raw = _config_value(config, key)
     if not found:
         value = float(default)
@@ -551,17 +496,13 @@ def _config_float(
     return float(max(float(minimum), value))
 
 
-def _resolve_volume_series(
-    df: pd.DataFrame,
-) -> Tuple[Optional[np.ndarray], Optional[str]]:
+def _resolve_volume_series(df: pd.DataFrame) -> Tuple[Optional[np.ndarray], Optional[str]]:
     if not isinstance(df, pd.DataFrame) or len(df) <= 0:
         return None, None
 
     if "real_volume" in df.columns:
         try:
-            real_volume = pd.to_numeric(df["real_volume"], errors="coerce").to_numpy(
-                dtype=float, copy=False
-            )
+            real_volume = pd.to_numeric(df["real_volume"], errors="coerce").to_numpy(dtype=float, copy=False)
         except Exception:
             real_volume = np.asarray([], dtype=float)
         finite_real = real_volume[np.isfinite(real_volume)]
@@ -572,9 +513,7 @@ def _resolve_volume_series(
         if col not in df.columns:
             continue
         try:
-            volume = pd.to_numeric(df[col], errors="coerce").to_numpy(
-                dtype=float, copy=False
-            )
+            volume = pd.to_numeric(df[col], errors="coerce").to_numpy(dtype=float, copy=False)
         except Exception:
             continue
         if volume.size <= 0:
@@ -584,9 +523,7 @@ def _resolve_volume_series(
     return None, None
 
 
-def _volume_window_mean(
-    volume: Optional[np.ndarray], start_index: Any, end_index: Any
-) -> Optional[float]:
+def _volume_window_mean(volume: Optional[np.ndarray], start_index: Any, end_index: Any) -> Optional[float]:
     if volume is None or len(volume) <= 0:
         return None
     try:
@@ -618,9 +555,7 @@ def _infer_market_regime(df: pd.DataFrame, config: Any) -> Optional[Dict[str, An
         return None
 
     try:
-        close = pd.to_numeric(df.get("close"), errors="coerce").to_numpy(
-            dtype=float, copy=False
-        )
+        close = pd.to_numeric(df.get("close"), errors="coerce").to_numpy(dtype=float, copy=False)
     except Exception:
         return None
     if close.size < 20:
@@ -645,9 +580,7 @@ def _infer_market_regime(df: pd.DataFrame, config: Any) -> Optional[Dict[str, An
     base_price = float(segment[0]) if abs(float(segment[0])) > 1e-9 else 1e-9
     trend_strength = float(abs(move) / max(float(np.nanstd(segment)), 1e-9))
     efficiency_ratio = float(abs(move) / max(path_length, 1e-9))
-    trend_threshold = _config_float(
-        config, "regime_trend_strength_threshold", 1.25, minimum=0.1
-    )
+    trend_threshold = _config_float(config, "regime_trend_strength_threshold", 1.25, minimum=0.1)
     efficiency_threshold = _config_float(
         config,
         "regime_efficiency_trending_threshold",
@@ -691,9 +624,7 @@ def _attach_regime_context(
         details = dict(details)
 
     payload: Dict[str, Any] = {
-        "status": "disabled"
-        if not _config_bool(config, "use_regime_context", True)
-        else "unavailable",
+        "status": "disabled" if not _config_bool(config, "use_regime_context", True) else "unavailable",
     }
     if payload["status"] == "disabled":
         details["regime_context"] = payload
@@ -714,10 +645,7 @@ def _attach_regime_context(
     confidence_delta = 0.0
 
     if bias in {"bullish", "bearish"}:
-        if payload.get("state") == "trending" and payload.get("direction") in {
-            "bullish",
-            "bearish",
-        }:
+        if payload.get("state") == "trending" and payload.get("direction") in {"bullish", "bearish"}:
             if bias == payload.get("direction"):
                 payload["status"] = "aligned"
                 payload["alignment"] = "aligned"
@@ -763,9 +691,7 @@ def _attach_classic_volume_confirmation(
 
     payload: Dict[str, Any] = {
         "mode": "breakout",
-        "status": "disabled"
-        if not _config_bool(config, "use_volume_confirmation", True)
-        else "unavailable",
+        "status": "disabled" if not _config_bool(config, "use_volume_confirmation", True) else "unavailable",
         "volume_source": None,
     }
     if payload["status"] == "disabled":
@@ -781,16 +707,12 @@ def _attach_classic_volume_confirmation(
         return out
 
     breakout_bars = _config_int(config, "volume_confirm_breakout_bars", 2, minimum=1)
-    lookback_bars = _config_int(
-        config, "volume_confirm_lookback_bars", 20, minimum=breakout_bars + 1
-    )
+    lookback_bars = _config_int(config, "volume_confirm_lookback_bars", 20, minimum=breakout_bars + 1)
     min_ratio = _config_float(config, "volume_confirm_min_ratio", 1.10, minimum=1.0)
     bonus = _config_float(config, "volume_confirm_bonus", 0.08, minimum=0.0)
     penalty = _config_float(config, "volume_confirm_penalty", 0.06, minimum=0.0)
 
-    end_index = max(
-        0, min(int(len(volume) - 1), int(_safe_float(out.get("end_index")) or 0))
-    )
+    end_index = max(0, min(int(len(volume) - 1), int(_safe_float(out.get("end_index")) or 0)))
     signal_start = max(0, int(end_index - breakout_bars + 1))
     baseline_end = int(signal_start - 1)
     baseline_start = max(0, int(baseline_end - lookback_bars + 1))
@@ -866,9 +788,7 @@ def _attach_elliott_volume_confirmation(
 
     payload: Dict[str, Any] = {
         "mode": "wave_segments",
-        "status": "disabled"
-        if not _config_bool(config, "use_volume_confirmation", True)
-        else "unavailable",
+        "status": "disabled" if not _config_bool(config, "use_volume_confirmation", True) else "unavailable",
         "volume_source": None,
     }
     if payload["status"] == "disabled":
@@ -876,9 +796,7 @@ def _attach_elliott_volume_confirmation(
         out["details"] = details
         return out
 
-    wave_type = (
-        str(out.get("wave_type") or details.get("pattern_family") or "").strip().lower()
-    )
+    wave_type = str(out.get("wave_type") or details.get("pattern_family") or "").strip().lower()
     if wave_type == "candidate":
         payload["status"] = "candidate"
         details["volume_confirmation"] = payload
@@ -906,18 +824,14 @@ def _attach_elliott_volume_confirmation(
 
     segment_averages: Dict[int, float] = {}
     for segment_index in range(len(pivots) - 1):
-        seg_avg = _volume_window_mean(
-            volume, pivots[segment_index], pivots[segment_index + 1]
-        )
+        seg_avg = _volume_window_mean(volume, pivots[segment_index], pivots[segment_index + 1])
         if seg_avg is not None:
             segment_averages[segment_index] = float(seg_avg)
 
     trend_slots = [0, 2, 4] if family == "impulse" else [0, 2]
     counter_slots = [1, 3] if family == "impulse" else [1]
     trend_values = [segment_averages[i] for i in trend_slots if i in segment_averages]
-    counter_values = [
-        segment_averages[i] for i in counter_slots if i in segment_averages
-    ]
+    counter_values = [segment_averages[i] for i in counter_slots if i in segment_averages]
     if not trend_values or not counter_values:
         details["volume_confirmation"] = payload
         out["details"] = details
@@ -1039,9 +953,7 @@ def _classic_price_levels(
     lower_slope = _detail_float(details, "lower_slope")
     lower_intercept = _detail_float(details, "lower_intercept")
     if upper_slope is not None and upper_intercept is not None:
-        levels.setdefault(
-            "resistance", float(upper_slope * idx_float + upper_intercept)
-        )
+        levels.setdefault("resistance", float(upper_slope * idx_float + upper_intercept))
     if lower_slope is not None and lower_intercept is not None:
         levels.setdefault("support", float(lower_slope * idx_float + lower_intercept))
 
@@ -1104,9 +1016,7 @@ def _enrich_classic_pattern_row(
     level_eval_index = out.get("end_index")
     if status == "forming" and len(df) > 0:
         level_eval_index = current_bar_index
-    levels = _classic_price_levels(
-        details, out.get("end_index"), eval_index=level_eval_index
-    )
+    levels = _classic_price_levels(details, out.get("end_index"), eval_index=level_eval_index)
     height = _classic_pattern_height(levels, details, reference_price)
 
     support = levels.get("support")
@@ -1124,10 +1034,7 @@ def _enrich_classic_pattern_row(
                 invalidation = support
             elif neckline is not None and neckline < reference_price:
                 invalidation = neckline
-            elif (
-                _detail_float(details, "breakout_level") is not None
-                and float(_detail_float(details, "breakout_level")) < reference_price
-            ):
+            elif _detail_float(details, "breakout_level") is not None and float(_detail_float(details, "breakout_level")) < reference_price:
                 invalidation = float(_detail_float(details, "breakout_level"))
             elif height is not None and height > 0:
                 invalidation = reference_price - 0.5 * height
@@ -1140,10 +1047,7 @@ def _enrich_classic_pattern_row(
                 invalidation = resistance
             elif neckline is not None and neckline > reference_price:
                 invalidation = neckline
-            elif (
-                _detail_float(details, "breakout_level") is not None
-                and float(_detail_float(details, "breakout_level")) > reference_price
-            ):
+            elif _detail_float(details, "breakout_level") is not None and float(_detail_float(details, "breakout_level")) > reference_price:
                 invalidation = float(_detail_float(details, "breakout_level"))
             elif height is not None and height > 0:
                 invalidation = reference_price + 0.5 * height
@@ -1159,27 +1063,19 @@ def _enrich_classic_pattern_row(
     if invalidation is not None:
         out["invalidation_price"] = _round_value(invalidation)
     if levels:
-        out["price_levels"] = {
-            key: _round_value(value) for key, value in levels.items()
-        }
+        out["price_levels"] = {key: _round_value(value) for key, value in levels.items()}
     if status == "forming" and reference_price is not None and len(df) > 1:
         structural_est = _estimate_classic_bars_to_completion(
             str(name or ""),
             details,
             int(out.get("start_index", 0)),
-            int(
-                out.get(
-                    "end_index", level_eval_index if level_eval_index is not None else 0
-                )
-            ),
+            int(out.get("end_index", level_eval_index if level_eval_index is not None else 0)),
             len(df),
         )
         price_est: Optional[int] = None
         try:
-            close_arr = pd.to_numeric(df.get("close"), errors="coerce").to_numpy(
-                dtype=float, copy=False
-            )
-            recent_steps = np.abs(np.diff(close_arr[-min(len(close_arr), 20) :]))
+            close_arr = pd.to_numeric(df.get("close"), errors="coerce").to_numpy(dtype=float, copy=False)
+            recent_steps = np.abs(np.diff(close_arr[-min(len(close_arr), 20):]))
             finite_steps = recent_steps[np.isfinite(recent_steps)]
             step_size = float(np.median(finite_steps)) if finite_steps.size else 0.0
             if step_size > 1e-9:
@@ -1199,11 +1095,7 @@ def _enrich_classic_pattern_row(
                     for candidate in (support, resistance, breakout_level):
                         if candidate is not None:
                             level_targets.append(float(candidate))
-                distances = [
-                    abs(float(level) - reference_price)
-                    for level in level_targets
-                    if np.isfinite(level)
-                ]
+                distances = [abs(float(level) - reference_price) for level in level_targets if np.isfinite(level)]
                 if distances:
                     price_est = int(max(0, int(np.ceil(min(distances) / step_size))))
         except Exception:
@@ -1221,9 +1113,7 @@ def _enrich_classic_pattern_row(
     return _attach_regime_context(out, regime_context, config)
 
 
-def _enrich_classic_patterns(
-    rows: List[Dict[str, Any]], df: pd.DataFrame, config: Any = None
-) -> List[Dict[str, Any]]:
+def _enrich_classic_patterns(rows: List[Dict[str, Any]], df: pd.DataFrame, config: Any = None) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     regime_context = _infer_market_regime(df, config)
     for row in rows:
@@ -1233,9 +1123,7 @@ def _enrich_classic_patterns(
     return out
 
 
-def _enrich_elliott_patterns(
-    rows: List[Dict[str, Any]], df: pd.DataFrame, config: Any = None
-) -> List[Dict[str, Any]]:
+def _enrich_elliott_patterns(rows: List[Dict[str, Any]], df: pd.DataFrame, config: Any = None) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     regime_context = _infer_market_regime(df, config)
     for row in rows:
@@ -1255,12 +1143,8 @@ def _summarize_engine_findings(
     for engine in engines:
         rows = [row for row in per_engine.get(engine, []) if isinstance(row, dict)]
         n_total = int(len(rows))
-        n_forming = int(
-            sum(1 for row in rows if str(row.get("status", "")).lower() == "forming")
-        )
-        n_completed = int(
-            sum(1 for row in rows if str(row.get("status", "")).lower() == "completed")
-        )
+        n_forming = int(sum(1 for row in rows if str(row.get("status", "")).lower() == "forming"))
+        n_completed = int(sum(1 for row in rows if str(row.get("status", "")).lower() == "completed"))
         n_shown = n_total if include_completed else n_forming
         item: Dict[str, Any] = {
             "engine": engine,
@@ -1285,15 +1169,7 @@ def _estimate_classic_bars_to_completion(
     try:
         length = max(1, int(end_idx) - int(start_idx) + 1)
         name_text = str(name).lower()
-        if all(
-            key in details
-            for key in (
-                "top_slope",
-                "top_intercept",
-                "bottom_slope",
-                "bottom_intercept",
-            )
-        ):
+        if all(key in details for key in ("top_slope", "top_intercept", "bottom_slope", "bottom_intercept")):
             top_slope = float(details.get("top_slope"))
             top_intercept = float(details.get("top_intercept"))
             bottom_slope = float(details.get("bottom_slope"))
@@ -1304,15 +1180,7 @@ def _estimate_classic_bars_to_completion(
             t_star = (bottom_intercept - top_intercept) / denom
             bars = int(max(0, int(round(t_star - (n_bars - 1)))))
             return int(min(max(0, bars), 3 * length))
-        if all(
-            key in details
-            for key in (
-                "upper_slope",
-                "upper_intercept",
-                "lower_slope",
-                "lower_intercept",
-            )
-        ):
+        if all(key in details for key in ("upper_slope", "upper_intercept", "lower_slope", "lower_intercept")):
             top_slope = float(details.get("upper_slope"))
             top_intercept = float(details.get("upper_intercept"))
             bottom_slope = float(details.get("lower_slope"))
@@ -1351,9 +1219,7 @@ def _timestamp_to_label(ts: Any) -> Optional[str]:
     return None
 
 
-def _load_stock_pattern_utils(
-    config: Optional[Dict[str, Any]],
-) -> Tuple[Optional[Any], Optional[str]]:
+def _load_stock_pattern_utils(config: Optional[Dict[str, Any]]) -> Tuple[Optional[Any], Optional[str]]:
     _ = config
     candidate_modules = (
         "stock_pattern.utils",
@@ -1370,9 +1236,7 @@ def _load_stock_pattern_utils(
             last_err = str(ex)
             continue
         if not all(callable(getattr(module, fn, None)) for fn in required):
-            last_err = (
-                f"module '{module_name}' missing required stock-pattern functions"
-            )
+            last_err = f"module '{module_name}' missing required stock-pattern functions"
             continue
         _STOCK_PATTERN_UTILS_CACHE[module_name] = module
         return module, None
@@ -1380,8 +1244,7 @@ def _load_stock_pattern_utils(
     tail = f" Last import error: {last_err}" if last_err else ""
     return None, (
         "stock-pattern engine unavailable in current environment; "
-        "install an importable stock-pattern module exposing stock_pattern.utils."
-        + tail
+        "install an importable stock-pattern module exposing stock_pattern.utils." + tail
     )
 
 
@@ -1405,11 +1268,7 @@ def _build_stock_pattern_frame(df: pd.DataFrame) -> pd.DataFrame:
     open_col = "open" if "open" in src.columns else "Open"
     high_col = "high" if "high" in src.columns else "High"
     low_col = "low" if "low" in src.columns else "Low"
-    volume_col = (
-        "volume"
-        if "volume" in src.columns
-        else ("tick_volume" if "tick_volume" in src.columns else "Volume")
-    )
+    volume_col = "volume" if "volume" in src.columns else ("tick_volume" if "tick_volume" in src.columns else "Volume")
 
     out = pd.DataFrame(
         {
@@ -1423,9 +1282,7 @@ def _build_stock_pattern_frame(df: pd.DataFrame) -> pd.DataFrame:
 
     if "time" in src.columns:
         try:
-            idx = pd.to_datetime(
-                pd.to_numeric(src["time"], errors="coerce"), unit="s", utc=True
-            )
+            idx = pd.to_datetime(pd.to_numeric(src["time"], errors="coerce"), unit="s", utc=True)
             out.index = pd.DatetimeIndex(idx).tz_localize(None)
         except Exception:
             out.index = pd.RangeIndex(start=0, stop=len(out), step=1)
@@ -1472,9 +1329,7 @@ def _parse_engine_list(value: Any) -> List[str]:
     if value is None:
         return []
     if isinstance(value, str):
-        parts = [
-            part.strip() for part in value.replace(";", ",").split(",") if part.strip()
-        ]
+        parts = [part.strip() for part in value.replace(";", ",").split(",") if part.strip()]
         return [_normalize_engine_name(part) for part in parts]
     if isinstance(value, (list, tuple, set)):
         return [_normalize_engine_name(part) for part in value if str(part).strip()]
@@ -1486,9 +1341,7 @@ def _parse_native_scale_factors(config: Optional[Dict[str, Any]]) -> List[float]
     raw = cfg_map.get("native_scale_factors", cfg_map.get("native_scales"))
     vals: List[float] = []
     if isinstance(raw, str):
-        parts = [
-            part.strip() for part in raw.replace(";", ",").split(",") if part.strip()
-        ]
+        parts = [part.strip() for part in raw.replace(";", ",").split(",") if part.strip()]
         for part in parts:
             try:
                 vals.append(float(part))
@@ -1516,7 +1369,6 @@ def _parse_native_scale_factors(config: Optional[Dict[str, Any]]) -> List[float]
     if 1.0 not in [round(value, 4) for value in out]:
         out.insert(0, 1.0)
     return out
-
 
 def _resolve_engine_weights(
     engines: List[str],
@@ -1585,33 +1437,21 @@ def _merge_classic_ensemble(
         by_engine: Dict[str, Dict[str, Any]] = {}
         for engine, pattern in items:
             prev = by_engine.get(engine)
-            if prev is None or float(pattern.get("confidence", 0.0)) > float(
-                prev.get("confidence", 0.0)
-            ):
+            if prev is None or float(pattern.get("confidence", 0.0)) > float(prev.get("confidence", 0.0)):
                 by_engine[engine] = pattern
         engines = list(by_engine.keys())
         total_w = float(sum(weights.get(engine, 1.0) for engine in engines)) or 1.0
         conf = float(
             sum(
-                float(by_engine[engine].get("confidence", 0.0))
-                * float(weights.get(engine, 1.0))
+                float(by_engine[engine].get("confidence", 0.0)) * float(weights.get(engine, 1.0))
                 for engine in engines
             )
             / total_w
         )
-        anchor_engine = max(
-            engines, key=lambda engine: float(by_engine[engine].get("confidence", 0.0))
-        )
+        anchor_engine = max(engines, key=lambda engine: float(by_engine[engine].get("confidence", 0.0)))
         anchor = dict(by_engine[anchor_engine])
-        statuses = [
-            str(by_engine[engine].get("status", "forming")).lower()
-            for engine in engines
-        ]
-        anchor["status"] = (
-            "completed"
-            if any(status == "completed" for status in statuses)
-            else "forming"
-        )
+        statuses = [str(by_engine[engine].get("status", "forming")).lower() for engine in engines]
+        anchor["status"] = "completed" if any(status == "completed" for status in statuses) else "forming"
         anchor["confidence"] = float(max(0.0, min(1.0, conf)))
         anchor["support_count"] = int(len(engines))
         anchor["source_engines"] = engines
@@ -1620,9 +1460,7 @@ def _merge_classic_ensemble(
             details = {}
         details = dict(details)
         details["engine_confidences"] = {
-            engine: float(
-                max(0.0, min(1.0, float(by_engine[engine].get("confidence", 0.0))))
-            )
+            engine: float(max(0.0, min(1.0, float(by_engine[engine].get("confidence", 0.0)))))
             for engine in engines
         }
         details["consensus_support"] = int(len(engines))
@@ -1640,17 +1478,13 @@ def _merge_classic_ensemble(
     return merged
 
 
-def _format_pattern_dates(
-    start_time: Optional[float], end_time: Optional[float]
-) -> Tuple[Optional[str], Optional[str]]:
+def _format_pattern_dates(start_time: Optional[float], end_time: Optional[float]) -> Tuple[Optional[str], Optional[str]]:
     """Format epoch times to date strings."""
     start_epoch = float(start_time) if start_time is not None else None
     end_epoch = float(end_time) if end_time is not None else None
 
     try:
-        start_date = (
-            _format_time_minimal(start_epoch) if start_epoch is not None else None
-        )
+        start_date = _format_time_minimal(start_epoch) if start_epoch is not None else None
     except Exception:
         start_date = None
 

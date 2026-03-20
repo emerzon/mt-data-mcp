@@ -1,3 +1,4 @@
+
 from typing import Any, Dict, Optional, Literal, List
 import logging
 import math
@@ -31,7 +32,6 @@ def symbols_list(
     list_mode: Literal["symbols", "groups"] = "symbols",  # type: ignore
 ) -> Dict[str, Any]:
     """List symbols or symbol groups."""
-
     def _run() -> Dict[str, Any]:
         try:
             mt5_gateway = get_mt5_gateway(
@@ -43,9 +43,7 @@ def symbols_list(
             if mode not in ("symbols", "groups"):
                 return {"error": "list_mode must be 'symbols' or 'groups'."}
             if mode == "groups":
-                return _list_symbol_groups(
-                    search_term=search_term, limit=limit, mt5_gateway=mt5_gateway
-                )
+                return _list_symbol_groups(search_term=search_term, limit=limit, mt5_gateway=mt5_gateway)
 
             matched_symbols = []
 
@@ -54,9 +52,7 @@ def symbols_list(
 
                 all_symbols = mt5_gateway.symbols_get()
                 if all_symbols is None:
-                    return {
-                        "error": f"Failed to get symbols: {mt5_gateway.last_error()}"
-                    }
+                    return {"error": f"Failed to get symbols: {mt5_gateway.last_error()}"}
 
                 groups = {}
                 for symbol in all_symbols:
@@ -107,13 +103,11 @@ def symbols_list(
             for symbol in matched_symbols:
                 if only_visible and not symbol.visible:
                     continue
-                symbol_list.append(
-                    {
-                        "name": symbol.name,
-                        "group": _extract_group_path_util(symbol),
-                        "description": symbol.description,
-                    }
-                )
+                symbol_list.append({
+                    "name": symbol.name,
+                    "group": _extract_group_path_util(symbol),
+                    "description": symbol.description,
+                })
 
             limit_value = _normalize_limit(limit)
             if limit_value:
@@ -134,7 +128,6 @@ def symbols_list(
         func=_run,
     )
 
-
 def _list_symbol_groups(
     search_term: Optional[str] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
@@ -150,7 +143,7 @@ def _list_symbol_groups(
         all_symbols = gateway.symbols_get()
         if all_symbols is None:
             return {"error": f"Failed to get symbols: {gateway.last_error()}"}
-
+        
         # Collect unique groups and counts
         groups = {}
         for symbol in all_symbols:
@@ -158,14 +151,12 @@ def _list_symbol_groups(
             if group_path not in groups:
                 groups[group_path] = {"count": 0}
             groups[group_path]["count"] += 1
-
+        
         # Filter by search term if provided
         filtered_items = list(groups.items())
         if search_term:
             q = search_term.strip().lower()
-            filtered_items = [
-                (k, v) for (k, v) in filtered_items if q in (k or "").lower()
-            ]
+            filtered_items = [(k, v) for (k, v) in filtered_items if q in (k or '').lower()]
 
         # Sort groups by count (most symbols first)
         filtered_items.sort(key=lambda x: x[1]["count"], reverse=True)
@@ -182,14 +173,12 @@ def _list_symbol_groups(
     except Exception as e:
         return {"error": f"Error getting symbol groups: {str(e)}"}
 
-
 @mcp.tool()
 def symbols_describe(symbol: str) -> Dict[str, Any]:
     """Return symbol information as JSON for `symbol`.
-    Parameters: symbol
-    Includes information such as Symbol Description, Swap Values, Tick Size/Value, etc.
+       Parameters: symbol
+       Includes information such as Symbol Description, Swap Values, Tick Size/Value, etc.
     """
-
     def _run() -> Dict[str, Any]:
         try:
             mt5_gateway = get_mt5_gateway(
@@ -203,36 +192,16 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
 
             enum_specs = {
                 "trade_mode": {"prefixes": ("SYMBOL_TRADE_MODE_",), "bitmask": False},
-                "trade_exemode": {
-                    "prefixes": ("SYMBOL_TRADE_EXECUTION_",),
-                    "bitmask": False,
-                },
-                "trade_calc_mode": {
-                    "prefixes": ("SYMBOL_CALC_MODE_",),
-                    "bitmask": False,
-                },
+                "trade_exemode": {"prefixes": ("SYMBOL_TRADE_EXECUTION_",), "bitmask": False},
+                "trade_calc_mode": {"prefixes": ("SYMBOL_CALC_MODE_",), "bitmask": False},
                 "swap_mode": {"prefixes": ("SYMBOL_SWAP_MODE_",), "bitmask": False},
-                "filling_mode": {
-                    "prefixes": ("ORDER_FILLING_", "SYMBOL_FILLING_"),
-                    "bitmask": True,
-                },
-                "expiration_mode": {
-                    "prefixes": ("SYMBOL_EXPIRATION_",),
-                    "bitmask": True,
-                },
+                "filling_mode": {"prefixes": ("ORDER_FILLING_", "SYMBOL_FILLING_"), "bitmask": True},
+                "expiration_mode": {"prefixes": ("SYMBOL_EXPIRATION_",), "bitmask": True},
                 "order_mode": {"prefixes": ("SYMBOL_ORDER_",), "bitmask": True},
             }
 
             symbol_data = {}
-            excluded = {
-                "spread",
-                "ask",
-                "bid",
-                "visible",
-                "custom",
-                "n_fields",
-                "n_sequence_fields",
-            }
+            excluded = {"spread", "ask", "bid", "visible", "custom", "n_fields", "n_sequence_fields"}
             for attr in dir(symbol_info):
                 if attr.startswith("_"):
                     continue
@@ -266,9 +235,7 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
                 if is_bitmask:
                     labels = []
                     for prefix in prefixes:
-                        labels = decode_mt5_bitmask_labels(
-                            mt5_gateway, value, prefix=prefix
-                        )
+                        labels = decode_mt5_bitmask_labels(mt5_gateway, value, prefix=prefix)
                         if labels:
                             break
                     if labels:
@@ -406,9 +373,7 @@ def _build_market_scan_bar_row(
     row.update(
         {
             "timeframe": timeframe,
-            "bar_time": _format_time_minimal(bar_time)
-            if bar_time is not None
-            else None,
+            "bar_time": _format_time_minimal(bar_time) if bar_time is not None else None,
             "open": _market_scan_round(open_price, digits=digits),
             "close": _market_scan_round(close_price, digits=digits),
             "tick_volume": tick_volume,
@@ -422,9 +387,7 @@ def _build_market_scan_bar_row(
     return row, None
 
 
-def _market_scan_table(
-    headers: List[str], rows: List[Dict[str, Any]]
-) -> Dict[str, Any]:
+def _market_scan_table(headers: List[str], rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     ordered_rows = [[row.get(header) for header in headers] for row in rows]
     return _table_from_rows(headers, ordered_rows)
 
@@ -459,9 +422,7 @@ def symbols_top_markets(
             timeframe_value = str(timeframe or "H1").strip().upper()
             needs_bar_data = rank_by_value in {"all", "volume", "price_change"}
             if needs_bar_data and timeframe_value not in TIMEFRAME_MAP:
-                return {
-                    "error": invalid_timeframe_error(timeframe_value, TIMEFRAME_MAP)
-                }
+                return {"error": invalid_timeframe_error(timeframe_value, TIMEFRAME_MAP)}
             mt5_timeframe = TIMEFRAME_MAP.get(timeframe_value)
 
             mt5_gateway = get_mt5_gateway(
@@ -479,9 +440,7 @@ def symbols_top_markets(
             for symbol in all_symbols:
                 if not _market_scan_is_tradable(symbol):
                     continue
-                if universe_value == "visible" and not bool(
-                    getattr(symbol, "visible", False)
-                ):
+                if universe_value == "visible" and not bool(getattr(symbol, "visible", False)):
                     continue
                 selected_symbols.append(symbol)
 
@@ -513,9 +472,7 @@ def symbols_top_markets(
                 symbol_name = str(getattr(symbol, "name", "") or "")
 
                 if rank_by_value in {"all", "spread"}:
-                    spread_row, spread_error = _build_market_scan_spread_row(
-                        symbol, mt5_gateway
-                    )
+                    spread_row, spread_error = _build_market_scan_spread_row(symbol, mt5_gateway)
                     if spread_error:
                         _record_issue("spread", symbol_name, spread_error)
                     elif spread_row is not None:
@@ -542,10 +499,7 @@ def symbols_top_markets(
                 symbol_name = str(getattr(symbol, "name", "") or "")
                 is_hidden = not bool(getattr(symbol, "visible", False))
                 if universe_value == "all" and is_hidden:
-                    with _symbol_ready_guard(symbol_name, info_before=symbol) as (
-                        err,
-                        _,
-                    ):
+                    with _symbol_ready_guard(symbol_name, info_before=symbol) as (err, _):
                         if err:
                             if rank_by_value in {"all", "spread"}:
                                 _record_issue("spread", symbol_name, err)
@@ -561,9 +515,7 @@ def symbols_top_markets(
             spread_rows.sort(
                 key=lambda row: (
                     row.get("spread_pct") is None,
-                    row.get("spread_pct")
-                    if row.get("spread_pct") is not None
-                    else float("inf"),
+                    row.get("spread_pct") if row.get("spread_pct") is not None else float("inf"),
                     row.get("symbol") or "",
                 )
             )
@@ -599,9 +551,7 @@ def symbols_top_markets(
                 "universe": universe_value,
                 "timeframe": timeframe_value if needs_bar_data else None,
                 "scanned_symbols": len(selected_symbols),
-                "query_latency_ms": round(
-                    (time.perf_counter() - started_at) * 1000.0, 3
-                ),
+                "query_latency_ms": round((time.perf_counter() - started_at) * 1000.0, 3),
             }
 
             if rank_by_value == "spread":

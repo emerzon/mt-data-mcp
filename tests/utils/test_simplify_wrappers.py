@@ -1,4 +1,5 @@
 """Tests for canonical simplify helpers in utils.simplify."""
+import pytest
 
 from mtdata.utils.simplify import (
     _point_line_distance,
@@ -105,7 +106,7 @@ class TestDefaultTargetPoints:
 class TestRdpAutotuneEpsilon:
     def test_basic(self):
         x = list(range(50))
-        y = [float(i**2) for i in range(50)]
+        y = [float(i ** 2) for i in range(50)]
         indices, eps = _rdp_autotune_epsilon(x, y, target_points=10)
         assert len(indices) > 0
         assert eps > 0
@@ -114,7 +115,7 @@ class TestRdpAutotuneEpsilon:
 class TestPlaAutotuneMaxError:
     def test_basic(self):
         x = list(range(50))
-        y = [float(i**2) for i in range(50)]
+        y = [float(i ** 2) for i in range(50)]
         indices, err = _pla_autotune_max_error(x, y, target_points=10)
         assert len(indices) > 0
         assert err >= 0
@@ -122,7 +123,7 @@ class TestPlaAutotuneMaxError:
 
 class TestApcaAutotuneMaxError:
     def test_basic(self):
-        y = [float(i**2) for i in range(50)]
+        y = [float(i ** 2) for i in range(50)]
         indices, err = _apca_autotune_max_error(y, target_points=10)
         assert len(indices) > 0
         assert err >= 0
@@ -131,16 +132,14 @@ class TestApcaAutotuneMaxError:
 class TestSelectIndicesForTimeseries:
     def test_rdp_method(self):
         x = list(range(50))
-        y = [float(i**2) for i in range(50)]
-        indices, method, meta = _select_indices_for_timeseries(
-            x, y, {"method": "rdp", "points": 10}
-        )
+        y = [float(i ** 2) for i in range(50)]
+        indices, method, meta = _select_indices_for_timeseries(x, y, {"method": "rdp", "points": 10})
         assert len(indices) > 0
         assert method == "rdp"
 
     def test_default_method(self):
         x = list(range(50))
-        y = [float(i**2) for i in range(50)]
+        y = [float(i ** 2) for i in range(50)]
         indices, method, meta = _select_indices_for_timeseries(x, y, {"points": 10})
         assert len(indices) > 0
 

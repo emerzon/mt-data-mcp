@@ -1,8 +1,9 @@
 """Tests for src/mtdata/utils/utils.py — pure utility functions."""
-
+import math
 from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
+import pytest
 
 from mtdata.utils.utils import (
     _safe_float,
@@ -178,11 +179,11 @@ class TestToFloatNp:
         np.testing.assert_array_almost_equal(result, [1.5, 2.5])
 
     def test_drop_na(self):
-        result = to_float_np([1.0, float("nan"), 3.0], drop_na=True)
+        result = to_float_np([1.0, float('nan'), 3.0], drop_na=True)
         np.testing.assert_array_equal(result, [1.0, 3.0])
 
     def test_finite_only(self):
-        result = to_float_np([1.0, float("inf"), 3.0], finite_only=True)
+        result = to_float_np([1.0, float('inf'), 3.0], finite_only=True)
         np.testing.assert_array_equal(result, [1.0, 3.0])
 
     def test_return_mask(self):
@@ -197,7 +198,7 @@ class TestToFloatNp:
 
 class TestAlignFinite:
     def test_basic_alignment(self):
-        a, b = align_finite([1, float("nan"), 3], [4, 5, 6])
+        a, b = align_finite([1, float('nan'), 3], [4, 5, 6])
         np.testing.assert_array_equal(a, [1.0, 3.0])
         np.testing.assert_array_equal(b, [4.0, 6.0])
 

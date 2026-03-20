@@ -4,10 +4,7 @@ import pytest
 
 from mtdata.core.data_requests import WaitCandleRequest
 from mtdata.core import trading_time
-from mtdata.core.trading_time import (
-    _next_candle_close_server_time,
-    _sleep_until_next_candle,
-)
+from mtdata.core.trading_time import _next_candle_close_server_time, _sleep_until_next_candle
 
 
 @pytest.fixture()
@@ -18,9 +15,7 @@ def utc_server_clock(monkeypatch):
 
 
 def test_wait_candle_request_rejects_negative_buffer() -> None:
-    with pytest.raises(
-        ValueError, match="buffer_seconds must be greater than or equal to 0"
-    ):
+    with pytest.raises(ValueError, match="buffer_seconds must be greater than or equal to 0"):
         WaitCandleRequest(timeframe="M5", buffer_seconds=-0.1)
 
 
@@ -31,9 +26,7 @@ def test_wait_candle_request_defaults_max_wait_to_one_hour() -> None:
 
 
 def test_wait_candle_request_rejects_negative_max_wait() -> None:
-    with pytest.raises(
-        ValueError, match="max_wait_seconds must be greater than or equal to 0"
-    ):
+    with pytest.raises(ValueError, match="max_wait_seconds must be greater than or equal to 0"):
         WaitCandleRequest(timeframe="M5", max_wait_seconds=-0.1)
 
 
@@ -45,9 +38,7 @@ def test_next_candle_close_server_time_rounds_intraday_frame(utc_server_clock) -
     assert result == datetime(2026, 3, 13, 10, 5, 0)
 
 
-def test_next_candle_close_server_time_handles_weekly_boundary(
-    utc_server_clock,
-) -> None:
+def test_next_candle_close_server_time_handles_weekly_boundary(utc_server_clock) -> None:
     now_utc = datetime(2026, 3, 13, 10, 2, 10, tzinfo=timezone.utc)
 
     result = _next_candle_close_server_time("W1", now_utc=now_utc)

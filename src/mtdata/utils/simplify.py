@@ -3,7 +3,6 @@ Simplification helpers extracted for reuse across server tools.
 
 Contains target-point selection utilities and core selection algorithms.
 """
-
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -15,7 +14,6 @@ try:
 except Exception:
     MinMaxLTTBDownsampler = None
 
-
 # Import defaults from core.constants to avoid duplication.
 # Use a lazy import to prevent circular imports during initialization.
 def _get_simplify_defaults() -> Tuple[float, int, int]:
@@ -26,12 +24,7 @@ def _get_simplify_defaults() -> Tuple[float, int, int]:
             SIMPLIFY_DEFAULT_MIN_POINTS,
             SIMPLIFY_DEFAULT_MAX_POINTS,
         )
-
-        return (
-            SIMPLIFY_DEFAULT_RATIO,
-            SIMPLIFY_DEFAULT_MIN_POINTS,
-            SIMPLIFY_DEFAULT_MAX_POINTS,
-        )
+        return (SIMPLIFY_DEFAULT_RATIO, SIMPLIFY_DEFAULT_MIN_POINTS, SIMPLIFY_DEFAULT_MAX_POINTS)
     except ImportError:
         # Fallback if core.constants is not available (e.g., during isolated testing)
         return (0.25, 100, 500)
@@ -86,9 +79,7 @@ def _choose_simplify_points(total: int, spec: Dict[str, Any]) -> int:
         return total
 
 
-_LTTB_DOWNSAMPLER = (
-    MinMaxLTTBDownsampler() if MinMaxLTTBDownsampler is not None else None
-)
+_LTTB_DOWNSAMPLER = MinMaxLTTBDownsampler() if MinMaxLTTBDownsampler is not None else None
 
 
 def _fallback_lttb_indices(y: np.ndarray, n_out: int) -> List[int]:
@@ -167,9 +158,7 @@ def _segment_endpoints_to_indices(n: int, bkps: List[int]) -> List[int]:
     return _finalize_indices(n, idxs)
 
 
-def _n_bkps_from_segments_points(
-    n: int, segments: Optional[int], points: Optional[int]
-) -> Optional[int]:
+def _n_bkps_from_segments_points(n: int, segments: Optional[int], points: Optional[int]) -> Optional[int]:
     seg = segments
     if seg is None and points is not None:
         try:
@@ -197,9 +186,7 @@ def _lttb_select_indices(x: List[float], y: List[float], n_out: int) -> List[int
     return _finalize_indices(m, np.asarray(idxs, dtype=int).tolist())
 
 
-def _point_line_distance(
-    px: float, py: float, x1: float, y1: float, x2: float, y2: float
-) -> float:
+def _point_line_distance(px: float, py: float, x1: float, y1: float, x2: float, y2: float) -> float:
     """Vertical distance from P to line y(x) through (x1,y1)-(x2,y2)."""
     dx = x2 - x1
     if dx == 0.0:
@@ -311,9 +298,7 @@ def _apca_select_indices(
     return _segment_endpoints_to_indices(n, [int(b) for b in bkps])
 
 
-def _rdp_autotune_epsilon(
-    x: List[float], y: List[float], target_points: int, max_iter: int = 24
-) -> Tuple[List[int], float]:
+def _rdp_autotune_epsilon(x: List[float], y: List[float], target_points: int, max_iter: int = 24) -> Tuple[List[int], float]:
     """Binary-search epsilon for rdp to keep ~target_points."""
     n = len(x)
     target = max(3, min(int(target_points), n))
@@ -345,37 +330,27 @@ def _rdp_autotune_epsilon(
     return best, float(best_eps)
 
 
-def _pla_autotune_max_error(
-    x: List[float], y: List[float], target_points: int, max_iter: int = 24
-) -> Tuple[List[int], float]:
+def _pla_autotune_max_error(x: List[float], y: List[float], target_points: int, max_iter: int = 24) -> Tuple[List[int], float]:
     """Approximate target points for PLA via segment count."""
     n = len(x)
     target = max(3, min(int(target_points), n))
     if target >= n:
         return list(range(n)), 0.0
-    idxs = _pla_select_indices(
-        x, y, max_error=None, segments=max(1, target - 1), points=None
-    )
+    idxs = _pla_select_indices(x, y, max_error=None, segments=max(1, target - 1), points=None)
     return idxs, 0.0
 
 
-def _apca_autotune_max_error(
-    y: List[float], target_points: int, max_iter: int = 24
-) -> Tuple[List[int], float]:
+def _apca_autotune_max_error(y: List[float], target_points: int, max_iter: int = 24) -> Tuple[List[int], float]:
     """Approximate target points for APCA via segment count."""
     n = len(y)
     target = max(3, min(int(target_points), n))
     if target >= n:
         return list(range(n)), 0.0
-    idxs = _apca_select_indices(
-        y, max_error=None, segments=max(1, target - 1), points=None
-    )
+    idxs = _apca_select_indices(y, max_error=None, segments=max(1, target - 1), points=None)
     return idxs, 0.0
 
 
-def _select_indices_for_timeseries(
-    x: List[float], y: List[float], spec: Optional[Dict[str, Any]]
-) -> Tuple[List[int], str, Dict[str, Any]]:
+def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optional[Dict[str, Any]]) -> Tuple[List[int], str, Dict[str, Any]]:
     """Select representative indices according to simplify spec.
 
     Returns (indices, method_used, params_meta).
@@ -392,11 +367,7 @@ def _select_indices_for_timeseries(
             meta["implementation"] = "python-fallback"
         return idxs, "lttb", meta
     if method == "rdp":
-        eps = (
-            spec.get("epsilon", None)
-            or spec.get("tolerance", None)
-            or spec.get("eps", None)
-        )
+        eps = spec.get("epsilon", None) or spec.get("tolerance", None) or spec.get("eps", None)
         try:
             eps_val = float(eps) if eps is not None else None
         except Exception:
@@ -405,12 +376,7 @@ def _select_indices_for_timeseries(
             idxs = _rdp_select_indices(x, y, eps_val)
             meta.update({"epsilon": eps_val})
             return idxs, "rdp", meta
-        target = (
-            spec.get("points")
-            or spec.get("target_points")
-            or spec.get("max_points")
-            or None
-        )
+        target = spec.get("points") or spec.get("target_points") or spec.get("max_points") or None
         if target is None and spec.get("ratio") is not None:
             try:
                 r = float(spec.get("ratio"))
@@ -441,11 +407,7 @@ def _select_indices_for_timeseries(
         except Exception:
             me = None
         segments = spec.get("segments", None)
-        points = (
-            spec.get("points", None)
-            or spec.get("target_points", None)
-            or spec.get("max_points", None)
-        )
+        points = spec.get("points", None) or spec.get("target_points", None) or spec.get("max_points", None)
         if me is not None and me > 0:
             idxs = _pla_select_indices(x, y, me, None, None)
             meta.update({"max_error": me})
@@ -477,11 +439,7 @@ def _select_indices_for_timeseries(
         except Exception:
             me = None
         segments = spec.get("segments", None)
-        points = (
-            spec.get("points", None)
-            or spec.get("target_points", None)
-            or spec.get("max_points", None)
-        )
+        points = spec.get("points", None) or spec.get("target_points", None) or spec.get("max_points", None)
         if me is not None and me > 0:
             idxs = _apca_select_indices(y, me, None, None)
             meta.update({"max_error": me})
@@ -514,9 +472,7 @@ def _select_indices_for_timeseries(
     return idxs, "lttb", meta
 
 
-def _handle_select_mode(
-    df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]
-) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+def _handle_select_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
     original_count = len(df)
     if original_count <= 2:
         return df, None
@@ -526,11 +482,11 @@ def _handle_select_mode(
         return df, None
 
     series = None
-    if "close" in df.columns:
-        series = df["close"].values
+    if 'close' in df.columns:
+        series = df['close'].values
     elif len(headers) > 1:
         for h in headers:
-            if h != "time" and h in df.columns:
+            if h != 'time' and h in df.columns:
                 try:
                     series = df[h].astype(float).values
                     break
@@ -539,101 +495,85 @@ def _handle_select_mode(
     if series is None:
         return df, None
 
-    epochs = (
-        df["__epoch"].values if "__epoch" in df.columns else np.arange(original_count)
-    )
+    epochs = df['__epoch'].values if '__epoch' in df.columns else np.arange(original_count)
     idxs, method, params = _select_indices_for_timeseries(epochs, series, spec)
     simplified_df = df.iloc[idxs].copy()
     meta: Dict[str, Any] = {
-        "mode": "select",
-        "method": method,
-        "original_rows": int(original_count),
-        "returned_rows": int(len(simplified_df)),
-        "points": int(len(simplified_df)),
+        'mode': 'select',
+        'method': method,
+        'original_rows': int(original_count),
+        'returned_rows': int(len(simplified_df)),
+        'points': int(len(simplified_df)),
     }
     if params:
         meta.update(params)
     return simplified_df, meta
 
 
-def _handle_resample_mode(
-    df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]
-) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
-    rule = spec.get("rule") or spec.get("interval")
+def _handle_resample_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+    rule = spec.get('rule') or spec.get('interval')
     if not rule:
-        return df, {"error": "Missing rule for resample"}
+        return df, {'error': 'Missing rule for resample'}
     try:
-        if "time" in df.columns:
-            if "__epoch" in df.columns:
-                df = df.set_index(pd.to_datetime(df["__epoch"], unit="s"))
+        if 'time' in df.columns:
+            if '__epoch' in df.columns:
+                df = df.set_index(pd.to_datetime(df['__epoch'], unit='s'))
             else:
-                df = df.set_index(pd.to_datetime(df["time"]))
+                df = df.set_index(pd.to_datetime(df['time']))
 
         agg_map: Dict[str, str] = {}
         for h in headers:
-            if h in ["open"]:
-                agg_map[h] = "first"
-            elif h in ["high"]:
-                agg_map[h] = "max"
-            elif h in ["low"]:
-                agg_map[h] = "min"
-            elif h in ["close"]:
-                agg_map[h] = "last"
-            elif h in ["tick_volume", "real_volume", "volume"]:
-                agg_map[h] = "sum"
+            if h in ['open']:
+                agg_map[h] = 'first'
+            elif h in ['high']:
+                agg_map[h] = 'max'
+            elif h in ['low']:
+                agg_map[h] = 'min'
+            elif h in ['close']:
+                agg_map[h] = 'last'
+            elif h in ['tick_volume', 'real_volume', 'volume']:
+                agg_map[h] = 'sum'
             else:
-                agg_map[h] = "last"
+                agg_map[h] = 'last'
 
         resampled = df.resample(rule).agg(agg_map).dropna()
-        return resampled, {
-            "mode": "resample",
-            "rule": rule,
-            "rows": int(len(resampled)),
-        }
+        return resampled, {'mode': 'resample', 'rule': rule, 'rows': int(len(resampled))}
     except Exception as exc:
-        return df, {"error": f"Resample failed: {exc}"}
+        return df, {'error': f'Resample failed: {exc}'}
 
 
-def _handle_encode_mode(
-    df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]
-) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
-    value_col = str(spec.get("value_col") or "").strip()
+def _handle_encode_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+    value_col = str(spec.get('value_col') or '').strip()
     if not value_col or value_col not in df.columns:
-        if "close" in df.columns:
-            value_col = "close"
+        if 'close' in df.columns:
+            value_col = 'close'
         else:
             value_col = next(
                 (
-                    h
-                    for h in headers
-                    if h in df.columns
-                    and h != "time"
-                    and pd.api.types.is_numeric_dtype(df[h])
+                    h for h in headers
+                    if h in df.columns and h != 'time' and pd.api.types.is_numeric_dtype(df[h])
                 ),
-                "",
+                '',
             )
     if not value_col:
-        return df, {
-            "mode": "encode",
-            "error": "No numeric column available for encoding",
-        }
+        return df, {'mode': 'encode', 'error': 'No numeric column available for encoding'}
 
-    vals = pd.to_numeric(df[value_col], errors="coerce").to_numpy(dtype=float)
+    vals = pd.to_numeric(df[value_col], errors='coerce').to_numpy(dtype=float)
     vals = vals[np.isfinite(vals)]
     if vals.size <= 0:
-        return df, {"mode": "encode", "error": "No finite values to encode"}
+        return df, {'mode': 'encode', 'error': 'No finite values to encode'}
 
-    schema = str(spec.get("schema", "delta")).lower().strip()
-    if schema not in ("delta", "envelope"):
-        schema = "delta"
+    schema = str(spec.get('schema', 'delta')).lower().strip()
+    if schema not in ('delta', 'envelope'):
+        schema = 'delta'
 
-    if schema == "envelope":
+    if schema == 'envelope':
         encoded = (
             f"start={float(vals[0]):.6g}|end={float(vals[-1]):.6g}|"
             f"min={float(np.min(vals)):.6g}|max={float(np.max(vals)):.6g}"
         )
     else:
-        scale = spec.get("scale", 1.0)
+        scale = spec.get('scale', 1.0)
         try:
             scale_f = float(scale)
         except Exception:
@@ -641,42 +581,38 @@ def _handle_encode_mode(
         scale_f = scale_f if abs(scale_f) > 1e-12 else 1.0
         diffs = np.diff(vals, prepend=vals[0])
         q = np.round(diffs / scale_f).astype(int)
-        if bool(spec.get("as_chars", False)):
-            zero_char = str(spec.get("zero_char", "0"))[:1] or "0"
-            encoded = "".join(
-                "+" if d > 0 else "-" if d < 0 else zero_char for d in q.tolist()
-            )
+        if bool(spec.get('as_chars', False)):
+            zero_char = str(spec.get('zero_char', '0'))[:1] or '0'
+            encoded = ''.join('+' if d > 0 else '-' if d < 0 else zero_char for d in q.tolist())
         else:
-            encoded = ",".join(str(int(v)) for v in q.tolist())
+            encoded = ','.join(str(int(v)) for v in q.tolist())
 
-    out_df = pd.DataFrame([{"encoding": encoded}])
+    out_df = pd.DataFrame([{'encoding': encoded}])
     meta = {
-        "mode": "encode",
-        "schema": schema,
-        "value_col": value_col,
-        "headers": ["encoding"],
-        "original_rows": int(len(df)),
-        "returned_rows": 1,
-        "points": 1,
+        'mode': 'encode',
+        'schema': schema,
+        'value_col': value_col,
+        'headers': ['encoding'],
+        'original_rows': int(len(df)),
+        'returned_rows': 1,
+        'points': 1,
     }
     return out_df, meta
 
 
-def _handle_segment_mode(
-    df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]
-) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
-    value_col = str(spec.get("value_col") or "").strip()
+def _handle_segment_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+    value_col = str(spec.get('value_col') or '').strip()
     if not value_col or value_col not in df.columns:
-        value_col = "close" if "close" in df.columns else ""
+        value_col = 'close' if 'close' in df.columns else ''
     if not value_col:
         return _handle_select_mode(df, headers, spec)
 
-    vals = pd.to_numeric(df[value_col], errors="coerce").to_numpy(dtype=float)
+    vals = pd.to_numeric(df[value_col], errors='coerce').to_numpy(dtype=float)
     if vals.size <= 2:
-        return df, {"mode": "segment", "algo": "zigzag", "points": int(len(df))}
+        return df, {'mode': 'segment', 'algo': 'zigzag', 'points': int(len(df))}
 
     try:
-        threshold_pct = float(spec.get("threshold_pct", 0.005))
+        threshold_pct = float(spec.get('threshold_pct', 0.005))
     except Exception:
         threshold_pct = 0.005
     threshold_pct = max(0.0, threshold_pct)
@@ -713,49 +649,44 @@ def _handle_segment_mode(
 
     out_df = df.iloc[idxs].copy()
     meta = {
-        "mode": "segment",
-        "algo": "zigzag",
-        "threshold_pct": float(threshold_pct),
-        "value_col": value_col,
-        "original_rows": int(len(df)),
-        "returned_rows": int(len(out_df)),
-        "points": int(len(out_df)),
+        'mode': 'segment',
+        'algo': 'zigzag',
+        'threshold_pct': float(threshold_pct),
+        'value_col': value_col,
+        'original_rows': int(len(df)),
+        'returned_rows': int(len(out_df)),
+        'points': int(len(out_df)),
     }
     return out_df, meta
 
 
-def _handle_symbolic_mode(
-    df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]
-) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
-    value_col = str(spec.get("value_col") or "").strip()
+def _handle_symbolic_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+    value_col = str(spec.get('value_col') or '').strip()
     if not value_col or value_col not in df.columns:
-        value_col = "close" if "close" in df.columns else ""
+        value_col = 'close' if 'close' in df.columns else ''
     if not value_col:
-        return df, {
-            "mode": "symbolic",
-            "error": "No numeric column available for symbolic mode",
-        }
+        return df, {'mode': 'symbolic', 'error': 'No numeric column available for symbolic mode'}
 
-    vals = pd.to_numeric(df[value_col], errors="coerce").to_numpy(dtype=float)
+    vals = pd.to_numeric(df[value_col], errors='coerce').to_numpy(dtype=float)
     vals = vals[np.isfinite(vals)]
     if vals.size <= 0:
-        return df, {"mode": "symbolic", "error": "No finite values to symbolize"}
+        return df, {'mode': 'symbolic', 'error': 'No finite values to symbolize'}
 
     try:
-        paa = int(spec.get("paa", 8))
+        paa = int(spec.get('paa', 8))
     except Exception:
         paa = 8
     paa = max(1, min(paa, int(vals.size)))
 
-    alphabet = str(spec.get("alphabet") or "abcdefghijklmnopqrstuvwxyz")
-    alphabet = "".join(dict.fromkeys(ch for ch in alphabet if ch.strip()))
+    alphabet = str(spec.get('alphabet') or 'abcdefghijklmnopqrstuvwxyz')
+    alphabet = ''.join(dict.fromkeys(ch for ch in alphabet if ch.strip()))
     if len(alphabet) < 2:
-        alphabet = "abcdefghijklmnopqrstuvwxyz"
+        alphabet = 'abcdefghijklmnopqrstuvwxyz'
     bins_n = min(26, len(alphabet))
     alphabet = alphabet[:bins_n]
 
     x = vals.copy()
-    if bool(spec.get("znorm", True)):
+    if bool(spec.get('znorm', True)):
         mu = float(np.mean(x))
         sigma = float(np.std(x))
         if sigma > 1e-12:
@@ -764,28 +695,26 @@ def _handle_symbolic_mode(
             x = x - mu
 
     chunks = np.array_split(x, paa)
-    paa_vals = np.array(
-        [float(np.mean(c)) if len(c) else 0.0 for c in chunks], dtype=float
-    )
+    paa_vals = np.array([float(np.mean(c)) if len(c) else 0.0 for c in chunks], dtype=float)
     quantiles = np.linspace(0.0, 1.0, bins_n + 1)
     edges = np.quantile(paa_vals, quantiles)
     for i in range(1, len(edges)):
         if edges[i] <= edges[i - 1]:
             edges[i] = edges[i - 1] + 1e-12
-    ids = np.searchsorted(edges[1:-1], paa_vals, side="right")
-    symbols = "".join(alphabet[int(i)] for i in ids.tolist())
+    ids = np.searchsorted(edges[1:-1], paa_vals, side='right')
+    symbols = ''.join(alphabet[int(i)] for i in ids.tolist())
 
-    out_df = pd.DataFrame([{"symbolic": symbols}])
+    out_df = pd.DataFrame([{'symbolic': symbols}])
     meta = {
-        "mode": "symbolic",
-        "schema": "sax",
-        "value_col": value_col,
-        "paa": int(paa),
-        "alphabet": alphabet,
-        "headers": ["symbolic"],
-        "original_rows": int(len(df)),
-        "returned_rows": 1,
-        "points": 1,
+        'mode': 'symbolic',
+        'schema': 'sax',
+        'value_col': value_col,
+        'paa': int(paa),
+        'alphabet': alphabet,
+        'headers': ['symbolic'],
+        'original_rows': int(len(df)),
+        'returned_rows': 1,
+        'points': 1,
     }
     return out_df, meta
 
@@ -802,25 +731,20 @@ def _simplify_dataframe_rows_ext(
     from ..shared.constants import SIMPLIFY_DEFAULT_MODE
 
     spec = dict(simplify) if simplify else {}
-    mode = (
-        str(spec.get("mode", SIMPLIFY_DEFAULT_MODE)).lower().strip()
-        or SIMPLIFY_DEFAULT_MODE
-    )
+    mode = str(spec.get('mode', SIMPLIFY_DEFAULT_MODE)).lower().strip() or SIMPLIFY_DEFAULT_MODE
 
-    if mode == "resample":
+    if mode == 'resample':
         return _handle_resample_mode(df, headers, spec)
-    if mode == "encode":
+    if mode == 'encode':
         return _handle_encode_mode(df, headers, spec)
-    if mode == "segment":
+    if mode == 'segment':
         return _handle_segment_mode(df, headers, spec)
-    if mode == "symbolic":
+    if mode == 'symbolic':
         return _handle_symbolic_mode(df, headers, spec)
     return _handle_select_mode(df, headers, spec)
 
 
-def _simplify_dataframe_rows(
-    df: pd.DataFrame, headers: List[str], simplify: Optional[Dict[str, Any]]
-) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Optional[Dict[str, Any]]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
     """Reduce or transform rows across numeric columns.
 
     Modes (simplify['mode']):
@@ -838,15 +762,12 @@ def _simplify_dataframe_rows(
         total = len(df)
         if total <= 3:
             return df, None
-
+        
         # Import constants to avoid circular imports
         from ..shared.constants import SIMPLIFY_DEFAULT_METHOD, SIMPLIFY_DEFAULT_MODE
-
+        
         method = str(simplify.get("method", SIMPLIFY_DEFAULT_METHOD)).lower().strip()
-        mode = (
-            str(simplify.get("mode", SIMPLIFY_DEFAULT_MODE)).lower().strip()
-            or SIMPLIFY_DEFAULT_MODE
-        )
+        mode = str(simplify.get("mode", SIMPLIFY_DEFAULT_MODE)).lower().strip() or SIMPLIFY_DEFAULT_MODE
 
         # If users passed a high-level mode via --simplify (CLI maps to 'method'), map it to mode
         if method in ("encode", "symbolic", "segment"):
@@ -860,7 +781,7 @@ def _simplify_dataframe_rows(
         def _numeric_columns_from_headers() -> List[str]:
             cols: List[str] = []
             for h in headers:
-                if h in ("time",) or str(h).startswith("_"):
+                if h in ('time',) or str(h).startswith('_'):
                     continue
                 try:
                     if h in df.columns and pd.api.types.is_numeric_dtype(df[h]):
@@ -869,7 +790,7 @@ def _simplify_dataframe_rows(
                     continue
             if not cols:
                 for c in df.columns:
-                    if c in ("time",) or str(c).startswith("_"):
+                    if c in ('time',) or str(c).startswith('_'):
                         continue
                     try:
                         if pd.api.types.is_numeric_dtype(df[c]):
@@ -891,17 +812,14 @@ def _simplify_dataframe_rows(
                     row[col] = float(seg[col].mean())
                 elif col in seg.columns:
                     try:
-                        row[col] = next(
-                            (v for v in seg[col].tolist() if pd.notna(v)),
-                            seg.iloc[0][col],
-                        )
+                        row[col] = next((v for v in seg[col].tolist() if pd.notna(v)), seg.iloc[0][col])
                     except Exception:
                         row[col] = seg.iloc[0][col]
             return row
 
         # Determine target number of points early (used for select and to infer resample/encode)
         n_out = _choose_simplify_points(total, spec_eff)
-
+        
         if mode == "resample" and "__epoch" in df.columns:
             bs = spec_eff.get("bucket_seconds")
             if bs is None or (isinstance(bs, (int, float)) and bs <= 0):
@@ -918,9 +836,7 @@ def _simplify_dataframe_rows(
                 bs = max(1, int(bs))
             except Exception:
                 bs = max(1, int(round(total / float(max(1, n_out)))))
-            grp = (
-                (df["__epoch"].astype(float) - float(df["__epoch"].iloc[0])) // bs
-            ).astype(int)
+            grp = ((df["__epoch"].astype(float) - float(df["__epoch"].iloc[0])) // bs).astype(int)
             out_rows: List[Dict[str, Any]] = []
             for _, seg in df.groupby(grp):
                 i0 = seg.index[0]
@@ -938,6 +854,6 @@ def _simplify_dataframe_rows(
             return out_df.reset_index(drop=True), meta
 
         return _simplify_dataframe_rows_ext(df, headers, spec_eff)
-
+        
     except Exception:
         return df, None

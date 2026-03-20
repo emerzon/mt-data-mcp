@@ -13,9 +13,7 @@ from ..bootstrap.settings import mt5_config
 logger = logging.getLogger(__name__)
 
 _SYMBOL_INFO_TTL_SECONDS = 5
-_MT5_CONNECTION_FAILURE_MESSAGE = (
-    "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
-)
+_MT5_CONNECTION_FAILURE_MESSAGE = "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
 
 
 class MT5ConnectionError(RuntimeError):
@@ -130,9 +128,7 @@ class MT5Adapter:
 
     def copy_rates_from_pos(self, symbol, timeframe, start_pos, count):
         with _mt5_lock:
-            return self._module().copy_rates_from_pos(
-                symbol, timeframe, start_pos, count
-            )
+            return self._module().copy_rates_from_pos(symbol, timeframe, start_pos, count)
 
     def copy_ticks_from(self, symbol, dt_from, count, flags):
         with _mt5_lock:
@@ -157,11 +153,9 @@ class MT5Adapter:
     def __getattr__(self, name: str) -> Any:
         attr = getattr(self._module(), name)
         if callable(attr):
-
             def _locked(*a, **kw):
                 with _mt5_lock:
                     return attr(*a, **kw)
-
             return _locked
         return attr
 
@@ -243,12 +237,12 @@ def _normalize_times_in_struct(arr: Any):
     try:
         if arr is None:
             return arr
-        names = getattr(getattr(arr, "dtype", None), "names", None)
-        if not names or "time" not in names:
+        names = getattr(getattr(arr, 'dtype', None), 'names', None)
+        if not names or 'time' not in names:
             return arr
         for i in range(len(arr)):
             try:
-                arr[i]["time"] = _mt5_epoch_to_utc(float(arr[i]["time"]))
+                arr[i]['time'] = _mt5_epoch_to_utc(float(arr[i]['time']))
             except Exception:
                 continue
         return arr
@@ -262,9 +256,7 @@ def _mt5_copy_rates_from(symbol: str, timeframe, to_dt_utc: datetime, count: int
     return _normalize_times_in_struct(data)
 
 
-def _mt5_copy_rates_range(
-    symbol: str, timeframe, from_dt_utc: datetime, to_dt_utc: datetime
-):
+def _mt5_copy_rates_range(symbol: str, timeframe, from_dt_utc: datetime, to_dt_utc: datetime):
     dt_from = _to_server_naive_dt(from_dt_utc)
     dt_to = _to_server_naive_dt(to_dt_utc)
     data = mt5.copy_rates_range(symbol, timeframe, dt_from, dt_to)
@@ -282,9 +274,7 @@ def _mt5_copy_rates_from_pos(symbol: str, timeframe, start_pos: int, count: int)
     return _normalize_times_in_struct(data)
 
 
-def _mt5_copy_ticks_range(
-    symbol: str, from_dt_utc: datetime, to_dt_utc: datetime, flags: int
-):
+def _mt5_copy_ticks_range(symbol: str, from_dt_utc: datetime, to_dt_utc: datetime, flags: int):
     dt_from = _to_server_naive_dt(from_dt_utc)
     dt_to = _to_server_naive_dt(to_dt_utc)
     data = mt5.copy_ticks_range(symbol, dt_from, dt_to, flags)
@@ -304,9 +294,7 @@ class MT5Connection:
                 password = mt5_config.get_password()
                 server = mt5_config.get_server()
                 if not mt5.initialize(login=login, password=password, server=server):
-                    logger.warning(
-                        f"Failed to initialize MT5 with credentials: {mt5.last_error()}"
-                    )
+                    logger.warning(f"Failed to initialize MT5 with credentials: {mt5.last_error()}")
                     if not mt5.initialize():
                         logger.error(f"Failed to initialize MT5: {mt5.last_error()}")
                         return False
@@ -385,11 +373,7 @@ def _ensure_symbol_ready(symbol: str) -> Optional[str]:
             deadline = time.time() + data_ready_timeout
             while time.time() < deadline:
                 tick = mt5.symbol_info_tick(symbol)
-                if tick and (
-                    getattr(tick, "time", 0)
-                    or getattr(tick, "bid", 0)
-                    or getattr(tick, "ask", 0)
-                ):
+                if tick and (getattr(tick, 'time', 0) or getattr(tick, 'bid', 0) or getattr(tick, 'ask', 0)):
                     break
                 time.sleep(data_poll_interval)
         # Final check
@@ -422,12 +406,12 @@ def _symbol_ready_guard(
 
 def estimate_server_offset(symbol: str = "EURUSD", samples: int = 5) -> int:
     """Estimate server offset from UTC in seconds by comparing tick time to local UTC time.
-
+    
     Returns 0 if failed.
     """
     try:
         ensure_mt5_connection_or_raise(service=MT5Service(mt5_connection))
-
+        
         # Ensure symbol is ready
         if not mt5.symbol_select(symbol, True):
             # Try a fallback if EURUSD not found
@@ -435,7 +419,7 @@ def estimate_server_offset(symbol: str = "EURUSD", samples: int = 5) -> int:
                 if mt5.symbol_select(s, True):
                     symbol = s
                     break
-
+        
         deltas = []
         for _ in range(samples):
             tick = mt5.symbol_info_tick(symbol)
@@ -446,14 +430,14 @@ def estimate_server_offset(symbol: str = "EURUSD", samples: int = 5) -> int:
                 diff = float(tick.time) - time.time()
                 deltas.append(diff)
             time.sleep(0.2)
-
+            
         if not deltas:
             return 0
-
+            
         # Median
         deltas.sort()
         med = deltas[len(deltas) // 2]
-
+        
         # Round to nearest 15 minutes (900s) to be safe/clean
         offset = int(round(med / 900.0) * 900)
         return offset
@@ -565,14 +549,10 @@ def inspect_mt5_time_alignment(
     offset_inference_reliable = False
     if raw_tick_epoch and raw_tick_epoch > 0:
         raw_tick_delta_seconds = float(raw_tick_epoch - now_utc_epoch)
-        inferred_offset_seconds = _round_seconds(
-            raw_tick_delta_seconds, tick_offset_bucket_seconds
-        )
+        inferred_offset_seconds = _round_seconds(raw_tick_delta_seconds, tick_offset_bucket_seconds)
         tick_utc_epoch = float(_mt5_epoch_to_utc(raw_tick_epoch))
         tick_age_seconds = float(now_utc_epoch - tick_utc_epoch)
-        offset_inference_reliable = abs(float(raw_tick_delta_seconds)) <= float(
-            max_plausible_offset_seconds
-        )
+        offset_inference_reliable = abs(float(raw_tick_delta_seconds)) <= float(max_plausible_offset_seconds)
         out["raw_tick_epoch"] = raw_tick_epoch
         out["raw_tick_time"] = _epoch_to_utc_iso(raw_tick_epoch)
         out["raw_tick_delta_seconds"] = raw_tick_delta_seconds
@@ -581,9 +561,7 @@ def inspect_mt5_time_alignment(
         out["tick_utc_time"] = _epoch_to_utc_iso(tick_utc_epoch)
         out["tick_age_seconds"] = tick_age_seconds
         out["offset_inference_reliable"] = offset_inference_reliable
-        out["offset_mismatch_seconds"] = int(
-            inferred_offset_seconds - configured_offset_seconds
-        )
+        out["offset_mismatch_seconds"] = int(inferred_offset_seconds - configured_offset_seconds)
 
     current_bar_open_epoch: Optional[float] = None
     last_closed_bar_open_epoch: Optional[float] = None
@@ -591,9 +569,7 @@ def inspect_mt5_time_alignment(
         rates = _mt5_copy_rates_from_pos(symbol, mt5_tf, 0, 3)
         if rates is None or len(rates) < 2:
             out["reason"] = "insufficient_bar_samples"
-            out["error"] = (
-                f"Not enough {tf_name} bars returned for broker-time sanity check"
-            )
+            out["error"] = f"Not enough {tf_name} bars returned for broker-time sanity check"
             return out
         import pandas as pd
 
@@ -611,57 +587,36 @@ def inspect_mt5_time_alignment(
         out["error"] = str(exc)
         return out
 
-    expected_current_bar_open_epoch = math.floor(
-        now_utc_epoch / float(tf_secs)
-    ) * float(tf_secs)
-    expected_last_closed_bar_open_epoch = expected_current_bar_open_epoch - float(
-        tf_secs
-    )
-    current_bar_delta_seconds = float(
-        current_bar_open_epoch - expected_current_bar_open_epoch
-    )
-    last_closed_bar_delta_seconds = float(
-        last_closed_bar_open_epoch - expected_last_closed_bar_open_epoch
-    )
+    expected_current_bar_open_epoch = math.floor(now_utc_epoch / float(tf_secs)) * float(tf_secs)
+    expected_last_closed_bar_open_epoch = expected_current_bar_open_epoch - float(tf_secs)
+    current_bar_delta_seconds = float(current_bar_open_epoch - expected_current_bar_open_epoch)
+    last_closed_bar_delta_seconds = float(last_closed_bar_open_epoch - expected_last_closed_bar_open_epoch)
 
     out.update(
         {
             "current_bar_open_utc_epoch": current_bar_open_epoch,
             "current_bar_open_utc_time": _epoch_to_utc_iso(current_bar_open_epoch),
             "expected_current_bar_open_utc_epoch": expected_current_bar_open_epoch,
-            "expected_current_bar_open_utc_time": _epoch_to_utc_iso(
-                expected_current_bar_open_epoch
-            ),
+            "expected_current_bar_open_utc_time": _epoch_to_utc_iso(expected_current_bar_open_epoch),
             "current_bar_delta_seconds": current_bar_delta_seconds,
             "last_closed_bar_open_utc_epoch": last_closed_bar_open_epoch,
-            "last_closed_bar_open_utc_time": _epoch_to_utc_iso(
-                last_closed_bar_open_epoch
-            ),
+            "last_closed_bar_open_utc_time": _epoch_to_utc_iso(last_closed_bar_open_epoch),
             "expected_last_closed_bar_open_utc_epoch": expected_last_closed_bar_open_epoch,
-            "expected_last_closed_bar_open_utc_time": _epoch_to_utc_iso(
-                expected_last_closed_bar_open_epoch
-            ),
+            "expected_last_closed_bar_open_utc_time": _epoch_to_utc_iso(expected_last_closed_bar_open_epoch),
             "last_closed_bar_delta_seconds": last_closed_bar_delta_seconds,
         }
     )
 
-    stale_threshold_seconds = max(
-        int(stale_bar_tolerance) * int(tf_secs), int(max_future_seconds)
-    )
-    tick_stale = tick_age_seconds is not None and tick_age_seconds > float(
-        max_tick_age_seconds
-    )
+    stale_threshold_seconds = max(int(stale_bar_tolerance) * int(tf_secs), int(max_future_seconds))
+    tick_stale = tick_age_seconds is not None and tick_age_seconds > float(max_tick_age_seconds)
     future_bar = current_bar_delta_seconds > float(max_future_seconds)
     stale_bar = current_bar_delta_seconds < -float(stale_threshold_seconds)
     offset_mismatch = (
         offset_inference_reliable
         and inferred_offset_seconds is not None
-        and abs(int(inferred_offset_seconds) - int(configured_offset_seconds))
-        >= int(tick_offset_bucket_seconds)
+        and abs(int(inferred_offset_seconds) - int(configured_offset_seconds)) >= int(tick_offset_bucket_seconds)
     )
-    tick_not_live_like = (
-        raw_tick_delta_seconds is not None and not offset_inference_reliable
-    )
+    tick_not_live_like = raw_tick_delta_seconds is not None and not offset_inference_reliable
 
     if future_bar or offset_mismatch:
         parts = []
@@ -685,19 +640,14 @@ def inspect_mt5_time_alignment(
                 f"latest tick delta vs UTC is {int(round(raw_tick_delta_seconds))}s, which is not a plausible live broker offset"
             )
         if tick_stale and tick_age_seconds is not None:
-            parts.append(
-                f"latest tick is {int(round(tick_age_seconds))}s old after UTC normalization"
-            )
+            parts.append(f"latest tick is {int(round(tick_age_seconds))}s old after UTC normalization")
         if stale_bar:
             parts.append(
                 f"latest converted {tf_name} bar lags expected current bar by {int(round(-current_bar_delta_seconds))}s"
             )
         out["status"] = "stale"
         out["reason"] = "market_data_stale"
-        out["warning"] = (
-            "MT5 broker-time sanity check could not confirm live alignment: "
-            + "; ".join(parts)
-        )
+        out["warning"] = "MT5 broker-time sanity check could not confirm live alignment: " + "; ".join(parts)
         return out
 
     out["status"] = "ok"

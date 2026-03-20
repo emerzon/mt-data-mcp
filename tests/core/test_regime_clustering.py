@@ -14,9 +14,7 @@ import pandas as pd
 from mtdata.core.regime import regime_detect
 
 
-def _mock_fetch_history(
-    symbol: str, timeframe: str, limit: int, as_of=None
-) -> pd.DataFrame:
+def _mock_fetch_history(symbol: str, timeframe: str, limit: int, as_of=None) -> pd.DataFrame:
     # Create a synthetic price series with two volatility regimes.
     rng = np.random.default_rng(12345)
     n = int(limit)

@@ -26,9 +26,7 @@ def test_ets_arima_method_metadata_on_concrete_method():
 def test_ses_requires_statsmodels(monkeypatch):
     monkeypatch.setattr(ea, "_SM_ETS_AVAILABLE", False)
     with pytest.raises(RuntimeError, match="requires statsmodels"):
-        ea.SESMethod().forecast(
-            pd.Series([1.0, 2.0, 3.0]), horizon=2, seasonality=0, params={}
-        )
+        ea.SESMethod().forecast(pd.Series([1.0, 2.0, 3.0]), horizon=2, seasonality=0, params={})
 
 
 def test_ses_optimized_path_and_alpha_recovery(monkeypatch):
@@ -36,10 +34,7 @@ def test_ses_optimized_path_and_alpha_recovery(monkeypatch):
 
     class FakeSES:
         def __init__(self, vals, initialization_method):
-            calls["init"] = {
-                "vals": np.asarray(vals),
-                "initialization_method": initialization_method,
-            }
+            calls["init"] = {"vals": np.asarray(vals), "initialization_method": initialization_method}
 
         def fit(self, **kwargs):
             calls["fit"] = kwargs
@@ -51,9 +46,7 @@ def test_ses_optimized_path_and_alpha_recovery(monkeypatch):
     monkeypatch.setattr(ea, "_SM_ETS_AVAILABLE", True)
     monkeypatch.setattr(ea, "_SES", FakeSES)
 
-    out = ea.SESMethod().forecast(
-        pd.Series([1.0, 2.0, 3.0]), horizon=3, seasonality=0, params={}
-    )
+    out = ea.SESMethod().forecast(pd.Series([1.0, 2.0, 3.0]), horizon=3, seasonality=0, params={})
     assert np.allclose(out.forecast, [10.0, 11.0, 12.0])
     assert out.params_used == {"alpha": 0.77}
     assert calls["init"]["initialization_method"] == "heuristic"
@@ -69,16 +62,12 @@ def test_ses_manual_alpha_path(monkeypatch):
 
         def fit(self, **kwargs):
             calls["fit"] = kwargs
-            return SimpleNamespace(
-                forecast=lambda h: np.full(int(h), 5.0, dtype=float), params=None
-            )
+            return SimpleNamespace(forecast=lambda h: np.full(int(h), 5.0, dtype=float), params=None)
 
     monkeypatch.setattr(ea, "_SM_ETS_AVAILABLE", True)
     monkeypatch.setattr(ea, "_SES", FakeSES)
 
-    out = ea.SESMethod().forecast(
-        pd.Series([1.0, 2.0]), horizon=2, seasonality=0, params={"alpha": "0.2"}
-    )
+    out = ea.SESMethod().forecast(pd.Series([1.0, 2.0]), horizon=2, seasonality=0, params={"alpha": "0.2"})
     assert np.allclose(out.forecast, [5.0, 5.0])
     assert out.params_used == {"alpha": "0.2"}
     assert calls["fit"] == {"smoothing_level": 0.2, "optimized": False}
@@ -100,14 +89,9 @@ def test_holt_forecast_manual_and_optimized_paths(monkeypatch):
 
     method = ea.HoltMethod()
     manual = method.forecast(
-        pd.Series([1.0, 2.0, 3.0]),
-        horizon=2,
-        seasonality=0,
-        params={"alpha": 0.3, "damped": True},
+        pd.Series([1.0, 2.0, 3.0]), horizon=2, seasonality=0, params={"alpha": 0.3, "damped": True}
     )
-    optimized = method.forecast(
-        pd.Series([1.0, 2.0, 3.0]), horizon=1, seasonality=0, params={}
-    )
+    optimized = method.forecast(pd.Series([1.0, 2.0, 3.0]), horizon=1, seasonality=0, params={})
 
     assert np.allclose(manual.forecast, [9.0, 9.0])
     assert manual.params_used == {"damped": True, "alpha": 0.3}
@@ -133,9 +117,7 @@ def test_holt_winters_validates_seasonality_and_manual_params(monkeypatch):
 
         def fit(self, **kwargs):
             calls["fit"] = kwargs
-            return SimpleNamespace(
-                forecast=lambda h: np.arange(1.0, 1.0 + int(h), dtype=float)
-            )
+            return SimpleNamespace(forecast=lambda h: np.arange(1.0, 1.0 + int(h), dtype=float))
 
     monkeypatch.setattr(ea, "_SM_ETS_AVAILABLE", True)
     monkeypatch.setattr(ea, "_ETS", FakeETS)
@@ -173,14 +155,10 @@ def test_holt_winters_mul_routes_to_mul_variant(monkeypatch):
 
     def fake_forecast_hw(self, series, horizon, seasonality, params, seasonal_type):
         captured["seasonal_type"] = seasonal_type
-        return ForecastResult(
-            forecast=np.array([7.0], dtype=float), params_used={"ok": True}
-        )
+        return ForecastResult(forecast=np.array([7.0], dtype=float), params_used={"ok": True})
 
     monkeypatch.setattr(ea.HoltWintersMulMethod, "_forecast_hw", fake_forecast_hw)
-    out = ea.HoltWintersMulMethod().forecast(
-        pd.Series([1.0, 2.0]), horizon=1, seasonality=2, params={}
-    )
+    out = ea.HoltWintersMulMethod().forecast(pd.Series([1.0, 2.0]), horizon=1, seasonality=2, params={})
     assert np.allclose(out.forecast, [7.0])
     assert captured["seasonal_type"] == "mul"
 
@@ -199,9 +177,7 @@ def test_ets_norm_component_mapping_and_errors():
 def test_ets_requires_statsmodels(monkeypatch):
     monkeypatch.setattr(ea, "_SM_ETS_AVAILABLE", False)
     with pytest.raises(RuntimeError, match="ETS requires statsmodels"):
-        ea.ETSMethod().forecast(
-            pd.Series([1.0, 2.0]), horizon=1, seasonality=0, params={}
-        )
+        ea.ETSMethod().forecast(pd.Series([1.0, 2.0]), horizon=1, seasonality=0, params={})
 
 
 def test_ets_forecast_auto_and_trend_none_forces_not_damped(monkeypatch):
@@ -264,11 +240,7 @@ def test_ets_forecast_manual_path_and_param_extraction(monkeypatch):
             calls["fit"] = kwargs
             return SimpleNamespace(
                 forecast=lambda h: np.arange(2.0, 2.0 + int(h), dtype=float),
-                params={
-                    "smoothing_level": 0.8,
-                    "smoothing_trend": 0.1,
-                    "smoothing_seasonal": 0.2,
-                },
+                params={"smoothing_level": 0.8, "smoothing_trend": 0.1, "smoothing_seasonal": 0.2},
             )
 
     monkeypatch.setattr(ea, "_SM_ETS_AVAILABLE", True)
@@ -313,9 +285,7 @@ def test_ets_forecast_rejects_insufficient_history_for_seasonal_fit(monkeypatch)
 def test_arima_requires_statsmodels(monkeypatch):
     monkeypatch.setattr(ea, "_SM_SARIMAX_AVAILABLE", False)
     with pytest.raises(RuntimeError, match="requires statsmodels"):
-        ea.ARIMAMethod().forecast(
-            pd.Series([1.0, 2.0]), horizon=1, seasonality=0, params={}
-        )
+        ea.ARIMAMethod().forecast(pd.Series([1.0, 2.0]), horizon=1, seasonality=0, params={})
 
 
 def test_arima_builds_orders_ci_and_exog_metadata(monkeypatch):
@@ -350,16 +320,7 @@ def test_arima_builds_orders_ci_and_exog_metadata(monkeypatch):
         pd.Series([10.0, 11.0, 12.0]),
         horizon=2,
         seasonality=12,
-        params={
-            "p": 2,
-            "d": 0,
-            "q": 1,
-            "P": 1,
-            "D": 0,
-            "Q": 1,
-            "trend": "n",
-            "alpha": 0.1,
-        },
+        params={"p": 2, "d": 0, "q": 1, "P": 1, "D": 0, "Q": 1, "trend": "n", "alpha": 0.1},
         exog_future=exog_future,
         exog_used=exog_used,
     )
@@ -445,14 +406,10 @@ def test_arima_conf_int_errors_are_reported_in_metadata(monkeypatch):
     monkeypatch.setattr(ea, "_SM_SARIMAX_AVAILABLE", True)
     monkeypatch.setattr(ea, "_SARIMAX", FakeSarimax)
 
-    out = ea.ARIMAMethod().forecast(
-        pd.Series([1.0, 2.0, 3.0]), horizon=1, seasonality=0, params={}
-    )
+    out = ea.ARIMAMethod().forecast(pd.Series([1.0, 2.0, 3.0]), horizon=1, seasonality=0, params={})
     assert np.allclose(out.forecast, [3.0])
     assert out.ci_values is None
-    assert out.metadata == {
-        "ci_warning": "Failed to compute confidence intervals: no ci"
-    }
+    assert out.metadata == {"ci_warning": "Failed to compute confidence intervals: no ci"}
 
 
 def test_legacy_wrappers_route_to_registry(monkeypatch):
@@ -487,15 +444,9 @@ def test_legacy_wrappers_route_to_registry(monkeypatch):
     monkeypatch.setattr(ea, "ForecastRegistry", FakeRegistry)
 
     ses_f, ses_params, ses_fit = ea.forecast_ses(np.array([1.0, 2.0]), fh=1, alpha=0.4)
-    holt_f, holt_params, holt_fit = ea.forecast_holt(
-        np.array([1.0, 2.0]), fh=1, damped=False
-    )
-    hw_add_f, hw_add_params, hw_add_fit = ea.forecast_holt_winters(
-        np.array([1.0, 2.0]), fh=1, m=12, seasonal="add"
-    )
-    hw_mul_f, hw_mul_params, hw_mul_fit = ea.forecast_holt_winters(
-        np.array([1.0, 2.0]), fh=1, m=12, seasonal="mul"
-    )
+    holt_f, holt_params, holt_fit = ea.forecast_holt(np.array([1.0, 2.0]), fh=1, damped=False)
+    hw_add_f, hw_add_params, hw_add_fit = ea.forecast_holt_winters(np.array([1.0, 2.0]), fh=1, m=12, seasonal="add")
+    hw_mul_f, hw_mul_params, hw_mul_fit = ea.forecast_holt_winters(np.array([1.0, 2.0]), fh=1, m=12, seasonal="mul")
 
     assert np.allclose(ses_f, [8.0])
     assert ses_params == {"method": "ses"}
@@ -510,12 +461,7 @@ def test_legacy_wrappers_route_to_registry(monkeypatch):
     assert hw_mul_params == {"method": "holt_winters_mul"}
     assert hw_mul_fit is None
 
-    assert [c["method"] for c in calls[:4]] == [
-        "ses",
-        "holt",
-        "holt_winters_add",
-        "holt_winters_mul",
-    ]
+    assert [c["method"] for c in calls[:4]] == ["ses", "holt", "holt_winters_add", "holt_winters_mul"]
     assert all(c["series_type"] == "Series" for c in calls[:4])
     assert calls[0]["params"] == {"alpha": 0.4}
     assert calls[1]["params"] == {"damped": False}

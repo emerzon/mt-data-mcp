@@ -1,5 +1,4 @@
 """Tests for src/mtdata/forecast/common.py — pure forecast utility functions."""
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -73,9 +72,7 @@ class TestExtractForecastValues:
         np.testing.assert_array_equal(result, [1.0, 2.0, 3.0])
 
     def test_non_y_column(self):
-        df = pd.DataFrame(
-            {"unique_id": ["ts", "ts"], "ds": [0, 1], "pred": [10.0, 20.0]}
-        )
+        df = pd.DataFrame({"unique_id": ["ts", "ts"], "ds": [0, 1], "pred": [10.0, 20.0]})
         result = _extract_forecast_values(df, 2)
         np.testing.assert_array_equal(result, [10.0, 20.0])
 

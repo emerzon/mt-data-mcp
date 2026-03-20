@@ -1,9 +1,9 @@
 """Tests for utils/dimred.py — DimReducer classes and create_reducer factory."""
-
 import numpy as np
 import pytest
 
 from mtdata.utils.dimred import (
+    DimReducer,
     NoneReducer,
     PCAReducer,
     SVDReducer,
@@ -84,9 +84,7 @@ class TestKPCAReducer:
         assert out.shape == (50, 2)
 
     def test_info_fields(self):
-        info = KPCAReducer(
-            n_components=2, kernel="poly", gamma=0.1, degree=2, coef0=0.5
-        ).info()
+        info = KPCAReducer(n_components=2, kernel="poly", gamma=0.1, degree=2, coef0=0.5).info()
         assert info["kernel"] == "poly"
         assert info["gamma"] == 0.1
         assert info["degree"] == 2
@@ -133,9 +131,7 @@ class TestTSNEReducer:
             r.transform(_synthetic_data())
 
     def test_info(self):
-        info = TSNEReducer(
-            n_components=2, perplexity=15.0, learning_rate=100.0, n_iter=500
-        ).info()
+        info = TSNEReducer(n_components=2, perplexity=15.0, learning_rate=100.0, n_iter=500).info()
         assert info["perplexity"] == 15.0
         assert info["supports_transform"] is False
 
@@ -172,9 +168,7 @@ class TestCreateReducer:
         assert isinstance(r, SparsePCAReducer)
 
     def test_kpca(self):
-        r, p = create_reducer(
-            "kpca", {"n_components": 2, "kernel": "poly", "gamma": 0.1, "degree": 2}
-        )
+        r, p = create_reducer("kpca", {"n_components": 2, "kernel": "poly", "gamma": 0.1, "degree": 2})
         assert isinstance(r, KPCAReducer)
         assert p["kernel"] == "poly"
 
@@ -191,9 +185,7 @@ class TestCreateReducer:
         assert isinstance(r, LaplacianReducer)
 
     def test_tsne(self):
-        r, p = create_reducer(
-            "tsne", {"n_components": 2, "perplexity": 10, "n_iter": 300}
-        )
+        r, p = create_reducer("tsne", {"n_components": 2, "perplexity": 10, "n_iter": 300})
         assert isinstance(r, TSNEReducer)
 
     def test_lda_raises(self):

@@ -37,25 +37,14 @@ def patterns_detect(**kwargs):
 
 def test_patterns_detect_returns_connection_error_payload(monkeypatch):
     def fail_connection():
-        raise MT5ConnectionError(
-            "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
-        )
+        raise MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running.")
 
-    monkeypatch.setattr(
-        core_patterns, "ensure_mt5_connection_or_raise", fail_connection
-    )
-    monkeypatch.setattr(
-        core_patterns,
-        "_fetch_pattern_data",
-        lambda *args, **kwargs: pytest.fail("fetch should not run"),
-    )
+    monkeypatch.setattr(core_patterns, "ensure_mt5_connection_or_raise", fail_connection)
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda *args, **kwargs: pytest.fail("fetch should not run"))
 
     out = patterns_detect(symbol="EURUSD", mode="classic", timeframe="H1")
 
-    assert (
-        out["error"]
-        == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
-    )
+    assert out["error"] == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
     assert out["success"] is False
     assert out["error_code"] == "tool_error"
     assert out["operation"] == "patterns_detect"
@@ -72,7 +61,6 @@ def test_fit_lines_and_arrays_uses_cfg_for_robust_fit(monkeypatch):
 
     # Patch the implementation module since we refactored logic into classic_impl
     from src.mtdata.patterns.classic_impl import utils as impl_utils
-
     monkeypatch.setattr(impl_utils, "_fit_line_robust", _fake_robust)
 
     ih = np.array([1, 5, 9], dtype=int)
@@ -80,9 +68,7 @@ def test_fit_lines_and_arrays_uses_cfg_for_robust_fit(monkeypatch):
     c = np.linspace(10.0, 20.0, 12)
     cfg = ClassicDetectorConfig(use_robust_fit=True)
 
-    sh, bh, r2h, sl, bl, r2l, upper, lower = _fit_lines_and_arrays(
-        ih, il, c, len(c), cfg
-    )
+    sh, bh, r2h, sl, bl, r2l, upper, lower = _fit_lines_and_arrays(ih, il, c, len(c), cfg)
 
     assert calls == [True, True]
     assert (sh, bh, r2h) == (1.0, 2.0, 0.9)
@@ -161,9 +147,7 @@ def test_get_candlestick_pattern_methods_caches_discovery(monkeypatch):
     assert fake_temp.ta.dir_calls == 1
 
 
-def test_get_candlestick_pattern_methods_invalidates_cache_on_accessor_type_change(
-    monkeypatch,
-):
+def test_get_candlestick_pattern_methods_invalidates_cache_on_accessor_type_change(monkeypatch):
     class _AlphaTA:
         def __init__(self):
             self.dir_calls = 0
@@ -278,14 +262,8 @@ def test_detect_candlestick_patterns_rejects_out_of_range_min_strength():
 
 def test_detect_candlestick_patterns_does_not_flatten_unexpected_errors(monkeypatch):
     monkeypatch.setattr(candlestick_mod, "_symbol_ready_guard", _always_ready_guard)
-    monkeypatch.setattr(
-        candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object()]
-    )
-    monkeypatch.setattr(
-        candlestick_mod,
-        "_rates_to_df",
-        lambda _rates: (_ for _ in ()).throw(RuntimeError("boom")),
-    )
+    monkeypatch.setattr(candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object()])
+    monkeypatch.setattr(candlestick_mod, "_rates_to_df", lambda _rates: (_ for _ in ()).throw(RuntimeError("boom")))
     monkeypatch.setattr(candlestick_mod, "TIMEFRAME_MAP", {"H1": 1})
 
     with pytest.raises(RuntimeError, match="boom"):
@@ -331,14 +309,8 @@ def test_detect_candlestick_patterns_prefilters_methods_by_whitelist(monkeypatch
     monkeypatch.setattr(candlestick_mod, "_ensure_candlestick_runtime", lambda: None)
     monkeypatch.setattr(candlestick_mod, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(candlestick_mod, "_symbol_ready_guard", _always_ready_guard)
-    monkeypatch.setattr(
-        candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object(), object()]
-    )
-    monkeypatch.setattr(
-        candlestick_mod,
-        "_get_candlestick_pattern_methods",
-        lambda _temp: ["cdl_alpha", "cdl_beta"],
-    )
+    monkeypatch.setattr(candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object(), object()])
+    monkeypatch.setattr(candlestick_mod, "_get_candlestick_pattern_methods", lambda _temp: ["cdl_alpha", "cdl_beta"])
 
     def _fake_rates_to_df(_rates):
         frame = _FakeFrame(
@@ -397,14 +369,8 @@ def test_detect_candlestick_patterns_top_k_uses_semantic_strength(monkeypatch):
     monkeypatch.setattr(candlestick_mod, "_ensure_candlestick_runtime", lambda: None)
     monkeypatch.setattr(candlestick_mod, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(candlestick_mod, "_symbol_ready_guard", _always_ready_guard)
-    monkeypatch.setattr(
-        candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object(), object()]
-    )
-    monkeypatch.setattr(
-        candlestick_mod,
-        "_get_candlestick_pattern_methods",
-        lambda _temp: ["cdl_doji", "cdl_engulfing"],
-    )
+    monkeypatch.setattr(candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object(), object()])
+    monkeypatch.setattr(candlestick_mod, "_get_candlestick_pattern_methods", lambda _temp: ["cdl_doji", "cdl_engulfing"])
 
     def _fake_rates_to_df(_rates):
         return _FakeFrame(
@@ -435,9 +401,7 @@ def test_detect_candlestick_patterns_top_k_uses_semantic_strength(monkeypatch):
     assert res["data"][0]["confidence"] == pytest.approx(0.95)
 
 
-def test_detect_candlestick_patterns_exposes_raw_signal_and_quality_warning(
-    monkeypatch,
-):
+def test_detect_candlestick_patterns_exposes_raw_signal_and_quality_warning(monkeypatch):
     class _FakeFrame(pd.DataFrame):
         @property
         def _constructor(self):
@@ -457,14 +421,8 @@ def test_detect_candlestick_patterns_exposes_raw_signal_and_quality_warning(
     monkeypatch.setattr(candlestick_mod, "_ensure_candlestick_runtime", lambda: None)
     monkeypatch.setattr(candlestick_mod, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(candlestick_mod, "_symbol_ready_guard", _always_ready_guard)
-    monkeypatch.setattr(
-        candlestick_mod,
-        "_mt5_copy_rates_from",
-        lambda *_a, **_k: [object(), object(), object()],
-    )
-    monkeypatch.setattr(
-        candlestick_mod, "_get_candlestick_pattern_methods", lambda _temp: ["cdl_alpha"]
-    )
+    monkeypatch.setattr(candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object(), object(), object()])
+    monkeypatch.setattr(candlestick_mod, "_get_candlestick_pattern_methods", lambda _temp: ["cdl_alpha"])
 
     def _fake_rates_to_df(_rates):
         return _FakeFrame(
@@ -516,12 +474,8 @@ def test_detect_candlestick_patterns_adds_volume_and_regime_enrichment(monkeypat
     monkeypatch.setattr(candlestick_mod, "_ensure_candlestick_runtime", lambda: None)
     monkeypatch.setattr(candlestick_mod, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(candlestick_mod, "_symbol_ready_guard", _always_ready_guard)
-    monkeypatch.setattr(
-        candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object()] * 5
-    )
-    monkeypatch.setattr(
-        candlestick_mod, "_get_candlestick_pattern_methods", lambda _temp: ["cdl_alpha"]
-    )
+    monkeypatch.setattr(candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object()] * 5)
+    monkeypatch.setattr(candlestick_mod, "_get_candlestick_pattern_methods", lambda _temp: ["cdl_alpha"])
 
     def _fake_rates_to_df(_rates):
         rows = 25
@@ -647,16 +601,9 @@ def test_patterns_support_config_helpers_read_dict_values():
         "volume_confirm_min_ratio": 1.35,
     }
 
-    assert (
-        patterns_support_mod._config_bool(config, "use_volume_confirmation", True)
-        is False
-    )
-    assert (
-        patterns_support_mod._config_int(config, "volume_confirm_breakout_bars", 2) == 4
-    )
-    assert patterns_support_mod._config_float(
-        config, "volume_confirm_min_ratio", 1.1
-    ) == pytest.approx(1.35)
+    assert patterns_support_mod._config_bool(config, "use_volume_confirmation", True) is False
+    assert patterns_support_mod._config_int(config, "volume_confirm_breakout_bars", 2) == 4
+    assert patterns_support_mod._config_float(config, "volume_confirm_min_ratio", 1.1) == pytest.approx(1.35)
 
 
 def test_candlestick_volume_confirmation_respects_dict_disable():
@@ -706,24 +653,16 @@ def test_detect_classic_uses_singular_pennant_name(monkeypatch):
     close[-window:] = seg
 
     df = pd.DataFrame(
-        {
-            "time": np.arange(n, dtype=float),
-            "close": close,
-            "high": close + 0.2,
-            "low": close - 0.2,
-        }
+        {"time": np.arange(n, dtype=float), "close": close, "high": close + 0.2, "low": close - 0.2}
     )
 
     def _fake_pivots(c, cfg, *args):
         n_local = len(c)
         if n_local >= 20:
-            return np.array([2, 7, 13, n_local - 4], dtype=int), np.array(
-                [4, 10, 16, n_local - 2], dtype=int
-            )
+            return np.array([2, 7, 13, n_local - 4], dtype=int), np.array([4, 10, 16, n_local - 2], dtype=int)
         return np.array([], dtype=int), np.array([], dtype=int)
 
     from src.mtdata.patterns.classic_impl import continuation
-
     monkeypatch.setattr(continuation, "_detect_pivots_close", _fake_pivots)
 
     def _fake_fit_lines(ih, il, c, n, cfg):
@@ -743,10 +682,7 @@ def test_detect_classic_uses_singular_pennant_name(monkeypatch):
 
     monkeypatch.setattr(continuation, "_fit_lines_and_arrays", _fake_fit_lines)
 
-    out = detect_classic_patterns(
-        df,
-        ClassicDetectorConfig(min_pole_return_pct=1.0, max_consolidation_bars=window),
-    )
+    out = detect_classic_patterns(df, ClassicDetectorConfig(min_pole_return_pct=1.0, max_consolidation_bars=window))
     names = {p.name for p in out}
     assert "Bull Pennant" in names
     assert "Bull Pennants" not in names
@@ -769,22 +705,11 @@ def test_detect_flags_pennants_measure_pole_from_tip_not_last_bar(monkeypatch):
     top = np.linspace(106.0, 104.0, window)
     bot = np.linspace(102.0, 103.0, window)
 
-    monkeypatch.setattr(
-        continuation, "_detect_pivots_close", lambda *_args, **_kwargs: (peaks, troughs)
-    )
+    monkeypatch.setattr(continuation, "_detect_pivots_close", lambda *_args, **_kwargs: (peaks, troughs))
     monkeypatch.setattr(
         continuation,
         "_fit_lines_and_arrays",
-        lambda *_args, **_kwargs: (
-            -0.05,
-            106.0,
-            0.9,
-            0.03,
-            102.0,
-            0.9,
-            top.copy(),
-            bot.copy(),
-        ),
+        lambda *_args, **_kwargs: (-0.05, 106.0, 0.9, 0.03, 102.0, 0.9, top.copy(), bot.copy()),
     )
 
     out = continuation.detect_flags_pennants(
@@ -818,22 +743,11 @@ def test_detect_flags_pennants_reject_protrend_consolidation(monkeypatch):
     top = np.linspace(104.0, 105.6, window)
     bot = np.linspace(102.0, 103.6, window)
 
-    monkeypatch.setattr(
-        continuation, "_detect_pivots_close", lambda *_args, **_kwargs: (peaks, troughs)
-    )
+    monkeypatch.setattr(continuation, "_detect_pivots_close", lambda *_args, **_kwargs: (peaks, troughs))
     monkeypatch.setattr(
         continuation,
         "_fit_lines_and_arrays",
-        lambda *_args, **_kwargs: (
-            0.06,
-            104.0,
-            0.9,
-            0.06,
-            102.0,
-            0.9,
-            top.copy(),
-            bot.copy(),
-        ),
+        lambda *_args, **_kwargs: (0.06, 104.0, 0.9, 0.06, 102.0, 0.9, top.copy(), bot.copy()),
     )
 
     out = continuation.detect_flags_pennants(
@@ -857,18 +771,9 @@ def test_detect_classic_channel_parallel_ratio_uses_config(monkeypatch):
     lower = 1.00 * np.arange(n, dtype=float) + 120.0
     close[peaks] = upper[peaks]
     close[troughs] = lower[troughs]
-    df = pd.DataFrame(
-        {
-            "time": np.arange(n, dtype=float),
-            "close": close,
-            "high": close + 0.2,
-            "low": close - 0.2,
-        }
-    )
+    df = pd.DataFrame({"time": np.arange(n, dtype=float), "close": close, "high": close + 0.2, "low": close - 0.2})
 
-    monkeypatch.setattr(
-        classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (peaks, troughs)
-    )
+    monkeypatch.setattr(classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (peaks, troughs))
     monkeypatch.setattr(classic_mod, "_is_converging", lambda *args, **kwargs: False)
 
     def _fake_fit_lines(ih, il, c, n, cfg):
@@ -876,16 +781,10 @@ def test_detect_classic_channel_parallel_ratio_uses_config(monkeypatch):
 
     monkeypatch.setattr(classic_mod, "_fit_lines_and_arrays", _fake_fit_lines)
 
-    out_default = detect_classic_patterns(
-        df, ClassicDetectorConfig(min_channel_touches=2, max_consolidation_bars=5)
-    )
+    out_default = detect_classic_patterns(df, ClassicDetectorConfig(min_channel_touches=2, max_consolidation_bars=5))
     out_relaxed = detect_classic_patterns(
         df,
-        ClassicDetectorConfig(
-            min_channel_touches=2,
-            max_consolidation_bars=5,
-            channel_parallel_slope_ratio=0.2,
-        ),
+        ClassicDetectorConfig(min_channel_touches=2, max_consolidation_bars=5, channel_parallel_slope_ratio=0.2),
     )
 
     assert not any("Channel" in p.name for p in out_default)
@@ -899,9 +798,7 @@ def test_select_classic_engines_uses_registry(monkeypatch):
         lambda symbol, df, cfg, config: ([{"name": "Unit Test"}], None),
     )
 
-    engines, invalid = core_patterns._select_classic_engines(
-        "unit_test", ensemble=False
-    )
+    engines, invalid = core_patterns._select_classic_engines("unit_test", ensemble=False)
 
     assert engines == ["unit_test"]
     assert invalid == []
@@ -978,11 +875,7 @@ def test_build_pattern_response_elliott_hidden_completed_preview_is_truthful():
             "end_index": 1,
             "start_date": "2026-03-01 00:00",
             "end_date": "2026-03-02 00:00",
-            "details": {
-                "trend": "bear",
-                "pattern_confirmed": True,
-                "has_unconfirmed_terminal_pivot": False,
-            },
+            "details": {"trend": "bear", "pattern_confirmed": True, "has_unconfirmed_terminal_pivot": False},
         },
         {
             "wave_type": "Impulse",
@@ -992,11 +885,7 @@ def test_build_pattern_response_elliott_hidden_completed_preview_is_truthful():
             "end_index": 3,
             "start_date": "2026-03-02 00:00",
             "end_date": "2026-03-04 00:00",
-            "details": {
-                "trend": "bull",
-                "pattern_confirmed": True,
-                "has_unconfirmed_terminal_pivot": False,
-            },
+            "details": {"trend": "bull", "pattern_confirmed": True, "has_unconfirmed_terminal_pivot": False},
         },
     ]
 
@@ -1129,9 +1018,7 @@ def test_build_pattern_response_compact_keeps_actionable_fields():
 
 
 def test_build_pattern_response_compact_adds_hint_when_rows_are_truncated():
-    df = pd.DataFrame(
-        {"time": list(range(12)), "close": [100.0 + i for i in range(12)]}
-    )
+    df = pd.DataFrame({"time": list(range(12)), "close": [100.0 + i for i in range(12)]})
     patterns = [
         {
             "name": f"Pattern {i}",
@@ -1156,15 +1043,11 @@ def test_build_pattern_response_compact_adds_hint_when_rows_are_truncated():
     )
 
     assert compact["summary"]["more_patterns"] == 1
-    assert (
-        compact["show_all_hint"] == "Use --detail full to show all detected patterns."
-    )
+    assert compact["show_all_hint"] == "Use --detail full to show all detected patterns."
 
 
 def test_patterns_detect_elliott_without_timeframe_scans_default_subset(monkeypatch):
-    monkeypatch.setattr(
-        core_patterns, "TIMEFRAME_MAP", {"M1": 1, "H1": 2, "H4": 3, "D1": 4}
-    )
+    monkeypatch.setattr(core_patterns, "TIMEFRAME_MAP", {"M1": 1, "H1": 2, "H4": 3, "D1": 4})
 
     df = pd.DataFrame(
         {
@@ -1212,9 +1095,7 @@ def test_patterns_detect_elliott_without_timeframe_scans_default_subset(monkeypa
 
 
 def test_patterns_detect_elliott_scan_timeframes_can_override_default(monkeypatch):
-    monkeypatch.setattr(
-        core_patterns, "TIMEFRAME_MAP", {"M15": 1, "H1": 2, "H4": 3, "D1": 4}
-    )
+    monkeypatch.setattr(core_patterns, "TIMEFRAME_MAP", {"M15": 1, "H1": 2, "H4": 3, "D1": 4})
 
     df = pd.DataFrame(
         {
@@ -1269,11 +1150,7 @@ def test_patterns_detect_classic_applies_regime_context(monkeypatch):
         }
     )
 
-    monkeypatch.setattr(
-        core_patterns,
-        "_fetch_pattern_data",
-        lambda symbol, timeframe, limit, denoise: (df.copy(), None),
-    )
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda symbol, timeframe, limit, denoise: (df.copy(), None))
 
     def _fake_run_classic_engine(engine, symbol, source_df, cfg, config):
         _ = (engine, symbol, source_df, cfg, config)
@@ -1285,11 +1162,7 @@ def test_patterns_detect_classic_applies_regime_context(monkeypatch):
                     "confidence": 0.60,
                     "start_index": 20,
                     "end_index": n - 2,
-                    "details": {
-                        "bias": "bullish",
-                        "support": 132.0,
-                        "resistance": 141.0,
-                    },
+                    "details": {"bias": "bullish", "support": 132.0, "resistance": 141.0},
                 }
             ],
             None,
@@ -1316,9 +1189,7 @@ def test_patterns_detect_classic_applies_regime_context(monkeypatch):
     assert float(row["confidence"]) > 0.60
 
 
-def test_patterns_detect_elliott_with_explicit_timeframe_uses_single_output(
-    monkeypatch,
-):
+def test_patterns_detect_elliott_with_explicit_timeframe_uses_single_output(monkeypatch):
     df = pd.DataFrame(
         {
             "time": [1, 2, 3, 4, 5, 6],
@@ -1362,9 +1233,7 @@ def test_patterns_detect_elliott_with_explicit_timeframe_uses_single_output(
     assert res["n_patterns"] == 1
 
 
-def test_patterns_detect_elliott_with_explicit_timeframe_hidden_completed_is_truthful(
-    monkeypatch,
-):
+def test_patterns_detect_elliott_with_explicit_timeframe_hidden_completed_is_truthful(monkeypatch):
     df = pd.DataFrame(
         {
             "time": [1, 2, 3, 4, 5, 6],
@@ -1373,11 +1242,7 @@ def test_patterns_detect_elliott_with_explicit_timeframe_hidden_completed_is_tru
         }
     )
 
-    monkeypatch.setattr(
-        core_patterns,
-        "_fetch_pattern_data",
-        lambda symbol, timeframe, limit, denoise: (df.copy(), None),
-    )
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda symbol, timeframe, limit, denoise: (df.copy(), None))
 
     def _fake_detect(_df, _cfg):
         return [
@@ -1388,11 +1253,7 @@ def test_patterns_detect_elliott_with_explicit_timeframe_hidden_completed_is_tru
                 end_index=1,
                 start_time=1.0,
                 end_time=2.0,
-                details={
-                    "trend": "bull",
-                    "pattern_confirmed": True,
-                    "has_unconfirmed_terminal_pivot": False,
-                },
+                details={"trend": "bull", "pattern_confirmed": True, "has_unconfirmed_terminal_pivot": False},
             )
         ]
 
@@ -1417,9 +1278,7 @@ def test_patterns_detect_elliott_with_explicit_timeframe_hidden_completed_is_tru
 
 
 def test_patterns_detect_elliott_scan_hidden_completed_is_truthful(monkeypatch):
-    monkeypatch.setattr(
-        core_patterns, "TIMEFRAME_MAP", {"M1": 1, "H1": 2, "H4": 3, "D1": 4}
-    )
+    monkeypatch.setattr(core_patterns, "TIMEFRAME_MAP", {"M1": 1, "H1": 2, "H4": 3, "D1": 4})
 
     df = pd.DataFrame(
         {
@@ -1429,11 +1288,7 @@ def test_patterns_detect_elliott_scan_hidden_completed_is_truthful(monkeypatch):
         }
     )
 
-    monkeypatch.setattr(
-        core_patterns,
-        "_fetch_pattern_data",
-        lambda symbol, timeframe, limit, denoise: (df.copy(), None),
-    )
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda symbol, timeframe, limit, denoise: (df.copy(), None))
 
     def _fake_detect(_df, _cfg):
         return [
@@ -1444,11 +1299,7 @@ def test_patterns_detect_elliott_scan_hidden_completed_is_truthful(monkeypatch):
                 end_index=1,
                 start_time=1.0,
                 end_time=2.0,
-                details={
-                    "trend": "bear",
-                    "pattern_confirmed": True,
-                    "has_unconfirmed_terminal_pivot": False,
-                },
+                details={"trend": "bear", "pattern_confirmed": True, "has_unconfirmed_terminal_pivot": False},
             )
         ]
 
@@ -1466,20 +1317,10 @@ def test_patterns_detect_elliott_scan_hidden_completed_is_truthful(monkeypatch):
     assert res["success"] is True
     assert res["n_patterns"] == 0
     assert res["completed_patterns_hidden"] == 3
-    assert (
-        "No forming Elliott Wave structures were detected across scanned timeframes."
-        in res["diagnostic"]
-    )
+    assert "No forming Elliott Wave structures were detected across scanned timeframes." in res["diagnostic"]
     assert len(res["completed_patterns_preview"]) == 3
-    assert {item["timeframe"] for item in res["completed_patterns_preview"]} == {
-        "H1",
-        "H4",
-        "D1",
-    }
-    assert all(
-        "No forming Elliott Wave structures detected" in row["diagnostic"]
-        for row in res["findings"]
-    )
+    assert {item["timeframe"] for item in res["completed_patterns_preview"]} == {"H1", "H4", "D1"}
+    assert all("No forming Elliott Wave structures detected" in row["diagnostic"] for row in res["findings"])
 
 
 def test_count_recent_touches_respects_lookback():
@@ -1489,13 +1330,9 @@ def test_count_recent_touches_respects_lookback():
     assert _count_recent_touches(series, close, tol_abs=0.15, lookback_bars=3) == 3
 
 
-def test_detect_classic_patterns_historical_scan_finds_older_prefix_pattern(
-    monkeypatch,
-):
+def test_detect_classic_patterns_historical_scan_finds_older_prefix_pattern(monkeypatch):
     n = 220
-    df = pd.DataFrame(
-        {"time": np.arange(n, dtype=float), "close": np.linspace(100.0, 120.0, n)}
-    )
+    df = pd.DataFrame({"time": np.arange(n, dtype=float), "close": np.linspace(100.0, 120.0, n)})
 
     def _fake_rounding(c, t, cfg):
         _ = cfg
@@ -1514,16 +1351,10 @@ def test_detect_classic_patterns_historical_scan_finds_older_prefix_pattern(
             )
         ]
 
-    monkeypatch.setattr(
-        classic_mod,
-        "_detect_pivots_close",
-        lambda c, cfg, *args: (np.array([], dtype=int), np.array([], dtype=int)),
-    )
+    monkeypatch.setattr(classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (np.array([], dtype=int), np.array([], dtype=int)))
     monkeypatch.setattr(classic_mod, "detect_rounding", _fake_rounding)
 
-    out_default = detect_classic_patterns(
-        df, ClassicDetectorConfig(max_consolidation_bars=5)
-    )
+    out_default = detect_classic_patterns(df, ClassicDetectorConfig(max_consolidation_bars=5))
     out_scan = detect_classic_patterns(
         df,
         ClassicDetectorConfig(
@@ -1549,17 +1380,12 @@ def test_detect_classic_patterns_historical_scan_finds_older_prefix_pattern(
             auto_complete_stale_forming=True,
         ),
     )
-    assert (
-        next(p for p in out_scan_completed if p.name == "Rounding Bottom").status
-        == "completed"
-    )
+    assert next(p for p in out_scan_completed if p.name == "Rounding Bottom").status == "completed"
 
 
 def test_detect_classic_patterns_historical_scan_reuses_global_pivots(monkeypatch):
     n = 220
-    df = pd.DataFrame(
-        {"time": np.arange(n, dtype=float), "close": np.linspace(100.0, 120.0, n)}
-    )
+    df = pd.DataFrame({"time": np.arange(n, dtype=float), "close": np.linspace(100.0, 120.0, n)})
     calls = {"count": 0}
 
     def _fake_pivots(c, cfg, *args):
@@ -1571,9 +1397,7 @@ def test_detect_classic_patterns_historical_scan_reuses_global_pivots(monkeypatc
 
     monkeypatch.setattr(classic_mod, "_detect_pivots_close", _fake_pivots)
     monkeypatch.setattr(classic_mod, "detect_diamonds", lambda *args, **kwargs: [])
-    monkeypatch.setattr(
-        classic_mod, "detect_flags_pennants", lambda *args, **kwargs: []
-    )
+    monkeypatch.setattr(classic_mod, "detect_flags_pennants", lambda *args, **kwargs: [])
 
     out = detect_classic_patterns(
         df,
@@ -1591,15 +1415,9 @@ def test_detect_classic_patterns_historical_scan_reuses_global_pivots(monkeypatc
 
 def test_detect_classic_patterns_surfaces_confidence_calibration_errors(monkeypatch):
     n = 150
-    df = pd.DataFrame(
-        {"time": np.arange(n, dtype=float), "close": np.linspace(100.0, 110.0, n)}
-    )
+    df = pd.DataFrame({"time": np.arange(n, dtype=float), "close": np.linspace(100.0, 110.0, n)})
 
-    monkeypatch.setattr(
-        classic_mod,
-        "_detect_pivots_close",
-        lambda c, cfg, *args: (np.array([], dtype=int), np.array([], dtype=int)),
-    )
+    monkeypatch.setattr(classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (np.array([], dtype=int), np.array([], dtype=int)))
     monkeypatch.setattr(
         classic_mod,
         "detect_rounding",
@@ -1616,11 +1434,7 @@ def test_detect_classic_patterns_surfaces_confidence_calibration_errors(monkeypa
             )
         ],
     )
-    monkeypatch.setattr(
-        classic_mod,
-        "_calibrate_confidence",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
-    )
+    monkeypatch.setattr(classic_mod, "_calibrate_confidence", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
 
     with pytest.raises(RuntimeError, match="boom"):
         detect_classic_patterns(df, ClassicDetectorConfig(max_consolidation_bars=5))
@@ -1630,15 +1444,7 @@ def test_detect_cup_handle_respects_configurable_handle_pullback():
     from src.mtdata.patterns.classic_impl.continuation import detect_cup_handle
 
     n = 180
-    anchors = [
-        (0, 100.0),
-        (25, 100.0),
-        (90, 82.0),
-        (135, 100.0),
-        (150, 98.0),
-        (165, 95.0),
-        (179, 101.0),
-    ]
+    anchors = [(0, 100.0), (25, 100.0), (90, 82.0), (135, 100.0), (150, 98.0), (165, 95.0), (179, 101.0)]
     close = np.full(n, 100.0, dtype=float)
     for (a_i, a_v), (b_i, b_v) in zip(anchors, anchors[1:]):
         close[a_i : b_i + 1] = np.linspace(a_v, b_v, b_i - a_i + 1)
@@ -1667,15 +1473,7 @@ def test_detect_cup_handle_scores_rim_mismatch_instead_of_hard_reject():
     from src.mtdata.patterns.classic_impl.continuation import detect_cup_handle
 
     n = 180
-    anchors = [
-        (0, 100.0),
-        (25, 100.0),
-        (90, 82.0),
-        (135, 104.0),
-        (150, 102.0),
-        (165, 99.0),
-        (179, 106.0),
-    ]
+    anchors = [(0, 100.0), (25, 100.0), (90, 82.0), (135, 104.0), (150, 102.0), (165, 99.0), (179, 106.0)]
     close = np.full(n, 100.0, dtype=float)
     for (a_i, a_v), (b_i, b_v) in zip(anchors, anchors[1:]):
         close[a_i : b_i + 1] = np.linspace(a_v, b_v, b_i - a_i + 1)
@@ -1702,9 +1500,7 @@ def test_detect_cup_handle_scores_rim_mismatch_instead_of_hard_reject():
     assert out_relaxed
     assert out_relaxed[0].status == "completed"
     assert out_relaxed[0].details["near_equal_rim"] == "no"
-    assert out_relaxed[0].details["rim_mismatch_pct"] == pytest.approx(
-        3.8461538461538463
-    )
+    assert out_relaxed[0].details["rim_mismatch_pct"] == pytest.approx(3.8461538461538463)
     assert 0.0 < out_relaxed[0].details["rim_symmetry"] < 1.0
 
 
@@ -1712,15 +1508,7 @@ def test_detect_inverted_cup_handle_detects_bearish_variant():
     from src.mtdata.patterns.classic_impl.continuation import detect_cup_handle
 
     n = 180
-    anchors = [
-        (0, 100.0),
-        (25, 100.0),
-        (90, 118.0),
-        (135, 100.0),
-        (150, 102.0),
-        (165, 105.0),
-        (179, 99.0),
-    ]
+    anchors = [(0, 100.0), (25, 100.0), (90, 118.0), (135, 100.0), (150, 102.0), (165, 105.0), (179, 99.0)]
     close = np.full(n, 100.0, dtype=float)
     for (a_i, a_v), (b_i, b_v) in zip(anchors, anchors[1:]):
         close[a_i : b_i + 1] = np.linspace(a_v, b_v, b_i - a_i + 1)
@@ -1736,9 +1524,7 @@ def test_detect_inverted_cup_handle_detects_bearish_variant():
             ),
         )
 
-    inverted = next(
-        pattern for pattern in out if pattern.name == "Inverted Cup and Handle"
-    )
+    inverted = next(pattern for pattern in out if pattern.name == "Inverted Cup and Handle")
     assert inverted.details["breakout_direction"] == "down"
     assert inverted.details["bias"] == "bearish"
     assert inverted.status == "completed"
@@ -1756,27 +1542,11 @@ def test_detect_triangles_skip_same_sign_converging_shapes(monkeypatch):
     close[peaks] = top[peaks]
     close[troughs] = bot[troughs]
 
-    monkeypatch.setattr(
-        shapes,
-        "_fit_lines_and_arrays",
-        lambda *_args, **_kwargs: (0.04, 112.0, 0.9, 0.02, 102.0, 0.9, top, bot),
-    )
+    monkeypatch.setattr(shapes, "_fit_lines_and_arrays", lambda *_args, **_kwargs: (0.04, 112.0, 0.9, 0.02, 102.0, 0.9, top, bot))
     monkeypatch.setattr(shapes, "_is_converging", lambda *_args, **_kwargs: True)
 
-    tri = shapes.detect_triangles(
-        close,
-        peaks,
-        troughs,
-        np.arange(n, dtype=float),
-        ClassicDetectorConfig(min_channel_touches=2),
-    )
-    wedge = shapes.detect_wedges(
-        close,
-        peaks,
-        troughs,
-        np.arange(n, dtype=float),
-        ClassicDetectorConfig(min_channel_touches=2),
-    )
+    tri = shapes.detect_triangles(close, peaks, troughs, np.arange(n, dtype=float), ClassicDetectorConfig(min_channel_touches=2))
+    wedge = shapes.detect_wedges(close, peaks, troughs, np.arange(n, dtype=float), ClassicDetectorConfig(min_channel_touches=2))
 
     assert tri == []
     assert wedge
@@ -1827,16 +1597,7 @@ def test_detect_triangles_reject_crossed_boundaries(monkeypatch):
     monkeypatch.setattr(
         shapes,
         "_fit_lines_and_arrays",
-        lambda *_args, **_kwargs: (
-            -0.09,
-            112.0,
-            0.9,
-            0.013,
-            102.0,
-            0.9,
-            top.copy(),
-            bot.copy(),
-        ),
+        lambda *_args, **_kwargs: (-0.09, 112.0, 0.9, 0.013, 102.0, 0.9, top.copy(), bot.copy()),
     )
     monkeypatch.setattr(shapes, "_is_converging", lambda *_args, **_kwargs: True)
 
@@ -1865,22 +1626,11 @@ def test_detect_flags_prefers_flag_when_convergence_is_only_noise(monkeypatch):
     top = np.linspace(104.0, 103.01, window)
     bot = np.linspace(102.0, 101.02, window)
 
-    monkeypatch.setattr(
-        continuation, "_detect_pivots_close", lambda *_args, **_kwargs: (peaks, troughs)
-    )
+    monkeypatch.setattr(continuation, "_detect_pivots_close", lambda *_args, **_kwargs: (peaks, troughs))
     monkeypatch.setattr(
         continuation,
         "_fit_lines_and_arrays",
-        lambda *_args, **_kwargs: (
-            -0.03,
-            104.0,
-            0.9,
-            -0.029,
-            102.0,
-            0.9,
-            top.copy(),
-            bot.copy(),
-        ),
+        lambda *_args, **_kwargs: (-0.03, 104.0, 0.9, -0.029, 102.0, 0.9, top.copy(), bot.copy()),
     )
 
     out = continuation.detect_flags_pennants(
@@ -1964,13 +1714,7 @@ def test_detect_rectangles_mark_completed_on_breakout():
     close[troughs] = 95.0
     close[-1] = 106.0
 
-    out = detect_rectangles(
-        close,
-        peaks,
-        troughs,
-        np.arange(n, dtype=float),
-        ClassicDetectorConfig(min_channel_touches=2),
-    )
+    out = detect_rectangles(close, peaks, troughs, np.arange(n, dtype=float), ClassicDetectorConfig(min_channel_touches=2))
 
     assert out
     assert out[0].status == "completed"
@@ -1988,13 +1732,7 @@ def test_detect_rectangles_without_time_values_return_none_timestamps():
     close[troughs] = 95.0
     close[-1] = 106.0
 
-    out = detect_rectangles(
-        close,
-        peaks,
-        troughs,
-        np.asarray([], dtype=float),
-        ClassicDetectorConfig(min_channel_touches=2),
-    )
+    out = detect_rectangles(close, peaks, troughs, np.asarray([], dtype=float), ClassicDetectorConfig(min_channel_touches=2))
 
     assert out
     assert out[0].start_time is None
@@ -2011,9 +1749,7 @@ def test_detect_trend_lines_extend_to_current_bar():
     close[peaks] = np.linspace(104.0, 118.0, peaks.size)
     close[troughs] = np.linspace(98.0, 112.0, troughs.size)
 
-    out = detect_trend_lines(
-        close, peaks, troughs, np.arange(n, dtype=float), ClassicDetectorConfig()
-    )
+    out = detect_trend_lines(close, peaks, troughs, np.arange(n, dtype=float), ClassicDetectorConfig())
 
     assert out
     assert all(p.end_index == (n - 1) for p in out)
@@ -2029,11 +1765,7 @@ def test_detect_channels_allow_small_absolute_slope_spread(monkeypatch):
     upper = 110.0 + (2e-5 * np.arange(n, dtype=float))
     lower = 100.0 + (9e-5 * np.arange(n, dtype=float))
 
-    monkeypatch.setattr(
-        trend,
-        "_fit_lines_and_arrays",
-        lambda *_args, **_kwargs: (2e-5, 110.0, 0.95, 9e-5, 100.0, 0.95, upper, lower),
-    )
+    monkeypatch.setattr(trend, "_fit_lines_and_arrays", lambda *_args, **_kwargs: (2e-5, 110.0, 0.95, 9e-5, 100.0, 0.95, upper, lower))
     monkeypatch.setattr(trend, "_is_converging", lambda *_args, **_kwargs: False)
 
     out = trend.detect_channels(
@@ -2062,16 +1794,7 @@ def test_detect_channels_reject_widening_parallel_structure(monkeypatch):
     monkeypatch.setattr(
         trend,
         "_fit_lines_and_arrays",
-        lambda *_args, **_kwargs: (
-            0.470,
-            110.0,
-            0.95,
-            0.400,
-            100.0,
-            0.95,
-            upper.copy(),
-            lower.copy(),
-        ),
+        lambda *_args, **_kwargs: (0.470, 110.0, 0.95, 0.400, 100.0, 0.95, upper.copy(), lower.copy()),
     )
     monkeypatch.setattr(trend, "_is_converging", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(trend, "_count_touches", lambda *_args, **_kwargs: 6)
@@ -2101,16 +1824,7 @@ def test_detect_channels_reject_crossed_boundaries(monkeypatch):
     monkeypatch.setattr(
         trend,
         "_fit_lines_and_arrays",
-        lambda *_args, **_kwargs: (
-            -0.08,
-            110.0,
-            0.95,
-            0.10,
-            100.0,
-            0.95,
-            upper.copy(),
-            lower.copy(),
-        ),
+        lambda *_args, **_kwargs: (-0.08, 110.0, 0.95, 0.10, 100.0, 0.95, upper.copy(), lower.copy()),
     )
     monkeypatch.setattr(trend, "_is_converging", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(trend, "_count_touches", lambda *_args, **_kwargs: 6)
@@ -2140,9 +1854,7 @@ def test_detect_trend_lines_require_breakout_for_completed_status(monkeypatch):
         return 0.0, 100.0, 0.95
 
     monkeypatch.setattr(trend, "_fit_line", _fake_fit)
-    monkeypatch.setattr(
-        trend, "_last_touch_indexes", lambda _line, idxs, _c, _tol: idxs.tolist()
-    )
+    monkeypatch.setattr(trend, "_last_touch_indexes", lambda _line, idxs, _c, _tol: idxs.tolist())
 
     cfg = ClassicDetectorConfig(
         use_robust_fit=False,
@@ -2160,9 +1872,7 @@ def test_detect_trend_lines_require_breakout_for_completed_status(monkeypatch):
         np.arange(n, dtype=float),
         cfg,
     )
-    support_forming = next(
-        pattern for pattern in out_forming if pattern.details["side"] == "low"
-    )
+    support_forming = next(pattern for pattern in out_forming if pattern.details["side"] == "low")
 
     assert support_forming.status == "forming"
     assert support_forming.details["touches_recent"] == 4
@@ -2177,9 +1887,7 @@ def test_detect_trend_lines_require_breakout_for_completed_status(monkeypatch):
         np.arange(n, dtype=float),
         cfg,
     )
-    support_break = next(
-        pattern for pattern in out_break if pattern.details["side"] == "low"
-    )
+    support_break = next(pattern for pattern in out_break if pattern.details["side"] == "low")
 
     assert support_break.status == "completed"
     assert support_break.end_index == n - 1
@@ -2199,16 +1907,7 @@ def test_detect_channels_require_breakout_for_completed_status(monkeypatch):
     monkeypatch.setattr(
         trend,
         "_fit_lines_and_arrays",
-        lambda *_args, **_kwargs: (
-            0.0,
-            105.0,
-            0.95,
-            0.0,
-            95.0,
-            0.95,
-            upper.copy(),
-            lower.copy(),
-        ),
+        lambda *_args, **_kwargs: (0.0, 105.0, 0.95, 0.0, 95.0, 0.95, upper.copy(), lower.copy()),
     )
     monkeypatch.setattr(trend, "_is_converging", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(trend, "_count_touches", lambda *_args, **_kwargs: 6)
@@ -2273,9 +1972,7 @@ def test_detect_diamonds_respects_geometry_threshold(monkeypatch):
             return 0.05, 85.0, 0.9
         return 0.0, 100.0, 0.0
 
-    monkeypatch.setattr(
-        shapes, "_detect_pivots_close", lambda seg, cfg, *args: (peaks, troughs)
-    )
+    monkeypatch.setattr(shapes, "_detect_pivots_close", lambda seg, cfg, *args: (peaks, troughs))
     monkeypatch.setattr(shapes, "_fit_line", _fake_fit)
 
     out_strict = shapes.detect_diamonds(
@@ -2327,9 +2024,7 @@ def test_detect_diamonds_forward_high_low_arrays_to_pivot_detection(monkeypatch)
 
     monkeypatch.setattr(shapes, "_detect_pivots_close", _fake_pivots)
 
-    out = shapes.detect_diamonds(
-        close, np.arange(n, dtype=float), ClassicDetectorConfig(), high, low
-    )
+    out = shapes.detect_diamonds(close, np.arange(n, dtype=float), ClassicDetectorConfig(), high, low)
 
     assert out == []
     assert np.array_equal(captured["high"], high[-n:])
@@ -2358,9 +2053,7 @@ def test_detect_diamonds_accepts_asymmetric_split_with_stricter_default_r2(monke
             return 0.02, 94.5, 0.75
         return 0.0, 100.0, 0.0
 
-    monkeypatch.setattr(
-        shapes, "_detect_pivots_close", lambda seg, cfg, *args: (peaks, troughs)
-    )
+    monkeypatch.setattr(shapes, "_detect_pivots_close", lambda seg, cfg, *args: (peaks, troughs))
     monkeypatch.setattr(shapes, "_fit_line", _fake_fit)
 
     out = shapes.detect_diamonds(
@@ -2398,9 +2091,7 @@ def test_detect_diamonds_reject_disjoint_split_boundaries(monkeypatch):
             return 0.05, 70.0, 0.9
         return 0.0, 100.0, 0.0
 
-    monkeypatch.setattr(
-        shapes, "_detect_pivots_close", lambda seg, cfg, *args: (peaks, troughs)
-    )
+    monkeypatch.setattr(shapes, "_detect_pivots_close", lambda seg, cfg, *args: (peaks, troughs))
     monkeypatch.setattr(shapes, "_fit_line", _fake_fit)
 
     out = shapes.detect_diamonds(
@@ -2452,9 +2143,7 @@ def test_detect_head_shoulders_fits_neckline_with_reaction_troughs(monkeypatch):
 
     monkeypatch.setattr(reversal, "_fit_line", _fake_fit)
 
-    close = np.array(
-        [96.0, 100.0, 95.0, 103.0, 110.0, 96.0, 95.5, 99.0, 100.5, 97.0], dtype=float
-    )
+    close = np.array([96.0, 100.0, 95.0, 103.0, 110.0, 96.0, 95.5, 99.0, 100.5, 97.0], dtype=float)
     peaks = np.array([1, 4, 8], dtype=int)
     troughs = np.array([2, 5, 6], dtype=int)
 
@@ -2463,9 +2152,7 @@ def test_detect_head_shoulders_fits_neckline_with_reaction_troughs(monkeypatch):
         peaks,
         troughs,
         np.arange(close.size, dtype=float),
-        ClassicDetectorConfig(
-            same_level_tol_pct=1.0, use_dtw_check=False, use_robust_fit=False
-        ),
+        ClassicDetectorConfig(same_level_tol_pct=1.0, use_dtw_check=False, use_robust_fit=False),
     )
 
     assert out
@@ -2496,15 +2183,11 @@ def test_detect_inverse_head_shoulders_uses_reaction_peaks_for_neckline(monkeypa
         peaks,
         troughs,
         np.arange(close.size, dtype=float),
-        ClassicDetectorConfig(
-            same_level_tol_pct=2.0, use_dtw_check=False, use_robust_fit=False
-        ),
+        ClassicDetectorConfig(same_level_tol_pct=2.0, use_dtw_check=False, use_robust_fit=False),
     )
 
     assert out
-    inverse = next(
-        pattern for pattern in out if pattern.name == "Inverse Head and Shoulders"
-    )
+    inverse = next(pattern for pattern in out if pattern.name == "Inverse Head and Shoulders")
     assert captured["x"] == [2.0, 4.0]
     assert inverse.details["neckline_source"] == "peaks"
     assert inverse.details["neck_points"] == 2
@@ -2545,9 +2228,7 @@ def test_detect_rounding_tries_multiple_windows(monkeypatch):
     out = reversal.detect_rounding(
         close,
         np.arange(n, dtype=float),
-        ClassicDetectorConfig(
-            rounding_window_bars=220, rounding_window_sizes=[100, 220]
-        ),
+        ClassicDetectorConfig(rounding_window_bars=220, rounding_window_sizes=[100, 220]),
     )
 
     assert called == [100, 220] or called == [220, 100]
@@ -2578,9 +2259,7 @@ def test_detect_rounding_returns_multiple_non_overlapping_windows(monkeypatch):
     out = reversal.detect_rounding(
         close,
         np.arange(n, dtype=float),
-        ClassicDetectorConfig(
-            rounding_window_bars=220, rounding_window_sizes=[100, 220]
-        ),
+        ClassicDetectorConfig(rounding_window_bars=220, rounding_window_sizes=[100, 220]),
     )
 
     assert len(out) == 2
@@ -2638,13 +2317,9 @@ def test_detect_classic_patterns_disables_aliases_by_default(monkeypatch):
 
     peaks = np.array([20, 45, 70, 95, 120, 145], dtype=int)
     troughs = np.array([10, 35, 60, 85, 110, 135], dtype=int)
-    monkeypatch.setattr(
-        classic_mod, "_detect_pivots_close", lambda c, cfg: (peaks, troughs)
-    )
+    monkeypatch.setattr(classic_mod, "_detect_pivots_close", lambda c, cfg: (peaks, troughs))
 
-    out_default = detect_classic_patterns(
-        df, ClassicDetectorConfig(max_consolidation_bars=5)
-    )
+    out_default = detect_classic_patterns(df, ClassicDetectorConfig(max_consolidation_bars=5))
     names_default = {p.name for p in out_default}
     assert "Ascending Trend Line" in names_default
     assert "Trend Line" not in names_default
@@ -2666,11 +2341,7 @@ def test_patterns_detect_classic_ensemble_merges_engine_outputs(monkeypatch, cap
         }
     )
 
-    monkeypatch.setattr(
-        core_patterns,
-        "_fetch_pattern_data",
-        lambda symbol, timeframe, limit, denoise: (df.copy(), None),
-    )
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda symbol, timeframe, limit, denoise: (df.copy(), None))
 
     def _fake_engine(engine, symbol, df_in, cfg, config):
         _ = symbol
@@ -2736,11 +2407,7 @@ def test_patterns_detect_rejects_hidden_precise_engine(monkeypatch):
             "low": [99.5, 100.5, 101.5],
         }
     )
-    monkeypatch.setattr(
-        core_patterns,
-        "_fetch_pattern_data",
-        lambda *_args, **_kwargs: (df.copy(), None),
-    )
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda *_args, **_kwargs: (df.copy(), None))
 
     res = patterns_detect(
         symbol="EURUSD",
@@ -2762,11 +2429,7 @@ def test_patterns_detect_classic_adds_signal_summary_and_levels(monkeypatch):
             "tick_volume": [100, 100, 100, 100, 100, 100],
         }
     )
-    monkeypatch.setattr(
-        core_patterns,
-        "_fetch_pattern_data",
-        lambda symbol, timeframe, limit, denoise: (df.copy(), None),
-    )
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda symbol, timeframe, limit, denoise: (df.copy(), None))
 
     def _fake_engine(engine, symbol, df_in, cfg, config):
         _ = engine
@@ -2811,11 +2474,7 @@ def test_patterns_detect_classic_adds_signal_summary_and_levels(monkeypatch):
     rows = res["patterns"]
     assert all("bias" in row for row in rows)
     assert all("reference_price" in row for row in rows)
-    assert all(
-        "volume_confirmation" in row["details"]
-        for row in rows
-        if isinstance(row.get("details"), dict)
-    )
+    assert all("volume_confirmation" in row["details"] for row in rows if isinstance(row.get("details"), dict))
     assert all("target_price" in row for row in rows)
     assert all("invalidation_price" in row for row in rows)
 
@@ -2828,30 +2487,14 @@ def test_patterns_detect_engine_findings_report_hidden_completed(monkeypatch):
             "tick_volume": [100, 100, 100, 100, 100, 100],
         }
     )
-    monkeypatch.setattr(
-        core_patterns,
-        "_fetch_pattern_data",
-        lambda symbol, timeframe, limit, denoise: (df.copy(), None),
-    )
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda symbol, timeframe, limit, denoise: (df.copy(), None))
     monkeypatch.setattr(
         core_patterns,
         "_run_classic_engine",
         lambda engine, symbol, df_in, cfg, config: (
             [
-                {
-                    "name": "Triangle",
-                    "status": "forming",
-                    "confidence": 0.8,
-                    "start_index": 1,
-                    "end_index": 4,
-                },
-                {
-                    "name": "Triangle",
-                    "status": "completed",
-                    "confidence": 0.7,
-                    "start_index": 0,
-                    "end_index": 3,
-                },
+                {"name": "Triangle", "status": "forming", "confidence": 0.8, "start_index": 1, "end_index": 4},
+                {"name": "Triangle", "status": "completed", "confidence": 0.7, "start_index": 0, "end_index": 3},
             ],
             None,
         ),
@@ -2882,11 +2525,7 @@ def test_patterns_detect_classic_invalid_engine_returns_error(monkeypatch):
             "tick_volume": [100, 100, 100, 100, 100, 100],
         }
     )
-    monkeypatch.setattr(
-        core_patterns,
-        "_fetch_pattern_data",
-        lambda symbol, timeframe, limit, denoise: (df.copy(), None),
-    )
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda symbol, timeframe, limit, denoise: (df.copy(), None))
 
     res = patterns_detect(
         symbol="EURUSD",
@@ -2924,9 +2563,7 @@ def test_detect_pivots_close_prefers_high_low_when_enabled():
     )
 
     peaks_hl, troughs_hl = classic_mod._detect_pivots_close(close, cfg_hl, high, low)
-    peaks_close, troughs_close = classic_mod._detect_pivots_close(
-        close, cfg_close, high, low
-    )
+    peaks_close, troughs_close = classic_mod._detect_pivots_close(close, cfg_close, high, low)
 
     assert peaks_hl.size >= 2
     assert troughs_hl.size >= 2
@@ -2947,17 +2584,8 @@ def test_detect_classic_triangle_marks_completed_on_breakout(monkeypatch):
     close[peaks] = top_line[peaks]
     close[troughs] = bot_line[troughs]
     close[-3:] = top_line[-3:] + 1.0
-    df = pd.DataFrame(
-        {
-            "time": np.arange(n, dtype=float),
-            "close": close,
-            "high": close + 0.2,
-            "low": close - 0.2,
-        }
-    )
-    monkeypatch.setattr(
-        classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (peaks, troughs)
-    )
+    df = pd.DataFrame({"time": np.arange(n, dtype=float), "close": close, "high": close + 0.2, "low": close - 0.2})
+    monkeypatch.setattr(classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (peaks, troughs))
 
     def _fake_fit_lines(ih, il, c, n, cfg):
         return -0.03, 106.0, 0.9, 0.03, 94.0, 0.9, top_line.copy(), bot_line.copy()
@@ -2992,28 +2620,12 @@ def test_detect_classic_converging_parallel_shape_excludes_channel(monkeypatch):
     close[troughs] = bot_line[troughs]
 
     df = pd.DataFrame(
-        {
-            "time": np.arange(n, dtype=float),
-            "close": close,
-            "high": close + 0.2,
-            "low": close - 0.2,
-        }
+        {"time": np.arange(n, dtype=float), "close": close, "high": close + 0.2, "low": close - 0.2}
     )
-    monkeypatch.setattr(
-        classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (peaks, troughs)
-    )
+    monkeypatch.setattr(classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (peaks, troughs))
 
     def _fake_fit_lines(ih, il, c, n, cfg):
-        return (
-            -0.020,
-            110.0,
-            0.95,
-            -0.019,
-            100.0,
-            0.95,
-            top_line.copy(),
-            bot_line.copy(),
-        )
+        return -0.020, 110.0, 0.95, -0.019, 100.0, 0.95, top_line.copy(), bot_line.copy()
 
     monkeypatch.setattr(classic_mod, "_fit_lines_and_arrays", _fake_fit_lines)
 
@@ -3034,20 +2646,11 @@ def test_detect_classic_confidence_calibration_and_lifecycle(monkeypatch):
     n = 150
     x = np.linspace(0, 4 * np.pi, n)
     close = 100 + 0.25 * np.arange(n) + 3.0 * np.sin(x)
-    df = pd.DataFrame(
-        {
-            "time": np.arange(n, dtype=float),
-            "close": close,
-            "high": close + 0.3,
-            "low": close - 0.3,
-        }
-    )
+    df = pd.DataFrame({"time": np.arange(n, dtype=float), "close": close, "high": close + 0.3, "low": close - 0.3})
 
     peaks = np.array([20, 45, 70, 95, 120, 145], dtype=int)
     troughs = np.array([10, 35, 60, 85, 110, 135], dtype=int)
-    monkeypatch.setattr(
-        classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (peaks, troughs)
-    )
+    monkeypatch.setattr(classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (peaks, troughs))
 
     cfg = ClassicDetectorConfig(
         calibrate_confidence=True,
@@ -3067,9 +2670,7 @@ def test_detect_classic_confidence_calibration_and_lifecycle(monkeypatch):
 
 def test_run_classic_engine_native_multiscale_merges(monkeypatch):
     cfg = ClassicDetectorConfig(min_distance=6, min_prominence_pct=0.6)
-    df = pd.DataFrame(
-        {"close": np.linspace(100.0, 120.0, 200), "time": np.arange(200, dtype=float)}
-    )
+    df = pd.DataFrame({"close": np.linspace(100.0, 120.0, 200), "time": np.arange(200, dtype=float)})
 
     def _fake_format(_df, cfg_in):
         md = int(cfg_in.min_distance)

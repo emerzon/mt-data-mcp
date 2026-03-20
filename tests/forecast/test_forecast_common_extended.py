@@ -1,7 +1,8 @@
 """Tests for forecast/common.py — extended coverage for nf_setup_and_predict and fetch_history."""
 
+import os
 import inspect
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, PropertyMock, call
 
 import numpy as np
 import pandas as pd
@@ -27,31 +28,19 @@ from mtdata.forecast.common import (
 
 def _mock_nf_class(has_max_steps=True, has_max_epochs=False, has_lr=True):
     """Build a real class whose __init__ has the right signature for inspect."""
-# ruff: noqa: E402, E731, E741, F811, F841
     params = [inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD)]
     if has_max_steps:
-        params.append(
-            inspect.Parameter("max_steps", inspect.Parameter.KEYWORD_ONLY, default=10)
-        )
+        params.append(inspect.Parameter("max_steps", inspect.Parameter.KEYWORD_ONLY, default=10))
     if has_max_epochs:
-        params.append(
-            inspect.Parameter("max_epochs", inspect.Parameter.KEYWORD_ONLY, default=10)
-        )
+        params.append(inspect.Parameter("max_epochs", inspect.Parameter.KEYWORD_ONLY, default=10))
     if has_lr:
-        params.append(
-            inspect.Parameter(
-                "learning_rate", inspect.Parameter.KEYWORD_ONLY, default=0.01
-            )
-        )
+        params.append(inspect.Parameter("learning_rate", inspect.Parameter.KEYWORD_ONLY, default=0.01))
     for name in ("h", "input_size", "batch_size"):
-        params.append(
-            inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY, default=10)
-        )
+        params.append(inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY, default=10))
     sig = inspect.Signature(params)
 
     def init_fn(self, **kw):
         pass
-
     init_fn.__signature__ = sig
 
     cls = type("MockModel", (), {"__init__": init_fn})
@@ -59,23 +48,19 @@ def _mock_nf_class(has_max_steps=True, has_max_epochs=False, has_lr=True):
 
 
 def _make_y_df(n=100):
-    return pd.DataFrame(
-        {
-            "unique_id": ["ts"] * n,
-            "ds": pd.RangeIndex(n),
-            "y": np.random.randn(n).cumsum() + 100,
-        }
-    )
+    return pd.DataFrame({
+        "unique_id": ["ts"] * n,
+        "ds": pd.RangeIndex(n),
+        "y": np.random.randn(n).cumsum() + 100,
+    })
 
 
 def _make_yf(fh=10):
-    return pd.DataFrame(
-        {
-            "unique_id": ["ts"] * fh,
-            "ds": pd.RangeIndex(fh),
-            "y": np.random.randn(fh) + 100,
-        }
-    )
+    return pd.DataFrame({
+        "unique_id": ["ts"] * fh,
+        "ds": pd.RangeIndex(fh),
+        "y": np.random.randn(fh) + 100,
+    })
 
 
 class TestNfSetupAndPredict:
@@ -86,13 +71,8 @@ class TestNfSetupAndPredict:
         with patch.dict("sys.modules", {"neuralforecast": None}):
             with pytest.raises((RuntimeError, ImportError)):
                 nf_setup_and_predict(
-                    model_class=model_cls,
-                    fh=10,
-                    timeframe="H1",
-                    Y_df=_make_y_df(),
-                    input_size=24,
-                    batch_size=32,
-                    steps=5,
+                    model_class=model_cls, fh=10, timeframe="H1",
+                    Y_df=_make_y_df(), input_size=24, batch_size=32, steps=5,
                 )
 
     def test_ctor_inspection_max_steps(self):
@@ -122,27 +102,19 @@ class TestNfSetupAndPredict:
         mock_nf_inst = MagicMock()
         mock_nf_inst.fit = MagicMock()
         mock_nf_inst.predict = MagicMock(return_value=_make_yf(10))
-        pred_params = [
-            inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
-            inspect.Parameter("h", inspect.Parameter.KEYWORD_ONLY, default=None),
-        ]
+        pred_params = [inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+                       inspect.Parameter("h", inspect.Parameter.KEYWORD_ONLY, default=None)]
         mock_nf_inst.predict.__signature__ = inspect.Signature(pred_params)
-        fit_params = [
-            inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
-            inspect.Parameter("df", inspect.Parameter.KEYWORD_ONLY),
-        ]
+        fit_params = [inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+                      inspect.Parameter("df", inspect.Parameter.KEYWORD_ONLY)]
         mock_nf_inst.fit.__signature__ = inspect.Signature(fit_params)
 
         # Build a callable that mimics NeuralForecast class — returns the mock instance
-        nf_init_params = [
-            inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
-            inspect.Parameter("models", inspect.Parameter.KEYWORD_ONLY),
-            inspect.Parameter("freq", inspect.Parameter.KEYWORD_ONLY),
-        ]
-
+        nf_init_params = [inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+                          inspect.Parameter("models", inspect.Parameter.KEYWORD_ONLY),
+                          inspect.Parameter("freq", inspect.Parameter.KEYWORD_ONLY)]
         def _nf_init(self, *, models, freq, **kw):
             pass
-
         _nf_init.__signature__ = inspect.Signature(nf_init_params)
 
         class FakeNF:
@@ -155,13 +127,8 @@ class TestNfSetupAndPredict:
 
         with patch.dict("sys.modules", {"neuralforecast": nf_module}):
             result = nf_setup_and_predict(
-                model_class=model_cls,
-                fh=10,
-                timeframe="H1",
-                Y_df=_make_y_df(),
-                input_size=24,
-                batch_size=32,
-                steps=5,
+                model_class=model_cls, fh=10, timeframe="H1",
+                Y_df=_make_y_df(), input_size=24, batch_size=32, steps=5,
             )
         assert isinstance(result, pd.DataFrame)
 
@@ -182,15 +149,11 @@ class TestFetchHistory:
         info.visible = True
         mock_info.return_value = info
         times = np.arange(0, 10 * 3600, 3600, dtype=float)
-        data = pd.DataFrame(
-            {
-                "time": times,
-                "open": np.ones(10),
-                "high": np.ones(10),
-                "low": np.ones(10),
-                "close": np.ones(10),
-            }
-        ).to_records(index=False)
+        data = pd.DataFrame({
+            "time": times,
+            "open": np.ones(10), "high": np.ones(10),
+            "low": np.ones(10), "close": np.ones(10),
+        }).to_records(index=False)
         mock_copy.return_value = data
         df = fetch_history("EURUSD", "H1", 10)
         assert not df.empty
@@ -227,25 +190,17 @@ class TestFetchHistory:
     @patch("mtdata.forecast.common._parse_start_datetime")
     @patch("mtdata.forecast.common._utc_epoch_seconds", return_value=36000.0)
     @patch("mtdata.forecast.common.TIMEFRAME_MAP", {"H1": 1})
-    def test_as_of_fetch(
-        self, mock_utc, mock_parse, mock_info, mock_ensure, mock_copy, mock_mt5
-    ):
+    def test_as_of_fetch(self, mock_utc, mock_parse, mock_info, mock_ensure, mock_copy, mock_mt5):
         from datetime import datetime, timezone
-
         mock_parse.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
-        info = MagicMock()
-        info.visible = True
+        info = MagicMock(); info.visible = True
         mock_info.return_value = info
         times = np.arange(0, 20 * 3600, 3600, dtype=float)
-        data = pd.DataFrame(
-            {
-                "time": times,
-                "open": np.ones(20),
-                "high": np.ones(20),
-                "low": np.ones(20),
-                "close": np.ones(20),
-            }
-        ).to_records(index=False)
+        data = pd.DataFrame({
+            "time": times,
+            "open": np.ones(20), "high": np.ones(20),
+            "low": np.ones(20), "close": np.ones(20),
+        }).to_records(index=False)
         mock_copy.return_value = data
         df = fetch_history("EURUSD", "H1", 10, as_of="2024-01-01T10:00:00")
         assert not df.empty
@@ -256,19 +211,14 @@ class TestFetchHistory:
     @patch("mtdata.forecast.common.get_symbol_info_cached")
     @patch("mtdata.forecast.common.TIMEFRAME_MAP", {"H1": 1})
     def test_drop_last_live_false(self, mock_info, mock_ensure, mock_copy, mock_mt5):
-        info = MagicMock()
-        info.visible = True
+        info = MagicMock(); info.visible = True
         mock_info.return_value = info
         times = np.arange(0, 10 * 3600, 3600, dtype=float)
-        data = pd.DataFrame(
-            {
-                "time": times,
-                "open": np.ones(10),
-                "high": np.ones(10),
-                "low": np.ones(10),
-                "close": np.ones(10),
-            }
-        ).to_records(index=False)
+        data = pd.DataFrame({
+            "time": times,
+            "open": np.ones(10), "high": np.ones(10),
+            "low": np.ones(10), "close": np.ones(10),
+        }).to_records(index=False)
         mock_copy.return_value = data
         df = fetch_history("EURUSD", "H1", 10, drop_last_live=False)
         assert len(df) == 10
@@ -278,22 +228,15 @@ class TestFetchHistory:
     @patch("mtdata.forecast.common._ensure_symbol_ready", return_value=None)
     @patch("mtdata.forecast.common.get_symbol_info_cached")
     @patch("mtdata.forecast.common.TIMEFRAME_MAP", {"H1": 1})
-    def test_restores_invisible_symbol(
-        self, mock_info, mock_ensure, mock_copy, mock_mt5
-    ):
-        info = MagicMock()
-        info.visible = False
+    def test_restores_invisible_symbol(self, mock_info, mock_ensure, mock_copy, mock_mt5):
+        info = MagicMock(); info.visible = False
         mock_info.return_value = info
         times = np.arange(0, 5 * 3600, 3600, dtype=float)
-        data = pd.DataFrame(
-            {
-                "time": times,
-                "open": np.ones(5),
-                "high": np.ones(5),
-                "low": np.ones(5),
-                "close": np.ones(5),
-            }
-        ).to_records(index=False)
+        data = pd.DataFrame({
+            "time": times,
+            "open": np.ones(5), "high": np.ones(5),
+            "low": np.ones(5), "close": np.ones(5),
+        }).to_records(index=False)
         mock_copy.return_value = data
         df = fetch_history("EURUSD", "H1", 5)
         mock_mt5.symbol_select.assert_called_with("EURUSD", False)
@@ -306,16 +249,12 @@ class TestFetchHistory:
 
 class TestExtractForecastValues:
     def test_y_column(self):
-        df = pd.DataFrame(
-            {"unique_id": ["ts"] * 5, "ds": range(5), "y": [1.0, 2, 3, 4, 5]}
-        )
+        df = pd.DataFrame({"unique_id": ["ts"] * 5, "ds": range(5), "y": [1.0, 2, 3, 4, 5]})
         vals = _extract_forecast_values(df, 5)
         assert len(vals) == 5
 
     def test_non_y_column(self):
-        df = pd.DataFrame(
-            {"unique_id": ["ts"] * 3, "ds": range(3), "prediction": [10, 20, 30]}
-        )
+        df = pd.DataFrame({"unique_id": ["ts"] * 3, "ds": range(3), "prediction": [10, 20, 30]})
         vals = _extract_forecast_values(df, 3)
         np.testing.assert_array_equal(vals, [10, 20, 30])
 
@@ -346,9 +285,7 @@ class TestCreateTrainingDataframes:
         series = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         exog = np.array([[0.1], [0.2], [0.3], [0.4], [0.5]])
         exog_f = np.array([[0.6], [0.7], [0.8]])
-        Y_df, X_df, Xf_df = _create_training_dataframes(
-            series, fh=3, exog_used=exog, exog_future=exog_f
-        )
+        Y_df, X_df, Xf_df = _create_training_dataframes(series, fh=3, exog_used=exog, exog_future=exog_f)
         assert X_df is not None
         assert "x0" in X_df.columns
         assert Xf_df is not None
@@ -368,10 +305,7 @@ class TestCreateTrainingDataframes:
 
 
 class TestDefaultSeasonality:
-    @patch(
-        "mtdata.forecast.common.TIMEFRAME_SECONDS",
-        {"M5": 300, "H1": 3600, "D1": 86400, "W1": 604800, "MN1": 2592000},
-    )
+    @patch("mtdata.forecast.common.TIMEFRAME_SECONDS", {"M5": 300, "H1": 3600, "D1": 86400, "W1": 604800, "MN1": 2592000})
     def test_intraday(self):
         assert default_seasonality("M5") == 288  # 86400/300
         assert default_seasonality("H1") == 24

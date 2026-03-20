@@ -49,4 +49,3 @@ jscpd_report.xml/*
 backtests/*
 webui/node_modules/*
 webui/dist/*
-AGENT_TRADE*

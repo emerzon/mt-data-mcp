@@ -11,10 +11,17 @@ Targets: _select_indices_for_timeseries (rdp/pla/apca dispatch, fallback),
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from mtdata.utils.simplify import (
     _choose_simplify_points,
     _default_target_points,
+    _fallback_lttb_indices,
+    _finalize_indices,
+    _lttb_select_indices,
+    _point_line_distance,
+    _rdp_keep_mask,
+    _rdp_select_indices,
     _rdp_autotune_epsilon,
     _pla_select_indices,
     _pla_autotune_max_error,
@@ -46,16 +53,14 @@ def _make_df(n: int = 100) -> pd.DataFrame:
     rng = np.random.RandomState(0)
     epochs = np.arange(n, dtype=float) * 60
     close = np.cumsum(rng.randn(n)) + 100.0
-    return pd.DataFrame(
-        {
-            "time": pd.to_datetime(epochs, unit="s").astype(str),
-            "__epoch": epochs,
-            "close": close,
-            "open": close + rng.randn(n) * 0.1,
-            "high": close + abs(rng.randn(n)),
-            "low": close - abs(rng.randn(n)),
-        }
-    )
+    return pd.DataFrame({
+        "time": pd.to_datetime(epochs, unit="s").astype(str),
+        "__epoch": epochs,
+        "close": close,
+        "open": close + rng.randn(n) * 0.1,
+        "high": close + abs(rng.randn(n)),
+        "low": close - abs(rng.randn(n)),
+    })
 
 
 # ===== _select_indices_for_timeseries: RDP branch =====
@@ -182,13 +187,7 @@ class TestHandleSelectMode:
         assert len(out_df) == 2
 
     def test_no_close_column(self):
-        df = pd.DataFrame(
-            {
-                "time": ["a", "b", "c", "d"],
-                "__epoch": [0, 1, 2, 3],
-                "price": [1, 2, 3, 4],
-            }
-        )
+        df = pd.DataFrame({"time": ["a", "b", "c", "d"], "__epoch": [0, 1, 2, 3], "price": [1, 2, 3, 4]})
         out_df, meta = _handle_select_mode(df, ["time", "price"], {"points": 2})
         assert meta is not None or len(out_df) <= 4
 
@@ -207,33 +206,25 @@ class TestSimplifyDataframeRowsExt:
 
     def test_select_mode(self):
         df = _make_df(80)
-        out, meta = _simplify_dataframe_rows_ext(
-            df, ["time", "close"], {"mode": "select", "points": 20}
-        )
+        out, meta = _simplify_dataframe_rows_ext(df, ["time", "close"], {"mode": "select", "points": 20})
         assert meta is not None
         assert meta["mode"] == "select"
 
     def test_encode_mode(self):
         df = _make_df(50)
-        out, meta = _simplify_dataframe_rows_ext(
-            df, ["time", "close"], {"mode": "encode"}
-        )
+        out, meta = _simplify_dataframe_rows_ext(df, ["time", "close"], {"mode": "encode"})
         assert meta is not None
         assert meta["mode"] == "encode"
 
     def test_segment_mode(self):
         df = _make_df(50)
-        out, meta = _simplify_dataframe_rows_ext(
-            df, ["time", "close"], {"mode": "segment"}
-        )
+        out, meta = _simplify_dataframe_rows_ext(df, ["time", "close"], {"mode": "segment"})
         assert meta is not None
         assert meta["mode"] == "segment"
 
     def test_symbolic_mode(self):
         df = _make_df(50)
-        out, meta = _simplify_dataframe_rows_ext(
-            df, ["time", "close"], {"mode": "symbolic"}
-        )
+        out, meta = _simplify_dataframe_rows_ext(df, ["time", "close"], {"mode": "symbolic"})
         assert meta is not None
         assert meta["mode"] == "symbolic"
 
@@ -292,8 +283,7 @@ class TestSimplifyDataframeRows:
     def test_resample_mode_with_epoch(self):
         df = _make_df(100)
         out, meta = _simplify_dataframe_rows(
-            df,
-            ["time", "close", "open", "high", "low"],
+            df, ["time", "close", "open", "high", "low"],
             {"mode": "resample", "method": "lttb", "bucket_seconds": 600},
         )
         assert meta is not None
@@ -332,7 +322,9 @@ class TestHandleEncodeMode:
 class TestHandleSegmentMode:
     def test_basic_zigzag(self):
         df = _make_df(100)
-        out, meta = _handle_segment_mode(df, ["time", "close"], {"threshold_pct": 0.01})
+        out, meta = _handle_segment_mode(
+            df, ["time", "close"], {"threshold_pct": 0.01}
+        )
         assert meta["algo"] == "zigzag"
         assert len(out) < 100
 

@@ -5,7 +5,6 @@ from numbers import Number
 
 import pandas as pd
 import dateparser
-import numpy as np
 
 from .constants import (
     PRECISION_ABS_TOL,
@@ -29,7 +28,7 @@ def _coerce_scalar(s: str):
         st = str(s).strip()
         if st == "":
             return st
-        if st.isdigit() or (st.startswith("-") and st[1:].isdigit()):
+        if st.isdigit() or (st.startswith('-') and st[1:].isdigit()):
             return int(st)
         v = float(st)
         return v
@@ -81,25 +80,15 @@ def _normalize_ohlcv_arg(ohlcv: Optional[str]) -> Optional[Set[str]]:
     if all(ch in "ohlcv" for ch in t):
         return {ch.upper() for ch in t}
     # Comma separated names
-    parts = [
-        p.strip().lower() for p in t.replace(";", ",").split(",") if p.strip() != ""
-    ]
+    parts = [p.strip().lower() for p in t.replace(";", ",").split(",") if p.strip() != ""]
     if not parts:
         return None
     mapping = {
-        "o": "O",
-        "open": "O",
-        "h": "H",
-        "high": "H",
-        "l": "L",
-        "low": "L",
-        "c": "C",
-        "close": "C",
-        "price": "C",
-        "v": "V",
-        "vol": "V",
-        "volume": "V",
-        "tick_volume": "V",
+        "o": "O", "open": "O",
+        "h": "H", "high": "H",
+        "l": "L", "low": "L",
+        "c": "C", "close": "C", "price": "C",
+        "v": "V", "vol": "V", "volume": "V", "tick_volume": "V",
     }
     out: Set[str] = set()
     for p in parts:
@@ -144,7 +133,6 @@ def _table_from_rows(headers: List[str], rows: List[List[Any]]) -> Dict[str, Any
         "count": len(items),
     }
 
-
 def _format_time_minimal(epoch_seconds: float) -> str:
     """Format epoch seconds into a normalized UTC datetime string.
 
@@ -153,7 +141,6 @@ def _format_time_minimal(epoch_seconds: float) -> str:
     dt = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc)
     return dt.strftime(TIME_DISPLAY_FORMAT)
 
-
 def _format_time_minimal_local(epoch_seconds: float) -> str:
     """Format epoch seconds into a normalized local/client datetime string.
 
@@ -161,7 +148,6 @@ def _format_time_minimal_local(epoch_seconds: float) -> str:
     Falls back to UTC if tz resolution fails.
     """
     from ..bootstrap.settings import mt5_config
-
     try:
         tz = mt5_config.get_client_tz()
         if tz is not None:
@@ -172,46 +158,38 @@ def _format_time_minimal_local(epoch_seconds: float) -> str:
     except Exception:
         return _format_time_minimal(epoch_seconds)
 
-
 def _use_client_tz(_: object = None) -> bool:
     """Return True when a client timezone is configured."""
     from ..bootstrap.settings import mt5_config
-
     try:
         return mt5_config.get_client_tz() is not None
     except Exception:
         return False
 
-
 def _resolve_client_tz(_: object = None):
     """Return the configured client timezone, if any."""
     from ..bootstrap.settings import mt5_config
-
     try:
         return mt5_config.get_client_tz()
     except Exception:
         return None
 
-
 def _time_format_from_epochs(epochs: List[float]) -> str:
     """Return the normalized display format regardless of epoch contents."""
     return TIME_DISPLAY_FORMAT
-
 
 def _maybe_strip_year(fmt: str, epochs: List[float]) -> str:
     """No-op when normalization is requested; keep full year for consistency."""
     return fmt
 
-
 def _style_time_format(fmt: str) -> str:
     """No special styling; keep normalized spacing."""
     try:
-        if "T" in fmt:
-            return fmt.replace("T", " ")
+        if 'T' in fmt:
+            return fmt.replace('T', ' ')
     except Exception:
         pass
     return fmt
-
 
 def _optimal_decimals(
     values: List[float],
@@ -246,9 +224,7 @@ def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
         s = obj.strip()
         if not s:
             return {}
-        if (s.startswith("{") and s.endswith("}")) or (
-            s.startswith("[") and s.endswith("]")
-        ):
+        if (s.startswith('{') and s.endswith('}')) or (s.startswith('[') and s.endswith(']')):
             try:
                 parsed = json.loads(s)
                 if isinstance(parsed, dict):
@@ -269,20 +245,19 @@ def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
             except Exception:
                 # Fallback to simple token parser inside braces; list-shaped JSON
                 # should just fall through to return {}.
-                if s.startswith("{") and s.endswith("}"):
-                    s = s.strip().strip("{}").strip()
+                if s.startswith('{') and s.endswith('}'):
+                    s = s.strip().strip('{}').strip()
                 else:
                     return {}
         # Parse k=v / k:v assignments. Commas split assignments only when a new key follows.
         import re
-
         out: Dict[str, Any] = {}
         pair_pattern = re.compile(
-            r"(?:^|[\s,])([A-Za-z_][\w.\-]*)\s*([=:])\s*(.*?)\s*(?=(?:[\s,]+[A-Za-z_][\w.\-]*\s*[=:])|$)"
+            r'(?:^|[\s,])([A-Za-z_][\w.\-]*)\s*([=:])\s*(.*?)\s*(?=(?:[\s,]+[A-Za-z_][\w.\-]*\s*[=:])|$)'
         )
         for m in pair_pattern.finditer(s):
-            k = str(m.group(1) or "").strip()
-            v = str(m.group(3) or "").strip().strip(",")
+            k = str(m.group(1) or '').strip()
+            v = str(m.group(3) or '').strip().strip(',')
             # Avoid Windows drive paths like "C:\foo".
             if len(k) == 1 and v.startswith(("\\", "/")):
                 continue
@@ -294,29 +269,29 @@ def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
         toks = [tok for tok in s.split() if tok]
         i = 0
         while i < len(toks):
-            tok = toks[i].strip().strip(",")
+            tok = toks[i].strip().strip(',')
             if not tok:
                 i += 1
                 continue
-            if "=" in tok:
-                k, v = tok.split("=", 1)
-                out[k.strip()] = v.strip().strip(",")
+            if '=' in tok:
+                k, v = tok.split('=', 1)
+                out[k.strip()] = v.strip().strip(',')
                 i += 1
                 continue
             # Support "k:v" tokens (avoid Windows drive paths like "C:\\foo")
-            if ":" in tok and not tok.endswith(":") and tok.count(":") == 1:
-                k, v = tok.split(":", 1)
+            if ':' in tok and not tok.endswith(':') and tok.count(':') == 1:
+                k, v = tok.split(':', 1)
                 if len(k) == 1 and v.startswith(("\\", "/")):
                     i += 1
                     continue
-                out[k.strip()] = v.strip().strip(",")
+                out[k.strip()] = v.strip().strip(',')
                 i += 1
                 continue
-            if tok.endswith(":"):
+            if tok.endswith(':'):
                 key = tok[:-1].strip()
-                val = ""
+                val = ''
                 if i + 1 < len(toks):
-                    val = toks[i + 1].strip().strip(",")
+                    val = toks[i + 1].strip().strip(',')
                     i += 2
                 else:
                     i += 1
@@ -331,6 +306,8 @@ def _format_float(v: float, d: int) -> str:
     return _format_float_shared(v, d)
 
 
+
+
 def _format_numeric_rows_from_df(
     df: pd.DataFrame,
     headers: List[str],
@@ -340,7 +317,7 @@ def _format_numeric_rows_from_df(
     # Precompute per-column decimals to trim numeric noise without losing precision.
     col_decimals: Dict[str, int] = {}
     for col in headers:
-        if col == "time" or col not in df.columns:
+        if col == 'time' or col not in df.columns:
             continue
         try:
             series = pd.to_numeric(df[col], errors="coerce")
@@ -359,7 +336,7 @@ def _format_numeric_rows_from_df(
         out_row: List[Any] = []
         for col in headers:
             val = row[col]
-            if col == "time":
+            if col == 'time':
                 out_row.append(str(val) if stringify else val)
             elif val is None or isinstance(val, bool):
                 out_row.append(format_number(val) if stringify else val)
@@ -389,7 +366,6 @@ def _format_numeric_rows_from_df(
                 out_row.append(str(val) if stringify else val)
         out_rows.append(out_row)
     return out_rows
-
 
 def to_float_np(
     values: Any,
@@ -460,7 +436,6 @@ def align_finite(*arrays: Any) -> Tuple["np.ndarray", ...]:
     Returns a tuple of filtered arrays, all of equal length.
     """
     import numpy as np
-
     conv = [to_float_np(a) for a in arrays]
     if not conv:
         return tuple()
@@ -477,10 +452,10 @@ def _parse_start_datetime(value: str) -> Optional[datetime]:
     dt = dateparser.parse(
         value,
         settings={
-            "RETURN_AS_TIMEZONE_AWARE": True,
-            "TIMEZONE": "UTC",
-            "TO_TIMEZONE": "UTC",
-            "PREFER_DAY_OF_MONTH": "first",
+            'RETURN_AS_TIMEZONE_AWARE': True,
+            'TIMEZONE': 'UTC',
+            'TO_TIMEZONE': 'UTC',
+            'PREFER_DAY_OF_MONTH': 'first',
         },
     )
     if not dt:
@@ -499,3 +474,4 @@ def _utc_epoch_seconds(dt: datetime) -> float:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc).timestamp()
     return dt.astimezone(timezone.utc).timestamp()
+

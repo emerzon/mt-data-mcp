@@ -19,16 +19,12 @@ def test_extract_forecast_values_handles_standard_alt_and_padding():
     out = fc._extract_forecast_values(yf_alt, fh=3, method_name="m")
     assert out.tolist() == [9.0, 9.0, 9.0]
 
-    yf_with_actuals = pd.DataFrame(
-        {"unique_id": ["ts"], "ds": [0], "y": [1.0], "pred": [9.0]}
-    )
+    yf_with_actuals = pd.DataFrame({"unique_id": ["ts"], "ds": [0], "y": [1.0], "pred": [9.0]})
     out = fc._extract_forecast_values(yf_with_actuals, fh=2, method_name="m")
     assert out.tolist() == [9.0, 9.0]
 
     with pytest.raises(RuntimeError, match="prediction columns not found"):
-        fc._extract_forecast_values(
-            pd.DataFrame({"unique_id": ["ts"], "ds": [0]}), fh=1, method_name="demo"
-        )
+        fc._extract_forecast_values(pd.DataFrame({"unique_id": ["ts"], "ds": [0]}), fh=1, method_name="demo")
 
 
 def test_create_training_dataframes_with_and_without_exog():
@@ -36,18 +32,14 @@ def test_create_training_dataframes_with_and_without_exog():
     exog = np.array([[10.0, 20.0], [11.0, 21.0], [12.0, 22.0]], dtype=float)
     exog_future = np.array([[13.0, 23.0], [14.0, 24.0]], dtype=float)
 
-    y_df, x_df, xf_df = fc._create_training_dataframes(
-        series, fh=2, exog_used=exog, exog_future=exog_future
-    )
+    y_df, x_df, xf_df = fc._create_training_dataframes(series, fh=2, exog_used=exog, exog_future=exog_future)
     assert list(y_df.columns) == ["unique_id", "ds", "y"]
     assert y_df["y"].tolist() == [1.0, 2.0, 3.0]
     assert x_df is not None and list(x_df.columns) == ["unique_id", "ds", "x0", "x1"]
     assert xf_df is not None and list(xf_df.columns) == ["unique_id", "ds", "x0", "x1"]
     assert xf_df["x0"].tolist() == [13.0, 14.0]
 
-    y_df, x_df, xf_df = fc._create_training_dataframes(
-        series, fh=2, exog_used=None, exog_future=None
-    )
+    y_df, x_df, xf_df = fc._create_training_dataframes(series, fh=2, exog_used=None, exog_future=None)
     assert x_df is None
     assert xf_df is None
     assert len(y_df) == 3
@@ -80,16 +72,10 @@ def test_fetch_history_validates_inputs_and_symbol_readiness(monkeypatch):
 def test_fetch_history_as_of_and_drop_last_live_paths(monkeypatch):
     monkeypatch.setattr(fc, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(fc, "_ensure_symbol_ready", lambda _symbol: None)
-    monkeypatch.setattr(
-        fc, "get_symbol_info_cached", lambda _symbol: SimpleNamespace(visible=False)
-    )
+    monkeypatch.setattr(fc, "get_symbol_info_cached", lambda _symbol: SimpleNamespace(visible=False))
 
     symbol_select_calls = []
-    monkeypatch.setattr(
-        fc.mt5,
-        "symbol_select",
-        lambda symbol, visible: symbol_select_calls.append((symbol, visible)) or True,
-    )
+    monkeypatch.setattr(fc.mt5, "symbol_select", lambda symbol, visible: symbol_select_calls.append((symbol, visible)) or True)
     monkeypatch.setattr(fc.mt5, "last_error", lambda: (1, "err"))
 
     rates = [
@@ -99,15 +85,9 @@ def test_fetch_history_as_of_and_drop_last_live_paths(monkeypatch):
         {"time": 400.0, "open": 4.0},
     ]
 
-    monkeypatch.setattr(
-        fc, "_mt5_copy_rates_from", lambda symbol, tf, to_dt, count: rates
-    )
-    monkeypatch.setattr(
-        fc, "_mt5_copy_rates_from_pos", lambda symbol, tf, start, count: rates
-    )
-    monkeypatch.setattr(
-        fc, "_parse_start_datetime", lambda _as_of: datetime(2024, 1, 1)
-    )
+    monkeypatch.setattr(fc, "_mt5_copy_rates_from", lambda symbol, tf, to_dt, count: rates)
+    monkeypatch.setattr(fc, "_mt5_copy_rates_from_pos", lambda symbol, tf, start, count: rates)
+    monkeypatch.setattr(fc, "_parse_start_datetime", lambda _as_of: datetime(2024, 1, 1))
     monkeypatch.setattr(fc, "_utc_epoch_seconds", lambda _dt: 300.0)
 
     out = fc.fetch_history("EURUSD", "H1", need=2, as_of="2024-01-01")
@@ -121,24 +101,16 @@ def test_fetch_history_as_of_and_drop_last_live_paths(monkeypatch):
 def test_fetch_history_as_of_anchors_directly_not_latest_window(monkeypatch):
     monkeypatch.setattr(fc, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(fc, "_ensure_symbol_ready", lambda _symbol: None)
-    monkeypatch.setattr(
-        fc, "get_symbol_info_cached", lambda _symbol: SimpleNamespace(visible=True)
-    )
+    monkeypatch.setattr(fc, "get_symbol_info_cached", lambda _symbol: SimpleNamespace(visible=True))
     monkeypatch.setattr(fc.mt5, "last_error", lambda: (1, "err"))
 
     # Would be returned by a latest-window fetch, but should not be used for old as_of.
     newest_rates = [{"time": 9000.0, "open": 9.0}, {"time": 9100.0, "open": 9.1}]
     asof_rates = [{"time": 100.0, "open": 1.0}, {"time": 200.0, "open": 2.0}]
 
-    monkeypatch.setattr(
-        fc, "_mt5_copy_rates_from_pos", lambda symbol, tf, start, count: newest_rates
-    )
-    monkeypatch.setattr(
-        fc, "_mt5_copy_rates_from", lambda symbol, tf, to_dt, count: asof_rates
-    )
-    monkeypatch.setattr(
-        fc, "_parse_start_datetime", lambda _as_of: datetime(2020, 1, 1)
-    )
+    monkeypatch.setattr(fc, "_mt5_copy_rates_from_pos", lambda symbol, tf, start, count: newest_rates)
+    monkeypatch.setattr(fc, "_mt5_copy_rates_from", lambda symbol, tf, to_dt, count: asof_rates)
+    monkeypatch.setattr(fc, "_parse_start_datetime", lambda _as_of: datetime(2020, 1, 1))
     monkeypatch.setattr(fc, "_utc_epoch_seconds", lambda _dt: 250.0)
 
     out = fc.fetch_history("EURUSD", "H1", need=2, as_of="2020-01-01")
@@ -148,20 +120,14 @@ def test_fetch_history_as_of_anchors_directly_not_latest_window(monkeypatch):
 def test_fetch_history_handles_invalid_as_of_and_empty_rates(monkeypatch):
     monkeypatch.setattr(fc, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(fc, "_ensure_symbol_ready", lambda _symbol: None)
-    monkeypatch.setattr(
-        fc, "get_symbol_info_cached", lambda _symbol: SimpleNamespace(visible=True)
-    )
+    monkeypatch.setattr(fc, "get_symbol_info_cached", lambda _symbol: SimpleNamespace(visible=True))
     monkeypatch.setattr(fc.mt5, "last_error", lambda: (500, "no data"))
 
     monkeypatch.setattr(fc, "_parse_start_datetime", lambda _as_of: None)
     with pytest.raises(RuntimeError, match="Invalid as_of time"):
         fc.fetch_history("EURUSD", "H1", need=2, as_of="bad")
 
-    monkeypatch.setattr(
-        fc, "_parse_start_datetime", lambda _as_of: datetime(2024, 1, 1)
-    )
-    monkeypatch.setattr(
-        fc, "_mt5_copy_rates_from_pos", lambda symbol, tf, start, count: []
-    )
+    monkeypatch.setattr(fc, "_parse_start_datetime", lambda _as_of: datetime(2024, 1, 1))
+    monkeypatch.setattr(fc, "_mt5_copy_rates_from_pos", lambda symbol, tf, start, count: [])
     with pytest.raises(RuntimeError, match="Failed to get rates"):
         fc.fetch_history("EURUSD", "H1", need=2)

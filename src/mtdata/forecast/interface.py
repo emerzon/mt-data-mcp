@@ -4,7 +4,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 import numpy as np
 
-
 @dataclass
 class ForecastResult:
     forecast: np.ndarray
@@ -12,21 +11,20 @@ class ForecastResult:
     params_used: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = None
 
-
 class ForecastMethod(ABC):
     """Abstract base class for all forecasting methods."""
-
+    
     @property
     @abstractmethod
     def name(self) -> str:
         """Unique name of the method."""
         ...
-
+    
     @property
     def category(self) -> str:
         """Category of the method (e.g., 'classical', 'neural', 'ensemble')."""
         return "unknown"
-
+        
     @property
     def required_packages(self) -> List[str]:
         """List of Python packages required for this method."""
@@ -39,17 +37,17 @@ class ForecastMethod(ABC):
 
     @abstractmethod
     def forecast(
-        self,
-        series: pd.Series,
-        horizon: int,
-        seasonality: int,
-        params: Dict[str, Any],
+        self, 
+        series: pd.Series, 
+        horizon: int, 
+        seasonality: int, 
+        params: Dict[str, Any], 
         exog_future: Optional[pd.DataFrame] = None,
-        **kwargs,
+        **kwargs
     ) -> ForecastResult:
         """
         Generate a forecast.
-
+        
         Args:
             series: Historical time series data.
             horizon: Number of steps to forecast.
@@ -57,19 +55,19 @@ class ForecastMethod(ABC):
             params: Method-specific parameters.
             exog_future: Future exogenous variables (optional).
             **kwargs: Additional arguments.
-
+            
         Returns:
             ForecastResult object containing the forecast and metadata.
         """
         ...
-
+    
     def validate_params(self, params: Dict[str, Any]) -> List[str]:
         """
         Validate method-specific parameters.
-
+        
         Args:
             params: Dictionary of parameters to validate.
-
+            
         Returns:
             List of error messages (empty if valid).
         """

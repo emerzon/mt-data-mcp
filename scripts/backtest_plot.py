@@ -24,7 +24,6 @@ import sys
 from typing import Dict, Any, List, Optional, Tuple
 from pathlib import Path
 import os
-import numpy as np
 
 
 def _ensure_repo_paths():
@@ -38,14 +37,14 @@ def _ensure_repo_paths():
 
 _ensure_repo_paths()
 
+import numpy as np
+
 
 def _import_matplotlib():
     try:
         import importlib
-
         mpl = importlib.import_module("matplotlib")
         import matplotlib.pyplot as plt
-
         return mpl, plt
     except Exception as ex:
         raise SystemExit(
@@ -79,7 +78,7 @@ def _fmt_pct(x: Optional[float]) -> str:
     try:
         if x is None or not np.isfinite(float(x)):
             return "n/a"
-        return f"{float(x) * 100:.1f}%"
+        return f"{float(x)*100:.1f}%"
     except Exception:
         return "n/a"
 
@@ -110,15 +109,10 @@ def generate_backtest_plots(
 
     # Ensure MT5 session and call the raw implementation
     from src.mtdata.utils.mt5 import mt5_connection
-
     if not mt5_connection._ensure_connection():
-        return {
-            "error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
-        }
+        return {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
 
-    from src.mtdata.forecast.backtest import (
-        forecast_backtest as _forecast_backtest_impl,
-    )
+    from src.mtdata.forecast.backtest import forecast_backtest as _forecast_backtest_impl
 
     bt = _forecast_backtest_impl(
         symbol=symbol,
@@ -143,7 +137,7 @@ def generate_backtest_plots(
     _ensure_dir(out_path)
     base = filename_base or f"{symbol}_{timeframe}_h{horizon}_s{steps}_p{spacing}"
     explicit_png_name = None
-    if isinstance(filename_base, str) and filename_base.lower().endswith(".png"):
+    if isinstance(filename_base, str) and filename_base.lower().endswith('.png'):
         explicit_png_name = filename_base
 
     # 1) Summary bar chart
@@ -160,9 +154,7 @@ def generate_backtest_plots(
     labels = [m for m, _, _ in methods_sorted]
     values = [rmse for _, rmse, _ in methods_sorted]
     bars = ax1.bar(labels, values, color="#4C78A8")
-    ax1.set_title(
-        f"Backtest Avg RMSE by Method — {symbol} {timeframe} (h={horizon}, steps={steps})"
-    )
+    ax1.set_title(f"Backtest Avg RMSE by Method — {symbol} {timeframe} (h={horizon}, steps={steps})")
     ax1.set_ylabel("Avg RMSE")
     ax1.set_xlabel("Method")
     ax1.grid(axis="y", alpha=0.3)
@@ -176,14 +168,8 @@ def generate_backtest_plots(
         if wr is not None:
             txt.append(f"WR {_fmt_pct(wr)}")
         if txt:
-            ax1.text(
-                bar.get_x() + bar.get_width() / 2,
-                bar.get_height(),
-                "\n".join(txt),
-                ha="center",
-                va="bottom",
-                fontsize=8,
-            )
+            ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height(), "\n".join(txt),
+                     ha='center', va='bottom', fontsize=8)
     fig1.tight_layout()
     file_summary = out_path / f"{base}_summary.png"
     fig1.savefig(file_summary)
@@ -194,12 +180,10 @@ def generate_backtest_plots(
     best = results.get(best_method) or {}
     details = best.get("details") or []
     rets = [float(d.get("trade_return") or 0.0) for d in details]
-    equity = (
-        np.cumprod(1.0 + np.asarray(rets, dtype=float)) if rets else np.array([1.0])
-    )
+    equity = np.cumprod(1.0 + np.asarray(rets, dtype=float)) if rets else np.array([1.0])
 
     fig2, ax2 = plt.subplots(figsize=(8, 4), dpi=144)
-    ax2.plot(range(len(equity)), equity, marker="o", color="#F58518")
+    ax2.plot(range(len(equity)), equity, marker='o', color="#F58518")
     ax2.set_title(f"Equity Curve — {best_method} ({symbol} {timeframe}, h={horizon})")
     ax2.set_ylabel("Equity (1=flat)")
     ax2.set_xlabel("Backtest step")
@@ -207,16 +191,9 @@ def generate_backtest_plots(
     if rets:
         total = equity[-1] - 1.0
         wr = float(np.mean(np.array(rets) > 0.0)) if rets else 0.0
-        ax2.text(
-            0.02,
-            0.95,
-            f"Total {_fmt_pct(total)}\nWin {_fmt_pct(wr)}",
-            transform=ax2.transAxes,
-            ha="left",
-            va="top",
-            fontsize=9,
-            bbox=dict(boxstyle="round", facecolor="white", alpha=0.6, lw=0.0),
-        )
+        ax2.text(0.02, 0.95, f"Total {_fmt_pct(total)}\nWin {_fmt_pct(wr)}",
+                 transform=ax2.transAxes, ha='left', va='top', fontsize=9,
+                 bbox=dict(boxstyle='round', facecolor='white', alpha=0.6, lw=0.0))
     fig2.tight_layout()
     file_equity = out_path / f"{base}_equity_{best_method}.png"
     fig2.savefig(file_equity)
@@ -231,9 +208,9 @@ def generate_backtest_plots(
             m = min(len(fc), len(act))
             fcs = fc[:m]
             acts = act[:m]
-            if plot_delta and target == "price":
+            if plot_delta and target == 'price':
                 try:
-                    entry = float(d.get("entry_price"))
+                    entry = float(d.get('entry_price'))
                     fcs = [float(v) - entry for v in fcs]
                     acts = [float(v) - entry for v in acts]
                 except Exception:
@@ -244,35 +221,24 @@ def generate_backtest_plots(
     if pairs:
         cols = min(3, max(1, int(np.ceil(np.sqrt(len(pairs))))))
         rows = int(np.ceil(len(pairs) / cols))
-        fig3, axes = plt.subplots(
-            rows, cols, figsize=(4 * cols, 2.8 * rows), dpi=144, squeeze=False
-        )
+        fig3, axes = plt.subplots(rows, cols, figsize=(4*cols, 2.8*rows), dpi=144, squeeze=False)
         for i, (anchor, fc, act) in enumerate(pairs):
-            r = i // cols
-            c = i % cols
+            r = i // cols; c = i % cols
             ax = axes[r][c]
-            ax.plot(act, label="Actual", color="#4C78A8", lw=1.5)
-            ax.plot(fc, label="Forecast", color="#E45756", lw=1.2)
+            ax.plot(act, label='Actual', color='#4C78A8', lw=1.5)
+            ax.plot(fc, label='Forecast', color='#E45756', lw=1.2)
             ax.set_title(anchor, fontsize=9)
             ax.grid(True, alpha=0.3)
             if r == rows - 1:
                 ax.set_xlabel("Step")
             if c == 0:
-                ax.set_ylabel(
-                    "ΔPrice"
-                    if (plot_delta and target == "price")
-                    else ("Return" if target == "return" else "Price")
-                )
-        for j in range(len(pairs), rows * cols):
-            r = j // cols
-            c = j % cols
-            axes[r][c].axis("off")
+                ax.set_ylabel("ΔPrice" if (plot_delta and target == 'price') else ("Return" if target == 'return' else "Price"))
+        for j in range(len(pairs), rows*cols):
+            r = j // cols; c = j % cols
+            axes[r][c].axis('off')
         handles, labels_ = axes[0][0].get_legend_handles_labels()
-        fig3.legend(handles, labels_, loc="upper center", ncol=2)
-        fig3.suptitle(
-            f"Best Method {best_method}: Forecast vs Actual — {symbol} {timeframe}",
-            y=0.995,
-        )
+        fig3.legend(handles, labels_, loc='upper center', ncol=2)
+        fig3.suptitle(f"Best Method {best_method}: Forecast vs Actual — {symbol} {timeframe}", y=0.995)
         fig3.tight_layout(rect=(0, 0, 1, 0.96))
         file_pairs = out_path / f"{base}_anchors_{best_method}.png"
         fig3.savefig(file_pairs)
@@ -281,17 +247,9 @@ def generate_backtest_plots(
     # 4) Combined sheet
     try:
         import matplotlib.pyplot as plt2
-        from matplotlib.gridspec import GridSpecFromSubplotSpec
-
+        from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
         fig = plt2.figure(figsize=(14, 8), dpi=140)
-        gs = fig.add_gridspec(
-            2,
-            2,
-            width_ratios=(1.0, 1.4),
-            height_ratios=(1.0, 1.0),
-            wspace=0.25,
-            hspace=0.25,
-        )
+        gs = fig.add_gridspec(2, 2, width_ratios=(1.0, 1.4), height_ratios=(1.0, 1.0), wspace=0.25, hspace=0.25)
         ax_tl = fig.add_subplot(gs[0, 0])
         ax_tl.bar(labels, values, color="#4C78A8")
         ax_tl.set_title("Avg RMSE by Method")
@@ -306,11 +264,9 @@ def generate_backtest_plots(
             if wr is not None:
                 txt.append(f"WR {_fmt_pct(wr)}")
             if txt:
-                ax_tl.text(
-                    x, values[x], "\n".join(txt), ha="center", va="bottom", fontsize=8
-                )
+                ax_tl.text(x, values[x], "\n".join(txt), ha='center', va='bottom', fontsize=8)
         ax_bl = fig.add_subplot(gs[1, 0])
-        ax_bl.plot(range(len(equity)), equity, marker="o", color="#F58518")
+        ax_bl.plot(range(len(equity)), equity, marker='o', color="#F58518")
         ax_bl.set_title(f"Equity — {best_method}")
         ax_bl.set_xlabel("Backtest step")
         ax_bl.set_ylabel("Equity")
@@ -318,55 +274,34 @@ def generate_backtest_plots(
         if rets:
             total = equity[-1] - 1.0
             wr = float(np.mean(np.array(rets) > 0.0)) if rets else 0.0
-            ax_bl.text(
-                0.02,
-                0.95,
-                f"Total {_fmt_pct(total)}\nWin {_fmt_pct(wr)}",
-                transform=ax_bl.transAxes,
-                ha="left",
-                va="top",
-                fontsize=9,
-                bbox=dict(boxstyle="round", facecolor="white", alpha=0.6, lw=0.0),
-            )
+            ax_bl.text(0.02, 0.95, f"Total {_fmt_pct(total)}\nWin {_fmt_pct(wr)}", transform=ax_bl.transAxes,
+                       ha='left', va='top', fontsize=9,
+                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.6, lw=0.0))
         ax_right = fig.add_subplot(gs[:, 1])
         pairs_to_plot = pairs[:9] if pairs else []
         if pairs_to_plot:
             ncols = min(3, max(1, int(np.ceil(np.sqrt(len(pairs_to_plot))))))
             nrows = int(np.ceil(len(pairs_to_plot) / ncols))
-            sub_gs = GridSpecFromSubplotSpec(
-                nrows, ncols, subplot_spec=gs[:, 1], wspace=0.25, hspace=0.35
-            )
-            sub_axes = [
-                fig.add_subplot(sub_gs[i // ncols, i % ncols])
-                for i in range(nrows * ncols)
-            ]
+            sub_gs = GridSpecFromSubplotSpec(nrows, ncols, subplot_spec=gs[:, 1], wspace=0.25, hspace=0.35)
+            sub_axes = [fig.add_subplot(sub_gs[i // ncols, i % ncols]) for i in range(nrows * ncols)]
             for i, (anchor, fc, act) in enumerate(pairs_to_plot):
                 ax = sub_axes[i]
-                ax.plot(act, label="Actual", color="#4C78A8", lw=1.3)
-                ax.plot(fc, label="Forecast", color="#E45756", lw=1.1)
+                ax.plot(act, label='Actual', color='#4C78A8', lw=1.3)
+                ax.plot(fc, label='Forecast', color='#E45756', lw=1.1)
                 ax.set_title(anchor, fontsize=9)
                 ax.grid(True, alpha=0.25)
                 if i // ncols == nrows - 1:
                     ax.set_xlabel("Step")
                 if i % ncols == 0:
-                    ax.set_ylabel(
-                        "ΔPrice"
-                        if (plot_delta and target == "price")
-                        else ("Return" if target == "return" else "Price")
-                    )
+                    ax.set_ylabel("ΔPrice" if (plot_delta and target == 'price') else ("Return" if target == 'return' else "Price"))
             for j in range(len(pairs_to_plot), len(sub_axes)):
-                sub_axes[j].axis("off")
+                sub_axes[j].axis('off')
             handles, labels_ = sub_axes[0].get_legend_handles_labels()
-            fig.legend(handles, labels_, loc="upper center", ncol=2)
+            fig.legend(handles, labels_, loc='upper center', ncol=2)
         else:
-            ax_right.text(
-                0.5, 0.5, "No anchor plots available", ha="center", va="center"
-            )
-            ax_right.axis("off")
-        fig.suptitle(
-            f"Backtest Summary — {symbol} {timeframe} (h={horizon}, steps={steps}, spacing={spacing}, target={target}{', delta' if (plot_delta and target == 'price') else ''})",
-            y=0.995,
-        )
+            ax_right.text(0.5, 0.5, "No anchor plots available", ha='center', va='center')
+            ax_right.axis('off')
+        fig.suptitle(f"Backtest Summary — {symbol} {timeframe} (h={horizon}, steps={steps}, spacing={spacing}, target={target}{', delta' if (plot_delta and target=='price') else ''})", y=0.995)
         fig.tight_layout(rect=(0, 0, 1, 0.97))
         file_combined = out_path / (explicit_png_name or f"{base}_download.png")
         fig.savefig(file_combined)
@@ -396,39 +331,21 @@ def generate_backtest_plots(
 
 def _parse_args(argv: Optional[List[str]] = None):
     import argparse
-
     p = argparse.ArgumentParser(description="Generate backtest plots")
     p.add_argument("--symbol", required=True)
     p.add_argument("--timeframe", default="H1")
     p.add_argument("--horizon", type=int, default=12)
     p.add_argument("--steps", type=int, default=5)
     p.add_argument("--spacing", type=int, default=20)
-    p.add_argument(
-        "--methods", type=str, default=None, help="Space or comma separated method list"
-    )
+    p.add_argument("--methods", type=str, default=None, help="Space or comma separated method list")
     p.add_argument("--out-dir", default="backtests")
     p.add_argument("--filename-base", default=None)
     p.add_argument("--slippage-bps", type=float, default=0.0)
     p.add_argument("--trade-threshold", type=float, default=0.0)
-    p.add_argument("--target", choices=["price", "return"], default="price")
-    p.add_argument(
-        "--denoise",
-        dest="denoise_method",
-        default=None,
-        help="Denoise method (e.g., ema, sma)",
-    )
-    p.add_argument(
-        "--denoise-span",
-        dest="denoise_span",
-        type=int,
-        default=None,
-        help="Denoise span/window",
-    )
-    p.add_argument(
-        "--plot-delta",
-        action="store_true",
-        help="For price target, plot ΔPrice vs anchor entry",
-    )
+    p.add_argument("--target", choices=["price","return"], default="price")
+    p.add_argument("--denoise", dest="denoise_method", default=None, help="Denoise method (e.g., ema, sma)")
+    p.add_argument("--denoise-span", dest="denoise_span", type=int, default=None, help="Denoise span/window")
+    p.add_argument("--plot-delta", action="store_true", help="For price target, plot ΔPrice vs anchor entry")
     return p.parse_args(argv)
 
 
@@ -476,3 +393,4 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

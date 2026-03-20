@@ -38,7 +38,6 @@ def _clear_scipy_lru_cache():
     """
     try:
         from scipy._lib.array_api_compat.common._helpers import _issubclass_fast
-
         _issubclass_fast.cache_clear()
     except Exception:
         pass

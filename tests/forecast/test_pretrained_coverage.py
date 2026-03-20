@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import sys
 import types
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch, PropertyMock
 
 import numpy as np
 import pandas as pd
@@ -14,7 +14,6 @@ import pytest
 # ---------------------------------------------------------------------------
 # Stub heavy third-party packages before importing the module under test
 # ---------------------------------------------------------------------------
-
 
 def _make_module(name: str, attrs: dict | None = None) -> types.ModuleType:
     mod = types.ModuleType(name)
@@ -33,30 +32,22 @@ _torch_cuda.is_available = MagicMock(return_value=False)
 _torch.cuda = _torch_cuda
 _torch.load = MagicMock(return_value={"hyper_parameters": {"model_kwargs": {}}})
 
-
 class _FakeTensor:
     def __init__(self, data=None, dtype=None):
         self._data = np.array(data) if data is not None else np.zeros(1)
-
     def unsqueeze(self, dim):
         return self
-
     def to(self, device):
         return self
-
     def detach(self):
         return self
-
     def cpu(self):
         return self
-
     def numpy(self):
         return self._data
-
     @property
     def shape(self):
         return self._data.shape
-
 
 _torch.tensor = lambda data, dtype=None: _FakeTensor(data, dtype)
 _torch_serial = _make_module("torch.serialization")
@@ -65,7 +56,6 @@ _torch.serialization = _torch_serial
 
 # --- chronos stub ----------------------------------------------------------
 _chronos = _make_module("chronos")
-
 
 class _FakePipeline:
     @classmethod
@@ -82,36 +72,28 @@ class _FakePipeline:
     def predict(self, ctx, prediction_length=10, **kw):
         return _FakeTensor(np.random.rand(1, prediction_length))
 
-
 _chronos.ChronosBoltPipeline = _FakePipeline
 _chronos.ChronosPipeline = _FakePipeline
 
 # --- timesfm stub ----------------------------------------------------------
 _timesfm = _make_module("timesfm")
 
-
 class _FakeForecastConfig:
     def __init__(self, **kw):
         pass
 
-
 _timesfm.ForecastConfig = _FakeForecastConfig
-
 
 class _FakeTimesFMTorch:
     def __init__(self, **kw):
         pass
-
     def load_checkpoint(self):
         pass
-
     def compile(self, cfg):
         pass
-
     def forecast(self, inputs, horizon):
         arr = np.ones((1, horizon))
         return arr, None
-
 
 _timesfm_torch = _make_module("timesfm.torch")
 _timesfm_torch.TimesFM_2p5_200M_torch = _FakeTimesFMTorch
@@ -125,20 +107,15 @@ _lag_llama = _make_module("lag_llama")
 _lag_llama_gluon = _make_module("lag_llama.gluon")
 _lag_llama_gluon_est = _make_module("lag_llama.gluon.estimator")
 
-
 class _FakeLagLlamaEstimator:
     def __init__(self, **kw):
         self._kw = kw
-
     def create_lightning_module(self):
         return MagicMock()
-
     def create_transformation(self):
         return MagicMock()
-
     def create_predictor(self, transformation, module):
         return MagicMock()
-
 
 _lag_llama_gluon_est.LagLlamaEstimator = _FakeLagLlamaEstimator
 
@@ -150,24 +127,19 @@ _hf_hub.hf_hub_download = MagicMock(return_value="/tmp/fake.ckpt")
 _gluonts = _make_module("gluonts")
 _gluonts_eval = _make_module("gluonts.evaluation")
 
-
 class _FakeForecastObj:
     def __init__(self, h=10):
         self.mean = np.ones(h)
         self.samples = np.ones((100, h))
-
     def quantile(self, q):
         return np.ones(10) * q
-
 
 _gluonts_eval.make_evaluation_predictions = MagicMock(
     side_effect=lambda **kw: (iter([_FakeForecastObj()]), iter([]))
 )
 _gluonts_dataset = _make_module("gluonts.dataset")
 _gluonts_dataset_common = _make_module("gluonts.dataset.common")
-_gluonts_dataset_common.ListDataset = MagicMock(
-    return_value=[{"target": np.ones(50), "start": pd.Timestamp("2000-01-01")}]
-)
+_gluonts_dataset_common.ListDataset = MagicMock(return_value=[{"target": np.ones(50), "start": pd.Timestamp("2000-01-01")}])
 
 # --- Register all stubs in sys.modules ------------------------------------
 # Stubs are installed at module level for the initial import, then
@@ -210,6 +182,7 @@ from mtdata.forecast.methods.pretrained import (
     forecast_chronos_bolt,
     forecast_timesfm,
     forecast_lag_llama,
+    PretrainedMethod,
 )
 from mtdata.forecast.interface import ForecastResult
 
@@ -219,11 +192,9 @@ from mtdata.forecast.interface import ForecastResult
 # cleaned them up between tests.
 # ---------------------------------------------------------------------------
 
-
 @pytest.fixture(autouse=True)
 def _ensure_stubs():
     """Re-install non-torch stubs before every test & clean up after."""
-# ruff: noqa: E402
     saved = {}
     for name, mod in _NON_TORCH_STUBS.items():
         saved[name] = sys.modules.get(name)
@@ -251,7 +222,6 @@ def _with_torch_stubs():
             sys.modules[name] = orig
     try:
         from scipy._lib.array_api_compat.common._helpers import _issubclass_fast
-
         _issubclass_fast.cache_clear()
     except Exception:
         pass
@@ -261,7 +231,6 @@ def _with_torch_stubs():
 # Helpers
 # ===========================================================================
 
-
 def _series(n: int = 100) -> pd.Series:
     return pd.Series(np.random.rand(n) * 100 + 50, name="price")
 
@@ -269,7 +238,6 @@ def _series(n: int = 100) -> pd.Series:
 # ===========================================================================
 # _resolve_chronos_device_map
 # ===========================================================================
-
 
 class TestResolveChronosDeviceMap:
     def test_empty_no_cuda(self):
@@ -320,7 +288,6 @@ class TestResolveChronosDeviceMap:
 # PretrainedMethod base class
 # ===========================================================================
 
-
 class TestPretrainedMethodBase:
     def test_category(self):
         m = ChronosBoltMethod()
@@ -336,7 +303,6 @@ class TestPretrainedMethodBase:
 # ===========================================================================
 # ChronosBoltMethod (lines 96-268)
 # ===========================================================================
-
 
 @pytest.mark.usefixtures("_with_torch_stubs")
 class TestChronosBoltMethod:
@@ -356,36 +322,23 @@ class TestChronosBoltMethod:
         assert res.forecast is not None
 
     def test_forecast_with_model_name(self):
-        res = self.method.forecast(
-            _series(),
-            horizon=5,
-            seasonality=1,
-            params={"model_name": "amazon/chronos-bolt-small"},
-        )
+        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={"model_name": "amazon/chronos-bolt-small"})
         assert res.params_used["model_name"] == "amazon/chronos-bolt-small"
 
     def test_forecast_with_context_length(self):
-        res = self.method.forecast(
-            _series(200), horizon=10, seasonality=1, params={"context_length": 50}
-        )
+        res = self.method.forecast(_series(200), horizon=10, seasonality=1, params={"context_length": 50})
         assert res is not None
 
     def test_forecast_zero_context_length(self):
-        res = self.method.forecast(
-            _series(), horizon=5, seasonality=1, params={"context_length": 0}
-        )
+        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={"context_length": 0})
         assert res.forecast is not None
 
     def test_forecast_with_quantiles(self):
-        res = self.method.forecast(
-            _series(), horizon=10, seasonality=1, params={"quantiles": [0.1, 0.5, 0.9]}
-        )
+        res = self.method.forecast(_series(), horizon=10, seasonality=1, params={"quantiles": [0.1, 0.5, 0.9]})
         assert "quantiles" in res.metadata
 
     def test_forecast_device_map_cpu(self):
-        res = self.method.forecast(
-            _series(), horizon=5, seasonality=1, params={"device_map": "cpu"}
-        )
+        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={"device_map": "cpu"})
         assert res.params_used["device_map"] == "cpu"
 
     def test_forecast_short_series(self):
@@ -400,27 +353,15 @@ class TestChronosBoltMethod:
         s = _series(50)
         exog_hist = np.random.rand(50, 2)
         exog_fut = np.random.rand(10, 2)
-        res = self.method.forecast(
-            s,
-            horizon=10,
-            seasonality=1,
-            params={},
-            exog_used=exog_hist,
-            exog_future=exog_fut,
-        )
+        res = self.method.forecast(s, horizon=10, seasonality=1, params={}, exog_used=exog_hist, exog_future=exog_fut)
         assert res.forecast is not None
 
     def test_forecast_exog_in_params(self):
         s = _series(50)
-        res = self.method.forecast(
-            s,
-            horizon=10,
-            seasonality=1,
-            params={
-                "exog_used": np.random.rand(50, 2),
-                "exog_future": np.random.rand(10, 2),
-            },
-        )
+        res = self.method.forecast(s, horizon=10, seasonality=1, params={
+            "exog_used": np.random.rand(50, 2),
+            "exog_future": np.random.rand(10, 2),
+        })
         assert res.forecast is not None
 
     def test_forecast_none_params(self):
@@ -430,34 +371,20 @@ class TestChronosBoltMethod:
     def test_default_model_name(self):
         res = self.method.forecast(_series(), horizon=5, seasonality=1, params={})
         assert "chronos-bolt-base" in res.params_used["model_name"]
-        assert res.params_used.get("pipeline") in {
-            "ChronosBoltPipeline",
-            "ChronosPipeline",
-            "Chronos2Pipeline",
-        }
+        assert res.params_used.get("pipeline") in {"ChronosBoltPipeline", "ChronosPipeline", "Chronos2Pipeline"}
 
     def test_falls_back_when_chronos2_pipeline_init_fails(self):
         class _BrokenChronos2Pipeline:
             @classmethod
             def from_pretrained(cls, model_name, device_map=None):
-                raise AttributeError(
-                    "module 'chronos.chronos2' has no attribute 'ChronosBoltModelForForecasting'"
-                )
+                raise AttributeError("module 'chronos.chronos2' has no attribute 'ChronosBoltModelForForecasting'")
 
         saved = getattr(_chronos, "Chronos2Pipeline", None)
         _chronos.Chronos2Pipeline = _BrokenChronos2Pipeline
         try:
-            res = self.method.forecast(
-                _series(),
-                horizon=5,
-                seasonality=1,
-                params={"model_name": "amazon/chronos-2"},
-            )
+            res = self.method.forecast(_series(), horizon=5, seasonality=1, params={"model_name": "amazon/chronos-2"})
             assert res.forecast is not None
-            assert res.params_used.get("pipeline") in {
-                "ChronosBoltPipeline",
-                "ChronosPipeline",
-            }
+            assert res.params_used.get("pipeline") in {"ChronosBoltPipeline", "ChronosPipeline"}
         finally:
             if saved is None:
                 delattr(_chronos, "Chronos2Pipeline")
@@ -502,18 +429,11 @@ class TestChronosBoltMethod:
             call_count[0] += 1
             if call_count[0] == 1 and kw:
                 raise TypeError("unexpected kwargs")
-            return orig_pq(
-                self_pipe,
-                ctx,
-                prediction_length=prediction_length,
-                quantile_levels=quantile_levels,
-            )
+            return orig_pq(self_pipe, ctx, prediction_length=prediction_length, quantile_levels=quantile_levels)
 
         _FakePipeline.predict_quantiles = _new_pq
         try:
-            res = self.method.forecast(
-                _series(), horizon=5, seasonality=1, params={"quantiles": [0.5]}
-            )
+            res = self.method.forecast(_series(), horizon=5, seasonality=1, params={"quantiles": [0.5]})
             assert res.forecast is not None
         finally:
             _FakePipeline.predict_quantiles = orig_pq
@@ -535,19 +455,13 @@ class TestChronosBoltMethod:
 
     def test_quantile_shape_q_axis_0(self):
         """Quantile tensor shape (n_q, h) -> q_axis=0."""
-
         def _pq(self_pipe, ctx, prediction_length=10, quantile_levels=None, **kw):
             n_q = len(quantile_levels) if quantile_levels else 1
-            return _FakeTensor(np.random.rand(n_q, prediction_length)), _FakeTensor(
-                np.random.rand(1, prediction_length)
-            )
-
+            return _FakeTensor(np.random.rand(n_q, prediction_length)), _FakeTensor(np.random.rand(1, prediction_length))
         orig = _FakePipeline.predict_quantiles
         _FakePipeline.predict_quantiles = _pq
         try:
-            res = self.method.forecast(
-                _series(), horizon=10, seasonality=1, params={"quantiles": [0.1, 0.9]}
-            )
+            res = self.method.forecast(_series(), horizon=10, seasonality=1, params={"quantiles": [0.1, 0.9]})
             assert res.metadata["quantiles"]
         finally:
             _FakePipeline.predict_quantiles = orig
@@ -558,15 +472,11 @@ class TestChronosBoltMethod:
         def _pq(self_pipe, ctx, prediction_length=10, quantile_levels=None, **kw):
             short_h = max(1, int(prediction_length) - 2)
             n_q = len(quantile_levels) if quantile_levels else 1
-            return _FakeTensor(np.ones((1, short_h, n_q))), _FakeTensor(
-                np.arange(short_h, dtype=float).reshape(1, short_h)
-            )
+            return _FakeTensor(np.ones((1, short_h, n_q))), _FakeTensor(np.arange(short_h, dtype=float).reshape(1, short_h))
 
         _FakePipeline.predict_quantiles = _pq
         try:
-            res = self.method.forecast(
-                _series(), horizon=5, seasonality=1, params={"quantiles": [0.5]}
-            )
+            res = self.method.forecast(_series(), horizon=5, seasonality=1, params={"quantiles": [0.5]})
             assert len(res.forecast) == 5
             assert res.forecast.tolist() == [0.0, 1.0, 2.0, 2.0, 2.0]
         finally:
@@ -588,7 +498,6 @@ class TestChronosBoltMethod:
 # TimesFMMethod (lines 296-492)
 # ===========================================================================
 
-
 @pytest.mark.usefixtures("_with_torch_stubs")
 class TestTimesFMMethod:
     def setup_method(self):
@@ -607,67 +516,45 @@ class TestTimesFMMethod:
         assert len(res.forecast) == 10
 
     def test_forecast_with_context_length(self):
-        res = self.method.forecast(
-            _series(200), horizon=10, seasonality=1, params={"context_length": 64}
-        )
+        res = self.method.forecast(_series(200), horizon=10, seasonality=1, params={"context_length": 64})
         assert res.forecast is not None
 
     def test_forecast_with_quantiles_dict(self):
         """Quantiles returned as dict from forecast call."""
-
         def _forecast_dict(self_mdl, inputs, horizon):
             return np.ones((1, horizon)), {"0.5": np.ones(horizon)}
-
         orig = _FakeTimesFMTorch.forecast
         _FakeTimesFMTorch.forecast = _forecast_dict
         try:
-            res = self.method.forecast(
-                _series(), horizon=10, seasonality=1, params={"quantiles": [0.5]}
-            )
+            res = self.method.forecast(_series(), horizon=10, seasonality=1, params={"quantiles": [0.5]})
             assert res.forecast is not None
         finally:
             _FakeTimesFMTorch.forecast = orig
 
     def test_forecast_with_quantiles_array(self):
         """Quantiles returned as 3-D array."""
-
         def _forecast_arr(self_mdl, inputs, horizon):
             return np.ones((1, horizon)), np.random.rand(1, horizon, 9)
-
         orig = _FakeTimesFMTorch.forecast
         _FakeTimesFMTorch.forecast = _forecast_arr
         try:
-            res = self.method.forecast(
-                _series(),
-                horizon=10,
-                seasonality=1,
-                params={"quantiles": [0.1, 0.5, 0.9]},
-            )
+            res = self.method.forecast(_series(), horizon=10, seasonality=1, params={"quantiles": [0.1, 0.5, 0.9]})
             assert res.forecast is not None
         finally:
             _FakeTimesFMTorch.forecast = orig
 
     def test_forecast_model_class_override(self):
-        res = self.method.forecast(
-            _series(),
-            horizon=5,
-            seasonality=1,
-            params={"model_class": "TimesFM_2p5_200M_torch"},
-        )
+        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={"model_class": "TimesFM_2p5_200M_torch"})
         assert res.forecast is not None
 
     def test_forecast_config_kwargs(self):
-        res = self.method.forecast(
-            _series(), horizon=10, seasonality=1, params={"context_length": 128}
-        )
+        res = self.method.forecast(_series(), horizon=10, seasonality=1, params={"context_length": 128})
         assert res.forecast is not None
 
     def test_forecast_none_point_raises(self):
         """When forecast returns None point forecast, RuntimeError raised."""
-
         def _forecast_none(self_mdl, inputs, horizon):
             return None, None
-
         orig = _FakeTimesFMTorch.forecast
         _FakeTimesFMTorch.forecast = _forecast_none
         try:
@@ -678,10 +565,8 @@ class TestTimesFMMethod:
 
     def test_forecast_2d_point(self):
         """2-D point forecast array handled correctly."""
-
         def _forecast_2d(self_mdl, inputs, horizon):
             return np.ones((1, horizon)) * 42, None
-
         orig = _FakeTimesFMTorch.forecast
         _FakeTimesFMTorch.forecast = _forecast_2d
         try:
@@ -737,11 +622,9 @@ class TestTimesFMMethod:
     def test_forecast_call_signature_fallbacks(self):
         """_call_forecast tries multiple signatures."""
         call_count = [0]
-
         def _tricky_forecast(self_mdl, inputs, horizon):
             call_count[0] += 1
             return np.ones(horizon), None
-
         orig = _FakeTimesFMTorch.forecast
         _FakeTimesFMTorch.forecast = _tricky_forecast
         try:
@@ -752,15 +635,11 @@ class TestTimesFMMethod:
 
     def test_forecast_returns_dict(self):
         """Model forecast returns dict instead of tuple."""
-
         def _forecast_dict(self_mdl, inputs, horizon):
             return {"point_forecast": np.ones(horizon), "quantiles": None}
-
         # The internal _call_forecast tries tuple, then dict, then raw
         orig = _FakeTimesFMTorch.forecast
-        _FakeTimesFMTorch.forecast = lambda self, **kw: {
-            "point_forecast": np.ones(kw.get("horizon", 5))
-        }
+        _FakeTimesFMTorch.forecast = lambda self, **kw: {"point_forecast": np.ones(kw.get("horizon", 5))}
         try:
             res = self.method.forecast(_series(), horizon=5, seasonality=1, params={})
             assert res.forecast is not None
@@ -771,7 +650,6 @@ class TestTimesFMMethod:
 # ===========================================================================
 # LagLlamaMethod (lines 525-702)
 # ===========================================================================
-
 
 @pytest.mark.usefixtures("_with_torch_stubs")
 class TestLagLlamaMethod:
@@ -787,9 +665,7 @@ class TestLagLlamaMethod:
         assert "gluonts" in pkgs
 
     def test_forecast_with_ckpt(self):
-        res = self.method.forecast(
-            _series(), horizon=10, seasonality=1, params={"ckpt_path": "/tmp/fake.ckpt"}
-        )
+        res = self.method.forecast(_series(), horizon=10, seasonality=1, params={"ckpt_path": "/tmp/fake.ckpt"})
         assert isinstance(res, ForecastResult)
         assert res.forecast is not None
 
@@ -799,110 +675,65 @@ class TestLagLlamaMethod:
         assert res.forecast is not None
 
     def test_forecast_custom_hf_repo(self):
-        res = self.method.forecast(
-            _series(),
-            horizon=5,
-            seasonality=1,
-            params={
-                "hf_repo": "my-org/my-model",
-                "hf_filename": "model.ckpt",
-            },
-        )
+        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={
+            "hf_repo": "my-org/my-model",
+            "hf_filename": "model.ckpt",
+        })
         assert res.forecast is not None
 
     def test_forecast_with_quantiles(self):
-        res = self.method.forecast(
-            _series(),
-            horizon=10,
-            seasonality=1,
-            params={
-                "ckpt_path": "/tmp/fake.ckpt",
-                "quantiles": [0.1, 0.5, 0.9],
-            },
-        )
+        res = self.method.forecast(_series(), horizon=10, seasonality=1, params={
+            "ckpt_path": "/tmp/fake.ckpt",
+            "quantiles": [0.1, 0.5, 0.9],
+        })
         assert "quantiles" in res.metadata
 
     def test_forecast_context_length(self):
-        res = self.method.forecast(
-            _series(200),
-            horizon=10,
-            seasonality=1,
-            params={
-                "ckpt_path": "/tmp/fake.ckpt",
-                "context_length": 32,
-            },
-        )
+        res = self.method.forecast(_series(200), horizon=10, seasonality=1, params={
+            "ckpt_path": "/tmp/fake.ckpt",
+            "context_length": 32,
+        })
         assert res.params_used["context_length"] == 32
 
     def test_forecast_num_samples(self):
-        res = self.method.forecast(
-            _series(),
-            horizon=5,
-            seasonality=1,
-            params={
-                "ckpt_path": "/tmp/fake.ckpt",
-                "num_samples": 50,
-            },
-        )
+        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={
+            "ckpt_path": "/tmp/fake.ckpt",
+            "num_samples": 50,
+        })
         assert res.params_used["num_samples"] == 50
 
     def test_forecast_rope_scaling(self):
-        res = self.method.forecast(
-            _series(),
-            horizon=10,
-            seasonality=1,
-            params={
-                "ckpt_path": "/tmp/fake.ckpt",
-                "use_rope_scaling": True,
-                "context_length": 64,
-            },
-        )
+        res = self.method.forecast(_series(), horizon=10, seasonality=1, params={
+            "ckpt_path": "/tmp/fake.ckpt",
+            "use_rope_scaling": True,
+            "context_length": 64,
+        })
         assert res.params_used["use_rope_scaling"] is True
 
     def test_forecast_device_explicit(self):
-        res = self.method.forecast(
-            _series(),
-            horizon=5,
-            seasonality=1,
-            params={
-                "ckpt_path": "/tmp/fake.ckpt",
-                "device": "cpu",
-            },
-        )
+        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={
+            "ckpt_path": "/tmp/fake.ckpt",
+            "device": "cpu",
+        })
         assert "cpu" in str(res.params_used["device"])
 
     def test_forecast_freq(self):
-        res = self.method.forecast(
-            _series(),
-            horizon=5,
-            seasonality=1,
-            params={
-                "ckpt_path": "/tmp/fake.ckpt",
-                "freq": "D",
-            },
-        )
+        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={
+            "ckpt_path": "/tmp/fake.ckpt",
+            "freq": "D",
+        })
         assert res.params_used["freq"] == "D"
 
     def test_checkpoint_alias(self):
-        res = self.method.forecast(
-            _series(),
-            horizon=5,
-            seasonality=1,
-            params={
-                "checkpoint": "/tmp/fake.ckpt",
-            },
-        )
+        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={
+            "checkpoint": "/tmp/fake.ckpt",
+        })
         assert res.forecast is not None
 
     def test_model_path_alias(self):
-        res = self.method.forecast(
-            _series(),
-            horizon=5,
-            seasonality=1,
-            params={
-                "model_path": "/tmp/fake.ckpt",
-            },
-        )
+        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={
+            "model_path": "/tmp/fake.ckpt",
+        })
         assert res.forecast is not None
 
     def test_hf_download_failure(self):
@@ -916,33 +747,18 @@ class TestLagLlamaMethod:
             _hf_hub.hf_hub_download.return_value = "/tmp/fake.ckpt"
 
     def test_short_series_context(self):
-        res = self.method.forecast(
-            _series(5),
-            horizon=3,
-            seasonality=1,
-            params={"ckpt_path": "/tmp/fake.ckpt", "context_length": 100},
-        )
+        res = self.method.forecast(_series(5), horizon=3, seasonality=1, params={"ckpt_path": "/tmp/fake.ckpt", "context_length": 100})
         assert res.forecast is not None
 
     def test_zero_context_uses_full(self):
-        res = self.method.forecast(
-            _series(20),
-            horizon=5,
-            seasonality=1,
-            params={"ckpt_path": "/tmp/fake.ckpt", "context_length": 0},
-        )
+        res = self.method.forecast(_series(20), horizon=5, seasonality=1, params={"ckpt_path": "/tmp/fake.ckpt", "context_length": 0})
         assert res.forecast is not None
 
     def test_quantiles_params_used(self):
-        res = self.method.forecast(
-            _series(),
-            horizon=5,
-            seasonality=1,
-            params={
-                "ckpt_path": "/tmp/fake.ckpt",
-                "quantiles": [0.25, 0.75],
-            },
-        )
+        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={
+            "ckpt_path": "/tmp/fake.ckpt",
+            "quantiles": [0.25, 0.75],
+        })
         assert "quantiles" in res.params_used
 
 
@@ -950,13 +766,10 @@ class TestLagLlamaMethod:
 # Backward-compatibility wrapper functions
 # ===========================================================================
 
-
 @pytest.mark.usefixtures("_with_torch_stubs")
 class TestBackwardCompatWrappers:
     def test_forecast_chronos_bolt_success(self):
-        f_vals, fq, pu, err = forecast_chronos_bolt(
-            series=np.random.rand(100), fh=10, params={}, n=100
-        )
+        f_vals, fq, pu, err = forecast_chronos_bolt(series=np.random.rand(100), fh=10, params={}, n=100)
         assert err is None or f_vals is not None  # may succeed
 
     def test_forecast_chronos_bolt_error(self):
@@ -964,24 +777,15 @@ class TestBackwardCompatWrappers:
         saved = sys.modules.get("chronos")
         sys.modules["chronos"] = None
         try:
-            f_vals, fq, pu, err = forecast_chronos_bolt(
-                series=np.random.rand(50), fh=5, params={}, n=50
-            )
+            f_vals, fq, pu, err = forecast_chronos_bolt(series=np.random.rand(50), fh=5, params={}, n=50)
             assert err is not None or f_vals is not None
         finally:
             sys.modules["chronos"] = saved
 
     def test_forecast_timesfm_success(self):
-        f_vals, fq, pu, err = forecast_timesfm(
-            series=np.random.rand(100), fh=10, params={}, n=100
-        )
+        f_vals, fq, pu, err = forecast_timesfm(series=np.random.rand(100), fh=10, params={}, n=100)
         assert f_vals is not None or err is not None
 
     def test_forecast_lag_llama_success(self):
-        f_vals, fq, pu, err = forecast_lag_llama(
-            series=np.random.rand(100),
-            fh=10,
-            params={"ckpt_path": "/tmp/fake.ckpt"},
-            n=100,
-        )
+        f_vals, fq, pu, err = forecast_lag_llama(series=np.random.rand(100), fh=10, params={"ckpt_path": "/tmp/fake.ckpt"}, n=100)
         assert f_vals is not None or err is not None

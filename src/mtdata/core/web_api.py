@@ -60,13 +60,7 @@ logger = logging.getLogger(__name__)
 _bearer_auth = HTTPBearer(auto_error=False)
 
 
-def _raise_auth_error(
-    status_code: int,
-    message: str,
-    *,
-    code: str,
-    headers: Optional[Dict[str, str]] = None,
-) -> None:
+def _raise_auth_error(status_code: int, message: str, *, code: str, headers: Optional[Dict[str, str]] = None) -> None:
     payload = build_http_error_detail(message, code=code, operation="web_api_auth")
     logger.warning(
         "transport=web_api operation=%s request_id=%s status=%s error=%s",
@@ -119,7 +113,6 @@ def _require_api_access(
         code="web_api_remote_forbidden",
     )
 
-
 app = create_web_api_app()
 api_router = APIRouter(dependencies=[Depends(_require_api_access)])
 
@@ -162,9 +155,7 @@ def get_timeframes() -> Dict[str, Any]:
 
 
 @api_router.get("/instruments")
-def get_instruments(
-    search: Optional[str] = Query(None), limit: Optional[int] = Query(None, ge=1)
-) -> Dict[str, Any]:
+def get_instruments(search: Optional[str] = Query(None), limit: Optional[int] = Query(None, ge=1)) -> Dict[str, Any]:
     return _get_instruments_response(
         search=search,
         limit=limit,
@@ -211,15 +202,9 @@ def get_history(
     start: Optional[str] = Query(None),
     end: Optional[str] = Query(None),
     ohlcv: Optional[str] = Query("ohlc"),
-    include_incomplete: bool = Query(
-        False, description="Include the latest forming candle."
-    ),
-    denoise_method: Optional[str] = Query(
-        None, description="Denoise method name; if set, returns extra *_dn columns."
-    ),
-    denoise_params: Optional[str] = Query(
-        None, description="JSON or k=v list of denoise params."
-    ),
+    include_incomplete: bool = Query(False, description="Include the latest forming candle."),
+    denoise_method: Optional[str] = Query(None, description="Denoise method name; if set, returns extra *_dn columns."),
+    denoise_params: Optional[str] = Query(None, description="JSON or k=v list of denoise params."),
 ) -> Dict[str, Any]:
     return _get_history_response(
         symbol=symbol,
@@ -284,23 +269,17 @@ def get_tick(symbol: str = Query(...)) -> Dict[str, Any]:
 
 @api_router.post("/forecast/price")
 def post_forecast_price(body: ForecastPriceBody) -> Dict[str, Any]:
-    return _post_forecast_price_response(
-        body=body, forecast_generate_use_case=_run_forecast_generate_impl
-    )
+    return _post_forecast_price_response(body=body, forecast_generate_use_case=_run_forecast_generate_impl)
 
 
 @api_router.post("/forecast/volatility")
 def post_forecast_volatility(body: ForecastVolBody) -> Dict[str, Any]:
-    return _post_forecast_volatility_response(
-        body=body, forecast_vol_impl=_forecast_vol_impl
-    )
+    return _post_forecast_volatility_response(body=body, forecast_vol_impl=_forecast_vol_impl)
 
 
 @api_router.post("/backtest")
 def post_backtest(body: BacktestBody) -> Dict[str, Any]:
-    return _post_backtest_response(
-        body=body, backtest_use_case=_run_forecast_backtest_impl
-    )
+    return _post_backtest_response(body=body, backtest_use_case=_run_forecast_backtest_impl)
 
 
 @api_router.get("/health")

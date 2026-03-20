@@ -11,11 +11,7 @@ def test_ensemble_bma_weights_remain_non_degenerate():
     method = em.EnsembleMethod()
 
     def dispatch(method_name, series_in, horizon, seasonality, params):
-        return (
-            np.array([1.0, 2.0], dtype=float)
-            if method_name == "naive"
-            else np.array([1.1, 2.1], dtype=float)
-        )
+        return np.array([1.0, 2.0], dtype=float) if method_name == "naive" else np.array([1.1, 2.1], dtype=float)
 
     def prepare_cv(*args, **kwargs):
         X_cv = np.array(
@@ -52,11 +48,7 @@ def test_ensemble_reports_component_failures():
     class Dispatch:
         def __call__(self, method_name, series_in, horizon, seasonality, params):
             if method_name == "bad":
-                self._last_error = {
-                    "method": "bad",
-                    "error": "boom",
-                    "error_type": "RuntimeError",
-                }
+                self._last_error = {"method": "bad", "error": "boom", "error_type": "RuntimeError"}
                 return None
             self._last_error = None
             return np.array([5.0, 6.0], dtype=float)

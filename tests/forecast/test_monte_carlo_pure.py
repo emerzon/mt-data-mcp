@@ -1,5 +1,4 @@
 """Tests for forecast/monte_carlo.py — pure NumPy simulation functions."""
-
 import numpy as np
 import pytest
 import warnings
@@ -29,12 +28,10 @@ class TestNormalizeProbabilityVector:
 
     def test_all_zero(self):
         result = _normalize_probability_vector(np.array([0.0, 0.0, 0.0]))
-        np.testing.assert_allclose(result, [1 / 3, 1 / 3, 1 / 3])
+        np.testing.assert_allclose(result, [1/3, 1/3, 1/3])
 
     def test_all_zero_with_fallback(self):
-        result = _normalize_probability_vector(
-            np.array([0.0, 0.0, 0.0]), fallback_index=1
-        )
+        result = _normalize_probability_vector(np.array([0.0, 0.0, 0.0]), fallback_index=1)
         np.testing.assert_allclose(result, [0.0, 1.0, 0.0])
 
     def test_negative_clipped(self):
@@ -111,23 +108,11 @@ class TestFitGaussianMixture1d:
         from sklearn.exceptions import ConvergenceWarning
 
         class DummyGaussianMixture:
-            def __init__(
-                self,
-                n_components,
-                covariance_type,
-                reg_covar,
-                max_iter,
-                tol,
-                n_init,
-                random_state,
-            ):
+            def __init__(self, n_components, covariance_type, reg_covar, max_iter, tol, n_init, random_state):
                 self.n_components = int(n_components)
 
             def fit(self, x):
-                warnings.warn(
-                    "Best performing initialization did not converge.",
-                    ConvergenceWarning,
-                )
+                warnings.warn("Best performing initialization did not converge.", ConvergenceWarning)
                 return self
 
             def predict_proba(self, x):
@@ -153,9 +138,7 @@ class TestFitGaussianMixture1d:
             def score(self, x):
                 return -0.5
 
-        monkeypatch.setattr(
-            "mtdata.forecast.monte_carlo.GaussianMixture", DummyGaussianMixture
-        )
+        monkeypatch.setattr("mtdata.forecast.monte_carlo.GaussianMixture", DummyGaussianMixture)
 
         with warnings.catch_warnings(record=True) as records:
             warnings.simplefilter("always")
@@ -253,15 +236,8 @@ class TestSimulateHestonMc:
 
     def test_custom_params(self):
         result = simulate_heston_mc(
-            self._prices(),
-            horizon=5,
-            n_sims=10,
-            seed=1,
-            kappa=3.0,
-            theta=0.02,
-            xi=0.3,
-            rho=-0.5,
-            v0=0.01,
+            self._prices(), horizon=5, n_sims=10, seed=1,
+            kappa=3.0, theta=0.02, xi=0.3, rho=-0.5, v0=0.01,
         )
         assert result["params"]["kappa"] == 3.0
         assert result["params"]["rho"] == -0.5
@@ -277,21 +253,14 @@ class TestSimulateJumpDiffusionMc:
         return 100.0 * np.exp(np.cumsum(rng.normal(0, 0.01, n)))
 
     def test_output_shape(self):
-        result = simulate_jump_diffusion_mc(
-            self._prices(), horizon=10, n_sims=20, seed=1
-        )
+        result = simulate_jump_diffusion_mc(self._prices(), horizon=10, n_sims=20, seed=1)
         assert result["price_paths"].shape == (20, 10)
         assert "params" in result
 
     def test_custom_jump_params(self):
         result = simulate_jump_diffusion_mc(
-            self._prices(),
-            horizon=5,
-            n_sims=10,
-            seed=1,
-            jump_lambda=0.1,
-            jump_mu=-0.02,
-            jump_sigma=0.05,
+            self._prices(), horizon=5, n_sims=10, seed=1,
+            jump_lambda=0.1, jump_mu=-0.02, jump_sigma=0.05,
         )
         assert result["params"]["jump_lambda"] == 0.1
 
@@ -326,9 +295,7 @@ class TestSimulateBootstrapMc:
         assert "block_size" in result
 
     def test_custom_block_size(self):
-        result = simulate_bootstrap_mc(
-            self._prices(), horizon=5, n_sims=10, seed=1, block_size=5
-        )
+        result = simulate_bootstrap_mc(self._prices(), horizon=5, n_sims=10, seed=1, block_size=5)
         assert int(result["block_size"]) == 5
 
     def test_short_bootstrap_generator_backfills_from_real_samples(self, monkeypatch):
@@ -340,14 +307,9 @@ class TestSimulateBootstrapMc:
                 for _ in range(2):
                     yield ((self._rets[:3],),)
 
-        monkeypatch.setattr(
-            "mtdata.forecast.monte_carlo._load_circular_block_bootstrap",
-            lambda: _ShortBootstrap,
-        )
+        monkeypatch.setattr("mtdata.forecast.monte_carlo._load_circular_block_bootstrap", lambda: _ShortBootstrap)
 
-        result = simulate_bootstrap_mc(
-            self._prices(), horizon=4, n_sims=5, seed=7, block_size=3
-        )
+        result = simulate_bootstrap_mc(self._prices(), horizon=4, n_sims=5, seed=7, block_size=3)
 
         assert result["return_paths"].shape == (5, 4)
         assert not np.allclose(result["return_paths"][2:], 0.0)
@@ -402,9 +364,7 @@ class TestGbmBarrierUpcrossProb:
     def test_invalid_inputs(self):
         assert gbm_single_barrier_upcross_prob(0.0, 100.0, 0.05, 0.2, 1.0) == 0.0
         assert gbm_single_barrier_upcross_prob(100.0, 110.0, 0.05, 0.2, 0.0) == 0.0
-        assert (
-            gbm_single_barrier_upcross_prob(float("nan"), 110.0, 0.05, 0.2, 1.0) == 0.0
-        )
+        assert gbm_single_barrier_upcross_prob(float("nan"), 110.0, 0.05, 0.2, 1.0) == 0.0
 
     def test_reasonable_prob(self):
         p = gbm_single_barrier_upcross_prob(100.0, 110.0, 0.05, 0.2, 1.0)

@@ -1,5 +1,4 @@
 """Extended coverage tests for patterns/elliott.py targeting uncovered lines."""
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -15,6 +14,8 @@ from mtdata.patterns.elliott import (
     _normalize_pattern_types,
     _zigzag_pivots_indices,
     _enforce_min_distance_on_pivots,
+    _segment_waves_from_pivots,
+    _extract_wave_features,
     _classify_waves,
     _window_hit,
     _evaluate_impulse_rules,
@@ -32,7 +33,6 @@ from mtdata.patterns.elliott import (
 # ---------------------------------------------------------------------------
 def _trending_close(n=200, seed=42):
     """Generate a zig-zag close array suitable for wave detection."""
-# ruff: noqa: E402, E731, E741, F811, F841
     rng = np.random.RandomState(seed)
     base = np.cumsum(rng.randn(n) * 0.5) + 100.0
     return np.maximum(base, 10.0)
@@ -52,11 +52,10 @@ def _make_df(close, n=None):
     if n is None:
         n = len(close)
     t = np.arange(n, dtype=float) * 3600 + 1_700_000_000
-    return pd.DataFrame({"time": t[: len(close)], "close": close})
+    return pd.DataFrame({"time": t[:len(close)], "close": close})
 
 
 # ===== _zigzag_pivots_indices (lines 124-139) ==============================
-
 
 class TestZigzagPivotsExtended:
     def test_empty_array(self):
@@ -124,7 +123,6 @@ class TestZigzagPivotsExtended:
 
 # ===== _enforce_min_distance_on_pivots (lines 218-225) =====================
 
-
 class TestEnforceMinDistanceExtended:
     def test_empty(self):
         assert _enforce_min_distance_on_pivots([], np.array([1.0]), 3) == []
@@ -160,7 +158,6 @@ class TestEnforceMinDistanceExtended:
 
 # ===== _classify_waves (lines 280-284) =====================================
 
-
 class TestClassifyWaves:
     def test_too_few_features(self):
         features = np.array([[1.0, 0.1, 0.01]])
@@ -193,15 +190,11 @@ class TestClassifyWaves:
     def test_enough_features(self):
         """Lines 280-284: successful GMM classification."""
         rng = np.random.RandomState(42)
-        features = np.vstack(
-            [
-                rng.randn(10, 3) * [5, 0.02, 0.01],
-                rng.randn(10, 3) * [3, 0.05, 0.02] + [0, 0.1, 0.05],
-            ]
-        )
-        labels, gmm, scaler, probs, imp_cluster = _classify_waves(
-            features, ElliottWaveConfig()
-        )
+        features = np.vstack([
+            rng.randn(10, 3) * [5, 0.02, 0.01],
+            rng.randn(10, 3) * [3, 0.05, 0.02] + [0, 0.1, 0.05],
+        ])
+        labels, gmm, scaler, probs, imp_cluster = _classify_waves(features, ElliottWaveConfig())
         assert labels.shape[0] == 20
         assert gmm is not None
         assert probs is not None
@@ -215,7 +208,6 @@ class TestClassifyWaves:
 
 
 # ===== _classification_score_window (lines 422-440) ========================
-
 
 class TestClassificationScoreWindow:
     def test_none_probs(self):
@@ -239,18 +231,14 @@ class TestClassificationScoreWindow:
         rng = np.random.RandomState(0)
         probs = rng.rand(20, 2)
         means = np.array([[0.1, 0.5, 0.1], [-0.1, -0.3, 0.0]])
-        score = _classification_score_window(
-            probs, means, 0, True, 5, [0, 2, 4], [1, 3]
-        )
+        score = _classification_score_window(probs, means, 0, True, 5, [0, 2, 4], [1, 3])
         assert 0.0 <= score <= 1.0
 
     def test_valid_bearish(self):
         rng = np.random.RandomState(0)
         probs = rng.rand(20, 2)
         means = np.array([[0.1, 0.5, 0.1], [-0.1, -0.3, 0.0]])
-        score = _classification_score_window(
-            probs, means, 0, False, 5, [0, 2, 4], [1, 3]
-        )
+        score = _classification_score_window(probs, means, 0, False, 5, [0, 2, 4], [1, 3])
         assert 0.0 <= score <= 1.0
 
     def test_empty_slots(self):
@@ -284,7 +272,6 @@ class TestClassificationScoreWindow:
 
 
 # ===== _evaluate_impulse_rules and _evaluate_correction_rules ==============
-
 
 class TestEvaluateImpulseRules:
     def test_valid_bullish(self):
@@ -360,9 +347,7 @@ class TestEvaluateCorrectionRules:
         assert "alternation_failed" not in ev.violations
 
     def test_wrong_count(self):
-        ev = _evaluate_correction_rules(
-            np.array([1, 2, 3], dtype=float), [0, 1, 2], True
-        )
+        ev = _evaluate_correction_rules(np.array([1, 2, 3], dtype=float), [0, 1, 2], True)
         assert "pivot_count_not_4" in ev.violations
 
     def test_waveB_over_retrace_bullish(self):
@@ -397,15 +382,9 @@ class TestResultSortKey:
             details={},
         )
         results = [
-            ElliottWaveResult(
-                wave_type="Impulse", wave_sequence=[2, 4, 6, 8, 10, 12], **shared
-            ),
-            ElliottWaveResult(
-                wave_type="Correction", wave_sequence=[1, 3, 5, 10], **shared
-            ),
-            ElliottWaveResult(
-                wave_type="Impulse", wave_sequence=[1, 3, 5, 7, 9, 10], **shared
-            ),
+            ElliottWaveResult(wave_type="Impulse", wave_sequence=[2, 4, 6, 8, 10, 12], **shared),
+            ElliottWaveResult(wave_type="Correction", wave_sequence=[1, 3, 5, 10], **shared),
+            ElliottWaveResult(wave_type="Impulse", wave_sequence=[1, 3, 5, 7, 9, 10], **shared),
         ]
 
         ordered = sorted(results, key=_result_sort_key)
@@ -510,7 +489,6 @@ class TestResultSortKey:
 
 # ===== ElliottWaveAnalyzer.build_result (lines 576-577) ====================
 
-
 class TestBuildResult:
     def test_correction_labels(self):
         """Lines 567-568: correction → S, A, B, C labels."""
@@ -519,13 +497,8 @@ class TestBuildResult:
         analyzer = ElliottWaveAnalyzer(c, t, ElliottWaveConfig())
         rule_eval = _evaluate_correction_rules(c, [0, 1, 2, 3], bullish=True)
         scenario = ElliottScenario(
-            pivots=[0, 1, 2, 3],
-            bullish=True,
-            confidence=0.5,
-            cls_score=0.5,
-            rule_eval=rule_eval,
-            threshold_used=1.0,
-            min_distance_used=1,
+            pivots=[0, 1, 2, 3], bullish=True, confidence=0.5, cls_score=0.5,
+            rule_eval=rule_eval, threshold_used=1.0, min_distance_used=1,
             wave_type="Correction",
         )
         result = analyzer.build_result(scenario)
@@ -543,13 +516,8 @@ class TestBuildResult:
         analyzer = ElliottWaveAnalyzer(c, t, ElliottWaveConfig())
         rule_eval = _evaluate_impulse_rules(c, [0, 1, 2, 3, 4, 5], bullish=True)
         scenario = ElliottScenario(
-            pivots=[0, 1, 2, 3, 4, 5],
-            bullish=True,
-            confidence=0.7,
-            cls_score=0.6,
-            rule_eval=rule_eval,
-            threshold_used=1.0,
-            min_distance_used=1,
+            pivots=[0, 1, 2, 3, 4, 5], bullish=True, confidence=0.7, cls_score=0.6,
+            rule_eval=rule_eval, threshold_used=1.0, min_distance_used=1,
             wave_type="Impulse",
         )
         result = analyzer.build_result(scenario)
@@ -585,9 +553,7 @@ class TestBuildResult:
         assert result.details["pattern_confirmed"] is False
         assert result.details["has_unconfirmed_terminal_pivot"] is True
         assert result.details["base_confidence"] == pytest.approx(0.92)
-        assert result.details["confidence_adjustments"][
-            "unconfirmed_pattern_penalty"
-        ] == pytest.approx(0.12)
+        assert result.details["confidence_adjustments"]["unconfirmed_pattern_penalty"] == pytest.approx(0.12)
         assert result.details["wave_points_labeled"][-1]["is_confirmed"] is False
 
     def test_fallback_result_exposes_validated_wave_type(self):
@@ -632,22 +598,15 @@ class TestBuildResult:
         result = analyzer.build_result(scenario)
 
         assert "wave5_targets" in result.details
-        assert (
-            result.details["wave5_targets"]["zone_high"]
-            >= result.details["wave5_targets"]["zone_low"]
-        )
-        assert result.details["wave5_targets"]["equal_wave1"] == pytest.approx(
-            rule_eval.metrics["wave5_target_equal_wave1"]
-        )
+        assert result.details["wave5_targets"]["zone_high"] >= result.details["wave5_targets"]["zone_low"]
+        assert result.details["wave5_targets"]["equal_wave1"] == pytest.approx(rule_eval.metrics["wave5_target_equal_wave1"])
 
     def test_impulse_result_can_use_wick_aware_pivot_prices(self):
         c = _impulse_close()
         h = np.array([101.0, 123.0, 110.0, 155.0, 136.0, 165.0], dtype=float)
         l = np.array([97.0, 118.0, 105.0, 149.0, 130.0, 159.0], dtype=float)
         t = np.arange(6, dtype=float) * 3600 + 1_700_000_000
-        analyzer = ElliottWaveAnalyzer(
-            c, t, ElliottWaveConfig(pivot_price_source="hybrid"), high=h, low=l
-        )
+        analyzer = ElliottWaveAnalyzer(c, t, ElliottWaveConfig(pivot_price_source="hybrid"), high=h, low=l)
         rule_eval = _evaluate_impulse_rules(c, [0, 1, 2, 3, 4, 5], bullish=True)
         scenario = ElliottScenario(
             pivots=[0, 1, 2, 3, 4, 5],
@@ -664,9 +623,7 @@ class TestBuildResult:
 
         expected_prices = [97.0, 123.0, 105.0, 155.0, 130.0, 165.0]
         assert result.details["wave_points"] == pytest.approx(expected_prices)
-        assert [
-            point["price"] for point in result.details["wave_points_labeled"]
-        ] == pytest.approx(expected_prices)
+        assert [point["price"] for point in result.details["wave_points_labeled"]] == pytest.approx(expected_prices)
         assert result.details["invalidation_level"] == pytest.approx(97.0)
         assert result.details["pivot_price_source"] == "hybrid"
         assert result.details["rule_price_source"] == "close"
@@ -675,7 +632,6 @@ class TestBuildResult:
 
 
 # ===== ElliottWaveAnalyzer.build_fallback (lines 623-651) ==================
-
 
 class TestBuildFallback:
     def test_disabled_fallback(self):
@@ -707,8 +663,7 @@ class TestBuildFallback:
     def test_fallback_correction_only(self):
         """Line 637: correction-only pattern_types → preferred_len=4."""
         cfg = ElliottWaveConfig(
-            include_fallback_candidate=True,
-            min_distance=1,
+            include_fallback_candidate=True, min_distance=1,
             pattern_types=["correction"],
         )
         close = _trending_close(60, seed=20)
@@ -718,25 +673,13 @@ class TestBuildFallback:
         assert result is None or isinstance(result, ElliottWaveResult)
 
     def test_fallback_marks_synthetic_terminal_pivot(self, monkeypatch):
-        cfg = ElliottWaveConfig(
-            include_fallback_candidate=True,
-            min_distance=1,
-            pattern_types=["correction"],
-        )
+        cfg = ElliottWaveConfig(include_fallback_candidate=True, min_distance=1, pattern_types=["correction"])
         close = _trending_close(20, seed=21)
         t = np.arange(20, dtype=float) * 3600 + 1_700_000_000
         analyzer = ElliottWaveAnalyzer(close, t, cfg)
 
-        monkeypatch.setattr(
-            elliott_mod,
-            "_zigzag_pivots_indices",
-            lambda *_args, **_kwargs: ([0, 4, 8], ["up", "down", "up"]),
-        )
-        monkeypatch.setattr(
-            elliott_mod,
-            "_enforce_min_distance_on_pivots",
-            lambda pivots, *_args, **_kwargs: list(pivots),
-        )
+        monkeypatch.setattr(elliott_mod, "_zigzag_pivots_indices", lambda *_args, **_kwargs: ([0, 4, 8], ["up", "down", "up"]))
+        monkeypatch.setattr(elliott_mod, "_enforce_min_distance_on_pivots", lambda pivots, *_args, **_kwargs: list(pivots))
 
         result = analyzer.build_fallback(0.5, 1)
 
@@ -746,7 +689,6 @@ class TestBuildFallback:
 
 
 # ===== detect_elliott_waves (lines 672-728, 747-751) =======================
-
 
 class TestDetectElliottWaves:
     def test_none_config(self):
@@ -780,10 +722,8 @@ class TestDetectElliottWaves:
         close = _trending_close(200, seed=6)
         df = _make_df(close)
         cfg = ElliottWaveConfig(
-            autotune=True,
-            tune_thresholds=[0.5, 1.0],
-            tune_min_distance=[2, 4],
-            min_confidence=0.0,
+            autotune=True, tune_thresholds=[0.5, 1.0],
+            tune_min_distance=[2, 4], min_confidence=0.0,
         )
         results = detect_elliott_waves(df, cfg)
         assert isinstance(results, list)
@@ -807,21 +747,14 @@ class TestDetectElliottWaves:
         """Line 754-756."""
         close = _trending_close(200, seed=9)
         df = _make_df(close)
-        cfg = ElliottWaveConfig(
-            autotune=True, min_distance=2, min_confidence=0.0, top_k=2
-        )
+        cfg = ElliottWaveConfig(autotune=True, min_distance=2, min_confidence=0.0, top_k=2)
         results = detect_elliott_waves(df, cfg)
         assert len(results) <= 2
 
     def test_correction_only(self):
         close = _trending_close(200, seed=11)
         df = _make_df(close)
-        cfg = ElliottWaveConfig(
-            autotune=True,
-            min_distance=2,
-            pattern_types=["correction"],
-            min_confidence=0.0,
-        )
+        cfg = ElliottWaveConfig(autotune=True, min_distance=2, pattern_types=["correction"], min_confidence=0.0)
         results = detect_elliott_waves(df, cfg)
         assert all(r.wave_type in ("Correction", "Candidate") for r in results)
 
@@ -830,10 +763,8 @@ class TestDetectElliottWaves:
         close = _trending_close(200, seed=12)
         df = _make_df(close)
         cfg = ElliottWaveConfig(
-            autotune=True,
-            tune_thresholds=[0.3, 0.5, 0.7],
-            tune_min_distance=[2, 3],
-            min_confidence=0.0,
+            autotune=True, tune_thresholds=[0.3, 0.5, 0.7],
+            tune_min_distance=[2, 3], min_confidence=0.0,
         )
         results = detect_elliott_waves(df, cfg)
         keys = [(r.wave_type, tuple(r.wave_sequence)) for r in results]
@@ -843,19 +774,14 @@ class TestDetectElliottWaves:
         """Lines 738-745: fallback candidate appended."""
         rng = np.random.RandomState(55)
         # Build data where waves end early, leaving tail without recent detection
-        close = np.concatenate(
-            [
-                _trending_close(50, seed=55),
-                np.full(50, 100.0) + rng.randn(50) * 0.01,
-            ]
-        )
+        close = np.concatenate([
+            _trending_close(50, seed=55),
+            np.full(50, 100.0) + rng.randn(50) * 0.01,
+        ])
         df = _make_df(close)
         cfg = ElliottWaveConfig(
-            autotune=True,
-            min_distance=2,
-            min_confidence=0.0,
-            include_fallback_candidate=True,
-            recent_bars=3,
+            autotune=True, min_distance=2, min_confidence=0.0,
+            include_fallback_candidate=True, recent_bars=3,
         )
         results = detect_elliott_waves(df, cfg)
         assert isinstance(results, list)
@@ -874,14 +800,7 @@ class TestDetectElliottWaves:
         monkeypatch.setattr(
             elliott_mod,
             "_pivot_signature_for_settings",
-            lambda _close, threshold_pct, _min_distance: (
-                0,
-                10,
-                20,
-                30,
-                40,
-                int(float(threshold_pct) * 100),
-            ),
+            lambda _close, threshold_pct, _min_distance: (0, 10, 20, 30, 40, int(float(threshold_pct) * 100)),
         )
 
         def _fake_analyze(self, threshold_pct, min_distance):
@@ -892,18 +811,14 @@ class TestDetectElliottWaves:
                     bullish=True,
                     confidence=float(threshold_pct),
                     cls_score=0.5,
-                    rule_eval=ElliottRuleEvaluation(
-                        valid=True, fib_score=0.5, metrics={}
-                    ),
+                    rule_eval=ElliottRuleEvaluation(valid=True, fib_score=0.5, metrics={}),
                     threshold_used=float(threshold_pct),
                     min_distance_used=int(min_distance),
                     wave_type="Correction",
                 )
             ]
 
-        monkeypatch.setattr(
-            elliott_mod.ElliottWaveAnalyzer, "analyze_once", _fake_analyze
-        )
+        monkeypatch.setattr(elliott_mod.ElliottWaveAnalyzer, "analyze_once", _fake_analyze)
 
         results = detect_elliott_waves(df, cfg)
 
@@ -938,18 +853,14 @@ class TestDetectElliottWaves:
                     bullish=True,
                     confidence=0.6,
                     cls_score=0.5,
-                    rule_eval=ElliottRuleEvaluation(
-                        valid=True, fib_score=0.5, metrics={}
-                    ),
+                    rule_eval=ElliottRuleEvaluation(valid=True, fib_score=0.5, metrics={}),
                     threshold_used=float(threshold_pct),
                     min_distance_used=int(min_distance),
                     wave_type="Correction",
                 )
             ]
 
-        monkeypatch.setattr(
-            elliott_mod.ElliottWaveAnalyzer, "analyze_once", _fake_analyze
-        )
+        monkeypatch.setattr(elliott_mod.ElliottWaveAnalyzer, "analyze_once", _fake_analyze)
 
         results = detect_elliott_waves(df, cfg)
 
@@ -973,13 +884,7 @@ class TestDetectElliottWaves:
         monkeypatch.setattr(
             elliott_mod,
             "_pivot_signature_for_settings",
-            lambda _close, threshold_pct, _min_distance: (
-                0,
-                10,
-                20,
-                30,
-                int(float(threshold_pct) * 100),
-            ),
+            lambda _close, threshold_pct, _min_distance: (0, 10, 20, 30, int(float(threshold_pct) * 100)),
         )
 
         def _fake_analyze(self, threshold_pct, min_distance):
@@ -992,18 +897,14 @@ class TestDetectElliottWaves:
                     bullish=True,
                     confidence=0.6,
                     cls_score=0.5,
-                    rule_eval=ElliottRuleEvaluation(
-                        valid=True, fib_score=0.5, metrics={}
-                    ),
+                    rule_eval=ElliottRuleEvaluation(valid=True, fib_score=0.5, metrics={}),
                     threshold_used=float(threshold_pct),
                     min_distance_used=int(min_distance),
                     wave_type="Correction",
                 )
             ]
 
-        monkeypatch.setattr(
-            elliott_mod.ElliottWaveAnalyzer, "analyze_once", _fake_analyze
-        )
+        monkeypatch.setattr(elliott_mod.ElliottWaveAnalyzer, "analyze_once", _fake_analyze)
 
         results = detect_elliott_waves(df, cfg)
 
@@ -1025,14 +926,7 @@ class TestDetectElliottWaves:
         monkeypatch.setattr(
             elliott_mod,
             "_pivot_signature_for_settings",
-            lambda _close, threshold_pct, _min_distance: (
-                0,
-                10,
-                20,
-                30,
-                40,
-                int(float(threshold_pct) * 100),
-            ),
+            lambda _close, threshold_pct, _min_distance: (0, 10, 20, 30, 40, int(float(threshold_pct) * 100)),
         )
 
         def _fake_analyze(self, threshold_pct, min_distance):
@@ -1044,9 +938,7 @@ class TestDetectElliottWaves:
                         bullish=True,
                         confidence=0.6,
                         cls_score=0.5,
-                        rule_eval=ElliottRuleEvaluation(
-                            valid=True, fib_score=0.5, metrics={}
-                        ),
+                        rule_eval=ElliottRuleEvaluation(valid=True, fib_score=0.5, metrics={}),
                         threshold_used=float(threshold_pct),
                         min_distance_used=int(min_distance),
                         wave_type="Correction",
@@ -1058,18 +950,14 @@ class TestDetectElliottWaves:
                     bullish=True,
                     confidence=0.7,
                     cls_score=0.5,
-                    rule_eval=ElliottRuleEvaluation(
-                        valid=True, fib_score=0.5, metrics={}
-                    ),
+                    rule_eval=ElliottRuleEvaluation(valid=True, fib_score=0.5, metrics={}),
                     threshold_used=float(threshold_pct),
                     min_distance_used=int(min_distance),
                     wave_type="Impulse",
                 )
             ]
 
-        monkeypatch.setattr(
-            elliott_mod.ElliottWaveAnalyzer, "analyze_once", _fake_analyze
-        )
+        monkeypatch.setattr(elliott_mod.ElliottWaveAnalyzer, "analyze_once", _fake_analyze)
 
         results = detect_elliott_waves(df, cfg)
 
@@ -1092,15 +980,9 @@ class TestDetectElliottWaves:
             ),
         )
 
-        monkeypatch.setattr(
-            elliott_mod,
-            "_zigzag_pivots_indices",
-            lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5], ["up"] * 6),
-        )
+        monkeypatch.setattr(elliott_mod, "_zigzag_pivots_indices", lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5], ["up"] * 6))
 
-        fake_gmm = type(
-            "FakeGMM", (), {"means_": np.array([[0.0, -0.1, 0.0], [0.0, 0.1, 0.0]])}
-        )()
+        fake_gmm = type("FakeGMM", (), {"means_": np.array([[0.0, -0.1, 0.0], [0.0, 0.1, 0.0]])})()
         monkeypatch.setattr(
             elliott_mod,
             "_classify_waves",
@@ -1118,9 +1000,7 @@ class TestDetectElliottWaves:
         assert any(s.wave_type == "Impulse" for s in scenarios)
         assert not any(s.wave_type == "Correction" for s in scenarios)
 
-    def test_analyze_once_skips_near_matching_correction_subsequence_of_impulse(
-        self, monkeypatch
-    ):
+    def test_analyze_once_skips_near_matching_correction_subsequence_of_impulse(self, monkeypatch):
         close = np.array([100.0, 120.0, 108.0, 150.0, 135.0, 158.0, 160.0], dtype=float)
         t = np.arange(close.size, dtype=float) * 3600 + 1_700_000_000
         analyzer = ElliottWaveAnalyzer(
@@ -1155,9 +1035,7 @@ class TestDetectElliottWaves:
             },
         )
 
-        fake_gmm = type(
-            "FakeGMM", (), {"means_": np.array([[0.0, -0.1, 0.0], [0.0, 0.1, 0.0]])}
-        )()
+        fake_gmm = type("FakeGMM", (), {"means_": np.array([[0.0, -0.1, 0.0], [0.0, 0.1, 0.0]])})()
         monkeypatch.setattr(
             elliott_mod,
             "_classify_waves",
@@ -1175,9 +1053,7 @@ class TestDetectElliottWaves:
         assert any(s.wave_type == "Impulse" for s in scenarios)
         assert not any(s.wave_type == "Correction" for s in scenarios)
 
-    def test_analyze_once_uses_rule_score_when_classification_unavailable(
-        self, monkeypatch
-    ):
+    def test_analyze_once_uses_rule_score_when_classification_unavailable(self, monkeypatch):
         close = _impulse_close()
         t = np.arange(close.size, dtype=float) * 3600 + 1_700_000_000
         analyzer = ElliottWaveAnalyzer(
@@ -1193,11 +1069,7 @@ class TestDetectElliottWaves:
             ),
         )
 
-        monkeypatch.setattr(
-            elliott_mod,
-            "_zigzag_pivots_indices",
-            lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5], ["up"] * 6),
-        )
+        monkeypatch.setattr(elliott_mod, "_zigzag_pivots_indices", lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5], ["up"] * 6))
         monkeypatch.setattr(
             elliott_mod,
             "_classify_waves",
@@ -1214,13 +1086,9 @@ class TestDetectElliottWaves:
             analyzer.config,
         )
         assert scenarios[0].confidence == pytest.approx(expected)
-        assert scenarios[0].base_confidence == pytest.approx(
-            scenarios[0].rule_eval.fib_score
-        )
+        assert scenarios[0].base_confidence == pytest.approx(scenarios[0].rule_eval.fib_score)
         assert scenarios[0].confidence_adjustments == adjustments
-        assert scenarios[0].pivot_confirmations[:-1] == [True] * (
-            len(scenarios[0].pivot_confirmations) - 1
-        )
+        assert scenarios[0].pivot_confirmations[:-1] == [True] * (len(scenarios[0].pivot_confirmations) - 1)
         assert scenarios[0].pivot_confirmations[-1] is False
 
     def test_analyze_once_uses_configured_blend_weights(self, monkeypatch):
@@ -1241,21 +1109,13 @@ class TestDetectElliottWaves:
             ),
         )
 
-        monkeypatch.setattr(
-            elliott_mod,
-            "_zigzag_pivots_indices",
-            lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5], ["up"] * 6),
-        )
+        monkeypatch.setattr(elliott_mod, "_zigzag_pivots_indices", lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5], ["up"] * 6))
         monkeypatch.setattr(
             elliott_mod,
             "_classify_waves",
             lambda features, config: (
                 np.arange(features.shape[0], dtype=int),
-                type(
-                    "FakeGMM",
-                    (),
-                    {"means_": np.array([[0.0, -0.1, 0.0], [0.0, 0.1, 0.0]])},
-                )(),
+                type("FakeGMM", (), {"means_": np.array([[0.0, -0.1, 0.0], [0.0, 0.1, 0.0]])})(),
                 None,
                 np.full((features.shape[0], 2), 0.75, dtype=float),
                 1,
@@ -1265,9 +1125,7 @@ class TestDetectElliottWaves:
         scenarios = analyzer.analyze_once(1.0, 1)
 
         assert scenarios
-        expected = (0.2 * scenarios[0].rule_eval.fib_score) + (
-            0.8 * scenarios[0].cls_score
-        )
+        expected = (0.2 * scenarios[0].rule_eval.fib_score) + (0.8 * scenarios[0].cls_score)
         adjusted, adjustments = _apply_confirmation_confidence_adjustments(
             expected,
             scenarios[0].pivot_confirmations,
@@ -1293,9 +1151,7 @@ class TestDetectElliottWaves:
         assert adjusted == pytest.approx(0.72)
         assert adjustments["unconfirmed_pattern_penalty"] == pytest.approx(0.12)
         assert adjustments["unconfirmed_terminal_pivot_penalty"] == pytest.approx(0.10)
-        assert adjustments[
-            "unconfirmed_terminal_pivot_confidence_cap"
-        ] == pytest.approx(0.72)
+        assert adjustments["unconfirmed_terminal_pivot_confidence_cap"] == pytest.approx(0.72)
 
     def test_analyze_once_classifies_with_prefix_only(self, monkeypatch):
         close = np.array([100.0, 120.0, 108.0, 150.0, 135.0, 160.0, 148.0], dtype=float)
@@ -1321,9 +1177,7 @@ class TestDetectElliottWaves:
         monkeypatch.setattr(
             elliott_mod,
             "_evaluate_impulse_rules",
-            lambda *args, **kwargs: ElliottRuleEvaluation(
-                valid=True, fib_score=0.5, metrics={}, violations=[]
-            ),
+            lambda *args, **kwargs: ElliottRuleEvaluation(valid=True, fib_score=0.5, metrics={}, violations=[]),
         )
 
         seen_feature_lengths = []
@@ -1332,9 +1186,7 @@ class TestDetectElliottWaves:
             _ = config
             seen_feature_lengths.append(int(features.shape[0]))
             probs = np.full((features.shape[0], 2), 0.75, dtype=float)
-            fake_gmm = type(
-                "FakeGMM", (), {"means_": np.array([[0.0, -0.1, 0.0], [0.0, 0.1, 0.0]])}
-            )()
+            fake_gmm = type("FakeGMM", (), {"means_": np.array([[0.0, -0.1, 0.0], [0.0, 0.1, 0.0]])})()
             return np.zeros(features.shape[0], dtype=int), fake_gmm, None, probs, 1
 
         monkeypatch.setattr(elliott_mod, "_classify_waves", _fake_classify)
@@ -1346,7 +1198,6 @@ class TestDetectElliottWaves:
 
 
 # ===== _window_hit =========================================================
-
 
 class TestWindowHit:
     def test_inside(self):
@@ -1371,7 +1222,6 @@ class TestWindowHit:
 
 
 # ===== _normalize_pattern_types ============================================
-
 
 class TestNormalizePatternTypes:
     def test_default(self):

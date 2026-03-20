@@ -1,6 +1,6 @@
 """Tests for utils/simplify.py — pure selection/simplification helpers."""
-
 import numpy as np
+import pytest
 
 from mtdata.utils.simplify import (
     _default_target_points,

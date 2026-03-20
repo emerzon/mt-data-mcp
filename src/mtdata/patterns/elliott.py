@@ -30,9 +30,7 @@ class ElliottWaveConfig:
     volume_confirm_min_ratio: float = 1.05
     volume_confirm_bonus: float = 0.06
     volume_confirm_penalty: float = 0.04
-    impulse_fib_weights: List[float] = field(
-        default_factory=lambda: [0.30, 0.35, 0.20, 0.15]
-    )
+    impulse_fib_weights: List[float] = field(default_factory=lambda: [0.30, 0.35, 0.20, 0.15])
     impulse_rule_weight: float = 0.65
     impulse_cls_weight: float = 0.35
     correction_rule_weight: float = 0.60
@@ -120,9 +118,7 @@ def _normalize_pattern_types(config: ElliottWaveConfig) -> set[str]:
     return out or {"impulse", "correction"}
 
 
-def _zigzag_pivots_indices(
-    close: np.ndarray, threshold_pct: float
-) -> Tuple[List[int], List[str]]:
+def _zigzag_pivots_indices(close: np.ndarray, threshold_pct: float) -> Tuple[List[int], List[str]]:
     """Lightweight ZigZag pivot detection returning indices and directions."""
 
     n = int(close.size)
@@ -138,6 +134,7 @@ def _zigzag_pivots_indices(
     piv_dir: List[str] = []  # "up" for a peak and "down" for a trough
 
     pivot_i = start_i
+    pivot_p = start_p
     trend: Optional[str] = None
     last_ext_i = start_i
     last_ext_p = start_p
@@ -166,12 +163,8 @@ def _zigzag_pivots_indices(
                 pre_low_p = p
                 pre_low_i = i
 
-            up_change = (
-                (p - pre_low_p) / abs(pre_low_p) * 100.0 if pre_low_p != 0 else 0.0
-            )
-            down_change = (
-                (pre_high_p - p) / abs(pre_high_p) * 100.0 if pre_high_p != 0 else 0.0
-            )
+            up_change = (p - pre_low_p) / abs(pre_low_p) * 100.0 if pre_low_p != 0 else 0.0
+            down_change = (pre_high_p - p) / abs(pre_high_p) * 100.0 if pre_high_p != 0 else 0.0
             can_start_up = up_change >= threshold_pct and pre_low_i < i
             can_start_down = down_change >= threshold_pct and pre_high_i < i
 
@@ -179,21 +172,27 @@ def _zigzag_pivots_indices(
                 if pre_low_i > pre_high_i:
                     trend = "up"
                     pivot_i = pre_low_i
+                    pivot_p = pre_low_p
                 elif pre_high_i > pre_low_i:
                     trend = "down"
                     pivot_i = pre_high_i
+                    pivot_p = pre_high_p
                 elif up_change >= down_change:
                     trend = "up"
                     pivot_i = pre_low_i
+                    pivot_p = pre_low_p
                 else:
                     trend = "down"
                     pivot_i = pre_high_i
+                    pivot_p = pre_high_p
             elif can_start_up:
                 trend = "up"
                 pivot_i = pre_low_i
+                pivot_p = pre_low_p
             elif can_start_down:
                 trend = "down"
                 pivot_i = pre_high_i
+                pivot_p = pre_high_p
             else:
                 continue
             last_ext_i = i
@@ -211,20 +210,20 @@ def _zigzag_pivots_indices(
                 piv_dir.append("up")
                 trend = "down"
                 pivot_i = i
+                pivot_p = p
                 last_ext_i = i
                 last_ext_p = p
         else:
             if p < last_ext_p:
                 last_ext_p = p
                 last_ext_i = i
-            retr = (
-                (p - last_ext_p) / abs(last_ext_p) * 100.0 if last_ext_p != 0 else 0.0
-            )
+            retr = (p - last_ext_p) / abs(last_ext_p) * 100.0 if last_ext_p != 0 else 0.0
             if retr >= threshold_pct:
                 piv_idx.append(last_ext_i)
                 piv_dir.append("down")
                 trend = "up"
                 pivot_i = i
+                pivot_p = p
                 last_ext_i = i
                 last_ext_p = p
 
@@ -235,9 +234,7 @@ def _zigzag_pivots_indices(
     return piv_idx, piv_dir
 
 
-def _enforce_min_distance_on_pivots(
-    pivots: List[int], close: np.ndarray, min_distance: int
-) -> List[int]:
+def _enforce_min_distance_on_pivots(pivots: List[int], close: np.ndarray, min_distance: int) -> List[int]:
     """Ensure pivots are monotonic and separated by at least min_distance bars."""
 
     if not pivots:
@@ -315,9 +312,7 @@ def _extract_wave_features_with_index(
     return np.asarray(features, dtype=float), wave_index_map
 
 
-def _extract_wave_features(
-    waves: List[Tuple[int, int]], close: np.ndarray
-) -> np.ndarray:
+def _extract_wave_features(waves: List[Tuple[int, int]], close: np.ndarray) -> np.ndarray:
     """Backward-compatible feature extractor used by existing tests/importers."""
     features, _ = _extract_wave_features_with_index(waves, close)
     return features
@@ -334,10 +329,7 @@ def _select_impulsive_cluster(cluster_means: np.ndarray) -> Optional[int]:
     if cluster_means.ndim != 2 or cluster_means.shape[0] < 1:
         return None
     scores = np.asarray(
-        [
-            _cluster_impulsive_score(cluster_means[i])
-            for i in range(cluster_means.shape[0])
-        ],
+        [_cluster_impulsive_score(cluster_means[i]) for i in range(cluster_means.shape[0])],
         dtype=float,
     )
     if scores.size == 0 or not np.all(np.isfinite(scores)):
@@ -351,16 +343,11 @@ def _cluster_direction_score(cluster_mean: np.ndarray) -> float:
     return float(price_change + 0.75 * slope)
 
 
-def _select_directional_cluster(
-    cluster_means: np.ndarray, bullish: bool
-) -> Optional[int]:
+def _select_directional_cluster(cluster_means: np.ndarray, bullish: bool) -> Optional[int]:
     if cluster_means.ndim != 2 or cluster_means.shape[0] < 1:
         return None
     scores = np.asarray(
-        [
-            _cluster_direction_score(cluster_means[i])
-            for i in range(cluster_means.shape[0])
-        ],
+        [_cluster_direction_score(cluster_means[i]) for i in range(cluster_means.shape[0])],
         dtype=float,
     )
     if scores.size == 0 or not np.all(np.isfinite(scores)):
@@ -368,9 +355,7 @@ def _select_directional_cluster(
     return int(np.argmax(scores) if bullish else np.argmin(scores))
 
 
-def _normalized_impulse_fib_weights(
-    config: Optional[ElliottWaveConfig],
-) -> Tuple[float, float, float, float]:
+def _normalized_impulse_fib_weights(config: Optional[ElliottWaveConfig]) -> Tuple[float, float, float, float]:
     defaults = (0.30, 0.35, 0.20, 0.15)
     if config is None:
         return defaults
@@ -392,18 +377,10 @@ def _normalized_impulse_fib_weights(
 def _classify_waves(
     features: np.ndarray,
     config: ElliottWaveConfig,
-) -> Tuple[
-    np.ndarray,
-    Optional[GaussianMixture],
-    Optional[StandardScaler],
-    Optional[np.ndarray],
-    Optional[int],
-]:
+) -> Tuple[np.ndarray, Optional[GaussianMixture], Optional[StandardScaler], Optional[np.ndarray], Optional[int]]:
     """Classify waves with GMM; return cluster labels, model, scaler, probabilities and impulsive cluster id."""
 
-    feature_count = (
-        int(features.shape[1]) if features.ndim == 2 and features.size else 0
-    )
+    feature_count = int(features.shape[1]) if features.ndim == 2 and features.size else 0
     statistical_floor = max(
         int(config.gmm_components),
         int(max(1, feature_count)) * 4,
@@ -419,10 +396,7 @@ def _classify_waves(
 
     try:
         feature_std = np.nanstd(features, axis=0)
-        if (
-            not np.all(np.isfinite(feature_std))
-            or float(np.nanmax(np.abs(feature_std))) <= 1e-8
-        ):
+        if not np.all(np.isfinite(feature_std)) or float(np.nanmax(np.abs(feature_std))) <= 1e-8:
             return np.array([]), None, None, None, None
 
         scaler = StandardScaler()
@@ -466,15 +440,11 @@ def _evaluate_impulse_rules(
     """Validate core 5-wave impulse rules and compute Fibonacci alignment score."""
 
     if len(piv) != 6:
-        return ElliottRuleEvaluation(
-            valid=False, fib_score=0.0, metrics={}, violations=["pivot_count_not_6"]
-        )
+        return ElliottRuleEvaluation(valid=False, fib_score=0.0, metrics={}, violations=["pivot_count_not_6"])
 
     w = [float(c[i]) for i in piv]
     if not all(np.isfinite(v) for v in w):
-        return ElliottRuleEvaluation(
-            valid=False, fib_score=0.0, metrics={}, violations=["non_finite_prices"]
-        )
+        return ElliottRuleEvaluation(valid=False, fib_score=0.0, metrics={}, violations=["non_finite_prices"])
 
     L = [w[i + 1] - w[i] for i in range(5)]
     absL = [abs(x) for x in L]
@@ -517,12 +487,8 @@ def _evaluate_impulse_rules(
     direction = 1.0 if bullish else -1.0
     wave5_target_equal_wave1 = float(w[4] + direction * absL[0])
     wave5_target_0618_wave3 = float(w[4] + direction * 0.618 * absL[2])
-    wave5_target_zone_low = float(
-        min(wave5_target_equal_wave1, wave5_target_0618_wave3)
-    )
-    wave5_target_zone_high = float(
-        max(wave5_target_equal_wave1, wave5_target_0618_wave3)
-    )
+    wave5_target_zone_low = float(min(wave5_target_equal_wave1, wave5_target_0618_wave3))
+    wave5_target_zone_high = float(max(wave5_target_equal_wave1, wave5_target_0618_wave3))
 
     metrics = {
         "r2": float(r2),
@@ -540,31 +506,17 @@ def _evaluate_impulse_rules(
         "fib_weight_wave4": float(w4),
         "fib_weight_wave5": float(w5),
     }
-    return ElliottRuleEvaluation(
-        valid=(len(violations) == 0),
-        fib_score=fib_score,
-        metrics=metrics,
-        violations=violations,
-    )
+    return ElliottRuleEvaluation(valid=(len(violations) == 0), fib_score=fib_score, metrics=metrics, violations=violations)
 
 
-def _impulse_rules_and_score(
-    c: np.ndarray, piv: List[int], bullish: bool
-) -> Tuple[bool, float, Dict[str, float]]:
+def _impulse_rules_and_score(c: np.ndarray, piv: List[int], bullish: bool) -> Tuple[bool, float, Dict[str, float]]:
     """Backward-compatible wrapper around rule evaluation."""
 
     ev = _evaluate_impulse_rules(c, piv, bullish)
     return ev.valid, ev.fib_score, ev.metrics
 
 
-def _blend_confidence(
-    rule_score: float,
-    cls_score: float,
-    *,
-    classification_available: bool,
-    rule_weight: float,
-    cls_weight: float,
-) -> float:
+def _blend_confidence(rule_score: float, cls_score: float, *, classification_available: bool, rule_weight: float, cls_weight: float) -> float:
     if not classification_available:
         return float(min(1.0, max(0.0, rule_score)))
     rule_weight = max(0.0, float(rule_weight))
@@ -589,11 +541,7 @@ def _apply_confirmation_confidence_adjustments(
     has_unconfirmed_terminal = not bool(confirmations[-1])
 
     if not pattern_confirmed:
-        penalty = (
-            float(max(0.0, getattr(config, "unconfirmed_pattern_penalty", 0.12)))
-            if config is not None
-            else 0.12
-        )
+        penalty = float(max(0.0, getattr(config, "unconfirmed_pattern_penalty", 0.12))) if config is not None else 0.12
         adjusted -= penalty
         if penalty > 0.0:
             adjustments["unconfirmed_pattern_penalty"] = penalty
@@ -630,15 +578,11 @@ def _evaluate_correction_rules(
     """Validate a 3-wave corrective sequence (ABC) and compute score."""
 
     if len(piv) != 4:
-        return ElliottRuleEvaluation(
-            valid=False, fib_score=0.0, metrics={}, violations=["pivot_count_not_4"]
-        )
+        return ElliottRuleEvaluation(valid=False, fib_score=0.0, metrics={}, violations=["pivot_count_not_4"])
 
     w = [float(c[i]) for i in piv]
     if not all(np.isfinite(v) for v in w):
-        return ElliottRuleEvaluation(
-            valid=False, fib_score=0.0, metrics={}, violations=["non_finite_prices"]
-        )
+        return ElliottRuleEvaluation(valid=False, fib_score=0.0, metrics={}, violations=["non_finite_prices"])
 
     L = [w[i + 1] - w[i] for i in range(3)]
     absL = [abs(x) for x in L]
@@ -656,11 +600,7 @@ def _evaluate_correction_rules(
         violations.append("waveB_over_retrace")
 
     # C should have meaningful size versus A to avoid noise classifications.
-    min_c_vs_a = (
-        float(getattr(config, "correction_min_c_vs_a", 0.25))
-        if config is not None
-        else 0.25
-    )
+    min_c_vs_a = float(getattr(config, "correction_min_c_vs_a", 0.25)) if config is not None else 0.25
     if absL[2] < min_c_vs_a * absL[0]:
         violations.append("waveC_too_short")
 
@@ -675,12 +615,7 @@ def _evaluate_correction_rules(
         "c_vs_a": float(c_vs_a),
         "fib_score": fib_score,
     }
-    return ElliottRuleEvaluation(
-        valid=(len(violations) == 0),
-        fib_score=fib_score,
-        metrics=metrics,
-        violations=violations,
-    )
+    return ElliottRuleEvaluation(valid=(len(violations) == 0), fib_score=fib_score, metrics=metrics, violations=violations)
 
 
 def _classification_score_window(
@@ -716,19 +651,13 @@ def _classification_score_window(
     if window_probs.shape[0] != window_len:
         return 0.5
 
-    trend_vals = [
-        float(window_probs[i]) for i in trend_slots if 0 <= int(i) < window_len
-    ]
-    counter_vals = [
-        float(window_probs[i]) for i in counter_slots if 0 <= int(i) < window_len
-    ]
+    trend_vals = [float(window_probs[i]) for i in trend_slots if 0 <= int(i) < window_len]
+    counter_vals = [float(window_probs[i]) for i in counter_slots if 0 <= int(i) < window_len]
     if not trend_vals and not counter_vals:
         return 0.5
 
     trend_score = float(sum(trend_vals) / len(trend_vals)) if trend_vals else 0.5
-    counter_score = (
-        float(sum(counter_vals) / len(counter_vals)) if counter_vals else 0.5
-    )
+    counter_score = float(sum(counter_vals) / len(counter_vals)) if counter_vals else 0.5
     cls_score = 0.5 * trend_score + 0.5 * (1.0 - counter_score)
     return float(min(1.0, max(0.0, cls_score)))
 
@@ -739,19 +668,13 @@ def _classify_waves_through_index(
     wave_index_map: Dict[int, int],
     through_wave_idx: int,
     *,
-    cache: Optional[
-        Dict[int, Tuple[Optional[np.ndarray], Optional[np.ndarray], bool]]
-    ] = None,
+    cache: Optional[Dict[int, Tuple[Optional[np.ndarray], Optional[np.ndarray], bool]]] = None,
 ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], bool]:
     through_key = int(through_wave_idx)
     if through_key in wave_index_map:
         max_row = int(wave_index_map[through_key])
     else:
-        eligible_rows = [
-            int(row)
-            for wave_idx, row in wave_index_map.items()
-            if int(wave_idx) <= through_key
-        ]
+        eligible_rows = [int(row) for wave_idx, row in wave_index_map.items() if int(wave_idx) <= through_key]
         if not eligible_rows:
             return None, None, False
         max_row = max(eligible_rows)
@@ -777,9 +700,7 @@ def _result_priority_score(result: ElliottWaveResult) -> float:
     return float(result.confidence) + span_bonus
 
 
-def _result_sort_key(
-    result: ElliottWaveResult,
-) -> Tuple[int, float, int, int, str, Tuple[int, ...]]:
+def _result_sort_key(result: ElliottWaveResult) -> Tuple[int, float, int, int, str, Tuple[int, ...]]:
     details = result.details if isinstance(result.details, dict) else {}
     pattern_confirmed = bool(details.get("pattern_confirmed", True))
     span = max(0, int(result.end_index) - int(result.start_index))
@@ -796,10 +717,7 @@ def _result_sort_key(
 def _contiguous_pivot_slices(pivots: List[int], size: int) -> set[Tuple[int, ...]]:
     if size <= 0 or len(pivots) < size:
         return set()
-    return {
-        tuple(int(v) for v in pivots[i : i + size])
-        for i in range(len(pivots) - size + 1)
-    }
+    return {tuple(int(v) for v in pivots[i : i + size]) for i in range(len(pivots) - size + 1)}
 
 
 def _pivot_sequence_is_near_match(
@@ -811,24 +729,16 @@ def _pivot_sequence_is_near_match(
 ) -> bool:
     if len(candidate) != len(reference) or not candidate:
         return False
-    if all(
-        abs(int(a) - int(b)) <= int(bar_tolerance) for a, b in zip(candidate, reference)
-    ):
+    if all(abs(int(a) - int(b)) <= int(bar_tolerance) for a, b in zip(candidate, reference)):
         return True
     overlap = max(
-        _interval_overlap_ratio(
-            int(candidate[0]), int(candidate[-1]), int(reference[0]), int(reference[-1])
-        ),
-        _interval_coverage_ratio(
-            int(candidate[0]), int(candidate[-1]), int(reference[0]), int(reference[-1])
-        ),
+        _interval_overlap_ratio(int(candidate[0]), int(candidate[-1]), int(reference[0]), int(reference[-1])),
+        _interval_coverage_ratio(int(candidate[0]), int(candidate[-1]), int(reference[0]), int(reference[-1])),
     )
     return bool(overlap >= float(overlap_ratio))
 
 
-def _scenario_signature(
-    scenarios: List["ElliottScenario"],
-) -> Tuple[Tuple[str, bool, int, int, int], ...]:
+def _scenario_signature(scenarios: List["ElliottScenario"]) -> Tuple[Tuple[str, bool, int, int, int], ...]:
     entries = {
         (
             str(scenario.wave_type).lower(),
@@ -858,12 +768,8 @@ def _scenario_signatures_overlap(
             if item[:3] != prior_item[:3]:
                 continue
             overlap = max(
-                _interval_overlap_ratio(
-                    int(item[3]), int(item[4]), int(prior_item[3]), int(prior_item[4])
-                ),
-                _interval_coverage_ratio(
-                    int(item[3]), int(item[4]), int(prior_item[3]), int(prior_item[4])
-                ),
+                _interval_overlap_ratio(int(item[3]), int(item[4]), int(prior_item[3]), int(prior_item[4])),
+                _interval_coverage_ratio(int(item[3]), int(item[4]), int(prior_item[3]), int(prior_item[4])),
             )
             if overlap >= float(overlap_ratio):
                 match_index = idx
@@ -898,9 +804,7 @@ def _pivot_signature_for_settings(
     return tuple(int(idx) for idx in piv_idx)
 
 
-def _interval_coverage_ratio(
-    a_start: int, a_end: int, b_start: int, b_end: int
-) -> float:
+def _interval_coverage_ratio(a_start: int, a_end: int, b_start: int, b_end: int) -> float:
     lo = max(int(a_start), int(b_start))
     hi = min(int(a_end), int(b_end))
     inter = max(0, hi - lo + 1)
@@ -915,9 +819,7 @@ def _filter_overlapping_corrections(
     *,
     overlap_threshold: float = 0.8,
 ) -> List[ElliottWaveResult]:
-    impulses = [
-        result for result in results if str(result.wave_type).lower() == "impulse"
-    ]
+    impulses = [result for result in results if str(result.wave_type).lower() == "impulse"]
     if not impulses:
         return results
 
@@ -940,8 +842,7 @@ def _filter_overlapping_corrections(
                     int(impulse.start_index),
                     int(impulse.end_index),
                 ),
-            )
-            >= float(overlap_threshold)
+            ) >= float(overlap_threshold)
             for impulse in impulses
         )
         if not overlaps_impulse:
@@ -967,11 +868,7 @@ def _is_nested_same_direction_result(
         return False
     candidate_direction = _result_direction(candidate)
     reference_direction = _result_direction(reference)
-    if (
-        candidate_direction
-        and reference_direction
-        and candidate_direction != reference_direction
-    ):
+    if candidate_direction and reference_direction and candidate_direction != reference_direction:
         return False
     candidate_start = int(candidate.start_index)
     candidate_end = int(candidate.end_index)
@@ -980,12 +877,8 @@ def _is_nested_same_direction_result(
     if candidate_start < reference_start or candidate_end > reference_end:
         return False
     overlap = max(
-        _interval_overlap_ratio(
-            candidate_start, candidate_end, reference_start, reference_end
-        ),
-        _interval_coverage_ratio(
-            candidate_start, candidate_end, reference_start, reference_end
-        ),
+        _interval_overlap_ratio(candidate_start, candidate_end, reference_start, reference_end),
+        _interval_coverage_ratio(candidate_start, candidate_end, reference_start, reference_end),
     )
     return bool(overlap >= float(containment_threshold))
 
@@ -998,10 +891,7 @@ def _filter_nested_results(
     if len(results) <= 1:
         return results
     kept: List[ElliottWaveResult] = []
-
-    def _dominance_key(
-        result: ElliottWaveResult,
-    ) -> Tuple[int, int, float, int, str, Tuple[int, ...]]:
+    def _dominance_key(result: ElliottWaveResult) -> Tuple[int, int, float, int, str, Tuple[int, ...]]:
         details = result.details if isinstance(result.details, dict) else {}
         pattern_confirmed = bool(details.get("pattern_confirmed", True))
         span = max(0, int(result.end_index) - int(result.start_index))
@@ -1016,9 +906,7 @@ def _filter_nested_results(
 
     for result in sorted(results, key=_dominance_key):
         if any(
-            _is_nested_same_direction_result(
-                result, prior, containment_threshold=containment_threshold
-            )
+            _is_nested_same_direction_result(result, prior, containment_threshold=containment_threshold)
             for prior in kept
         ):
             continue
@@ -1041,17 +929,11 @@ class ElliottWaveAnalyzer:
         self.close = close
         self.times = times
         self.config = config
-        self.high = (
-            high if isinstance(high, np.ndarray) else np.asarray([], dtype=float)
-        )
+        self.high = high if isinstance(high, np.ndarray) else np.asarray([], dtype=float)
         self.low = low if isinstance(low, np.ndarray) else np.asarray([], dtype=float)
 
     def _normalized_pivot_price_source(self) -> str:
-        raw = (
-            str(getattr(self.config, "pivot_price_source", "close") or "close")
-            .strip()
-            .lower()
-        )
+        raw = str(getattr(self.config, "pivot_price_source", "close") or "close").strip().lower()
         return raw if raw in {"close", "hybrid", "hl"} else "close"
 
     def _pivot_display_price(self, idx: int, *, pivot_pos: int, bullish: bool) -> float:
@@ -1085,9 +967,7 @@ class ElliottWaveAnalyzer:
             "zone_high": float(max(equal_wave1, wave3_0618)),
         }
 
-    def analyze_once(
-        self, threshold_pct: float, min_distance: int
-    ) -> List[ElliottScenario]:
+    def analyze_once(self, threshold_pct: float, min_distance: int) -> List[ElliottScenario]:
         piv_idx, _ = _zigzag_pivots_indices(self.close, float(threshold_pct))
         piv_idx = _enforce_min_distance_on_pivots(piv_idx, self.close, min_distance)
         if len(piv_idx) < 4:
@@ -1106,20 +986,11 @@ class ElliottWaveAnalyzer:
         total_waves = len(waves)
         min_wave_span = int(max(1, max(min_distance, self.config.wave_min_len)))
         correction_exclusions: List[Tuple[int, ...]] = []
-        correction_bar_tolerance = max(
-            0, int(getattr(self.config, "correction_exclusion_bar_tolerance", 1))
-        )
+        correction_bar_tolerance = max(0, int(getattr(self.config, "correction_exclusion_bar_tolerance", 1)))
         correction_overlap_ratio = float(
-            max(
-                0.0,
-                min(
-                    1.0, getattr(self.config, "correction_exclusion_overlap_ratio", 0.9)
-                ),
-            )
+            max(0.0, min(1.0, getattr(self.config, "correction_exclusion_overlap_ratio", 0.9)))
         )
-        classification_cache: Dict[
-            int, Tuple[Optional[np.ndarray], Optional[np.ndarray], bool]
-        ] = {}
+        classification_cache: Dict[int, Tuple[Optional[np.ndarray], Optional[np.ndarray], bool]] = {}
 
         if "impulse" in pattern_types:
             for k in range(0, total_waves - 4):
@@ -1135,20 +1006,16 @@ class ElliottWaveAnalyzer:
                 if not (bullish or bearish):
                     continue
 
-                rule_eval = _evaluate_impulse_rules(
-                    self.close, piv_seq, bullish=bullish, config=self.config
-                )
+                rule_eval = _evaluate_impulse_rules(self.close, piv_seq, bullish=bullish, config=self.config)
                 if not rule_eval.valid:
                     continue
 
-                probs, cluster_means, classification_available = (
-                    _classify_waves_through_index(
-                        features,
-                        self.config,
-                        wave_index_map,
-                        through_wave_idx=int(k + 4),
-                        cache=classification_cache,
-                    )
+                probs, cluster_means, classification_available = _classify_waves_through_index(
+                    features,
+                    self.config,
+                    wave_index_map,
+                    through_wave_idx=int(k + 4),
+                    cache=classification_cache,
                 )
                 cls_score = _classification_score_window(
                     probs,
@@ -1167,17 +1034,13 @@ class ElliottWaveAnalyzer:
                     rule_eval.fib_score,
                     cls_score,
                     classification_available=classification_available,
-                    rule_weight=float(
-                        getattr(self.config, "impulse_rule_weight", 0.65)
-                    ),
+                    rule_weight=float(getattr(self.config, "impulse_rule_weight", 0.65)),
                     cls_weight=float(getattr(self.config, "impulse_cls_weight", 0.35)),
                 )
-                confidence, confidence_adjustments = (
-                    _apply_confirmation_confidence_adjustments(
-                        base_confidence,
-                        pivot_confirmations,
-                        self.config,
-                    )
+                confidence, confidence_adjustments = _apply_confirmation_confidence_adjustments(
+                    base_confidence,
+                    pivot_confirmations,
+                    self.config,
                 )
                 if confidence < float(self.config.min_confidence):
                     continue
@@ -1233,14 +1096,12 @@ class ElliottWaveAnalyzer:
                 if not rule_eval.valid:
                     continue
 
-                probs, cluster_means, classification_available = (
-                    _classify_waves_through_index(
-                        features,
-                        self.config,
-                        wave_index_map,
-                        through_wave_idx=int(k + 2),
-                        cache=classification_cache,
-                    )
+                probs, cluster_means, classification_available = _classify_waves_through_index(
+                    features,
+                    self.config,
+                    wave_index_map,
+                    through_wave_idx=int(k + 2),
+                    cache=classification_cache,
                 )
                 cls_score = _classification_score_window(
                     probs,
@@ -1259,19 +1120,13 @@ class ElliottWaveAnalyzer:
                     rule_eval.fib_score,
                     cls_score,
                     classification_available=classification_available,
-                    rule_weight=float(
-                        getattr(self.config, "correction_rule_weight", 0.60)
-                    ),
-                    cls_weight=float(
-                        getattr(self.config, "correction_cls_weight", 0.40)
-                    ),
+                    rule_weight=float(getattr(self.config, "correction_rule_weight", 0.60)),
+                    cls_weight=float(getattr(self.config, "correction_cls_weight", 0.40)),
                 )
-                confidence, confidence_adjustments = (
-                    _apply_confirmation_confidence_adjustments(
-                        base_confidence,
-                        pivot_confirmations,
-                        self.config,
-                    )
+                confidence, confidence_adjustments = _apply_confirmation_confidence_adjustments(
+                    base_confidence,
+                    pivot_confirmations,
+                    self.config,
                 )
                 if confidence < float(self.config.min_confidence):
                     continue
@@ -1310,13 +1165,9 @@ class ElliottWaveAnalyzer:
         for j, idx in enumerate(piv_seq):
             ti = PatternResultBase.resolve_time(self.times, idx)
             is_confirmed = True
-            if isinstance(scenario.pivot_confirmations, list) and j < len(
-                scenario.pivot_confirmations
-            ):
+            if isinstance(scenario.pivot_confirmations, list) and j < len(scenario.pivot_confirmations):
                 is_confirmed = bool(scenario.pivot_confirmations[j])
-            pivot_price = self._pivot_display_price(
-                int(idx), pivot_pos=j, bullish=bool(scenario.bullish)
-            )
+            pivot_price = self._pivot_display_price(int(idx), pivot_pos=j, bullish=bool(scenario.bullish))
             pivot_prices.append(float(pivot_price))
             wave_points_labeled.append(
                 {
@@ -1344,18 +1195,14 @@ class ElliottWaveAnalyzer:
             "rule_violations": list(scenario.rule_eval.violations),
             "cls_score": float(scenario.cls_score),
             "base_confidence": float(
-                scenario.base_confidence
-                if scenario.base_confidence is not None
-                else scenario.confidence
+                scenario.base_confidence if scenario.base_confidence is not None else scenario.confidence
             ),
             "tuned_threshold_pct": float(scenario.threshold_used),
             "min_distance_used": int(scenario.min_distance_used),
             "fallback_candidate": bool(scenario.fallback_candidate),
             "synthetic_terminal_pivot": bool(scenario.synthetic_terminal_pivot),
             "classification_available": bool(scenario.classification_available),
-            "pattern_confirmed": bool(all(scenario.pivot_confirmations))
-            if isinstance(scenario.pivot_confirmations, list)
-            else True,
+            "pattern_confirmed": bool(all(scenario.pivot_confirmations)) if isinstance(scenario.pivot_confirmations, list) else True,
             "has_unconfirmed_terminal_pivot": bool(
                 isinstance(scenario.pivot_confirmations, list)
                 and len(scenario.pivot_confirmations) > 0
@@ -1392,9 +1239,7 @@ class ElliottWaveAnalyzer:
             if wave5_targets:
                 details["wave5_targets"] = wave5_targets
         if scenario.fallback_candidate and scenario.validated_wave_type:
-            details["candidate_validates_as"] = str(
-                scenario.validated_wave_type
-            ).lower()
+            details["candidate_validates_as"] = str(scenario.validated_wave_type).lower()
 
         return ElliottWaveResult(
             wave_type=scenario.wave_type,
@@ -1407,9 +1252,7 @@ class ElliottWaveAnalyzer:
             details=details,
         )
 
-    def build_fallback(
-        self, threshold_base: float, min_distance: int
-    ) -> Optional[ElliottWaveResult]:
+    def build_fallback(self, threshold_base: float, min_distance: int) -> Optional[ElliottWaveResult]:
         if not bool(self.config.include_fallback_candidate):
             return None
 
@@ -1419,9 +1262,7 @@ class ElliottWaveAnalyzer:
 
         thr_cand = float(min(0.2, max(0.01, threshold_base)))
         piv_idx, _ = _zigzag_pivots_indices(self.close, thr_cand)
-        piv_idx = _enforce_min_distance_on_pivots(
-            piv_idx, self.close, max(1, min_distance)
-        )
+        piv_idx = _enforce_min_distance_on_pivots(piv_idx, self.close, max(1, min_distance))
         if len(piv_idx) < 1:
             return None
 
@@ -1438,14 +1279,10 @@ class ElliottWaveAnalyzer:
         piv_seq = [int(i) for i in piv_idx[-seq_len:]]
         bullish = bool(float(self.close[piv_seq[-1]]) > float(self.close[piv_seq[0]]))
 
-        rule_eval = ElliottRuleEvaluation(
-            valid=False, fib_score=0.0, metrics={}, violations=["fallback_candidate"]
-        )
+        rule_eval = ElliottRuleEvaluation(valid=False, fib_score=0.0, metrics={}, violations=["fallback_candidate"])
         validated_wave_type: Optional[str] = None
         if len(piv_seq) == 6 and "impulse" in pattern_types:
-            rule_eval = _evaluate_impulse_rules(
-                self.close, piv_seq, bullish=bullish, config=self.config
-            )
+            rule_eval = _evaluate_impulse_rules(self.close, piv_seq, bullish=bullish, config=self.config)
             if rule_eval.valid:
                 validated_wave_type = "Impulse"
         elif len(piv_seq) == 4 and "correction" in pattern_types:
@@ -1474,15 +1311,12 @@ class ElliottWaveAnalyzer:
             wave_type="Candidate",
             validated_wave_type=validated_wave_type,
             classification_available=False,
-            pivot_confirmations=([True] * max(0, len(piv_seq) - 1))
-            + ([False] if piv_seq else []),
+            pivot_confirmations=([True] * max(0, len(piv_seq) - 1)) + ([False] if piv_seq else []),
         )
         return self.build_result(scenario)
 
 
-def detect_elliott_waves(
-    df: pd.DataFrame, config: Optional[ElliottWaveConfig] = None
-) -> List[ElliottWaveResult]:
+def detect_elliott_waves(df: pd.DataFrame, config: Optional[ElliottWaveConfig] = None) -> List[ElliottWaveResult]:
     if config is None:
         config = ElliottWaveConfig()
 
@@ -1498,7 +1332,7 @@ def detect_elliott_waves(
         t = np.asarray([], dtype=float)
     c = to_float_np(df["close"])
     h = to_float_np(df["high"]) if "high" in df.columns else np.asarray([], dtype=float)
-    low = to_float_np(df["low"]) if "low" in df.columns else np.asarray([], dtype=float)
+    l = to_float_np(df["low"]) if "low" in df.columns else np.asarray([], dtype=float)
     n = int(c.size)
     pattern_types = _normalize_pattern_types(config)
     min_pattern_pivots = 6 if "impulse" in pattern_types else 4
@@ -1511,34 +1345,28 @@ def detect_elliott_waves(
     if n < min_required:
         return []
 
-    analyzer = ElliottWaveAnalyzer(c, t, config, high=h, low=low)
+    analyzer = ElliottWaveAnalyzer(c, t, config, high=h, low=l)
 
     results_by_key: Dict[Tuple[str, Tuple[int, ...]], ElliottWaveResult] = {}
 
     if bool(getattr(config, "autotune", False)):
         thr_list = (
             config.tune_thresholds
-            if isinstance(config.tune_thresholds, list)
-            and len(config.tune_thresholds) > 0
+            if isinstance(config.tune_thresholds, list) and len(config.tune_thresholds) > 0
             else [0.2, 0.3, 0.5, 0.75, 1.0]
         )
         md_base = int(max(1, config.min_distance))
         md_list = (
             config.tune_min_distance
-            if isinstance(config.tune_min_distance, list)
-            and len(config.tune_min_distance) > 0
+            if isinstance(config.tune_min_distance, list) and len(config.tune_min_distance) > 0
             else sorted({max(1, md_base - 2), md_base, md_base + 2, md_base + 4})
         )
 
         seen_pivot_signatures: set[Tuple[int, ...]] = set()
         prior_scenario_signature: Tuple[Tuple[str, bool, int, int, int], ...] = tuple()
         repeated_scenario_runs = 0
-        stop_after_repeats = max(
-            0, int(getattr(config, "autotune_early_stop_repeats", 3))
-        )
-        scenario_overlap_ratio = float(
-            max(0.0, min(1.0, getattr(config, "autotune_scenario_overlap_ratio", 0.9)))
-        )
+        stop_after_repeats = max(0, int(getattr(config, "autotune_early_stop_repeats", 3)))
+        scenario_overlap_ratio = float(max(0.0, min(1.0, getattr(config, "autotune_scenario_overlap_ratio", 0.9))))
         stop_autotune = False
         for thr_val in thr_list:
             try:
@@ -1572,44 +1400,27 @@ def detect_elliott_waves(
                 for scenario in scenarios:
                     result = analyzer.build_result(scenario)
                     _upsert_elliott_result(results_by_key, result)
-                if (
-                    stop_after_repeats > 0
-                    and repeated_scenario_runs >= stop_after_repeats
-                ):
+                if stop_after_repeats > 0 and repeated_scenario_runs >= stop_after_repeats:
                     stop_autotune = True
                     break
             if stop_autotune:
                 break
     else:
-        thr = float(
-            config.swing_threshold_pct
-            if config.swing_threshold_pct is not None
-            else config.min_prominence_pct
-        )
+        thr = float(config.swing_threshold_pct if config.swing_threshold_pct is not None else config.min_prominence_pct)
         scenarios = analyzer.analyze_once(thr, int(max(1, config.min_distance)))
         for scenario in scenarios:
             _upsert_elliott_result(results_by_key, analyzer.build_result(scenario))
 
     recent_bars = int(max(1, getattr(config, "recent_bars", 3)))
-    results = _filter_nested_results(
-        _filter_overlapping_corrections(list(results_by_key.values()))
-    )
+    results = _filter_nested_results(_filter_overlapping_corrections(list(results_by_key.values())))
     results.sort(key=_result_sort_key)
-    has_recent = any(
-        int(getattr(r, "end_index", -10)) >= int(n - recent_bars) for r in results
-    )
+    has_recent = any(int(getattr(r, "end_index", -10)) >= int(n - recent_bars) for r in results)
     if not has_recent:
-        thr_base = float(
-            config.swing_threshold_pct
-            if config.swing_threshold_pct is not None
-            else config.min_prominence_pct
-        )
+        thr_base = float(config.swing_threshold_pct if config.swing_threshold_pct is not None else config.min_prominence_pct)
         fallback = analyzer.build_fallback(thr_base, int(max(1, config.min_distance)))
         if fallback is not None:
             _upsert_elliott_result(results_by_key, fallback)
-            results = _filter_nested_results(
-                _filter_overlapping_corrections(list(results_by_key.values()))
-            )
+            results = _filter_nested_results(_filter_overlapping_corrections(list(results_by_key.values())))
 
     results.sort(key=_result_sort_key)
     k = int(getattr(config, "top_k", 10))

@@ -7,42 +7,29 @@ from .constants import DEFAULT_ROW_LIMIT
 from ..utils.utils import _table_from_rows
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
-
 # Import the actual implementation from utils
 from ..utils.indicators import list_ta_indicators as _list_ta_indicators
 
 logger = logging.getLogger(__name__)
 
-
-def _infer_defaults_from_doc(
-    func_name: str, doc_text: str, params: List[Dict[str, Any]]
-):
+def _infer_defaults_from_doc(func_name: str, doc_text: str, params: List[Dict[str, Any]]):
     """Delegate to utils implementation."""
     from ..core.indicators_docs import infer_defaults_from_doc as _impl
-
     return _impl(func_name, doc_text, params)
 
-
 def _try_number(s: str):
-    """Delegate to utils implementation."""
+    """Delegate to utils implementation.""" 
     from ..core.indicators_docs import _try_number as _impl
-
     return _impl(s)
 
-
-def _clean_help_text(
-    text: str, func_name: Optional[str] = None, func: Optional[Any] = None
-) -> str:
+def _clean_help_text(text: str, func_name: Optional[str] = None, func: Optional[Any] = None) -> str:
     """Delegate to utils implementation."""
     from ..core.indicators_docs import clean_help_text as _impl
-
     return _impl(text, func_name=func_name)
 
 
 _DOC_SECTION_RE = re.compile(r"^([A-Za-z][A-Za-z0-9 _/\-]{1,48})\s*:\s*$")
-_DOC_PARAM_RE = re.compile(
-    r"^[\-\*\u2022]?\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^)]*\))?\s*:\s*(.+)$"
-)
+_DOC_PARAM_RE = re.compile(r"^[\-\*\u2022]?\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^)]*\))?\s*:\s*(.+)$")
 _DOC_SIG_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\s*\(.*\)\s*$")
 
 
@@ -125,11 +112,7 @@ def _extract_interpretation(sections: Dict[str, List[str]]) -> Optional[str]:
     explicit = _join_doc_lines(sections.get("interpretation", []))
     if explicit:
         return explicit
-    overview = [
-        ln
-        for ln in sections.get("overview", [])
-        if not _DOC_SIG_RE.match(str(ln or "").strip())
-    ]
+    overview = [ln for ln in sections.get("overview", []) if not _DOC_SIG_RE.match(str(ln or "").strip())]
     return _join_doc_lines(overview) or None
 
 
@@ -138,15 +121,11 @@ def _build_indicator_documentation(target: Dict[str, Any]) -> Dict[str, Any]:
     raw_desc = str(target.get("description") or "")
     cleaned_desc = _clean_help_text(raw_desc, func_name=name) if raw_desc else ""
     sections = _parse_doc_sections(cleaned_desc)
-    overview = [
-        ln
-        for ln in sections.get("overview", [])
-        if not _DOC_SIG_RE.match(str(ln or "").strip())
-    ]
+    overview = [ln for ln in sections.get("overview", []) if not _DOC_SIG_RE.match(str(ln or "").strip())]
     param_docs = _parse_parameter_docs(sections.get("parameters", []))
 
     params_out: List[Dict[str, Any]] = []
-    for raw in target.get("params") or []:
+    for raw in (target.get("params") or []):
         if not isinstance(raw, dict):
             continue
         p = dict(raw)
@@ -171,7 +150,6 @@ def _build_indicator_documentation(target: Dict[str, Any]) -> Dict[str, Any]:
         "sources": sources,
     }
 
-
 @mcp.tool()
 def indicators_list(
     search_term: Optional[str] = None,
@@ -183,7 +161,6 @@ def indicators_list(
 
     Parameters: search_term?, category?, limit?, detail?
     """
-
     def _run() -> Dict[str, Any]:
         try:
             detail_mode = str(detail or "compact").strip().lower()
@@ -195,28 +172,17 @@ def indicators_list(
                 q = search_term.strip().lower()
                 filtered = []
                 for it in items:
-                    name = it.get("name", "").lower()
-                    desc = (it.get("description") or "").lower()
-                    cat = (it.get("category") or "").lower()
-                    aliases = [
-                        str(alias).strip().lower()
-                        for alias in (it.get("aliases") or [])
-                        if str(alias).strip()
-                    ]
-                    if (
-                        q in name
-                        or q in desc
-                        or q in cat
-                        or any(q in alias for alias in aliases)
-                    ):
+                    name = it.get('name', '').lower()
+                    desc = (it.get('description') or '').lower()
+                    cat = (it.get('category') or '').lower()
+                    aliases = [str(alias).strip().lower() for alias in (it.get("aliases") or []) if str(alias).strip()]
+                    if q in name or q in desc or q in cat or any(q in alias for alias in aliases):
                         filtered.append(it)
                 items = filtered
             if category:
                 cat_q = category.strip().lower()
-                items = [
-                    it for it in items if (it.get("category") or "").lower() == cat_q
-                ]
-            items.sort(key=lambda x: (x.get("category") or "", x.get("name") or ""))
+                items = [it for it in items if (it.get('category') or '').lower() == cat_q]
+            items.sort(key=lambda x: (x.get('category') or '', x.get('name') or ''))
             total_matches = len(items)
             limit_value = None
             try:
@@ -231,29 +197,21 @@ def indicators_list(
                     [
                         it.get("name", ""),
                         it.get("category", ""),
-                        ", ".join(
-                            str(alias)
-                            for alias in (it.get("aliases") or [])
-                            if str(alias).strip()
-                        ),
+                        ", ".join(str(alias) for alias in (it.get("aliases") or []) if str(alias).strip()),
                         it.get("description", ""),
                     ]
                     for it in items
                 ]
-                result = _table_from_rows(
-                    ["name", "category", "aliases", "description"], rows
-                )
+                result = _table_from_rows(["name", "category", "aliases", "description"], rows)
             else:
-                rows = [[it.get("name", ""), it.get("category", "")] for it in items]
+                rows = [[it.get('name',''), it.get('category','')] for it in items]
                 result = _table_from_rows(["name", "category"], rows)
             result["detail"] = detail_mode
             if total_matches > len(items):
                 result["total_count"] = total_matches
                 result["more_available"] = total_matches - len(items)
                 result["truncated"] = True
-                result["show_all_hint"] = (
-                    "Increase --limit to view more matching indicators."
-                )
+                result["show_all_hint"] = "Increase --limit to view more matching indicators."
             return result
         except Exception as exc:
             return {"error": f"Error listing indicators: {exc}"}
@@ -271,14 +229,12 @@ def indicators_list(
 
 # Note: category annotation is set at definition time above to be captured in the MCP schema
 
-
 @mcp.tool()
 def indicators_describe(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: ignore
     """Return detailed indicator information (name, category, params, description).
 
     Parameters: name
     """
-
     def _run() -> Dict[str, Any]:
         try:
             items = _list_ta_indicators(detailed=True)
@@ -286,9 +242,8 @@ def indicators_describe(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: 
                 (
                     it
                     for it in items
-                    if it.get("name", "").lower() == str(name).lower()
-                    or str(name).lower()
-                    in {
+                    if it.get('name','').lower() == str(name).lower()
+                    or str(name).lower() in {
                         str(alias).strip().lower()
                         for alias in (it.get("aliases") or [])
                         if str(alias).strip()
@@ -300,9 +255,7 @@ def indicators_describe(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: 
                 return {"error": f"Indicator '{name}' not found"}
             indicator = dict(target)
             docs = _build_indicator_documentation(indicator)
-            indicator["description"] = (
-                docs.get("description") or indicator.get("description") or ""
-            )
+            indicator["description"] = docs.get("description") or indicator.get("description") or ""
             indicator["documentation"] = {
                 "calculation": docs.get("calculation"),
                 "parameters": docs.get("parameters") or [],
@@ -319,3 +272,5 @@ def indicators_describe(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: 
         name=name,
         func=_run,
     )
+
+

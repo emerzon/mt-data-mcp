@@ -298,19 +298,11 @@ class TestGetSymbolReturns:
         assert pi.get_symbol_returns("MISSING") is None
 
     def test_returns_short_series(self):
-        ser = _SeriesStore(
-            symbol="X", time_epoch=np.array([0.0, 1.0]), close=np.array([100.0, 101.0])
-        )
+        ser = _SeriesStore(symbol="X", time_epoch=np.array([0.0, 1.0]), close=np.array([100.0, 101.0]))
         pi = PatternIndex(
-            timeframe="H1",
-            window_size=2,
-            future_size=0,
-            symbols=["X"],
-            tree=None,
-            X=np.zeros((1, 2)),
-            start_end_idx=np.array([[0, 1]]),
-            labels=np.array([0]),
-            series=[ser],
+            timeframe="H1", window_size=2, future_size=0, symbols=["X"],
+            tree=None, X=np.zeros((1, 2)), start_end_idx=np.array([[0, 1]]),
+            labels=np.array([0]), series=[ser],
         )
         assert pi.get_symbol_returns("X") is None  # size < 3
 

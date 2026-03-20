@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 def _normalize_report_error_message(message: Any) -> str:
     text = str(message).strip()
     if not text:
-        text = "Unknown error."
+        text = 'Unknown error.'
     return text
 
 
@@ -25,7 +25,6 @@ def _report_error_text(message: Any) -> str:
 
 def _report_error_payload(message: Any) -> Dict[str, Any]:
     return {"error": _normalize_report_error_message(message)}
-
 
 def _report_connection_error() -> Dict[str, Any] | None:
     return mt5_connection_error(
@@ -59,7 +58,7 @@ def report_generate(
                 'advanced' (adds regimes, HAR-RV, conformal),
                 or style-specific ('scalping' | 'intraday' | 'swing' | 'position').
     - params: optional dict to tune steps/spacing, grids, and optionally override timeframe per template via 'timeframe' or methods via 'methods'.
-    - denoise: pass-through to candle fetching (e.g., {method:'ema', params:{alpha:0.2}, columns:['close']}).
+    - denoise: pass-through to candle fetching (e.g., {method:'ema', params:{alpha:0.2}, columns:['close']}).  
     - output: 'toon' (structured TOON) or 'markdown' (rendered report text).
     """
     return run_logged_operation(

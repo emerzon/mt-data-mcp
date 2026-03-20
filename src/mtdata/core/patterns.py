@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import math
 from typing import Any, Callable, Dict, Optional, List, Tuple, Literal
+import importlib
 import copy
 import logging
 import numpy as np
@@ -11,6 +12,7 @@ from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway, mt5_connection_error
 from .patterns_support import (
+    _STOCK_PATTERN_UTILS_CACHE,
     _build_stock_pattern_frame,
     _compact_patterns_payload,
     _elliott_completed_preview,
@@ -21,6 +23,7 @@ from .patterns_support import (
     _format_pattern_dates,
     _index_pos_for_timestamp,
     _infer_stock_pattern_confidence,
+    _interval_overlap_ratio,
     _load_stock_pattern_utils,
     _map_stock_pattern_name,
     _merge_classic_ensemble,
@@ -32,31 +35,21 @@ from .patterns_support import (
     _summarize_engine_findings,
     _summarize_pattern_bias,
     _timestamp_to_label,
+    _to_float_safe,
     _to_jsonable,
 )
 from ..utils.mt5 import _mt5_copy_rates_from
 from ..utils.utils import _format_time_minimal, to_float_np as __to_float_np
-from ..patterns.candlestick import (
-    detect_candlestick_patterns as _detect_candlestick_patterns,
-)
-from ..patterns.classic import (
-    detect_classic_patterns as _detect_classic_patterns,
-    ClassicDetectorConfig as _ClassicCfg,
-)
+from ..patterns.candlestick import detect_candlestick_patterns as _detect_candlestick_patterns
+from ..patterns.classic import detect_classic_patterns as _detect_classic_patterns, ClassicDetectorConfig as _ClassicCfg
 from ..patterns.common import data_quality_warnings
-from ..patterns.elliott import (
-    detect_elliott_waves as _detect_elliott_waves,
-    ElliottWaveConfig as _ElliottCfg,
-)
+from ..patterns.elliott import detect_elliott_waves as _detect_elliott_waves, ElliottWaveConfig as _ElliottCfg
 from ._mcp_instance import mcp
 from .patterns_requests import PatternsDetectRequest
 from .patterns_use_cases import PatternsDetectDeps, run_patterns_detect
 from ..shared.validators import invalid_timeframe_error
-from ..utils.denoise import (
-    _apply_denoise as _apply_denoise_util,
-    normalize_denoise_spec as _normalize_denoise_spec,
-)
-from ..utils.mt5 import ensure_mt5_connection_or_raise, mt5
+from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
+from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +60,6 @@ ClassicEngineRunner = Callable[
     Tuple[List[Dict[str, Any]], Optional[str]],
 ]
 _CLASSIC_ENGINE_REGISTRY: Dict[str, ClassicEngineRunner] = {}
-
 
 def _patterns_connection_error() -> Optional[Dict[str, Any]]:
     return mt5_connection_error(
@@ -110,7 +102,7 @@ def _fetch_pattern_data(
     gateway: Any = None,
 ) -> Tuple[Optional[pd.DataFrame], Optional[Dict[str, Any]]]:
     """Fetch and prepare OHLCV data for pattern detection.
-
+    
     Returns (df, error_dict) where error_dict is None on success.
     """
     if timeframe not in TIMEFRAME_MAP:
@@ -128,40 +120,40 @@ def _fetch_pattern_data(
             mt5_gateway.symbol_select(symbol, True)
     except Exception:
         pass
-
+    
     utc_now = datetime.now(timezone.utc)
     count = max(400, int(limit) + 2)
     rates = _mt5_copy_rates_from(symbol, mt5_tf, utc_now, count)
-
+    
     if rates is None or len(rates) < 100:
         return None, {"error": f"Failed to fetch sufficient bars for {symbol}"}
-
+    
     df = pd.DataFrame(rates)
-    if "volume" not in df.columns and "tick_volume" in df.columns:
+    if 'volume' not in df.columns and 'tick_volume' in df.columns:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            df["volume"] = df["tick_volume"]
+            df['volume'] = df['tick_volume']
 
     warnings_out: List[str] = []
 
     # Drop the last bar only when it is still open or cannot be validated.
     if _should_drop_last_pattern_bar(df, timeframe, now_utc=utc_now):
         df = df.iloc[:-1].copy()
-
+    
     # Apply denoising if requested
     if denoise:
         try:
-            dn = _normalize_denoise_spec(denoise, default_when="pre_ti")
+            dn = _normalize_denoise_spec(denoise, default_when='pre_ti')
             if dn:
-                _apply_denoise_util(df, dn, default_when="pre_ti")
+                _apply_denoise_util(df, dn, default_when='pre_ti')
         except Exception as exc:
             warning = f"Denoise failed for pattern detection on {symbol} {timeframe}; raw prices were used."
             logger.warning(warning, exc_info=True)
             warnings_out.append(f"{warning} {exc}")
-
+    
     # Trim to requested limit
     if len(df) > int(limit):
-        df = df.iloc[-int(limit) :].copy()
+        df = df.iloc[-int(limit):].copy()
 
     warnings_out.extend(
         data_quality_warnings(
@@ -171,7 +163,7 @@ def _fetch_pattern_data(
     )
     if warnings_out:
         df.attrs["warnings"] = list(warnings_out)
-
+    
     return df, None
 
 
@@ -201,20 +193,12 @@ def _resolve_elliott_scan_timeframes(cfg: _ElliottCfg) -> List[str]:
     raw_scan = getattr(cfg, "scan_timeframes", None)
     requested: List[str] = []
     if isinstance(raw_scan, str):
-        requested = [
-            part.strip().upper()
-            for part in raw_scan.replace(";", ",").split(",")
-            if part.strip()
-        ]
+        requested = [part.strip().upper() for part in raw_scan.replace(";", ",").split(",") if part.strip()]
     elif isinstance(raw_scan, (list, tuple, set)):
-        requested = [
-            str(part).strip().upper() for part in raw_scan if str(part).strip()
-        ]
+        requested = [str(part).strip().upper() for part in raw_scan if str(part).strip()]
 
     if not requested:
-        requested = [
-            tf for tf in _DEFAULT_ELLIOTT_SCAN_TIMEFRAMES if tf in TIMEFRAME_MAP
-        ]
+        requested = [tf for tf in _DEFAULT_ELLIOTT_SCAN_TIMEFRAMES if tf in TIMEFRAME_MAP]
     if not requested:
         requested = [str(tf).strip().upper() for tf in TIMEFRAME_MAP.keys()]
 
@@ -288,24 +272,18 @@ def _build_pattern_response(
 ) -> Dict[str, Any]:
     """Build the response dict for pattern detection results."""
     # Filter patterns based on include_completed
-    filtered = (
-        patterns
-        if include_completed
-        else [d for d in patterns if str(d.get("status", "")).lower() == "forming"]
-    )
-    completed_hidden = (
-        0
-        if include_completed
-        else int(
-            sum(1 for d in patterns if str(d.get("status", "")).lower() == "completed")
-        )
+    filtered = patterns if include_completed else [
+        d for d in patterns if str(d.get('status', '')).lower() == 'forming'
+    ]
+    completed_hidden = 0 if include_completed else int(
+        sum(1 for d in patterns if str(d.get("status", "")).lower() == "completed")
     )
     elliott_preview = (
         _elliott_completed_preview(patterns, timeframe=timeframe)
         if str(mode).lower() == "elliott" and completed_hidden > 0
         else []
     )
-
+    
     resp: Dict[str, Any] = {
         "success": True,
         "symbol": symbol,
@@ -344,21 +322,16 @@ def _build_pattern_response(
     warnings_out = df.attrs.get("warnings")
     if isinstance(warnings_out, list) and warnings_out:
         resp["warnings"] = [str(w) for w in warnings_out if str(w)]
-
+    
     # Include series data if requested
     if include_series:
-        resp["series_close"] = [
-            float(v) for v in __to_float_np(df.get("close")).tolist()
-        ]
-        if "time" in df.columns:
-            if str(series_time).lower() == "epoch":
-                resp["series_epoch"] = [
-                    float(v) for v in __to_float_np(df.get("time")).tolist()
-                ]
+        resp["series_close"] = [float(v) for v in __to_float_np(df.get('close')).tolist()]
+        if 'time' in df.columns:
+            if str(series_time).lower() == 'epoch':
+                resp["series_epoch"] = [float(v) for v in __to_float_np(df.get('time')).tolist()]
             else:
                 resp["series_time"] = [
-                    _format_time_minimal(float(v))
-                    for v in __to_float_np(df.get("time")).tolist()
+                    _format_time_minimal(float(v)) for v in __to_float_np(df.get('time')).tolist()
                 ]
 
     if str(detail).lower().strip() == "compact":
@@ -366,9 +339,7 @@ def _build_pattern_response(
     return resp
 
 
-def _format_elliott_patterns(
-    df: pd.DataFrame, cfg: _ElliottCfg
-) -> List[Dict[str, Any]]:
+def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[str, Any]]:
     """Run Elliott detection on prepared data and normalize result rows."""
     pats = _detect_elliott_waves(df, cfg)
     out_list: List[Dict[str, Any]] = []
@@ -378,17 +349,11 @@ def _format_elliott_patterns(
         try:
             start_date, end_date = _format_pattern_dates(p.start_time, p.end_time)
             raw_recent_bars = getattr(cfg, "recent_bars", 3)
-            if isinstance(
-                raw_recent_bars, (int, float, np.integer, np.floating)
-            ) and not isinstance(raw_recent_bars, bool):
+            if isinstance(raw_recent_bars, (int, float, np.integer, np.floating)) and not isinstance(raw_recent_bars, bool):
                 recent_bars = max(1, int(raw_recent_bars))
             else:
                 recent_bars = 3
-            status = (
-                "forming"
-                if int(p.end_index) >= int(n_bars - recent_bars)
-                else "completed"
-            )
+            status = 'forming' if int(p.end_index) >= int(n_bars - recent_bars) else 'completed'
 
             out_list.append(
                 {
@@ -399,9 +364,7 @@ def _format_elliott_patterns(
                     "end_index": int(p.end_index),
                     "start_date": start_date,
                     "end_date": end_date,
-                    "details": {
-                        k: _round_value(v) for k, v in (p.details or {}).items()
-                    },
+                    "details": {k: _round_value(v) for k, v in (p.details or {}).items()},
                 }
             )
         except Exception:
@@ -409,9 +372,7 @@ def _format_elliott_patterns(
     return _enrich_elliott_patterns(out_list, df, cfg)
 
 
-def _format_classic_native_patterns(
-    df: pd.DataFrame, cfg: _ClassicCfg
-) -> List[Dict[str, Any]]:
+def _format_classic_native_patterns(df: pd.DataFrame, cfg: _ClassicCfg) -> List[Dict[str, Any]]:
     pats = _detect_classic_patterns(df, cfg)
     out_list: List[Dict[str, Any]] = []
     n_bars = len(df)
@@ -428,13 +389,9 @@ def _format_classic_native_patterns(
                 "end_date": end_date,
                 "details": {k: _round_value(v) for k, v in (p.details or {}).items()},
             }
-            if p.status == "forming":
+            if p.status == 'forming':
                 est = _estimate_classic_bars_to_completion(
-                    p.name,
-                    d["details"],
-                    int(d["start_index"]),
-                    int(d["end_index"]),
-                    n_bars,
+                    p.name, d["details"], int(d["start_index"]), int(d["end_index"]), n_bars
                 )
                 if est is not None:
                     d["bars_to_completion"] = int(est)
@@ -444,9 +401,7 @@ def _format_classic_native_patterns(
     return out_list
 
 
-def _register_classic_engine(
-    name: str,
-) -> Callable[[ClassicEngineRunner], ClassicEngineRunner]:
+def _register_classic_engine(name: str) -> Callable[[ClassicEngineRunner], ClassicEngineRunner]:
     norm_name = _normalize_engine_name(name)
 
     def _decorator(func: ClassicEngineRunner) -> ClassicEngineRunner:
@@ -457,12 +412,8 @@ def _register_classic_engine(
 
 
 def _available_classic_engines() -> Tuple[str, ...]:
-    ordered = [
-        name for name in _CLASSIC_ENGINE_ORDER if name in _CLASSIC_ENGINE_REGISTRY
-    ]
-    ordered.extend(
-        name for name in _CLASSIC_ENGINE_REGISTRY.keys() if name not in ordered
-    )
+    ordered = [name for name in _CLASSIC_ENGINE_ORDER if name in _CLASSIC_ENGINE_REGISTRY]
+    ordered.extend(name for name in _CLASSIC_ENGINE_REGISTRY.keys() if name not in ordered)
     return tuple(ordered)
 
 
@@ -544,9 +495,7 @@ def _run_classic_engine_native(
         overlap = 0.45
     overlap = float(max(0.2, min(0.9, overlap)))
 
-    merged = _merge_classic_ensemble(
-        non_empty, {k: 1.0 for k in non_empty.keys()}, overlap_threshold=overlap
-    )
+    merged = _merge_classic_ensemble(non_empty, {k: 1.0 for k in non_empty.keys()}, overlap_threshold=overlap)
     for row in merged:
         details = row.get("details")
         if not isinstance(details, dict):
@@ -556,9 +505,7 @@ def _run_classic_engine_native(
         details["native_multiscale"] = True
         details["native_multiscale_overlap"] = float(overlap)
         details["native_scale_support"] = int(len(src))
-        details["native_scale_factors"] = [
-            float(scale_by_key[s]) for s in src if s in scale_by_key
-        ]
+        details["native_scale_factors"] = [float(scale_by_key[s]) for s in src if s in scale_by_key]
         row["details"] = details
     return merged, None
 
@@ -598,12 +545,8 @@ def _run_classic_engine_stock_pattern(
 
     def _get_pivots(pivot_type: str) -> pd.DataFrame:
         if pivot_type not in pivots_cache:
-            piv = sp_utils.get_max_min(
-                sp_df, barsLeft=bars_left, barsRight=bars_right, pivot_type=pivot_type
-            )
-            pivots_cache[pivot_type] = (
-                piv if isinstance(piv, pd.DataFrame) else pd.DataFrame()
-            )
+            piv = sp_utils.get_max_min(sp_df, barsLeft=bars_left, barsRight=bars_right, pivot_type=pivot_type)
+            pivots_cache[pivot_type] = piv if isinstance(piv, pd.DataFrame) else pd.DataFrame()
         return pivots_cache[pivot_type]
 
     fn_specs = [
@@ -678,25 +621,18 @@ def _run_classic_engine_stock_pattern(
         d: Dict[str, Any] = {
             "name": name,
             "status": "forming",
-            "confidence": float(
-                max(0.0, min(1.0, _infer_stock_pattern_confidence(res)))
-            ),
+            "confidence": float(max(0.0, min(1.0, _infer_stock_pattern_confidence(res)))),
             "start_index": int(s_idx),
             "end_index": int(e_idx),
             "start_date": _timestamp_to_label(start_ts),
             "end_date": _timestamp_to_label(end_ts),
-            "details": {k: _round_value(v) for k, v in dict(details).items()}
-            if isinstance(details, dict)
-            else {"raw": details},
+            "details": {k: _round_value(v) for k, v in dict(details).items()} if isinstance(details, dict) else {"raw": details},
         }
-        est = _estimate_classic_bars_to_completion(
-            name, d["details"], int(d["start_index"]), int(d["end_index"]), n_bars
-        )
+        est = _estimate_classic_bars_to_completion(name, d["details"], int(d["start_index"]), int(d["end_index"]), n_bars)
         if est is not None:
             d["bars_to_completion"] = int(est)
         out_list.append(d)
     return out_list, None
-
 
 def _run_classic_engine(
     engine: str,
@@ -742,9 +678,7 @@ def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> List[str
             # Handle list-like attrs from common CLI forms, e.g. "impulse,correction".
             if isinstance(current, list):
                 if isinstance(v, str):
-                    parsed = [
-                        p.strip() for p in v.replace(";", ",").split(",") if p.strip()
-                    ]
+                    parsed = [p.strip() for p in v.replace(";", ",").split(",") if p.strip()]
                     setattr(cfg, k, parsed)
                 elif isinstance(v, (list, tuple, set)):
                     setattr(cfg, k, [x for x in v])
@@ -768,26 +702,25 @@ def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> List[str
             deduped.append(key)
     return deduped
 
-
 @mcp.tool()
 def patterns_detect(
     request: PatternsDetectRequest,
 ) -> Dict[str, Any]:
     """Detect chart patterns (candlestick, classic chart patterns, or Elliott Wave).
-
+    
     **REQUIRED**: symbol parameter must be provided (e.g., "EURUSD", "BTCUSD")
-
+    
     Parameters:
     -----------
     symbol : str (REQUIRED)
         Trading symbol to analyze (e.g., "EURUSD", "GBPUSD", "BTCUSD")
-
+    
     timeframe : str, optional
         Chart timeframe: "M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"
         For `mode="elliott"`, when omitted, a default higher-structure subset
         (`H1`, `H4`, `D1` when available) is scanned and returned in one
         aggregated output.
-
+    
     mode : str, optional (default="candlestick")
         Pattern detection method:
         - "candlestick": Japanese candlestick patterns (Doji, Hammer, Engulfing, etc.)
@@ -799,10 +732,10 @@ def patterns_detect(
         Output verbosity:
         - "compact": trader-focused summary with recent patterns and pattern mix.
         - "full": complete pattern rows suitable for research/debugging.
-
+    
     limit : int, optional (default=1000)
         Number of historical bars to analyze
-
+    
     Candlestick Mode Parameters:
     ----------------------------
     min_strength : float, optional (default=0.95)
@@ -810,28 +743,28 @@ def patterns_detect(
         normalized candlestick strength score that combines pattern reliability,
         multi-bar span, and any raw detector bonus rather than raw pandas_ta
         signal magnitude alone.
-
+    
     min_gap : int, optional (default=3)
         Minimum gap between patterns (in bars)
-
+    
     robust_only : bool, optional (default=True)
         Only return high-confidence patterns
-
+    
     whitelist : str, optional
         Comma-separated list of specific patterns to detect (e.g., "doji,hammer,engulfing")
-
+    
     top_k : int, optional (default=1)
         Return only the top K strongest patterns
 
     last_n_bars : int, optional
         Candlestick mode only. Restrict detections to patterns that occur in the
         most recent N bars.
-
+    
     Classic/Elliott Mode Parameters:
     ---------------------------------
     denoise : dict, optional
         Denoising configuration to smooth price data
-
+    
     config : dict, optional
         Pattern-specific configuration parameters.
         Useful classic options include:
@@ -850,16 +783,16 @@ def patterns_detect(
     ensemble_weights : dict, optional
         Per-engine weights used for consensus confidence, e.g.
         {"native": 1.0, "stock_pattern": 0.8}
-
+    
     include_series : bool, optional (default=False)
         Include the price series data in the response
-
+    
     series_time : str, optional (default="string")
         Time format for series data
-
+    
     include_completed : bool, optional (default=False)
         Include completed patterns alongside forming results (when False, only forming patterns are returned)
-
+    
     Returns:
     --------
     dict
@@ -868,22 +801,21 @@ def patterns_detect(
         - symbol: str
         - timeframe: str
         - patterns: list of detected patterns with metadata
-
+    
     Examples:
     ---------
     # Detect candlestick patterns
     patterns_detect(symbol="EURUSD")
-
+    
     # Detect candlestick patterns on M15 with custom parameters
     patterns_detect(symbol="EURUSD", timeframe="M15", min_strength=0.90, top_k=3)
-
+    
     # Detect classic chart patterns
     patterns_detect(symbol="GBPUSD", mode="classic", limit=500)
-
+    
     # Detect Elliott Wave patterns
     patterns_detect(symbol="BTCUSD", mode="elliott", timeframe="H4", detail="full")
     """
-
     def _run() -> Dict[str, Any]:
         connection_error = _patterns_connection_error()
         if connection_error is not None:

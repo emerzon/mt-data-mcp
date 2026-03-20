@@ -125,9 +125,7 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
             "max_wait_seconds": request.max_wait_seconds,
         },
     )
-    monkeypatch.setattr(
-        core_data, "get_mt5_gateway", lambda ensure_connection_impl=None: object()
-    )
+    monkeypatch.setattr(core_data, "get_mt5_gateway", lambda ensure_connection_impl=None: object())
 
     sig = inspect.signature(core_data.wait_event)
     assert tuple(sig.parameters.keys()) == ("instrument", "timeframe")
@@ -226,15 +224,11 @@ def test_run_wait_event_uses_all_default_watchers_when_omitted() -> None:
     assert result["status"] == "matched"
     assert result["matched_event"]["type"] == "order_created"
     assert result["criteria"]["watch_for_inferred"] is True
-    assert any(
-        item["type"] == "price_change" for item in result["criteria"]["watch_for"]
-    )
+    assert any(item["type"] == "price_change" for item in result["criteria"]["watch_for"])
     assert result["criteria"]["end_on_inferred"] is False
 
 
-def test_run_wait_event_infers_candle_boundary_from_request_timeframe(
-    monkeypatch,
-) -> None:
+def test_run_wait_event_infers_candle_boundary_from_request_timeframe(monkeypatch) -> None:
     monkeypatch.setattr(
         "mtdata.core.wait_events._next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
@@ -335,12 +329,8 @@ def test_fetch_market_ticks_range_converts_window_to_server_naive(monkeypatch) -
     )
 
 
-def test_normalize_tick_rows_keeps_epoch_and_time_msc_on_same_utc_basis(
-    monkeypatch,
-) -> None:
-    monkeypatch.setattr(
-        wait_events_mod, "_mt5_epoch_to_utc", lambda value: float(value) - 7200.0
-    )
+def test_normalize_tick_rows_keeps_epoch_and_time_msc_on_same_utc_basis(monkeypatch) -> None:
+    monkeypatch.setattr(wait_events_mod, "_mt5_epoch_to_utc", lambda value: float(value) - 7200.0)
 
     rows = [
         {
@@ -372,9 +362,7 @@ def test_normalize_tick_rows_keeps_epoch_and_time_msc_on_same_utc_basis(
     ]
 
 
-def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(
-    monkeypatch,
-) -> None:
+def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(monkeypatch) -> None:
     monkeypatch.setattr(
         "mtdata.core.wait_events._next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
@@ -416,9 +404,7 @@ def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(
     assert result["criteria"]["end_on_inferred"] is True
 
 
-def test_run_wait_event_stops_on_candle_boundary_when_no_watch_event(
-    monkeypatch,
-) -> None:
+def test_run_wait_event_stops_on_candle_boundary_when_no_watch_event(monkeypatch) -> None:
     monkeypatch.setattr(
         "mtdata.core.wait_events._next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
@@ -553,15 +539,7 @@ def test_run_wait_event_matches_position_closed_from_history_out_by() -> None:
         ],
         history_deals_seq=[
             [],
-            [
-                {
-                    "ticket": 3001,
-                    "position_id": 9001,
-                    "symbol": "BTCUSD",
-                    "entry": 3,
-                    "type": "sell",
-                }
-            ],
+            [{"ticket": 3001, "position_id": 9001, "symbol": "BTCUSD", "entry": 3, "type": "sell"}],
         ],
     )
     clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))

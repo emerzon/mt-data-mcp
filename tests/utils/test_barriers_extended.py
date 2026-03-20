@@ -5,7 +5,10 @@ Targets: _is_crypto_symbol, _auto_barrier_method, _brownian_bridge_hits,
          All pure logic – no MT5 calls.
 """
 
+import math
 import numpy as np
+import pandas as pd
+import pytest
 
 from mtdata.forecast.barriers import (
     _is_crypto_symbol,
@@ -158,14 +161,7 @@ class TestAutoBarrierMethod:
     def test_regime_shift(self):
         prices = _regime_switch_prices(500, seed=5)
         method, reason = _auto_barrier_method("EURUSD", "H1", prices)
-        assert method in (
-            "hmm_mc",
-            "heston",
-            "mc_gbm",
-            "mc_gbm_bb",
-            "bootstrap",
-            "jump_diffusion",
-        )
+        assert method in ("hmm_mc", "heston", "mc_gbm", "mc_gbm_bb", "bootstrap", "jump_diffusion")
 
     def test_insufficient_returns(self):
         # Constant price => all returns zero => std=0 => insufficient finite returns
@@ -174,9 +170,7 @@ class TestAutoBarrierMethod:
         assert "mc_gbm" in method
 
     def test_non_finite_prices_filtered(self):
-        prices = np.array(
-            [100.0, np.nan, 101.0, np.inf, 99.0, 100.5, 102.0, 98.0, 101.0, 100.0]
-        )
+        prices = np.array([100.0, np.nan, 101.0, np.inf, 99.0, 100.5, 102.0, 98.0, 101.0, 100.0])
         method, reason = _auto_barrier_method("EURUSD", "H1", prices)
         assert method == "mc_gbm"
 
@@ -196,14 +190,7 @@ class TestAutoBarrierMethod:
             rets[i] = rng.randn() * np.sqrt(vol)
         prices = 100.0 * np.exp(np.cumsum(rets))
         method, reason = _auto_barrier_method("EURUSD", "H1", prices)
-        assert method in (
-            "heston",
-            "garch",
-            "jump_diffusion",
-            "bootstrap",
-            "mc_gbm",
-            "mc_gbm_bb",
-        )
+        assert method in ("heston", "garch", "jump_diffusion", "bootstrap", "mc_gbm", "mc_gbm_bb")
 
 
 # ===================================================================
@@ -320,13 +307,7 @@ class TestAutoBarrierEdgeCases:
         rets = rng.exponential(0.01, size=500) - 0.005
         prices = 100.0 * np.exp(np.cumsum(rets))
         method, reason = _auto_barrier_method("EURUSD", "D1", prices)
-        assert method in (
-            "bootstrap",
-            "jump_diffusion",
-            "heston",
-            "mc_gbm",
-            "mc_gbm_bb",
-        )
+        assert method in ("bootstrap", "jump_diffusion", "heston", "mc_gbm", "mc_gbm_bb")
 
     def test_horizon_none(self):
         prices = _price_series(100, seed=8)

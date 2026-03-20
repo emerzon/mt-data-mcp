@@ -21,9 +21,7 @@ def _sample_ohlc_df():
 def test_simplify_dataframe_rows_ext_empty_dataframe_returns_none_meta():
     empty = pd.DataFrame(columns=["time", "close"])
 
-    result_df, meta = simp._simplify_dataframe_rows_ext(
-        empty, ["time", "close"], {"mode": "select"}
-    )
+    result_df, meta = simp._simplify_dataframe_rows_ext(empty, ["time", "close"], {"mode": "select"})
 
     assert result_df.empty
     assert meta is None
@@ -39,9 +37,7 @@ def test_simplify_dataframe_rows_ext_approximate_falls_back_to_select(monkeypatc
     monkeypatch.setattr(simp, "_handle_select_mode", fake_select)
     df = _sample_ohlc_df()
 
-    result_df, meta = simp._simplify_dataframe_rows_ext(
-        df, list(df.columns), {"mode": "approximate"}
-    )
+    result_df, meta = simp._simplify_dataframe_rows_ext(df, list(df.columns), {"mode": "approximate"})
 
     assert called["count"] == 1
     assert len(result_df) == 1
@@ -82,9 +78,7 @@ def test_handle_select_returns_subset_and_metadata(monkeypatch):
         lambda epochs, series, spec: ([0, 2, 4], "lttb", {"bucket_size": 2}),
     )
 
-    result_df, meta = simp._handle_select_mode(
-        df, list(df.columns), {"mode": "select", "points": 3}
-    )
+    result_df, meta = simp._handle_select_mode(df, list(df.columns), {"mode": "select", "points": 3})
 
     assert list(result_df.index) == [0, 2, 4]
     assert meta == {
@@ -111,23 +105,17 @@ def test_handle_select_returns_original_when_series_unavailable(monkeypatch):
 def test_simplify_modes_no_recursive_delegation():
     df = _sample_ohlc_df()
 
-    enc_df, enc_meta = simp._simplify_dataframe_rows_ext(
-        df, list(df.columns), {"mode": "encode", "schema": "delta"}
-    )
+    enc_df, enc_meta = simp._simplify_dataframe_rows_ext(df, list(df.columns), {"mode": "encode", "schema": "delta"})
     assert enc_meta is not None
     assert enc_meta.get("mode") == "encode"
     assert "encoding" in enc_df.columns
 
-    seg_df, seg_meta = simp._simplify_dataframe_rows_ext(
-        df, list(df.columns), {"mode": "segment", "threshold_pct": 0.01}
-    )
+    seg_df, seg_meta = simp._simplify_dataframe_rows_ext(df, list(df.columns), {"mode": "segment", "threshold_pct": 0.01})
     assert seg_meta is not None
     assert seg_meta.get("mode") == "segment"
     assert len(seg_df) >= 2
 
-    sym_df, sym_meta = simp._simplify_dataframe_rows_ext(
-        df, list(df.columns), {"mode": "symbolic", "paa": 3}
-    )
+    sym_df, sym_meta = simp._simplify_dataframe_rows_ext(df, list(df.columns), {"mode": "symbolic", "paa": 3})
     assert sym_meta is not None
     assert sym_meta.get("mode") == "symbolic"
     assert "symbolic" in sym_df.columns

@@ -20,20 +20,10 @@ def test_analog_method_metadata_properties():
 def test_analog_method_rejects_derived_or_missing_series():
     method = AnalogMethod()
     with pytest.raises(ValueError, match="price series only"):
-        method.forecast(
-            pd.Series([], dtype=float),
-            horizon=3,
-            seasonality=1,
-            params={"symbol": "EURUSD", "timeframe": "H1"},
-        )
+        method.forecast(pd.Series([], dtype=float), horizon=3, seasonality=1, params={"symbol": "EURUSD", "timeframe": "H1"})
 
     with pytest.raises(ValueError, match="price series only"):
-        method.forecast(
-            pd.Series([0.1, 0.2], name="__log_return"),
-            horizon=3,
-            seasonality=1,
-            params={"symbol": "EURUSD", "timeframe": "H1"},
-        )
+        method.forecast(pd.Series([0.1, 0.2], name="__log_return"), horizon=3, seasonality=1, params={"symbol": "EURUSD", "timeframe": "H1"})
 
 
 def test_analog_method_requires_symbol_and_timeframe():
@@ -49,24 +39,13 @@ def test_analog_method_raises_when_primary_search_fails(monkeypatch):
     series = pd.Series(np.linspace(100.0, 105.0, 80), name="close")
 
     def fake_run(*args, **kwargs):
-        method._timeframe_diagnostics["H1"] = {
-            "reason": "search_failed",
-            "message": "search backend unavailable",
-        }
+        method._timeframe_diagnostics["H1"] = {"reason": "search_failed", "message": "search backend unavailable"}
         return ([], [])
 
     monkeypatch.setattr(method, "_run_single_timeframe", fake_run)
 
-    with pytest.raises(
-        RuntimeError,
-        match="Primary analog search failed.*search failed.*search backend unavailable",
-    ):
-        method.forecast(
-            series,
-            horizon=3,
-            seasonality=1,
-            params={"symbol": "EURUSD", "timeframe": "H1"},
-        )
+    with pytest.raises(RuntimeError, match="Primary analog search failed.*search failed.*search backend unavailable"):
+        method.forecast(series, horizon=3, seasonality=1, params={"symbol": "EURUSD", "timeframe": "H1"})
 
 
 def test_analog_method_aggregates_primary_and_secondary_paths(monkeypatch):
@@ -137,12 +116,7 @@ def test_analog_method_requires_denoise_spec_for_close_dn_series():
             series,
             horizon=3,
             seasonality=1,
-            params={
-                "symbol": "EURUSD",
-                "timeframe": "H1",
-                "window_size": 5,
-                "base_col": "close_dn",
-            },
+            params={"symbol": "EURUSD", "timeframe": "H1", "window_size": 5, "base_col": "close_dn"},
         )
 
 
@@ -173,9 +147,7 @@ def test_analog_method_reports_only_contributing_components(monkeypatch):
     assert out.metadata is not None
     assert out.metadata["components"] == ["H1"]
     assert out.metadata["requested_components"] == ["H1", "H4"]
-    secondary_status = next(
-        item for item in out.metadata["component_status"] if item["timeframe"] == "H4"
-    )
+    secondary_status = next(item for item in out.metadata["component_status"] if item["timeframe"] == "H4")
     assert secondary_status["status"] == "skipped_insufficient_coverage"
 
 
@@ -189,10 +161,7 @@ def test_analog_method_reports_search_symbol_universe(monkeypatch):
             "returned_paths": 1,
             "search_symbols_used": ["EURUSD", "GBPUSD"],
         }
-        return (
-            [np.array([101.0, 102.0, 103.0], dtype=float)],
-            [{"score": 0.1, "symbol": "GBPUSD"}],
-        )
+        return ([np.array([101.0, 102.0, 103.0], dtype=float)], [{"score": 0.1, "symbol": "GBPUSD"}])
 
     monkeypatch.setattr(method, "_run_single_timeframe", fake_run)
 
@@ -228,10 +197,7 @@ def test_analog_method_rejects_primary_scores_above_threshold(monkeypatch):
 
     monkeypatch.setattr(method, "_run_single_timeframe", fake_run)
 
-    with pytest.raises(
-        RuntimeError,
-        match="Primary analog search rejected.*primary best score too high",
-    ):
+    with pytest.raises(RuntimeError, match="Primary analog search rejected.*primary best score too high"):
         method.forecast(
             series,
             horizon=3,
@@ -264,9 +230,7 @@ def test_analog_method_rejects_low_effective_path_count(monkeypatch):
 
     monkeypatch.setattr(method, "_run_single_timeframe", fake_run)
 
-    with pytest.raises(
-        RuntimeError, match="Analog ensemble rejected.*insufficient effective paths"
-    ):
+    with pytest.raises(RuntimeError, match="Analog ensemble rejected.*insufficient effective paths"):
         method.forecast(
             series,
             horizon=3,
@@ -321,10 +285,7 @@ def test_analog_method_reports_quality_gate_metrics_when_thresholds_pass(monkeyp
     assert out.metadata["ensemble_metrics"]["effective_paths"] > 1.0
     assert out.metadata["ensemble_metrics"]["quality_gate"]["status"] == "passed"
     assert out.metadata["ensemble_metrics"]["quality_gate"]["primary"]["n_paths"] == 2
-    assert (
-        out.metadata["timeframe_diagnostics"]["H1"]["quality_gate"]["status"]
-        == "passed"
-    )
+    assert out.metadata["timeframe_diagnostics"]["H1"]["quality_gate"]["status"] == "passed"
 
 
 def test_analog_method_routes_timeframe_specific_history_to_secondary(monkeypatch):
@@ -366,20 +327,13 @@ def test_analog_method_routes_timeframe_specific_history_to_secondary(monkeypatc
         history_base_col="close",
         history_by_timeframe={"H4": secondary_history},
         history_base_cols_by_timeframe={"H4": "close"},
-        history_denoise_specs_by_timeframe={
-            "H4": {"method": "sma", "params": {"window": 3}}
-        },
+        history_denoise_specs_by_timeframe={"H4": {"method": "sma", "params": {"window": 3}}},
     )
 
-    secondary_kwargs = next(
-        kwargs for timeframe, kwargs in seen_calls if timeframe == "H4"
-    )
+    secondary_kwargs = next(kwargs for timeframe, kwargs in seen_calls if timeframe == "H4")
     assert secondary_kwargs["history_df"].equals(secondary_history)
     assert secondary_kwargs["history_base_col"] == "close"
-    assert secondary_kwargs["history_denoise_spec"] == {
-        "method": "sma",
-        "params": {"window": 3},
-    }
+    assert secondary_kwargs["history_denoise_spec"] == {"method": "sma", "params": {"window": 3}}
 
 
 def test_analog_method_resamples_primary_history_for_coarser_secondary(monkeypatch):
@@ -416,15 +370,10 @@ def test_analog_method_resamples_primary_history_for_coarser_secondary(monkeypat
         history_denoise_spec={"method": "sma", "params": {"window": 3}},
     )
 
-    secondary_kwargs = next(
-        kwargs for timeframe, kwargs in seen_calls if timeframe == "H4"
-    )
+    secondary_kwargs = next(kwargs for timeframe, kwargs in seen_calls if timeframe == "H4")
     resampled_history = secondary_kwargs["history_df"]
     assert resampled_history is not None
     assert secondary_kwargs["history_base_col"] == "close"
-    assert secondary_kwargs["history_denoise_spec"] == {
-        "method": "sma",
-        "params": {"window": 3},
-    }
+    assert secondary_kwargs["history_denoise_spec"] == {"method": "sma", "params": {"window": 3}}
     assert resampled_history["time"].tolist() == [0, 14400, 28800]
     assert resampled_history["close"].tolist() == pytest.approx([103.2, 107.2, 111.2])

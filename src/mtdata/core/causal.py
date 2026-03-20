@@ -7,7 +7,7 @@ import logging
 import time
 import warnings
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 import numpy as np
@@ -45,9 +45,7 @@ def _parse_symbols(value: str) -> List[str]:
     return list(dict.fromkeys(items))  # dedupe preserving order
 
 
-def _expand_symbols_for_group(
-    anchor: str, gateway: Any = None
-) -> tuple[List[str], str | None, str | None]:
+def _expand_symbols_for_group(anchor: str, gateway: Any = None) -> tuple[List[str], str | None, str | None]:
     """Return visible group members for anchor along with the group path."""
     mt5_gateway = gateway or get_mt5_gateway(
         adapter=mt5,
@@ -62,7 +60,7 @@ def _expand_symbols_for_group(
         return [], f"Failed to load symbol list: {mt5_gateway.last_error()}", group_path
     members: list[str] = []
     for sym in all_symbols:
-        if not getattr(sym, "visible", True) and sym.name != anchor:
+        if not getattr(sym, 'visible', True) and sym.name != anchor:
             continue
         if _extract_group_path_util(sym) == group_path:
             members.append(sym.name)
@@ -70,17 +68,12 @@ def _expand_symbols_for_group(
         members.insert(0, anchor)
     deduped = list(dict.fromkeys(members))
     if len(deduped) < 2:
-        return (
-            deduped,
-            f"Symbol group {group_path} has fewer than two visible instruments",
-            group_path,
-        )
+        return deduped, f"Symbol group {group_path} has fewer than two visible instruments", group_path
     return deduped, None, group_path
 
 
-def _fetch_series(
-    symbol: str, timeframe, count: int, retries: int = 3, pause: float = 0.25
-) -> Tuple[pd.Series, str | None]:
+
+def _fetch_series(symbol: str, timeframe, count: int, retries: int = 3, pause: float = 0.25) -> Tuple[pd.Series, str | None]:
     """Fetch recent close prices for a symbol."""
     err = _ensure_symbol_ready(symbol)
     if err:
@@ -102,14 +95,9 @@ def _fetch_series(
         df = df.sort_values("time")
         if len(df) > count:
             df = df.tail(count)
-        series = pd.Series(
-            df["close"].to_numpy(dtype=float),
-            index=pd.to_datetime(df["time"], unit="s"),
-        )
+        series = pd.Series(df["close"].to_numpy(dtype=float), index=pd.to_datetime(df["time"], unit="s"))
         return series, None
-    return pd.Series(dtype=float), f"Failed to fetch data for {symbol}" + (
-        f" after {retries} retries" if retries > 1 else ""
-    )
+    return pd.Series(dtype=float), f"Failed to fetch data for {symbol}" + (f" after {retries} retries" if retries > 1 else "")
 
 
 def _transform_frame(frame: pd.DataFrame, transform: str) -> pd.DataFrame:
@@ -152,18 +140,10 @@ def _standardize_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return standardized
 
 
-def _format_summary(
-    rows: List[Dict[str, object]],
-    symbols: List[str],
-    transform: str,
-    alpha: float,
-    group_hint: str | None = None,
-) -> str:
+def _format_summary(rows: List[Dict[str, object]], symbols: List[str], transform: str, alpha: float, group_hint: str | None = None) -> str:
     if not rows:
         return "No valid pairings available for causal discovery."
-    rows_sorted = sorted(
-        rows, key=lambda item: (item["p_value"], item["effect"], item["cause"])
-    )
+    rows_sorted = sorted(rows, key=lambda item: (item["p_value"], item["effect"], item["cause"]))
     header = [
         f"Causal signal discovery (transform={transform}, alpha={alpha:.4f})",
         f"Symbols analysed: {', '.join(symbols)}",
@@ -180,12 +160,8 @@ def _format_summary(
             f"{row['effect']} <- {row['cause']} | {row['lag']} | {row['p_value']:.4f} | {row['samples']} | {conclusion}"
         )
     lines.append("")
-    lines.append(
-        "Lag refers to the history length of the cause series used in the best-performing test (ssr_ftest)."
-    )
-    lines.append(
-        "Use the p-value to gauge strength; results are pairwise and do not imply full causal graphs."
-    )
+    lines.append("Lag refers to the history length of the cause series used in the best-performing test (ssr_ftest).")
+    lines.append("Use the p-value to gauge strength; results are pairwise and do not imply full causal graphs.")
     return "\n".join(lines)
 
 
@@ -218,22 +194,18 @@ def _format_overlap_details(
     parts: List[str] = []
     for symbol, count in symbol_rows.items():
         parts.append(f"{symbol}: {int(count)} rows")
-    parts.append(
-        f"aligned: {int(aligned_rows)} (minimum {int(minimum_required)} required)"
-    )
+    parts.append(f"aligned: {int(aligned_rows)} (minimum {int(minimum_required)} required)")
     return ", ".join(parts)
 
 
-def _pair_overlap_counts(
-    series_map: Dict[str, pd.Series], symbols: List[str]
-) -> Dict[str, int]:
+def _pair_overlap_counts(series_map: Dict[str, pd.Series], symbols: List[str]) -> Dict[str, int]:
     overlaps: Dict[str, int] = {}
     for i, left in enumerate(symbols):
         left_series = series_map.get(left)
         if not isinstance(left_series, pd.Series):
             continue
         left_idx = left_series.dropna().index
-        for right in symbols[i + 1 :]:
+        for right in symbols[i + 1:]:
             right_series = series_map.get(right)
             if not isinstance(right_series, pd.Series):
                 continue
@@ -258,19 +230,15 @@ def _build_overlap_frame(
     return pd.concat(aligned_map, axis=1, join="inner").tail(limit)
 
 
-def _pair_overlap_symbols(
-    pair_key: str, symbols: List[str] | None = None
-) -> tuple[str, str]:
+def _pair_overlap_symbols(pair_key: str, symbols: List[str] | None = None) -> tuple[str, str]:
     text = str(pair_key)
     if symbols:
-        ordered = sorted(
-            {str(symbol) for symbol in symbols if symbol}, key=len, reverse=True
-        )
+        ordered = sorted({str(symbol) for symbol in symbols if symbol}, key=len, reverse=True)
         for left in ordered:
             prefix = f"{left}-"
             if not text.startswith(prefix):
                 continue
-            right = text[len(prefix) :]
+            right = text[len(prefix):]
             if right in ordered:
                 return left, right
     left, _, right = text.partition("-")
@@ -283,11 +251,7 @@ def _select_prune_symbol(
     *,
     bottleneck_pair: str,
 ) -> str | None:
-    candidates = [
-        symbol
-        for symbol in _pair_overlap_symbols(bottleneck_pair, symbols)
-        if symbol in symbols
-    ]
+    candidates = [symbol for symbol in _pair_overlap_symbols(bottleneck_pair, symbols) if symbol in symbols]
     if len(candidates) < 2:
         return None
     anchor = symbols[0] if symbols else None
@@ -325,9 +289,7 @@ def _prune_symbols_for_overlap(
         pair_overlaps = _pair_overlap_counts(series_map, active_symbols)
         if not pair_overlaps:
             break
-        bottleneck_pair, bottleneck_rows = min(
-            pair_overlaps.items(), key=lambda kv: kv[1]
-        )
+        bottleneck_pair, bottleneck_rows = min(pair_overlaps.items(), key=lambda kv: kv[1])
         drop_symbol = _select_prune_symbol(
             active_symbols,
             pair_overlaps,
@@ -425,7 +387,6 @@ def causal_discover_signals(
         transform: Preprocessing transform: "log_return", "pct", "diff", or "level".
         normalize: Z-score columns before testing to stabilise scale.
     """
-
     def _run() -> Dict[str, Any]:
         connection_error = _causal_connection_error()
         if connection_error is not None:
@@ -462,9 +423,7 @@ def causal_discover_signals(
                 meta=meta,
             )
         if len(symbol_list) == 1:
-            expanded, err, group_path = _expand_symbols_for_group(
-                symbol_list[0], gateway=mt5_gateway
-            )
+            expanded, err, group_path = _expand_symbols_for_group(symbol_list[0], gateway=mt5_gateway)
             if err:
                 return _causal_error(
                     err,
@@ -541,11 +500,7 @@ def causal_discover_signals(
             meta["pair_overlaps"] = pair_overlaps
 
         frame = _build_overlap_frame(series_map, symbol_list, limit)
-        meta["symbols_used"] = (
-            list(frame.columns)
-            if isinstance(frame, pd.DataFrame)
-            else list(series_map.keys())
-        )
+        meta["symbols_used"] = list(frame.columns) if isinstance(frame, pd.DataFrame) else list(series_map.keys())
         min_required_samples = int(max_lag + 6)
         meta["minimum_samples_required"] = int(min_required_samples)
         meta["samples_aligned_raw"] = int(len(frame))
@@ -569,9 +524,7 @@ def causal_discover_signals(
                 symbol_list = pruned_symbols
                 frame = pruned_frame
                 meta["overlap_pruning"] = overlap_pruning
-                meta["pruned_symbols"] = list(
-                    overlap_pruning.get("dropped_symbols") or []
-                )
+                meta["pruned_symbols"] = list(overlap_pruning.get("dropped_symbols") or [])
                 meta["symbols_used"] = list(symbol_list)
                 meta["samples_aligned_raw_after_pruning"] = int(len(frame))
                 pair_overlaps_after = _pair_overlap_counts(series_map, symbol_list)
@@ -679,9 +632,7 @@ def causal_discover_signals(
                 try:
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore", category=FutureWarning)
-                        tests = grangercausalitytests(
-                            subset[[effect, cause]], maxlag=max_lag, verbose=False
-                        )
+                        tests = grangercausalitytests(subset[[effect, cause]], maxlag=max_lag, verbose=False)
                 except Exception as ex:
                     if len(pair_failures) < 10:
                         pair_failures.append(
@@ -716,19 +667,15 @@ def causal_discover_signals(
                         "significant": bool(best_p < significance),
                     }
                 )
-        rows_sorted = sorted(
-            rows, key=lambda item: (item["p_value"], item["effect"], item["cause"])
-        )
-        meta.update(
-            {
-                "group_hint": group_hint,
-                "symbols_used": list(transformed.columns),
-                "samples_aligned": int(len(transformed)),
-                "pairs_attempted": int(pair_attempts),
-                "pairs_tested": int(pair_success),
-                "pairs_failed": int(max(pair_attempts - pair_success, 0)),
-            }
-        )
+        rows_sorted = sorted(rows, key=lambda item: (item["p_value"], item["effect"], item["cause"]))
+        meta.update({
+            "group_hint": group_hint,
+            "symbols_used": list(transformed.columns),
+            "samples_aligned": int(len(transformed)),
+            "pairs_attempted": int(pair_attempts),
+            "pairs_tested": int(pair_success),
+            "pairs_failed": int(max(pair_attempts - pair_success, 0)),
+        })
         if pair_failures:
             meta["pair_failures"] = pair_failures
             warnings_out.append(
@@ -746,9 +693,7 @@ def causal_discover_signals(
         if warnings_out:
             out["warnings"] = warnings_out
         if not rows_sorted:
-            out["message"] = (
-                "No causal relationships detected (insufficient data or all tests failed)."
-            )
+            out["message"] = "No causal relationships detected (insufficient data or all tests failed)."
         return out
 
     return run_logged_operation(

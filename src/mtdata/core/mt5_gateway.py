@@ -7,11 +7,7 @@ import logging
 import time
 from typing import Any, Callable, Dict, Optional
 
-from .execution_logging import (
-    log_operation_exception,
-    log_operation_finish,
-    log_operation_start,
-)
+from .execution_logging import log_operation_exception, log_operation_finish, log_operation_start
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5_adapter
 
 logger = logging.getLogger(__name__)

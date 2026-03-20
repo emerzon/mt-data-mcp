@@ -1,5 +1,5 @@
 """Tests for src/mtdata/forecast/forecast_validation.py"""
-
+import pytest
 import pandas as pd
 import numpy as np
 
@@ -17,6 +17,7 @@ from mtdata.forecast.forecast_validation import (
     create_error_response,
     safe_cast_numeric,
     sanitize_params,
+    ForecastValidationError,
 )
 
 
@@ -281,9 +282,7 @@ class TestSafeCastNumeric:
         assert safe_cast_numeric("42", "x") == 42
 
     def test_float(self):
-        assert (
-            safe_cast_numeric("3.14", "x") == 3.14
-        )  # int() fails, falls through to float
+        assert safe_cast_numeric("3.14", "x") == 3.14  # int() fails, falls through to float
 
     def test_none(self):
         assert safe_cast_numeric(None, "x") is None

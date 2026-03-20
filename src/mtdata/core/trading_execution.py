@@ -7,14 +7,11 @@ from datetime import datetime, timezone
 from typing import Optional, Union, List, Dict, Any
 
 from . import trading_comments, trading_time, trading_validation
-from .trading_gateway import (
-    MT5TradingGateway,
-    create_trading_gateway,
-    trading_connection_error,
-)
+from .trading_gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .trading_positions import _resolve_open_position
 from .trading_time import ExpirationValue
 from ..utils.mt5 import _mt5_epoch_to_utc
+from ..utils.mt5 import ensure_mt5_connection_or_raise
 
 
 def _safe_last_error(mt5: Any) -> Any:
@@ -104,21 +101,14 @@ def _modify_position(
                 ticket_candidates=[ticket_id],
             )
             if position is None or resolved_ticket is None:
-                return {
-                    "error": f"Position {ticket} not found",
-                    "checked_scopes": ["positions"],
-                }
+                return {"error": f"Position {ticket} not found", "checked_scopes": ["positions"]}
 
             # Get symbol info for price normalization
             symbol_info = mt5.symbol_info(position.symbol)
             if symbol_info is None:
                 return {"error": f"Failed to get symbol info for {position.symbol}"}
 
-            point = (
-                float(symbol_info.point or 0.0)
-                if hasattr(symbol_info, "point")
-                else 0.0
-            )
+            point = float(symbol_info.point or 0.0) if hasattr(symbol_info, "point") else 0.0
             digits = trading_validation._safe_int_attr(symbol_info, "digits", 5)
 
             explicit_remove_sl = _zero_price_requested(stop_loss)
@@ -126,33 +116,17 @@ def _modify_position(
             requested_sl = (
                 None
                 if stop_loss is None or explicit_remove_sl
-                else trading_validation._normalize_price_for_symbol(
-                    stop_loss, point=point, digits=digits
-                )
+                else trading_validation._normalize_price_for_symbol(stop_loss, point=point, digits=digits)
             )
             requested_tp = (
                 None
                 if take_profit is None or explicit_remove_tp
-                else trading_validation._normalize_price_for_symbol(
-                    take_profit, point=point, digits=digits
-                )
+                else trading_validation._normalize_price_for_symbol(take_profit, point=point, digits=digits)
             )
-            if (
-                stop_loss is not None
-                and not explicit_remove_sl
-                and requested_sl is None
-            ):
-                return {
-                    "error": "stop_loss must be a non-zero finite price after symbol normalization."
-                }
-            if (
-                take_profit is not None
-                and not explicit_remove_tp
-                and requested_tp is None
-            ):
-                return {
-                    "error": "take_profit must be a non-zero finite price after symbol normalization."
-                }
+            if stop_loss is not None and not explicit_remove_sl and requested_sl is None:
+                return {"error": "stop_loss must be a non-zero finite price after symbol normalization."}
+            if take_profit is not None and not explicit_remove_tp and requested_tp is None:
+                return {"error": "take_profit must be a non-zero finite price after symbol normalization."}
 
             # Normalize SL/TP values
             existing_sl = trading_validation._normalize_price_for_symbol(
@@ -183,20 +157,12 @@ def _modify_position(
                     else float(existing_tp or 0.0)
                 )
             )
-            validate_sl = (
-                None if stop_loss is None or explicit_remove_sl else float(requested_sl)
-            )
-            validate_tp = (
-                None
-                if take_profit is None or explicit_remove_tp
-                else float(requested_tp)
-            )
+            validate_sl = None if stop_loss is None or explicit_remove_sl else float(requested_sl)
+            validate_tp = None if take_profit is None or explicit_remove_tp else float(requested_tp)
 
             side = _resolve_position_side(position, mt5)
             if side is None:
-                return {
-                    "error": "Unable to determine position side for protection validation."
-                }
+                return {"error": "Unable to determine position side for protection validation."}
             tick = mt5.symbol_info_tick(position.symbol)
             if tick is None:
                 return {"error": f"Failed to get current price for {position.symbol}"}
@@ -216,13 +182,9 @@ def _modify_position(
                 "position": resolved_ticket,
                 "sl": norm_sl,
                 "tp": norm_tp,
-                "comment": trading_comments._normalize_trade_comment(
-                    comment, default="MCP modify position"
-                ),
+                "comment": trading_comments._normalize_trade_comment(comment, default="MCP modify position"),
             }
-            request_magic = trading_validation._safe_int_ticket(
-                getattr(position, "magic", None)
-            )
+            request_magic = trading_validation._safe_int_ticket(getattr(position, "magic", None))
             if request_magic is not None:
                 request["magic"] = request_magic
 
@@ -242,9 +204,7 @@ def _modify_position(
                     "retcode_name": mt5.retcode_name(result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
-                    "last_error": mt5.last_error()
-                    if hasattr(mt5, "last_error")
-                    else None,
+                    "last_error": mt5.last_error() if hasattr(mt5, "last_error") else None,
                 }
 
             return {
@@ -297,15 +257,10 @@ def _modify_pending_order(
             ticket_id = int(ticket)
             orders = mt5.orders_get(ticket=ticket_id)
             if orders is None or len(orders) == 0:
-                return {
-                    "error": f"Pending order {ticket} not found",
-                    "checked_scopes": ["pending_orders"],
-                }
+                return {"error": f"Pending order {ticket} not found", "checked_scopes": ["pending_orders"]}
 
             order = orders[0]
-            normalized_expiration, expiration_specified = (
-                trading_time._normalize_pending_expiration(expiration)
-            )
+            normalized_expiration, expiration_specified = trading_time._normalize_pending_expiration(expiration)
             symbol_info = mt5.symbol_info(order.symbol)
             if symbol_info is None:
                 return {"error": f"Failed to get symbol info for {order.symbol}"}
@@ -323,40 +278,22 @@ def _modify_pending_order(
                 digits=digits,
             )
             if normalized_price is None:
-                return {
-                    "error": "price must be a non-zero finite number after symbol normalization."
-                }
+                return {"error": "price must be a non-zero finite number after symbol normalization."}
 
             requested_sl = (
                 None
                 if stop_loss is None or explicit_remove_sl
-                else trading_validation._normalize_price_for_symbol(
-                    stop_loss, point=point, digits=digits
-                )
+                else trading_validation._normalize_price_for_symbol(stop_loss, point=point, digits=digits)
             )
             requested_tp = (
                 None
                 if take_profit is None or explicit_remove_tp
-                else trading_validation._normalize_price_for_symbol(
-                    take_profit, point=point, digits=digits
-                )
+                else trading_validation._normalize_price_for_symbol(take_profit, point=point, digits=digits)
             )
-            if (
-                stop_loss is not None
-                and not explicit_remove_sl
-                and requested_sl is None
-            ):
-                return {
-                    "error": "stop_loss must be a non-zero finite price after symbol normalization."
-                }
-            if (
-                take_profit is not None
-                and not explicit_remove_tp
-                and requested_tp is None
-            ):
-                return {
-                    "error": "take_profit must be a non-zero finite price after symbol normalization."
-                }
+            if stop_loss is not None and not explicit_remove_sl and requested_sl is None:
+                return {"error": "stop_loss must be a non-zero finite price after symbol normalization."}
+            if take_profit is not None and not explicit_remove_tp and requested_tp is None:
+                return {"error": "take_profit must be a non-zero finite price after symbol normalization."}
 
             existing_sl = trading_validation._normalize_price_for_symbol(
                 getattr(order, "sl", None),
@@ -409,13 +346,9 @@ def _modify_pending_order(
                 "price": float(normalized_price),
                 "sl": request_sl,
                 "tp": request_tp,
-                "comment": trading_comments._normalize_trade_comment(
-                    comment, default="MCP modify pending order"
-                ),
+                "comment": trading_comments._normalize_trade_comment(comment, default="MCP modify pending order"),
             }
-            request_magic = trading_validation._safe_int_ticket(
-                getattr(order, "magic", None)
-            )
+            request_magic = trading_validation._safe_int_ticket(getattr(order, "magic", None))
             if request_magic is not None:
                 request["magic"] = request_magic
 
@@ -430,22 +363,13 @@ def _modify_pending_order(
                 current_expiration = getattr(order, "time_expiration", None)
                 if current_type_time is not None:
                     request["type_time"] = current_type_time
-                    if (
-                        current_type_time == mt5.ORDER_TIME_SPECIFIED
-                        and current_expiration
-                    ):
+                    if current_type_time == mt5.ORDER_TIME_SPECIFIED and current_expiration:
                         try:
                             request["expiration"] = int(current_expiration)
                         except Exception:
                             if isinstance(current_expiration, datetime):
-                                server_dt = trading_time._to_server_time_naive(
-                                    current_expiration
-                                )
-                                request["expiration"] = (
-                                    trading_time._server_time_naive_to_mt5_timestamp(
-                                        server_dt
-                                    )
-                                )
+                                server_dt = trading_time._to_server_time_naive(current_expiration)
+                                request["expiration"] = trading_time._server_time_naive_to_mt5_timestamp(server_dt)
 
             result = mt5.order_send(request)
             if result is None:
@@ -453,10 +377,7 @@ def _modify_pending_order(
                     last_err = mt5.last_error()
                 except Exception:
                     last_err = None
-                return {
-                    "error": "Failed to modify pending order",
-                    "last_error": last_err,
-                }
+                return {"error": "Failed to modify pending order", "last_error": last_err}
 
             if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
                 return {
@@ -465,9 +386,7 @@ def _modify_pending_order(
                     "retcode_name": mt5.retcode_name(result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
-                    "last_error": mt5.last_error()
-                    if hasattr(mt5, "last_error")
-                    else None,
+                    "last_error": mt5.last_error() if hasattr(mt5, "last_error") else None,
                 }
 
             return {
@@ -525,10 +444,7 @@ def _close_positions(
                 t_int = int(ticket)
                 positions = mt5.positions_get(ticket=t_int)
                 if positions is None or len(positions) == 0:
-                    return {
-                        "error": f"Position {ticket} not found",
-                        "checked_scopes": ["positions"],
-                    }
+                    return {"error": f"Position {ticket} not found", "checked_scopes": ["positions"]}
             elif symbol is not None:
                 positions = mt5.positions_get(symbol=symbol)
                 if positions is None or len(positions) == 0:
@@ -557,9 +473,7 @@ def _close_positions(
             if not to_close:
                 return {"message": "No positions matched criteria"}
 
-            deviation_validated, deviation_error = (
-                trading_validation._validate_deviation(deviation)
-            )
+            deviation_validated, deviation_error = trading_validation._validate_deviation(deviation)
             if deviation_error:
                 return {"error": deviation_error}
 
@@ -570,90 +484,70 @@ def _close_positions(
                 position_volume_before = None
                 remaining_volume_estimate = None
                 try:
-                    position_volume_before = float(
-                        getattr(position, "volume", 0.0) or 0.0
-                    )
+                    position_volume_before = float(getattr(position, "volume", 0.0) or 0.0)
                 except Exception:
                     position_volume_before = None
                 if volume is not None:
                     symbol_info = mt5.symbol_info(position.symbol)
                     if symbol_info is None:
-                        results.append(
-                            {
-                                "ticket": position.ticket,
-                                "error": f"Failed to get symbol info for {position.symbol}",
-                            }
-                        )
+                        results.append({
+                            "ticket": position.ticket,
+                            "error": f"Failed to get symbol info for {position.symbol}",
+                        })
                         continue
-                    requested_volume, requested_volume_error = (
-                        trading_validation._validate_volume(
-                            volume,
-                            symbol_info,
-                        )
+                    requested_volume, requested_volume_error = trading_validation._validate_volume(
+                        volume,
+                        symbol_info,
                     )
                     if requested_volume_error:
-                        results.append(
-                            {
-                                "ticket": position.ticket,
-                                "error": requested_volume_error,
-                                "requested_volume": volume,
-                            }
-                        )
+                        results.append({
+                            "ticket": position.ticket,
+                            "error": requested_volume_error,
+                            "requested_volume": volume,
+                        })
                         continue
                     if (
                         position_volume_before is None
                         or not math.isfinite(position_volume_before)
                         or position_volume_before <= 0
                     ):
-                        results.append(
-                            {
-                                "ticket": position.ticket,
-                                "error": "Open position volume is invalid for partial close.",
-                                "requested_volume": requested_volume,
-                            }
-                        )
+                        results.append({
+                            "ticket": position.ticket,
+                            "error": "Open position volume is invalid for partial close.",
+                            "requested_volume": requested_volume,
+                        })
                         continue
                     if requested_volume > (position_volume_before + 1e-12):
-                        results.append(
-                            {
-                                "ticket": position.ticket,
-                                "error": (
-                                    f"volume must be <= open position volume ({position_volume_before:g})"
-                                ),
-                                "requested_volume": requested_volume,
-                                "position_volume": position_volume_before,
-                            }
-                        )
+                        results.append({
+                            "ticket": position.ticket,
+                            "error": (
+                                f"volume must be <= open position volume ({position_volume_before:g})"
+                            ),
+                            "requested_volume": requested_volume,
+                            "position_volume": position_volume_before,
+                        })
                         continue
-                    remaining_volume_estimate = max(
-                        0.0, position_volume_before - requested_volume
-                    )
+                    remaining_volume_estimate = max(0.0, position_volume_before - requested_volume)
                     if remaining_volume_estimate > 1e-12:
                         _, remaining_error = trading_validation._validate_volume(
                             remaining_volume_estimate,
                             symbol_info,
                         )
                         if remaining_error:
-                            results.append(
-                                {
-                                    "ticket": position.ticket,
-                                    "error": (
-                                        "remaining position volume would be invalid after partial close: "
-                                        f"{remaining_error}"
-                                    ),
-                                    "requested_volume": requested_volume,
-                                    "position_volume": position_volume_before,
-                                    "remaining_volume": remaining_volume_estimate,
-                                }
-                            )
+                            results.append({
+                                "ticket": position.ticket,
+                                "error": (
+                                    "remaining position volume would be invalid after partial close: "
+                                    f"{remaining_error}"
+                                ),
+                                "requested_volume": requested_volume,
+                                "position_volume": position_volume_before,
+                                "remaining_volume": remaining_volume_estimate,
+                            })
                             continue
 
                 fill_modes: List[int] = []
-                for fill_attr in (
-                    "ORDER_FILLING_IOC",
-                    "ORDER_FILLING_FOK",
-                    "ORDER_FILLING_RETURN",
-                ):
+                for fill_attr in ("ORDER_FILLING_IOC", "ORDER_FILLING_FOK", "ORDER_FILLING_RETURN"):
                     if hasattr(mt5, fill_attr):
                         try:
                             fill_val = int(getattr(mt5, fill_attr))
@@ -667,9 +561,7 @@ def _close_positions(
                 result = None
                 request = None
                 attempts: List[Dict[str, Any]] = []
-                position_type_buy = getattr(
-                    mt5, "POSITION_TYPE_BUY", getattr(mt5, "ORDER_TYPE_BUY", 0)
-                )
+                position_type_buy = getattr(mt5, "POSITION_TYPE_BUY", getattr(mt5, "ORDER_TYPE_BUY", 0))
                 close_type_buy = getattr(mt5, "ORDER_TYPE_BUY", 0)
                 close_type_sell = getattr(mt5, "ORDER_TYPE_SELL", 1)
                 done_codes = {
@@ -682,9 +574,7 @@ def _close_positions(
                     if tick is None:
                         tick_error = None
                         try:
-                            tick_error = (
-                                mt5.last_error() if hasattr(mt5, "last_error") else None
-                            )
+                            tick_error = mt5.last_error() if hasattr(mt5, "last_error") else None
                         except Exception:
                             tick_error = None
                         attempts.append(
@@ -697,20 +587,14 @@ def _close_positions(
                         continue
 
                     try:
-                        is_buy_position = int(
-                            getattr(position, "type", position_type_buy)
-                        ) == int(position_type_buy)
+                        is_buy_position = int(getattr(position, "type", position_type_buy)) == int(position_type_buy)
                     except Exception:
                         is_buy_position = True
-                    close_price = (
-                        float(getattr(tick, "bid", 0.0) or 0.0)
-                        if is_buy_position
-                        else float(getattr(tick, "ask", 0.0) or 0.0)
+                    close_price = float(getattr(tick, "bid", 0.0) or 0.0) if is_buy_position else float(
+                        getattr(tick, "ask", 0.0) or 0.0
                     )
                     close_type = close_type_sell if is_buy_position else close_type_buy
-                    close_comment = trading_comments._normalize_trade_comment(
-                        comment, default="MCP close"
-                    )
+                    close_comment = trading_comments._normalize_trade_comment(comment, default="MCP close")
                     # Some brokers reject edge-length comments during close-deal requests.
                     if len(close_comment) > 24:
                         close_comment = close_comment[:24]
@@ -719,9 +603,7 @@ def _close_positions(
                         "action": mt5.TRADE_ACTION_DEAL,
                         "position": position.ticket,
                         "symbol": position.symbol,
-                        "volume": requested_volume
-                        if requested_volume is not None
-                        else position.volume,
+                        "volume": requested_volume if requested_volume is not None else position.volume,
                         "type": close_type,
                         "price": close_price,
                         "deviation": deviation_validated,
@@ -735,19 +617,12 @@ def _close_positions(
                     if result is None:
                         send_error = None
                         try:
-                            send_error = (
-                                mt5.last_error() if hasattr(mt5, "last_error") else None
-                            )
+                            send_error = mt5.last_error() if hasattr(mt5, "last_error") else None
                         except Exception:
                             send_error = None
-                        send_error_text = (
-                            str(send_error).lower() if send_error is not None else ""
-                        )
+                        send_error_text = str(send_error).lower() if send_error is not None else ""
                         # Retry with a minimal/no comment when broker rejects the comment field.
-                        if (
-                            "invalid" in send_error_text
-                            and "comment" in send_error_text
-                        ):
+                        if "invalid" in send_error_text and "comment" in send_error_text:
                             alt_requests: List[Dict[str, Any]] = []
                             req_short = dict(request)
                             req_short["comment"] = "MCP"
@@ -761,11 +636,7 @@ def _close_positions(
                                 if alt_res is None:
                                     alt_err = None
                                     try:
-                                        alt_err = (
-                                            mt5.last_error()
-                                            if hasattr(mt5, "last_error")
-                                            else None
-                                        )
+                                        alt_err = mt5.last_error() if hasattr(mt5, "last_error") else None
                                     except Exception:
                                         alt_err = None
                                     attempts.append(
@@ -781,9 +652,7 @@ def _close_positions(
                                     {
                                         "type_filling": int(fill_mode),
                                         "retcode": getattr(alt_res, "retcode", None),
-                                        "retcode_name": mt5.retcode_name(
-                                            getattr(alt_res, "retcode", None)
-                                        ),
+                                        "retcode_name": mt5.retcode_name(getattr(alt_res, "retcode", None)),
                                         "comment": getattr(alt_res, "comment", None),
                                         "comment_fallback": True,
                                     }
@@ -795,10 +664,7 @@ def _close_positions(
                             if recovered:
                                 retcode_val = getattr(result, "retcode", None)
                                 try:
-                                    if (
-                                        retcode_val is not None
-                                        and int(retcode_val) in done_codes
-                                    ):
+                                    if retcode_val is not None and int(retcode_val) in done_codes:
                                         break
                                 except Exception:
                                     pass
@@ -840,15 +706,11 @@ def _close_positions(
                 if not close_ok:
                     last_error = None
                     try:
-                        last_error = (
-                            mt5.last_error() if hasattr(mt5, "last_error") else None
-                        )
+                        last_error = mt5.last_error() if hasattr(mt5, "last_error") else None
                     except Exception:
                         last_error = None
                     tick_failures = [
-                        a
-                        for a in attempts
-                        if "tick data" in str(a.get("error", "")).lower()
+                        a for a in attempts if "tick data" in str(a.get("error", "")).lower()
                     ]
                     if attempts and len(tick_failures) == len(attempts):
                         error_msg = f"Failed to get tick data for {position.symbol}"
@@ -867,47 +729,31 @@ def _close_positions(
                 if result is not None:
                     open_price = getattr(position, "price_open", None)
                     try:
-                        open_price = (
-                            float(open_price) if open_price is not None else None
-                        )
+                        open_price = float(open_price) if open_price is not None else None
                     except Exception:
                         open_price = None
                     close_exec_price = getattr(result, "price", close_price)
                     try:
-                        close_exec_price = (
-                            float(close_exec_price)
-                            if close_exec_price is not None
-                            else None
-                        )
+                        close_exec_price = float(close_exec_price) if close_exec_price is not None else None
                     except Exception:
                         close_exec_price = None
                     open_epoch = getattr(position, "time", None)
                     try:
-                        open_epoch_utc = (
-                            _mt5_epoch_to_utc(float(open_epoch))
-                            if open_epoch is not None
-                            else None
-                        )
+                        open_epoch_utc = _mt5_epoch_to_utc(float(open_epoch)) if open_epoch is not None else None
                     except Exception:
                         open_epoch_utc = None
                     duration_seconds = None
                     if open_epoch_utc is not None:
                         try:
                             duration_seconds = int(
-                                max(
-                                    0.0,
-                                    datetime.now(timezone.utc).timestamp()
-                                    - float(open_epoch_utc),
-                                )
+                                max(0.0, datetime.now(timezone.utc).timestamp() - float(open_epoch_utc))
                             )
                         except Exception:
                             duration_seconds = None
 
                     realized_pnl = getattr(result, "profit", None)
                     try:
-                        realized_pnl = (
-                            float(realized_pnl) if realized_pnl is not None else None
-                        )
+                        realized_pnl = float(realized_pnl) if realized_pnl is not None else None
                     except Exception:
                         realized_pnl = None
                     if realized_pnl is None:
@@ -940,9 +786,7 @@ def _close_positions(
                         "pnl": realized_pnl,
                         "pnl_price_delta": pnl_price_delta,
                         "duration_seconds": duration_seconds,
-                        "requested_volume": requested_volume
-                        if requested_volume is not None
-                        else position_volume_before,
+                        "requested_volume": requested_volume if requested_volume is not None else position_volume_before,
                         "position_volume_before": position_volume_before,
                         "position_volume_remaining_estimate": remaining_volume_estimate,
                         "attempts": attempts,
@@ -963,11 +807,7 @@ def _close_positions(
                         success_count += 1
                 except Exception:
                     continue
-            return {
-                "closed_count": success_count,
-                "attempted_count": len(results),
-                "results": results,
-            }
+            return {"closed_count": success_count, "attempted_count": len(results), "results": results}
 
         except Exception as e:
             return {"error": str(e)}
@@ -998,10 +838,7 @@ def _cancel_pending(
                 t_int = int(ticket)
                 orders = mt5.orders_get(ticket=t_int)
                 if orders is None or len(orders) == 0:
-                    return {
-                        "error": f"Pending order {ticket} not found",
-                        "checked_scopes": ["pending_orders"],
-                    }
+                    return {"error": f"Pending order {ticket} not found", "checked_scopes": ["pending_orders"]}
             elif symbol is not None:
                 orders = mt5.orders_get(symbol=symbol)
                 if orders is None or len(orders) == 0:
@@ -1018,27 +855,21 @@ def _cancel_pending(
                     "action": mt5.TRADE_ACTION_REMOVE,
                     "order": order.ticket,
                     "magic": 234000,
-                    "comment": trading_comments._normalize_trade_comment(
-                        comment, default="MCP cancel pending order"
-                    ),
+                    "comment": trading_comments._normalize_trade_comment(comment, default="MCP cancel pending order"),
                 }
 
                 result = mt5.order_send(request)
                 if result is None:
-                    results.append(
-                        {"ticket": order.ticket, "error": "Failed to send cancel order"}
-                    )
+                    results.append({"ticket": order.ticket, "error": "Failed to send cancel order"})
                 else:
-                    results.append(
-                        {
-                            "ticket": order.ticket,
-                            "retcode": result.retcode,
-                            "retcode_name": mt5.retcode_name(result.retcode),
-                            "deal": result.deal,
-                            "order": result.order,
-                            "comment": result.comment,
-                        }
-                    )
+                    results.append({
+                        "ticket": order.ticket,
+                        "retcode": result.retcode,
+                        "retcode_name": mt5.retcode_name(result.retcode),
+                        "deal": result.deal,
+                        "order": result.order,
+                        "comment": result.comment,
+                    })
 
             # If only one order was targeted by ticket, return single result
             if ticket is not None and len(results) == 1:
@@ -1054,11 +885,7 @@ def _cancel_pending(
                         success_count += 1
                 except Exception:
                     continue
-            return {
-                "cancelled_count": success_count,
-                "attempted_count": len(results),
-                "results": results,
-            }
+            return {"cancelled_count": success_count, "attempted_count": len(results), "results": results}
 
         except Exception as e:
             return {"error": str(e)}

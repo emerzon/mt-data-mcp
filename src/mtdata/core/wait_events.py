@@ -53,11 +53,7 @@ def run_wait_event_loop(
     )
     poll_interval_seconds = float(request.poll_interval_seconds)
 
-    if (
-        not watch_for
-        and len(boundaries) == 1
-        and boundaries[0]["type"] == "candle_close"
-    ):
+    if not watch_for and len(boundaries) == 1 and boundaries[0]["type"] == "candle_close":
         return _run_candle_boundary_only(
             request=request,
             boundary=boundaries[0],
@@ -73,11 +69,7 @@ def run_wait_event_loop(
     if isinstance(history_state, dict) and "error" in history_state:
         return history_state
 
-    baseline = (
-        _build_baseline(gateway, watch_for)
-        if _watchers_need_current_state(watch_for)
-        else {}
-    )
+    baseline = _build_baseline(gateway, watch_for) if _watchers_need_current_state(watch_for) else {}
     market_state = _build_market_state(
         gateway=gateway,
         watch_for=watch_for,
@@ -145,9 +137,7 @@ def run_wait_event_loop(
                 end_on_inferred=end_on_inferred,
             )
 
-        boundary_event = _evaluate_boundaries(
-            boundaries, observed_at_utc=observed_at_utc
-        )
+        boundary_event = _evaluate_boundaries(boundaries, observed_at_utc=observed_at_utc)
         if boundary_event is not None:
             return _build_wait_result(
                 request=request,
@@ -198,11 +188,7 @@ def _compile_request(
 ) -> Dict[str, Any]:
     raw_watch_specs = request.watch_for
     watch_for_inferred = raw_watch_specs is None
-    source_watch_specs = (
-        _default_watch_specs(request)
-        if raw_watch_specs is None
-        else list(raw_watch_specs)
-    )
+    source_watch_specs = _default_watch_specs(request) if raw_watch_specs is None else list(raw_watch_specs)
     source_end_specs: List[Any]
     end_on_inferred = False
     if request.end_on:
@@ -233,10 +219,7 @@ def _compile_request(
     return {
         "watch_for": watch_for,
         "watch_for_inferred": watch_for_inferred,
-        "watch_for_payload": [
-            _public_watch_spec_payload(spec, request=request)
-            for spec in source_watch_specs
-        ],
+        "watch_for_payload": [_public_watch_spec_payload(spec, request=request) for spec in source_watch_specs],
         "end_on_inferred": end_on_inferred,
         "end_on": sorted(
             end_on,
@@ -245,10 +228,7 @@ def _compile_request(
                 str(item.get("timeframe") or ""),
             ),
         ),
-        "end_on_payload": [
-            _public_boundary_spec_payload(spec, request=request)
-            for spec in source_end_specs
-        ],
+        "end_on_payload": [_public_boundary_spec_payload(spec, request=request) for spec in source_end_specs],
     }
 
 
@@ -270,21 +250,18 @@ def _compile_watch_event(spec: Any, *, request: WaitEventRequest) -> Dict[str, A
     if isinstance(spec, PriceChangeEventSpec):
         symbol = _resolved_value(spec, request, "symbol")
         if not symbol:
-            return {
-                "error": "price_change events require symbol at the event or request level."
-            }
-        if spec.threshold_mode in {"ratio_to_baseline", "zscore"} and str(
-            spec.baseline_window.kind
-        ) != str(spec.window.kind):
+            return {"error": "price_change events require symbol at the event or request level."}
+        if (
+            spec.threshold_mode in {"ratio_to_baseline", "zscore"}
+            and str(spec.baseline_window.kind) != str(spec.window.kind)
+        ):
             return {
                 "error": (
                     "price_change baseline_window.kind must match window.kind when "
                     "threshold_mode is ratio_to_baseline or zscore."
                 )
             }
-        if spec.threshold_mode in {"ratio_to_baseline", "zscore"} and float(
-            spec.baseline_window.value
-        ) <= float(spec.window.value):
+        if spec.threshold_mode in {"ratio_to_baseline", "zscore"} and float(spec.baseline_window.value) <= float(spec.window.value):
             return {
                 "error": (
                     "price_change baseline_window must be larger than window when "
@@ -311,9 +288,7 @@ def _compile_watch_event(spec: Any, *, request: WaitEventRequest) -> Dict[str, A
     if isinstance(spec, VolumeSpikeEventSpec):
         symbol = _resolved_value(spec, request, "symbol")
         if not symbol:
-            return {
-                "error": "volume_spike events require symbol at the event or request level."
-            }
+            return {"error": "volume_spike events require symbol at the event or request level."}
         if spec.source == "tick_count" and str(spec.window.kind) == "ticks":
             return {
                 "error": (
@@ -321,18 +296,17 @@ def _compile_watch_event(spec: Any, *, request: WaitEventRequest) -> Dict[str, A
                     "A tick-count metric over a fixed tick window is constant."
                 )
             }
-        if spec.threshold_mode in {"ratio_to_baseline", "zscore"} and str(
-            spec.baseline_window.kind
-        ) != str(spec.window.kind):
+        if (
+            spec.threshold_mode in {"ratio_to_baseline", "zscore"}
+            and str(spec.baseline_window.kind) != str(spec.window.kind)
+        ):
             return {
                 "error": (
                     "volume_spike baseline_window.kind must match window.kind when "
                     "threshold_mode is ratio_to_baseline or zscore."
                 )
             }
-        if spec.threshold_mode in {"ratio_to_baseline", "zscore"} and float(
-            spec.baseline_window.value
-        ) <= float(spec.window.value):
+        if spec.threshold_mode in {"ratio_to_baseline", "zscore"} and float(spec.baseline_window.value) <= float(spec.window.value):
             return {
                 "error": (
                     "volume_spike baseline_window must be larger than window when "
@@ -355,9 +329,7 @@ def _compile_watch_event(spec: Any, *, request: WaitEventRequest) -> Dict[str, A
                 adaptive=spec.threshold_mode in {"ratio_to_baseline", "zscore"},
             ),
         }
-    return {
-        "error": f"Unsupported wait event type: {getattr(spec, 'type', type(spec).__name__)}"
-    }
+    return {"error": f"Unsupported wait event type: {getattr(spec, 'type', type(spec).__name__)}"}
 
 
 def _compile_account_event(spec: Any, *, request: WaitEventRequest) -> Dict[str, Any]:
@@ -379,13 +351,9 @@ def _compile_boundary_event(
     request: WaitEventRequest,
     started_at_utc: datetime,
 ) -> Dict[str, Any]:
-    timeframe = (
-        str(_resolved_value(spec, request, "timeframe", default="H1")).upper().strip()
-    )
+    timeframe = str(_resolved_value(spec, request, "timeframe", default="H1")).upper().strip()
     buffer_seconds = float(
-        spec.buffer_seconds
-        if spec.buffer_seconds is not None
-        else request.buffer_seconds
+        spec.buffer_seconds if spec.buffer_seconds is not None else request.buffer_seconds
     )
     preview = _next_candle_wait_payload(
         timeframe,
@@ -419,9 +387,7 @@ def _default_watch_specs(request: WaitEventRequest) -> List[Any]:
     return specs
 
 
-def _public_watch_spec_payload(
-    spec: Any, *, request: WaitEventRequest
-) -> Dict[str, Any]:
+def _public_watch_spec_payload(spec: Any, *, request: WaitEventRequest) -> Dict[str, Any]:
     if hasattr(spec, "model_dump"):
         payload = spec.model_dump(mode="json")
     else:
@@ -435,9 +401,7 @@ def _public_watch_spec_payload(
     return {key: value for key, value in payload.items() if value is not None}
 
 
-def _public_boundary_spec_payload(
-    spec: Any, *, request: WaitEventRequest
-) -> Dict[str, Any]:
+def _public_boundary_spec_payload(spec: Any, *, request: WaitEventRequest) -> Dict[str, Any]:
     if hasattr(spec, "model_dump"):
         payload = spec.model_dump(mode="json")
     else:
@@ -459,9 +423,7 @@ def _run_candle_boundary_only(
 ) -> Dict[str, Any]:
     preview = dict(boundary["preview"])
     max_wait_seconds = request.max_wait_seconds
-    if max_wait_seconds is not None and float(preview["sleep_seconds"]) > float(
-        max_wait_seconds
-    ):
+    if max_wait_seconds is not None and float(preview["sleep_seconds"]) > float(max_wait_seconds):
         preview["success"] = True
         preview["status"] = "deferred_timeout_risk"
         preview["slept"] = False
@@ -503,24 +465,18 @@ def _build_baseline(gateway: Any, watch_for: List[Dict[str, Any]]) -> Dict[str, 
     baseline: Dict[str, Any] = {}
     if any(item["type"] == "order_created" for item in watch_for):
         baseline["orders"] = _coerce_rows(gateway.orders_get())
-    if any(
-        item["type"] in {"position_opened", "position_closed"} for item in watch_for
-    ):
+    if any(item["type"] in {"position_opened", "position_closed"} for item in watch_for):
         baseline["positions"] = _coerce_rows(gateway.positions_get())
     return baseline
 
 
 def _watchers_need_current_state(watch_for: List[Dict[str, Any]]) -> bool:
-    return any(
-        item["type"] in {"order_created", "position_opened", "position_closed"}
-        for item in watch_for
-    )
+    return any(item["type"] in {"order_created", "position_opened", "position_closed"} for item in watch_for)
 
 
 def _watchers_need_history_deals(watch_for: List[Dict[str, Any]]) -> bool:
     return any(
-        item["type"]
-        in {"order_filled", "position_opened", "position_closed", "tp_hit", "sl_hit"}
+        item["type"] in {"order_filled", "position_opened", "position_closed", "tp_hit", "sl_hit"}
         for item in watch_for
     )
 
@@ -566,9 +522,7 @@ def _seed_account_history_keys(
     row_kind: str,
     label: str,
 ) -> set[tuple[Any, ...]] | Dict[str, Any]:
-    seed_from_utc = started_at_utc - timedelta(
-        seconds=_ACCOUNT_HISTORY_SEED_LOOKBACK_SECONDS
-    )
+    seed_from_utc = started_at_utc - timedelta(seconds=_ACCOUNT_HISTORY_SEED_LOOKBACK_SECONDS)
     try:
         rows = fetch_impl(
             _to_server_naive_dt(seed_from_utc),
@@ -622,9 +576,7 @@ def _collect_snapshot(
     if any(item["type"] == "order_created" for item in watch_for):
         snapshot["orders"] = _coerce_rows(gateway.orders_get())
 
-    if any(
-        item["type"] in {"position_opened", "position_closed"} for item in watch_for
-    ):
+    if any(item["type"] in {"position_opened", "position_closed"} for item in watch_for):
         snapshot["positions"] = _coerce_rows(gateway.positions_get())
 
     if _watchers_need_history_deals(watch_for):
@@ -718,9 +670,7 @@ def _build_market_state(
     observed_at_utc: datetime,
     poll_interval_seconds: float,
 ) -> Dict[str, Any]:
-    market_specs = [
-        item for item in watch_for if item["type"] in {"price_change", "volume_spike"}
-    ]
+    market_specs = [item for item in watch_for if item["type"] in {"price_change", "volume_spike"}]
     if not market_specs:
         return {}
 
@@ -886,9 +836,7 @@ def _evaluate_boundaries(
                 "timeframe": boundary["timeframe"],
                 "buffer_seconds": boundary["buffer_seconds"],
                 "next_candle_close_utc": boundary["preview"]["next_candle_close_utc"],
-                "next_candle_close_server": boundary["preview"][
-                    "next_candle_close_server"
-                ],
+                "next_candle_close_server": boundary["preview"]["next_candle_close_server"],
                 "server_timezone": boundary["preview"]["server_timezone"],
             }
     return None
@@ -916,9 +864,7 @@ def _next_poll_sleep_seconds(
     return max(0.0, sleep_seconds)
 
 
-def _evaluate_price_change(
-    spec: Dict[str, Any], market_data: Any
-) -> Optional[Dict[str, Any]]:
+def _evaluate_price_change(spec: Dict[str, Any], market_data: Any) -> Optional[Dict[str, Any]]:
     ticks = list((market_data or {}).get("ticks", []))
     if not ticks:
         return None
@@ -982,16 +928,12 @@ def _evaluate_price_change(
     }
 
 
-def _evaluate_volume_spike(
-    spec: Dict[str, Any], market_data: Any
-) -> Optional[Dict[str, Any]]:
+def _evaluate_volume_spike(spec: Dict[str, Any], market_data: Any) -> Optional[Dict[str, Any]]:
     ticks = list((market_data or {}).get("ticks", []))
     if not ticks:
         return None
 
-    volume_source = _resolve_market_volume_source(
-        ticks, preferred=spec["source"], window_kind=spec["window"]["kind"]
-    )
+    volume_source = _resolve_market_volume_source(ticks, preferred=spec["source"], window_kind=spec["window"]["kind"])
     current_volume = _current_volume_metric(spec, ticks, source=volume_source)
     if current_volume is None:
         return None
@@ -1060,12 +1002,8 @@ def _bootstrap_market_ticks(
     observed_at_utc: datetime,
     poll_interval_seconds: float,
 ) -> Dict[str, Any] | Dict[str, str]:
-    required_tick_count = max(
-        int(spec.get("required_tick_count") or 0) for spec in specs
-    )
-    required_history_seconds = max(
-        float(spec.get("required_history_seconds") or 0.0) for spec in specs
-    )
+    required_tick_count = max(int(spec.get("required_tick_count") or 0) for spec in specs)
+    required_history_seconds = max(float(spec.get("required_history_seconds") or 0.0) for spec in specs)
     duration_seconds = _bootstrap_duration_seconds(
         required_tick_count=required_tick_count,
         required_history_seconds=required_history_seconds,
@@ -1083,11 +1021,7 @@ def _bootstrap_market_ticks(
         if isinstance(ticks_or_error, dict) and "error" in ticks_or_error:
             return ticks_or_error
         ticks = ticks_or_error
-        if (
-            required_tick_count <= 0
-            or len(ticks) >= required_tick_count
-            or duration_seconds >= _MARKET_BOOTSTRAP_MAX_SECONDS
-        ):
+        if required_tick_count <= 0 or len(ticks) >= required_tick_count or duration_seconds >= _MARKET_BOOTSTRAP_MAX_SECONDS:
             break
         duration_seconds = min(duration_seconds * 2.0, _MARKET_BOOTSTRAP_MAX_SECONDS)
 
@@ -1163,7 +1097,6 @@ def _build_wait_result(
             "accept_preexisting": bool(request.accept_preexisting),
         },
     }
-
 
 def _matches_account_filters(row: Any, spec: Dict[str, Any], *, gateway: Any) -> bool:
     symbol = spec.get("symbol")
@@ -1248,19 +1181,8 @@ def _is_deal_entry_out(row: Any, *, gateway: Any) -> bool:
     return _row_enum_matches(
         row,
         "entry",
-        text_patterns=(
-            "deal_entry_out",
-            "deal_entry_out_by",
-            "entry_out",
-            "entry_out_by",
-            " out",
-        ),
-        numeric_constants=(
-            "DEAL_ENTRY_OUT",
-            "DEAL_ENTRY_OUT_BY",
-            "DEAL_ENTRY_INOUT",
-            "ENTRY_OUT",
-        ),
+        text_patterns=("deal_entry_out", "deal_entry_out_by", "entry_out", "entry_out_by", " out"),
+        numeric_constants=("DEAL_ENTRY_OUT", "DEAL_ENTRY_OUT_BY", "DEAL_ENTRY_INOUT", "ENTRY_OUT"),
         gateway=gateway,
     )
 
@@ -1280,12 +1202,7 @@ def _is_exit_trigger(row: Any, *, gateway: Any, trigger: str) -> bool:
     comment = str(_row_value(row, "comment") or "").lower()
     reason = str(_row_value(row, "reason") or "").lower()
     if trigger_txt == "tp":
-        if (
-            "tp" in comment
-            or "take profit" in comment
-            or "tp" in reason
-            or "take profit" in reason
-        ):
+        if "tp" in comment or "take profit" in comment or "tp" in reason or "take profit" in reason:
             return True
         return _row_enum_matches(
             row,
@@ -1295,12 +1212,7 @@ def _is_exit_trigger(row: Any, *, gateway: Any, trigger: str) -> bool:
             gateway=gateway,
         )
     if trigger_txt == "sl":
-        if (
-            "sl" in comment
-            or "stop loss" in comment
-            or "sl" in reason
-            or "stop loss" in reason
-        ):
+        if "sl" in comment or "stop loss" in comment or "sl" in reason or "stop loss" in reason:
             return True
         return _row_enum_matches(
             row,
@@ -1426,10 +1338,7 @@ def _required_history_seconds(
     tick_count = float(window.value)
     if adaptive:
         tick_count += float(baseline_window.value)
-    estimated = (
-        max(float(poll_interval_seconds), _MARKET_ESTIMATED_SECONDS_PER_TICK)
-        * tick_count
-    )
+    estimated = max(float(poll_interval_seconds), _MARKET_ESTIMATED_SECONDS_PER_TICK) * tick_count
     return max(_MARKET_BOOTSTRAP_MIN_SECONDS, estimated)
 
 
@@ -1479,9 +1388,7 @@ def _normalize_tick_rows(rows: Any) -> List[Dict[str, Any]]:
     return normalized
 
 
-def _merge_market_ticks(
-    existing: List[Dict[str, Any]], new_ticks: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
+def _merge_market_ticks(existing: List[Dict[str, Any]], new_ticks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     if not existing:
         return list(new_ticks)
     out = list(existing)
@@ -1505,20 +1412,11 @@ def _trim_market_ticks(
 ) -> List[Dict[str, Any]]:
     if not ticks:
         return []
-    keep_seconds = max(
-        float(spec.get("required_history_seconds") or 0.0) for spec in specs
-    )
-    keep_ticks = (
-        max(int(spec.get("required_tick_count") or 0) for spec in specs)
-        + _MARKET_BUFFER_EXTRA_TICKS
-    )
+    keep_seconds = max(float(spec.get("required_history_seconds") or 0.0) for spec in specs)
+    keep_ticks = max(int(spec.get("required_tick_count") or 0) for spec in specs) + _MARKET_BUFFER_EXTRA_TICKS
     start_idx = 0
     if keep_seconds > 0.0:
-        cutoff = (
-            observed_at_utc.timestamp()
-            - keep_seconds
-            - max(1.0, _MARKET_ESTIMATED_SECONDS_PER_TICK)
-        )
+        cutoff = observed_at_utc.timestamp() - keep_seconds - max(1.0, _MARKET_ESTIMATED_SECONDS_PER_TICK)
         start_idx = len(ticks)
         for idx, tick in enumerate(ticks):
             if float(tick["epoch"]) >= cutoff:
@@ -1529,9 +1427,7 @@ def _trim_market_ticks(
     return ticks[start_idx:]
 
 
-def _market_price_points(
-    ticks: List[Dict[str, Any]], *, source: str
-) -> List[tuple[float, float]]:
+def _market_price_points(ticks: List[Dict[str, Any]], *, source: str) -> List[tuple[float, float]]:
     points: List[tuple[float, float]] = []
     for tick in ticks:
         price = _tick_price(tick, source=source)
@@ -1541,9 +1437,7 @@ def _market_price_points(
     return points
 
 
-def _current_price_change(
-    spec: Dict[str, Any], prices: List[tuple[float, float]]
-) -> Optional[float]:
+def _current_price_change(spec: Dict[str, Any], prices: List[tuple[float, float]]) -> Optional[float]:
     if not prices:
         return None
     if spec["window"]["kind"] == "ticks":
@@ -1602,11 +1496,7 @@ def _duration_price_change_baseline_samples(
         window_end = min(window_start + window_seconds, current_start)
         if window_end <= window_start:
             continue
-        window_points = [
-            (epoch, price)
-            for epoch, price in prices
-            if window_start <= epoch <= window_end
-        ]
+        window_points = [(epoch, price) for epoch, price in prices if window_start <= epoch <= window_end]
         if len(window_points) < 2:
             continue
         change = _pct_change(window_points[0][1], window_points[-1][1])
@@ -1624,14 +1514,10 @@ def _resolve_market_volume_source(
 ) -> str:
     if preferred != "auto":
         return str(preferred)
-    has_real = any(
-        _finite_number(tick.get("volume_real")) not in (None, 0.0) for tick in ticks
-    )
+    has_real = any(_finite_number(tick.get("volume_real")) not in (None, 0.0) for tick in ticks)
     if has_real:
         return "volume_real"
-    has_volume = any(
-        _finite_number(tick.get("volume")) not in (None, 0.0) for tick in ticks
-    )
+    has_volume = any(_finite_number(tick.get("volume")) not in (None, 0.0) for tick in ticks)
     if has_volume:
         return "volume"
     if window_kind == "minutes":
@@ -1672,9 +1558,7 @@ def _volume_baseline_samples(
         start_idx = max(0, end_idx - baseline_ticks)
         samples: List[float] = []
         for idx in range(start_idx + window_ticks, end_idx + 1):
-            metric = _volume_metric_for_ticks(
-                ticks[idx - window_ticks : idx], source=source
-            )
+            metric = _volume_metric_for_ticks(ticks[idx - window_ticks : idx], source=source)
             if metric is None:
                 continue
             samples.append(metric)
@@ -1701,9 +1585,7 @@ def _volume_baseline_samples(
     return samples
 
 
-def _volume_metric_for_ticks(
-    ticks: List[Dict[str, Any]], *, source: str
-) -> Optional[float]:
+def _volume_metric_for_ticks(ticks: List[Dict[str, Any]], *, source: str) -> Optional[float]:
     if not ticks:
         return None
     if source == "tick_count":
@@ -1824,9 +1706,7 @@ def _tick_epoch(row: Any) -> Optional[float]:
 
 def _mt5_millis_to_utc(value_millis: float) -> int:
     try:
-        return int(
-            round(float(_mt5_epoch_to_utc(float(value_millis) / 1000.0)) * 1000.0)
-        )
+        return int(round(float(_mt5_epoch_to_utc(float(value_millis) / 1000.0)) * 1000.0))
     except Exception:
         return int(round(float(value_millis)))
 
@@ -1981,9 +1861,7 @@ def _normalize_optional_utc_datetime(value: Any) -> Optional[datetime]:
         return _normalize_utc_datetime(value)
     if isinstance(value, (int, float)):
         try:
-            return datetime.fromtimestamp(
-                _mt5_epoch_to_utc(float(value)), tz=timezone.utc
-            )
+            return datetime.fromtimestamp(_mt5_epoch_to_utc(float(value)), tz=timezone.utc)
         except Exception:
             return None
     if isinstance(value, str):
@@ -1998,17 +1876,13 @@ def _normalize_utc_datetime(value: Any) -> datetime:
     if isinstance(value, str):
         value = datetime.fromisoformat(value)
     if not isinstance(value, datetime):
-        raise TypeError(
-            f"Expected datetime-compatible value, got {type(value).__name__}."
-        )
+        raise TypeError(f"Expected datetime-compatible value, got {type(value).__name__}.")
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
 
 
-def _resolved_value(
-    spec: Any, request: WaitEventRequest, field_name: str, default: Any = None
-) -> Any:
+def _resolved_value(spec: Any, request: WaitEventRequest, field_name: str, default: Any = None) -> Any:
     value = getattr(spec, field_name, None)
     if value is not None:
         return value

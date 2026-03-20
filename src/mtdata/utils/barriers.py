@@ -6,9 +6,7 @@ from .mt5 import get_symbol_info_cached
 from .utils import _coerce_finite_float
 
 
-def normalize_trade_direction(
-    direction: Any,
-) -> Tuple[Optional[Literal["long", "short"]], Optional[str]]:
+def normalize_trade_direction(direction: Any) -> Tuple[Optional[Literal["long", "short"]], Optional[str]]:
     """Normalize trade direction aliases into canonical long/short values."""
     text = str(direction or "").strip().lower()
     if text in {"long", "up", "buy"}:
@@ -91,27 +89,15 @@ def resolve_barrier_prices(
 
     if tp_price is None:
         if r_tp is not None:
-            tp_price = (
-                price_val * (1.0 + (r_tp / 100.0))
-                if dir_long
-                else price_val * (1.0 - (r_tp / 100.0))
-            )
+            tp_price = price_val * (1.0 + (r_tp / 100.0)) if dir_long else price_val * (1.0 - (r_tp / 100.0))
         elif p_tp is not None and pip_size is not None and pip_size > 0:
-            tp_price = (
-                price_val + p_tp * pip_size if dir_long else price_val - p_tp * pip_size
-            )
+            tp_price = price_val + p_tp * pip_size if dir_long else price_val - p_tp * pip_size
 
     if sl_price is None:
         if r_sl is not None:
-            sl_price = (
-                price_val * (1.0 - (r_sl / 100.0))
-                if dir_long
-                else price_val * (1.0 + (r_sl / 100.0))
-            )
+            sl_price = price_val * (1.0 - (r_sl / 100.0)) if dir_long else price_val * (1.0 + (r_sl / 100.0))
         elif p_sl is not None and pip_size is not None and pip_size > 0:
-            sl_price = (
-                price_val - p_sl * pip_size if dir_long else price_val + p_sl * pip_size
-            )
+            sl_price = price_val - p_sl * pip_size if dir_long else price_val + p_sl * pip_size
 
     if tp_price is None or sl_price is None:
         return None, None

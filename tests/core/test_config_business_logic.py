@@ -46,11 +46,7 @@ def test_mt5_config_warns_once_when_timezone_info_missing(monkeypatch, caplog):
         cfg.MT5Config()
         cfg.MT5Config()
 
-    warnings = [
-        r.message
-        for r in caplog.records
-        if "MT5_SERVER_TZ or MT5_TIME_OFFSET_MINUTES not set" in r.message
-    ]
+    warnings = [r.message for r in caplog.records if "MT5_SERVER_TZ or MT5_TIME_OFFSET_MINUTES not set" in r.message]
     assert len(warnings) == 1
 
 

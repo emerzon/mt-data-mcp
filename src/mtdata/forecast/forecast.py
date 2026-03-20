@@ -4,10 +4,14 @@ import os
 # Adopt upcoming StatsForecast DataFrame format to avoid repeated warnings
 os.environ.setdefault("NIXTLA_ID_AS_COL", "1")
 
+from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
 from .exceptions import ForecastError
+from .forecast_registry import get_forecast_methods_data
 
 # Re-exported for compatibility with older tests/importers that patch these seams.
+from .common import fetch_history as _fetch_history
+from .forecast_preprocessing import _create_dimred_reducer
 
 
 def forecast(
@@ -19,7 +23,7 @@ def forecast(
     as_of: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     ci_alpha: Optional[float] = 0.05,
-    quantity: Literal["price", "return", "volatility"] = "price",  # type: ignore
+    quantity: Literal['price','return','volatility'] = 'price',  # type: ignore
     denoise: Optional[DenoiseSpec] = None,
     # Feature engineering for exogenous/multivariate models
     features: Optional[Dict[str, Any]] = None,
@@ -33,14 +37,14 @@ def forecast(
     Parameters: symbol, timeframe, method, horizon, lookback?, as_of?, params?, ci_alpha?, quantity, denoise?
 
     Methods: naive, seasonal_naive, drift, theta, fourier_ols, ses, holt, holt_winters_add, holt_winters_mul, arima, sarima.
-
+    
     - `params`: method-specific settings; use `seasonality` inside params when needed (auto if omitted).
     - `quantity`: 'price', 'return', or 'volatility'.
     - `ci_alpha`: confidence level (e.g., 0.05). Set to null to disable intervals.
     - `features`: Dict or "key=value" string for feature engineering.
         - `include`: List of columns to include (e.g., "open,high").
         - `future_covariates`: List of date-based features to generate for future horizon.
-          Supported tokens: `hour`, `dow` (day of week), `month`, `day`, `doy` (day of year),
+          Supported tokens: `hour`, `dow` (day of week), `month`, `day`, `doy` (day of year), 
           `week`, `minute`, `mod` (minute of day), `is_weekend`, `is_holiday`.
           For `is_holiday`, specify `country` in features (default: US).
         - `dimred_method`: Dimensionality reduction method (e.g., "pca").
@@ -49,16 +53,15 @@ def forecast(
         method_l = str(method).lower().strip()
         quantity_l = str(quantity).lower().strip()
 
-        if quantity_l == "volatility" or method_l.startswith("vol_"):
+        if quantity_l == 'volatility' or method_l.startswith('vol_'):
             from .volatility import forecast_volatility
-
             return forecast_volatility(
                 symbol=symbol,
                 timeframe=timeframe,
                 horizon=horizon,
                 method=method,
                 params=params,
-                as_of=as_of,
+                as_of=as_of
             )
 
         from .forecast_engine import forecast_engine

@@ -14,9 +14,7 @@ def test_wait_event_request_defaults_watch_for_to_inferred_set() -> None:
 
 
 def test_wait_event_request_rejects_non_positive_poll_interval() -> None:
-    with pytest.raises(
-        ValueError, match="poll_interval_seconds must be greater than 0"
-    ):
+    with pytest.raises(ValueError, match="poll_interval_seconds must be greater than 0"):
         WaitEventRequest(
             watch_for=[{"type": "order_created"}],
             poll_interval_seconds=0.0,

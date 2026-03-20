@@ -1,30 +1,30 @@
 from __future__ import annotations
 import copy
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import numpy as np
 import pandas as pd
 
 from ..utils.utils import to_float_np
 from .classic_impl.config import ClassicDetectorConfig, ClassicPatternResult
 from .classic_impl.utils import (
-    _build_time_array,
-    _detect_pivots_close,
-    _calibrate_confidence,
+    _build_time_array, _detect_pivots_close, _calibrate_confidence,
+    _fit_lines_and_arrays, _count_recent_touches, _fit_line_robust,
+    _fit_line, _tol_abs_from_close, _level_close, _is_converging,
+    _find_recent_breakout, _find_forward_level_breakout, _result, _alias,
+    _count_touches, _conf, _last_touch_indexes, _compute_atr, _pivot_thresholds,
+    _znorm, _paa, _dtw_distance, _template_hs, _collect_calibration_points
 )
 from .classic_impl.trend import detect_trend_lines, detect_channels
 from .classic_impl.shapes import (
-    detect_rectangles,
-    detect_triangles,
-    detect_wedges,
-    detect_broadening,
-    detect_diamonds,
+    detect_rectangles, detect_triangles, detect_wedges, 
+    detect_broadening, detect_diamonds
 )
 from .classic_impl.reversal import (
-    detect_tops_bottoms,
-    detect_head_shoulders,
-    detect_rounding,
+    detect_tops_bottoms, detect_head_shoulders, detect_rounding
 )
-from .classic_impl.continuation import detect_flags_pennants, detect_cup_handle
+from .classic_impl.continuation import (
+    detect_flags_pennants, detect_cup_handle
+)
 
 # Re-export for backward compatibility
 __all__ = [
@@ -33,36 +33,35 @@ __all__ = [
     "detect_classic_patterns",
 ]
 
-
 def _prepare_classic_inputs(
     df: pd.DataFrame,
     cfg: ClassicDetectorConfig,
 ) -> Optional[tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]]:
-    if not isinstance(df, pd.DataFrame) or "close" not in df.columns:
+    if not isinstance(df, pd.DataFrame) or 'close' not in df.columns:
         return None
     if len(df) > cfg.max_bars:
-        df = df.iloc[-cfg.max_bars :].copy()
+        df = df.iloc[-cfg.max_bars:].copy()
 
     t = _build_time_array(df)
-    c = to_float_np(df["close"])
-    h = to_float_np(df["high"]) if "high" in df.columns else c
-    low = to_float_np(df["low"]) if "low" in df.columns else c
+    c = to_float_np(df['close'])
+    h = to_float_np(df['high']) if 'high' in df.columns else c
+    l = to_float_np(df['low']) if 'low' in df.columns else c
     if h.size != c.size:
         h = c
-    if low.size != c.size:
-        low = c
+    if l.size != c.size:
+        l = c
     n = c.size
     min_input_bars = max(20, int(getattr(cfg, "min_input_bars", 100)))
     if n < min_input_bars:
         return None
-    return df, t, c, h, low, n
+    return df, t, c, h, l, n
 
 
 def _detect_classic_patterns_once(
     t: np.ndarray,
     c: np.ndarray,
     h: np.ndarray,
-    low: np.ndarray,
+    l: np.ndarray,
     n: int,
     cfg: ClassicDetectorConfig,
     *,
@@ -71,7 +70,7 @@ def _detect_classic_patterns_once(
 ) -> List[ClassicPatternResult]:
     if peaks is None or troughs is None:
         try:
-            peaks, troughs = _detect_pivots_close(c, cfg, h, low)
+            peaks, troughs = _detect_pivots_close(c, cfg, h, l)
         except TypeError:
             # Keep compatibility with monkeypatched tests that still use the old 2-arg signature.
             peaks, troughs = _detect_pivots_close(c, cfg)
@@ -86,13 +85,11 @@ def _detect_classic_patterns_once(
     results.extend(detect_triangles(c, peaks, troughs, t, cfg))
     results.extend(detect_wedges(c, peaks, troughs, t, cfg))
     results.extend(detect_broadening(c, peaks, troughs, t, cfg))
-    results.extend(detect_diamonds(c, t, cfg, h, low, peaks=peaks, troughs=troughs))
+    results.extend(detect_diamonds(c, t, cfg, h, l, peaks=peaks, troughs=troughs))
     results.extend(detect_tops_bottoms(c, peaks, troughs, t, cfg))
     results.extend(detect_head_shoulders(c, peaks, troughs, t, cfg))
     results.extend(detect_rounding(c, t, cfg))
-    results.extend(
-        detect_flags_pennants(c, h, low, t, n, cfg, peaks=peaks, troughs=troughs)
-    )
+    results.extend(detect_flags_pennants(c, h, l, t, n, cfg, peaks=peaks, troughs=troughs))
     results.extend(detect_cup_handle(c, t, cfg))
     return results
 
@@ -103,11 +100,7 @@ def _pattern_overlap_ratio(a: ClassicPatternResult, b: ClassicPatternResult) -> 
     if hi < lo:
         return 0.0
     inter = hi - lo + 1
-    union = (
-        max(int(a.end_index), int(b.end_index))
-        - min(int(a.start_index), int(b.start_index))
-        + 1
-    )
+    union = max(int(a.end_index), int(b.end_index)) - min(int(a.start_index), int(b.start_index)) + 1
     if union <= 0:
         return 0.0
     return float(inter) / float(union)
@@ -157,15 +150,12 @@ def _scan_classic_patterns(
     t: np.ndarray,
     c: np.ndarray,
     h: np.ndarray,
-    low: np.ndarray,
+    l: np.ndarray,
     cfg: ClassicDetectorConfig,
 ) -> List[ClassicPatternResult]:
     n_total = int(c.size)
     step = max(1, int(getattr(cfg, "scan_step_bars", 10)))
-    min_prefix = max(
-        int(getattr(cfg, "min_input_bars", 100)),
-        int(getattr(cfg, "scan_min_prefix_bars", 120)),
-    )
+    min_prefix = max(int(getattr(cfg, "min_input_bars", 100)), int(getattr(cfg, "scan_min_prefix_bars", 120)))
     prefix_ends = list(range(min_prefix, n_total + 1, step))
     if not prefix_ends or prefix_ends[-1] != n_total:
         prefix_ends.append(n_total)
@@ -173,7 +163,7 @@ def _scan_classic_patterns(
     scan_cfg = copy.deepcopy(cfg)
     scan_cfg.scan_historical = False
     try:
-        full_peaks, full_troughs = _detect_pivots_close(c, scan_cfg, h, low)
+        full_peaks, full_troughs = _detect_pivots_close(c, scan_cfg, h, l)
     except TypeError:
         full_peaks, full_troughs = _detect_pivots_close(c, scan_cfg)
     full_peaks = np.asarray(full_peaks, dtype=int)
@@ -187,7 +177,7 @@ def _scan_classic_patterns(
             t[:end],
             c[:end],
             h[:end],
-            low[:end],
+            l[:end],
             int(end),
             scan_cfg,
             peaks=full_peaks[full_peaks < pivot_cutoff],
@@ -205,10 +195,10 @@ def _postprocess_classic_results(
     if bool(cfg.auto_complete_stale_forming):
         recent_bars = max(1, int(getattr(cfg, "stale_completion_recent_bars", 3)))
         for i, r in enumerate(results):
-            if r.status == "forming" and r.end_index < (n - recent_bars):
+            if r.status == 'forming' and r.end_index < (n - recent_bars):
                 results[i] = ClassicPatternResult(
                     name=r.name,
-                    status="completed",
+                    status='completed',
                     confidence=r.confidence,
                     start_index=r.start_index,
                     end_index=r.end_index,
@@ -244,9 +234,7 @@ def _postprocess_classic_results(
     return results
 
 
-def detect_classic_patterns(
-    df: pd.DataFrame, cfg: Optional[ClassicDetectorConfig] = None
-) -> List[ClassicPatternResult]:
+def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfig] = None) -> List[ClassicPatternResult]:
     """Detect classic chart patterns on OHLCV DataFrame with 'time' and 'close' columns."""
     if cfg is None:
         cfg = ClassicDetectorConfig()
@@ -254,10 +242,10 @@ def detect_classic_patterns(
     if prepared is None:
         return []
 
-    _, t, c, h, low, n = prepared
+    _, t, c, h, l, n = prepared
     if bool(getattr(cfg, "scan_historical", False)):
-        results = _scan_classic_patterns(t, c, h, low, cfg)
+        results = _scan_classic_patterns(t, c, h, l, cfg)
     else:
-        results = _detect_classic_patterns_once(t, c, h, low, n, cfg)
+        results = _detect_classic_patterns_once(t, c, h, l, n, cfg)
 
     return _postprocess_classic_results(results, cfg, n)

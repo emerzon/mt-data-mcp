@@ -1,4 +1,3 @@
-# ruff: noqa: E402
 from __future__ import annotations
 
 import os
@@ -27,18 +26,11 @@ def test_backtest_return_target_scores_against_returns() -> None:
     idx = 60
     horizon = 2
     anchor = _format_time_minimal(float(times[idx]))
-    actual_returns = np.log(
-        close[idx + 1 : idx + 1 + horizon] / close[idx : idx + horizon]
-    )
+    actual_returns = np.log(close[idx + 1 : idx + 1 + horizon] / close[idx : idx + horizon])
 
-    with (
-        patch("mtdata.forecast.backtest._fetch_history", return_value=df),
-        patch(
-            "mtdata.forecast.backtest.forecast",
-            return_value={
-                "forecast_return": [float(v) for v in actual_returns.tolist()]
-            },
-        ),
+    with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
+        "mtdata.forecast.backtest.forecast",
+        return_value={"forecast_return": [float(v) for v in actual_returns.tolist()]},
     ):
         res = forecast_backtest(
             symbol="EURUSD",
@@ -66,12 +58,9 @@ def test_backtest_volatility_with_return_target_uses_price_truth_windows() -> No
     truth_prices = close[idx + 1 : idx + 1 + horizon]
     expected_sigma = float(np.sqrt(np.mean(np.diff(np.log(truth_prices)) ** 2)))
 
-    with (
-        patch("mtdata.forecast.backtest._fetch_history", return_value=df),
-        patch(
-            "mtdata.forecast.backtest.forecast_volatility",
-            return_value={"horizon_sigma_return": expected_sigma},
-        ),
+    with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
+        "mtdata.forecast.backtest.forecast_volatility",
+        return_value={"horizon_sigma_return": expected_sigma},
     ):
         res = forecast_backtest(
             symbol="EURUSD",
@@ -95,19 +84,12 @@ def test_backtest_return_target_converts_log_returns_to_simple_trade_returns() -
     idx = 70
     horizon = 2
     anchor = _format_time_minimal(float(times[idx]))
-    actual_returns = np.log(
-        close[idx + 1 : idx + 1 + horizon] / close[idx : idx + horizon]
-    )
+    actual_returns = np.log(close[idx + 1 : idx + 1 + horizon] / close[idx : idx + horizon])
     expected_simple = float(np.exp(np.sum(actual_returns)) - 1.0)
 
-    with (
-        patch("mtdata.forecast.backtest._fetch_history", return_value=df),
-        patch(
-            "mtdata.forecast.backtest.forecast",
-            return_value={
-                "forecast_return": [float(v) for v in actual_returns.tolist()]
-            },
-        ),
+    with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
+        "mtdata.forecast.backtest.forecast",
+        return_value={"forecast_return": [float(v) for v in actual_returns.tolist()]},
     ):
         res = forecast_backtest(
             symbol="EURUSD",
@@ -152,12 +134,9 @@ def test_backtest_price_target_trade_returns_vary_by_forecast_implied_exit() -> 
             return {"forecast_price": [140.8, 141.0, 141.2]}
         return {"forecast_price": [143.5, 144.0, 144.5]}
 
-    with (
-        patch("mtdata.forecast.backtest._fetch_history", return_value=df),
-        patch(
-            "mtdata.forecast.backtest.forecast",
-            side_effect=_fake_forecast,
-        ),
+    with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
+        "mtdata.forecast.backtest.forecast",
+        side_effect=_fake_forecast,
     ):
         res = forecast_backtest(
             symbol="EURUSD",
@@ -174,9 +153,7 @@ def test_backtest_price_target_trade_returns_vary_by_forecast_implied_exit() -> 
     assert aggressive_detail["success"] is True
     assert slow_detail["position"] == "long"
     assert aggressive_detail["position"] == "long"
-    assert float(slow_detail["trade_return"]) != float(
-        aggressive_detail["trade_return"]
-    )
+    assert float(slow_detail["trade_return"]) != float(aggressive_detail["trade_return"])
     assert int(slow_detail["exit_step"]) < int(aggressive_detail["exit_step"])
 
 
@@ -187,12 +164,9 @@ def test_backtest_default_detail_is_compact_without_full_series_arrays() -> None
 
     idx = 60
     anchor = _format_time_minimal(float(times[idx]))
-    with (
-        patch("mtdata.forecast.backtest._fetch_history", return_value=df),
-        patch(
-            "mtdata.forecast.backtest.forecast",
-            return_value={"forecast_price": [110.0, 111.0, 112.0]},
-        ),
+    with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
+        "mtdata.forecast.backtest.forecast",
+        return_value={"forecast_price": [110.0, 111.0, 112.0]},
     ):
         res = forecast_backtest(
             symbol="EURUSD",
@@ -217,12 +191,9 @@ def test_backtest_full_detail_includes_series_arrays() -> None:
 
     idx = 60
     anchor = _format_time_minimal(float(times[idx]))
-    with (
-        patch("mtdata.forecast.backtest._fetch_history", return_value=df),
-        patch(
-            "mtdata.forecast.backtest.forecast",
-            return_value={"forecast_price": [110.0, 111.0, 112.0]},
-        ),
+    with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
+        "mtdata.forecast.backtest.forecast",
+        return_value={"forecast_price": [110.0, 111.0, 112.0]},
     ):
         res = forecast_backtest(
             symbol="EURUSD",

@@ -2,23 +2,16 @@ import numpy as np
 from typing import Dict, List, Optional
 from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
-    _detect_pivots_close,
-    _fit_lines_and_arrays,
-    _find_recent_breakout,
-    _find_forward_level_breakout,
-    _tol_abs_from_close,
-    _level_close,
-    _conf,
-    _result,
-    _alias,
-    _apply_breakout_confidence_bonus,
+    _detect_pivots_close, _fit_lines_and_arrays, _is_converging,
+    _find_recent_breakout, _find_forward_level_breakout, _tol_abs_from_close,
+    _level_close, _conf, _result, _alias, _count_recent_touches,
+    _apply_breakout_confidence_bonus
 )
-
 
 def detect_flags_pennants(
     c: np.ndarray,
     h: np.ndarray,
-    low: np.ndarray,
+    l: np.ndarray,
     t: np.ndarray,
     n: int,
     cfg: ClassicDetectorConfig,
@@ -47,19 +40,9 @@ def detect_flags_pennants(
         return out
 
     hist_peaks = peaks if isinstance(peaks, np.ndarray) else np.asarray([], dtype=int)
-    hist_troughs = (
-        troughs if isinstance(troughs, np.ndarray) else np.asarray([], dtype=int)
-    )
-    bull_base_idx = (
-        int(hist_troughs[hist_troughs < idx0][-1])
-        if hist_troughs.size and np.any(hist_troughs < idx0)
-        else int(fallback_base_idx)
-    )
-    bear_base_idx = (
-        int(hist_peaks[hist_peaks < idx0][-1])
-        if hist_peaks.size and np.any(hist_peaks < idx0)
-        else int(fallback_base_idx)
-    )
+    hist_troughs = troughs if isinstance(troughs, np.ndarray) else np.asarray([], dtype=int)
+    bull_base_idx = int(hist_troughs[hist_troughs < idx0][-1]) if hist_troughs.size and np.any(hist_troughs < idx0) else int(fallback_base_idx)
+    bear_base_idx = int(hist_peaks[hist_peaks < idx0][-1]) if hist_peaks.size and np.any(hist_peaks < idx0) else int(fallback_base_idx)
     bull_base = float(c[bull_base_idx])
     bear_base = float(c[bear_base_idx])
     bull_ret = (seg_high - bull_base) / max(1e-9, abs(bull_base)) * 100.0
@@ -80,25 +63,21 @@ def detect_flags_pennants(
         return out
     pole_bars = max(1, int((idx0 + pole_tip_idx_local) - pole_base_idx))
     pole_slope_pct_per_bar = abs(ret) / float(pole_bars)
-    if pole_slope_pct_per_bar < float(
-        max(0.0, getattr(cfg, "min_pole_slope_pct_per_bar", 0.0))
-    ):
+    if pole_slope_pct_per_bar < float(max(0.0, getattr(cfg, "min_pole_slope_pct_per_bar", 0.0))):
         return out
     pole_slope_price_per_bar = (pole_tip - pole_base) / float(pole_bars)
 
     seg_h = h[-window:] if h.size >= window else seg
-    seg_low = low[-window:] if low.size >= window else seg
+    seg_l = l[-window:] if l.size >= window else seg
     consolidation_offset = int(max(0, min(seg.size - 1, pole_tip_idx_local)))
     consolidation_seg = seg[consolidation_offset:]
     if consolidation_seg.size < 10:
         return out
     consolidation_h = seg_h[consolidation_offset:]
-    consolidation_low = seg_low[consolidation_offset:]
-
+    consolidation_l = seg_l[consolidation_offset:]
+    
     try:
-        peaks2, troughs2 = _detect_pivots_close(
-            consolidation_seg, cfg, consolidation_h, consolidation_low
-        )
+        peaks2, troughs2 = _detect_pivots_close(consolidation_seg, cfg, consolidation_h, consolidation_l)
     except TypeError:
         peaks2, troughs2 = _detect_pivots_close(consolidation_seg, cfg)
 
@@ -106,33 +85,25 @@ def detect_flags_pennants(
         return out
 
     # build local arrays for consolidation region
-    sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(
-        peaks2, troughs2, consolidation_seg, consolidation_seg.size, cfg
-    )
-    dist_recent = float(np.mean((top - bot)[-max(5, consolidation_seg.size // 4) :]))
-    dist_past = float(np.mean((top - bot)[: max(5, consolidation_seg.size // 4)]))
-    min_convergence_ratio = float(
-        max(0.0, min(0.95, getattr(cfg, "pennant_min_convergence_ratio", 0.05)))
-    )
-    converging = dist_past > 0.0 and dist_recent <= (
-        dist_past * (1.0 - min_convergence_ratio)
-    )
+    sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(peaks2, troughs2, consolidation_seg, consolidation_seg.size, cfg)
+    dist_recent = float(np.mean((top - bot)[-max(5, consolidation_seg.size//4):]))
+    dist_past = float(np.mean((top - bot)[:max(5, consolidation_seg.size//4)]))
+    min_convergence_ratio = float(max(0.0, min(0.95, getattr(cfg, "pennant_min_convergence_ratio", 0.05))))
+    converging = dist_past > 0.0 and dist_recent <= (dist_past * (1.0 - min_convergence_ratio))
     parallel = abs(sh - sl) <= max(
         1e-4,
-        float(cfg.pennant_parallel_slope_ratio)
-        * max(abs(sh), abs(sl), cfg.max_flat_slope),
+        float(cfg.pennant_parallel_slope_ratio) * max(abs(sh), abs(sl), cfg.max_flat_slope),
     )
     consolidation_slope = 0.5 * (float(sh) + float(sl))
     max_with_trend_slope = max(
         float(cfg.max_flat_slope),
-        abs(float(pole_slope_price_per_bar))
-        * float(max(0.0, getattr(cfg, "flag_max_with_trend_slope_ratio", 0.15))),
+        abs(float(pole_slope_price_per_bar)) * float(max(0.0, getattr(cfg, "flag_max_with_trend_slope_ratio", 0.15))),
     )
     if (ret > 0.0 and consolidation_slope >= max_with_trend_slope) or (
         ret < 0.0 and consolidation_slope <= -max_with_trend_slope
     ):
         return out
-
+    
     name = None
     if converging:
         name = "Pennant"
@@ -144,9 +115,7 @@ def detect_flags_pennants(
         titled = ("Bull " + name) if ret > 0 else ("Bear " + name)
         status = "forming"
         tol_abs = _tol_abs_from_close(consolidation_seg, cfg.same_level_tol_pct)
-        breakout_look = max(
-            int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead))
-        )
+        breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
         bdir, bidx_local = _find_recent_breakout(
             consolidation_seg,
             upper=top,
@@ -156,19 +125,17 @@ def detect_flags_pennants(
             lookback_bars=breakout_look,
         )
         expected = "up" if ret > 0 else "down"
-
+        
         if bdir == expected and bidx_local is not None:
             status = "completed"
             conf = _apply_breakout_confidence_bonus(conf, cfg)
-
+            
         base = _result(
             titled,
             status,
             conf,
             int(idx0 + consolidation_offset),
-            int(idx0 + consolidation_offset + bidx_local)
-            if bidx_local is not None
-            else n - 1,
+            int(idx0 + consolidation_offset + bidx_local) if bidx_local is not None else n - 1,
             t,
             {
                 "pole_return_pct": float(ret),
@@ -183,9 +150,7 @@ def detect_flags_pennants(
                 "bottom_slope": float(sl),
                 "consolidation_slope": float(consolidation_slope),
                 "breakout_direction": bdir,
-                "breakout_index": int(idx0 + consolidation_offset + bidx_local)
-                if bidx_local is not None
-                else None,
+                "breakout_index": int(idx0 + consolidation_offset + bidx_local) if bidx_local is not None else None,
                 "breakout_expected": expected,
                 "bias": "bullish" if ret > 0 else "bearish",
             },
@@ -196,7 +161,6 @@ def detect_flags_pennants(
             out.append(_alias(base, "Continuation Pattern", 0.9))
 
     return out
-
 
 def _detect_cup_handle_variant(
     c: np.ndarray,
@@ -227,11 +191,7 @@ def _detect_cup_handle_variant(
         return None
 
     depth_pct = (left - bottom) / left * 100.0 if left != 0 else 0.0
-    if not (
-        float(cfg.cup_handle_min_depth_pct)
-        <= depth_pct
-        <= float(cfg.cup_handle_max_depth_pct)
-    ):
+    if not (float(cfg.cup_handle_min_depth_pct) <= depth_pct <= float(cfg.cup_handle_max_depth_pct)):
         return None
 
     handle_frac = float(max(0.05, min(0.5, cfg.cup_handle_handle_window_frac)))
@@ -273,19 +233,13 @@ def _detect_cup_handle_variant(
     )
     status = "forming"
     tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
-    breakout_look = max(
-        int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead))
-    )
+    breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
     handle_anchor = max(int(i_max_right), handle_start)
     absolute_left_idx = int(n - W + i_max_left)
     absolute_bottom_idx = int(n - W + i_min)
     absolute_right_idx = int(n - W + i_max_right)
     expected = "down" if invert else "up"
-    breakout_level = (
-        float(min(c[absolute_left_idx], c[absolute_right_idx]))
-        if invert
-        else float(max(c[absolute_left_idx], c[absolute_right_idx]))
-    )
+    breakout_level = float(min(c[absolute_left_idx], c[absolute_right_idx])) if invert else float(max(c[absolute_left_idx], c[absolute_right_idx]))
     break_i = _find_forward_level_breakout(
         c,
         int(n - W + handle_anchor),
@@ -332,7 +286,9 @@ def _detect_cup_handle_variant(
 
 
 def detect_cup_handle(
-    c: np.ndarray, t: np.ndarray, cfg: ClassicDetectorConfig
+    c: np.ndarray,
+    t: np.ndarray,
+    cfg: ClassicDetectorConfig
 ) -> List[ClassicPatternResult]:
     out: List[ClassicPatternResult] = []
     bullish = _detect_cup_handle_variant(c, t, cfg, invert=False)

@@ -1,6 +1,6 @@
-"""Options market-data service helpers."""
-
 from __future__ import annotations
+
+"""Options market-data service helpers."""
 
 from typing import Any, Dict, List, Optional
 import datetime as _dt
@@ -43,9 +43,7 @@ def _ymd_to_epoch(ymd: str) -> int:
     return int(dt.timestamp())
 
 
-def _fetch_yahoo_options_payload(
-    symbol: str, expiry_epoch: Optional[int] = None
-) -> Dict[str, Any]:
+def _fetch_yahoo_options_payload(symbol: str, expiry_epoch: Optional[int] = None) -> Dict[str, Any]:
     params: Dict[str, Any] = {}
     if expiry_epoch is not None:
         params["date"] = int(expiry_epoch)
@@ -70,15 +68,11 @@ def get_options_expirations(symbol: str) -> Dict[str, Any]:
         payload = _fetch_yahoo_options_payload(symbol)
         expiration_epochs = _extract_expiration_epochs(payload)
         expirations = [_epoch_to_ymd(v) for v in expiration_epochs]
-        quote = (
-            payload.get("quote", {}) if isinstance(payload.get("quote"), dict) else {}
-        )
+        quote = payload.get("quote", {}) if isinstance(payload.get("quote"), dict) else {}
         return {
             "success": True,
             "symbol": str(symbol).upper().strip(),
-            "underlying_price": _to_numeric(
-                quote.get("regularMarketPrice"), float, float("nan")
-            ),
+            "underlying_price": _to_numeric(quote.get("regularMarketPrice"), float, float("nan")),
             "currency": quote.get("currency"),
             "expirations": expirations,
             "expiration_count": int(len(expirations)),
@@ -123,14 +117,10 @@ def get_options_chain(
                 }
 
         payload = _fetch_yahoo_options_payload(symbol_norm, chosen_expiry_epoch)
-        quote = (
-            payload.get("quote", {}) if isinstance(payload.get("quote"), dict) else {}
-        )
+        quote = payload.get("quote", {}) if isinstance(payload.get("quote"), dict) else {}
         options_arr = payload.get("options", [])
         if not isinstance(options_arr, list) or not options_arr:
-            return {
-                "error": f"No options chain returned for {symbol_norm} @ {chosen_expiry_ymd}"
-            }
+            return {"error": f"No options chain returned for {symbol_norm} @ {chosen_expiry_ymd}"}
         chain = options_arr[0] if isinstance(options_arr[0], dict) else {}
         calls_raw = chain.get("calls", []) if isinstance(chain, dict) else []
         puts_raw = chain.get("puts", []) if isinstance(chain, dict) else []
@@ -161,14 +151,10 @@ def get_options_chain(
                     "bid": _to_numeric(row.get("bid"), float, float("nan")),
                     "ask": _to_numeric(row.get("ask"), float, float("nan")),
                     "change": _to_numeric(row.get("change"), float, float("nan")),
-                    "percent_change": _to_numeric(
-                        row.get("percentChange"), float, float("nan")
-                    ),
+                    "percent_change": _to_numeric(row.get("percentChange"), float, float("nan")),
                     "volume": int(vol),
                     "open_interest": int(oi),
-                    "implied_volatility": _to_numeric(
-                        row.get("impliedVolatility"), float, float("nan")
-                    ),
+                    "implied_volatility": _to_numeric(row.get("impliedVolatility"), float, float("nan")),
                     "in_the_money": bool(row.get("inTheMoney", False)),
                     "last_trade_epoch": _to_numeric(row.get("lastTradeDate"), int, 0),
                     "currency": row.get("currency"),
@@ -185,9 +171,7 @@ def get_options_chain(
             "success": True,
             "symbol": symbol_norm,
             "expiration": chosen_expiry_ymd,
-            "underlying_price": _to_numeric(
-                quote.get("regularMarketPrice"), float, float("nan")
-            ),
+            "underlying_price": _to_numeric(quote.get("regularMarketPrice"), float, float("nan")),
             "currency": quote.get("currency"),
             "contract_size": quote.get("contractSize"),
             "expirations": sorted(available_map),

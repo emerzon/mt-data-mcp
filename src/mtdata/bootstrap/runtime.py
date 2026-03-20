@@ -30,9 +30,7 @@ def _get_bool_env(name: str, default: bool = False) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _normalize_transport(
-    value: Optional[str], *, default: TransportLiteral = "sse"
-) -> TransportLiteral:
+def _normalize_transport(value: Optional[str], *, default: TransportLiteral = "sse") -> TransportLiteral:
     candidate = str(value or default).strip().lower()
     if candidate not in ("stdio", "sse", "streamable-http"):
         return default
@@ -51,9 +49,7 @@ def is_loopback_host(value: Optional[str]) -> bool:
         return False
 
 
-def _require_explicit_remote_bind(
-    host: str, *, allow_remote: bool, host_env: str, allow_remote_env: str
-) -> str:
+def _require_explicit_remote_bind(host: str, *, allow_remote: bool, host_env: str, allow_remote_env: str) -> str:
     normalized = str(host or "").strip() or "127.0.0.1"
     if is_loopback_host(normalized) or allow_remote:
         return normalized
@@ -97,11 +93,9 @@ def load_mcp_runtime_settings(
     transport_override: Optional[str] = None,
     default_transport: TransportLiteral = "sse",
 ) -> McpRuntimeSettings:
-    transport = _normalize_transport(
-        transport_override or os.getenv("MCP_TRANSPORT"), default=default_transport
-    )
+    transport = _normalize_transport(transport_override or os.getenv("MCP_TRANSPORT"), default=default_transport)
     allow_remote = _get_bool_env("FASTMCP_ALLOW_REMOTE", False)
-    host = os.getenv("FASTMCP_HOST", "127.0.0.1").strip() or "127.0.0.1"
+    host = (os.getenv("FASTMCP_HOST", "127.0.0.1").strip() or "127.0.0.1")
     if transport != "stdio":
         host = _require_explicit_remote_bind(
             host,
@@ -116,9 +110,7 @@ def load_mcp_runtime_settings(
         log_level=(os.getenv("FASTMCP_LOG_LEVEL", "INFO").strip() or "INFO"),
         mount_path=(os.getenv("FASTMCP_MOUNT_PATH", "/").strip() or "/"),
         sse_path=(os.getenv("FASTMCP_SSE_PATH", "/sse").strip() or "/sse"),
-        message_path=(
-            os.getenv("FASTMCP_MESSAGE_PATH", "/message").strip() or "/message"
-        ),
+        message_path=(os.getenv("FASTMCP_MESSAGE_PATH", "/message").strip() or "/message"),
         allow_remote=allow_remote,
     )
 
@@ -134,9 +126,7 @@ def load_web_api_runtime_settings() -> WebApiRuntimeSettings:
     auth_token_raw = os.getenv("WEBAPI_AUTH_TOKEN")
     auth_token = str(auth_token_raw or "").strip() or None
     if not is_loopback_host(host) and not auth_token:
-        raise ValueError(
-            "WEBAPI_AUTH_TOKEN is required for non-loopback WEBAPI_HOST values."
-        )
+        raise ValueError("WEBAPI_AUTH_TOKEN is required for non-loopback WEBAPI_HOST values.")
     cors_origins = _validate_cors_origins(
         _get_csv_env(
             "CORS_ORIGINS",
@@ -147,9 +137,7 @@ def load_web_api_runtime_settings() -> WebApiRuntimeSettings:
         host=host,
         port=_get_int_env("WEBAPI_PORT", 8000),
         cors_origins=cors_origins,
-        webui_directory=(
-            os.getenv("WEBUI_DIST_DIR", "webui/dist").strip() or "webui/dist"
-        ),
+        webui_directory=(os.getenv("WEBUI_DIST_DIR", "webui/dist").strip() or "webui/dist"),
         auth_token=auth_token,
         allow_remote=allow_remote,
     )

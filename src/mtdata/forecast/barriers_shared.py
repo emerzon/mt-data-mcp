@@ -1,45 +1,43 @@
 from typing import Any, Dict, Optional, List, Literal, Tuple, Set
 import math
+import warnings
 import numpy as np
+from ..shared.schema import TimeframeLiteral, DenoiseSpec
 from ..shared.constants import TIMEFRAME_SECONDS
-from .common import log_returns_from_prices as _log_returns_from_prices
-from ..utils.utils import _safe_float
+from .common import fetch_history as _fetch_history, log_returns_from_prices as _log_returns_from_prices
+from ..utils.utils import _safe_float, parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import (
+    get_pip_size as _get_pip_size,
+    resolve_barrier_prices as _resolve_barrier_prices,
     normalize_trade_direction,
+    barrier_prices_are_valid as _barrier_prices_are_valid,
+)
+from .monte_carlo import (
+    simulate_gbm_mc as _simulate_gbm_mc, 
+    simulate_hmm_mc as _simulate_hmm_mc, 
+    simulate_garch_mc as _simulate_garch_mc,
+    simulate_bootstrap_mc as _simulate_bootstrap_mc,
+    simulate_heston_mc as _simulate_heston_mc,
+    simulate_jump_diffusion_mc as _simulate_jump_diffusion_mc,
+    gbm_single_barrier_upcross_prob as _gbm_upcross_prob
 )
 
 BARRIER_GRID_PRESETS = {
-    "scalp": {
-        "tp_min": 0.08,
-        "tp_max": 0.60,
-        "tp_steps": 7,
-        "sl_min": 0.20,
-        "sl_max": 1.20,
-        "sl_steps": 7,
+    'scalp': {
+        'tp_min': 0.08, 'tp_max': 0.60, 'tp_steps': 7,
+        'sl_min': 0.20, 'sl_max': 1.20, 'sl_steps': 7,
     },
-    "intraday": {
-        "tp_min": 0.25,
-        "tp_max": 1.50,
-        "tp_steps": 7,
-        "sl_min": 0.25,
-        "sl_max": 2.50,
-        "sl_steps": 9,
+    'intraday': {
+        'tp_min': 0.25, 'tp_max': 1.50, 'tp_steps': 7,
+        'sl_min': 0.25, 'sl_max': 2.50, 'sl_steps': 9,
     },
-    "swing": {
-        "tp_min": 0.60,
-        "tp_max": 3.50,
-        "tp_steps": 7,
-        "sl_min": 0.50,
-        "sl_max": 4.50,
-        "sl_steps": 8,
+    'swing': {
+        'tp_min': 0.60, 'tp_max': 3.50, 'tp_steps': 7,
+        'sl_min': 0.50, 'sl_max': 4.50, 'sl_steps': 8,
     },
-    "position": {
-        "tp_min": 1.00,
-        "tp_max": 8.00,
-        "tp_steps": 8,
-        "sl_min": 0.75,
-        "sl_max": 6.00,
-        "sl_steps": 8,
+    'position': {
+        'tp_min': 1.00, 'tp_max': 8.00, 'tp_steps': 8,
+        'sl_min': 0.75, 'sl_max': 6.00, 'sl_steps': 8,
     },
 }
 
@@ -116,35 +114,33 @@ def _sort_candidate_results(res_list: List[Dict[str, Any]], objective_val: str) 
 
         return _resolve
 
-    if objective_val == "edge":
-        res_list.sort(key=_metric("edge", descending=True), reverse=True)
-    elif objective_val == "ev":
-        res_list.sort(key=_metric("ev", descending=True), reverse=True)
-    elif objective_val == "ev_cond":
-        res_list.sort(key=_metric("ev_cond", descending=True), reverse=True)
-    elif objective_val == "ev_per_bar":
-        res_list.sort(key=_metric("ev_per_bar", descending=True), reverse=True)
-    elif objective_val == "kelly":
-        res_list.sort(key=_metric("kelly", descending=True), reverse=True)
-    elif objective_val == "kelly_cond":
-        res_list.sort(key=_metric("kelly_cond", descending=True), reverse=True)
-    elif objective_val == "prob_tp_first":
-        res_list.sort(key=_metric("prob_tp_first", descending=True), reverse=True)
-    elif objective_val == "prob_resolve":
-        res_list.sort(key=_metric("prob_resolve", descending=True), reverse=True)
-    elif objective_val == "profit_factor":
-        res_list.sort(key=_metric("profit_factor", descending=True), reverse=True)
-    elif objective_val == "min_loss_prob":
-        res_list.sort(key=_metric("prob_loss", descending=False))
-    elif objective_val == "utility":
-        res_list.sort(key=_metric("utility", descending=True), reverse=True)
+    if objective_val == 'edge':
+        res_list.sort(key=_metric('edge', descending=True), reverse=True)
+    elif objective_val == 'ev':
+        res_list.sort(key=_metric('ev', descending=True), reverse=True)
+    elif objective_val == 'ev_cond':
+        res_list.sort(key=_metric('ev_cond', descending=True), reverse=True)
+    elif objective_val == 'ev_per_bar':
+        res_list.sort(key=_metric('ev_per_bar', descending=True), reverse=True)
+    elif objective_val == 'kelly':
+        res_list.sort(key=_metric('kelly', descending=True), reverse=True)
+    elif objective_val == 'kelly_cond':
+        res_list.sort(key=_metric('kelly_cond', descending=True), reverse=True)
+    elif objective_val == 'prob_tp_first':
+        res_list.sort(key=_metric('prob_tp_first', descending=True), reverse=True)
+    elif objective_val == 'prob_resolve':
+        res_list.sort(key=_metric('prob_resolve', descending=True), reverse=True)
+    elif objective_val == 'profit_factor':
+        res_list.sort(key=_metric('profit_factor', descending=True), reverse=True)
+    elif objective_val == 'min_loss_prob':
+        res_list.sort(key=_metric('prob_loss', descending=False))
+    elif objective_val == 'utility':
+        res_list.sort(key=_metric('utility', descending=True), reverse=True)
     else:
-        res_list.sort(key=_metric("ev", descending=True), reverse=True)
+        res_list.sort(key=_metric('ev', descending=True), reverse=True)
 
 
-def _annotate_candidate_metrics(
-    row: Optional[Dict[str, Any]], cost_per_trade: float = 0.0
-) -> Optional[Dict[str, Any]]:
+def _annotate_candidate_metrics(row: Optional[Dict[str, Any]], cost_per_trade: float = 0.0) -> Optional[Dict[str, Any]]:
     if not isinstance(row, dict):
         return row
 
@@ -181,11 +177,7 @@ def _annotate_candidate_metrics(
             row["breakeven_win_rate_net"] = breakeven_win_rate_net
 
     edge_vs_breakeven: Optional[float] = None
-    effective_breakeven = (
-        breakeven_win_rate_net
-        if breakeven_win_rate_net is not None
-        else breakeven_win_rate
-    )
+    effective_breakeven = breakeven_win_rate_net if breakeven_win_rate_net is not None else breakeven_win_rate
     if prob_win is not None and effective_breakeven is not None:
         edge_vs_breakeven = float(prob_win - effective_breakeven)
         row["edge_vs_breakeven"] = edge_vs_breakeven
@@ -214,9 +206,7 @@ def _annotate_candidate_metrics(
     return row
 
 
-def _candidate_is_viable(
-    row: Optional[Dict[str, Any]], cost_per_trade: float = 0.0
-) -> bool:
+def _candidate_is_viable(row: Optional[Dict[str, Any]], cost_per_trade: float = 0.0) -> bool:
     if not isinstance(row, dict):
         return False
     _annotate_candidate_metrics(row, cost_per_trade=cost_per_trade)
@@ -228,9 +218,7 @@ def _candidate_is_viable(
     return True
 
 
-def _candidate_status_reason(
-    row: Optional[Dict[str, Any]], cost_per_trade: float = 0.0
-) -> Optional[str]:
+def _candidate_status_reason(row: Optional[Dict[str, Any]], cost_per_trade: float = 0.0) -> Optional[str]:
     if not isinstance(row, dict):
         return None
     _annotate_candidate_metrics(row, cost_per_trade=cost_per_trade)
@@ -247,9 +235,7 @@ def _candidate_status_reason(
     return None
 
 
-def _build_selection_diagnostics(
-    row: Optional[Dict[str, Any]], cost_per_trade: float = 0.0
-) -> Dict[str, Any]:
+def _build_selection_diagnostics(row: Optional[Dict[str, Any]], cost_per_trade: float = 0.0) -> Dict[str, Any]:
     if not isinstance(row, dict):
         return {}
     _annotate_candidate_metrics(row, cost_per_trade=cost_per_trade)
@@ -288,11 +274,7 @@ def _build_selection_diagnostics(
 
     breakeven_win_rate = _safe_float(row.get("breakeven_win_rate"))
     edge_vs_breakeven = _safe_float(row.get("edge_vs_breakeven"))
-    if (
-        edge_vs_breakeven is not None
-        and edge_vs_breakeven < 0.0
-        and breakeven_win_rate is not None
-    ):
+    if edge_vs_breakeven is not None and edge_vs_breakeven < 0.0 and breakeven_win_rate is not None:
         if win_rate is not None:
             warnings_out.append(
                 f"Win rate {win_rate:.1%} is below the break-even threshold "
@@ -312,9 +294,7 @@ def _build_selection_diagnostics(
         )
 
     if best_ev is not None and edge_vs_breakeven is not None:
-        if (best_ev > 0.0 and edge_vs_breakeven < 0.0) or (
-            best_ev < 0.0 and edge_vs_breakeven > 0.0
-        ):
+        if (best_ev > 0.0 and edge_vs_breakeven < 0.0) or (best_ev < 0.0 and edge_vs_breakeven > 0.0):
             ev_edge_conflict = True
             ev_edge_conflict_reason = "ev and edge_vs_breakeven have opposite signs"
             warnings_out.append(
@@ -324,7 +304,9 @@ def _build_selection_diagnostics(
 
     if bool(row.get("phantom_profit_risk")):
         ev_edge_conflict = True
-        ev_edge_conflict_reason = "positive EV is dominated by unresolved paths with near-zero loss probability"
+        ev_edge_conflict_reason = (
+            "positive EV is dominated by unresolved paths with near-zero loss probability"
+        )
         warnings_out.append(
             "CAUTION: SL barrier was not reached in most simulations while the observed loss rate "
             "was near zero. Positive EV may reflect horizon boundary effects, not trading edge."
@@ -371,7 +353,7 @@ def _build_selection_diagnostics(
             target_width = 0.05
             z = 1.96
             pq = prob_win_val * (1.0 - prob_win_val)
-            min_sims = int(math.ceil((2.0 * z) ** 2 * pq / (target_width**2)))
+            min_sims = int(math.ceil((2.0 * z) ** 2 * pq / (target_width ** 2)))
             out["min_sims_recommended"] = max(min_sims, 2000)
     return out
 
@@ -379,23 +361,8 @@ def _build_selection_diagnostics(
 def _is_crypto_symbol(symbol: str) -> bool:
     sym = str(symbol or "").upper()
     crypto_tokens = {
-        "BTC",
-        "ETH",
-        "XRP",
-        "LTC",
-        "SOL",
-        "ADA",
-        "DOGE",
-        "BNB",
-        "DOT",
-        "AVAX",
-        "LINK",
-        "TRX",
-        "MATIC",
-        "NEAR",
-        "ATOM",
-        "FIL",
-        "UNI",
+        "BTC", "ETH", "XRP", "LTC", "SOL", "ADA", "DOGE", "BNB", "DOT",
+        "AVAX", "LINK", "TRX", "MATIC", "NEAR", "ATOM", "FIL", "UNI",
     }
     return any(tok in sym for tok in crypto_tokens)
 
@@ -440,9 +407,9 @@ def _auto_barrier_method(
     mu = float(np.mean(rets))
     sigma = float(np.std(rets, ddof=1)) + 1e-12
     z = (rets - mu) / sigma
-    kurt = float(np.mean(z**4) - 3.0) if z.size > 0 else 0.0
+    kurt = float(np.mean(z ** 4) - 3.0) if z.size > 0 else 0.0
     jump_ratio = float(np.max(np.abs(rets - mu)) / sigma) if rets.size > 0 else 0.0
-    skew = float(np.mean(z**3)) if z.size > 0 else 0.0
+    skew = float(np.mean(z ** 3)) if z.size > 0 else 0.0
 
     r2 = (rets - mu) ** 2
     if r2.size >= 6:
@@ -483,7 +450,6 @@ def _auto_barrier_method(
     if vol_corr > 0.3 and r2.size >= 150:
         try:
             import arch  # noqa: F401
-
             return "garch", "auto: strong volatility clustering (garch)"
         except Exception:
             return "heston", "auto: strong volatility clustering (heston fallback)"
@@ -526,9 +492,7 @@ def _brownian_bridge_hits(
     return hits
 
 
-def _get_live_reference_price(
-    symbol: str, direction: str
-) -> Tuple[Optional[float], Optional[str]]:
+def _get_live_reference_price(symbol: str, direction: str) -> Tuple[Optional[float], Optional[str]]:
     """Best-effort live tick reference price; returns (price, source) or (None, None)."""
     try:
         import MetaTrader5 as _mt5  # type: ignore
@@ -585,60 +549,28 @@ def _resolve_reference_prices(
     direction: str,
     use_live_price: bool = True,
     live_price_getter: Any = None,
-) -> Tuple[
-    Optional[float], Optional[float], Optional[str], Optional[str], Optional[str]
-]:
+) -> Tuple[Optional[float], Optional[float], Optional[str], Optional[str], Optional[str]]:
     closes = np.asarray(close_values, dtype=float)
     if closes.size == 0:
-        return (
-            None,
-            None,
-            None,
-            None,
-            "Latest close is non-finite; refresh history or enable a live reference price.",
-        )
+        return None, None, None, None, "Latest close is non-finite; refresh history or enable a live reference price."
 
     trailing_close = _safe_float(closes[-1])
     finite_closes = closes[np.isfinite(closes)]
     history_anchor = _safe_float(finite_closes[-1]) if finite_closes.size else None
     if history_anchor is None or history_anchor <= 0.0:
-        return (
-            None,
-            None,
-            None,
-            None,
-            "Latest close is non-finite; refresh history or enable a live reference price.",
-        )
+        return None, None, None, None, "Latest close is non-finite; refresh history or enable a live reference price."
 
     if use_live_price:
-        getter = (
-            live_price_getter
-            if callable(live_price_getter)
-            else _get_live_reference_price
-        )
+        getter = live_price_getter if callable(live_price_getter) else _get_live_reference_price
         live_price, live_source = getter(symbol, direction)
-        if (
-            live_price is not None
-            and np.isfinite(live_price)
-            and float(live_price) > 0.0
-        ):
+        if live_price is not None and np.isfinite(live_price) and float(live_price) > 0.0:
             warning = None
             if trailing_close is None or trailing_close <= 0.0:
                 warning = "Latest close is non-finite; using the last finite historical close as the simulation anchor."
-            return (
-                float(history_anchor),
-                float(live_price),
-                str(live_source or "live_tick"),
-                warning,
-                None,
-            )
+            return float(history_anchor), float(live_price), str(live_source or "live_tick"), warning, None
 
     if trailing_close is None or trailing_close <= 0.0:
-        return (
-            None,
-            None,
-            None,
-            None,
-            "Latest close is non-finite; refresh history or enable a live reference price.",
-        )
+        return None, None, None, None, "Latest close is non-finite; refresh history or enable a live reference price."
     return float(trailing_close), float(trailing_close), "close", None, None
+
+

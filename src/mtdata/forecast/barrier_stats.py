@@ -10,7 +10,7 @@ barrier simulations, including:
 - Sensitivity analysis for barrier parameters
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 import math
 import numpy as np
 from scipy import stats as scipy_stats
@@ -23,15 +23,15 @@ def minimum_simulations_for_ci_width(
     conservative: bool = True,
 ) -> int:
     """Calculate minimum simulations needed for target confidence interval width.
-
+    
     Uses Wilson score interval approximation: width ≈ 2*z*sqrt(p*(1-p)/n)
-
+    
     Args:
         target_width: Desired CI width (e.g., 0.05 for ±2.5%)
         expected_prob: Expected probability (0.5 is most conservative)
         confidence: Confidence level (0.90, 0.95, 0.99)
         conservative: If True, use worst-case p=0.5 regardless of expected_prob
-
+        
     Returns:
         Minimum number of simulations required
     """
@@ -39,11 +39,11 @@ def minimum_simulations_for_ci_width(
         raise ValueError(f"target_width must be in (0, 1), got {target_width}")
     if not 0 < confidence < 1:
         raise ValueError(f"confidence must be in (0, 1), got {confidence}")
-
+    
     z = scipy_stats.norm.ppf(1 - (1 - confidence) / 2)
     p = 0.5 if conservative else float(np.clip(expected_prob, 0.01, 0.99))
-
-    n = (2 * z) ** 2 * p * (1 - p) / (target_width**2)
+    
+    n = (2 * z) ** 2 * p * (1 - p) / (target_width ** 2)
     return max(int(math.ceil(n)), 100)
 
 
@@ -53,30 +53,30 @@ def confidence_interval_wilson(
     confidence: float = 0.95,
 ) -> Tuple[float, float]:
     """Wilson score interval for binomial proportion.
-
+    
     Better than normal approximation for small n or extreme probabilities.
-
+    
     Args:
         successes: Number of successes
         n_trials: Total number of trials
         confidence: Confidence level (default 0.95)
-
+        
     Returns:
         (lower_bound, upper_bound) tuple
     """
     if n_trials <= 0:
         return float("nan"), float("nan")
-
+    
     p_hat = float(np.clip(successes / n_trials, 0.0, 1.0))
     z = scipy_stats.norm.ppf(1 - (1 - confidence) / 2)
     z2 = z * z
-
+    
     denom = 1.0 + z2 / n_trials
     center = (p_hat + z2 / (2.0 * n_trials)) / denom
     margin = (z / denom) * math.sqrt(
         (p_hat * (1.0 - p_hat) / n_trials) + (z2 / (4.0 * n_trials * n_trials))
     )
-
+    
     lo = max(0.0, center - margin)
     hi = min(1.0, center + margin)
     return float(lo), float(hi)
@@ -88,30 +88,30 @@ def confidence_interval_agresti_coull(
     confidence: float = 0.95,
 ) -> Tuple[float, float]:
     """Agresti-Coull interval for binomial proportion.
-
+    
     Simple adjustment to Wald interval with better coverage.
-
+    
     Args:
         successes: Number of successes
         n_trials: Total number of trials
         confidence: Confidence level (default 0.95)
-
+        
     Returns:
         (lower_bound, upper_bound) tuple
     """
     if n_trials <= 0:
         return float("nan"), float("nan")
-
+    
     z = scipy_stats.norm.ppf(1 - (1 - confidence) / 2)
     z2 = z * z
-
+    
     n_tilde = n_trials + z2
     p_tilde = (successes + z2 / 2) / n_tilde
-
+    
     se = math.sqrt(p_tilde * (1 - p_tilde) / n_tilde)
     center = float(p_tilde)
     margin = z * se
-
+    
     lo = max(0.0, center - margin)
     hi = min(1.0, center + margin)
     return float(lo), float(hi)
@@ -123,27 +123,27 @@ def confidence_interval_jeffreys(
     confidence: float = 0.95,
 ) -> Tuple[float, float]:
     """Jeffreys interval for binomial proportion (Bayesian).
-
+    
     Uses Beta(0.5, 0.5) prior. Good frequentist properties.
-
+    
     Args:
         successes: Number of successes
         n_trials: Total number of trials
         confidence: Confidence level (default 0.95)
-
+        
     Returns:
         (lower_bound, upper_bound) tuple
     """
     if n_trials <= 0:
         return float("nan"), float("nan")
-
+    
     alpha = 1 - confidence
     successes_adj = float(successes) + 0.5
     failures_adj = float(n_trials - successes) + 0.5
-
+    
     lo = scipy_stats.beta.ppf(alpha / 2, successes_adj, failures_adj)
     hi = scipy_stats.beta.ppf(1 - alpha / 2, successes_adj, failures_adj)
-
+    
     return float(max(0.0, lo)), float(min(1.0, hi))
 
 
@@ -155,31 +155,31 @@ def confidence_interval_bootstrap(
     seed: Optional[int] = None,
 ) -> Tuple[float, float]:
     """Bootstrap confidence interval for binomial proportion.
-
+    
     Non-parametric approach, useful for complex estimators.
-
+    
     Args:
         successes: Number of successes
         n_trials: Total number of trials
         n_bootstrap: Number of bootstrap samples
         confidence: Confidence level (default 0.95)
         seed: Random seed for reproducibility
-
+        
     Returns:
         (lower_bound, upper_bound) tuple
     """
     if n_trials <= 0 or n_bootstrap <= 0:
         return float("nan"), float("nan")
-
+    
     rng = np.random.RandomState(seed)
     p_hat = successes / n_trials
-
+    
     bootstrap_probs = rng.binomial(n_trials, p_hat, size=n_bootstrap) / n_trials
     alpha = 1 - confidence
-
+    
     lo = float(np.percentile(bootstrap_probs, 100 * alpha / 2))
     hi = float(np.percentile(bootstrap_probs, 100 * (1 - alpha / 2)))
-
+    
     return float(max(0.0, lo)), float(min(1.0, hi))
 
 
@@ -190,16 +190,16 @@ def mc_convergence_diagnostic(
     threshold: float = 0.01,
 ) -> Dict[str, Any]:
     """Check if Monte Carlo simulation has converged.
-
+    
     Analyzes the stability of the probability estimate over the last
     window_size simulations.
-
+    
     Args:
         cumulative_successes: Array of cumulative success counts
         cumulative_trials: Array of cumulative trial counts
         window_size: Number of recent samples to check stability
         threshold: Convergence threshold for probability change
-
+        
     Returns:
         Dictionary with convergence metrics:
         - converged: bool indicating if converged
@@ -222,17 +222,17 @@ def mc_convergence_diagnostic(
             "samples_collected": len(cumulative_trials),
             "samples_needed": window_size,
         }
-
+    
     probs = cumulative_successes / cumulative_trials
     recent_probs = probs[-window_size:]
-
+    
     window_mean = float(np.mean(recent_probs))
     window_std = float(np.std(recent_probs, ddof=1))
     max_change = float(np.max(np.abs(np.diff(recent_probs))))
     current_estimate = float(probs[-1])
-
+    
     converged = (window_std < threshold) and (max_change < threshold)
-
+    
     if not converged:
         if window_std > threshold:
             recommendation = (
@@ -246,7 +246,7 @@ def mc_convergence_diagnostic(
             )
     else:
         recommendation = "Simulation appears converged"
-
+    
     return {
         "converged": converged,
         "current_estimate": current_estimate,
@@ -265,12 +265,12 @@ def cross_seed_stability(
     threshold_cv: float = 0.10,
 ) -> Dict[str, Any]:
     """Analyze stability of results across different random seeds.
-
+    
     Args:
         results_by_seed: Dictionary mapping seed -> result dict
         metric_keys: List of metrics to analyze (default: common metrics)
         threshold_cv: Coefficient of variation threshold for stability
-
+        
     Returns:
         Dictionary with stability analysis:
         - stable: bool indicating overall stability
@@ -283,23 +283,17 @@ def cross_seed_stability(
             "error": "No results provided",
             "recommendation": "Run with multiple seeds for stability analysis",
         }
-
+    
     if metric_keys is None:
         metric_keys = [
-            "prob_win",
-            "prob_loss",
-            "prob_tp_first",
-            "prob_sl_first",
-            "ev",
-            "edge",
-            "kelly",
-            "prob_no_hit",
+            'prob_win', 'prob_loss', 'prob_tp_first', 'prob_sl_first',
+            'ev', 'edge', 'kelly', 'prob_no_hit'
         ]
-
+    
     n_seeds = len(results_by_seed)
     metrics_analysis: Dict[str, Dict[str, Any]] = {}
     all_stable = True
-
+    
     for metric in metric_keys:
         values = []
         for seed_result in results_by_seed.values():
@@ -308,7 +302,7 @@ def cross_seed_stability(
             val = seed_result.get(metric)
             if val is not None and np.isfinite(float(val)):
                 values.append(float(val))
-
+        
         if len(values) < 2:
             metrics_analysis[metric] = {
                 "stable": False,
@@ -317,15 +311,15 @@ def cross_seed_stability(
             }
             all_stable = False
             continue
-
+        
         mean_val = float(np.mean(values))
         std_val = float(np.std(values, ddof=1))
-        cv = std_val / abs(mean_val) if abs(mean_val) > 1e-10 else float("inf")
-
+        cv = std_val / abs(mean_val) if abs(mean_val) > 1e-10 else float('inf')
+        
         stable = cv < threshold_cv
         if not stable:
             all_stable = False
-
+        
         metrics_analysis[metric] = {
             "stable": stable,
             "mean": mean_val,
@@ -336,7 +330,7 @@ def cross_seed_stability(
             "range": float(np.max(values) - np.min(values)),
             "n_seeds": n_seeds,
         }
-
+    
     if all_stable:
         recommendation = (
             f"Results are stable across {n_seeds} seeds (CV < {threshold_cv:.0%}). "
@@ -344,15 +338,14 @@ def cross_seed_stability(
         )
     else:
         unstable_metrics = [
-            m
-            for m, analysis in metrics_analysis.items()
+            m for m, analysis in metrics_analysis.items()
             if not analysis.get("stable", False)
         ]
         recommendation = (
             f"Results show instability across seeds for: {', '.join(unstable_metrics)}. "
             f"Consider increasing n_sims or using more seeds."
         )
-
+    
     return {
         "stable": all_stable,
         "n_seeds": n_seeds,
@@ -370,34 +363,32 @@ def sensitivity_analysis_single_parameter(
     metric_keys: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Analyze sensitivity of results to a single parameter.
-
+    
     Args:
         base_result: Base configuration result
         parameter_name: Name of parameter to vary
         parameter_values: List of parameter values to test
         evaluate_fn: Function to evaluate configuration
         metric_keys: Metrics to track (default: key metrics)
-
+        
     Returns:
         Dictionary with sensitivity analysis results
     """
     if metric_keys is None:
-        metric_keys = ["prob_win", "prob_loss", "ev", "edge", "kelly"]
-
+        metric_keys = ['prob_win', 'prob_loss', 'ev', 'edge', 'kelly']
+    
     results = []
     for param_val in parameter_values:
         try:
             result = evaluate_fn({parameter_name: param_val})
-            if isinstance(result, dict) and result.get("success"):
-                results.append(
-                    {
-                        parameter_name: param_val,
-                        **{k: result.get("best", {}).get(k) for k in metric_keys},
-                    }
-                )
+            if isinstance(result, dict) and result.get('success'):
+                results.append({
+                    parameter_name: param_val,
+                    **{k: result.get('best', {}).get(k) for k in metric_keys}
+                })
         except Exception:
             continue
-
+    
     if not results:
         return {
             "success": False,
@@ -405,7 +396,7 @@ def sensitivity_analysis_single_parameter(
             "parameter": parameter_name,
             "values_tested": len(parameter_values),
         }
-
+    
     sensitivity_metrics: Dict[str, Dict[str, Any]] = {}
     for metric in metric_keys:
         values = [r.get(metric) for r in results if r.get(metric) is not None]
@@ -418,15 +409,13 @@ def sensitivity_analysis_single_parameter(
                 "std": float(np.nanstd(values_arr, ddof=1)),
                 "mean": float(np.nanmean(values_arr)),
                 "elasticity": float(
-                    (np.nanmax(values_arr) - np.nanmin(values_arr))
-                    / (np.nanmean(values_arr) + 1e-10)
-                )
-                if len(values) > 0
-                else 0.0,
+                    (np.nanmax(values_arr) - np.nanmin(values_arr)) / 
+                    (np.nanmean(values_arr) + 1e-10)
+                ) if len(values) > 0 else 0.0,
             }
-
-    base_values = {k: base_result.get("best", {}).get(k) for k in metric_keys}
-
+    
+    base_values = {k: base_result.get('best', {}).get(k) for k in metric_keys}
+    
     return {
         "success": True,
         "parameter": parameter_name,
@@ -434,9 +423,7 @@ def sensitivity_analysis_single_parameter(
         "base_configuration": base_values,
         "sensitivity_metrics": sensitivity_metrics,
         "results": results,
-        "recommendation": _sensitivity_recommendation(
-            sensitivity_metrics, parameter_name
-        ),
+        "recommendation": _sensitivity_recommendation(sensitivity_metrics, parameter_name),
     }
 
 
@@ -447,12 +434,12 @@ def _sensitivity_recommendation(
     """Generate recommendation based on sensitivity analysis."""
     if not sensitivity_metrics:
         return "Insufficient data for sensitivity analysis"
-
+    
     high_sensitivity = []
     for metric, analysis in sensitivity_metrics.items():
-        if analysis.get("elasticity", 0) > 0.5:
+        if analysis.get('elasticity', 0) > 0.5:
             high_sensitivity.append(metric)
-
+    
     if high_sensitivity:
         return (
             f"High sensitivity detected for {parameter_name} affecting: "
@@ -470,14 +457,14 @@ def bootstrap_metric_uncertainty(
     paths: np.ndarray,
     tp_trigger: float,
     sl_trigger: float,
-    direction: str = "long",
+    direction: str = 'long',
     entry_price: Optional[float] = None,
     n_bootstrap: int = 500,
     metrics: Optional[List[str]] = None,
     seed: Optional[int] = None,
 ) -> Dict[str, Dict[str, float]]:
     """Estimate uncertainty of barrier metrics via bootstrap resampling.
-
+    
     Args:
         paths: Price paths array (n_sims x horizon)
         tp_trigger: Take profit trigger price
@@ -487,81 +474,71 @@ def bootstrap_metric_uncertainty(
         n_bootstrap: Number of bootstrap samples
         metrics: Metrics to estimate (default: all key metrics)
         seed: Random seed
-
+        
     Returns:
         Dictionary mapping metric -> {mean, std, ci_low, ci_high}
     """
     n_sims, horizon = paths.shape
-
+    
     if metrics is None:
         metrics = [
-            "prob_win",
-            "prob_loss",
-            "prob_tp_first",
-            "prob_sl_first",
-            "ev",
-            "edge",
-            "kelly",
-            "prob_no_hit",
+            'prob_win', 'prob_loss', 'prob_tp_first', 'prob_sl_first',
+            'ev', 'edge', 'kelly', 'prob_no_hit'
         ]
-
+    
     rng = np.random.RandomState(seed)
     bootstrap_estimates: Dict[str, List[float]] = {m: [] for m in metrics}
-
-    dir_long = direction == "long"
+    
+    dir_long = (direction == 'long')
     anchor_price = float(entry_price) if entry_price is not None else float(paths[0, 0])
-
+    
     for _ in range(n_bootstrap):
         indices = rng.choice(n_sims, size=n_sims, replace=True)
         bootstrap_paths = paths[indices]
-
+        
         if dir_long:
-            hit_tp = bootstrap_paths >= tp_trigger
-            hit_sl = bootstrap_paths <= sl_trigger
+            hit_tp = (bootstrap_paths >= tp_trigger)
+            hit_sl = (bootstrap_paths <= sl_trigger)
         else:
-            hit_tp = bootstrap_paths <= tp_trigger
-            hit_sl = bootstrap_paths >= sl_trigger
-
+            hit_tp = (bootstrap_paths <= tp_trigger)
+            hit_sl = (bootstrap_paths >= sl_trigger)
+        
         any_tp = hit_tp.any(axis=1)
         any_sl = hit_sl.any(axis=1)
-
+        
         first_tp = hit_tp.argmax(axis=1)
         first_sl = hit_sl.argmax(axis=1)
         first_tp[~any_tp] = horizon
         first_sl[~any_sl] = horizon
-
-        wins = first_tp < first_sl
-        losses = first_sl < first_tp
+        
+        wins = (first_tp < first_sl)
+        losses = (first_sl < first_tp)
         ties = (first_tp == first_sl) & (first_tp < horizon)
-
+        
         n_wins = wins.sum()
         n_losses = losses.sum()
         n_ties = ties.sum()
-
+        
         prob_win = n_wins / n_sims
         prob_loss = n_losses / n_sims
         prob_tie = n_ties / n_sims
         prob_tp_first = (n_wins + 0.5 * n_ties) / n_sims
         prob_sl_first = (n_losses + 0.5 * n_ties) / n_sims
         prob_no_hit = 1.0 - (any_tp | any_sl).sum() / n_sims
-
+        
         edge = prob_win - prob_loss
-
+        
         tp_dist = abs(tp_trigger - anchor_price)
         sl_dist = abs(sl_trigger - anchor_price)
         ev = prob_tp_first * tp_dist - prob_sl_first * sl_dist
-
-        kelly = (
-            prob_win - (prob_loss / (tp_dist / sl_dist))
-            if tp_dist / sl_dist > 0
-            else 0.0
-        )
-
+        
+        kelly = prob_win - (prob_loss / (tp_dist / sl_dist)) if tp_dist / sl_dist > 0 else 0.0
+        
         for metric in metrics:
             val = locals().get(metric)
             if val is not None and np.isfinite(val):
                 bootstrap_estimates[metric].append(float(val))
-
+    
     results: Dict[str, Dict[str, float]] = {}
     for metric in metrics:
         values = bootstrap_estimates[metric]
@@ -574,7 +551,7 @@ def bootstrap_metric_uncertainty(
                 "ci_high": float(np.percentile(values_arr, 97.5)),
                 "n_bootstrap": n_bootstrap,
             }
-
+    
     return results
 
 
@@ -585,13 +562,13 @@ def statistical_power_analysis(
     alpha: float = 0.05,
 ) -> Dict[str, float]:
     """Calculate statistical power to detect an effect in barrier probabilities.
-
+    
     Args:
         base_prob: Baseline probability (e.g., prob_win under null)
         effect_size: Minimum detectable effect (absolute difference)
         n_sims: Number of simulations
         alpha: Significance level (default 0.05)
-
+        
     Returns:
         Dictionary with power analysis results
     """
@@ -601,7 +578,7 @@ def statistical_power_analysis(
         return {"error": "effect_size must be positive"}
     if n_sims <= 0:
         return {"error": "n_sims must be positive"}
-
+    
     p1 = base_prob
     p2 = base_prob + effect_size
     if p2 >= 1:
@@ -610,26 +587,22 @@ def statistical_power_analysis(
             "p1": p1,
             "p2": p2,
         }
-
+    
     p_pooled = (p1 + p2) / 2
     se_null = math.sqrt(p_pooled * (1 - p_pooled) * 2 / n_sims)
     se_alt = math.sqrt((p1 * (1 - p1) + p2 * (1 - p2)) / n_sims)
-
+    
     z_alpha = scipy_stats.norm.ppf(1 - alpha / 2)
     z_beta = (abs(p2 - p1) - z_alpha * se_null) / se_alt
-
+    
     power = scipy_stats.norm.cdf(z_beta)
-
-    min_n_for_80_power = int(
-        math.ceil(
-            2
-            * p_pooled
-            * (1 - p_pooled)
-            * (scipy_stats.norm.ppf(0.8) + z_alpha) ** 2
-            / (effect_size**2)
-        )
-    )
-
+    
+    min_n_for_80_power = int(math.ceil(
+        2 * p_pooled * (1 - p_pooled) * 
+        (scipy_stats.norm.ppf(0.8) + z_alpha) ** 2 / 
+        (effect_size ** 2)
+    ))
+    
     return {
         "power": float(power),
         "power_percent": float(power * 100),
@@ -640,61 +613,61 @@ def statistical_power_analysis(
         "alpha": alpha,
         "min_n_for_80_power": min_n_for_80_power,
         "interpretation": (
-            f"{power * 100:.1f}% power to detect effect size {effect_size:.3f} "
+            f"{power*100:.1f}% power to detect effect size {effect_size:.3f} "
             f"with {n_sims} simulations"
             if power >= 0.8
-            else f"Low power ({power * 100:.1f}%). Need ~{min_n_for_80_power} sims for 80% power."
+            else f"Low power ({power*100:.1f}%). Need ~{min_n_for_80_power} sims for 80% power."
         ),
     }
 
 
 def ensemble_ci_from_multiple_methods(
     method_results: List[Dict[str, Any]],
-    metric: str = "prob_win",
+    metric: str = 'prob_win',
     confidence: float = 0.95,
 ) -> Dict[str, Any]:
     """Combine confidence intervals from multiple methods/seeds.
-
+    
     Uses bootstrap-t method to combine estimates.
-
+    
     Args:
         method_results: List of result dictionaries from different methods/seeds
         metric: Metric to combine
         confidence: Confidence level
-
+        
     Returns:
         Combined estimate with confidence interval
     """
     if not method_results:
         return {"error": "No method results provided"}
-
+    
     values = []
     for result in method_results:
         if not isinstance(result, dict):
             continue
-        best = result.get("best", {})
+        best = result.get('best', {})
         if not isinstance(best, dict):
             continue
         val = best.get(metric)
         if val is not None and np.isfinite(float(val)):
             values.append(float(val))
-
+    
     if len(values) < 2:
         return {
             "metric": metric,
             "n_methods": len(values),
             "error": "Need at least 2 methods for ensemble CI",
         }
-
+    
     values_arr = np.array(values)
     mean_val = float(np.mean(values_arr))
     std_val = float(np.std(values_arr, ddof=1))
     se_val = std_val / math.sqrt(len(values))
-
+    
     t_crit = scipy_stats.t.ppf(1 - (1 - confidence) / 2, df=len(values) - 1)
     ci_low = mean_val - t_crit * se_val
     ci_high = mean_val + t_crit * se_val
-
+    
     return {
         "metric": metric,
         "n_methods": len(values),

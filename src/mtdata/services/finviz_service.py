@@ -84,9 +84,7 @@ def _normalize_finviz_date_string(value: Any) -> Any:
     return value
 
 
-def _normalize_finviz_dates_in_rows(
-    rows: List[Dict[str, Any]], *keys: str
-) -> List[Dict[str, Any]]:
+def _normalize_finviz_dates_in_rows(rows: List[Dict[str, Any]], *keys: str) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     wanted = set(keys)
     for row in rows:
@@ -108,23 +106,15 @@ def _run_screener_view(
     page: int = 1,
 ) -> Any:
     """Run screener_view with bounded rows and no inter-page sleep."""
-    fetch_limit = _compute_screener_fetch_limit(
-        limit=limit, page=page, max_rows=_FINVIZ_SCREENER_MAX_ROWS
-    )
-    return screener.screener_view(
-        order=order, limit=fetch_limit, verbose=0, sleep_sec=0
-    ), fetch_limit
+    fetch_limit = _compute_screener_fetch_limit(limit=limit, page=page, max_rows=_FINVIZ_SCREENER_MAX_ROWS)
+    return screener.screener_view(order=order, limit=fetch_limit, verbose=0, sleep_sec=0), fetch_limit
 
 
-def _finviz_http_get(
-    url: str, *, headers: Dict[str, str], params: Dict[str, Any]
-) -> Any:
+def _finviz_http_get(url: str, *, headers: Dict[str, str], params: Dict[str, Any]) -> Any:
     """HTTP GET helper with centralized timeout and pooled connections."""
     # Testability: when requests.get is monkeypatched, honor that hook.
     if requests.get is not requests.api.get:
-        return requests.get(
-            url, headers=headers, params=params, timeout=_FINVIZ_HTTP_TIMEOUT
-        )
+        return requests.get(url, headers=headers, params=params, timeout=_FINVIZ_HTTP_TIMEOUT)
 
     global _FINVIZ_HTTP_SESSION
     if _FINVIZ_HTTP_SESSION is None:
@@ -133,9 +123,7 @@ def _finviz_http_get(
                 session = requests.Session()
                 session.headers.update({"User-Agent": "Mozilla/5.0"})
                 _FINVIZ_HTTP_SESSION = session
-    return _FINVIZ_HTTP_SESSION.get(
-        url, headers=headers, params=params, timeout=_FINVIZ_HTTP_TIMEOUT
-    )
+    return _FINVIZ_HTTP_SESSION.get(url, headers=headers, params=params, timeout=_FINVIZ_HTTP_TIMEOUT)
 
 
 def _apply_finvizfinance_timeout_patch() -> None:
@@ -266,7 +254,7 @@ def _fetch_finviz_market_performance_rows(
 def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
     """
     Get fundamental data for a stock symbol.
-
+    
     Returns metrics like P/E, EPS, market cap, sector, industry, etc.
     """
     try:
@@ -304,7 +292,7 @@ def get_stock_description(symbol: str) -> Dict[str, Any]:
 def get_stock_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any]:
     """
     Get latest news for a stock symbol.
-
+    
     Returns list of news items with title, link, date, source.
     """
     try:
@@ -339,12 +327,10 @@ def get_stock_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any
         return {"error": f"Failed to fetch news: {message}"}
 
 
-def get_stock_insider_trades(
-    symbol: str, limit: int = 20, page: int = 1
-) -> Dict[str, Any]:
+def get_stock_insider_trades(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any]:
     """
     Get insider trading activity for a stock symbol.
-
+    
     Returns list of insider trades with owner, relationship, date, transaction, cost, shares, value.
     """
     try:
@@ -375,7 +361,7 @@ def get_stock_insider_trades(
 def get_stock_ratings(symbol: str) -> Dict[str, Any]:
     """
     Get analyst ratings for a stock symbol.
-
+    
     Returns list of ratings with date, status, analyst, rating, price target.
     """
     try:
@@ -421,7 +407,7 @@ def screen_stocks(
 ) -> Dict[str, Any]:
     """
     Screen stocks using Finviz screener.
-
+    
     Parameters
     ----------
     filters : dict, optional
@@ -449,7 +435,7 @@ def screen_stocks(
     view : str
         Screener view type: "overview", "valuation", "financial", "ownership",
         "performance", "technical"
-
+    
     Returns
     -------
     dict
@@ -459,14 +445,10 @@ def screen_stocks(
         _apply_finvizfinance_timeout_patch()
         view_lower = view.lower().strip()
         screener = _build_finviz_screener(view_lower)
-
+        
         if filters:
             screener.set_filter(filters_dict=filters)
-        order_name = (
-            str(order).strip()
-            if isinstance(order, str) and str(order).strip()
-            else "Ticker"
-        )
+        order_name = str(order).strip() if isinstance(order, str) and str(order).strip() else "Ticker"
 
         df, fetch_limit = _run_screener_view(
             screener,
@@ -493,9 +475,7 @@ def screen_stocks(
                 "message": "No stocks matched the filter criteria",
             }
 
-        truncated = bool(
-            total >= fetch_limit and fetch_limit >= _FINVIZ_SCREENER_MAX_ROWS
-        )
+        truncated = bool(total >= fetch_limit and fetch_limit >= _FINVIZ_SCREENER_MAX_ROWS)
         return {
             "success": True,
             "view": view_lower,
@@ -512,12 +492,10 @@ def screen_stocks(
         return {"error": f"Failed to run screener: {str(e)}"}
 
 
-def get_general_news(
-    news_type: str = "news", limit: int = 20, page: int = 1
-) -> Dict[str, Any]:
+def get_general_news(news_type: str = "news", limit: int = 20, page: int = 1) -> Dict[str, Any]:
     """
     Get general financial news from Finviz.
-
+    
     Parameters
     ----------
     news_type : str
@@ -562,16 +540,14 @@ def get_general_news(
             "items": items_list,
         }
     except Exception as e:
-        logger.exception("Error fetching general news")
+        logger.exception(f"Error fetching general news")
         return {"error": f"Failed to fetch news: {str(e)}"}
 
 
-def get_insider_activity(
-    option: str = "latest", limit: int = 50, page: int = 1
-) -> Dict[str, Any]:
+def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1) -> Dict[str, Any]:
     """
     Get general insider trading activity.
-
+    
     Parameters
     ----------
     option : str
@@ -607,7 +583,7 @@ def get_insider_activity(
             "insider_trades": items_list,
         }
     except Exception as e:
-        logger.exception("Error fetching insider activity")
+        logger.exception(f"Error fetching insider activity")
         return {"error": f"Failed to fetch insider activity: {str(e)}"}
 
 
@@ -647,11 +623,7 @@ def get_crypto_performance() -> Dict[str, Any]:
                 row["Price_display"] = price_display
         if _crypto_day_week_identical(items_list):
             for row in items_list:
-                if (
-                    isinstance(row, dict)
-                    and "Perf Week" in row
-                    and "Perf WTD" not in row
-                ):
+                if isinstance(row, dict) and "Perf Week" in row and "Perf WTD" not in row:
                     row["Perf WTD"] = row.get("Perf Week")
             warnings_out.append(
                 "Finviz returned identical 'Perf Day' and 'Perf Week' values across all rows; "
@@ -781,18 +753,12 @@ def get_economic_calendar(
         )
 
         api_date_from = _align_to_next_monday_if_weekend(date_from)
-        raw_items = _fetch_finviz_economic_calendar_items(
-            date_from=api_date_from, date_to=date_to
-        )
+        raw_items = _fetch_finviz_economic_calendar_items(date_from=api_date_from, date_to=date_to)
         events = _normalize_finviz_economic_calendar_items(raw_items)
-        events = _filter_calendar_events_by_date(
-            events, date_from=date_from, date_to=date_to
-        )
+        events = _filter_calendar_events_by_date(events, date_from=date_from, date_to=date_to)
 
         if impact_norm is not None:
-            events = [
-                e for e in events if str(e.get("Impact", "")).lower() == impact_norm
-            ]
+            events = [e for e in events if str(e.get("Impact", "")).lower() == impact_norm]
 
         events.sort(key=lambda e: str(e.get("Datetime", "")))
 
@@ -803,9 +769,7 @@ def get_economic_calendar(
 
         message = None
         if impact_norm and total == 0:
-            message = "No economic releases matched impact='{impact}'".format(
-                impact=impact_norm
-            )
+            message = "No economic releases matched impact='{impact}'".format(impact=impact_norm)
 
         return {
             "success": True,
@@ -837,9 +801,7 @@ def get_earnings_calendar_api(
     try:
         safe_limit, safe_page = _sanitize_pagination(limit, page)
         default_days = 7 if (date_from is not None and date_to is None) else 30
-        date_from, date_to = _resolve_date_range(
-            date_from=date_from, date_to=date_to, default_days=default_days
-        )
+        date_from, date_to = _resolve_date_range(date_from=date_from, date_to=date_to, default_days=default_days)
         payload = _fetch_finviz_calendar_paged(
             kind="earnings",
             date_from=date_from,
@@ -849,10 +811,7 @@ def get_earnings_calendar_api(
         )
         items = payload.get("items") or []
         total = int(payload.get("totalItemsCount") or len(items))
-        pages = int(
-            payload.get("totalPages")
-            or ((total + safe_limit - 1) // safe_limit if total else 0)
-        )
+        pages = int(payload.get("totalPages") or ((total + safe_limit - 1) // safe_limit if total else 0))
         return {
             "success": True,
             "source": "finviz_api",
@@ -882,9 +841,7 @@ def get_dividends_calendar_api(
     try:
         safe_limit, safe_page = _sanitize_pagination(limit, page)
         default_days = 7 if (date_from is not None and date_to is None) else 30
-        date_from, date_to = _resolve_date_range(
-            date_from=date_from, date_to=date_to, default_days=default_days
-        )
+        date_from, date_to = _resolve_date_range(date_from=date_from, date_to=date_to, default_days=default_days)
         payload = _fetch_finviz_calendar_paged(
             kind="dividends",
             date_from=date_from,
@@ -894,10 +851,7 @@ def get_dividends_calendar_api(
         )
         items = payload.get("items") or []
         total = int(payload.get("totalItemsCount") or len(items))
-        pages = int(
-            payload.get("totalPages")
-            or ((total + safe_limit - 1) // safe_limit if total else 0)
-        )
+        pages = int(payload.get("totalPages") or ((total + safe_limit - 1) // safe_limit if total else 0))
         return {
             "success": True,
             "source": "finviz_api",
@@ -917,9 +871,7 @@ def get_dividends_calendar_api(
         return {"error": f"Failed to fetch dividends calendar: {str(e)}"}
 
 
-def _resolve_date_range(
-    *, date_from: Optional[str], date_to: Optional[str], default_days: int
-) -> tuple[str, str]:
+def _resolve_date_range(*, date_from: Optional[str], date_to: Optional[str], default_days: int) -> tuple[str, str]:
     """Resolve an ISO date range for Finviz API calls."""
     if date_to and not date_from:
         raise ValueError("date_from is required when date_to is provided")
@@ -928,9 +880,7 @@ def _resolve_date_range(
         try:
             df = datetime.date.fromisoformat(date_from)
         except ValueError as e:
-            raise ValueError(
-                f"Invalid date_from '{date_from}'. Expected YYYY-MM-DD"
-            ) from e
+            raise ValueError(f"Invalid date_from '{date_from}'. Expected YYYY-MM-DD") from e
     else:
         df = datetime.date.today()
         date_from = df.isoformat()
@@ -1000,9 +950,7 @@ def _filter_calendar_events_by_date(
     return filtered
 
 
-def _fetch_finviz_economic_calendar_items(
-    date_from: str, date_to: str
-) -> List[Dict[str, Any]]:
+def _fetch_finviz_economic_calendar_items(date_from: str, date_to: str) -> List[Dict[str, Any]]:
     """Fetch raw economic calendar items from Finviz's JSON API."""
     url = "https://finviz.com/api/calendar/economic"
     headers = {
@@ -1019,11 +967,7 @@ def _fetch_finviz_economic_calendar_items(
     finally:
         resp.close()
     if not isinstance(data, list):
-        raise TypeError(
-            "Unexpected response type from Finviz API: {t}".format(
-                t=type(data).__name__
-            )
-        )
+        raise TypeError("Unexpected response type from Finviz API: {t}".format(t=type(data).__name__))
 
     items: List[Dict[str, Any]] = []
     for item in data:
@@ -1062,19 +1006,13 @@ def _fetch_finviz_calendar_paged(
     finally:
         resp.close()
     if not isinstance(data, dict):
-        raise TypeError(
-            "Unexpected response type from Finviz API: {t}".format(
-                t=type(data).__name__
-            )
-        )
+        raise TypeError("Unexpected response type from Finviz API: {t}".format(t=type(data).__name__))
     if "items" not in data or not isinstance(data.get("items"), list):
         raise TypeError("Unexpected payload shape from Finviz API (missing items list)")
     return data
 
 
-def _normalize_finviz_economic_calendar_items(
-    items: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+def _normalize_finviz_economic_calendar_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Normalize Finviz API items to the legacy calendar schema."""
     importance_to_impact: Dict[int, Literal["low", "medium", "high"]] = {
         1: "low",
@@ -1085,11 +1023,7 @@ def _normalize_finviz_economic_calendar_items(
     normalized: List[Dict[str, Any]] = []
     for item in items:
         importance = item.get("importance")
-        impact = (
-            importance_to_impact.get(importance)
-            if isinstance(importance, int)
-            else None
-        )
+        impact = importance_to_impact.get(importance) if isinstance(importance, int) else None
 
         normalized.append(
             {

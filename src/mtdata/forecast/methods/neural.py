@@ -5,10 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ..common import (
-    edge_pad_to_length as _edge_pad_to_length,
-    nf_setup_and_predict as _nf_setup_and_predict,
-)  # type: ignore
+from ..common import edge_pad_to_length as _edge_pad_to_length, nf_setup_and_predict as _nf_setup_and_predict  # type: ignore
 from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 
@@ -32,40 +29,33 @@ def forecast_neural(
     Returns (forecast_values, params_used).
     """
     try:
-        from neuralforecast.models import (
-            NHITS as _NF_NHITS,
-            NBEATSx as _NF_NBEATSX,
-            TFT as _NF_TFT,
-            PatchTST as _NF_PATCHTST,
-        )  # type: ignore
+        from neuralforecast.models import NHITS as _NF_NHITS, NBEATSx as _NF_NBEATSX, TFT as _NF_TFT, PatchTST as _NF_PATCHTST  # type: ignore
     except Exception as ex:
         raise RuntimeError(f"Failed to import neuralforecast models: {ex}")
 
     method_l = str(method).lower().strip()
     model_class = {
-        "nhits": _NF_NHITS,
-        "nbeatsx": _NF_NBEATSX,
-        "tft": _NF_TFT,
-        "patchtst": _NF_PATCHTST,
+        'nhits': _NF_NHITS,
+        'nbeatsx': _NF_NBEATSX,
+        'tft': _NF_TFT,
+        'patchtst': _NF_PATCHTST,
     }.get(method_l)
     if model_class is None:
-        raise RuntimeError(
-            f"Model '{method_l}' not available in installed neuralforecast version"
-        )
+        raise RuntimeError(f"Model '{method_l}' not available in installed neuralforecast version")
 
     # Hyperparameters with defaults and safety caps
     h = int(fh)
     available_context = int(max(1, (n - h) if n > h else n))
     input_size = None
-    if params.get("input_size") is not None:
-        requested = int(params["input_size"])
+    if params.get('input_size') is not None:
+        requested = int(params['input_size'])
         input_size = int(max(1, min(requested, available_context)))
     else:
         base = max(64, (int(m) * 3) if m and int(m) > 0 else 96)
         input_size = int(max(1, min(available_context, base)))
-    steps = int(params.get("max_steps", params.get("max_epochs", 50)))
-    batch_size = int(params.get("batch_size", 32))
-    lr = params.get("learning_rate", None)
+    steps = int(params.get('max_steps', params.get('max_epochs', 50)))
+    batch_size = int(params.get('batch_size', 32))
+    lr = params.get('learning_rate', None)
 
     Yf = _nf_setup_and_predict(
         model_class=model_class,
@@ -81,54 +71,30 @@ def forecast_neural(
         future_times=future_times,
     )
     try:
-        Yf = Yf[Yf["unique_id"] == "ts"]
+        Yf = Yf[Yf['unique_id'] == 'ts']
     except Exception:
         pass
     pred_col = None
     for c in list(Yf.columns):
-        if c not in ("unique_id", "ds", "y"):
+        if c not in ('unique_id', 'ds', 'y'):
             pred_col = c
-            if c == "y_hat":
+            if c == 'y_hat':
                 break
     if pred_col is None:
         raise RuntimeError(f"{method_l.upper()} prediction columns not found")
     vals = np.asarray(Yf[pred_col].to_numpy(), dtype=float)
     f_vals = _edge_pad_to_length(vals, int(fh))
-    params_used = {
-        "max_epochs": int(steps),
-        "input_size": int(input_size),
-        "batch_size": int(batch_size),
-    }
+    params_used = {'max_epochs': int(steps), 'input_size': int(input_size), 'batch_size': int(batch_size)}
     return f_vals.astype(float, copy=False), params_used
 
 
 class NeuralForecastMethod(ForecastMethod):
     PARAMS: List[Dict[str, Any]] = [
-        {
-            "name": "input_size",
-            "type": "int|null",
-            "description": "Lookback context for the model (auto if omitted).",
-        },
-        {
-            "name": "max_steps",
-            "type": "int|null",
-            "description": "Training steps (fallback to max_epochs, default: 50).",
-        },
-        {
-            "name": "max_epochs",
-            "type": "int|null",
-            "description": "Alias for max_steps.",
-        },
-        {
-            "name": "batch_size",
-            "type": "int",
-            "description": "Batch size (default: 32).",
-        },
-        {
-            "name": "learning_rate",
-            "type": "float|null",
-            "description": "Learning rate (model default if omitted).",
-        },
+        {"name": "input_size", "type": "int|null", "description": "Lookback context for the model (auto if omitted)."},
+        {"name": "max_steps", "type": "int|null", "description": "Training steps (fallback to max_epochs, default: 50)."},
+        {"name": "max_epochs", "type": "int|null", "description": "Alias for max_steps."},
+        {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)."},
+        {"name": "learning_rate", "type": "float|null", "description": "Learning rate (model default if omitted)."},
     ]
 
     @property
@@ -165,13 +131,9 @@ class NeuralForecastMethod(ForecastMethod):
             exog_used = p.get("exog_used")
         exog_future_arr = kwargs.get("exog_future")
         if exog_future_arr is None:
-            exog_future_arr = (
-                exog_future if exog_future is not None else p.get("exog_future")
-            )
+            exog_future_arr = exog_future if exog_future is not None else p.get("exog_future")
 
-        Y_df, _, _ = _create_training_dataframes(
-            x, int(horizon), exog_used, exog_future_arr
-        )
+        Y_df, _, _ = _create_training_dataframes(x, int(horizon), exog_used, exog_future_arr)
         f_vals, params_used = forecast_neural(
             method=self.name,
             series=x,

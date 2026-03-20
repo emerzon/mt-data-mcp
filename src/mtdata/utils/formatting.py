@@ -1,5 +1,4 @@
 """Shared formatting helpers for consistent text output."""
-
 from typing import Any, List, Optional
 import math
 
@@ -13,11 +12,9 @@ from .constants import (
 
 def _adaptive_decimals(num: float, max_decimals: int = PRECISION_MAX_DECIMALS) -> int:
     scale = max(1.0, abs(num))
-    tol = max(
-        PRECISION_ABS_TOL, PRECISION_REL_TOL * scale, abs(num) * PRECISION_MAX_LOSS_PCT
-    )
+    tol = max(PRECISION_ABS_TOL, PRECISION_REL_TOL * scale, abs(num) * PRECISION_MAX_LOSS_PCT)
     for d in range(0, max_decimals + 1):
-        factor = 10.0**d
+        factor = 10.0 ** d
         rv = round(num * factor) / factor
         if abs(rv - num) <= tol:
             return d
@@ -65,7 +62,7 @@ def optimal_decimals(
         tol = max(abs_tol, value_range * max_loss_pct)
 
     for d in range(0, int(max_decimals) + 1):
-        factor = 10.0**d
+        factor = 10.0 ** d
         max_diff = 0.0
         for v in nums:
             rv = round(v * factor) / factor

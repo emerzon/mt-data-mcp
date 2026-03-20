@@ -1,5 +1,6 @@
 """Tests for src/mtdata/utils/formatting.py"""
-
+import math
+import pytest
 from mtdata.utils.formatting import (
     _adaptive_decimals,
     format_float,
@@ -56,10 +57,10 @@ class TestFormatNumber:
         assert format_number("hello") == "hello"
 
     def test_inf_returns_null(self):
-        assert format_number(float("inf")) == "null"
+        assert format_number(float('inf')) == "null"
 
     def test_nan_returns_null(self):
-        assert format_number(float("nan")) == "null"
+        assert format_number(float('nan')) == "null"
 
     def test_explicit_decimals(self):
         assert format_number(1.23456, decimals=2) == "1.23"
@@ -84,7 +85,7 @@ class TestOptimalDecimals:
         assert result >= 2
 
     def test_non_finite_filtered(self):
-        result = optimal_decimals([1.0, float("nan"), float("inf"), 2.0])
+        result = optimal_decimals([1.0, float('nan'), float('inf'), 2.0])
         assert isinstance(result, int)
 
     def test_non_numeric_filtered(self):

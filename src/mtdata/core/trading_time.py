@@ -13,16 +13,8 @@ from ..shared.constants import TIMEFRAME_SECONDS
 
 
 ExpirationValue = Union[int, float, str, datetime]
-_GTC_EXPIRATION_TOKENS = {
-    "GTC",
-    "GOOD_TILL_CANCEL",
-    "GOOD_TILL_CANCELLED",
-    "NONE",
-    "NO_EXPIRATION",
-}
-_SIMPLE_RELATIVE_PATTERN = re.compile(
-    r"^(?:in\s+)?(\d+(?:\.\d+)?)\s*([a-zA-Z]+)$", re.IGNORECASE
-)
+_GTC_EXPIRATION_TOKENS = {"GTC", "GOOD_TILL_CANCEL", "GOOD_TILL_CANCELLED", "NONE", "NO_EXPIRATION"}
+_SIMPLE_RELATIVE_PATTERN = re.compile(r"^(?:in\s+)?(\d+(?:\.\d+)?)\s*([a-zA-Z]+)$", re.IGNORECASE)
 
 
 def _to_server_time_naive(dt: datetime) -> datetime:
@@ -38,11 +30,7 @@ def _to_server_time_naive(dt: datetime) -> datetime:
     try:
         if dt.tzinfo is None:
             if client_tz is not None:
-                aware = (
-                    client_tz.localize(dt)
-                    if hasattr(client_tz, "localize")
-                    else dt.replace(tzinfo=client_tz)
-                )
+                aware = client_tz.localize(dt) if hasattr(client_tz, "localize") else dt.replace(tzinfo=client_tz)
             else:
                 aware = dt.replace(tzinfo=timezone.utc)
     except Exception:
@@ -62,9 +50,7 @@ def _to_server_time_naive(dt: datetime) -> datetime:
     try:
         utc_dt = aware.astimezone(timezone.utc)
     except Exception:
-        utc_dt = (
-            aware if aware.tzinfo is not None else aware.replace(tzinfo=timezone.utc)
-        )
+        utc_dt = aware if aware.tzinfo is not None else aware.replace(tzinfo=timezone.utc)
     server_dt = utc_dt + timedelta(seconds=offset_sec)
     return server_dt.replace(tzinfo=None)
 
@@ -89,18 +75,10 @@ def _server_time_naive_to_utc(dt: datetime) -> datetime:
 
     if server_tz is not None:
         try:
-            aware_server = (
-                server_tz.localize(dt, is_dst=None)
-                if hasattr(server_tz, "localize")
-                else dt.replace(tzinfo=server_tz)
-            )
+            aware_server = server_tz.localize(dt, is_dst=None) if hasattr(server_tz, "localize") else dt.replace(tzinfo=server_tz)
         except Exception:
             try:
-                aware_server = (
-                    server_tz.localize(dt, is_dst=True)
-                    if hasattr(server_tz, "localize")
-                    else dt.replace(tzinfo=server_tz)
-                )
+                aware_server = server_tz.localize(dt, is_dst=True) if hasattr(server_tz, "localize") else dt.replace(tzinfo=server_tz)
             except Exception:
                 aware_server = dt.replace(tzinfo=server_tz)
         return aware_server.astimezone(timezone.utc)
@@ -112,9 +90,7 @@ def _server_time_naive_to_utc(dt: datetime) -> datetime:
     return (dt - timedelta(seconds=offset_sec)).replace(tzinfo=timezone.utc)
 
 
-def _next_candle_close_server_time(
-    timeframe: str, *, now_utc: Optional[datetime] = None
-) -> datetime:
+def _next_candle_close_server_time(timeframe: str, *, now_utc: Optional[datetime] = None) -> datetime:
     """Return the next candle close in server-local naive time."""
     tf = str(timeframe or "").upper().strip()
     if tf not in TIMEFRAME_SECONDS:
@@ -132,18 +108,8 @@ def _next_candle_close_server_time(
 
     if tf == "MN1":
         if server_now.month == 12:
-            return server_now.replace(
-                year=server_now.year + 1,
-                month=1,
-                day=1,
-                hour=0,
-                minute=0,
-                second=0,
-                microsecond=0,
-            )
-        return server_now.replace(
-            month=server_now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0
-        )
+            return server_now.replace(year=server_now.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        return server_now.replace(month=server_now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
 
     if tf == "W1":
         days_until_next_monday = (7 - server_now.weekday()) % 7
@@ -157,9 +123,7 @@ def _next_candle_close_server_time(
         )
 
     if tf == "D1":
-        return (server_now + timedelta(days=1)).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
+        return (server_now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
 
     interval_seconds = int(TIMEFRAME_SECONDS[tf])
     if interval_seconds <= 0:
@@ -188,15 +152,11 @@ def _next_candle_wait_payload(
     next_close_utc = _server_time_naive_to_utc(next_close_server)
     wait_seconds = max(
         0.0,
-        float((next_close_utc - current_utc).total_seconds())
-        + max(0.0, float(buffer_seconds)),
+        float((next_close_utc - current_utc).total_seconds()) + max(0.0, float(buffer_seconds)),
     )
 
     try:
-        server_tz_name = (
-            getattr(mt5_config, "server_tz_name", None)
-            or f"UTC{int(mt5_config.get_time_offset_seconds()) / 3600:+g}"
-        )
+        server_tz_name = getattr(mt5_config, "server_tz_name", None) or f"UTC{int(mt5_config.get_time_offset_seconds()) / 3600:+g}"
     except Exception:
         server_tz_name = "UTC"
 
@@ -233,9 +193,7 @@ def _sleep_until_next_candle(
     return payload
 
 
-def _normalize_pending_expiration(
-    expiration: Optional[ExpirationValue],
-) -> Tuple[Optional[int], bool]:
+def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tuple[Optional[int], bool]:
     """Convert user-supplied expiration data into an MT5-compatible timestamp."""
     if expiration is None:
         return None, False
@@ -248,14 +206,10 @@ def _normalize_pending_expiration(
         if not math.isfinite(expiration) or expiration <= 0:
             return None, True
         try:
-            server_dt = _to_server_time_naive(
-                datetime.fromtimestamp(expiration, tz=timezone.utc)
-            )
+            server_dt = _to_server_time_naive(datetime.fromtimestamp(expiration, tz=timezone.utc))
             return _server_time_naive_to_mt5_timestamp(server_dt), True
         except (OverflowError, OSError) as exc:
-            raise ValueError(
-                f"Expiration timestamp out of range: {expiration}"
-            ) from exc
+            raise ValueError(f"Expiration timestamp out of range: {expiration}") from exc
 
     if isinstance(expiration, str):
         cleaned = expiration.strip().strip('"').strip("'")
@@ -307,21 +261,15 @@ def _normalize_pending_expiration(
             if not math.isfinite(numeric) or numeric <= 0:
                 return None, True
             try:
-                server_dt = _to_server_time_naive(
-                    datetime.fromtimestamp(numeric, tz=timezone.utc)
-                )
+                server_dt = _to_server_time_naive(datetime.fromtimestamp(numeric, tz=timezone.utc))
                 return _server_time_naive_to_mt5_timestamp(server_dt), True
             except (OverflowError, OSError) as exc:
-                raise ValueError(
-                    f"Expiration timestamp out of range: {expiration}"
-                ) from exc
+                raise ValueError(f"Expiration timestamp out of range: {expiration}") from exc
         except ValueError:
             try:
                 server_dt = _to_server_time_naive(datetime.fromisoformat(cleaned))
                 return _server_time_naive_to_mt5_timestamp(server_dt), True
             except ValueError as exc:
-                raise ValueError(
-                    f"Unsupported expiration format: {expiration}"
-                ) from exc
+                raise ValueError(f"Unsupported expiration format: {expiration}") from exc
 
     raise TypeError(f"Unsupported expiration type: {type(expiration).__name__}")

@@ -1,8 +1,9 @@
 """Tests for src/mtdata/utils/minimal_output.py — TOON formatting helpers."""
-
+import math
 from mtdata.utils.minimal_output import (
     _is_scalar_value,
     _is_empty_value,
+    _minify_number,
     _stringify_scalar,
     _stringify_cell,
     _indent_text,
@@ -227,7 +228,7 @@ class TestStringifyForToon:
         assert "3.14" in result
 
     def test_inf(self):
-        result = _stringify_for_toon(float("inf"))
+        result = _stringify_for_toon(float('inf'))
         assert "inf" in result.lower()
 
     def test_string(self):
@@ -254,7 +255,7 @@ class TestStringifyForToonValue:
         assert result == "42"
 
     def test_inf(self):
-        result = _stringify_for_toon_value(float("inf"), None, ",")
+        result = _stringify_for_toon_value(float('inf'), None, ",")
         assert "inf" in result.lower()
 
 

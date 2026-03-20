@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from unittest.mock import patch
+import os
+from unittest.mock import MagicMock, patch
 
 from mtdata.core import web_api
 
@@ -15,12 +16,9 @@ def test_history_uses_start_end_ohlcv_and_drops_open_bar() -> None:
         ],
         "last_candle_open": True,
     }
-    with (
-        patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True),
-        patch(
-            "mtdata.core.web_api._fetch_candles_impl", return_value=payload
-        ) as mock_fetch,
-    ):
+    with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), patch(
+        "mtdata.core.web_api._fetch_candles_impl", return_value=payload
+    ) as mock_fetch:
         res = web_api.get_history(
             symbol="EURUSD",
             timeframe="H1",

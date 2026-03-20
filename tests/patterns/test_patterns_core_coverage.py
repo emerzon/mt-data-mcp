@@ -1,9 +1,10 @@
 """Tests for mtdata.core.patterns — pattern detection helpers and tool wrappers."""
 
+import copy
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from typing import Any, Dict
-from unittest.mock import MagicMock, patch
+from typing import Any, Dict, List, Optional, Tuple
+from unittest.mock import MagicMock, patch, PropertyMock
 
 import numpy as np
 import pandas as pd
@@ -15,12 +16,8 @@ from mtdata.core.patterns_requests import PatternsDetectRequest
 # Helpers to build mock data
 # ---------------------------------------------------------------------------
 
-
-def _make_ohlcv_df(
-    n: int = 200, *, with_time: bool = True, with_volume: bool = True
-) -> pd.DataFrame:
+def _make_ohlcv_df(n: int = 200, *, with_time: bool = True, with_volume: bool = True) -> pd.DataFrame:
     """Build a synthetic OHLCV dataframe."""
-# ruff: noqa: E402, E731, E741, F811, F841
     rng = np.random.RandomState(42)
     base = 1.1000 + np.cumsum(rng.randn(n) * 0.0005)
     data: Dict[str, Any] = {
@@ -62,11 +59,10 @@ def _mock_pattern_result(**overrides):
 
 # ── _round_value ──────────────────────────────────────────────────────────
 
-
 class TestRoundValue:
+
     def _call(self, x):
         from mtdata.core.patterns import _round_value
-
         return _round_value(x)
 
     def test_rounds_float(self):
@@ -87,11 +83,10 @@ class TestRoundValue:
 
 # ── _normalize_engine_name ────────────────────────────────────────────────
 
-
 class TestNormalizeEngineName:
+
     def _call(self, value):
         from mtdata.core.patterns import _normalize_engine_name
-
         return _normalize_engine_name(value)
 
     def test_lowercase(self):
@@ -112,11 +107,10 @@ class TestNormalizeEngineName:
 
 # ── _parse_engine_list ────────────────────────────────────────────────────
 
-
 class TestParseEngineList:
+
     def _call(self, value):
         from mtdata.core.patterns import _parse_engine_list
-
         return _parse_engine_list(value)
 
     def test_none(self):
@@ -150,11 +144,10 @@ class TestParseEngineList:
 
 # ── _select_classic_engines ───────────────────────────────────────────────
 
-
 class TestSelectClassicEngines:
+
     def _call(self, engine, ensemble):
         from mtdata.core.patterns import _select_classic_engines
-
         return _select_classic_engines(engine, ensemble)
 
     def test_default_native(self):
@@ -192,11 +185,10 @@ class TestSelectClassicEngines:
 
 # ── _to_jsonable ──────────────────────────────────────────────────────────
 
-
 class TestToJsonable:
+
     def _call(self, value):
         from mtdata.core.patterns import _to_jsonable
-
         return _to_jsonable(value)
 
     def test_numpy_float(self):
@@ -234,11 +226,10 @@ class TestToJsonable:
 
 # ── _timestamp_to_label ──────────────────────────────────────────────────
 
-
 class TestTimestampToLabel:
+
     def _call(self, ts):
         from mtdata.core.patterns import _timestamp_to_label
-
         return _timestamp_to_label(ts)
 
     def test_pd_timestamp(self):
@@ -257,11 +248,10 @@ class TestTimestampToLabel:
 
 # ── _to_float_safe ───────────────────────────────────────────────────────
 
-
 class TestToFloatSafe:
+
     def _call(self, value, default=0.6):
         from mtdata.core.patterns import _to_float_safe
-
         return _to_float_safe(value, default=default)
 
     def test_valid_float(self):
@@ -288,11 +278,10 @@ class TestToFloatSafe:
 
 # ── _infer_stock_pattern_confidence ──────────────────────────────────────
 
-
 class TestInferStockPatternConfidence:
+
     def _call(self, row):
         from mtdata.core.patterns import _infer_stock_pattern_confidence
-
         return _infer_stock_pattern_confidence(row)
 
     def test_explicit_confidence(self):
@@ -314,18 +303,14 @@ class TestInferStockPatternConfidence:
 
 # ── _map_stock_pattern_name ──────────────────────────────────────────────
 
-
 class TestMapStockPatternName:
+
     def _call(self, row):
         from mtdata.core.patterns import _map_stock_pattern_name
-
         return _map_stock_pattern_name(row)
 
     def test_trng_with_alt(self):
-        assert (
-            self._call({"pattern": "TRNG", "alt_name": "Ascending"})
-            == "Ascending Triangle"
-        )
+        assert self._call({"pattern": "TRNG", "alt_name": "Ascending"}) == "Ascending Triangle"
 
     def test_dtop(self):
         assert self._call({"pattern": "DTOP", "alt_name": ""}) == "Double Top"
@@ -349,11 +334,10 @@ class TestMapStockPatternName:
 
 # ── _parse_native_scale_factors ──────────────────────────────────────────
 
-
 class TestParseNativeScaleFactors:
+
     def _call(self, config):
         from mtdata.core.patterns import _parse_native_scale_factors
-
         return _parse_native_scale_factors(config)
 
     def test_none_returns_defaults(self):
@@ -401,11 +385,10 @@ class TestParseNativeScaleFactors:
 
 # ── _interval_overlap_ratio ──────────────────────────────────────────────
 
-
 class TestIntervalOverlapRatio:
+
     def _call(self, a_start, a_end, b_start, b_end):
         from mtdata.core.patterns import _interval_overlap_ratio
-
         return _interval_overlap_ratio(a_start, a_end, b_start, b_end)
 
     def test_full_overlap(self):
@@ -429,11 +412,10 @@ class TestIntervalOverlapRatio:
 
 # ── _format_pattern_dates ────────────────────────────────────────────────
 
-
 class TestFormatPatternDates:
+
     def _call(self, start, end):
         from mtdata.core.patterns import _format_pattern_dates
-
         return _format_pattern_dates(start, end)
 
     def test_both_none(self):
@@ -452,11 +434,10 @@ class TestFormatPatternDates:
 
 # ── _apply_config_to_obj ────────────────────────────────────────────────
 
-
 class TestApplyConfigToObj:
+
     def _call(self, cfg, config):
         from mtdata.core.patterns import _apply_config_to_obj
-
         return _apply_config_to_obj(cfg, config)
 
     def test_sets_float_attr(self):
@@ -516,11 +497,10 @@ class TestApplyConfigToObj:
 
 # ── _resolve_engine_weights ──────────────────────────────────────────────
 
-
 class TestResolveEngineWeights:
+
     def _call(self, engines, weights):
         from mtdata.core.patterns import _resolve_engine_weights
-
         return _resolve_engine_weights(engines, weights)
 
     def test_defaults_to_1(self):
@@ -528,9 +508,7 @@ class TestResolveEngineWeights:
         assert result == {"native": 1.0, "stock_pattern": 1.0}
 
     def test_custom_weights(self):
-        result = self._call(
-            ["native", "stock_pattern"], {"native": 2.0, "stock_pattern": 0.5}
-        )
+        result = self._call(["native", "stock_pattern"], {"native": 2.0, "stock_pattern": 0.5})
         assert result["native"] == 2.0
         assert result["stock_pattern"] == 0.5
 
@@ -553,53 +531,24 @@ class TestResolveEngineWeights:
 
 # ── _merge_classic_ensemble ──────────────────────────────────────────────
 
-
 class TestMergeClassicEnsemble:
+
     def _call(self, engine_patterns, weights, overlap=0.5):
         from mtdata.core.patterns import _merge_classic_ensemble
-
-        return _merge_classic_ensemble(
-            engine_patterns, weights, overlap_threshold=overlap
-        )
+        return _merge_classic_ensemble(engine_patterns, weights, overlap_threshold=overlap)
 
     def test_empty(self):
         assert self._call({}, {}) == []
 
     def test_single_engine(self):
-        pats = {
-            "native": [
-                {
-                    "name": "Triangle",
-                    "start_index": 0,
-                    "end_index": 10,
-                    "confidence": 0.8,
-                    "status": "forming",
-                }
-            ]
-        }
+        pats = {"native": [{"name": "Triangle", "start_index": 0, "end_index": 10, "confidence": 0.8, "status": "forming"}]}
         result = self._call(pats, {"native": 1.0})
         assert len(result) == 1
 
     def test_merges_overlapping(self):
         pats = {
-            "native": [
-                {
-                    "name": "triangle",
-                    "start_index": 0,
-                    "end_index": 10,
-                    "confidence": 0.8,
-                    "status": "forming",
-                }
-            ],
-            "stock": [
-                {
-                    "name": "triangle",
-                    "start_index": 2,
-                    "end_index": 10,
-                    "confidence": 0.7,
-                    "status": "forming",
-                }
-            ],
+            "native": [{"name": "triangle", "start_index": 0, "end_index": 10, "confidence": 0.8, "status": "forming"}],
+            "stock": [{"name": "triangle", "start_index": 2, "end_index": 10, "confidence": 0.7, "status": "forming"}],
         }
         result = self._call(pats, {"native": 1.0, "stock": 1.0})
         assert len(result) == 1
@@ -607,96 +556,32 @@ class TestMergeClassicEnsemble:
 
     def test_does_not_merge_non_overlapping(self):
         pats = {
-            "native": [
-                {
-                    "name": "triangle",
-                    "start_index": 0,
-                    "end_index": 5,
-                    "confidence": 0.8,
-                    "status": "forming",
-                }
-            ],
-            "stock": [
-                {
-                    "name": "triangle",
-                    "start_index": 50,
-                    "end_index": 60,
-                    "confidence": 0.7,
-                    "status": "forming",
-                }
-            ],
+            "native": [{"name": "triangle", "start_index": 0, "end_index": 5, "confidence": 0.8, "status": "forming"}],
+            "stock": [{"name": "triangle", "start_index": 50, "end_index": 60, "confidence": 0.7, "status": "forming"}],
         }
         result = self._call(pats, {"native": 1.0, "stock": 1.0})
         assert len(result) == 2
 
     def test_weighted_confidence(self):
         pats = {
-            "native": [
-                {
-                    "name": "triangle",
-                    "start_index": 0,
-                    "end_index": 10,
-                    "confidence": 1.0,
-                    "status": "forming",
-                }
-            ],
-            "stock": [
-                {
-                    "name": "triangle",
-                    "start_index": 0,
-                    "end_index": 10,
-                    "confidence": 0.0,
-                    "status": "forming",
-                }
-            ],
+            "native": [{"name": "triangle", "start_index": 0, "end_index": 10, "confidence": 1.0, "status": "forming"}],
+            "stock": [{"name": "triangle", "start_index": 0, "end_index": 10, "confidence": 0.0, "status": "forming"}],
         }
         result = self._call(pats, {"native": 3.0, "stock": 1.0})
         assert result[0]["confidence"] == pytest.approx(0.75)
 
     def test_completed_status(self):
         pats = {
-            "native": [
-                {
-                    "name": "triangle",
-                    "start_index": 0,
-                    "end_index": 10,
-                    "confidence": 0.8,
-                    "status": "completed",
-                }
-            ],
-            "stock": [
-                {
-                    "name": "triangle",
-                    "start_index": 0,
-                    "end_index": 10,
-                    "confidence": 0.7,
-                    "status": "completed",
-                }
-            ],
+            "native": [{"name": "triangle", "start_index": 0, "end_index": 10, "confidence": 0.8, "status": "completed"}],
+            "stock": [{"name": "triangle", "start_index": 0, "end_index": 10, "confidence": 0.7, "status": "completed"}],
         }
         result = self._call(pats, {"native": 1.0, "stock": 1.0})
         assert result[0]["status"] == "completed"
 
     def test_any_completed_status_promotes_merged_pattern(self):
         pats = {
-            "native": [
-                {
-                    "name": "triangle",
-                    "start_index": 0,
-                    "end_index": 10,
-                    "confidence": 0.8,
-                    "status": "completed",
-                }
-            ],
-            "stock": [
-                {
-                    "name": "triangle",
-                    "start_index": 0,
-                    "end_index": 10,
-                    "confidence": 0.7,
-                    "status": "forming",
-                }
-            ],
+            "native": [{"name": "triangle", "start_index": 0, "end_index": 10, "confidence": 0.8, "status": "completed"}],
+            "stock": [{"name": "triangle", "start_index": 0, "end_index": 10, "confidence": 0.7, "status": "forming"}],
         }
         result = self._call(pats, {"native": 1.0, "stock": 1.0})
         assert result[0]["status"] == "completed"
@@ -704,30 +589,19 @@ class TestMergeClassicEnsemble:
 
 # ── _estimate_classic_bars_to_completion ─────────────────────────────────
 
-
 class TestEstimateClassicBarsToCompletion:
+
     def _call(self, name, details, start, end, n_bars):
         from mtdata.core.patterns import _estimate_classic_bars_to_completion
-
         return _estimate_classic_bars_to_completion(name, details, start, end, n_bars)
 
     def test_with_slopes(self):
-        details = {
-            "top_slope": -0.01,
-            "top_intercept": 1.2,
-            "bottom_slope": 0.01,
-            "bottom_intercept": 1.0,
-        }
+        details = {"top_slope": -0.01, "top_intercept": 1.2, "bottom_slope": 0.01, "bottom_intercept": 1.0}
         result = self._call("Triangle", details, 0, 50, 100)
         assert result is None or isinstance(result, int)
 
     def test_with_upper_lower(self):
-        details = {
-            "upper_slope": -0.01,
-            "upper_intercept": 1.2,
-            "lower_slope": 0.01,
-            "lower_intercept": 1.0,
-        }
+        details = {"upper_slope": -0.01, "upper_intercept": 1.2, "lower_slope": 0.01, "lower_intercept": 1.0}
         result = self._call("Triangle", details, 0, 50, 100)
         assert result is None or isinstance(result, int)
 
@@ -744,22 +618,18 @@ class TestEstimateClassicBarsToCompletion:
         assert result is None
 
     def test_zero_denom(self):
-        details = {
-            "top_slope": 0.01,
-            "top_intercept": 1.0,
-            "bottom_slope": 0.01,
-            "bottom_intercept": 1.0,
-        }
+        details = {"top_slope": 0.01, "top_intercept": 1.0, "bottom_slope": 0.01, "bottom_intercept": 1.0}
         result = self._call("Triangle", details, 0, 50, 100)
         assert result is None
 
 
 # ── _enrich_classic_patterns / current level projection ──────────────────
 
-
 class TestEnrichClassicPatterns:
+
     def test_forming_patterns_project_line_levels_to_current_bar(self):
         from mtdata.core.patterns_support import _enrich_classic_patterns
+        from mtdata.patterns.classic import ClassicDetectorConfig
 
         df = _make_ohlcv_df(6)
         rows = [
@@ -820,9 +690,7 @@ class TestEnrichClassicPatterns:
     def test_completed_targets_are_flagged_stale(self):
         from mtdata.core.patterns_support import _enrich_classic_patterns
 
-        df = pd.DataFrame(
-            {"close": [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111]}
-        )
+        df = pd.DataFrame({"close": [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111]})
         rows = [
             {
                 "name": "Head and Shoulders",
@@ -864,11 +732,7 @@ class TestEnrichClassicPatterns:
         enriched = _enrich_classic_patterns(rows, df)
 
         assert enriched[0]["bars_to_completion"] >= 1
-        assert enriched[0]["bars_to_completion_basis"] in {
-            "structure",
-            "structure_and_price",
-            "price_proximity",
-        }
+        assert enriched[0]["bars_to_completion_basis"] in {"structure", "structure_and_price", "price_proximity"}
 
     def test_explicit_detail_bias_beats_name_inference(self):
         from mtdata.core.patterns_support import _enrich_classic_patterns
@@ -929,11 +793,10 @@ class TestEnrichClassicPatterns:
 
 # ── _build_pattern_response ──────────────────────────────────────────────
 
-
 class TestBuildPatternResponse:
+
     def _call(self, **kwargs):
         from mtdata.core.patterns import _build_pattern_response
-
         defaults = dict(
             symbol="EURUSD",
             timeframe="H1",
@@ -986,11 +849,10 @@ class TestBuildPatternResponse:
 
 # ── _build_stock_pattern_frame ───────────────────────────────────────────
 
-
 class TestBuildStockPatternFrame:
+
     def _call(self, df):
         from mtdata.core.patterns import _build_stock_pattern_frame
-
         return _build_stock_pattern_frame(df)
 
     def test_basic(self):
@@ -1006,32 +868,23 @@ class TestBuildStockPatternFrame:
         assert isinstance(result.index, pd.RangeIndex)
 
     def test_uppercase_columns(self):
-        df = pd.DataFrame(
-            {
-                "Open": [1.0],
-                "High": [1.1],
-                "Low": [0.9],
-                "Close": [1.05],
-                "Volume": [100],
-            }
-        )
+        df = pd.DataFrame({
+            "Open": [1.0], "High": [1.1], "Low": [0.9], "Close": [1.05], "Volume": [100]
+        })
         result = self._call(df)
         assert len(result) == 1
 
 
 # ── _index_pos_for_timestamp ─────────────────────────────────────────────
 
-
 class TestIndexPosForTimestamp:
+
     def _call(self, index, ts):
         from mtdata.core.patterns import _index_pos_for_timestamp
-
         return _index_pos_for_timestamp(index, ts)
 
     def test_found(self):
-        idx = pd.DatetimeIndex(
-            pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"])
-        )
+        idx = pd.DatetimeIndex(pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"]))
         result = self._call(idx, "2024-01-02")
         assert result == 1
 
@@ -1043,11 +896,10 @@ class TestIndexPosForTimestamp:
 
 # ── _available_classic_engines ───────────────────────────────────────────
 
-
 class TestAvailableClassicEngines:
+
     def test_returns_tuple(self):
         from mtdata.core.patterns import _available_classic_engines
-
         result = _available_classic_engines()
         assert isinstance(result, tuple)
         assert "native" in result
@@ -1056,59 +908,44 @@ class TestAvailableClassicEngines:
 
 # ── _register_classic_engine ─────────────────────────────────────────────
 
-
 class TestRegisterClassicEngine:
-    def test_registers(self):
-        from mtdata.core.patterns import (
-            _register_classic_engine,
-            _CLASSIC_ENGINE_REGISTRY,
-        )
 
+    def test_registers(self):
+        from mtdata.core.patterns import _register_classic_engine, _CLASSIC_ENGINE_REGISTRY
         @_register_classic_engine("__test_engine__")
         def dummy(symbol, df, cfg, config):
             return [], None
-
         assert "__test_engine__" in _CLASSIC_ENGINE_REGISTRY
         del _CLASSIC_ENGINE_REGISTRY["__test_engine__"]
 
 
 # ── _run_classic_engine ──────────────────────────────────────────────────
 
-
 class TestRunClassicEngine:
+
     def _call(self, engine, symbol, df, cfg, config):
         from mtdata.core.patterns import _run_classic_engine
-
         return _run_classic_engine(engine, symbol, df, cfg, config)
 
     def test_unknown_engine(self):
-        pats, err = self._call(
-            "nonexistent_xyz", "EURUSD", _make_ohlcv_df(), None, None
-        )
+        pats, err = self._call("nonexistent_xyz", "EURUSD", _make_ohlcv_df(), None, None)
         assert pats == []
         assert "Unsupported" in err
 
     @patch("mtdata.core.patterns._detect_classic_patterns", return_value=[])
     def test_native_engine(self, mock_detect):
         from mtdata.patterns.classic import ClassicDetectorConfig
-
-        pats, err = self._call(
-            "native", "EURUSD", _make_ohlcv_df(), ClassicDetectorConfig(), None
-        )
+        pats, err = self._call("native", "EURUSD", _make_ohlcv_df(), ClassicDetectorConfig(), None)
         assert pats == []
         assert err is None
 
 
 # ── _load_stock_pattern_utils ────────────────────────────────────────────
 
-
 class TestLoadStockPatternUtils:
-    def _call(self, config=None):
-        from mtdata.core.patterns import (
-            _load_stock_pattern_utils,
-            _STOCK_PATTERN_UTILS_CACHE,
-        )
 
+    def _call(self, config=None):
+        from mtdata.core.patterns import _load_stock_pattern_utils, _STOCK_PATTERN_UTILS_CACHE
         _STOCK_PATTERN_UTILS_CACHE.clear()
         return _load_stock_pattern_utils(config)
 
@@ -1140,11 +977,10 @@ class TestLoadStockPatternUtils:
 
 # ── _fetch_pattern_data ──────────────────────────────────────────────────
 
-
 class TestFetchPatternData:
+
     def _call(self, symbol, timeframe, limit, denoise=None):
         from mtdata.core.patterns import _fetch_pattern_data
-
         return _fetch_pattern_data(symbol, timeframe, limit, denoise)
 
     def test_invalid_timeframe(self):
@@ -1201,9 +1037,7 @@ class TestFetchPatternData:
     def test_keeps_last_closed_bar(self, mock_rates, mock_datetime, mock_mt5):
         mock_mt5.symbol_info.return_value = MagicMock(visible=True)
         mock_rates.return_value = _make_rates_array(200)
-        mock_datetime.now.return_value = datetime(
-            2024, 1, 9, 8, 30, tzinfo=timezone.utc
-        )
+        mock_datetime.now.return_value = datetime(2024, 1, 9, 8, 30, tzinfo=timezone.utc)
 
         df, err = self._call("EURUSD", "H1", 100)
 
@@ -1217,9 +1051,7 @@ class TestFetchPatternData:
     def test_drops_last_open_bar(self, mock_rates, mock_datetime, mock_mt5):
         mock_mt5.symbol_info.return_value = MagicMock(visible=True)
         mock_rates.return_value = _make_rates_array(200)
-        mock_datetime.now.return_value = datetime(
-            2024, 1, 9, 7, 30, tzinfo=timezone.utc
-        )
+        mock_datetime.now.return_value = datetime(2024, 1, 9, 7, 30, tzinfo=timezone.utc)
 
         df, err = self._call("EURUSD", "H1", 100)
 
@@ -1230,9 +1062,7 @@ class TestFetchPatternData:
     @patch("mtdata.core.patterns.mt5")
     @patch("mtdata.core.patterns._apply_denoise_util", side_effect=RuntimeError("boom"))
     @patch("mtdata.core.patterns._mt5_copy_rates_from")
-    def test_denoise_failure_is_exposed_as_warning(
-        self, mock_rates, _mock_denoise, mock_mt5
-    ):
+    def test_denoise_failure_is_exposed_as_warning(self, mock_rates, _mock_denoise, mock_mt5):
         mock_mt5.symbol_info.return_value = MagicMock(visible=True)
         mock_rates.return_value = _make_rates_array(200)
 
@@ -1261,25 +1091,18 @@ class TestFetchPatternData:
 
 # ── _format_elliott_patterns ─────────────────────────────────────────────
 
-
 class TestFormatElliottPatterns:
+
     def _call(self, df, cfg):
         from mtdata.core.patterns import _format_elliott_patterns
-
         return _format_elliott_patterns(df, cfg)
 
     @patch("mtdata.core.patterns._detect_elliott_waves")
     def test_basic(self, mock_detect):
         mock_detect.return_value = [
-            _mock_pattern_result(
-                wave_type="Impulse",
-                start_index=0,
-                end_index=10,
-                start_time=1704067200.0,
-                end_time=1704110400.0,
-                confidence=0.9,
-                details={"key": 1.5},
-            ),
+            _mock_pattern_result(wave_type="Impulse", start_index=0, end_index=10,
+                                 start_time=1704067200.0, end_time=1704110400.0,
+                                 confidence=0.9, details={"key": 1.5}),
         ]
         df = _make_ohlcv_df(50)
         result = self._call(df, MagicMock())
@@ -1400,7 +1223,6 @@ class TestFormatElliottPatterns:
 
 # ── patterns_detect (main tool) ──────────────────────────────────────────
 
-
 def _fully_unwrap(fn):
     while hasattr(fn, "__wrapped__"):
         fn = fn.__wrapped__
@@ -1411,13 +1233,11 @@ def _call_patterns_detect(**kwargs):
     from mtdata.core.patterns import patterns_detect
 
     inner = _fully_unwrap(patterns_detect)
-    with patch(
-        "mtdata.core.patterns.ensure_mt5_connection_or_raise", return_value=None
-    ):
+    with patch("mtdata.core.patterns.ensure_mt5_connection_or_raise", return_value=None):
         return inner(request=PatternsDetectRequest(**kwargs))
 
-
 class TestPatternsDetect:
+
     @patch("mtdata.core.patterns._detect_candlestick_patterns")
     def test_candlestick_mode(self, mock_detect):
         mock_detect.return_value = {"success": True, "patterns": []}
@@ -1439,18 +1259,8 @@ class TestPatternsDetect:
     def test_classic_mode_success(self, mock_fetch, mock_engine):
         df = _make_ohlcv_df(200)
         mock_fetch.return_value = (df, None)
-        mock_engine.return_value = (
-            [
-                {
-                    "name": "Triangle",
-                    "status": "forming",
-                    "confidence": 0.8,
-                    "start_index": 0,
-                    "end_index": 10,
-                }
-            ],
-            None,
-        )
+        mock_engine.return_value = ([{"name": "Triangle", "status": "forming", "confidence": 0.8,
+                                       "start_index": 0, "end_index": 10}], None)
         result = _call_patterns_detect(symbol="EURUSD", mode="classic", timeframe="H1")
         assert result.get("success") is True
 
@@ -1467,23 +1277,16 @@ class TestPatternsDetect:
 
     @patch("mtdata.core.patterns._run_classic_engine")
     @patch("mtdata.core.patterns._fetch_pattern_data")
-    def test_classic_mode_allows_engine_extra_config_keys(
-        self, mock_fetch, mock_engine
-    ):
+    def test_classic_mode_allows_engine_extra_config_keys(self, mock_fetch, mock_engine):
         df = _make_ohlcv_df(200)
         mock_fetch.return_value = (df, None)
-        mock_engine.return_value = (
-            [
-                {
-                    "name": "Triangle",
-                    "status": "forming",
-                    "confidence": 0.8,
-                    "start_index": 0,
-                    "end_index": 10,
-                }
-            ],
-            None,
-        )
+        mock_engine.return_value = ([{
+            "name": "Triangle",
+            "status": "forming",
+            "confidence": 0.8,
+            "start_index": 0,
+            "end_index": 10,
+        }], None)
         result = _call_patterns_detect(
             symbol="EURUSD",
             mode="classic",
@@ -1511,24 +1314,18 @@ class TestPatternsDetect:
 
     @patch("mtdata.core.patterns._format_elliott_patterns")
     @patch("mtdata.core.patterns._fetch_pattern_data")
-    def test_elliott_mode_single_tf_zero_patterns_includes_diagnostic(
-        self, mock_fetch, mock_format
-    ):
+    def test_elliott_mode_single_tf_zero_patterns_includes_diagnostic(self, mock_fetch, mock_format):
         df = _make_ohlcv_df(200)
         mock_fetch.return_value = (df, None)
         mock_format.return_value = []
         result = _call_patterns_detect(symbol="EURUSD", mode="elliott", timeframe="H1")
         assert result.get("success") is True
         assert "diagnostic" in result
-        assert "No valid Elliott Wave structures detected" in str(
-            result.get("diagnostic")
-        )
+        assert "No valid Elliott Wave structures detected" in str(result.get("diagnostic"))
 
     @patch("mtdata.core.patterns._format_elliott_patterns")
     @patch("mtdata.core.patterns._fetch_pattern_data")
-    def test_elliott_mode_diagnostic_does_not_repeat_current_timeframe(
-        self, mock_fetch, mock_format
-    ):
+    def test_elliott_mode_diagnostic_does_not_repeat_current_timeframe(self, mock_fetch, mock_format):
         df = _make_ohlcv_df(200)
         mock_fetch.return_value = (df, None)
         mock_format.return_value = []
@@ -1550,9 +1347,7 @@ class TestPatternsDetect:
 
     @patch("mtdata.core.patterns._format_elliott_patterns")
     @patch("mtdata.core.patterns._fetch_pattern_data")
-    def test_elliott_mode_all_tf_zero_patterns_includes_diagnostic(
-        self, mock_fetch, mock_format
-    ):
+    def test_elliott_mode_all_tf_zero_patterns_includes_diagnostic(self, mock_fetch, mock_format):
         df = _make_ohlcv_df(200)
         mock_fetch.return_value = (df, None)
         mock_format.return_value = []
@@ -1572,12 +1367,7 @@ class TestPatternsDetect:
     def test_classic_invalid_engine(self, mock_fetch, mock_engine):
         df = _make_ohlcv_df(200)
         mock_fetch.return_value = (df, None)
-        result = _call_patterns_detect(
-            symbol="EURUSD",
-            mode="classic",
-            timeframe="H1",
-            engine="totally_fake_engine_xyz",
-        )
+        result = _call_patterns_detect(symbol="EURUSD", mode="classic", timeframe="H1", engine="totally_fake_engine_xyz")
         assert "error" in result
 
     @patch("mtdata.core.patterns._run_classic_engine")

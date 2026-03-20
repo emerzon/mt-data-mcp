@@ -107,8 +107,6 @@ def validate_method_params(method: str, params: Dict[str, Any]) -> List[str]:
                     if expected_len is None:
                         expected_len = 4 if param_name == "seasonal_order" else 3
                     if len(param_value) != expected_len:
-                        errors.append(
-                            f"Parameter '{param_name}' should have {expected_len} elements"
-                        )
+                        errors.append(f"Parameter '{param_name}' should have {expected_len} elements")
 
     return errors

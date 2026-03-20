@@ -4,7 +4,7 @@ import json
 import re
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
-from pydantic import AfterValidator, BaseModel, BeforeValidator, Field, field_validator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, Field, field_validator, model_validator
 
 from .schema import DenoiseSpec, IndicatorSpec, SimplifySpec, TimeframeLiteral
 
@@ -52,9 +52,7 @@ def _normalize_indicator_entry(value: Any) -> Dict[str, Any]:
     if isinstance(value, dict):
         params = value.get("params")
         if isinstance(params, dict):
-            raise ValueError(
-                "'params' must be a list of numbers, e.g., [14], not a dict."
-            )
+            raise ValueError("'params' must be a list of numbers, e.g., [14], not a dict.")
         return dict(value)
     if value is None:
         raise ValueError("Indicator entries cannot be null.")
@@ -71,9 +69,7 @@ def _normalize_indicator_entry(value: Any) -> Dict[str, Any]:
         except Exception as exc:
             raise ValueError(f"Invalid indicator JSON: {exc}") from exc
         if not isinstance(parsed, dict):
-            raise ValueError(
-                "Indicator JSON entries must be objects with 'name' and optional 'params'."
-            )
+            raise ValueError("Indicator JSON entries must be objects with 'name' and optional 'params'.")
         return _normalize_indicator_entry(parsed)
 
     match = re.fullmatch(r"([A-Za-z0-9_]+)(?:\((.*)\))?", stripped)
@@ -124,10 +120,7 @@ def _normalize_indicator_specs(value: Any) -> Any:
                 parsed = None
             if isinstance(parsed, list):
                 return [_normalize_indicator_entry(item) for item in parsed]
-        return [
-            _normalize_indicator_entry(token)
-            for token in _split_indicator_tokens(stripped)
-        ]
+        return [_normalize_indicator_entry(token) for token in _split_indicator_tokens(stripped)]
     if isinstance(value, list):
         return [_normalize_indicator_entry(item) for item in value]
     return value
@@ -175,9 +168,7 @@ def _validate_indicator_entries(value: Any) -> Any:
             continue
         name = str(item.get("name") or "").strip()
         if re.fullmatch(r"[+-]?\d+(?:\.\d+)?", name):
-            raise ValueError(
-                "Indicator params must use parentheses, e.g. sma(20), not sma,20."
-            )
+            raise ValueError("Indicator params must use parentheses, e.g. sma(20), not sma,20.")
         normalized = dict(item)
         if name:
             normalized["name"] = name
@@ -331,9 +322,7 @@ class PriceChangeEventSpec(BaseModel):
     )
     price_source: Literal["auto", "bid", "ask", "mid", "last"] = "auto"
     direction: Literal["up", "down", "either"] = "either"
-    threshold_mode: Literal["fixed_pct", "ratio_to_baseline", "zscore"] = (
-        "ratio_to_baseline"
-    )
+    threshold_mode: Literal["fixed_pct", "ratio_to_baseline", "zscore"] = "ratio_to_baseline"
     threshold_value: float = 2.0
 
     @field_validator("threshold_value")

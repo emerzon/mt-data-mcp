@@ -157,9 +157,7 @@ def _run_wait_candle_impl(
             buffer_seconds=request.buffer_seconds,
         )
         max_wait_seconds = request.max_wait_seconds
-        if max_wait_seconds is not None and float(preview["sleep_seconds"]) > float(
-            max_wait_seconds
-        ):
+        if max_wait_seconds is not None and float(preview["sleep_seconds"]) > float(max_wait_seconds):
             preview["success"] = True
             preview["status"] = "deferred_timeout_risk"
             preview["slept"] = False

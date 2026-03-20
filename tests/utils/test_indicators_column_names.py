@@ -14,9 +14,7 @@ if str(SRC) not in sys.path:
 
 
 INDICATORS_PATH = SRC / "mtdata" / "utils" / "indicators.py"
-spec = importlib.util.spec_from_file_location(
-    "mtdata.utils.indicators", INDICATORS_PATH
-)
+spec = importlib.util.spec_from_file_location("mtdata.utils.indicators", INDICATORS_PATH)
 if spec is None or spec.loader is None:
     raise ImportError(f"Cannot load indicators module from {INDICATORS_PATH}")
 indicators = importlib.util.module_from_spec(spec)

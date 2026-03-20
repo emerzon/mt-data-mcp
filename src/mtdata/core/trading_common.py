@@ -38,9 +38,7 @@ def _retcode_name(mt5: Any, retcode: Any) -> Optional[str]:
     return None
 
 
-def _build_trade_preflight(
-    mt5: Any, account_info: Any = None, terminal_info: Any = None
-) -> Dict[str, Any]:
+def _build_trade_preflight(mt5: Any, account_info: Any = None, terminal_info: Any = None) -> Dict[str, Any]:
     """Summarize account and terminal execution readiness."""
     info = account_info if account_info is not None else None
     term = terminal_info if terminal_info is not None else None
@@ -55,33 +53,11 @@ def _build_trade_preflight(
         except Exception:
             term = None
 
-    account_trade_allowed = (
-        trading_validation._coerce_optional_bool(getattr(info, "trade_allowed", None))
-        if info is not None
-        else None
-    )
-    account_trade_expert = (
-        trading_validation._coerce_optional_bool(getattr(info, "trade_expert", None))
-        if info is not None
-        else None
-    )
-    terminal_trade_allowed = (
-        trading_validation._coerce_optional_bool(getattr(term, "trade_allowed", None))
-        if term is not None
-        else None
-    )
-    terminal_tradeapi_disabled = (
-        trading_validation._coerce_optional_bool(
-            getattr(term, "tradeapi_disabled", None)
-        )
-        if term is not None
-        else None
-    )
-    terminal_connected = (
-        trading_validation._coerce_optional_bool(getattr(term, "connected", None))
-        if term is not None
-        else None
-    )
+    account_trade_allowed = trading_validation._coerce_optional_bool(getattr(info, "trade_allowed", None)) if info is not None else None
+    account_trade_expert = trading_validation._coerce_optional_bool(getattr(info, "trade_expert", None)) if info is not None else None
+    terminal_trade_allowed = trading_validation._coerce_optional_bool(getattr(term, "trade_allowed", None)) if term is not None else None
+    terminal_tradeapi_disabled = trading_validation._coerce_optional_bool(getattr(term, "tradeapi_disabled", None)) if term is not None else None
+    terminal_connected = trading_validation._coerce_optional_bool(getattr(term, "connected", None)) if term is not None else None
 
     hard_blockers: List[str] = []
     soft_blockers: List[str] = []
@@ -106,20 +82,14 @@ def _build_trade_preflight(
         "server": getattr(info, "server", None) if info is not None else None,
         "company": getattr(info, "company", None) if info is not None else None,
         "trade_mode": _trade_mode_text(mt5, info) if info is not None else None,
-        "trade_mode_raw": getattr(info, "trade_mode", None)
-        if info is not None
-        else None,
+        "trade_mode_raw": getattr(info, "trade_mode", None) if info is not None else None,
         "login": getattr(info, "login", None) if info is not None else None,
         "account_trade_allowed": account_trade_allowed,
         "account_trade_expert": account_trade_expert,
         "terminal_trade_allowed": terminal_trade_allowed,
         "terminal_tradeapi_disabled": terminal_tradeapi_disabled,
         "terminal_connected": terminal_connected,
-        "community_account": trading_validation._coerce_optional_bool(
-            getattr(term, "community_account", None)
-        )
-        if term is not None
-        else None,
+        "community_account": trading_validation._coerce_optional_bool(getattr(term, "community_account", None)) if term is not None else None,
         "auto_trading_enabled": auto_trading_enabled,
         "execution_ready": len(hard_blockers) == 0,
         "execution_ready_strict": len(all_blockers) == 0,

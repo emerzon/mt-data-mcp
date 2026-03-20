@@ -45,9 +45,7 @@ def _get_indicator_value(row: Optional[Dict[str, Any]], base_key: str) -> Any:
     return None
 
 
-def _format_series_preview(
-    values: Any, decimals: int = 6, head: int = 3, tail: int = 3
-) -> Optional[str]:
+def _format_series_preview(values: Any, decimals: int = 6, head: int = 3, tail: int = 3) -> Optional[str]:
     if not isinstance(values, list):
         return None
     n = len(values)
@@ -84,11 +82,7 @@ def _format_series_preview(
     if n <= head + tail:
         items = [_fmt(v) for v in values]
     else:
-        items = (
-            [_fmt(v) for v in values[:head]]
-            + ["..."]
-            + [_fmt(v) for v in values[-tail:]]
-        )
+        items = [_fmt(v) for v in values[:head]] + ["..."] + [_fmt(v) for v in values[-tail:]]
     return f"n={n} [" + ", ".join(items) + "]"
 
 
@@ -96,9 +90,7 @@ def _format_state_shares(shares: Any) -> Optional[str]:
     if not isinstance(shares, dict) or not shares:
         return None
     parts: List[str] = []
-    for key in sorted(
-        shares.keys(), key=lambda x: int(x) if str(x).isdigit() else str(x)
-    ):
+    for key in sorted(shares.keys(), key=lambda x: int(x) if str(x).isdigit() else str(x)):
         try:
             pct = float(shares[key]) * 100.0
             parts.append(f"{key}:{pct:.1f}%")
@@ -107,9 +99,7 @@ def _format_state_shares(shares: Any) -> Optional[str]:
     return ", ".join(parts) if parts else None
 
 
-def _format_table(
-    headers: List[str], rows: List[List[Optional[Any]]], name: str = "data"
-) -> List[str]:
+def _format_table(headers: List[str], rows: List[List[Optional[Any]]], name: str = "data") -> List[str]:
     return _format_table_toon(headers, rows, name=name)
 
 

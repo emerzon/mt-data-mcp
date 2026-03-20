@@ -23,9 +23,7 @@ def trade_history(**kwargs):
     request = kwargs.pop("request", None)
     if request is None:
         request = TradeHistoryRequest(**kwargs)
-    with patch(
-        "mtdata.core.trading_account.ensure_mt5_connection_or_raise", return_value=None
-    ):
+    with patch("mtdata.core.trading_account.ensure_mt5_connection_or_raise", return_value=None):
         if raw_output:
             return _unwrap(_trade_history_tool)(request=request)
         return _trade_history_tool(request=request, __cli_raw=False)
@@ -41,9 +39,7 @@ def _install_mock_mt5() -> tuple[MagicMock, object]:
 def test_trade_history_deals_normalizes_time_to_utc_string() -> None:
     mt5, prev = _install_mock_mt5()
     Deal = namedtuple("Deal", ["ticket", "time", "symbol"])
-    mt5.history_deals_get.return_value = [
-        Deal(ticket=1, time=1700000000, symbol="EURUSD")
-    ]
+    mt5.history_deals_get.return_value = [Deal(ticket=1, time=1700000000, symbol="EURUSD")]
 
     with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
         out = trade_history(history_kind="deals", __cli_raw=True)
@@ -119,9 +115,7 @@ def test_trade_history_deals_extracts_exit_trigger_from_comment() -> None:
     mt5, prev = _install_mock_mt5()
     mt5.DEAL_ENTRY_OUT = 1
     mt5.DEAL_REASON_SL = 4
-    Deal = namedtuple(
-        "Deal", ["ticket", "time", "symbol", "entry", "reason", "comment"]
-    )
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol", "entry", "reason", "comment"])
     mt5.history_deals_get.return_value = [
         Deal(
             ticket=1,
@@ -144,15 +138,11 @@ def test_trade_history_deals_extracts_exit_trigger_from_comment() -> None:
     assert out[0]["exit_trigger_source"] == "comment"
 
 
-def test_trade_history_deals_extracts_exit_trigger_from_reason_when_comment_missing() -> (
-    None
-):
+def test_trade_history_deals_extracts_exit_trigger_from_reason_when_comment_missing() -> None:
     mt5, prev = _install_mock_mt5()
     mt5.DEAL_ENTRY_OUT = 1
     mt5.DEAL_REASON_TP = 5
-    Deal = namedtuple(
-        "Deal", ["ticket", "time", "symbol", "entry", "reason", "comment"]
-    )
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol", "entry", "reason", "comment"])
     mt5.history_deals_get.return_value = [
         Deal(
             ticket=1,
@@ -321,9 +311,7 @@ def test_trade_history_filters_deals_by_position_ticket() -> None:
     ]
 
     with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
-        out = trade_history(
-            history_kind="deals", symbol="BTCUSD", position_ticket=222, __cli_raw=True
-        )
+        out = trade_history(history_kind="deals", symbol="BTCUSD", position_ticket=222, __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
@@ -384,18 +372,13 @@ def test_trade_history_surfaces_comment_limit_metadata() -> None:
 def test_trade_history_returns_connection_error_payload() -> None:
     with patch(
         "mtdata.core.trading_account.ensure_mt5_connection_or_raise",
-        side_effect=MT5ConnectionError(
-            "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
-        ),
+        side_effect=MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running."),
     ):
         out = _trade_history_tool(
             request=TradeHistoryRequest(history_kind="deals"),
             __cli_raw=True,
         )
 
-    assert (
-        out["error"]
-        == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
-    )
+    assert out["error"] == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
     assert out["operation"] == "trade_history"
     assert out["success"] is False

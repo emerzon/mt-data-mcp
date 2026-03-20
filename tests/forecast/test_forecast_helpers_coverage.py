@@ -1,5 +1,4 @@
 """Tests for common forecast helper utilities."""
-
 from mtdata.forecast.common import (
     default_seasonality as default_seasonality_period,
     next_times_from_last,

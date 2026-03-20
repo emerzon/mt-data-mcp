@@ -27,11 +27,7 @@ def _has_payload_error(payload: Any) -> bool:
         err = payload.get("error")
         if isinstance(err, str) and err.strip():
             return True
-        return any(
-            _has_payload_error(value)
-            for key, value in payload.items()
-            if key != "error"
-        )
+        return any(_has_payload_error(value) for key, value in payload.items() if key != "error")
     if isinstance(payload, list):
         return any(_has_payload_error(item) for item in payload)
     return False
@@ -39,11 +35,7 @@ def _has_payload_error(payload: Any) -> bool:
 
 def _has_payload_content(payload: Any) -> bool:
     if isinstance(payload, dict):
-        return any(
-            _has_payload_content(value)
-            for key, value in payload.items()
-            if key != "error"
-        )
+        return any(_has_payload_content(value) for key, value in payload.items() if key != "error")
     if isinstance(payload, list):
         return any(_has_payload_content(item) for item in payload)
     return payload not in (None, "")
@@ -125,23 +117,15 @@ def run_report_generate(
                 if name == "basic":
                     rep = _t_basic(request.symbol, eff_horizon, request.denoise, params)
                 elif name == "advanced":
-                    rep = _t_advanced(
-                        request.symbol, eff_horizon, request.denoise, params
-                    )
+                    rep = _t_advanced(request.symbol, eff_horizon, request.denoise, params)
                 elif name == "scalping":
-                    rep = _t_scalping(
-                        request.symbol, eff_horizon, request.denoise, params
-                    )
+                    rep = _t_scalping(request.symbol, eff_horizon, request.denoise, params)
                 elif name == "intraday":
-                    rep = _t_intraday(
-                        request.symbol, eff_horizon, request.denoise, params
-                    )
+                    rep = _t_intraday(request.symbol, eff_horizon, request.denoise, params)
                 elif name == "swing":
                     rep = _t_swing(request.symbol, eff_horizon, request.denoise, params)
                 elif name == "position":
-                    rep = _t_position(
-                        request.symbol, eff_horizon, request.denoise, params
-                    )
+                    rep = _t_position(request.symbol, eff_horizon, request.denoise, params)
                 else:
                     msg = (
                         f"Unknown template: {request.template}. "
@@ -264,9 +248,7 @@ def run_report_generate(
             try:
                 vol = rep.get("sections", {}).get("volatility", {})
                 if isinstance(vol, dict):
-                    hs = vol.get("horizon_sigma_price") or vol.get(
-                        "horizon_sigma_return"
-                    )
+                    hs = vol.get("horizon_sigma_price") or vol.get("horizon_sigma_return")
                     if hs is not None:
                         summ.append(f"h{eff_horizon} sigma={format_number(hs)}")
             except Exception:
@@ -278,12 +260,7 @@ def run_report_generate(
                     method_name = str(fc.get("method"))
                     forecast_line = f"forecast={method_name}"
                     values = None
-                    for key in (
-                        "forecast_price",
-                        "forecast_return",
-                        "forecast_series",
-                        "forecast",
-                    ):
+                    for key in ("forecast_price", "forecast_return", "forecast_series", "forecast"):
                         candidate = fc.get(key)
                         if isinstance(candidate, list) and candidate:
                             values = candidate
@@ -309,9 +286,7 @@ def run_report_generate(
                     summ.append(forecast_line)
                     timing_parts: List[str] = []
                     last_obs = _report_time_label(
-                        fc.get(
-                            "last_observation_time", fc.get("last_observation_epoch")
-                        )
+                        fc.get("last_observation_time", fc.get("last_observation_epoch"))
                     )
                     start_time = _report_time_label(
                         fc.get("forecast_start_time", fc.get("forecast_start_epoch"))
@@ -330,28 +305,16 @@ def run_report_generate(
 
             try:
                 backtest_sec = rep.get("sections", {}).get("backtest", {})
-                criteria = (
-                    backtest_sec.get("selection_criteria")
-                    if isinstance(backtest_sec, dict)
-                    else None
-                )
-                best_payload = (
-                    backtest_sec.get("best_method")
-                    if isinstance(backtest_sec, dict)
-                    else None
-                )
+                criteria = backtest_sec.get("selection_criteria") if isinstance(backtest_sec, dict) else None
+                best_payload = backtest_sec.get("best_method") if isinstance(backtest_sec, dict) else None
                 if isinstance(criteria, dict):
                     primary = str(criteria.get("primary_metric") or "avg_rmse")
-                    tie_breaker = str(
-                        criteria.get("tie_breaker") or "avg_directional_accuracy"
-                    )
+                    tie_breaker = str(criteria.get("tie_breaker") or "avg_directional_accuracy")
                     tol_pct = criteria.get("rmse_tolerance_pct")
                     if tol_pct is None:
                         tol_raw = criteria.get("rmse_tolerance")
                         try:
-                            tol_pct = (
-                                float(tol_raw) * 100.0 if tol_raw is not None else None
-                            )
+                            tol_pct = float(tol_raw) * 100.0 if tol_raw is not None else None
                         except Exception:
                             tol_pct = None
                     line = f"forecast selection: min {primary}"
@@ -397,13 +360,9 @@ def run_report_generate(
                             if ev is not None and edge is not None:
                                 ev_num = float(ev)
                                 edge_num = float(edge)
-                                if (ev_num > 0 and edge_num < 0) or (
-                                    ev_num < 0 and edge_num > 0
-                                ):
+                                if (ev_num > 0 and edge_num < 0) or (ev_num < 0 and edge_num > 0):
                                     details.append("ev_edge_conflict=true")
-                                    details.append(
-                                        "ev_edge_conflict_reason=ev and edge have opposite signs"
-                                    )
+                                    details.append("ev_edge_conflict_reason=ev and edge have opposite signs")
                         except Exception:
                             pass
                         if details:
@@ -431,13 +390,9 @@ def run_report_generate(
                             if ev is not None and edge is not None:
                                 ev_num = float(ev)
                                 edge_num = float(edge)
-                                if (ev_num > 0 and edge_num < 0) or (
-                                    ev_num < 0 and edge_num > 0
-                                ):
+                                if (ev_num > 0 and edge_num < 0) or (ev_num < 0 and edge_num > 0):
                                     details.append("ev_edge_conflict=true")
-                                    details.append(
-                                        "ev_edge_conflict_reason=ev and edge have opposite signs"
-                                    )
+                                    details.append("ev_edge_conflict_reason=ev and edge have opposite signs")
                         except Exception:
                             pass
                         if details:
@@ -452,15 +407,12 @@ def run_report_generate(
                 rep["sections_status"] = sections_status
                 summary_counts = sections_status.get("summary", {})
                 rep["success"] = bool(
-                    int(summary_counts.get("error", 0)) == 0
-                    and int(summary_counts.get("partial", 0)) == 0
+                    int(summary_counts.get("error", 0)) == 0 and int(summary_counts.get("partial", 0)) == 0
                 )
             diagnostics = rep.get("diagnostics")
             if not isinstance(diagnostics, dict):
                 diagnostics = {}
-            diagnostics["execution_time_ms"] = round(
-                (time.perf_counter() - started_at) * 1000.0, 3
-            )
+            diagnostics["execution_time_ms"] = round((time.perf_counter() - started_at) * 1000.0, 3)
             rep["diagnostics"] = diagnostics
 
             if output_mode == "markdown":

@@ -1,3 +1,4 @@
+
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 import logging
@@ -7,22 +8,16 @@ from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
 from .schema import TimeframeLiteral, _PIVOT_METHODS
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..shared.validators import (
-    invalid_timeframe_error,
-    unsupported_timeframe_seconds_error,
-)
+from ..shared.validators import invalid_timeframe_error, unsupported_timeframe_seconds_error
 from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from,
     _mt5_epoch_to_utc,
     _symbol_ready_guard,
     ensure_mt5_connection_or_raise,
+    mt5,
 )
-from ..utils.utils import (
-    _format_time_minimal,
-    _format_time_minimal_local,
-    _use_client_tz,
-)
+from ..utils.utils import _format_time_minimal, _format_time_minimal_local, _use_client_tz
 from ._mcp_instance import mcp
 
 logger = logging.getLogger(__name__)
@@ -38,7 +33,6 @@ def pivot_compute_points(
 
     Returns JSON with shared source data plus levels for every supported pivot method.
     """
-
     def _run() -> Dict[str, Any]:
         try:
             mt5 = get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
@@ -64,9 +58,7 @@ def pivot_compute_points(
                 rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, 5)
 
             if rates is None or len(rates) == 0:
-                return {
-                    "error": f"Failed to get rates for {symbol}: {mt5.last_error()}"
-                }
+                return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}
 
             now_ts = server_now_ts
             if len(rates) >= 2:
@@ -76,16 +68,14 @@ def pivot_compute_points(
                 if (float(only["time"]) + tf_secs) <= now_ts:
                     src = only
                 else:
-                    return {
-                        "error": "No completed bars available to compute pivot points"
-                    }
+                    return {"error": "No completed bars available to compute pivot points"}
 
             def _has_field(row, name: str) -> bool:
                 try:
                     if isinstance(row, dict):
                         return name in row
-                    dt = getattr(row, "dtype", None)
-                    names = getattr(dt, "names", None) if dt is not None else None
+                    dt = getattr(row, 'dtype', None)
+                    names = getattr(dt, 'names', None) if dt is not None else None
                     return bool(names and name in names)
                 except Exception:
                     return False
@@ -93,23 +83,15 @@ def pivot_compute_points(
             H = float(src["high"]) if _has_field(src, "high") else float("nan")
             L = float(src["low"]) if _has_field(src, "low") else float("nan")
             C = float(src["close"]) if _has_field(src, "close") else float("nan")
-            open_ = float(src["open"]) if _has_field(src, "open") else C
+            O = float(src["open"]) if _has_field(src, "open") else C
             if any(math.isnan(v) for v in (H, L, C)):
-                return {
-                    "error": "Pivot calculation requires high, low, and close prices"
-                }
+                return {"error": "Pivot calculation requires high, low, and close prices"}
 
-            period_start = (
-                float(src["time"]) if _has_field(src, "time") else float("nan")
-            )
+            period_start = float(src["time"]) if _has_field(src, "time") else float("nan")
             period_start = _mt5_epoch_to_utc(period_start)
             period_end = period_start + float(tf_secs)
 
-            digits = (
-                int(getattr(_info_before, "digits", 0) or 0)
-                if _info_before is not None
-                else 0
-            )
+            digits = int(getattr(_info_before, "digits", 0) or 0) if _info_before is not None else 0
 
             def _round(v: float) -> float:
                 try:
@@ -170,9 +152,9 @@ def pivot_compute_points(
                     }
                     pivot_val = PP
                 elif name == "demark":
-                    if C < open_:
+                    if C < O:
                         X = H + 2 * L + C
-                    elif C > open_:
+                    elif C > O:
                         X = 2 * H + L + C
                     else:
                         X = H + L + 2 * C
@@ -202,7 +184,7 @@ def pivot_compute_points(
                     continue
                 methods_out.append(method_info)
                 levels_by_method[method_info["method"]] = method_info["levels"]
-                pivot_val = method_info.get("pivot")
+                pivot_val = method_info.get('pivot')
                 if isinstance(pivot_val, (int, float)):
                     pivot_values[method_info["method"]] = float(pivot_val)
 
@@ -212,7 +194,6 @@ def pivot_compute_points(
                 for lvl in info["levels"].keys():
                     present_levels.add(str(lvl))
             import re as _re
-
             rs_nums = set()
             for name in list(present_levels):
                 m = _re.match(r"^([RS])(\d+)$", str(name))
@@ -228,18 +209,18 @@ def pivot_compute_points(
                 rn = f"R{n}"
                 if rn in present_levels:
                     level_sequence.append(rn)
-            if not include_pivot_row and "PP" in present_levels:
-                level_sequence.append("PP")
+            if not include_pivot_row and 'PP' in present_levels:
+                level_sequence.append('PP')
             for n in range(1, max_n + 1):
                 sn = f"S{n}"
                 if sn in present_levels:
                     level_sequence.append(sn)
-            consumed = set(level_sequence) | ({"PP"} if include_pivot_row else set())
+            consumed = set(level_sequence) | ({'PP'} if include_pivot_row else set())
             leftovers = sorted([lv for lv in present_levels if lv not in consumed])
             level_sequence.extend(leftovers)
             levels_table: List[Dict[str, Any]] = []
             for lvl in level_sequence:
-                if not str(lvl).startswith("R"):
+                if not str(lvl).startswith('R'):
                     continue
                 row: Dict[str, Any] = {"level": lvl}
                 for name in method_names:
@@ -254,16 +235,16 @@ def pivot_compute_points(
                     if name in pivot_values:
                         pivot_row[name] = pivot_values.get(name)
                 levels_table.append(pivot_row)
-            elif "PP" in level_sequence:
-                row: Dict[str, Any] = {"level": "PP"}
+            elif 'PP' in level_sequence:
+                row: Dict[str, Any] = {"level": 'PP'}
                 for name in method_names:
                     level_map = levels_by_method.get(name, {})
-                    val = level_map.get("PP")
+                    val = level_map.get('PP')
                     if val is not None:
                         row[name] = val
                 levels_table.append(row)
             for lvl in level_sequence:
-                if not str(lvl).startswith("S"):
+                if not str(lvl).startswith('S'):
                     continue
                 row: Dict[str, Any] = {"level": lvl}
                 for name in method_names:
@@ -282,16 +263,8 @@ def pivot_compute_points(
                 levels_table.append(row)
 
             _use_ctz = _use_client_tz()
-            start_str = (
-                _format_time_minimal_local(period_start)
-                if _use_ctz
-                else _format_time_minimal(period_start)
-            )
-            end_str = (
-                _format_time_minimal_local(period_end)
-                if _use_ctz
-                else _format_time_minimal(period_end)
-            )
+            start_str = _format_time_minimal_local(period_start) if _use_ctz else _format_time_minimal(period_start)
+            end_str = _format_time_minimal_local(period_end) if _use_ctz else _format_time_minimal(period_end)
 
             payload: Dict[str, Any] = {
                 "success": True,
@@ -324,3 +297,4 @@ def pivot_compute_points(
         timeframe=timeframe,
         func=_run,
     )
+

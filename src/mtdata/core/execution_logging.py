@@ -38,9 +38,7 @@ def infer_result_success(result: Any) -> bool:
     return result is not None
 
 
-def log_operation_start(
-    logger: logging.Logger, *, operation: str, **fields: Any
-) -> None:
+def log_operation_start(logger: logging.Logger, *, operation: str, **fields: Any) -> None:
     parent_operation = _push_operation(operation)
     if parent_operation == str(operation):
         return
@@ -109,11 +107,7 @@ def run_logged_operation(
         )
         raise
 
-    success_value = (
-        infer_result_success(result)
-        if success_eval is None
-        else bool(success_eval(result))
-    )
+    success_value = infer_result_success(result) if success_eval is None else bool(success_eval(result))
     log_operation_finish(
         logger,
         operation=operation,

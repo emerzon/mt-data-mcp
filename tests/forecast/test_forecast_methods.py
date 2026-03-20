@@ -7,7 +7,6 @@ Usage:
 
 Writes JSON output into tests/test_results/.
 """
-
 from __future__ import annotations
 
 import json
@@ -39,9 +38,7 @@ def _parse_method_spec(spec: str) -> tuple[str, str]:
     return "native", spec.strip()
 
 
-def _run(
-    symbol: str, timeframe: str, horizon: int, methods: List[str]
-) -> Dict[str, Any]:
+def _run(symbol: str, timeframe: str, horizon: int, methods: List[str]) -> Dict[str, Any]:
     out: Dict[str, Any] = {
         "symbol": symbol,
         "timeframe": timeframe,

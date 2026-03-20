@@ -89,9 +89,7 @@ def _stringify_cell(value: Any) -> str:
 
 
 def _indent_text(text: str, indent: str = "  ") -> str:
-    return "\n".join(
-        f"{indent}{line}" if line else indent.rstrip() for line in text.splitlines()
-    )
+    return "\n".join(f"{indent}{line}" if line else indent.rstrip() for line in text.splitlines())
 
 
 def _quote_if_needed(text: str, delimiter: str = _DEFAULT_DELIMITER) -> str:
@@ -99,8 +97,9 @@ def _quote_if_needed(text: str, delimiter: str = _DEFAULT_DELIMITER) -> str:
     if text is None:
         return ""
     raw = str(text)
-    needs_quote = raw.strip() != raw or any(
-        ch in raw for ch in (delimiter, ":", "\n", "\r", '"', "|", "\t")
+    needs_quote = (
+        raw.strip() != raw
+        or any(ch in raw for ch in (delimiter, ":", "\n", "\r", '"', "|", "\t"))
     )
     if not needs_quote:
         return raw
@@ -302,9 +301,7 @@ def format_table_toon(
         for idx, col in enumerate(cols):
             item[col] = row[idx] if idx < len(row) else None
         items.append(item)
-    return _encode_tabular(
-        name, cols, items, indent=0, simplify_numbers=simplify_numbers
-    ).splitlines()
+    return _encode_tabular(name, cols, items, indent=0, simplify_numbers=simplify_numbers).splitlines()
 
 
 def _encode_inline_array(
@@ -335,8 +332,7 @@ def _encode_inline_array(
         if values:
             dec = _optimal_decimals(values)
     vals = delimiter.join(
-        _stringify_for_toon_value(v, dec, delimiter, simplify_numbers=simplify_numbers)
-        for v in items
+        _stringify_for_toon_value(v, dec, delimiter, simplify_numbers=simplify_numbers) for v in items
     )
     return f"{ind}{name}[{len(items)}]: {vals}"
 
@@ -372,74 +368,52 @@ def _encode_expanded_array(
     return "\n".join(lines)
 
 
-def _normalize_forecast_payload(
-    payload: Dict[str, Any], verbose: bool = True
-) -> Optional[Dict[str, Any]]:
+def _normalize_forecast_payload(payload: Dict[str, Any], verbose: bool = True) -> Optional[Dict[str, Any]]:
     """Convert forecast payload into meta + tabular rows when possible."""
     try:
         # Detect time column
         times = None
-        if isinstance(payload.get("times"), list):
-            times = list(payload.get("times") or [])
-        elif isinstance(payload.get("forecast_time"), list):
-            times = list(payload.get("forecast_time") or [])
-        elif isinstance(payload.get("forecast_epoch"), list):
+        if isinstance(payload.get('times'), list):
+            times = list(payload.get('times') or [])
+        elif isinstance(payload.get('forecast_time'), list):
+            times = list(payload.get('forecast_time') or [])
+        elif isinstance(payload.get('forecast_epoch'), list):
             # Fallback to epochs if string times missing
-            times = list(payload.get("forecast_epoch") or [])
-
+            times = list(payload.get('forecast_epoch') or [])
+        
         if not times:
             return None
 
         main_key = None
-        for k in ("forecast_price", "forecast_return", "forecast_series", "forecast"):
+        for k in ('forecast_price', 'forecast_return', 'forecast_series', 'forecast'):
             if isinstance(payload.get(k), list):
                 main_key = k
                 break
         if not main_key:
             return None
-
+            
         fvals = list(payload.get(main_key) or [])
         n = min(len(times), len(fvals))
-
+        
         # Check for digits precision
-        digits = payload.get("digits")
+        digits = payload.get('digits')
         if digits is not None:
             try:
                 digits = int(digits)
             except Exception:
                 digits = None
-
-        if "price" in main_key:
-            lower_key, upper_key = "lower_price", "upper_price"
-        elif "return" in main_key:
-            lower_key = (
-                "lower_return"
-                if isinstance(payload.get("lower_return"), list)
-                else "lower"
-            )
-            upper_key = (
-                "upper_return"
-                if isinstance(payload.get("upper_return"), list)
-                else "upper"
-            )
+        
+        if 'price' in main_key:
+            lower_key, upper_key = 'lower_price', 'upper_price'
+        elif 'return' in main_key:
+            lower_key = 'lower_return' if isinstance(payload.get('lower_return'), list) else 'lower'
+            upper_key = 'upper_return' if isinstance(payload.get('upper_return'), list) else 'upper'
         else:
-            lower_key, upper_key = "lower", "upper"
-        lower = (
-            list(payload.get(lower_key) or [])
-            if isinstance(payload.get(lower_key), list)
-            else []
-        )
-        upper = (
-            list(payload.get(upper_key) or [])
-            if isinstance(payload.get(upper_key), list)
-            else []
-        )
-
-        qmap = (
-            payload.get("forecast_quantiles")
-            if isinstance(payload.get("forecast_quantiles"), dict)
-            else None
-        )
+            lower_key, upper_key = 'lower', 'upper'
+        lower = list(payload.get(lower_key) or []) if isinstance(payload.get(lower_key), list) else []
+        upper = list(payload.get(upper_key) or []) if isinstance(payload.get(upper_key), list) else []
+        
+        qmap = payload.get('forecast_quantiles') if isinstance(payload.get('forecast_quantiles'), dict) else None
         qcols: List[str] = []
         if isinstance(qmap, dict):
             try:
@@ -447,30 +421,22 @@ def _normalize_forecast_payload(
             except Exception:
                 qcols = list(qmap.keys())
         try:
-            if "0.5" in qcols:
-                q50 = qmap.get("0.5") if isinstance(qmap, dict) else None  # type: ignore[assignment]
+            if '0.5' in qcols:
+                q50 = qmap.get('0.5') if isinstance(qmap, dict) else None  # type: ignore[assignment]
                 if isinstance(q50, list) and len(q50) >= n and len(fvals) >= n:
                     same = True
                     for i in range(n):
                         try:
                             a = float(fvals[i])
                             b = float(q50[i])
-                            if not (
-                                abs(a - b) <= 1e-9
-                                or (
-                                    math.isfinite(a)
-                                    and math.isfinite(b)
-                                    and abs(a - b)
-                                    <= max(1e-9, 1e-8 * max(abs(a), abs(b)))
-                                )
-                            ):
+                            if not (abs(a - b) <= 1e-9 or (math.isfinite(a) and math.isfinite(b) and abs(a - b) <= max(1e-9, 1e-8 * max(abs(a), abs(b))))):
                                 same = False
                                 break
                         except Exception:
                             same = False
                             break
                     if same:
-                        qcols = [q for q in qcols if q != "0.5"]
+                        qcols = [q for q in qcols if q != '0.5']
         except Exception:
             pass
 
@@ -481,9 +447,9 @@ def _normalize_forecast_payload(
             if isinstance(qarr, list) and qarr:
                 usable_qcols.append(q)
 
-        headers = ["time", "forecast"]
+        headers = ['time', 'forecast']
         if include_interval_columns:
-            headers += ["lower", "upper"]
+            headers += ['lower', 'upper']
         for q in usable_qcols:
             headers.append(f"q{q}")
         rows: List[Dict[str, Any]] = []
@@ -494,24 +460,22 @@ def _normalize_forecast_payload(
                     val = f"{float(val):.{digits}f}"
                 except Exception:
                     pass
-
+                    
             row: Dict[str, Any] = {
-                "time": times[i],
-                "forecast": val,
+                'time': times[i],
+                'forecast': val,
             }
             if include_interval_columns:
                 low_val = lower[i] if i < len(lower) else None
                 up_val = upper[i] if i < len(upper) else None
                 if digits is not None:
                     try:
-                        if isinstance(low_val, (int, float)):
-                            low_val = f"{float(low_val):.{digits}f}"
-                        if isinstance(up_val, (int, float)):
-                            up_val = f"{float(up_val):.{digits}f}"
+                        if isinstance(low_val, (int, float)): low_val = f"{float(low_val):.{digits}f}"
+                        if isinstance(up_val, (int, float)): up_val = f"{float(up_val):.{digits}f}"
                     except Exception:
                         pass
-                row["lower"] = low_val
-                row["upper"] = up_val
+                row['lower'] = low_val
+                row['upper'] = up_val
             for q in usable_qcols:
                 qarr = qmap.get(q) if isinstance(qmap, dict) else None  # type: ignore[assignment]
                 if not isinstance(qarr, list):
@@ -529,36 +493,30 @@ def _normalize_forecast_payload(
         if verbose:
             meta_block = _build_forecast_meta(payload)
             if meta_block:
-                out["meta"] = meta_block
+                out['meta'] = meta_block
 
         ci_diag = _compact_forecast_ci(payload, lower=lower, upper=upper)
         if ci_diag:
-            out["ci"] = ci_diag
+            out['ci'] = ci_diag
 
-        warnings_in = payload.get("warnings")
+        warnings_in = payload.get('warnings')
         if isinstance(warnings_in, list) and warnings_in:
             warnings_clean = [str(w).strip() for w in warnings_in if str(w).strip()]
             if warnings_clean:
-                out["warnings"] = warnings_clean
-
-        out["forecast"] = rows
+                out['warnings'] = warnings_clean
+                 
+        out['forecast'] = rows
         return out
     except Exception:
         return None
 
 
-def _normalize_triple_barrier_payload(
-    payload: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
+def _normalize_triple_barrier_payload(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Convert triple-barrier column arrays into a single tabular block."""
     entries = payload.get("entries")
     labels = payload.get("labels")
     holding_bars = payload.get("holding_bars")
-    if (
-        not isinstance(entries, list)
-        or not isinstance(labels, list)
-        or not isinstance(holding_bars, list)
-    ):
+    if not isinstance(entries, list) or not isinstance(labels, list) or not isinstance(holding_bars, list):
         return None
     if any(isinstance(item, dict) for item in labels):
         return None
@@ -635,8 +593,7 @@ def _compact_trade_warnings(warnings: Any, *, verbose: bool) -> List[str]:
     if not actionable:
         return []
     critical = [
-        msg
-        for msg in actionable
+        msg for msg in actionable
         if any(
             marker in msg.lower()
             for marker in (
@@ -673,9 +630,7 @@ def _maybe_add_trade_key(
     out[key] = value
 
 
-def _compact_trade_row(
-    row: Dict[str, Any], *, verbose: bool
-) -> Optional[Dict[str, Any]]:
+def _compact_trade_row(row: Dict[str, Any], *, verbose: bool) -> Optional[Dict[str, Any]]:
     out: Dict[str, Any] = {}
     _maybe_add_trade_key(out, "ticket", row.get("ticket"), skip_zero=True)
     _maybe_add_trade_key(out, "error", row.get("error"))
@@ -692,21 +647,12 @@ def _compact_trade_row(
     if "price" not in out:
         _maybe_add_trade_key(out, "price", row.get("price"))
     _maybe_add_trade_key(out, "pnl", row.get("pnl"))
-    _maybe_add_trade_key(
-        out, "remaining_volume", row.get("position_volume_remaining_estimate")
-    )
+    _maybe_add_trade_key(out, "remaining_volume", row.get("position_volume_remaining_estimate"))
     _maybe_add_trade_key(out, "message", row.get("message"))
 
     if verbose:
         diagnostics: Dict[str, Any] = {}
-        for key in (
-            "comment",
-            "attempts",
-            "last_error",
-            "open_price",
-            "pnl_price_delta",
-            "duration_seconds",
-        ):
+        for key in ("comment", "attempts", "last_error", "open_price", "pnl_price_delta", "duration_seconds"):
             value = row.get(key)
             if not _is_empty_value(value):
                 diagnostics[key] = value
@@ -750,22 +696,11 @@ def _normalize_trade_payload(
     success_value = payload.get("success")
     if isinstance(success_value, bool):
         out["success"] = success_value
-    elif (
-        "retcode_name" in payload
-        or "retcode" in payload
-        or "order" in payload
-        or "deal" in payload
-    ):
+    elif "retcode_name" in payload or "retcode" in payload or "order" in payload or "deal" in payload:
         out["success"] = True
 
     if "results" in payload and isinstance(payload.get("results"), list):
-        for key in (
-            "closed_count",
-            "cancelled_count",
-            "attempted_count",
-            "message",
-            "no_action",
-        ):
+        for key in ("closed_count", "cancelled_count", "attempted_count", "message", "no_action"):
             _maybe_add_trade_key(out, key, payload.get(key))
         rows: List[Dict[str, Any]] = []
         for row in payload.get("results", []):
@@ -814,16 +749,12 @@ def _normalize_trade_payload(
     _maybe_add_trade_key(out, "requested_tp", requested_tp)
     _maybe_add_trade_key(out, "applied_sl", applied_sl)
     _maybe_add_trade_key(out, "applied_tp", applied_tp)
-    _maybe_add_trade_key(
-        out, "requested_expiration", payload.get("requested_expiration")
-    )
+    _maybe_add_trade_key(out, "requested_expiration", payload.get("requested_expiration"))
     _maybe_add_trade_key(out, "applied_expiration", payload.get("applied_expiration"))
     _maybe_add_trade_key(out, "protection_status", payload.get("protection_status"))
     _maybe_add_trade_key(out, "protection_error", protection_error)
     _maybe_add_trade_key(out, "pnl", payload.get("pnl"))
-    _maybe_add_trade_key(
-        out, "remaining_volume", payload.get("position_volume_remaining_estimate")
-    )
+    _maybe_add_trade_key(out, "remaining_volume", payload.get("position_volume_remaining_estimate"))
     _maybe_add_trade_key(out, "no_action", payload.get("no_action"))
     _maybe_add_trade_key(out, "message", payload.get("message"))
 
@@ -867,25 +798,25 @@ def _compact_forecast_ci(
     upper: List[Any],
 ) -> Dict[str, Any]:
     """Emit CI diagnostics only when they add signal beyond the forecast table."""
-    ci_status = payload.get("ci_status")
+    ci_status = payload.get('ci_status')
     if _is_empty_value(ci_status):
-        ci_available = payload.get("ci_available")
+        ci_available = payload.get('ci_available')
         if ci_available is True:
-            ci_status = "available"
-        elif payload.get("ci_unavailable") or ci_available is False:
-            ci_status = "unavailable"
-        elif bool(payload.get("ci_requested")):
-            ci_status = "requested"
+            ci_status = 'available'
+        elif payload.get('ci_unavailable') or ci_available is False:
+            ci_status = 'unavailable'
+        elif bool(payload.get('ci_requested')):
+            ci_status = 'requested'
     has_interval_columns = bool(lower and upper)
 
     alpha = None
-    for key in ("ci_alpha", "ci_alpha_requested"):
+    for key in ('ci_alpha', 'ci_alpha_requested'):
         value = payload.get(key)
         if not _is_empty_value(value):
             alpha = value
             break
 
-    if ci_status == "available" and has_interval_columns:
+    if ci_status == 'available' and has_interval_columns:
         return {}
 
     if _is_empty_value(ci_status) and alpha is None:
@@ -893,10 +824,10 @@ def _compact_forecast_ci(
 
     out: Dict[str, Any] = {}
     if not _is_empty_value(ci_status):
-        out["status"] = ci_status
+        out['status'] = ci_status
 
     if alpha is not None:
-        out["ci_alpha"] = alpha
+        out['ci_alpha'] = alpha
 
     return out
 
@@ -904,36 +835,29 @@ def _compact_forecast_ci(
 def _build_forecast_meta(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Group verbose forecast metadata into stable sections."""
     domain: Dict[str, Any] = {}
-    for key in (
-        "symbol",
-        "timeframe",
-        "method",
-        "horizon",
-        "lookback_used",
-        "forecast_trend",
-    ):
+    for key in ('symbol', 'timeframe', 'method', 'horizon', 'lookback_used', 'forecast_trend'):
         value = payload.get(key)
         if not _is_empty_value(value):
             domain[key] = value
 
-    denoise_used = payload.get("denoise_used")
-    if isinstance(denoise_used, dict) and denoise_used.get("method"):
-        domain["denoise"] = denoise_used.get("method")
-    elif payload.get("denoise_applied"):
-        domain["denoise"] = "applied"
+    denoise_used = payload.get('denoise_used')
+    if isinstance(denoise_used, dict) and denoise_used.get('method'):
+        domain['denoise'] = denoise_used.get('method')
+    elif payload.get('denoise_applied'):
+        domain['denoise'] = 'applied'
 
-    timezone = payload.get("timezone")
+    timezone = payload.get('timezone')
     if isinstance(timezone, str) and timezone.strip():
-        domain["timezone"] = timezone.strip()
+        domain['timezone'] = timezone.strip()
 
-    params_used = payload.get("params_used")
+    params_used = payload.get('params_used')
     if not _is_empty_value(params_used):
-        domain["params"] = params_used
+        domain['params'] = params_used
 
-    cli_meta_in = payload.get("cli_meta")
+    cli_meta_in = payload.get('cli_meta')
     cli_meta = dict(cli_meta_in) if isinstance(cli_meta_in, dict) else {}
-    tool_name = str(cli_meta.pop("command", "")).strip()
-    cli_timezone = cli_meta.pop("timezone", None)
+    tool_name = str(cli_meta.pop('command', '')).strip()
+    cli_timezone = cli_meta.pop('timezone', None)
 
     runtime: Dict[str, Any] = {}
     cli: Dict[str, Any] = {}
@@ -951,34 +875,34 @@ def _build_forecast_meta(payload: Dict[str, Any]) -> Dict[str, Any]:
             timezone_source = None
 
     if isinstance(timezone_source, dict):
-        local_meta = timezone_source.get("local")
+        local_meta = timezone_source.get('local')
         if isinstance(local_meta, dict):
-            local_tz_meta = local_meta.get("tz")
+            local_tz_meta = local_meta.get('tz')
             if isinstance(local_tz_meta, dict):
-                local_tz = local_tz_meta.get("name")
+                local_tz = local_tz_meta.get('name')
                 if not _is_empty_value(local_tz):
-                    cli["local_tz"] = local_tz
+                    cli['local_tz'] = local_tz
 
         for key, value in timezone_source.items():
-            if key == "local" or _is_empty_value(value):
+            if key == 'local' or _is_empty_value(value):
                 continue
             runtime_timezone[str(key)] = _compact_timezone_display(value)
 
     if runtime_timezone:
-        runtime["timezone"] = runtime_timezone
+        runtime['timezone'] = runtime_timezone
 
     if cli_meta:
         cli.update(cli_meta)
 
     meta: Dict[str, Any] = {}
     if tool_name:
-        meta["tool"] = tool_name
+        meta['tool'] = tool_name
     if domain:
-        meta["domain"] = domain
+        meta['domain'] = domain
     if runtime:
-        meta["runtime"] = runtime
+        meta['runtime'] = runtime
     if cli:
-        meta["cli"] = cli
+        meta['cli'] = cli
     return meta
 
 
@@ -990,12 +914,8 @@ def _compact_timezone_display(value: Any) -> Any:
             if _is_empty_value(compacted):
                 continue
             out[str(key)] = compacted
-        if (
-            "configured" in out
-            and "resolved" in out
-            and out.get("configured") == out.get("resolved")
-        ):
-            out.pop("resolved", None)
+        if 'configured' in out and 'resolved' in out and out.get('configured') == out.get('resolved'):
+            out.pop('resolved', None)
         return out
     if isinstance(value, list):
         items = [_compact_timezone_display(item) for item in value]
@@ -1007,9 +927,7 @@ def _collapse_single_key_path(key: str, value: Any) -> tuple[str, Any]:
     current_key = str(key)
     current_value = value
     while isinstance(current_value, dict):
-        items = [
-            (str(k), v) for k, v in current_value.items() if not _is_empty_value(v)
-        ]
+        items = [(str(k), v) for k, v in current_value.items() if not _is_empty_value(v)]
         if len(items) != 1:
             break
         subkey, subval = items[0]
@@ -1030,9 +948,7 @@ def _format_to_toon(
     if key is not None and isinstance(value, dict):
         key, value = _collapse_single_key_path(key, value)
     if _is_scalar_value(value):
-        rendered = _stringify_for_toon(
-            value, delimiter, simplify_numbers=simplify_numbers
-        )
+        rendered = _stringify_for_toon(value, delimiter, simplify_numbers=simplify_numbers)
         if key is None:
             return f"{ind}{rendered}".rstrip()
         return f"{ind}{_quote_key(key, delimiter)}: {rendered}".rstrip()
@@ -1053,12 +969,8 @@ def _format_to_toon(
                     simplify_numbers=simplify_numbers,
                 )
         if all(_is_scalar_value(item) for item in value):
-            return _encode_inline_array(
-                name, value, indent, delimiter, simplify_numbers=simplify_numbers
-            )
-        return _encode_expanded_array(
-            name, value, indent, delimiter, simplify_numbers=simplify_numbers
-        )
+            return _encode_inline_array(name, value, indent, delimiter, simplify_numbers=simplify_numbers)
+        return _encode_expanded_array(name, value, indent, delimiter, simplify_numbers=simplify_numbers)
 
     if isinstance(value, dict):
         if key is None and not value:
@@ -1134,7 +1046,7 @@ def to_methods_availability_toon(methods: List[Dict[str, Any]]) -> str:
     rows: List[Dict[str, Any]] = []
     for m in methods or []:
         if isinstance(m, dict):
-            rows.append({"method": m.get("method"), "available": m.get("available")})
+            rows.append({'method': m.get('method'), 'available': m.get('available')})
     if not rows:
         return ""
     headers = _headers_from_dicts(rows)

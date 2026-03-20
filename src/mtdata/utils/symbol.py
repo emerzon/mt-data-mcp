@@ -11,11 +11,11 @@ def _extract_group_path(sym) -> str:
     MT5 sometimes reports `symbol.path` including the symbol at the tail. This trims the
     last component when it equals the symbol name (case-insensitive).
     """
-    raw = getattr(sym, "path", "") or ""
-    name = getattr(sym, "name", "") or ""
+    raw = getattr(sym, 'path', '') or ''
+    name = getattr(sym, 'name', '') or ''
     if not raw:
-        return "Unknown"
-    parts = raw.split("\\")
+        return 'Unknown'
+    parts = raw.split('\\')
     tail = parts[-1] if parts else ""
     tail_norm = _normalize_symbol_token(tail)
     name_norm = _normalize_symbol_token(name)
@@ -34,5 +34,5 @@ def _extract_group_path(sym) -> str:
     )
     if parts and tail_matches_symbol:
         parts = parts[:-1]
-    group = "\\".join(parts).strip("\\")
-    return group or "Unknown"
+    group = '\\'.join(parts).strip('\\')
+    return group or 'Unknown'

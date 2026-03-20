@@ -1,5 +1,6 @@
 import json
 import math
+import os
 import types
 from datetime import datetime
 from typing import Any, Dict, Optional
@@ -97,20 +98,12 @@ def _resolve_cli_formatter(args: Any) -> str:
     return CLI_FORMAT_TOON
 
 
-def _format_result_for_cli(
-    result: Any, *, fmt: str, verbose: bool, cmd_name: str
-) -> str:
+def _format_result_for_cli(result: Any, *, fmt: str, verbose: bool, cmd_name: str) -> str:
     fmt_s = _normalize_cli_formatter(fmt)
     if fmt_s == CLI_FORMAT_JSON:
         payload = {"text": result} if isinstance(result, str) else result
         payload = _sanitize_json_compat(payload)
-        return json.dumps(
-            payload,
-            ensure_ascii=False,
-            indent=2,
-            allow_nan=False,
-            default=_json_default,
-        )
+        return json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False, default=_json_default)
     if isinstance(result, str):
         return result
     simplify_numbers = not str(cmd_name or "").startswith("trade_")
@@ -156,36 +149,22 @@ def _build_cli_timezone_meta_brief(result: Any) -> Dict[str, Any]:
             "tz": {
                 "value": (
                     ((((full.get("server") or {}).get("tz")) or {}).get("resolved"))
-                    or (
-                        (((full.get("server") or {}).get("tz")) or {}).get("configured")
-                    )
-                )
-                if isinstance((full.get("server") or {}).get("tz"), dict)
-                else None,
+                    or ((((full.get("server") or {}).get("tz")) or {}).get("configured"))
+                ) if isinstance((full.get("server") or {}).get("tz"), dict) else None,
             },
-            "now": (full.get("server") or {}).get("now")
-            if isinstance(full.get("server"), dict)
-            else None,
+            "now": (full.get("server") or {}).get("now") if isinstance(full.get("server"), dict) else None,
         },
         "client": {
             "tz": {
                 "value": (
                     ((((full.get("client") or {}).get("tz")) or {}).get("resolved"))
-                    or (
-                        (((full.get("client") or {}).get("tz")) or {}).get("configured")
-                    )
-                )
-                if isinstance((full.get("client") or {}).get("tz"), dict)
-                else None,
+                    or ((((full.get("client") or {}).get("tz")) or {}).get("configured"))
+                ) if isinstance((full.get("client") or {}).get("tz"), dict) else None,
             },
-            "now": (full.get("client") or {}).get("now")
-            if isinstance(full.get("client"), dict)
-            else None,
+            "now": (full.get("client") or {}).get("now") if isinstance(full.get("client"), dict) else None,
         },
         "utc": {
-            "now": (full.get("utc") or {}).get("now")
-            if isinstance(full.get("utc"), dict)
-            else None,
+            "now": (full.get("utc") or {}).get("now") if isinstance(full.get("utc"), dict) else None,
         },
     }
 
@@ -216,12 +195,7 @@ def _build_market_ticker_cli_verbose_meta(result: Any) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
     diagnostics = result.get("diagnostics")
     if isinstance(diagnostics, dict):
-        for key in (
-            "source",
-            "cache_used",
-            "query_latency_ms",
-            "data_freshness_seconds",
-        ):
+        for key in ("source", "cache_used", "query_latency_ms", "data_freshness_seconds"):
             if key in diagnostics:
                 out[key] = diagnostics.get(key)
     tick_epoch = result.get("time")
@@ -229,9 +203,7 @@ def _build_market_ticker_cli_verbose_meta(result: Any) -> Dict[str, Any]:
         out["tick_time_epoch"] = float(tick_epoch)
         if "data_freshness_seconds" not in out:
             try:
-                out["data_freshness_seconds"] = max(
-                    0.0, datetime.now().timestamp() - float(tick_epoch)
-                )
+                out["data_freshness_seconds"] = max(0.0, datetime.now().timestamp() - float(tick_epoch))
             except Exception:
                 pass
     for field in ("bid", "ask", "spread", "spread_points", "spread_usd"):

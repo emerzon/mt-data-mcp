@@ -2,8 +2,7 @@
 
 Covers lines 20-199 by mocking MT5.
 """
-# ruff: noqa: E402, E731, E741, F811, F841
-
+import pytest
 from unittest.mock import patch, MagicMock
 
 
@@ -11,10 +10,7 @@ from unittest.mock import patch, MagicMock
 # Helpers
 # ---------------------------------------------------------------------------
 
-
-def _make_symbol(
-    name, path="Forex\\Majors", description="Euro vs US Dollar", visible=True
-):
+def _make_symbol(name, path="Forex\\Majors", description="Euro vs US Dollar", visible=True):
     s = MagicMock()
     s.name = name
     s.path = path
@@ -31,13 +27,10 @@ def _unwrap(fn):
 
 def _get_symbols_list():
     from mtdata.core.symbols import symbols_list
-
     raw = _unwrap(symbols_list)
 
     def _call(*args, **kwargs):
-        with patch(
-            "mtdata.core.symbols.ensure_mt5_connection_or_raise", return_value=None
-        ):
+        with patch("mtdata.core.symbols.ensure_mt5_connection_or_raise", return_value=None):
             return raw(*args, **kwargs)
 
     return _call
@@ -45,13 +38,10 @@ def _get_symbols_list():
 
 def _get_symbols_describe():
     from mtdata.core.symbols import symbols_describe
-
     raw = _unwrap(symbols_describe)
 
     def _call(*args, **kwargs):
-        with patch(
-            "mtdata.core.symbols.ensure_mt5_connection_or_raise", return_value=None
-        ):
+        with patch("mtdata.core.symbols.ensure_mt5_connection_or_raise", return_value=None):
             return raw(*args, **kwargs)
 
     return _call
@@ -69,6 +59,7 @@ _NORM_LIMIT = "mtdata.core.symbols._normalize_limit"
 
 
 class TestSymbolsListNoSearch:
+
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
     @patch(_GROUP_PATH, return_value="Forex\\Majors")
@@ -86,10 +77,7 @@ class TestSymbolsListNoSearch:
     @patch(_GROUP_PATH, return_value="Forex\\Majors")
     @patch(f"{_MT5}.symbols_get")
     def test_hidden_filtered(self, mock_get, mock_gp, mock_tbl, mock_lim):
-        syms = [
-            _make_symbol("EURUSD", visible=True),
-            _make_symbol("HIDDEN", visible=False),
-        ]
+        syms = [_make_symbol("EURUSD", visible=True), _make_symbol("HIDDEN", visible=False)]
         mock_get.return_value = syms
         fn = _get_symbols_list()
         res = fn(search_term=None, limit=25)
@@ -113,6 +101,7 @@ class TestSymbolsListNoSearch:
 
 
 class TestSymbolsListSearch:
+
     def _setup_syms(self):
         return [
             _make_symbol("EURUSD", path="Forex\\Majors", description="Euro vs Dollar"),
@@ -142,10 +131,8 @@ class TestSymbolsListSearch:
             _make_symbol("EURUSD", path="Forex\\Majors"),
         ]
         mock_get.return_value = syms
-        with (
-            patch(_GROUP_PATH, side_effect=lambda s: s.path),
-            patch("mtdata.core.symbols.GROUP_SEARCH_THRESHOLD", 5),
-        ):
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path), \
+             patch("mtdata.core.symbols.GROUP_SEARCH_THRESHOLD", 5):
             fn = _get_symbols_list()
             res = fn(search_term="Metal", limit=25)
         assert "data" in res
@@ -159,10 +146,8 @@ class TestSymbolsListSearch:
         for i in range(10):
             syms.append(_make_symbol(f"USD{i}", path=f"Group{i}\\USD"))
         mock_get.return_value = syms
-        with (
-            patch(_GROUP_PATH, side_effect=lambda s: s.path),
-            patch("mtdata.core.symbols.GROUP_SEARCH_THRESHOLD", 3),
-        ):
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path), \
+             patch("mtdata.core.symbols.GROUP_SEARCH_THRESHOLD", 3):
             fn = _get_symbols_list()
             res = fn(search_term="USD", limit=25)
         assert "data" in res
@@ -174,10 +159,8 @@ class TestSymbolsListSearch:
         """When no name or group match, fallback to description."""
         syms = [_make_symbol("SYM1", path="G1", description="Gold Spot")]
         mock_get.return_value = syms
-        with (
-            patch(_GROUP_PATH, side_effect=lambda s: s.path),
-            patch("mtdata.core.symbols.GROUP_SEARCH_THRESHOLD", 5),
-        ):
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path), \
+             patch("mtdata.core.symbols.GROUP_SEARCH_THRESHOLD", 5):
             fn = _get_symbols_list()
             res = fn(search_term="Gold", limit=25)
         assert "data" in res
@@ -189,10 +172,8 @@ class TestSymbolsListSearch:
         """Description empty but path matches."""
         s = _make_symbol("SYM1", path="Metals\\Gold", description="")
         mock_get.return_value = [s]
-        with (
-            patch(_GROUP_PATH, side_effect=lambda s: s.path),
-            patch("mtdata.core.symbols.GROUP_SEARCH_THRESHOLD", 5),
-        ):
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path), \
+             patch("mtdata.core.symbols.GROUP_SEARCH_THRESHOLD", 5):
             fn = _get_symbols_list()
             res = fn(search_term="Gold", limit=25)
         assert "data" in res
@@ -201,14 +182,10 @@ class TestSymbolsListSearch:
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
     @patch(f"{_MT5}.symbols_get")
     def test_search_no_match(self, mock_get, mock_tbl, mock_lim):
-        syms = [
-            _make_symbol("EURUSD", path="Forex\\Majors", description="Euro vs Dollar")
-        ]
+        syms = [_make_symbol("EURUSD", path="Forex\\Majors", description="Euro vs Dollar")]
         mock_get.return_value = syms
-        with (
-            patch(_GROUP_PATH, side_effect=lambda s: s.path),
-            patch("mtdata.core.symbols.GROUP_SEARCH_THRESHOLD", 5),
-        ):
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path), \
+             patch("mtdata.core.symbols.GROUP_SEARCH_THRESHOLD", 5):
             fn = _get_symbols_list()
             res = fn(search_term="ZZZZZ", limit=25)
         assert "data" in res
@@ -239,15 +216,13 @@ class TestSymbolsListSearch:
 
 
 class TestSymbolsListModes:
+
     def test_invalid_list_mode(self):
         fn = _get_symbols_list()
         res = fn(list_mode="invalid")
         assert res == {"error": "list_mode must be 'symbols' or 'groups'."}
 
-    @patch(
-        "mtdata.core.symbols._list_symbol_groups",
-        return_value={"headers": ["group"], "data": []},
-    )
+    @patch("mtdata.core.symbols._list_symbol_groups", return_value={"headers": ["group"], "data": []})
     def test_groups_mode(self, mock_lsg):
         fn = _get_symbols_list()
         res = fn(list_mode="groups")
@@ -255,6 +230,7 @@ class TestSymbolsListModes:
 
 
 class TestSymbolsListException:
+
     @patch(f"{_MT5}.symbols_get", side_effect=RuntimeError("boom"))
     def test_exception(self, mock_get):
         fn = _get_symbols_list()
@@ -264,13 +240,11 @@ class TestSymbolsListException:
 
 def test_symbols_list_logs_finish_event(caplog):
     fn = _get_symbols_list()
-    with (
-        patch(f"{_MT5}.symbols_get", return_value=[_make_symbol("EURUSD")]),
-        patch(_GROUP_PATH, side_effect=lambda s: s.path),
-        patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r}),
-        patch(_NORM_LIMIT, return_value=25),
-        caplog.at_level("INFO", logger="mtdata.core.symbols"),
-    ):
+    with patch(f"{_MT5}.symbols_get", return_value=[_make_symbol("EURUSD")]), \
+         patch(_GROUP_PATH, side_effect=lambda s: s.path), \
+         patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r}), \
+         patch(_NORM_LIMIT, return_value=25), \
+         caplog.at_level("INFO", logger="mtdata.core.symbols"):
         res = fn(search_term=None, limit=25)
 
     assert "data" in res
@@ -288,16 +262,15 @@ from mtdata.core.symbols import _list_symbol_groups
 
 
 class TestListSymbolGroups:
+
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_GROUP_PATH, side_effect=lambda s: s.path)
     @patch(f"{_MT5}.symbols_get")
     def test_basic(self, mock_get, mock_gp, mock_lim, mock_tbl):
-        syms = [
-            _make_symbol("EURUSD", path="Forex\\Majors"),
-            _make_symbol("GBPUSD", path="Forex\\Majors"),
-            _make_symbol("XAUUSD", path="Commodities"),
-        ]
+        syms = [_make_symbol("EURUSD", path="Forex\\Majors"),
+                _make_symbol("GBPUSD", path="Forex\\Majors"),
+                _make_symbol("XAUUSD", path="Commodities")]
         mock_get.return_value = syms
         res = _list_symbol_groups()
         assert "data" in res
@@ -309,10 +282,8 @@ class TestListSymbolGroups:
     @patch(_GROUP_PATH, side_effect=lambda s: s.path)
     @patch(f"{_MT5}.symbols_get")
     def test_with_search(self, mock_get, mock_gp, mock_lim, mock_tbl):
-        syms = [
-            _make_symbol("EURUSD", path="Forex\\Majors"),
-            _make_symbol("XAUUSD", path="Commodities"),
-        ]
+        syms = [_make_symbol("EURUSD", path="Forex\\Majors"),
+                _make_symbol("XAUUSD", path="Commodities")]
         mock_get.return_value = syms
         res = _list_symbol_groups(search_term="Forex")
         assert "data" in res
@@ -347,6 +318,7 @@ class TestListSymbolGroups:
 
 
 class TestSymbolsDescribe:
+
     @patch(f"{_MT5}.symbol_info")
     def test_symbol_not_found(self, mock_info):
         mock_info.return_value = None
@@ -359,14 +331,7 @@ class TestSymbolsDescribe:
     def test_basic_describe(self, mock_info):
         info = MagicMock()
         # Provide some attributes
-        info.__dir__ = lambda self: [
-            "name",
-            "digits",
-            "trade_mode",
-            "spread",
-            "_priv",
-            "method",
-        ]
+        info.__dir__ = lambda self: ["name", "digits", "trade_mode", "spread", "_priv", "method"]
         info.name = "EURUSD"
         info.digits = 5
         info.trade_mode = 2
@@ -458,9 +423,7 @@ class TestSymbolsDescribe:
         assert "Limit" in (sd.get("order_mode_labels") or [])
         assert "GTC" in (sd.get("expiration_mode_labels") or [])
         assert "Specified" in (sd.get("expiration_mode_labels") or [])
-        assert any(
-            v in (sd.get("filling_mode_labels") or []) for v in ("IOC", "Return")
-        )
+        assert any(v in (sd.get("filling_mode_labels") or []) for v in ("IOC", "Return"))
         assert sd.get("swap_mode_label") == "Points"
 
     @patch(f"{_MT5}.symbol_info")
