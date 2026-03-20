@@ -1,6 +1,7 @@
 import logging
 import importlib
 import math
+import threading
 import time
 from contextlib import contextmanager
 from functools import lru_cache
@@ -38,8 +39,20 @@ def _load_mt5_module() -> Any:
     return importlib.import_module("MetaTrader5")
 
 
+# Reentrant lock serialising all MT5 COM calls so that concurrent
+# asyncio.to_thread workers (MCP tool dispatch) cannot deadlock the
+# single-threaded COM apartment used by the MetaTrader5 library.
+_mt5_lock = threading.RLock()
+
+
 class MT5Adapter:
-    """Thin dynamic adapter around MetaTrader5."""
+    """Thin dynamic adapter around MetaTrader5.
+
+    Every public method acquires ``_mt5_lock`` so that only one thread
+    interacts with the underlying COM bridge at a time.  This prevents
+    the deadlocks observed when ``asyncio.to_thread`` dispatches
+    concurrent MCP tool calls from different worker threads.
+    """
 
     def _module(self) -> Any:
         return _load_mt5_module()
@@ -54,70 +67,97 @@ class MT5Adapter:
         object.__setattr__(self, name, value)
 
     def initialize(self, *args, **kwargs):
-        return self._module().initialize(*args, **kwargs)
+        with _mt5_lock:
+            return self._module().initialize(*args, **kwargs)
 
     def shutdown(self):
-        return self._module().shutdown()
+        with _mt5_lock:
+            return self._module().shutdown()
 
     def last_error(self):
-        return self._module().last_error()
+        with _mt5_lock:
+            return self._module().last_error()
 
     def symbol_info(self, symbol):
-        return self._module().symbol_info(symbol)
+        with _mt5_lock:
+            return self._module().symbol_info(symbol)
 
     def symbol_select(self, symbol, visible=True):
-        return self._module().symbol_select(symbol, visible)
+        with _mt5_lock:
+            return self._module().symbol_select(symbol, visible)
 
     def symbol_info_tick(self, symbol):
-        return self._module().symbol_info_tick(symbol)
+        with _mt5_lock:
+            return self._module().symbol_info_tick(symbol)
 
     def order_send(self, request):
-        return self._module().order_send(request)
+        with _mt5_lock:
+            return self._module().order_send(request)
 
     def positions_get(self, **kwargs):
-        return self._module().positions_get(**kwargs)
+        with _mt5_lock:
+            return self._module().positions_get(**kwargs)
 
     def orders_get(self, **kwargs):
-        return self._module().orders_get(**kwargs)
+        with _mt5_lock:
+            return self._module().orders_get(**kwargs)
 
     def history_orders_get(self, dt_from, dt_to, **kwargs):
-        return self._module().history_orders_get(dt_from, dt_to, **kwargs)
+        with _mt5_lock:
+            return self._module().history_orders_get(dt_from, dt_to, **kwargs)
 
     def history_deals_get(self, dt_from, dt_to, **kwargs):
-        return self._module().history_deals_get(dt_from, dt_to, **kwargs)
+        with _mt5_lock:
+            return self._module().history_deals_get(dt_from, dt_to, **kwargs)
 
     def account_info(self):
-        return self._module().account_info()
+        with _mt5_lock:
+            return self._module().account_info()
 
     def terminal_info(self):
-        return self._module().terminal_info()
+        with _mt5_lock:
+            return self._module().terminal_info()
 
     def copy_rates_from(self, symbol, timeframe, dt_from, count):
-        return self._module().copy_rates_from(symbol, timeframe, dt_from, count)
+        with _mt5_lock:
+            return self._module().copy_rates_from(symbol, timeframe, dt_from, count)
 
     def copy_rates_range(self, symbol, timeframe, dt_from, dt_to):
-        return self._module().copy_rates_range(symbol, timeframe, dt_from, dt_to)
+        with _mt5_lock:
+            return self._module().copy_rates_range(symbol, timeframe, dt_from, dt_to)
 
     def copy_rates_from_pos(self, symbol, timeframe, start_pos, count):
-        return self._module().copy_rates_from_pos(symbol, timeframe, start_pos, count)
+        with _mt5_lock:
+            return self._module().copy_rates_from_pos(symbol, timeframe, start_pos, count)
 
     def copy_ticks_from(self, symbol, dt_from, count, flags):
-        return self._module().copy_ticks_from(symbol, dt_from, count, flags)
+        with _mt5_lock:
+            return self._module().copy_ticks_from(symbol, dt_from, count, flags)
 
     def copy_ticks_range(self, symbol, dt_from, dt_to, flags):
-        return self._module().copy_ticks_range(symbol, dt_from, dt_to, flags)
+        with _mt5_lock:
+            return self._module().copy_ticks_range(symbol, dt_from, dt_to, flags)
 
     def market_book_add(self, symbol):
-        return self._module().market_book_add(symbol)
+        with _mt5_lock:
+            return self._module().market_book_add(symbol)
 
     def market_book_get(self, symbol):
-        return self._module().market_book_get(symbol)
+        with _mt5_lock:
+            return self._module().market_book_get(symbol)
 
     def market_book_release(self, symbol):
-        return self._module().market_book_release(symbol)
+        with _mt5_lock:
+            return self._module().market_book_release(symbol)
 
     def __getattr__(self, name: str) -> Any:
-        return getattr(self._module(), name)
+        attr = getattr(self._module(), name)
+        if callable(attr):
+            def _locked(*a, **kw):
+                with _mt5_lock:
+                    return attr(*a, **kw)
+            return _locked
+        return attr
 
 
 mt5_adapter = MT5Adapter()

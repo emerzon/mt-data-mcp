@@ -447,9 +447,20 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
 
         # Register an async wrapper with FastMCP so sync tool execution does not
         # block the event loop while the underlying work runs in a worker thread.
+        # A generous timeout prevents indefinite hangs when the underlying MT5
+        # COM bridge deadlocks under concurrent access.
+        _TOOL_TIMEOUT_SECONDS = 120
+
         @_wraps(func)
         async def _async_wrapped(*a, **kw):
-            return await asyncio.to_thread(_wrapped, *a, **kw)
+            try:
+                return await asyncio.wait_for(
+                    asyncio.to_thread(_wrapped, *a, **kw),
+                    timeout=_TOOL_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                _tool_name = getattr(func, "__name__", "tool")
+                return f"error: {_tool_name} timed out after {_TOOL_TIMEOUT_SECONDS}s"
 
         try:
             _async_wrapped.__annotations__ = getattr(_wrapped, "__annotations__", {})
