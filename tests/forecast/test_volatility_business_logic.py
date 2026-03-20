@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import math
 import numpy as np
+import pytest
 
 from mtdata.forecast import volatility as vol
 
@@ -149,3 +150,40 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     monkeypatch.setattr(vol, "_mt5_copy_rates_from", lambda *args, **kwargs: _rates(5))
     out = vol.forecast_volatility(symbol="EURUSD", timeframe="H1", method="ewma")
     assert "Insufficient returns" in out["error"]
+
+
+def test_forecast_volatility_ensemble_aggregates_component_methods(monkeypatch):
+    monkeypatch.setattr(vol, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(vol, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(vol, "_ensure_symbol_ready", lambda _symbol: None)
+    monkeypatch.setattr(vol.mt5, "symbol_info", lambda _symbol: SimpleNamespace(visible=True))
+    monkeypatch.setattr(vol.mt5, "symbol_info_tick", lambda _symbol: SimpleNamespace(time=1_700_100_000))
+    monkeypatch.setattr(vol, "_mt5_epoch_to_utc", lambda t: float(t))
+    monkeypatch.setattr(vol.mt5, "last_error", lambda: (0, "ok"))
+    monkeypatch.setattr(vol, "_mt5_copy_rates_from", lambda *args, **kwargs: _rates(240))
+
+    ewma = vol.forecast_volatility(symbol="EURUSD", timeframe="H1", method="ewma")
+    rolling_std = vol.forecast_volatility(symbol="EURUSD", timeframe="H1", method="rolling_std")
+    ensemble = vol.forecast_volatility(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="ensemble",
+        params={
+            "methods": ["ewma", "rolling_std"],
+            "aggregator": "mean",
+            "expose_components": True,
+        },
+    )
+
+    assert ewma["success"] is True
+    assert rolling_std["success"] is True
+    assert ensemble["success"] is True
+    assert ensemble["method"] == "ensemble"
+    assert ensemble["params_used"]["methods"] == ["ewma", "rolling_std"]
+    assert len(ensemble["components"]) == 2
+    assert ensemble["sigma_bar_return"] == pytest.approx(
+        (float(ewma["sigma_bar_return"]) + float(rolling_std["sigma_bar_return"])) / 2.0
+    )
+    assert ensemble["horizon_sigma_return"] == pytest.approx(
+        (float(ewma["horizon_sigma_return"]) + float(rolling_std["horizon_sigma_return"])) / 2.0
+    )

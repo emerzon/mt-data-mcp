@@ -201,12 +201,13 @@ def get_volatility_methods_data() -> Dict[str, Any]:
         "method": "ensemble",
         "available": True,
         "requires": [],
-        "description": "Blend of multiple price/return forecast methods applied to the volatility proxy.",
+        "description": "Blend of multiple direct/general volatility methods.",
         "params": [
-            {"name": "methods", "type": "list[str]", "default": [], "description": "Base forecast methods to blend (leave blank for defaults)."},
+            {"name": "methods", "type": "list[str]", "default": [], "description": "Volatility methods to blend (leave blank for defaults)."},
             {"name": "aggregator", "type": "str", "default": "mean", "description": "Aggregation strategy: mean, median, weighted."},
             {"name": "weights", "type": "list[float]", "default": [], "description": "Optional weights for the weighted aggregator."},
             {"name": "expose_components", "type": "bool", "default": True, "description": "Expose individual component forecasts in the response."},
+            {"name": "method_params", "type": "dict", "default": {}, "description": "Optional per-method params merged into the shared params payload."},
         ],
     })
 
@@ -316,7 +317,7 @@ def forecast_volatility(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 1,
-    method: Literal['ewma','parkinson','gk','rs','yang_zhang','rolling_std','realized_kernel','har_rv','garch','egarch','gjr_garch','garch_t','egarch_t','gjr_garch_t','figarch','arima','sarima','ets','theta'] = 'ewma',  # type: ignore
+    method: Literal['ewma','parkinson','gk','rs','yang_zhang','rolling_std','realized_kernel','har_rv','garch','egarch','gjr_garch','garch_t','egarch_t','gjr_garch_t','figarch','arima','sarima','ets','theta','ensemble'] = 'ewma',  # type: ignore
     proxy: Optional[Literal['squared_return','abs_return','log_r2']] = None,  # type: ignore
     params: Optional[Dict[str, Any]] = None,
     as_of: Optional[str] = None,
@@ -326,6 +327,7 @@ def forecast_volatility(
 
     Direct: ewma, parkinson, gk, rs, yang_zhang, rolling_std, realized_kernel, har_rv, garch(+variants).
     General: arima, sarima, ets, theta (require `proxy`: squared_return|abs_return|log_r2).
+    Meta: ensemble aggregates multiple successful component volatility forecasts.
     """
     try:
         if timeframe not in TIMEFRAME_MAP:
@@ -338,7 +340,9 @@ def forecast_volatility(
         garch_family = {'garch','egarch','gjr_garch','garch_t','egarch_t','gjr_garch_t','figarch'}
         valid_direct = {'ewma','parkinson','gk','rs','yang_zhang','rolling_std','realized_kernel','har_rv'} | garch_family
         valid_general = {'arima','sarima','ets','theta'}
-        if method_l not in valid_direct.union(valid_general):
+        valid_meta = {'ensemble'}
+        valid_methods = valid_direct.union(valid_general).union(valid_meta)
+        if method_l not in valid_methods:
             return {"error": f"Invalid method: {method}"}
         if method_l in garch_family and not _ARCH_AVAILABLE:
             return {"error": f"{method_l} requires 'arch' package."}
@@ -387,6 +391,137 @@ def forecast_volatility(
                     # ignore stray tokens without '='
         else:
             p = {}
+
+        if method_l == 'ensemble':
+            default_methods = ['ewma', 'parkinson', 'rolling_std']
+            base_methods_in = p.get('methods')
+            if isinstance(base_methods_in, str):
+                base_methods = [tok.strip().lower() for tok in base_methods_in.split(',') if tok.strip()]
+            elif isinstance(base_methods_in, (list, tuple)):
+                base_methods = [str(item).strip().lower() for item in base_methods_in if str(item).strip()]
+            else:
+                base_methods = list(default_methods)
+            base_methods = [m for m in base_methods if m in valid_direct.union(valid_general) and m != 'ensemble']
+            seen_methods: set[str] = set()
+            base_methods = [m for m in base_methods if not (m in seen_methods or seen_methods.add(m))]
+            if not base_methods:
+                return {"error": "Ensemble requires at least one valid component method."}
+
+            aggregator = str(p.get('aggregator', 'mean')).lower().strip()
+            if aggregator not in {'mean', 'median', 'weighted'}:
+                aggregator = 'mean'
+
+            expose_components = bool(p.get('expose_components', True))
+            method_params = p.get('method_params') if isinstance(p.get('method_params'), dict) else {}
+            shared_params = dict(p)
+            for key in ('methods', 'aggregator', 'weights', 'expose_components', 'method_params'):
+                shared_params.pop(key, None)
+
+            raw_weights = p.get('weights')
+            weight_map: dict[str, float] = {}
+            if isinstance(raw_weights, (list, tuple)) and len(raw_weights) == len(base_methods):
+                parsed_weights: list[float] = []
+                for item in raw_weights:
+                    try:
+                        weight = float(item)
+                    except Exception:
+                        parsed_weights = []
+                        break
+                    if not np.isfinite(weight) or weight <= 0.0:
+                        parsed_weights = []
+                        break
+                    parsed_weights.append(weight)
+                if parsed_weights:
+                    total_weight = float(sum(parsed_weights))
+                    if total_weight > 0.0:
+                        weight_map = {
+                            method_name: float(weight / total_weight)
+                            for method_name, weight in zip(base_methods, parsed_weights)
+                        }
+
+            component_results: list[dict[str, Any]] = []
+            component_errors: list[dict[str, Any]] = []
+            for base_method in base_methods:
+                call_params = dict(shared_params)
+                per_method_params = method_params.get(base_method)
+                if isinstance(per_method_params, dict):
+                    call_params.update(per_method_params)
+                result = forecast_volatility(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    horizon=horizon,
+                    method=base_method,  # type: ignore[arg-type]
+                    proxy=proxy,
+                    params=call_params or None,
+                    as_of=as_of,
+                    denoise=denoise,
+                )
+                if not isinstance(result, dict) or not result.get('success'):
+                    err = result.get('error') if isinstance(result, dict) else None
+                    component_errors.append({"method": base_method, "error": str(err or "Component forecast failed")})
+                    continue
+                try:
+                    sigma_bar = float(result['sigma_bar_return'])
+                    horizon_sigma = float(result['horizon_sigma_return'])
+                except Exception:
+                    component_errors.append({"method": base_method, "error": "Component output missing volatility metrics"})
+                    continue
+                if not (np.isfinite(sigma_bar) and np.isfinite(horizon_sigma)):
+                    component_errors.append({"method": base_method, "error": "Component output contains non-finite volatility metrics"})
+                    continue
+                component_row: dict[str, Any] = {
+                    "method": base_method,
+                    "sigma_bar_return": sigma_bar,
+                    "horizon_sigma_return": horizon_sigma,
+                    "sigma_annual_return": float(result.get('sigma_annual_return', float('nan'))),
+                    "horizon_sigma_annual": float(result.get('horizon_sigma_annual', float('nan'))),
+                    "params_used": result.get('params_used'),
+                }
+                if result.get('proxy') is not None:
+                    component_row['proxy'] = result.get('proxy')
+                component_results.append(component_row)
+
+            if not component_results:
+                return {"error": "Ensemble failed: no successful component methods", "component_errors": component_errors}
+
+            def _aggregate_metric(metric_name: str) -> float:
+                values = np.asarray([float(row[metric_name]) for row in component_results], dtype=float)
+                if aggregator == 'median':
+                    return float(np.median(values))
+                if aggregator == 'weighted' and weight_map:
+                    weights = np.asarray([float(weight_map.get(str(row['method']), 0.0)) for row in component_results], dtype=float)
+                    total = float(np.sum(weights))
+                    if total > 0.0:
+                        return float(np.sum(values * weights) / total)
+                return float(np.mean(values))
+
+            bpy = float(365.0 * 24.0 * 3600.0 / float(tf_secs))
+            sigma_bar_return = _aggregate_metric('sigma_bar_return')
+            horizon_sigma_return = _aggregate_metric('horizon_sigma_return')
+            out: Dict[str, Any] = {
+                "success": True,
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "method": "ensemble",
+                "horizon": int(horizon),
+                "sigma_bar_return": sigma_bar_return,
+                "sigma_annual_return": float(sigma_bar_return * math.sqrt(bpy)),
+                "horizon_sigma_return": horizon_sigma_return,
+                "horizon_sigma_annual": float(horizon_sigma_return * math.sqrt(bpy / max(1, int(horizon)))),
+                "params_used": {
+                    "methods": base_methods,
+                    "aggregator": aggregator,
+                    "weights": [weight_map.get(method_name) for method_name in base_methods] if weight_map else None,
+                },
+            }
+            if proxy is not None:
+                out["proxy"] = str(proxy).lower().strip()
+            if expose_components:
+                out["components"] = component_results
+            if component_errors:
+                out["component_errors"] = component_errors
+                out["warning"] = f"{len(component_errors)} ensemble component(s) failed."
+            return out
 
         # If using general forecasters on proxy, compute proxy series and return using internal logic
         if method_l in valid_general:
@@ -768,189 +903,6 @@ def forecast_volatility(
             except Exception as ex:
                 return {"error": f"{method_l} error: {ex}"}
 
-        # Ensemble meta-method: aggregate multiple base forecasts
-        if method_l == 'ensemble':
-            try:
-                # Determine default base methods based on availability
-                default_methods = ['theta', 'fourier_ols']
-                if _SM_ETS_AVAILABLE:
-                    default_methods.append('holt')
-                # ARIMA/SARIMA can be added by user explicitly to avoid latency by default
-
-                base_methods_in = p.get('methods')
-                if isinstance(base_methods_in, (list, tuple)) and base_methods_in:
-                    base_methods = [str(m).lower().strip() for m in base_methods_in]
-                else:
-                    base_methods = list(default_methods)
-                # Remove invalid or recursive entries
-                base_methods = [m for m in base_methods if m in _FORECAST_METHODS and m != 'ensemble']
-                # Deduplicate while preserving order
-                seen = set()
-                base_methods = [m for m in base_methods if not (m in seen or seen.add(m))]
-                if not base_methods:
-                    return {"error": "Ensemble requires at least one valid base method"}
-
-                aggregator = str(p.get('aggregator', 'mean')).lower()
-                weights = p.get('weights')
-                expose_components = bool(p.get('expose_components', True))
-
-                # Normalize weights if provided
-                w = None
-                if isinstance(weights, (list, tuple)) and len(weights) == len(base_methods):
-                    try:
-                        w_arr = np.array([float(x) for x in weights], dtype=float)
-                        if np.all(np.isfinite(w_arr)) and np.any(w_arr > 0):
-                            w = w_arr.clip(min=0)
-                            s = float(np.sum(w))
-                            if s > 0:
-                                w = w / s
-                            else:
-                                w = None
-                        else:
-                            w = None
-                    except Exception:
-                        w = None
-
-                comp_results = []
-                for bm in base_methods:
-                    try:
-                        # Pass through common args; avoid per-method params for MVP simplicity
-                        r = forecast(
-                            symbol=symbol,
-                            timeframe=timeframe,
-                            method=bm,  # type: ignore
-                            horizon=horizon,
-                            lookback=lookback,
-                            as_of=as_of,
-                            params=None,
-                            ci_alpha=ci_alpha,
-                            denoise=denoise,
-                        )
-                        if isinstance(r, dict) and r.get('success') and r.get('forecast_price'):
-                            comp_results.append((bm, r))
-                    except Exception:
-                        continue
-
-                if not comp_results:
-                    return {"error": "Ensemble failed: no successful base forecasts"}
-
-                # Establish reference horizon and timestamps from first successful component
-                first_method, first_res = comp_results[0]
-                ref_prices = np.array(first_res.get('forecast_price', []), dtype=float)
-                fh = int(len(ref_prices))
-                if fh <= 0:
-                    return {"error": "Ensemble failed: empty forecast from base methods"}
-
-                # Collect aligned component arrays; drop any mismatched lengths
-                comps_prices = []
-                comps_returns = []
-                lower_list = []
-                upper_list = []
-                used_methods = []
-                for bm, r in comp_results:
-                    fp = r.get('forecast_price')
-                    if not isinstance(fp, (list, tuple)) or len(fp) != fh:
-                        continue
-                    used_methods.append(bm)
-                    comps_prices.append(np.array(fp, dtype=float))
-                    fr = r.get('forecast_return')
-                    if isinstance(fr, (list, tuple)) and len(fr) == fh:
-                        comps_returns.append(np.array(fr, dtype=float))
-                    lp = r.get('lower_price'); up = r.get('upper_price')
-                    if isinstance(lp, (list, tuple)) and isinstance(up, (list, tuple)) and len(lp) == fh and len(up) == fh:
-                        lower_list.append(np.array(lp, dtype=float))
-                        upper_list.append(np.array(up, dtype=float))
-
-                if len(comps_prices) == 0:
-                    return {"error": "Ensemble failed: no aligned component forecasts"}
-
-                M = len(comps_prices)
-                # Choose weights
-                if aggregator == 'weighted' and w is not None and len(w) == M:
-                    w_use = np.array(w, dtype=float)
-                else:
-                    w_use = np.full(M, 1.0 / M, dtype=float)
-                    aggregator = 'mean' if aggregator == 'weighted' else aggregator
-
-                X = np.vstack(comps_prices)  # shape (M, fh)
-                if aggregator == 'median':
-                    agg_price = np.median(X, axis=0)
-                else:  # mean or default
-                    agg_price = np.average(X, axis=0, weights=w_use)
-
-                # Aggregate returns if all components provided them; otherwise skip
-                if len(comps_returns) == M:
-                    XR = np.vstack(comps_returns)
-                    if aggregator == 'median':
-                        agg_return = np.median(XR, axis=0)
-                    else:
-                        agg_return = np.average(XR, axis=0, weights=w_use)
-                else:
-                    agg_return = None
-
-                # Aggregate confidence intervals only if all components have them
-                if len(lower_list) == M and len(upper_list) == M:
-                    L = np.vstack(lower_list)
-                    U = np.vstack(upper_list)
-                    if aggregator == 'median':
-                        agg_lower = np.median(L, axis=0)
-                        agg_upper = np.median(U, axis=0)
-                    else:
-                        agg_lower = np.average(L, axis=0, weights=w_use)
-                        agg_upper = np.average(U, axis=0, weights=w_use)
-                else:
-                    agg_lower = None
-                    agg_upper = None
-
-                # Build payload using the first component as template for metadata/times
-                payload: Dict[str, Any] = {
-                    "success": True,
-                    "symbol": first_res.get('symbol', symbol),
-                    "timeframe": first_res.get('timeframe', timeframe),
-                    "method": "ensemble",
-                    "params_used": {
-                        "base_methods": used_methods,
-                        "aggregator": aggregator,
-                        "weights": [float(x) for x in (w_use.tolist() if isinstance(w_use, np.ndarray) else [])],
-                    },
-                    "lookback_used": int(first_res.get('lookback_used', 0)),
-                    "horizon": int(first_res.get('horizon', horizon)),
-                    "seasonality_period": int(first_res.get('seasonality_period', 0)),
-                    "as_of": first_res.get('as_of', as_of or None),
-                    "train_start": first_res.get('train_start'),
-                    "train_end": first_res.get('train_end'),
-                    "times": first_res.get('times'),
-                    "forecast_price": [float(v) for v in agg_price.tolist()],
-                }
-                # Timezone flag passthrough if present
-                if 'timezone' in first_res:
-                    payload['timezone'] = first_res.get('timezone')
-                # Trend: reuse first component's for simplicity
-                if 'forecast_trend' in first_res:
-                    payload['forecast_trend'] = first_res.get('forecast_trend')
-                if agg_return is not None:
-                    payload['forecast_return'] = [float(v) for v in agg_return.tolist()]
-                if agg_lower is not None and agg_upper is not None and ci_alpha is not None:
-                    payload['lower_price'] = [float(v) for v in agg_lower.tolist()]
-                    payload['upper_price'] = [float(v) for v in agg_upper.tolist()]
-                    payload['ci_alpha'] = float(ci_alpha)
-
-                if expose_components:
-                    comps_out = []
-                    for i, (bm, r) in enumerate(comp_results):
-                        try:
-                            comps_out.append({
-                                "method": bm,
-                                "weight": float(w_use[i]) if i < len(w_use) else float(1.0 / M),
-                                "forecast_price": r.get('forecast_price'),
-                            })
-                        except Exception:
-                            continue
-                    payload['components'] = comps_out
-
-                return payload
-            except Exception as ex:
-                return {"error": f"Error computing ensemble forecast: {ex}"}
         # Backward compatibility for 'lambda' -> 'lambda_'
         if 'lambda' in p and 'lambda_' not in p:
             p['lambda_'] = p['lambda']
