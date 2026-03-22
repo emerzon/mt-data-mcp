@@ -295,11 +295,12 @@ def forecast_backtest(
                     per_anchor.append({"anchor": anchor_time, "success": False, "error": r['error']})
                     continue
                 if quantity == 'volatility':
-                    # Compute realized horizon sigma from ground truth prices
+                    # Compute realized horizon sigma from the anchor close through the future path.
                     act = np.array(truth, dtype=float)
-                    r_act = _log_returns_from_prices(act) if act.size >= 2 else np.array([], dtype=float)
+                    path = np.concatenate(([float(closes[idx])], act)) if act.size > 0 else act
+                    r_act = _log_returns_from_prices(path) if path.size >= 2 else np.array([], dtype=float)
                     realized_sigma = (
-                        float(np.sqrt(np.mean(np.square(np.clip(r_act, -1e6, 1e6)))))
+                        float(np.sqrt(np.sum(np.square(np.clip(r_act, -1e6, 1e6)))))
                         if r_act.size > 0
                         else float('nan')
                     )

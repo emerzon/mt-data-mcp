@@ -269,7 +269,7 @@ class TestForecastBacktest:
         assert isinstance(result, dict)
 
     @patch("mtdata.forecast.backtest._fetch_history")
-    def test_volatility_realized_sigma_uses_rms_scaling(self, fetch):
+    def test_volatility_realized_sigma_uses_horizon_aggregated_returns(self, fetch):
         df = _make_df(500)
         fetch.return_value = df
         with patch("mtdata.forecast.backtest.forecast_volatility") as fv:
@@ -285,8 +285,8 @@ class TestForecastBacktest:
         from mtdata.utils.utils import _format_time_minimal
 
         anchor_idx = next(i for i, ts in enumerate(df["time"]) if _format_time_minimal(float(ts)) == entry["anchor"])
-        act = df["close"].iloc[anchor_idx + 1: anchor_idx + 4].to_numpy(dtype=float)
-        realized = math.sqrt(np.mean(np.square(np.diff(np.log(act)))))
+        path = df["close"].iloc[anchor_idx: anchor_idx + 4].to_numpy(dtype=float)
+        realized = math.sqrt(np.sum(np.square(np.diff(np.log(path)))))
         assert entry["realized_sigma"] == pytest.approx(realized)
 
     @patch("mtdata.forecast.backtest._fetch_history")

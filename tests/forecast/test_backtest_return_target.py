@@ -55,8 +55,8 @@ def test_backtest_volatility_with_return_target_uses_price_truth_windows() -> No
     idx = 60
     horizon = 3
     anchor = _format_time_minimal(float(times[idx]))
-    truth_prices = close[idx + 1 : idx + 1 + horizon]
-    expected_sigma = float(np.sqrt(np.mean(np.diff(np.log(truth_prices)) ** 2)))
+    truth_path = close[idx : idx + 1 + horizon]
+    expected_sigma = float(np.sqrt(np.sum(np.diff(np.log(truth_path)) ** 2)))
 
     with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
         "mtdata.forecast.backtest.forecast_volatility",
