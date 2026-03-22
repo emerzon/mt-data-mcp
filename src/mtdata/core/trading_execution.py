@@ -612,11 +612,13 @@ def _close_positions(
                         "type": close_type,
                         "price": close_price,
                         "deviation": deviation_validated,
-                        "magic": 234000,
                         "comment": close_comment,
                         "type_time": mt5.ORDER_TIME_GTC,
                         "type_filling": int(fill_mode),
                     }
+                    request_magic = trading_validation._safe_int_ticket(getattr(position, "magic", None))
+                    if request_magic is not None:
+                        request["magic"] = request_magic
 
                     result = mt5.order_send(request)
                     if result is None:
@@ -859,9 +861,11 @@ def _cancel_pending(
                 request = {
                     "action": mt5.TRADE_ACTION_REMOVE,
                     "order": order.ticket,
-                    "magic": 234000,
                     "comment": trading_comments._normalize_trade_comment(comment, default="MCP cancel pending order"),
                 }
+                request_magic = trading_validation._safe_int_ticket(getattr(order, "magic", None))
+                if request_magic is not None:
+                    request["magic"] = request_magic
 
                 result = mt5.order_send(request)
                 if result is None:

@@ -6,6 +6,7 @@ import math
 
 from src.mtdata.core.trading import (
     _cancel_pending,
+    _close_positions,
     _modify_pending_order,
     _modify_position,
     _place_market_order,
@@ -669,6 +670,22 @@ def test_modify_pending_order_preserves_existing_magic(mock_mt5):
     assert req["magic"] == 54321
 
 
+def test_close_positions_preserves_existing_magic(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.positions_get.return_value = [
+        SimpleNamespace(ticket=123, symbol="EURUSD", volume=0.1, type=0, profit=10.0, magic=67890)
+    ]
+
+    res = _close_positions(ticket=123)
+
+    assert "error" not in res
+    req = mock_mt5.order_send.call_args[0][0]
+    assert req["magic"] == 67890
+
+
 def test_cancel_pending_counts_done_partial_as_success(mock_mt5):
     mock_mt5.TRADE_ACTION_REMOVE = 8
     mock_mt5.TRADE_RETCODE_DONE_PARTIAL = 10010
@@ -683,6 +700,17 @@ def test_cancel_pending_counts_done_partial_as_success(mock_mt5):
     res = _cancel_pending(symbol="EURUSD")
 
     assert res["cancelled_count"] == 1
+
+
+def test_cancel_pending_preserves_existing_magic(mock_mt5):
+    mock_mt5.TRADE_ACTION_REMOVE = 8
+    mock_mt5.orders_get.return_value = [SimpleNamespace(ticket=123, magic=54321)]
+
+    res = _cancel_pending(ticket=123)
+
+    assert "error" not in res
+    req = mock_mt5.order_send.call_args[0][0]
+    assert req["magic"] == 54321
 
 
 def test_place_market_order_retries_fill_modes_when_first_mode_fails(mock_mt5):
