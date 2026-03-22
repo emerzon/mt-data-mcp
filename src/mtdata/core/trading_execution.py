@@ -561,13 +561,22 @@ def _close_positions(
                 result = None
                 request = None
                 attempts: List[Dict[str, Any]] = []
-                position_type_buy = getattr(mt5, "POSITION_TYPE_BUY", getattr(mt5, "ORDER_TYPE_BUY", 0))
                 close_type_buy = getattr(mt5, "ORDER_TYPE_BUY", 0)
                 close_type_sell = getattr(mt5, "ORDER_TYPE_SELL", 1)
                 done_codes = {
                     int(getattr(mt5, "TRADE_RETCODE_DONE", 10009)),
                     int(getattr(mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010)),
                 }
+                position_side = _resolve_position_side(position, mt5)
+                if position_side is None:
+                    results.append(
+                        {
+                            "ticket": position.ticket,
+                            "error": "Unable to determine position side for close request.",
+                        }
+                    )
+                    continue
+                is_buy_position = position_side == "BUY"
 
                 for fill_mode in fill_modes:
                     tick = mt5.symbol_info_tick(position.symbol)
@@ -586,10 +595,6 @@ def _close_positions(
                         )
                         continue
 
-                    try:
-                        is_buy_position = int(getattr(position, "type", position_type_buy)) == int(position_type_buy)
-                    except Exception:
-                        is_buy_position = True
                     close_price = float(getattr(tick, "bid", 0.0) or 0.0) if is_buy_position else float(
                         getattr(tick, "ask", 0.0) or 0.0
                     )
@@ -765,7 +770,7 @@ def _close_positions(
                     pnl_price_delta = None
                     if open_price is not None and close_exec_price is not None:
                         try:
-                            if int(position.type) == int(position_type_buy):
+                            if is_buy_position:
                                 pnl_price_delta = close_exec_price - open_price
                             else:
                                 pnl_price_delta = open_price - close_exec_price

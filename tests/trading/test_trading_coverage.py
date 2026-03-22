@@ -1529,6 +1529,35 @@ class TestClosePositions:
         assert "error" in result and "tick" in result["error"].lower()
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_close_rejects_position_with_unreadable_side(self):
+        class _BrokenTypePosition:
+            ticket = 11
+            symbol = "EURUSD"
+            volume = 0.01
+            price_open = 1.1
+            sl = 1.09
+            tp = 1.12
+            profit = 50.0
+            price_current = 1.105
+            comment = ""
+            magic = 234000
+            time = 1700000000
+            time_update = 1700000000
+            swap = 0.0
+
+            @property
+            def type(self):
+                raise RuntimeError("bad type")
+
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_BrokenTypePosition()]
+        from mtdata.core.trading import _close_positions
+        result = _close_positions(ticket=11)
+        assert result["error"] == "Unable to determine position side for close request."
+        mt5.order_send.assert_not_called()
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_order_send_none(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
