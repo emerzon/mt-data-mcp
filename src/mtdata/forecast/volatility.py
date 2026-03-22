@@ -336,6 +336,7 @@ def forecast_volatility(
         tf_secs = TIMEFRAME_SECONDS.get(timeframe)
         if not tf_secs:
             return {"error": unsupported_timeframe_seconds_error(timeframe)}
+        annualization_bars_per_year = float(_bars_per_year(timeframe))
         method_l = str(method).lower().strip()
         garch_family = {'garch','egarch','gjr_garch','garch_t','egarch_t','gjr_garch_t','figarch'}
         valid_direct = {'ewma','parkinson','gk','rs','yang_zhang','rolling_std','realized_kernel','har_rv'} | garch_family
@@ -495,7 +496,7 @@ def forecast_volatility(
                         return float(np.sum(values * weights) / total)
                 return float(np.mean(values))
 
-            bpy = float(365.0 * 24.0 * 3600.0 / float(tf_secs))
+            bpy = annualization_bars_per_year
             sigma_bar_return = _aggregate_metric('sigma_bar_return')
             horizon_sigma_return = _aggregate_metric('horizon_sigma_return')
             out: Dict[str, Any] = {
@@ -700,7 +701,7 @@ def forecast_volatility(
             hsig = float(math.sqrt(np.sum(sig[:fh]**2)))
             # Current sigma (baseline)
             sbar = float(np.std(r[-100:], ddof=0) if r.size>=5 else np.std(r, ddof=0))
-            bpy = float(365.0*24.0*3600.0/float(tf_secs))
+            bpy = annualization_bars_per_year
             return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "proxy": proxy_l,
                     "horizon": int(horizon), "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
                     "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
@@ -768,7 +769,7 @@ def forecast_volatility(
         r = r[np.isfinite(r)]
         if r.size < 5:
             return {"error": "Insufficient returns to estimate volatility"}
-        bpy = float(365.0*24.0*3600.0/float(tf_secs))
+        bpy = annualization_bars_per_year
 
         if method_l == 'ewma':
             lb = int(p.get('lookback', 1500))
@@ -1132,7 +1133,7 @@ def forecast_volatility(
                 sbar = float(math.sqrt(rv_next / bars_per_day))
                 h_days = float(int(horizon)) / bars_per_day
                 hsig = float(math.sqrt(rv_next * max(h_days, 0.0)))
-                bpy = float(365.0 * 24.0 * 3600.0 / float(tf_secs))
+                bpy = annualization_bars_per_year
                 return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
                         "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
                         "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
