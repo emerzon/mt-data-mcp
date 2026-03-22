@@ -884,6 +884,40 @@ class TestFetchCandles(unittest.TestCase):
         # _apply_ta_indicators_util should have been called twice (original + retry)
         self.assertGreaterEqual(mock_ti.call_count, 2)
 
+    @patch(_MT5_CONFIG)
+    @patch(_APPLY_TI)
+    @patch(f'{_DS}.FETCH_RETRY_DELAY', 0)
+    @patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 1)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=14)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_nan_warmup_retry_metadata_stays_unapplied_when_refetch_is_empty(
+        self,
+        mock_warmup,
+        mock_ctz,
+        mock_info,
+        mock_from,
+        mock_ti,
+        mock_cfg,
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.side_effect = [_make_rates(30), []]
+
+        def add_nan_col(df, spec):
+            df['rsi_14'] = float('nan')
+            return ['rsi_14']
+
+        mock_ti.side_effect = add_nan_col
+
+        result = fetch_candles('EURUSD', limit=5, indicators=[{'name': 'rsi', 'params': [14]}])
+
+        self.assertTrue(result.get('success'))
+        warmup_retry = result['meta']['diagnostics']['query']['warmup_retry']
+        self.assertFalse(warmup_retry['applied'])
+        self.assertEqual(warmup_retry['raw_bars_fetched'], 0)
+
     # -- Simplify ------------------------------------------------------------
 
     @patch(_MT5_CONFIG)
@@ -1172,14 +1206,15 @@ class TestFetchTicks(unittest.TestCase):
 
     # -- With start/end dates ------------------------------------------------
 
-    @patch(_TICKS_FROM)
+    @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_start_only(self, mock_ctz, mock_info, mock_from):
-        mock_from.return_value = _make_ticks(10)
+    def test_start_only(self, mock_ctz, mock_info, mock_range):
+        mock_range.return_value = _make_ticks(10)
         result = fetch_ticks('EURUSD', limit=5, start='2025-01-01', output='rows')
         self.assertTrue(result.get('success'))
+        self.assertEqual(result['count'], 5)
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
@@ -1226,6 +1261,45 @@ class TestFetchTicks(unittest.TestCase):
         result = fetch_ticks('EURUSD', limit=5, output='BADMODE')
         self.assertIn('error', result)
         self.assertIn('Invalid output mode', result['error'])
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    @patch(_PARSE_START)
+    def test_start_only_returns_latest_ticks_since_start(self, mock_parse, mock_ctz, mock_info, mock_range):
+        now = datetime.now(timezone.utc)
+        mock_parse.return_value = now - timedelta(days=2)
+
+        older_ticks = _make_ticks(3, base_ts=(now - timedelta(days=1, hours=12)).timestamp())
+        newer_ticks = _make_ticks(4, base_ts=now.timestamp())
+        for i, tick in enumerate(older_ticks):
+            tick['bid'] = 1.2000 + i * 0.0001
+            tick['ask'] = tick['bid'] + 0.0002
+            tick['last'] = tick['bid'] + 0.0001
+        for i, tick in enumerate(newer_ticks):
+            tick['bid'] = 1.3000 + i * 0.0001
+            tick['ask'] = tick['bid'] + 0.0002
+            tick['last'] = tick['bid'] + 0.0001
+
+        mock_range.side_effect = [newer_ticks, older_ticks]
+
+        result = fetch_ticks('EURUSD', limit=5, start='ignored', output='rows')
+
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['count'], 5)
+        bids = [row['bid'] for row in result['data']]
+        self.assertEqual(bids, [1.2002, 1.3, 1.3001, 1.3002, 1.3003])
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_start_after_end_is_rejected(self, mock_ctz, mock_info, mock_range):
+        result = fetch_ticks('EURUSD', limit=5, start='2025-01-02', end='2025-01-01', output='rows')
+
+        self.assertEqual(result['error'], 'start must be before or equal to end.')
+        mock_range.assert_not_called()
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())

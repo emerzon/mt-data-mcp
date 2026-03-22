@@ -25,7 +25,7 @@ from ..shared.validators import invalid_timeframe_error
 
 # Imports from utils
 from ..utils.mt5 import (
-    _mt5_copy_rates_from, _mt5_copy_rates_range, _mt5_copy_ticks_from,
+    _mt5_copy_rates_from, _mt5_copy_rates_range,
     _mt5_copy_ticks_range, _mt5_epoch_to_utc, _rates_to_df, _symbol_ready_guard,
     get_symbol_info_cached, mt5
 )
@@ -187,6 +187,75 @@ def _tick_field_value(tick: Any, name: str) -> Any:
         return tick.get(name)
     except Exception:
         return None
+
+
+def _fetch_ticks_range_with_retry(
+    symbol: str,
+    from_date: datetime,
+    to_date: datetime,
+) -> Any:
+    ticks = None
+    for _ in range(FETCH_RETRY_ATTEMPTS):
+        ticks = _mt5_copy_ticks_range(symbol, from_date, to_date, mt5.COPY_TICKS_ALL)
+        if ticks is not None and len(ticks) > 0:
+            break
+        time.sleep(FETCH_RETRY_DELAY)
+    return ticks
+
+
+def _fetch_recent_ticks_backwards(
+    symbol: str,
+    *,
+    to_date: datetime,
+    limit: int,
+    min_from_date: Optional[datetime] = None,
+) -> Any:
+    """Fetch the most recent ticks in bounded backward ranges to avoid huge queries."""
+    if limit <= 0:
+        return []
+    if min_from_date is not None:
+        min_is_aware = min_from_date.tzinfo is not None and min_from_date.utcoffset() is not None
+        to_is_aware = to_date.tzinfo is not None and to_date.utcoffset() is not None
+        if min_is_aware != to_is_aware:
+            to_date = to_date.replace(tzinfo=min_from_date.tzinfo if min_is_aware else None)
+
+    chunk_days = 1
+    max_lookback_days = max(max(1, int(TICKS_LOOKBACK_DAYS)), 30)
+    cursor_end = to_date
+    lookback_days_used = 0
+    saw_response = False
+    collected: List[Any] = []
+
+    while True:
+        chunk_from = cursor_end - timedelta(days=chunk_days)
+        if min_from_date is not None and chunk_from < min_from_date:
+            chunk_from = min_from_date
+
+        ticks_candidate = _fetch_ticks_range_with_retry(symbol, chunk_from, cursor_end)
+        if ticks_candidate is not None:
+            saw_response = True
+            if len(ticks_candidate) > 0:
+                collected = list(ticks_candidate) + collected
+                if len(collected) > limit:
+                    collected = collected[-limit:]
+                if len(collected) >= limit:
+                    break
+
+        if min_from_date is not None:
+            if chunk_from <= min_from_date:
+                break
+        else:
+            lookback_days_used += chunk_days
+            if lookback_days_used >= max_lookback_days:
+                break
+
+        cursor_end = chunk_from - timedelta(microseconds=1)
+
+    if collected:
+        return collected
+    if saw_response:
+        return []
+    return None
 
 
 def _trim_df_to_target(
@@ -658,13 +727,14 @@ def fetch_candles(
                         retry=False,
                         sanity_check=False,
                     )
+                    retry_applied = rates_retry is not None and len(rates_retry) > 0
                     warmup_retry_meta = {
-                        "applied": True,
+                        "applied": bool(retry_applied),
                         "warmup_bars": int(warmup_bars_retry),
                         "raw_bars_fetched": int(len(rates_retry)) if rates_retry is not None else 0,
                     }
                     # Rebuild df and indicators with the larger window
-                    if rates_retry is not None and len(rates_retry) > 0:
+                    if retry_applied:
                         df, ti_cols = _rebuild_candle_indicator_window(
                             rates_retry,
                             use_client_tz=_use_ctz,
@@ -864,45 +934,26 @@ def fetch_ticks(
                     to_date = _parse_start_datetime(end)
                     if not to_date:
                         return {"error": "Invalid 'end' date format. Try '2025-08-29 14:30' or 'yesterday 18:00'."}
-                    ticks = None
-                    for _ in range(FETCH_RETRY_ATTEMPTS):
-                        ticks = _mt5_copy_ticks_range(symbol, from_date, to_date, mt5.COPY_TICKS_ALL)
-                        if ticks is not None and len(ticks) > 0:
-                            break
-                        time.sleep(FETCH_RETRY_DELAY)
+                    if from_date > to_date:
+                        return {"error": "start must be before or equal to end."}
+                    ticks = _fetch_ticks_range_with_retry(symbol, from_date, to_date)
                     if ticks is not None and effective_limit and len(ticks) > effective_limit:
                         ticks = ticks[-effective_limit:]
                 else:
-                    ticks = None
-                    for _ in range(FETCH_RETRY_ATTEMPTS):
-                        ticks = _mt5_copy_ticks_from(symbol, from_date, effective_limit, mt5.COPY_TICKS_ALL)
-                        if ticks is not None and len(ticks) > 0:
-                            break
-                        time.sleep(FETCH_RETRY_DELAY)
+                    ticks = _fetch_recent_ticks_backwards(
+                        symbol,
+                        to_date=datetime.now(dt_timezone.utc),
+                        limit=effective_limit,
+                        min_from_date=from_date,
+                    )
             else:
                 # Get recent ticks from current time (now)
                 to_date = datetime.now(dt_timezone.utc)
-                ticks = None
-                lookback_days = max(1, int(TICKS_LOOKBACK_DAYS))
-                max_lookback_days = max(lookback_days, 30)
-                current_lookback_days = lookback_days
-                while current_lookback_days <= max_lookback_days:
-                    from_date = to_date - timedelta(days=current_lookback_days)
-                    ticks_candidate = None
-                    for _ in range(FETCH_RETRY_ATTEMPTS):
-                        ticks_candidate = _mt5_copy_ticks_range(symbol, from_date, to_date, mt5.COPY_TICKS_ALL)
-                        if ticks_candidate is not None and len(ticks_candidate) > 0:
-                            break
-                        time.sleep(FETCH_RETRY_DELAY)
-                    if ticks_candidate is not None and len(ticks_candidate) > 0:
-                        ticks = ticks_candidate
-                        if not effective_limit or len(ticks_candidate) >= effective_limit:
-                            break
-                    if current_lookback_days == max_lookback_days:
-                        break
-                    current_lookback_days = min(max_lookback_days, current_lookback_days * 2)
-                if ticks is not None and effective_limit and len(ticks) > effective_limit:
-                    ticks = ticks[-effective_limit:]  # Get the last ticks
+                ticks = _fetch_recent_ticks_backwards(
+                    symbol,
+                    to_date=to_date,
+                    limit=effective_limit,
+                )
         # visibility handled by _symbol_ready_guard
         
         if ticks is None:
