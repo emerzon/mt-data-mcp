@@ -147,16 +147,32 @@ def _fetch_rates_with_warmup(
 
     attempts = FETCH_RETRY_ATTEMPTS if retry else 1
     rates = None
+    stale_last_t: Optional[float] = None
+    freshness_cutoff: Optional[float] = None
     for idx in range(attempts):
         rates = _fetch()
         if rates is not None and len(rates) > 0:
             if not sanity_check:
                 break
             last_t = rates[-1]["time"]
-            if last_t >= (expected_end_ts - seconds_per_bar * SANITY_BARS_TOLERANCE):
+            freshness_cutoff = expected_end_ts - seconds_per_bar * SANITY_BARS_TOLERANCE
+            if last_t >= freshness_cutoff:
                 break
+            stale_last_t = float(last_t)
         if retry and idx < (attempts - 1):
             time.sleep(FETCH_RETRY_DELAY)
+    if (
+        sanity_check
+        and stale_last_t is not None
+        and freshness_cutoff is not None
+        and rates is not None
+        and len(rates) > 0
+    ):
+        return None, (
+            f"Latest {timeframe} bar for {symbol} remained stale after {attempts} attempt(s) "
+            f"(last={_format_time_minimal(stale_last_t)}, "
+            f"freshness_cutoff={_format_time_minimal(float(freshness_cutoff))})."
+        )
     return rates, None
 
 

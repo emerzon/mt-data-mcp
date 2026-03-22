@@ -270,6 +270,20 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         self.assertIsNone(err)
         self.assertIsNotNone(result)
 
+    @patch(_RATES_FROM)
+    def test_sanity_check_rejects_stale_rates_after_retries(self, mock_from):
+        """Stale bars should fail instead of being returned after retry exhaustion."""
+        stale_rates = _make_rates(5, base_ts=60 * 60 * 5, step=60 * 60)
+        mock_from.return_value = stale_rates
+        with patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 2), patch(f'{_DS}.FETCH_RETRY_DELAY', 0):
+            result, err = _fetch_rates_with_warmup(
+                'EURUSD', 16385, 'H1', 5, 0, None, None,
+                retry=True, sanity_check=True,
+            )
+        self.assertIsNone(result)
+        self.assertIn('remained stale after 2 attempt(s)', err)
+        self.assertEqual(mock_from.call_count, 2)
+
 
 # ============================================================================
 # _build_rates_df
@@ -748,6 +762,20 @@ class TestFetchCandles(unittest.TestCase):
         result = fetch_candles('EURUSD', limit=5)
         self.assertIn('error', result)
         self.assertIn('No data', result['error'])
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_stale_rates_are_rejected(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(5, base_ts=60 * 60 * 5, step=60 * 60)
+        with patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 2), patch(f'{_DS}.FETCH_RETRY_DELAY', 0):
+            result = fetch_candles('EURUSD', limit=5)
+        self.assertIn('error', result)
+        self.assertIn('remained stale after 2 attempt(s)', result['error'])
 
     # -- Indicators ----------------------------------------------------------
 
