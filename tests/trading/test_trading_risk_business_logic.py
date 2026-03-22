@@ -295,3 +295,42 @@ def test_trade_risk_analyze_flags_invalid_tick_configuration_with_existing_stop_
     assert out["positions"][0]["risk_status"] == "undefined"
     assert out["risk_calculation_failures"][0]["ticket"] == 8
     assert out["risk_calculation_failures"][0]["error_type"] == "InvalidTickConfiguration"
+
+
+def test_trade_risk_analyze_preserves_quantified_risk_level_with_unlimited_positions() -> None:
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=100.0, currency="USD"),
+        positions_get=lambda symbol=None: [
+            SimpleNamespace(
+                ticket=9,
+                symbol="EURUSD",
+                type=0,
+                volume=1.0,
+                price_open=100.0,
+                sl=80.0,
+                tp=120.0,
+            ),
+            SimpleNamespace(
+                ticket=10,
+                symbol="EURUSD",
+                type=0,
+                volume=1.0,
+                price_open=100.0,
+                sl=0.0,
+                tp=0.0,
+            ),
+        ],
+        symbol_info=lambda symbol: _make_symbol_info(),
+    )
+
+    out = run_trade_risk_analyze(
+        TradeRiskAnalyzeRequest(),
+        gateway=gateway,
+    )
+
+    assert out["success"] is True
+    assert out["portfolio_risk"]["overall_risk_status"] == "unlimited"
+    assert out["portfolio_risk"]["quantified_risk_level"] == "high"
+    assert out["portfolio_risk"]["total_risk_pct"] == 20.0
+    assert out["portfolio_risk"]["positions_without_sl"] == 1

@@ -1059,23 +1059,26 @@ def run_trade_risk_analyze(
                 (total_notional_exposure / equity) * 100.0 if equity > 0 else 0.0
             )
 
-            overall_risk_status = "defined"
+            if total_risk_pct > 10:
+                quantified_risk_level = "high"
+            elif total_risk_pct > 5:
+                quantified_risk_level = "moderate"
+            else:
+                quantified_risk_level = "low"
+
             if positions_without_sl > 0:
                 overall_risk_status = "unlimited"
             elif risk_calculation_failures:
                 overall_risk_status = "incomplete"
-            elif total_risk_pct > 10:
-                overall_risk_status = "high"
-            elif total_risk_pct > 5:
-                overall_risk_status = "moderate"
             else:
-                overall_risk_status = "low"
+                overall_risk_status = "defined"
 
             result: Dict[str, Any] = {
                 "success": True,
                 "account": {"equity": round(equity, 2), "currency": currency},
                 "portfolio_risk": {
                     "overall_risk_status": overall_risk_status,
+                    "quantified_risk_level": quantified_risk_level,
                     "total_risk_currency": round(total_risk_currency, 2),
                     "total_risk_pct": round(total_risk_pct, 2),
                     "positions_count": len(position_risks),
