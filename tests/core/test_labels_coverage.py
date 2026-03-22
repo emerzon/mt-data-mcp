@@ -38,6 +38,11 @@ def _make_flat_df(n: int = 50, price: float = 1.1000):
     })
 
 
+def _make_down_df(n: int = 50, base: float = 1.2000, step: float = 0.0015):
+    """Down-trending OHLC DataFrame for short-side barrier tests."""
+    return _make_df(n=n, base=base, step=-abs(step))
+
+
 _LABELS_MOD = "mtdata.core.labels"
 
 
@@ -223,6 +228,23 @@ class TestLabelsTripleBarrier:
         mock_hist.return_value = _make_df(60)
         result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, output="summary")
         assert "median_holding_bars" in result["summary"]
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_short_direction_labels_falling_prices_as_take_profit(self, mock_hist, mock_den, mock_pip):
+        mock_hist.return_value = _make_down_df(60)
+        result = _get_raw_fn()(
+            "EURUSD",
+            tp_pct=0.2,
+            sl_pct=0.2,
+            horizon=3,
+            direction="short",
+            label_on="close",
+        )
+        assert result["success"] is True
+        assert result["direction"] == "short"
+        assert result["labels"][0] == 1
 
 
 @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)

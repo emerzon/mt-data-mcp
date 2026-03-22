@@ -14,6 +14,7 @@ from ..utils.barriers import (
     resolve_barrier_prices as _resolve_barrier_prices,
     build_barrier_kwargs_from as _build_barrier_kwargs_from,
     barrier_prices_are_valid as _barrier_prices_are_valid,
+    normalize_trade_direction as _normalize_trade_direction,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ def labels_triple_barrier(
     tp_pips: Optional[float] = None,
     sl_pips: Optional[float] = None,
     denoise: Optional[DenoiseSpec] = None,
+    direction: Literal["long", "short"] = "long",  # type: ignore
     label_on: Literal['close','high_low'] = 'high_low',  # type: ignore
     output: Literal['full','summary','compact','summary_only'] = 'full',  # type: ignore
     summary_only: bool = False,
@@ -45,11 +47,15 @@ def labels_triple_barrier(
       - Ticks: tp_pips/sl_pips (trade_tick_size from symbol info)
 
     label_on='high_low' considers intrabar extremes for barrier hits; 'close' uses closes only.
+    direction='long' or 'short' controls which side is treated as TP/SL.
     Outputs label: +1 (TP first), -1 (SL first), 0 (neither by horizon), and holding_bars until decision.
     """
     def _run() -> Dict[str, Any]:
         try:
             get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise).ensure_connection()
+            direction_value, direction_error = _normalize_trade_direction(direction)
+            if direction_error or direction_value is None:
+                return {"error": direction_error or "Invalid direction."}
             output_mode = str(output).strip().lower()
             if output_mode == 'summary_only':
                 output_mode = 'summary'
@@ -93,7 +99,7 @@ def labels_triple_barrier(
                 p0 = float(closes[i])
                 tp, sl = _resolve_barrier_prices(
                     price=p0,
-                    direction="long",
+                    direction=direction_value,
                     pip_size=pip_size,
                     adjust_inverted=True,
                     **barrier_kwargs,
@@ -102,7 +108,7 @@ def labels_triple_barrier(
                     return {"error": "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or tp_pips/sl_pips"}
                 if not _barrier_prices_are_valid(
                     price=p0,
-                    direction="long",
+                    direction=direction_value,
                     tp_price=tp,
                     sl_price=sl,
                 ):
@@ -116,16 +122,20 @@ def labels_triple_barrier(
                         break
                     if label_on == 'close':
                         x = closes[idx]
-                        if x >= tp and hit_tp < 0:
+                        tp_hit = x >= tp if direction_value == "long" else x <= tp
+                        sl_hit = x <= sl if direction_value == "long" else x >= sl
+                        if tp_hit and hit_tp < 0:
                             hit_tp = k
-                        if x <= sl and hit_sl < 0:
+                        if sl_hit and hit_sl < 0:
                             hit_sl = k
                     else:
                         h = highs[idx] if highs is not None else closes[idx]
                         lw = lows[idx] if lows is not None else closes[idx]
-                        if h >= tp and hit_tp < 0:
+                        tp_hit = h >= tp if direction_value == "long" else lw <= tp
+                        sl_hit = lw <= sl if direction_value == "long" else h >= sl
+                        if tp_hit and hit_tp < 0:
                             hit_tp = k
-                        if lw <= sl and hit_sl < 0:
+                        if sl_hit and hit_sl < 0:
                             hit_sl = k
                     if hit_tp > 0 or hit_sl > 0:
                         break
@@ -143,6 +153,7 @@ def labels_triple_barrier(
                 "success": True,
                 "symbol": symbol,
                 "timeframe": timeframe,
+                "direction": direction_value,
                 "horizon": int(horizon),
                 "entries": t_entry,
                 "labels": labels,
@@ -161,7 +172,14 @@ def labels_triple_barrier(
                 med_hold = float(_np.median(_np.array(hold_tail, dtype=float))) if hold_tail else float('nan')
                 summary = {"lookback": int(n), "counts": counts, "median_holding_bars": med_hold}
                 if output_mode == 'summary':
-                    return {"success": True, "symbol": symbol, "timeframe": timeframe, "horizon": int(horizon), "summary": summary}
+                    return {
+                        "success": True,
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "direction": direction_value,
+                        "horizon": int(horizon),
+                        "summary": summary,
+                    }
                 payload["summary"] = summary
                 if n > 0:
                     payload["entries"] = t_entry[-n:]
@@ -180,6 +198,7 @@ def labels_triple_barrier(
         operation="labels_triple_barrier",
         symbol=symbol,
         timeframe=timeframe,
+        direction=direction,
         horizon=horizon,
         output=output,
         func=_run,
