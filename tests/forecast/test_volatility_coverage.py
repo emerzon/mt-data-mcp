@@ -529,6 +529,7 @@ class TestForecastVolatilityEWMA:
             assert result.get("success") is True
             assert result["params_used"]["lambda_source"] == "halflife"
             assert result["params_used"]["halflife"] == pytest.approx(30.0)
+            assert result["params_used"]["lambda_"] == pytest.approx(0.5 ** (1.0 / 30.0))
             assert "halflife" in result["params_explained"]
 
     def test_ewma_horizon_gt1(self):

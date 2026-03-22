@@ -150,8 +150,8 @@ class TestPointLineDistance:
         assert abs(d - 2.0) < 1e-6
 
     def test_vertical(self):
-        d = _point_line_distance(5.0, 10.0, 5.0, 0.0, 5.0, 20.0)
-        assert isinstance(d, float)
+        d = _point_line_distance(7.0, 10.0, 5.0, 0.0, 5.0, 20.0)
+        assert abs(d - 2.0) < 1e-6
 
 
 class TestRdpKeepMask:

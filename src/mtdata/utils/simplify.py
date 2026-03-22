@@ -190,7 +190,7 @@ def _point_line_distance(px: float, py: float, x1: float, y1: float, x2: float, 
     """Vertical distance from P to line y(x) through (x1,y1)-(x2,y2)."""
     dx = x2 - x1
     if dx == 0.0:
-        return abs(py - (y1 + y2) / 2.0)
+        return abs(px - x1)
     m = (y2 - y1) / dx
     y_on_line = y1 + m * (px - x1)
     return abs(py - y_on_line)

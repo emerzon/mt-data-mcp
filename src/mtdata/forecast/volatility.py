@@ -780,7 +780,7 @@ def forecast_volatility(
             if halflife is not None:
                 try:
                     halflife_used = float(halflife)
-                    lam = 1.0 - math.log(2.0) / halflife_used
+                    lam = math.exp(-math.log(2.0) / halflife_used)
                     lambda_source = "halflife"
                 except Exception:
                     lam = 0.94
