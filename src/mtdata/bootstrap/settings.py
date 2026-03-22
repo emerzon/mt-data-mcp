@@ -12,6 +12,7 @@ except Exception:
 
 _WARNED_SERVER_TZ = False
 _ENV_LOADED = False
+_LOGGER = logging.getLogger(__name__)
 
 
 def _suppress_noisy_third_party_logs() -> None:
@@ -54,6 +55,35 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return int(default)
+    text = str(raw).strip()
+    if not text:
+        _LOGGER.warning("%s is blank; using default %s.", name, default)
+        return int(default)
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        _LOGGER.warning("Invalid %s=%r; using default %s.", name, raw, default)
+        return int(default)
+
+
+def _env_optional_int(name: str) -> Optional[int]:
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        _LOGGER.warning("Invalid %s=%r; ignoring configured login.", name, raw)
+        return None
+
+
 def load_environment(*, force: bool = False) -> bool:
     """Load environment variables from `.env` once for application entrypoints."""
     global _ENV_LOADED
@@ -77,8 +107,8 @@ def load_environment(*, force: bool = False) -> bool:
     if config_obj is not None:
         try:
             config_obj.reload_from_env(warn_if_timezone_missing=True)
-        except Exception:
-            pass
+        except Exception as exc:
+            _LOGGER.warning("Failed to reload MT5 configuration from environment: %s", exc)
     return loaded
 
 class MT5Config:
@@ -86,6 +116,7 @@ class MT5Config:
 
     def __init__(self, *, warn_if_timezone_missing: bool = True):
         self.login: Optional[str] = None
+        self._login_value: Optional[int] = None
         self.password: Optional[str] = None
         self.server: Optional[str] = None
         self.timeout = 30
@@ -98,20 +129,22 @@ class MT5Config:
 
     def reload_from_env(self, *, warn_if_timezone_missing: bool = True) -> None:
         self.login = os.getenv("MT5_LOGIN")
+        self._login_value = _env_optional_int("MT5_LOGIN")
         self.password = os.getenv("MT5_PASSWORD")
         self.server = os.getenv("MT5_SERVER")
-        self.timeout = int(os.getenv("MT5_TIMEOUT", "30"))
+        self.timeout = _env_int("MT5_TIMEOUT", 30)
         self.server_tz_name = os.getenv("MT5_SERVER_TZ")  # e.g., "Europe/Lisbon"
         self.client_tz_name = os.getenv("CLIENT_TZ") or os.getenv("MT5_CLIENT_TZ")  # e.g., "America/New_York"
-        try:
-            self.time_offset_minutes = int(os.getenv("MT5_TIME_OFFSET_MINUTES", "0"))
-        except Exception:
-            self.time_offset_minutes = 0
+        self.time_offset_minutes = _env_int("MT5_TIME_OFFSET_MINUTES", 0)
         self.broker_time_check_enabled = _env_bool("MTDATA_BROKER_TIME_CHECK", default=False)
-        try:
-            self.broker_time_check_ttl_seconds = max(0, int(os.getenv("MTDATA_BROKER_TIME_CHECK_TTL_SECONDS", "60")))
-        except Exception:
-            self.broker_time_check_ttl_seconds = 60
+        ttl_raw = os.getenv("MTDATA_BROKER_TIME_CHECK_TTL_SECONDS")
+        ttl_seconds = _env_int("MTDATA_BROKER_TIME_CHECK_TTL_SECONDS", 60)
+        if ttl_seconds < 0:
+            _LOGGER.warning(
+                "MTDATA_BROKER_TIME_CHECK_TTL_SECONDS=%r is negative; clamping to 0.",
+                ttl_raw,
+            )
+        self.broker_time_check_ttl_seconds = max(0, ttl_seconds)
         if warn_if_timezone_missing:
             self._warn_if_timezone_missing()
 
@@ -131,7 +164,7 @@ class MT5Config:
 
     def get_login(self) -> Optional[int]:
         """Get login as integer if available"""
-        return int(self.login) if self.login else None
+        return self._login_value
     
     def get_password(self) -> Optional[str]:
         """Get password"""
@@ -143,7 +176,7 @@ class MT5Config:
     
     def has_credentials(self) -> bool:
         """Check if all credentials are available"""
-        return all([self.login, self.password, self.server])
+        return self.get_login() is not None and bool(self.password) and bool(self.server)
 
     def get_time_offset_seconds(self) -> int:
         """Return configured MT5 server time offset relative to UTC in seconds.

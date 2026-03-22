@@ -1,4 +1,5 @@
 from datetime import timedelta, tzinfo
+from types import SimpleNamespace
 from mtdata.core import config as cfg
 
 
@@ -35,6 +36,21 @@ def test_mt5_config_credentials_and_login_parsing(monkeypatch):
     assert conf.get_password() == "secret"
     assert conf.get_server() == "Demo-Server"
     assert conf.has_credentials() is True
+
+
+def test_mt5_config_ignores_invalid_login_and_warns(monkeypatch, caplog):
+    monkeypatch.setenv("MT5_LOGIN", "not-a-number")
+    monkeypatch.setenv("MT5_PASSWORD", "secret")
+    monkeypatch.setenv("MT5_SERVER", "Demo-Server")
+    monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+
+    with caplog.at_level("WARNING"):
+        conf = cfg.MT5Config()
+
+    assert conf.get_login() is None
+    assert conf.has_credentials() is False
+    assert any("Invalid MT5_LOGIN" in record.message for record in caplog.records)
 
 
 def test_mt5_config_warns_once_when_timezone_info_missing(monkeypatch, caplog):
@@ -87,6 +103,18 @@ def test_mt5_config_handles_invalid_offset_and_bad_timezone(monkeypatch):
     assert conf.get_client_tz() is None
 
 
+def test_mt5_config_handles_invalid_timeout_with_warning(monkeypatch, caplog):
+    monkeypatch.setenv("MT5_TIMEOUT", "not-a-number")
+    monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+
+    with caplog.at_level("WARNING"):
+        conf = cfg.MT5Config()
+
+    assert conf.timeout == 30
+    assert any("Invalid MT5_TIMEOUT" in record.message for record in caplog.records)
+
+
 def test_mt5_config_reads_broker_time_check_settings(monkeypatch):
     monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
     monkeypatch.setenv("MTDATA_BROKER_TIME_CHECK", "true")
@@ -109,3 +137,20 @@ def test_mt5_config_handles_invalid_broker_time_check_ttl(monkeypatch):
 
     assert conf.broker_time_check_enabled is False
     assert conf.broker_time_check_ttl_seconds == 60
+
+
+def test_load_environment_logs_reload_failures(monkeypatch, caplog):
+    monkeypatch.setattr(cfg, "_ENV_LOADED", False)
+    monkeypatch.setattr(
+        cfg,
+        "mt5_config",
+        SimpleNamespace(reload_from_env=lambda **kwargs: (_ for _ in ()).throw(RuntimeError("reload exploded"))),
+    )
+
+    with caplog.at_level("WARNING"):
+        cfg.load_environment(force=True)
+
+    assert any(
+        "Failed to reload MT5 configuration from environment: reload exploded" in record.message
+        for record in caplog.records
+    )
