@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import math
+import re
 import statistics
 from typing import Any, Callable, Dict, List, Optional
 
@@ -27,6 +28,15 @@ _MARKET_BOOTSTRAP_MAX_SECONDS = 14400.0
 _MARKET_ESTIMATED_SECONDS_PER_TICK = 2.0
 _MARKET_BUFFER_EXTRA_TICKS = 32
 _ACCOUNT_HISTORY_SEED_LOOKBACK_SECONDS = 5.0
+
+
+def _wait_event_connection_error(gateway: Any) -> Optional[Dict[str, Any]]:
+    try:
+        if hasattr(gateway, "ensure_connection"):
+            gateway.ensure_connection()
+    except Exception as exc:
+        return {"error": f"MT5 connection lost while waiting for events: {exc}"}
+    return None
 
 
 def run_wait_event_loop(
@@ -60,6 +70,9 @@ def run_wait_event_loop(
             sleep_impl=sleep_impl,
             now_utc=started_at_utc,
         )
+    connection_error = _wait_event_connection_error(gateway)
+    if connection_error is not None:
+        return connection_error
 
     history_state = _build_account_history_state(
         gateway=gateway,
@@ -105,6 +118,9 @@ def run_wait_event_loop(
     while True:
         polls += 1
         observed_at_utc = _normalize_utc_datetime(now_utc_impl())
+        connection_error = _wait_event_connection_error(gateway)
+        if connection_error is not None:
+            return connection_error
         snapshot = _collect_snapshot(
             gateway=gateway,
             watch_for=watch_for,
@@ -574,10 +590,16 @@ def _collect_snapshot(
     }
 
     if any(item["type"] == "order_created" for item in watch_for):
-        snapshot["orders"] = _coerce_rows(gateway.orders_get())
+        try:
+            snapshot["orders"] = _coerce_rows(gateway.orders_get())
+        except Exception as exc:
+            return {"error": f"Failed to fetch open orders: {exc}"}
 
     if any(item["type"] in {"position_opened", "position_closed"} for item in watch_for):
-        snapshot["positions"] = _coerce_rows(gateway.positions_get())
+        try:
+            snapshot["positions"] = _coerce_rows(gateway.positions_get())
+        except Exception as exc:
+            return {"error": f"Failed to fetch open positions: {exc}"}
 
     if _watchers_need_history_deals(watch_for):
         rows = _collect_new_account_history_rows(
@@ -793,7 +815,11 @@ def _evaluate_watch_events(
                 if ticket is not None and ticket in current_tickets:
                     continue
                 if _matches_account_filters(row, spec, gateway=gateway):
-                    return _format_account_match(event_type, row, gateway=gateway)
+                    return _format_inferred_position_closed(
+                        row,
+                        gateway=gateway,
+                        observed_at_utc=snapshot.get("observed_at_utc", datetime.now(timezone.utc)),
+                    )
         elif event_type == "tp_hit":
             for row in snapshot.get("history_deals", []):
                 if not _is_deal_entry_out(row, gateway=gateway):
@@ -1167,6 +1193,55 @@ def _format_account_match(event_type: str, row: Any, *, gateway: Any) -> Dict[st
     }
 
 
+def _format_inferred_position_closed(row: Any, *, gateway: Any, observed_at_utc: datetime) -> Dict[str, Any]:
+    return {
+        "type": "position_closed",
+        "observed": {
+            "ticket": None,
+            "order_ticket": _first_int(
+                _row_int(row, "order"),
+                _row_int(row, "order_ticket"),
+            ),
+            "position_ticket": _first_int(
+                _row_int(row, "position_id"),
+                _row_int(row, "position"),
+                _row_int(row, "position_by_id"),
+                _row_int(row, "ticket"),
+            ),
+            "symbol": _row_value(row, "symbol"),
+            "magic": _row_int(row, "magic"),
+            "side": _row_side(row, gateway=gateway),
+            "reason": None,
+            "comment": None,
+            "time_utc": _normalize_utc_datetime(observed_at_utc).isoformat(),
+            "inferred": True,
+            "source": "position_disappeared",
+        },
+    }
+
+
+def _matches_exit_trigger_text(text: str, *, trigger: str) -> bool:
+    text_norm = str(text or "").strip().lower()
+    if not text_norm:
+        return False
+    if trigger == "tp":
+        phrases = ("take profit", "tp hit", "hit tp", "closed by tp", "tp")
+    elif trigger == "sl":
+        phrases = ("stop loss", "sl hit", "hit sl", "closed by sl", "sl")
+    else:
+        return False
+    for phrase in phrases:
+        if " " in phrase:
+            if re.search(rf"\b{re.escape(phrase)}\b", text_norm):
+                return True
+            continue
+        if text_norm == phrase:
+            return True
+        if re.search(rf"\b(?:hit|closed by)\s+{re.escape(phrase)}\b", text_norm):
+            return True
+    return False
+
+
 def _is_deal_entry_in(row: Any, *, gateway: Any) -> bool:
     return _row_enum_matches(
         row,
@@ -1202,7 +1277,7 @@ def _is_exit_trigger(row: Any, *, gateway: Any, trigger: str) -> bool:
     comment = str(_row_value(row, "comment") or "").lower()
     reason = str(_row_value(row, "reason") or "").lower()
     if trigger_txt == "tp":
-        if "tp" in comment or "take profit" in comment or "tp" in reason or "take profit" in reason:
+        if _matches_exit_trigger_text(comment, trigger="tp") or _matches_exit_trigger_text(reason, trigger="tp"):
             return True
         return _row_enum_matches(
             row,
@@ -1212,7 +1287,7 @@ def _is_exit_trigger(row: Any, *, gateway: Any, trigger: str) -> bool:
             gateway=gateway,
         )
     if trigger_txt == "sl":
-        if "sl" in comment or "stop loss" in comment or "sl" in reason or "stop loss" in reason:
+        if _matches_exit_trigger_text(comment, trigger="sl") or _matches_exit_trigger_text(reason, trigger="sl"):
             return True
         return _row_enum_matches(
             row,

@@ -112,6 +112,17 @@ class ReplayHistoryGateway(SequenceGateway):
         return list(self.replay_deals)
 
 
+class DisconnectingGateway(SequenceGateway):
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.ensure_calls = 0
+
+    def ensure_connection(self) -> None:
+        self.ensure_calls += 1
+        if self.ensure_calls >= 2:
+            raise RuntimeError("lost connection")
+
+
 def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     monkeypatch.setattr(
         core_data,
@@ -647,4 +658,45 @@ def test_run_wait_event_matches_position_closed_when_position_disappears() -> No
 
     assert result["status"] == "matched"
     assert result["matched_event"]["type"] == "position_closed"
-    assert result["matched_event"]["observed"]["ticket"] == 9002
+    assert result["matched_event"]["observed"]["ticket"] is None
+    assert result["matched_event"]["observed"]["position_ticket"] == 9002
+    assert result["matched_event"]["observed"]["inferred"] is True
+    assert result["matched_event"]["observed"]["source"] == "position_disappeared"
+
+
+def test_exit_trigger_text_matching_ignores_non_hit_mentions() -> None:
+    gateway = SequenceGateway()
+    row = {"comment": "stop loss hit, no tp set", "reason": "manual"}
+
+    assert wait_events_mod._is_exit_trigger(row, gateway=gateway, trigger="tp") is False
+    assert wait_events_mod._is_exit_trigger(row, gateway=gateway, trigger="sl") is True
+
+
+def test_exit_trigger_text_matching_accepts_explicit_tp_markers() -> None:
+    gateway = SequenceGateway()
+    row = {"comment": "tp", "reason": ""}
+
+    assert wait_events_mod._is_exit_trigger(row, gateway=gateway, trigger="tp") is True
+
+
+def test_run_wait_event_returns_connection_error_when_gateway_disconnects_mid_loop() -> None:
+    gateway = DisconnectingGateway(
+        positions_seq=[[]],
+        history_deals_seq=[[]],
+    )
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[{"type": "position_closed", "symbol": "BTCUSD"}],
+            poll_interval_seconds=1.0,
+            max_wait_seconds=5.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert "error" in result
+    assert "lost connection" in result["error"]
