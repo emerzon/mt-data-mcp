@@ -424,6 +424,30 @@ class TestRegimeDetectBOCPD:
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH)
+    def test_bocpd_return_target_keeps_times_aligned_after_nan_filter(self, mock_fetch, mock_denoise, mock_fmt):
+        df = _make_df(12)
+        df.loc[3, "close"] = np.nan
+        mock_fetch.return_value = df
+
+        def _fake_bocpd(x, **_kwargs):
+            return {"cp_prob": np.zeros(len(x))}
+
+        with patch("mtdata.utils.regime.bocpd_gaussian", side_effect=_fake_bocpd):
+            fn = _get_regime_detect()
+            res = fn("EURUSD", limit=12, method="bocpd", target="return", output="full", include_series=True)
+
+        assert res.get("success") is True
+        expected_times = [
+            _time_fmt_stub(ts)
+            for ts in df["time"].to_numpy()[1:][
+                np.isfinite(np.diff(np.log(np.maximum(df["close"].to_numpy(), 1e-12))))
+            ]
+        ]
+        assert res["series"]["times"] == expected_times
+
+    @patch(_FMT, side_effect=_time_fmt_stub)
+    @patch(_DENOISE, return_value="close")
+    @patch(_FETCH)
     def test_bocpd_include_series(self, mock_fetch, mock_denoise, mock_fmt):
         df = _make_df(50)
         mock_fetch.return_value = df
@@ -672,6 +696,25 @@ class TestRegimeDetectHMM:
             fn = _get_regime_detect()
             res = fn("EURUSD", limit=50, method="hmm", output="full")
         assert isinstance(res, dict)
+
+    @patch(_FMT, side_effect=_time_fmt_stub)
+    @patch(_DENOISE, return_value="close")
+    @patch(_FETCH)
+    def test_hmm_pads_degenerate_gamma_to_requested_state_count(self, mock_fetch, mock_denoise, mock_fmt):
+        df = _make_df(50)
+        mock_fetch.return_value = df
+        gamma = np.ones((49, 1), dtype=float)
+        w = np.array([1.0])
+        mu = np.array([0.0])
+        sigma = np.array([0.001])
+        with patch("mtdata.forecast.monte_carlo.fit_gaussian_mixture_1d",
+                    return_value=(w, mu, sigma, gamma, None), create=True):
+            fn = _get_regime_detect()
+            res = fn("EURUSD", limit=50, method="hmm", params={"n_states": 3}, output="full", include_series=True)
+        assert isinstance(res, dict)
+        assert len(res["series"]["state_probabilities"][0]) == 3
+        assert res["series"]["state_probabilities"][0] == [1.0, 0.0, 0.0]
+        assert res["params_used"]["fitted_n_states"] == 1
 
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")

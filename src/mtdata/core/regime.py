@@ -175,6 +175,22 @@ def _smooth_short_state_runs(
     }
 
 
+def _normalize_state_probability_matrix(
+    probs: Any,
+    *,
+    rows: int,
+    requested_states: int,
+) -> np.ndarray:
+    """Return a rectangular state-probability matrix for payload serialization."""
+    out = np.zeros((max(0, int(rows)), max(1, int(requested_states))), dtype=float)
+    if not isinstance(probs, np.ndarray) or probs.ndim != 2 or probs.shape[0] != rows:
+        return out
+
+    cols = min(out.shape[1], probs.shape[1])
+    out[:, :cols] = np.asarray(probs[:, :cols], dtype=float)
+    return out
+
+
 def _is_probably_crypto_symbol(symbol: Any) -> bool:
     s = str(symbol or "").upper().strip()
     if not s:
@@ -822,12 +838,14 @@ def regime_detect(
         calibration_returns = calibration_returns[np.isfinite(calibration_returns)]
         if target == 'return':
             with np.errstate(divide='ignore', invalid='ignore'):
-                x = np.diff(np.log(np.maximum(y, 1e-12)))
-            x = x[np.isfinite(x)]
-            t = times[1: 1 + x.size]
+                x_raw = np.diff(np.log(np.maximum(y, 1e-12)))
+            return_mask = np.isfinite(x_raw)
+            x = x_raw[return_mask]
+            t = times[1:][return_mask]
         else:
-            x = y[np.isfinite(y)]
-            t = times[: x.size]
+            price_mask = np.isfinite(y)
+            x = y[price_mask]
+            t = times[price_mask]
 
         if x.size < 2:
             return _finish({"error": "Insufficient finite observations after filter"})
@@ -1119,8 +1137,13 @@ def regime_detect(
                 return _finish({"error": f"HMM-lite import error: {ex}"})
             n_states = int(p.get('n_states', 2))
             w, mu, sigma, gamma, _ = fit_gaussian_mixture_1d(x, n_states=max(2, n_states))
-            state = np.argmax(gamma, axis=1) if gamma.ndim == 2 and gamma.shape[0] == x.size else np.zeros(x.size, dtype=int)
-            gamma_smoothed: Optional[np.ndarray] = gamma if isinstance(gamma, np.ndarray) else None
+            gamma_matrix = _normalize_state_probability_matrix(
+                gamma,
+                rows=x.size,
+                requested_states=n_states,
+            )
+            state = np.argmax(gamma_matrix, axis=1) if gamma_matrix.size else np.zeros(x.size, dtype=int)
+            gamma_smoothed: Optional[np.ndarray] = gamma_matrix
             state, gamma_smoothed, smoothing_meta = _smooth_short_state_runs(
                 state=np.asarray(state, dtype=int),
                 probs=gamma_smoothed,
@@ -1129,7 +1152,7 @@ def regime_detect(
             gamma_for_payload = (
                 gamma_smoothed
                 if isinstance(gamma_smoothed, np.ndarray)
-                else (gamma if isinstance(gamma, np.ndarray) else None)
+                else gamma_matrix
             )
             payload = {
                 "success": True,
@@ -1141,15 +1164,12 @@ def regime_detect(
                 "state": [int(s) for s in state.tolist()],
                 "state_probabilities": [
                     [float(v) for v in row]
-                    for row in (
-                        gamma_for_payload.tolist()
-                        if isinstance(gamma_for_payload, np.ndarray) and gamma_for_payload.ndim == 2
-                        else np.zeros((x.size, n_states)).tolist()
-                    )
+                    for row in gamma_for_payload.tolist()
                 ],
                 "regime_params": {"weights": [float(v) for v in w.tolist()], "mu": [float(v) for v in mu.tolist()], "sigma": [float(v) for v in sigma.tolist()]},
                 "params_used": {
                     "n_states": int(n_states),
+                    "fitted_n_states": int(len(mu)),
                     "min_regime_bars": int(min_regime_bars_val),
                     "smoothing_applied": bool(smoothing_meta.get("smoothing_applied", False)),
                     "transitions_before": int(smoothing_meta.get("transitions_before", 0)),

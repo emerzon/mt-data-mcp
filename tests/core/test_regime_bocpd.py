@@ -102,3 +102,10 @@ class TestBocpdGaussian:
         x = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         result = bocpd_gaussian(x, hazard_lambda=0)
         assert result["cp_prob"].shape == (5,)
+
+    def test_hazard_lambda_one_stays_finite(self):
+        x = np.array([1.0, 1.1, 1.2, 1.3, 1.4])
+        result = bocpd_gaussian(x, hazard_lambda=1)
+        assert result["cp_prob"].shape == (5,)
+        assert np.all(np.isfinite(result["cp_prob"]))
+        assert np.all(np.isfinite(result["run_length_map"]))

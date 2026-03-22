@@ -74,6 +74,7 @@ def bocpd_gaussian(
         return {"cp_prob": np.array([]), "run_length_map": np.array([]), "log_joint": np.zeros((0, 0))}
 
     H = 1.0 / float(max(1, hazard_lambda))
+    H = min(max(H, 1e-12), 1.0 - 1e-12)
     R = int(max(10, min(max_run_length, T)))
 
     # Posterior parameters per run-length
