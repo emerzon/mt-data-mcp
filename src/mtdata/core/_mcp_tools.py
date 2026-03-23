@@ -318,6 +318,17 @@ def _signature_default_for_model_field(field: Any) -> Any:
     return default
 
 
+def _normalize_exposed_annotation(annotation: Any) -> Any:
+    """Keep rich typing metadata for FastMCP schema generation when possible."""
+    if annotation is inspect._empty:
+        return object
+    # Unresolved string annotations are safer to downcast than to expose
+    # directly to FastMCP/Pydantic.
+    if isinstance(annotation, str):
+        return object
+    return annotation
+
+
 def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
     if _ORIG_TOOL_DECORATOR is None:
         def _noop(func):
@@ -336,24 +347,22 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
         if flattened_params:
             cleaned = {
                 param.name: (
-                    param.annotation
-                    if param.annotation is not inspect._empty
-                    else object
+                    _normalize_exposed_annotation(param.annotation)
                 )
                 for param in flattened_params
             }
             ann = _get_runtime_annotations(func)
             if "return" in ann:
-                cleaned["return"] = ann["return"] if ann["return"] is not inspect._empty else object
+                cleaned["return"] = _normalize_exposed_annotation(ann["return"])
             return cleaned
         cleaned = {}
         ann = _get_runtime_annotations(func)
         sig = _get_runtime_signature(func)
         for name, param in sig.parameters.items():
             value = ann.get(name, param.annotation)
-            cleaned[name] = value if isinstance(value, type) else object
+            cleaned[name] = _normalize_exposed_annotation(value)
         if "return" in ann:
-            cleaned["return"] = ann["return"] if isinstance(ann["return"], type) else object
+            cleaned["return"] = _normalize_exposed_annotation(ann["return"])
         return cleaned
 
     def _wrap(func):

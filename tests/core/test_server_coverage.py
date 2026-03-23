@@ -1,8 +1,10 @@
 """Tests for mtdata.core.server — server configuration, coercion helpers, tool decorator."""
 
+import asyncio
 import inspect
 import math
 import os
+import sys
 import types
 from typing import Optional, Union
 from unittest.mock import MagicMock, patch, PropertyMock
@@ -804,6 +806,44 @@ class TestRecordingToolDecorator:
             assert nested_result["symbol"] == "ETHUSD"
         finally:
             srv._ORIG_TOOL_DECORATOR = original
+
+
+class TestMcpToolSchemas:
+
+    def test_regime_detect_list_tools_schema_preserves_direct_annotations(self):
+        from mcp import ClientSession
+        from mcp.client.stdio import StdioServerParameters, stdio_client
+
+        async def _run() -> dict:
+            server = StdioServerParameters(
+                command=sys.executable,
+                args=["-c", "from mtdata.core.server import main_stdio; main_stdio()"],
+            )
+            async with stdio_client(server) as streams:
+                async with ClientSession(*streams) as session:
+                    await session.initialize()
+                    tools = await session.list_tools()
+                    items = getattr(tools, "tools", tools)
+                    tool = next(t for t in items if getattr(t, "name", None) == "regime_detect")
+                    return getattr(tool, "inputSchema", {}) or {}
+
+        schema = asyncio.run(_run())
+        props = schema.get("properties") or {}
+
+        assert props["timeframe"]["type"] == "string"
+        assert "enum" in props["timeframe"]
+        assert props["method"]["type"] == "string"
+        assert props["method"]["enum"] == ["bocpd", "hmm", "ms_ar"]
+        assert props["target"]["type"] == "string"
+        assert props["target"]["enum"] == ["return", "price"]
+        assert props["output"]["type"] == "string"
+        assert props["output"]["enum"] == ["full", "summary", "compact"]
+
+        params_schema = props["params"]
+        assert (
+            params_schema.get("type") == "object"
+            or any(option.get("type") == "object" for option in params_schema.get("anyOf", []))
+        )
 
 
 # ── _disconnect_mt5 ──────────────────────────────────────────────────────
