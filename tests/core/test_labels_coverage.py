@@ -113,6 +113,37 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_invalid_entry_price_is_skipped_instead_of_aborting(self, mock_hist, mock_den, mock_pip):
+        df = _make_df(12)
+        df.loc[0, "close"] = np.nan
+        mock_hist.return_value = df
+
+        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=3, label_on="close")
+
+        assert result["success"] is True
+        assert result["skipped_entries"] == 1
+        assert len(result["labels"]) == 8
+        assert len(result["entries"]) == 8
+        assert any("Skipped 1 entries" in msg for msg in result["warnings"])
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_summary_output_reports_skipped_invalid_entries(self, mock_hist, mock_den, mock_pip):
+        df = _make_df(12)
+        df.loc[0, "close"] = np.nan
+        mock_hist.return_value = df
+
+        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=3, output="summary")
+
+        assert result["success"] is True
+        assert result["skipped_entries"] == 1
+        assert "summary" in result
+        assert any("Skipped 1 entries" in msg for msg in result["warnings"])
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
     def test_label_on_close(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
         result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=12, label_on="close")

@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional, Literal, List
 import logging
+import math
 
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
@@ -94,9 +95,40 @@ def labels_triple_barrier(
                     "sl_pips": sl_pips,
                 }
             )
+            max_entry_index = N - int(horizon)
+            sample_entry_price = next(
+                (
+                    float(closes[idx])
+                    for idx in range(max(0, max_entry_index))
+                    if math.isfinite(float(closes[idx])) and float(closes[idx]) > 0.0
+                ),
+                None,
+            )
+            if sample_entry_price is None:
+                return {"error": "No valid positive entry prices available for labeling."}
+            sample_tp, sample_sl = _resolve_barrier_prices(
+                price=sample_entry_price,
+                direction=direction_value,
+                pip_size=pip_size,
+                adjust_inverted=True,
+                **barrier_kwargs,
+            )
+            if sample_tp is None or sample_sl is None:
+                return {"error": "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or tp_pips/sl_pips"}
+            if not _barrier_prices_are_valid(
+                price=sample_entry_price,
+                direction=direction_value,
+                tp_price=sample_tp,
+                sl_price=sample_sl,
+            ):
+                return {"error": "Resolved TP/SL barriers are invalid for the entry price."}
+            skipped_entries = 0
 
-            for i in range(0, N - int(horizon)):
+            for i in range(0, max_entry_index):
                 p0 = float(closes[i])
+                if not math.isfinite(p0) or p0 <= 0.0:
+                    skipped_entries += 1
+                    continue
                 tp, sl = _resolve_barrier_prices(
                     price=p0,
                     direction=direction_value,
@@ -105,14 +137,16 @@ def labels_triple_barrier(
                     **barrier_kwargs,
                 )
                 if tp is None or sl is None:
-                    return {"error": "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or tp_pips/sl_pips"}
+                    skipped_entries += 1
+                    continue
                 if not _barrier_prices_are_valid(
                     price=p0,
                     direction=direction_value,
                     tp_price=tp,
                     sl_price=sl,
                 ):
-                    return {"error": "Resolved TP/SL barriers are invalid for the entry price."}
+                    skipped_entries += 1
+                    continue
 
                 hit_tp = -1
                 hit_sl = -1
@@ -161,6 +195,11 @@ def labels_triple_barrier(
                 "tp_time": tp_times,
                 "sl_time": sl_times,
             }
+            if skipped_entries > 0:
+                payload["warnings"] = [
+                    f"Skipped {int(skipped_entries)} entries with invalid or non-positive entry prices."
+                ]
+                payload["skipped_entries"] = int(skipped_entries)
             if output_mode in ('summary','compact'):
                 import numpy as _np
                 n = min(int(lookback), len(labels))
@@ -172,7 +211,7 @@ def labels_triple_barrier(
                 med_hold = float(_np.median(_np.array(hold_tail, dtype=float))) if hold_tail else float('nan')
                 summary = {"lookback": int(n), "counts": counts, "median_holding_bars": med_hold}
                 if output_mode == 'summary':
-                    return {
+                    out = {
                         "success": True,
                         "symbol": symbol,
                         "timeframe": timeframe,
@@ -180,6 +219,12 @@ def labels_triple_barrier(
                         "horizon": int(horizon),
                         "summary": summary,
                     }
+                    if skipped_entries > 0:
+                        out["warnings"] = [
+                            f"Skipped {int(skipped_entries)} entries with invalid or non-positive entry prices."
+                        ]
+                        out["skipped_entries"] = int(skipped_entries)
+                    return out
                 payload["summary"] = summary
                 if n > 0:
                     payload["entries"] = t_entry[-n:]
