@@ -71,6 +71,29 @@ def _safe_log(x: np.ndarray, eps: float = 1e-12) -> np.ndarray:
     return np.log(np.clip(x, eps, None))
 
 
+def _gaussian_mixture_init_kwargs(x: np.ndarray, n_states: int) -> Dict[str, np.ndarray | str]:
+    """Build deterministic non-KMeans initialization for 1D GaussianMixture.
+
+    The default sklearn initialization path runs a KMeans seed step which can
+    block indefinitely in stdio/MCP worker-thread execution on Windows when
+    joblib probes CPU topology. A simple percentile-based seed avoids that
+    branch while keeping the fitted model stable and deterministic.
+    """
+    x = np.asarray(x, dtype=float).reshape(-1)
+    K = max(1, int(n_states))
+    quantiles = np.linspace(0.0, 1.0, K + 2, dtype=float)[1:-1]
+    means = np.quantile(x, quantiles).reshape(K, 1)
+    variance = float(np.var(x))
+    if not np.isfinite(variance) or variance <= 0.0:
+        variance = 1.0
+    return {
+        "init_params": "random",
+        "weights_init": np.full(K, 1.0 / float(K), dtype=float),
+        "means_init": means,
+        "precisions_init": np.full((K, 1), 1.0 / variance, dtype=float),
+    }
+
+
 def fit_gaussian_mixture_1d(
     x: np.ndarray, n_states: int = 2, max_iter: int = 50, tol: float = 1e-6, seed: Optional[int] = 42
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
@@ -106,6 +129,7 @@ def fit_gaussian_mixture_1d(
         tol=float(tol),
         n_init=1,
         random_state=seed,
+        **_gaussian_mixture_init_kwargs(x, K),
     )
     x2 = x.reshape(-1, 1)
     with warnings.catch_warnings():

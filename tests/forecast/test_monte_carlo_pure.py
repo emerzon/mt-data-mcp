@@ -107,9 +107,12 @@ class TestFitGaussianMixture1d:
     def test_convergence_warning_is_suppressed(self, monkeypatch):
         from sklearn.exceptions import ConvergenceWarning
 
+        captured = {}
+
         class DummyGaussianMixture:
-            def __init__(self, n_components, covariance_type, reg_covar, max_iter, tol, n_init, random_state):
-                self.n_components = int(n_components)
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+                self.n_components = int(kwargs["n_components"])
 
             def fit(self, x):
                 warnings.warn("Best performing initialization did not converge.", ConvergenceWarning)
@@ -145,6 +148,10 @@ class TestFitGaussianMixture1d:
             _ = fit_gaussian_mixture_1d(np.linspace(-1.0, 1.0, 50), n_states=2, seed=1)
 
         assert not any(isinstance(w.message, ConvergenceWarning) for w in records)
+        assert captured["init_params"] == "random"
+        np.testing.assert_allclose(captured["weights_init"], np.array([0.5, 0.5]))
+        assert captured["means_init"].shape == (2, 1)
+        assert captured["precisions_init"].shape == (2, 1)
 
 
 class TestEstimateTransitionMatrix:
