@@ -8,6 +8,7 @@ from mtdata.forecast.monte_carlo import (
     _normalize_transition_matrix,
     _safe_log,
     fit_gaussian_mixture_1d,
+    estimate_transition_matrix_from_gamma,
     simulate_markov_chain,
     simulate_gbm_mc,
     simulate_hmm_mc,
@@ -15,6 +16,7 @@ from mtdata.forecast.monte_carlo import (
     simulate_jump_diffusion_mc,
     simulate_garch_mc,
     simulate_bootstrap_mc,
+    summarize_paths,
     gbm_single_barrier_upcross_prob,
 )
 
@@ -150,6 +152,20 @@ class TestFitGaussianMixture1d:
         np.testing.assert_allclose(captured["weights_init"], np.array([0.5, 0.5]))
         assert captured["means_init"].shape == (2, 1)
         assert captured["precisions_init"].shape == (2, 1)
+
+
+class TestEstimateTransitionMatrix:
+    def test_basic(self):
+        gamma = np.array([[1.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.0, 1.0]])
+        A = estimate_transition_matrix_from_gamma(gamma)
+        assert A.shape == (2, 2)
+        for row in A:
+            assert np.isclose(np.sum(row), 1.0)
+
+    def test_single_row(self):
+        gamma = np.array([[0.5, 0.5]])
+        A = estimate_transition_matrix_from_gamma(gamma)
+        assert A.shape == (2, 2)
 
 
 class TestSimulateMarkovChain:
@@ -308,6 +324,30 @@ class TestSimulateBootstrapMc:
     def test_too_few(self):
         with pytest.raises(ValueError):
             simulate_bootstrap_mc(np.array([1.0, 2.0, 3.0]), horizon=5)
+
+
+class TestSummarizePaths:
+    def test_price_only(self):
+        paths = np.random.RandomState(1).uniform(90, 110, size=(100, 10))
+        result = summarize_paths(paths)
+        assert "price_mean" in result
+        assert "price_lower" in result
+        assert "price_upper" in result
+        assert "return_mean" not in result
+        assert result["price_mean"].shape == (10,)
+
+    def test_with_returns(self):
+        p = np.random.RandomState(1).uniform(90, 110, size=(50, 5))
+        r = np.random.RandomState(2).normal(0, 0.01, size=(50, 5))
+        result = summarize_paths(p, return_paths=r)
+        assert "return_mean" in result
+        assert result["return_lower"].shape == (5,)
+
+    def test_ci_ordering(self):
+        paths = np.random.RandomState(1).uniform(90, 110, size=(200, 10))
+        result = summarize_paths(paths, alpha=0.1)
+        assert np.all(result["price_lower"] <= result["price_mean"])
+        assert np.all(result["price_mean"] <= result["price_upper"])
 
 
 class TestGbmBarrierUpcrossProb:

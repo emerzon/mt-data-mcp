@@ -10,6 +10,7 @@ import pandas as pd
 
 from mtdata.forecast.backtest import forecast_backtest
 from mtdata.forecast.forecast import _create_dimred_reducer
+from mtdata.forecast.forecast_preprocessing import _apply_dimensionality_reduction
 from mtdata.services.data_service import fetch_ticks
 from mtdata.utils.utils import _format_time_minimal
 
@@ -24,6 +25,18 @@ def _mock_symbol_ready_guard_digits(*args: Any, **kwargs: Any) -> Iterator[Tuple
     info = MagicMock()
     info.digits = 2
     yield None, info
+
+
+def test_selectkbest_dimred_reduces_without_target_y() -> None:
+    X = pd.DataFrame(
+        {
+            "a": [1.0, 1.0, 1.0, 1.0],
+            "b": [1.0, 2.0, 3.0, 4.0],
+            "c": [10.0, 20.0, 30.0, 40.0],
+        }
+    )
+    out = _apply_dimensionality_reduction(X, "selectkbest", {"k": 2})
+    assert out.shape[1] == 2
 
 
 def test_wrapper_selectkbest_reducer_no_y_dependency() -> None:

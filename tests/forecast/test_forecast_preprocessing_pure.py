@@ -1,6 +1,8 @@
 """Tests for src/mtdata/forecast/forecast_preprocessing.py — pure preprocessing helpers."""
+import math
 import numpy as np
 import pandas as pd
+import pytest
 
 from mtdata.forecast.forecast_preprocessing import (
     _process_include_specification,
@@ -8,6 +10,7 @@ from mtdata.forecast.forecast_preprocessing import (
     _create_hour_features,
     _create_dow_features,
     _build_feature_arrays,
+    apply_preprocessing,
 )
 
 
@@ -150,3 +153,23 @@ class TestBuildFeatureArrays:
         assert exog_future.shape == (5, 2)
 
 
+class TestApplyPreprocessing:
+    def test_price_target(self):
+        df = _make_ohlcv_df()
+        col = apply_preprocessing(df, "price", "price", None)
+        assert col == "close"
+
+    def test_return_quantity(self):
+        df = _make_ohlcv_df()
+        col = apply_preprocessing(df, "return", "price", None)
+        assert col == "close"
+
+    def test_volatility_quantity(self):
+        df = _make_ohlcv_df()
+        col = apply_preprocessing(df, "volatility", "price", None)
+        assert col == "close"
+
+    def test_with_denoise_does_not_crash(self):
+        df = _make_ohlcv_df(50)
+        col = apply_preprocessing(df, "price", "price", {"method": "ema"})
+        assert col == "close"

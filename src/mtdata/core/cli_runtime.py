@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, get_args
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, get_args, get_origin
 
 from pydantic import ValidationError
 

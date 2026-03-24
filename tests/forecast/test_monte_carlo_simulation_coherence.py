@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import os
+import sys
 import unittest
 
 import numpy as np
 import pandas as pd
 
+# Add src to path to ensure local package is found
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
+
 from mtdata.forecast.registry import ForecastRegistry
 import mtdata.forecast.methods.monte_carlo  # noqa: F401
 from mtdata.forecast.monte_carlo import (
+    estimate_transition_matrix_from_gamma,
     simulate_garch_mc,
     simulate_gbm_mc,
     simulate_markov_chain,
@@ -15,6 +21,13 @@ from mtdata.forecast.monte_carlo import (
 
 
 class TestMonteCarloSimulationCoherence(unittest.TestCase):
+    def test_estimate_transition_matrix_handles_degenerate_rows(self) -> None:
+        gamma = np.array([[1.0, 0.0], [1.0, 0.0], [1.0, 0.0]], dtype=float)
+        A = estimate_transition_matrix_from_gamma(gamma)
+        self.assertTrue(np.isfinite(A).all())
+        self.assertTrue(np.allclose(A.sum(axis=1), np.ones(A.shape[0])))
+        self.assertTrue(np.allclose(A[1], np.array([0.0, 1.0])))
+
     def test_simulate_markov_chain_tolerates_nan_transition_rows(self) -> None:
         A = np.array([[1.0, 0.0], [np.nan, np.nan]], dtype=float)
         init = np.array([0.0, 1.0], dtype=float)

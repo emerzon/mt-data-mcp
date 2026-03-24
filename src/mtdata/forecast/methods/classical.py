@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, Tuple, List
 import math
 import numpy as np
 import pandas as pd
@@ -188,3 +188,29 @@ class FourierOLSMethod(ClassicalMethod):
             params_used={"m": m_eff, "K": K_eff, "trend": bool(trend)}
         )
 
+# Backward compatibility wrappers
+def forecast_naive(series: np.ndarray, fh: int) -> Tuple[np.ndarray, Dict[str, Any]]:
+    res = ForecastRegistry.get("naive").forecast(pd.Series(series), fh, 0, {})
+    return res.forecast, res.params_used
+
+def forecast_drift(series: np.ndarray, fh: int, n: Optional[int] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
+    # Note: original drift had 'n' param for slope calculation window, but implementation used full series if n is None.
+    # The new implementation uses full series. If 'n' was used to slice input, we should slice before calling.
+    # The original implementation: slope = (last - first) / (n-1). If n was passed, it implied using only last n points?
+    # Actually original implementation: if n is None: n = series.size. slope = (series[-1] - series[0]) / (n-1).
+    # It seems it always used first and last point of the PASSED series. 
+    # So 'n' argument in original function was redundant if it just meant series size.
+    res = ForecastRegistry.get("drift").forecast(pd.Series(series), fh, 0, {})
+    return res.forecast, res.params_used
+
+def forecast_seasonal_naive(series: np.ndarray, fh: int, m: int) -> Tuple[np.ndarray, Dict[str, Any]]:
+    res = ForecastRegistry.get("seasonal_naive").forecast(pd.Series(series), fh, m, {})
+    return res.forecast, res.params_used
+
+def forecast_theta(series: np.ndarray, fh: int, alpha: float = 0.2) -> Tuple[np.ndarray, Dict[str, Any]]:
+    res = ForecastRegistry.get("theta").forecast(pd.Series(series), fh, 0, {"alpha": alpha})
+    return res.forecast, res.params_used
+
+def forecast_fourier_ols(series: np.ndarray, fh: int, m: Optional[int], K: Optional[int], trend: bool = True) -> Tuple[np.ndarray, Dict[str, Any]]:
+    res = ForecastRegistry.get("fourier_ols").forecast(pd.Series(series), fh, m or 0, {"terms": K, "trend": trend})
+    return res.forecast, res.params_used

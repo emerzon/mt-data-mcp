@@ -13,6 +13,7 @@ import math
 import numpy as np
 import pandas as pd
 
+from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.indicators import (
     _apply_ta_indicators as _apply_ta_indicators_util,
     _parse_ti_specs as _parse_ti_specs_util,
@@ -509,6 +510,23 @@ def _reduce_feature_frame(
     return pd.DataFrame(arr, index=X.index, columns=cols), info
 
 
+def _apply_dimensionality_reduction(
+    X: pd.DataFrame,
+    dimred_method: Optional[str],
+    dimred_params: Optional[Dict[str, Any]],
+    *,
+    reducer_factory: ReducerFactory = _create_dimred_reducer,
+) -> pd.DataFrame:
+    """Apply dimensionality reduction to a feature DataFrame."""
+    reduced, _ = _reduce_feature_frame(
+        X,
+        dimred_method,
+        dimred_params,
+        reducer_factory=reducer_factory,
+    )
+    return reduced
+
+
 def prepare_features(
     df: pd.DataFrame,
     features_cfg: Optional[Dict[str, Any]],
@@ -585,15 +603,40 @@ def prepare_features(
     return exog_train_arr, exog_future_arr, feat_info
 
 
+def apply_preprocessing(
+    df: pd.DataFrame,
+    quantity: str,
+    target: str,
+    denoise: Optional[Dict[str, Any]],
+    *,
+    base_col: str = "close",
+) -> str:
+    """Apply initial preprocessing and return the effective base column."""
+    if denoise:
+        try:
+            denoise_spec = _normalize_denoise_spec(denoise, default_when="pre_ti")
+        except Exception:
+            denoise_spec = None
+        try:
+            added = _apply_denoise(df, denoise_spec, default_when="pre_ti") if denoise_spec else []
+        except Exception:
+            added = []
+        if f"{base_col}_dn" in added:
+            return f"{base_col}_dn"
+    return base_col
+
+
 __all__ = [
     "_pd_freq_from_timeframe",
     "_create_dimred_reducer",
     "_prepare_base_data",
     "_apply_features_and_target_spec",
+    "_apply_dimensionality_reduction",
     "_process_include_specification",
     "_create_fourier_features",
     "_create_hour_features",
     "_create_dow_features",
     "_build_feature_arrays",
     "prepare_features",
+    "apply_preprocessing",
 ]

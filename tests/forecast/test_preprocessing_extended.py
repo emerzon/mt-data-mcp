@@ -20,7 +20,9 @@ from mtdata.forecast.forecast_preprocessing import (
     _build_calendar_features,
     _build_feature_arrays,
     _reduce_feature_frame,
+    _apply_dimensionality_reduction,
     prepare_features,
+    apply_preprocessing,
 )
 
 
@@ -557,3 +559,40 @@ class TestPrepareFeatures:
         assert "Technical indicator request could not be applied" in info["warnings"][0]
 
 
+# ===== apply_preprocessing (lines 612-623) ================================
+
+class TestApplyPreprocessing:
+    def test_no_denoise(self):
+        df = _make_df(20)
+        assert apply_preprocessing(df, "price", "close", None) == "close"
+
+    def test_denoise_success(self):
+        """Lines 612-622: denoise applied and _dn column returned."""
+        df = _make_df(20)
+        with patch("mtdata.forecast.forecast_preprocessing._normalize_denoise_spec", return_value={"method": "ema"}), \
+             patch("mtdata.forecast.forecast_preprocessing._apply_denoise", return_value=["close_dn"]):
+            col = apply_preprocessing(df, "price", "close", {"method": "ema"})
+        assert col == "close_dn"
+
+    def test_denoise_normalize_exception(self):
+        """Lines 615-616: normalize raises."""
+        df = _make_df(20)
+        with patch("mtdata.forecast.forecast_preprocessing._normalize_denoise_spec", side_effect=RuntimeError):
+            col = apply_preprocessing(df, "price", "close", {"method": "bad"})
+        assert col == "close"
+
+    def test_denoise_apply_exception(self):
+        """Lines 619-620: apply raises."""
+        df = _make_df(20)
+        with patch("mtdata.forecast.forecast_preprocessing._normalize_denoise_spec", return_value={"m": "x"}), \
+             patch("mtdata.forecast.forecast_preprocessing._apply_denoise", side_effect=RuntimeError):
+            col = apply_preprocessing(df, "price", "close", {"method": "ema"})
+        assert col == "close"
+
+    def test_denoise_no_dn_column(self):
+        """Line 621: _dn column not in added list."""
+        df = _make_df(20)
+        with patch("mtdata.forecast.forecast_preprocessing._normalize_denoise_spec", return_value={"m": "x"}), \
+             patch("mtdata.forecast.forecast_preprocessing._apply_denoise", return_value=["other_dn"]):
+            col = apply_preprocessing(df, "price", "close", {"method": "ema"})
+        assert col == "close"
