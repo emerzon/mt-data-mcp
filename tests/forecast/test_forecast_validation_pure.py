@@ -1,7 +1,5 @@
 """Tests for src/mtdata/forecast/forecast_validation.py"""
 import pytest
-import pandas as pd
-import numpy as np
 
 from mtdata.forecast.forecast_validation import (
     validate_horizon,
@@ -12,12 +10,7 @@ from mtdata.forecast.forecast_validation import (
     validate_features_spec,
     validate_dimred_spec,
     validate_target_spec,
-    validate_data_sufficiency,
     validate_seasonality_for_method,
-    create_error_response,
-    safe_cast_numeric,
-    sanitize_params,
-    ForecastValidationError,
 )
 
 
@@ -229,27 +222,6 @@ class TestValidateTargetSpec:
         assert len(errors) > 0
 
 
-class TestValidateDataSufficiency:
-    def test_enough_data(self):
-        df = pd.DataFrame({"close": [1.0, 2.0, 3.0, 4.0]})
-        assert validate_data_sufficiency(df, "close") == []
-
-    def test_too_few_rows(self):
-        df = pd.DataFrame({"close": [1.0]})
-        errors = validate_data_sufficiency(df, "close")
-        assert len(errors) > 0
-
-    def test_missing_column(self):
-        df = pd.DataFrame({"open": [1.0, 2.0, 3.0]})
-        errors = validate_data_sufficiency(df, "close")
-        assert any("not found" in e for e in errors)
-
-    def test_too_many_nans(self):
-        df = pd.DataFrame({"close": [np.nan, np.nan, np.nan]})
-        errors = validate_data_sufficiency(df, "close")
-        assert len(errors) > 0
-
-
 class TestValidateSeasonalityForMethod:
     def test_seasonal_naive_no_seasonality(self):
         errors = validate_seasonality_for_method("seasonal_naive", None)
@@ -264,38 +236,3 @@ class TestValidateSeasonalityForMethod:
 
     def test_non_seasonal_method(self):
         assert validate_seasonality_for_method("linear", None) == []
-
-
-class TestCreateErrorResponse:
-    def test_no_errors(self):
-        result = create_error_response([])
-        assert result["success"] is True
-
-    def test_with_errors(self):
-        result = create_error_response(["err1", "err2"])
-        assert "error" in result
-        assert result["error_count"] == 2
-
-
-class TestSafeCastNumeric:
-    def test_int(self):
-        assert safe_cast_numeric("42", "x") == 42
-
-    def test_float(self):
-        assert safe_cast_numeric("3.14", "x") == 3.14  # int() fails, falls through to float
-
-    def test_none(self):
-        assert safe_cast_numeric(None, "x") is None
-
-    def test_string(self):
-        assert safe_cast_numeric("abc", "x") == "abc"
-
-
-class TestSanitizeParams:
-    def test_none(self):
-        assert sanitize_params(None) == {}
-
-    def test_casts_values(self):
-        result = sanitize_params({"a": "5", "b": "hello"})
-        assert result["a"] == 5
-        assert result["b"] == "hello"

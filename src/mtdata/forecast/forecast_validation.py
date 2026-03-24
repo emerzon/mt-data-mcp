@@ -3,8 +3,7 @@ Forecast validation utilities and error handling.
 """
 
 import difflib
-from typing import Any, Dict, Optional, List, Literal, Union
-import pandas as pd
+from typing import Any, Dict, Optional, List, Literal
 
 from ..shared.constants import TIMEFRAME_MAP
 from ..shared.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
@@ -245,24 +244,6 @@ def validate_target_spec(target_spec: Optional[Dict[str, Any]]) -> List[str]:
     return errors
 
 
-def validate_data_sufficiency(df: pd.DataFrame, base_col: str, min_points: int = 3) -> List[str]:
-    """Validate that sufficient data is available for forecasting."""
-    errors = []
-
-    if len(df) < min_points:
-        errors.append(f"Insufficient data: only {len(df)} bars available, minimum {min_points} required")
-
-    if base_col not in df.columns:
-        errors.append(f"Base column '{base_col}' not found in data")
-    else:
-        # Check for sufficient non-NaN values
-        non_nan_count = df[base_col].notna().sum()
-        if non_nan_count < min_points:
-            errors.append(f"Insufficient non-NaN values in column '{base_col}': {non_nan_count} valid points")
-
-    return errors
-
-
 def validate_seasonality_for_method(method: str, seasonality: Optional[int]) -> List[str]:
     """Validate seasonality parameter for seasonal methods."""
     errors = []
@@ -340,44 +321,3 @@ def validate_forecast_request(
     errors.extend(check_method_dependencies(method))
 
     return errors
-
-
-def create_error_response(errors: List[str]) -> Dict[str, Any]:
-    """Create a standardized error response."""
-    if not errors:
-        return {"success": True}
-
-    return {
-        "error": "; ".join(errors),
-        "validation_errors": errors,
-        "error_count": len(errors)
-    }
-
-
-def safe_cast_numeric(value: Any, param_name: str) -> Union[int, float, str]:
-    """Safely cast a value to numeric type or return original."""
-    if value is None:
-        return None
-
-    try:
-        # Try int first
-        return int(value)
-    except (ValueError, TypeError):
-        try:
-            # Try float
-            return float(value)
-        except (ValueError, TypeError):
-            # Return original if can't cast
-            return value
-
-
-def sanitize_params(params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """Sanitize and cast forecast parameters."""
-    if params is None:
-        return {}
-
-    sanitized = {}
-    for key, value in params.items():
-        sanitized[key] = safe_cast_numeric(value, key)
-
-    return sanitized

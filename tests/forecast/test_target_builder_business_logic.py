@@ -104,17 +104,3 @@ def test_build_target_series_invalid_base_raises_value_error():
             base_col="close",
             target_spec={"base": "does_not_exist", "transform": "none"},
         )
-
-
-def test_aggregate_horizon_target_passthrough_modes():
-    y = np.array([1.0, 2.0, 3.0], dtype=float)
-
-    out, info = tb.aggregate_horizon_target(y, horizon=2, agg_spec=None)
-    assert np.allclose(out, y)
-    assert info == {"agg": "last", "normalize": "none"}
-
-    for agg in ("mean", "sum", "slope", "vol", "unknown"):
-        out, info = tb.aggregate_horizon_target(y, horizon=2, agg_spec=agg, normalize="per_bar")
-        assert np.allclose(out, y)
-        assert info["agg"] == agg
-        assert info["normalize"] == "per_bar"

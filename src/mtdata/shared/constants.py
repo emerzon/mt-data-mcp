@@ -9,15 +9,6 @@ from ..utils.constants import (
     TIME_DISPLAY_FORMAT,
 )
 
-# Re-export precision/display constants from a single canonical location.
-_PRECISION_EXPORTS = (
-    DISPLAY_MAX_DECIMALS,
-    PRECISION_REL_TOL,
-    PRECISION_ABS_TOL,
-    PRECISION_MAX_DECIMALS,
-    TIME_DISPLAY_FORMAT,
-)
-
 # Constants (centralize defaults instead of hardcoding inline)
 SERVICE_NAME = "MetaTrader5 Market Data Server"
 GROUP_SEARCH_THRESHOLD = 5   # threshold for treating a search as group vs symbol search

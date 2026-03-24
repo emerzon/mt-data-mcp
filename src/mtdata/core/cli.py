@@ -8,7 +8,6 @@ import argparse
 import sys
 import os
 import types
-import math
 import json
 from typing import get_origin, get_args, Optional, Dict, Any, List, Tuple, Literal, Union, is_typeddict
 from pydantic import BaseModel
@@ -52,6 +51,13 @@ from .cli_runtime import (
 )
 
 # Simple debug logging controlled by env var MTDATA_CLI_DEBUG
+_CONSOLE_TEXT_TRANSLATION = str.maketrans({
+    "\u2192": "->",
+    "\u2190": "<-",
+    "\u2026": "...",
+})
+
+
 def _debug_enabled() -> bool:
     try:
         v = os.environ.get("MTDATA_CLI_DEBUG", "").strip().lower()
@@ -408,14 +414,7 @@ def _format_result_for_cli(result: Any, *, fmt: str, verbose: bool, cmd_name: st
 
 
 def _normalize_console_text(text: str) -> str:
-    normalized = str(text)
-    for src, dst in {
-        "\u2192": "->",
-        "\u2190": "<-",
-        "\u2026": "...",
-    }.items():
-        normalized = normalized.replace(src, dst)
-    return normalized
+    return str(text).translate(_CONSOLE_TEXT_TRANSLATION)
 
 
 def _write_cli_text(text: str, *, stream: Any = None) -> None:
@@ -1005,9 +1004,7 @@ def _example_value(param: Dict[str, Any], *, prefer_default: bool) -> str:
                 pass
         if isinstance(hint, str):
             return hint
-    if prefer_default and default_text is not None:
-        return default_text
-    if not prefer_default and default_text is not None:
+    if default_text is not None:
         return default_text
     ptype = param.get('type')
     if ptype == int:
