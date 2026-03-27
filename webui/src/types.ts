@@ -68,9 +68,64 @@ export type SupportResistanceLevel = {
   type: 'support' | 'resistance'
   value: number
   touches: number
+  episodes?: number
   score?: number
+  distance?: number | null
+  distance_pct?: number | null
+  zone_low?: number | null
+  zone_high?: number | null
+  zone_width?: number | null
+  zone_width_atr?: number | null
   first_touch?: string | null
   last_touch?: string | null
+  dominant_source?: 'support' | 'resistance' | 'mixed'
+  status?: string
+  source_tests?: {
+    support: number
+    resistance: number
+  }
+  source_episodes?: {
+    support: number
+    resistance: number
+  }
+  avg_bounce_atr?: number | null
+  avg_pretest_adx?: number | null
+  breakout_analysis?: {
+    decisive_break_count: number
+    avg_breach_atr?: number | null
+    last_break_time?: string | null
+    role_reversal_count: number
+  }
+  score_breakdown?: {
+    base?: number
+    retests?: number
+    bounce?: number
+    adx?: number
+    breakout_penalty?: number
+    role_reversal_bonus?: number
+    mtf_confirmation_bonus?: number
+    total?: number
+  }
+  source_timeframes?: string[]
+  merge_details?: {
+    cross_timeframe_dedupe_count: number
+    deduped_timeframes: string[]
+  }
+  episode_details?: Array<{
+    type: 'support' | 'resistance' | 'mixed'
+    touches: number
+    first_touch?: string | null
+    last_touch?: string | null
+  }>
+  timeframe_contributions?: Array<{
+    timeframe: string
+    weight: number
+    raw_score: number
+    weighted_score: number
+    touches: number
+    episodes?: number
+    merge_mode?: 'full' | 'deduped'
+  }>
 }
 
 export type PivotLevel = {
@@ -89,12 +144,40 @@ export type PivotResponse = {
 export type SupportResistanceResponse = {
   symbol: string
   timeframe: string
+  mode?: string
+  timeframes_analyzed?: string[]
+  timeframe_weights?: Record<string, number>
+  per_timeframe?: Array<{
+    timeframe: string
+    supports: number
+    resistances: number
+    current_price?: number | null
+    window?: { start?: string | null; end?: string | null }
+    effective_tolerance_pct?: number
+    effective_reaction_bars?: number
+    volatility_ratio?: number
+    current_atr_pct?: number | null
+    baseline_atr_pct?: number | null
+  }>
   limit: number
   method: string
   tolerance_pct: number
+  effective_tolerance_pct?: number
   min_touches: number
+  qualification_basis?: 'episodes'
+  max_levels?: number
+  reaction_bars?: number
+  effective_reaction_bars?: number
+  adx_period?: number
+  adaptive_mode?: 'atr_regime'
+  volatility_ratio?: number
+  current_atr_pct?: number | null
+  baseline_atr_pct?: number | null
+  current_price?: number | null
   window?: { start?: string | null; end?: string | null }
   levels: SupportResistanceLevel[]
+  supports?: SupportResistanceLevel[]
+  resistances?: SupportResistanceLevel[]
 }
 
 // ============================================================================

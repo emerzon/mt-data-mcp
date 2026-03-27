@@ -241,7 +241,7 @@ def get_pivots(
 @api_router.get("/support-resistance")
 def get_support_resistance(
     symbol: str = Query(...),
-    timeframe: str = Query("H1"),
+    timeframe: str = Query("auto"),
     limit: int = Query(800, ge=100, le=20000),
     tolerance_pct: float = Query(0.0015, ge=0.0, le=0.05),
     min_touches: int = Query(2, ge=1),

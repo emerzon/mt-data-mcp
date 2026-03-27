@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import HTTPException
 
 from ..forecast.exceptions import ForecastError
+from .pivot import compute_support_resistance_payload
 from ..utils.mt5 import MT5ConnectionError
 from .runtime_metadata import build_runtime_timezone_meta
 from .error_envelope import build_http_error_detail
@@ -480,173 +480,27 @@ def get_support_resistance_response(
     fetch_history_impl: Callable[..., Any],
 ) -> Dict[str, Any]:
     try:
-        need = int(limit)
-        frame = fetch_history_impl(symbol=symbol, timeframe=timeframe, need=need)
+        result = compute_support_resistance_payload(
+            fetch_history_impl=fetch_history_impl,
+            symbol=symbol,
+            timeframe=timeframe,
+            limit=int(limit),
+            tolerance_pct=float(tolerance_pct),
+            min_touches=int(min_touches),
+            max_levels=int(max_levels),
+            reaction_bars=6,
+            adx_period=14,
+            decay_half_life_bars=None,
+        )
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"history fetch failed: {exc}")
-    if frame is None or frame.empty:
-        raise HTTPException(status_code=404, detail="No history available")
-    required_cols = ("high", "low", "close")
-    missing = [col for col in required_cols if col not in frame.columns]
-    if missing:
-        missing_cols = ", ".join(missing)
-        raise HTTPException(status_code=400, detail=f"Missing columns: {missing_cols}")
-    if len(frame) < 3:
-        raise HTTPException(status_code=400, detail="Need at least 3 bars to compute support/resistance levels")
+        message = str(exc)
+        status_code = 404 if "No history available" in message else 400
+        detail = message if status_code == 404 else f"history fetch failed: {message}"
+        raise HTTPException(status_code=status_code, detail=detail)
 
-    times = frame["time"].tolist() if "time" in frame.columns else []
-
-    def _coerce_series(series: List[Any]) -> List[float]:
-        out: List[float] = []
-        for value in series:
-            try:
-                out.append(float(value))
-            except Exception:
-                out.append(float("nan"))
-        return out
-
-    highs = _coerce_series(frame["high"].tolist())
-    lows = _coerce_series(frame["low"].tolist())
-
-    def _to_epoch(value: Any) -> Optional[float]:
-        if value is None:
-            return None
-        try:
-            if isinstance(value, (int, float)):
-                return float(value)
-            if hasattr(value, "timestamp"):
-                return float(value.timestamp())
-        except Exception:
-            return None
-        return None
-
-    epochs = [_to_epoch(value) for value in times]
-
-    def _format_time(timestamp: Optional[float]) -> Optional[str]:
-        if timestamp is None:
-            return None
-        try:
-            return datetime.fromtimestamp(float(timestamp), tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
-        except Exception:
-            return None
-
-    def _find_extrema(values: List[float], comparator: Callable[[float, float, float], bool]) -> List[int]:
-        indices: List[int] = []
-        for index in range(1, len(values) - 1):
-            try:
-                center = float(values[index])
-                previous = float(values[index - 1])
-                nxt = float(values[index + 1])
-            except Exception:
-                continue
-            if comparator(center, previous, nxt):
-                indices.append(index)
-        return indices
-
-    total_bars = len(highs)
-
-    def _cluster(indices: List[int], values: List[float], level_type: str, limit_per_type: int) -> List[Dict[str, Any]]:
-        clusters: List[Dict[str, Any]] = []
-        for index in sorted(indices, key=lambda item: values[item], reverse=(level_type == "resistance")):
-            try:
-                value = float(values[index])
-            except Exception:
-                continue
-            assigned = None
-            for cluster in clusters:
-                ref = cluster["value"]
-                threshold = max(abs(ref), abs(value)) * tolerance_pct
-                if threshold <= 0:
-                    threshold = tolerance_pct
-                if abs(ref - value) <= threshold:
-                    cluster["value"] = (cluster["value"] * cluster["touches"] + value) / (cluster["touches"] + 1)
-                    cluster["touches"] += 1
-                    cluster["indices"].append(index)
-                    timestamp = epochs[index] if index < len(epochs) else None
-                    if timestamp is not None:
-                        if cluster["last_time"] is None or timestamp > cluster["last_time"]:
-                            cluster["last_time"] = timestamp
-                        if cluster["first_time"] is None or timestamp < cluster["first_time"]:
-                            cluster["first_time"] = timestamp
-                    assigned = cluster
-                    break
-            if assigned is None:
-                timestamp = epochs[index] if index < len(epochs) else None
-                clusters.append(
-                    {
-                        "type": level_type,
-                        "value": value,
-                        "touches": 1,
-                        "indices": [index],
-                        "first_time": timestamp,
-                        "last_time": timestamp,
-                    }
-                )
-        usable = [cluster for cluster in clusters if cluster["touches"] >= min_touches]
-        if not usable and clusters:
-            usable = clusters[:1]
-
-        def _sort_key(cluster: Dict[str, Any]) -> tuple[int, int, float]:
-            last_index = max(cluster["indices"])
-            value_key = -float(cluster["value"]) if level_type == "support" else float(cluster["value"])
-            return (cluster["touches"], last_index, value_key)
-
-        usable.sort(key=_sort_key, reverse=True)
-        out: List[Dict[str, Any]] = []
-        for cluster in usable[:limit_per_type]:
-            last_index = max(cluster["indices"])
-            recency = 0.0
-            if total_bars > 1:
-                recency = max(0.0, 1.0 - (total_bars - 1 - last_index) / float(total_bars))
-            out.append(
-                {
-                    "type": level_type,
-                    "value": float(round(cluster["value"], 6)),
-                    "touches": int(cluster["touches"]),
-                    "score": float(round(cluster["touches"] + recency, 4)),
-                    "first_touch": _format_time(cluster["first_time"]),
-                    "last_touch": _format_time(cluster["last_time"]),
-                }
-            )
-        return out
-
-    resistance_levels = _cluster(_find_extrema(highs, lambda c, p, n: c >= p and c >= n), highs, "resistance", max_levels)
-    support_levels = _cluster(_find_extrema(lows, lambda c, p, n: c <= p and c <= n), lows, "support", max_levels)
-
-    def _first_valid(values: List[Optional[float]]) -> Optional[float]:
-        for item in values:
-            if item is not None:
-                return item
-        return None
-
-    def _last_valid(values: List[Optional[float]]) -> Optional[float]:
-        for item in reversed(values):
-            if item is not None:
-                return item
-        return None
-
-    window: Dict[str, Optional[str]] = {}
-    start = _first_valid(epochs)
-    end = _last_valid(epochs)
-    if start is not None or end is not None:
-        window = {"start": _format_time(start), "end": _format_time(end)}
-
-    levels = resistance_levels + support_levels
-    if not levels:
+    if not isinstance(result, dict) or not result.get("levels"):
         raise HTTPException(status_code=404, detail="No support/resistance levels detected")
-
-    response: Dict[str, Any] = {
-        "symbol": symbol,
-        "timeframe": timeframe,
-        "limit": int(limit),
-        "method": "swing",
-        "tolerance_pct": float(tolerance_pct),
-        "min_touches": int(min_touches),
-        "levels": levels,
-    }
-    if window:
-        response["window"] = window
-    return response
+    return result
 
 
 def get_tick_response(

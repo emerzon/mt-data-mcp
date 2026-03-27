@@ -1066,6 +1066,29 @@ class TestGetSupportResistance:
         assert res["symbol"] == "EURUSD"
         assert "window" in res
 
+    def test_default_timeframe_uses_auto_mode(self):
+        import pandas as pd
+
+        n = 20
+        frame = pd.DataFrame({
+            "high": [1.10, 1.12, 1.10, 1.09, 1.12, 1.10, 1.09, 1.12, 1.10, 1.09,
+                     1.10, 1.12, 1.10, 1.09, 1.12, 1.10, 1.09, 1.12, 1.10, 1.09],
+            "low": [1.08, 1.09, 1.07, 1.08, 1.09, 1.07, 1.08, 1.09, 1.07, 1.08,
+                    1.08, 1.09, 1.07, 1.08, 1.09, 1.07, 1.08, 1.09, 1.07, 1.08],
+            "close": [1.09] * n,
+            "time": [1700000000 + i * 3600 for i in range(n)],
+        })
+
+        with patch("mtdata.core.web_api._fetch_history_impl", return_value=frame) as mock_fetch:
+            resp = _client.get("/api/support-resistance", params={"symbol": "EURUSD"})
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["timeframe"] == "auto"
+        assert body["mode"] == "auto"
+        assert body["timeframes_analyzed"] == ["M15", "H1", "H4", "D1"]
+        assert mock_fetch.call_count == 4
+
     def test_no_levels_detected(self):
         import pandas as pd
         # Strictly monotonic data: no local extrema (center never >= both neighbors for highs)

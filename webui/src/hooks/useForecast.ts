@@ -153,7 +153,7 @@ export function useSupportResistance(symbol: string, timeframe: string, limit: n
     try {
       setIsLoading(true)
       setError(null)
-      const data = await getSupportResistance({ symbol, timeframe, limit })
+      const data = await getSupportResistance({ symbol, timeframe: 'auto', limit })
       const parsed = (data.levels || []).filter(row => Number.isFinite(row?.value))
 
       if (!parsed.length) {

@@ -1,6 +1,6 @@
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import logging
 import math
 
@@ -9,6 +9,12 @@ from .mt5_gateway import get_mt5_gateway
 from .schema import TimeframeLiteral, _PIVOT_METHODS
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.validators import invalid_timeframe_error, unsupported_timeframe_seconds_error
+from ..forecast.common import fetch_history as _fetch_history
+from ..utils.support_resistance import (
+    compute_support_resistance_levels,
+    get_auto_support_resistance_timeframes,
+    merge_support_resistance_results,
+)
 from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from,
@@ -21,6 +27,80 @@ from ..utils.utils import _format_time_minimal, _format_time_minimal_local, _use
 from ._mcp_instance import mcp
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_support_resistance_timeframes(timeframe: Optional[str]) -> tuple[str, List[str]]:
+    raw = str(timeframe or "auto").strip()
+    if not raw or raw.lower() == "auto":
+        return "auto", list(get_auto_support_resistance_timeframes())
+    normalized = raw.upper()
+    if normalized not in TIMEFRAME_MAP:
+        raise RuntimeError(invalid_timeframe_error(normalized, TIMEFRAME_MAP))
+    return normalized, [normalized]
+
+
+def compute_support_resistance_payload(
+    *,
+    fetch_history_impl,
+    symbol: str,
+    timeframe: Optional[str],
+    limit: int,
+    tolerance_pct: float,
+    min_touches: int,
+    max_levels: int,
+    reaction_bars: int,
+    adx_period: int,
+    decay_half_life_bars: Optional[int],
+) -> Dict[str, Any]:
+    requested_timeframe, timeframes = _resolve_support_resistance_timeframes(timeframe)
+    multi_timeframe = len(timeframes) > 1
+    results: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    per_timeframe_min_touches = 1 if multi_timeframe else int(min_touches)
+    per_timeframe_max_levels = max(int(max_levels), 1) if not multi_timeframe else max(int(max_levels) * 2, 6)
+
+    for tf in timeframes:
+        try:
+            frame = fetch_history_impl(symbol=symbol, timeframe=tf, need=int(limit))
+            result = compute_support_resistance_levels(
+                frame,
+                symbol=symbol,
+                timeframe=tf,
+                limit=int(limit),
+                tolerance_pct=float(tolerance_pct),
+                min_touches=int(per_timeframe_min_touches),
+                max_levels=int(per_timeframe_max_levels),
+                reaction_bars=int(reaction_bars),
+                adx_period=int(adx_period),
+                decay_half_life_bars=None if decay_half_life_bars is None else int(decay_half_life_bars),
+            )
+            if (result.get("levels") or []) or not multi_timeframe:
+                results.append(result)
+        except Exception as exc:
+            errors.append(f"{tf}: {exc}")
+            if not multi_timeframe:
+                raise
+
+    if not results:
+        if errors:
+            raise RuntimeError("; ".join(errors))
+        raise RuntimeError("No history available")
+
+    if not multi_timeframe:
+        return results[0]
+
+    return merge_support_resistance_results(
+        results,
+        symbol=symbol,
+        timeframe=requested_timeframe,
+        limit=int(limit),
+        tolerance_pct=float(tolerance_pct),
+        min_touches=int(min_touches),
+        max_levels=int(max_levels),
+        reaction_bars=int(reaction_bars),
+        adx_period=int(adx_period),
+        decay_half_life_bars=None if decay_half_life_bars is None else int(decay_half_life_bars),
+    )
 
 
 @mcp.tool()
@@ -295,6 +375,65 @@ def pivot_compute_points(
         operation="pivot_compute_points",
         symbol=symbol,
         timeframe=timeframe,
+        func=_run,
+    )
+
+
+@mcp.tool()
+def support_resistance_levels(
+    symbol: str,
+    timeframe: str = "auto",
+    limit: int = 800,
+    tolerance_pct: float = 0.0015,
+    min_touches: int = 2,
+    max_levels: int = 4,
+    reaction_bars: int = 6,
+    adx_period: int = 14,
+    decay_half_life_bars: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Detect support and resistance levels around the current price from weighted historical retests.
+
+    `timeframe="auto"` (default) merges levels from M15, H1, H4, and D1.
+
+    Score combines:
+    - repeated tests of a level
+    - bounce strength after each test (normalized by ATR)
+    - pre-test ADX trend strength
+    - exponential time decay so recent tests matter more
+    """
+
+    def _run() -> Dict[str, Any]:
+        try:
+            get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise).ensure_connection()
+            return compute_support_resistance_payload(
+                fetch_history_impl=_fetch_history,
+                symbol=symbol,
+                timeframe=timeframe,
+                limit=int(limit),
+                tolerance_pct=float(tolerance_pct),
+                min_touches=int(min_touches),
+                max_levels=int(max_levels),
+                reaction_bars=int(reaction_bars),
+                adx_period=int(adx_period),
+                decay_half_life_bars=None if decay_half_life_bars is None else int(decay_half_life_bars),
+            )
+        except MT5ConnectionError as exc:
+            return {"error": str(exc)}
+        except Exception as exc:
+            return {"error": f"Error computing support/resistance levels: {str(exc)}"}
+
+    return run_logged_operation(
+        logger,
+        operation="support_resistance_levels",
+        symbol=symbol,
+        timeframe=timeframe,
+        limit=limit,
+        tolerance_pct=tolerance_pct,
+        min_touches=min_touches,
+        max_levels=max_levels,
+        reaction_bars=reaction_bars,
+        adx_period=adx_period,
+        decay_half_life_bars=decay_half_life_bars,
         func=_run,
     )
 
