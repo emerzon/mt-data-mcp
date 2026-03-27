@@ -168,7 +168,6 @@ def pivot_compute_points(
                 return {"error": "Pivot calculation requires high, low, and close prices"}
 
             period_start = float(src["time"]) if _has_field(src, "time") else float("nan")
-            period_start = _mt5_epoch_to_utc(period_start)
             period_end = period_start + float(tf_secs)
 
             digits = int(getattr(_info_before, "digits", 0) or 0) if _info_before is not None else 0

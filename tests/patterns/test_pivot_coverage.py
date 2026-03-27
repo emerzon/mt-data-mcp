@@ -278,6 +278,30 @@ class TestPivotHappyPath:
         assert "start" in res["period"]
         assert "end" in res["period"]
 
+    def test_period_field_uses_already_normalized_bar_time(self):
+        src_time = 1_704_067_200.0
+        r = [_make_rate(time_=src_time), _make_rate(time_=src_time + 86_400.0)]
+        fn = _get_pivot_fn()
+        info = _make_symbol_info()
+
+        @contextmanager
+        def _guard(symbol):
+            yield None, info
+
+        with patch(_TF_MAP_PATCH, {"D1": 1}), \
+             patch(_TF_SECS_PATCH, {"D1": 86400}), \
+             patch(_GUARD, _guard), \
+             patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick(src_time + 172_800.0)), \
+             patch(_EPOCH, side_effect=lambda x: float(x) - 7200.0), \
+             patch(_COPY_RATES, return_value=np.array(r)), \
+             patch(_USE_CTZ, return_value=False), \
+             patch(_FMT, side_effect=lambda x: f"T{int(x)}"):
+            res = fn("EURUSD", timeframe="D1")
+
+        assert res["success"] is True
+        assert res["period"]["start"] == f"T{int(src_time)}"
+        assert res["period"]["end"] == f"T{int(src_time + 86400.0)}"
+
     def test_calculation_basis_context(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
         res = self._run(r, use_ctz=False)
