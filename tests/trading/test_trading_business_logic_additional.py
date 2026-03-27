@@ -151,3 +151,58 @@ def test_run_trade_place_logs_finish_event(caplog):
         "event=finish operation=trade_place success=True" in record.message
         for record in caplog.records
     )
+
+
+def test_run_trade_place_ignores_gtc_for_market_buy_sell_without_price():
+    request = TradePlaceRequest(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        expiration="GTC",
+        require_sl_tp=False,
+    )
+    place_market_order = MagicMock(return_value={"success": True, "path": "market"})
+    place_pending_order = MagicMock(return_value={"success": True, "path": "pending"})
+
+    result = run_trade_place(
+        request,
+        normalize_order_type_input=lambda value: ("BUY", None),
+        normalize_pending_expiration=lambda value: (None, True),
+        prevalidate_trade_place_market_input=lambda symbol, volume: None,
+        place_market_order=place_market_order,
+        place_pending_order=place_pending_order,
+        close_positions=lambda **kwargs: {"closed_count": 1},
+        safe_int_ticket=lambda value: value,
+    )
+
+    assert result == {"success": True, "path": "market"}
+    place_market_order.assert_called_once()
+    place_pending_order.assert_not_called()
+
+
+def test_run_trade_place_rejects_dated_market_expiration_without_price():
+    request = TradePlaceRequest(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        expiration="2026-04-01 12:00",
+        require_sl_tp=False,
+    )
+    place_market_order = MagicMock(return_value={"success": True, "path": "market"})
+    place_pending_order = MagicMock(return_value={"success": True, "path": "pending"})
+
+    result = run_trade_place(
+        request,
+        normalize_order_type_input=lambda value: ("BUY", None),
+        normalize_pending_expiration=lambda value: (1711972800, True),
+        prevalidate_trade_place_market_input=lambda symbol, volume: None,
+        place_market_order=place_market_order,
+        place_pending_order=place_pending_order,
+        close_positions=lambda **kwargs: {"closed_count": 1},
+        safe_int_ticket=lambda value: value,
+    )
+
+    assert "error" in result
+    assert "expiration only applies to pending orders placed with a price" in result["error"]
+    place_market_order.assert_not_called()
+    place_pending_order.assert_not_called()

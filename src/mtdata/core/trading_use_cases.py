@@ -161,14 +161,33 @@ def run_trade_place(
 
     price_provided = request.price not in (None, 0)
     try:
-        _, expiration_provided = normalize_pending_expiration(request.expiration)
+        normalized_expiration, expiration_provided = normalize_pending_expiration(request.expiration)
     except (TypeError, ValueError) as ex:
         return _finish({"error": str(ex)}, order_type=order_type_norm)
+
+    ignore_market_gtc_expiration = (
+        order_type_norm in market_side_types
+        and not price_provided
+        and expiration_provided
+        and normalized_expiration is None
+    )
+    if (
+        order_type_norm in market_side_types
+        and not price_provided
+        and expiration_provided
+        and normalized_expiration is not None
+    ):
+        return _finish({
+            "error": (
+                "expiration only applies to pending orders placed with a price. "
+                "For BUY/SELL market orders, omit expiration or provide price to place a pending order."
+            )
+        }, order_type=order_type_norm, pending=False)
 
     is_pending = (
         order_type_norm in explicit_pending_types
         or price_provided
-        or expiration_provided
+        or (expiration_provided and not ignore_market_gtc_expiration)
     )
     if bool(request.require_sl_tp) and not is_pending:
         missing_protection: List[str] = []
