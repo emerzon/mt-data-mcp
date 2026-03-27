@@ -157,6 +157,7 @@ def _fetch_rates_with_warmup(
             last_t = rates[-1]["time"]
             freshness_cutoff = expected_end_ts - seconds_per_bar * SANITY_BARS_TOLERANCE
             if last_t >= freshness_cutoff:
+                stale_last_t = None
                 break
             stale_last_t = float(last_t)
         if retry and idx < (attempts - 1):

@@ -284,6 +284,26 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         self.assertIn('remained stale after 2 attempt(s)', err)
         self.assertEqual(mock_from.call_count, 2)
 
+    @patch(_RATES_FROM)
+    @patch(_PARSE_START)
+    def test_sanity_check_accepts_fresh_retry_after_initial_stale_result(self, mock_parse, mock_from):
+        """A fresh retry should clear stale state instead of tripping the post-loop guard."""
+        to_date = datetime(2025, 1, 2, tzinfo=_UTC)
+        mock_parse.return_value = to_date
+        stale_rates = _make_rates(5, base_ts=to_date.timestamp() - (10 * 60 * 60), step=60 * 60)
+        fresh_rates = _make_rates(5, base_ts=to_date.timestamp(), step=60 * 60)
+        mock_from.side_effect = [stale_rates, fresh_rates]
+
+        with patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 2), patch(f'{_DS}.FETCH_RETRY_DELAY', 0):
+            result, err = _fetch_rates_with_warmup(
+                'EURUSD', 16385, 'H1', 5, 0, None, '2025-01-02',
+                retry=True, sanity_check=True,
+            )
+
+        self.assertIsNone(err)
+        self.assertEqual(result, fresh_rates)
+        self.assertEqual(mock_from.call_count, 2)
+
 
 # ============================================================================
 # _build_rates_df
