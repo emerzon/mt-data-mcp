@@ -407,7 +407,7 @@ def temporal_analyze(
                 return _error_response("No data available.", stage="fetch", context=context, bars=0)
 
             try:
-                df["__epoch"] = df["time"].astype(float).apply(_mt5_epoch_to_utc)
+                df["__epoch"] = df["time"].astype(float)
             except Exception:
                 return _error_response("Failed to normalize bar times.", stage="process", context=context)
 

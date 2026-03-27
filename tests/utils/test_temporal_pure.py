@@ -563,6 +563,18 @@ class TestTemporalAnalyze:
         assert r["groups"][0]["group"].endswith(":00")
 
     @_apply_analyze_patches
+    def test_group_by_hour_uses_already_normalized_bar_times(self, mock_fetch, *_):
+        rates = _make_rates(n=3, start_epoch=1704067200, interval=3600)
+        mock_fetch.return_value = (rates, None)
+
+        with patch(_P + "_mt5_epoch_to_utc", new=lambda value: float(value) - 7200.0):
+            r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", limit=1000, group_by="hour")
+
+        assert r.get("success") is True
+        assert [group["group_key"] for group in r["groups"]] == [0, 1, 2]
+        assert [group["group"] for group in r["groups"]] == ["00:00", "01:00", "02:00"]
+
+    @_apply_analyze_patches
     def test_group_by_month(self, mock_fetch, *_):
         # Use enough data to span multiple months
         rates = _make_rates(n=2000, start_epoch=1704067200, interval=3600)
