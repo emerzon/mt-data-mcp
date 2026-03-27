@@ -699,8 +699,8 @@ def _place_pending_order(
             if volume_error:
                 return {"error": volume_error}
 
-            current_price = mt5.symbol_info_tick(symbol)
-            if current_price is None:
+            initial_tick = mt5.symbol_info_tick(symbol)
+            if initial_tick is None:
                 return {"error": f"Failed to get current price for {symbol}"}
 
             deviation_validated, deviation_error = trading_validation._validate_deviation(deviation)
@@ -718,15 +718,33 @@ def _place_pending_order(
                 "SELL_STOP": mt5.ORDER_TYPE_SELL_STOP,
             }
 
-            # Basic side/price sanity checks for explicit pending types
-            bid = float(getattr(current_price, "bid", 0.0) or 0.0)
-            ask = float(getattr(current_price, "ask", 0.0) or 0.0)
             point = float(symbol_info.point or 0.0) if hasattr(symbol_info, "point") else 0.0
             digits = trading_validation._safe_int_attr(symbol_info, "digits", 5)
 
             norm_price = trading_validation._normalize_price_for_symbol(price, point=point, digits=digits)
             if norm_price is None:
                 return {"error": "price must be a non-zero finite number after symbol normalization."}
+            norm_sl = (
+                trading_validation._normalize_price_for_symbol(stop_loss, point=point, digits=digits)
+                if stop_loss not in (None, 0)
+                else None
+            )
+            norm_tp = (
+                trading_validation._normalize_price_for_symbol(take_profit, point=point, digits=digits)
+                if take_profit not in (None, 0)
+                else None
+            )
+            if stop_loss not in (None, 0) and norm_sl is None:
+                return {"error": "stop_loss must be a non-zero finite price after symbol normalization."}
+            if take_profit not in (None, 0) and norm_tp is None:
+                return {"error": "take_profit must be a non-zero finite price after symbol normalization."}
+
+            normalized_expiration, expiration_specified = trading_time._normalize_pending_expiration(expiration)
+            live_tick = mt5.symbol_info_tick(symbol) or initial_tick
+            if live_tick is None:
+                return {"error": f"Failed to refresh current price for {symbol}"}
+            bid = float(getattr(live_tick, "bid", 0.0) or 0.0)
+            ask = float(getattr(live_tick, "ask", 0.0) or 0.0)
             price_tol = point * 0.1 if point > 0 else 1e-9
 
             if t == "BUY" and abs(norm_price - ask) <= price_tol:
@@ -758,25 +776,10 @@ def _place_pending_order(
                         "Use BUY/SELL or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
                     )
                 }
-            norm_sl = (
-                trading_validation._normalize_price_for_symbol(stop_loss, point=point, digits=digits)
-                if stop_loss not in (None, 0)
-                else None
-            )
-            norm_tp = (
-                trading_validation._normalize_price_for_symbol(take_profit, point=point, digits=digits)
-                if take_profit not in (None, 0)
-                else None
-            )
-            if stop_loss not in (None, 0) and norm_sl is None:
-                return {"error": "stop_loss must be a non-zero finite price after symbol normalization."}
-            if take_profit not in (None, 0) and norm_tp is None:
-                return {"error": "take_profit must be a non-zero finite price after symbol normalization."}
 
-            normalized_expiration, expiration_specified = trading_time._normalize_pending_expiration(expiration)
             pending_level_error = trading_validation._validate_pending_order_levels(
                 symbol_info=symbol_info,
-                tick=current_price,
+                tick=live_tick,
                 order_type_value=order_type_value,
                 price=float(norm_price),
                 stop_loss=None if norm_sl is None else float(norm_sl),

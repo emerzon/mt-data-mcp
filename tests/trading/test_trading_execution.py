@@ -324,6 +324,25 @@ def test_place_pending_order_implicit_types(mock_mt5):
     assert req["type"] == mock_mt5.ORDER_TYPE_SELL_STOP
 
 
+def test_place_pending_order_implicit_type_uses_refreshed_tick_before_send(mock_mt5):
+    mock_mt5.symbol_info_tick.side_effect = [
+        MagicMock(bid=1.05000, ask=1.05010),
+        MagicMock(bid=1.03980, ask=1.03990),
+    ]
+
+    res = _place_pending_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        price=1.04000,
+    )
+
+    assert "error" not in res
+    req = mock_mt5.order_send.call_args[0][0]
+    assert req["type"] == mock_mt5.ORDER_TYPE_BUY_STOP
+    assert mock_mt5.symbol_info_tick.call_count == 2
+
+
 def test_place_pending_order_rejects_price_at_market_for_auto_side(mock_mt5):
     res = _place_pending_order(
         symbol="EURUSD",
