@@ -49,7 +49,7 @@ def data_fetch_candles(
     timeframe : str, optional (default="H1")
         Candle timeframe: "M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"
     
-    limit : int, optional (default=25)
+    limit : int, optional (default=200)
         Maximum number of candles to return
     
     start : str, optional
@@ -83,7 +83,7 @@ def data_fetch_candles(
     
     Examples:
     ---------
-    # Get last 25 H1 candles
+    # Get last 200 H1 candles
     data_fetch_candles(symbol="EURUSD")
     
     # Get 100 M15 candles with RSI indicator
