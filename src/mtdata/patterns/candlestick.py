@@ -427,6 +427,7 @@ def detect_candlestick_patterns(
     df = _rates_to_df(rates)
     warnings_out = data_quality_warnings(
         df,
+        symbol=symbol,
         timeframe_seconds=float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0),
     )
     epochs = [float(t) for t in df['time'].tolist()] if 'time' in df.columns else []

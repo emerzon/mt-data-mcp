@@ -156,6 +156,14 @@ def merge_dict(dst: Optional[Dict[str, Any]], src: Optional[Dict[str, Any]]) -> 
     return merged
 
 
+_SIMPLIFY_METHOD_DESCRIPTIONS = {
+    "lttb": "fast bucket-based selection",
+    "rdp": "Douglas-Peucker line simplification",
+    "pla": "piecewise linear approximation",
+    "apca": "adaptive piecewise constant approximation",
+}
+
+
 def create_command_function(
     func_info: Dict[str, Any],
     *,
@@ -255,6 +263,12 @@ def create_command_function(
             msg = str(item.get("msg") or "Invalid value.")
             if "indicators" in loc and "params" in loc and ("list" in msg.lower() or "valid list" in msg.lower()):
                 return "'params' must be a list of numbers, e.g., [14], not a dict."
+            if loc.endswith("simplify.method") and ("input should be" in msg.lower() or "literal" in msg.lower()):
+                choices = ", ".join(
+                    f"{name} ({description})"
+                    for name, description in _SIMPLIFY_METHOD_DESCRIPTIONS.items()
+                )
+                return f"simplify.method must be one of: {choices}."
             if loc:
                 messages.append(f"{loc}: {msg}")
             else:

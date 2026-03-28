@@ -2064,6 +2064,35 @@ class TestCreateCommandFunction:
         assert "limit must be greater than 0." in capsys.readouterr().out
         mock_fn.assert_not_called()
 
+    def test_invalid_simplify_method_returns_descriptive_validation_error(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "request_model": DataFetchCandlesRequest,
+            "request_param_name": "request",
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+                {"name": "simplify", "type": Dict[str, Any], "required": False, "default": None},
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="data_fetch_candles")
+        args = argparse.Namespace(
+            symbol="BTCUSD",
+            simplify="ltd",
+            simplify_params=None,
+            json=False,
+            verbose=False,
+        )
+        status = cmd_fn(args)
+        output = capsys.readouterr().out
+        assert status == 1
+        assert "simplify.method must be one of:" in output
+        assert "lttb (fast bucket-based selection)" in output
+        assert "rdp (Douglas-Peucker line simplification)" in output
+        assert "pla (piecewise linear approximation)" in output
+        assert "apca (adaptive piecewise constant approximation)" in output
+        mock_fn.assert_not_called()
+
     def test_missing_required_argument_returns_structured_error(self, capsys):
         mock_fn = MagicMock(return_value={"ok": True})
         func_info = {

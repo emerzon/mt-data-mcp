@@ -158,6 +158,7 @@ def _fetch_pattern_data(
     warnings_out.extend(
         data_quality_warnings(
             df,
+            symbol=symbol,
             timeframe_seconds=float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0),
         )
     )

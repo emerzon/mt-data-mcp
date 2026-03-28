@@ -5,6 +5,29 @@ import numpy as np
 import pandas as pd
 
 
+def _is_probably_crypto_symbol(symbol: Any) -> bool:
+    sym = str(symbol or "").upper()
+    if not sym:
+        return False
+    crypto_tokens = {
+        "BTC",
+        "ETH",
+        "XRP",
+        "SOL",
+        "DOGE",
+        "ADA",
+        "LTC",
+        "BCH",
+        "DOT",
+        "AVAX",
+        "MATIC",
+        "LINK",
+        "ATOM",
+        "UNI",
+    }
+    return any(token in sym for token in crypto_tokens)
+
+
 @dataclass
 class PatternResultBase:
     confidence: float
@@ -45,6 +68,7 @@ def interval_overlap_ratio(a_start: int, a_end: int, b_start: int, b_end: int) -
 def data_quality_warnings(
     df: Any,
     *,
+    symbol: Optional[str] = None,
     timeframe_seconds: Optional[float] = None,
 ) -> list[str]:
     warnings: list[str] = []
@@ -94,6 +118,12 @@ def data_quality_warnings(
         if volume.size >= 5:
             zero_share = float(np.mean(volume <= 0))
             if zero_share >= 0.6:
-                warnings.append("Data quality warning: zero-volume bars dominate the sample.")
+                if _is_probably_crypto_symbol(symbol):
+                    warnings.append(
+                        "Data quality warning: zero-volume bars dominate the sample "
+                        "(common for crypto low-volume periods)."
+                    )
+                else:
+                    warnings.append("Data quality warning: zero-volume bars dominate the sample.")
 
     return warnings
