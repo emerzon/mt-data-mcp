@@ -188,26 +188,27 @@ def _modify_position(
             if request_magic is not None:
                 request["magic"] = request_magic
 
-            result = mt5.order_send(request)
+            result, comment_fallback, last_error = trading_comments._send_order_with_comment_fallback(
+                mt5,
+                request,
+            )
             if result is None:
-                # surface the MT5 terminal error for debugging
-                try:
-                    last_err = mt5.last_error()
-                except Exception:
-                    last_err = None
-                return {"error": "Failed to modify position", "last_error": last_err}
+                return {"error": "Failed to modify position", "last_error": last_error}
 
             if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
-                return {
+                out = {
                     "error": "Failed to modify position",
                     "retcode": result.retcode,
                     "retcode_name": mt5.retcode_name(result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
-                    "last_error": mt5.last_error() if hasattr(mt5, "last_error") else None,
+                    "last_error": last_error,
                 }
+                if isinstance(comment_fallback, dict):
+                    out["comment_fallback"] = comment_fallback
+                return out
 
-            return {
+            out = {
                 "success": True,
                 "retcode": result.retcode,
                 "retcode_name": mt5.retcode_name(result.retcode),
@@ -221,6 +222,9 @@ def _modify_position(
                 "applied_sl": None if float(norm_sl) == 0.0 else float(norm_sl),
                 "applied_tp": None if float(norm_tp) == 0.0 else float(norm_tp),
             }
+            if isinstance(comment_fallback, dict):
+                out["comment_fallback"] = comment_fallback
+            return out
 
         except Exception as e:
             return _unexpected_operation_error(

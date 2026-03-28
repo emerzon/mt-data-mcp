@@ -645,6 +645,60 @@ def test_place_market_order_preserves_existing_position_magic_on_sltp_follow_up(
     assert sltp_req["magic"] == 24680
 
 
+def test_place_market_order_retries_sltp_without_comment_when_comment_is_invalid(mock_mt5):
+    mock_mt5.TRADE_ACTION_SLTP = 6
+    position = SimpleNamespace(symbol="EURUSD", sl=0.0, tp=0.0, type=0, magic=24680)
+    mock_mt5.last_error.side_effect = [
+        (1, "Success"),
+        (-2, 'Invalid "comment" argument'),
+        (-2, 'Invalid "comment" argument'),
+        (1, "Success"),
+    ]
+    mock_mt5.order_send.side_effect = [
+        MagicMock(
+            retcode=10009,
+            deal=123,
+            order=456,
+            volume=0.1,
+            price=1.05010,
+            bid=1.05000,
+            ask=1.05010,
+            comment="",
+            request_id=789,
+        ),
+        None,
+        None,
+        MagicMock(
+            retcode=10009,
+            deal=0,
+            order=456,
+            comment="",
+            request_id=790,
+        ),
+    ]
+
+    with patch(
+        "src.mtdata.core.trading_orders._resolve_open_position",
+        return_value=(position, 456, {}),
+    ):
+        res = _place_market_order(
+            symbol="EURUSD",
+            volume=0.1,
+            order_type="BUY",
+            stop_loss=1.04000,
+            take_profit=1.06000,
+            comment="Breakout scalp comment that will be truncated anyway",
+        )
+
+    assert "error" not in res
+    assert res["sl_tp_result"]["status"] == "applied"
+    assert res["sl_tp_result"]["comment_fallback"]["used"] is True
+    assert res["sl_tp_result"]["comment_fallback"]["strategy"] == "none"
+    assert any("TP/SL modification" in str(w) for w in res.get("warnings", []))
+    final_req = mock_mt5.order_send.call_args_list[-1].args[0]
+    assert "comment" not in final_req
+
+
 def test_modify_position_preserves_existing_magic(mock_mt5):
     mock_mt5.TRADE_ACTION_SLTP = 6
     position = SimpleNamespace(symbol="EURUSD", sl=1.04000, tp=1.06000, type=0, magic=98765)
@@ -662,6 +716,44 @@ def test_modify_position_preserves_existing_magic(mock_mt5):
     assert "error" not in res
     req = mock_mt5.order_send.call_args[0][0]
     assert req["magic"] == 98765
+
+
+def test_modify_position_retries_without_comment_when_comment_is_invalid(mock_mt5):
+    mock_mt5.TRADE_ACTION_SLTP = 6
+    position = SimpleNamespace(symbol="EURUSD", sl=1.04000, tp=1.06000, type=0, magic=98765)
+    mock_mt5.last_error.side_effect = [
+        (-2, 'Invalid "comment" argument'),
+        (-2, 'Invalid "comment" argument'),
+        (1, "Success"),
+    ]
+    mock_mt5.order_send.side_effect = [
+        None,
+        None,
+        MagicMock(
+            retcode=10009,
+            deal=0,
+            order=456,
+            comment="",
+            request_id=790,
+        ),
+    ]
+
+    with patch(
+        "src.mtdata.core.trading_execution._resolve_open_position",
+        return_value=(position, 456, {}),
+    ):
+        res = _modify_position(
+            ticket=456,
+            stop_loss=1.04000,
+            take_profit=1.06000,
+            comment="Breakout scalp comment that will be truncated anyway",
+        )
+
+    assert res.get("success") is True
+    assert res.get("comment_fallback", {}).get("used") is True
+    assert res.get("comment_fallback", {}).get("strategy") == "none"
+    final_req = mock_mt5.order_send.call_args_list[-1].args[0]
+    assert "comment" not in final_req
 
 
 def test_modify_pending_order_preserves_existing_magic(mock_mt5):

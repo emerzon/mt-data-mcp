@@ -22,30 +22,6 @@ def _safe_last_error(mt5: Any) -> Any:
     return None
 
 
-def _invalid_comment_error_text(result: Any, last_error: Any) -> Optional[str]:
-    texts: List[str] = []
-    try:
-        result_comment = getattr(result, "comment", None)
-    except Exception:
-        result_comment = None
-    if isinstance(result_comment, str) and result_comment.strip():
-        texts.append(result_comment.strip())
-    if isinstance(last_error, tuple):
-        if len(last_error) >= 2 and isinstance(last_error[1], str) and last_error[1].strip():
-            texts.append(last_error[1].strip())
-        elif last_error:
-            texts.append(str(last_error))
-    elif isinstance(last_error, str) and last_error.strip():
-        texts.append(last_error.strip())
-    elif last_error not in (None, False):
-        texts.append(str(last_error))
-    combined = " | ".join(text for text in texts if text)
-    lowered = combined.lower()
-    if "invalid" in lowered and "comment" in lowered:
-        return combined or "Invalid comment field."
-    return None
-
-
 def _compact_sl_tp_levels(
     *,
     sl: Optional[float],
@@ -72,6 +48,7 @@ def _build_sl_tp_result(
     attempts: int,
     last_retcode: Any,
     last_comment: Any,
+    comment_fallback: Optional[Dict[str, Any]],
     fallback_used: bool,
     fallback_result: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
@@ -94,6 +71,8 @@ def _build_sl_tp_result(
         out["last_retcode"] = last_retcode
     if last_comment is not None:
         out["last_comment"] = last_comment
+    if comment_fallback is not None:
+        out["comment_fallback"] = comment_fallback
     if fallback_used:
         out["fallback_used"] = True
     if fallback_result is not None:
@@ -105,49 +84,7 @@ def _send_order_with_comment_fallback(
     mt5: Any,
     request: Dict[str, Any],
 ) -> tuple[Any, Optional[Dict[str, Any]], Any]:
-    result = mt5.order_send(request)
-    last_error = _safe_last_error(mt5)
-    invalid_comment = _invalid_comment_error_text(result, last_error)
-    if invalid_comment is None:
-        return result, None, last_error
-
-    fallback_requests: List[tuple[str, Dict[str, Any]]] = []
-    minimal_comment = trading_comments._normalize_trade_comment("MCP", default="MCP")
-    if request.get("comment") != minimal_comment:
-        req_short = dict(request)
-        req_short["comment"] = minimal_comment
-        fallback_requests.append(("minimal", req_short))
-    if "comment" in request:
-        req_nocomment = dict(request)
-        req_nocomment.pop("comment", None)
-        fallback_requests.append(("none", req_nocomment))
-
-    strategies = [strategy for strategy, _req in fallback_requests]
-    for strategy, alt_request in fallback_requests:
-        alt_result = mt5.order_send(alt_request)
-        alt_last_error = _safe_last_error(mt5)
-        if alt_result is not None and getattr(alt_result, "retcode", None) == mt5.TRADE_RETCODE_DONE:
-            return (
-                alt_result,
-                {
-                    "used": True,
-                    "strategy": strategy,
-                    "invalid_comment_error": invalid_comment,
-                    "request": alt_request,
-                },
-                alt_last_error,
-            )
-
-    return (
-        result,
-        {
-            "used": False,
-            "attempted": bool(fallback_requests),
-            "strategies": strategies,
-            "invalid_comment_error": invalid_comment,
-        },
-        last_error,
-    )
+    return trading_comments._send_order_with_comment_fallback(mt5, request)
 
 
 def _candidate_fill_modes(mt5: Any) -> List[int]:
@@ -395,6 +332,7 @@ def _place_market_order(
             sl_tp_attempts = 0
             sl_tp_last_retcode = None
             sl_tp_last_comment = None
+            sl_tp_comment_fallback: Optional[Dict[str, Any]] = None
             sl_tp_fallback_used = False
             sl_tp_fallback_result: Optional[Dict[str, Any]] = None
 
@@ -447,7 +385,10 @@ def _place_market_order(
                         for modify_try in range(max_modify_attempts):
                             sl_tp_attempts = int(modify_try + 1)
                             try:
-                                modify_result = mt5.order_send(modify_request)
+                                modify_result, sl_tp_comment_fallback, _sl_tp_last_error = _send_order_with_comment_fallback(
+                                    mt5,
+                                    modify_request,
+                                )
                             except StopIteration:
                                 modify_result = None
                                 break
@@ -583,6 +524,10 @@ def _place_market_order(
                 warnings_out.append(
                     "Broker rejected the comment field; order was retried with a minimal MT5-safe comment."
                 )
+            if isinstance(sl_tp_comment_fallback, dict) and sl_tp_comment_fallback.get("used"):
+                warnings_out.append(
+                    "Broker rejected the comment field on the TP/SL modification; protection was retried without the original comment."
+                )
             if sl_tp_requested and sl_tp_apply_status == "failed":
                 if position_ticket is not None:
                     action_text = f"Run trade_modify {position_ticket} immediately"
@@ -634,6 +579,7 @@ def _place_market_order(
                     attempts=sl_tp_attempts,
                     last_retcode=sl_tp_last_retcode,
                     last_comment=sl_tp_last_comment,
+                    comment_fallback=sl_tp_comment_fallback,
                     fallback_used=sl_tp_fallback_used,
                     fallback_result=sl_tp_fallback_result,
                 ),

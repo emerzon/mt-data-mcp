@@ -106,3 +106,81 @@ def _comment_row_metadata(comment: Any) -> Dict[str, Any]:
         "comment_max_length": _MT5_COMMENT_MAX_LENGTH,
         "comment_may_be_truncated": len(text) >= _MT5_COMMENT_MAX_LENGTH,
     }
+
+
+def _invalid_comment_error_text(result: Any, last_error: Any) -> Optional[str]:
+    texts = []
+    try:
+        result_comment = getattr(result, "comment", None)
+    except Exception:
+        result_comment = None
+    if isinstance(result_comment, str) and result_comment.strip():
+        texts.append(result_comment.strip())
+    if isinstance(last_error, tuple):
+        if len(last_error) >= 2 and isinstance(last_error[1], str) and last_error[1].strip():
+            texts.append(last_error[1].strip())
+        elif last_error:
+            texts.append(str(last_error))
+    elif isinstance(last_error, str) and last_error.strip():
+        texts.append(last_error.strip())
+    elif last_error not in (None, False):
+        texts.append(str(last_error))
+    combined = " | ".join(text for text in texts if text)
+    lowered = combined.lower()
+    if "invalid" in lowered and "comment" in lowered:
+        return combined or 'Invalid "comment" argument'
+    return None
+
+
+def _send_order_with_comment_fallback(mt5: Any, request: Dict[str, Any]) -> tuple[Any, Optional[Dict[str, Any]], Any]:
+    def _safe_last_error() -> Any:
+        try:
+            if hasattr(mt5, "last_error"):
+                return mt5.last_error()
+        except Exception:
+            return None
+        return None
+
+    result = mt5.order_send(request)
+    last_error = _safe_last_error()
+    invalid_comment = _invalid_comment_error_text(result, last_error)
+    if invalid_comment is None:
+        return result, None, last_error
+
+    fallback_requests = []
+    minimal_comment = _normalize_trade_comment("MCP", default="MCP")
+    if request.get("comment") != minimal_comment:
+        req_short = dict(request)
+        req_short["comment"] = minimal_comment
+        fallback_requests.append(("minimal", req_short))
+    if "comment" in request:
+        req_nocomment = dict(request)
+        req_nocomment.pop("comment", None)
+        fallback_requests.append(("none", req_nocomment))
+
+    strategies = [strategy for strategy, _req in fallback_requests]
+    for strategy, alt_request in fallback_requests:
+        alt_result = mt5.order_send(alt_request)
+        alt_last_error = _safe_last_error()
+        if alt_result is not None and getattr(alt_result, "retcode", None) == mt5.TRADE_RETCODE_DONE:
+            return (
+                alt_result,
+                {
+                    "used": True,
+                    "strategy": strategy,
+                    "invalid_comment_error": invalid_comment,
+                    "request": alt_request,
+                },
+                alt_last_error,
+            )
+
+    return (
+        result,
+        {
+            "used": False,
+            "attempted": bool(fallback_requests),
+            "strategies": strategies,
+            "invalid_comment_error": invalid_comment,
+        },
+        last_error,
+    )
