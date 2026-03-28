@@ -48,6 +48,7 @@ from mtdata.core.cli import (
     _attach_cli_meta,
     get_function_info,
     _apply_schema_overrides,
+    _apply_cli_output_mode_defaults,
     _extract_function_from_tool_obj,
     _extract_metadata_from_tool_obj,
     _is_union_origin,
@@ -1783,6 +1784,64 @@ class TestResolveParamKwargs:
             "auto",
         ]
         assert "Barrier simulation method" in kwargs["help"]
+
+
+# ========================================================================
+# _apply_cli_output_mode_defaults
+# ========================================================================
+
+class TestApplyCliOutputModeDefaults:
+    def test_defaults_detail_to_compact_when_user_does_not_specify_mode(self):
+        args = argparse.Namespace(command="patterns_detect", detail="full", verbose=False)
+        func_info = {
+            "params": [
+                {"name": "detail", "type": Literal["compact", "full"], "required": False, "default": "full"},
+            ]
+        }
+        functions = {"patterns_detect": {"func": MagicMock(), "_cli_func_info": func_info, "meta": {}}}
+
+        out = _apply_cli_output_mode_defaults(args, ["patterns_detect"], functions)
+
+        assert out.detail == "compact"
+
+    def test_defaults_output_to_summary_when_compact_is_unavailable(self):
+        args = argparse.Namespace(command="forecast_barrier_optimize", output="full", verbose=False)
+        func_info = {
+            "params": [
+                {"name": "output", "type": Literal["full", "summary"], "required": False, "default": "full"},
+            ]
+        }
+        functions = {"forecast_barrier_optimize": {"func": MagicMock(), "_cli_func_info": func_info, "meta": {}}}
+
+        out = _apply_cli_output_mode_defaults(args, ["forecast_barrier_optimize"], functions)
+
+        assert out.output == "summary"
+
+    def test_verbose_promotes_supported_modes_to_full(self):
+        args = argparse.Namespace(command="indicators_list", detail="compact", verbose=True)
+        func_info = {
+            "params": [
+                {"name": "detail", "type": Literal["compact", "full"], "required": False, "default": "compact"},
+            ]
+        }
+        functions = {"indicators_list": {"func": MagicMock(), "_cli_func_info": func_info, "meta": {}}}
+
+        out = _apply_cli_output_mode_defaults(args, ["indicators_list", "--verbose"], functions)
+
+        assert out.detail == "full"
+
+    def test_explicit_mode_is_respected(self):
+        args = argparse.Namespace(command="patterns_detect", detail="full", verbose=False)
+        func_info = {
+            "params": [
+                {"name": "detail", "type": Literal["compact", "full"], "required": False, "default": "full"},
+            ]
+        }
+        functions = {"patterns_detect": {"func": MagicMock(), "_cli_func_info": func_info, "meta": {}}}
+
+        out = _apply_cli_output_mode_defaults(args, ["patterns_detect", "--detail", "full"], functions)
+
+        assert out.detail == "full"
 
 
 # ========================================================================

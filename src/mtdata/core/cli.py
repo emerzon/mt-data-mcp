@@ -246,6 +246,74 @@ def _apply_global_cli_overrides(args: Any, argv: List[str]) -> Any:
     return args
 
 
+def _argv_param_present_after_command(argv: List[str], command: str, param_name: str) -> bool:
+    flags = (
+        f"--{param_name.replace('_', '-')}",
+        f"--{param_name}",
+    )
+    return any(_argv_option_present_after_command(argv, command, flag) for flag in flags)
+
+
+def _literal_choices_for_cli_param(param: Dict[str, Any]) -> Optional[List[str]]:
+    try:
+        ptype = param.get("type")
+        base_type, origin = _unwrap_optional_type(ptype)
+    except Exception:
+        return None
+    if not _is_literal_origin(origin):
+        return None
+    choices = [str(value) for value in get_args(base_type) if value is not None]
+    return choices or None
+
+
+def _default_cli_compact_choice(choices: List[str], *, verbose: bool) -> Optional[str]:
+    by_lower = {str(choice).strip().lower(): str(choice) for choice in choices if str(choice).strip()}
+    if "full" not in by_lower:
+        return None
+    if verbose:
+        return by_lower["full"]
+    if "compact" in by_lower:
+        return by_lower["compact"]
+    if "summary" in by_lower:
+        return by_lower["summary"]
+    return None
+
+
+def _apply_cli_output_mode_defaults(args: Any, argv: List[str], functions: Dict[str, ToolInfo]) -> Any:
+    command = getattr(args, "command", None)
+    if not isinstance(command, str) or not command:
+        return args
+
+    tool = functions.get(command)
+    if not isinstance(tool, dict):
+        return args
+
+    func = tool.get("func")
+    if func is None:
+        return args
+
+    func_info = tool.setdefault("_cli_func_info", get_function_info(func))
+    _apply_schema_overrides(tool, func_info)
+    verbose = bool(getattr(args, "verbose", False))
+
+    for param in func_info.get("params") or []:
+        if not isinstance(param, dict):
+            continue
+        param_name = str(param.get("name") or "").strip()
+        if param_name not in {"detail", "output"}:
+            continue
+        if _argv_param_present_after_command(argv, command, param_name):
+            continue
+        choices = _literal_choices_for_cli_param(param)
+        if not choices:
+            continue
+        selected = _default_cli_compact_choice(choices, verbose=verbose)
+        if selected is None:
+            continue
+        setattr(args, param_name, selected)
+    return args
+
+
 def _drop_cli_result_keys(value: Any, keys: set[str]) -> Any:
     if isinstance(value, dict):
         return {k: v for k, v in value.items() if k not in keys}
@@ -1317,7 +1385,8 @@ def main():
     # Parse arguments
     args = parser.parse_args()
     args = _apply_global_cli_overrides(args, sys.argv[1:])
-    
+    args = _apply_cli_output_mode_defaults(args, sys.argv[1:], functions)
+
     if not args.command:
         parser.print_help()
         return 1
