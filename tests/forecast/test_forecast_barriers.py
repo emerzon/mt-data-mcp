@@ -1,4 +1,5 @@
 import importlib.util
+import inspect
 import unittest
 import warnings
 from unittest.mock import patch
@@ -63,6 +64,9 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             [1.0, 0.99, 0.98, 0.97],
             [1.0, 1.002, 0.998, 1.006],
         ])
+
+    def test_forecast_barrier_optimize_signature_defaults_to_summary_output(self):
+        self.assertEqual(inspect.signature(forecast_barrier_optimize).parameters["output"].default, "summary")
 
     def tearDown(self):
         self._stop_barrier_module_patchers()

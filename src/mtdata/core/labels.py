@@ -36,7 +36,7 @@ def labels_triple_barrier(
     denoise: Optional[DenoiseSpec] = None,
     direction: Literal["long", "short"] = "long",  # type: ignore
     label_on: Literal['close','high_low'] = 'high_low',  # type: ignore
-    output: Literal['full','summary','compact','summary_only'] = 'full',  # type: ignore
+    output: Literal['full','summary','compact','summary_only'] = 'compact',  # type: ignore
     summary_only: bool = False,
     lookback: int = 300,
 ) -> Dict[str, Any]:

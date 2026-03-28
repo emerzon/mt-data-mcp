@@ -81,7 +81,7 @@ def forecast_barrier_optimize(
     ] = 'ev',
     return_grid: bool = True,
     top_k: Optional[int] = None,
-    output: Literal['full','summary'] = 'full',
+    output: Literal['full','summary'] = 'summary',
     viable_only: bool = False,
     concise: bool = False,
     grid_style: Literal['fixed','volatility','ratio','preset'] = 'fixed',
@@ -165,7 +165,7 @@ def forecast_barrier_optimize(
             return {"error": f"Invalid mode: {mode}. Use 'pct' or 'pips'."}
         output_mode = str(output).strip().lower()
         if output_mode not in {'full', 'summary'}:
-            output_mode = 'full'
+            output_mode = 'summary'
 
         def _coerce_bool_flag(value: Any, default: bool = False) -> bool:
             if isinstance(value, bool):

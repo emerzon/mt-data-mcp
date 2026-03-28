@@ -99,7 +99,7 @@ def forecast_barrier_optimize(
     ] = "ev",
     return_grid: bool = True,
     top_k: Optional[int] = None,
-    output: Literal["full", "summary"] = "full",
+    output: Literal["full", "summary"] = "summary",
     viable_only: bool = False,
     concise: bool = False,
     grid_style: Literal["fixed", "volatility", "ratio", "preset"] = "fixed",

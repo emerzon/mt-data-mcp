@@ -1,5 +1,6 @@
 """Tests for core/labels.py — triple barrier labeling (mocked MT5)."""
 
+import inspect
 import numpy as np
 import pandas as pd
 import pytest
@@ -61,6 +62,12 @@ def _get_raw_fn():
 class TestLabelsTripleBarrier:
     """Tests targeting lines 43-146 of labels.py."""
 
+    def test_signature_defaults_to_compact_output(self):
+        from mtdata.core.labels import labels_triple_barrier
+
+        raw = labels_triple_barrier.__wrapped__
+        assert inspect.signature(raw).parameters["output"].default == "compact"
+
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
@@ -68,6 +75,7 @@ class TestLabelsTripleBarrier:
         mock_hist.return_value = _make_df(60)
         result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=12)
         assert result["success"] is True
+        assert "summary" in result
         assert len(result["labels"]) > 0
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)

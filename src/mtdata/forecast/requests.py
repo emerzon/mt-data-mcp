@@ -163,7 +163,7 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     objective: str = "ev"
     return_grid: bool = True
     top_k: Optional[int] = None
-    output: str = "full"
+    output: str = "summary"
     viable_only: bool = False
     concise: bool = False
     grid_style: str = "fixed"

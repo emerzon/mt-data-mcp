@@ -315,6 +315,11 @@ def test_forecast_barrier_optimize_logs_finish_event(caplog, monkeypatch):
     )
 
 
+def test_forecast_barrier_optimize_request_defaults_to_summary_output():
+    request = ForecastBarrierOptimizeRequest(symbol="EURUSD")
+    assert request.output == "summary"
+
+
 def test_forecast_list_library_models_and_list_methods(monkeypatch):
     stats_mod = ModuleType("statsforecast")
     models_mod = ModuleType("statsforecast.models")
