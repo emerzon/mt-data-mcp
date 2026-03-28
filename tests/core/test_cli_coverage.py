@@ -1729,6 +1729,21 @@ class TestAddDynamicArguments:
         assert output_action.choices == ["full", "summary", "compact", "summary_only"]
         assert not any(action.dest == "summary_only" for action in parser._actions)
 
+    def test_partial_flag_prefix_is_rejected_when_abbrev_disabled(self, capsys):
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        func_info = {
+            "params": [
+                {"name": "search_term", "type": str, "required": False, "default": None},
+            ]
+        }
+
+        add_dynamic_arguments(parser, func_info)
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--search", "BTC"])
+
+        assert "unrecognized arguments: --search BTC" in capsys.readouterr().err
+
 
 # ========================================================================
 # _parse_kv_string
@@ -2458,6 +2473,34 @@ class TestMain:
             result = main()
         assert result == 0
         mock_fn.assert_called_once()
+
+    @patch("mtdata.core.cli.discover_tools")
+    def test_hyphenated_command_alias_executes_tool(self, mock_discover):
+        mock_fn = MagicMock(return_value="output text")
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "symbols_list"
+        mock_fn.__doc__ = "List symbols."
+
+        def symbols_list(search_term: str | None = None):
+            """List symbols."""
+            pass
+
+        info = get_function_info(symbols_list)
+        info["func"] = mock_fn
+
+        mock_discover.return_value = {
+            "symbols_list": {
+                "func": mock_fn,
+                "meta": {"description": "List symbols"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch("sys.argv", ["cli.py", "symbols-list", "--search-term", "BTC"]):
+            result = main()
+
+        assert result == 0
+        mock_fn.assert_called_once_with(search_term="BTC", __cli_raw=True)
 
     @patch("mtdata.core.cli.discover_tools")
     def test_global_timeframe_before_command_is_applied(self, mock_discover):

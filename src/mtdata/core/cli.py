@@ -169,9 +169,8 @@ def _model_dump_compat(model: BaseModel) -> Dict[str, Any]:
 
 
 def _argv_option_present_after_command(argv: List[str], command: str, option: str) -> bool:
-    try:
-        cmd_index = argv.index(command)
-    except ValueError:
+    cmd_index = _find_command_index(argv, command)
+    if cmd_index is None:
         return False
     for token in argv[cmd_index + 1 :]:
         if token == option or token.startswith(f"{option}="):
@@ -179,10 +178,43 @@ def _argv_option_present_after_command(argv: List[str], command: str, option: st
     return False
 
 
+def _command_variants(command: str) -> Tuple[str, ...]:
+    text = str(command or "").strip()
+    if not text:
+        return ()
+    variants = [text]
+    hyphen = text.replace("_", "-")
+    underscore = text.replace("-", "_")
+    if hyphen not in variants:
+        variants.append(hyphen)
+    if underscore not in variants:
+        variants.append(underscore)
+    return tuple(variants)
+
+
+def _find_command_index(argv: List[str], command: str) -> Optional[int]:
+    for candidate in _command_variants(command):
+        try:
+            return argv.index(candidate)
+        except ValueError:
+            continue
+    return None
+
+
+def _command_aliases(command: str) -> List[str]:
+    text = str(command or "").strip()
+    if not text or "_" not in text:
+        return []
+    alias = text.replace("_", "-")
+    return [alias] if alias != text else []
+
+
 def _apply_global_cli_overrides(args: Any, argv: List[str]) -> Any:
     command = getattr(args, "command", None)
     if not isinstance(command, str) or not command:
         return args
+    command = command.replace("-", "_")
+    setattr(args, "command", command)
     global_timeframe = getattr(args, "_global_timeframe", None)
     if global_timeframe is not None and not _argv_option_present_after_command(argv, command, "--timeframe"):
         setattr(args, "timeframe", global_timeframe)
@@ -1041,6 +1073,7 @@ def main():
         description="Dynamic CLI for MetaTrader5 MCP tools (formatted text output by default)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=_build_epilog(functions),
+        allow_abbrev=False,
         suggest_on_error=True,
         color=_argparse_color_enabled(),
     )
@@ -1075,6 +1108,8 @@ def main():
             cmd_name, 
             help=((meta.get('description') or func_info['doc'].split('\n')[0] if func_info['doc'] else f"Execute {cmd_name}").replace('%', '%%')),
             formatter_class=argparse.RawDescriptionHelpFormatter,
+            allow_abbrev=False,
+            aliases=_command_aliases(cmd_name),
             suggest_on_error=True,
             color=_argparse_color_enabled(),
         )
@@ -1108,6 +1143,8 @@ def main():
             cmd_name,
             help=((meta.get('description') or func_info['doc'].split('\n')[0] if func_info['doc'] else f"Execute {cmd_name}").replace('%', '%%')),
             formatter_class=argparse.RawDescriptionHelpFormatter,
+            allow_abbrev=False,
+            aliases=_command_aliases(cmd_name),
             suggest_on_error=True,
             color=_argparse_color_enabled(),
         )
