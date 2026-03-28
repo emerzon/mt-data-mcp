@@ -1765,6 +1765,20 @@ class TestModifyPosition:
         assert result.get("success") is True
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_no_changes_returns_success_when_levels_already_match(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.TRADE_RETCODE_NO_CHANGES = 10025
+        mt5.positions_get.return_value = [_position(sl=1.08, tp=1.13)]
+        mt5.symbol_info.return_value = _sym()
+        from mtdata.core.trading import _modify_position
+        result = _modify_position(ticket=1, stop_loss=1.08, take_profit=1.13)
+        assert result.get("success") is True
+        assert result.get("no_change") is True
+        assert result.get("retcode") == 10025
+        mt5.order_send.assert_not_called()
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_resolves_position_by_identifier_when_ticket_lookup_misses(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
@@ -1804,6 +1818,23 @@ class TestModifyPosition:
         from mtdata.core.trading import _modify_position
         result = _modify_position(ticket=1, stop_loss=1.08)
         assert "error" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_broker_no_changes_retcode_is_success_when_live_position_matches(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.TRADE_RETCODE_NO_CHANGES = 10025
+        mt5.positions_get.side_effect = [
+            [_position(sl=1.09, tp=1.12)],
+            [_position(sl=1.08, tp=1.12)],
+        ]
+        mt5.symbol_info.return_value = _sym()
+        mt5.order_send.return_value = _order_result(retcode=10025, comment="No changes")
+        from mtdata.core.trading import _modify_position
+        result = _modify_position(ticket=1, stop_loss=1.08)
+        assert result.get("success") is True
+        assert result.get("no_change") is True
+        assert result.get("retcode") == 10025
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_symbol_info_none(self):

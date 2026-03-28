@@ -55,6 +55,24 @@ def _resolve_position_side(position: Any, mt5: Any) -> Optional[str]:
     return None
 
 
+def _normalize_protection_level(value: Optional[float], *, tol: float) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(numeric) or math.isclose(numeric, 0.0, abs_tol=tol):
+        return None
+    return numeric
+
+
+def _protection_levels_match(lhs: Optional[float], rhs: Optional[float], *, tol: float) -> bool:
+    if lhs is None or rhs is None:
+        return lhs is None and rhs is None
+    return math.isclose(float(lhs), float(rhs), abs_tol=tol)
+
+
 def _unexpected_operation_error(
     operation: str,
     exc: Exception,
@@ -160,6 +178,29 @@ def _modify_position(
             validate_sl = None if stop_loss is None or explicit_remove_sl else float(requested_sl)
             validate_tp = None if take_profit is None or explicit_remove_tp else float(requested_tp)
 
+            price_tol = point if math.isfinite(point) and point > 0.0 else 1e-9
+            current_sl = _normalize_protection_level(existing_sl, tol=price_tol)
+            current_tp = _normalize_protection_level(existing_tp, tol=price_tol)
+            desired_sl = _normalize_protection_level(norm_sl, tol=price_tol)
+            desired_tp = _normalize_protection_level(norm_tp, tol=price_tol)
+
+            if _protection_levels_match(current_sl, desired_sl, tol=price_tol) and _protection_levels_match(current_tp, desired_tp, tol=price_tol):
+                no_change_code = trading_validation._safe_int_attr(mt5, "TRADE_RETCODE_NO_CHANGES", 10025)
+                return {
+                    "success": True,
+                    "retcode": no_change_code,
+                    "retcode_name": mt5.retcode_name(no_change_code),
+                    "comment": "No changes",
+                    "request_id": 0,
+                    "position_ticket": resolved_ticket,
+                    "ticket_requested": ticket_id,
+                    "ticket_resolution": ticket_resolution,
+                    "applied_sl": desired_sl,
+                    "applied_tp": desired_tp,
+                    "no_change": True,
+                    "message": "Requested SL/TP already match the live position.",
+                }
+
             side = _resolve_position_side(position, mt5)
             if side is None:
                 return {"error": "Unable to determine position side for protection validation."}
@@ -195,11 +236,58 @@ def _modify_position(
             if result is None:
                 return {"error": "Failed to modify position", "last_error": last_error}
 
-            if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
+            result_retcode = getattr(result, "retcode", None)
+            no_change_code = trading_validation._safe_int_attr(mt5, "TRADE_RETCODE_NO_CHANGES", 10025)
+
+            if result_retcode == no_change_code:
+                refreshed_position = None
+                try:
+                    refreshed_rows = mt5.positions_get(ticket=resolved_ticket)
+                except Exception:
+                    refreshed_rows = None
+                if refreshed_rows:
+                    try:
+                        refreshed_position = list(refreshed_rows)[0]
+                    except Exception:
+                        refreshed_position = None
+                refreshed_sl = trading_validation._normalize_price_for_symbol(
+                    getattr(refreshed_position, "sl", None) if refreshed_position is not None else getattr(position, "sl", None),
+                    point=point,
+                    digits=digits,
+                )
+                refreshed_tp = trading_validation._normalize_price_for_symbol(
+                    getattr(refreshed_position, "tp", None) if refreshed_position is not None else getattr(position, "tp", None),
+                    point=point,
+                    digits=digits,
+                )
+                final_sl = _normalize_protection_level(refreshed_sl, tol=price_tol)
+                final_tp = _normalize_protection_level(refreshed_tp, tol=price_tol)
+                if _protection_levels_match(final_sl, desired_sl, tol=price_tol) and _protection_levels_match(final_tp, desired_tp, tol=price_tol):
+                    out = {
+                        "success": True,
+                        "retcode": result_retcode,
+                        "retcode_name": mt5.retcode_name(result_retcode),
+                        "deal": result.deal,
+                        "order": result.order,
+                        "comment": result.comment,
+                        "request_id": result.request_id,
+                        "position_ticket": resolved_ticket,
+                        "ticket_requested": ticket_id,
+                        "ticket_resolution": ticket_resolution,
+                        "applied_sl": final_sl,
+                        "applied_tp": final_tp,
+                        "no_change": True,
+                        "message": "Requested SL/TP already match the live position.",
+                    }
+                    if isinstance(comment_fallback, dict):
+                        out["comment_fallback"] = comment_fallback
+                    return out
+
+            if result_retcode != mt5.TRADE_RETCODE_DONE:
                 out = {
                     "error": "Failed to modify position",
-                    "retcode": result.retcode,
-                    "retcode_name": mt5.retcode_name(result.retcode),
+                    "retcode": result_retcode,
+                    "retcode_name": mt5.retcode_name(result_retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
                     "last_error": last_error,
@@ -210,8 +298,8 @@ def _modify_position(
 
             out = {
                 "success": True,
-                "retcode": result.retcode,
-                "retcode_name": mt5.retcode_name(result.retcode),
+                "retcode": result_retcode,
+                "retcode_name": mt5.retcode_name(result_retcode),
                 "deal": result.deal,
                 "order": result.order,
                 "comment": result.comment,
@@ -219,8 +307,8 @@ def _modify_position(
                 "position_ticket": resolved_ticket,
                 "ticket_requested": ticket_id,
                 "ticket_resolution": ticket_resolution,
-                "applied_sl": None if float(norm_sl) == 0.0 else float(norm_sl),
-                "applied_tp": None if float(norm_tp) == 0.0 else float(norm_tp),
+                "applied_sl": desired_sl,
+                "applied_tp": desired_tp,
             }
             if isinstance(comment_fallback, dict):
                 out["comment_fallback"] = comment_fallback

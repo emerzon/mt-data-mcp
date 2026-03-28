@@ -701,7 +701,7 @@ def test_place_market_order_retries_sltp_without_comment_when_comment_is_invalid
 
 def test_modify_position_preserves_existing_magic(mock_mt5):
     mock_mt5.TRADE_ACTION_SLTP = 6
-    position = SimpleNamespace(symbol="EURUSD", sl=1.04000, tp=1.06000, type=0, magic=98765)
+    position = SimpleNamespace(symbol="EURUSD", sl=1.03000, tp=1.05000, type=0, magic=98765)
 
     with patch(
         "src.mtdata.core.trading_execution._resolve_open_position",
@@ -720,7 +720,7 @@ def test_modify_position_preserves_existing_magic(mock_mt5):
 
 def test_modify_position_retries_without_comment_when_comment_is_invalid(mock_mt5):
     mock_mt5.TRADE_ACTION_SLTP = 6
-    position = SimpleNamespace(symbol="EURUSD", sl=1.04000, tp=1.06000, type=0, magic=98765)
+    position = SimpleNamespace(symbol="EURUSD", sl=1.03000, tp=1.05000, type=0, magic=98765)
     mock_mt5.last_error.side_effect = [
         (-2, 'Invalid "comment" argument'),
         (-2, 'Invalid "comment" argument'),
