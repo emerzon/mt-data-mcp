@@ -491,13 +491,18 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
 
         res = dec(_async_wrapped)
         name = getattr(func, "__name__", None)
+        try:
+            setattr(_wrapped, "_mcp_async_wrapper", _async_wrapped)
+            setattr(_wrapped, "_mcp_tool_object", res)
+        except Exception:
+            pass
         if name:
             _TOOL_REGISTRY[str(name)] = _wrapped
             try:
                 _TOOL_OBJECT_REGISTRY[str(name)] = res
             except Exception:
                 pass
-        return res
+        return _wrapped
 
     return _wrap
 

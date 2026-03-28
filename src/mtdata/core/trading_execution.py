@@ -455,10 +455,7 @@ def _modify_pending_order(
 
             result = mt5.order_send(request)
             if result is None:
-                try:
-                    last_err = mt5.last_error()
-                except Exception:
-                    last_err = None
+                last_err = trading_validation._safe_last_error(mt5)
                 return {"error": "Failed to modify pending order", "last_error": last_err}
 
             if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
@@ -468,7 +465,7 @@ def _modify_pending_order(
                     "retcode_name": mt5.retcode_name(result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
-                    "last_error": mt5.last_error() if hasattr(mt5, "last_error") else None,
+                    "last_error": trading_validation._safe_last_error(mt5),
                 }
 
             return {
@@ -663,11 +660,7 @@ def _close_positions(
                 for fill_mode in fill_modes:
                     tick = mt5.symbol_info_tick(position.symbol)
                     if tick is None:
-                        tick_error = None
-                        try:
-                            tick_error = mt5.last_error() if hasattr(mt5, "last_error") else None
-                        except Exception:
-                            tick_error = None
+                        tick_error = trading_validation._safe_last_error(mt5)
                         attempts.append(
                             {
                                 "type_filling": int(fill_mode),
@@ -704,11 +697,7 @@ def _close_positions(
 
                     result = mt5.order_send(request)
                     if result is None:
-                        send_error = None
-                        try:
-                            send_error = mt5.last_error() if hasattr(mt5, "last_error") else None
-                        except Exception:
-                            send_error = None
+                        send_error = trading_validation._safe_last_error(mt5)
                         send_error_text = str(send_error).lower() if send_error is not None else ""
                         # Retry with a minimal/no comment when broker rejects the comment field.
                         if "invalid" in send_error_text and "comment" in send_error_text:
@@ -723,11 +712,7 @@ def _close_positions(
                             for alt_req in alt_requests:
                                 alt_res = mt5.order_send(alt_req)
                                 if alt_res is None:
-                                    alt_err = None
-                                    try:
-                                        alt_err = mt5.last_error() if hasattr(mt5, "last_error") else None
-                                    except Exception:
-                                        alt_err = None
+                                    alt_err = trading_validation._safe_last_error(mt5)
                                     attempts.append(
                                         {
                                             "type_filling": int(fill_mode),
@@ -793,11 +778,7 @@ def _close_positions(
                         close_ok = False
 
                 if not close_ok:
-                    last_error = None
-                    try:
-                        last_error = mt5.last_error() if hasattr(mt5, "last_error") else None
-                    except Exception:
-                        last_error = None
+                    last_error = trading_validation._safe_last_error(mt5)
                     tick_failures = [
                         a for a in attempts if "tick data" in str(a.get("error", "")).lower()
                     ]
