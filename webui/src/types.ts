@@ -38,7 +38,12 @@ export type RuntimeTimezoneMeta = {
 }
 
 export type HistoryResponse = {
-  bars: HistoryBar[]
+  data: HistoryBar[]
+  candles?: number
+  timeframe?: string
+  symbol?: string
+  success?: boolean
+  last_candle_open?: boolean
   meta?: {
     runtime?: {
       timezone?: RuntimeTimezoneMeta

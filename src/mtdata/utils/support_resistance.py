@@ -1399,6 +1399,83 @@ def merge_support_resistance_results(
     }
 
 
+def compact_support_resistance_level(level: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(level, dict):
+        return None
+    out: Dict[str, Any] = {}
+    for key in ("type", "value", "distance", "distance_pct", "touches", "episodes", "status", "score", "strength_rank"):
+        value = level.get(key)
+        if value is not None:
+            out[str(key)] = value
+    source_timeframes = level.get("source_timeframes")
+    if isinstance(source_timeframes, list) and source_timeframes:
+        out["source_timeframes"] = list(source_timeframes)
+    dominant_source = level.get("dominant_source")
+    if isinstance(dominant_source, str) and dominant_source.strip():
+        out["dominant_source"] = dominant_source
+    return out or None
+
+
+def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return payload
+
+    out: Dict[str, Any] = {}
+    for key in ("success", "symbol", "timeframe", "mode", "method", "current_price", "timeframes_analyzed"):
+        value = payload.get(key)
+        if value is not None:
+            out[str(key)] = value
+
+    window = payload.get("window")
+    if isinstance(window, dict):
+        window_out = {str(k): v for k, v in window.items() if v is not None}
+        if window_out:
+            out["window"] = window_out
+
+    supports = payload.get("supports")
+    resistances = payload.get("resistances")
+    if isinstance(supports, list) or isinstance(resistances, list):
+        counts: Dict[str, int] = {}
+        if isinstance(supports, list):
+            counts["support"] = len(supports)
+        if isinstance(resistances, list):
+            counts["resistance"] = len(resistances)
+        if counts:
+            counts["total"] = sum(counts.values())
+            out["level_counts"] = counts
+
+    nearest: Dict[str, Any] = {}
+    if isinstance(supports, list) and supports:
+        support_compact = compact_support_resistance_level(supports[0])
+        if support_compact:
+            nearest["support"] = support_compact
+    if isinstance(resistances, list) and resistances:
+        resistance_compact = compact_support_resistance_level(resistances[0])
+        if resistance_compact:
+            nearest["resistance"] = resistance_compact
+    if nearest:
+        out["nearest"] = nearest
+
+    levels = payload.get("levels")
+    if isinstance(levels, list):
+        compact_levels = [
+            compacted
+            for compacted in (compact_support_resistance_level(level) for level in levels)
+            if compacted
+        ]
+        if compact_levels:
+            out["levels"] = compact_levels
+
+    warnings = payload.get("warnings")
+    if isinstance(warnings, list) and warnings:
+        out["warnings"] = list(warnings)
+
+    meta = payload.get("meta")
+    if isinstance(meta, dict) and meta:
+        out["meta"] = dict(meta)
+    return out or dict(payload)
+
+
 def compute_support_resistance_levels(
     frame: pd.DataFrame,
     *,

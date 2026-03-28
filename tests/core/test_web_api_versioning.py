@@ -56,8 +56,12 @@ def test_history_available_on_versioned_route() -> None:
 
     assert response.status_code == 200
     assert response.json() == {
-        "bars": payload["data"],
+        "success": True,
+        "data": payload["data"],
+        "last_candle_open": False,
+        "candles": 2,
         "meta": {
+            "tool": "data_fetch_candles",
             "runtime": {
                 "timezone": {
                     "utc": {"tz": "UTC"},

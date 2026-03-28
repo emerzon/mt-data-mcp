@@ -478,21 +478,23 @@ class TestBuildForecastMeta:
             },
         }
 
-    def test_flattens_legacy_timezone_dicts_in_display_meta(self):
+    def test_flattens_nested_timezone_dicts_in_common_meta(self):
         payload = {
-            "cli_meta": {
-                "command": "forecast_generate",
-                "timezone": {
-                    "server": {
-                        "tz": {
-                            "configured": "Europe/Nicosia",
-                            "resolved": "Europe/Nicosia",
+            "meta": {
+                "tool": "forecast_generate",
+                "runtime": {
+                    "timezone": {
+                        "server": {
+                            "tz": {
+                                "configured": "Europe/Nicosia",
+                                "resolved": "Europe/Nicosia",
+                            },
                         },
-                    },
-                    "client": {
-                        "tz": {
-                            "configured": "US/Central",
-                            "resolved": "US/Central",
+                        "client": {
+                            "tz": {
+                                "configured": "US/Central",
+                                "resolved": "US/Central",
+                            },
                         },
                     },
                 },
@@ -504,13 +506,15 @@ class TestBuildForecastMeta:
 
     def test_prefers_resolved_timezone_when_it_differs(self):
         payload = {
-            "cli_meta": {
-                "command": "forecast_generate",
-                "timezone": {
-                    "server": {
-                        "tz": {
-                            "configured": "EET",
-                            "resolved": "Europe/Nicosia",
+            "meta": {
+                "tool": "forecast_generate",
+                "runtime": {
+                    "timezone": {
+                        "server": {
+                            "tz": {
+                                "configured": "EET",
+                                "resolved": "Europe/Nicosia",
+                            },
                         },
                     },
                 },
@@ -639,7 +643,7 @@ class TestFormatResultMinimal:
         assert "  runtime.timezone:" in lines
         assert "    utc:" in lines
         assert "      tz: UTC" in lines
-        assert "    utc.now: \"2026-03-08T16:10:00+00:00\"" in lines
+        assert "      now: \"2026-03-08T16:10:00+00:00\"" in lines
         assert "      source: MT5_SERVER_TZ" in lines
         assert "      tz: Europe/Nicosia" in lines
         assert "      now: \"2026-03-08T18:10:00+02:00\"" in lines

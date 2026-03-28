@@ -11,9 +11,10 @@ from fastapi import HTTPException
 from ..forecast.exceptions import ForecastError
 from .pivot import compute_support_resistance_payload
 from ..utils.mt5 import MT5ConnectionError
-from .runtime_metadata import build_runtime_timezone_meta
+from ..utils.support_resistance import compact_support_resistance_payload
 from .error_envelope import build_http_error_detail
 from .mt5_gateway import get_default_mt5_gateway
+from .output_contract import ensure_common_meta
 from .tool_calling import resolve_sync_tool_result
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
 
@@ -405,19 +406,14 @@ def get_history_response(
     if not include_incomplete and bool(result.get("last_candle_open")) and rows:
         rows = rows[:-1]
 
-    return {
-        "bars": rows,
-        "meta": {
-            "runtime": {
-                "timezone": build_runtime_timezone_meta(
-                    result,
-                    mt5_config=mt5_config,
-                    include_local=False,
-                    include_now=False,
-                ),
-            },
-        },
-    }
+    result_out = dict(result)
+    result_out["data"] = rows
+    result_out["candles"] = len(rows)
+    return ensure_common_meta(
+        result_out,
+        tool_name="data_fetch_candles",
+        mt5_config=mt5_config,
+    )
 
 
 def get_pivots_response(
@@ -477,6 +473,7 @@ def get_support_resistance_response(
     tolerance_pct: float,
     min_touches: int,
     max_levels: int,
+    detail: str,
     fetch_history_impl: Callable[..., Any],
 ) -> Dict[str, Any]:
     try:
@@ -500,6 +497,8 @@ def get_support_resistance_response(
 
     if not isinstance(result, dict) or not result.get("levels"):
         raise HTTPException(status_code=404, detail="No support/resistance levels detected")
+    if str(detail).strip().lower() == "compact":
+        return compact_support_resistance_payload(result)
     return result
 
 

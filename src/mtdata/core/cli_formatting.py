@@ -5,6 +5,7 @@ import types
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+from .output_contract import ensure_common_meta
 from .runtime_metadata import build_runtime_timezone_meta, _safe_tz_name as _runtime_safe_tz_name
 from ..utils.minimal_output import format_result_minimal as _shared_minimal
 from .mt5_gateway import get_default_mt5_gateway
@@ -218,39 +219,4 @@ def _merge_meta_dict(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, A
 
 
 def _attach_cli_meta(result: Any, *, cmd_name: str, verbose: bool) -> Any:
-    if not isinstance(result, dict):
-        return result
-    out = dict(result)
-    existing_meta = out.get("meta")
-    meta = dict(existing_meta) if isinstance(existing_meta, dict) else {}
-    tool_name = str(cmd_name or "").strip()
-    if tool_name and not str(meta.get("tool") or "").strip():
-        meta["tool"] = tool_name
-
-    runtime_meta = meta.get("runtime")
-    runtime = dict(runtime_meta) if isinstance(runtime_meta, dict) else {}
-    timezone_meta = runtime.get("timezone")
-    if not isinstance(timezone_meta, dict):
-        runtime["timezone"] = build_runtime_timezone_meta(
-            out,
-            include_local=False,
-            include_now=False,
-        )
-    if runtime:
-        meta["runtime"] = runtime
-
-    legacy_cli_meta = out.pop("cli_meta", None)
-    if isinstance(legacy_cli_meta, dict):
-        legacy_tool = str(legacy_cli_meta.get("command") or "").strip()
-        if legacy_tool and not str(meta.get("tool") or "").strip():
-            meta["tool"] = legacy_tool
-        legacy_timezone = legacy_cli_meta.get("timezone")
-        if isinstance(legacy_timezone, dict):
-            runtime = dict(meta.get("runtime")) if isinstance(meta.get("runtime"), dict) else {}
-            if not isinstance(runtime.get("timezone"), dict):
-                runtime["timezone"] = legacy_timezone
-            meta["runtime"] = runtime
-
-    if meta:
-        out["meta"] = meta
-    return out
+    return ensure_common_meta(result, tool_name=cmd_name)

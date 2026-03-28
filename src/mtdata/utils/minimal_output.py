@@ -180,11 +180,6 @@ def _resolve_tool_name(result: Any, tool_name: Optional[str]) -> str:
             meta_tool = str(meta.get("tool") or "").strip()
             if meta_tool:
                 return meta_tool
-        cli_meta = result.get("cli_meta")
-        if isinstance(cli_meta, dict):
-            command = str(cli_meta.get("command") or "").strip()
-            if command:
-                return command
         operation = str(result.get("operation") or "").strip()
         if operation:
             return operation
@@ -864,19 +859,12 @@ def _build_forecast_meta(payload: Dict[str, Any]) -> Dict[str, Any]:
         domain['params'] = params_used
 
     tool_name = str(meta_existing.get('tool') or '').strip()
-    cli_meta_in = payload.get('cli_meta')
-    cli_meta = dict(cli_meta_in) if isinstance(cli_meta_in, dict) else {}
-    if not tool_name:
-        tool_name = str(cli_meta.pop('command', '')).strip()
-    cli_timezone = cli_meta.pop('timezone', None)
 
     runtime_in = meta_existing.get('runtime')
     runtime: Dict[str, Any] = dict(runtime_in) if isinstance(runtime_in, dict) else {}
 
     existing_runtime_timezone = runtime.get('timezone')
     timezone_source = existing_runtime_timezone if isinstance(existing_runtime_timezone, dict) else None
-    if timezone_source is None:
-        timezone_source = cli_timezone if isinstance(cli_timezone, dict) else None
     if timezone_source is None:
         try:
             from ..core.runtime_metadata import build_runtime_timezone_meta

@@ -61,8 +61,11 @@ def test_support_resistance_tool_returns_weighted_levels():
     assert result["timeframe"] == "H1"
     assert result["method"] == "weighted_retests"
     assert len(result["levels"]) == 2
-    assert result["supports"][0]["type"] == "support"
-    assert result["resistances"][0]["type"] == "resistance"
+    assert result["level_counts"] == {"support": 1, "resistance": 1, "total": 2}
+    assert result["nearest"]["support"]["type"] == "support"
+    assert result["nearest"]["resistance"]["type"] == "resistance"
+    assert "supports" not in result
+    assert "resistances" not in result
 
 
 def test_support_resistance_tool_defaults_to_auto_mode():
@@ -86,9 +89,32 @@ def test_support_resistance_tool_defaults_to_auto_mode():
     assert result["timeframe"] == "auto"
     assert result["mode"] == "auto"
     assert result["timeframes_analyzed"] == ["M15", "H1", "H4", "D1"]
+    assert result["level_counts"] == {"support": 1, "resistance": 1, "total": 2}
+    assert result["nearest"]["support"]["source_timeframes"] == ["M15", "H1", "H4", "D1"]
+    assert "supports" not in result
+    assert "resistances" not in result
+
+
+def test_support_resistance_tool_full_detail_retains_support_and_resistance_lists():
+    fn = _get_support_resistance_fn()
+    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
+         patch("mtdata.core.pivot._fetch_history", return_value=_frame()):
+        result = fn(
+            "EURUSD",
+            timeframe="H1",
+            limit=200,
+            tolerance_pct=0.005,
+            min_touches=2,
+            max_levels=3,
+            reaction_bars=4,
+            detail="full",
+        )
+
     assert len(result["supports"]) == 1
     assert len(result["resistances"]) == 1
-    assert result["supports"][0]["source_timeframes"] == ["M15", "H1", "H4", "D1"]
+    assert result["supports"][0]["type"] == "support"
+    assert result["resistances"][0]["type"] == "resistance"
 
 
 def test_support_resistance_tool_wraps_fetch_errors():

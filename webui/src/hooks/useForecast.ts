@@ -44,7 +44,7 @@ export function useChartData(options: UseChartDataOptions) {
   })
 
   return {
-    bars: query.data?.bars ?? [],
+    bars: query.data?.data ?? [],
     isLoading: query.isFetching,
     error: query.error ? getErrorMessage(query.error) : null,
     refetch: query.refetch,

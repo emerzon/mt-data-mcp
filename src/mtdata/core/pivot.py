@@ -1,6 +1,6 @@
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 import logging
 import math
 
@@ -11,6 +11,7 @@ from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.validators import invalid_timeframe_error, unsupported_timeframe_seconds_error
 from ..forecast.common import fetch_history as _fetch_history
 from ..utils.support_resistance import (
+    compact_support_resistance_payload,
     compute_support_resistance_levels,
     get_auto_support_resistance_timeframes,
     merge_support_resistance_results,
@@ -389,6 +390,7 @@ def support_resistance_levels(
     reaction_bars: int = 6,
     adx_period: int = 14,
     decay_half_life_bars: Optional[int] = None,
+    detail: Literal["compact", "full"] = "compact",
 ) -> Dict[str, Any]:
     """Detect support and resistance levels around the current price from weighted historical retests.
 
@@ -404,7 +406,7 @@ def support_resistance_levels(
     def _run() -> Dict[str, Any]:
         try:
             get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise).ensure_connection()
-            return compute_support_resistance_payload(
+            result = compute_support_resistance_payload(
                 fetch_history_impl=_fetch_history,
                 symbol=symbol,
                 timeframe=timeframe,
@@ -416,6 +418,9 @@ def support_resistance_levels(
                 adx_period=int(adx_period),
                 decay_half_life_bars=None if decay_half_life_bars is None else int(decay_half_life_bars),
             )
+            if str(detail).strip().lower() == "compact":
+                return compact_support_resistance_payload(result)
+            return result
         except MT5ConnectionError as exc:
             return {"error": str(exc)}
         except Exception as exc:
@@ -433,6 +438,7 @@ def support_resistance_levels(
         reaction_bars=reaction_bars,
         adx_period=adx_period,
         decay_half_life_bars=decay_half_life_bars,
+        detail=detail,
         func=_run,
     )
 

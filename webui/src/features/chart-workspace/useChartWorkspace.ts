@@ -83,8 +83,8 @@ export function useChartWorkspace() {
   }, [symbol, timeframe])
 
   const bars = useMemo(() => {
-    const base = (histDataResponse?.bars ?? []) as HistoryBar[]
-    const live = (liveDataResponse?.bars ?? []) as HistoryBar[]
+    const base = (histDataResponse?.data ?? []) as HistoryBar[]
+    const live = (liveDataResponse?.data ?? []) as HistoryBar[]
 
     let combined = base
 
@@ -198,8 +198,8 @@ export function useChartWorkspace() {
           end: before,
           denoise: chartDenoise,
         })
-        if (older.bars.length) {
-          setExtraHistory((previous) => [...older.bars, ...previous])
+        if (older.data.length) {
+          setExtraHistory((previous) => [...older.data, ...previous])
         }
       } catch (error) {
         console.error('Failed to load more history:', error)

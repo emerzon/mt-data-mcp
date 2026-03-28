@@ -246,6 +246,7 @@ def get_support_resistance(
     tolerance_pct: float = Query(0.0015, ge=0.0, le=0.05),
     min_touches: int = Query(2, ge=1),
     max_levels: int = Query(4, ge=1, le=20),
+    detail: str = Query("compact"),
 ) -> Dict[str, Any]:
     return _get_support_resistance_response(
         symbol=symbol,
@@ -254,6 +255,7 @@ def get_support_resistance(
         tolerance_pct=tolerance_pct,
         min_touches=min_touches,
         max_levels=max_levels,
+        detail=detail,
         fetch_history_impl=_fetch_history_impl,
     )
 

@@ -245,7 +245,7 @@ class TestGetInstruments:
     def test_connection_failure(self):
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=False):
             resp = _client.get("/api/instruments")
-        assert resp.status_code == 500
+        assert resp.status_code == 503
 
     def test_symbols_get_none(self):
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
@@ -498,7 +498,7 @@ class TestGetHistory:
     def test_connection_failure(self):
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=False):
             resp = _client.get("/api/history", params={"symbol": "EURUSD"})
-        assert resp.status_code == 500
+        assert resp.status_code == 503
 
     def test_basic_success(self):
         payload = {"data": [{"time": 1.0, "close": 1.1}], "last_candle_open": False}
@@ -512,7 +512,9 @@ class TestGetHistory:
             mock_cfg.get_time_offset_seconds.return_value = 0
             resp = _client.get("/api/history", params={"symbol": "EURUSD", "timeframe": "H1", "limit": 500})
         res = resp.json()
-        assert res["bars"] == [{"time": 1.0, "close": 1.1}]
+        assert res["data"] == [{"time": 1.0, "close": 1.1}]
+        assert res["candles"] == 1
+        assert res["meta"]["tool"] == "data_fetch_candles"
         assert res["meta"]["runtime"]["timezone"] == {
             "utc": {"tz": "UTC"},
             "server": {
@@ -530,7 +532,7 @@ class TestGetHistory:
             mock_cfg.get_time_offset_seconds.return_value = 0
             resp = _client.get("/api/history", params={"symbol": "EURUSD", "include_incomplete": "false"})
         res = resp.json()
-        assert len(res["bars"]) == 1
+        assert len(res["data"]) == 1
 
     def test_keeps_incomplete_candle_when_flag(self):
         payload = {"data": [{"time": 1.0}, {"time": 2.0}], "last_candle_open": True}
@@ -540,7 +542,7 @@ class TestGetHistory:
             mock_cfg.get_time_offset_seconds.return_value = 0
             resp = _client.get("/api/history", params={"symbol": "EURUSD", "include_incomplete": "true"})
         res = resp.json()
-        assert len(res["bars"]) == 2
+        assert len(res["data"]) == 2
 
     def test_fetch_exception(self):
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
@@ -671,7 +673,7 @@ class TestGetHistory:
             mock_cfg.get_time_offset_seconds.return_value = 0
             resp = _client.get("/api/history", params={"symbol": "EURUSD"})
         res = resp.json()
-        assert res["bars"] == []
+        assert res["data"] == []
 
 
 # ===========================================================================
@@ -777,7 +779,7 @@ class TestGetTick:
     def test_connection_failure(self):
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=False):
             resp = _client.get("/api/tick", params={"symbol": "EURUSD"})
-        assert resp.status_code == 500
+        assert resp.status_code == 503
 
     def test_success(self):
         tick = self._mock_tick()
@@ -1182,7 +1184,7 @@ class TestHistoryDenoiseEdgeCases:
             mock_cfg.get_time_offset_seconds.return_value = 0
             resp = _client.get("/api/history", params={"symbol": "EURUSD", "denoise_method": "  wavelet  "})
         assert resp.status_code == 200
-        assert resp.json()["bars"] == [{"time": 1.0}]
+        assert resp.json()["data"] == [{"time": 1.0}]
 
     def test_denoise_empty_string_no_denoise(self):
         payload = {"data": [{"time": 1.0}]}

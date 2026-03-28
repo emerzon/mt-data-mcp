@@ -101,8 +101,8 @@ export async function getHistory(params: HistoryParams): Promise<HistoryResponse
 
   const { data } = await api.get<HistoryResponse>(apiPath('/history'), { params: query })
   return {
-    bars: data.bars ?? [],
-    meta: data.meta,
+    ...data,
+    data: data.data ?? [],
   }
 }
 

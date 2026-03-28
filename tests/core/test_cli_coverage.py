@@ -40,8 +40,6 @@ from mtdata.core.cli import (
     _debug,
     _argparse_color_enabled,
     _configure_cli_logging,
-    _compact_support_resistance_level,
-    _prepare_support_resistance_for_cli_display,
     _is_typed_dict_type,
     _format_result_minimal,
     _json_default,
@@ -141,108 +139,6 @@ class TestConfigureCliLogging:
             assert logger.level == logging.INFO
         finally:
             logger.setLevel(previous)
-
-
-# ========================================================================
-# support_resistance_levels CLI compaction
-# ========================================================================
-
-class TestSupportResistanceCliDisplay:
-    def test_compact_level_keeps_only_terminal_friendly_fields(self):
-        result = _compact_support_resistance_level(
-            {
-                "type": "support",
-                "value": 66119.0,
-                "distance": -9.0,
-                "distance_pct": -0.00014,
-                "touches": 4,
-                "episodes": 3,
-                "status": "active",
-                "score": 2.315,
-                "strength_rank": 1,
-                "source_timeframes": ["H1", "H4"],
-                "dominant_source": "support",
-                "episode_details": [{"bar": 1}],
-                "score_breakdown": {"base": 1.0},
-                "timeframe_contributions": [{"timeframe": "H1"}],
-            }
-        )
-        assert result == {
-            "type": "support",
-            "price": 66119.0,
-            "distance": -9.0,
-            "distance_pct": -0.00014,
-            "touches": 4,
-            "episodes": 3,
-            "status": "active",
-            "score": 2.315,
-            "strength_rank": 1,
-            "timeframes": ["H1", "H4"],
-            "dominant_source": "support",
-        }
-
-    def test_prepare_support_resistance_summarizes_nearest_and_levels(self):
-        result = _prepare_support_resistance_for_cli_display(
-            {
-                "success": True,
-                "symbol": "BTCUSD",
-                "timeframe": "auto",
-                "mode": "auto",
-                "method": "weighted_retests",
-                "current_price": 66128.0,
-                "timeframes_analyzed": ["M15", "H1", "H4", "D1"],
-                "window": {"start": "2026-03-01T00:00:00Z", "end": "2026-03-27T00:00:00Z"},
-                "supports": [
-                    {
-                        "type": "support",
-                        "value": 66119.0,
-                        "distance": -9.0,
-                        "touches": 4,
-                        "episodes": 3,
-                        "status": "active",
-                    }
-                ],
-                "resistances": [
-                    {
-                        "type": "resistance",
-                        "value": 66519.0,
-                        "distance": 391.0,
-                        "touches": 2,
-                        "episodes": 2,
-                        "status": "active",
-                    }
-                ],
-                "levels": [
-                    {
-                        "type": "support",
-                        "value": 66119.0,
-                        "distance": -9.0,
-                        "touches": 4,
-                        "episodes": 3,
-                        "status": "active",
-                        "score_breakdown": {"base": 1.0},
-                    },
-                    {
-                        "type": "resistance",
-                        "value": 66519.0,
-                        "distance": 391.0,
-                        "touches": 2,
-                        "episodes": 2,
-                        "status": "active",
-                        "episode_details": [{"bar": 1}],
-                    },
-                ],
-            }
-        )
-        assert result["symbol"] == "BTCUSD"
-        assert result["level_counts"] == {"support": 1, "resistance": 1, "total": 2}
-        assert result["nearest"]["support"]["price"] == 66119.0
-        assert result["nearest"]["resistance"]["price"] == 66519.0
-        assert result["levels"][0]["type"] == "support"
-        assert "score_breakdown" not in result["levels"][0]
-        assert "episode_details" not in result["levels"][1]
-        assert "supports" not in result
-        assert "resistances" not in result
 
 
 # ========================================================================
@@ -443,7 +339,7 @@ class TestFormatResultForCli:
         result = _format_result_for_cli("hello", fmt=None, verbose=False, cmd_name="test")
         assert isinstance(result, str)
 
-    def test_toon_format_hides_candle_warmup_details_in_default_view(self):
+    def test_toon_format_preserves_candle_diagnostics_in_shared_output(self):
         result = _format_result_for_cli(
             {
                 "meta": {
@@ -460,7 +356,7 @@ class TestFormatResultForCli:
             verbose=False,
             cmd_name="data_fetch_candles",
         )
-        assert "warmup_bars" not in result
+        assert "warmup_bars" in result
         assert "requested_bars" in result
 
     def test_toon_format_keeps_barrier_probability_curves_in_default_view(self):
@@ -477,7 +373,7 @@ class TestFormatResultForCli:
         assert "tp_hit_prob_by_t" in result
         assert "sl_hit_prob_by_t" in result
 
-    def test_toon_format_hides_barrier_optimization_grid_in_default_view(self):
+    def test_toon_format_preserves_barrier_grid_and_param_help_in_shared_output(self):
         result = _format_result_for_cli(
             {
                 "success": True,
@@ -489,7 +385,7 @@ class TestFormatResultForCli:
             verbose=False,
             cmd_name="forecast_barrier_optimize",
         )
-        assert "grid" not in result
+        assert "grid" in result
         assert "best" in result
 
         vol_result = _format_result_for_cli(
@@ -498,9 +394,9 @@ class TestFormatResultForCli:
             verbose=False,
             cmd_name="forecast_volatility_estimate",
         )
-        assert "params_explained" not in vol_result
+        assert "params_explained" in vol_result
 
-    def test_toon_format_hides_raw_time_and_duplicate_tick_stats_in_default_view(self):
+    def test_toon_format_preserves_shared_time_and_tick_fields(self):
         ticker = _format_result_for_cli(
             {
                 "success": True,
@@ -512,7 +408,7 @@ class TestFormatResultForCli:
             cmd_name="market_ticker",
         )
         assert "time_display" in ticker
-        assert "time:" not in ticker
+        assert "time:" in ticker
 
         depth = _format_result_for_cli(
             {
@@ -528,7 +424,7 @@ class TestFormatResultForCli:
             cmd_name="market_depth_fetch",
         )
         assert "time_display" in depth
-        assert "time:" not in depth
+        assert "time:" in depth
 
         ticks = _format_result_for_cli(
             {
@@ -541,12 +437,11 @@ class TestFormatResultForCli:
             verbose=False,
             cmd_name="data_fetch_ticks",
         )
-        assert "start_epoch" not in ticks
-        assert "end_epoch" not in ticks
-        assert "stats_display" not in ticks
+        assert "start_epoch" in ticks
+        assert "end_epoch" in ticks
         assert "stats" in ticks
 
-    def test_toon_format_hides_redundant_causal_summary_and_regime_calibration_internals(self):
+    def test_toon_format_preserves_shared_causal_and_regime_details(self):
         causal = _format_result_for_cli(
             {
                 "success": True,
@@ -559,7 +454,7 @@ class TestFormatResultForCli:
             verbose=False,
             cmd_name="causal_discover_signals",
         )
-        assert "summary_text" not in causal
+        assert "summary_text" in causal
         assert "links[1]" in causal
 
         regime = _format_result_for_cli(
@@ -591,14 +486,14 @@ class TestFormatResultForCli:
         assert "hazard_lambda" in regime
         assert "auto_calibration:" in regime
         assert "calibrated: true" in regime
-        assert "sigma" not in regime
-        assert "kurtosis_excess" not in regime
-        assert "jump_share_abs_z_ge_2_5" not in regime
-        assert "trend_norm" not in regime
-        assert "window:" not in regime
-        assert "null_max_quantile" not in regime
+        assert "sigma" in regime
+        assert "kurtosis_excess" in regime
+        assert "jump_share_abs_z_ge_2_5" in regime
+        assert "trend_norm" in regime
+        assert "window:" in regime
+        assert "null_max_quantile" in regime
 
-    def test_toon_format_hides_internal_trade_metadata_in_default_view(self):
+    def test_toon_format_preserves_trade_metadata_in_shared_output(self):
         open_out = _format_result_for_cli(
             [
                 {
@@ -612,9 +507,9 @@ class TestFormatResultForCli:
             verbose=False,
             cmd_name="trade_get_open",
         )
-        assert "Comment Length" not in open_out
-        assert "Comment Limit" not in open_out
-        assert "Comment May Be Truncated" not in open_out
+        assert "Comment Length" in open_out
+        assert "Comment Limit" in open_out
+        assert "Comment May Be Truncated" in open_out
 
         hist_out = _format_result_for_cli(
             [
@@ -633,24 +528,23 @@ class TestFormatResultForCli:
             verbose=False,
             cmd_name="trade_history",
         )
-        assert "comment_visible_length" not in hist_out
-        assert "comment_max_length" not in hist_out
-        assert "comment_may_be_truncated" not in hist_out
-        assert "type_code" not in hist_out
-        assert "entry_code" not in hist_out
-        assert "reason_code" not in hist_out
-        assert "time_msc" not in hist_out
+        assert "comment_visible_length" in hist_out
+        assert "comment_max_length" in hist_out
+        assert "comment_may_be_truncated" in hist_out
+        assert "type_code" in hist_out
+        assert "entry_code" in hist_out
+        assert "reason_code" in hist_out
+        assert "time_msc" in hist_out
 
-    def test_toon_format_normalizes_empty_pending_orders_message(self):
+    def test_toon_format_preserves_pending_orders_message_shape(self):
         result = _format_result_for_cli(
             [{"message": "No pending orders"}],
             fmt="toon",
             verbose=False,
             cmd_name="trade_get_pending",
         )
-        assert "count: 0" in result
-        assert "message: No pending orders" in result
-        assert "items[1]" not in result
+        assert "items[1]{message}:" in result
+        assert "No pending orders" in result
 
 
 class TestWriteCliText:
