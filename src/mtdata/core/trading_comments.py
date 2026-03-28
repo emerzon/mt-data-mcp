@@ -6,6 +6,8 @@ import math
 import re
 from typing import Any, Dict, Optional
 
+from . import trading_validation
+
 
 _MT5_COMMENT_MAX_LENGTH = 31
 _MT5_COMMENT_SANITIZE_RE = re.compile(r"[^A-Za-z0-9 _.!-]+")
@@ -133,16 +135,8 @@ def _invalid_comment_error_text(result: Any, last_error: Any) -> Optional[str]:
 
 
 def _send_order_with_comment_fallback(mt5: Any, request: Dict[str, Any]) -> tuple[Any, Optional[Dict[str, Any]], Any]:
-    def _safe_last_error() -> Any:
-        try:
-            if hasattr(mt5, "last_error"):
-                return mt5.last_error()
-        except Exception:
-            return None
-        return None
-
     result = mt5.order_send(request)
-    last_error = _safe_last_error()
+    last_error = trading_validation._safe_last_error(mt5)
     invalid_comment = _invalid_comment_error_text(result, last_error)
     if invalid_comment is None:
         return result, None, last_error
@@ -161,7 +155,7 @@ def _send_order_with_comment_fallback(mt5: Any, request: Dict[str, Any]) -> tupl
     strategies = [strategy for strategy, _req in fallback_requests]
     for strategy, alt_request in fallback_requests:
         alt_result = mt5.order_send(alt_request)
-        alt_last_error = _safe_last_error()
+        alt_last_error = trading_validation._safe_last_error(mt5)
         if alt_result is not None and getattr(alt_result, "retcode", None) == mt5.TRADE_RETCODE_DONE:
             return (
                 alt_result,

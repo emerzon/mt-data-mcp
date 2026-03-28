@@ -187,6 +187,16 @@ def _safe_int_attr(obj: Any, name: str, default: int) -> int:
     return int(numeric)
 
 
+def _safe_last_error(mt5: Any) -> Any:
+    """Best-effort access to mt5.last_error()."""
+    try:
+        if hasattr(mt5, "last_error"):
+            return mt5.last_error()
+    except Exception:
+        return None
+    return None
+
+
 def _normalize_price_for_symbol(
     value: Optional[Union[int, float]],
     *,

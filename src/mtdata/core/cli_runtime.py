@@ -1,8 +1,9 @@
 import json
-import re
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, get_args, get_origin
 
 from pydantic import ValidationError
+
+from .data_requests import _normalize_indicator_specs as _shared_normalize_indicator_specs
 
 
 def parse_kv_string(s: str, *, debug: Callable[[str], None]) -> Optional[Dict[str, Any]]:
@@ -192,65 +193,12 @@ def create_command_function(
             return choices or None
         return None
 
-    def _normalize_indicator_token(token: Any) -> Dict[str, Any]:
-        if isinstance(token, dict):
-            params = token.get("params")
-            if isinstance(params, dict):
-                raise ValueError("'params' must be a list of numbers, e.g., [14], not a dict.")
-            return dict(token)
-        if token is None:
-            raise ValueError("Indicator entries cannot be null.")
-        if isinstance(token, str):
-            stripped = token.strip()
-            if not stripped:
-                raise ValueError("Indicator entries cannot be empty.")
-            if stripped.startswith("{") and stripped.endswith("}"):
-                try:
-                    parsed = json.loads(stripped)
-                except Exception as exc:
-                    raise ValueError(f"Invalid indicator JSON: {exc}") from exc
-                if not isinstance(parsed, dict):
-                    raise ValueError("Indicator JSON entries must be objects with 'name' and optional 'params'.")
-                return _normalize_indicator_token(parsed)
-            match = re.fullmatch(r"([A-Za-z0-9_]+)(?:\((.*)\))?", stripped)
-            if not match:
-                raise ValueError(
-                    "Invalid indicator format. Use bare names like 'rsi' or compact specs like 'sma(20)' and 'macd(12,26,9)'."
-                )
-            name = match.group(1)
-            params_blob = match.group(2)
-            if params_blob is None or not params_blob.strip():
-                return {"name": name}
-            params_out: List[float] = []
-            for raw_part in params_blob.split(","):
-                part = raw_part.strip()
-                if not part:
-                    continue
-                try:
-                    value = json.loads(part)
-                except Exception:
-                    try:
-                        value = float(part)
-                    except Exception as exc:
-                        raise ValueError(
-                            f"Indicator params must be numeric. Invalid value {part!r} in {stripped!r}."
-                        ) from exc
-                if isinstance(value, bool) or not isinstance(value, (int, float)):
-                    raise ValueError(
-                        f"Indicator params must be numeric. Invalid value {part!r} in {stripped!r}."
-                    )
-                params_out.append(float(value))
-            return {"name": name, "params": params_out}
-        raise ValueError("Indicators must be strings or objects.")
-
     def _normalize_indicator_specs(value: Any) -> Any:
         if value is None:
             return None
         if isinstance(value, str):
             value = normalize_cli_list_value(value)
-        if not isinstance(value, list):
-            return value
-        return [_normalize_indicator_token(item) for item in value]
+        return _shared_normalize_indicator_specs(value)
 
     def _friendly_validation_error(exc: ValidationError) -> str:
         try:

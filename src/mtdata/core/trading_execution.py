@@ -13,16 +13,6 @@ from .trading_time import ExpirationValue
 from ..utils.mt5 import _mt5_epoch_to_utc
 from ..utils.mt5 import ensure_mt5_connection_or_raise
 
-
-def _safe_last_error(mt5: Any) -> Any:
-    try:
-        if hasattr(mt5, "last_error"):
-            return mt5.last_error()
-    except Exception:
-        return None
-    return None
-
-
 def _zero_price_requested(value: Optional[Union[int, float]]) -> bool:
     if value is None or isinstance(value, bool):
         return False
@@ -86,7 +76,7 @@ def _unexpected_operation_error(
         "error_detail": str(exc),
         "traceback": traceback.format_exc(limit=5).strip(),
     }
-    last_error = _safe_last_error(mt5)
+    last_error = trading_validation._safe_last_error(mt5)
     if last_error is not None:
         payload["last_error"] = last_error
     if context:

@@ -12,16 +12,6 @@ from .trading_time import ExpirationValue
 from .trading_validation import MarketOrderTypeInput, OrderTypeInput
 from ..utils.mt5 import ensure_mt5_connection_or_raise
 
-
-def _safe_last_error(mt5: Any) -> Any:
-    try:
-        if hasattr(mt5, "last_error"):
-            return mt5.last_error()
-    except Exception:
-        return None
-    return None
-
-
 def _compact_sl_tp_levels(
     *,
     sl: Optional[float],
