@@ -5,6 +5,7 @@ Automatically discovers function parameters and creates CLI arguments
 """
 
 import argparse
+import difflib
 import sys
 import os
 import types
@@ -1230,6 +1231,21 @@ def _match_commands(functions: Dict[str, ToolInfo], query: str) -> List[Tuple[st
     return matches
 
 
+def _suggest_commands(functions: Dict[str, ToolInfo], query: str, *, limit: int = 3) -> List[str]:
+    needle = str(query or "").strip().lower()
+    if not needle:
+        return []
+    name_map = {
+        str(name).strip().lower(): str(name)
+        for name in functions.keys()
+        if str(name).strip()
+    }
+    if not name_map:
+        return []
+    matches = difflib.get_close_matches(needle, list(name_map.keys()), n=max(1, int(limit)), cutoff=0.45)
+    return [name_map[name] for name in matches]
+
+
 def _extract_help_query(argv: List[str]) -> Optional[str]:
     for flag in ('--help', '-h'):
         if flag in argv:
@@ -1255,6 +1271,9 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
     matches = _match_commands(functions, query)
     if not matches:
         print(f"No commands match '{query}'.")
+        suggestions = _suggest_commands(functions, query)
+        if suggestions:
+            print(f"Did you mean: {', '.join(suggestions)}")
         print("Available commands:")
         for name in sorted(functions.keys()):
             print(f"  {name}")

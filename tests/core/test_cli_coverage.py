@@ -72,6 +72,7 @@ from mtdata.core.cli import (
     _example_value,
     _build_usage_examples,
     _match_commands,
+    _suggest_commands,
     _extract_help_query,
     _print_extended_help,
     _build_epilog,
@@ -242,6 +243,30 @@ class TestSupportResistanceCliDisplay:
         assert "episode_details" not in result["levels"][1]
         assert "supports" not in result
         assert "resistances" not in result
+
+
+# ========================================================================
+# help suggestions
+# ========================================================================
+
+class TestHelpSuggestions:
+    def test_suggest_commands_returns_close_matches(self):
+        functions = {
+            "forecast_generate": {"func": lambda: None},
+            "indicators_list": {"func": lambda: None},
+            "market_ticker": {"func": lambda: None},
+        }
+        assert _suggest_commands(functions, "forecast_generat") == ["forecast_generate"]
+
+    def test_extended_help_shows_did_you_mean_for_typos(self, capsys):
+        fns = {
+            "indicators_list": {"func": lambda: None, "meta": {}, "_cli_func_info": {"params": [], "doc": ""}},
+            "market_ticker": {"func": lambda: None, "meta": {}, "_cli_func_info": {"params": [], "doc": ""}},
+        }
+        _print_extended_help(fns, "indicatr_list")
+        out = capsys.readouterr().out
+        assert "No commands match 'indicatr_list'." in out
+        assert "Did you mean: indicators_list" in out
 
 
 # ========================================================================
