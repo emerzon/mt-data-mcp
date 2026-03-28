@@ -584,14 +584,23 @@ def _place_market_order(
                     "Broker rejected the comment field; order was retried with a minimal MT5-safe comment."
                 )
             if sl_tp_requested and sl_tp_apply_status == "failed":
-                fix_hint = (
-                    f"trade_modify {position_ticket}"
-                    if position_ticket is not None
-                    else "trade_modify <position_ticket>"
-                )
+                if position_ticket is not None:
+                    action_text = f"Run trade_modify {position_ticket} immediately"
+                elif position_ticket_candidates:
+                    candidate_list = ", ".join(str(v) for v in position_ticket_candidates)
+                    primary_candidate = position_ticket_candidates[0]
+                    action_text = (
+                        f"Try trade_modify {primary_candidate} immediately "
+                        f"(candidate tickets: {candidate_list})"
+                    )
+                else:
+                    action_text = (
+                        "Run trade_get_open immediately to find the live position ticket, "
+                        "then trade_modify it"
+                    )
                 warnings_out.append(
                     "CRITICAL: Order filled but TP/SL could not be applied. "
-                    f"Use {fix_hint} immediately or close the position."
+                    f"{action_text}, or close the position."
                 )
             if sl_tp_requested and sl_tp_fallback_used and sl_tp_apply_status == "applied":
                 warnings_out.append(

@@ -206,3 +206,60 @@ def test_run_trade_place_rejects_dated_market_expiration_without_price():
     assert "expiration only applies to pending orders placed with a price" in result["error"]
     place_market_order.assert_not_called()
     place_pending_order.assert_not_called()
+
+
+def test_run_trade_place_uses_candidate_tickets_when_position_ticket_is_missing():
+    request = TradePlaceRequest(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        stop_loss=1.08,
+        take_profit=1.12,
+    )
+
+    result = run_trade_place(
+        request,
+        normalize_order_type_input=lambda value: ("BUY", None),
+        normalize_pending_expiration=lambda value: (value, False),
+        prevalidate_trade_place_market_input=lambda symbol, volume: None,
+        place_market_order=lambda **kwargs: {
+            "retcode": 10009,
+            "sl_tp_result": {"status": "failed", "requested": {"sl": 1.08, "tp": 1.12}},
+            "position_ticket_candidates": [111, 222],
+        },
+        place_pending_order=lambda **kwargs: {"success": True, "path": "pending"},
+        close_positions=lambda **kwargs: {"closed_count": 1},
+        safe_int_ticket=lambda value: value,
+    )
+
+    assert result["protection_status"] == "unprotected_position"
+    assert any("trade_modify 111" in str(w) for w in result.get("warnings", []))
+    assert any("trade_get_open" in str(w) for w in result.get("warnings", []))
+
+
+def test_run_trade_place_without_any_ticket_guides_to_trade_get_open():
+    request = TradePlaceRequest(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        stop_loss=1.08,
+        take_profit=1.12,
+    )
+
+    result = run_trade_place(
+        request,
+        normalize_order_type_input=lambda value: ("BUY", None),
+        normalize_pending_expiration=lambda value: (value, False),
+        prevalidate_trade_place_market_input=lambda symbol, volume: None,
+        place_market_order=lambda **kwargs: {
+            "retcode": 10009,
+            "sl_tp_result": {"status": "failed", "requested": {"sl": 1.08, "tp": 1.12}},
+        },
+        place_pending_order=lambda **kwargs: {"success": True, "path": "pending"},
+        close_positions=lambda **kwargs: {"closed_count": 1},
+        safe_int_ticket=lambda value: value,
+    )
+
+    assert result["protection_status"] == "unprotected_position"
+    assert any("trade_get_open" in str(w) for w in result.get("warnings", []))
+    assert not any("trade_modify now" in str(w) for w in result.get("warnings", []))

@@ -235,15 +235,30 @@ def run_trade_place(
             if sl_tp_requested and sl_tp_failed:
                 warnings_out: List[str] = list(result.get("warnings") or [])
                 pos_ticket = result.get("position_ticket")
+                candidate_tickets = [
+                    ticket
+                    for ticket in list(result.get("position_ticket_candidates") or [])
+                    if ticket is not None
+                ]
                 if pos_ticket is not None:
                     critical = (
                         "CRITICAL: Order executed without applied TP/SL protection. "
                         f"Run trade_modify {pos_ticket} now, or close the position."
                     )
+                elif candidate_tickets:
+                    candidate_list = ", ".join(str(v) for v in candidate_tickets)
+                    critical = (
+                        "CRITICAL: Order executed without applied TP/SL protection. "
+                        f"Try trade_modify {candidate_tickets[0]} now "
+                        f"(candidate tickets: {candidate_list}). "
+                        "If that fails, run trade_get_open to confirm the live position ticket, "
+                        "or close the position."
+                    )
                 else:
                     critical = (
                         "CRITICAL: Order executed without applied TP/SL protection. "
-                        "Run trade_modify now, or close the position."
+                        "Run trade_get_open to find the live position ticket, then trade_modify it now, "
+                        "or close the position."
                     )
                 if critical not in warnings_out:
                     warnings_out.append(critical)

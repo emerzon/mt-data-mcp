@@ -1132,6 +1132,8 @@ class TestPlaceMarketOrder:
         assert sl_tp_result.get("applied") is None
         assert result.get("position_ticket") is None
         assert result.get("position_ticket_candidates") == [1]
+        assert any("trade_modify 1" in str(w) for w in result.get("warnings", []))
+        assert not any("<position_ticket>" in str(w) for w in result.get("warnings", []))
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_sl_tp_not_requested_state_is_explicit(self):
