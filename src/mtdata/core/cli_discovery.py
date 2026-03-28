@@ -42,6 +42,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("forecast_tune_optuna", "search_space"): "Optuna search space (JSON or k=v).",
     ("indicators_list", "detail"): "Output detail: compact table or full rows with aliases and descriptions.",
     ("labels_triple_barrier", "output"): "Output mode: full, summary, compact, or summary_only (alias for summary).",
+    ("market_depth_fetch", "compact"): "Fail if DOM is unavailable instead of falling back to a ticker snapshot. Alias: --require-dom.",
     ("report_generate", "output"): "Output format: formatted text or markdown.",
     ("trade_modify", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
     ("trade_place", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
@@ -397,6 +398,8 @@ def add_dynamic_arguments(
             extras.append("--bars")
         if cmd_name_value == "trade_history" and param_name == "position_ticket":
             extras.append("--ticket")
+        if cmd_name_value == "market_depth_fetch" and param_name == "compact":
+            extras.extend(["--require-dom", "--require_dom"])
         return tuple(extras)
 
     for param in param_info["params"]:

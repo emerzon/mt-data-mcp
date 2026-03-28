@@ -425,6 +425,43 @@ class TestFinvizService:
 class TestFinvizTools:
     """Tests for finviz MCP tools."""
 
+    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    def test_finviz_fundamentals_rejects_non_equity_symbols_upfront(self, mock_get_fundamentals):
+        from mtdata.core.finviz import finviz_fundamentals
+
+        raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
+        result = raw("BTCUSD")
+
+        mock_get_fundamentals.assert_not_called()
+        assert result["error"] == (
+            "BTCUSD is not a Finviz-supported equity ticker. "
+            "finviz_fundamentals only supports US equities."
+        )
+
+    @patch("mtdata.core.finviz.get_stock_description")
+    def test_finviz_description_normalizes_equity_symbols(self, mock_get_description):
+        from mtdata.core.finviz import finviz_description
+
+        mock_get_description.return_value = {"success": True, "symbol": "AAPL"}
+        raw = getattr(finviz_description, "__wrapped__", finviz_description)
+        result = raw("aapl")
+
+        mock_get_description.assert_called_once_with("AAPL")
+        assert result["success"] is True
+
+    @patch("mtdata.core.finviz.get_stock_news")
+    def test_finviz_news_rejects_non_equity_symbols_upfront(self, mock_get_news):
+        from mtdata.core.finviz import finviz_news
+
+        raw = getattr(finviz_news, "__wrapped__", finviz_news)
+        result = raw("BTCUSD", limit=5, page=1)
+
+        mock_get_news.assert_not_called()
+        assert result["error"] == (
+            "BTCUSD is not a Finviz-supported equity ticker. "
+            "finviz_news only supports US equities."
+        )
+
     @patch('mtdata.services.finviz_service.get_stock_fundamentals')
     def test_finviz_fundamentals_tool(self, mock_get_fundamentals):
         """Test finviz_fundamentals tool."""

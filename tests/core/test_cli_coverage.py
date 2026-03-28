@@ -1627,6 +1627,19 @@ class TestAddDynamicArguments:
         args = parser.parse_args(["--ticket", "123456"])
         assert args.position_ticket == 123456
 
+    def test_market_depth_compact_accepts_require_dom_alias(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "compact", "type": bool, "required": False, "default": False},
+            ]
+        }
+        add_dynamic_arguments(parser, func_info, cmd_name="market_depth_fetch")
+        args = parser.parse_args(["--require-dom"])
+        assert args.compact == "true"
+        compact_action = next(action for action in parser._actions if action.dest == "compact")
+        assert "--require-dom" in compact_action.option_strings
+
     def test_labels_triple_barrier_keeps_summary_only_output_alias_without_duplicate_flag(self):
         parser = argparse.ArgumentParser()
         func_info = {

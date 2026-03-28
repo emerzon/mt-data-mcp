@@ -47,6 +47,20 @@ def _looks_like_non_equity_symbol(symbol: str) -> bool:
     return False
 
 
+def _normalize_equity_symbol(symbol: str, *, tool_name: str) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    symbol_norm = str(symbol or "").strip().upper()
+    if not symbol_norm:
+        return None, {"error": f"{tool_name} requires a symbol."}
+    if _looks_like_non_equity_symbol(symbol_norm):
+        return None, {
+            "error": (
+                f"{symbol_norm} is not a Finviz-supported equity ticker. "
+                f"{tool_name} only supports US equities."
+            )
+        }
+    return symbol_norm, None
+
+
 def _run_logged_tool(
     operation: str,
     fields: Dict[str, Any],
@@ -83,10 +97,16 @@ def finviz_fundamentals(symbol: str) -> Dict[str, Any]:
     >>> finviz_fundamentals("AAPL")
     {"success": True, "symbol": "AAPL", "fundamentals": {"P/E": "28.5", ...}}
     """
+    def _run() -> Dict[str, Any]:
+        symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_fundamentals")
+        if error is not None:
+            return error
+        return get_stock_fundamentals(symbol_norm)
+
     return _run_logged_tool(
         "finviz_fundamentals",
         {"symbol": symbol},
-        lambda: get_stock_fundamentals(symbol),
+        _run,
     )
 
 
@@ -105,10 +125,16 @@ def finviz_description(symbol: str) -> Dict[str, Any]:
     dict
         Company description text
     """
+    def _run() -> Dict[str, Any]:
+        symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_description")
+        if error is not None:
+            return error
+        return get_stock_description(symbol_norm)
+
     return _run_logged_tool(
         "finviz_description",
         {"symbol": symbol},
-        lambda: get_stock_description(symbol),
+        _run,
     )
 
 
@@ -136,14 +162,9 @@ def finviz_news(symbol: Optional[str] = None, limit: int = 20, page: int = 1) ->
 
     def _run() -> Dict[str, Any]:
         if symbol:
-            symbol_norm = str(symbol).strip().upper()
-            if _looks_like_non_equity_symbol(symbol_norm):
-                return {
-                    "error": (
-                        f"{symbol_norm} is not a Finviz-supported equity ticker. "
-                        "finviz_news only covers US equities."
-                    )
-                }
+            symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_news")
+            if error is not None:
+                return error
             return get_stock_news(symbol_norm, limit=limit, page=page)
         return get_general_news(news_type="news", limit=limit, page=page)
 
@@ -172,10 +193,16 @@ def finviz_insider(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any
     dict
         List of insider trades
     """
+    def _run() -> Dict[str, Any]:
+        symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_insider")
+        if error is not None:
+            return error
+        return get_stock_insider_trades(symbol_norm, limit=limit, page=page)
+
     return _run_logged_tool(
         "finviz_insider",
         {"symbol": symbol, "limit": limit, "page": page},
-        lambda: get_stock_insider_trades(symbol, limit=limit, page=page),
+        _run,
     )
 
 
@@ -197,10 +224,16 @@ def finviz_ratings(symbol: str) -> Dict[str, Any]:
     dict
         List of analyst ratings
     """
+    def _run() -> Dict[str, Any]:
+        symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_ratings")
+        if error is not None:
+            return error
+        return get_stock_ratings(symbol_norm)
+
     return _run_logged_tool(
         "finviz_ratings",
         {"symbol": symbol},
-        lambda: get_stock_ratings(symbol),
+        _run,
     )
 
 
@@ -219,10 +252,16 @@ def finviz_peers(symbol: str) -> Dict[str, Any]:
     dict
         List of peer ticker symbols
     """
+    def _run() -> Dict[str, Any]:
+        symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_peers")
+        if error is not None:
+            return error
+        return get_stock_peers(symbol_norm)
+
     return _run_logged_tool(
         "finviz_peers",
         {"symbol": symbol},
-        lambda: get_stock_peers(symbol),
+        _run,
     )
 
 
