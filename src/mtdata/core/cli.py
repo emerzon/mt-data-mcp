@@ -425,6 +425,86 @@ def _prepare_regime_result_for_cli_display(result: Dict[str, Any]) -> Dict[str, 
     return out
 
 
+def _compact_support_resistance_level(level: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(level, dict):
+        return None
+    out: Dict[str, Any] = {}
+    level_type = level.get("type")
+    if isinstance(level_type, str) and level_type.strip():
+        out["type"] = level_type
+    value = level.get("value")
+    if value is not None:
+        out["price"] = value
+    for key in ("distance", "distance_pct", "touches", "episodes", "status", "score", "strength_rank"):
+        value = level.get(key)
+        if value is not None:
+            out[key] = value
+    source_timeframes = level.get("source_timeframes")
+    if isinstance(source_timeframes, list) and source_timeframes:
+        out["timeframes"] = list(source_timeframes)
+    dominant_source = level.get("dominant_source")
+    if isinstance(dominant_source, str) and dominant_source.strip():
+        out["dominant_source"] = dominant_source
+    return out or None
+
+
+def _prepare_support_resistance_for_cli_display(result: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for key in ("success", "symbol", "timeframe", "mode", "method", "current_price", "timeframes_analyzed"):
+        value = result.get(key)
+        if value is not None:
+            out[key] = value
+
+    window = result.get("window")
+    if isinstance(window, dict):
+        window_out = {k: v for k, v in window.items() if v is not None}
+        if window_out:
+            out["window"] = window_out
+
+    supports = result.get("supports")
+    resistances = result.get("resistances")
+    if isinstance(supports, list) or isinstance(resistances, list):
+        counts: Dict[str, int] = {}
+        if isinstance(supports, list):
+            counts["support"] = len(supports)
+        if isinstance(resistances, list):
+            counts["resistance"] = len(resistances)
+        if counts:
+            counts["total"] = sum(counts.values())
+            out["level_counts"] = counts
+
+    nearest: Dict[str, Any] = {}
+    if isinstance(supports, list) and supports:
+        compacted = _compact_support_resistance_level(supports[0])
+        if compacted:
+            nearest["support"] = compacted
+    if isinstance(resistances, list) and resistances:
+        compacted = _compact_support_resistance_level(resistances[0])
+        if compacted:
+            nearest["resistance"] = compacted
+    if nearest:
+        out["nearest"] = nearest
+
+    levels = result.get("levels")
+    if isinstance(levels, list):
+        compact_levels = [
+            compacted
+            for compacted in (_compact_support_resistance_level(level) for level in levels)
+            if compacted
+        ]
+        if compact_levels:
+            out["levels"] = compact_levels
+
+    warnings = result.get("warnings")
+    if isinstance(warnings, list) and warnings:
+        out["warnings"] = list(warnings)
+
+    meta = result.get("meta")
+    if isinstance(meta, dict) and meta:
+        out["meta"] = dict(meta)
+    return out or dict(result)
+
+
 _CLI_LIST_RESULT_TRANSFORMS = {
     "trade_get_pending": _prepare_pending_orders_for_cli_display,
 }
@@ -435,6 +515,7 @@ _CLI_DICT_RESULT_TRANSFORMS = {
     "market_depth_fetch": _prepare_market_depth_for_cli_display,
     "causal_discover_signals": _prepare_causal_result_for_cli_display,
     "regime_detect": _prepare_regime_result_for_cli_display,
+    "support_resistance_levels": _prepare_support_resistance_for_cli_display,
 }
 
 

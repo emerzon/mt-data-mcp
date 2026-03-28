@@ -40,6 +40,8 @@ from mtdata.core.cli import (
     _debug,
     _argparse_color_enabled,
     _configure_cli_logging,
+    _compact_support_resistance_level,
+    _prepare_support_resistance_for_cli_display,
     _is_typed_dict_type,
     _format_result_minimal,
     _json_default,
@@ -138,6 +140,108 @@ class TestConfigureCliLogging:
             assert logger.level == logging.INFO
         finally:
             logger.setLevel(previous)
+
+
+# ========================================================================
+# support_resistance_levels CLI compaction
+# ========================================================================
+
+class TestSupportResistanceCliDisplay:
+    def test_compact_level_keeps_only_terminal_friendly_fields(self):
+        result = _compact_support_resistance_level(
+            {
+                "type": "support",
+                "value": 66119.0,
+                "distance": -9.0,
+                "distance_pct": -0.00014,
+                "touches": 4,
+                "episodes": 3,
+                "status": "active",
+                "score": 2.315,
+                "strength_rank": 1,
+                "source_timeframes": ["H1", "H4"],
+                "dominant_source": "support",
+                "episode_details": [{"bar": 1}],
+                "score_breakdown": {"base": 1.0},
+                "timeframe_contributions": [{"timeframe": "H1"}],
+            }
+        )
+        assert result == {
+            "type": "support",
+            "price": 66119.0,
+            "distance": -9.0,
+            "distance_pct": -0.00014,
+            "touches": 4,
+            "episodes": 3,
+            "status": "active",
+            "score": 2.315,
+            "strength_rank": 1,
+            "timeframes": ["H1", "H4"],
+            "dominant_source": "support",
+        }
+
+    def test_prepare_support_resistance_summarizes_nearest_and_levels(self):
+        result = _prepare_support_resistance_for_cli_display(
+            {
+                "success": True,
+                "symbol": "BTCUSD",
+                "timeframe": "auto",
+                "mode": "auto",
+                "method": "weighted_retests",
+                "current_price": 66128.0,
+                "timeframes_analyzed": ["M15", "H1", "H4", "D1"],
+                "window": {"start": "2026-03-01T00:00:00Z", "end": "2026-03-27T00:00:00Z"},
+                "supports": [
+                    {
+                        "type": "support",
+                        "value": 66119.0,
+                        "distance": -9.0,
+                        "touches": 4,
+                        "episodes": 3,
+                        "status": "active",
+                    }
+                ],
+                "resistances": [
+                    {
+                        "type": "resistance",
+                        "value": 66519.0,
+                        "distance": 391.0,
+                        "touches": 2,
+                        "episodes": 2,
+                        "status": "active",
+                    }
+                ],
+                "levels": [
+                    {
+                        "type": "support",
+                        "value": 66119.0,
+                        "distance": -9.0,
+                        "touches": 4,
+                        "episodes": 3,
+                        "status": "active",
+                        "score_breakdown": {"base": 1.0},
+                    },
+                    {
+                        "type": "resistance",
+                        "value": 66519.0,
+                        "distance": 391.0,
+                        "touches": 2,
+                        "episodes": 2,
+                        "status": "active",
+                        "episode_details": [{"bar": 1}],
+                    },
+                ],
+            }
+        )
+        assert result["symbol"] == "BTCUSD"
+        assert result["level_counts"] == {"support": 1, "resistance": 1, "total": 2}
+        assert result["nearest"]["support"]["price"] == 66119.0
+        assert result["nearest"]["resistance"]["price"] == 66519.0
+        assert result["levels"][0]["type"] == "support"
+        assert "score_breakdown" not in result["levels"][0]
+        assert "episode_details" not in result["levels"][1]
+        assert "supports" not in result
+        assert "resistances" not in result
 
 
 # ========================================================================
