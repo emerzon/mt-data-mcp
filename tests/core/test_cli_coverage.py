@@ -123,22 +123,31 @@ class TestConfigureCliLogging:
     def test_default_cli_logging_suppresses_mtdata_info(self):
         logger = logging.getLogger("mtdata")
         previous = logger.level
+        previous_propagate = logger.propagate
         try:
             logger.setLevel(logging.NOTSET)
+            logger.propagate = True
             _configure_cli_logging(verbose=False)
             assert logger.level == logging.WARNING
+            assert logger.propagate is False
+            assert any(isinstance(handler, logging.NullHandler) for handler in logger.handlers)
         finally:
             logger.setLevel(previous)
+            logger.propagate = previous_propagate
 
     def test_verbose_cli_logging_restores_mtdata_info(self):
         logger = logging.getLogger("mtdata")
         previous = logger.level
+        previous_propagate = logger.propagate
         try:
             logger.setLevel(logging.WARNING)
+            logger.propagate = False
             _configure_cli_logging(verbose=True)
             assert logger.level == logging.INFO
+            assert logger.propagate is True
         finally:
             logger.setLevel(previous)
+            logger.propagate = previous_propagate
 
 
 # ========================================================================
@@ -2523,6 +2532,40 @@ class TestMain:
             result = main()
         assert result == 0
         assert mock_fn.call_args[1]["timeframe"] == "D1"
+
+    @patch("mtdata.core.cli.discover_tools")
+    def test_json_output_suppresses_mtdata_logs_in_non_verbose_mode(self, mock_discover, capsys):
+        def noisy_tool(**_kwargs):
+            """Emit a log line before returning structured output."""
+            logging.getLogger("mtdata.test_noise").error("noise that should be suppressed")
+            return {"ok": True}
+
+        info = get_function_info(noisy_tool)
+        root_logger = logging.getLogger()
+        handler = logging.StreamHandler(sys.stderr)
+        root_logger.addHandler(handler)
+        previous_level = root_logger.level
+        root_logger.setLevel(logging.INFO)
+
+        mock_discover.return_value = {
+            "noisy_tool": {
+                "func": noisy_tool,
+                "meta": {"description": "Noisy tool"},
+                "_cli_func_info": info,
+            },
+        }
+
+        try:
+            with patch("sys.argv", ["cli.py", "--json", "noisy_tool"]):
+                result = main()
+        finally:
+            root_logger.removeHandler(handler)
+            root_logger.setLevel(previous_level)
+
+        assert result == 0
+        out = capsys.readouterr()
+        assert json.loads(out.out)["ok"] is True
+        assert "noise that should be suppressed" not in out.err
 
     @patch("mtdata.core.cli.discover_tools")
     def test_help_hides_irrelevant_timeframe_for_trade_account_info(self, mock_discover, capsys):

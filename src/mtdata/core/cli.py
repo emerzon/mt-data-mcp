@@ -95,7 +95,11 @@ def _is_typed_dict_type(value: Any) -> bool:
 def _configure_cli_logging(*, verbose: bool) -> None:
     """Keep CLI output clean by default while preserving opt-in execution logs."""
     try:
-        logging.getLogger("mtdata").setLevel(logging.INFO if verbose else logging.WARNING)
+        mtdata_logger = logging.getLogger("mtdata")
+        mtdata_logger.setLevel(logging.INFO if verbose else logging.WARNING)
+        mtdata_logger.propagate = bool(verbose)
+        if not any(isinstance(handler, logging.NullHandler) for handler in mtdata_logger.handlers):
+            mtdata_logger.addHandler(logging.NullHandler())
     except Exception:
         pass
 
