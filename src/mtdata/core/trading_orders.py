@@ -4,7 +4,7 @@ import math
 import time
 from typing import Optional, Union, List, Dict, Any
 
-from . import trading_comments, trading_time, trading_validation
+from . import trading_comments, trading_common, trading_time, trading_validation
 from .trading_execution import _modify_position
 from .trading_gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .trading_positions import _resolve_open_position
@@ -157,9 +157,12 @@ def _place_market_order(
         try:
             preflight = mt5.build_trade_preflight()
             if not preflight.get("execution_ready_strict", preflight.get("execution_ready", True)):
+                guidance = trading_common._build_trade_preflight_guidance(preflight)
                 return {
                     "error": "Trading not ready in MT5 terminal/account preflight.",
                     "preflight": preflight,
+                    "hint": guidance[0] if guidance else None,
+                    "next_steps": guidance,
                 }
             symbol_info = mt5.symbol_info(symbol)
             if symbol_info is None:
@@ -628,9 +631,12 @@ def _place_pending_order(
         try:
             preflight = mt5.build_trade_preflight()
             if not preflight.get("execution_ready_strict", preflight.get("execution_ready", True)):
+                guidance = trading_common._build_trade_preflight_guidance(preflight)
                 return {
                     "error": "Trading not ready in MT5 terminal/account preflight.",
                     "preflight": preflight,
+                    "hint": guidance[0] if guidance else None,
+                    "next_steps": guidance,
                 }
             symbol_info = mt5.symbol_info(symbol)
             if symbol_info is None:

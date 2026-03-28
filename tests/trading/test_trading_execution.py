@@ -436,6 +436,8 @@ def test_place_pending_order_blocks_on_trade_preflight(mock_mt5):
     assert res["preflight"]["execution_ready"] is True
     assert res["preflight"]["execution_ready_strict"] is False
     assert "Terminal AutoTrading is disabled." in res["preflight"]["execution_blockers"]
+    assert "Enable AutoTrading in the MT5 terminal toolbar" in res["hint"]
+    assert any("AutoTrading" in step for step in res["next_steps"])
     mock_mt5.order_send.assert_not_called()
 
 
@@ -465,6 +467,8 @@ def test_place_market_order_blocks_on_trade_preflight(mock_mt5):
     assert res["preflight"]["execution_ready"] is True
     assert res["preflight"]["execution_ready_strict"] is False
     assert "Terminal AutoTrading is disabled." in res["preflight"]["execution_blockers"]
+    assert "Enable AutoTrading in the MT5 terminal toolbar" in res["hint"]
+    assert any("AutoTrading" in step for step in res["next_steps"])
     mock_mt5.order_send.assert_not_called()
 
 

@@ -97,3 +97,32 @@ def _build_trade_preflight(mt5: Any, account_info: Any = None, terminal_info: An
         "execution_soft_blockers": soft_blockers,
         "execution_blockers": all_blockers,
     }
+
+
+def _build_trade_preflight_guidance(preflight: Optional[Dict[str, Any]]) -> List[str]:
+    """Translate preflight blockers into concise next-step guidance."""
+    if not isinstance(preflight, dict):
+        return []
+
+    blockers = [str(item).strip() for item in preflight.get("execution_blockers") or [] if str(item).strip()]
+    guidance: List[str] = []
+
+    if "Terminal AutoTrading is disabled." in blockers:
+        guidance.append("Enable AutoTrading in the MT5 terminal toolbar, then retry the order.")
+    if "Terminal API trading is disabled." in blockers:
+        guidance.append(
+            "In MT5, open Tools > Options > Expert Advisors and enable algorithmic/API trading."
+        )
+    if "Terminal is not connected." in blockers:
+        guidance.append("Reconnect the MT5 terminal to the broker server before placing orders.")
+    if "Expert trading is disabled for the account." in blockers:
+        guidance.append("Use an account that permits expert trading, or ask the broker to enable it.")
+    if "Account trading is disabled." in blockers:
+        guidance.append("Check the account permissions/status with the broker before retrying.")
+
+    if guidance:
+        return guidance
+
+    if blockers:
+        return ["Review the returned preflight blockers and resolve them before retrying the order."]
+    return []
