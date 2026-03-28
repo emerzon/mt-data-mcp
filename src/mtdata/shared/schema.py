@@ -27,7 +27,7 @@ PARAM_HINTS = {
     "group_by": "Temporal grouping: dow, hour, month, or all.",
     "day_of_week": "Weekday filter (0-6 or Mon..Sun).",
     "month": "Month filter (1-12 or Jan..Dec).",
-    "time_range": "Time-of-day filter 'HH:MM-HH:MM' (wraps midnight).",
+    "time_range": "Time-of-day filter 'HH:MM-HH:MM' (start inclusive, end exclusive; wraps midnight).",
     "rank_by": "Ranking to compute for market scans: all, spread, volume, or price_change.",
     "return_mode": "Return calculation mode: pct or log.",
     "output": "Output mode (full/summary/compact).",

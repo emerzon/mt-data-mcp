@@ -298,8 +298,8 @@ def temporal_analyze(
     Filters:
     - day_of_week: 0-6 or names like Mon, Tuesday
     - month: 1-12 or names like Jan, September
-    - time_range: 'HH:MM-HH:MM' (local/client timezone if configured, wraps
-      midnight like 22:00-02:00)
+    - time_range: 'HH:MM-HH:MM' (start inclusive, end exclusive; local/client
+      timezone if configured, wraps midnight like 22:00-02:00)
     - volume: uses real_volume when available and non-zero, else tick_volume
 
     Returns grouped averages for returns and volatility plus simple extras.
@@ -375,6 +375,7 @@ def temporal_analyze(
                 filters["time_range"] = {
                     "start": _time_label(tr_start),
                     "end": _time_label(tr_end),
+                    "end_exclusive": True,
                     "wraps_midnight": bool(tr_start > tr_end),
                 }
 

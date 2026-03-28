@@ -36,7 +36,7 @@ mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month --limit 1000 
 | `--group-by` | `dow` | Grouping: `dow` (day of week), `hour`, `month`, `all` |
 | `--day-of-week` | (optional) | Filter to a specific day (0–6 or name, e.g., `Mon`, `Friday`) |
 | `--month` | (optional) | Filter to a specific month (1–12 or name, e.g., `Jan`, `September`) |
-| `--time-range` | (optional) | Filter by time window `HH:MM-HH:MM` (wraps midnight, e.g., `22:00-02:00`) |
+| `--time-range` | (optional) | Filter by time window `HH:MM-HH:MM` using a half-open interval `[start, end)` (wraps midnight, e.g., `22:00-02:00`) |
 | `--return-mode` | `pct` | Return calculation: `pct` (percentage) or `log` (logarithmic) |
 
 ---
@@ -77,6 +77,8 @@ mtdata-cli temporal_analyze EURUSD --group-by hour --time-range "08:00-16:00" --
 # Asian session (wraps midnight)
 mtdata-cli temporal_analyze EURUSD --group-by hour --time-range "22:00-07:00" --json
 ```
+
+`--time-range` is applied to candle open times. The start time is included and the end time is excluded, so `08:00-16:00` keeps bars stamped `08:00` through `15:59...` and excludes a bar stamped exactly `16:00`.
 
 ### Calendar Month (`--group-by month`)
 

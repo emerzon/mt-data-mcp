@@ -610,13 +610,33 @@ class TestTemporalAnalyze:
         r = self._call(mock_fetch, time_range="09:00-17:00")
         assert r.get("success") is True
         assert r["filters"]["time_range"]["start"] == "09:00"
+        assert r["filters"]["time_range"]["end_exclusive"] is True
         assert r["filters"]["time_range"]["wraps_midnight"] is False
 
     @_apply_analyze_patches
     def test_filter_time_range_wraps_midnight(self, mock_fetch, *_):
         r = self._call(mock_fetch, time_range="22:00-02:00")
         assert r.get("success") is True
+        assert r["filters"]["time_range"]["end_exclusive"] is True
         assert r["filters"]["time_range"]["wraps_midnight"] is True
+
+    @_apply_analyze_patches
+    def test_filter_time_range_excludes_exact_end_time(self, mock_fetch, *_):
+        rates = _make_rates(n=24, start_epoch=1704067200, interval=3600)
+        r = self._call(mock_fetch, rates=rates, group_by="hour", time_range="09:00-17:00")
+        assert r.get("success") is True
+        group_keys = [g["group_key"] for g in r["groups"]]
+        assert group_keys == [9, 10, 11, 12, 13, 14, 15, 16]
+        assert 17 not in group_keys
+
+    @_apply_analyze_patches
+    def test_filter_time_range_wraps_midnight_excludes_exact_end_time(self, mock_fetch, *_):
+        rates = _make_rates(n=24, start_epoch=1704067200, interval=3600)
+        r = self._call(mock_fetch, rates=rates, group_by="hour", time_range="22:00-02:00")
+        assert r.get("success") is True
+        group_keys = [g["group_key"] for g in r["groups"]]
+        assert group_keys == [0, 1, 22, 23]
+        assert 2 not in group_keys
 
     @_apply_analyze_patches
     def test_return_mode_log(self, mock_fetch, *_):
