@@ -343,6 +343,50 @@ class TestCausalDiscoverSignals:
         warnings_out = result.get("warnings", [])
         assert any("Dropped USDJPY due to insufficient overlap" in warning for warning in warnings_out)
 
+    @patch("mtdata.core.causal._expand_symbols_for_group", return_value=(["BTCUSD", "ETHUSD", "LTCUSD"], None, "Crypto"))
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_single_symbol_auto_expand_does_not_succeed_without_anchor(self, mock_fetch, _mock_expand):
+        idx_anchor = pd.date_range("2024-01-01", periods=80, freq="h")
+        idx_peers = pd.date_range("2024-03-01", periods=80, freq="h")
+        series_map = {
+            "BTCUSD": pd.Series(np.linspace(1.0, 2.0, 80), index=idx_anchor),
+            "ETHUSD": pd.Series(np.linspace(2.0, 3.0, 80), index=idx_peers),
+            "LTCUSD": pd.Series(np.linspace(3.0, 4.0, 80), index=idx_peers),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+
+        result = self._unwrapped()("BTCUSD", max_lag=2, transform="diff", normalize=False)
+
+        assert result["success"] is False
+        assert result["error_code"] == "insufficient_overlap"
+        assert result["meta"]["symbols_input"] == ["BTCUSD"]
+        assert result["meta"]["symbols_expanded"] == ["BTCUSD", "ETHUSD", "LTCUSD"]
+
+    @patch("mtdata.core.causal._expand_symbols_for_group", return_value=(["BTCUSD", "ETHUSD"], None, "Crypto"))
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_single_symbol_auto_expand_fails_when_anchor_fetch_is_missing(self, mock_fetch, _mock_expand):
+        idx_peer = pd.date_range("2024-01-01", periods=80, freq="h")
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            if symbol == "BTCUSD":
+                return pd.Series(dtype=float), "Failed to fetch data for BTCUSD"
+            return pd.Series(np.linspace(2.0, 3.0, 80), index=idx_peer), None
+
+        mock_fetch.side_effect = _fetch_side_effect
+
+        result = self._unwrapped()("BTCUSD", max_lag=2, transform="diff", normalize=False)
+
+        assert result["success"] is False
+        assert result["error_code"] == "anchor_symbol_missing"
+        assert "BTCUSD" in result["error"]
+        assert "Failed to fetch data for BTCUSD" in " ".join(result.get("warnings", []))
+
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {})
     def test_invalid_timeframe(self):
         result = self._unwrapped()("A,B", timeframe="BAD")

@@ -250,10 +250,15 @@ def _select_prune_symbol(
     pair_overlaps: Dict[str, int],
     *,
     bottleneck_pair: str,
+    preserve_symbol: str | None = None,
 ) -> str | None:
     candidates = [symbol for symbol in _pair_overlap_symbols(bottleneck_pair, symbols) if symbol in symbols]
     if len(candidates) < 2:
         return None
+    if preserve_symbol in candidates and len(candidates) > 1:
+        prunable = [symbol for symbol in candidates if symbol != preserve_symbol]
+        if prunable:
+            candidates = prunable
     anchor = symbols[0] if symbols else None
     totals: Dict[str, int] = {symbol: 0 for symbol in candidates}
     for pair_key, overlap_rows in pair_overlaps.items():
@@ -277,6 +282,7 @@ def _prune_symbols_for_overlap(
     *,
     limit: int,
     minimum_required: int,
+    preserve_symbol: str | None = None,
 ) -> tuple[List[str], pd.DataFrame, Dict[str, Any] | None]:
     active_symbols = [symbol for symbol in symbols if symbol in series_map]
     frame = _build_overlap_frame(series_map, active_symbols, limit)
@@ -294,6 +300,7 @@ def _prune_symbols_for_overlap(
             active_symbols,
             pair_overlaps,
             bottleneck_pair=str(bottleneck_pair),
+            preserve_symbol=preserve_symbol,
         )
         if not drop_symbol:
             break
@@ -416,6 +423,7 @@ def causal_discover_signals(
         symbol_list = _parse_symbols(symbols)
         meta["symbols_input"] = list(symbol_list)
         group_hint: str | None = None
+        requested_anchor = symbol_list[0] if len(symbol_list) == 1 else None
         if not symbol_list:
             return _causal_error(
                 "Provide at least one symbol for causal discovery (e.g. 'EURUSD' or 'EURUSD,GBPUSD').",
@@ -432,6 +440,7 @@ def causal_discover_signals(
                 )
             symbol_list = expanded
             group_hint = group_path
+            meta["symbols_expanded"] = list(symbol_list)
 
         if len(symbol_list) < 2:
             return _causal_error(
@@ -479,6 +488,19 @@ def causal_discover_signals(
             warnings_out.extend(errors)
             symbol_list = [s for s in symbol_list if s in series_map]
 
+        if requested_anchor and requested_anchor not in series_map:
+            details_out = []
+            expanded_symbols = meta.get("symbols_expanded")
+            if isinstance(expanded_symbols, list) and expanded_symbols:
+                details_out.append(f"Expanded group: {', '.join(str(sym) for sym in expanded_symbols)}")
+            return _causal_error(
+                f"Requested symbol {requested_anchor} could not be fetched from its auto-expanded group.",
+                code="anchor_symbol_missing",
+                meta=meta,
+                warnings=warnings_out,
+                details=details_out or None,
+            )
+
         if len(series_map) < 2:
             return _causal_error(
                 "Not enough valid symbol data fetched to run causal discovery.",
@@ -519,6 +541,7 @@ def causal_discover_signals(
                 symbol_list,
                 limit=limit,
                 minimum_required=min_required_samples,
+                preserve_symbol=requested_anchor,
             )
             if overlap_pruning is not None:
                 symbol_list = pruned_symbols
