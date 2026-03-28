@@ -3,6 +3,7 @@
 import logging
 import os
 import warnings
+from datetime import datetime
 from typing import Optional
 
 try:
@@ -10,9 +11,36 @@ try:
 except Exception:
     pytz = None  # optional
 
+try:
+    from dateutil import tz as dateutil_tz  # type: ignore
+except Exception:
+    dateutil_tz = None  # optional
+
 _WARNED_SERVER_TZ = False
 _ENV_LOADED = False
 _LOGGER = logging.getLogger(__name__)
+
+
+def _detect_local_client_tz():
+    """Best-effort local timezone detection for unset client timezone config."""
+    if dateutil_tz is not None:
+        try:
+            if os.name == "nt" and hasattr(dateutil_tz, "tzwinlocal"):
+                tz = dateutil_tz.tzwinlocal()
+                if tz is not None:
+                    return tz
+        except Exception:
+            pass
+        try:
+            tz = dateutil_tz.tzlocal()
+            if tz is not None:
+                return tz
+        except Exception:
+            pass
+    try:
+        return datetime.now().astimezone().tzinfo
+    except Exception:
+        return None
 
 
 def _suppress_noisy_third_party_logs() -> None:
@@ -192,7 +220,6 @@ class MT5Config:
         # 2. Derive from MT5_SERVER_TZ if available
         if self.server_tz_name and pytz:
             try:
-                from datetime import datetime
                 tz = pytz.timezone(self.server_tz_name)
                 # Calculate current offset (aware of DST)
                 return int(datetime.now(tz).utcoffset().total_seconds())
@@ -211,13 +238,15 @@ class MT5Config:
         return None
 
     def get_client_tz(self):
-        """Return a pytz timezone for the client, if configured and pytz is available."""
+        """Return the client timezone from config or local autodetection."""
         try:
-            if pytz and self.client_tz_name:
-                return pytz.timezone(self.client_tz_name)
+            if self.client_tz_name:
+                if pytz:
+                    return pytz.timezone(self.client_tz_name)
+                return None
         except Exception:
             return None
-        return None
+        return _detect_local_client_tz()
 
 # Global configuration instance. Entry points call `load_environment()` explicitly.
 mt5_config = MT5Config(warn_if_timezone_missing=False)

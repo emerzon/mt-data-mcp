@@ -103,6 +103,20 @@ def test_mt5_config_handles_invalid_offset_and_bad_timezone(monkeypatch):
     assert conf.get_client_tz() is None
 
 
+def test_mt5_config_autodetects_client_timezone_when_env_unset(monkeypatch):
+    sentinel_tz = object()
+    monkeypatch.delenv("CLIENT_TZ", raising=False)
+    monkeypatch.delenv("MT5_CLIENT_TZ", raising=False)
+    monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+    monkeypatch.setattr(cfg, "_detect_local_client_tz", lambda: sentinel_tz)
+
+    conf = cfg.MT5Config()
+
+    assert conf.client_tz_name is None
+    assert conf.get_client_tz() is sentinel_tz
+
+
 def test_mt5_config_handles_invalid_timeout_with_warning(monkeypatch, caplog):
     monkeypatch.setenv("MT5_TIMEOUT", "not-a-number")
     monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")

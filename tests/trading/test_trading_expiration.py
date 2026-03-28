@@ -9,20 +9,32 @@ import pytest
 # Add src to path to ensure local package is found
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
+from mtdata.core import config as mt5_config_module
 from mtdata.core.trading_time import _normalize_pending_expiration, mt5_config
 
 
 def _with_clean_tz_config():
     """Temporarily clear tz/offset config for deterministic tests."""
-    original = (mt5_config.server_tz_name, mt5_config.client_tz_name, mt5_config.time_offset_minutes)
+    original = (
+        mt5_config.server_tz_name,
+        mt5_config.client_tz_name,
+        mt5_config.time_offset_minutes,
+        mt5_config_module._detect_local_client_tz,
+    )
     mt5_config.server_tz_name = None
     mt5_config.client_tz_name = None
     mt5_config.time_offset_minutes = 0
+    mt5_config_module._detect_local_client_tz = lambda: None
     return original
 
 
 def _restore_tz_config(original) -> None:
-    mt5_config.server_tz_name, mt5_config.client_tz_name, mt5_config.time_offset_minutes = original
+    (
+        mt5_config.server_tz_name,
+        mt5_config.client_tz_name,
+        mt5_config.time_offset_minutes,
+        mt5_config_module._detect_local_client_tz,
+    ) = original
 
 
 def test_normalize_pending_expiration_datetime_returns_int_timestamp() -> None:
@@ -72,8 +84,6 @@ def test_normalize_pending_expiration_none_is_not_explicit() -> None:
 
 
 def test_normalize_pending_expiration_applies_server_tz_offset() -> None:
-    from mtdata.core import config as mt5_config_module
-
     if getattr(mt5_config_module, "pytz", None) is None:
         pytest.skip("pytz is not available")
 
