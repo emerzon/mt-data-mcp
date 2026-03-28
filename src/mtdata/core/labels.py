@@ -48,6 +48,8 @@ def labels_triple_barrier(
       - Ticks: tp_pips/sl_pips (trade_tick_size from symbol info)
 
     label_on='high_low' considers intrabar extremes for barrier hits; 'close' uses closes only.
+    When both TP and SL are touched in the same high/low bar, the result is treated
+    conservatively as SL-first because the intrabar ordering is unknowable.
     direction='long' or 'short' controls which side is treated as TP/SL.
     Outputs label: +1 (TP first), -1 (SL first), 0 (neither by horizon), and holding_bars until decision.
     """
@@ -177,7 +179,9 @@ def labels_triple_barrier(
                     labels.append(0); hold.append(int(horizon)); tp_times.append(None); sl_times.append(None)
                 elif hit_tp > 0 and (hit_sl < 0 or hit_tp < hit_sl):
                     labels.append(1); hold.append(hit_tp); tp_times.append(_format_time_minimal(times[i+hit_tp])); sl_times.append(None)
-                elif hit_sl > 0 and (hit_tp < 0 or hit_sl < hit_tp):
+                # For high/low mode, both barriers can be touched in the same bar.
+                # Without tick ordering, assume the loss barrier was hit first.
+                elif hit_sl > 0 and (hit_tp < 0 or hit_sl <= hit_tp):
                     labels.append(-1); hold.append(hit_sl); tp_times.append(None); sl_times.append(_format_time_minimal(times[i+hit_sl]))
                 else:
                     labels.append(0); hold.append(min(hit_tp, hit_sl)); tp_times.append(_format_time_minimal(times[i+hit_tp])); sl_times.append(_format_time_minimal(times[i+hit_sl]))

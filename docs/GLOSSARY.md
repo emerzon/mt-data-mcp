@@ -225,6 +225,8 @@ A method to label historical data based on which barrier was hit first:
 - **-1 (Loss):** SL hit first
 - **0 (Neutral):** Neither hit within horizon
 
+For triple-barrier labeling in `high_low` mode, if one bar touches both TP and SL, the tie is resolved conservatively as a loss (`-1`) because intrabar order is unknown.
+
 **Use case:** Creating labels for machine learning models.
 
 ---

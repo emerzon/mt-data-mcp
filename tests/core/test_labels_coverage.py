@@ -277,6 +277,31 @@ class TestLabelsTripleBarrier:
         assert result["direction"] == "short"
         assert result["labels"][0] == 1
 
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_same_bar_high_low_barrier_hits_resolve_conservatively_to_stop_loss(self, mock_hist, mock_den, mock_pip):
+        mock_hist.return_value = pd.DataFrame({
+            "time": np.array([0.0, 3600.0, 7200.0]),
+            "open": np.array([1.0, 1.0, 1.0]),
+            "high": np.array([1.0, 1.02, 1.0]),
+            "low": np.array([1.0, 0.98, 1.0]),
+            "close": np.array([1.0, 1.0, 1.0]),
+        })
+        result = _get_raw_fn()(
+            "EURUSD",
+            tp_pct=1.0,
+            sl_pct=1.0,
+            horizon=1,
+            label_on="high_low",
+        )
+
+        assert result["success"] is True
+        assert result["labels"][0] == -1
+        assert result["holding_bars"][0] == 1
+        assert result["tp_time"][0] is None
+        assert result["sl_time"][0] == "1970-01-01 01:00"
+
 
 @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
 @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
