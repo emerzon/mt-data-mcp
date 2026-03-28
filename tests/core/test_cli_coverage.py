@@ -1449,6 +1449,12 @@ class TestAddForecastGenerateArgs:
         assert args.verbose is True
         assert args.print_config is True
 
+    def test_symbol_flag_alias(self):
+        parser = argparse.ArgumentParser()
+        _add_forecast_generate_args(parser)
+        args = parser.parse_args(["--symbol", "GBPUSD"])
+        assert args.symbol == "GBPUSD"
+
 
 # ========================================================================
 # add_dynamic_arguments
@@ -1490,7 +1496,11 @@ class TestAddDynamicArguments:
         assert args.flag == "true"
         args = parser.parse_args(["--flag", "true"])
         assert args.flag == "true"
+        args = parser.parse_args(["--flag", "True"])
+        assert args.flag == "true"
         args = parser.parse_args(["--flag", "false"])
+        assert args.flag == "false"
+        args = parser.parse_args(["--flag", "FALSE"])
         assert args.flag == "false"
         args = parser.parse_args(["--no-flag"])
         assert args.flag == "false"
@@ -1616,7 +1626,7 @@ class TestAddDynamicArguments:
         args = parser.parse_args(["--ticket", "123456"])
         assert args.position_ticket == 123456
 
-    def test_labels_triple_barrier_hides_summary_only_cli_duplicate(self):
+    def test_labels_triple_barrier_keeps_summary_only_output_alias_without_duplicate_flag(self):
         parser = argparse.ArgumentParser()
         func_info = {
             "params": [
@@ -1638,7 +1648,7 @@ class TestAddDynamicArguments:
         add_dynamic_arguments(parser, func_info, cmd_name="labels_triple_barrier")
 
         output_action = next(action for action in parser._actions if action.dest == "output")
-        assert output_action.choices == ["full", "summary", "compact"]
+        assert output_action.choices == ["full", "summary", "compact", "summary_only"]
         assert not any(action.dest == "summary_only" for action in parser._actions)
 
 
@@ -1689,6 +1699,8 @@ class TestResolveParamKwargs:
         param = {"name": "verbose", "type": bool, "required": False, "default": None}
         kwargs, is_mapping = _resolve_param_kwargs(param, None)
         assert kwargs["choices"] == ["true", "false"]
+        assert kwargs["type"]("True") == "true"
+        assert kwargs["type"]("FALSE") == "false"
 
     def test_optional_int(self):
         param = {"name": "count", "type": Optional[int], "required": False, "default": None}
@@ -2537,6 +2549,22 @@ class TestForecastGenerateIntegration:
         assert request.library == "native"
         assert request.method == "theta"
         assert call_kwargs["__cli_raw"] is True
+
+    @patch("mtdata.core.cli.discover_tools")
+    def test_forecast_generate_accepts_symbol_flag_alias(self, mock_discover):
+        mock_fn = MagicMock(return_value={"forecast": [1.0, 2.0]})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "forecast_generate"
+        mock_fn.__doc__ = "Generate forecasts."
+
+        mock_discover.return_value = {
+            "forecast_generate": {"func": mock_fn, "meta": {"description": "Generate forecasts"}},
+        }
+        with patch("sys.argv", ["cli.py", "forecast_generate", "--symbol", "BTCUSD"]):
+            result = main()
+        assert result == 0
+        request = mock_fn.call_args[1]["request"]
+        assert request.symbol == "BTCUSD"
 
     @patch("mtdata.core.cli.discover_tools")
     def test_forecast_generate_print_config(self, mock_discover, capsys):

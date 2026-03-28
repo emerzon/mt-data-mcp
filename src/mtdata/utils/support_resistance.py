@@ -1352,6 +1352,7 @@ def merge_support_resistance_results(
     ]
 
     return {
+        "success": True,
         "symbol": symbol if symbol is not None else results[0].get("symbol"),
         "timeframe": str(timeframe),
         "mode": "auto",
@@ -1504,6 +1505,7 @@ def compute_support_resistance_levels(
     resistances.sort(key=lambda level: (float(level.get("value", 0.0)), -float(level.get("score", 0.0))))
 
     return {
+        "success": True,
         "symbol": symbol,
         "timeframe": timeframe,
         "mode": "single",

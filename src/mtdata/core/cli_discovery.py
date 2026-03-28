@@ -41,7 +41,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("forecast_quantlib_barrier_price", "option_type"): "Option side: call or put.",
     ("forecast_tune_optuna", "search_space"): "Optuna search space (JSON or k=v).",
     ("indicators_list", "detail"): "Output detail: compact table or full rows with aliases and descriptions.",
-    ("labels_triple_barrier", "output"): "Output mode: full, summary, or compact.",
+    ("labels_triple_barrier", "output"): "Output mode: full, summary, compact, or summary_only (alias for summary).",
     ("report_generate", "output"): "Output format: formatted text or markdown.",
     ("trade_modify", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
     ("trade_place", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
@@ -69,6 +69,10 @@ _FORECAST_METHOD_LITERAL_MARKERS = {
     "chronos2",
     "statsforecast",
 }
+
+
+def _normalize_bool_choice(value: Any) -> str:
+    return str(value or "").strip().lower()
 
 
 def _is_forecast_method_literal(
@@ -339,7 +343,7 @@ def resolve_param_kwargs(
             if base_type in (int, float, str):
                 kwargs["type"] = base_type
             elif base_type is bool:
-                kwargs["type"] = str
+                kwargs["type"] = _normalize_bool_choice
                 kwargs["choices"] = ["true", "false"]
                 kwargs["metavar"] = "bool"
 
@@ -357,8 +361,6 @@ def resolve_param_kwargs(
                     kwargs["nargs"] = "+"
             elif is_literal_origin(origin):
                 choices = [str(v) for v in get_args(base_type)]
-                if cmd_name == "labels_triple_barrier" and param["name"] == "output":
-                    choices = [choice for choice in choices if choice != "summary_only"]
                 if choices:
                     kwargs["choices"] = choices
                 kwargs["type"] = str

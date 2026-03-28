@@ -727,7 +727,8 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     cmd_parser.description = "Generate forecasts with an optional preprocessing pipeline."
     cmd_parser.epilog = _forecast_generate_typed_value_epilog()
 
-    cmd_parser.add_argument("symbol", help="Trading symbol.")
+    cmd_parser.add_argument("symbol", nargs="?", default=argparse.SUPPRESS, help="Trading symbol.")
+    cmd_parser.add_argument("--symbol", dest="symbol", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
 
     group_method = cmd_parser.add_argument_group("Method")
     group_method.add_argument(
@@ -1223,6 +1224,15 @@ def main():
             except ValueError as exc:
                 cmd_parser.error(str(exc))
 
+            symbol = getattr(args, "symbol", None)
+            if symbol in (None, ""):
+                _render_cli_result(
+                    {"error": "Missing required argument(s): symbol."},
+                    args=args,
+                    cmd_name="forecast_generate",
+                )
+                return 1
+
             params_raw = _resolve_forecast_typed_cli_value(
                 args.params,
                 key="params",
@@ -1277,7 +1287,7 @@ def main():
             target_spec = _merge_dict(target_spec, overrides.get("target"))
 
             request = ForecastGenerateRequest(
-                symbol=args.symbol,
+                symbol=symbol,
                 timeframe=args.timeframe,
                 library=args.library,
                 method=args.method,

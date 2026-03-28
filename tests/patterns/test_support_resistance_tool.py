@@ -56,6 +56,7 @@ def test_support_resistance_tool_returns_weighted_levels():
 
     mock_gateway.assert_called_once()
     mock_fetch.assert_called_once_with(symbol="EURUSD", timeframe="H1", need=200)
+    assert result["success"] is True
     assert result["symbol"] == "EURUSD"
     assert result["timeframe"] == "H1"
     assert result["method"] == "weighted_retests"
@@ -81,6 +82,7 @@ def test_support_resistance_tool_defaults_to_auto_mode():
         result = fn("EURUSD", limit=200, tolerance_pct=0.005, min_touches=2, max_levels=3, reaction_bars=4)
 
     assert mock_fetch.call_count == 4
+    assert result["success"] is True
     assert result["timeframe"] == "auto"
     assert result["mode"] == "auto"
     assert result["timeframes_analyzed"] == ["M15", "H1", "H4", "D1"]
