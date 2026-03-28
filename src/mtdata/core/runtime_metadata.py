@@ -16,6 +16,24 @@ def _safe_tz_name(value: Any) -> Optional[str]:
     if isinstance(name, str):
         text = name.strip()
         return text or None
+    tzname = getattr(value, "tzname", None)
+    if callable(tzname):
+        try:
+            current_name = tzname(datetime.now(timezone.utc).astimezone(value))
+        except Exception:
+            try:
+                current_name = tzname(None)
+            except Exception:
+                current_name = None
+        if isinstance(current_name, str):
+            text = current_name.strip()
+            if text:
+                return text
+    std_name = getattr(value, "_std_abbr", None)
+    if isinstance(std_name, str):
+        text = std_name.strip()
+        if text:
+            return text
     if hasattr(value, "utcoffset"):
         try:
             text = str(value).strip()
@@ -60,6 +78,13 @@ def _prune_empty(value: Any) -> Any:
             out[key] = cleaned
         return out
     return value
+def _offset_tz_name(offset_seconds: Optional[int]) -> Optional[str]:
+    if offset_seconds is None:
+        return None
+    try:
+        return timezone(timedelta(seconds=int(offset_seconds))).tzname(None)
+    except Exception:
+        return None
 
 
 def build_runtime_timezone_meta(
@@ -115,23 +140,11 @@ def build_runtime_timezone_meta(
     if server_offset_seconds is None and isinstance(server_offset_minutes, int):
         server_offset_seconds = int(server_offset_minutes) * 60
 
-    output_timezone = None
-    if isinstance(result, dict):
-        output_timezone = _safe_tz_name(result.get("timezone"))
-
-    output_hint = str(output_timezone) if output_timezone else (client_tz_resolved or client_tz_config or "UTC")
-
     server_source = "none"
     if server_tz_config:
         server_source = "MT5_SERVER_TZ"
     elif server_offset_minutes is not None:
         server_source = "MT5_TIME_OFFSET_MINUTES"
-
-    local_tz = None
-    try:
-        local_tz = _safe_tz_name(datetime.now().astimezone().tzinfo)
-    except Exception:
-        local_tz = None
 
     server_tzinfo = _resolve_tzinfo(server_tz_obj) or _resolve_tzinfo(server_tz_resolved or server_tz_config)
     client_tzinfo = _resolve_tzinfo(client_tz_obj) or _resolve_tzinfo(client_tz_resolved or client_tz_config)
@@ -146,39 +159,30 @@ def build_runtime_timezone_meta(
 
     client_now = _safe_now_iso(client_tzinfo) if include_now and client_tzinfo is not None else None
 
-    server_tz_meta: Dict[str, Any] = {
-        "configured": server_tz_config,
-        "resolved": server_tz_resolved,
-    }
-    if server_offset_seconds is not None and (server_source != "none" or server_offset_seconds != 0):
-        server_tz_meta["offset_seconds"] = server_offset_seconds
+    server_tz_value = server_tz_resolved or server_tz_config
+    if server_tz_value is None and server_source == "MT5_TIME_OFFSET_MINUTES":
+        server_tz_value = _offset_tz_name(server_offset_seconds)
+
+    client_tz_value = client_tz_resolved or client_tz_config
 
     runtime_meta = {
-        "output": {
-            "tz": {
-                "value": output_timezone,
-                "hint": output_hint,
-            },
-        },
         "utc": {
+            "tz": "UTC",
             "now": utc_now,
-        } if include_now else None,
+        },
         "server": {
             "source": server_source,
-            "tz": server_tz_meta,
+            "tz": server_tz_value,
+            "offset_seconds": (
+                server_offset_seconds
+                if server_offset_seconds is not None and (server_source != "none" or server_offset_seconds != 0)
+                else None
+            ),
             "now": server_now if include_now else None,
         },
         "client": {
-            "tz": {
-                "configured": client_tz_config,
-                "resolved": client_tz_resolved,
-            },
+            "tz": client_tz_value,
             "now": client_now if include_now else None,
         },
-        "local": {
-            "tz": {
-                "name": local_tz,
-            },
-        } if include_local else None,
     }
     return _prune_empty(runtime_meta)

@@ -60,14 +60,11 @@ def test_history_available_on_versioned_route() -> None:
         "meta": {
             "runtime": {
                 "timezone": {
-                    "output": {"tz": {"hint": "UTC"}},
+                    "utc": {"tz": "UTC"},
                     "server": {
                         "source": "MT5_SERVER_TZ",
-                        "tz": {
-                            "configured": "Europe/Nicosia",
-                            "resolved": "Europe/Nicosia",
-                            "offset_seconds": 7200,
-                        },
+                        "tz": "Europe/Nicosia",
+                        "offset_seconds": 7200,
                     },
                 },
             },

@@ -16,6 +16,11 @@ try:
 except Exception:
     dateutil_tz = None  # optional
 
+try:
+    import tzlocal  # type: ignore
+except Exception:
+    tzlocal = None  # optional
+
 _WARNED_SERVER_TZ = False
 _ENV_LOADED = False
 _LOGGER = logging.getLogger(__name__)
@@ -23,6 +28,13 @@ _LOGGER = logging.getLogger(__name__)
 
 def _detect_local_client_tz():
     """Best-effort local timezone detection for unset client timezone config."""
+    if tzlocal is not None:
+        try:
+            tz = tzlocal.get_localzone()
+            if tz is not None:
+                return tz
+        except Exception:
+            pass
     if dateutil_tz is not None:
         try:
             if os.name == "nt" and hasattr(dateutil_tz, "tzwinlocal"):

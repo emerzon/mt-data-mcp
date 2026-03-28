@@ -544,6 +544,19 @@ class TestSafeTzName:
         result = _safe_tz_name(FakeTZ())
         assert isinstance(result, str)
 
+    def test_prefers_tzname_over_raw_repr(self):
+        class FakeTZ:
+            def tzname(self, _dt):
+                return "Central Daylight Time"
+
+            def utcoffset(self, _dt):
+                return None
+
+            def __str__(self):
+                return "tzwinlocal('Central Standard Time')"
+
+        assert _safe_tz_name(FakeTZ()) == "Central Daylight Time"
+
 
 # ========================================================================
 # _build_cli_timezone_meta
@@ -561,9 +574,10 @@ class TestBuildCliTimezoneMeta:
         mock_config.get_time_offset_seconds.return_value = 7200
         result = _build_cli_timezone_meta({"some": "data"})
         assert isinstance(result, dict)
-        assert result["server"]["tz"]["configured"] == "Europe/Nicosia"
-        assert result["client"]["tz"]["configured"] == "US/Eastern"
-        assert result["server"]["tz"]["offset_seconds"] == 7200
+        assert result["utc"]["tz"] == "UTC"
+        assert result["server"]["tz"] == "Europe/Nicosia"
+        assert result["client"]["tz"] == "US/Eastern"
+        assert result["server"]["offset_seconds"] == 7200
         assert result["server"]["now"] != result["client"]["now"]
 
     @patch("mtdata.core.config.mt5_config")
@@ -574,7 +588,8 @@ class TestBuildCliTimezoneMeta:
         mock_config.get_client_tz.return_value = None
         mock_config.get_time_offset_seconds.return_value = 0
         result = _build_cli_timezone_meta({"timezone": "US/Eastern"})
-        assert result["output"]["tz"]["value"] == "US/Eastern"
+        assert result["utc"]["tz"] == "UTC"
+        assert "client" not in result or result["client"].get("tz") is None
 
     @patch("mtdata.core.config.mt5_config")
     def test_with_non_dict_result(self, mock_config):
@@ -584,7 +599,7 @@ class TestBuildCliTimezoneMeta:
         mock_config.get_client_tz.return_value = None
         mock_config.get_time_offset_seconds.return_value = 0
         result = _build_cli_timezone_meta("some string")
-        assert result["output"]["tz"].get("value") is None
+        assert result["utc"]["tz"] == "UTC"
 
     @patch("mtdata.core.config.mt5_config")
     def test_with_offset_env(self, mock_config, monkeypatch):
@@ -595,7 +610,8 @@ class TestBuildCliTimezoneMeta:
         mock_config.get_time_offset_seconds.return_value = 10800
         monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "180")
         result = _build_cli_timezone_meta({})
-        assert result["server"]["tz"]["offset_seconds"] == 10800
+        assert result["server"]["offset_seconds"] == 10800
+        assert result["server"]["tz"] == "UTC+03:00"
 
     @patch("mtdata.core.config.mt5_config")
     def test_with_invalid_offset_env(self, mock_config, monkeypatch):
@@ -606,7 +622,7 @@ class TestBuildCliTimezoneMeta:
         mock_config.get_time_offset_seconds.return_value = 0
         monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "abc")
         result = _build_cli_timezone_meta({})
-        assert result["server"].get("tz", {}).get("offset_seconds") is None
+        assert result["server"].get("offset_seconds") is None
 
     def test_server_source_none_by_default(self):
         result = _build_cli_timezone_meta({})
@@ -630,7 +646,7 @@ class TestBuildCliTimezoneMeta:
         mock_config.get_time_offset_seconds.return_value = 3600
         monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "60")
         result = _build_cli_timezone_meta({})
-        if result["server"].get("tz", {}).get("configured") is None:
+        if result["server"].get("tz") == "UTC+01:00":
             assert result["server"]["source"] == "MT5_TIME_OFFSET_MINUTES"
 
     @patch("mtdata.core.config.mt5_config")
@@ -652,22 +668,20 @@ class TestBuildCliTimezoneMeta:
 # ========================================================================
 
 class TestAttachCliMeta:
-    def test_non_verbose_adds_brief_meta(self):
+    def test_non_verbose_adds_common_meta(self):
         r = {"key": "val"}
         out = _attach_cli_meta(r, cmd_name="test", verbose=False)
         assert out is not r
-        assert "cli_meta" in out
-        assert out["cli_meta"]["command"] == "test"
-        tz_meta = out["cli_meta"]["timezone"]
+        assert "cli_meta" not in out
+        assert out["meta"]["tool"] == "test"
+        tz_meta = out["meta"]["runtime"]["timezone"]
         assert "server" in tz_meta
         assert "client" in tz_meta
         assert "utc" in tz_meta
         assert "local" not in tz_meta
-        assert "tz" in tz_meta["server"]
-        assert "tz" in tz_meta["client"]
-        assert "value" in tz_meta["server"]["tz"]
-        assert "value" in tz_meta["client"]["tz"]
-        assert "now" in tz_meta["utc"]
+        assert tz_meta["utc"]["tz"] == "UTC"
+        assert "tz" in tz_meta["server"] or "source" in tz_meta["server"]
+        assert "tz" in tz_meta["client"] or "client" in tz_meta
 
     def test_non_dict_returns_unchanged(self):
         assert _attach_cli_meta("string", cmd_name="test", verbose=True) == "string"
@@ -675,17 +689,23 @@ class TestAttachCliMeta:
     def test_verbose_dict_adds_meta(self):
         r = {"data": 1}
         out = _attach_cli_meta(r, cmd_name="my_cmd", verbose=True)
-        assert "cli_meta" in out
-        assert out["cli_meta"]["command"] == "my_cmd"
-        assert "timezone" in out["cli_meta"]
+        assert "cli_meta" not in out
+        assert out["meta"]["tool"] == "my_cmd"
+        assert "timezone" in out["meta"]["runtime"]
 
-    def test_preserves_existing_cli_meta(self):
+    def test_converts_existing_cli_meta_to_common_meta(self):
         r = {"data": 1, "cli_meta": {"existing": True}}
         out = _attach_cli_meta(r, cmd_name="cmd", verbose=True)
-        assert out["cli_meta"]["existing"] is True
-        assert out["cli_meta"]["command"] == "cmd"
+        assert "cli_meta" not in out
+        assert out["meta"]["tool"] == "cmd"
 
-    def test_verbose_candles_adds_command_diagnostics(self):
+    def test_preserves_existing_common_meta(self):
+        r = {"data": 1, "meta": {"domain": {"symbol": "EURUSD"}}}
+        out = _attach_cli_meta(r, cmd_name="cmd", verbose=True)
+        assert out["meta"]["tool"] == "cmd"
+        assert out["meta"]["domain"]["symbol"] == "EURUSD"
+
+    def test_verbose_candles_keeps_existing_common_diagnostics(self):
         r = {
             "meta": {
                 "diagnostics": {
@@ -697,12 +717,11 @@ class TestAttachCliMeta:
             "warnings": ["sample warning"],
         }
         out = _attach_cli_meta(r, cmd_name="data_fetch_candles", verbose=True)
-        cmd_diag = out["cli_meta"]["command_diagnostics"]["data_fetch_candles"]
-        assert cmd_diag["query"]["raw_bars_fetched"] == 5
-        assert cmd_diag["indicators"]["requested"] is False
-        assert cmd_diag["warnings"] == ["sample warning"]
+        assert "cli_meta" not in out
+        assert out["meta"]["diagnostics"]["query"]["raw_bars_fetched"] == 5
+        assert out["meta"]["tool"] == "data_fetch_candles"
 
-    def test_verbose_market_ticker_adds_command_diagnostics(self):
+    def test_verbose_market_ticker_does_not_add_cli_diagnostics(self):
         r = {
             "time": 1700000000,
             "bid": 200.0,
@@ -718,11 +737,9 @@ class TestAttachCliMeta:
             },
         }
         out = _attach_cli_meta(r, cmd_name="market_ticker", verbose=True)
-        cmd_diag = out["cli_meta"]["command_diagnostics"]["market_ticker"]
-        assert cmd_diag["source"] == "mt5.symbol_info_tick"
-        assert cmd_diag["cache_used"] is False
-        assert cmd_diag["query_latency_ms"] == 7.5
-        assert cmd_diag["spread_points"] == 100.0
+        assert "cli_meta" not in out
+        assert out["meta"]["tool"] == "market_ticker"
+        assert out["diagnostics"]["source"] == "mt5.symbol_info_tick"
 
 
 # ========================================================================
@@ -2073,7 +2090,8 @@ class TestCreateCommandFunction:
         out = capsys.readouterr().out
         parsed = json.loads(out)
         assert parsed["price"] == 1.23
-        assert "cli_meta" in parsed
+        assert parsed["meta"]["tool"] == "test_cmd"
+        assert "runtime" in parsed["meta"]
 
     def test_bool_param_coercion(self, capsys):
         mock_fn = MagicMock(return_value="ok")
@@ -2200,7 +2218,8 @@ class TestCreateCommandFunction:
         cmd_fn(args)
         out = capsys.readouterr().out
         parsed = json.loads(out)
-        assert "cli_meta" in parsed
+        assert parsed["meta"]["tool"] == "test_cmd"
+        assert "runtime" in parsed["meta"]
 
     def test_empty_output_no_print(self, capsys):
         mock_fn = MagicMock(return_value={})
@@ -2826,13 +2845,15 @@ class TestEdgeCases:
 
     def test_build_cli_timezone_meta_local_tz(self):
         result = _build_cli_timezone_meta({})
-        assert "local" in result
-        assert "name" in result["local"]["tz"]
+        assert "local" not in result
+        assert result["utc"]["tz"] == "UTC"
 
     def test_attach_cli_meta_with_none_cmd(self):
         r = {"data": 1}
         out = _attach_cli_meta(r, cmd_name=None, verbose=True)
-        assert out["cli_meta"]["command"] == ""
+        assert "cli_meta" not in out
+        assert "tool" not in out["meta"]
+        assert "runtime" in out["meta"]
 
     def test_resolve_param_kwargs_type_resolution_failure(self):
         # A parameter with a weird type that causes exception

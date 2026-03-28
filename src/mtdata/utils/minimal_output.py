@@ -175,6 +175,11 @@ def _resolve_tool_name(result: Any, tool_name: Optional[str]) -> str:
     if isinstance(tool_name, str) and tool_name.strip():
         return tool_name.strip()
     if isinstance(result, dict):
+        meta = result.get("meta")
+        if isinstance(meta, dict):
+            meta_tool = str(meta.get("tool") or "").strip()
+            if meta_tool:
+                return meta_tool
         cli_meta = result.get("cli_meta")
         if isinstance(cli_meta, dict):
             command = str(cli_meta.get("command") or "").strip()
@@ -555,7 +560,7 @@ def _normalize_triple_barrier_payload(payload: Dict[str, Any]) -> Optional[Dict[
     if isinstance(summary, dict) and summary:
         out["summary"] = summary
 
-    for key in ("params_used", "cli_meta"):
+    for key in ("params_used", "meta"):
         value = payload.get(key)
         if not _is_empty_value(value):
             out[key] = value
@@ -834,7 +839,11 @@ def _compact_forecast_ci(
 
 def _build_forecast_meta(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Group verbose forecast metadata into stable sections."""
-    domain: Dict[str, Any] = {}
+    meta_in = payload.get('meta')
+    meta_existing = dict(meta_in) if isinstance(meta_in, dict) else {}
+
+    domain_in = meta_existing.get('domain')
+    domain: Dict[str, Any] = dict(domain_in) if isinstance(domain_in, dict) else {}
     for key in ('symbol', 'timeframe', 'method', 'horizon', 'lookback_used', 'forecast_trend'):
         value = payload.get(key)
         if not _is_empty_value(value):
@@ -854,73 +863,136 @@ def _build_forecast_meta(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not _is_empty_value(params_used):
         domain['params'] = params_used
 
+    tool_name = str(meta_existing.get('tool') or '').strip()
     cli_meta_in = payload.get('cli_meta')
     cli_meta = dict(cli_meta_in) if isinstance(cli_meta_in, dict) else {}
-    tool_name = str(cli_meta.pop('command', '')).strip()
+    if not tool_name:
+        tool_name = str(cli_meta.pop('command', '')).strip()
     cli_timezone = cli_meta.pop('timezone', None)
 
-    runtime: Dict[str, Any] = {}
-    cli: Dict[str, Any] = {}
+    runtime_in = meta_existing.get('runtime')
+    runtime: Dict[str, Any] = dict(runtime_in) if isinstance(runtime_in, dict) else {}
 
-    runtime_timezone: Dict[str, Any] = {}
-    timezone_source = cli_timezone if isinstance(cli_timezone, dict) else None
+    existing_runtime_timezone = runtime.get('timezone')
+    timezone_source = existing_runtime_timezone if isinstance(existing_runtime_timezone, dict) else None
+    if timezone_source is None:
+        timezone_source = cli_timezone if isinstance(cli_timezone, dict) else None
     if timezone_source is None:
         try:
             from ..core.runtime_metadata import build_runtime_timezone_meta
 
-            generated_timezone = build_runtime_timezone_meta(payload)
+            generated_timezone = build_runtime_timezone_meta(
+                payload,
+                include_local=False,
+                include_now=False,
+            )
             if isinstance(generated_timezone, dict):
                 timezone_source = generated_timezone
         except Exception:
             timezone_source = None
 
-    if isinstance(timezone_source, dict):
-        local_meta = timezone_source.get('local')
-        if isinstance(local_meta, dict):
-            local_tz_meta = local_meta.get('tz')
-            if isinstance(local_tz_meta, dict):
-                local_tz = local_tz_meta.get('name')
-                if not _is_empty_value(local_tz):
-                    cli['local_tz'] = local_tz
-
-        for key, value in timezone_source.items():
-            if key == 'local' or _is_empty_value(value):
-                continue
-            runtime_timezone[str(key)] = _compact_timezone_display(value)
-
+    runtime_timezone = _normalize_timezone_display_meta(timezone_source)
     if runtime_timezone:
         runtime['timezone'] = runtime_timezone
-
-    if cli_meta:
-        cli.update(cli_meta)
+    elif 'timezone' in runtime and _is_empty_value(runtime.get('timezone')):
+        runtime.pop('timezone', None)
 
     meta: Dict[str, Any] = {}
+    for key, value in meta_existing.items():
+        if key in {'tool', 'domain', 'runtime', 'cli'} or _is_empty_value(value):
+            continue
+        meta[str(key)] = value
     if tool_name:
         meta['tool'] = tool_name
     if domain:
         meta['domain'] = domain
     if runtime:
         meta['runtime'] = runtime
-    if cli:
-        meta['cli'] = cli
     return meta
 
 
-def _compact_timezone_display(value: Any) -> Any:
+def _timezone_value_from_any(value: Any) -> Any:
+    if _is_empty_value(value):
+        return None
     if isinstance(value, dict):
-        out: Dict[str, Any] = {}
-        for key, subval in value.items():
-            compacted = _compact_timezone_display(subval)
-            if _is_empty_value(compacted):
-                continue
-            out[str(key)] = compacted
-        if 'configured' in out and 'resolved' in out and out.get('configured') == out.get('resolved'):
-            out.pop('resolved', None)
-        return out
-    if isinstance(value, list):
-        items = [_compact_timezone_display(item) for item in value]
-        return [item for item in items if not _is_empty_value(item)]
+        if 'tz' in value:
+            nested = _timezone_value_from_any(value.get('tz'))
+            if not _is_empty_value(nested):
+                return nested
+        for key in ('resolved', 'configured', 'value', 'hint', 'name'):
+            candidate = value.get(key)
+            if not _is_empty_value(candidate):
+                return candidate
+        return None
     return value
+
+
+def _normalize_timezone_display_meta(value: Any) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+
+    out: Dict[str, Any] = {}
+
+    utc_meta = value.get('utc')
+    if isinstance(utc_meta, dict) or not _is_empty_value(utc_meta):
+        utc_out: Dict[str, Any] = {}
+        if isinstance(utc_meta, dict):
+            utc_out['tz'] = _timezone_value_from_any(utc_meta) or 'UTC'
+            now = utc_meta.get('now')
+            if not _is_empty_value(now):
+                utc_out['now'] = now
+        else:
+            utc_out['tz'] = _timezone_value_from_any(utc_meta) or 'UTC'
+        if utc_out:
+            out['utc'] = utc_out
+
+    server_meta = value.get('server')
+    if isinstance(server_meta, dict) or not _is_empty_value(server_meta):
+        server_out: Dict[str, Any] = {}
+        if isinstance(server_meta, dict):
+            source = server_meta.get('source')
+            if not _is_empty_value(source):
+                server_out['source'] = source
+            tz_value = _timezone_value_from_any(server_meta)
+            if not _is_empty_value(tz_value):
+                server_out['tz'] = tz_value
+            offset_seconds = server_meta.get('offset_seconds')
+            if not _is_empty_value(offset_seconds):
+                server_out['offset_seconds'] = offset_seconds
+            now = server_meta.get('now')
+            if not _is_empty_value(now):
+                server_out['now'] = now
+        else:
+            tz_value = _timezone_value_from_any(server_meta)
+            if not _is_empty_value(tz_value):
+                server_out['tz'] = tz_value
+        if server_out:
+            out['server'] = server_out
+
+    client_meta = value.get('client')
+    output_meta = value.get('output')
+    output_tz = _timezone_value_from_any(output_meta)
+    if isinstance(client_meta, dict) or not _is_empty_value(client_meta) or not _is_empty_value(output_tz):
+        client_out: Dict[str, Any] = {}
+        if isinstance(client_meta, dict):
+            tz_value = _timezone_value_from_any(client_meta)
+            if _is_empty_value(tz_value):
+                tz_value = output_tz
+            if not _is_empty_value(tz_value):
+                client_out['tz'] = tz_value
+            now = client_meta.get('now')
+            if not _is_empty_value(now):
+                client_out['now'] = now
+        else:
+            tz_value = _timezone_value_from_any(client_meta)
+            if _is_empty_value(tz_value):
+                tz_value = output_tz
+            if not _is_empty_value(tz_value):
+                client_out['tz'] = tz_value
+        if client_out:
+            out['client'] = client_out
+
+    return out
 
 
 def _collapse_single_key_path(key: str, value: Any) -> tuple[str, Any]:

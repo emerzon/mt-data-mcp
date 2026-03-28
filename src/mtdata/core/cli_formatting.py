@@ -5,7 +5,7 @@ import types
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from .runtime_metadata import build_runtime_timezone_meta
+from .runtime_metadata import build_runtime_timezone_meta, _safe_tz_name as _runtime_safe_tz_name
 from ..utils.minimal_output import format_result_minimal as _shared_minimal
 from .mt5_gateway import get_default_mt5_gateway
 
@@ -121,7 +121,11 @@ def _format_result_for_cli(result: Any, *, fmt: str, verbose: bool, cmd_name: st
 def _safe_tz_name(value: Any) -> Optional[str]:
     if value is None:
         return None
-    return getattr(value, "zone", None) or str(value)
+    name = _runtime_safe_tz_name(value)
+    if name:
+        return name
+    text = str(value).strip()
+    return text or None
 
 
 def _build_cli_timezone_meta(result: Any) -> Dict[str, Any]:
@@ -130,43 +134,22 @@ def _build_cli_timezone_meta(result: Any) -> Dict[str, Any]:
 
 def _build_cli_timezone_meta_brief(result: Any) -> Dict[str, Any]:
     full = _build_cli_timezone_meta(result)
-    return {
-        "output": {
-            "tz": {
-                "value": (
-                    (((full.get("output") or {}).get("tz")) or {}).get("value")
-                    if isinstance((full.get("output") or {}).get("tz"), dict)
-                    else None
-                ),
-                "hint": (
-                    (((full.get("output") or {}).get("tz")) or {}).get("hint")
-                    if isinstance((full.get("output") or {}).get("tz"), dict)
-                    else None
-                ),
-            },
-        },
-        "server": {
-            "tz": {
-                "value": (
-                    ((((full.get("server") or {}).get("tz")) or {}).get("resolved"))
-                    or ((((full.get("server") or {}).get("tz")) or {}).get("configured"))
-                ) if isinstance((full.get("server") or {}).get("tz"), dict) else None,
-            },
-            "now": (full.get("server") or {}).get("now") if isinstance(full.get("server"), dict) else None,
-        },
-        "client": {
-            "tz": {
-                "value": (
-                    ((((full.get("client") or {}).get("tz")) or {}).get("resolved"))
-                    or ((((full.get("client") or {}).get("tz")) or {}).get("configured"))
-                ) if isinstance((full.get("client") or {}).get("tz"), dict) else None,
-            },
-            "now": (full.get("client") or {}).get("now") if isinstance(full.get("client"), dict) else None,
-        },
-        "utc": {
-            "now": (full.get("utc") or {}).get("now") if isinstance(full.get("utc"), dict) else None,
-        },
-    }
+    out: Dict[str, Any] = {}
+    utc_meta = full.get("utc")
+    if isinstance(utc_meta, dict):
+        out["utc"] = {"tz": utc_meta.get("tz"), "now": utc_meta.get("now")}
+    server_meta = full.get("server")
+    if isinstance(server_meta, dict):
+        out["server"] = {
+            "source": server_meta.get("source"),
+            "tz": server_meta.get("tz"),
+            "offset_seconds": server_meta.get("offset_seconds"),
+            "now": server_meta.get("now"),
+        }
+    client_meta = full.get("client")
+    if isinstance(client_meta, dict):
+        out["client"] = {"tz": client_meta.get("tz"), "now": client_meta.get("now")}
+    return out
 
 
 def _build_candle_cli_verbose_meta(result: Any) -> Dict[str, Any]:
@@ -223,33 +206,51 @@ def _build_market_ticker_cli_verbose_meta(result: Any) -> Dict[str, Any]:
     return out
 
 
+def _merge_meta_dict(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(base)
+    for key, value in extra.items():
+        existing = out.get(key)
+        if isinstance(existing, dict) and isinstance(value, dict):
+            out[str(key)] = _merge_meta_dict(existing, value)
+            continue
+        out[str(key)] = value
+    return out
+
+
 def _attach_cli_meta(result: Any, *, cmd_name: str, verbose: bool) -> Any:
     if not isinstance(result, dict):
         return result
     out = dict(result)
-    meta = out.get("cli_meta")
-    if not isinstance(meta, dict):
-        meta = {}
-    meta.setdefault("command", cmd_name or "")
-    meta["timezone"] = (
-        _build_cli_timezone_meta(result)
-        if bool(verbose)
-        else _build_cli_timezone_meta_brief(result)
-    )
-    cmd_diag: Dict[str, Any] = {}
-    if bool(verbose) and str(cmd_name or "").strip() == "data_fetch_candles":
-        details = _build_candle_cli_verbose_meta(out)
-        if details:
-            cmd_diag["data_fetch_candles"] = details
-    if bool(verbose) and str(cmd_name or "").strip() == "market_ticker":
-        details = _build_market_ticker_cli_verbose_meta(out)
-        if details:
-            cmd_diag["market_ticker"] = details
-    if cmd_diag:
-        existing = meta.get("command_diagnostics")
-        if not isinstance(existing, dict):
-            existing = {}
-        existing.update(cmd_diag)
-        meta["command_diagnostics"] = existing
-    out["cli_meta"] = meta
+    existing_meta = out.get("meta")
+    meta = dict(existing_meta) if isinstance(existing_meta, dict) else {}
+    tool_name = str(cmd_name or "").strip()
+    if tool_name and not str(meta.get("tool") or "").strip():
+        meta["tool"] = tool_name
+
+    runtime_meta = meta.get("runtime")
+    runtime = dict(runtime_meta) if isinstance(runtime_meta, dict) else {}
+    timezone_meta = runtime.get("timezone")
+    if not isinstance(timezone_meta, dict):
+        runtime["timezone"] = build_runtime_timezone_meta(
+            out,
+            include_local=False,
+            include_now=False,
+        )
+    if runtime:
+        meta["runtime"] = runtime
+
+    legacy_cli_meta = out.pop("cli_meta", None)
+    if isinstance(legacy_cli_meta, dict):
+        legacy_tool = str(legacy_cli_meta.get("command") or "").strip()
+        if legacy_tool and not str(meta.get("tool") or "").strip():
+            meta["tool"] = legacy_tool
+        legacy_timezone = legacy_cli_meta.get("timezone")
+        if isinstance(legacy_timezone, dict):
+            runtime = dict(meta.get("runtime")) if isinstance(meta.get("runtime"), dict) else {}
+            if not isinstance(runtime.get("timezone"), dict):
+                runtime["timezone"] = legacy_timezone
+            meta["runtime"] = runtime
+
+    if meta:
+        out["meta"] = meta
     return out

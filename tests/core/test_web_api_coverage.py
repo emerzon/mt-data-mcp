@@ -514,14 +514,11 @@ class TestGetHistory:
         res = resp.json()
         assert res["bars"] == [{"time": 1.0, "close": 1.1}]
         assert res["meta"]["runtime"]["timezone"] == {
-            "output": {"tz": {"hint": "UTC"}},
+            "utc": {"tz": "UTC"},
             "server": {
                 "source": "MT5_SERVER_TZ",
-                "tz": {
-                    "configured": "Europe/Nicosia",
-                    "resolved": "Europe/Nicosia",
-                    "offset_seconds": 0,
-                },
+                "tz": "Europe/Nicosia",
+                "offset_seconds": 0,
             },
         }
 

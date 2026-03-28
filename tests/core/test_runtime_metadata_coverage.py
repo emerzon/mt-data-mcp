@@ -29,9 +29,10 @@ def test_omits_unknown_server_and_client_now_fields() -> None:
     result = build_runtime_timezone_meta({}, mt5_config=cfg)
 
     assert isinstance(result["utc"]["now"], str)
+    assert result["utc"]["tz"] == "UTC"
     assert "now" not in result.get("server", {})
     assert "now" not in result.get("client", {})
-    assert "offset_seconds" not in result.get("server", {}).get("tz", {})
+    assert "offset_seconds" not in result.get("server", {})
 
 
 def test_api_shape_uses_shared_schema_without_local_or_now() -> None:
@@ -51,24 +52,24 @@ def test_api_shape_uses_shared_schema_without_local_or_now() -> None:
     )
 
     assert result == {
-        "output": {
-            "tz": {
-                "value": "UTC",
-                "hint": "UTC",
-            },
+        "utc": {
+            "tz": "UTC",
         },
         "server": {
             "source": "MT5_SERVER_TZ",
-            "tz": {
-                "configured": "Europe/Nicosia",
-                "resolved": "Europe/Nicosia",
-                "offset_seconds": 7200,
-            },
+            "tz": "Europe/Nicosia",
+            "offset_seconds": 7200,
         },
         "client": {
-            "tz": {
-                "configured": "US/Central",
-                "resolved": "US/Central",
-            },
+            "tz": "US/Central",
         },
     }
+
+
+def test_uses_iana_name_for_client_timezone_when_available() -> None:
+    cfg = _make_config(client_tz=ZoneInfo("America/Chicago"))
+
+    result = build_runtime_timezone_meta({}, mt5_config=cfg)
+
+    assert result["client"]["tz"] == "America/Chicago"
+    assert result["utc"]["tz"] == "UTC"

@@ -117,6 +117,14 @@ def test_mt5_config_autodetects_client_timezone_when_env_unset(monkeypatch):
     assert conf.get_client_tz() is sentinel_tz
 
 
+def test_detect_local_client_tz_prefers_tzlocal(monkeypatch):
+    sentinel_tz = object()
+    monkeypatch.setattr(cfg, "tzlocal", SimpleNamespace(get_localzone=lambda: sentinel_tz))
+    monkeypatch.setattr(cfg, "dateutil_tz", None)
+
+    assert cfg._detect_local_client_tz() is sentinel_tz
+
+
 def test_mt5_config_handles_invalid_timeout_with_warning(monkeypatch, caplog):
     monkeypatch.setenv("MT5_TIMEOUT", "not-a-number")
     monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")

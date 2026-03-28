@@ -21,33 +21,19 @@ export type HistoryBar = {
 }
 
 export type RuntimeTimezoneMeta = {
-  output?: {
-    tz?: {
-      value?: string | null
-      hint?: string
-    }
+  utc?: {
+    tz?: string | null
+    now?: string
   }
   server?: {
     source?: string
-    tz?: {
-      configured?: string | null
-      resolved?: string | null
-      offset_seconds?: number
-    }
-  }
-  client?: {
-    tz?: {
-      configured?: string | null
-      resolved?: string | null
-    }
-  }
-  utc?: {
+    tz?: string | null
+    offset_seconds?: number
     now?: string
   }
-  local?: {
-    tz?: {
-      name?: string | null
-    }
+  client?: {
+    tz?: string | null
+    now?: string
   }
 }
 

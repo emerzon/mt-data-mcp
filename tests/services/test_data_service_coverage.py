@@ -38,7 +38,8 @@ from mtdata.services.data_service import (
 # ---------------------------------------------------------------------------
 
 _UTC = timezone.utc
-_NOW = datetime(2025, 6, 15, 12, 0, 0, tzinfo=_UTC)
+# Keep default fixture data close to the test run so freshness checks remain stable.
+_NOW = datetime.now(_UTC).replace(second=0, microsecond=0)
 _NOW_TS = _NOW.timestamp()
 
 
@@ -578,14 +579,11 @@ class TestFetchCandles(unittest.TestCase):
         self.assertEqual(
             result['meta']['runtime']['timezone'],
             {
-                'output': {'tz': {'value': 'UTC', 'hint': 'UTC'}},
+                'utc': {'tz': 'UTC'},
                 'server': {
                     'source': 'MT5_SERVER_TZ',
-                    'tz': {
-                        'configured': 'Europe/Nicosia',
-                        'resolved': 'Europe/Nicosia',
-                        'offset_seconds': 7200,
-                    },
+                    'tz': 'Europe/Nicosia',
+                    'offset_seconds': 7200,
                 },
             },
         )
