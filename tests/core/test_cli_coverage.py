@@ -7,6 +7,7 @@ and heavy imports are mocked.
 
 import argparse
 import json
+import logging
 import os
 import sys
 import types
@@ -38,6 +39,7 @@ from mtdata.core.cli import (
     _debug_enabled,
     _debug,
     _argparse_color_enabled,
+    _configure_cli_logging,
     _is_typed_dict_type,
     _format_result_minimal,
     _json_default,
@@ -114,6 +116,28 @@ class TestDebug:
         monkeypatch.delenv("MTDATA_CLI_DEBUG", raising=False)
         _debug("should not appear")
         assert capsys.readouterr().err == ""
+
+
+class TestConfigureCliLogging:
+    def test_default_cli_logging_suppresses_mtdata_info(self):
+        logger = logging.getLogger("mtdata")
+        previous = logger.level
+        try:
+            logger.setLevel(logging.NOTSET)
+            _configure_cli_logging(verbose=False)
+            assert logger.level == logging.WARNING
+        finally:
+            logger.setLevel(previous)
+
+    def test_verbose_cli_logging_restores_mtdata_info(self):
+        logger = logging.getLogger("mtdata")
+        previous = logger.level
+        try:
+            logger.setLevel(logging.WARNING)
+            _configure_cli_logging(verbose=True)
+            assert logger.level == logging.INFO
+        finally:
+            logger.setLevel(previous)
 
 
 # ========================================================================

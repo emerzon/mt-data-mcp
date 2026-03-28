@@ -10,6 +10,7 @@ import os
 import types
 import math
 import json
+import logging
 from typing import get_origin, get_args, Optional, Dict, Any, List, Tuple, Literal, Union, is_typeddict
 from pydantic import BaseModel
 from .config import load_environment
@@ -88,6 +89,14 @@ def _is_typed_dict_type(value: Any) -> bool:
         getattr(value, "__required_keys__", None) is not None
         or getattr(value, "__optional_keys__", None) is not None
     )
+
+
+def _configure_cli_logging(*, verbose: bool) -> None:
+    """Keep CLI output clean by default while preserving opt-in execution logs."""
+    try:
+        logging.getLogger("mtdata").setLevel(logging.INFO if verbose else logging.WARNING)
+    except Exception:
+        pass
 
 from .unified_params import add_global_args_to_parser
 from .server_utils import get_mcp_registry
@@ -1390,6 +1399,8 @@ def main():
     if not args.command:
         parser.print_help()
         return 1
+
+    _configure_cli_logging(verbose=bool(getattr(args, "verbose", False)))
     
     try:
         status = args.func(args)
