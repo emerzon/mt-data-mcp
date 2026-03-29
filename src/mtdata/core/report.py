@@ -55,7 +55,7 @@ def report_generate(
     """Generate a consolidated, information-dense analysis report with compact multi-format output.
 
     - template: 'basic' (context, pivot, EWMA vol, backtest->best forecast, MC barrier grid, patterns)
-                'minimal' (context, selected forecast, barrier summary),
+                'minimal' (fast path: context + direct forecast; skips pivot/backtest/barrier optimization/patterns),
                 'advanced' (adds regimes, HAR-RV, conformal),
                 or style-specific ('scalping' | 'intraday' | 'swing' | 'position').
     - params: optional dict to tune steps/spacing, grids, and optionally override timeframe per template via 'timeframe' or methods via 'methods'.

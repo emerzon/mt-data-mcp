@@ -24,9 +24,14 @@ def now_utc_iso() -> str:
 
 
 def parse_table_tail(data: Any, tail: int = 1) -> List[Dict[str, Any]]:
-    """Return the last N rows from a tabular payload (list[dict] or {data: ...})."""
+    """Return the last N rows from a tabular payload (list[dict] or {data|bars: ...})."""
     try:
-        rows_obj = data.get('data') if isinstance(data, dict) else data
+        if isinstance(data, dict):
+            rows_obj = data.get('data')
+            if not isinstance(rows_obj, list):
+                rows_obj = data.get('bars')
+        else:
+            rows_obj = data
         if not isinstance(rows_obj, list):
             return []
         tail_i = int(tail or 0)
