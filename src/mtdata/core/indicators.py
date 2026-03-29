@@ -30,7 +30,7 @@ def _clean_help_text(text: str, func_name: Optional[str] = None, func: Optional[
 
 _DOC_SECTION_RE = re.compile(r"^([A-Za-z][A-Za-z0-9 _/\-]{1,48})\s*:\s*$")
 _DOC_PARAM_RE = re.compile(r"^[\-\*\u2022]?\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^)]*\))?\s*:\s*(.+)$")
-_DOC_SIG_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\s*\(.*\)\s*$")
+_DOC_SIG_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\s*\(.*\)\s*(?:->\s*.+)?$")
 
 
 def _canonical_doc_section(name: str) -> str:
@@ -225,7 +225,7 @@ def indicators_list(
                         it.get("name", ""),
                         it.get("category", ""),
                         ", ".join(str(alias) for alias in (it.get("aliases") or []) if str(alias).strip()),
-                        it.get("description", ""),
+                        (_build_indicator_documentation(it).get("description") or it.get("description", "")),
                     ]
                     for it in items
                 ]

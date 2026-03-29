@@ -451,6 +451,43 @@ Values below 30 often indicate oversold conditions.
         assert out["data"][0]["aliases"] == "bb, bollinger_bands"
         assert "Bollinger Bands" in out["data"][0]["description"]
 
+    def test_indicators_list_full_detail_strips_signature_and_doc_sections(self, monkeypatch):
+        from mtdata.core import indicators as core_indicators
+
+        sample_doc = (
+            "adx(high, low, close, length=14) -> pandas.core.frame.DataFrame\n"
+            "Average Directional Movement\n\n"
+            "This indicator attempts to quantify trend strength.\n\n"
+            "Parameters:\n"
+            "    length (int): Window length.\n"
+            "Sources:\n"
+            "    * https://example.com/adx\n"
+        )
+
+        monkeypatch.setattr(
+            core_indicators,
+            "_list_ta_indicators",
+            lambda detailed=False: [
+                {
+                    "name": "adx",
+                    "category": "trend",
+                    "description": sample_doc,
+                    "aliases": [],
+                }
+            ],
+        )
+
+        raw_list = getattr(core_indicators.indicators_list, "__wrapped__", core_indicators.indicators_list)
+        out = raw_list(search_term="adx", detail="full")
+
+        assert out["success"] is True
+        description = out["data"][0]["description"]
+        assert "Average Directional Movement" in description
+        assert "quantify trend strength" in description
+        assert "adx(" not in description
+        assert "Parameters:" not in description
+        assert "Sources:" not in description
+
     def test_indicators_list_search_matches_names_and_aliases_only(self, monkeypatch):
         from mtdata.core import indicators as core_indicators
 

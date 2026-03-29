@@ -308,7 +308,8 @@ class TestPivotHappyPath:
         assert res["calculation_basis"]["source_bar"] == "last completed D1 bar"
         assert res["calculation_basis"]["session_boundary"] == "MT5 broker/session calendar"
         assert res["calculation_basis"]["display_timezone"] == "UTC"
-        assert res["levels_note"] == "null cells mean that pivot method does not define that level."
+        assert "null cells mean that pivot method does not define that level." in res["levels_note"]
+        assert "Camarilla levels are centered on the close price" in res["levels_note"]
 
     def test_symbol_timeframe_in_response(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]

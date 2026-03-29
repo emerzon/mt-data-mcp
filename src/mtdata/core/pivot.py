@@ -359,7 +359,10 @@ def pivot_compute_points(
                     "session_boundary": "MT5 broker/session calendar",
                     "display_timezone": "client_local" if _use_ctz else "UTC",
                 },
-                "levels_note": "null cells mean that pivot method does not define that level.",
+                "levels_note": (
+                    "null cells mean that pivot method does not define that level. "
+                    "Camarilla levels are centered on the close price, so S1 may be above PP and R1 may be below PP."
+                ),
                 "levels": levels_table,
             }
             if not _use_ctz:
