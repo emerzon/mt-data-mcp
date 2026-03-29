@@ -141,7 +141,7 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     monkeypatch.setattr(core_data, "get_mt5_gateway", lambda ensure_connection_impl=None: object())
 
     sig = inspect.signature(core_data.wait_event)
-    assert tuple(sig.parameters.keys()) == ("instrument", "timeframe")
+    assert tuple(sig.parameters.keys()) == ("instrument", "timeframe", "watch_tick_count_spike")
 
     raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
     result = raw("BTCUSD", "M1")
@@ -157,6 +157,15 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
         "sl_hit",
     ]
     assert "max_wait_seconds" not in result
+
+    with_tick_count = raw("BTCUSD", "M1", True)
+    assert [item.type for item in with_tick_count["watch_for"]] == [
+        "position_opened",
+        "position_closed",
+        "tp_hit",
+        "sl_hit",
+        "tick_count_spike",
+    ]
 
 
 def test_run_wait_event_defers_boundary_only_when_cap_is_short(monkeypatch) -> None:
@@ -573,6 +582,62 @@ def test_run_wait_event_matches_volume_spike() -> None:
     assert result["status"] == "matched"
     assert result["matched_event"]["type"] == "volume_spike"
     assert result["matched_event"]["observed"]["ratio"] > 4.0
+
+
+def test_run_wait_event_matches_tick_count_spike() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    now_epoch = int(clock.now_utc().timestamp())
+    ticks = []
+
+    for offset_seconds in (300, 270, 240, 210, 180, 150, 120, 90):
+        ticks.append(
+            {
+                "time": now_epoch - offset_seconds,
+                "time_msc": (now_epoch - offset_seconds) * 1000,
+                "bid": 100.0,
+                "ask": 100.01,
+                "last": 100.005,
+            }
+        )
+
+    for offset_seconds in (55, 50, 45, 40, 35, 30, 25, 20, 15, 10, 5, 0):
+        ticks.append(
+            {
+                "time": now_epoch - offset_seconds,
+                "time_msc": (now_epoch - offset_seconds) * 1000,
+                "bid": 100.1,
+                "ask": 100.11,
+                "last": 100.105,
+            }
+        )
+
+    gateway = SequenceGateway(ticks_by_symbol={"EURUSD": ticks})
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[
+                {
+                    "type": "tick_count_spike",
+                    "symbol": "EURUSD",
+                    "window": {"kind": "minutes", "value": 1},
+                    "baseline_window": {"kind": "minutes", "value": 4},
+                    "threshold_mode": "ratio_to_baseline",
+                    "threshold_value": 2.0,
+                }
+            ],
+            poll_interval_seconds=0.5,
+            max_wait_seconds=5.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "matched"
+    assert result["matched_event"]["type"] == "tick_count_spike"
+    assert result["matched_event"]["observed"]["volume_source"] == "tick_count"
+    assert result["matched_event"]["observed"]["ratio"] > 2.0
 
 
 def test_run_wait_event_matches_position_closed_from_history_out_by() -> None:

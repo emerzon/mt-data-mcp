@@ -15,6 +15,7 @@ from .data_requests import (
     PositionOpenedEventSpec,
     PriceChangeEventSpec,
     SlHitEventSpec,
+    TickCountSpikeEventSpec,
     TpHitEventSpec,
     VolumeSpikeEventSpec,
     WaitEventRequest,
@@ -301,14 +302,16 @@ def _compile_watch_event(spec: Any, *, request: WaitEventRequest) -> Dict[str, A
                 adaptive=spec.threshold_mode in {"ratio_to_baseline", "zscore"},
             ),
         }
-    if isinstance(spec, VolumeSpikeEventSpec):
+    if isinstance(spec, (VolumeSpikeEventSpec, TickCountSpikeEventSpec)):
         symbol = _resolved_value(spec, request, "symbol")
+        event_type = str(spec.type)
+        source = "tick_count" if isinstance(spec, TickCountSpikeEventSpec) else str(spec.source)
         if not symbol:
-            return {"error": "volume_spike events require symbol at the event or request level."}
-        if spec.source == "tick_count" and str(spec.window.kind) == "ticks":
+            return {"error": f"{event_type} events require symbol at the event or request level."}
+        if source == "tick_count" and str(spec.window.kind) == "ticks":
             return {
                 "error": (
-                    "volume_spike with source='tick_count' requires a minutes window. "
+                    f"{event_type} with source='tick_count' requires a minutes window. "
                     "A tick-count metric over a fixed tick window is constant."
                 )
             }
@@ -318,21 +321,21 @@ def _compile_watch_event(spec: Any, *, request: WaitEventRequest) -> Dict[str, A
         ):
             return {
                 "error": (
-                    "volume_spike baseline_window.kind must match window.kind when "
+                    f"{event_type} baseline_window.kind must match window.kind when "
                     "threshold_mode is ratio_to_baseline or zscore."
                 )
             }
         if spec.threshold_mode in {"ratio_to_baseline", "zscore"} and float(spec.baseline_window.value) <= float(spec.window.value):
             return {
                 "error": (
-                    "volume_spike baseline_window must be larger than window when "
+                    f"{event_type} baseline_window must be larger than window when "
                     "threshold_mode is ratio_to_baseline or zscore."
                 )
             }
         return {
-            "type": spec.type,
+            "type": event_type,
             "symbol": str(symbol).upper(),
-            "source": spec.source,
+            "source": source,
             "threshold_mode": spec.threshold_mode,
             "threshold_value": float(spec.threshold_value),
             "window": _window_payload(spec.window),
@@ -628,7 +631,7 @@ def _collect_snapshot(
         snapshot["history_orders"] = rows
 
     market_specs = [
-        item for item in watch_for if item["type"] in {"price_change", "volume_spike"}
+        item for item in watch_for if item["type"] in {"price_change", "volume_spike", "tick_count_spike"}
     ]
     if market_specs:
         refreshed = _refresh_market_state(
@@ -692,7 +695,7 @@ def _build_market_state(
     observed_at_utc: datetime,
     poll_interval_seconds: float,
 ) -> Dict[str, Any]:
-    market_specs = [item for item in watch_for if item["type"] in {"price_change", "volume_spike"}]
+    market_specs = [item for item in watch_for if item["type"] in {"price_change", "volume_spike", "tick_count_spike"}]
     if not market_specs:
         return {}
 
@@ -841,7 +844,7 @@ def _evaluate_watch_events(
             match = _evaluate_price_change(spec, market_data)
             if match is not None:
                 return match
-        elif event_type == "volume_spike":
+        elif event_type in {"volume_spike", "tick_count_spike"}:
             market_data = snapshot.get("market_data", {}).get(spec["symbol"])
             match = _evaluate_volume_spike(spec, market_data)
             if match is not None:
@@ -1386,7 +1389,7 @@ def _required_tick_count_for_price_change(spec: PriceChangeEventSpec) -> int:
     return current_points + baseline_points
 
 
-def _required_tick_count_for_volume_spike(spec: VolumeSpikeEventSpec) -> int:
+def _required_tick_count_for_volume_spike(spec: VolumeSpikeEventSpec | TickCountSpikeEventSpec) -> int:
     if str(spec.window.kind) != "ticks":
         return 0
     current_points = max(1, int(math.ceil(float(spec.window.value))))

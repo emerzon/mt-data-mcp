@@ -41,12 +41,20 @@ def test_wait_event_request_parses_market_event_specs() -> None:
                     "threshold_mode": "zscore",
                     "threshold_value": 2.5,
                 },
+                {
+                    "type": "tick_count_spike",
+                    "window": {"kind": "minutes", "value": 2},
+                    "baseline_window": {"kind": "minutes", "value": 20},
+                    "threshold_mode": "ratio_to_baseline",
+                    "threshold_value": 3.0,
+                },
             ],
             "end_on": [{"type": "candle_close", "timeframe": "M5"}],
         }
     )
 
-    assert len(request.watch_for) == 2
+    assert len(request.watch_for) == 3
     assert request.watch_for[0].type == "price_change"
     assert request.watch_for[1].type == "volume_spike"
+    assert request.watch_for[2].type == "tick_count_spike"
     assert request.end_on[0].type == "candle_close"

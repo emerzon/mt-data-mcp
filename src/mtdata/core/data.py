@@ -147,23 +147,30 @@ def data_fetch_ticks(
 def wait_event(
     instrument: str,
     timeframe: TimeframeLiteral = "M1",
+    watch_tick_count_spike: bool = False,
 ) -> Dict[str, Any]:
     """Wait for position lifecycle events on an instrument until the next timeframe boundary.
 
     The public tool focuses on position state changes for the instrument:
     `position_opened`, `position_closed`, `tp_hit`, and `sl_hit`.
+    When `watch_tick_count_spike=true`, it also wakes on a significant
+    tick-count activity surge for the instrument.
     It stops at the next candle close for `timeframe` if no watched event
     happens first.
     """
+    watch_for = [
+        {"type": "position_opened", "symbol": instrument},
+        {"type": "position_closed", "symbol": instrument},
+        {"type": "tp_hit", "symbol": instrument},
+        {"type": "sl_hit", "symbol": instrument},
+    ]
+    if watch_tick_count_spike:
+        watch_for.append({"type": "tick_count_spike", "symbol": instrument})
+
     request = WaitEventRequest(
         symbol=instrument,
         timeframe=timeframe,
-        watch_for=[
-            {"type": "position_opened", "symbol": instrument},
-            {"type": "position_closed", "symbol": instrument},
-            {"type": "tp_hit", "symbol": instrument},
-            {"type": "sl_hit", "symbol": instrument},
-        ],
+        watch_for=watch_for,
     )
     def _run() -> Dict[str, Any]:
         result = run_wait_event(
@@ -180,5 +187,6 @@ def wait_event(
         operation="wait_event",
         instrument=instrument,
         timeframe=timeframe,
+        watch_tick_count_spike=watch_tick_count_spike,
         func=_run,
     )

@@ -348,6 +348,22 @@ class VolumeSpikeEventSpec(BaseModel):
         return _validate_positive_float(value, "threshold_value")
 
 
+class TickCountSpikeEventSpec(BaseModel):
+    type: Literal["tick_count_spike"] = "tick_count_spike"
+    symbol: Optional[str] = None
+    window: WaitEventWindow = Field(default_factory=WaitEventWindow)
+    baseline_window: WaitEventWindow = Field(
+        default_factory=lambda: WaitEventWindow(kind="minutes", value=60.0)
+    )
+    threshold_mode: Literal["ratio_to_baseline", "zscore"] = "ratio_to_baseline"
+    threshold_value: float = 2.0
+
+    @field_validator("threshold_value")
+    @classmethod
+    def _validate_threshold_value(cls, value: float) -> float:
+        return _validate_positive_float(value, "threshold_value")
+
+
 WaitWatchEventSpec = Annotated[
     OrderCreatedEventSpec
     | OrderFilledEventSpec
@@ -357,7 +373,8 @@ WaitWatchEventSpec = Annotated[
     | TpHitEventSpec
     | SlHitEventSpec
     | PriceChangeEventSpec
-    | VolumeSpikeEventSpec,
+    | VolumeSpikeEventSpec
+    | TickCountSpikeEventSpec,
     Field(discriminator="type"),
 ]
 
