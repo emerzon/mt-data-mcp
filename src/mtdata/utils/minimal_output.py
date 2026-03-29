@@ -900,6 +900,98 @@ def _normalize_market_ticker_payload(
     return out
 
 
+def _compact_barrier_rows(
+    rows: Any,
+    *,
+    preferred_keys: List[str],
+) -> Optional[List[Dict[str, Any]]]:
+    if not isinstance(rows, list):
+        return None
+
+    dict_rows = [row for row in rows if isinstance(row, dict)]
+    if not dict_rows:
+        return []
+
+    active_keys = [
+        key
+        for key in preferred_keys
+        if any(key in row and not _is_empty_value(row.get(key)) for row in dict_rows)
+    ]
+    compacted: List[Dict[str, Any]] = []
+    for row in dict_rows:
+        compacted.append(
+            {
+                key: row.get(key)
+                for key in active_keys
+                if key in row and not _is_empty_value(row.get(key))
+            }
+        )
+    return compacted
+
+
+def _normalize_barrier_optimize_payload(
+    payload: Dict[str, Any],
+    *,
+    verbose: bool,
+    tool_name: str,
+) -> Optional[Dict[str, Any]]:
+    if tool_name != "forecast_barrier_optimize" or verbose:
+        return None
+
+    out = dict(payload)
+    best = payload.get("best")
+    if isinstance(best, dict):
+        best_keys = [
+            "tp",
+            "sl",
+            "rr",
+            "tp_price",
+            "sl_price",
+            "prob_win",
+            "prob_loss",
+            "prob_resolve",
+            "ev",
+            "profit_factor",
+            "breakeven_win_rate",
+            "edge_vs_breakeven",
+            "phantom_profit_risk",
+            "low_confidence",
+        ]
+        out["best"] = {
+            key: best.get(key)
+            for key in best_keys
+            if key in best and not _is_empty_value(best.get(key))
+        }
+
+    row_keys = [
+        "tp",
+        "sl",
+        "rr",
+        "tp_price",
+        "sl_price",
+        "prob_win",
+        "prob_loss",
+        "prob_no_hit",
+        "prob_resolve",
+        "ev",
+        "profit_factor",
+        "t_hit_resolve_median",
+        "low_confidence",
+    ]
+    compact_results = _compact_barrier_rows(payload.get("results"), preferred_keys=row_keys)
+    if compact_results is not None:
+        out["results"] = compact_results
+
+    if "grid" in out and "results" in out:
+        out.pop("grid", None)
+    else:
+        compact_grid = _compact_barrier_rows(payload.get("grid"), preferred_keys=row_keys)
+        if compact_grid is not None:
+            out["grid"] = compact_grid
+
+    return out
+
+
 def _compact_forecast_ci(
     payload: Dict[str, Any],
     *,
@@ -1207,13 +1299,21 @@ def format_result_minimal(
                 if market_ticker_norm is not None:
                     normalized = market_ticker_norm
                 else:
-                    triple_barrier_norm = _normalize_triple_barrier_payload(result)
-                    if triple_barrier_norm is not None:
-                        normalized = triple_barrier_norm
+                    barrier_optimize_norm = _normalize_barrier_optimize_payload(
+                        result,
+                        verbose=verbose,
+                        tool_name=resolved_tool_name,
+                    )
+                    if barrier_optimize_norm is not None:
+                        normalized = barrier_optimize_norm
                     else:
-                        forecast_norm = _normalize_forecast_payload(result, verbose=verbose)
-                        if forecast_norm is not None:
-                            normalized = forecast_norm
+                        triple_barrier_norm = _normalize_triple_barrier_payload(result)
+                        if triple_barrier_norm is not None:
+                            normalized = triple_barrier_norm
+                        else:
+                            forecast_norm = _normalize_forecast_payload(result, verbose=verbose)
+                            if forecast_norm is not None:
+                                normalized = forecast_norm
         if isinstance(normalized, str):
             return normalized.strip()
         toon_text = _format_to_toon(normalized, simplify_numbers=simplify_numbers)

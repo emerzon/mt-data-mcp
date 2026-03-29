@@ -387,16 +387,43 @@ class TestFormatResultForCli:
         result = _format_result_for_cli(
             {
                 "success": True,
-                "best": {"tp": 0.5, "sl": 0.25, "ev": 0.1},
-                "results": [{"tp": 0.5, "sl": 0.25, "ev": 0.1}],
-                "grid": [{"tp": 0.5, "sl": 0.25, "ev": 0.1}, {"tp": 0.75, "sl": 0.25, "ev": 0.08}],
+                "best": {
+                    "tp": 0.5,
+                    "sl": 0.25,
+                    "ev": 0.1,
+                    "ev_gross": None,
+                    "ev_net": None,
+                    "prob_win": 0.4,
+                    "prob_loss": 0.5,
+                },
+                "results": [
+                    {
+                        "tp": 0.5,
+                        "sl": 0.25,
+                        "rr": 2.0,
+                        "prob_win": 0.4,
+                        "prob_loss": 0.5,
+                        "prob_resolve": 0.9,
+                        "ev": 0.1,
+                        "ev_gross": None,
+                        "ev_net": None,
+                        "profit_factor": 1.4,
+                    }
+                ],
+                "grid": [
+                    {"tp": 0.5, "sl": 0.25, "ev": 0.1, "ev_gross": None, "ev_net": None},
+                    {"tp": 0.75, "sl": 0.25, "ev": 0.08, "ev_gross": None, "ev_net": None},
+                ],
             },
             fmt="toon",
             verbose=False,
             cmd_name="forecast_barrier_optimize",
         )
-        assert "grid" in result
         assert "best" in result
+        assert "results" in result
+        assert "grid" not in result
+        assert "ev_gross" not in result
+        assert "ev_net" not in result
 
         vol_result = _format_result_for_cli(
             {"success": True, "params_explained": {"lambda_": "EWMA decay factor"}},
