@@ -744,8 +744,8 @@ class TestTemplateBasic:
         assert isinstance(ctx.get("trend_compact"), dict)
         assert isinstance(ctx.get("trend_compact_legend"), dict)
         assert "s" in ctx["trend_compact_legend"]
-        assert isinstance(ctx.get("trend_compact_explained"), dict)
-        assert "regime_label" in ctx["trend_compact_explained"]
+        assert "trend_compact_explained" not in ctx
+        assert "sparkline_close" not in ctx
 
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")

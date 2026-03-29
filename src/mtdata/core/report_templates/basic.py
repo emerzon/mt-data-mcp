@@ -493,27 +493,16 @@ def template_basic(
             report['sections']['context'] = {'error': 'No candle data available for context section.'}
         else:
             last = tail_rows[-1] if tail_rows else {}
-            clos: List[float] = []
-            for r in (tail_rows[-30:] if tail_rows else []):
-                v = r.get('close')
-                try:
-                    clos.append(float(v))
-                except Exception:
-                    continue
             compact = _compute_compact_trend(tail_rows)
             ctx_obj: Dict[str, Any] = {
                 'symbol': symbol,
                 'timeframe': tf,
                 'last_snapshot': last,
-                'sparkline_close': clos,
                 'notes': 'Indicators included: EMA(20), EMA(50), RSI(14), MACD(12,26,9).',
             }
             if compact:
                 ctx_obj['trend_compact'] = compact
                 ctx_obj['trend_compact_legend'] = dict(_TREND_COMPACT_LEGEND)
-                explained = _explain_compact_trend(compact)
-                if explained:
-                    ctx_obj['trend_compact_explained'] = explained
             report['sections']['context'] = ctx_obj
 
     # Pivots (D1)
@@ -994,7 +983,8 @@ def template_basic(
     sec_bar['mode'] = mode_val
     sec_bar['note'] = (
         "Report barriers are produced by an independent optimization run; "
-        "standalone forecast_barrier_optimize may yield different candidates."
+        "standalone forecast_barrier_optimize may yield different candidates. "
+        "edge measures win-rate margin versus breakeven, while EV also weights reward/risk."
     )
     report['sections']['barriers'] = sec_bar
 
@@ -1005,14 +995,18 @@ def template_basic(
         symbol=symbol,
         timeframe=tf,
         mode='candlestick',
-        detail='full',
+        detail='compact',
         limit=int(p.get('patterns_limit', 120)),
     )
     if 'error' in pats:
         report['sections']['patterns'] = {'error': pats['error']}
     else:
-        rows = parse_table_tail(pats, tail=20)
-        detections = rows[-5:] if rows else []
+        recent_patterns = pats.get('recent_patterns') if isinstance(pats, dict) else None
+        if isinstance(recent_patterns, list):
+            detections = [row for row in recent_patterns[:5] if isinstance(row, dict)]
+        else:
+            rows = parse_table_tail(pats, tail=20)
+            detections = rows[-5:] if rows else []
         report['sections']['patterns'] = {'recent': detections}
 
     return report
