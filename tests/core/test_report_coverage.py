@@ -50,6 +50,7 @@ def test_run_report_generate_logs_finish_event(caplog):
 
     basic_template = MagicMock(return_value={"sections": {}, "diagnostics": {}})
     with patch("mtdata.core.report_templates.template_basic", basic_template, create=True), \
+         patch("mtdata.core.report_templates.template_minimal", basic_template, create=True), \
          patch("mtdata.core.report_templates.template_advanced", basic_template, create=True), \
          patch("mtdata.core.report_templates.template_scalping", basic_template, create=True), \
          patch("mtdata.core.report_templates.template_intraday", basic_template, create=True), \
@@ -196,6 +197,7 @@ class TestReportTemplateDispatch:
 
         mock_templates = {
             "basic": MagicMock(return_value=rep),
+            "minimal": MagicMock(return_value=rep),
             "advanced": MagicMock(return_value=rep),
             "scalping": MagicMock(return_value=rep),
             "intraday": MagicMock(return_value=rep),
@@ -204,6 +206,7 @@ class TestReportTemplateDispatch:
         }
 
         with patch(f"{_TEMPLATES_PATH}._t_basic", mock_templates["basic"], create=True), \
+             patch(f"{_TEMPLATES_PATH}._t_minimal", mock_templates["minimal"], create=True), \
              patch(f"{_TEMPLATES_PATH}._t_advanced", mock_templates["advanced"], create=True), \
              patch(f"{_TEMPLATES_PATH}._t_scalping", mock_templates["scalping"], create=True), \
              patch(f"{_TEMPLATES_PATH}._t_intraday", mock_templates["intraday"], create=True), \
@@ -214,6 +217,7 @@ class TestReportTemplateDispatch:
             # Patch the import block inside the function
             mock_mod = MagicMock()
             mock_mod.template_basic = mock_templates["basic"]
+            mock_mod.template_minimal = mock_templates["minimal"]
             mock_mod.template_advanced = mock_templates["advanced"]
             mock_mod.template_scalping = mock_templates["scalping"]
             mock_mod.template_intraday = mock_templates["intraday"]
@@ -226,6 +230,7 @@ class TestReportTemplateDispatch:
 
             # Actually run the function with template import patched
             with patch("mtdata.core.report_templates.template_basic", mock_templates["basic"], create=True), \
+                 patch("mtdata.core.report_templates.template_minimal", mock_templates["minimal"], create=True), \
                  patch("mtdata.core.report_templates.template_advanced", mock_templates["advanced"], create=True), \
                  patch("mtdata.core.report_templates.template_scalping", mock_templates["scalping"], create=True), \
                  patch("mtdata.core.report_templates.template_intraday", mock_templates["intraday"], create=True), \
@@ -241,6 +246,10 @@ class TestReportTemplateDispatch:
 
     def test_advanced_template(self):
         res = self._run("advanced")
+        assert isinstance(res, dict)
+
+    def test_minimal_template(self):
+        res = self._run("minimal")
         assert isinstance(res, dict)
 
     def test_scalping_template(self):
@@ -267,6 +276,7 @@ class TestReportUnknownTemplate:
         # Patch the import block to succeed
         mock_basic = MagicMock()
         with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_minimal", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
@@ -279,6 +289,7 @@ class TestReportUnknownTemplate:
         fn = _get_report_generate()
         mock_basic = MagicMock()
         with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_minimal", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
@@ -321,6 +332,7 @@ class TestReportBadTemplateReturn:
         fn = _get_report_generate()
         mock_basic = MagicMock(return_value="not a dict")
         with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_minimal", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
@@ -380,6 +392,7 @@ class TestReportHorizon:
         rep = _make_report(sections={})
         mock_basic = MagicMock(return_value=rep)
         with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_minimal", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
@@ -402,6 +415,10 @@ class TestReportHorizon:
     def test_horizon_from_params(self):
         mock = self._run_with_horizon(params={"horizon": 30}, template="basic")
         assert mock.call_args[0][1] == 30
+
+    def test_minimal_default_horizon(self):
+        mock = self._run_with_horizon(template="minimal")
+        assert mock.call_args[0][1] == 12
 
     def test_scalping_default_horizon(self):
         mock = self._run_with_horizon(template="scalping")

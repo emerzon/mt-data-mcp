@@ -87,6 +87,7 @@ def run_report_generate(
                     template_advanced as _t_advanced,
                     template_basic as _t_basic,
                     template_intraday as _t_intraday,
+                    template_minimal as _t_minimal,
                     template_position as _t_position,
                     template_scalping as _t_scalping,
                     template_swing as _t_swing,
@@ -98,6 +99,7 @@ def run_report_generate(
 
             default_horizon = {
                 "basic": 12,
+                "minimal": 12,
                 "advanced": 12,
                 "scalping": 8,
                 "intraday": 12,
@@ -116,6 +118,8 @@ def run_report_generate(
                 warnings.simplefilter("always")
                 if name == "basic":
                     rep = _t_basic(request.symbol, eff_horizon, request.denoise, params)
+                elif name == "minimal":
+                    rep = _t_minimal(request.symbol, eff_horizon, request.denoise, params)
                 elif name == "advanced":
                     rep = _t_advanced(request.symbol, eff_horizon, request.denoise, params)
                 elif name == "scalping":
@@ -129,7 +133,7 @@ def run_report_generate(
                 else:
                     msg = (
                         f"Unknown template: {request.template}. "
-                        "Use one of basic, advanced, scalping, intraday, swing, position."
+                        "Use one of basic, minimal, advanced, scalping, intraday, swing, position."
                     )
                     if output_mode == "markdown":
                         return report_error_text(msg)
