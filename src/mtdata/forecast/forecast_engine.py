@@ -269,9 +269,19 @@ def _calculate_lookback_bars(method_l: str, horizon: int, lookback: Optional[int
             window_size = int(p.get('window_size', 64))
         except Exception:
             window_size = 64
+        try:
+            search_depth = int(p.get('search_depth', 5000))
+        except Exception:
+            search_depth = 5000
+        search_depth = max(1, search_depth)
+        # Analog search needs enough history for:
+        # 1. `search_depth` disjoint candidate starts
+        # 2. each candidate's full window plus forecast future
+        # 3. the active query window at the end of the series
+        analog_history_bars = search_depth + (2 * window_size) + int(horizon) - 1
         if lookback is not None and lookback > 0:
-            return max(int(lookback) + 2, window_size + 2)
-        return max(100, window_size + 2, int(horizon) + 10)
+            return max(int(lookback) + 2, analog_history_bars)
+        return max(100, analog_history_bars)
 
     if lookback is not None and lookback > 0:
         return int(lookback) + 2

@@ -36,13 +36,21 @@ def test_normalize_weights_and_lookback_helpers():
     assert fe._normalize_weights([-1, 0], 2) is None
 
     assert fe._calculate_lookback_bars("theta", horizon=4, lookback=10, seasonality=24, timeframe="H1") == 12
-    assert fe._calculate_lookback_bars("analog", horizon=4, lookback=None, seasonality=24, timeframe="H1") >= 100
+    assert fe._calculate_lookback_bars("analog", horizon=4, lookback=None, seasonality=24, timeframe="H1") == 5131
     assert fe._calculate_lookback_bars(
         "analog", horizon=4, lookback=None, seasonality=24, timeframe="H1", params={"window_size": 256}
-    ) >= 258
+    ) == 5515
     assert fe._calculate_lookback_bars(
         "analog", horizon=4, lookback=10, seasonality=24, timeframe="H1", params={"window_size": 256}
-    ) >= 258
+    ) == 5515
+    assert fe._calculate_lookback_bars(
+        "analog",
+        horizon=4,
+        lookback=6000,
+        seasonality=24,
+        timeframe="H1",
+        params={"window_size": 64, "search_depth": 500},
+    ) == 6002
     assert fe._calculate_lookback_bars("seasonal_naive", horizon=4, lookback=None, seasonality=12, timeframe="H1") == 36
     assert fe._calculate_lookback_bars("fourier_ols", horizon=4, lookback=None, seasonality=24, timeframe="H1") >= 300
 
@@ -632,6 +640,57 @@ def test_forecast_engine_injects_context_for_analog(monkeypatch):
     assert isinstance(captured["kwargs"]["history_df"], pd.DataFrame)
     assert captured["kwargs"]["history_base_col"] == "close"
     assert captured["kwargs"]["history_denoise_spec"] is None
+
+
+def test_forecast_engine_fetches_sufficient_history_for_analog(monkeypatch):
+    captured = {}
+
+    class CaptureForecaster(fe._analog_methods.AnalogMethod):
+        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+            return ForecastResult(
+                forecast=np.array([float(series.iloc[-1])], dtype=float),
+                params_used={},
+                metadata={},
+            )
+
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return CaptureForecaster()
+
+    def fake_fetch_history(symbol, timeframe, need, as_of):
+        captured["fetch"] = {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "need": int(need),
+            "as_of": as_of,
+        }
+        return _df(int(need))
+
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("analog",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+    monkeypatch.setattr(fe, "_fetch_history", fake_fetch_history)
+    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
+
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="analog",
+        horizon=12,
+        params={"window_size": 64, "search_depth": 5000, "top_k": 20},
+        ci_alpha=None,
+    )
+
+    assert out["success"] is True
+    assert captured["fetch"] == {
+        "symbol": "EURUSD",
+        "timeframe": "H1",
+        "need": 5139,
+        "as_of": None,
+    }
 
 
 def test_forecast_engine_injects_denoise_context_for_analog(monkeypatch):
