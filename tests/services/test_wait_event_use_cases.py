@@ -3,6 +3,8 @@ from __future__ import annotations
 import inspect
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from mtdata.core import data as core_data
 from mtdata.core import wait_events as wait_events_mod
 from mtdata.core.data_requests import WaitEventRequest
@@ -446,6 +448,37 @@ def test_run_wait_event_stops_on_candle_boundary_when_no_watch_event(monkeypatch
 
     assert result["status"] == "boundary_reached"
     assert result["boundary_event"]["type"] == "candle_close"
+
+
+def test_run_wait_event_waits_across_pytz_dst_gap(monkeypatch) -> None:
+    pytz = pytest.importorskip("pytz")
+    from mtdata.core import trading_time
+
+    monkeypatch.setattr(trading_time.mt5_config, "get_server_tz", lambda: pytz.timezone("Europe/Nicosia"))
+    monkeypatch.setattr(trading_time.mt5_config, "get_time_offset_seconds", lambda: 7200)
+    monkeypatch.setattr(trading_time.mt5_config, "server_tz_name", "Europe/Nicosia")
+
+    gateway = SequenceGateway(orders_seq=[[], [], [], []])
+    clock = FakeClock(datetime(2026, 3, 29, 0, 54, 0, tzinfo=timezone.utc))
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[{"type": "order_created", "symbol": "BTCUSD"}],
+            end_on=[{"type": "candle_close", "timeframe": "M15", "buffer_seconds": 1.0}],
+            poll_interval_seconds=120.0,
+            max_wait_seconds=600.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "boundary_reached"
+    assert result["boundary_event"]["type"] == "candle_close"
+    assert result["boundary_event"]["next_candle_close_utc"] == "2026-03-29T01:00:00+00:00"
+    assert result["elapsed_seconds"] == 361.0
+    assert result["polls"] > 1
 
 
 def test_run_wait_event_matches_adaptive_price_change() -> None:

@@ -76,11 +76,23 @@ def _server_time_naive_to_utc(dt: datetime) -> datetime:
     if server_tz is not None:
         try:
             aware_server = server_tz.localize(dt, is_dst=None) if hasattr(server_tz, "localize") else dt.replace(tzinfo=server_tz)
-        except Exception:
+        except Exception as exc:
+            exc_name = exc.__class__.__name__
             try:
+                if hasattr(server_tz, "localize") and exc_name in {"NonExistentTimeError", "AmbiguousTimeError"}:
+                    standard_candidate = server_tz.localize(dt, is_dst=False)
+                    daylight_candidate = server_tz.localize(dt, is_dst=True)
+                    standard_utc = standard_candidate.astimezone(timezone.utc)
+                    daylight_utc = daylight_candidate.astimezone(timezone.utc)
+                    if exc_name == "NonExistentTimeError":
+                        return max(standard_utc, daylight_utc)
+                    return min(standard_utc, daylight_utc)
                 aware_server = server_tz.localize(dt, is_dst=True) if hasattr(server_tz, "localize") else dt.replace(tzinfo=server_tz)
             except Exception:
-                aware_server = dt.replace(tzinfo=server_tz)
+                try:
+                    aware_server = server_tz.localize(dt, is_dst=False) if hasattr(server_tz, "localize") else dt.replace(tzinfo=server_tz)
+                except Exception:
+                    aware_server = dt.replace(tzinfo=server_tz)
         return aware_server.astimezone(timezone.utc)
 
     try:

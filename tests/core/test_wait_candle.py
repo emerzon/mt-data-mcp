@@ -4,7 +4,7 @@ import pytest
 
 from mtdata.core.data_requests import WaitCandleRequest
 from mtdata.core import trading_time
-from mtdata.core.trading_time import _next_candle_close_server_time, _sleep_until_next_candle
+from mtdata.core.trading_time import _next_candle_close_server_time, _next_candle_wait_payload, _sleep_until_next_candle
 
 
 @pytest.fixture()
@@ -61,3 +61,21 @@ def test_sleep_until_next_candle_returns_expected_wait(utc_server_clock) -> None
     assert payload["slept"] is True
     assert payload["status"] == "completed"
     assert payload["next_candle_close_utc"] == "2026-03-13T10:05:00+00:00"
+
+
+def test_next_candle_wait_payload_handles_pytz_dst_gap(monkeypatch) -> None:
+    pytz = pytest.importorskip("pytz")
+
+    monkeypatch.setattr(trading_time.mt5_config, "get_server_tz", lambda: pytz.timezone("Europe/Nicosia"))
+    monkeypatch.setattr(trading_time.mt5_config, "get_time_offset_seconds", lambda: 7200)
+    monkeypatch.setattr(trading_time.mt5_config, "server_tz_name", "Europe/Nicosia")
+
+    payload = _next_candle_wait_payload(
+        "M15",
+        buffer_seconds=1.0,
+        now_utc=datetime(2026, 3, 29, 0, 54, 0, tzinfo=timezone.utc),
+    )
+
+    assert payload["next_candle_close_server"] == "2026-03-29T03:00:00"
+    assert payload["next_candle_close_utc"] == "2026-03-29T01:00:00+00:00"
+    assert payload["sleep_seconds"] == 361.0
