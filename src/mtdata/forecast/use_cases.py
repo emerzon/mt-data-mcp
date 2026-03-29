@@ -316,7 +316,7 @@ def run_forecast_conformal_intervals(
             spacing=int(request.spacing),
             methods=[str(request.method)],
             denoise=request.denoise,
-            params={str(request.method): dict(request.params or {})},
+            params_per_method={str(request.method): dict(request.params or {})},
             detail="full",
         )
         if "error" in bt:

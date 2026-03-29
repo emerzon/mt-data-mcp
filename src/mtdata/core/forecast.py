@@ -47,6 +47,70 @@ def _forecast_tune_module():
     return import_module("mtdata.forecast.tune")
 
 
+def _forecast_impl(**kwargs):
+    return _forecast_module().forecast(**kwargs)
+
+
+def _forecast_backtest_impl(**kwargs):
+    return _forecast_backtest_module().forecast_backtest(**kwargs)
+
+
+def _forecast_volatility_impl(**kwargs):
+    return _forecast_volatility_module().forecast_volatility(**kwargs)
+
+
+def _get_forecast_methods_data():
+    return _forecast_module().get_forecast_methods_data()
+
+
+def _genetic_search_impl(**kwargs):
+    return _forecast_tune_module().genetic_search_forecast_params(**kwargs)
+
+
+def _optuna_search_impl(**kwargs):
+    return _forecast_tune_module().optuna_search_forecast_params(**kwargs)
+
+
+def _discover_sktime_forecasters():
+    return _forecast_use_cases_module()._discover_sktime_forecasters()
+
+
+def _resolve_sktime_forecaster(*args, **kwargs):
+    return _forecast_use_cases_module()._resolve_sktime_forecaster(*args, **kwargs)
+
+
+def run_forecast_generate(*args, **kwargs):
+    return _forecast_use_cases_module().run_forecast_generate(*args, **kwargs)
+
+
+def run_forecast_backtest(*args, **kwargs):
+    return _forecast_use_cases_module().run_forecast_backtest(*args, **kwargs)
+
+
+def run_forecast_conformal_intervals(*args, **kwargs):
+    return _forecast_use_cases_module().run_forecast_conformal_intervals(*args, **kwargs)
+
+
+def run_forecast_tune_genetic(*args, **kwargs):
+    return _forecast_use_cases_module().run_forecast_tune_genetic(*args, **kwargs)
+
+
+def run_forecast_tune_optuna(*args, **kwargs):
+    return _forecast_use_cases_module().run_forecast_tune_optuna(*args, **kwargs)
+
+
+def run_forecast_barrier_prob(*args, **kwargs):
+    return _forecast_use_cases_module().run_forecast_barrier_prob(*args, **kwargs)
+
+
+def run_forecast_barrier_optimize(*args, **kwargs):
+    return _forecast_use_cases_module().run_forecast_barrier_optimize(*args, **kwargs)
+
+
+def run_forecast_volatility_estimate(*args, **kwargs):
+    return _forecast_use_cases_module().run_forecast_volatility_estimate(*args, **kwargs)
+
+
 def _forecast_connection_error() -> Optional[Dict[str, Any]]:
     return mt5_connection_error(
         get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
@@ -93,12 +157,10 @@ def forecast_generate(request: ForecastGenerateRequest) -> Dict[str, Any]:
     Delegates to `mtdata.forecast.forecast`.
     """
     def _execute() -> Dict[str, Any]:
-        use_cases = _forecast_use_cases_module()
-        forecast_mod = _forecast_module()
-        return use_cases.run_forecast_generate(
+        return run_forecast_generate(
             request,
-            forecast_impl=forecast_mod.forecast,
-            resolve_sktime_forecaster=use_cases._resolve_sktime_forecaster,
+            forecast_impl=_forecast_impl,
+            resolve_sktime_forecaster=_resolve_sktime_forecaster,
             log_events=False,
         )
 
@@ -134,11 +196,9 @@ def forecast_list_library_models(
 def forecast_backtest_run(request: ForecastBacktestRequest) -> Dict[str, Any]:
     """Rolling-origin backtest over historical anchors using the forecast tool."""
     def _execute() -> Dict[str, Any]:
-        use_cases = _forecast_use_cases_module()
-        backtest_mod = _forecast_backtest_module()
-        return use_cases.run_forecast_backtest(
+        return run_forecast_backtest(
             request,
-            backtest_impl=backtest_mod.forecast_backtest,
+            backtest_impl=_forecast_backtest_impl,
         )
 
     return _run_forecast_operation(
@@ -158,11 +218,9 @@ def forecast_volatility_estimate(
 ) -> Dict[str, Any]:
     """Forecast volatility over `horizon` bars using direct estimators or proxies."""
     def _execute() -> Dict[str, Any]:
-        use_cases = _forecast_use_cases_module()
-        volatility_mod = _forecast_volatility_module()
-        return use_cases.run_forecast_volatility_estimate(
+        return run_forecast_volatility_estimate(
             request,
-            forecast_volatility_impl=volatility_mod.forecast_volatility,
+            forecast_volatility_impl=_forecast_volatility_impl,
         )
 
     return _run_forecast_operation(
@@ -204,13 +262,10 @@ def forecast_conformal_intervals(request: ForecastConformalIntervalsRequest) -> 
     - Returns point forecast (from `method`) and conformal bands per step.
     """
     def _execute() -> Dict[str, Any]:
-        use_cases = _forecast_use_cases_module()
-        backtest_mod = _forecast_backtest_module()
-        forecast_mod = _forecast_module()
-        return use_cases.run_forecast_conformal_intervals(
+        return run_forecast_conformal_intervals(
             request,
-            backtest_impl=backtest_mod.forecast_backtest,
-            forecast_impl=forecast_mod.forecast,
+            backtest_impl=_forecast_backtest_impl,
+            forecast_impl=_forecast_impl,
         )
 
     return _run_forecast_operation(
@@ -235,11 +290,9 @@ def forecast_tune_genetic(request: ForecastTuneGeneticRequest) -> Dict[str, Any]
     - mode: 'min' or 'max'
     """
     def _execute() -> Dict[str, Any]:
-        use_cases = _forecast_use_cases_module()
-        tune_mod = _forecast_tune_module()
-        return use_cases.run_forecast_tune_genetic(
+        return run_forecast_tune_genetic(
             request,
-            genetic_search_impl=tune_mod.genetic_search_forecast_params,
+            genetic_search_impl=_genetic_search_impl,
         )
 
     return _run_forecast_operation(
@@ -258,11 +311,9 @@ def forecast_tune_genetic(request: ForecastTuneGeneticRequest) -> Dict[str, Any]
 def forecast_tune_optuna(request: ForecastTuneOptunaRequest) -> Dict[str, Any]:
     """Optuna search over method params to optimize a backtest metric."""
     def _execute() -> Dict[str, Any]:
-        use_cases = _forecast_use_cases_module()
-        tune_mod = _forecast_tune_module()
-        return use_cases.run_forecast_tune_optuna(
+        return run_forecast_tune_optuna(
             request,
-            optuna_search_impl=tune_mod.optuna_search_forecast_params,
+            optuna_search_impl=_optuna_search_impl,
         )
 
     return _run_forecast_operation(
@@ -491,13 +542,12 @@ def forecast_barrier_prob(
     )
     """
     def _execute() -> Dict[str, Any]:
-        use_cases = _forecast_use_cases_module()
         from ..forecast.barriers import (
             forecast_barrier_closed_form as _barrier_closed_form_impl,
             forecast_barrier_hit_probabilities as _barrier_hit_probabilities_impl,
         )
 
-        return use_cases.run_forecast_barrier_prob(
+        return run_forecast_barrier_prob(
             request,
             build_barrier_kwargs=_build_barrier_kwargs_from,
             normalize_trade_direction=normalize_trade_direction,
@@ -522,10 +572,9 @@ def forecast_barrier_optimize(
 ) -> Dict[str, Any]:
     """Optimize TP/SL barriers with support for presets, volatility scaling, ratios, and two-stage refinement."""
     def _execute() -> Dict[str, Any]:
-        use_cases = _forecast_use_cases_module()
         from ..forecast.barriers import forecast_barrier_optimize as _barrier_optimize_impl
 
-        return use_cases.run_forecast_barrier_optimize(
+        return run_forecast_barrier_optimize(
             request,
             parse_kv_or_json=_parse_kv_or_json,
             barrier_optimize_impl=_barrier_optimize_impl,
@@ -587,7 +636,7 @@ def _forecast_list_library_models_impl(
         }
 
     if lib == "sktime":
-        mapping = _forecast_use_cases_module()._discover_sktime_forecasters()
+        mapping = _discover_sktime_forecasters()
         return {
             "library": lib,
             "models": sorted({v[0] for v in mapping.values()}),
@@ -650,7 +699,7 @@ def _forecast_list_methods_impl(
     search: Optional[str] = None,
 ) -> Dict[str, Any]:
     try:
-        data = _forecast_module().get_forecast_methods_data()
+        data = _get_forecast_methods_data()
         detail_value = str(detail or "compact").strip().lower()
         search_value = str(search or "").strip().lower()
         limit_value: Optional[int] = None
