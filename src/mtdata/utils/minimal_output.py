@@ -493,6 +493,10 @@ def _normalize_forecast_payload(payload: Dict[str, Any], verbose: bool = True) -
             rows.append(row)
 
         out: Dict[str, Any] = {}
+        success_value = payload.get("success")
+        if isinstance(success_value, bool):
+            out["success"] = success_value
+
         if verbose:
             meta_block = _build_forecast_meta(payload)
             if meta_block:

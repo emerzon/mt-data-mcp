@@ -828,13 +828,6 @@ def _forecast_list_methods_impl(
                 row["description"] = desc.splitlines()[0].strip()
             cat = method_to_category.get(method_name)
             row["category"] = cat or "other"
-            capability = capability_by_method.get(method_name, {})
-            row["namespace"] = capability.get("namespace", "native")
-            row["concept"] = capability.get("concept", method_name)
-            row["method_id"] = capability.get("capability_id", f"native:{method_name}")
-            row["capability_id"] = row["method_id"]
-            row["adapter_method"] = capability.get("adapter_method", method_name)
-            row["selector"] = capability.get("selector", {"mode": "method"})
             params = item.get("params")
             if isinstance(params, list):
                 row["params_count"] = len(params)

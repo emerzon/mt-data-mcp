@@ -214,7 +214,32 @@ def test_forecast_generate_native_theta_adds_disambiguation_warning(monkeypatch)
     out = raw(request=ForecastGenerateRequest(symbol="BTCUSD", timeframe="H1", library="native", method="theta", horizon=12))
 
     assert out["ok"] is True
+    assert out["success"] is True
     assert any("StatsForecast theta is available" in str(w) for w in out.get("warnings", []))
+
+
+def test_forecast_generate_native_theta_suppresses_duplicate_interval_guidance(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+
+    def fake_forecast_impl(**kwargs):
+        return {
+            "ok": True,
+            "method": kwargs["method"],
+            "warnings": [
+                "Point forecast only for method 'theta'; confidence intervals are unavailable. "
+                "Use forecast_conformal_intervals for uncertainty bands."
+            ],
+        }
+
+    monkeypatch.setattr(cf, "_forecast_impl", fake_forecast_impl)
+
+    out = raw(request=ForecastGenerateRequest(symbol="BTCUSD", timeframe="H1", library="native", method="theta", horizon=12))
+
+    assert out["ok"] is True
+    assert out["success"] is True
+    assert len(out["warnings"]) == 1
+    assert "forecast_conformal_intervals" in out["warnings"][0]
+    assert all("StatsForecast theta is available" not in str(w) for w in out["warnings"])
 
 
 def test_run_forecast_generate_logs_finish_event(caplog):
@@ -423,15 +448,15 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert compact["methods"][0]["method"] == "theta"
     assert "category_summary" in compact
     assert "params_count" in compact["methods"][0]
-    assert compact["methods"][0]["namespace"] == "native"
-    assert compact["methods"][0]["method_id"] == "native:theta"
-    assert compact["methods"][0]["concept"] == "theta"
-    assert compact["methods"][0]["capability_id"] == "native:theta"
-    assert compact["methods"][0]["adapter_method"] == "theta"
-    assert compact["methods"][0]["selector"]["mode"] == "method"
-    assert compact["methods"][1]["namespace"] == "mlforecast"
-    assert compact["methods"][1]["method_id"] == "mlforecast:rf"
-    assert compact["methods"][1]["adapter_method"] == "mlf_rf"
+    assert "namespace" not in compact["methods"][0]
+    assert "method_id" not in compact["methods"][0]
+    assert "concept" not in compact["methods"][0]
+    assert "capability_id" not in compact["methods"][0]
+    assert "adapter_method" not in compact["methods"][0]
+    assert "selector" not in compact["methods"][0]
+    assert "namespace" not in compact["methods"][1]
+    assert "method_id" not in compact["methods"][1]
+    assert "adapter_method" not in compact["methods"][1]
     assert "params" not in compact["methods"][0]
     assert all("requires" not in row for row in compact["methods"])
     assert compact["methods_shown"] == 2

@@ -113,6 +113,7 @@ class TestStringifyCell:
 class TestNormalizeForecastPayload:
     def test_basic_forecast(self):
         payload = {
+            "success": True,
             "times": ["2024-01-01", "2024-01-02", "2024-01-03"],
             "forecast_price": [100.0, 101.0, 102.0],
             "symbol": "EURUSD",
@@ -120,6 +121,7 @@ class TestNormalizeForecastPayload:
         }
         result = _normalize_forecast_payload(payload)
         assert result is not None
+        assert result["success"] is True
         assert "forecast" in result
         assert len(result["forecast"]) == 3
         assert result["forecast"][0]["time"] == "2024-01-01"

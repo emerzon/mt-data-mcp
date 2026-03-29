@@ -221,6 +221,8 @@ def run_forecast_generate(
             dimred_params=request.dimred_params,
             target_spec=request.target_spec,
         )
+        if isinstance(out, dict) and "success" not in out and infer_result_success(out):
+            out["success"] = True
 
         if (
             isinstance(out, dict)
@@ -236,7 +238,12 @@ def run_forecast_generate(
             warnings_out = out.get("warnings")
             if not isinstance(warnings_out, list):
                 warnings_out = []
-            if warning not in warnings_out:
+            has_interval_warning = any(
+                "forecast_conformal_intervals" in str(item)
+                or "confidence intervals are unavailable" in str(item)
+                for item in warnings_out
+            )
+            if warning not in warnings_out and not has_interval_warning:
                 warnings_out.append(warning)
             out["warnings"] = warnings_out
         return _finish(out, resolved_method=str(resolved_method))
