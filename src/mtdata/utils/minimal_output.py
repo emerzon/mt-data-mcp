@@ -687,6 +687,13 @@ def _trade_table_hidden_keys(tool_name: str) -> set[str]:
             "type_filling_code",
             "entry_code",
             "reason_code",
+            "time_setup_msc",
+            "time_done_msc",
+            "type_time",
+            "type_filling",
+            "position_by_id",
+            "price_stoplimit",
+            "external_id",
         }
     return set()
 

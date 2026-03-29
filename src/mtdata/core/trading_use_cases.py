@@ -476,6 +476,7 @@ def run_trade_close(
     *,
     close_positions: Any,
     cancel_pending: Any,
+    lookup_ticket_history: Any = None,
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
     log_operation_start(
@@ -609,6 +610,14 @@ def run_trade_close(
                 isinstance(pending_result, dict)
                 and pending_result.get("error") == f"Pending order {request.ticket} not found"
             ):
+                history_result = None
+                if lookup_ticket_history is not None:
+                    try:
+                        history_result = lookup_ticket_history(request.ticket)
+                    except Exception:
+                        history_result = None
+                if isinstance(history_result, dict) and history_result:
+                    return _finish(history_result, scope="history")
                 return _finish({
                     "error": f"Ticket {request.ticket} not found as position or pending order.",
                     "checked_scopes": ["positions", "pending_orders"],
@@ -876,6 +885,8 @@ def run_trade_history(
                     message += f" in {default_window_label}"
                 if kind_label == "deals":
                     message += ". For order creation/cancellation events, use --history-kind orders."
+                if minutes_back_value is not None and minutes_back_value < 30:
+                    message += " Note: MT5 history may take up to a few minutes to reflect very recent events."
                 return {"message": message}
 
             if kind == "deals":

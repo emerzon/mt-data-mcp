@@ -397,6 +397,19 @@ def test_trade_history_empty_deals_message_includes_orders_hint() -> None:
     assert "--history-kind orders" in out["message"]
 
 
+def test_trade_history_small_window_empty_orders_message_includes_propagation_note() -> None:
+    mt5, prev = _install_mock_mt5()
+    mt5.history_orders_get.return_value = []
+
+    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+        out = trade_history(history_kind="orders", minutes_back=5, __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert out["message"].startswith("No orders found")
+    assert "may take up to a few minutes to reflect very recent events" in out["message"]
+
+
 def test_trade_history_returns_connection_error_payload() -> None:
     with patch(
         "mtdata.core.trading_account.ensure_mt5_connection_or_raise",

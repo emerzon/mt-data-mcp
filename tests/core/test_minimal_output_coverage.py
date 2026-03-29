@@ -11,6 +11,7 @@ from mtdata.utils.minimal_output import (
     _compact_forecast_ci,
     _normalize_forecast_payload,
     _normalize_trade_payload,
+    _normalize_trade_table_payload,
     _normalize_triple_barrier_payload,
     format_table_toon,
     _encode_inline_array,
@@ -407,6 +408,52 @@ class TestNormalizeTradePayload:
         }
         result = _normalize_trade_payload(payload, verbose=False, tool_name="trade_close")
         assert result == {}
+
+
+class TestNormalizeTradeTablePayload:
+    def test_trade_history_default_view_hides_low_signal_order_columns(self):
+        payload = [
+            {
+                "ticket": 1,
+                "time_setup": "2026-03-29 10:00",
+                "time_done": "2026-03-29 10:05",
+                "type": "Buy Limit",
+                "state": "Canceled",
+                "reason": "Client",
+                "volume_initial": 0.01,
+                "price_open": 64500.0,
+                "sl": 64000.0,
+                "tp": 67200.0,
+                "symbol": "BTCUSD",
+                "comment": "scan2",
+                "time_setup_msc": 1770000000000,
+                "time_done_msc": 1770000300000,
+                "type_time": "GTC",
+                "type_filling": "Return",
+                "position_by_id": 0,
+                "price_stoplimit": 0.0,
+                "external_id": "4392901617-01",
+            }
+        ]
+
+        result = _normalize_trade_table_payload(
+            payload,
+            verbose=False,
+            tool_name="trade_history",
+        )
+
+        row = result[0]
+        assert row["ticket"] == 1
+        assert row["time_setup"] == "2026-03-29 10:00"
+        assert row["time_done"] == "2026-03-29 10:05"
+        assert row["type"] == "Buy Limit"
+        assert "time_setup_msc" not in row
+        assert "time_done_msc" not in row
+        assert "type_time" not in row
+        assert "type_filling" not in row
+        assert "position_by_id" not in row
+        assert "price_stoplimit" not in row
+        assert "external_id" not in row
 
 
 class TestCompactForecastCi:

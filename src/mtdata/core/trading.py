@@ -5,7 +5,7 @@ import logging
 from ._mcp_instance import mcp
 from . import trading_time, trading_validation
 from .execution_logging import run_logged_operation
-from .trading_account import trade_account_info, trade_history
+from .trading_account import lookup_trade_ticket_history, trade_account_info, trade_history
 from .trading_execution import _cancel_pending, _close_positions, _modify_pending_order, _modify_position
 from .trading_orders import _place_market_order, _place_pending_order
 from .trading_positions import trade_get_open, trade_get_pending
@@ -83,5 +83,6 @@ def trade_close(request: TradeCloseRequest) -> dict:
             request,
             close_positions=_close_positions,
             cancel_pending=_cancel_pending,
+            lookup_ticket_history=lookup_trade_ticket_history,
         ),
     )

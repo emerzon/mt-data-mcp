@@ -26,6 +26,105 @@ from ..utils.utils import (
 logger = logging.getLogger(__name__)
 
 
+def _run_trade_history_request(request: TradeHistoryRequest) -> Any:
+    return run_trade_history(
+        request,
+        gateway=create_trading_gateway(
+            include_trade_preflight=True,
+            adapter=mt5_adapter,
+            ensure_connection_impl=ensure_mt5_connection_or_raise,
+        ),
+        use_client_tz=_use_client_tz,
+        format_time_minimal=_format_time_minimal,
+        format_time_minimal_local=_format_time_minimal_local,
+        mt5_epoch_to_utc=_mt5_epoch_to_utc,
+        parse_start_datetime=_parse_start_datetime,
+        normalize_limit=_normalize_limit,
+        comment_row_metadata=trading_comments._comment_row_metadata,
+        normalize_ticket_filter=trading_validation._normalize_ticket_filter,
+        normalize_minutes_back=trading_validation._normalize_minutes_back,
+        decode_mt5_enum_label=decode_mt5_enum_label,
+        mt5_config=mt5_config,
+    )
+
+
+def lookup_trade_ticket_history(ticket: Any) -> Optional[Dict[str, Any]]:
+    ticket_text = str(ticket).strip()
+    if not ticket_text:
+        return None
+
+    lookback_minutes = 60 * 24 * 7
+
+    def _latest_row(result: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(result, list) or not result:
+            return None
+        rows = [row for row in result if isinstance(row, dict)]
+        return rows[-1] if rows else None
+
+    def _time_label(row: Dict[str, Any], *keys: str) -> Optional[str]:
+        for key in keys:
+            value = row.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    deals = _run_trade_history_request(
+        TradeHistoryRequest(
+            history_kind="deals",
+            position_ticket=ticket,
+            minutes_back=lookback_minutes,
+            limit=20,
+        )
+    )
+    deal_row = _latest_row(deals)
+    if deal_row is not None:
+        symbol = str(deal_row.get("symbol") or "").strip()
+        type_label = str(deal_row.get("type") or "position").strip()
+        time_label = _time_label(deal_row, "time", "time_done", "time_setup")
+        reason_label = str(deal_row.get("reason") or "").strip()
+        message = f"Ticket {ticket_text} was a {type_label} position that has already been closed"
+        if symbol:
+            message += f" on {symbol}"
+        if time_label:
+            message += f" at {time_label}"
+        if reason_label:
+            message += f" ({reason_label})"
+        message += ". No action taken."
+        return {
+            "message": message,
+            "no_action": True,
+            "checked_scopes": ["positions", "pending_orders", "history_deals"],
+        }
+
+    orders = _run_trade_history_request(
+        TradeHistoryRequest(
+            history_kind="orders",
+            order_ticket=ticket,
+            minutes_back=lookback_minutes,
+            limit=20,
+        )
+    )
+    order_row = _latest_row(orders)
+    if order_row is not None:
+        symbol = str(order_row.get("symbol") or "").strip()
+        type_label = str(order_row.get("type") or "order").strip()
+        state_label = str(order_row.get("state") or "completed").strip()
+        time_label = _time_label(order_row, "time_done", "time_setup", "time")
+        message = f"Ticket {ticket_text} was a {type_label} order that was {state_label}"
+        if symbol:
+            message += f" on {symbol}"
+        if time_label:
+            message += f" at {time_label}"
+        message += ". No action taken."
+        return {
+            "message": message,
+            "no_action": True,
+            "checked_scopes": ["positions", "pending_orders", "history_orders"],
+        }
+
+    return None
+
+
 @mcp.tool()
 def trade_account_info() -> dict:
     """Get account information (balance, equity, profit, margin level, free margin, account type, leverage, currency)."""
@@ -104,23 +203,5 @@ def trade_history(request: TradeHistoryRequest) -> List[Dict[str, Any]]:
         history_kind=request.history_kind,
         symbol=request.symbol,
         limit=request.limit,
-        func=lambda: run_trade_history(
-            request,
-            gateway=create_trading_gateway(
-                include_trade_preflight=True,
-                adapter=mt5_adapter,
-                ensure_connection_impl=ensure_mt5_connection_or_raise,
-            ),
-            use_client_tz=_use_client_tz,
-            format_time_minimal=_format_time_minimal,
-            format_time_minimal_local=_format_time_minimal_local,
-            mt5_epoch_to_utc=_mt5_epoch_to_utc,
-            parse_start_datetime=_parse_start_datetime,
-            normalize_limit=_normalize_limit,
-            comment_row_metadata=trading_comments._comment_row_metadata,
-            normalize_ticket_filter=trading_validation._normalize_ticket_filter,
-            normalize_minutes_back=trading_validation._normalize_minutes_back,
-            decode_mt5_enum_label=decode_mt5_enum_label,
-            mt5_config=mt5_config,
-        ),
+        func=lambda: _run_trade_history_request(request),
     )

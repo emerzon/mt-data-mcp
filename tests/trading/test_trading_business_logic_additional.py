@@ -90,6 +90,31 @@ def test_run_trade_close_rejects_conflicting_profit_and_loss_filters():
     cancel_pending.assert_not_called()
 
 
+def test_run_trade_close_uses_history_lookup_when_ticket_is_already_closed():
+    request = TradeCloseRequest(ticket=123)
+    close_positions = MagicMock(return_value={"error": "Position 123 not found"})
+    cancel_pending = MagicMock(return_value={"error": "Pending order 123 not found"})
+    lookup_ticket_history = MagicMock(
+        return_value={
+            "message": "Ticket 123 was a Buy position that has already been closed at 2026-03-29 10:00 UTC. No action taken.",
+            "no_action": True,
+            "checked_scopes": ["positions", "pending_orders", "history_deals"],
+        }
+    )
+
+    result = run_trade_close(
+        request,
+        close_positions=close_positions,
+        cancel_pending=cancel_pending,
+        lookup_ticket_history=lookup_ticket_history,
+    )
+
+    assert result["no_action"] is True
+    assert "already been closed" in result["message"]
+    assert result["checked_scopes"] == ["positions", "pending_orders", "history_deals"]
+    lookup_ticket_history.assert_called_once_with(123)
+
+
 def test_normalize_trade_comment_applies_default_and_suffix_length_caps():
     comment = _normalize_trade_comment(None, default="DefaultComment", suffix="-MKT")
     assert comment == "DefaultComment-MKT"
