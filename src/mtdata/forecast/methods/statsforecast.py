@@ -176,6 +176,10 @@ class StatsForecastMethod(ForecastMethod):
 class GenericStatsForecastMethod(StatsForecastMethod):
     """Generic wrapper for any StatsForecast model."""
 
+    CAPABILITY_EXECUTION_LIBRARY = "statsforecast"
+    CAPABILITY_SELECTOR_KEY = "model_name"
+    CAPABILITY_SELECTOR_MODE = "class_name"
+
     PARAMS: List[Dict[str, Any]] = [
         {"name": "model_name", "type": "str", "description": "StatsForecast model class name."},
         {"name": "season_length", "type": "int", "description": "Season length (auto if omitted)."},
@@ -281,6 +285,12 @@ _SF_MODEL_CLASS_NAMES: Tuple[str, ...] = (
 
 def _build_sf_alias_class(model_name: str, alias: str):
     class _StatsForecastAlias(GenericStatsForecastMethod):
+        CAPABILITY_EXECUTION_LIBRARY = "statsforecast"
+        CAPABILITY_SELECTOR_KEY = "model_name"
+        CAPABILITY_SELECTOR_MODE = "class_name"
+        CAPABILITY_SELECTOR_VALUE = model_name
+        CAPABILITY_ALIASES = (alias,)
+
         @property
         def name(self) -> str:
             return alias

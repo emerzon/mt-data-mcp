@@ -151,7 +151,17 @@ def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):
     assert captured["method"] == "statsforecast"
     assert captured["params"]["model_name"] == "AutoARIMA"
 
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="statsforecast:autoarima", params={}))
+    assert out["ok"] is True
+    assert captured["method"] == "statsforecast"
+    assert captured["params"]["model_name"] == "AutoARIMA"
+
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="sktime", method="theta", params={}))
+    assert out["ok"] is True
+    assert captured["method"] == "sktime"
+    assert captured["params"]["estimator"] == "sktime.forecasting.theta.ThetaForecaster"
+
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="sktime:theta", params={}))
     assert out["ok"] is True
     assert captured["method"] == "sktime"
     assert captured["params"]["estimator"] == "sktime.forecasting.theta.ThetaForecaster"
@@ -178,6 +188,16 @@ def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):
     assert out["ok"] is True
     assert captured["method"] == "mlforecast"
     assert captured["params"]["model"] == "sklearn.linear_model.LinearRegression"
+
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="mlforecast:rf", params={"lags": [1, 2, 3]}))
+    assert out["ok"] is True
+    assert captured["method"] == "mlf_rf"
+    assert captured["params"]["lags"] == [1, 2, 3]
+
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="native:theta", params={"x": 2}))
+    assert out["ok"] is True
+    assert captured["method"] == "theta"
+    assert captured["params"] == {"x": 2}
 
     with pytest.raises(Exception):
         ForecastGenerateRequest(symbol="EURUSD", library="unsupported", method="x")
@@ -349,17 +369,24 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     out_native = raw_list_models("native")
     assert out_native["library"] == "native"
     assert isinstance(out_native["models"], list)
+    assert isinstance(out_native["capabilities"], list)
+    assert out_native["capabilities"][0]["execution"]["library"] == "native"
 
     out_stats = raw_list_models("statsforecast")
     assert out_stats["library"] == "statsforecast"
     assert "AutoARIMA" in out_stats["models"]
+    assert out_stats["capabilities"][0]["execution"]["library"] == "statsforecast"
+    assert out_stats["capabilities"][0]["selector"]["key"] == "model_name"
 
     out_sktime = raw_list_models("sktime")
     assert out_sktime["models"] == ["NaiveForecaster", "ThetaForecaster"]
+    assert out_sktime["capabilities"][0]["selector"]["key"] == "estimator"
+    assert out_sktime["capabilities"][0]["execution"]["method"] == "sktime"
 
     out_ml = raw_list_models("mlforecast")
     assert out_ml["library"] == "mlforecast"
     assert "note" in out_ml
+    assert out_ml["capabilities"][0]["selector"]["key"] == "model"
 
     out_bad = raw_list_models("other")
     assert "Unsupported library" in out_bad["error"]
@@ -399,6 +426,12 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert compact["methods"][0]["namespace"] == "native"
     assert compact["methods"][0]["method_id"] == "native:theta"
     assert compact["methods"][0]["concept"] == "theta"
+    assert compact["methods"][0]["capability_id"] == "native:theta"
+    assert compact["methods"][0]["adapter_method"] == "theta"
+    assert compact["methods"][0]["selector"]["mode"] == "method"
+    assert compact["methods"][1]["namespace"] == "mlforecast"
+    assert compact["methods"][1]["method_id"] == "mlforecast:rf"
+    assert compact["methods"][1]["adapter_method"] == "mlf_rf"
     assert "params" not in compact["methods"][0]
     assert all("requires" not in row for row in compact["methods"])
     assert compact["methods_shown"] == 2
@@ -409,6 +442,9 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert isinstance(full.get("methods"), list)
     assert "params" in full["methods"][0]
     assert "method_id" in full["methods"][0]
+    assert "execution" in full["methods"][0]
+    assert "selector" in full["methods"][0]
+    assert full["methods"][1]["execution"] == {"library": "native", "method": "mlf_rf"}
 
     monkeypatch.setattr(
         cf,

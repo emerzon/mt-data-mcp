@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 import numpy as np
@@ -10,6 +10,72 @@ class ForecastResult:
     ci_values: Optional[Tuple[np.ndarray, np.ndarray]] = None  # (lower, upper)
     params_used: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = None
+
+
+@dataclass(frozen=True)
+class ForecastCapabilityDescriptor:
+    capability_id: str
+    method: str
+    adapter_method: str
+    library: str
+    namespace: str
+    concept: str
+    display_name: str
+    category: str
+    description: str = ""
+    available: bool = True
+    requires: Tuple[str, ...] = ()
+    supports: Dict[str, bool] = field(default_factory=dict)
+    params: Tuple[Dict[str, Any], ...] = ()
+    aliases: Tuple[str, ...] = ()
+    selector_key: Optional[str] = None
+    selector_value: Optional[str] = None
+    selector_mode: str = "method"
+    source: str = "registry"
+    notes: Optional[str] = None
+
+    def selector(self) -> Dict[str, Any]:
+        selector: Dict[str, Any] = {"mode": self.selector_mode}
+        if self.selector_key is not None:
+            selector["key"] = self.selector_key
+        if self.selector_value is not None:
+            selector["value"] = self.selector_value
+        if self.aliases:
+            selector["aliases"] = list(self.aliases)
+        return selector
+
+    def execution(self) -> Dict[str, Any]:
+        execution: Dict[str, Any] = {
+            "library": self.library,
+            "method": self.adapter_method,
+        }
+        if self.selector_key is not None and self.selector_value is not None:
+            execution["params"] = {self.selector_key: self.selector_value}
+        return execution
+
+    def to_record(self) -> Dict[str, Any]:
+        record: Dict[str, Any] = {
+            "capability_id": self.capability_id,
+            "method": self.method,
+            "adapter_method": self.adapter_method,
+            "library": self.library,
+            "namespace": self.namespace,
+            "concept": self.concept,
+            "display_name": self.display_name,
+            "category": self.category,
+            "description": self.description,
+            "available": self.available,
+            "requires": list(self.requires),
+            "supports": dict(self.supports),
+            "params": [dict(param) for param in self.params],
+            "aliases": list(self.aliases),
+            "selector": self.selector(),
+            "execution": self.execution(),
+            "source": self.source,
+        }
+        if self.notes:
+            record["notes"] = self.notes
+        return record
 
 
 @dataclass(frozen=True)

@@ -10,6 +10,7 @@ from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 from .backtest import execute_forecast_backtest as _forecast_backtest_impl
+from .capabilities import resolve_capability_request
 from .exceptions import ForecastError, raise_if_error_result
 from .forecast import execute_forecast as _forecast_impl
 from ..core.execution_logging import (
@@ -155,7 +156,27 @@ def run_forecast_generate(
         return result
 
     try:
-        if lib in ("", "native"):
+        capability_requested = ":" in method
+        lib, method, params = resolve_capability_request(
+            library=lib,
+            method=method,
+            params=params,
+            discover_sktime_forecasters=_discover_sktime_forecasters,
+        ) if capability_requested else (lib, method, params)
+        if capability_requested:
+            if lib in ("", "native"):
+                resolved_method = method or "theta"
+            elif lib == "statsforecast":
+                resolved_method = "statsforecast"
+            elif lib == "sktime":
+                resolved_method = "sktime"
+            elif lib == "pretrained":
+                resolved_method = method or "chronos2"
+            elif lib == "mlforecast":
+                resolved_method = "mlforecast"
+            else:
+                raise ForecastError(f"Unsupported library: {lib}")
+        elif lib in ("", "native"):
             resolved_method = method or "theta"
         elif lib == "statsforecast":
             if not method:

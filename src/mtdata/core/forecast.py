@@ -47,6 +47,10 @@ def _forecast_tune_module():
     return import_module("mtdata.forecast.tune")
 
 
+def _forecast_capabilities_module():
+    return import_module("mtdata.forecast.capabilities")
+
+
 def _forecast_impl(**kwargs):
     module = _forecast_module()
     func = getattr(module, "execute_forecast", module.forecast)
@@ -65,6 +69,14 @@ def _forecast_volatility_impl(**kwargs):
 
 def _get_forecast_methods_data():
     return _forecast_module().get_forecast_methods_data()
+
+
+def _get_registered_forecast_capabilities():
+    return _forecast_capabilities_module().get_registered_capabilities()
+
+
+def _get_library_forecast_capabilities(*args, **kwargs):
+    return _forecast_capabilities_module().get_library_capabilities(*args, **kwargs)
 
 
 def _genetic_search_impl(**kwargs):
@@ -609,22 +621,15 @@ def _forecast_list_library_models_impl(
     library: Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast"],
 ) -> Dict[str, Any]:
     lib = str(library).strip().lower()
+    capabilities = _get_library_forecast_capabilities(
+        lib,
+        discover_sktime_forecasters=_discover_sktime_forecasters,
+    )
     if lib == "native":
-        try:
-            methods_data = _get_forecast_methods_data()
-            methods = methods_data.get("methods", []) if isinstance(methods_data, dict) else []
-            _METHODS = [
-                str(row.get("method"))
-                for row in methods
-                if isinstance(row, dict) and row.get("method")
-            ]
-        except Exception:
-            _METHODS = ()
-
-        excluded = {"statsforecast", "sktime", "mlforecast", "chronos2", "chronos_bolt", "timesfm", "lag_llama"}
         return {
             "library": lib,
-            "models": sorted(m for m in _METHODS if m not in excluded),
+            "models": [str(row.get("method")) for row in capabilities],
+            "capabilities": capabilities,
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library native --method analog",
                 "mtdata-cli forecast_generate SYMBOL --library native --method theta",
@@ -637,29 +642,18 @@ def _forecast_list_library_models_impl(
         except Exception as exc:
             return {"library": lib, "error": f"statsforecast import failed: {exc}"}
 
-        names: List[str] = []
-        for attr in dir(_models):
-            if attr.startswith("_"):
-                continue
-            obj = getattr(_models, attr, None)
-            if not isinstance(obj, type):
-                continue
-            if getattr(obj, "__module__", None) != getattr(_models, "__name__", None):
-                continue
-            if not any(callable(getattr(obj, a, None)) for a in ("fit", "forecast", "predict")):
-                continue
-            names.append(attr)
         return {
             "library": lib,
-            "models": sorted(set(names)),
+            "models": [str(row.get("display_name")) for row in capabilities],
+            "capabilities": capabilities,
             "usage": "mtdata-cli forecast_generate SYMBOL --library statsforecast --method AutoARIMA",
         }
 
     if lib == "sktime":
-        mapping = _discover_sktime_forecasters()
         return {
             "library": lib,
-            "models": sorted({v[0] for v in mapping.values()}),
+            "models": [str(row.get("display_name")) for row in capabilities],
+            "capabilities": capabilities,
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library sktime --method theta",
                 "mtdata-cli forecast_generate SYMBOL --library sktime --method ThetaForecaster",
@@ -693,6 +687,7 @@ def _forecast_list_library_models_impl(
                     "notes": "May not be installable on Python 3.13 due to upstream pins; included for completeness.",
                 },
             ],
+            "capabilities": capabilities,
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library pretrained --method chronos2",
                 "mtdata-cli forecast_generate SYMBOL --library pretrained --method timesfm",
@@ -702,6 +697,7 @@ def _forecast_list_library_models_impl(
     if lib == "mlforecast":
         return {
             "library": lib,
+            "capabilities": capabilities,
             "note": "Use `--method <dotted sklearn/lightgbm regressor class>` plus optional constructor kwargs in --params (or use --set method.<k>=<v>).",
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library mlforecast --method sklearn.ensemble.RandomForestRegressor --params \"n_estimators=200\"",
@@ -720,6 +716,12 @@ def _forecast_list_methods_impl(
 ) -> Dict[str, Any]:
     try:
         data = _get_forecast_methods_data()
+        capabilities = _get_registered_forecast_capabilities()
+        capability_by_method = {
+            str(row.get("method")): row
+            for row in capabilities
+            if isinstance(row, dict) and row.get("method")
+        }
         detail_value = str(detail or "compact").strip().lower()
         search_value = str(search or "").strip().lower()
         limit_value: Optional[int] = None
@@ -751,22 +753,6 @@ def _forecast_list_methods_impl(
             haystack = " ".join((method_name, desc, cat)).lower()
             return search_value in haystack
 
-        def _namespace_info(method_name: str, category: str) -> Tuple[str, str, str]:
-            method_norm = str(method_name or "").strip()
-            cat_norm = str(category or "").strip().lower()
-            if method_norm.startswith("sf_") or cat_norm == "statsforecast":
-                concept = method_norm[3:] if method_norm.startswith("sf_") else method_norm
-                return "statsforecast", concept, f"statsforecast:{concept}"
-            if method_norm.startswith("skt_") or cat_norm == "sktime":
-                concept = method_norm[4:] if method_norm.startswith("skt_") else method_norm
-                return "sktime", concept, f"sktime:{concept}"
-            pretrained_names = {"chronos2", "chronos_bolt", "timesfm", "lag_llama"}
-            if method_norm in pretrained_names or cat_norm == "pretrained":
-                return "pretrained", method_norm, f"pretrained:{method_norm}"
-            if method_norm.startswith("mlf_") or cat_norm in {"mlforecast", "ml"}:
-                return "mlforecast", method_norm, f"mlforecast:{method_norm}"
-            return "native", method_norm, f"native:{method_norm}"
-
         if detail_value == "full":
             methods_full = data.get("methods")
             if not isinstance(methods_full, list):
@@ -777,12 +763,22 @@ def _forecast_list_methods_impl(
                     continue
                 method_name = str(row.get("method") or "")
                 category = method_to_category.get(method_name, "other")
-                namespace, concept, method_id = _namespace_info(method_name, category)
                 row_out = dict(row)
                 row_out["category"] = category
-                row_out["namespace"] = namespace
-                row_out["concept"] = concept
-                row_out["method_id"] = method_id
+                capability = capability_by_method.get(method_name, {})
+                row_out["namespace"] = capability.get("namespace", "native")
+                row_out["concept"] = capability.get("concept", method_name)
+                row_out["method_id"] = capability.get("capability_id", f"native:{method_name}")
+                row_out["capability_id"] = capability.get("capability_id", row_out["method_id"])
+                row_out["adapter_method"] = capability.get("adapter_method", method_name)
+                row_out["selector"] = capability.get("selector", {"mode": "method"})
+                row_out["execution"] = capability.get(
+                    "execution",
+                    {"library": row_out["namespace"], "method": row_out["adapter_method"]},
+                )
+                row_out["display_name"] = capability.get("display_name", method_name)
+                row_out["aliases"] = capability.get("aliases", [])
+                row_out["source"] = capability.get("source", "registry")
                 enriched_full.append(row_out)
             filtered_full = [row for row in enriched_full if _method_matches(row)]
             if limit_value is not None:
@@ -832,10 +828,13 @@ def _forecast_list_methods_impl(
                 row["description"] = desc.splitlines()[0].strip()
             cat = method_to_category.get(method_name)
             row["category"] = cat or "other"
-            namespace, concept, method_id = _namespace_info(method_name, row["category"])
-            row["namespace"] = namespace
-            row["concept"] = concept
-            row["method_id"] = method_id
+            capability = capability_by_method.get(method_name, {})
+            row["namespace"] = capability.get("namespace", "native")
+            row["concept"] = capability.get("concept", method_name)
+            row["method_id"] = capability.get("capability_id", f"native:{method_name}")
+            row["capability_id"] = row["method_id"]
+            row["adapter_method"] = capability.get("adapter_method", method_name)
+            row["selector"] = capability.get("selector", {"mode": "method"})
             params = item.get("params")
             if isinstance(params, list):
                 row["params_count"] = len(params)

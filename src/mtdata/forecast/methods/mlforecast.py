@@ -107,6 +107,11 @@ class MLForecastMethod(ForecastMethod):
 
 @ForecastRegistry.register("mlf_rf")
 class MLFRandomForest(MLForecastMethod):
+    CAPABILITY_EXECUTION_LIBRARY = "native"
+    CAPABILITY_CONCEPT = "rf"
+    CAPABILITY_DISPLAY_NAME = "RandomForestRegressor"
+    CAPABILITY_ALIASES = ("randomforest", "random_forest")
+
     PARAMS: List[Dict[str, Any]] = [
         {"name": "n_estimators", "type": "int", "description": "Number of trees (default: 200)."},
         {"name": "max_depth", "type": "int|null", "description": "Maximum depth (default: None)."},
@@ -130,6 +135,11 @@ class MLFRandomForest(MLForecastMethod):
 
 @ForecastRegistry.register("mlf_lightgbm")
 class MLFLightGBM(MLForecastMethod):
+    CAPABILITY_EXECUTION_LIBRARY = "native"
+    CAPABILITY_CONCEPT = "lightgbm"
+    CAPABILITY_DISPLAY_NAME = "LGBMRegressor"
+    CAPABILITY_ALIASES = ("lgbm", "light_gbm")
+
     PARAMS: List[Dict[str, Any]] = [
         {"name": "n_estimators", "type": "int", "description": "Number of trees (default: 200)."},
         {"name": "learning_rate", "type": "float", "description": "Learning rate (default: 0.05)."},
@@ -160,6 +170,10 @@ class MLFLightGBM(MLForecastMethod):
 @ForecastRegistry.register("mlforecast")
 class GenericMLForecastMethod(MLForecastMethod):
     """Generic wrapper for any MLForecast compatible model."""
+
+    CAPABILITY_EXECUTION_LIBRARY = "mlforecast"
+    CAPABILITY_SELECTOR_KEY = "model"
+    CAPABILITY_SELECTOR_MODE = "dotted_class"
 
     PARAMS: List[Dict[str, Any]] = [
         {"name": "model", "type": "str", "description": "Dotted class path for ML model."},

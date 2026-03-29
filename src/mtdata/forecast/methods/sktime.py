@@ -183,6 +183,10 @@ class SktimeMethod(ForecastMethod):
 class GenericSktimeMethod(SktimeMethod):
     """Generic wrapper for any Sktime estimator."""
 
+    CAPABILITY_EXECUTION_LIBRARY = "sktime"
+    CAPABILITY_SELECTOR_KEY = "estimator"
+    CAPABILITY_SELECTOR_MODE = "dotted_path"
+
     PARAMS: List[Dict[str, Any]] = [
         {"name": "estimator", "type": "str", "description": "Fully qualified class path."},
         {"name": "estimator_params", "type": "dict", "description": "Constructor kwargs for estimator."},
@@ -231,6 +235,9 @@ class GenericSktimeMethod(SktimeMethod):
 class SktThetaMethod(GenericSktimeMethod):
     """Alias for `sktime` using `sktime.forecasting.theta.ThetaForecaster`."""
 
+    CAPABILITY_SELECTOR_VALUE = "sktime.forecasting.theta.ThetaForecaster"
+    CAPABILITY_ALIASES = ("ThetaForecaster", "theta")
+
     @property
     def name(self) -> str:
         return "skt_theta"
@@ -244,6 +251,9 @@ class SktThetaMethod(GenericSktimeMethod):
 @ForecastRegistry.register("skt_naive")
 class SktNaiveMethod(GenericSktimeMethod):
     """Alias for `sktime` using `sktime.forecasting.naive.NaiveForecaster`."""
+
+    CAPABILITY_SELECTOR_VALUE = "sktime.forecasting.naive.NaiveForecaster"
+    CAPABILITY_ALIASES = ("NaiveForecaster", "naive")
 
     @property
     def name(self) -> str:
@@ -259,6 +269,9 @@ class SktNaiveMethod(GenericSktimeMethod):
 @ForecastRegistry.register("skt_autoets")
 class SktAutoETSMethod(GenericSktimeMethod):
     """Alias for `sktime` using `sktime.forecasting.ets.AutoETS`."""
+
+    CAPABILITY_SELECTOR_VALUE = "sktime.forecasting.ets.AutoETS"
+    CAPABILITY_ALIASES = ("AutoETS", "autoets")
 
     @property
     def name(self) -> str:
