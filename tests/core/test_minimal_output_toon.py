@@ -258,6 +258,15 @@ class TestStringifyForToonValue:
         result = _stringify_for_toon_value(float('inf'), None, ",")
         assert "inf" in result.lower()
 
+    def test_dict_uses_compact_key_value_text_instead_of_repr(self):
+        result = _stringify_for_toon_value({"low": 0.1, "high": 0.2}, None, ",")
+        assert result == "low=0.1; high=0.2"
+        assert "{" not in result
+
+    def test_list_uses_compact_scalar_joining(self):
+        result = _stringify_for_toon_value([1, 2, 3], None, ",")
+        assert result == '"1|2|3"'
+
 
 class TestFormatComplexValue:
     def test_scalar(self):
@@ -284,3 +293,16 @@ class TestFormatComplexValue:
         result = _format_complex_value({"a": None, "b": 1})
         assert "a:" not in result
         assert "b: 1" in result
+
+
+class TestEncodeTabular:
+    def test_nested_cells_do_not_render_python_repr(self):
+        result = _encode_tabular(
+            "results",
+            ["method", "prob_win_ci95"],
+            [{"method": "theta", "prob_win_ci95": {"low": 0.3, "high": 0.5}}],
+        )
+
+        assert "prob_win_ci95" in result
+        assert "low=0.3; high=0.5" in result
+        assert "{'low': 0.3, 'high': 0.5}" not in result

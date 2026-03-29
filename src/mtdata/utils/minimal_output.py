@@ -239,6 +239,9 @@ def _stringify_for_toon_value(
         return "null"
     if isinstance(value, bool):
         return format_number(value)
+    if isinstance(value, (dict, list, tuple, set)):
+        rendered = _stringify_cell(value)
+        return _quote_if_needed(rendered, delimiter) if rendered else ""
     if isinstance(value, Number):
         try:
             num = float(value)
