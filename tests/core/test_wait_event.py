@@ -48,13 +48,70 @@ def test_wait_event_request_parses_market_event_specs() -> None:
                     "threshold_mode": "ratio_to_baseline",
                     "threshold_value": 3.0,
                 },
+                {
+                    "type": "spread_spike",
+                    "window": {"kind": "ticks", "value": 3},
+                    "baseline_window": {"kind": "ticks", "value": 12},
+                    "threshold_mode": "ratio_to_baseline",
+                    "threshold_value": 2.0,
+                },
+                {
+                    "type": "tick_count_drought",
+                    "window": {"kind": "minutes", "value": 2},
+                    "baseline_window": {"kind": "minutes", "value": 20},
+                    "threshold_mode": "ratio_to_baseline",
+                    "threshold_value": 0.5,
+                },
+                {
+                    "type": "range_expansion",
+                    "window": {"kind": "ticks", "value": 4},
+                    "baseline_window": {"kind": "ticks", "value": 16},
+                    "price_source": "mid",
+                    "threshold_mode": "zscore",
+                    "threshold_value": 2.0,
+                },
+                {
+                    "type": "price_touch_level",
+                    "level": 100.5,
+                    "direction": "up",
+                    "tolerance": 0.1,
+                },
+                {
+                    "type": "price_break_level",
+                    "level": 101.0,
+                    "direction": "up",
+                    "tolerance": 0.05,
+                    "confirm_ticks": 2,
+                },
+                {
+                    "type": "price_enter_zone",
+                    "lower": 99.5,
+                    "upper": 100.5,
+                    "direction": "either",
+                },
+                {
+                    "type": "pending_near_fill",
+                    "distance": 0.2,
+                },
+                {
+                    "type": "stop_threat",
+                    "distance": 0.15,
+                },
             ],
             "end_on": [{"type": "candle_close", "timeframe": "M5"}],
         }
     )
 
-    assert len(request.watch_for) == 3
+    assert len(request.watch_for) == 11
     assert request.watch_for[0].type == "price_change"
     assert request.watch_for[1].type == "volume_spike"
     assert request.watch_for[2].type == "tick_count_spike"
+    assert request.watch_for[3].type == "spread_spike"
+    assert request.watch_for[4].type == "tick_count_drought"
+    assert request.watch_for[5].type == "range_expansion"
+    assert request.watch_for[6].type == "price_touch_level"
+    assert request.watch_for[7].type == "price_break_level"
+    assert request.watch_for[8].type == "price_enter_zone"
+    assert request.watch_for[9].type == "pending_near_fill"
+    assert request.watch_for[10].type == "stop_threat"
     assert request.end_on[0].type == "candle_close"

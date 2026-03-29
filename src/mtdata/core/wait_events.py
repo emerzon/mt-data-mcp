@@ -11,10 +11,18 @@ from .data_requests import (
     OrderCancelledEventSpec,
     OrderCreatedEventSpec,
     OrderFilledEventSpec,
+    PendingNearFillEventSpec,
     PositionClosedEventSpec,
     PositionOpenedEventSpec,
+    PriceBreakLevelEventSpec,
     PriceChangeEventSpec,
+    PriceEnterZoneEventSpec,
+    PriceTouchLevelEventSpec,
+    RangeExpansionEventSpec,
+    SpreadSpikeEventSpec,
     SlHitEventSpec,
+    StopThreatEventSpec,
+    TickCountDroughtEventSpec,
     TickCountSpikeEventSpec,
     TpHitEventSpec,
     VolumeSpikeEventSpec,
@@ -29,6 +37,21 @@ _MARKET_BOOTSTRAP_MAX_SECONDS = 14400.0
 _MARKET_ESTIMATED_SECONDS_PER_TICK = 2.0
 _MARKET_BUFFER_EXTRA_TICKS = 32
 _ACCOUNT_HISTORY_SEED_LOOKBACK_SECONDS = 5.0
+_ORDER_STATE_EVENT_TYPES = {"order_created", "pending_near_fill"}
+_POSITION_STATE_EVENT_TYPES = {"position_opened", "position_closed", "stop_threat"}
+_MARKET_EVENT_TYPES = {
+    "price_change",
+    "volume_spike",
+    "tick_count_spike",
+    "spread_spike",
+    "tick_count_drought",
+    "range_expansion",
+    "price_touch_level",
+    "price_break_level",
+    "price_enter_zone",
+    "pending_near_fill",
+    "stop_threat",
+}
 
 
 def _wait_event_connection_error(gateway: Any) -> Optional[Dict[str, Any]]:
@@ -96,6 +119,7 @@ def run_wait_event_loop(
         preexisting_match = _find_preexisting_match(
             watch_for=watch_for,
             baseline=baseline,
+            market_state=market_state,
             gateway=gateway,
         )
         if preexisting_match is not None:
@@ -264,90 +288,72 @@ def _compile_watch_event(spec: Any, *, request: WaitEventRequest) -> Dict[str, A
         return _compile_account_event(spec, request=request)
     if isinstance(spec, SlHitEventSpec):
         return _compile_account_event(spec, request=request)
+    if isinstance(spec, PendingNearFillEventSpec):
+        compiled = _compile_account_market_event(spec, request=request)
+        if "error" in compiled:
+            return compiled
+        compiled.update(
+            {
+                "distance": float(spec.distance),
+                "price_source": str(spec.price_source),
+                "required_tick_count": 1,
+                "required_history_seconds": _MARKET_BOOTSTRAP_MIN_SECONDS,
+            }
+        )
+        return compiled
+    if isinstance(spec, StopThreatEventSpec):
+        compiled = _compile_account_market_event(spec, request=request)
+        if "error" in compiled:
+            return compiled
+        compiled.update(
+            {
+                "distance": float(spec.distance),
+                "price_source": str(spec.price_source),
+                "required_tick_count": 1,
+                "required_history_seconds": _MARKET_BOOTSTRAP_MIN_SECONDS,
+            }
+        )
+        return compiled
     if isinstance(spec, PriceChangeEventSpec):
-        symbol = _resolved_value(spec, request, "symbol")
-        if not symbol:
-            return {"error": "price_change events require symbol at the event or request level."}
+        return _compile_window_metric_event(
+            spec,
+            request=request,
+            required_tick_count=_required_tick_count_for_price_change(spec),
+        )
+    if isinstance(spec, (VolumeSpikeEventSpec, TickCountSpikeEventSpec)):
+        extra = {
+            "source": "tick_count" if isinstance(spec, TickCountSpikeEventSpec) else str(spec.source),
+        }
+        compiled = _compile_window_metric_event(
+            spec,
+            request=request,
+            required_tick_count=_required_tick_count_for_volume_spike(spec),
+            extra=extra,
+        )
         if (
-            spec.threshold_mode in {"ratio_to_baseline", "zscore"}
-            and str(spec.baseline_window.kind) != str(spec.window.kind)
+            "error" not in compiled
+            and compiled.get("source") == "tick_count"
+            and str(spec.window.kind) == "ticks"
         ):
             return {
                 "error": (
-                    "price_change baseline_window.kind must match window.kind when "
-                    "threshold_mode is ratio_to_baseline or zscore."
-                )
-            }
-        if spec.threshold_mode in {"ratio_to_baseline", "zscore"} and float(spec.baseline_window.value) <= float(spec.window.value):
-            return {
-                "error": (
-                    "price_change baseline_window must be larger than window when "
-                    "threshold_mode is ratio_to_baseline or zscore."
-                )
-            }
-        return {
-            "type": spec.type,
-            "symbol": str(symbol).upper(),
-            "price_source": spec.price_source,
-            "direction": spec.direction,
-            "threshold_mode": spec.threshold_mode,
-            "threshold_value": float(spec.threshold_value),
-            "window": _window_payload(spec.window),
-            "baseline_window": _window_payload(spec.baseline_window),
-            "required_tick_count": _required_tick_count_for_price_change(spec),
-            "required_history_seconds": _required_history_seconds(
-                window=spec.window,
-                baseline_window=spec.baseline_window,
-                poll_interval_seconds=float(request.poll_interval_seconds),
-                adaptive=spec.threshold_mode in {"ratio_to_baseline", "zscore"},
-            ),
-        }
-    if isinstance(spec, (VolumeSpikeEventSpec, TickCountSpikeEventSpec)):
-        symbol = _resolved_value(spec, request, "symbol")
-        event_type = str(spec.type)
-        source = "tick_count" if isinstance(spec, TickCountSpikeEventSpec) else str(spec.source)
-        if not symbol:
-            return {"error": f"{event_type} events require symbol at the event or request level."}
-        if source == "tick_count" and str(spec.window.kind) == "ticks":
-            return {
-                "error": (
-                    f"{event_type} with source='tick_count' requires a minutes window. "
+                    f"{spec.type} with source='tick_count' requires a minutes window. "
                     "A tick-count metric over a fixed tick window is constant."
                 )
             }
-        if (
-            spec.threshold_mode in {"ratio_to_baseline", "zscore"}
-            and str(spec.baseline_window.kind) != str(spec.window.kind)
-        ):
-            return {
-                "error": (
-                    f"{event_type} baseline_window.kind must match window.kind when "
-                    "threshold_mode is ratio_to_baseline or zscore."
-                )
-            }
-        if spec.threshold_mode in {"ratio_to_baseline", "zscore"} and float(spec.baseline_window.value) <= float(spec.window.value):
-            return {
-                "error": (
-                    f"{event_type} baseline_window must be larger than window when "
-                    "threshold_mode is ratio_to_baseline or zscore."
-                )
-            }
-        return {
-            "type": event_type,
-            "symbol": str(symbol).upper(),
-            "source": source,
-            "threshold_mode": spec.threshold_mode,
-            "threshold_value": float(spec.threshold_value),
-            "window": _window_payload(spec.window),
-            "baseline_window": _window_payload(spec.baseline_window),
-            "required_tick_count": _required_tick_count_for_volume_spike(spec),
-            "required_history_seconds": _required_history_seconds(
-                window=spec.window,
-                baseline_window=spec.baseline_window,
-                poll_interval_seconds=float(request.poll_interval_seconds),
-                adaptive=spec.threshold_mode in {"ratio_to_baseline", "zscore"},
-            ),
-        }
+        return compiled
+    if isinstance(spec, (SpreadSpikeEventSpec, TickCountDroughtEventSpec, RangeExpansionEventSpec)):
+        extra: Dict[str, Any] = {}
+        if hasattr(spec, "price_source"):
+            extra["price_source"] = str(spec.price_source)
+        return _compile_window_metric_event(
+            spec,
+            request=request,
+            required_tick_count=_required_tick_count_for_volume_spike(spec),
+            extra=extra,
+        )
+    if isinstance(spec, (PriceTouchLevelEventSpec, PriceBreakLevelEventSpec, PriceEnterZoneEventSpec)):
+        return _compile_price_level_event(spec, request=request)
     return {"error": f"Unsupported wait event type: {getattr(spec, 'type', type(spec).__name__)}"}
 
 
@@ -362,6 +368,95 @@ def _compile_account_event(spec: Any, *, request: WaitEventRequest) -> Dict[str,
         "magic": _resolved_value(spec, request, "magic"),
         "side": side,
     }
+
+
+def _compile_account_market_event(spec: Any, *, request: WaitEventRequest) -> Dict[str, Any]:
+    compiled = _compile_account_event(spec, request=request)
+    if "error" in compiled:
+        return compiled
+    if not compiled.get("symbol"):
+        return {"error": f"{spec.type} events require symbol at the event or request level."}
+    return compiled
+
+
+def _compile_window_metric_event(
+    spec: Any,
+    *,
+    request: WaitEventRequest,
+    required_tick_count: int,
+    extra: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    symbol = _resolved_value(spec, request, "symbol")
+    event_type = str(spec.type)
+    if not symbol:
+        return {"error": f"{event_type} events require symbol at the event or request level."}
+    if (
+        spec.threshold_mode in {"ratio_to_baseline", "zscore"}
+        and str(spec.baseline_window.kind) != str(spec.window.kind)
+    ):
+        return {
+            "error": (
+                f"{event_type} baseline_window.kind must match window.kind when "
+                "threshold_mode is ratio_to_baseline or zscore."
+            )
+        }
+    if spec.threshold_mode in {"ratio_to_baseline", "zscore"} and float(spec.baseline_window.value) <= float(spec.window.value):
+        return {
+            "error": (
+                f"{event_type} baseline_window must be larger than window when "
+                "threshold_mode is ratio_to_baseline or zscore."
+            )
+        }
+    payload: Dict[str, Any] = {
+        "type": event_type,
+        "symbol": str(symbol).upper(),
+        "threshold_mode": spec.threshold_mode,
+        "threshold_value": float(spec.threshold_value),
+        "window": _window_payload(spec.window),
+        "baseline_window": _window_payload(spec.baseline_window),
+        "required_tick_count": int(required_tick_count),
+        "required_history_seconds": _required_history_seconds(
+            window=spec.window,
+            baseline_window=spec.baseline_window,
+            poll_interval_seconds=float(request.poll_interval_seconds),
+            adaptive=spec.threshold_mode in {"ratio_to_baseline", "zscore"},
+        ),
+    }
+    if hasattr(spec, "direction"):
+        payload["direction"] = str(spec.direction)
+    if hasattr(spec, "price_source"):
+        payload["price_source"] = str(spec.price_source)
+    if extra:
+        payload.update(extra)
+    return payload
+
+
+def _compile_price_level_event(spec: Any, *, request: WaitEventRequest) -> Dict[str, Any]:
+    symbol = _resolved_value(spec, request, "symbol")
+    event_type = str(spec.type)
+    if not symbol:
+        return {"error": f"{event_type} events require symbol at the event or request level."}
+    payload: Dict[str, Any] = {
+        "type": event_type,
+        "symbol": str(symbol).upper(),
+        "price_source": str(spec.price_source),
+        "required_tick_count": 2,
+        "required_history_seconds": _MARKET_BOOTSTRAP_MIN_SECONDS,
+    }
+    if hasattr(spec, "direction"):
+        payload["direction"] = str(spec.direction)
+    if hasattr(spec, "tolerance"):
+        payload["tolerance"] = float(spec.tolerance)
+    if hasattr(spec, "level"):
+        payload["level"] = float(spec.level)
+    if hasattr(spec, "lower"):
+        payload["lower"] = float(spec.lower)
+    if hasattr(spec, "upper"):
+        payload["upper"] = float(spec.upper)
+    if hasattr(spec, "confirm_ticks"):
+        payload["confirm_ticks"] = int(spec.confirm_ticks)
+        payload["required_tick_count"] = max(2, int(spec.confirm_ticks) + 1)
+    return payload
 
 
 def _compile_boundary_event(
@@ -482,15 +577,15 @@ def _run_candle_boundary_only(
 
 def _build_baseline(gateway: Any, watch_for: List[Dict[str, Any]]) -> Dict[str, Any]:
     baseline: Dict[str, Any] = {}
-    if any(item["type"] == "order_created" for item in watch_for):
+    if any(item["type"] in _ORDER_STATE_EVENT_TYPES for item in watch_for):
         baseline["orders"] = _coerce_rows(gateway.orders_get())
-    if any(item["type"] in {"position_opened", "position_closed"} for item in watch_for):
+    if any(item["type"] in _POSITION_STATE_EVENT_TYPES for item in watch_for):
         baseline["positions"] = _coerce_rows(gateway.positions_get())
     return baseline
 
 
 def _watchers_need_current_state(watch_for: List[Dict[str, Any]]) -> bool:
-    return any(item["type"] in {"order_created", "position_opened", "position_closed"} for item in watch_for)
+    return any(item["type"] in (_ORDER_STATE_EVENT_TYPES | _POSITION_STATE_EVENT_TYPES) for item in watch_for)
 
 
 def _watchers_need_history_deals(watch_for: List[Dict[str, Any]]) -> bool:
@@ -561,6 +656,7 @@ def _find_preexisting_match(
     *,
     watch_for: List[Dict[str, Any]],
     baseline: Dict[str, Any],
+    market_state: Dict[str, Any],
     gateway: Any,
 ) -> Optional[Dict[str, Any]]:
     for spec in watch_for:
@@ -569,11 +665,38 @@ def _find_preexisting_match(
             for row in rows:
                 if _matches_account_filters(row, spec, gateway=gateway):
                     return _format_account_match(spec["type"], row, gateway=gateway)
+        elif spec["type"] == "pending_near_fill":
+            match = _evaluate_pending_near_fill(
+                spec,
+                baseline.get("orders", []),
+                (market_state or {}).get(spec["symbol"]),
+                gateway=gateway,
+            )
+            if match is not None:
+                return match
         elif spec["type"] in {"position_opened", "position_closed"}:
             rows = baseline.get("positions") or _coerce_rows(gateway.positions_get())
             for row in rows:
                 if _matches_account_filters(row, spec, gateway=gateway):
                     return _format_account_match(spec["type"], row, gateway=gateway)
+        elif spec["type"] == "stop_threat":
+            match = _evaluate_stop_threat(
+                spec,
+                baseline.get("positions", []),
+                (market_state or {}).get(spec["symbol"]),
+                gateway=gateway,
+            )
+            if match is not None:
+                return match
+        elif spec["type"] in _MARKET_EVENT_TYPES:
+            match = _evaluate_market_event(
+                spec,
+                (market_state or {}).get(spec["symbol"]),
+                snapshot={"baseline": baseline},
+                gateway=gateway,
+            )
+            if match is not None:
+                return match
     return None
 
 
@@ -592,13 +715,13 @@ def _collect_snapshot(
         "baseline": baseline,
     }
 
-    if any(item["type"] == "order_created" for item in watch_for):
+    if any(item["type"] in _ORDER_STATE_EVENT_TYPES for item in watch_for):
         try:
             snapshot["orders"] = _coerce_rows(gateway.orders_get())
         except Exception as exc:
             return {"error": f"Failed to fetch open orders: {exc}"}
 
-    if any(item["type"] in {"position_opened", "position_closed"} for item in watch_for):
+    if any(item["type"] in _POSITION_STATE_EVENT_TYPES for item in watch_for):
         try:
             snapshot["positions"] = _coerce_rows(gateway.positions_get())
         except Exception as exc:
@@ -630,9 +753,7 @@ def _collect_snapshot(
             return rows
         snapshot["history_orders"] = rows
 
-    market_specs = [
-        item for item in watch_for if item["type"] in {"price_change", "volume_spike", "tick_count_spike"}
-    ]
+    market_specs = [item for item in watch_for if item["type"] in _MARKET_EVENT_TYPES]
     if market_specs:
         refreshed = _refresh_market_state(
             market_state=market_state,
@@ -695,7 +816,7 @@ def _build_market_state(
     observed_at_utc: datetime,
     poll_interval_seconds: float,
 ) -> Dict[str, Any]:
-    market_specs = [item for item in watch_for if item["type"] in {"price_change", "volume_spike", "tick_count_spike"}]
+    market_specs = [item for item in watch_for if item["type"] in _MARKET_EVENT_TYPES]
     if not market_specs:
         return {}
 
@@ -839,14 +960,9 @@ def _evaluate_watch_events(
                     continue
                 if _matches_account_filters(row, spec, gateway=gateway):
                     return _format_account_match(event_type, row, gateway=gateway)
-        elif event_type == "price_change":
+        elif event_type in _MARKET_EVENT_TYPES:
             market_data = snapshot.get("market_data", {}).get(spec["symbol"])
-            match = _evaluate_price_change(spec, market_data)
-            if match is not None:
-                return match
-        elif event_type in {"volume_spike", "tick_count_spike"}:
-            market_data = snapshot.get("market_data", {}).get(spec["symbol"])
-            match = _evaluate_volume_spike(spec, market_data)
+            match = _evaluate_market_event(spec, market_data, snapshot=snapshot, gateway=gateway)
             if match is not None:
                 return match
     return None
@@ -891,6 +1007,47 @@ def _next_poll_sleep_seconds(
         if boundary_remaining > 0.0:
             sleep_seconds = min(sleep_seconds, boundary_remaining)
     return max(0.0, sleep_seconds)
+
+
+def _evaluate_market_event(
+    spec: Dict[str, Any],
+    market_data: Any,
+    *,
+    snapshot: Dict[str, Any],
+    gateway: Any,
+) -> Optional[Dict[str, Any]]:
+    event_type = str(spec.get("type") or "")
+    if event_type == "price_change":
+        return _evaluate_price_change(spec, market_data)
+    if event_type in {"volume_spike", "tick_count_spike"}:
+        return _evaluate_volume_spike(spec, market_data)
+    if event_type == "spread_spike":
+        return _evaluate_spread_spike(spec, market_data)
+    if event_type == "tick_count_drought":
+        return _evaluate_tick_count_drought(spec, market_data)
+    if event_type == "range_expansion":
+        return _evaluate_range_expansion(spec, market_data)
+    if event_type == "price_touch_level":
+        return _evaluate_price_touch_level(spec, market_data)
+    if event_type == "price_break_level":
+        return _evaluate_price_break_level(spec, market_data)
+    if event_type == "price_enter_zone":
+        return _evaluate_price_enter_zone(spec, market_data)
+    if event_type == "pending_near_fill":
+        return _evaluate_pending_near_fill(
+            spec,
+            snapshot.get("orders", []),
+            market_data,
+            gateway=gateway,
+        )
+    if event_type == "stop_threat":
+        return _evaluate_stop_threat(
+            spec,
+            snapshot.get("positions", []),
+            market_data,
+            gateway=gateway,
+        )
+    return None
 
 
 def _evaluate_price_change(spec: Dict[str, Any], market_data: Any) -> Optional[Dict[str, Any]]:
@@ -972,29 +1129,18 @@ def _evaluate_volume_spike(spec: Dict[str, Any], market_data: Any) -> Optional[D
         "window": spec["window"],
         "baseline_window": spec["baseline_window"],
         "volume_source": volume_source,
-        "current_window_volume": round(current_volume, 6),
     }
-
     samples = _volume_baseline_samples(spec, ticks, source=volume_source)
-    if not samples:
-        return None
-    threshold_mode = spec["threshold_mode"]
-    threshold_value = float(spec["threshold_value"])
-    baseline_center = statistics.median(samples)
-    observed["baseline_median_window_volume"] = round(baseline_center, 6)
-    if threshold_mode == "ratio_to_baseline":
-        if baseline_center <= 0.0:
-            return None
-        ratio = current_volume / baseline_center
-        observed["ratio"] = round(ratio, 6)
-        if ratio < threshold_value:
-            return None
-    elif threshold_mode == "zscore":
-        zscore = _zscore(current_volume, samples)
-        if zscore is None or zscore < threshold_value:
-            return None
-        observed["zscore"] = round(zscore, 6)
-    else:
+    threshold_value = _apply_window_metric_threshold(
+        spec,
+        current_value=current_volume,
+        samples=samples,
+        observed=observed,
+        current_label="current_window_volume",
+        baseline_label="baseline_median_window_volume",
+        mode="spike",
+    )
+    if threshold_value is None:
         return None
 
     return {
@@ -1002,13 +1148,362 @@ def _evaluate_volume_spike(spec: Dict[str, Any], market_data: Any) -> Optional[D
         "criteria": {
             "symbol": spec["symbol"],
             "source": spec["source"],
-            "threshold_mode": threshold_mode,
+            "threshold_mode": spec["threshold_mode"],
             "threshold_value": threshold_value,
             "window": spec["window"],
             "baseline_window": spec["baseline_window"],
         },
         "observed": observed,
     }
+
+
+def _evaluate_spread_spike(spec: Dict[str, Any], market_data: Any) -> Optional[Dict[str, Any]]:
+    ticks = list((market_data or {}).get("ticks", []))
+    current_spread = _current_spread_metric(spec, ticks)
+    if current_spread is None:
+        return None
+    observed: Dict[str, Any] = {
+        "symbol": spec["symbol"],
+        "window": spec["window"],
+        "baseline_window": spec["baseline_window"],
+    }
+    threshold_value = _apply_window_metric_threshold(
+        spec,
+        current_value=current_spread,
+        samples=_spread_baseline_samples(spec, ticks),
+        observed=observed,
+        current_label="current_window_max_spread",
+        baseline_label="baseline_median_window_max_spread",
+        mode="spike",
+    )
+    if threshold_value is None:
+        return None
+    return {
+        "type": spec["type"],
+        "criteria": {
+            "symbol": spec["symbol"],
+            "threshold_mode": spec["threshold_mode"],
+            "threshold_value": threshold_value,
+            "window": spec["window"],
+            "baseline_window": spec["baseline_window"],
+        },
+        "observed": observed,
+    }
+
+
+def _evaluate_tick_count_drought(spec: Dict[str, Any], market_data: Any) -> Optional[Dict[str, Any]]:
+    ticks = list((market_data or {}).get("ticks", []))
+    current_volume = _current_volume_metric(spec, ticks, source="tick_count")
+    if current_volume is None:
+        return None
+    observed: Dict[str, Any] = {
+        "symbol": spec["symbol"],
+        "window": spec["window"],
+        "baseline_window": spec["baseline_window"],
+        "volume_source": "tick_count",
+    }
+    threshold_value = _apply_window_metric_threshold(
+        spec,
+        current_value=current_volume,
+        samples=_volume_baseline_samples(spec, ticks, source="tick_count"),
+        observed=observed,
+        current_label="current_window_volume",
+        baseline_label="baseline_median_window_volume",
+        mode="drought",
+    )
+    if threshold_value is None:
+        return None
+    return {
+        "type": spec["type"],
+        "criteria": {
+            "symbol": spec["symbol"],
+            "threshold_mode": spec["threshold_mode"],
+            "threshold_value": threshold_value,
+            "window": spec["window"],
+            "baseline_window": spec["baseline_window"],
+        },
+        "observed": observed,
+    }
+
+
+def _evaluate_range_expansion(spec: Dict[str, Any], market_data: Any) -> Optional[Dict[str, Any]]:
+    ticks = list((market_data or {}).get("ticks", []))
+    prices = _market_price_points(ticks, source=str(spec.get("price_source") or "auto"))
+    current_range_pct = _current_range_metric(spec, prices)
+    if current_range_pct is None:
+        return None
+    observed: Dict[str, Any] = {
+        "symbol": spec["symbol"],
+        "window": spec["window"],
+        "baseline_window": spec["baseline_window"],
+        "price_source": spec["price_source"],
+    }
+    threshold_value = _apply_window_metric_threshold(
+        spec,
+        current_value=current_range_pct,
+        samples=_range_baseline_samples(spec, prices),
+        observed=observed,
+        current_label="current_window_range_pct",
+        baseline_label="baseline_median_window_range_pct",
+        mode="spike",
+    )
+    if threshold_value is None:
+        return None
+    return {
+        "type": spec["type"],
+        "criteria": {
+            "symbol": spec["symbol"],
+            "price_source": spec["price_source"],
+            "threshold_mode": spec["threshold_mode"],
+            "threshold_value": threshold_value,
+            "window": spec["window"],
+            "baseline_window": spec["baseline_window"],
+        },
+        "observed": observed,
+    }
+
+
+def _evaluate_price_touch_level(spec: Dict[str, Any], market_data: Any) -> Optional[Dict[str, Any]]:
+    prices = _market_price_points(list((market_data or {}).get("ticks", [])), source=str(spec.get("price_source") or "auto"))
+    if len(prices) < 2:
+        return None
+    previous_price = float(prices[-2][1])
+    current_price = float(prices[-1][1])
+    level = float(spec["level"])
+    tolerance = float(spec.get("tolerance") or 0.0)
+    lower = level - tolerance
+    upper = level + tolerance
+    upward_touch = previous_price < lower and current_price >= lower
+    downward_touch = previous_price > upper and current_price <= upper
+    direction = str(spec.get("direction") or "either")
+    if direction == "up" and not upward_touch:
+        return None
+    if direction == "down" and not downward_touch:
+        return None
+    if direction == "either" and not (upward_touch or downward_touch):
+        return None
+    if not _price_within_band(current_price, lower=lower, upper=upper):
+        return None
+    return {
+        "type": spec["type"],
+        "criteria": {
+            "symbol": spec["symbol"],
+            "level": level,
+            "tolerance": tolerance,
+            "direction": direction,
+            "price_source": spec["price_source"],
+        },
+        "observed": {
+            "symbol": spec["symbol"],
+            "price_source": spec["price_source"],
+            "previous_price": round(previous_price, 8),
+            "current_price": round(current_price, 8),
+            "level": round(level, 8),
+            "tolerance": round(tolerance, 8),
+            "distance": round(abs(current_price - level), 8),
+        },
+    }
+
+
+def _evaluate_price_break_level(spec: Dict[str, Any], market_data: Any) -> Optional[Dict[str, Any]]:
+    prices = _market_price_points(list((market_data or {}).get("ticks", [])), source=str(spec.get("price_source") or "auto"))
+    confirm_ticks = max(1, int(spec.get("confirm_ticks") or 1))
+    if len(prices) < confirm_ticks + 1:
+        return None
+    level = float(spec["level"])
+    tolerance = float(spec.get("tolerance") or 0.0)
+    upper = level + tolerance
+    lower = level - tolerance
+    previous_price = float(prices[-(confirm_ticks + 1)][1])
+    confirmed_prices = [float(price) for _, price in prices[-confirm_ticks:]]
+    breakout_up = previous_price < lower and all(price >= upper for price in confirmed_prices)
+    breakout_down = previous_price > upper and all(price <= lower for price in confirmed_prices)
+    direction = str(spec.get("direction") or "either")
+    if direction == "up" and not breakout_up:
+        return None
+    if direction == "down" and not breakout_down:
+        return None
+    if direction == "either" and not (breakout_up or breakout_down):
+        return None
+    return {
+        "type": spec["type"],
+        "criteria": {
+            "symbol": spec["symbol"],
+            "level": level,
+            "tolerance": tolerance,
+            "direction": direction,
+            "confirm_ticks": confirm_ticks,
+            "price_source": spec["price_source"],
+        },
+        "observed": {
+            "symbol": spec["symbol"],
+            "price_source": spec["price_source"],
+            "previous_price": round(previous_price, 8),
+            "current_price": round(confirmed_prices[-1], 8),
+            "level": round(level, 8),
+            "tolerance": round(tolerance, 8),
+            "confirm_ticks": confirm_ticks,
+        },
+    }
+
+
+def _evaluate_price_enter_zone(spec: Dict[str, Any], market_data: Any) -> Optional[Dict[str, Any]]:
+    prices = _market_price_points(list((market_data or {}).get("ticks", [])), source=str(spec.get("price_source") or "auto"))
+    if len(prices) < 2:
+        return None
+    previous_price = float(prices[-2][1])
+    current_price = float(prices[-1][1])
+    lower = float(spec["lower"])
+    upper = float(spec["upper"])
+    if not _price_within_band(current_price, lower=lower, upper=upper):
+        return None
+    if _price_within_band(previous_price, lower=lower, upper=upper):
+        return None
+    direction = str(spec.get("direction") or "either")
+    enter_up = previous_price < lower
+    enter_down = previous_price > upper
+    if direction == "up" and not enter_up:
+        return None
+    if direction == "down" and not enter_down:
+        return None
+    if direction == "either" and not (enter_up or enter_down):
+        return None
+    return {
+        "type": spec["type"],
+        "criteria": {
+            "symbol": spec["symbol"],
+            "lower": lower,
+            "upper": upper,
+            "direction": direction,
+            "price_source": spec["price_source"],
+        },
+        "observed": {
+            "symbol": spec["symbol"],
+            "price_source": spec["price_source"],
+            "previous_price": round(previous_price, 8),
+            "current_price": round(current_price, 8),
+            "lower": round(lower, 8),
+            "upper": round(upper, 8),
+        },
+    }
+
+
+def _evaluate_pending_near_fill(
+    spec: Dict[str, Any],
+    orders: List[Any],
+    market_data: Any,
+    *,
+    gateway: Any,
+) -> Optional[Dict[str, Any]]:
+    for row in orders:
+        if not _matches_account_filters(row, spec, gateway=gateway):
+            continue
+        order_price = _order_reference_price(row)
+        if order_price is None:
+            continue
+        side = _row_side(row, gateway=gateway)
+        current_price = _latest_market_price(
+            market_data,
+            price_source=str(spec.get("price_source") or "auto"),
+            side=side,
+            fallback_row=row,
+        )
+        if current_price is None:
+            continue
+        distance = abs(float(current_price) - float(order_price))
+        max_distance = float(spec.get("distance") or 0.0)
+        if distance > max_distance + 1e-12:
+            continue
+        return {
+            "type": spec["type"],
+            "criteria": {
+                "symbol": spec["symbol"],
+                "distance": max_distance,
+                "price_source": spec["price_source"],
+                "order_ticket": spec.get("order_ticket"),
+                "magic": spec.get("magic"),
+                "side": spec.get("side"),
+            },
+            "observed": {
+                "ticket": _row_int(row, "ticket"),
+                "order_ticket": _first_int(_row_int(row, "ticket"), _row_int(row, "order")),
+                "symbol": _row_value(row, "symbol"),
+                "side": side,
+                "order_price": round(float(order_price), 8),
+                "current_price": round(float(current_price), 8),
+                "distance": round(distance, 8),
+                "time_utc": _row_time_iso(row),
+            },
+        }
+    return None
+
+
+def _evaluate_stop_threat(
+    spec: Dict[str, Any],
+    positions: List[Any],
+    market_data: Any,
+    *,
+    gateway: Any,
+) -> Optional[Dict[str, Any]]:
+    for row in positions:
+        if not _matches_account_filters(row, spec, gateway=gateway):
+            continue
+        stop_price = _finite_number(_row_value(row, "sl"))
+        if stop_price is None or float(stop_price) <= 0.0:
+            continue
+        side = _row_side(row, gateway=gateway)
+        price_source = str(spec.get("price_source") or "auto")
+        if price_source == "auto":
+            if side == "buy":
+                price_source = "bid"
+            elif side == "sell":
+                price_source = "ask"
+        current_price = _latest_market_price(
+            market_data,
+            price_source=price_source,
+            side=side,
+            fallback_row=row,
+        )
+        if current_price is None:
+            continue
+        current_price = float(current_price)
+        stop_price = float(stop_price)
+        max_distance = float(spec.get("distance") or 0.0)
+        distance = abs(current_price - stop_price)
+        if side == "buy":
+            threatened = current_price <= stop_price + max_distance
+        elif side == "sell":
+            threatened = current_price >= stop_price - max_distance
+        else:
+            threatened = distance <= max_distance + 1e-12
+        if not threatened:
+            continue
+        return {
+            "type": spec["type"],
+            "criteria": {
+                "symbol": spec["symbol"],
+                "distance": max_distance,
+                "price_source": spec["price_source"],
+                "position_ticket": spec.get("position_ticket"),
+                "magic": spec.get("magic"),
+                "side": spec.get("side"),
+            },
+            "observed": {
+                "ticket": _row_int(row, "ticket"),
+                "position_ticket": _first_int(
+                    _row_int(row, "ticket"),
+                    _row_int(row, "position_id"),
+                    _row_int(row, "position"),
+                ),
+                "symbol": _row_value(row, "symbol"),
+                "side": side,
+                "stop_price": round(stop_price, 8),
+                "current_price": round(current_price, 8),
+                "distance": round(distance, 8),
+                "time_utc": _row_time_iso(row),
+            },
+        }
+    return None
 
 
 def _market_symbols(watch_for: List[Dict[str, Any]]) -> List[str]:
@@ -1389,7 +1884,13 @@ def _required_tick_count_for_price_change(spec: PriceChangeEventSpec) -> int:
     return current_points + baseline_points
 
 
-def _required_tick_count_for_volume_spike(spec: VolumeSpikeEventSpec | TickCountSpikeEventSpec) -> int:
+def _required_tick_count_for_volume_spike(
+    spec: VolumeSpikeEventSpec
+    | TickCountSpikeEventSpec
+    | SpreadSpikeEventSpec
+    | TickCountDroughtEventSpec
+    | RangeExpansionEventSpec
+) -> int:
     if str(spec.window.kind) != "ticks":
         return 0
     current_points = max(1, int(math.ceil(float(spec.window.value))))
@@ -1454,11 +1955,11 @@ def _normalize_tick_rows(rows: Any) -> List[Dict[str, Any]]:
         }
         tick["key"] = (
             int(tick["time_msc"]),
-            tick["bid"],
-            tick["ask"],
-            tick["last"],
-            tick["volume"],
-            tick["volume_real"],
+            _tick_key_component(tick["bid"]),
+            _tick_key_component(tick["ask"]),
+            _tick_key_component(tick["last"]),
+            _tick_key_component(tick["volume"]),
+            _tick_key_component(tick["volume_real"]),
             int(tick["flags"]),
         )
         normalized.append(tick)
@@ -1678,6 +2179,252 @@ def _volume_metric_for_ticks(ticks: List[Dict[str, Any]], *, source: str) -> Opt
     return float(sum(clean))
 
 
+def _current_spread_metric(spec: Dict[str, Any], ticks: List[Dict[str, Any]]) -> Optional[float]:
+    current_window = _window_ticks(ticks, spec["window"])
+    if not current_window:
+        return None
+    spreads = _spread_values_for_ticks(current_window)
+    if not spreads:
+        return None
+    return max(spreads)
+
+
+def _spread_baseline_samples(spec: Dict[str, Any], ticks: List[Dict[str, Any]]) -> List[float]:
+    return _window_metric_baseline_samples(spec, ticks, metric_fn=lambda window: _max_spread_for_ticks(window))
+
+
+def _current_range_metric(spec: Dict[str, Any], prices: List[tuple[float, float]]) -> Optional[float]:
+    current_window = _window_prices(prices, spec["window"])
+    return _price_range_pct_for_points(current_window)
+
+
+def _range_baseline_samples(spec: Dict[str, Any], prices: List[tuple[float, float]]) -> List[float]:
+    return _window_metric_baseline_samples_for_prices(
+        spec,
+        prices,
+        metric_fn=_price_range_pct_for_points,
+    )
+
+
+def _apply_window_metric_threshold(
+    spec: Dict[str, Any],
+    *,
+    current_value: float,
+    samples: List[float],
+    observed: Dict[str, Any],
+    current_label: str,
+    baseline_label: str,
+    mode: str,
+) -> Optional[float]:
+    observed[current_label] = round(float(current_value), 6)
+    if not samples:
+        return None
+    threshold_mode = str(spec["threshold_mode"])
+    threshold_value = float(spec["threshold_value"])
+    baseline_center = statistics.median(samples)
+    observed[baseline_label] = round(float(baseline_center), 6)
+    if threshold_mode == "ratio_to_baseline":
+        if baseline_center <= 0.0:
+            return None
+        ratio = float(current_value) / float(baseline_center)
+        observed["ratio"] = round(ratio, 6)
+        if mode == "spike" and ratio < threshold_value:
+            return None
+        if mode == "drought" and ratio > threshold_value:
+            return None
+        return threshold_value
+    if threshold_mode == "zscore":
+        zscore = _zscore(float(current_value), samples)
+        if zscore is None:
+            return None
+        observed["zscore"] = round(zscore, 6)
+        if mode == "spike" and zscore < threshold_value:
+            return None
+        if mode == "drought" and zscore > -threshold_value:
+            return None
+        return threshold_value
+    return None
+
+
+def _window_metric_baseline_samples(
+    spec: Dict[str, Any],
+    ticks: List[Dict[str, Any]],
+    *,
+    metric_fn: Callable[[List[Dict[str, Any]]], Optional[float]],
+) -> List[float]:
+    if spec["window"]["kind"] == "ticks":
+        window_ticks = max(1, int(math.ceil(float(spec["window"]["value"]))))
+        baseline_ticks = max(1, int(math.ceil(float(spec["baseline_window"]["value"]))))
+        end_idx = len(ticks) - window_ticks
+        start_idx = max(0, end_idx - baseline_ticks)
+        samples: List[float] = []
+        for idx in range(start_idx + window_ticks, end_idx + 1):
+            metric = metric_fn(ticks[idx - window_ticks : idx])
+            if metric is not None:
+                samples.append(metric)
+        return samples
+    window_seconds = float(spec["window"]["value"]) * 60.0
+    baseline_seconds = float(spec["baseline_window"]["value"]) * 60.0
+    latest_epoch = float(ticks[-1]["epoch"])
+    current_start = latest_epoch - window_seconds
+    baseline_start = current_start - baseline_seconds
+    sample_count = max(1, int(math.floor(baseline_seconds / max(window_seconds, 1.0))))
+    samples: List[float] = []
+    for sample_idx in range(sample_count):
+        window_start = baseline_start + sample_idx * window_seconds
+        window_end = min(window_start + window_seconds, current_start)
+        if window_end <= window_start:
+            continue
+        metric = metric_fn(
+            [
+                tick
+                for tick in ticks
+                if window_start <= float(tick["epoch"]) <= window_end
+            ]
+        )
+        if metric is not None:
+            samples.append(metric)
+    return samples
+
+
+def _window_metric_baseline_samples_for_prices(
+    spec: Dict[str, Any],
+    prices: List[tuple[float, float]],
+    *,
+    metric_fn: Callable[[List[tuple[float, float]]], Optional[float]],
+) -> List[float]:
+    if spec["window"]["kind"] == "ticks":
+        window_ticks = max(1, int(math.ceil(float(spec["window"]["value"]))))
+        baseline_ticks = max(1, int(math.ceil(float(spec["baseline_window"]["value"]))))
+        end_idx = len(prices) - window_ticks
+        start_idx = max(0, end_idx - baseline_ticks)
+        samples: List[float] = []
+        for idx in range(start_idx + window_ticks, end_idx + 1):
+            metric = metric_fn(prices[idx - window_ticks : idx])
+            if metric is not None:
+                samples.append(metric)
+        return samples
+    window_seconds = float(spec["window"]["value"]) * 60.0
+    baseline_seconds = float(spec["baseline_window"]["value"]) * 60.0
+    latest_epoch = float(prices[-1][0])
+    current_start = latest_epoch - window_seconds
+    baseline_start = current_start - baseline_seconds
+    sample_count = max(1, int(math.floor(baseline_seconds / max(window_seconds, 1.0))))
+    samples: List[float] = []
+    for sample_idx in range(sample_count):
+        window_start = baseline_start + sample_idx * window_seconds
+        window_end = min(window_start + window_seconds, current_start)
+        if window_end <= window_start:
+            continue
+        metric = metric_fn(
+            [
+                (epoch, price)
+                for epoch, price in prices
+                if window_start <= epoch <= window_end
+            ]
+        )
+        if metric is not None:
+            samples.append(metric)
+    return samples
+
+
+def _window_ticks(ticks: List[Dict[str, Any]], window: Dict[str, Any]) -> List[Dict[str, Any]]:
+    if not ticks:
+        return []
+    if window["kind"] == "ticks":
+        window_ticks = max(1, int(math.ceil(float(window["value"]))))
+        if len(ticks) < window_ticks:
+            return []
+        return ticks[-window_ticks:]
+    window_seconds = float(window["value"]) * 60.0
+    end_epoch = float(ticks[-1]["epoch"])
+    start_epoch = end_epoch - window_seconds
+    return [tick for tick in ticks if float(tick["epoch"]) >= start_epoch]
+
+
+def _window_prices(prices: List[tuple[float, float]], window: Dict[str, Any]) -> List[tuple[float, float]]:
+    if not prices:
+        return []
+    if window["kind"] == "ticks":
+        window_ticks = max(1, int(math.ceil(float(window["value"]))))
+        if len(prices) < window_ticks:
+            return []
+        return prices[-window_ticks:]
+    window_seconds = float(window["value"]) * 60.0
+    end_epoch = float(prices[-1][0])
+    start_epoch = end_epoch - window_seconds
+    return [(epoch, price) for epoch, price in prices if epoch >= start_epoch]
+
+
+def _spread_values_for_ticks(ticks: List[Dict[str, Any]]) -> List[float]:
+    values: List[float] = []
+    for tick in ticks:
+        bid = _finite_number(tick.get("bid"))
+        ask = _finite_number(tick.get("ask"))
+        if bid is None or ask is None:
+            continue
+        spread = float(ask) - float(bid)
+        if math.isfinite(spread) and spread >= 0.0:
+            values.append(spread)
+    return values
+
+
+def _max_spread_for_ticks(ticks: List[Dict[str, Any]]) -> Optional[float]:
+    spreads = _spread_values_for_ticks(ticks)
+    if not spreads:
+        return None
+    return max(spreads)
+
+
+def _price_range_pct_for_points(points: List[tuple[float, float]]) -> Optional[float]:
+    if len(points) < 2:
+        return None
+    values = [float(price) for _, price in points if math.isfinite(float(price))]
+    if len(values) < 2:
+        return None
+    base = abs(values[0])
+    if base <= 0.0:
+        return None
+    return ((max(values) - min(values)) / base) * 100.0
+
+
+def _price_within_band(price: float, *, lower: float, upper: float) -> bool:
+    return float(lower) - 1e-12 <= float(price) <= float(upper) + 1e-12
+
+
+def _latest_market_price(
+    market_data: Any,
+    *,
+    price_source: str,
+    side: Optional[str],
+    fallback_row: Any,
+) -> Optional[float]:
+    ticks = list((market_data or {}).get("ticks", []))
+    effective_source = price_source
+    if effective_source == "auto":
+        if side == "buy":
+            effective_source = "ask"
+        elif side == "sell":
+            effective_source = "bid"
+    if ticks:
+        price = _tick_price(ticks[-1], source=effective_source)
+        if price is not None:
+            return float(price)
+    for key in ("price_current", "price_open", "price"):
+        value = _finite_number(_row_value(fallback_row, key))
+        if value is not None:
+            return float(value)
+    return None
+
+
+def _order_reference_price(row: Any) -> Optional[float]:
+    for key in ("price_open", "price_current", "price"):
+        value = _finite_number(_row_value(row, key))
+        if value is not None:
+            return float(value)
+    return None
+
+
 def _window_payload(window: WaitEventWindow) -> Dict[str, Any]:
     return {
         "kind": str(window.kind),
@@ -1745,6 +2492,13 @@ def _tick_value(row: Any, key: str) -> Any:
     if hasattr(row, key):
         return getattr(row, key)
     return None
+
+
+def _tick_key_component(value: Any) -> Any:
+    numeric = _finite_number(value)
+    if numeric is None:
+        return None
+    return float(numeric)
 
 
 def _finite_number(value: Any) -> Optional[float]:

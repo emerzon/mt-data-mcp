@@ -364,6 +364,132 @@ class TickCountSpikeEventSpec(BaseModel):
         return _validate_positive_float(value, "threshold_value")
 
 
+class SpreadSpikeEventSpec(BaseModel):
+    type: Literal["spread_spike"] = "spread_spike"
+    symbol: Optional[str] = None
+    window: WaitEventWindow = Field(default_factory=WaitEventWindow)
+    baseline_window: WaitEventWindow = Field(
+        default_factory=lambda: WaitEventWindow(kind="minutes", value=60.0)
+    )
+    threshold_mode: Literal["ratio_to_baseline", "zscore"] = "ratio_to_baseline"
+    threshold_value: float = 2.0
+
+    @field_validator("threshold_value")
+    @classmethod
+    def _validate_threshold_value(cls, value: float) -> float:
+        return _validate_positive_float(value, "threshold_value")
+
+
+class TickCountDroughtEventSpec(BaseModel):
+    type: Literal["tick_count_drought"] = "tick_count_drought"
+    symbol: Optional[str] = None
+    window: WaitEventWindow = Field(default_factory=WaitEventWindow)
+    baseline_window: WaitEventWindow = Field(
+        default_factory=lambda: WaitEventWindow(kind="minutes", value=60.0)
+    )
+    threshold_mode: Literal["ratio_to_baseline", "zscore"] = "ratio_to_baseline"
+    threshold_value: float = 0.5
+
+    @field_validator("threshold_value")
+    @classmethod
+    def _validate_threshold_value(cls, value: float) -> float:
+        return _validate_positive_float(value, "threshold_value")
+
+
+class RangeExpansionEventSpec(BaseModel):
+    type: Literal["range_expansion"] = "range_expansion"
+    symbol: Optional[str] = None
+    window: WaitEventWindow = Field(default_factory=WaitEventWindow)
+    baseline_window: WaitEventWindow = Field(
+        default_factory=lambda: WaitEventWindow(kind="minutes", value=60.0)
+    )
+    price_source: Literal["auto", "bid", "ask", "mid", "last"] = "auto"
+    threshold_mode: Literal["ratio_to_baseline", "zscore"] = "ratio_to_baseline"
+    threshold_value: float = 2.0
+
+    @field_validator("threshold_value")
+    @classmethod
+    def _validate_threshold_value(cls, value: float) -> float:
+        return _validate_positive_float(value, "threshold_value")
+
+
+class PriceTouchLevelEventSpec(BaseModel):
+    type: Literal["price_touch_level"] = "price_touch_level"
+    symbol: Optional[str] = None
+    level: float
+    price_source: Literal["auto", "bid", "ask", "mid", "last"] = "auto"
+    direction: Literal["up", "down", "either"] = "either"
+    tolerance: float = 0.0
+
+    @field_validator("tolerance")
+    @classmethod
+    def _validate_tolerance(cls, value: float) -> float:
+        validated = _validate_non_negative(value, "tolerance")
+        return 0.0 if validated is None else float(validated)
+
+
+class PriceBreakLevelEventSpec(BaseModel):
+    type: Literal["price_break_level"] = "price_break_level"
+    symbol: Optional[str] = None
+    level: float
+    price_source: Literal["auto", "bid", "ask", "mid", "last"] = "auto"
+    direction: Literal["up", "down", "either"] = "either"
+    tolerance: float = 0.0
+    confirm_ticks: int = 1
+
+    @field_validator("tolerance")
+    @classmethod
+    def _validate_tolerance(cls, value: float) -> float:
+        validated = _validate_non_negative(value, "tolerance")
+        return 0.0 if validated is None else float(validated)
+
+    @field_validator("confirm_ticks")
+    @classmethod
+    def _validate_confirm_ticks(cls, value: int) -> int:
+        if int(value) < 1:
+            raise ValueError("confirm_ticks must be greater than or equal to 1.")
+        return int(value)
+
+
+class PriceEnterZoneEventSpec(BaseModel):
+    type: Literal["price_enter_zone"] = "price_enter_zone"
+    symbol: Optional[str] = None
+    lower: float
+    upper: float
+    price_source: Literal["auto", "bid", "ask", "mid", "last"] = "auto"
+    direction: Literal["up", "down", "either"] = "either"
+
+    @model_validator(mode="after")
+    def _validate_bounds(self) -> "PriceEnterZoneEventSpec":
+        if float(self.upper) <= float(self.lower):
+            raise ValueError("upper must be greater than lower.")
+        return self
+
+
+class PendingNearFillEventSpec(_WaitAccountEventBase):
+    type: Literal["pending_near_fill"] = "pending_near_fill"
+    distance: float = 0.0
+    price_source: Literal["auto", "bid", "ask", "mid", "last"] = "auto"
+
+    @field_validator("distance")
+    @classmethod
+    def _validate_distance(cls, value: float) -> float:
+        validated = _validate_non_negative(value, "distance")
+        return 0.0 if validated is None else float(validated)
+
+
+class StopThreatEventSpec(_WaitAccountEventBase):
+    type: Literal["stop_threat"] = "stop_threat"
+    distance: float = 0.0
+    price_source: Literal["auto", "bid", "ask", "mid", "last"] = "auto"
+
+    @field_validator("distance")
+    @classmethod
+    def _validate_distance(cls, value: float) -> float:
+        validated = _validate_non_negative(value, "distance")
+        return 0.0 if validated is None else float(validated)
+
+
 WaitWatchEventSpec = Annotated[
     OrderCreatedEventSpec
     | OrderFilledEventSpec
@@ -374,7 +500,15 @@ WaitWatchEventSpec = Annotated[
     | SlHitEventSpec
     | PriceChangeEventSpec
     | VolumeSpikeEventSpec
-    | TickCountSpikeEventSpec,
+    | TickCountSpikeEventSpec
+    | SpreadSpikeEventSpec
+    | TickCountDroughtEventSpec
+    | RangeExpansionEventSpec
+    | PriceTouchLevelEventSpec
+    | PriceBreakLevelEventSpec
+    | PriceEnterZoneEventSpec
+    | PendingNearFillEventSpec
+    | StopThreatEventSpec,
     Field(discriminator="type"),
 ]
 

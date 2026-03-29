@@ -139,9 +139,27 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
         },
     )
     monkeypatch.setattr(core_data, "get_mt5_gateway", lambda ensure_connection_impl=None: object())
+    monkeypatch.setattr(
+        core_data,
+        "_build_default_wait_event_watchers",
+        lambda instrument, timeframe, watch_tick_count_spike: [
+            {"type": "position_opened", "symbol": instrument},
+            {"type": "tick_count_spike", "symbol": instrument},
+            {"type": "price_touch_level", "symbol": instrument, "level": 100.0},
+        ] if watch_tick_count_spike else [
+            {"type": "position_opened", "symbol": instrument},
+            {"type": "price_touch_level", "symbol": instrument, "level": 100.0},
+        ],
+    )
 
     sig = inspect.signature(core_data.wait_event)
-    assert tuple(sig.parameters.keys()) == ("instrument", "timeframe", "watch_tick_count_spike")
+    assert tuple(sig.parameters.keys()) == (
+        "instrument",
+        "timeframe",
+        "watch_tick_count_spike",
+        "watch_for",
+        "end_on",
+    )
 
     raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
     result = raw("BTCUSD", "M1")
@@ -152,19 +170,69 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     assert result["watch_for_inferred"] is False
     assert [item.type for item in result["watch_for"]] == [
         "position_opened",
-        "position_closed",
-        "tp_hit",
-        "sl_hit",
         "tick_count_spike",
+        "price_touch_level",
     ]
     assert "max_wait_seconds" not in result
 
     without_tick_count = raw("BTCUSD", "M1", False)
     assert [item.type for item in without_tick_count["watch_for"]] == [
         "position_opened",
-        "position_closed",
-        "tp_hit",
-        "sl_hit",
+        "price_touch_level",
+    ]
+
+    explicit = raw(
+        "BTCUSD",
+        "M1",
+        True,
+        [{"type": "price_touch_level", "symbol": "BTCUSD", "level": 100.0}],
+        [{"type": "candle_close", "timeframe": "M5"}],
+    )
+    assert [item.type for item in explicit["watch_for"]] == ["price_touch_level"]
+
+
+def test_support_resistance_watchers_use_compact_levels(monkeypatch) -> None:
+    monkeypatch.setattr(
+        core_data,
+        "support_resistance_levels",
+        lambda symbol, timeframe="auto", detail="compact": {
+            "success": True,
+            "levels": [
+                {"type": "support", "value": 99.5},
+                {"type": "resistance", "value": 101.0},
+            ],
+        },
+    )
+
+    watchers = core_data._support_resistance_watchers(instrument="BTCUSD")
+
+    assert watchers == [
+        {"type": "price_touch_level", "symbol": "BTCUSD", "level": 99.5, "direction": "either"},
+        {"type": "price_break_level", "symbol": "BTCUSD", "level": 99.5, "direction": "down"},
+        {"type": "price_touch_level", "symbol": "BTCUSD", "level": 101.0, "direction": "either"},
+        {"type": "price_break_level", "symbol": "BTCUSD", "level": 101.0, "direction": "up"},
+    ]
+
+
+def test_pivot_zone_watchers_use_adjacent_pivot_bands(monkeypatch) -> None:
+    monkeypatch.setattr(
+        core_data,
+        "pivot_compute_points",
+        lambda symbol, timeframe="D1": {
+            "success": True,
+            "levels": [
+                {"level": "S1", "traditional": 99.0, "fibonacci": 99.0},
+                {"level": "PP", "traditional": 100.0, "fibonacci": 100.0},
+                {"level": "R1", "traditional": 101.0, "fibonacci": 101.0},
+            ],
+        },
+    )
+
+    watchers = core_data._pivot_zone_watchers(instrument="BTCUSD", timeframe="M15")
+
+    assert watchers == [
+        {"type": "price_enter_zone", "symbol": "BTCUSD", "lower": 99.0, "upper": 100.0, "direction": "either"},
+        {"type": "price_enter_zone", "symbol": "BTCUSD", "lower": 100.0, "upper": 101.0, "direction": "either"},
     ]
 
 
@@ -382,6 +450,35 @@ def test_normalize_tick_rows_keeps_epoch_and_time_msc_on_same_utc_basis(monkeypa
             "key": (1500, 1.1, 1.2, 1.15, 0.0, 0.0, 0),
         }
     ]
+
+
+def test_merge_market_ticks_dedupes_rows_with_missing_volume_fields() -> None:
+    existing = wait_events_mod._normalize_tick_rows(
+        [
+            {
+                "time": 100.0,
+                "time_msc": 100000,
+                "bid": 1.1,
+                "ask": 1.2,
+                "last": 1.15,
+            }
+        ]
+    )
+    incoming = wait_events_mod._normalize_tick_rows(
+        [
+            {
+                "time": 100.0,
+                "time_msc": 100000,
+                "bid": 1.1,
+                "ask": 1.2,
+                "last": 1.15,
+            }
+        ]
+    )
+
+    merged = wait_events_mod._merge_market_ticks(existing, incoming)
+
+    assert len(merged) == 1
 
 
 def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(monkeypatch) -> None:
@@ -638,6 +735,340 @@ def test_run_wait_event_matches_tick_count_spike() -> None:
     assert result["matched_event"]["type"] == "tick_count_spike"
     assert result["matched_event"]["observed"]["volume_source"] == "tick_count"
     assert result["matched_event"]["observed"]["ratio"] > 2.0
+
+
+def test_run_wait_event_matches_spread_spike() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    base_epoch = int(clock.now_utc().timestamp()) - 20
+    ticks = []
+    for idx in range(20):
+        bid = 100.0 + idx * 0.01
+        spread = 0.01 if idx < 17 else 0.20
+        ticks.append(
+            {
+                "time": base_epoch + idx,
+                "time_msc": (base_epoch + idx) * 1000,
+                "bid": bid,
+                "ask": bid + spread,
+                "last": bid + spread / 2.0,
+            }
+        )
+    gateway = SequenceGateway(ticks_by_symbol={"EURUSD": ticks})
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[
+                {
+                    "type": "spread_spike",
+                    "symbol": "EURUSD",
+                    "window": {"kind": "ticks", "value": 3},
+                    "baseline_window": {"kind": "ticks", "value": 12},
+                    "threshold_mode": "ratio_to_baseline",
+                    "threshold_value": 4.0,
+                }
+            ],
+            poll_interval_seconds=0.5,
+            max_wait_seconds=5.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "matched"
+    assert result["matched_event"]["type"] == "spread_spike"
+    assert result["matched_event"]["observed"]["ratio"] > 4.0
+
+
+def test_run_wait_event_matches_tick_count_drought() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    now_epoch = int(clock.now_utc().timestamp())
+    ticks = []
+    for offset_seconds in (300, 270, 240, 210, 180, 150, 120, 90, 75, 70):
+        ticks.append(
+            {
+                "time": now_epoch - offset_seconds,
+                "time_msc": (now_epoch - offset_seconds) * 1000,
+                "bid": 100.0,
+                "ask": 100.02,
+                "last": 100.01,
+            }
+        )
+    ticks.append(
+        {
+            "time": now_epoch - 5,
+            "time_msc": (now_epoch - 5) * 1000,
+            "bid": 100.1,
+            "ask": 100.12,
+            "last": 100.11,
+        }
+    )
+    gateway = SequenceGateway(ticks_by_symbol={"EURUSD": ticks})
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[
+                {
+                    "type": "tick_count_drought",
+                    "symbol": "EURUSD",
+                    "window": {"kind": "minutes", "value": 1},
+                    "baseline_window": {"kind": "minutes", "value": 4},
+                    "threshold_mode": "ratio_to_baseline",
+                    "threshold_value": 0.5,
+                }
+            ],
+            poll_interval_seconds=0.5,
+            max_wait_seconds=5.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "matched"
+    assert result["matched_event"]["type"] == "tick_count_drought"
+    assert result["matched_event"]["observed"]["ratio"] <= 0.5
+
+
+def test_run_wait_event_matches_range_expansion() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    base_epoch = int(clock.now_utc().timestamp()) - 20
+    ticks = []
+    mid = 100.0
+    for idx in range(20):
+        if idx < 16:
+            mid += 0.02 if idx % 2 == 0 else -0.01
+        else:
+            mid = 100.0 + [0.0, 0.1, 2.0, -1.5][idx - 16]
+        ticks.append(
+            {
+                "time": base_epoch + idx,
+                "time_msc": (base_epoch + idx) * 1000,
+                "bid": mid - 0.01,
+                "ask": mid + 0.01,
+                "last": mid,
+            }
+        )
+    gateway = SequenceGateway(ticks_by_symbol={"EURUSD": ticks})
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[
+                {
+                    "type": "range_expansion",
+                    "symbol": "EURUSD",
+                    "window": {"kind": "ticks", "value": 4},
+                    "baseline_window": {"kind": "ticks", "value": 12},
+                    "price_source": "mid",
+                    "threshold_mode": "ratio_to_baseline",
+                    "threshold_value": 5.0,
+                }
+            ],
+            poll_interval_seconds=0.5,
+            max_wait_seconds=5.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "matched"
+    assert result["matched_event"]["type"] == "range_expansion"
+    assert result["matched_event"]["observed"]["ratio"] > 5.0
+
+
+def test_run_wait_event_matches_price_touch_level() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    base_epoch = int(clock.now_utc().timestamp()) - 2
+    ticks = [
+        {"time": base_epoch, "time_msc": base_epoch * 1000, "bid": 99.7, "ask": 99.9, "last": 99.8},
+        {"time": base_epoch + 1, "time_msc": (base_epoch + 1) * 1000, "bid": 99.95, "ask": 100.05, "last": 100.0},
+    ]
+    gateway = SequenceGateway(ticks_by_symbol={"EURUSD": ticks})
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[
+                {
+                    "type": "price_touch_level",
+                    "symbol": "EURUSD",
+                    "level": 100.0,
+                    "price_source": "mid",
+                    "direction": "up",
+                    "tolerance": 0.05,
+                }
+            ],
+            poll_interval_seconds=0.5,
+            max_wait_seconds=5.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "matched"
+    assert result["matched_event"]["type"] == "price_touch_level"
+
+
+def test_run_wait_event_matches_price_break_level() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    base_epoch = int(clock.now_utc().timestamp()) - 3
+    ticks = [
+        {"time": base_epoch, "time_msc": base_epoch * 1000, "bid": 99.8, "ask": 99.9, "last": 99.85},
+        {"time": base_epoch + 1, "time_msc": (base_epoch + 1) * 1000, "bid": 100.1, "ask": 100.2, "last": 100.15},
+        {"time": base_epoch + 2, "time_msc": (base_epoch + 2) * 1000, "bid": 100.2, "ask": 100.3, "last": 100.25},
+    ]
+    gateway = SequenceGateway(ticks_by_symbol={"EURUSD": ticks})
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[
+                {
+                    "type": "price_break_level",
+                    "symbol": "EURUSD",
+                    "level": 100.0,
+                    "price_source": "mid",
+                    "direction": "up",
+                    "confirm_ticks": 2,
+                }
+            ],
+            poll_interval_seconds=0.5,
+            max_wait_seconds=5.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "matched"
+    assert result["matched_event"]["type"] == "price_break_level"
+
+
+def test_run_wait_event_matches_price_enter_zone() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    base_epoch = int(clock.now_utc().timestamp()) - 2
+    ticks = [
+        {"time": base_epoch, "time_msc": base_epoch * 1000, "bid": 101.2, "ask": 101.4, "last": 101.3},
+        {"time": base_epoch + 1, "time_msc": (base_epoch + 1) * 1000, "bid": 100.4, "ask": 100.6, "last": 100.5},
+    ]
+    gateway = SequenceGateway(ticks_by_symbol={"EURUSD": ticks})
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[
+                {
+                    "type": "price_enter_zone",
+                    "symbol": "EURUSD",
+                    "lower": 100.0,
+                    "upper": 101.0,
+                    "price_source": "mid",
+                    "direction": "down",
+                }
+            ],
+            poll_interval_seconds=0.5,
+            max_wait_seconds=5.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "matched"
+    assert result["matched_event"]["type"] == "price_enter_zone"
+
+
+def test_run_wait_event_matches_pending_near_fill() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    now_epoch = int(clock.now_utc().timestamp())
+    gateway = SequenceGateway(
+        orders_seq=[
+            [{"ticket": 7001, "symbol": "EURUSD", "type": "buy_limit", "price_open": 100.0}],
+            [{"ticket": 7001, "symbol": "EURUSD", "type": "buy_limit", "price_open": 100.0}],
+        ],
+        ticks_by_symbol={
+            "EURUSD": [
+                {
+                    "time": now_epoch - 1,
+                    "time_msc": (now_epoch - 1) * 1000,
+                    "bid": 99.96,
+                    "ask": 100.04,
+                    "last": 100.0,
+                }
+            ]
+        },
+    )
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[
+                {
+                    "type": "pending_near_fill",
+                    "symbol": "EURUSD",
+                    "distance": 0.05,
+                }
+            ],
+            poll_interval_seconds=0.5,
+            max_wait_seconds=5.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "matched"
+    assert result["matched_event"]["type"] == "pending_near_fill"
+    assert result["matched_event"]["observed"]["ticket"] == 7001
+
+
+def test_run_wait_event_matches_stop_threat() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    now_epoch = int(clock.now_utc().timestamp())
+    gateway = SequenceGateway(
+        positions_seq=[
+            [{"ticket": 9001, "symbol": "EURUSD", "type": "buy", "sl": 99.9, "price_current": 99.95}],
+            [{"ticket": 9001, "symbol": "EURUSD", "type": "buy", "sl": 99.9, "price_current": 99.95}],
+        ],
+        ticks_by_symbol={
+            "EURUSD": [
+                {
+                    "time": now_epoch - 1,
+                    "time_msc": (now_epoch - 1) * 1000,
+                    "bid": 99.94,
+                    "ask": 99.96,
+                    "last": 99.95,
+                }
+            ]
+        },
+    )
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[
+                {
+                    "type": "stop_threat",
+                    "symbol": "EURUSD",
+                    "distance": 0.05,
+                }
+            ],
+            poll_interval_seconds=0.5,
+            max_wait_seconds=5.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "matched"
+    assert result["matched_event"]["type"] == "stop_threat"
+    assert result["matched_event"]["observed"]["ticket"] == 9001
 
 
 def test_run_wait_event_matches_position_closed_from_history_out_by() -> None:

@@ -1,6 +1,7 @@
 
-from typing import Any, Dict
 import logging
+import statistics
+from typing import Any, Dict, List, Optional
 
 from ._mcp_instance import mcp
 from .data_requests import (
@@ -8,6 +9,7 @@ from .data_requests import (
     DataFetchTicksRequest,
     WaitEventRequest,
 )
+from .pivot import pivot_compute_points, support_resistance_levels
 from .schema import TimeframeLiteral
 from .data_use_cases import (
     run_data_fetch_candles,
@@ -23,6 +25,175 @@ from ..utils.mt5 import ensure_mt5_connection_or_raise
 __all__ = ['data_fetch_candles', 'data_fetch_ticks', 'wait_event']
 
 logger = logging.getLogger(__name__)
+
+
+def _build_default_wait_event_watchers(
+    *,
+    instrument: str,
+    timeframe: TimeframeLiteral,
+    watch_tick_count_spike: bool,
+) -> List[Dict[str, Any]]:
+    watch_for: List[Dict[str, Any]] = [
+        {"type": "order_created", "symbol": instrument},
+        {"type": "order_filled", "symbol": instrument},
+        {"type": "order_cancelled", "symbol": instrument},
+        {"type": "position_opened", "symbol": instrument},
+        {"type": "position_closed", "symbol": instrument},
+        {"type": "tp_hit", "symbol": instrument},
+        {"type": "sl_hit", "symbol": instrument},
+        {"type": "pending_near_fill", "symbol": instrument},
+        {"type": "stop_threat", "symbol": instrument},
+        {"type": "price_change", "symbol": instrument},
+        {"type": "volume_spike", "symbol": instrument},
+        {"type": "spread_spike", "symbol": instrument},
+        {"type": "tick_count_drought", "symbol": instrument},
+        {"type": "range_expansion", "symbol": instrument},
+    ]
+    if watch_tick_count_spike:
+        watch_for.append({"type": "tick_count_spike", "symbol": instrument})
+    watch_for.extend(_support_resistance_watchers(instrument=instrument))
+    watch_for.extend(_pivot_zone_watchers(instrument=instrument, timeframe=timeframe))
+    return _dedupe_wait_event_watchers(watch_for)
+
+
+def _support_resistance_watchers(*, instrument: str) -> List[Dict[str, Any]]:
+    try:
+        raw_tool = getattr(support_resistance_levels, "__wrapped__", support_resistance_levels)
+        payload = raw_tool(symbol=instrument, timeframe="auto", detail="compact")
+    except Exception:
+        return []
+    if not isinstance(payload, dict) or payload.get("error"):
+        return []
+    levels = payload.get("levels")
+    if not isinstance(levels, list):
+        return []
+    watch_for: List[Dict[str, Any]] = []
+    for level in levels:
+        if not isinstance(level, dict):
+            continue
+        level_value = _coerce_price(level.get("value"))
+        if level_value is None:
+            continue
+        level_type = str(level.get("type") or "").strip().lower()
+        direction = "either"
+        if level_type == "support":
+            direction = "down"
+        elif level_type == "resistance":
+            direction = "up"
+        watch_for.append(
+            {
+                "type": "price_touch_level",
+                "symbol": instrument,
+                "level": level_value,
+                "direction": "either",
+            }
+        )
+        watch_for.append(
+            {
+                "type": "price_break_level",
+                "symbol": instrument,
+                "level": level_value,
+                "direction": direction,
+            }
+        )
+    return watch_for
+
+
+def _pivot_zone_watchers(*, instrument: str, timeframe: TimeframeLiteral) -> List[Dict[str, Any]]:
+    try:
+        raw_tool = getattr(pivot_compute_points, "__wrapped__", pivot_compute_points)
+        payload = raw_tool(symbol=instrument, timeframe=_default_wait_event_pivot_timeframe(timeframe))
+    except Exception:
+        return []
+    if not isinstance(payload, dict) or payload.get("error"):
+        return []
+    levels = _extract_pivot_levels(payload)
+    if len(levels) < 2:
+        return []
+    watch_for: List[Dict[str, Any]] = []
+    for idx in range(len(levels) - 1):
+        lower = levels[idx]["value"]
+        upper = levels[idx + 1]["value"]
+        if upper <= lower:
+            continue
+        watch_for.append(
+            {
+                "type": "price_enter_zone",
+                "symbol": instrument,
+                "lower": lower,
+                "upper": upper,
+                "direction": "either",
+            }
+        )
+    return watch_for
+
+
+def _default_wait_event_pivot_timeframe(timeframe: TimeframeLiteral) -> TimeframeLiteral:
+    normalized = str(timeframe or "M1").upper().strip()
+    if normalized in {"D1", "W1", "MN1"}:
+        return normalized  # type: ignore[return-value]
+    return "D1"
+
+
+def _extract_pivot_levels(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    rows = payload.get("levels")
+    if not isinstance(rows, list):
+        return []
+    out: List[Dict[str, Any]] = []
+    seen_values: set[float] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        label = str(row.get("level") or "").strip().upper()
+        if not label:
+            continue
+        values = [
+            numeric
+            for numeric in (_coerce_price(value) for key, value in row.items() if key != "level")
+            if numeric is not None
+        ]
+        if not values:
+            continue
+        price = round(float(statistics.median(values)), 10)
+        if price in seen_values:
+            continue
+        seen_values.add(price)
+        out.append({"label": label, "value": price})
+    out.sort(key=lambda item: float(item["value"]))
+    return out
+
+
+def _coerce_price(value: Any) -> Optional[float]:
+    try:
+        numeric = float(value)
+    except Exception:
+        return None
+    if numeric != numeric:
+        return None
+    return float(numeric)
+
+
+def _dedupe_wait_event_watchers(watch_for: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for item in watch_for:
+        key = (
+            str(item.get("type") or ""),
+            str(item.get("symbol") or "").upper(),
+            item.get("order_ticket"),
+            item.get("position_ticket"),
+            item.get("magic"),
+            item.get("side"),
+            item.get("direction"),
+            item.get("level"),
+            item.get("lower"),
+            item.get("upper"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(dict(item))
+    return out
 
 
 @mcp.tool()
@@ -148,31 +319,44 @@ def wait_event(
     instrument: str,
     timeframe: TimeframeLiteral = "M1",
     watch_tick_count_spike: bool = True,
+    watch_for: Optional[List[Dict[str, Any]]] = None,
+    end_on: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """Wait for position lifecycle events on an instrument until the next timeframe boundary.
+    """Wait for watch events on an instrument until the next timeframe boundary.
 
-    The public tool focuses on position state changes for the instrument:
-    `position_opened`, `position_closed`, `tp_hit`, and `sl_hit`.
-    By default it also wakes on a significant tick-count activity surge
-    for the instrument; set `watch_tick_count_spike=false` to disable it.
-    It stops at the next candle close for `timeframe` if no watched event
-    happens first.
+    If `watch_for` is omitted, the public default watches the full event set:
+    order/position lifecycle events, pending/stop proximity, volatility/activity
+    events, support/resistance touch and break levels, and pivot-based zone
+    entry events. Support/resistance defaults come from
+    `support_resistance_levels(symbol, timeframe="auto")`; pivot zones default
+    to adjacent daily pivot bands for intraday waits and same-timeframe pivots
+    for daily-or-higher waits.
+
+    Advanced callers can pass explicit `watch_for` and `end_on` event specs to
+    use the richer wait-event engine directly. When explicit `watch_for` is
+    provided, `watch_tick_count_spike` no longer alters the watcher list.
     """
-    watch_for = [
-        {"type": "position_opened", "symbol": instrument},
-        {"type": "position_closed", "symbol": instrument},
-        {"type": "tp_hit", "symbol": instrument},
-        {"type": "sl_hit", "symbol": instrument},
-    ]
-    if watch_tick_count_spike:
-        watch_for.append({"type": "tick_count_spike", "symbol": instrument})
+    request_kwargs: Dict[str, Any] = {
+        "symbol": instrument,
+        "timeframe": timeframe,
+    }
+    if end_on is not None:
+        request_kwargs["end_on"] = list(end_on)
 
-    request = WaitEventRequest(
-        symbol=instrument,
-        timeframe=timeframe,
-        watch_for=watch_for,
-    )
     def _run() -> Dict[str, Any]:
+        resolved_watch_for = (
+            list(watch_for)
+            if watch_for is not None
+            else _build_default_wait_event_watchers(
+                instrument=instrument,
+                timeframe=timeframe,
+                watch_tick_count_spike=watch_tick_count_spike,
+            )
+        )
+        request = WaitEventRequest(
+            **request_kwargs,
+            watch_for=resolved_watch_for,
+        )
         result = run_wait_event(
             request,
             gateway=get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
@@ -188,5 +372,7 @@ def wait_event(
         instrument=instrument,
         timeframe=timeframe,
         watch_tick_count_spike=watch_tick_count_spike,
+        explicit_watch_for=watch_for is not None,
+        end_on_count=len(end_on or []),
         func=_run,
     )
