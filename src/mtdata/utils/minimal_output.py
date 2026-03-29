@@ -664,6 +664,53 @@ def _compact_trade_row(row: Dict[str, Any], *, verbose: bool) -> Optional[Dict[s
     return out or None
 
 
+def _trade_table_hidden_keys(tool_name: str) -> set[str]:
+    if tool_name == "trade_get_open" or tool_name == "trade_get_pending":
+        return {
+            "Comment Length",
+            "Comment Limit",
+            "Comment May Be Truncated",
+        }
+    if tool_name == "trade_history":
+        return {
+            "timestamp_timezone",
+            "comment_visible_length",
+            "comment_max_length",
+            "comment_may_be_truncated",
+            "type_code",
+            "state_code",
+            "type_time_code",
+            "type_filling_code",
+            "entry_code",
+            "reason_code",
+        }
+    return set()
+
+
+def _normalize_trade_table_payload(
+    payload: Any,
+    *,
+    verbose: bool,
+    tool_name: str,
+) -> Optional[Any]:
+    if tool_name not in {"trade_get_open", "trade_get_pending", "trade_history"}:
+        return None
+    if verbose or not isinstance(payload, list):
+        return payload if isinstance(payload, list) else None
+
+    hidden = _trade_table_hidden_keys(tool_name)
+    if not hidden:
+        return payload
+
+    normalized_rows: List[Any] = []
+    for row in payload:
+        if not isinstance(row, dict):
+            normalized_rows.append(row)
+            continue
+        normalized_rows.append({key: value for key, value in row.items() if key not in hidden})
+    return normalized_rows
+
+
 def _normalize_trade_payload(
     payload: Dict[str, Any],
     *,
@@ -1076,8 +1123,15 @@ def format_result_minimal(
         return ""
     try:
         normalized = result
+        resolved_tool_name = _resolve_tool_name(result, tool_name)
+        trade_table_norm = _normalize_trade_table_payload(
+            result,
+            verbose=verbose,
+            tool_name=resolved_tool_name,
+        )
+        if trade_table_norm is not None:
+            normalized = trade_table_norm
         if isinstance(result, dict):
-            resolved_tool_name = _resolve_tool_name(result, tool_name)
             trade_norm = _normalize_trade_payload(
                 result,
                 verbose=verbose,

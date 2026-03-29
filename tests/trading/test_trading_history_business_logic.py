@@ -384,6 +384,19 @@ def test_trade_history_surfaces_comment_limit_metadata() -> None:
     assert out[0]["comment_may_be_truncated"] is False
 
 
+def test_trade_history_empty_deals_message_includes_orders_hint() -> None:
+    mt5, prev = _install_mock_mt5()
+    mt5.history_deals_get.return_value = []
+
+    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+        out = trade_history(history_kind="deals", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert out["message"].startswith("No deals found")
+    assert "--history-kind orders" in out["message"]
+
+
 def test_trade_history_returns_connection_error_payload() -> None:
     with patch(
         "mtdata.core.trading_account.ensure_mt5_connection_or_raise",

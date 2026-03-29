@@ -820,6 +820,8 @@ def run_trade_history(
                     message += f" for {request.symbol}"
                 if default_window_label:
                     message += f" in {default_window_label}"
+                if kind_label == "deals":
+                    message += ". For order creation/cancellation events, use --history-kind orders."
                 return {"message": message}
 
             if kind == "deals":

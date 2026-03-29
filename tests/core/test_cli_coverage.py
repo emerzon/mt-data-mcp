@@ -503,7 +503,7 @@ class TestFormatResultForCli:
         assert "window:" in regime
         assert "null_max_quantile" in regime
 
-    def test_toon_format_preserves_trade_metadata_in_shared_output(self):
+    def test_toon_format_hides_trade_metadata_in_non_verbose_output(self):
         open_out = _format_result_for_cli(
             [
                 {
@@ -517,9 +517,9 @@ class TestFormatResultForCli:
             verbose=False,
             cmd_name="trade_get_open",
         )
-        assert "Comment Length" in open_out
-        assert "Comment Limit" in open_out
-        assert "Comment May Be Truncated" in open_out
+        assert "Comment Length" not in open_out
+        assert "Comment Limit" not in open_out
+        assert "Comment May Be Truncated" not in open_out
 
         hist_out = _format_result_for_cli(
             [
@@ -531,6 +531,7 @@ class TestFormatResultForCli:
                     "type_code": 0,
                     "entry_code": 1,
                     "reason_code": 2,
+                    "timestamp_timezone": "UTC",
                     "time_msc": 1700000000000,
                 }
             ],
@@ -538,13 +539,36 @@ class TestFormatResultForCli:
             verbose=False,
             cmd_name="trade_history",
         )
+        assert "comment_visible_length" not in hist_out
+        assert "comment_max_length" not in hist_out
+        assert "comment_may_be_truncated" not in hist_out
+        assert "type_code" not in hist_out
+        assert "entry_code" not in hist_out
+        assert "reason_code" not in hist_out
+        assert "timestamp_timezone" not in hist_out
+        assert "time_msc" in hist_out
+
+    def test_toon_format_keeps_trade_metadata_in_verbose_output(self):
+        hist_out = _format_result_for_cli(
+            [
+                {
+                    "symbol": "EURUSD",
+                    "comment_visible_length": 11,
+                    "comment_max_length": 31,
+                    "comment_may_be_truncated": True,
+                    "type_code": 0,
+                    "timestamp_timezone": "UTC",
+                }
+            ],
+            fmt="toon",
+            verbose=True,
+            cmd_name="trade_history",
+        )
         assert "comment_visible_length" in hist_out
         assert "comment_max_length" in hist_out
         assert "comment_may_be_truncated" in hist_out
         assert "type_code" in hist_out
-        assert "entry_code" in hist_out
-        assert "reason_code" in hist_out
-        assert "time_msc" in hist_out
+        assert "timestamp_timezone" in hist_out
 
     def test_toon_format_preserves_pending_orders_message_shape(self):
         result = _format_result_for_cli(
