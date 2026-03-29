@@ -7,7 +7,10 @@ from typing import Any, Dict, Optional
 
 from .output_contract import ensure_common_meta
 from .runtime_metadata import build_runtime_timezone_meta, _safe_tz_name as _runtime_safe_tz_name
-from ..utils.minimal_output import format_result_minimal as _shared_minimal
+from ..utils.minimal_output import (
+    format_result_minimal as _shared_minimal,
+    _is_empty_value,
+)
 from .mt5_gateway import get_default_mt5_gateway
 
 CLI_FORMAT_TOON = "toon"
@@ -101,22 +104,28 @@ def _resolve_cli_formatter(args: Any) -> str:
 
 def _format_result_for_cli(result: Any, *, fmt: str, verbose: bool, cmd_name: str) -> str:
     fmt_s = _normalize_cli_formatter(fmt)
+    prepared = _prepare_cli_payload(
+        result,
+        fmt=fmt_s,
+        verbose=verbose,
+        cmd_name=cmd_name,
+    )
     if fmt_s == CLI_FORMAT_JSON:
-        payload = {"text": result} if isinstance(result, str) else result
+        payload = {"text": prepared} if isinstance(prepared, str) else prepared
         payload = _sanitize_json_compat(payload)
         return json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False, default=_json_default)
-    if isinstance(result, str):
-        return result
+    if isinstance(prepared, str):
+        return prepared
     simplify_numbers = not str(cmd_name or "").startswith("trade_")
     try:
         return _shared_minimal(
-            result,
+            prepared,
             verbose=verbose,
             simplify_numbers=simplify_numbers,
             tool_name=cmd_name,
         )
     except TypeError:
-        return _format_result_minimal(result, verbose=verbose)
+        return _format_result_minimal(prepared, verbose=verbose)
 
 
 def _safe_tz_name(value: Any) -> Optional[str]:
@@ -216,6 +225,107 @@ def _merge_meta_dict(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, A
             continue
         out[str(key)] = value
     return out
+
+
+def _prune_compact_runtime_meta(result: Any) -> Any:
+    if not isinstance(result, dict):
+        return result
+
+    meta_in = result.get("meta")
+    if not isinstance(meta_in, dict):
+        return result
+
+    out = dict(result)
+    meta = dict(meta_in)
+    runtime_in = meta.get("runtime")
+    if isinstance(runtime_in, dict):
+        runtime = dict(runtime_in)
+        runtime.pop("timezone", None)
+        if runtime:
+            meta["runtime"] = runtime
+        else:
+            meta.pop("runtime", None)
+
+    if set(meta.keys()) <= {"tool"}:
+        out.pop("meta", None)
+        return out
+
+    if meta:
+        out["meta"] = meta
+    else:
+        out.pop("meta", None)
+    return out
+
+
+def _normalize_market_ticker_cli_payload(result: Any, *, verbose: bool) -> Any:
+    if not isinstance(result, dict):
+        return result
+
+    out = dict(result)
+    display_time = out.get("time_display")
+    raw_epoch = out.get("time_epoch")
+    if _is_empty_value(raw_epoch):
+        epoch_candidate = out.get("time")
+        if isinstance(epoch_candidate, (int, float)):
+            raw_epoch = epoch_candidate
+
+    canonical_time = display_time
+    if _is_empty_value(canonical_time):
+        canonical_time = out.get("time")
+
+    if not _is_empty_value(canonical_time):
+        out["time"] = canonical_time
+    else:
+        out.pop("time", None)
+
+    out.pop("time_display", None)
+    if verbose and not _is_empty_value(raw_epoch):
+        out["time_epoch"] = raw_epoch
+    else:
+        out.pop("time_epoch", None)
+    return out
+
+
+def _normalize_symbols_describe_cli_payload(result: Any, *, verbose: bool) -> Any:
+    if not isinstance(result, dict):
+        return result
+
+    symbol_in = result.get("symbol")
+    if not isinstance(symbol_in, dict):
+        return result
+
+    out = dict(result)
+    symbol = dict(symbol_in)
+    if not verbose:
+        symbol.pop("time_epoch", None)
+    out["symbol"] = symbol
+    return out
+
+
+def _normalize_candle_json_payload(result: Any) -> Any:
+    if not isinstance(result, dict):
+        return result
+    if "bars" in result or not isinstance(result.get("data"), list):
+        return result
+    out = dict(result)
+    out["bars"] = out.pop("data")
+    return out
+
+
+def _prepare_cli_payload(result: Any, *, fmt: str, verbose: bool, cmd_name: str) -> Any:
+    prepared = result
+    if cmd_name == "market_ticker":
+        prepared = _normalize_market_ticker_cli_payload(prepared, verbose=verbose)
+    elif cmd_name == "symbols_describe":
+        prepared = _normalize_symbols_describe_cli_payload(prepared, verbose=verbose)
+
+    if fmt == CLI_FORMAT_JSON and cmd_name == "data_fetch_candles":
+        prepared = _normalize_candle_json_payload(prepared)
+
+    if fmt == CLI_FORMAT_TOON and not verbose:
+        prepared = _prune_compact_runtime_meta(prepared)
+
+    return prepared
 
 
 def _attach_cli_meta(result: Any, *, cmd_name: str, verbose: bool) -> Any:

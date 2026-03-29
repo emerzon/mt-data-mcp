@@ -478,6 +478,95 @@ class TestFormatResultForCli:
         assert "end_epoch" in ticks
         assert "stats" in ticks
 
+    def test_market_ticker_json_uses_display_time_as_canonical_field(self):
+        payload = json.loads(
+            _format_result_for_cli(
+                {
+                    "success": True,
+                    "symbol": "BTCUSD",
+                    "time": 1700000000,
+                    "time_display": "2023-11-14 22:13",
+                },
+                fmt="json",
+                verbose=False,
+                cmd_name="market_ticker",
+            )
+        )
+        assert payload["time"] == "2023-11-14 22:13"
+        assert "time_display" not in payload
+        assert "time_epoch" not in payload
+
+    def test_market_ticker_verbose_toon_keeps_raw_epoch_separately(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "time": 1700000000,
+                "time_display": "2023-11-14 22:13",
+            },
+            fmt="toon",
+            verbose=True,
+            cmd_name="market_ticker",
+        )
+        assert 'time: "2023-11-14 22:13"' in result
+        assert "time_epoch: 1700000000" in result
+        assert "time_display" not in result
+
+    def test_symbols_describe_compact_view_hides_time_epoch(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "symbol": {
+                    "name": "BTCUSD",
+                    "time_epoch": 1700000000.0,
+                    "time": "2023-11-14 22:13",
+                },
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="symbols_describe",
+        )
+        assert 'time: "2023-11-14 22:13"' in result
+        assert "time_epoch" not in result
+
+    def test_candle_json_uses_bars_key(self):
+        payload = json.loads(
+            _format_result_for_cli(
+                {
+                    "data": [{"time": "2023-11-14 22:13", "close": 1.1}],
+                    "success": True,
+                    "count": 1,
+                    "symbol": "EURUSD",
+                },
+                fmt="json",
+                verbose=False,
+                cmd_name="data_fetch_candles",
+            )
+        )
+        assert payload["bars"] == [{"time": "2023-11-14 22:13", "close": 1.1}]
+        assert "data" not in payload
+
+    def test_compact_toon_hides_runtime_timezone_meta(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "meta": {
+                    "tool": "support_resistance_levels",
+                    "runtime": {
+                        "timezone": {
+                            "utc": {"tz": "UTC"},
+                            "server": {"tz": "Europe/Nicosia"},
+                            "client": {"tz": "America/Chicago"},
+                        }
+                    },
+                },
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="support_resistance_levels",
+        )
+        assert "runtime.timezone" not in result
+        assert "meta:" not in result
+
     def test_toon_format_preserves_shared_causal_and_regime_details(self):
         causal = _format_result_for_cli(
             {

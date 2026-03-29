@@ -877,17 +877,18 @@ def _normalize_market_ticker_payload(
             out[key] = value
 
     display_time = payload.get("time_display")
-    epoch_time = payload.get("time")
-    if verbose:
-        if not _is_empty_value(epoch_time):
-            out["time"] = epoch_time
-        if not _is_empty_value(display_time):
-            out["time_display"] = display_time
-    else:
-        if not _is_empty_value(display_time):
-            out["time"] = display_time
-        elif not _is_empty_value(epoch_time):
-            out["time"] = epoch_time
+    epoch_time = payload.get("time_epoch")
+    if _is_empty_value(epoch_time):
+        raw_time = payload.get("time")
+        if isinstance(raw_time, (int, float)):
+            epoch_time = raw_time
+    canonical_time = display_time
+    if _is_empty_value(canonical_time):
+        canonical_time = payload.get("time")
+    if not _is_empty_value(canonical_time):
+        out["time"] = canonical_time
+    if verbose and not _is_empty_value(epoch_time):
+        out["time_epoch"] = epoch_time
 
     diagnostics = payload.get("diagnostics")
     if isinstance(diagnostics, dict) and diagnostics:
@@ -896,6 +897,10 @@ def _normalize_market_ticker_payload(
     timezone = payload.get("timezone")
     if not _is_empty_value(timezone):
         out["timezone"] = timezone
+
+    meta = payload.get("meta")
+    if isinstance(meta, dict) and meta:
+        out["meta"] = meta
 
     return out
 

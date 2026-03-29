@@ -5,6 +5,7 @@ from mtdata.utils.minimal_output import (
     _build_forecast_meta,
     _is_scalar_value,
     _is_empty_value,
+    _normalize_market_ticker_payload,
     _stringify_scalar,
     _stringify_cell,
     _compact_forecast_ci,
@@ -612,6 +613,20 @@ class TestFormatToToon:
 
 
 class TestFormatResultMinimal:
+    def test_market_ticker_verbose_uses_display_time_and_keeps_epoch_field(self):
+        payload = {
+            "success": True,
+            "symbol": "BTCUSD",
+            "time": 1700000000,
+            "time_display": "2023-11-14 22:13",
+            "meta": {"tool": "market_ticker"},
+        }
+        result = _normalize_market_ticker_payload(payload, verbose=True, tool_name="market_ticker")
+        assert result["time"] == "2023-11-14 22:13"
+        assert result["time_epoch"] == 1700000000
+        assert "time_display" not in result
+        assert result["meta"]["tool"] == "market_ticker"
+
     def test_verbose_forecast_sections_are_not_nested_under_meta(self):
         payload = {
             "times": ["t1"],

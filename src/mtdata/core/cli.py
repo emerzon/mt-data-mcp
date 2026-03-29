@@ -31,6 +31,7 @@ from .cli_formatting import (
     _format_result_minimal,
     _json_default,
     _normalize_cli_formatter,
+    _prepare_cli_payload,
     _resolve_cli_formatter,
     _safe_tz_name,
     _sanitize_json_compat,
@@ -326,22 +327,28 @@ def _apply_cli_output_mode_defaults(args: Any, argv: List[str], functions: Dict[
 
 def _format_result_for_cli(result: Any, *, fmt: str, verbose: bool, cmd_name: str) -> str:
     fmt_s = _normalize_cli_formatter(fmt)
+    prepared = _prepare_cli_payload(
+        result,
+        fmt=fmt_s,
+        verbose=verbose,
+        cmd_name=cmd_name,
+    )
     if fmt_s == CLI_FORMAT_JSON:
-        payload = {"text": result} if isinstance(result, str) else result
+        payload = {"text": prepared} if isinstance(prepared, str) else prepared
         payload = _sanitize_json_compat(payload)
         return json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False, default=_json_default)
-    if isinstance(result, str):
-        return result
+    if isinstance(prepared, str):
+        return prepared
     simplify_numbers = not str(cmd_name or "").startswith("trade_")
     try:
         return _shared_minimal(
-            result,
+            prepared,
             verbose=verbose,
             simplify_numbers=simplify_numbers,
             tool_name=cmd_name,
         )
     except TypeError:
-        return _format_result_minimal(result, verbose=verbose)
+        return _format_result_minimal(prepared, verbose=verbose)
 
 
 def _normalize_console_text(text: str) -> str:
