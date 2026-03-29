@@ -845,6 +845,61 @@ def _normalize_trade_payload(
     return out
 
 
+def _normalize_market_ticker_payload(
+    payload: Dict[str, Any],
+    *,
+    verbose: bool,
+    tool_name: str,
+) -> Optional[Dict[str, Any]]:
+    if tool_name != "market_ticker":
+        return None
+
+    out: Dict[str, Any] = {}
+    if "error" in payload and not _is_empty_value(payload.get("error")):
+        out["error"] = payload.get("error")
+        return out
+
+    for key in (
+        "success",
+        "symbol",
+        "type",
+        "price_precision",
+        "bid",
+        "ask",
+        "last",
+        "spread",
+        "spread_points",
+        "spread_pct",
+        "spread_usd",
+    ):
+        value = payload.get(key)
+        if not _is_empty_value(value):
+            out[key] = value
+
+    display_time = payload.get("time_display")
+    epoch_time = payload.get("time")
+    if verbose:
+        if not _is_empty_value(epoch_time):
+            out["time"] = epoch_time
+        if not _is_empty_value(display_time):
+            out["time_display"] = display_time
+    else:
+        if not _is_empty_value(display_time):
+            out["time"] = display_time
+        elif not _is_empty_value(epoch_time):
+            out["time"] = epoch_time
+
+    diagnostics = payload.get("diagnostics")
+    if isinstance(diagnostics, dict) and diagnostics:
+        out["diagnostics"] = diagnostics
+
+    timezone = payload.get("timezone")
+    if not _is_empty_value(timezone):
+        out["timezone"] = timezone
+
+    return out
+
+
 def _compact_forecast_ci(
     payload: Dict[str, Any],
     *,
@@ -1144,13 +1199,21 @@ def format_result_minimal(
             if trade_norm is not None:
                 normalized = trade_norm
             else:
-                triple_barrier_norm = _normalize_triple_barrier_payload(result)
-                if triple_barrier_norm is not None:
-                    normalized = triple_barrier_norm
+                market_ticker_norm = _normalize_market_ticker_payload(
+                    result,
+                    verbose=verbose,
+                    tool_name=resolved_tool_name,
+                )
+                if market_ticker_norm is not None:
+                    normalized = market_ticker_norm
                 else:
-                    forecast_norm = _normalize_forecast_payload(result, verbose=verbose)
-                    if forecast_norm is not None:
-                        normalized = forecast_norm
+                    triple_barrier_norm = _normalize_triple_barrier_payload(result)
+                    if triple_barrier_norm is not None:
+                        normalized = triple_barrier_norm
+                    else:
+                        forecast_norm = _normalize_forecast_payload(result, verbose=verbose)
+                        if forecast_norm is not None:
+                            normalized = forecast_norm
         if isinstance(normalized, str):
             return normalized.strip()
         toon_text = _format_to_toon(normalized, simplify_numbers=simplify_numbers)

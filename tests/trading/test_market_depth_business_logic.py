@@ -264,3 +264,13 @@ def test_market_ticker_logs_finish_event(caplog) -> None:
         "event=finish operation=market_ticker success=True" in record.message
         for record in caplog.records
     )
+
+
+def test_market_ticker_rewrites_invalid_symbol_selection_error() -> None:
+    with patch("mtdata.core.market_depth.mt5") as mt5:
+        mt5.symbol_select.return_value = False
+        mt5.last_error.return_value = (-1, "Terminal: Call failed")
+
+        out = _raw_market_ticker("FAKESYMBOL")
+
+    assert out["error"] == "Symbol 'FAKESYMBOL' was not found or is not available in MT5."

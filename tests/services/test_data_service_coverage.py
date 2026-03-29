@@ -837,6 +837,47 @@ class TestFetchCandles(unittest.TestCase):
         self.assertTrue(result.get('success'))
 
     @patch(_MT5_CONFIG)
+    @patch(_APPLY_TI, return_value=['RSI_14', 'EMA_20', 'ATRr_14'])
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=20)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_indicator_display_names_and_spec_are_normalized(
+        self,
+        mock_warmup,
+        mock_ctz,
+        mock_info,
+        mock_from,
+        mock_ti,
+        mock_cfg,
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(30)
+
+        def add_cols(df, spec):
+            df['RSI_14'] = 50.0
+            df['EMA_20'] = 1.1
+            df['ATRr_14'] = 2.2
+            return ['RSI_14', 'EMA_20', 'ATRr_14']
+
+        mock_ti.side_effect = add_cols
+
+        result = fetch_candles('EURUSD', limit=10, indicators='RSI(14.0),EMA(20.0),ATR(14.0)')
+
+        self.assertTrue(result.get('success'))
+        self.assertEqual(
+            result['meta']['diagnostics']['indicators']['spec'],
+            'RSI(14),EMA(20),ATR(14)',
+        )
+        self.assertEqual(
+            result['meta']['diagnostics']['indicators']['added_columns'],
+            ['RSI_14', 'EMA_20', 'ATR_14'],
+        )
+        self.assertIn('ATR_14', result['data'][0])
+        self.assertNotIn('ATRr_14', result['data'][0])
+
+    @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_RESOLVE_CTZ, return_value=None)

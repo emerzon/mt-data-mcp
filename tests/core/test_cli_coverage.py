@@ -417,8 +417,8 @@ class TestFormatResultForCli:
             verbose=False,
             cmd_name="market_ticker",
         )
-        assert "time_display" in ticker
-        assert "time:" in ticker
+        assert 'time: "2023-11-14 22:13"' in ticker
+        assert "time_display" not in ticker
 
         depth = _format_result_for_cli(
             {

@@ -3,7 +3,7 @@ import logging
 import math
 import os
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
@@ -20,6 +20,26 @@ def _market_depth_fetch_enabled() -> bool:
     if raw is None:
         return False
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _format_mt5_error_text(error: Any) -> str:
+    if isinstance(error, tuple) and len(error) >= 2:
+        code = error[0]
+        message = error[1]
+        if message not in (None, ""):
+            return f"{code}: {message}"
+        return str(code)
+    return str(error)
+
+
+def _describe_symbol_select_error(symbol: str, error: Any) -> str:
+    text = str(_format_mt5_error_text(error or "")).strip()
+    lowered = text.lower()
+    if any(marker in lowered for marker in ("call failed", "unknown symbol", "not found", "invalid symbol")):
+        return f"Symbol '{symbol}' was not found or is not available in MT5."
+    if text:
+        return f"Failed to select symbol {symbol}: {text}"
+    return f"Failed to select symbol {symbol}."
 
 
 def _market_depth_disabled_payload() -> Dict[str, Any]:
@@ -60,7 +80,7 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, compact: bool = 
             mt5_gateway.ensure_connection()
             started = time.perf_counter()
             if not mt5_gateway.symbol_select(symbol, True):
-                return {"error": f"Failed to select symbol {symbol}: {mt5_gateway.last_error()}"}
+                return {"error": _describe_symbol_select_error(symbol, mt5_gateway.last_error())}
 
             symbol_info = mt5_gateway.symbol_info(symbol)
             if symbol_info is None:
@@ -259,7 +279,7 @@ def market_ticker(symbol: str) -> Dict[str, Any]:
             mt5_gateway.ensure_connection()
             started = time.perf_counter()
             if not mt5_gateway.symbol_select(symbol, True):
-                return {"error": f"Failed to select symbol {symbol}: {mt5_gateway.last_error()}"}
+                return {"error": _describe_symbol_select_error(symbol, mt5_gateway.last_error())}
 
             symbol_info = mt5_gateway.symbol_info(symbol)
             if symbol_info is None:

@@ -349,6 +349,41 @@ def _normalize_indicator_spec(indicators: Optional[List[IndicatorSpec]]) -> Opti
     return str(source)
 
 
+def _normalize_indicator_spec_for_display(ti_spec: Optional[str]) -> str:
+    text = str(ti_spec or "").strip()
+    if not text:
+        return ""
+    return re.sub(r"(?<![\d.])([+-]?\d+)\.0(?!\d)", r"\1", text)
+
+
+def _display_indicator_column_name(column: str) -> str:
+    text = str(column or "")
+    if text.startswith("ATRr_"):
+        return "ATR_" + text[len("ATRr_") :]
+    return text
+
+
+def _normalize_indicator_columns_for_display(
+    df: pd.DataFrame,
+    columns: List[str],
+) -> List[str]:
+    if not columns:
+        return []
+
+    rename_map: Dict[str, str] = {}
+    normalized: List[str] = []
+    for column in columns:
+        old_name = str(column)
+        new_name = _display_indicator_column_name(old_name)
+        if new_name != old_name and old_name in df.columns and new_name not in df.columns:
+            rename_map[old_name] = new_name
+        normalized.append(rename_map.get(old_name, new_name))
+
+    if rename_map:
+        df.rename(columns=rename_map, inplace=True)
+    return normalized
+
+
 def _extend_unique_headers(headers: List[str], columns: List[str]) -> None:
     for column in columns:
         if column not in headers:
@@ -448,6 +483,7 @@ def _apply_indicator_stage(
         return ti_cols
 
     ti_cols = _apply_ta_indicators_util(df, ti_spec)
+    ti_cols = _normalize_indicator_columns_for_display(df, ti_cols)
     _extend_unique_headers(headers, ti_cols)
 
     if denoise and ti_cols:
@@ -852,7 +888,7 @@ def fetch_candles(
                     },
                     "indicators": {
                         "requested": bool(ti_spec),
-                        "spec": str(ti_spec or ""),
+                        "spec": _normalize_indicator_spec_for_display(ti_spec),
                         "added_columns": ti_added_cols,
                     },
                     "session_gaps": {
