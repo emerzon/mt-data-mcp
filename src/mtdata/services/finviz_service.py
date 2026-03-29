@@ -620,7 +620,7 @@ def get_crypto_performance() -> Dict[str, Any]:
                 continue
             price_display = _crypto_price_display(row.get("Price"))
             if price_display is not None:
-                row["Price_display"] = price_display
+                row["Price"] = price_display
         if _crypto_day_week_identical(items_list):
             for row in items_list:
                 if isinstance(row, dict) and "Perf Week" in row and "Perf WTD" not in row:

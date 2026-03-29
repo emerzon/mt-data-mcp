@@ -163,7 +163,8 @@ class TestFinvizService:
         
         assert result["success"] is True
         assert result["market"] == "crypto"
-        assert result["coins"][0]["Price_display"] == "45000.00"
+        assert result["coins"][0]["Price"] == "45000.00"
+        assert "Price_display" not in result["coins"][0]
 
     @patch('finvizfinance.crypto.Crypto')
     def test_get_crypto_performance_preserves_subcent_price_display(self, mock_crypto_class):
@@ -180,7 +181,8 @@ class TestFinvizService:
         result = get_crypto_performance()
 
         assert result["success"] is True
-        assert result["coins"][0]["Price_display"] == "0.00001234"
+        assert result["coins"][0]["Price"] == "0.00001234"
+        assert "Price_display" not in result["coins"][0]
 
     @patch('finvizfinance.crypto.Crypto')
     def test_get_crypto_performance_adds_wtd_alias_when_day_week_identical(self, mock_crypto_class):
