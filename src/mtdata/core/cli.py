@@ -43,6 +43,7 @@ from .cli_discovery import (
     extract_metadata_from_tool_obj as _extract_metadata_from_tool_obj_impl,
     get_function_info as _get_function_info_impl,
     resolve_param_kwargs as _resolve_param_kwargs_impl,
+    should_expose_cli_param as _should_expose_cli_param_impl,
 )
 from .cli_runtime import (
     coerce_cli_scalar as _coerce_cli_scalar_impl,
@@ -211,6 +212,26 @@ def _command_aliases(command: str) -> List[str]:
         return []
     alias = text.replace("_", "-")
     return [alias] if alias != text else []
+
+
+def _normalize_cli_argv_aliases(argv: List[str], functions: Dict[str, ToolInfo]) -> List[str]:
+    normalized = list(argv)
+    alias_map: Dict[str, str] = {}
+    for command in functions.keys():
+        canonical = str(command or "").strip()
+        if not canonical:
+            continue
+        for alias in _command_aliases(canonical):
+            alias_map[alias] = canonical
+    for index, token in enumerate(normalized):
+        token_text = str(token)
+        canonical = alias_map.get(token_text)
+        if canonical:
+            normalized[index] = canonical
+            break
+        if token_text in functions:
+            break
+    return normalized
 
 
 def _apply_global_cli_overrides(args: Any, argv: List[str]) -> Any:
@@ -385,22 +406,28 @@ def _result_has_tool_error(result: Any) -> bool:
 
 def _safe_argument_parser(*args: Any, **kwargs: Any) -> argparse.ArgumentParser:
     try:
-        return argparse.ArgumentParser(*args, **kwargs)
-    except TypeError:
+        signature = inspect.signature(argparse.ArgumentParser)
+        if not any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values()):
+            kwargs = {key: value for key, value in kwargs.items() if key in signature.parameters}
+    except Exception:
         fallback = dict(kwargs)
         fallback.pop("suggest_on_error", None)
         fallback.pop("color", None)
-        return argparse.ArgumentParser(*args, **fallback)
+        kwargs = fallback
+    return argparse.ArgumentParser(*args, **kwargs)
 
 
 def _safe_add_subparser(subparsers: Any, name: str, **kwargs: Any) -> argparse.ArgumentParser:
     try:
-        return subparsers.add_parser(name, **kwargs)
-    except TypeError:
+        signature = inspect.signature(subparsers.add_parser)
+        if not any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values()):
+            kwargs = {key: value for key, value in kwargs.items() if key in signature.parameters}
+    except Exception:
         fallback = dict(kwargs)
         fallback.pop("suggest_on_error", None)
         fallback.pop("color", None)
-        return subparsers.add_parser(name, **fallback)
+        kwargs = fallback
+    return subparsers.add_parser(name, **kwargs)
 
 def get_function_info(func):
     """Thin wrapper around schema.get_function_info that attaches the callable.
@@ -769,6 +796,34 @@ def _first_line(text: Optional[str]) -> str:
             return s
     return ""
 
+
+def _should_expose_cli_param(*, cmd_name: str, param_name: str) -> bool:
+    return _should_expose_cli_param_impl(cmd_name=cmd_name, param_name=param_name)
+
+
+def _format_epilog_param_usage(param: Dict[str, Any], *, cmd_name: str, index: int) -> Optional[str]:
+    name = str(param.get("name") or "").strip()
+    if not name or not _should_expose_cli_param(cmd_name=cmd_name, param_name=name):
+        return None
+    choices = _literal_choices_for_cli_param(param)
+    if choices:
+        type_token = "{" + ",".join(choices) + "}"
+    else:
+        try:
+            base_type, _ = _unwrap_optional_type(param.get("type"))
+        except Exception:
+            base_type = param.get("type")
+        type_token = f"<{_type_name(base_type or str)}>"
+
+    if bool(param.get("required")):
+        if index == 0:
+            return f"{name}{type_token}"
+        return f"--{name.replace('_', '-')}{type_token}"
+
+    default = param.get("default")
+    return f"--{name.replace('_', '-')}{type_token}=[{default}]"
+
+
 def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
     lines = []
     lines.append("Commands and Arguments:")
@@ -778,17 +833,9 @@ def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
         _apply_schema_overrides(tool, func_info)
         arg_strs = []
         for index, param in enumerate(func_info['params']):
-            tname = _type_name(param['type']) if param['type'] else 'str'
-            if param['required']:
-                if index == 0:
-                    arg_strs.append(f"{param['name']}<{tname}>")
-                else:
-                    arg_strs.append(f"--{param['name'].replace('_','-')}<{tname}>")
-            else:
-                default = param.get('default')
-                arg_strs.append(
-                    f"--{param['name'].replace('_','-')}<{tname}>=[{default}]"
-                )
+            rendered = _format_epilog_param_usage(param, cmd_name=cmd_name, index=index)
+            if rendered:
+                arg_strs.append(rendered)
         meta = tool.get('meta') or {}
         desc = meta.get('description') or _first_line(func_info.get('doc'))
         lines.append(f"  {cmd_name}: {' '.join(arg_strs) if arg_strs else '(no args)'}")
@@ -796,6 +843,7 @@ def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
             lines.append(f"    - {desc}")
     lines.append("")
     lines.append("Tip: Use `--help <keyword>` to search commands and examples.")
+    lines.append("Aliases: commands also accept kebab-case spellings (e.g. market-ticker).")
     lines.append("Type Conventions:")
     lines.append("  - int: integer")
     lines.append("  - str: string")
@@ -1067,7 +1115,8 @@ def main():
     if not functions:
         print("No tools discovered from server module.", file=sys.stderr)
         return 1
-    help_query = _extract_help_query(sys.argv[1:])
+    argv = _normalize_cli_argv_aliases(sys.argv[1:], functions)
+    help_query = _extract_help_query(argv)
     if help_query:
         _print_extended_help(functions, help_query)
         return 0
@@ -1091,7 +1140,7 @@ def main():
         help="Timeframe for market data (H1, M30, D1, etc.)",
     )
 
-    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+    subparsers = parser.add_subparsers(dest='command', help='Available commands', metavar='<command>')
     
     # Dynamically create subparsers for each function, except forecast_generate
     forecast_tool = None
@@ -1113,7 +1162,6 @@ def main():
             help=((meta.get('description') or func_info['doc'].split('\n')[0] if func_info['doc'] else f"Execute {cmd_name}").replace('%', '%%')),
             formatter_class=argparse.RawDescriptionHelpFormatter,
             allow_abbrev=False,
-            aliases=_command_aliases(cmd_name),
             suggest_on_error=True,
             color=_argparse_color_enabled(),
         )
@@ -1148,7 +1196,6 @@ def main():
             help=((meta.get('description') or func_info['doc'].split('\n')[0] if func_info['doc'] else f"Execute {cmd_name}").replace('%', '%%')),
             formatter_class=argparse.RawDescriptionHelpFormatter,
             allow_abbrev=False,
-            aliases=_command_aliases(cmd_name),
             suggest_on_error=True,
             color=_argparse_color_enabled(),
         )
@@ -1254,9 +1301,9 @@ def main():
         cmd_parser.set_defaults(func=_forecast_generate_cmd)
     
     # Parse arguments
-    args = parser.parse_args()
-    args = _apply_global_cli_overrides(args, sys.argv[1:])
-    args = _apply_cli_output_mode_defaults(args, sys.argv[1:], functions)
+    args = parser.parse_args(argv)
+    args = _apply_global_cli_overrides(args, argv)
+    args = _apply_cli_output_mode_defaults(args, argv, functions)
 
     if not args.command:
         parser.print_help()

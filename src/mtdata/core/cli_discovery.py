@@ -99,6 +99,13 @@ def _dedupe_flags(*flags: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(flag for flag in flags if flag))
 
 
+def should_expose_cli_param(*, cmd_name: Optional[str], param_name: str) -> bool:
+    """Return whether a function parameter should surface as a user CLI argument."""
+    if str(cmd_name or "") == "labels_triple_barrier" and str(param_name or "") == "summary_only":
+        return False
+    return True
+
+
 def get_function_info(
     func: Any,
     *,
@@ -403,7 +410,7 @@ def add_dynamic_arguments(
         return tuple(extras)
 
     for param in param_info["params"]:
-        if cmd_name == "labels_triple_barrier" and param["name"] == "summary_only":
+        if not should_expose_cli_param(cmd_name=cmd_name, param_name=str(param.get("name") or "")):
             continue
         hyph = f"--{param['name'].replace('_', '-')}"
         uscr = f"--{param['name']}"

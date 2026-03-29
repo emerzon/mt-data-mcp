@@ -48,6 +48,7 @@ from mtdata.core.cli import (
     _safe_tz_name,
     _build_cli_timezone_meta,
     _attach_cli_meta,
+    _normalize_cli_argv_aliases,
     get_function_info,
     _apply_schema_overrides,
     _apply_cli_output_mode_defaults,
@@ -1403,6 +1404,30 @@ class TestExtractHelpQuery:
         assert _extract_help_query(["--help", "forecast", "--verbose"]) == "forecast"
 
 
+class TestNormalizeCliArgvAliases:
+    def test_normalizes_first_alias_command_token(self):
+        functions = {
+            "symbols_list": {"func": lambda: None},
+            "market_ticker": {"func": lambda: None},
+        }
+
+        out = _normalize_cli_argv_aliases(
+            ["--timeframe", "H1", "symbols-list", "--search-term", "BTC"],
+            functions,
+        )
+
+        assert out == ["--timeframe", "H1", "symbols_list", "--search-term", "BTC"]
+
+    def test_normalizes_help_query_alias_keyword(self):
+        functions = {
+            "trade_place": {"func": lambda: None},
+        }
+
+        out = _normalize_cli_argv_aliases(["--help", "trade-place"], functions)
+
+        assert out == ["--help", "trade_place"]
+
+
 # ========================================================================
 # _print_extended_help
 # ========================================================================
@@ -1479,6 +1504,30 @@ class TestBuildEpilog:
         epilog = _build_epilog(functions)
         assert "my_func" in epilog
         assert "Commands and Arguments" in epilog
+
+    def test_hides_labels_summary_only_shadow_flag_and_renders_literal_choices(self):
+        def labels_triple_barrier(
+            symbol: str,
+            output: Literal["full", "summary", "compact", "summary_only"] = "compact",
+            summary_only: bool = False,
+        ):
+            """Label bars."""
+            pass
+
+        info = get_function_info(labels_triple_barrier)
+        functions = {
+            "labels_triple_barrier": {
+                "func": labels_triple_barrier,
+                "meta": {"description": "Label bars"},
+                "_cli_func_info": info,
+            },
+        }
+
+        epilog = _build_epilog(functions)
+
+        assert "--summary-only" not in epilog
+        assert "--output{full,summary,compact,summary_only}=[compact]" in epilog
+        assert "<Literal>" not in epilog
 
 
 # ========================================================================
@@ -2460,6 +2509,11 @@ class TestMain:
         with patch("sys.argv", ["cli.py"]):
             result = main()
         assert result == 1
+        out = capsys.readouterr().out
+        assert "usage: cli.py" in out
+        assert "<command>" in out
+        assert "{my_tool,my-tool}" not in out
+        assert out.count("    my_tool") == 1
 
     @patch("mtdata.core.cli.discover_tools")
     def test_command_execution(self, mock_discover, capsys):
