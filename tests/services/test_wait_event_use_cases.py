@@ -832,6 +832,35 @@ def test_run_wait_event_matches_tick_count_drought() -> None:
     assert result["matched_event"]["observed"]["ratio"] <= 0.5
 
 
+def test_run_wait_event_tick_count_drought_handles_empty_ticks() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    gateway = SequenceGateway(ticks_by_symbol={"EURUSD": []})
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[
+                {
+                    "type": "tick_count_drought",
+                    "symbol": "EURUSD",
+                    "window": {"kind": "minutes", "value": 1},
+                    "baseline_window": {"kind": "minutes", "value": 4},
+                    "threshold_mode": "ratio_to_baseline",
+                    "threshold_value": 0.5,
+                }
+            ],
+            poll_interval_seconds=0.5,
+            max_wait_seconds=0.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "timeout"
+    assert result["matched_event"] is None
+
+
 def test_run_wait_event_matches_range_expansion() -> None:
     clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
     base_epoch = int(clock.now_utc().timestamp()) - 20

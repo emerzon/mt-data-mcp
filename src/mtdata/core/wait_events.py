@@ -2110,6 +2110,8 @@ def _current_volume_metric(
     *,
     source: str,
 ) -> Optional[float]:
+    if not ticks:
+        return None
     if spec["window"]["kind"] == "ticks":
         window_ticks = max(1, int(math.ceil(float(spec["window"]["value"]))))
         if len(ticks) < window_ticks:
@@ -2130,6 +2132,8 @@ def _volume_baseline_samples(
     *,
     source: str,
 ) -> List[float]:
+    if not ticks:
+        return []
     if spec["window"]["kind"] == "ticks":
         window_ticks = max(1, int(math.ceil(float(spec["window"]["value"]))))
         baseline_ticks = max(1, int(math.ceil(float(spec["baseline_window"]["value"]))))
