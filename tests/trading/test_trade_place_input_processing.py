@@ -175,6 +175,47 @@ def test_trade_place_require_sl_tp_false_allows_market_without_sl_tp() -> None:
     mock_market.assert_called_once()
 
 
+def test_trade_place_dry_run_market_preview_skips_order_send() -> None:
+    with patch("mtdata.core.trading._place_market_order") as mock_market:
+        out = trade_place(
+            symbol="BTCUSD",
+            volume=0.03,
+            order_type="BUY",
+            stop_loss=64000,
+            take_profit=68000,
+            dry_run=True,
+            __cli_raw=True,
+        )
+
+    assert out.get("success") is True
+    assert out.get("dry_run") is True
+    assert out.get("pending") is False
+    assert out.get("action") == "place_market_order"
+    assert out.get("message") == "Dry run only. No order was sent to MT5."
+    mock_market.assert_not_called()
+
+
+def test_trade_place_dry_run_pending_preview_skips_order_send() -> None:
+    with patch("mtdata.core.trading._place_pending_order") as mock_pending:
+        out = trade_place(
+            symbol="BTCUSD",
+            volume=0.03,
+            order_type="BUY_LIMIT",
+            price=64500,
+            expiration="GTC",
+            dry_run=True,
+            __cli_raw=True,
+        )
+
+    assert out.get("success") is True
+    assert out.get("dry_run") is True
+    assert out.get("pending") is True
+    assert out.get("action") == "place_pending_order"
+    assert out.get("requested_price") == 64500
+    assert out.get("expiration") == "GTC"
+    mock_pending.assert_not_called()
+
+
 def test_trade_place_require_sl_tp_flags_unprotected_market_fill() -> None:
     with patch(
         "mtdata.core.trading._place_market_order",

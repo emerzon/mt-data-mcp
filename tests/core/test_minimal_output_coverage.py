@@ -775,6 +775,34 @@ class TestFormatResultMinimal:
         assert "Comment sanitized" not in result
         assert "Broker rejected the comment field" not in result
 
+    def test_trade_place_dry_run_default_view_surfaces_preview_fields(self):
+        payload = {
+            "success": True,
+            "dry_run": True,
+            "symbol": "BTCUSD",
+            "order_type": "BUY_LIMIT",
+            "pending": True,
+            "action": "place_pending_order",
+            "volume": 0.01,
+            "requested_price": 64500.0,
+            "requested_sl": 64000.0,
+            "requested_tp": 67200.0,
+            "expiration": "GTC",
+            "message": "Dry run only. No order was sent to MT5.",
+            "warnings": [
+                "Dry run only. Routing and local safety checks passed; MT5/broker validation was not executed.",
+            ],
+        }
+        result = format_result_minimal(payload, verbose=False, tool_name="trade_place")
+        assert "dry_run: true" in result
+        assert "symbol: BTCUSD" in result
+        assert "order_type: BUY_LIMIT" in result
+        assert "pending: true" in result
+        assert "action: place_pending_order" in result
+        assert "price: 64500" in result
+        assert "message: Dry run only. No order was sent to MT5." in result
+        assert "warnings[1]:" in result
+
 
 class TestFormatComplexValue:
     def test_dict(self):

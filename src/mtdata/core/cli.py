@@ -1109,6 +1109,7 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
         if name == "trade_place":
             print("  Safety: market orders default to require_sl_tp=true; add both stop_loss and take_profit or explicitly set --require-sl-tp false.")
             print("  Recovery: set --auto-close-on-sl-tp-fail true to try to close a filled order if TP/SL attachment fails.")
+            print("  Preview: set --dry-run true to preview routing without sending an order to MT5.")
         print(f"  Example: {base_example}")
         if advanced_example and advanced_example != base_example:
             print(f"  Example+: {advanced_example}")

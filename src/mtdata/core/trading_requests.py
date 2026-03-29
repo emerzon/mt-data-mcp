@@ -18,6 +18,7 @@ class TradePlaceRequest(BaseModel):
     expiration: Optional[ExpirationValue] = None
     comment: Optional[str] = None
     deviation: int = 20
+    dry_run: bool = False
     require_sl_tp: bool = True
     auto_close_on_sl_tp_fail: bool = False
 

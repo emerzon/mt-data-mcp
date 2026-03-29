@@ -124,6 +124,41 @@ def run_trade_place(
         )
         return result
 
+    def _dry_run_preview(
+        *,
+        order_type: str,
+        pending: bool,
+        normalized_expiration: Any,
+        expiration_provided: bool,
+    ) -> Dict[str, Any]:
+        preview: Dict[str, Any] = {
+            "success": True,
+            "dry_run": True,
+            "symbol": symbol_norm,
+            "order_type": order_type,
+            "pending": pending,
+            "action": "place_pending_order" if pending else "place_market_order",
+            "volume": float(request.volume),
+            "message": "Dry run only. No order was sent to MT5.",
+            "validation_scope": "request_routing_only",
+            "warnings": [
+                "Dry run only. Routing and local safety checks passed; MT5/broker validation was not executed.",
+            ],
+            "require_sl_tp": bool(request.require_sl_tp),
+            "auto_close_on_sl_tp_fail": bool(request.auto_close_on_sl_tp_fail),
+        }
+        if pending:
+            preview["requested_price"] = request.price
+        if request.stop_loss not in (None, 0):
+            preview["requested_sl"] = request.stop_loss
+        if request.take_profit not in (None, 0):
+            preview["requested_tp"] = request.take_profit
+        if expiration_provided:
+            preview["expiration"] = request.expiration
+            if normalized_expiration is not None:
+                preview["expiration_normalized"] = normalized_expiration
+        return preview
+
     if not symbol_norm:
         missing.append("symbol")
     if request.volume is None:
@@ -196,16 +231,17 @@ def run_trade_place(
         if request.take_profit in (None, 0):
             missing_protection.append("take_profit")
         if missing_protection:
-            prevalidation_error = prevalidate_trade_place_market_input(
-                symbol_norm,
-                request.volume,
-            )
-            if prevalidation_error is not None:
-                return _finish(
-                    prevalidation_error,
-                    order_type=order_type_norm,
-                    pending=is_pending,
+            if not bool(request.dry_run):
+                prevalidation_error = prevalidate_trade_place_market_input(
+                    symbol_norm,
+                    request.volume,
                 )
+                if prevalidation_error is not None:
+                    return _finish(
+                        prevalidation_error,
+                        order_type=order_type_norm,
+                        pending=is_pending,
+                    )
             return _finish({
                 "error": (
                     "require_sl_tp=True requires both stop_loss and take_profit for market orders. "
@@ -218,6 +254,24 @@ def run_trade_place(
                     "or explicitly set --require-sl-tp false."
                 ),
             }, order_type=order_type_norm, pending=is_pending)
+
+    if bool(request.dry_run):
+        if is_pending and request.price is None:
+            return _finish(
+                {"error": "price is required for pending orders."},
+                order_type=order_type_norm,
+                pending=is_pending,
+            )
+        return _finish(
+            _dry_run_preview(
+                order_type=order_type_norm,
+                pending=is_pending,
+                normalized_expiration=normalized_expiration,
+                expiration_provided=expiration_provided,
+            ),
+            order_type=order_type_norm,
+            pending=is_pending,
+        )
 
     if not is_pending:
         result = place_market_order(

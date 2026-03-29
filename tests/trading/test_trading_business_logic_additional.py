@@ -208,6 +208,38 @@ def test_run_trade_place_rejects_dated_market_expiration_without_price():
     place_pending_order.assert_not_called()
 
 
+def test_run_trade_place_dry_run_returns_preview_without_execution():
+    request = TradePlaceRequest(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        stop_loss=1.08,
+        take_profit=1.12,
+        dry_run=True,
+    )
+    place_market_order = MagicMock(return_value={"success": True, "path": "market"})
+    place_pending_order = MagicMock(return_value={"success": True, "path": "pending"})
+
+    result = run_trade_place(
+        request,
+        normalize_order_type_input=lambda value: ("BUY", None),
+        normalize_pending_expiration=lambda value: (value, False),
+        prevalidate_trade_place_market_input=lambda symbol, volume: {"error": "should not run"},
+        place_market_order=place_market_order,
+        place_pending_order=place_pending_order,
+        close_positions=lambda **kwargs: {"closed_count": 1},
+        safe_int_ticket=lambda value: value,
+    )
+
+    assert result["dry_run"] is True
+    assert result["pending"] is False
+    assert result["action"] == "place_market_order"
+    assert result["requested_sl"] == 1.08
+    assert result["requested_tp"] == 1.12
+    place_market_order.assert_not_called()
+    place_pending_order.assert_not_called()
+
+
 def test_run_trade_place_uses_candidate_tickets_when_position_ticket_is_missing():
     request = TradePlaceRequest(
         symbol="EURUSD",
