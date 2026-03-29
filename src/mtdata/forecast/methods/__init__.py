@@ -1,19 +1,27 @@
 """
-Forecast methods init file to ensure proper imports.
+Lazy exports for selected forecast method helpers.
 """
 
 from __future__ import annotations
 
-# Import specific functions to avoid wildcard issues
-from . import pretrained
+from importlib import import_module
+from typing import Any
 
-# Re-export the main forecast functions
-forecast_chronos_bolt = pretrained.forecast_chronos_bolt
-forecast_timesfm = pretrained.forecast_timesfm
-forecast_lag_llama = pretrained.forecast_lag_llama
+_PRETRAINED_EXPORTS = {
+    "forecast_chronos_bolt",
+    "forecast_timesfm",
+    "forecast_lag_llama",
+}
 
-__all__ = [
-    'forecast_chronos_bolt',
-    'forecast_timesfm', 
-    'forecast_lag_llama',
-]
+__all__ = sorted(_PRETRAINED_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    if name in _PRETRAINED_EXPORTS:
+        pretrained = import_module(f"{__name__}.pretrained")
+        return getattr(pretrained, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | _PRETRAINED_EXPORTS)
