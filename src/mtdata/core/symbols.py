@@ -24,6 +24,50 @@ from ..utils.mt5 import (
 
 logger = logging.getLogger(__name__)
 
+_SYMBOL_DESCRIBE_FIELDS: tuple[str, ...] = (
+    "name",
+    "description",
+    "path",
+    "bank",
+    "currency_base",
+    "currency_profit",
+    "currency_margin",
+    "digits",
+    "point",
+    "bidlow",
+    "bidhigh",
+    "asklow",
+    "askhigh",
+    "price_change",
+    "session_open",
+    "session_close",
+    "trade_mode",
+    "trade_exemode",
+    "trade_calc_mode",
+    "order_mode",
+    "expiration_mode",
+    "filling_mode",
+    "trade_contract_size",
+    "trade_tick_size",
+    "trade_tick_value",
+    "trade_tick_value_profit",
+    "trade_tick_value_loss",
+    "trade_stops_level",
+    "trade_freeze_level",
+    "volume_min",
+    "volume_max",
+    "volume_step",
+    "volume_limit",
+    "swap_mode",
+    "swap_long",
+    "swap_short",
+    "swap_rollover3days",
+    "spread_float",
+    "ticks_bookdepth",
+    "time",
+    "select",
+)
+
 
 @mcp.tool()
 def symbols_list(
@@ -201,11 +245,9 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
             }
 
             symbol_data = {}
-            excluded = {"spread", "ask", "bid", "visible", "custom", "n_fields", "n_sequence_fields"}
-            for attr in dir(symbol_info):
-                if attr.startswith("_"):
-                    continue
-                if attr in excluded:
+            available_attrs = set(dir(symbol_info))
+            for attr in _SYMBOL_DESCRIBE_FIELDS:
+                if attr not in available_attrs:
                     continue
                 try:
                     value = getattr(symbol_info, attr)

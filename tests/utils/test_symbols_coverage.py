@@ -451,3 +451,33 @@ class TestSymbolsDescribe:
         fn = _get_symbols_describe()
         res = fn("X")
         assert "error" in res
+
+    @patch(f"{_MT5}.symbol_info")
+    def test_omits_non_curated_symbol_fields(self, mock_info):
+        info = MagicMock()
+        info.__dir__ = lambda self: [
+            "name",
+            "digits",
+            "price_greeks_delta",
+            "volumehigh",
+            "session_buy_orders",
+            "trade_mode",
+        ]
+        info.name = "BTCUSD"
+        info.digits = 2
+        info.price_greeks_delta = 0.0
+        info.volumehigh = 0.0
+        info.session_buy_orders = 0
+        info.trade_mode = 4
+        mock_info.return_value = info
+
+        fn = _get_symbols_describe()
+        res = fn("BTCUSD")
+        sd = res["symbol"]
+
+        assert sd["name"] == "BTCUSD"
+        assert sd["digits"] == 2
+        assert sd["trade_mode"] == 4
+        assert "price_greeks_delta" not in sd
+        assert "volumehigh" not in sd
+        assert "session_buy_orders" not in sd
