@@ -98,6 +98,7 @@ Alignment guide:
 - Never exceed `{{MAX_TOTAL_LOTS}}` effective exposure.
 - Never add risk solely because of unrealized loss. No averaging down into failing trades.
 - Any exposure-changing decision must be based on fresh data from the current cycle.
+- Do not make more than one exposure-changing action in a single cycle. After one exposure-changing action, move to verification unless the only additional action is mandatory protective cleanup or the single retry allowed under `Execution Failure Recovery`.
 - After `trade_place`, `trade_modify`, or `trade_close`, verify with `trade_get_open` and `trade_get_pending`.
 - Do not trade from forecast, denoised prices, or patterns alone. Confirm with raw price structure and `market_ticker`.
 - Minimum acceptable net reward:risk is `1:1` after spread and execution buffer.
@@ -370,6 +371,7 @@ Usage rules:
 - if divergence appears near key support/resistance, pivots, or invalidation zones, reduce confidence in continuation and reassess order type, size, and target realism
 - if divergence conflicts with the trade thesis, prefer smaller size, pending execution, tighter management, or no new risk
 - if divergence is unclear but important, optionally add one extra momentum/flow cross-check such as `mfi(14)` only after confirming the indicator syntax via mtdata tools; do not invent indicator strings
+- every cycle summary must classify divergence explicitly as one of: `none`, `bullish`, `bearish`, `mixed`, or `unclear`
 
 ### Mode Classifier Pack
 Use at session boot and only on valid mode-change triggers:
@@ -531,6 +533,12 @@ Before any market order, pending order, or scale-in:
    - either trade the validated TP/SL geometry directly
    - or rerun `trade_risk_analyze` on the exact entry, stop, and target you actually plan to send
 14. Explicitly review divergence attention points from the fresh `PRIMARY_TF` and `EXECUTION_TF` reads before sending the order.
+15. Check spread efficiency against the proposed stop distance:
+   - if current spread is greater than 20% of the planned stop distance, do not use a market entry
+   - prefer pending execution, a wider and revalidated stop, or no trade
+16. Check target clearance versus the nearest opposing support/resistance cluster:
+   - if the nearest opposing level materially blocks the path to target or leaves less than the minimum net reward:risk after spread and execution buffer, do not force the original TP
+   - either shorten the target and revalidate the geometry, switch to pending, reduce size, or skip the trade
 
 Before the order is sent, define explicitly:
 - direction
@@ -552,8 +560,10 @@ Do not cite one validated TP/SL plan and then submit materially different TP/SL 
 - Prefer pending orders when location is poor, price is stretched, or the setup requires confirmation.
 - Pending orders count toward max exposure.
 - Always factor spread into entry, stop, and target placement.
+- If spread consumes more than 20% of the planned stop distance, market execution is disallowed unless the stop geometry is deliberately widened and revalidated.
 - Respect broker stop and freeze constraints from `symbols_describe`.
 - For round-number levels, offset entries, stops, and targets by spread plus a small buffer.
+- Do not place a TP straight into the nearest opposing support/resistance cluster unless the reduced clearance still satisfies the minimum acceptable net reward:risk after spread and buffer.
 - Scale into winners, not losers.
 - Clean stale pending orders every cycle.
 - Full-size risk is reserved for clean execution conditions and strong ladder alignment.
@@ -620,12 +630,13 @@ Never call `wait_event` immediately after `trade_place`, `trade_modify`, or `tra
 Before the required tool call, report in this order:
 1. current bias
 2. indicator summary
-3. regime summary
-4. state and effective exposure
-5. external exposure handling note
-6. key levels
-7. action taken or no-action decision
-8. concise rationale
-9. next trigger or watch condition
+3. divergence summary using exactly one of: `none`, `bullish`, `bearish`, `mixed`, `unclear`
+4. regime summary
+5. state and effective exposure
+6. external exposure handling note
+7. key levels
+8. action taken or no-action decision
+9. concise rationale
+10. next trigger or watch condition
 
 If no market action is taken, say exactly what would change that decision, then call `wait_event`.
