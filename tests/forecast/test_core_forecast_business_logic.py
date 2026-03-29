@@ -523,6 +523,44 @@ def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
     assert raw(request=ForecastConformalIntervalsRequest(symbol="EURUSD", method="theta", horizon=2))["error"] == "engine exploded"
 
 
+def test_run_forecast_conformal_intervals_routes_method_params_consistently():
+    captured = {}
+
+    def fake_backtest(**kwargs):
+        captured["backtest"] = kwargs
+        return {
+            "results": {
+                "theta": {
+                    "details": [
+                        {"forecast": [10.0], "actual": [9.0]},
+                    ]
+                }
+            }
+        }
+
+    def fake_forecast(**kwargs):
+        captured["forecast"] = kwargs
+        return {"forecast_price": [100.0]}
+
+    result = forecast_use_cases.run_forecast_conformal_intervals(
+        ForecastConformalIntervalsRequest(
+            symbol="EURUSD",
+            method="theta",
+            horizon=1,
+            steps=1,
+            spacing=1,
+            params={"seasonality": 24},
+        ),
+        backtest_impl=fake_backtest,
+        forecast_impl=fake_forecast,
+    )
+
+    assert captured["backtest"]["params_per_method"] == {"theta": {"seasonality": 24}}
+    assert "params" not in captured["backtest"]
+    assert captured["forecast"]["params"] == {"seasonality": 24}
+    assert result["ci_alpha"] == 0.1
+
+
 def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
     raw_tune = _unwrap(cf.forecast_tune_genetic)
     raw_barrier = _unwrap(cf.forecast_barrier_prob)
