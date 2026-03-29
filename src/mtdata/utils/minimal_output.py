@@ -774,6 +774,11 @@ def _normalize_trade_payload(
             out["results"] = rows
         return out
 
+    resolved_ticket = payload.get("position_ticket")
+    if _is_empty_value(resolved_ticket):
+        resolved_ticket = payload.get("ticket")
+    order_value = payload.get("order")
+
     _maybe_add_trade_key(out, "retcode_name", payload.get("retcode_name"))
     if "retcode_name" not in out:
         _maybe_add_trade_key(out, "retcode", payload.get("retcode"))
@@ -782,11 +787,10 @@ def _normalize_trade_payload(
     _maybe_add_trade_key(out, "order_type", payload.get("order_type"))
     _maybe_add_trade_key(out, "pending", payload.get("pending"))
     _maybe_add_trade_key(out, "action", payload.get("action"))
-    _maybe_add_trade_key(out, "order", payload.get("order"), skip_zero=True)
+    if verbose or str(order_value).strip() != str(resolved_ticket).strip():
+        _maybe_add_trade_key(out, "order", order_value, skip_zero=True)
     _maybe_add_trade_key(out, "deal", payload.get("deal"), skip_zero=True)
-    _maybe_add_trade_key(out, "ticket", payload.get("position_ticket"), skip_zero=True)
-    if "ticket" not in out:
-        _maybe_add_trade_key(out, "ticket", payload.get("ticket"), skip_zero=True)
+    _maybe_add_trade_key(out, "ticket", resolved_ticket, skip_zero=True)
     _maybe_add_trade_key(out, "volume", payload.get("volume"))
     _maybe_add_trade_key(out, "price", payload.get("requested_price"))
     if "price" not in out:

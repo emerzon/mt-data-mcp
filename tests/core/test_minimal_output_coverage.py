@@ -409,6 +409,19 @@ class TestNormalizeTradePayload:
         result = _normalize_trade_payload(payload, verbose=False, tool_name="trade_close")
         assert result == {}
 
+    def test_trade_place_compact_hides_duplicate_order_when_ticket_matches(self):
+        payload = {
+            "success": True,
+            "retcode_name": "TRADE_RETCODE_DONE",
+            "order": 4392901844,
+            "position_ticket": 4392901844,
+            "deal": 0,
+            "volume": 0.01,
+        }
+        result = _normalize_trade_payload(payload, verbose=False, tool_name="trade_place")
+        assert result["ticket"] == 4392901844
+        assert "order" not in result
+
 
 class TestNormalizeTradeTablePayload:
     def test_trade_history_default_view_hides_low_signal_order_columns(self):
