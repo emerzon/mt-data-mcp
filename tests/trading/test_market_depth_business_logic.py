@@ -1,19 +1,29 @@
 from __future__ import annotations
 
+import importlib
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
+import mtdata.core.market_depth as market_depth_mod
 from mtdata.core.market_depth import market_depth_fetch, market_ticker
+from mtdata.core._mcp_tools import get_tool_functions
 from mtdata.utils.mt5 import MT5ConnectionError
 
 
 def _raw_market_depth_fetch(symbol: str, spread: bool = False, compact: bool = False):
-    # Bypass @mcp.tool wrapper.
-    return market_depth_fetch.__wrapped__(symbol, spread=spread, compact=compact)
+    raw = getattr(market_depth_fetch, "__wrapped__", market_depth_fetch)
+    return raw(symbol, spread=spread, compact=compact)
 
 
 def _raw_market_ticker(symbol: str):
     return market_ticker.__wrapped__(symbol)
+
+
+@pytest.fixture(autouse=True)
+def _enable_market_depth(monkeypatch) -> None:
+    monkeypatch.setenv("MTDATA_ENABLE_MARKET_DEPTH_FETCH", "1")
 
 
 def test_market_depth_tick_fallback_includes_price_display() -> None:
@@ -204,6 +214,28 @@ def test_market_depth_returns_connection_error_payload() -> None:
         out = _raw_market_depth_fetch("BTCUSD")
 
     assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
+
+
+def test_market_depth_returns_env_gate_error_when_disabled(monkeypatch) -> None:
+    monkeypatch.delenv("MTDATA_ENABLE_MARKET_DEPTH_FETCH", raising=False)
+
+    out = _raw_market_depth_fetch("BTCUSD")
+
+    assert out["error"] == (
+        "market_depth_fetch is disabled. "
+        "Set MTDATA_ENABLE_MARKET_DEPTH_FETCH=1 to enable it."
+    )
+    assert out["recommended_alternative"] == "market_ticker"
+
+
+def test_market_depth_tool_not_registered_when_env_disabled(monkeypatch) -> None:
+    monkeypatch.delenv("MTDATA_ENABLE_MARKET_DEPTH_FETCH", raising=False)
+    reloaded = importlib.reload(market_depth_mod)
+    try:
+        assert "market_depth_fetch" not in get_tool_functions()
+    finally:
+        monkeypatch.setenv("MTDATA_ENABLE_MARKET_DEPTH_FETCH", "1")
+        importlib.reload(reloaded)
 
 
 def test_market_ticker_logs_finish_event(caplog) -> None:

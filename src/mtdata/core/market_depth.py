@@ -1,8 +1,9 @@
 
-from typing import Any, Dict
 import logging
 import math
+import os
 import time
+from typing import Any, Dict
 
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
@@ -11,10 +12,41 @@ from ..utils.utils import _format_time_minimal, _format_time_minimal_local, _use
 from ._mcp_instance import mcp
 
 logger = logging.getLogger(__name__)
+_MARKET_DEPTH_ENABLE_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
 
 
-@mcp.tool()
-def market_depth_fetch(symbol: str, spread: bool = False, compact: bool = False) -> Dict[str, Any]:
+def _market_depth_fetch_enabled() -> bool:
+    raw = os.getenv(_MARKET_DEPTH_ENABLE_ENV)
+    if raw is None:
+        return False
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _market_depth_disabled_payload() -> Dict[str, Any]:
+    return {
+        "error": (
+            "market_depth_fetch is disabled. "
+            f"Set {_MARKET_DEPTH_ENABLE_ENV}=1 to enable it."
+        ),
+        "recommended_alternative": "market_ticker",
+    }
+
+
+def _unregister_market_depth_fetch_tool() -> None:
+    try:
+        from . import _mcp_tools
+
+        registry = getattr(_mcp_tools, "_TOOL_REGISTRY", None)
+        if isinstance(registry, dict):
+            registry.pop("market_depth_fetch", None)
+        object_registry = getattr(_mcp_tools, "_TOOL_OBJECT_REGISTRY", None)
+        if isinstance(object_registry, dict):
+            object_registry.pop("market_depth_fetch", None)
+    except Exception:
+        pass
+
+
+def _market_depth_fetch_impl(symbol: str, spread: bool = False, compact: bool = False) -> Dict[str, Any]:
     """Return DOM if available; otherwise current bid/ask snapshot for `symbol`.
 
     Parameters: symbol
@@ -186,6 +218,30 @@ def market_depth_fetch(symbol: str, spread: bool = False, compact: bool = False)
         compact=compact,
         func=_run,
     )
+
+
+def _market_depth_fetch_disabled(symbol: str, spread: bool = False, compact: bool = False) -> Dict[str, Any]:
+    """Return DOM if available; otherwise current bid/ask snapshot for `symbol`.
+
+    Parameters: symbol
+    """
+    if _market_depth_fetch_enabled():
+        return _market_depth_fetch_impl(symbol, spread=spread, compact=compact)
+    return run_logged_operation(
+        logger,
+        operation="market_depth_fetch",
+        symbol=symbol,
+        spread=spread,
+        compact=compact,
+        func=_market_depth_disabled_payload,
+    )
+
+
+if _market_depth_fetch_enabled():
+    market_depth_fetch = mcp.tool()(_market_depth_fetch_impl)
+else:
+    _unregister_market_depth_fetch_tool()
+    market_depth_fetch = _market_depth_fetch_disabled
 
 
 @mcp.tool()
