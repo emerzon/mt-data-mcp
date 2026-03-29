@@ -6,7 +6,7 @@ os.environ.setdefault("NIXTLA_ID_AS_COL", "1")
 
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
-from .exceptions import ForecastError
+from .exceptions import ForecastError, ForecastResultError, raise_if_error_result
 from .forecast_registry import get_forecast_methods_data
 
 # Re-exported for compatibility with older tests/importers that patch these seams.
@@ -14,7 +14,7 @@ from .common import fetch_history as _fetch_history
 from .forecast_preprocessing import _create_dimred_reducer
 
 
-def forecast(
+def execute_forecast(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     method: ForecastMethodLiteral = "theta",
@@ -31,6 +31,64 @@ def forecast(
     dimred_method: Optional[str] = None,
     dimred_params: Optional[Dict[str, Any]] = None,
     # Custom target specification (base column/alias, transform, and horizon aggregation)
+    target_spec: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Internal forecast entrypoint that raises ForecastError on failure."""
+    try:
+        method_l = str(method).lower().strip()
+        quantity_l = str(quantity).lower().strip()
+
+        if quantity_l == 'volatility' or method_l.startswith('vol_'):
+            from .volatility import forecast_volatility
+            result = forecast_volatility(
+                symbol=symbol,
+                timeframe=timeframe,
+                horizon=horizon,
+                method=method,
+                params=params,
+                as_of=as_of
+            )
+            return raise_if_error_result(result)
+
+        from .forecast_engine import forecast_engine
+
+        result = forecast_engine(
+            symbol=symbol,
+            timeframe=timeframe,
+            method=method,
+            horizon=horizon,
+            lookback=lookback,
+            as_of=as_of,
+            params=params,
+            ci_alpha=ci_alpha,
+            quantity=quantity,
+            denoise=denoise,
+            features=features,
+            dimred_method=dimred_method,
+            dimred_params=dimred_params,
+            target_spec=target_spec,
+        )
+        return raise_if_error_result(result)
+    except ForecastError:
+        raise
+    except Exception as exc:
+        raise ForecastError(str(exc)) from exc
+
+
+def forecast(
+    symbol: str,
+    timeframe: TimeframeLiteral = "H1",
+    method: ForecastMethodLiteral = "theta",
+    horizon: int = 12,
+    lookback: Optional[int] = None,
+    as_of: Optional[str] = None,
+    params: Optional[Dict[str, Any]] = None,
+    ci_alpha: Optional[float] = 0.05,
+    quantity: Literal['price','return','volatility'] = 'price',  # type: ignore
+    denoise: Optional[DenoiseSpec] = None,
+    features: Optional[Dict[str, Any]] = None,
+    dimred_method: Optional[str] = None,
+    dimred_params: Optional[Dict[str, Any]] = None,
     target_spec: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Fast forecasts for the next `horizon` bars using lightweight methods.
@@ -50,23 +108,7 @@ def forecast(
         - `dimred_method`: Dimensionality reduction method (e.g., "pca").
     """
     try:
-        method_l = str(method).lower().strip()
-        quantity_l = str(quantity).lower().strip()
-
-        if quantity_l == 'volatility' or method_l.startswith('vol_'):
-            from .volatility import forecast_volatility
-            return forecast_volatility(
-                symbol=symbol,
-                timeframe=timeframe,
-                horizon=horizon,
-                method=method,
-                params=params,
-                as_of=as_of
-            )
-
-        from .forecast_engine import forecast_engine
-
-        return forecast_engine(
+        return execute_forecast(
             symbol=symbol,
             timeframe=timeframe,
             method=method,
@@ -82,7 +124,7 @@ def forecast(
             dimred_params=dimred_params,
             target_spec=target_spec,
         )
-    except ForecastError:
-        raise
+    except ForecastResultError as exc:
+        return {"error": str(exc)}
     except Exception as exc:
         raise ForecastError(str(exc)) from exc

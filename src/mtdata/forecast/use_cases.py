@@ -9,9 +9,9 @@ import time
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
-from .backtest import forecast_backtest as _forecast_backtest_impl
-from .exceptions import ForecastError
-from .forecast import forecast as _forecast_impl
+from .backtest import execute_forecast_backtest as _forecast_backtest_impl
+from .exceptions import ForecastError, raise_if_error_result
+from .forecast import execute_forecast as _forecast_impl
 from ..core.execution_logging import (
     infer_result_success,
     log_operation_exception,
@@ -308,7 +308,7 @@ def run_forecast_conformal_intervals(
     )
     try:
         # 1) Rolling backtest to collect residuals.
-        bt = backtest_impl(
+        bt = raise_if_error_result(backtest_impl(
             symbol=request.symbol,
             timeframe=request.timeframe,
             horizon=int(request.horizon),
@@ -318,34 +318,10 @@ def run_forecast_conformal_intervals(
             denoise=request.denoise,
             params_per_method={str(request.method): dict(request.params or {})},
             detail="full",
-        )
-        if "error" in bt:
-            result = bt
-            log_operation_finish(
-                logger,
-                operation="forecast_conformal_intervals",
-                started_at=started_at,
-                success=infer_result_success(result),
-                symbol=request.symbol,
-                timeframe=request.timeframe,
-                method=request.method,
-                horizon=request.horizon,
-            )
-            return result
+        ))
         res = bt.get("results", {}).get(str(request.method))
         if not res or not res.get("details"):
-            result = {"error": "Conformal calibration failed: no backtest details"}
-            log_operation_finish(
-                logger,
-                operation="forecast_conformal_intervals",
-                started_at=started_at,
-                success=False,
-                symbol=request.symbol,
-                timeframe=request.timeframe,
-                method=request.method,
-                horizon=request.horizon,
-            )
-            return result
+            raise ForecastError("Conformal calibration failed: no backtest details")
 
         # Build per-step residuals |y_hat_i - y_i|.
         fh = int(request.horizon)
@@ -371,41 +347,17 @@ def run_forecast_conformal_intervals(
         ]
 
         # 2) Forecast now (latest).
-        out = forecast_impl(
+        out = raise_if_error_result(forecast_impl(
             symbol=request.symbol,
             timeframe=request.timeframe,
             method=request.method,
             horizon=int(request.horizon),
             params=request.params,
             denoise=request.denoise,
-        )
-        if "error" in out:
-            result = out
-            log_operation_finish(
-                logger,
-                operation="forecast_conformal_intervals",
-                started_at=started_at,
-                success=infer_result_success(result),
-                symbol=request.symbol,
-                timeframe=request.timeframe,
-                method=request.method,
-                horizon=request.horizon,
-            )
-            return result
+        ))
         yhat = out.get("forecast_price") or []
         if not yhat:
-            result = {"error": "Empty point forecast for conformal intervals"}
-            log_operation_finish(
-                logger,
-                operation="forecast_conformal_intervals",
-                started_at=started_at,
-                success=False,
-                symbol=request.symbol,
-                timeframe=request.timeframe,
-                method=request.method,
-                horizon=request.horizon,
-            )
-            return result
+            raise ForecastError("Empty point forecast for conformal intervals")
         yhat_arr = _np.array(yhat, dtype=float)
         fh_eff = min(fh, yhat_arr.size)
         lo = _np.empty(fh_eff, dtype=float)

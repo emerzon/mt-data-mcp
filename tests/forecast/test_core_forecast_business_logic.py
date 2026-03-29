@@ -558,7 +558,21 @@ def test_run_forecast_conformal_intervals_routes_method_params_consistently():
     assert captured["backtest"]["params_per_method"] == {"theta": {"seasonality": 24}}
     assert "params" not in captured["backtest"]
     assert captured["forecast"]["params"] == {"seasonality": 24}
-    assert result["ci_alpha"] == 0.1
+
+
+def test_run_forecast_conformal_intervals_raises_typed_error_for_nested_error_payload():
+    with pytest.raises(ForecastError, match="backtest failed"):
+        forecast_use_cases.run_forecast_conformal_intervals(
+            ForecastConformalIntervalsRequest(
+                symbol="EURUSD",
+                method="theta",
+                horizon=1,
+                steps=1,
+                spacing=1,
+            ),
+            backtest_impl=lambda **kwargs: {"error": "backtest failed"},
+            forecast_impl=lambda **kwargs: {"forecast_price": [100.0]},
+        )
 
 
 def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):

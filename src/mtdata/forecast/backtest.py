@@ -6,6 +6,7 @@ from ..shared.constants import TIMEFRAME_MAP
 from ..shared.schema import TimeframeLiteral, DenoiseSpec
 from ..shared.validators import invalid_timeframe_error
 from ..utils.utils import _format_time_minimal
+from .exceptions import ForecastError, raise_if_error_result
 from .volatility import forecast_volatility
 from .forecast import forecast
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
@@ -260,7 +261,7 @@ def forecast_backtest(
                         pm_raw = params_map.get(method) or {}
                         pm = dict(pm_raw) if isinstance(pm_raw, dict) else {}
                         proxy = pm.pop('proxy', None) if isinstance(pm, dict) else None
-                        r = forecast_volatility(  # type: ignore
+                        r = raise_if_error_result(forecast_volatility(  # type: ignore
                             symbol=symbol,
                             timeframe=timeframe,
                             method=method,  # type: ignore
@@ -269,13 +270,13 @@ def forecast_backtest(
                             params=pm if isinstance(pm, dict) else None,
                             proxy=proxy,  # type: ignore
                             denoise=_dn_used,
-                        )
+                        ))
                     else:
                         # Choose per-method params falling back to global params
                         pm = params_map.get(method)
                         if pm is None:
                             pm = params
-                        r = forecast(
+                        r = raise_if_error_result(forecast(
                             symbol=symbol,
                             timeframe=timeframe,
                             method=method,  # type: ignore[arg-type]
@@ -287,12 +288,9 @@ def forecast_backtest(
                             features=features,
                             dimred_method=dimred_method,
                             dimred_params=dimred_params,
-                        )
+                        ))
                 except Exception as ex:
                     per_anchor.append({"anchor": anchor_time, "success": False, "error": str(ex)})
-                    continue
-                if 'error' in r:
-                    per_anchor.append({"anchor": anchor_time, "success": False, "error": r['error']})
                     continue
                 if quantity == 'volatility':
                     # Compute realized horizon sigma from the anchor close through the future path.
@@ -477,3 +475,13 @@ def forecast_backtest(
         }
     except Exception as e:
         return {"error": f"Error in forecast_backtest: {str(e)}"}
+
+
+def execute_forecast_backtest(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    """Internal backtest entrypoint that raises typed errors for result payload failures."""
+    try:
+        return raise_if_error_result(forecast_backtest(*args, **kwargs))
+    except ForecastError:
+        raise
+    except Exception as exc:
+        raise ForecastError(str(exc)) from exc

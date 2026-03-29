@@ -136,6 +136,13 @@ def test_forecast_engine_error_passthrough(monkeypatch):
     assert captured["dimred_method"] == "pca"
 
 
+def test_execute_forecast_raises_typed_exception_on_error_payload(monkeypatch):
+    monkeypatch.setattr(fe, "forecast_engine", lambda **kwargs: {"error": "engine failure"})
+
+    with pytest.raises(ForecastError, match="engine failure"):
+        ff.execute_forecast(symbol="EURUSD", timeframe="H1", method="theta")
+
+
 def test_forecast_target_spec_is_delegated_without_local_validation(monkeypatch):
     captured = {}
 

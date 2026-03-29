@@ -48,11 +48,15 @@ def _forecast_tune_module():
 
 
 def _forecast_impl(**kwargs):
-    return _forecast_module().forecast(**kwargs)
+    module = _forecast_module()
+    func = getattr(module, "execute_forecast", module.forecast)
+    return func(**kwargs)
 
 
 def _forecast_backtest_impl(**kwargs):
-    return _forecast_backtest_module().forecast_backtest(**kwargs)
+    module = _forecast_backtest_module()
+    func = getattr(module, "execute_forecast_backtest", module.forecast_backtest)
+    return func(**kwargs)
 
 
 def _forecast_volatility_impl(**kwargs):
@@ -73,6 +77,16 @@ def _optuna_search_impl(**kwargs):
 
 def _discover_sktime_forecasters():
     return _forecast_use_cases_module()._discover_sktime_forecasters()
+
+
+def _clear_discover_sktime_forecasters_cache() -> None:
+    func = getattr(_forecast_use_cases_module(), "_discover_sktime_forecasters", None)
+    cache_clear = getattr(func, "cache_clear", None)
+    if callable(cache_clear):
+        cache_clear()
+
+
+_discover_sktime_forecasters.cache_clear = _clear_discover_sktime_forecasters_cache
 
 
 def _resolve_sktime_forecaster(*args, **kwargs):
