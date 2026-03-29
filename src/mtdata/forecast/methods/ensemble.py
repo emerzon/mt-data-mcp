@@ -6,7 +6,7 @@ import math
 import numpy as np
 import pandas as pd
 
-from ..interface import ForecastMethod, ForecastResult
+from ..interface import ForecastCallContext, ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 
 _FAILURE_DETAIL_LIMIT = 12
@@ -232,6 +232,21 @@ class EnsembleMethod(ForecastMethod):
     @property
     def supports_features(self) -> Dict[str, bool]:
         return {"price": True, "return": True, "volatility": True, "ci": False}
+
+    def prepare_forecast_call(
+        self,
+        params: Dict[str, Any],
+        call_kwargs: Dict[str, Any],
+        context: ForecastCallContext,
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        from .. import forecast_engine as _forecast_engine
+
+        call_kwargs_out = dict(call_kwargs)
+        call_kwargs_out["ensemble_dispatch_method"] = _forecast_engine._ensemble_dispatch_method
+        call_kwargs_out["prepare_ensemble_cv"] = _forecast_engine._prepare_ensemble_cv
+        call_kwargs_out["normalize_weights"] = _forecast_engine._normalize_weights
+        call_kwargs_out["get_available_methods"] = _forecast_engine._get_available_methods
+        return dict(params), call_kwargs_out
 
     def forecast(
         self,

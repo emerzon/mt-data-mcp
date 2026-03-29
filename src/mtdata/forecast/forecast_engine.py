@@ -27,6 +27,7 @@ from .common import (
     next_times_from_last,
 )
 from .forecast_validation import format_invalid_method_error
+from .interface import ForecastCallContext
 from .registry import ForecastRegistry
 from .target_builder import build_target_series
 
@@ -456,14 +457,6 @@ def _run_registered_forecast_method(
 ) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
     forecaster = ForecastRegistry.get(method_l)
     method_params = dict(params)
-    if method_l == 'analog':
-        method_params.setdefault('symbol', symbol)
-        method_params.setdefault('timeframe', timeframe)
-        method_params.setdefault('base_col', base_col)
-        if as_of is not None:
-            method_params.setdefault('as_of', as_of)
-        if denoise_spec_used is not None:
-            method_params.setdefault('denoise', denoise_spec_used)
     if ci_alpha is not None and 'ci_alpha' not in method_params:
         method_params['ci_alpha'] = ci_alpha
 
@@ -475,15 +468,29 @@ def _run_registered_forecast_method(
     }
     if X is not None:
         call_kwargs['exog_used'] = X
-    if method_l == 'analog':
-        call_kwargs['history_df'] = df.copy()
-        call_kwargs['history_base_col'] = str(base_col)
-        call_kwargs['history_denoise_spec'] = denoise_spec_used
-    if method_l == 'ensemble':
-        call_kwargs['ensemble_dispatch_method'] = _ensemble_dispatch_method
-        call_kwargs['prepare_ensemble_cv'] = _prepare_ensemble_cv
-        call_kwargs['normalize_weights'] = _normalize_weights
-        call_kwargs['get_available_methods'] = _get_available_methods
+    call_context = ForecastCallContext(
+        method=method_l,
+        symbol=symbol,
+        timeframe=str(timeframe),
+        quantity=quantity_l,
+        horizon=int(horizon),
+        seasonality=int(seasonality),
+        base_col=str(base_col),
+        ci_alpha=ci_alpha,
+        as_of=as_of,
+        denoise_spec_used=denoise_spec_used,
+        history_df=df,
+        target_series=target_series,
+        exog_used=X,
+        future_exog=future_exog,
+    )
+    prepare_call = getattr(forecaster, "prepare_forecast_call", None)
+    if callable(prepare_call):
+        method_params, call_kwargs = prepare_call(
+            method_params,
+            call_kwargs,
+            call_context,
+        )
 
     res = forecaster.forecast(
         target_series,

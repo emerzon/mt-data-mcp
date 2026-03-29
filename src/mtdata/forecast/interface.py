@@ -11,6 +11,24 @@ class ForecastResult:
     params_used: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = None
 
+
+@dataclass(frozen=True)
+class ForecastCallContext:
+    method: str
+    symbol: str
+    timeframe: str
+    quantity: str
+    horizon: int
+    seasonality: int
+    base_col: str
+    ci_alpha: Optional[float]
+    as_of: Optional[str]
+    denoise_spec_used: Optional[Any]
+    history_df: pd.DataFrame
+    target_series: pd.Series
+    exog_used: Optional[np.ndarray]
+    future_exog: Optional[np.ndarray]
+
 class ForecastMethod(ABC):
     """Abstract base class for all forecasting methods."""
     
@@ -72,3 +90,12 @@ class ForecastMethod(ABC):
             List of error messages (empty if valid).
         """
         return []
+
+    def prepare_forecast_call(
+        self,
+        params: Dict[str, Any],
+        call_kwargs: Dict[str, Any],
+        context: ForecastCallContext,
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """Allow methods to request engine context without engine name checks."""
+        return params, call_kwargs

@@ -311,6 +311,65 @@ def test_forecast_engine_prefetched_non_ensemble_success_and_failures(monkeypatc
     assert out["error"].startswith("Forecast method 'naive' failed: method exploded")
 
 
+def test_run_registered_forecast_method_uses_method_prepare_hook(monkeypatch):
+    captured = {}
+
+    class HookedForecaster:
+        def prepare_forecast_call(self, params, call_kwargs, context):
+            captured["context"] = context
+            params = dict(params)
+            call_kwargs = dict(call_kwargs)
+            params["prepared"] = context.symbol
+            call_kwargs["prepared_flag"] = context.base_col
+            return params, call_kwargs
+
+        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+            captured["params"] = dict(params)
+            captured["kwargs"] = dict(kwargs)
+            return ForecastResult(
+                forecast=np.array([float(series.iloc[-1])], dtype=float),
+                params_used={"prepared": True},
+                metadata={"hooked": True},
+            )
+
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return HookedForecaster()
+
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+
+    forecast, ci_values, metadata = fe._run_registered_forecast_method(
+        method_l="theta",
+        method="theta",
+        df=_df(20),
+        target_series=pd.Series([1.0, 2.0, 3.0], name="close"),
+        horizon=1,
+        seasonality=24,
+        params={"alpha": 1},
+        ci_alpha=0.05,
+        as_of="2024-01-01",
+        quantity_l="price",
+        symbol="EURUSD",
+        timeframe="H1",
+        base_col="close",
+        denoise_spec_used={"method": "ema"},
+        X=np.array([[1.0], [2.0], [3.0]], dtype=float),
+        future_exog=np.array([[4.0]], dtype=float),
+    )
+
+    assert forecast.tolist() == [3.0]
+    assert ci_values is None
+    assert metadata["hooked"] is True
+    assert metadata["params_used"] == {"prepared": True}
+    assert captured["params"]["prepared"] == "EURUSD"
+    assert captured["kwargs"]["prepared_flag"] == "close"
+    assert captured["kwargs"]["exog_used"].shape == (3, 1)
+    assert captured["context"].timeframe == "H1"
+    assert captured["context"].quantity == "price"
+    assert captured["context"].future_exog.shape == (1, 1)
+
+
 def test_forecast_engine_preserves_prefetched_denoised_base_column(monkeypatch):
     captured = {}
 
@@ -531,7 +590,7 @@ def test_forecast_engine_warns_when_ci_requested_but_method_has_no_intervals(mon
 def test_forecast_engine_injects_context_for_analog(monkeypatch):
     captured = {}
 
-    class CaptureForecaster:
+    class CaptureForecaster(fe._analog_methods.AnalogMethod):
         def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
             captured["params"] = dict(params)
             captured["kwargs"] = dict(kwargs)
@@ -578,7 +637,7 @@ def test_forecast_engine_injects_context_for_analog(monkeypatch):
 def test_forecast_engine_injects_denoise_context_for_analog(monkeypatch):
     captured = {}
 
-    class CaptureForecaster:
+    class CaptureForecaster(fe._analog_methods.AnalogMethod):
         def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
             captured["params"] = dict(params)
             captured["kwargs"] = dict(kwargs)

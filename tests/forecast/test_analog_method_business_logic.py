@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from mtdata.forecast.interface import ForecastCallContext
 from mtdata.forecast.methods.analog import AnalogMethod
 from mtdata.shared import constants as shared_constants
 
@@ -15,6 +16,39 @@ def test_analog_method_metadata_properties():
     assert "scipy" in method.required_packages
     assert method.supports_features["price"] is True
     assert method.supports_features["return"] is False
+
+
+def test_analog_method_prepare_forecast_call_injects_history_context():
+    method = AnalogMethod()
+    history = pd.DataFrame({"time": [1.0, 2.0], "close": [100.0, 101.0]})
+    context = ForecastCallContext(
+        method="analog",
+        symbol="EURUSD",
+        timeframe="H1",
+        quantity="price",
+        horizon=2,
+        seasonality=24,
+        base_col="close_dn",
+        ci_alpha=0.1,
+        as_of="2024-01-01",
+        denoise_spec_used={"method": "ema"},
+        history_df=history,
+        target_series=pd.Series([100.0, 101.0], name="close_dn"),
+        exog_used=None,
+        future_exog=None,
+    )
+
+    params, kwargs = method.prepare_forecast_call({"window_size": 32}, {"timeframe": "H1"}, context)
+
+    assert params["symbol"] == "EURUSD"
+    assert params["timeframe"] == "H1"
+    assert params["base_col"] == "close_dn"
+    assert params["as_of"] == "2024-01-01"
+    assert params["denoise"] == {"method": "ema"}
+    assert kwargs["history_base_col"] == "close_dn"
+    assert kwargs["history_denoise_spec"] == {"method": "ema"}
+    assert isinstance(kwargs["history_df"], pd.DataFrame)
+    assert kwargs["history_df"] is not history
 
 
 def test_analog_method_rejects_derived_or_missing_series():

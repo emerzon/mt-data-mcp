@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from mtdata.forecast.interface import ForecastCallContext
+from mtdata.forecast import forecast_engine as fe
 from mtdata.forecast.methods import ensemble as em
 
 
@@ -67,3 +69,31 @@ def test_ensemble_reports_component_failures():
     assert np.allclose(out.forecast, [5.0, 6.0])
     assert out.metadata["component_failures"][0]["method"] == "bad"
     assert out.metadata["component_failures"][0]["error"] == "boom"
+
+
+def test_ensemble_prepare_forecast_call_injects_engine_helpers():
+    method = em.EnsembleMethod()
+    context = ForecastCallContext(
+        method="ensemble",
+        symbol="EURUSD",
+        timeframe="H1",
+        quantity="price",
+        horizon=2,
+        seasonality=24,
+        base_col="close",
+        ci_alpha=0.05,
+        as_of=None,
+        denoise_spec_used=None,
+        history_df=pd.DataFrame({"time": [1.0], "close": [100.0]}),
+        target_series=pd.Series([100.0], name="close"),
+        exog_used=None,
+        future_exog=None,
+    )
+
+    params, kwargs = method.prepare_forecast_call({"methods": ["naive"]}, {}, context)
+
+    assert params == {"methods": ["naive"]}
+    assert kwargs["ensemble_dispatch_method"] is fe._ensemble_dispatch_method
+    assert kwargs["prepare_ensemble_cv"] is fe._prepare_ensemble_cv
+    assert kwargs["normalize_weights"] is fe._normalize_weights
+    assert kwargs["get_available_methods"] is fe._get_available_methods

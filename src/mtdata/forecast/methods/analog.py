@@ -5,7 +5,7 @@ import pandas as pd
 
 from ...utils.patterns import build_index
 from ...utils.mt5 import _mt5_epoch_to_utc
-from ..interface import ForecastMethod, ForecastResult
+from ..interface import ForecastCallContext, ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 
 
@@ -111,6 +111,26 @@ class AnalogMethod(ForecastMethod):
     @property
     def supports_features(self) -> Dict[str, bool]:
         return {"price": True, "return": False, "volatility": False, "ci": True}
+
+    def prepare_forecast_call(
+        self,
+        params: Dict[str, Any],
+        call_kwargs: Dict[str, Any],
+        context: ForecastCallContext,
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        params_out = dict(params)
+        call_kwargs_out = dict(call_kwargs)
+        params_out.setdefault("symbol", context.symbol)
+        params_out.setdefault("timeframe", context.timeframe)
+        params_out.setdefault("base_col", context.base_col)
+        if context.as_of is not None:
+            params_out.setdefault("as_of", context.as_of)
+        if context.denoise_spec_used is not None:
+            params_out.setdefault("denoise", context.denoise_spec_used)
+        call_kwargs_out["history_df"] = context.history_df.copy()
+        call_kwargs_out["history_base_col"] = context.base_col
+        call_kwargs_out["history_denoise_spec"] = context.denoise_spec_used
+        return params_out, call_kwargs_out
 
     def _record_timeframe_diagnostic(self, timeframe: str, diagnostic: Dict[str, Any]) -> None:
         diag = dict(diagnostic)
