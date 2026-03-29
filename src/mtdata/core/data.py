@@ -147,14 +147,14 @@ def data_fetch_ticks(
 def wait_event(
     instrument: str,
     timeframe: TimeframeLiteral = "M1",
-    watch_tick_count_spike: bool = False,
+    watch_tick_count_spike: bool = True,
 ) -> Dict[str, Any]:
     """Wait for position lifecycle events on an instrument until the next timeframe boundary.
 
     The public tool focuses on position state changes for the instrument:
     `position_opened`, `position_closed`, `tp_hit`, and `sl_hit`.
-    When `watch_tick_count_spike=true`, it also wakes on a significant
-    tick-count activity surge for the instrument.
+    By default it also wakes on a significant tick-count activity surge
+    for the instrument; set `watch_tick_count_spike=false` to disable it.
     It stops at the next candle close for `timeframe` if no watched event
     happens first.
     """

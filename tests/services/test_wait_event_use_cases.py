@@ -155,16 +155,16 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
         "position_closed",
         "tp_hit",
         "sl_hit",
+        "tick_count_spike",
     ]
     assert "max_wait_seconds" not in result
 
-    with_tick_count = raw("BTCUSD", "M1", True)
-    assert [item.type for item in with_tick_count["watch_for"]] == [
+    without_tick_count = raw("BTCUSD", "M1", False)
+    assert [item.type for item in without_tick_count["watch_for"]] == [
         "position_opened",
         "position_closed",
         "tp_hit",
         "sl_hit",
-        "tick_count_spike",
     ]
 
 
