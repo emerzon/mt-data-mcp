@@ -9,7 +9,7 @@ import pandas as pd
 from ..shared.constants import TIMEFRAME_MAP
 from ..shared.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
 from ..shared.validators import invalid_timeframe_error
-from .forecast_methods import FORECAST_METHODS, validate_method_params, get_method_requirements
+from .forecast_methods import get_forecast_method_names, validate_method_params, get_method_requirements
 
 
 class ForecastValidationError(Exception):
@@ -62,8 +62,9 @@ def validate_method(method: ForecastMethodLiteral) -> List[str]:
     """Validate forecast method parameter."""
     errors = []
     method_l = str(method).lower().strip()
-    if method_l not in FORECAST_METHODS:
-        errors.append(format_invalid_method_error(method, list(FORECAST_METHODS)))
+    valid_methods = list(get_forecast_method_names())
+    if method_l not in valid_methods:
+        errors.append(format_invalid_method_error(method, valid_methods))
     return errors
 
 

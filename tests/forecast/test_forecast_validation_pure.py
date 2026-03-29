@@ -7,6 +7,7 @@ from mtdata.forecast.forecast_validation import (
     validate_horizon,
     validate_lookback,
     validate_ci_alpha,
+    validate_method,
     validate_quantity_method_combination,
     validate_denoise_spec,
     validate_features_spec,
@@ -19,6 +20,7 @@ from mtdata.forecast.forecast_validation import (
     sanitize_params,
     ForecastValidationError,
 )
+import mtdata.forecast.forecast_validation as fv
 
 
 class TestValidateHorizon:
@@ -80,6 +82,16 @@ class TestValidateCiAlpha:
     def test_non_numeric(self):
         errors = validate_ci_alpha("abc")
         assert len(errors) > 0
+
+
+class TestValidateMethod:
+    def test_reads_live_method_catalog(self, monkeypatch):
+        monkeypatch.setattr(fv, "get_forecast_method_names", lambda: ("theta", "custom_method"))
+
+        assert validate_method("custom_method") == []
+        errors = validate_method("missing")
+        assert errors
+        assert "Invalid method: missing." in errors[0]
 
 
 class TestValidateQuantityMethodCombination:

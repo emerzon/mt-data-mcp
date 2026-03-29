@@ -10,16 +10,21 @@ from .forecast_registry import (
     get_forecast_methods_data as _registry_methods_data,
 )
 
-# Supported forecast methods (derived from registry to avoid drift)
-_METHOD_DATA = _registry_methods_data()
-FORECAST_METHODS = tuple(
-    m.get("method") for m in _METHOD_DATA.get("methods", []) if m.get("method")
-)
-
-
 def get_forecast_methods_data() -> Dict[str, Any]:
     """Get comprehensive data about available forecast methods."""
     return _registry_methods_data()
+
+
+def get_forecast_method_names() -> tuple[str, ...]:
+    """Return forecast method names from the current registry-derived catalog."""
+    methods = get_forecast_methods_data().get("methods", [])
+    if not isinstance(methods, list):
+        return ()
+    return tuple(
+        str(method_def.get("method"))
+        for method_def in methods
+        if isinstance(method_def, dict) and method_def.get("method")
+    )
 
 
 def _find_method_definition(method: str) -> Optional[Dict[str, Any]]:

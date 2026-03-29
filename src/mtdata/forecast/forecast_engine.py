@@ -256,8 +256,6 @@ def _prepare_ensemble_cv(
 def _get_available_methods():
     return tuple(ForecastRegistry.get_all_method_names())
 
-_FORECAST_METHODS = _get_available_methods()
-
 
 
 def _calculate_lookback_bars(method_l: str, horizon: int, lookback: Optional[int],

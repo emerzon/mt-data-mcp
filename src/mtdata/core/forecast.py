@@ -597,7 +597,13 @@ def _forecast_list_library_models_impl(
     lib = str(library).strip().lower()
     if lib == "native":
         try:
-            from mtdata.forecast.forecast_methods import FORECAST_METHODS as _METHODS
+            methods_data = _get_forecast_methods_data()
+            methods = methods_data.get("methods", []) if isinstance(methods_data, dict) else []
+            _METHODS = [
+                str(row.get("method"))
+                for row in methods
+                if isinstance(row, dict) and row.get("method")
+            ]
         except Exception:
             _METHODS = ()
 
