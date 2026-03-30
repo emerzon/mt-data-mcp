@@ -332,6 +332,10 @@ def wait_event(
     to adjacent daily pivot bands for intraday waits and same-timeframe pivots
     for daily-or-higher waits.
 
+    Boundary waits belong in `end_on` as `{"type": "candle_close", ...}`.
+    `watch_for` is for market/account events, and the canonical price-level
+    event name is `price_touch_level`.
+
     Advanced callers can pass explicit `watch_for` and `end_on` event specs to
     use the richer wait-event engine directly. When explicit `watch_for` is
     provided, `watch_tick_count_spike` no longer alters the watcher list.

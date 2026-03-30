@@ -490,6 +490,58 @@ class StopThreatEventSpec(_WaitAccountEventBase):
         return 0.0 if validated is None else float(validated)
 
 
+_WAIT_EVENT_TYPE_ALIASES = {
+    "price_level_touch": "price_touch_level",
+}
+
+
+def _normalize_wait_event_spec_item(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    normalized = dict(value)
+    event_type = str(normalized.get("type") or "").strip()
+    if event_type in _WAIT_EVENT_TYPE_ALIASES:
+        normalized["type"] = _WAIT_EVENT_TYPE_ALIASES[event_type]
+    return normalized
+
+
+def _normalize_wait_event_request_payload(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+
+    data = dict(value)
+    watch_for_input = data.get("watch_for")
+    end_on_input = data.get("end_on")
+
+    if not isinstance(watch_for_input, list) and not isinstance(end_on_input, list):
+        return data
+
+    watch_for_out: List[Any] = []
+    end_on_out: List[Any] = []
+
+    if isinstance(watch_for_input, list):
+        for item in watch_for_input:
+            normalized = _normalize_wait_event_spec_item(item)
+            if isinstance(normalized, dict) and str(normalized.get("type") or "").strip() == "candle_close":
+                end_on_out.append(normalized)
+            else:
+                watch_for_out.append(normalized)
+
+    if isinstance(end_on_input, list):
+        for item in end_on_input:
+            normalized = _normalize_wait_event_spec_item(item)
+            if isinstance(normalized, dict) and str(normalized.get("type") or "").strip() == "candle_close":
+                end_on_out.append(normalized)
+            else:
+                watch_for_out.append(normalized)
+
+    if isinstance(watch_for_input, list) or watch_for_out:
+        data["watch_for"] = watch_for_out
+    if isinstance(end_on_input, list) or end_on_out:
+        data["end_on"] = end_on_out
+    return data
+
+
 WaitWatchEventSpec = Annotated[
     OrderCreatedEventSpec
     | OrderFilledEventSpec
@@ -528,6 +580,11 @@ class WaitEventRequest(BaseModel):
     poll_interval_seconds: float = 0.5
     max_wait_seconds: Optional[float] = 86400.0
     accept_preexisting: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_event_names(cls, value: Any) -> Any:
+        return _normalize_wait_event_request_payload(value)
 
     @field_validator("order_ticket")
     @classmethod

@@ -115,3 +115,19 @@ def test_wait_event_request_parses_market_event_specs() -> None:
     assert request.watch_for[9].type == "pending_near_fill"
     assert request.watch_for[10].type == "stop_threat"
     assert request.end_on[0].type == "candle_close"
+
+
+def test_wait_event_request_normalizes_legacy_event_names() -> None:
+    request = WaitEventRequest.model_validate(
+        {
+            "symbol": "EURUSD",
+            "watch_for": [
+                {"type": "candle_close", "timeframe": "M15"},
+                {"type": "price_level_touch", "level": 1.1454, "tolerance": 0.0002},
+            ],
+        }
+    )
+
+    assert [item.type for item in request.watch_for] == ["price_touch_level"]
+    assert [item.type for item in request.end_on] == ["candle_close"]
+    assert request.end_on[0].timeframe == "M15"
