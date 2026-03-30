@@ -2549,6 +2549,7 @@ def test_detect_pivots_close_prefers_high_low_when_enabled():
 
     cfg_hl = ClassicDetectorConfig(
         pivot_use_hl=True,
+        pivot_enable_fallback=False,
         pivot_use_atr_adaptive_prominence=False,
         pivot_use_atr_adaptive_distance=False,
         min_prominence_pct=1.0,
@@ -2556,6 +2557,7 @@ def test_detect_pivots_close_prefers_high_low_when_enabled():
     )
     cfg_close = ClassicDetectorConfig(
         pivot_use_hl=False,
+        pivot_enable_fallback=False,
         pivot_use_atr_adaptive_prominence=False,
         pivot_use_atr_adaptive_distance=False,
         min_prominence_pct=1.0,

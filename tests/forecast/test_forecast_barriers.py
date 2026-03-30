@@ -863,17 +863,27 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertTrue(grid)
 
     def test_forecast_barrier_optimize_tie_probabilities_sum_to_one(self):
-        # Force TP and SL to coincide at zero so every path ties.
-        self._set_flat_history(0.0)
-        paths = np.zeros((3, 4))
+        # Force both barriers to be detected on the same bar through the bridge path.
+        # This keeps the reference price positive while still exercising tie accounting.
+        paths = np.array([
+            [1.0, 1.01, 1.02, 1.03],
+            [1.0, 0.99, 0.98, 0.97],
+            [1.0, 1.002, 0.998, 1.006],
+        ])
+
+        def _force_bridge_ties(*args, **kwargs):
+            uniform = kwargs.get("uniform")
+            return np.ones_like(uniform, dtype=bool)
+
         with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim, \
-             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(None, None)):
+             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(None, None)), \
+             patch(f'{_BARRIER_OPT_ROOT}._brownian_bridge_hits', side_effect=_force_bridge_ties):
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
                 timeframe="H1",
                 horizon=4,
-                method="mc_gbm",
+                method="mc_gbm_bb",
                 direction="long",
                 mode="pct",
                 tp_min=0.5, tp_max=1.0, tp_steps=2,

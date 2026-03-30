@@ -84,14 +84,15 @@ class TestDataService(unittest.TestCase):
     @patch('mtdata.services.data_service._mt5_epoch_to_utc', side_effect=AssertionError("unexpected extra UTC conversion"))
     @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
     def test_fetch_candles_does_not_double_convert_normalized_times(self, _mock_epoch_to_utc, mock_copy_rates):
+        now = datetime.now(timezone.utc)
         rates = [
             {
-                'time': 1704067200.0,
+                'time': (now - timedelta(minutes=2)).timestamp(),
                 'open': 1.1, 'high': 1.2, 'low': 1.0, 'close': 1.15,
                 'tick_volume': 100, 'real_volume': 0, 'spread': 1,
             },
             {
-                'time': 1704067260.0,
+                'time': (now - timedelta(minutes=1)).timestamp(),
                 'open': 1.15, 'high': 1.25, 'low': 1.05, 'close': 1.2,
                 'tick_volume': 120, 'real_volume': 0, 'spread': 1,
             },
@@ -101,7 +102,10 @@ class TestDataService(unittest.TestCase):
         result = fetch_candles(symbol="EURUSD", limit=2, time_as_epoch=True)
 
         self.assertTrue(result.get("success"))
-        self.assertEqual([row["time"] for row in result.get("data", [])], [1704067200.0, 1704067260.0])
+        self.assertEqual(
+            [row["time"] for row in result.get("data", [])],
+            [rates[0]["time"], rates[1]["time"]],
+        )
         
     @patch('mtdata.services.data_service._mt5_copy_ticks_range')
     @patch('mtdata.services.data_service._mt5_epoch_to_utc', side_effect=AssertionError("unexpected extra UTC conversion"))

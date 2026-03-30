@@ -26,6 +26,7 @@ from mtdata.forecast.backtest import (
     _compute_performance_metrics,
     forecast_backtest,
 )
+from mtdata.utils.utils import _format_time_minimal
 
 
 # ── Helper to build a fake df ────────────────────────────────────────────────
@@ -177,6 +178,47 @@ class TestForecastBacktest:
             fv.return_value = {"horizon_sigma_return": 0.05}
             result = forecast_backtest("EURUSD", timeframe="H1", quantity="volatility")
         assert isinstance(result, dict)
+
+    @patch("mtdata.forecast.backtest._fetch_history")
+    def test_reuses_prefetched_anchor_history_for_nested_forecasts(self, fetch):
+        df = _make_df(500)
+        fetch.return_value = df
+        captured = []
+
+        def fake_forecast(**kwargs):
+            prefetched = kwargs.get("prefetched_df")
+            captured.append(
+                {
+                    "as_of": kwargs.get("as_of"),
+                    "prefetched_len": len(prefetched) if prefetched is not None else None,
+                    "prefetched_last_time": float(prefetched["time"].iloc[-1]) if prefetched is not None else None,
+                }
+            )
+            return {"forecast_price": [101.0] * 12}
+
+        with patch("mtdata.forecast.backtest.forecast", side_effect=fake_forecast):
+            result = forecast_backtest(
+                "EURUSD",
+                timeframe="H1",
+                horizon=12,
+                steps=2,
+                spacing=10,
+                methods=["theta"],
+            )
+
+        assert result.get("success") is True
+        assert captured == [
+            {
+                "as_of": _format_time_minimal(float(df["time"].iloc[477])),
+                "prefetched_len": 478,
+                "prefetched_last_time": float(df["time"].iloc[477]),
+            },
+            {
+                "as_of": _format_time_minimal(float(df["time"].iloc[487])),
+                "prefetched_len": 488,
+                "prefetched_last_time": float(df["time"].iloc[487]),
+            },
+        ]
 
     @patch("mtdata.forecast.backtest._fetch_history")
     def test_explicit_anchors(self, fetch):

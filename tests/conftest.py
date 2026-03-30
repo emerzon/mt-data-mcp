@@ -5,7 +5,9 @@ sys.modules at import time.  Without cleanup the mocks leak into later
 test modules and cause spurious failures.
 """
 
+import os
 from pathlib import Path
+import logging
 import sys
 from unittest.mock import MagicMock
 
@@ -41,6 +43,87 @@ def _clear_scipy_lru_cache():
         _issubclass_fast.cache_clear()
     except Exception:
         pass
+
+
+@pytest.fixture(autouse=True)
+def _restore_mtdata_logging_state():
+    """Keep mtdata logger mutations from leaking across tests."""
+    logger_names = ("mtdata", "mtdata.bootstrap", "mtdata.bootstrap.settings")
+    snapshots = {}
+    for name in logger_names:
+        logger = logging.getLogger(name)
+        snapshots[name] = {
+            "level": logger.level,
+            "propagate": logger.propagate,
+            "disabled": logger.disabled,
+            "handlers": list(logger.handlers),
+            "filters": list(logger.filters),
+        }
+
+    yield
+
+    for name, snapshot in snapshots.items():
+        logger = logging.getLogger(name)
+        logger.setLevel(snapshot["level"])
+        logger.propagate = snapshot["propagate"]
+        logger.disabled = snapshot["disabled"]
+        logger.handlers[:] = snapshot["handlers"]
+        logger.filters[:] = snapshot["filters"]
+
+
+def _snapshot_mt5_config_state():
+    settings_mod = sys.modules.get("mtdata.bootstrap.settings")
+    if settings_mod is None:
+        return None
+
+    config_obj = getattr(settings_mod, "mt5_config", None)
+    if config_obj is None:
+        return None
+
+    return {
+        "module": settings_mod,
+        "config": config_obj,
+        "env_loaded": getattr(settings_mod, "_ENV_LOADED", None),
+        "warned_server_tz": getattr(settings_mod, "_WARNED_SERVER_TZ", None),
+        "state": {
+            "login": getattr(config_obj, "login", None),
+            "_login_value": getattr(config_obj, "_login_value", None),
+            "password": getattr(config_obj, "password", None),
+            "server": getattr(config_obj, "server", None),
+            "timeout": getattr(config_obj, "timeout", None),
+            "server_tz_name": getattr(config_obj, "server_tz_name", None),
+            "client_tz_name": getattr(config_obj, "client_tz_name", None),
+            "time_offset_minutes": getattr(config_obj, "time_offset_minutes", None),
+            "broker_time_check_enabled": getattr(config_obj, "broker_time_check_enabled", None),
+            "broker_time_check_ttl_seconds": getattr(config_obj, "broker_time_check_ttl_seconds", None),
+        },
+    }
+
+
+def _restore_mt5_config_state(snapshot) -> None:
+    if snapshot is None:
+        return
+
+    module = snapshot["module"]
+    config_obj = snapshot["config"]
+    module.mt5_config = config_obj
+    for name, value in snapshot["state"].items():
+        setattr(config_obj, name, value)
+    module._ENV_LOADED = snapshot["env_loaded"]
+    module._WARNED_SERVER_TZ = snapshot["warned_server_tz"]
+
+
+@pytest.fixture(autouse=True)
+def _restore_mtdata_process_state():
+    """Keep env and MT5 bootstrap mutations from leaking across tests."""
+    env_snapshot = dict(os.environ)
+    mt5_snapshot = _snapshot_mt5_config_state()
+
+    yield
+
+    os.environ.clear()
+    os.environ.update(env_snapshot)
+    _restore_mt5_config_state(mt5_snapshot)
 
 
 @pytest.fixture

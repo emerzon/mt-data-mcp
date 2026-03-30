@@ -1059,6 +1059,8 @@ def _denoise_wavelet_series(
     del causality
     if _pywt is None:
         return s
+    # PyWavelets rejects read-only inputs, and upstream series data can be a view.
+    x = np.array(x, dtype=float, copy=True, order='C')
     wavelet = str(params.get('wavelet', 'db4'))
     level = params.get('level')
     mode = str(params.get('mode', 'soft'))
@@ -1200,7 +1202,9 @@ def _denoise_series(
     handler = _DENOISE_METHOD_HANDLERS.get(method)
     if handler is None:
         return s
-    x = s.astype(float).ffill().bfill().values
+    # Materialize a writable contiguous buffer so backends like PyWavelets can
+    # safely operate even when pandas hands us a read-only view.
+    x = np.array(s.astype(float).ffill().bfill().to_numpy(copy=True), dtype=float, copy=True, order='C')
     return handler(s, x, params, causality)
 
 

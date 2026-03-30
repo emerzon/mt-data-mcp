@@ -276,6 +276,7 @@ def forecast_backtest(
                         pm = params_map.get(method)
                         if pm is None:
                             pm = params
+                        anchor_history = df.iloc[: idx + 1].copy()
                         r = raise_if_error_result(forecast(
                             symbol=symbol,
                             timeframe=timeframe,
@@ -288,6 +289,7 @@ def forecast_backtest(
                             features=features,
                             dimred_method=dimred_method,
                             dimred_params=dimred_params,
+                            prefetched_df=anchor_history,
                         ))
                 except Exception as ex:
                     per_anchor.append({"anchor": anchor_time, "success": False, "error": str(ex)})

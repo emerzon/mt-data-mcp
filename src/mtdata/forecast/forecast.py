@@ -32,6 +32,9 @@ def execute_forecast(
     dimred_params: Optional[Dict[str, Any]] = None,
     # Custom target specification (base column/alias, transform, and horizon aggregation)
     target_spec: Optional[Dict[str, Any]] = None,
+    prefetched_df: Optional[Any] = None,
+    prefetched_base_col: Optional[str] = None,
+    prefetched_denoise_spec: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Internal forecast entrypoint that raises ForecastError on failure."""
     try:
@@ -67,6 +70,9 @@ def execute_forecast(
             dimred_method=dimred_method,
             dimred_params=dimred_params,
             target_spec=target_spec,
+            prefetched_df=prefetched_df,
+            prefetched_base_col=prefetched_base_col,
+            prefetched_denoise_spec=prefetched_denoise_spec,
         )
         return raise_if_error_result(result)
     except ForecastError:
@@ -90,6 +96,9 @@ def forecast(
     dimred_method: Optional[str] = None,
     dimred_params: Optional[Dict[str, Any]] = None,
     target_spec: Optional[Dict[str, Any]] = None,
+    prefetched_df: Optional[Any] = None,
+    prefetched_base_col: Optional[str] = None,
+    prefetched_denoise_spec: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Fast forecasts for the next `horizon` bars using lightweight methods.
     Parameters: symbol, timeframe, method, horizon, lookback?, as_of?, params?, ci_alpha?, quantity, denoise?
@@ -123,6 +132,9 @@ def forecast(
             dimred_method=dimred_method,
             dimred_params=dimred_params,
             target_spec=target_spec,
+            prefetched_df=prefetched_df,
+            prefetched_base_col=prefetched_base_col,
+            prefetched_denoise_spec=prefetched_denoise_spec,
         )
     except ForecastResultError as exc:
         return {"error": str(exc)}

@@ -828,6 +828,11 @@ def _forecast_list_methods_impl(
                 row["description"] = desc.splitlines()[0].strip()
             cat = method_to_category.get(method_name)
             row["category"] = cat or "other"
+            capability = capability_by_method.get(method_name, {})
+            if row["category"] in {"statsforecast", "sktime", "mlforecast", "pretrained"}:
+                namespace = capability.get("namespace")
+                if isinstance(namespace, str) and namespace.strip():
+                    row["namespace"] = namespace
             params = item.get("params")
             if isinstance(params, list):
                 row["params_count"] = len(params)

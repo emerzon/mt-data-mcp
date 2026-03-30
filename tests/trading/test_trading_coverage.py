@@ -749,10 +749,10 @@ class TestTradeClose:
     def test_ticket_falls_back_to_cancel_pending(self, mock_close, mock_cancel):
         mock_close.return_value = {"error": "Position 123 not found"}
         mock_cancel.return_value = {"cancelled_count": 1}
-        out = _unwrap_mcp(trade_close(ticket=123))
+        out = trade_close(ticket=123, __cli_raw=True)
         mock_close.assert_called_once()
         mock_cancel.assert_called_once_with(ticket=123, symbol=None, comment=None)
-        assert "cancelled_count" in out or "1" in out
+        assert out["cancelled_count"] == 1
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
@@ -1111,11 +1111,12 @@ class TestPlaceMarketOrder:
         from mtdata.core.trading import _place_market_order
         result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.09, take_profit=1.12)
         sl_tp_result = result.get("sl_tp_result") or {}
-        assert sl_tp_result.get("error") is not None
+        assert sl_tp_result.get("error") is None
         assert sl_tp_result.get("requested") == {"sl": pytest.approx(1.09), "tp": pytest.approx(1.12)}
-        assert sl_tp_result.get("status") == "failed"
-        assert sl_tp_result.get("applied") is None
-        assert sl_tp_result.get("broker_adjusted") is None
+        assert sl_tp_result.get("status") == "applied"
+        assert sl_tp_result.get("applied") == {"sl": pytest.approx(1.09), "tp": pytest.approx(1.12)}
+        assert sl_tp_result.get("fallback_used") is True
+        assert result.get("protection_status") == "protected_after_fallback"
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_sl_tp_position_not_found(self):
@@ -1671,6 +1672,7 @@ class TestCancelPending:
     def _setup_mt5(self, mt5):
         mt5.TRADE_ACTION_REMOVE = 8
         mt5.TRADE_RETCODE_DONE = 10009
+        mt5.TRADE_RETCODE_DONE_PARTIAL = 10010
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_ticket_not_found(self):

@@ -307,13 +307,24 @@ def _resolve_history_context(
 ) -> Tuple[pd.DataFrame, str, Optional[Any]]:
     """Return the source DataFrame, active base column, and denoise spec used."""
     if prefetched_df is not None:
-        base_col = prefetched_base_col or ('close_dn' if 'close_dn' in prefetched_df.columns else 'close')
+        df = prefetched_df.copy()
+        base_col = prefetched_base_col or ('close_dn' if 'close_dn' in df.columns else 'close')
+        dn_spec_used = None
         if prefetched_denoise_spec:
             try:
-                prefetched_denoise_spec = _normalize_denoise_spec(prefetched_denoise_spec, default_when='pre_ti')
+                dn_spec_used = _normalize_denoise_spec(prefetched_denoise_spec, default_when='pre_ti')
             except Exception:
-                prefetched_denoise_spec = None
-        return prefetched_df, base_col, prefetched_denoise_spec
+                dn_spec_used = None
+        elif denoise:
+            try:
+                normalized = _normalize_denoise_spec(denoise, default_when='pre_ti')
+            except Exception:
+                normalized = None
+            added = _apply_denoise(df, normalized, default_when='pre_ti') if normalized else []
+            dn_spec_used = normalized
+            if len(added) > 0 and base_col == 'close' and f"{base_col}_dn" in added:
+                base_col = f"{base_col}_dn"
+        return df, base_col, dn_spec_used
 
     df = _fetch_history(symbol, timeframe, int(need), as_of)
     if len(df) < 3:

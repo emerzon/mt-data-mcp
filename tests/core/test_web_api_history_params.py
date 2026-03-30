@@ -29,10 +29,11 @@ def test_history_uses_start_end_ohlcv_and_drops_open_bar() -> None:
             include_incomplete=False,
         )
 
-    assert len(res["bars"]) == 2
+    assert len(res["data"]) == 2
+    assert res["candles"] == 2
     kwargs = mock_fetch.call_args.kwargs
     assert kwargs["start"] == "2025-01-01 00:00"
     assert kwargs["end"] == "2025-01-01 03:00"
     assert kwargs["ohlcv"] == "close"
     assert kwargs["time_as_epoch"] is True
-    assert all(isinstance(row["time"], (int, float)) for row in res["bars"])
+    assert all(isinstance(row["time"], (int, float)) for row in res["data"])

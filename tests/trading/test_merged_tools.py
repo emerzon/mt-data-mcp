@@ -137,7 +137,7 @@ class TestMergedTools(unittest.TestCase):
         res = get_open(__cli_raw=True)
         self.assertEqual(res[0].get("Comment Limit"), 31)
         self.assertEqual(res[0].get("Comment Length"), len("audit short"))
-        self.assertTrue(res[0].get("Comment May Be Truncated"))
+        self.assertFalse(res[0].get("Comment May Be Truncated"))
 
     def test_trading_open_get_pending(self):
         self.mt5.orders_get.return_value = None

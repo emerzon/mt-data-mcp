@@ -742,13 +742,15 @@ class TestRecordingToolDecorator:
                 return {"success": True}
 
             wrapped = dec(slow_tool)
+            async_wrapped = getattr(wrapped, "_mcp_async_wrapper")
+
             async def _raise_timeout(coro, timeout):
                 if hasattr(coro, "close"):
                     coro.close()
                 raise asyncio.TimeoutError
 
             with patch("mtdata.core._mcp_tools.asyncio.wait_for", side_effect=_raise_timeout):
-                result = asyncio.run(wrapped())
+                result = asyncio.run(async_wrapped())
 
             assert result["success"] is False
             assert result["error_code"] == "tool_timeout"
