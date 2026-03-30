@@ -96,7 +96,7 @@ mtdata-cli forecast_volatility_estimate EURUSD --method ewma --params "lambda=0.
 mtdata-cli regime_detect EURUSD --method hmm --params "n_states=3"
 ```
 
-Format: `key=value,key2=value2` or JSON `{"key": value}`
+Format: `key=value key2=value2` (space-separated), `key=value,key2=value2` (comma-separated), or JSON `{"key": value}` — all three are accepted.
 
 ### Reduce Large Outputs (Simplify)
 Use `--simplify` to downsample returned rows for charting or large exports.
@@ -285,7 +285,7 @@ mtdata-cli forecast_volatility_estimate EURUSD --horizon 12 --method ewma
 
 # Barrier probability
 mtdata-cli forecast_barrier_prob EURUSD --horizon 12 \
-  --method mc --mc-method hmm_mc --tp-pct 0.5 --sl-pct 0.3
+  --method hmm_mc --tp-pct 0.5 --sl-pct 0.3
 
 # Optimize TP/SL
 mtdata-cli forecast_barrier_optimize EURUSD --horizon 12 \

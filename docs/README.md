@@ -69,7 +69,7 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta -
 ### 2) TP/SL odds for a trade idea
 ```bash
 mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
-  --method mc --mc-method mc_gbm --direction long --tp-pct 0.4 --sl-pct 0.6 --json
+  --method mc_gbm --direction long --tp-pct 0.4 --sl-pct 0.6 --json
 ```
 
 ### 3) Scan a small watchlist (PowerShell)

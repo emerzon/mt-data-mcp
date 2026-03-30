@@ -21,7 +21,7 @@ This document provides a deep dive into the barrier analytics available in mtdat
 Percent barriers are expressed in percent (e.g., `--tp-pct 0.40` means **0.40%**, not 40%):
 ```bash
 mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
-  --method mc --mc-method mc_gbm --direction long --tp-pct 0.40 --sl-pct 0.60 --json
+  --method mc_gbm --direction long --tp-pct 0.40 --sl-pct 0.60 --json
 ```
 
 Look for `prob_tp_first`, `prob_sl_first`, `prob_no_hit`, and `edge` in the output.
@@ -104,7 +104,7 @@ where:
 > **Command**:
 > ```bash
 > mtdata-cli forecast_barrier_prob EURUSD --timeframe M5 --horizon 12 \
->   --method mc --mc-method mc_gbm --tp-pct 0.2 --sl-pct 0.15
+>   --method mc_gbm --tp-pct 0.2 --sl-pct 0.15
 > ```
 
 ---
@@ -149,7 +149,7 @@ P(hit | S_t, S_T) = exp(-2 * (B - S_t)(B - S_T) / (σ²Δt))
 > **Command**:
 > ```bash
 > mtdata-cli forecast_barrier_prob BTCUSD --timeframe M1 --horizon 6 \
->   --method mc --mc-method mc_gbm_bb --tp-pct 0.1 --sl-pct 0.08
+>   --method mc_gbm_bb --tp-pct 0.1 --sl-pct 0.08
 > ```
 
 ---
@@ -197,7 +197,7 @@ Transition: P(s_t = j | s_{t-1} = i) = A_{ij}
 > **Command**:
 > ```bash
 > mtdata-cli forecast_barrier_prob GBPUSD --timeframe H4 --horizon 48 \
->   --method mc --mc-method hmm_mc --tp-pct 1.5 --sl-pct 1.0 \
+>   --method hmm_mc --tp-pct 1.5 --sl-pct 1.0 \
 >   --params "n_states=2 n_sims=5000"
 > ```
 
@@ -246,7 +246,7 @@ r_t = μ + ε_t
 > **Command**:
 > ```bash
 > mtdata-cli forecast_barrier_prob SPY --timeframe D1 --horizon 20 \
->   --method mc --mc-method garch --tp-pct 3.0 --sl-pct 2.0 \
+>   --method garch --tp-pct 3.0 --sl-pct 2.0 \
 >   --params "p=1 q=1"
 > ```
 
@@ -287,7 +287,7 @@ r_t = μ + ε_t
 > **Command**:
 > ```bash
 > mtdata-cli forecast_barrier_prob USDTRY --timeframe H1 --horizon 24 \
->   --method mc --mc-method bootstrap --tp-pct 2.0 --sl-pct 1.5 \
+>   --method bootstrap --tp-pct 2.0 --sl-pct 1.5 \
 >   --params "block_size=5"
 > ```
 
@@ -337,7 +337,7 @@ dW_t^1 dW_t^2 = ρ dt
 > **Command**:
 > ```bash
 > mtdata-cli forecast_barrier_prob AAPL --timeframe D1 --horizon 60 \
->   --method mc --mc-method heston --tp-pct 10.0 --sl-pct 5.0 \
+>   --method heston --tp-pct 10.0 --sl-pct 5.0 \
 >   --params "kappa=2.0 theta=0.04 xi=0.3 rho=-0.5"
 > ```
 
@@ -385,7 +385,7 @@ J_t: compound Poisson process with log-normal jumps
 > **Command**:
 > ```bash
 > mtdata-cli forecast_barrier_prob EURUSD --timeframe M15 --horizon 16 \
->   --method mc --mc-method jump_diffusion --tp-pct 0.5 --sl-pct 0.3 \
+>   --method jump_diffusion --tp-pct 0.5 --sl-pct 0.3 \
 >   --params "jump_lambda=0.5 jump_mu=0.001 jump_sigma=0.002"
 > ```
 
@@ -1039,7 +1039,7 @@ mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 500
 
 # If insufficient, use mc_gbm (or mc_gbm_bb for short horizons)
 mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 10 \
-  --method mc --mc-method mc_gbm --tp-pct 0.2 --sl-pct 0.15
+  --method mc_gbm --tp-pct 0.2 --sl-pct 0.15
 ```
 
 ---
@@ -1104,7 +1104,7 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=3
 # Example: 2 pip spread on EURUSD
 mtdata-cli forecast_barrier_prob \
   EURUSD --timeframe M5 --horizon 12 \
-  --method mc --mc-method hmm_mc --tp_pips 20 --sl_pips 15  # RR = 1.33 after spread
+  --method hmm_mc --tp_pips 20 --sl_pips 15  # RR = 1.33 after spread
 ```
 
 ---
@@ -1120,7 +1120,7 @@ for H in 6 12 24 48; do
   echo "Horizon $H bars:"
   mtdata-cli forecast_barrier_prob \
     EURUSD --timeframe H1 --horizon $H \
-    --method mc --mc-method hmm_mc --tp-pct 0.5 --sl-pct 0.3 \
+    --method hmm_mc --tp-pct 0.5 --sl-pct 0.3 \
     --json | jq '{horizon: .horizon, edge: .edge, prob_resolve: (.prob_tp_first + .prob_sl_first)}'
 done
 ```
@@ -1160,7 +1160,7 @@ Test stability of results:
 # Vary n_sims
 for N in 1000 2000 5000 10000; do
   mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
-    --method mc --mc-method hmm_mc --tp-pct 0.5 --sl-pct 0.3 --params "n_sims=$N" \
+    --method hmm_mc --tp-pct 0.5 --sl-pct 0.3 --params "n_sims=$N" \
     --json | jq '.prob_tp_first'
 done
 ```
@@ -1175,7 +1175,7 @@ Compare methods on same data:
 for METHOD in mc_gbm hmm_mc bootstrap; do
   echo "Method: $METHOD"
   mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
-    --method mc --mc-method $METHOD --tp-pct 0.5 --sl-pct 0.3 \
+    --method $METHOD --tp-pct 0.5 --sl-pct 0.3 \
     --json | jq '{method: .method, edge: .edge, prob_resolve: (.prob_tp_first + .prob_sl_first)}'
 done
 ```

@@ -111,7 +111,7 @@ pip install gluonts[torch]             # For Lag-Llama (pretrained)
 pip install QuantLib                   # For barrier option pricing & Heston calibration
 pip install optuna                     # For Bayesian hyperparameter tuning
 pip install neuralforecast torch       # For NHiTS, TFT, PatchTST, NBEATSx
-pip install finviz                     # For fundamental data, screening, insider activity
+pip install finvizfinance              # For fundamental data, screening, insider activity
 # TimesFM is installed from Git (pinned in `requirements.txt`); re-run `pip install -r requirements.txt`.
 # Lag-Llama may require a separate Python env due to upstream pins (see `requirements.txt`).
 ```
@@ -278,7 +278,7 @@ On Windows, a pre-built wheel is available. On Linux, you may need build tools (
 **Symptom:** `finviz_*` commands return empty data or connection errors.
 
 **Possible causes:**
-- `finviz` package not installed → `pip install finviz`
+- `finvizfinance` package not installed → `pip install finvizfinance`
 - Network/firewall blocking finviz.com
 - Rate limiting (finviz throttles rapid requests)
 
@@ -317,7 +317,7 @@ These models require PyTorch. GPU is recommended for training speed but not requ
 | Wrong timestamps | Set `MT5_TIME_OFFSET_MINUTES` in `.env` |
 | Command slow | Reduce `--limit`, use faster method |
 | QuantLib import error | `pip install QuantLib` |
-| Finviz empty data | `pip install finviz`, check network |
+| Finviz empty data | `pip install finvizfinance`, check network |
 | Optuna not found | `pip install optuna` |
 | Neural models unavailable | `pip install neuralforecast torch` |
 

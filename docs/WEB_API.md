@@ -92,23 +92,6 @@ List available wavelet families/names (when PyWavelets is installed).
 #### `GET /api/dimred/methods`
 List available dimensionality reduction methods (PCA, UMAP, t-SNE, etc.) with parameter suggestions.
 
-#### `GET /api/support-resistance`
-Identify support and resistance levels.
-
-- **Query Params:**
-  - `symbol` (string, required).
-  - `timeframe` (string): Default `"auto"`. `auto` merges levels from `M15`, `H1`, `H4`, and `D1`.
-  - `limit` (int): History depth to analyze.
-  - `tolerance_pct` (float): Clustering tolerance (0.0015 = 0.15%).
-  - `min_touches` (int): Minimum touches per level (default 2).
-  - `max_levels` (int): Max levels per side (default 4).
-- **Response Notes:**
-  - Each level includes a price `zone_low`/`zone_high` envelope rather than only a single line.
-  - `status` and `breakout_analysis` expose broken levels and role-reversal confirmations.
-  - In `auto` mode, overlapping same-event confirmations across timeframes are deduped instead of fully double-counted.
-  - Qualification now uses distinct test `episodes`, while raw `touches` remain available as secondary detail.
-  - The response includes both base and effective adaptive settings: `tolerance_pct`/`reaction_bars` are the inputs, while `effective_tolerance_pct`/`effective_reaction_bars` reflect the current ATR regime.
-
 ### Forecasting
 
 #### `GET /api/methods`
@@ -190,7 +173,7 @@ mtdata-webapi
 
 Or directly via Uvicorn (if installed):
 ```bash
-uvicorn src.mtdata.core.web_api:app --host 127.0.0.1 --port 8000
+uvicorn mtdata.core.web_api:app --host 127.0.0.1 --port 8000
 ```
 
 ## Configuration

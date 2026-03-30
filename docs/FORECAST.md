@@ -49,12 +49,12 @@ mtdata-cli forecast_list_methods
 | Category | Models | When to Use |
 |----------|--------|-------------|
 | **Classical** | `theta`, `naive`, `ses`, `holt`, `arima` | Fast baselines, short horizons |
-| **Seasonal** | `seasonal_naive`, `ets`, `holt_winters_add` | Data with recurring patterns |
+| **Seasonal** | `seasonal_naive`, `ets`, `holt_winters_add`, `fourier_ols` | Data with recurring patterns |
 | **Statistical** | `sf_autoarima`, `sf_autoets`, `sf_autotheta` | Auto-tuning, medium horizons |
 | **ML-Based** | `mlf_lightgbm`, `mlf_rf` | Non-linear patterns, feature engineering |
 | **Neural** | `nhits`, `tft`, `patchtst`, `nbeatsx` | Deep learning, long horizons (requires neuralforecast) |
 | **Foundation** | `chronos2`, `chronos_bolt`, `timesfm`, `lag_llama` | Pretrained models (optional deps) |
-| **GluonTS** | `gt_deepar`, `gt_tft`, `gt_wavenet`, `gt_prophet` | Probabilistic deep models (requires gluonts) |
+| **GluonTS** | `gt_deepar`, `gt_tft`, `gt_wavenet`, `gt_prophet`, `gt_sfeedforward`, `gt_deepnpts`, `gt_mqf2`, `gt_npts` | Probabilistic deep models (requires `gluonts`; use `--library native`) |
 | **Simulation** | `mc_gbm`, `hmm_mc` | Risk sizing, barrier analysis |
 | **Ensemble** | `ensemble` | Combine multiple models |
 

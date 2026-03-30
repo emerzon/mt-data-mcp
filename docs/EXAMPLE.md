@@ -147,7 +147,7 @@ Barrier probabilities (TP/SL odds within the horizon):
 
 ```bash
 mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
-  --method mc --mc-method hmm_mc --tp-pct 0.5 --sl-pct 0.3 --params "n_sims=5000 seed=7" \
+  --method hmm_mc --tp-pct 0.5 --sl-pct 0.3 --params "n_sims=5000 seed=7" \
   --json
 ```
 
