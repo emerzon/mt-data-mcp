@@ -33,12 +33,9 @@ class MT5NewsRecord:
         self.flags = flags
         self.priority = priority
     
-    def to_dict(self, client_tz: Any = None) -> Dict[str, Any]:
-        display_timestamp, timestamp_timezone = _display_timestamp(self.timestamp, client_tz)
+    def to_dict(self, now: Optional[datetime] = None) -> Dict[str, Any]:
         return {
-            "timestamp": display_timestamp.isoformat(),
-            "timestamp_utc": self.timestamp.astimezone(timezone.utc).isoformat(),
-            "timestamp_timezone": timestamp_timezone,
+            "relative_time": _relative_time_text(self.timestamp, now=now),
             "subject": self.subject,
             "category": self.category,
             "source": self.source,
@@ -229,28 +226,29 @@ class MT5NewsParser:
         return datetime.fromtimestamp(timestamp_utc, tz=timezone.utc)
 
 
-def _timezone_label(tzinfo: Any) -> str:
-    if tzinfo is None:
-        return "UTC"
-    label = getattr(tzinfo, "zone", None) or getattr(tzinfo, "key", None)
-    if isinstance(label, str) and label.strip():
-        return label.strip()
-    try:
-        rendered = str(tzinfo).strip()
-    except Exception:
-        rendered = ""
-    return rendered or "UTC"
-
-
-def _display_timestamp(timestamp: datetime, client_tz: Any = None) -> tuple[datetime, str]:
-    """Render a UTC timestamp using the configured client timezone when available."""
+def _relative_time_text(timestamp: datetime, now: Optional[datetime] = None) -> str:
+    """Return a compact relative-time label like '5 minutes ago'."""
+    current = now or datetime.now(timezone.utc)
+    current_utc = current.astimezone(timezone.utc) if current.tzinfo else current.replace(tzinfo=timezone.utc)
     timestamp_utc = timestamp.astimezone(timezone.utc) if timestamp.tzinfo else timestamp.replace(tzinfo=timezone.utc)
-    if client_tz is not None:
-        try:
-            return timestamp_utc.astimezone(client_tz), _timezone_label(client_tz)
-        except Exception:
-            pass
-    return timestamp_utc, "UTC"
+
+    delta_seconds = int(round((current_utc - timestamp_utc).total_seconds()))
+    if abs(delta_seconds) < 60:
+        return "just now" if delta_seconds >= 0 else "in less than a minute"
+
+    future = delta_seconds < 0
+    delta_seconds = abs(delta_seconds)
+    units = (
+        (86400, "day"),
+        (3600, "hour"),
+        (60, "minute"),
+    )
+    for unit_seconds, unit_name in units:
+        if delta_seconds >= unit_seconds:
+            count = delta_seconds // unit_seconds
+            label = f"{count} {unit_name}{'' if count == 1 else 's'}"
+            return f"in {label}" if future else f"{label} ago"
+    return "just now"
 
 
 def _parse_news_filter_datetime(value: str, client_tz: Any = None) -> datetime:
@@ -474,7 +472,8 @@ def get_mt5_news(
         filtered = filtered[:limit]
         
         # Build response
-        news_list = [r.to_dict(client_tz=client_tz) for r in filtered]
+        now_utc = datetime.now(timezone.utc)
+        news_list = [r.to_dict(now=now_utc) for r in filtered]
         
         # Get unique categories for reference
         all_categories = list(set(r.category for r in records if r.category))

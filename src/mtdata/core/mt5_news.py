@@ -52,7 +52,7 @@ def mt5_news(
     -------
     dict
         Dictionary containing:
-        - news: List of news items with timestamp, subject, category, source
+        - news: List of news items with relative_time, subject, category, source
         - count: Number of items returned
         - total_records: Total records in database
         - available_categories: List of available category filters
@@ -73,7 +73,7 @@ def mt5_news(
     # Use explicit path
     mt5_news(news_db_path="C:/Users/Admin/AppData/Roaming/MetaQuotes/Terminal/.../news/news.dat")
     """
-    fields = {
+    fields: Dict[str, Any] = {
         "news_db_path": news_db_path,
         "limit": limit,
         "from_date": from_date,
@@ -95,7 +95,12 @@ def mt5_news(
             search_term=search_term
         )
     
-    return run_logged_operation("mt5_news", fields, _run)
+    return run_logged_operation(
+        logger,
+        operation="mt5_news",
+        func=_run,
+        **fields,
+    )
 
 
 @mcp.tool()
@@ -121,9 +126,14 @@ def mt5_news_categories(news_db_path: Optional[str] = None) -> Dict[str, Any]:
         - total_records: Total number of news records in database
         - database_path: Path to the news database file
     """
-    fields = {"news_db_path": news_db_path}
+    fields: Dict[str, Any] = {"news_db_path": news_db_path}
     
     def _run() -> Dict[str, Any]:
         return get_news_categories(news_db_path=news_db_path)
     
-    return run_logged_operation("mt5_news_categories", fields, _run)
+    return run_logged_operation(
+        logger,
+        operation="mt5_news_categories",
+        func=_run,
+        **fields,
+    )
