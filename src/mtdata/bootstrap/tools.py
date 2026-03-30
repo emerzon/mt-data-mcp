@@ -25,6 +25,7 @@ TOOL_MODULE_NAMES: Final[tuple[str, ...]] = (
     "mtdata.core.trading",
     "mtdata.core.temporal",
     "mtdata.core.finviz",
+    "mtdata.core.mt5_news",
 )
 
 _BOOTSTRAPPED_MODULES: tuple[ModuleType, ...] = ()
