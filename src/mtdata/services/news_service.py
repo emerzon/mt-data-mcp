@@ -448,8 +448,14 @@ def get_mt5_news(
         use_client_tz = _use_client_tz()
         client_tz = _resolve_client_tz() if use_client_tz else None
         
-        from_dt = _parse_news_filter_datetime(from_date, client_tz) if from_date else None
-        to_dt = _parse_news_filter_datetime(to_date, client_tz) if to_date else None
+        try:
+            from_dt = _parse_news_filter_datetime(from_date, client_tz) if from_date else None
+            to_dt = _parse_news_filter_datetime(to_date, client_tz) if to_date else None
+        except ValueError as e:
+            return {
+                "error": f"Invalid news date filter: {e}",
+                "hint": "Use ISO dates such as YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS",
+            }
 
         if from_dt and to_dt and from_dt > to_dt:
             all_categories = list(set(r.category for r in records if r.category))

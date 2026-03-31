@@ -420,8 +420,12 @@ def _unique_preserve_order(items: Iterable[str]) -> List[str]:
 def _maybe_parse_datetime(value: Any) -> Optional[datetime]:
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return None
     text = _safe_text(value)
     if not text:
+        return None
+    if re.fullmatch(r"[+-]?\d+(?:\.\d+)?", text):
         return None
     for fmt in (
         "%Y-%m-%dT%H:%M:%S%z",
@@ -460,11 +464,14 @@ def _parse_relative_time(value: str) -> Optional[datetime]:
         return None
     amount = int(match.group(1))
     unit = match.group(2)
-    if unit == "minute":
-        return now - timedelta(minutes=amount)
-    if unit == "hour":
-        return now - timedelta(hours=amount)
-    return now - timedelta(days=amount)
+    try:
+        if unit == "minute":
+            return now - timedelta(minutes=amount)
+        if unit == "hour":
+            return now - timedelta(hours=amount)
+        return now - timedelta(days=amount)
+    except OverflowError:
+        return None
 
 
 def _parse_published_text(value: str) -> Optional[datetime]:
@@ -613,7 +620,13 @@ def _classify_instrument(symbol: str) -> InstrumentContext:
     elif base_asset in _COMMODITY_BASES:
         asset_class = "commodity"
         base_asset = _COMMODITY_BASE_PREFIXES.get(base_asset, base_asset)
-    elif base_asset in _KNOWN_CRYPTO_BASES or quote_asset in _CRYPTO_QUOTES and base_asset in _KNOWN_CRYPTO_BASES:
+    elif base_asset in _KNOWN_CRYPTO_BASES or (
+        bool(base_asset)
+        and
+        quote_asset in _CRYPTO_QUOTES
+        and base_asset not in _CURRENCY_CODES
+        and base_asset not in _COMMODITY_BASES
+    ):
         asset_class = "crypto"
     elif base_asset in _CURRENCY_CODES and quote_asset in _CURRENCY_CODES:
         asset_class = "forex"

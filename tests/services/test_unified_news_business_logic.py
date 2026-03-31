@@ -364,6 +364,15 @@ def test_parse_relative_time_rejects_negative_values() -> None:
     assert svc._parse_relative_time("-5 minutes ago") is None
 
 
+def test_parse_relative_time_rejects_overflowing_values() -> None:
+    assert svc._parse_relative_time("999999 days ago") is None
+
+
+def test_maybe_parse_datetime_rejects_numeric_values() -> None:
+    assert svc._maybe_parse_datetime(42) is None
+    assert svc._maybe_parse_datetime("42") is None
+
+
 def test_unknown_equity_classification_does_not_infer_description(monkeypatch) -> None:
     monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
 
