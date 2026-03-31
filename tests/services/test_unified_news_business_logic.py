@@ -193,6 +193,43 @@ def test_fetch_unified_news_includes_direct_equity_news(monkeypatch) -> None:
     assert result["related_news"][0]["title"] == "Apple unveils new AI features"
 
 
+def test_equity_stock_page_news_requires_company_evidence(monkeypatch) -> None:
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    monkeypatch.setattr(
+        svc,
+        "get_stock_description",
+        lambda symbol: {"description": "Apple Inc designs consumer electronics and software"},
+    )
+    monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
+    monkeypatch.setattr(
+        svc,
+        "get_stock_news",
+        lambda symbol, limit=20, page=1: {
+            "success": True,
+            "news": [
+                {"Title": "Apple expands AI tooling for developers", "Source": "Reuters", "Date": "2026-03-29T09:00:00Z"},
+                {"Title": "Netflix initiated, Instacart upgraded: Wall Street's top analyst calls", "Source": "The Fly", "Date": "2026-03-29T10:00:00Z"},
+            ],
+        },
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {"success": True, "items": []},
+    )
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    svc._safe_equity_description.cache_clear()
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("AAPL")
+
+    titles = [item["title"] for item in result["related_news"]]
+    assert "Apple expands AI tooling for developers" in titles
+    assert "Netflix initiated, Instacart upgraded: Wall Street's top analyst calls" not in titles
+
+
 def test_fetch_unified_news_treats_whitespace_symbol_as_general_news(monkeypatch) -> None:
     monkeypatch.setattr(
         svc,
@@ -387,7 +424,7 @@ def test_market_snapshots_handle_lowercase_and_pair_keys(monkeypatch) -> None:
     futures_result = svc.fetch_unified_news("NAS100")
 
     assert forex_result["related_news"][0]["title"] == "EUR/USD market snapshot"
-    assert futures_result["related_news"][0]["title"] == "NQ market snapshot"
+    assert futures_result["related_news"][0]["title"] == "Nasdaq 100 E-mini market snapshot"
     assert "Label: Nasdaq 100 E-mini" in (futures_result["related_news"][0]["summary"] or "")
     assert "Perf: 0.8%" in (futures_result["related_news"][0]["summary"] or "")
 
@@ -425,6 +462,121 @@ def test_index_snapshot_candidate_pool_keeps_more_than_three_rows(monkeypatch) -
     assert len(snapshots) >= 4
 
 
+def test_market_snapshots_require_meaningful_relevance(monkeypatch) -> None:
+    monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
+    monkeypatch.setattr(
+        svc,
+        "get_futures_performance",
+        lambda: {
+            "success": True,
+            "futures": [
+                {"Ticker": "NQ", "Label": "Nasdaq 100 E-mini", "Perf": "0.8%"},
+                {"Ticker": "DY", "Label": "US Dollar Index", "Perf": "0.2%"},
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {"success": True, "items": []},
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("NAS100")
+
+    titles = [item["title"] for item in result["related_news"]]
+    assert any(title == "Nasdaq 100 E-mini market snapshot" for title in titles)
+    assert all(title != "DY market snapshot" for title in titles)
+
+
+def test_crypto_snapshots_require_exact_symbol_family_match(monkeypatch) -> None:
+    monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
+    monkeypatch.setattr(
+        svc,
+        "get_crypto_performance",
+        lambda: {
+            "success": True,
+            "coins": [
+                {"Ticker": "BTC", "Label": "Bitcoin", "Perf": "1.2%"},
+                {"Ticker": "BCH", "Label": "Bitcoin Cash", "Perf": "0.9%"},
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {"success": True, "items": []},
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("BTCUSD")
+
+    titles = [item["title"] for item in result["related_news"]]
+    assert any(title == "BTC market snapshot" for title in titles)
+    assert all(title != "BCH market snapshot" for title in titles)
+
+
+def test_short_symbol_aliases_require_real_token_matches(monkeypatch) -> None:
+    monkeypatch.setattr(
+        svc,
+        "get_general_news",
+        lambda news_type="news", limit=20, page=1: {
+            "success": True,
+            "items": [
+                {
+                    "Title": "Pete Hegseth's broker attempted to make defense investments before Iran war",
+                    "Source": "CNBC",
+                    "Date": "2026-03-29T08:00:00Z",
+                },
+                {
+                    "Title": "ETH jumps after ETF rumor",
+                    "Source": "Reuters",
+                    "Date": "2026-03-29T09:00:00Z",
+                },
+                {
+                    "Title": "EUR/USD Price Forecast: Consolidates above one-week low",
+                    "Source": "FXStreet",
+                    "Date": "2026-03-29T10:00:00Z",
+                },
+                {
+                    "Title": "SOL rallies on network activity",
+                    "Source": "CoinDesk",
+                    "Date": "2026-03-29T11:00:00Z",
+                },
+            ],
+        },
+    )
+    monkeypatch.setattr(svc, "get_crypto_performance", lambda: {"success": True, "coins": []})
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {"success": True, "items": []},
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    eth_result = svc.fetch_unified_news("ETHUSDT")
+    sol_result = svc.fetch_unified_news("SOLUSDT")
+
+    eth_titles = [item["title"] for item in eth_result["related_news"]]
+    sol_titles = [item["title"] for item in sol_result["related_news"]]
+    assert "ETH jumps after ETF rumor" in eth_titles
+    assert all("Hegseth" not in title for title in eth_titles)
+    assert "SOL rallies on network activity" in sol_titles
+    assert all("Consolidates above one-week low" not in title for title in sol_titles)
+
+
 def test_us_index_filters_non_macro_calendar_noise(monkeypatch) -> None:
     monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
     monkeypatch.setattr(svc, "get_futures_performance", lambda: {"success": True, "futures": []})
@@ -452,6 +604,70 @@ def test_us_index_filters_non_macro_calendar_noise(monkeypatch) -> None:
     _reset_aggregator(monkeypatch)
 
     result = svc.fetch_unified_news("NAS100")
+
+    assert result["related_news"] == []
+
+
+def test_index_related_bucket_ignores_generic_general_headlines(monkeypatch) -> None:
+    monkeypatch.setattr(
+        svc,
+        "get_general_news",
+        lambda news_type="news", limit=20, page=1: {
+            "success": True,
+            "items": [
+                {
+                    "Title": "AI leaders rally after upbeat semiconductor outlook",
+                    "Source": "Reuters",
+                    "Date": "2026-03-29T08:00:00Z",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(svc, "get_futures_performance", lambda: {"success": True, "futures": []})
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {"success": True, "items": []},
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("NAS100")
+
+    assert result["related_news"] == []
+
+
+def test_crypto_related_bucket_rejects_generic_usd_headlines(monkeypatch) -> None:
+    monkeypatch.setattr(
+        svc,
+        "get_general_news",
+        lambda news_type="news", limit=20, page=1: {
+            "success": True,
+            "items": [
+                {
+                    "Title": "US Dollar Index trades broadly firm above 100.00 amid war fears",
+                    "Source": "Reuters",
+                    "Date": "2026-03-29T08:00:00Z",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(svc, "get_crypto_performance", lambda: {"success": True, "coins": []})
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {"success": True, "items": []},
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("BTCUSD")
 
     assert result["related_news"] == []
 
@@ -595,6 +811,32 @@ def test_fetch_unified_news_includes_ycnbc_general_candidates_when_enabled(monke
     assert "ycnbc" in result["sources_used"]
     assert any(item["provider"] == "ycnbc" for item in result["general_news"])
     assert result["source_details"]["ycnbc"]["selected_general"] >= 1
+
+
+def test_ycnbc_general_candidates_are_cached(monkeypatch) -> None:
+    call_counts = {"latest": 0}
+
+    class FakeNews:
+        def latest(self):
+            call_counts["latest"] += 1
+            return [{"headline": "CNBC latest", "time": "5 min ago", "link": "https://example.com/cnbc"}]
+
+        def __getattr__(self, _name):
+            return lambda: []
+
+    class FakeStocksUtil:
+        def news(self, symbol: str):
+            return []
+
+    monkeypatch.setattr(svc, "_import_ycnbc", lambda: (FakeNews, FakeStocksUtil))
+
+    source = svc.YCNBCNewsSource()
+    first = source.fetch_general_candidates(5)
+    second = source.fetch_general_candidates(5)
+
+    assert len(first) == 1
+    assert len(second) == 1
+    assert call_counts["latest"] == 1
 
 
 def test_fetch_unified_news_maps_indices_to_ycnbc_quote_symbols(monkeypatch) -> None:

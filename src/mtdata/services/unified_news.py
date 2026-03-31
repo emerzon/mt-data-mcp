@@ -6,9 +6,12 @@ import logging
 import math
 import re
 from collections import Counter
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import IntEnum
+from functools import lru_cache
+from time import monotonic
 from typing import Any, Dict, Iterable, List, Optional, Protocol, runtime_checkable
 
 from .finviz_service import (
@@ -17,6 +20,7 @@ from .finviz_service import (
     get_forex_performance,
     get_futures_performance,
     get_general_news,
+    get_stock_description,
     get_stock_news,
 )
 from .news_embeddings import get_news_embedding_service
@@ -30,6 +34,8 @@ _DEFAULT_IMPACT_BUCKET_SIZE = 3
 _CANDIDATE_MULTIPLIER = 5
 _MAX_SNAPSHOT_ROWS = 8
 _MIN_ECONOMIC_CANDIDATES = 24
+_MIN_SNAPSHOT_RELEVANCE = 1.0
+_YCNBC_GENERAL_CACHE_TTL_SECONDS = 180.0
 _CURRENCY_CODES = {"USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"}
 _CURRENCY_TERMS = {
     "USD": ["usd", "dollar", "us dollar", "fed", "fomc", "treasury", "cpi", "pce", "payrolls", "nfp"],
@@ -63,6 +69,14 @@ _INDEX_TERMS = {
     "DAX": ["dax", "germany", "europe", "ecb"],
     "FTSE": ["ftse", "uk stocks", "london", "boe", "britain", "sterling"],
     "NIKKEI": ["nikkei", "japan stocks", "tokyo", "boj", "yen", "japan"],
+}
+_INDEX_HARD_EVIDENCE_TERMS = {
+    "SPX": ["spx", "s&p 500", "es"],
+    "NAS": ["nasdaq", "nasdaq 100", "ndx", "nq"],
+    "DJI": ["dow", "dow jones", "dji", "ym"],
+    "DAX": ["dax", "germany", "german", "fdax"],
+    "FTSE": ["ftse", "london", "britain", "british"],
+    "NIKKEI": ["nikkei", "tokyo", "japan", "japanese"],
 }
 _CRYPTO_QUOTES = {"USD", "USDT", "USDC", "BTC", "ETH"}
 _COMMODITY_BASES = {"XAU", "XAG", "WTI", "BRENT", "XBR", "NG", "NGAS", "NATGAS"}
@@ -199,7 +213,7 @@ _ASSET_CLASS_IMPACT_TERMS = {
     "forex": {"war": 0.8, "oil": 0.8, "rates": 0.8, "yield": 0.8, "inflation": 0.7},
     "commodity": {"war": 1.0, "oil": 1.0, "energy": 0.9, "sanction": 0.8, "supply": 0.8},
 }
-_YCNBC_GENERAL_CATEGORIES = ("latest", "world_economy", "central_banks", "energy", "politics")
+_YCNBC_GENERAL_CATEGORIES = ("latest", "world_economy", "central_banks", "energy")
 _YCNBC_INDEX_SYMBOLS = {
     "SPX": ".SPX",
     "NAS": ".NDX",
@@ -360,6 +374,26 @@ def _tokenize(value: str) -> List[str]:
     return re.findall(r"[a-z0-9]+", value.lower())
 
 
+def _alias_matches_text(alias: str, text: str, compact_text: str, tokens: Collection[str]) -> bool:
+    alias_text = alias.lower().strip()
+    if not alias_text:
+        return False
+
+    alias_compact = _compact_token(alias)
+    if alias_text == text or alias_text in tokens:
+        return True
+
+    if " " in alias_text or "/" in alias_text or "-" in alias_text:
+        if alias_text in text:
+            return True
+        alias_tokens = _tokenize(alias_text)
+        if alias_tokens and all(token in tokens for token in alias_tokens):
+            return True
+        return bool(alias_compact) and len(alias_compact) >= 5 and alias_compact in compact_text
+
+    return bool(alias_compact) and len(alias_compact) >= 4 and alias_compact in compact_text
+
+
 def _unique_preserve_order(items: Iterable[str]) -> List[str]:
     seen: set[str] = set()
     out: List[str] = []
@@ -443,6 +477,15 @@ def _safe_symbol_metadata(symbol: str) -> Dict[str, str]:
         if isinstance(value, str) and value.strip():
             metadata[attr] = value.strip()
     return metadata
+
+
+@lru_cache(maxsize=128)
+def _safe_equity_description(symbol: str) -> str:
+    try:
+        result = get_stock_description(symbol)
+    except Exception:
+        return ""
+    return _safe_text(result.get("description")).lower()
 
 
 def _match_prefixed_base(compact: str, prefixes: Dict[str, str]) -> tuple[Optional[str], Optional[str]]:
@@ -553,6 +596,9 @@ def _classify_instrument(symbol: str) -> InstrumentContext:
     elif base_asset in _CURRENCY_CODES and quote_asset in _CURRENCY_CODES:
         asset_class = "forex"
 
+    if asset_class == "equity" and not desc_text:
+        desc_text = _safe_equity_description(symbol_norm)
+
     aliases = [symbol_norm, compact]
     if base_asset and base_asset in _INDEX_ALIASES:
         aliases.extend(_INDEX_ALIASES[base_asset])
@@ -568,7 +614,7 @@ def _classify_instrument(symbol: str) -> InstrumentContext:
     terms: List[str] = [alias.lower() for alias in aliases]
     if base_asset in _CURRENCY_TERMS:
         terms.extend(_CURRENCY_TERMS[base_asset])
-    if quote_asset in _CURRENCY_TERMS:
+    if asset_class == "forex" and quote_asset in _CURRENCY_TERMS:
         terms.extend(_CURRENCY_TERMS[quote_asset])
     if base_asset in _CRYPTO_TERMS:
         terms.extend(_CRYPTO_TERMS[base_asset])
@@ -577,7 +623,7 @@ def _classify_instrument(symbol: str) -> InstrumentContext:
     if base_asset in _INDEX_TERMS:
         terms.extend(_INDEX_TERMS[base_asset])
     if asset_class == "crypto":
-        terms.extend(["risk sentiment", "liquidity", "etf", "inflation", "fed"])
+        terms.extend(["crypto", "token"])
     if asset_class == "equity":
         terms.extend(["earnings", "guidance", "analyst"])
     if asset_class == "forex":
@@ -585,7 +631,7 @@ def _classify_instrument(symbol: str) -> InstrumentContext:
     if asset_class == "commodity":
         terms.extend(["commodity", "inventory", "supply", "demand"])
     if asset_class == "index":
-        terms.extend(["index", "risk sentiment", "breadth", "earnings"])
+        terms.extend(["futures"])
 
     if desc_text:
         desc_terms = [token for token in _tokenize(desc_text) if len(token) > 3][:6]
@@ -615,6 +661,10 @@ def _has_symbol_specific_evidence(item: NewsItem, context: InstrumentContext) ->
     if direct_symbol == context.symbol:
         return True
 
+    return _has_textual_context_evidence(item, context)
+
+
+def _has_textual_context_evidence(item: NewsItem, context: InstrumentContext) -> bool:
     snapshot_ticker = _safe_text(item.metadata.get("ticker")).upper()
     if snapshot_ticker:
         compact_ticker = _compact_token(snapshot_ticker)
@@ -623,19 +673,107 @@ def _has_symbol_specific_evidence(item: NewsItem, context: InstrumentContext) ->
 
     text = item.search_text().lower()
     compact_text = _compact_token(text)
+    tokens = set(_tokenize(text))
     for alias in context.aliases:
-        alias_compact = _compact_token(alias)
-        if len(alias_compact) >= 4 and alias_compact in compact_text:
+        if _alias_matches_text(alias, text, compact_text, tokens):
             return True
 
     if context.asset_class == "equity" and context.description:
-        tokens = set(_tokenize(text))
         desc_tokens = {
             token for token in _tokenize(context.description)
             if len(token) > 3 and token not in _EQUITY_DESCRIPTION_STOPWORDS
         }
         if desc_tokens & tokens:
             return True
+
+    return False
+
+
+def _has_asset_specific_evidence(item: NewsItem, context: InstrumentContext) -> bool:
+    if _has_textual_context_evidence(item, context):
+        return True
+
+    text = item.search_text().lower()
+    token_set = set(_tokenize(text))
+
+    if context.asset_class == "crypto" and context.base_asset in _CRYPTO_TERMS:
+        strong_terms = [term for term in _CRYPTO_TERMS[context.base_asset] if term not in {"crypto"}]
+        return any(term in text or term in token_set for term in strong_terms)
+
+    if context.asset_class == "commodity" and context.base_asset in _COMMODITY_TERMS:
+        strong_terms = [term for term in _COMMODITY_TERMS[context.base_asset] if term not in {"energy"}]
+        return any(term in text or term in token_set for term in strong_terms)
+
+    if context.asset_class == "index" and context.base_asset in _INDEX_TERMS:
+        strong_terms = _INDEX_HARD_EVIDENCE_TERMS.get(context.base_asset, [])
+        if any(term in text or term in token_set for term in strong_terms):
+            return True
+
+    if context.asset_class == "forex":
+        return any(alias.lower() in text for alias in context.aliases if "/" in alias)
+
+    if context.asset_class == "equity" and context.description:
+        tokens = {
+            token for token in _tokenize(context.description)
+            if len(token) > 3 and token not in _EQUITY_DESCRIPTION_STOPWORDS
+        }
+        return bool(tokens & token_set)
+
+    return False
+
+
+def _passes_related_gate(item: NewsItem, context: InstrumentContext) -> bool:
+    if item.kind == "direct_symbol":
+        if context.asset_class == "equity":
+            return _has_asset_specific_evidence(item, context)
+        return True
+
+    if _has_asset_specific_evidence(item, context):
+        return True
+
+    if item.kind != "economic_event" or not _is_macro_sensitive_event(item):
+        return False
+
+    event_for = _safe_text(item.metadata.get("event_for")).upper()
+    if not event_for:
+        return False
+
+    if context.asset_class == "forex":
+        return event_for in {context.base_asset or "", context.quote_asset or ""}
+
+    if context.asset_class == "index":
+        return event_for == _INDEX_EXPOSURE_CURRENCIES.get(context.base_asset or "")
+
+    if context.asset_class in {"crypto", "commodity"}:
+        return event_for == (context.quote_asset or "") and item.priority >= NewsPriority.HIGH
+
+    return False
+
+
+def _should_promote_general_item_to_related(item: NewsItem, context: InstrumentContext) -> bool:
+    if _has_asset_specific_evidence(item, context):
+        return True
+    return _passes_related_gate(item, context)
+
+
+def _has_snapshot_context_evidence(ticker: str, label: str, context: InstrumentContext) -> bool:
+    snapshot_text = " ".join(part for part in (ticker, label) if part).lower()
+    snapshot_compact = _compact_token(snapshot_text)
+    snapshot_tokens = set(_tokenize(snapshot_text))
+    for alias in context.aliases:
+        alias_text = alias.lower()
+        alias_compact = _compact_token(alias)
+        if alias_compact and alias_compact == _compact_token(ticker):
+            return True
+        if _alias_matches_text(alias, snapshot_text, snapshot_compact, snapshot_tokens):
+            return True
+
+    if context.asset_class == "index" and context.base_asset in _INDEX_HARD_EVIDENCE_TERMS:
+        return any(term in snapshot_text for term in _INDEX_HARD_EVIDENCE_TERMS[context.base_asset])
+
+    if context.asset_class == "commodity" and context.base_asset in _COMMODITY_TERMS:
+        strong_terms = [term for term in _COMMODITY_TERMS[context.base_asset] if term not in {"energy"}]
+        return any(term in snapshot_text for term in strong_terms)
 
     return False
 
@@ -681,13 +819,14 @@ def _score_relevance(item: NewsItem, context: InstrumentContext) -> tuple[float,
     text = item.search_text().lower()
     compact_text = _compact_token(text)
     tokens = _tokenize(text)
+    token_set = set(tokens)
     matched_terms: List[str] = []
     score = 0.0
     macro_sensitive_event = _is_macro_sensitive_event(item)
 
     direct_symbol = _safe_text(item.metadata.get("direct_symbol")).upper()
     if direct_symbol and direct_symbol == context.symbol:
-        score += 4.0
+        score += 4.0 if context.asset_class != "equity" or _has_asset_specific_evidence(item, context) else 1.0
         matched_terms.append(context.symbol)
 
     snapshot_ticker = _safe_text(item.metadata.get("ticker")).upper()
@@ -711,8 +850,7 @@ def _score_relevance(item: NewsItem, context: InstrumentContext) -> tuple[float,
         matched_terms.append(event_for)
 
     for alias in context.aliases:
-        alias_compact = _compact_token(alias)
-        if alias_compact and alias_compact in compact_text:
+        if _alias_matches_text(alias, text, compact_text, token_set):
             score += 1.4
             matched_terms.append(alias)
 
@@ -724,7 +862,7 @@ def _score_relevance(item: NewsItem, context: InstrumentContext) -> tuple[float,
             if term_norm in text:
                 score += 0.9
                 matched_terms.append(term_norm)
-        elif term_norm in tokens:
+        elif term_norm in token_set:
             score += 0.5
             matched_terms.append(term_norm)
 
@@ -771,6 +909,9 @@ def _score_systemic_impact(item: NewsItem, context: InstrumentContext) -> tuple[
 def _apply_embedding_rerank(items: List[NewsItem], context: InstrumentContext) -> bool:
     service = get_news_embedding_service()
     if not service.is_available():
+        return False
+
+    if len(items) < 2:
         return False
 
     rerank_count = min(len(items), service.top_n)
@@ -845,6 +986,7 @@ class YCNBCNewsSource:
 
     def __init__(self) -> None:
         self._available: Optional[bool] = None
+        self._general_cache: Optional[tuple[float, List[NewsItem]]] = None
 
     def is_available(self) -> bool:
         if self._available is not None:
@@ -860,6 +1002,9 @@ class YCNBCNewsSource:
     def fetch_general_candidates(self, limit: int) -> List[NewsItem]:
         if not self.is_available():
             return []
+        cached = self._general_cache
+        if cached is not None and monotonic() - cached[0] <= _YCNBC_GENERAL_CACHE_TTL_SECONDS:
+            return deepcopy(cached[1][:limit])
         try:
             news_cls, _stocks_cls = _import_ycnbc()
             news_client = news_cls()
@@ -900,8 +1045,10 @@ class YCNBCNewsSource:
                     )
                     rank += 1
                     if len(out) >= limit:
-                        return out
-            return out
+                        self._general_cache = (monotonic(), out)
+                        return deepcopy(out)
+            self._general_cache = (monotonic(), out)
+            return deepcopy(out[:limit])
         except Exception:
             logger.exception("Error fetching YCNBC general candidates")
             return []
@@ -1056,23 +1203,21 @@ class FinvizNewsSource:
             ticker = _first_present(row, "Ticker", "ticker", "Pair", "pair", "Symbol", "symbol", "Name", "name")
             label = _first_present(row, "Label", "label", "Group", "group")
             search_text = " ".join(_safe_text(value) for value in row.values())
-            row_score, _matched = _score_relevance(
-                NewsItem(
-                    title=ticker or label or market,
-                    provider=self.name,
-                    source=f"Finviz {market.title()}",
-                    kind="market_snapshot",
-                    category=market,
-                    metadata={
-                        "ticker": ticker,
-                        "label": label,
-                        "search_text": search_text,
-                        "market": market,
-                    },
-                ),
-                context,
+            row_item = NewsItem(
+                title=ticker or label or market,
+                provider=self.name,
+                source=f"Finviz {market.title()}",
+                kind="market_snapshot",
+                category=market,
+                metadata={
+                    "ticker": ticker,
+                    "label": label,
+                    "search_text": search_text,
+                    "market": market,
+                },
             )
-            if row_score > 0:
+            row_score, _matched = _score_relevance(row_item, context)
+            if row_score >= _MIN_SNAPSHOT_RELEVANCE and _has_snapshot_context_evidence(ticker, label, context):
                 scored_rows.append((row_score, row))
         scored_rows.sort(key=lambda item: item[0], reverse=True)
 
@@ -1080,6 +1225,9 @@ class FinvizNewsSource:
         for row_score, row in scored_rows[:_MAX_SNAPSHOT_ROWS]:
             ticker = _first_present(row, "Ticker", "ticker", "Pair", "pair", "Symbol", "symbol", "Name", "name")
             label = _first_present(row, "Label", "label", "Group", "group")
+            display_name = ticker or label or market.upper()
+            if context.asset_class in {"index", "commodity"} and label:
+                display_name = label
             summary_parts = []
             for display_key, row_keys in (
                 ("Label", ("Label", "label")),
@@ -1097,7 +1245,7 @@ class FinvizNewsSource:
             observed_at = datetime.now(timezone.utc)
             out.append(
                 NewsItem(
-                    title=f"{ticker or label or market.upper()} market snapshot",
+                    title=f"{display_name} market snapshot",
                     provider=self.name,
                     source=f"Finviz {market.title()}",
                     kind="market_snapshot",
@@ -1308,25 +1456,18 @@ class NewsAggregator:
         related_news: List[NewsItem] = []
         impact_news: List[NewsItem] = []
         if context is not None:
-            related_pool = _dedupe_items(list(related_candidates) + list(general_pool))
+            promoted_general_candidates = [
+                item for item in general_pool
+                if _should_promote_general_item_to_related(item, context)
+            ]
+            related_pool = _dedupe_items(list(related_candidates) + promoted_general_candidates)
             filtered_related: List[NewsItem] = []
             for item in related_pool:
                 item.importance_score = _score_importance(item)
                 item.relevance_score, matched_terms = _score_relevance(item, context)
                 if matched_terms:
                     item.metadata["matched_terms"] = matched_terms
-                if (
-                    item.kind == "economic_event"
-                    and context.asset_class in {"crypto", "equity", "index"}
-                    and not _is_macro_sensitive_event(item)
-                    and not _has_symbol_specific_evidence(item, context)
-                ):
-                    continue
-                if (
-                    context.asset_class == "equity"
-                    and item.kind != "direct_symbol"
-                    and not _has_symbol_specific_evidence(item, context)
-                ):
+                if not _passes_related_gate(item, context):
                     continue
                 threshold = 0.55 if item.kind != "direct_symbol" else 0.2
                 if item.relevance_score >= threshold:
@@ -1351,8 +1492,9 @@ class NewsAggregator:
                 )
             related_news = filtered_related[:bucket_size]
 
+            impact_pool = _dedupe_items(list(related_candidates) + list(general_pool))
             impact_candidates: List[NewsItem] = []
-            for item in related_pool:
+            for item in impact_pool:
                 systemic_score, impact_terms = _score_systemic_impact(item, context)
                 if systemic_score < 2.4 or item.importance_score < 3.0:
                     continue

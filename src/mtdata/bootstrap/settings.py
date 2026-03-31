@@ -287,7 +287,7 @@ class NewsEmbeddingsConfig:
 
     def __init__(self) -> None:
         self.model_name = "Qwen/Qwen3-Embedding-0.6B"
-        self.top_n = 20
+        self.top_n = 8
         self.weight = 1.0
         self.truncate_dim: Optional[int] = None
         self.cache_size = 256
@@ -299,7 +299,7 @@ class NewsEmbeddingsConfig:
             os.getenv("MTDATA_NEWS_EMBEDDINGS_MODEL", "Qwen/Qwen3-Embedding-0.6B").strip()
             or "Qwen/Qwen3-Embedding-0.6B"
         )
-        self.top_n = max(1, _env_int("MTDATA_NEWS_EMBEDDINGS_TOP_N", 20))
+        self.top_n = max(1, _env_int("MTDATA_NEWS_EMBEDDINGS_TOP_N", 8))
         self.weight = max(0.0, _env_float("MTDATA_NEWS_EMBEDDINGS_WEIGHT", 1.0))
         self.truncate_dim = _env_optional_int("MTDATA_NEWS_EMBEDDINGS_TRUNCATE_DIM")
         if self.truncate_dim is not None and self.truncate_dim <= 0:
