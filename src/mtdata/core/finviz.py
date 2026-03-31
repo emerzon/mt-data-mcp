@@ -101,6 +101,7 @@ def finviz_fundamentals(symbol: str) -> Dict[str, Any]:
         symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_fundamentals")
         if error is not None:
             return error
+        assert symbol_norm is not None
         return get_stock_fundamentals(symbol_norm)
 
     return _run_logged_tool(
@@ -129,6 +130,7 @@ def finviz_description(symbol: str) -> Dict[str, Any]:
         symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_description")
         if error is not None:
             return error
+        assert symbol_norm is not None
         return get_stock_description(symbol_norm)
 
     return _run_logged_tool(
@@ -165,6 +167,7 @@ def finviz_news(symbol: Optional[str] = None, limit: int = 20, page: int = 1) ->
             symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_news")
             if error is not None:
                 return error
+            assert symbol_norm is not None
             return get_stock_news(symbol_norm, limit=limit, page=page)
         return get_general_news(news_type="news", limit=limit, page=page)
 
@@ -197,6 +200,7 @@ def finviz_insider(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any
         symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_insider")
         if error is not None:
             return error
+        assert symbol_norm is not None
         return get_stock_insider_trades(symbol_norm, limit=limit, page=page)
 
     return _run_logged_tool(
@@ -228,6 +232,7 @@ def finviz_ratings(symbol: str) -> Dict[str, Any]:
         symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_ratings")
         if error is not None:
             return error
+        assert symbol_norm is not None
         return get_stock_ratings(symbol_norm)
 
     return _run_logged_tool(
@@ -256,6 +261,7 @@ def finviz_peers(symbol: str) -> Dict[str, Any]:
         symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_peers")
         if error is not None:
             return error
+        assert symbol_norm is not None
         return get_stock_peers(symbol_norm)
 
     return _run_logged_tool(

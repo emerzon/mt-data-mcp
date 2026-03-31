@@ -4,7 +4,7 @@ import logging
 from unittest.mock import patch
 
 from mtdata.core import finviz as core_finviz
-from mtdata.core.finviz import finviz_news
+from mtdata.core.finviz import finviz_market_news, finviz_news
 from mtdata.services.finviz_service import get_stock_news
 
 
@@ -52,3 +52,8 @@ def test_finviz_news_logs_finish_event_for_success(caplog) -> None:
         "event=finish" in record.message and "operation=finviz_news" in record.message
         for record in caplog.records
     )
+
+
+def test_finviz_news_helpers_are_registered_tools() -> None:
+    assert hasattr(finviz_news, "__wrapped__")
+    assert hasattr(finviz_market_news, "__wrapped__")
