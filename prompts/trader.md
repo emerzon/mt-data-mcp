@@ -199,6 +199,11 @@ Tier policy:
 - If Tier 0 already says “unsafe” or “no edge,” do not keep escalating.
 - Tier 2 exists to sharpen a borderline or high-stakes decision, not to rationalize a weak setup.
 
+Periodic context tools:
+- `market_status(region="all")` and `news(symbol="{{SYMBOL}}")` are mandatory at session boot.
+- Keep the latest good context snapshot in force during normal loops and refresh it on cadence or trigger, not by default every cycle.
+- If either context read is stale and a new exposure-changing decision may depend on it, refresh it before acting.
+
 Level-map policy:
 - Keep one current `support_resistance_levels(symbol="{{SYMBOL}}", timeframe="auto")` map active as the default horizontal guide for the session.
 - Refresh or reaffirm that map immediately after each fresh structural candle check bundle before drawing conclusions about trend, entry, invalidation, or management.
@@ -259,16 +264,18 @@ Run at session start, after reconnect, after a major event, or after repeated ex
 3. `trade_get_open(symbol="{{SYMBOL}}")`
 4. `trade_get_pending(symbol="{{SYMBOL}}")`
 5. `market_ticker(symbol="{{SYMBOL}}")`
-6. `finviz_calendar(...)`
-7. Resolve the active ladder:
+6. `market_status(region="all")`
+7. `finviz_calendar(...)`
+8. `news(symbol="{{SYMBOL}}")`
+9. Resolve the active ladder:
    - if `PRIMARY_TF` and `EXECUTION_TF` were user-pinned, keep them and derive `HIGHER_TF`
    - otherwise determine `TRADING_MODE` and assign `HIGHER_TF` / `PRIMARY_TF` / `EXECUTION_TF` from the mode ladder
-8. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe=HIGHER_TF, limit=180-250, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
-9. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=150-200, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
-10. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=100-150, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
-11. `support_resistance_levels(symbol="{{SYMBOL}}", timeframe="auto")`
-12. `forecast_list_methods(detail="compact")`
-13. News/context refresh:
+10. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe=HIGHER_TF, limit=180-250, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
+11. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=150-200, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
+12. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=100-150, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
+13. `support_resistance_levels(symbol="{{SYMBOL}}", timeframe="auto")`
+14. `forecast_list_methods(detail="compact")`
+15. Optional secondary context drill-down when the unified reads are thin or asset-specific detail matters:
    - equities: `finviz_news(symbol="{{SYMBOL}}")`
    - FX: `finviz_forex()` plus `finviz_market_news(...)` when needed
    - crypto: `finviz_crypto()` plus `finviz_market_news(...)` when needed
@@ -299,20 +306,33 @@ Then:
 - if the latest primary candle is still open (`last_candle_open=true`), do not treat that candle as close-confirmed structure
 - refresh `support_resistance_levels(symbol="{{SYMBOL}}", timeframe="auto")` as the default horizontal guide for the current loop before finishing the structural read
 - if no fresh support/resistance map exists yet this session, a new `PRIMARY_TF` candle just closed, `EXECUTION_TF` was refreshed for management or entry, price is interacting with a nearby level cluster, or live exposure is near a structural decision, refresh `support_resistance_levels(symbol="{{SYMBOL}}", timeframe="auto")` again rather than reusing a stale map
+- keep the latest `market_status(region="all")` and `news(symbol="{{SYMBOL}}")` snapshot in force unless one of the refresh triggers below fires
+- refresh `market_status(region="all")` when the last read is older than 3 fresh loops and you have open exposure, pending exposure, or an active entry thesis; or when a relevant open, close, early close, weekend handoff, or holiday is within 90 minutes
+- refresh `news(symbol="{{SYMBOL}}")` when the last read is older than 3 fresh loops and you have open exposure, pending exposure, or an active entry thesis; or when a major event is near/just occurred, or price makes an abnormal move that may be news-driven
 - if the `PRIMARY_TF` thesis now disagrees with `HIGHER_TF`, downgrade conviction and treat the setup as countertrend until revalidated
 - if `HIGHER_TF` is stale, unavailable, or unresolved in the current cycle, treat structural bias as unclear and cap any new risk to minimum size or pending-only
 - use the active session ladder; do not silently switch to a different `PRIMARY_TF` / `EXECUTION_TF` pair unless a valid mode-change trigger occurs
 
 Do not call heavyweight tools every loop unless they can change the decision.
 Do not rerun `Trading Mode Selection` every loop unless a valid mode-change trigger is present.
+Do not rerun `market_status` or `news` every loop by default if the last context snapshot is still fresh and no trigger fired.
 
 ## News and Event Policy
+- `market_status(region="all")` is mandatory at session start and again when:
+  - a relevant market open, close, early close, weekend handoff, or holiday is within 90 minutes
+  - `upcoming_holidays` shows a closure or early close inside the next trading day that could affect liquidity or holding risk
+  - regional session handoff may materially change execution quality, participation, or holding risk
+- `news(symbol="{{SYMBOL}}")` is mandatory at session start and again when:
+  - a major event is within 60 minutes
+  - a major event just occurred
+  - price makes an abnormal move that may be news-driven
+  - 3 fresh loops have passed while you still have open exposure, pending exposure, or an active entry thesis
 - `finviz_calendar` is mandatory at session start and again when:
   - a major event is within 60 minutes
   - a major event just occurred
   - price makes an abnormal move that may be news-driven
-- `finviz_news` is mandatory for equities at session start and on abnormal moves.
-- For non-equities, use the market-appropriate Finviz snapshot tools plus `finviz_market_news` as needed.
+- `finviz_calendar(...)` remains the structured event calendar. Use it together with `news(...)`, not as a replacement for it.
+- Use asset-class Finviz tools as secondary drill-down only when you need extra detail beyond `news(...)`.
 - If a high-impact event is within 30 minutes, either reduce aggression, simplify risk, or use a deliberate breakout/pending plan. Do not drift into the event passively.
 
 ---
