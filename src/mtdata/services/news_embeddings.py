@@ -89,7 +89,7 @@ class NewsEmbeddingService:
 
     @property
     def enabled(self) -> bool:
-        return bool(news_embeddings_config.enabled)
+        return True
 
     @property
     def top_n(self) -> int:
@@ -117,8 +117,6 @@ class NewsEmbeddingService:
         }
 
     def is_available(self) -> bool:
-        if not self.enabled:
-            return False
         return self._ensure_model() is not None
 
     def score_documents(self, context: "InstrumentContext", items: Iterable["NewsItem"]) -> dict[str, float]:
@@ -140,8 +138,6 @@ class NewsEmbeddingService:
         return scores
 
     def _ensure_model(self) -> Any:
-        if not self.enabled:
-            return None
         if self._model is not None:
             return self._model
         if self._load_attempted:

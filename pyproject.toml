@@ -87,6 +87,9 @@ news-embeddings = [
     "sentence-transformers>=5.1.2,<6",
     "huggingface-hub>=0.36.2,<1",
 ]
+news-ycnbc = [
+    "ycnbc @ git+https://github.com/codestorm-official/ycnbc.git@master",
+]
 all = [
     "arch>=8.0.0",
     "hmmlearn>=0.3.3",
@@ -113,6 +116,7 @@ all = [
     "uvicorn[standard]>=0.41.0",
     "sentence-transformers>=5.1.2,<6",
     "huggingface-hub>=0.36.2,<1",
+    "ycnbc @ git+https://github.com/codestorm-official/ycnbc.git@master",
 ]
 
 [project.scripts]

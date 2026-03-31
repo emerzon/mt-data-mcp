@@ -9,6 +9,28 @@ def _reset_aggregator(monkeypatch) -> None:
     monkeypatch.setattr(svc, "_news_aggregator", None)
 
 
+def _disable_ycnbc(monkeypatch) -> None:
+    monkeypatch.setattr(svc, "_import_ycnbc", lambda: (_ for _ in ()).throw(ImportError("ycnbc unavailable")))
+
+
+def _disable_embeddings(monkeypatch) -> None:
+    class FakeEmbeddingService:
+        enabled = True
+        top_n = 0
+        weight = 1.0
+
+        def is_available(self) -> bool:
+            return False
+
+        def score_documents(self, context, items):
+            return {}
+
+        def status(self):
+            return {"enabled": True, "available": False, "model": "Qwen/Qwen3-Embedding-0.6B"}
+
+    monkeypatch.setattr(svc, "get_news_embedding_service", lambda: FakeEmbeddingService())
+
+
 def test_fetch_unified_news_without_symbol_returns_only_general_bucket(monkeypatch) -> None:
     def fake_general_news(news_type: str = "news", limit: int = 20, page: int = 1):
         return {
@@ -40,6 +62,7 @@ def test_fetch_unified_news_without_symbol_returns_only_general_bucket(monkeypat
     monkeypatch.setattr(svc, "get_general_news", fake_general_news)
     monkeypatch.setattr(svc, "get_mt5_news", fake_mt5_news)
     monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
     _reset_aggregator(monkeypatch)
 
     result = svc.fetch_unified_news()
@@ -181,6 +204,8 @@ def test_fetch_unified_news_treats_whitespace_symbol_as_general_news(monkeypatch
     )
     monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
     monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
     _reset_aggregator(monkeypatch)
 
     result = svc.fetch_unified_news("   ")
@@ -287,6 +312,8 @@ def test_unknown_equity_without_specific_evidence_returns_no_related_items(monke
     )
     monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
     monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
     _reset_aggregator(monkeypatch)
 
     result = svc.fetch_unified_news("ZZZZNOTREAL")
@@ -314,6 +341,8 @@ def test_index_aliases_match_futures_snapshots(monkeypatch) -> None:
     )
     monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
     monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
     _reset_aggregator(monkeypatch)
 
     result = svc.fetch_unified_news("NAS100")
@@ -350,6 +379,8 @@ def test_market_snapshots_handle_lowercase_and_pair_keys(monkeypatch) -> None:
     )
     monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
     monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
     _reset_aggregator(monkeypatch)
 
     forex_result = svc.fetch_unified_news("EURUSD")
@@ -384,6 +415,8 @@ def test_index_snapshot_candidate_pool_keeps_more_than_three_rows(monkeypatch) -
     )
     monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
     monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
     _reset_aggregator(monkeypatch)
 
     result = svc.fetch_unified_news("NAS100")
@@ -414,6 +447,8 @@ def test_us_index_filters_non_macro_calendar_noise(monkeypatch) -> None:
     )
     monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
     monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
     _reset_aggregator(monkeypatch)
 
     result = svc.fetch_unified_news("NAS100")
@@ -528,6 +563,78 @@ def test_fetch_unified_news_can_rerank_with_embeddings(monkeypatch) -> None:
     assert result["related_news"][0]["title"] == "NAS100 market snapshot"
     assert result["related_news"][0]["metadata"]["embedding_used"] is True
     assert result["matching"]["embeddings"]["enabled"] is True
+
+
+def test_fetch_unified_news_includes_ycnbc_general_candidates_when_enabled(monkeypatch) -> None:
+    class FakeNews:
+        def latest(self):
+            return [
+                {
+                    "headline": "Oil prices reverse course as traders assess Iran conflict",
+                    "time": "23 min ago",
+                    "link": "https://example.com/cnbc-oil",
+                }
+            ]
+
+        def __getattr__(self, _name):
+            return lambda: []
+
+    class FakeStocksUtil:
+        def news(self, symbol: str):
+            return []
+
+    monkeypatch.setattr(svc, "_import_ycnbc", lambda: (FakeNews, FakeStocksUtil))
+    monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": False, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news()
+
+    assert result["success"] is True
+    assert "ycnbc" in result["sources_used"]
+    assert any(item["provider"] == "ycnbc" for item in result["general_news"])
+    assert result["source_details"]["ycnbc"]["selected_general"] >= 1
+
+
+def test_fetch_unified_news_maps_indices_to_ycnbc_quote_symbols(monkeypatch) -> None:
+    class FakeNews:
+        def latest(self):
+            return []
+
+        def __getattr__(self, _name):
+            return lambda: []
+
+    class FakeStocksUtil:
+        def news(self, symbol: str):
+            assert symbol == ".NDX"
+            return [
+                {
+                    "headline": "Nasdaq 100 rebounds as chip stocks lead gains",
+                    "posttime": "4 Hours Ago",
+                    "link": "https://example.com/cnbc-ndx",
+                }
+            ]
+
+    monkeypatch.setattr(svc, "_import_ycnbc", lambda: (FakeNews, FakeStocksUtil))
+    monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
+    monkeypatch.setattr(svc, "get_futures_performance", lambda: {"success": True, "futures": []})
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {"success": True, "items": []},
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": False, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("NAS100")
+
+    assert result["success"] is True
+    assert any("Nasdaq 100 rebounds" in item["title"] for item in result["related_news"])
+    assert result["source_details"]["ycnbc"]["related_candidates"] >= 1
+    ycnbc_items = [item for item in result["related_news"] if item["provider"] == "ycnbc"]
+    assert ycnbc_items[0]["metadata"]["cnbc_symbol"] == ".NDX"
 
 
 def test_fetch_unified_news_returns_failure_when_all_sources_error(monkeypatch) -> None:

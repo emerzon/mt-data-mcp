@@ -50,17 +50,18 @@ def test_format_document_text_uses_title_and_selected_metadata() -> None:
     assert "NQ" in text
 
 
-def test_embedding_service_is_disabled_by_default() -> None:
+def test_embedding_service_is_optional_until_model_is_available() -> None:
     service = NewsEmbeddingService()
+    service._load_attempted = True
 
-    assert news_embeddings_config.enabled is False
     assert service.is_available() is False
-    assert service.status()["enabled"] is False
+    assert service.status()["enabled"] is True
     assert service.status()["model"] == "Qwen/Qwen3-Embedding-0.6B"
 
 
-def test_embedding_service_returns_empty_scores_when_disabled() -> None:
+def test_embedding_service_returns_empty_scores_when_backend_is_unavailable() -> None:
     service = NewsEmbeddingService()
+    service._load_attempted = True
     item = NewsItem(title="test", provider="p", source="s")
 
     scores = service.score_documents(_sample_context(), [item])
@@ -84,7 +85,6 @@ def test_embedding_service_caches_vectors(monkeypatch) -> None:
 
     service = NewsEmbeddingService()
     fake_model = FakeModel()
-    monkeypatch.setattr(news_embeddings_config, "enabled", True)
     monkeypatch.setattr(news_embeddings_config, "cache_size", 8)
     monkeypatch.setattr(service, "_ensure_model", lambda: fake_model)
 

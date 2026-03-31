@@ -199,6 +199,44 @@ _ASSET_CLASS_IMPACT_TERMS = {
     "forex": {"war": 0.8, "oil": 0.8, "rates": 0.8, "yield": 0.8, "inflation": 0.7},
     "commodity": {"war": 1.0, "oil": 1.0, "energy": 0.9, "sanction": 0.8, "supply": 0.8},
 }
+_YCNBC_GENERAL_CATEGORIES = ("latest", "world_economy", "central_banks", "energy", "politics")
+_YCNBC_INDEX_SYMBOLS = {
+    "SPX": ".SPX",
+    "NAS": ".NDX",
+    "DJI": ".DJI",
+    "DAX": ".GDAXI",
+    "FTSE": ".FTSE",
+    "NIKKEI": ".N225",
+}
+_YCNBC_COMMODITY_SYMBOLS = {
+    "XAU": "@GC.1",
+    "XAG": "@SI.1",
+    "WTI": "@CL.1",
+    "BRENT": "@LCO.1",
+    "NG": "@NG.1",
+}
+_YCNBC_CRYPTO_SYMBOLS = {
+    "BTC": "BTC.CM=",
+    "ETH": "ETH.CM=",
+    "SOL": "SOL.CM=",
+    "XRP": "XRP.CM=",
+    "DOGE": "DOGE.CM=",
+    "BNB": "BNB.CM=",
+}
+_YCNBC_FOREX_SYMBOLS = {
+    "EURUSD": "EUR=",
+    "USDJPY": "JPY=",
+    "GBPUSD": "GBP=",
+    "USDCAD": "CAD=",
+    "USDCHF": "CHF=",
+    "AUDUSD": "AUD=",
+    "NZDUSD": "NZD=",
+    "EURJPY": "EURJPY=",
+    "EURGBP": "EURGBP=",
+    "EURCHF": "EURCHF=",
+    "EURCAD": "EURCAD=",
+    "AUDJPY": "AUDJPY=",
+}
 
 
 class NewsPriority(IntEnum):
@@ -385,6 +423,13 @@ def _parse_relative_time(value: str) -> Optional[datetime]:
     return now - timedelta(days=amount)
 
 
+def _parse_published_text(value: str) -> Optional[datetime]:
+    parsed = _parse_relative_time(value)
+    if parsed is not None:
+        return parsed
+    return _maybe_parse_datetime(value)
+
+
 def _safe_symbol_metadata(symbol: str) -> Dict[str, str]:
     try:
         info = get_symbol_info_cached(symbol)
@@ -436,6 +481,24 @@ def _first_present(row: Dict[str, Any], *keys: str) -> str:
         if value:
             return value
     return ""
+
+
+def _import_ycnbc() -> tuple[Any, Optional[Any]]:
+    from ycnbc import News as YCNBCNews
+
+    stocks_util = None
+    try:
+        from ycnbc.stocks.stocks_util import StocksUtil
+    except Exception:
+        try:
+            from ycnbc.stocks import StocksUtil  # type: ignore[attr-defined]
+        except Exception:
+            StocksUtil = None  # type: ignore[assignment]
+        stocks_util = StocksUtil
+    else:
+        stocks_util = StocksUtil
+
+    return YCNBCNews, stocks_util
 
 
 def _classify_instrument(symbol: str) -> InstrumentContext:
@@ -744,6 +807,165 @@ def _dedupe_items(items: Iterable[NewsItem]) -> List[NewsItem]:
     return list(deduped.values())
 
 
+def _build_ycnbc_symbol_candidates(context: InstrumentContext) -> List[str]:
+    compact_symbol = _compact_token(context.symbol)
+    mapped: List[str] = []
+
+    if context.asset_class == "equity":
+        mapped.append(context.symbol)
+    elif context.asset_class == "index" and context.base_asset:
+        mapped_symbol = _YCNBC_INDEX_SYMBOLS.get(context.base_asset)
+        if mapped_symbol:
+            mapped.append(mapped_symbol)
+    elif context.asset_class == "commodity" and context.base_asset:
+        mapped_symbol = _YCNBC_COMMODITY_SYMBOLS.get(context.base_asset)
+        if mapped_symbol:
+            mapped.append(mapped_symbol)
+    elif context.asset_class == "crypto" and context.base_asset:
+        mapped_symbol = _YCNBC_CRYPTO_SYMBOLS.get(context.base_asset)
+        if mapped_symbol:
+            mapped.append(mapped_symbol)
+    elif context.asset_class == "forex":
+        mapped_symbol = _YCNBC_FOREX_SYMBOLS.get(compact_symbol)
+        if mapped_symbol:
+            mapped.append(mapped_symbol)
+
+    if context.asset_class == "equity":
+        compact = _compact_token(context.symbol)
+        if compact and compact not in mapped:
+            mapped.append(compact)
+
+    return _unique_preserve_order(mapped)
+
+
+class YCNBCNewsSource:
+    """Optional CNBC scraping source for general and quote-page news."""
+
+    name = "ycnbc"
+
+    def __init__(self) -> None:
+        self._available: Optional[bool] = None
+
+    def is_available(self) -> bool:
+        if self._available is not None:
+            return self._available
+        try:
+            _import_ycnbc()
+        except Exception:
+            self._available = False
+        else:
+            self._available = True
+        return self._available
+
+    def fetch_general_candidates(self, limit: int) -> List[NewsItem]:
+        if not self.is_available():
+            return []
+        try:
+            news_cls, _stocks_cls = _import_ycnbc()
+            news_client = news_cls()
+            out: List[NewsItem] = []
+            rank = 0
+            for category in _YCNBC_GENERAL_CATEGORIES:
+                fetcher = getattr(news_client, category, None)
+                if fetcher is None:
+                    continue
+                raw_items = fetcher() or []
+                if not isinstance(raw_items, list):
+                    continue
+                for item in raw_items:
+                    if not isinstance(item, dict):
+                        continue
+                    title = _safe_text(item.get("headline") or item.get("title"))
+                    url = _safe_text(item.get("link")) or None
+                    if not title:
+                        continue
+                    published_at = _parse_published_text(_safe_text(item.get("time") or item.get("posttime")))
+                    tag = _safe_text(item.get("tag"))
+                    metadata: Dict[str, Any] = {"source_rank": rank}
+                    if tag:
+                        metadata["tag"] = tag
+                        metadata["search_text"] = tag
+                    out.append(
+                        NewsItem(
+                            title=title,
+                            provider=self.name,
+                            source="CNBC",
+                            kind="headline",
+                            published_at=published_at,
+                            url=url,
+                            category=f"cnbc_{category}",
+                            priority=NewsPriority.MEDIUM,
+                            metadata=metadata,
+                        )
+                    )
+                    rank += 1
+                    if len(out) >= limit:
+                        return out
+            return out
+        except Exception:
+            logger.exception("Error fetching YCNBC general candidates")
+            return []
+
+    def fetch_related_candidates(self, context: InstrumentContext, limit: int) -> List[NewsItem]:
+        if not self.is_available():
+            return []
+        symbol_candidates = _build_ycnbc_symbol_candidates(context)
+        if not symbol_candidates:
+            return []
+        try:
+            _news_cls, stocks_cls = _import_ycnbc()
+            if stocks_cls is None:
+                return []
+            stocks_client = stocks_cls()
+            out: List[NewsItem] = []
+            rank = 0
+            for mapped_symbol in symbol_candidates:
+                raw_items = stocks_client.news(mapped_symbol) or []
+                if not isinstance(raw_items, list):
+                    continue
+                for item in raw_items:
+                    if not isinstance(item, dict):
+                        continue
+                    title = _safe_text(item.get("headline") or item.get("title"))
+                    url = _safe_text(item.get("link")) or None
+                    if not title:
+                        continue
+                    published_at = _parse_published_text(_safe_text(item.get("posttime") or item.get("time")))
+                    out.append(
+                        NewsItem(
+                            title=title,
+                            provider=self.name,
+                            source="CNBC Quote News",
+                            kind="headline",
+                            published_at=published_at,
+                            url=url,
+                            category="quote_news",
+                            priority=NewsPriority.MEDIUM,
+                            metadata={
+                                "source_rank": rank,
+                                "cnbc_symbol": mapped_symbol,
+                                "search_text": " ".join(
+                                    token
+                                    for token in (
+                                        mapped_symbol,
+                                        context.symbol,
+                                        context.base_asset or "",
+                                        context.description or "",
+                                    )
+                                    if token
+                                ),
+                            },
+                        )
+                    )
+                    rank += 1
+                    if len(out) >= limit:
+                        return out
+            return out
+        except Exception:
+            logger.exception("Error fetching YCNBC related candidates for %s", context.symbol)
+            return []
+
+
 class FinvizNewsSource:
     """Finviz-backed news provider and market context provider."""
 
@@ -1011,6 +1233,7 @@ class NewsAggregator:
         self._sources: Dict[str, NewsSource] = {}
         self.register_source(FinvizNewsSource())
         self.register_source(MT5NewsSource())
+        self.register_source(YCNBCNewsSource())
 
     def register_source(self, source: NewsSource) -> None:
         self._sources[source.name] = source

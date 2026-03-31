@@ -99,7 +99,6 @@ def _snapshot_mt5_config_state():
             "broker_time_check_ttl_seconds": getattr(config_obj, "broker_time_check_ttl_seconds", None),
         },
         "news_embeddings_state": {
-            "enabled": getattr(getattr(settings_mod, "news_embeddings_config", None), "enabled", None),
             "model_name": getattr(getattr(settings_mod, "news_embeddings_config", None), "model_name", None),
             "top_n": getattr(getattr(settings_mod, "news_embeddings_config", None), "top_n", None),
             "weight": getattr(getattr(settings_mod, "news_embeddings_config", None), "weight", None),
