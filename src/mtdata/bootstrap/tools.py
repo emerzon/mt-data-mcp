@@ -7,8 +7,8 @@ from types import ModuleType
 from typing import Final
 
 from ..core._mcp_instance import mcp
-from ..core.schema import get_shared_enum_lists
 from ..core.schema_attach import attach_schemas_to_tools
+from ..shared.schema import get_shared_enum_lists
 
 TOOL_MODULE_NAMES: Final[tuple[str, ...]] = (
     "mtdata.core.data",
@@ -25,7 +25,7 @@ TOOL_MODULE_NAMES: Final[tuple[str, ...]] = (
     "mtdata.core.trading",
     "mtdata.core.temporal",
     "mtdata.core.finviz",
-    "mtdata.core.mt5_news",
+    "mtdata.core.news",
 )
 
 _BOOTSTRAPPED_MODULES: tuple[ModuleType, ...] = ()
