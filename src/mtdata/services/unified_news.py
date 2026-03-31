@@ -45,6 +45,16 @@ _CURRENCY_TERMS = {
     "CHF": ["chf", "franc", "snb", "swiss", "switzerland"],
     "NZD": ["nzd", "kiwi", "rbnz", "new zealand"],
 }
+_FOREX_HARD_EVIDENCE_TERMS = {
+    "USD": ["usd", "dollar", "us dollar", "fed", "fomc", "treasury"],
+    "EUR": ["eur", "euro", "ecb", "lagarde", "eurozone"],
+    "GBP": ["gbp", "pound", "sterling", "boe", "bank of england", "britain"],
+    "JPY": ["jpy", "yen", "boj", "bank of japan", "japan", "ueda"],
+    "AUD": ["aud", "aussie", "rba", "australia"],
+    "CAD": ["cad", "loonie", "boc", "canada"],
+    "CHF": ["chf", "franc", "snb", "swiss", "switzerland"],
+    "NZD": ["nzd", "kiwi", "rbnz", "new zealand"],
+}
 _CRYPTO_TERMS = {
     "BTC": ["btc", "bitcoin", "crypto", "etf", "stablecoin", "halving", "miner"],
     "ETH": ["eth", "ethereum", "crypto", "staking", "layer 2", "defi"],
@@ -53,6 +63,7 @@ _CRYPTO_TERMS = {
     "DOGE": ["doge", "dogecoin", "crypto"],
     "BNB": ["bnb", "binance", "crypto"],
 }
+_CRYPTO_MARKET_TERMS = ("crypto market", "digital asset", "market cap")
 _COMMODITY_TERMS = {
     "XAU": ["xau", "gold", "bullion", "real yields", "safe haven"],
     "XAG": ["xag", "silver", "bullion", "industrial metals"],
@@ -77,7 +88,7 @@ _INDEX_HARD_EVIDENCE_TERMS = {
     "NIKKEI": ["nikkei", "tokyo", "japan", "japanese"],
 }
 _CRYPTO_QUOTES = {"USD", "USDT", "USDC", "BTC", "ETH"}
-_COMMODITY_BASES = {"XAU", "XAG", "WTI", "BRENT", "XBR", "NG", "NGAS", "NATGAS"}
+_COMMODITY_BASES = {"XAU", "XAG", "WTI", "BRENT", "XBR", "NG", "NGAS", "NATGAS", "GOLD", "SILVER", "USOIL", "UKOIL"}
 _KNOWN_CRYPTO_BASES = set(_CRYPTO_TERMS)
 _KNOWN_INDEX_HINTS = {
     "SPX500": "SPX",
@@ -103,6 +114,10 @@ _CRYPTO_BASE_PREFIXES = {
     "BNB": "BNB",
 }
 _COMMODITY_BASE_PREFIXES = {
+    "SILVER": "XAG",
+    "USOIL": "WTI",
+    "UKOIL": "BRENT",
+    "GOLD": "XAU",
     "NATGAS": "NG",
     "BRENT": "BRENT",
     "NGAS": "NG",
@@ -140,6 +155,18 @@ _EQUITY_DESCRIPTION_STOPWORDS = {
     "ordinary",
     "plc",
     "shares",
+}
+_EQUITY_SYMBOL_HINTS = {
+    "AAPL": "apple iphone mac ipad ios",
+    "MSFT": "microsoft windows azure office xbox",
+    "NVDA": "nvidia chips gpu ai datacenter",
+    "AMZN": "amazon aws ecommerce cloud retail",
+    "GOOGL": "google alphabet search youtube cloud android",
+    "GOOG": "google alphabet search youtube cloud android",
+    "META": "meta facebook instagram whatsapp ads",
+    "TSLA": "tesla electric vehicles ev autonomous energy",
+    "NFLX": "netflix streaming subscriber entertainment",
+    "AMD": "amd semiconductor chips gpu cpu",
 }
 _MACRO_EVENT_TERMS = (
     "cpi",
@@ -668,6 +695,9 @@ def _classify_instrument(symbol: str) -> InstrumentContext:
     if asset_class == "index":
         terms.extend(["futures"])
 
+    if asset_class == "equity" and not desc_text and compact in _EQUITY_SYMBOL_HINTS:
+        desc_text = _EQUITY_SYMBOL_HINTS[compact]
+
     if desc_text:
         desc_terms = [token for token in _tokenize(desc_text) if len(token) > 3][:6]
         terms.extend(desc_terms)
@@ -733,7 +763,9 @@ def _has_asset_specific_evidence(item: NewsItem, context: InstrumentContext) -> 
 
     if context.asset_class == "crypto" and context.base_asset in _CRYPTO_TERMS:
         strong_terms = [term for term in _CRYPTO_TERMS[context.base_asset] if term not in {"crypto"}]
-        return any(term in text or term in token_set for term in strong_terms)
+        if any(term in text or term in token_set for term in strong_terms):
+            return True
+        return item.priority >= NewsPriority.MEDIUM and any(term in text for term in _CRYPTO_MARKET_TERMS)
 
     if context.asset_class == "commodity" and context.base_asset in _COMMODITY_TERMS:
         strong_terms = [term for term in _COMMODITY_TERMS[context.base_asset] if term not in {"energy"}]
@@ -745,7 +777,15 @@ def _has_asset_specific_evidence(item: NewsItem, context: InstrumentContext) -> 
             return True
 
     if context.asset_class == "forex":
-        return any(alias.lower() in text for alias in context.aliases if "/" in alias)
+        if any(alias.lower() in text for alias in context.aliases if "/" in alias):
+            return True
+        base_terms = _FOREX_HARD_EVIDENCE_TERMS.get(context.base_asset or "", [])
+        quote_terms = _FOREX_HARD_EVIDENCE_TERMS.get(context.quote_asset or "", [])
+        base_match = any(term in text or term in token_set for term in base_terms)
+        quote_match = any(term in text or term in token_set for term in quote_terms)
+        if "USD" in {context.base_asset or "", context.quote_asset or ""}:
+            return quote_match if context.base_asset == "USD" else base_match
+        return base_match or quote_match
 
     if context.asset_class == "equity" and context.description:
         tokens = {

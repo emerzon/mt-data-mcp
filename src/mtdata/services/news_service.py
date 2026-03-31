@@ -433,6 +433,12 @@ def get_mt5_news(
         Dictionary containing news items and metadata
     """
     try:
+        try:
+            safe_limit = int(limit)
+        except Exception:
+            safe_limit = 100
+        safe_limit = max(1, min(500, safe_limit))
+
         # Auto-detect path if not provided
         if not news_db_path:
             news_db_path = _auto_detect_news_path()
@@ -505,7 +511,7 @@ def get_mt5_news(
         
         # Sort by timestamp (newest first) and apply limit
         filtered.sort(key=lambda x: x.timestamp, reverse=True)
-        filtered = filtered[:limit]
+        filtered = filtered[:safe_limit]
         
         # Build response
         now_utc = datetime.now(timezone.utc)
@@ -518,6 +524,7 @@ def get_mt5_news(
         payload = {
             "success": True,
             "count": len(news_list),
+            "limit": safe_limit,
             "total_records": len(records),
             "database_path": str(news_db_path),
             "header_info": parser.header_info,
@@ -545,7 +552,7 @@ def get_mt5_news(
     except FileNotFoundError as e:
         logger.error(f"News database not found: {e}")
         return {
-            "error": f"News database not found: {e}",
+            "error": str(e),
             "hint": "Verify the path to news.dat or let the tool auto-detect from MT5 directories"
         }
     except Exception as e:

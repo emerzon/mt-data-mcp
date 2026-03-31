@@ -320,6 +320,18 @@ def test_classify_instrument_handles_short_and_alias_commodities(monkeypatch) ->
     assert "XBR" in brent.aliases
 
 
+def test_classify_instrument_handles_common_broker_commodity_aliases(monkeypatch) -> None:
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+
+    usoil = svc._classify_instrument("USOIL")
+    gold = svc._classify_instrument("GOLD")
+
+    assert usoil.asset_class == "commodity"
+    assert usoil.base_asset == "WTI"
+    assert gold.asset_class == "commodity"
+    assert gold.base_asset == "XAU"
+
+
 def test_classify_index_hints_override_mt5_currency_metadata(monkeypatch) -> None:
     class FakeInfo:
         path = "Indices\\Cash"
@@ -380,6 +392,34 @@ def test_unknown_equity_classification_does_not_infer_description(monkeypatch) -
 
     assert context.asset_class == "equity"
     assert context.description is None
+
+
+def test_equity_symbol_hints_help_without_mt5_metadata(monkeypatch) -> None:
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
+    monkeypatch.setattr(
+        svc,
+        "get_stock_news",
+        lambda symbol, limit=20, page=1: {
+            "success": True,
+            "news": [
+                {"Title": "Apple expands AI tooling for developers", "Source": "Reuters", "Date": "2026-03-29T09:00:00Z"},
+            ],
+        },
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {"success": True, "items": []},
+    )
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("AAPL")
+
+    assert any("Apple expands AI tooling" in item["title"] for item in result["related_news"])
 
 
 def test_unknown_equity_without_specific_evidence_returns_no_related_items(monkeypatch) -> None:
@@ -738,6 +778,84 @@ def test_crypto_related_bucket_rejects_generic_usd_headlines(monkeypatch) -> Non
     result = svc.fetch_unified_news("BTCUSD")
 
     assert result["related_news"] == []
+
+
+def test_crypto_related_bucket_can_promote_crypto_market_headlines(monkeypatch) -> None:
+    monkeypatch.setattr(
+        svc,
+        "get_general_news",
+        lambda news_type="news", limit=20, page=1: {
+            "success": True,
+            "items": [
+                {
+                    "Title": "Crypto market cap climbs as digital asset momentum returns",
+                    "Source": "Reuters",
+                    "Date": "2026-03-29T08:00:00Z",
+                },
+                {
+                    "Title": "US stocks rally on improving consumer confidence",
+                    "Source": "Reuters",
+                    "Date": "2026-03-29T09:00:00Z",
+                },
+            ],
+        },
+    )
+    monkeypatch.setattr(svc, "get_crypto_performance", lambda: {"success": True, "coins": []})
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {"success": True, "items": []},
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("BTCUSD")
+
+    titles = [item["title"] for item in result["related_news"]]
+    assert "Crypto market cap climbs as digital asset momentum returns" in titles
+    assert "US stocks rally on improving consumer confidence" not in titles
+
+
+def test_forex_related_bucket_accepts_currency_side_headlines(monkeypatch) -> None:
+    monkeypatch.setattr(
+        svc,
+        "get_general_news",
+        lambda news_type="news", limit=20, page=1: {
+            "success": True,
+            "items": [
+                {
+                    "Title": "Japanese Yen outperforms as BoJ's Ueda signals readiness to intervene",
+                    "Source": "Reuters",
+                    "Date": "2026-03-29T08:00:00Z",
+                },
+                {
+                    "Title": "Fed officials stress patience on interest rates",
+                    "Source": "Reuters",
+                    "Date": "2026-03-29T09:00:00Z",
+                },
+            ],
+        },
+    )
+    monkeypatch.setattr(svc, "get_forex_performance", lambda: {"success": True, "pairs": []})
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {"success": True, "items": []},
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("USDJPY")
+
+    titles = [item["title"] for item in result["related_news"]]
+    assert "Japanese Yen outperforms as BoJ's Ueda signals readiness to intervene" in titles
+    assert "Fed officials stress patience on interest rates" not in titles
 
 
 def test_systemic_impact_news_surfaces_major_war_headline(monkeypatch) -> None:

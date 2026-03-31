@@ -98,6 +98,21 @@ def _normalize_finviz_dates_in_rows(rows: List[Dict[str, Any]], *keys: str) -> L
     return out
 
 
+def _strip_string_fields_in_rows(rows: List[Dict[str, Any]], *keys: str) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    wanted = set(keys)
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_out = dict(row)
+        for key in wanted:
+            value = row_out.get(key)
+            if isinstance(value, str):
+                row_out[key] = value.strip()
+        out.append(row_out)
+    return out
+
+
 def _run_screener_view(
     screener: Any,
     *,
@@ -305,6 +320,7 @@ def get_stock_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any
             limit=limit,
             page=page,
         )
+        news_list = _strip_string_fields_in_rows(news_list, "Title", "Source", "Date", "Link")
         return {
             "success": True,
             "symbol": symbol_norm,

@@ -66,3 +66,32 @@ def test_get_mt5_news_reports_invalid_date_filter_as_input_error(monkeypatch) ->
 
     assert "Invalid news date filter" in result["error"]
     assert "ISO dates" in result["hint"]
+
+
+def test_get_mt5_news_clamps_limit_at_service_layer(monkeypatch) -> None:
+    class FakeParser:
+        header_info = {"version": 1}
+
+        def __init__(self, path: str) -> None:
+            assert path == "C:/tmp/news.dat"
+
+        def parse(self):
+            return [
+                _record(datetime(2026, 3, 15, tzinfo=timezone.utc), subject=f"Item {idx}")
+                for idx in range(600)
+            ]
+
+    monkeypatch.setattr(svc, "MT5NewsParser", FakeParser)
+    monkeypatch.setattr(svc, "_use_client_tz", lambda: False)
+
+    result = svc.get_mt5_news(news_db_path="C:/tmp/news.dat", limit=999)
+
+    assert result["success"] is True
+    assert result["limit"] == 500
+    assert result["count"] == 500
+
+
+def test_get_mt5_news_does_not_double_wrap_missing_file_error() -> None:
+    result = svc.get_mt5_news(news_db_path="C:/definitely-missing/news.dat")
+
+    assert result["error"].count("News database not found:") == 1

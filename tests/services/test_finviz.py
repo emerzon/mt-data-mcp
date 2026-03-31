@@ -47,7 +47,7 @@ class TestFinvizService:
         
         mock_stock = MagicMock()
         mock_df = pd.DataFrame([
-            {"Title": "News 1", "Link": "http://example.com/1", "Date": "2024-01-01"},
+            {"Title": "\r\n    News 1   ", "Link": "  http://example.com/1  ", "Date": " 2024-01-01 "},
             {"Title": "News 2", "Link": "http://example.com/2", "Date": "2024-01-02"},
         ])
         mock_stock.ticker_news.return_value = mock_df
@@ -59,6 +59,9 @@ class TestFinvizService:
         assert result["symbol"] == "AAPL"
         assert result["count"] == 2
         assert len(result["news"]) == 2
+        assert result["news"][0]["Title"] == "News 1"
+        assert result["news"][0]["Link"] == "http://example.com/1"
+        assert result["news"][0]["Date"] == "2024-01-01"
 
     @patch('finvizfinance.quote.finvizfinance')
     def test_get_stock_insider_trades_success(self, mock_finviz):
