@@ -243,6 +243,7 @@ def data_fetch_candles(
     - Technical indicators (RSI, MACD, EMA, SMA, etc.)
     - Data denoising and smoothing
     - Data simplification for large datasets
+    - Defaults to closed candles only; set include_incomplete=true to keep the latest forming candle
     - Includes metadata: last_candle_open (true if last candle is still forming)
     
     Parameters:
@@ -274,6 +275,9 @@ def data_fetch_candles(
     
     simplify : dict, optional
         Data reduction options for large datasets
+
+    include_incomplete : bool, optional
+        Keep the latest forming candle instead of trimming it. Defaults to false.
     
     Returns:
     --------

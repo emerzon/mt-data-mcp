@@ -27,7 +27,7 @@ from ..shared.validators import invalid_timeframe_error
 from ..utils.mt5 import (
     _mt5_copy_rates_from, _mt5_copy_rates_range,
     _mt5_copy_ticks_range, _mt5_epoch_to_utc, _rates_to_df, _symbol_ready_guard,
-    get_symbol_info_cached, mt5
+    get_cached_mt5_time_alignment, get_symbol_info_cached, mt5
 )
 from ..utils.utils import (
     _table_from_rows, _format_time_minimal, _format_time_minimal_local,
@@ -51,6 +51,9 @@ from ..utils.simplify import (
     _simplify_dataframe_rows_ext,
 )
 logger = logging.getLogger(__name__)
+
+_AUTO_TIME_ALIGNMENT_MIN_SHIFT_SECONDS = 1800
+_AUTO_TIME_ALIGNMENT_MAX_SHIFT_SECONDS = 18 * 3600
 
 
 def _format_mt5_last_error() -> str:
@@ -95,10 +98,18 @@ def _fetch_rates_with_warmup(
     start_datetime: Optional[str],
     end_datetime: Optional[str],
     *,
+    include_incomplete: bool = True,
     retry: bool = True,
     sanity_check: bool = True,
 ):
     """Fetch MT5 rates with optional warmup, retry, and end-bar sanity checks."""
+    extra_bars = 0 if include_incomplete else 1
+    auto_shift_seconds = _resolve_live_rate_auto_shift_seconds(
+        symbol=symbol,
+        timeframe=timeframe,
+        start_datetime=start_datetime,
+        end_datetime=end_datetime,
+    )
     if start_datetime and end_datetime:
         from_date = _parse_start_datetime(start_datetime)
         to_date = _parse_start_datetime(end_datetime)
@@ -107,7 +118,7 @@ def _fetch_rates_with_warmup(
         if from_date > to_date:
             return None, "start_datetime must be before end_datetime"
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
-        from_date_internal = from_date - timedelta(seconds=seconds_per_bar * warmup_bars)
+        from_date_internal = from_date - timedelta(seconds=seconds_per_bar * (warmup_bars + extra_bars))
         expected_end_ts = _utc_epoch_seconds(to_date)
 
         def _fetch():
@@ -120,8 +131,8 @@ def _fetch_rates_with_warmup(
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe)
         if not seconds_per_bar:
             return None, f"Unable to determine timeframe seconds for {timeframe}"
-        to_date = from_date + timedelta(seconds=seconds_per_bar * (candles + 2))
-        from_date_internal = from_date - timedelta(seconds=seconds_per_bar * warmup_bars)
+        to_date = from_date + timedelta(seconds=seconds_per_bar * (candles + 2 + extra_bars))
+        from_date_internal = from_date - timedelta(seconds=seconds_per_bar * (warmup_bars + extra_bars))
         expected_end_ts = _utc_epoch_seconds(to_date)
 
         def _fetch():
@@ -135,7 +146,7 @@ def _fetch_rates_with_warmup(
         expected_end_ts = _utc_epoch_seconds(to_date)
 
         def _fetch():
-            return _mt5_copy_rates_from(symbol, mt5_timeframe, to_date, candles + warmup_bars)
+            return _mt5_copy_rates_from(symbol, mt5_timeframe, to_date, candles + warmup_bars + extra_bars)
 
     else:
         utc_now = datetime.now(dt_timezone.utc)
@@ -143,7 +154,7 @@ def _fetch_rates_with_warmup(
         expected_end_ts = _utc_epoch_seconds(utc_now)
 
         def _fetch():
-            return _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, candles + warmup_bars)
+            return _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, candles + warmup_bars + extra_bars)
 
     attempts = FETCH_RETRY_ATTEMPTS if retry else 1
     rates = None
@@ -152,10 +163,12 @@ def _fetch_rates_with_warmup(
     for idx in range(attempts):
         rates = _fetch()
         if rates is not None and len(rates) > 0:
+            if auto_shift_seconds:
+                rates = _shift_rate_times(rates, auto_shift_seconds)
             if not sanity_check:
                 break
             last_t = rates[-1]["time"]
-            freshness_cutoff = expected_end_ts - seconds_per_bar * SANITY_BARS_TOLERANCE
+            freshness_cutoff = expected_end_ts - seconds_per_bar * (SANITY_BARS_TOLERANCE + extra_bars)
             if last_t >= freshness_cutoff:
                 stale_last_t = None
                 break
@@ -175,6 +188,85 @@ def _fetch_rates_with_warmup(
             f"freshness_cutoff={_format_time_minimal(float(freshness_cutoff))})."
         )
     return rates, None
+
+
+def _resolve_live_rate_auto_shift_seconds(
+    *,
+    symbol: str,
+    timeframe: TimeframeLiteral,
+    start_datetime: Optional[str],
+    end_datetime: Optional[str],
+) -> int:
+    if start_datetime or end_datetime:
+        return 0
+
+    try:
+        if mt5_config.get_server_tz() is not None:
+            return 0
+    except Exception:
+        pass
+
+    try:
+        configured_offset_seconds = int(mt5_config.get_time_offset_seconds())
+    except Exception:
+        configured_offset_seconds = 0
+    if configured_offset_seconds != 0:
+        return 0
+
+    try:
+        alignment = get_cached_mt5_time_alignment(
+            symbol=symbol,
+            probe_timeframe=timeframe,
+            ttl_seconds=int(getattr(mt5_config, "broker_time_check_ttl_seconds", 60) or 60),
+        )
+    except Exception:
+        return 0
+
+    if not isinstance(alignment, dict) or not bool(alignment.get("offset_inference_reliable")):
+        return 0
+
+    try:
+        inferred_offset_seconds = int(alignment.get("inferred_offset_seconds"))
+    except Exception:
+        return 0
+
+    if not (
+        _AUTO_TIME_ALIGNMENT_MIN_SHIFT_SECONDS
+        <= abs(inferred_offset_seconds)
+        <= _AUTO_TIME_ALIGNMENT_MAX_SHIFT_SECONDS
+    ):
+        return 0
+
+    return -inferred_offset_seconds
+
+
+def _shift_rate_times(rates: Any, shift_seconds: int) -> Any:
+    if rates is None or int(shift_seconds) == 0:
+        return rates
+
+    shift_value = float(shift_seconds)
+    try:
+        names = getattr(getattr(rates, "dtype", None), "names", None)
+    except Exception:
+        names = None
+
+    if names and "time" in names:
+        try:
+            for idx in range(len(rates)):
+                rates[idx]["time"] = float(rates[idx]["time"]) + shift_value
+        except Exception:
+            pass
+        return rates
+
+    if isinstance(rates, list):
+        for row in rates:
+            if not isinstance(row, dict) or "time" not in row:
+                continue
+            try:
+                row["time"] = float(row["time"]) + shift_value
+            except Exception:
+                continue
+    return rates
 
 
 def _build_rates_df(rates: Any, use_client_tz: bool) -> pd.DataFrame:
@@ -683,6 +775,8 @@ def fetch_candles(
     denoise: Optional[DenoiseSpec] = None,
     simplify: Optional[SimplifySpec] = None,
     time_as_epoch: bool = False,
+    *,
+    include_incomplete: bool = False,
 ) -> Dict[str, Any]:
     """Return historical candles as tabular data."""
     try:
@@ -729,6 +823,7 @@ def fetch_candles(
                 warmup_bars,
                 start_datetime,
                 end_datetime,
+                include_incomplete=include_incomplete,
                 retry=True,
                 sanity_check=True,
             )
@@ -743,6 +838,18 @@ def fetch_candles(
         if len(rates) == 0:
             return {"error": "No data available"}
         raw_bars_fetched = int(len(rates))
+        if not include_incomplete:
+            try:
+                last_epoch = float(rates[-1]["time"])
+                seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 3600)
+                current_time = _utc_epoch_seconds(datetime.now(dt_timezone.utc))
+                _last_candle_open = 0 <= current_time - last_epoch < seconds_per_bar
+            except Exception:
+                _last_candle_open = False
+            if _last_candle_open and len(rates) > candles:
+                rates = rates[:-1]
+        if len(rates) == 0:
+            return {"error": "No data available"}
         headers = _build_candle_headers(rates, ohlcv)
         
         # Construct DataFrame to support indicators and consistent output
@@ -777,6 +884,7 @@ def fetch_candles(
                         warmup_bars_retry,
                         start_datetime,
                         end_datetime,
+                        include_incomplete=include_incomplete,
                         retry=False,
                         sanity_check=False,
                     )
@@ -878,6 +986,7 @@ def fetch_candles(
                 "diagnostics": {
                     "query": {
                         "mode": query_mode,
+                        "include_incomplete": bool(include_incomplete),
                         "latency_ms": query_latency_ms,
                         "requested_bars": int(candles),
                         "warmup_bars": int(warmup_bars),

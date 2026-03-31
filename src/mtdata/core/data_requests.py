@@ -196,6 +196,7 @@ class DataFetchCandlesRequest(BaseModel):
     indicators: IndicatorSpecsInput = None
     denoise: Optional[DenoiseSpec] = None
     simplify: Optional[SimplifySpec] = None
+    include_incomplete: bool = False
 
     @field_validator("limit")
     @classmethod

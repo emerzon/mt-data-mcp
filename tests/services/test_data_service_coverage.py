@@ -568,6 +568,36 @@ class TestFetchCandles(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
+    def test_default_excludes_incomplete_last_candle(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10, step=3600)
+        result = fetch_candles('EURUSD', timeframe='H1', limit=5)
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['candles'], 5)
+        self.assertFalse(result['last_candle_open'])
+        self.assertEqual(len(result['data']), 5)
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_include_incomplete_keeps_open_last_candle(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10, step=3600)
+        result = fetch_candles('EURUSD', timeframe='H1', limit=5, include_incomplete=True)
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['candles'], 5)
+        self.assertTrue(result['last_candle_open'])
+        self.assertEqual(len(result['data']), 5)
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
     def test_meta_server_tz_offset(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
         mock_cfg.server_tz_name = "Europe/Nicosia"
         mock_cfg.client_tz_name = None

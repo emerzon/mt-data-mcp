@@ -230,6 +230,16 @@ class TestNormalizeTimesInStruct:
             result = _normalize_times_in_struct(arr)
         assert float(result[0]["time"]) == 1001.0
 
+    def test_with_read_only_time_field_returns_normalized_copy(self):
+        dt = np.dtype([("time", int), ("close", float)])
+        arr = np.array([(1000, 1.1), (2000, 1.2)], dtype=dt)
+        arr.flags.writeable = False
+        with patch("mtdata.utils.mt5._mt5_epoch_to_utc", side_effect=lambda x: x - 10):
+            result = _normalize_times_in_struct(arr)
+        assert result is not arr
+        assert float(result[0]["time"]) == 990.0
+        assert float(arr[0]["time"]) == 1000.0
+
     def test_exception_returns_input(self):
         obj = MagicMock()
         obj.dtype = MagicMock()

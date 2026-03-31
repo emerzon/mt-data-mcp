@@ -29,7 +29,7 @@ export function useChartWorkspace() {
   const [showAsk, setShowAsk] = useState(false)
   const [showLast, setShowLast] = useState(true)
   const [isLive, setIsLive] = useState(true)
-  const [timezoneMode, setTimezoneMode] = useState<TimezoneMode>('utc')
+  const [timezoneMode, setTimezoneMode] = useState<TimezoneMode>('local')
   const [serverOffset, setServerOffset] = useState(0)
   const [forecastOverlays, setForecastOverlays] = useState<ChartOverlay[]>([])
   const [chartDenoise, setChartDenoise] = useState<DenoiseSpecUI | undefined>(undefined)

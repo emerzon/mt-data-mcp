@@ -240,12 +240,16 @@ def _normalize_times_in_struct(arr: Any):
         names = getattr(getattr(arr, 'dtype', None), 'names', None)
         if not names or 'time' not in names:
             return arr
-        for i in range(len(arr)):
+        out = arr
+        flags = getattr(arr, 'flags', None)
+        if flags is not None and not bool(getattr(flags, 'writeable', True)):
+            out = arr.copy()
+        for i in range(len(out)):
             try:
-                arr[i]['time'] = _mt5_epoch_to_utc(float(arr[i]['time']))
+                out[i]['time'] = _mt5_epoch_to_utc(float(out[i]['time']))
             except Exception:
                 continue
-        return arr
+        return out
     except Exception:
         return arr
 

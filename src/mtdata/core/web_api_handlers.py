@@ -390,6 +390,7 @@ def get_history_response(
             indicators=None,
             denoise=denoise_spec,
             simplify=None,
+            include_incomplete=include_incomplete,
             time_as_epoch=True,
         )
     except Exception as exc:

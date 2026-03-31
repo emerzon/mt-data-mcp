@@ -35,6 +35,7 @@ PARAM_HINTS = {
     "indicators": "Indicators as compact specs like 'rsi(14),macd(12,26,9)' or JSON like '[{\"name\":\"rsi\",\"params\":[14]}]'. Bare names such as 'rsi' are also accepted.",
     "denoise": "Denoise preset or JSON spec.",
     "simplify": "Simplify preset or JSON spec. Examples: '--simplify select', '--simplify \"{\"\"mode\"\":\"\"select\"\",\"\"method\"\":\"\"lttb\"\",\"\"ratio\"\":0.2}\"', or '--simplify select --simplify-params \"ratio=0.2\"'.",
+    "include_incomplete": "Include the latest forming candle; defaults to false so fetches return the last closed bar.",
     "method": "Method/algorithm for this tool. For forecast methods, run forecast_list_methods to browse valid names.",
     "mode": "Mode for this tool.",
     "engine": "Detection engine or comma-separated engines (for ensemble mode).",
