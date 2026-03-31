@@ -126,17 +126,26 @@ class DisconnectingGateway(SequenceGateway):
 
 
 def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
-    monkeypatch.setattr(
-        core_data,
-        "run_wait_event",
-        lambda request, gateway: {
+    def _mock_run_wait_event(request, gateway):
+        return {
             "success": True,
             "symbol": request.symbol,
             "timeframe": request.timeframe,
-            "watch_for_inferred": request.watch_for is None,
-            "watch_for": list(request.watch_for or []),
+            "status": "boundary_reached",
+            "criteria": {
+                "watch_for": list(request.watch_for or []),
+                "watch_for_inferred": False,
+                "end_on": list(request.end_on or []),
+                "end_on_inferred": False,
+                "accept_preexisting": bool(request.accept_preexisting),
+            },
             "max_wait_seconds": request.max_wait_seconds,
-        },
+        }
+
+    monkeypatch.setattr(
+        core_data,
+        "run_wait_event",
+        _mock_run_wait_event,
     )
     monkeypatch.setattr(core_data, "get_mt5_gateway", lambda ensure_connection_impl=None: object())
     monkeypatch.setattr(
@@ -167,19 +176,17 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     assert result["success"] is True
     assert result["symbol"] == "BTCUSD"
     assert result["timeframe"] == "M1"
-    assert result["watch_for_inferred"] is False
-    assert [item.type for item in result["watch_for"]] == [
-        "position_opened",
-        "tick_count_spike",
-        "price_touch_level",
-    ]
+    assert result["criteria"] == {
+        "watch_for_count": 3,
+        "watch_for_inferred": True,
+        "end_on_count": 0,
+        "end_on_inferred": True,
+        "accept_preexisting": False,
+    }
     assert "max_wait_seconds" not in result
 
     without_tick_count = raw("BTCUSD", "M1", False)
-    assert [item.type for item in without_tick_count["watch_for"]] == [
-        "position_opened",
-        "price_touch_level",
-    ]
+    assert without_tick_count["criteria"]["watch_for_count"] == 2
 
     explicit = raw(
         "BTCUSD",
@@ -188,7 +195,10 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
         [{"type": "price_touch_level", "symbol": "BTCUSD", "level": 100.0}],
         [{"type": "candle_close", "timeframe": "M5"}],
     )
-    assert [item.type for item in explicit["watch_for"]] == ["price_touch_level"]
+    assert [item.type for item in explicit["criteria"]["watch_for"]] == ["price_touch_level"]
+    assert [item.type for item in explicit["criteria"]["end_on"]] == ["candle_close"]
+    assert explicit["criteria"]["watch_for_inferred"] is False
+    assert explicit["criteria"]["end_on_inferred"] is False
 
 
 def test_support_resistance_watchers_use_compact_levels(monkeypatch) -> None:

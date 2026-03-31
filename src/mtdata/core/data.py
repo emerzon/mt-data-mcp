@@ -196,6 +196,39 @@ def _dedupe_wait_event_watchers(watch_for: List[Dict[str, Any]]) -> List[Dict[st
     return out
 
 
+def _compact_wait_event_public_result(
+    result: Dict[str, Any],
+    *,
+    explicit_watch_for: bool,
+    explicit_end_on: bool,
+) -> Dict[str, Any]:
+    out = dict(result)
+    out.pop("max_wait_seconds", None)
+
+    criteria_in = out.get("criteria")
+    if not isinstance(criteria_in, dict):
+        return out
+
+    criteria = dict(criteria_in)
+    criteria["watch_for_inferred"] = not explicit_watch_for
+    criteria["end_on_inferred"] = not explicit_end_on
+
+    if explicit_watch_for or explicit_end_on:
+        out["criteria"] = criteria
+        return out
+
+    watch_for_count = len(criteria.get("watch_for") or []) if isinstance(criteria.get("watch_for"), list) else 0
+    end_on_count = len(criteria.get("end_on") or []) if isinstance(criteria.get("end_on"), list) else 0
+    out["criteria"] = {
+        "watch_for_count": watch_for_count,
+        "watch_for_inferred": bool(criteria["watch_for_inferred"]),
+        "end_on_count": end_on_count,
+        "end_on_inferred": bool(criteria["end_on_inferred"]),
+        "accept_preexisting": bool(criteria.get("accept_preexisting")),
+    }
+    return out
+
+
 @mcp.tool()
 def data_fetch_candles(
     request: DataFetchCandlesRequest,
@@ -348,9 +381,11 @@ def wait_event(
         request_kwargs["end_on"] = list(end_on)
 
     def _run() -> Dict[str, Any]:
+        explicit_watch_for = watch_for is not None
+        explicit_end_on = end_on is not None
         resolved_watch_for = (
             list(watch_for)
-            if watch_for is not None
+            if explicit_watch_for
             else _build_default_wait_event_watchers(
                 instrument=instrument,
                 timeframe=timeframe,
@@ -366,8 +401,11 @@ def wait_event(
             gateway=get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
         )
         if isinstance(result, dict):
-            result = dict(result)
-            result.pop("max_wait_seconds", None)
+            result = _compact_wait_event_public_result(
+                result,
+                explicit_watch_for=explicit_watch_for,
+                explicit_end_on=explicit_end_on,
+            )
         return result
 
     return run_logged_operation(
