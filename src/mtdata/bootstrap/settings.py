@@ -124,6 +124,21 @@ def _env_optional_int(name: str) -> Optional[int]:
         return None
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return float(default)
+    text = str(raw).strip()
+    if not text:
+        _LOGGER.warning("%s is blank; using default %s.", name, default)
+        return float(default)
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        _LOGGER.warning("Invalid %s=%r; using default %s.", name, raw, default)
+        return float(default)
+
+
 def load_environment(*, force: bool = False) -> bool:
     """Load environment variables from `.env` once for application entrypoints."""
     global _ENV_LOADED
@@ -149,6 +164,12 @@ def load_environment(*, force: bool = False) -> bool:
             config_obj.reload_from_env(warn_if_timezone_missing=True)
         except Exception as exc:
             _LOGGER.warning("Failed to reload MT5 configuration from environment: %s", exc)
+    embeddings_obj = globals().get("news_embeddings_config")
+    if embeddings_obj is not None:
+        try:
+            embeddings_obj.reload_from_env()
+        except Exception as exc:
+            _LOGGER.warning("Failed to reload news embeddings configuration from environment: %s", exc)
     return loaded
 
 class MT5Config:
@@ -260,5 +281,40 @@ class MT5Config:
             return None
         return _detect_local_client_tz()
 
+
+class NewsEmbeddingsConfig:
+    """Optional embedding reranking configuration for unified news."""
+
+    def __init__(self) -> None:
+        self.enabled = False
+        self.model_name = "Qwen/Qwen3-Embedding-0.6B"
+        self.top_n = 20
+        self.weight = 1.0
+        self.truncate_dim: Optional[int] = None
+        self.cache_size = 256
+        self.hf_token_env_var = "HF_TOKEN"
+        self.reload_from_env()
+
+    def reload_from_env(self) -> None:
+        self.enabled = _env_bool("MTDATA_NEWS_EMBEDDINGS", default=False)
+        self.model_name = (
+            os.getenv("MTDATA_NEWS_EMBEDDINGS_MODEL", "Qwen/Qwen3-Embedding-0.6B").strip()
+            or "Qwen/Qwen3-Embedding-0.6B"
+        )
+        self.top_n = max(1, _env_int("MTDATA_NEWS_EMBEDDINGS_TOP_N", 20))
+        self.weight = max(0.0, _env_float("MTDATA_NEWS_EMBEDDINGS_WEIGHT", 1.0))
+        self.truncate_dim = _env_optional_int("MTDATA_NEWS_EMBEDDINGS_TRUNCATE_DIM")
+        if self.truncate_dim is not None and self.truncate_dim <= 0:
+            _LOGGER.warning(
+                "MTDATA_NEWS_EMBEDDINGS_TRUNCATE_DIM=%r is not positive; disabling truncation.",
+                self.truncate_dim,
+            )
+            self.truncate_dim = None
+        self.cache_size = max(0, _env_int("MTDATA_NEWS_EMBEDDINGS_CACHE_SIZE", 256))
+        self.hf_token_env_var = (
+            os.getenv("MTDATA_NEWS_EMBEDDINGS_HF_TOKEN_ENV_VAR", "HF_TOKEN").strip() or "HF_TOKEN"
+        )
+
 # Global configuration instance. Entry points call `load_environment()` explicitly.
 mt5_config = MT5Config(warn_if_timezone_missing=False)
+news_embeddings_config = NewsEmbeddingsConfig()

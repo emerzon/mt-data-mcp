@@ -83,6 +83,7 @@ def _snapshot_mt5_config_state():
     return {
         "module": settings_mod,
         "config": config_obj,
+        "news_embeddings_config": getattr(settings_mod, "news_embeddings_config", None),
         "env_loaded": getattr(settings_mod, "_ENV_LOADED", None),
         "warned_server_tz": getattr(settings_mod, "_WARNED_SERVER_TZ", None),
         "state": {
@@ -97,6 +98,15 @@ def _snapshot_mt5_config_state():
             "broker_time_check_enabled": getattr(config_obj, "broker_time_check_enabled", None),
             "broker_time_check_ttl_seconds": getattr(config_obj, "broker_time_check_ttl_seconds", None),
         },
+        "news_embeddings_state": {
+            "enabled": getattr(getattr(settings_mod, "news_embeddings_config", None), "enabled", None),
+            "model_name": getattr(getattr(settings_mod, "news_embeddings_config", None), "model_name", None),
+            "top_n": getattr(getattr(settings_mod, "news_embeddings_config", None), "top_n", None),
+            "weight": getattr(getattr(settings_mod, "news_embeddings_config", None), "weight", None),
+            "truncate_dim": getattr(getattr(settings_mod, "news_embeddings_config", None), "truncate_dim", None),
+            "cache_size": getattr(getattr(settings_mod, "news_embeddings_config", None), "cache_size", None),
+            "hf_token_env_var": getattr(getattr(settings_mod, "news_embeddings_config", None), "hf_token_env_var", None),
+        },
     }
 
 
@@ -107,8 +117,14 @@ def _restore_mt5_config_state(snapshot) -> None:
     module = snapshot["module"]
     config_obj = snapshot["config"]
     module.mt5_config = config_obj
+    if snapshot.get("news_embeddings_config") is not None:
+        module.news_embeddings_config = snapshot["news_embeddings_config"]
     for name, value in snapshot["state"].items():
         setattr(config_obj, name, value)
+    news_embeddings_config = snapshot.get("news_embeddings_config")
+    if news_embeddings_config is not None:
+        for name, value in snapshot["news_embeddings_state"].items():
+            setattr(news_embeddings_config, name, value)
     module._ENV_LOADED = snapshot["env_loaded"]
     module._WARNED_SERVER_TZ = snapshot["warned_server_tz"]
 

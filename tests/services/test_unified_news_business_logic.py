@@ -203,6 +203,16 @@ def test_classify_instrument_handles_four_character_crypto_bases(monkeypatch) ->
     assert "DOGE/USD" in context.aliases
 
 
+def test_classify_instrument_preserves_usdt_quotes(monkeypatch) -> None:
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+
+    context = svc._classify_instrument("BNBUSDT")
+
+    assert context.asset_class == "crypto"
+    assert context.base_asset == "BNB"
+    assert context.quote_asset == "USDT"
+
+
 def test_classify_instrument_handles_short_and_alias_commodities(monkeypatch) -> None:
     monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
 
@@ -215,6 +225,24 @@ def test_classify_instrument_handles_short_and_alias_commodities(monkeypatch) ->
     assert brent.base_asset == "BRENT"
     assert brent.quote_asset == "USD"
     assert "XBR" in brent.aliases
+
+
+def test_classify_index_hints_override_mt5_currency_metadata(monkeypatch) -> None:
+    class FakeInfo:
+        path = "Indices\\Cash"
+        description = "US Tech 100"
+        currency_base = "USD"
+        currency_profit = "USD"
+        currency_margin = "USD"
+
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: FakeInfo())
+
+    context = svc._classify_instrument("USTEC")
+
+    assert context.asset_class == "index"
+    assert context.base_asset == "NAS"
+    assert context.quote_asset is None
+    assert "NQ" in context.aliases
 
 
 def test_parse_relative_time_handles_yesterday() -> None:
@@ -297,6 +325,73 @@ def test_index_aliases_match_futures_snapshots(monkeypatch) -> None:
     assert result["source_details"]["finviz"]["selected_related"] >= 1
 
 
+def test_market_snapshots_handle_lowercase_and_pair_keys(monkeypatch) -> None:
+    monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
+    monkeypatch.setattr(
+        svc,
+        "get_forex_performance",
+        lambda: {
+            "success": True,
+            "pairs": [{"Pair": "EUR/USD", "Change": "0.5%"}],
+        },
+    )
+    monkeypatch.setattr(
+        svc,
+        "get_futures_performance",
+        lambda: {
+            "success": True,
+            "futures": [{"ticker": "NQ", "label": "Nasdaq 100 E-mini", "group": "Indices", "perf": "0.8%"}],
+        },
+    )
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {"success": True, "items": []},
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _reset_aggregator(monkeypatch)
+
+    forex_result = svc.fetch_unified_news("EURUSD")
+    futures_result = svc.fetch_unified_news("NAS100")
+
+    assert forex_result["related_news"][0]["title"] == "EUR/USD market snapshot"
+    assert futures_result["related_news"][0]["title"] == "NQ market snapshot"
+    assert "Label: Nasdaq 100 E-mini" in (futures_result["related_news"][0]["summary"] or "")
+    assert "Perf: 0.8%" in (futures_result["related_news"][0]["summary"] or "")
+
+
+def test_index_snapshot_candidate_pool_keeps_more_than_three_rows(monkeypatch) -> None:
+    monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
+    monkeypatch.setattr(
+        svc,
+        "get_futures_performance",
+        lambda: {
+            "success": True,
+            "futures": [
+                {"Ticker": "NQ", "Price": "20100.00", "Change": "0.8%"},
+                {"Ticker": "NAS100", "Price": "20105.00", "Change": "0.7%"},
+                {"Ticker": "USTEC", "Price": "20110.00", "Change": "0.6%"},
+                {"Ticker": "NDX", "Price": "20115.00", "Change": "0.5%"},
+                {"Ticker": "ES", "Price": "5300.00", "Change": "0.2%"},
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {"success": True, "items": []},
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("NAS100")
+
+    snapshots = [item for item in result["related_news"] if item["kind"] == "market_snapshot"]
+    assert len(snapshots) >= 4
+
+
 def test_us_index_filters_non_macro_calendar_noise(monkeypatch) -> None:
     monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
     monkeypatch.setattr(svc, "get_futures_performance", lambda: {"success": True, "futures": []})
@@ -326,6 +421,39 @@ def test_us_index_filters_non_macro_calendar_noise(monkeypatch) -> None:
     assert result["related_news"] == []
 
 
+def test_systemic_impact_news_surfaces_major_war_headline(monkeypatch) -> None:
+    monkeypatch.setattr(
+        svc,
+        "get_general_news",
+        lambda news_type="news", limit=20, page=1: {
+            "success": True,
+            "items": [
+                {
+                    "Title": "Oil surges as war fears deepen after overnight missile strikes",
+                    "Source": "Reuters",
+                    "Date": "2026-03-29T08:00:00Z",
+                    "Link": "https://example.com/war-oil",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(svc, "get_futures_performance", lambda: {"success": True, "futures": []})
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {"success": True, "items": []},
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("NAS100")
+
+    assert result["impact_count"] >= 1
+    assert any("war fears deepen" in item["title"].lower() for item in result["impact_news"])
+    assert result["impact_news"][0]["metadata"]["systemic_impact_score"] >= 2.4
+
+
 def test_european_index_matches_regional_macro_events(monkeypatch) -> None:
     monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
     monkeypatch.setattr(svc, "get_futures_performance", lambda: {"success": True, "futures": []})
@@ -353,3 +481,73 @@ def test_european_index_matches_regional_macro_events(monkeypatch) -> None:
     result = svc.fetch_unified_news("GER40")
 
     assert any("German CPI" in item["title"] for item in result["related_news"])
+
+
+def test_fetch_unified_news_can_rerank_with_embeddings(monkeypatch) -> None:
+    class FakeEmbeddingService:
+        enabled = True
+        top_n = 5
+        weight = 1.0
+
+        def is_available(self) -> bool:
+            return True
+
+        def score_documents(self, context, items):
+            return {
+                items[0].dedupe_key(): 0.05,
+                items[1].dedupe_key(): 0.95,
+            }
+
+        def status(self):
+            return {"enabled": True, "available": True, "model": "Qwen/Qwen3-Embedding-0.6B"}
+
+    monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
+    monkeypatch.setattr(
+        svc,
+        "get_futures_performance",
+        lambda: {
+            "success": True,
+            "futures": [
+                {"Ticker": "NQ", "Price": "20100.00", "Change": "0.4%"},
+                {"Ticker": "NAS100", "Price": "20110.00", "Change": "0.5%"},
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {"success": True, "items": []},
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    monkeypatch.setattr(svc, "get_news_embedding_service", lambda: FakeEmbeddingService())
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("NAS100")
+
+    assert result["related_news"][0]["title"] == "NAS100 market snapshot"
+    assert result["related_news"][0]["metadata"]["embedding_used"] is True
+    assert result["matching"]["embeddings"]["enabled"] is True
+
+
+def test_fetch_unified_news_returns_failure_when_all_sources_error(monkeypatch) -> None:
+    class BrokenSource:
+        name = "broken"
+
+        def is_available(self) -> bool:
+            return True
+
+        def fetch_general_candidates(self, limit: int):
+            raise RuntimeError("boom")
+
+        def fetch_related_candidates(self, context, limit: int):
+            raise RuntimeError("boom")
+
+    aggregator = svc.NewsAggregator()
+    aggregator._sources = {"broken": BrokenSource()}
+
+    result = aggregator.fetch_news("AAPL")
+
+    assert result["success"] is False
+    assert result["error"] == "All news sources failed"
+    assert result["source_details"]["broken"]["success"] is False

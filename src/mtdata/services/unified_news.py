@@ -19,12 +19,17 @@ from .finviz_service import (
     get_general_news,
     get_stock_news,
 )
+from .news_embeddings import get_news_embedding_service
 from .news_service import get_mt5_news
 from ..utils.mt5 import get_symbol_info_cached
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_BUCKET_SIZE = 10
+_DEFAULT_IMPACT_BUCKET_SIZE = 3
+_CANDIDATE_MULTIPLIER = 5
+_MAX_SNAPSHOT_ROWS = 8
+_MIN_ECONOMIC_CANDIDATES = 24
 _CURRENCY_CODES = {"USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"}
 _CURRENCY_TERMS = {
     "USD": ["usd", "dollar", "us dollar", "fed", "fomc", "treasury", "cpi", "pce", "payrolls", "nfp"],
@@ -56,6 +61,8 @@ _INDEX_TERMS = {
     "NAS": ["nasdaq", "tech", "yields", "ai", "earnings"],
     "DJI": ["dow", "industrials", "us stocks", "fed"],
     "DAX": ["dax", "germany", "europe", "ecb"],
+    "FTSE": ["ftse", "uk stocks", "london", "boe", "britain", "sterling"],
+    "NIKKEI": ["nikkei", "japan stocks", "tokyo", "boj", "yen", "japan"],
 }
 _CRYPTO_QUOTES = {"USD", "USDT", "USDC", "BTC", "ETH"}
 _COMMODITY_BASES = {"XAU", "XAG", "WTI", "BRENT", "XBR", "NG", "NGAS", "NATGAS"}
@@ -163,6 +170,34 @@ _GENERAL_IMPORTANCE_TERMS = {
     "rate cut": 1.5,
     "rate hike": 1.5,
     "decision": 0.8,
+}
+_SYSTEMIC_IMPACT_TERMS = {
+    "war": 1.8,
+    "military": 1.5,
+    "missile": 1.3,
+    "attack": 1.2,
+    "strike": 1.1,
+    "sanction": 1.3,
+    "tariff": 1.2,
+    "oil": 1.1,
+    "crude": 1.1,
+    "energy": 1.0,
+    "inflation": 1.0,
+    "rate cut": 1.0,
+    "rate hike": 1.0,
+    "fed": 0.9,
+    "ecb": 0.9,
+    "boj": 0.9,
+    "boe": 0.9,
+    "risk-off": 1.2,
+    "safe haven": 1.0,
+}
+_ASSET_CLASS_IMPACT_TERMS = {
+    "equity": {"war": 1.0, "tariff": 0.9, "sanction": 0.9, "rates": 0.8, "yield": 0.7},
+    "index": {"war": 1.1, "tariff": 0.9, "sanction": 0.9, "inflation": 0.8, "yield": 0.8, "risk": 0.7},
+    "crypto": {"war": 0.9, "liquidity": 0.8, "risk": 0.7, "fed": 0.8, "inflation": 0.7},
+    "forex": {"war": 0.8, "oil": 0.8, "rates": 0.8, "yield": 0.8, "inflation": 0.7},
+    "commodity": {"war": 1.0, "oil": 1.0, "energy": 0.9, "sanction": 0.8, "supply": 0.8},
 }
 
 
@@ -372,6 +407,37 @@ def _match_prefixed_base(compact: str, prefixes: Dict[str, str]) -> tuple[Option
     return None, None
 
 
+def _extract_compact_symbol_parts(compact: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    if compact in _KNOWN_INDEX_HINTS:
+        return _KNOWN_INDEX_HINTS[compact], None, "index"
+
+    crypto_base, crypto_quote = _match_prefixed_base(compact, _CRYPTO_BASE_PREFIXES)
+    if crypto_base:
+        return crypto_base, crypto_quote, "crypto"
+
+    commodity_base, commodity_quote = _match_prefixed_base(compact, _COMMODITY_BASE_PREFIXES)
+    if commodity_base:
+        return commodity_base, commodity_quote, "commodity"
+
+    if len(compact) >= 6 and compact[:3].isalpha() and compact[3:6].isalpha():
+        return compact[:3], compact[3:6], None
+
+    return None, None, None
+
+
+def _first_present(row: Dict[str, Any], *keys: str) -> str:
+    lower_lookup = {str(key).lower(): value for key, value in row.items()}
+    for key in keys:
+        if key in row:
+            value = _safe_text(row.get(key))
+            if value:
+                return value
+        value = _safe_text(lower_lookup.get(key.lower()))
+        if value:
+            return value
+    return ""
+
+
 def _classify_instrument(symbol: str) -> InstrumentContext:
     symbol_norm = _normalize_symbol(symbol)
     if not symbol_norm:
@@ -384,13 +450,14 @@ def _classify_instrument(symbol: str) -> InstrumentContext:
     base_asset: Optional[str] = None
     quote_asset: Optional[str] = None
     asset_class = "equity"
+    detected_asset_class: Optional[str] = None
 
     if "/" in symbol_norm:
         parts = [part for part in symbol_norm.split("/") if part]
         if len(parts) == 2:
             base_asset, quote_asset = parts[0], parts[1]
-    elif len(compact) >= 6 and compact[:3].isalpha() and compact[3:6].isalpha():
-        base_asset, quote_asset = compact[:3], compact[3:6]
+    else:
+        base_asset, quote_asset, detected_asset_class = _extract_compact_symbol_parts(compact)
 
     metadata_base = _safe_text(symbol_metadata.get("currency_base") or symbol_metadata.get("basis")).upper()
     metadata_quote = _safe_text(symbol_metadata.get("currency_profit") or symbol_metadata.get("currency_margin")).upper()
@@ -398,8 +465,16 @@ def _classify_instrument(symbol: str) -> InstrumentContext:
         base_asset = metadata_base
     if metadata_quote and not quote_asset:
         quote_asset = metadata_quote
+    if detected_asset_class == "index":
+        quote_asset = None
 
-    if any(term in path_text or term in desc_text for term in ("crypto", "bitcoin", "ethereum")):
+    if detected_asset_class == "index":
+        asset_class = "index"
+    elif detected_asset_class == "crypto":
+        asset_class = "crypto"
+    elif detected_asset_class == "commodity":
+        asset_class = "commodity"
+    elif any(term in path_text or term in desc_text for term in ("crypto", "bitcoin", "ethereum")):
         asset_class = "crypto"
     elif any(term in path_text or term in desc_text for term in ("forex", "fx")):
         asset_class = "forex"
@@ -414,24 +489,6 @@ def _classify_instrument(symbol: str) -> InstrumentContext:
         asset_class = "crypto"
     elif base_asset in _CURRENCY_CODES and quote_asset in _CURRENCY_CODES:
         asset_class = "forex"
-    elif compact in _KNOWN_INDEX_HINTS:
-        asset_class = "index"
-        base_asset = _KNOWN_INDEX_HINTS[compact]
-        quote_asset = None
-    else:
-        crypto_base, crypto_quote = _match_prefixed_base(compact, _CRYPTO_BASE_PREFIXES)
-        if crypto_base:
-            asset_class = "crypto"
-            base_asset = crypto_base
-            if crypto_quote:
-                quote_asset = crypto_quote
-        else:
-            commodity_base, commodity_quote = _match_prefixed_base(compact, _COMMODITY_BASE_PREFIXES)
-            if commodity_base:
-                asset_class = "commodity"
-                base_asset = commodity_base
-                if commodity_quote:
-                    quote_asset = commodity_quote
 
     aliases = [symbol_norm, compact]
     if base_asset and base_asset in _INDEX_ALIASES:
@@ -615,6 +672,65 @@ def _score_relevance(item: NewsItem, context: InstrumentContext) -> tuple[float,
     return score, matched_terms
 
 
+def _score_systemic_impact(item: NewsItem, context: InstrumentContext) -> tuple[float, List[str]]:
+    text = item.search_text().lower()
+    matched_terms: List[str] = []
+    score = 0.0
+
+    for term, weight in _SYSTEMIC_IMPACT_TERMS.items():
+        if term in text:
+            score += weight
+            matched_terms.append(term)
+
+    for term, weight in _ASSET_CLASS_IMPACT_TERMS.get(context.asset_class, {}).items():
+        if term in text:
+            score += weight
+            matched_terms.append(term)
+
+    if item.kind == "economic_event":
+        impact = _safe_text(item.metadata.get("impact")).lower()
+        if impact == "high":
+            score += 0.8
+        elif impact == "medium":
+            score += 0.4
+
+    if item.published_at is not None:
+        age_hours = max(0.0, (datetime.now(timezone.utc) - item.published_at).total_seconds() / 3600.0)
+        score += max(0.0, 0.75 - min(age_hours, 24.0) / 24.0)
+
+    if item.importance_score >= 5.0:
+        score += 0.5
+
+    matched_terms = _unique_preserve_order(matched_terms)
+    return score, matched_terms
+
+
+def _apply_embedding_rerank(items: List[NewsItem], context: InstrumentContext) -> bool:
+    service = get_news_embedding_service()
+    if not service.is_available():
+        return False
+
+    rerank_count = min(len(items), service.top_n)
+    if rerank_count <= 0:
+        return False
+
+    rerank_items = items[:rerank_count]
+    scores = service.score_documents(context, rerank_items)
+    if not scores:
+        return False
+
+    for item in rerank_items:
+        symbolic_score = float(item.relevance_score)
+        item.metadata["symbolic_score"] = round(symbolic_score, 4)
+        embedding_score = float(scores.get(item.dedupe_key(), 0.0))
+        item.metadata["embedding_score"] = round(embedding_score, 4)
+        item.metadata["embedding_used"] = True
+        final_score = symbolic_score + min(service.weight * embedding_score, 1.25)
+        item.relevance_score = final_score
+        item.metadata["final_relevance_score"] = round(final_score, 4)
+    return True
+
+
 def _dedupe_items(items: Iterable[NewsItem]) -> List[NewsItem]:
     deduped: Dict[str, NewsItem] = {}
     for item in items:
@@ -672,7 +788,7 @@ class FinvizNewsSource:
             items.extend(self._fetch_market_snapshots(get_forex_performance(), context, rows_key="pairs", market="forex"))
         elif context.asset_class in {"commodity", "index"}:
             items.extend(self._fetch_market_snapshots(get_futures_performance(), context, rows_key="futures", market="futures"))
-        items.extend(self._fetch_economic_candidates(limit=max(limit, 12)))
+        items.extend(self._fetch_economic_candidates(limit=max(limit, _MIN_ECONOMIC_CANDIDATES)))
         return items
 
     def _fetch_direct_equity_news(self, symbol: str, limit: int) -> List[NewsItem]:
@@ -715,16 +831,22 @@ class FinvizNewsSource:
         for row in rows:
             if not isinstance(row, dict):
                 continue
-            ticker = _safe_text(row.get("Ticker") or row.get("Symbol") or row.get("Name"))
+            ticker = _first_present(row, "Ticker", "ticker", "Pair", "pair", "Symbol", "symbol", "Name", "name")
+            label = _first_present(row, "Label", "label", "Group", "group")
             search_text = " ".join(_safe_text(value) for value in row.values())
             row_score, _matched = _score_relevance(
                 NewsItem(
-                    title=ticker or market,
+                    title=ticker or label or market,
                     provider=self.name,
                     source=f"Finviz {market.title()}",
                     kind="market_snapshot",
                     category=market,
-                    metadata={"ticker": ticker, "search_text": search_text, "market": market},
+                    metadata={
+                        "ticker": ticker,
+                        "label": label,
+                        "search_text": search_text,
+                        "market": market,
+                    },
                 ),
                 context,
             )
@@ -733,17 +855,27 @@ class FinvizNewsSource:
         scored_rows.sort(key=lambda item: item[0], reverse=True)
 
         out: List[NewsItem] = []
-        for row_score, row in scored_rows[:3]:
-            ticker = _safe_text(row.get("Ticker") or row.get("Symbol") or row.get("Name"))
+        for row_score, row in scored_rows[:_MAX_SNAPSHOT_ROWS]:
+            ticker = _first_present(row, "Ticker", "ticker", "Pair", "pair", "Symbol", "symbol", "Name", "name")
+            label = _first_present(row, "Label", "label", "Group", "group")
             summary_parts = []
-            for key in ("Price", "Change", "Perf Day", "Perf Week", "Perf WTD"):
-                value = row.get(key)
-                if value not in (None, ""):
-                    summary_parts.append(f"{key}: {value}")
+            for display_key, row_keys in (
+                ("Label", ("Label", "label")),
+                ("Group", ("Group", "group")),
+                ("Price", ("Price", "price")),
+                ("Change", ("Change", "change")),
+                ("Perf", ("Perf", "perf")),
+                ("Perf Day", ("Perf Day", "perf_day")),
+                ("Perf Week", ("Perf Week", "perf_week")),
+                ("Perf WTD", ("Perf WTD", "perf_wtd")),
+            ):
+                value = _first_present(row, *row_keys)
+                if value:
+                    summary_parts.append(f"{display_key}: {value}")
             observed_at = datetime.now(timezone.utc)
             out.append(
                 NewsItem(
-                    title=f"{ticker or market.upper()} market snapshot",
+                    title=f"{ticker or label or market.upper()} market snapshot",
                     provider=self.name,
                     source=f"Finviz {market.title()}",
                     kind="market_snapshot",
@@ -753,6 +885,7 @@ class FinvizNewsSource:
                     priority=NewsPriority.HIGH,
                     metadata={
                         "ticker": ticker,
+                        "label": label,
                         "market": market,
                         "search_text": " ".join(_safe_text(value) for value in row.values()),
                         "snapshot_time_inferred": True,
@@ -887,9 +1020,10 @@ class NewsAggregator:
 
     def fetch_news(self, symbol: Optional[str] = None) -> Dict[str, Any]:
         bucket_size = _DEFAULT_BUCKET_SIZE
-        candidate_limit = bucket_size * 3
+        candidate_limit = bucket_size * _CANDIDATE_MULTIPLIER
         symbol_norm = _normalize_symbol(symbol)
         context = _classify_instrument(symbol_norm) if symbol_norm else None
+        embedding_service = get_news_embedding_service()
         selected_sources = {name: src for name, src in self._sources.items() if src.is_available()}
         if not selected_sources:
             return {
@@ -920,6 +1054,22 @@ class NewsAggregator:
                 logger.exception("Error collecting news from %s", name)
                 source_details[name] = {"success": False, "error": str(exc)}
 
+        if source_details and not any(details.get("success") for details in source_details.values()):
+            return {
+                "success": False,
+                "error": "All news sources failed",
+                "symbol": context.symbol if context is not None else None,
+                "instrument": context.to_dict() if context is not None else None,
+                "sources_used": [],
+                "source_details": source_details,
+                "general_news": [],
+                "related_news": [],
+                "impact_news": [],
+                "general_count": 0,
+                "related_count": 0,
+                "impact_count": 0,
+            }
+
         general_pool = _dedupe_items(general_candidates)
         for item in general_pool:
             item.importance_score = _score_importance(item)
@@ -933,6 +1083,7 @@ class NewsAggregator:
         )
 
         related_news: List[NewsItem] = []
+        impact_news: List[NewsItem] = []
         if context is not None:
             related_pool = _dedupe_items(list(related_candidates) + list(general_pool))
             filtered_related: List[NewsItem] = []
@@ -965,20 +1116,55 @@ class NewsAggregator:
                 ),
                 reverse=True,
             )
+            embeddings_used = _apply_embedding_rerank(filtered_related, context)
+            if embeddings_used:
+                filtered_related.sort(
+                    key=lambda item: (
+                        item.relevance_score,
+                        item.importance_score,
+                        item.published_at or datetime.min.replace(tzinfo=timezone.utc),
+                    ),
+                    reverse=True,
+                )
             related_news = filtered_related[:bucket_size]
 
-            related_keys = {item.dedupe_key() for item in related_news}
-            general_pool = [item for item in general_pool if item.dedupe_key() not in related_keys]
+            impact_candidates: List[NewsItem] = []
+            for item in related_pool:
+                systemic_score, impact_terms = _score_systemic_impact(item, context)
+                if systemic_score < 2.4 or item.importance_score < 3.0:
+                    continue
+                item.metadata["systemic_impact_score"] = round(systemic_score, 4)
+                if impact_terms:
+                    item.metadata["impact_terms"] = impact_terms
+                impact_candidates.append(item)
+            impact_candidates.sort(
+                key=lambda item: (
+                    float(item.metadata.get("systemic_impact_score", 0.0)),
+                    item.importance_score,
+                    item.published_at or datetime.min.replace(tzinfo=timezone.utc),
+                ),
+                reverse=True,
+            )
+            impact_news = impact_candidates[:_DEFAULT_IMPACT_BUCKET_SIZE]
+            impact_keys = {item.dedupe_key() for item in impact_news}
+            general_pool = [
+                item for item in general_pool
+                if item.dedupe_key() not in impact_keys
+            ]
 
         general_news = general_pool[:bucket_size]
         selected_general_counts = Counter(item.provider for item in general_news)
         selected_related_counts = Counter(item.provider for item in related_news)
+        selected_impact_counts = Counter(item.provider for item in impact_news)
         for name, details in source_details.items():
             if not details.get("success"):
                 continue
             details["selected_general"] = selected_general_counts.get(name, 0)
             details["selected_related"] = selected_related_counts.get(name, 0)
-            details["selected_total"] = details["selected_general"] + details["selected_related"]
+            details["selected_impact"] = selected_impact_counts.get(name, 0)
+            details["selected_total"] = (
+                details["selected_general"] + details["selected_related"] + details["selected_impact"]
+            )
         return {
             "success": True,
             "symbol": context.symbol if context is not None else None,
@@ -990,12 +1176,16 @@ class NewsAggregator:
                 "notes": [
                     "Ranks direct symbol mentions, asset-class terms, macro exposures, and text cosine similarity.",
                     "Related news may include market snapshots and economic calendar events when they plausibly impact the instrument.",
+                    "Impact news highlights high-importance systemic headlines such as war, sanctions, tariffs, and energy shocks.",
                 ],
+                "embeddings": embedding_service.status() if context is not None else {"enabled": embedding_service.enabled},
             },
             "general_news": [item.to_dict() for item in general_news],
             "related_news": [item.to_dict() for item in related_news],
+            "impact_news": [item.to_dict() for item in impact_news],
             "general_count": len(general_news),
             "related_count": len(related_news),
+            "impact_count": len(impact_news),
         }
 
 

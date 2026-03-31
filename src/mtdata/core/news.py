@@ -25,6 +25,8 @@ def news(symbol: Optional[str] = None) -> Dict[str, Any]:
     - `related_news`: items relevant to the instrument, including direct symbol
       news when available, asset-specific market snapshots, and macro events
       whose text and metadata suggest likely impact on the instrument.
+    - `impact_news`: high-importance systemic headlines, such as war or energy
+      shocks, that may matter even when they are not direct lexical matches.
 
     Matching uses symbol aliases, asset-class terms, MT5 symbol metadata, and a
     lightweight cosine-similarity score over headline/event text.
@@ -42,6 +44,7 @@ def news(symbol: Optional[str] = None) -> Dict[str, Any]:
         - `instrument`: inferred symbol context when `symbol` is provided
         - `general_news`: important recent general news
         - `related_news`: symbol-relevant news and events
+        - `impact_news`: high-importance systemic market headlines
         - `source_details`: per-source candidate and selected counts
         - `matching`: summary of the relevance model
     """

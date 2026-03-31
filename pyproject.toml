@@ -83,6 +83,10 @@ web = [
     "fastapi>=0.134.0",
     "uvicorn[standard]>=0.41.0",
 ]
+news-embeddings = [
+    "sentence-transformers>=5.1.2,<6",
+    "huggingface-hub>=0.36.2,<1",
+]
 all = [
     "arch>=8.0.0",
     "hmmlearn>=0.3.3",
@@ -107,6 +111,8 @@ all = [
     "precise-patterns @ git+https://github.com/BennyThadikaran/precise-patterns.git@e92e10cbb1b6e414c89ad287be32ddae4214b353",
     "fastapi>=0.134.0",
     "uvicorn[standard]>=0.41.0",
+    "sentence-transformers>=5.1.2,<6",
+    "huggingface-hub>=0.36.2,<1",
 ]
 
 [project.scripts]
