@@ -10,9 +10,8 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import IntEnum
-from functools import lru_cache
 from time import monotonic
-from typing import Any, Dict, Iterable, List, Optional, Protocol, runtime_checkable
+from typing import Any, Collection, Dict, Iterable, List, Optional, Protocol, runtime_checkable
 
 from .finviz_service import (
     get_crypto_performance,
@@ -20,7 +19,6 @@ from .finviz_service import (
     get_forex_performance,
     get_futures_performance,
     get_general_news,
-    get_stock_description,
     get_stock_news,
 )
 from .news_embeddings import get_news_embedding_service
@@ -91,7 +89,10 @@ _KNOWN_INDEX_HINTS = {
     "GER40": "DAX",
     "DE40": "DAX",
     "UK100": "FTSE",
+    "FTSE100": "FTSE",
     "JP225": "NIKKEI",
+    "JPN225": "NIKKEI",
+    "NIKKEI225": "NIKKEI",
 }
 _CRYPTO_BASE_PREFIXES = {
     "DOGE": "DOGE",
@@ -115,6 +116,8 @@ _INDEX_ALIASES = {
     "NAS": ["NAS100", "USTEC", "NDX", "NQ"],
     "DJI": ["US30", "DJ30", "YM", "DOW"],
     "DAX": ["GER40", "DE40", "DAX40", "FDAX"],
+    "FTSE": ["UK100", "FTSE100"],
+    "NIKKEI": ["JP225", "JPN225", "NIKKEI225", "N225"],
 }
 _INDEX_EXPOSURE_CURRENCIES = {
     "SPX": "USD",
@@ -366,6 +369,11 @@ def _normalize_symbol(symbol: Optional[str]) -> Optional[str]:
     return text or None
 
 
+def _symbol_root(symbol: str) -> str:
+    match = re.match(r"[A-Z0-9/]+", symbol.upper())
+    return match.group(0) if match else symbol.upper()
+
+
 def _compact_token(value: str) -> str:
     return re.sub(r"[^A-Z0-9]+", "", value.upper())
 
@@ -445,7 +453,9 @@ def _parse_relative_time(value: str) -> Optional[datetime]:
         return now
     if text == "yesterday":
         return now - timedelta(days=1)
-    match = re.search(r"(\d+)\s+(minute|hour|day)s?\s+ago", text)
+    if text.startswith("-"):
+        return None
+    match = re.fullmatch(r"(\d+)\s+(minute|hour|day)s?\s+ago", text)
     if not match:
         return None
     amount = int(match.group(1))
@@ -479,20 +489,27 @@ def _safe_symbol_metadata(symbol: str) -> Dict[str, str]:
     return metadata
 
 
-@lru_cache(maxsize=128)
-def _safe_equity_description(symbol: str) -> str:
-    try:
-        result = get_stock_description(symbol)
-    except Exception:
-        return ""
-    return _safe_text(result.get("description")).lower()
-
-
 def _match_prefixed_base(compact: str, prefixes: Dict[str, str]) -> tuple[Optional[str], Optional[str]]:
     for prefix in sorted(prefixes, key=len, reverse=True):
         if compact.startswith(prefix):
             return prefixes[prefix], compact[len(prefix):] or None
     return None, None
+
+
+def _split_known_quote_suffix(compact: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    for quote in sorted(_CRYPTO_QUOTES | _CURRENCY_CODES, key=len, reverse=True):
+        if not compact.endswith(quote):
+            continue
+        base = compact[:-len(quote)]
+        if not base or not base.isalpha():
+            continue
+        if base in _CURRENCY_CODES and quote in _CURRENCY_CODES:
+            return base, quote, "forex"
+        if base in _COMMODITY_BASES or base in _COMMODITY_BASE_PREFIXES:
+            return _COMMODITY_BASE_PREFIXES.get(base, base), quote, "commodity"
+        if base in _KNOWN_CRYPTO_BASES or quote in _CRYPTO_QUOTES or len(base) >= 4:
+            return base, quote, "crypto"
+    return None, None, None
 
 
 def _extract_compact_symbol_parts(compact: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
@@ -507,7 +524,11 @@ def _extract_compact_symbol_parts(compact: str) -> tuple[Optional[str], Optional
     if commodity_base:
         return commodity_base, commodity_quote, "commodity"
 
-    if len(compact) >= 6 and compact[:3].isalpha() and compact[3:6].isalpha():
+    split_base, split_quote, split_asset_class = _split_known_quote_suffix(compact)
+    if split_base:
+        return split_base, split_quote, split_asset_class
+
+    if len(compact) == 6 and compact[:3].isalpha() and compact[3:6].isalpha():
         return compact[:3], compact[3:6], None
 
     return None, None, None
@@ -552,14 +573,15 @@ def _classify_instrument(symbol: str) -> InstrumentContext:
     symbol_metadata = _safe_symbol_metadata(symbol_norm)
     path_text = _safe_text(symbol_metadata.get("path")).lower()
     desc_text = _safe_text(symbol_metadata.get("description")).lower()
-    compact = _compact_token(symbol_norm)
+    symbol_root = _symbol_root(symbol_norm)
+    compact = _compact_token(symbol_root)
     base_asset: Optional[str] = None
     quote_asset: Optional[str] = None
     asset_class = "equity"
     detected_asset_class: Optional[str] = None
 
-    if "/" in symbol_norm:
-        parts = [part for part in symbol_norm.split("/") if part]
+    if "/" in symbol_root:
+        parts = [part for part in symbol_root.split("/") if part]
         if len(parts) == 2:
             base_asset, quote_asset = parts[0], parts[1]
     else:
@@ -596,10 +618,10 @@ def _classify_instrument(symbol: str) -> InstrumentContext:
     elif base_asset in _CURRENCY_CODES and quote_asset in _CURRENCY_CODES:
         asset_class = "forex"
 
-    if asset_class == "equity" and not desc_text:
-        desc_text = _safe_equity_description(symbol_norm)
-
-    aliases = [symbol_norm, compact]
+    aliases = [symbol_norm]
+    if symbol_root and symbol_root != symbol_norm:
+        aliases.append(symbol_root)
+    aliases.append(compact)
     if base_asset and base_asset in _INDEX_ALIASES:
         aliases.extend(_INDEX_ALIASES[base_asset])
     if base_asset and quote_asset:

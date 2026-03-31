@@ -448,15 +448,45 @@ def get_mt5_news(
         use_client_tz = _use_client_tz()
         client_tz = _resolve_client_tz() if use_client_tz else None
         
+        from_dt = _parse_news_filter_datetime(from_date, client_tz) if from_date else None
+        to_dt = _parse_news_filter_datetime(to_date, client_tz) if to_date else None
+
+        if from_dt and to_dt and from_dt > to_dt:
+            all_categories = list(set(r.category for r in records if r.category))
+            all_sources = list(set(r.source for r in records if r.source))
+            payload = {
+                "success": True,
+                "count": 0,
+                "total_records": len(records),
+                "database_path": str(news_db_path),
+                "header_info": parser.header_info,
+                "available_categories": all_categories[:20],
+                "available_sources": all_sources[:20],
+                "news": [],
+                "warning": "from_date is after to_date; returning no results",
+            }
+            timezone_meta_input: Dict[str, Any] = dict(payload)
+            if not use_client_tz:
+                timezone_meta_input["timezone"] = "UTC"
+                payload["timezone"] = "UTC"
+            payload["meta"] = {
+                "runtime": {
+                    "timezone": build_runtime_timezone_meta(
+                        timezone_meta_input,
+                        include_local=False,
+                        include_now=False,
+                    )
+                }
+            }
+            return payload
+
         # Apply filters
         filtered = records
-        
-        if from_date:
-            from_dt = _parse_news_filter_datetime(from_date, client_tz)
+
+        if from_dt:
             filtered = [r for r in filtered if r.timestamp >= from_dt]
-        
-        if to_date:
-            to_dt = _parse_news_filter_datetime(to_date, client_tz)
+
+        if to_dt:
             filtered = [r for r in filtered if r.timestamp <= to_dt]
         
         if category:

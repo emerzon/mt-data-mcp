@@ -194,12 +194,14 @@ def test_fetch_unified_news_includes_direct_equity_news(monkeypatch) -> None:
 
 
 def test_equity_stock_page_news_requires_company_evidence(monkeypatch) -> None:
-    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
-    monkeypatch.setattr(
-        svc,
-        "get_stock_description",
-        lambda symbol: {"description": "Apple Inc designs consumer electronics and software"},
-    )
+    class FakeInfo:
+        path = "Stocks\\US"
+        description = "Apple Inc designs consumer electronics and software"
+        currency_base = ""
+        currency_profit = ""
+        currency_margin = ""
+
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: FakeInfo())
     monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
     monkeypatch.setattr(
         svc,
@@ -220,7 +222,6 @@ def test_equity_stock_page_news_requires_company_evidence(monkeypatch) -> None:
     )
     _disable_ycnbc(monkeypatch)
     _disable_embeddings(monkeypatch)
-    svc._safe_equity_description.cache_clear()
     _reset_aggregator(monkeypatch)
 
     result = svc.fetch_unified_news("AAPL")
@@ -275,6 +276,36 @@ def test_classify_instrument_preserves_usdt_quotes(monkeypatch) -> None:
     assert context.quote_asset == "USDT"
 
 
+def test_classify_instrument_handles_broker_suffixes(monkeypatch) -> None:
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+
+    nas = svc._classify_instrument("NAS100.cash")
+    spx = svc._classify_instrument("US500.cash")
+    gold = svc._classify_instrument("XAUUSD.a")
+
+    assert nas.asset_class == "index"
+    assert nas.base_asset == "NAS"
+    assert spx.asset_class == "index"
+    assert spx.base_asset == "SPX"
+    assert gold.asset_class == "commodity"
+    assert gold.base_asset == "XAU"
+    assert gold.quote_asset == "USD"
+
+
+def test_classify_instrument_handles_generic_crypto_quote_splits(monkeypatch) -> None:
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+
+    aave = svc._classify_instrument("AAVEUSDT")
+    link = svc._classify_instrument("LINKUSD")
+
+    assert aave.asset_class == "crypto"
+    assert aave.base_asset == "AAVE"
+    assert aave.quote_asset == "USDT"
+    assert link.asset_class == "crypto"
+    assert link.base_asset == "LINK"
+    assert link.quote_asset == "USD"
+
+
 def test_classify_instrument_handles_short_and_alias_commodities(monkeypatch) -> None:
     monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
 
@@ -307,11 +338,39 @@ def test_classify_index_hints_override_mt5_currency_metadata(monkeypatch) -> Non
     assert "NQ" in context.aliases
 
 
+def test_classify_instrument_supports_common_index_aliases(monkeypatch) -> None:
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+
+    ftse = svc._classify_instrument("FTSE100")
+    nikkei = svc._classify_instrument("NIKKEI225")
+    jpn = svc._classify_instrument("JPN225")
+
+    assert ftse.asset_class == "index"
+    assert ftse.base_asset == "FTSE"
+    assert nikkei.asset_class == "index"
+    assert nikkei.base_asset == "NIKKEI"
+    assert jpn.asset_class == "index"
+    assert jpn.base_asset == "NIKKEI"
+
+
 def test_parse_relative_time_handles_yesterday() -> None:
     parsed = svc._parse_relative_time("yesterday")
 
     assert parsed is not None
     assert datetime.now(timezone.utc) - timedelta(days=1, minutes=1) <= parsed <= datetime.now(timezone.utc)
+
+
+def test_parse_relative_time_rejects_negative_values() -> None:
+    assert svc._parse_relative_time("-5 minutes ago") is None
+
+
+def test_unknown_equity_classification_does_not_infer_description(monkeypatch) -> None:
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+
+    context = svc._classify_instrument("ZZZZNOTREAL")
+
+    assert context.asset_class == "equity"
+    assert context.description is None
 
 
 def test_unknown_equity_without_specific_evidence_returns_no_related_items(monkeypatch) -> None:
