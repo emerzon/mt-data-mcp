@@ -945,6 +945,9 @@ def fetch_candles(
         ti_added_cols = [str(c) for c in ti_cols if isinstance(c, str)]
         # Build tabular payload
         payload = _table_from_rows(headers, rows)
+        # `candles` is the domain-specific row count for this tool; avoid
+        # duplicating the generic `count` field in public output.
+        payload.pop("count", None)
         if time_as_epoch:
             for row in payload.get("data", []) or []:
                 if isinstance(row, dict) and "time" in row:

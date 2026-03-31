@@ -615,8 +615,25 @@ class TestFetchCandles(unittest.TestCase):
                     'tz': 'Europe/Nicosia',
                     'offset_seconds': 7200,
                 },
+                'used': {'tz': 'UTC'},
             },
         )
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=ZoneInfo("America/Chicago"))
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_meta_used_timezone_uses_iana_name(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.server_tz_name = "Europe/Nicosia"
+        mock_cfg.client_tz_name = "America/Chicago"
+        mock_cfg.get_server_tz.return_value = ZoneInfo("Europe/Nicosia")
+        mock_cfg.get_client_tz.return_value = ZoneInfo("America/Chicago")
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10)
+        result = fetch_candles('EURUSD', limit=5)
+        self.assertEqual(result['meta']['runtime']['timezone']['used'], {'tz': 'America/Chicago'})
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)

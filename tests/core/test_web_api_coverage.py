@@ -522,6 +522,7 @@ class TestGetHistory:
                 "tz": "Europe/Nicosia",
                 "offset_seconds": 0,
             },
+            "used": {"tz": "UTC"},
         }
 
     def test_strips_incomplete_candle(self):

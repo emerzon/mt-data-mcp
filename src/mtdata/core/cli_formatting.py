@@ -240,7 +240,15 @@ def _prune_compact_runtime_meta(result: Any) -> Any:
     runtime_in = meta.get("runtime")
     if isinstance(runtime_in, dict):
         runtime = dict(runtime_in)
-        runtime.pop("timezone", None)
+        timezone_in = runtime.get("timezone")
+        if isinstance(timezone_in, dict):
+            used_in = timezone_in.get("used")
+            if isinstance(used_in, dict) and not _is_empty_value(used_in):
+                runtime["timezone"] = {"used": dict(used_in)}
+            else:
+                runtime.pop("timezone", None)
+        else:
+            runtime.pop("timezone", None)
         if runtime:
             meta["runtime"] = runtime
         else:
@@ -302,13 +310,35 @@ def _normalize_symbols_describe_cli_payload(result: Any, *, verbose: bool) -> An
     return out
 
 
-def _normalize_candle_json_payload(result: Any) -> Any:
+def _normalize_candle_cli_payload(result: Any, *, fmt: str) -> Any:
     if not isinstance(result, dict):
         return result
-    if "bars" in result or not isinstance(result.get("data"), list):
-        return result
     out = dict(result)
-    out["bars"] = out.pop("data")
+    out.pop("count", None)
+    if fmt == CLI_FORMAT_TOON:
+        meta_in = out.get("meta")
+        if isinstance(meta_in, dict):
+            meta: Dict[str, Any] = {}
+            used_tz = None
+            runtime_in = meta_in.get("runtime")
+            if isinstance(runtime_in, dict):
+                timezone_in = runtime_in.get("timezone")
+                if isinstance(timezone_in, dict):
+                    used_in = timezone_in.get("used")
+                    if isinstance(used_in, dict):
+                        used_tz = used_in.get("tz")
+            for key, value in meta_in.items():
+                if key in {"runtime", "tool"} or _is_empty_value(value):
+                    continue
+                meta[key] = dict(value) if isinstance(value, dict) else value
+            if used_tz:
+                meta["timezone"] = used_tz
+            if meta:
+                out["meta"] = meta
+            else:
+                out.pop("meta", None)
+    if fmt == CLI_FORMAT_JSON and "bars" not in out and isinstance(out.get("data"), list):
+        out["bars"] = out.pop("data")
     return out
 
 
@@ -357,8 +387,8 @@ def _prepare_cli_payload(result: Any, *, fmt: str, verbose: bool, cmd_name: str)
     if fmt == CLI_FORMAT_TOON and cmd_name == "mt5_news" and not verbose:
         return _render_mt5_news_cli_compact(prepared)
 
-    if fmt == CLI_FORMAT_JSON and cmd_name == "data_fetch_candles":
-        prepared = _normalize_candle_json_payload(prepared)
+    if cmd_name == "data_fetch_candles":
+        prepared = _normalize_candle_cli_payload(prepared, fmt=fmt)
 
     if fmt == CLI_FORMAT_TOON and not verbose:
         prepared = _prune_compact_runtime_meta(prepared)

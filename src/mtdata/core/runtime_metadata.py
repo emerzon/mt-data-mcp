@@ -164,6 +164,7 @@ def build_runtime_timezone_meta(
         server_tz_value = _offset_tz_name(server_offset_seconds)
 
     client_tz_value = client_tz_resolved or client_tz_config
+    used_tz = client_tz_value or "UTC"
 
     runtime_meta = {
         "utc": {
@@ -183,6 +184,9 @@ def build_runtime_timezone_meta(
         "client": {
             "tz": client_tz_value,
             "now": client_now if include_now else None,
+        },
+        "used": {
+            "tz": used_tz,
         },
     }
     return _prune_empty(runtime_meta)

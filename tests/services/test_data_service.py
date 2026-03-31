@@ -50,6 +50,7 @@ class TestDataService(unittest.TestCase):
         self.assertIsInstance(result, dict)
         self.assertTrue(result.get('success'))
         self.assertEqual(result.get('candles'), 5)
+        self.assertNotIn('count', result)
         # Check tabular rows
         data = result.get('data')
         self.assertIsInstance(data, list)

@@ -544,6 +544,7 @@ class TestFormatResultForCli:
         )
         assert payload["bars"] == [{"time": "2023-11-14 22:13", "close": 1.1}]
         assert "data" not in payload
+        assert "count" not in payload
 
     def test_compact_toon_hides_runtime_timezone_meta(self):
         result = _format_result_for_cli(
@@ -566,6 +567,28 @@ class TestFormatResultForCli:
         )
         assert "runtime.timezone" not in result
         assert "meta:" not in result
+
+    def test_compact_toon_keeps_used_timezone_as_meta_timezone(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "meta": {
+                    "tool": "data_fetch_candles",
+                    "runtime": {
+                        "timezone": {
+                            "used": {"tz": "America/Chicago"},
+                            "utc": {"tz": "UTC"},
+                            "server": {"tz": "Europe/Nicosia"},
+                        }
+                    },
+                },
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="data_fetch_candles",
+        )
+        assert "timezone: America/Chicago" in result
+        assert "runtime.timezone" not in result
 
     def test_toon_format_preserves_shared_causal_and_regime_details(self):
         causal = _format_result_for_cli(
@@ -1770,6 +1793,37 @@ class TestAddDynamicArguments:
         assert args.flag == "false"
         args = parser.parse_args(["--no-flag"])
         assert args.flag == "false"
+
+    def test_include_incomplete_bool_param_uses_canonical_hyphen_flag(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "include_incomplete", "type": bool, "required": False, "default": False},
+            ]
+        }
+        add_dynamic_arguments(parser, func_info, cmd_name="data_fetch_candles")
+
+        canonical_action = next(
+            action
+            for action in parser._actions
+            if action.dest == "include_incomplete" and action.help != argparse.SUPPRESS
+        )
+        hidden_alias_action = next(
+            action
+            for action in parser._actions
+            if action.dest == "include_incomplete"
+            and action.help == argparse.SUPPRESS
+            and "--include_incomplete" in action.option_strings
+        )
+
+        assert canonical_action.option_strings == ["--include-incomplete"]
+        assert "--include_incomplete" in hidden_alias_action.option_strings
+        assert not any(
+            action.help != argparse.SUPPRESS and action.dest == "include_incomplete" and "--no-include-incomplete" in action.option_strings
+            for action in parser._actions
+        )
+        assert parser.parse_args(["--include_incomplete"]).include_incomplete == "true"
+        assert parser.parse_args(["--no_include_incomplete"]).include_incomplete == "false"
 
     def test_list_param(self):
         parser = argparse.ArgumentParser()

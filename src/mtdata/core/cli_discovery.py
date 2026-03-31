@@ -99,6 +99,28 @@ def _dedupe_flags(*flags: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(flag for flag in flags if flag))
 
 
+def _canonicalize_long_option(flag: str) -> str:
+    text = str(flag or "").strip()
+    if not text.startswith("--"):
+        return text
+    if "=" in text:
+        option, value = text.split("=", 1)
+        return f"{option.replace('_', '-')}={value}"
+    return text.replace("_", "-")
+
+
+def _split_visible_and_hidden_flags(*flags: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    visible: list[str] = []
+    hidden: list[str] = []
+    for flag in _dedupe_flags(*flags):
+        canonical = _canonicalize_long_option(flag)
+        if canonical and canonical not in visible:
+            visible.append(canonical)
+        if flag != canonical and flag not in hidden:
+            hidden.append(flag)
+    return tuple(visible), tuple(hidden)
+
+
 def should_expose_cli_param(*, cmd_name: Optional[str], param_name: str) -> bool:
     """Return whether a function parameter should surface as a user CLI argument."""
     if str(cmd_name or "") == "labels_triple_barrier" and str(param_name or "") == "summary_only":
@@ -414,7 +436,7 @@ def add_dynamic_arguments(
             continue
         hyph = f"--{param['name'].replace('_', '-')}"
         uscr = f"--{param['name']}"
-        option_flags = _dedupe_flags(
+        option_flags, hidden_option_flags = _split_visible_and_hidden_flags(
             hyph,
             uscr,
             *_extra_option_flags(param["name"], cmd_name),
@@ -441,7 +463,10 @@ def add_dynamic_arguments(
             parser.add_argument(param["name"], **positional_kwargs)
             hidden_alias_kwargs = dict(kwargs)
             hidden_alias_kwargs["help"] = argparse.SUPPRESS
-            parser.add_argument(*option_flags, **hidden_alias_kwargs)
+            if option_flags:
+                parser.add_argument(*option_flags, **hidden_alias_kwargs)
+            if hidden_option_flags:
+                parser.add_argument(*hidden_option_flags, **hidden_alias_kwargs)
         elif allow_optional_first_positional:
             positional_kwargs = {k: v for k, v in kwargs.items() if k in ("help", "type", "choices", "metavar")}
             positional_kwargs["nargs"] = "?"
@@ -449,31 +474,58 @@ def add_dynamic_arguments(
             parser.add_argument(param["name"], **positional_kwargs)
             hidden_alias_kwargs = dict(kwargs)
             hidden_alias_kwargs["help"] = argparse.SUPPRESS
-            parser.add_argument(*option_flags, **hidden_alias_kwargs)
+            if option_flags:
+                parser.add_argument(*option_flags, **hidden_alias_kwargs)
+            if hidden_option_flags:
+                parser.add_argument(*hidden_option_flags, **hidden_alias_kwargs)
         else:
             if is_optional_bool:
                 local_kwargs = dict(kwargs)
                 local_kwargs["nargs"] = "?"
                 local_kwargs["const"] = "true"
-                parser.add_argument(*option_flags, **local_kwargs)
-                no_flags = _dedupe_flags(
+                if option_flags:
+                    parser.add_argument(*option_flags, **local_kwargs)
+                if hidden_option_flags:
+                    hidden_kwargs = dict(local_kwargs)
+                    hidden_kwargs["help"] = argparse.SUPPRESS
+                    parser.add_argument(*hidden_option_flags, **hidden_kwargs)
+                no_flags, no_hidden_flags = _split_visible_and_hidden_flags(
                     f"--no-{param['name'].replace('_', '-')}",
                     f"--no_{param['name']}",
                 )
-                parser.add_argument(
-                    *no_flags,
-                    dest=param["name"],
-                    action="store_const",
-                    const="false",
-                    help=f"Disable {param['name'].replace('_', ' ')}.",
-                )
+                if no_flags:
+                    parser.add_argument(
+                        *no_flags,
+                        dest=param["name"],
+                        action="store_const",
+                        const="false",
+                        help=argparse.SUPPRESS,
+                    )
+                if no_hidden_flags:
+                    hidden_no_kwargs = {
+                        "dest": param["name"],
+                        "action": "store_const",
+                        "const": "false",
+                        "help": argparse.SUPPRESS,
+                    }
+                    parser.add_argument(*no_hidden_flags, **hidden_no_kwargs)
             elif is_mapping_type:
                 local_kwargs = dict(kwargs)
                 local_kwargs["nargs"] = "?"
                 local_kwargs["const"] = "__PRESENT__"
-                parser.add_argument(*option_flags, **local_kwargs)
+                if option_flags:
+                    parser.add_argument(*option_flags, **local_kwargs)
+                if hidden_option_flags:
+                    hidden_kwargs = dict(local_kwargs)
+                    hidden_kwargs["help"] = argparse.SUPPRESS
+                    parser.add_argument(*hidden_option_flags, **hidden_kwargs)
             else:
-                parser.add_argument(*option_flags, **kwargs)
+                if option_flags:
+                    parser.add_argument(*option_flags, **kwargs)
+                if hidden_option_flags:
+                    hidden_kwargs = dict(kwargs)
+                    hidden_kwargs["help"] = argparse.SUPPRESS
+                    parser.add_argument(*hidden_option_flags, **hidden_kwargs)
         if cmd_name == "trade_history" and param["name"] == "minutes_back":
             parser.add_argument(
                 "--days",
