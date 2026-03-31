@@ -21,6 +21,7 @@ TOOL_MODULE_NAMES: Final[tuple[str, ...]] = (
     "mtdata.core.symbols",
     "mtdata.core.regime",
     "mtdata.core.labels",
+    "mtdata.core.market_status",
     "mtdata.core.report",
     "mtdata.core.trading",
     "mtdata.core.temporal",
