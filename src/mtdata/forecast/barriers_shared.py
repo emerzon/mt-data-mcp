@@ -358,6 +358,95 @@ def _build_selection_diagnostics(row: Optional[Dict[str, Any]], cost_per_trade: 
     return out
 
 
+def _build_actionability_payload(
+    *,
+    status: str,
+    status_reason: Optional[str] = None,
+    row: Optional[Dict[str, Any]] = None,
+    diagnostics: Optional[Dict[str, Any]] = None,
+    warning: Optional[str] = None,
+    ensemble_degraded: bool = False,
+) -> Dict[str, Any]:
+    diag = diagnostics if isinstance(diagnostics, dict) else {}
+    flags: List[str] = []
+
+    if status == "no_candidates":
+        flags.append("status_no_candidates")
+    elif status == "non_viable":
+        flags.append("status_non_viable")
+
+    if isinstance(row, dict) and bool(row.get("phantom_profit_risk")):
+        flags.append("phantom_profit_risk")
+    if bool(diag.get("ev_edge_conflict")):
+        flags.append("ev_edge_conflict")
+    if bool(diag.get("low_confidence")):
+        flags.append("low_confidence")
+    if diag.get("selection_warnings"):
+        flags.append("selection_warnings")
+    if warning:
+        flags.append("warning")
+    if ensemble_degraded:
+        flags.append("ensemble_degraded")
+
+    deduped_flags: List[str] = []
+    seen: Set[str] = set()
+    for flag in flags:
+        key = str(flag).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped_flags.append(key)
+
+    actionability = "actionable"
+    trade_gate_passed = True
+    actionability_reason = "No blocking diagnostics detected."
+
+    if status != "ok" or "phantom_profit_risk" in seen or "ev_edge_conflict" in seen:
+        actionability = "blocked"
+        trade_gate_passed = False
+        if status != "ok":
+            actionability_reason = (
+                str(status_reason).strip()
+                if status_reason else f"Optimizer status is {status!r}; do not trade this setup."
+            )
+        elif "phantom_profit_risk" in seen:
+            actionability_reason = (
+                "Positive EV is dominated by unresolved paths with near-zero observed loss; "
+                "skip this setup."
+            )
+        else:
+            actionability_reason = (
+                "EV and break-even-adjusted edge conflict; manual review is required before trading."
+            )
+    elif {
+        "selection_warnings",
+        "low_confidence",
+        "warning",
+        "ensemble_degraded",
+    }.intersection(seen):
+        actionability = "review"
+        trade_gate_passed = False
+        if warning:
+            actionability_reason = str(warning).strip()
+        elif diag.get("confidence_warning"):
+            actionability_reason = str(diag["confidence_warning"]).strip()
+        elif diag.get("selection_warnings"):
+            warnings_list = diag.get("selection_warnings")
+            if isinstance(warnings_list, list) and warnings_list:
+                actionability_reason = str(warnings_list[0]).strip()
+            else:
+                actionability_reason = "Selection diagnostics require manual review before trading."
+        else:
+            actionability_reason = "Selection diagnostics require manual review before trading."
+
+    return {
+        "actionability": actionability,
+        "trade_gate_passed": trade_gate_passed,
+        "actionability_reason": actionability_reason,
+        "actionability_flags": deduped_flags,
+    }
+
+
 def _is_crypto_symbol(symbol: str) -> bool:
     sym = str(symbol or "").upper()
     crypto_tokens = {

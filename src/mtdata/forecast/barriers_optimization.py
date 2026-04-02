@@ -26,6 +26,7 @@ from .monte_carlo import (
 from .barriers_shared import (
     BARRIER_GRID_PRESETS,
     DEGENERATE_OBJECTIVE_MIN_RESOLVE,
+    _build_actionability_payload,
     _annotate_candidate_metrics,
     _auto_barrier_method,
     _binomial_se,
@@ -915,13 +916,13 @@ def forecast_barrier_optimize(
                     )
                 else:
                     out["warning"] = f"{n_failed} ensemble member(s) failed."
+            diagnostics: Dict[str, Any] = {}
             if selected_best:
-                out.update(
-                    _build_selection_diagnostics(
-                        selected_best,
-                        cost_per_trade=cost_per_trade,
-                    )
+                diagnostics = _build_selection_diagnostics(
+                    selected_best,
+                    cost_per_trade=cost_per_trade,
                 )
+                out.update(diagnostics)
             if min_prob_resolve_val is not None:
                 out["min_prob_resolve"] = float(min_prob_resolve_val)
             if has_trading_costs:
@@ -941,6 +942,16 @@ def forecast_barrier_optimize(
                     "Widen TP/SL search ranges or switch grid_style to volatility/ratio.",
                     "Skip this setup if edge and EV remain unattractive.",
                 ]
+            out.update(
+                _build_actionability_payload(
+                    status=status,
+                    status_reason=status_reason,
+                    row=selected_best,
+                    diagnostics=diagnostics,
+                    warning=out.get("warning"),
+                    ensemble_degraded=ensemble_degraded,
+                )
+            )
             return out
 
         if method_name == 'auto':
@@ -2008,8 +2019,10 @@ def forecast_barrier_optimize(
                 out['statistical_robustness'] = statistical_analysis
                 out['min_sims_recommended'] = int(min_sims_recommended)
         
+        diagnostics = {}
         if isinstance(best, dict):
-            out.update(_build_selection_diagnostics(best, cost_per_trade=cost_per_trade))
+            diagnostics = _build_selection_diagnostics(best, cost_per_trade=cost_per_trade)
+            out.update(diagnostics)
         if warning is not None:
             out["warning"] = warning
         elif best is not None and not viable:
@@ -2019,6 +2032,15 @@ def forecast_barrier_optimize(
                 "Widen TP/SL search ranges or switch grid_style to volatility/ratio.",
                 "Skip this setup if edge and EV remain unattractive.",
             ]
+        out.update(
+            _build_actionability_payload(
+                status=status,
+                status_reason=status_reason,
+                row=best,
+                diagnostics=diagnostics,
+                warning=out.get("warning"),
+            )
+        )
         if invalid_barrier_candidates > 0:
             out["barrier_sanity_filtered"] = int(invalid_barrier_candidates)
         if min_prob_resolve_val is not None:
