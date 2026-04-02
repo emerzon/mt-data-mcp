@@ -363,6 +363,7 @@ def test_forecast_barrier_optimize_logs_finish_event(caplog, monkeypatch):
 def test_forecast_barrier_optimize_request_defaults_to_summary_output():
     request = ForecastBarrierOptimizeRequest(symbol="EURUSD")
     assert request.output == "summary"
+    assert request.search_profile == "medium"
 
 
 def test_forecast_list_library_models_and_list_methods(monkeypatch):
@@ -901,7 +902,7 @@ def test_forecast_barrier_optimize_applies_default_optuna_config(monkeypatch):
     out = raw_opt(request=ForecastBarrierOptimizeRequest(symbol="BTCUSD"))
     assert out["ok"] is True
     assert called["method"] == "auto"
-    assert called["search_profile"] == "long"
+    assert called["search_profile"] == "medium"
     assert called["params"]["optimizer"] == "optuna"
     assert called["params"]["sampler"] == "tpe"
     assert called["params"]["pruner"] == "median"

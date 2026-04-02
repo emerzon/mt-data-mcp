@@ -265,6 +265,15 @@ def _prune_compact_runtime_meta(result: Any) -> Any:
     return out
 
 
+def _round_cli_float(value: Any, *, digits: int) -> Any:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return value
+    try:
+        return round(float(value), int(digits))
+    except Exception:
+        return value
+
+
 def _normalize_market_ticker_cli_payload(result: Any, *, verbose: bool) -> Any:
     if not isinstance(result, dict):
         return result
@@ -285,6 +294,14 @@ def _normalize_market_ticker_cli_payload(result: Any, *, verbose: bool) -> Any:
         out["time"] = canonical_time
     else:
         out.pop("time", None)
+
+    for field, digits in (
+        ("spread_points", 4),
+        ("spread_pct", 6),
+        ("spread_usd", 6),
+    ):
+        if field in out:
+            out[field] = _round_cli_float(out.get(field), digits=digits)
 
     out.pop("time_display", None)
     if verbose and not _is_empty_value(raw_epoch):

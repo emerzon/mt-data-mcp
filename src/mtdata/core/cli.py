@@ -5,13 +5,15 @@ Automatically discovers function parameters and creates CLI arguments
 """
 
 import argparse
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 import difflib
-import sys
-import os
-import types
-import math
+import io
 import json
 import logging
+import math
+import os
+import sys
+import types
 from typing import get_origin, get_args, Optional, Dict, Any, List, Tuple, Literal, Union, is_typeddict
 from pydantic import BaseModel
 from .config import load_environment
@@ -104,6 +106,63 @@ def _configure_cli_logging(*, verbose: bool) -> None:
             mtdata_logger.addHandler(logging.NullHandler())
     except Exception:
         pass
+
+
+@contextmanager
+def _temporary_environment(overrides: Dict[str, Optional[str]]):
+    previous: Dict[str, Optional[str]] = {}
+    missing: set[str] = set()
+    for key, value in overrides.items():
+        if key in os.environ:
+            previous[key] = os.environ.get(key)
+        else:
+            missing.add(key)
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = str(value)
+    try:
+        yield
+    finally:
+        for key in overrides:
+            if key in missing:
+                os.environ.pop(key, None)
+                continue
+            restored = previous.get(key)
+            if restored is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = restored
+
+
+@contextmanager
+def _suppress_cli_side_output(*, enabled: bool):
+    if not enabled:
+        yield
+        return
+
+    stdout_buffer = io.StringIO()
+    stderr_buffer = io.StringIO()
+    previous_disable = logging.root.manager.disable
+    env_overrides = {
+        "HF_HUB_DISABLE_PROGRESS_BARS": "1",
+        "TOKENIZERS_PARALLELISM": "false",
+        "TRANSFORMERS_VERBOSITY": "error",
+        "TQDM_DISABLE": "1",
+    }
+    try:
+        logging.disable(logging.CRITICAL)
+        with _temporary_environment(env_overrides):
+            with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+                yield
+    finally:
+        logging.disable(previous_disable)
+
+
+def _invoke_cli_tool_function(func: Any, *, args: Any, cmd_name: str, kwargs: Dict[str, Any]) -> Any:
+    del cmd_name
+    with _suppress_cli_side_output(enabled=bool(getattr(args, "json", False))):
+        return func(**kwargs)
 
 from .unified_params import add_global_args_to_parser
 from .server_utils import get_mcp_registry
@@ -786,6 +845,7 @@ def create_command_function(func_info, cmd_name: str = "", cmd_parser: Optional[
         parse_kv_string=_parse_kv_string,
         unwrap_optional_type=_unwrap_optional_type,
         is_typed_dict_type=_is_typed_dict_type,
+        invoke_tool_function=_invoke_cli_tool_function,
     )
 
 def _type_name(t):
@@ -1302,7 +1362,12 @@ def main():
                 print(_format_result_minimal({"forecast_generate": _model_dump_compat(request)}, verbose=True))
                 return 0
 
-            out = func(request=request, __cli_raw=True)
+            out = _invoke_cli_tool_function(
+                func,
+                args=args,
+                cmd_name="forecast_generate",
+                kwargs={"request": request, "__cli_raw": True},
+            )
             _render_cli_result(out, args=args, cmd_name="forecast_generate")
             return 1 if _result_has_tool_error(out) else 0
 

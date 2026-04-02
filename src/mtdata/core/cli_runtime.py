@@ -175,6 +175,7 @@ def create_command_function(
     parse_kv_string: Callable[[str], Optional[Dict[str, Any]]],
     unwrap_optional_type: Callable[[Any], Tuple[Any, Any]],
     is_typed_dict_type: Callable[[Any], bool],
+    invoke_tool_function: Optional[Callable[..., Any]] = None,
 ) -> Callable[[Any], int]:
     """Build a CLI command callable for a tool function."""
 
@@ -318,7 +319,15 @@ def create_command_function(
                 return 1
 
         kwargs["__cli_raw"] = True
-        result = func_info["func"](**kwargs)
+        if invoke_tool_function is not None:
+            result = invoke_tool_function(
+                func_info["func"],
+                args=args,
+                cmd_name=cmd_name,
+                kwargs=kwargs,
+            )
+        else:
+            result = func_info["func"](**kwargs)
         render_cli_result(result, args=args, cmd_name=cmd_name)
         return 1 if result_has_tool_error(result) else 0
 

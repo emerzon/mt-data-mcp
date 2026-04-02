@@ -185,7 +185,7 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     max_prob_no_hit: Optional[float] = None
     max_median_time: Optional[float] = None
     fast_defaults: bool = False
-    search_profile: str = "long"
+    search_profile: str = "medium"
 
 
 class ForecastVolatilityEstimateRequest(BaseModel):

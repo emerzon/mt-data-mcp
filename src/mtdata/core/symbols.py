@@ -592,6 +592,8 @@ def symbols_top_markets(
                 "limit": limit_value,
                 "universe": universe_value,
                 "timeframe": timeframe_value if needs_bar_data else None,
+                "timeframe_requested": timeframe_value,
+                "timeframe_used": timeframe_value if needs_bar_data else None,
                 "scanned_symbols": len(selected_symbols),
                 "query_latency_ms": round((time.perf_counter() - started_at) * 1000.0, 3),
             }

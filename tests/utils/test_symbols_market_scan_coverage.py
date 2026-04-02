@@ -89,6 +89,8 @@ class TestSymbolsTopMarkets:
         assert result["universe"] == "visible"
         assert result["scanned_symbols"] == 2
         assert result["evaluated_symbols"] == 2
+        assert result["timeframe_requested"] == "H1"
+        assert result["timeframe_used"] is None
         assert [row["symbol"] for row in result["data"]] == ["EURUSD", "XAUUSD"]
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
@@ -116,6 +118,8 @@ class TestSymbolsTopMarkets:
         assert result["results"]["lowest_spread"]["data"][0]["symbol"] == "EURUSD"
         assert result["results"]["highest_volume"]["data"][0]["symbol"] == "EURUSD"
         assert result["results"]["highest_price_change"]["data"][0]["symbol"] == "GBPUSD"
+        assert result["timeframe_requested"] == "H1"
+        assert result["timeframe_used"] == "H1"
         assert result["scan_stats"]["spread"]["evaluated_symbols"] == 2
         assert result["scan_stats"]["volume"]["evaluated_symbols"] == 2
         assert result["scan_stats"]["price_change"]["evaluated_symbols"] == 2
