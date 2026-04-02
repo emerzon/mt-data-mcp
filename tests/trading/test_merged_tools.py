@@ -68,7 +68,10 @@ class TestMergedTools(unittest.TestCase):
 
         # Test default
         res = get_open(__cli_raw=True)
-        self.assertIsInstance(res, list)
+        self.assertIsInstance(res, dict)
+        self.assertTrue(res.get("success"))
+        self.assertEqual(res.get("count"), 0)
+        self.assertTrue(res.get("no_action"))
 
         # Test with symbol
         get_open(symbol="EURUSD", __cli_raw=True)
@@ -93,19 +96,20 @@ class TestMergedTools(unittest.TestCase):
         ]
 
         res = get_open(__cli_raw=True)
-        self.assertIsInstance(res, list)
-        self.assertGreaterEqual(len(res), 1)
-        self.assertEqual(res[0].get("Type"), "BUY")
-        self.assertEqual(res[0].get("Symbol"), "EURUSD")
-        self.assertEqual(res[0].get("Ticket"), 1)
+        self.assertIsInstance(res, dict)
+        self.assertGreaterEqual(res.get("count", 0), 1)
+        row = res["items"][0]
+        self.assertEqual(row.get("Type"), "BUY")
+        self.assertEqual(row.get("Symbol"), "EURUSD")
+        self.assertEqual(row.get("Ticket"), 1)
         fmt_time = _format_time_minimal_local if _use_client_tz() else _format_time_minimal
         expected_time = fmt_time(_mt5_epoch_to_utc(1700000001))
-        self.assertEqual(res[0].get("Time"), expected_time)
-        self.assertIsNone(res[0].get("time_msc"))
-        self.assertIsNone(res[0].get("time_update"))
-        self.assertIsNone(res[0].get("time_update_msc"))
-        self.assertIsNone(res[0].get("direction"))
-        self.assertIsNone(res[0].get("type_code"))
+        self.assertEqual(row.get("Time"), expected_time)
+        self.assertIsNone(row.get("time_msc"))
+        self.assertIsNone(row.get("time_update"))
+        self.assertIsNone(row.get("time_update_msc"))
+        self.assertIsNone(row.get("direction"))
+        self.assertIsNone(row.get("type_code"))
 
     def test_trading_open_comment_metadata_is_exposed(self):
         Pos = namedtuple(
@@ -135,14 +139,19 @@ class TestMergedTools(unittest.TestCase):
         ]
 
         res = get_open(__cli_raw=True)
-        self.assertEqual(res[0].get("Comment Limit"), 31)
-        self.assertEqual(res[0].get("Comment Length"), len("audit short"))
-        self.assertFalse(res[0].get("Comment May Be Truncated"))
+        row = res["items"][0]
+        self.assertEqual(row.get("Comment Limit"), 31)
+        self.assertEqual(row.get("Comment Length"), len("audit short"))
+        self.assertFalse(row.get("Comment May Be Truncated"))
 
     def test_trading_open_get_pending(self):
         self.mt5.orders_get.return_value = None
 
-        get_pending(__cli_raw=True)
+        res = get_pending(__cli_raw=True)
+        self.assertIsInstance(res, dict)
+        self.assertTrue(res.get("success"))
+        self.assertEqual(res.get("count"), 0)
+        self.assertTrue(res.get("no_action"))
 
         get_pending(symbol="EURUSD", __cli_raw=True)
         self.mt5.orders_get.assert_called_with(symbol="EURUSD")
@@ -164,23 +173,24 @@ class TestMergedTools(unittest.TestCase):
         ]
 
         res = get_pending(__cli_raw=True)
-        self.assertIsInstance(res, list)
-        self.assertGreaterEqual(len(res), 1)
-        self.assertEqual(res[0].get("Type"), "SELL_LIMIT")
-        self.assertEqual(res[0].get("Symbol"), "EURUSD")
-        self.assertEqual(res[0].get("Ticket"), 1)
+        self.assertIsInstance(res, dict)
+        self.assertGreaterEqual(res.get("count", 0), 1)
+        row = res["items"][0]
+        self.assertEqual(row.get("Type"), "SELL_LIMIT")
+        self.assertEqual(row.get("Symbol"), "EURUSD")
+        self.assertEqual(row.get("Ticket"), 1)
         fmt_time = _format_time_minimal_local if _use_client_tz() else _format_time_minimal
         expected_time = fmt_time(_mt5_epoch_to_utc(1700000000))
         expected_exp = fmt_time(_mt5_epoch_to_utc(1700003600))
-        self.assertEqual(res[0].get("Time"), expected_time)
-        self.assertIn("Expiration", res[0])
-        self.assertEqual(res[0].get("Expiration"), expected_exp)
-        self.assertNotIn("Profit", res[0])
-        self.assertNotIn("Swap", res[0])
-        self.assertIsNone(res[0].get("time_setup"))
-        self.assertIsNone(res[0].get("time_setup_msc"))
-        self.assertIsNone(res[0].get("direction"))
-        self.assertIsNone(res[0].get("type_code"))
+        self.assertEqual(row.get("Time"), expected_time)
+        self.assertIn("Expiration", row)
+        self.assertEqual(row.get("Expiration"), expected_exp)
+        self.assertNotIn("Profit", row)
+        self.assertNotIn("Swap", row)
+        self.assertIsNone(row.get("time_setup"))
+        self.assertIsNone(row.get("time_setup_msc"))
+        self.assertIsNone(row.get("direction"))
+        self.assertIsNone(row.get("type_code"))
 
     def test_patterns_detect(self):
         # Mock symbol info

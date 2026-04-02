@@ -67,6 +67,60 @@ def _resolved_position_ticket(position: Any, *, fallback: Optional[int] = None) 
     return trading_validation._safe_int_ticket(fallback)
 
 
+def _trade_read_scope(request: Any) -> str:
+    if getattr(request, "ticket", None) is not None:
+        return "ticket"
+    if getattr(request, "symbol", None) is not None:
+        return "symbol"
+    return "all"
+
+
+def _normalize_trade_read_output(
+    rows: Any,
+    *,
+    request: Any,
+    kind: str,
+) -> Dict[str, Any]:
+    out: Dict[str, Any] = {
+        "success": True,
+        "kind": kind,
+        "scope": _trade_read_scope(request),
+        "count": 0,
+        "items": [],
+    }
+    symbol = getattr(request, "symbol", None)
+    ticket = getattr(request, "ticket", None)
+    limit = getattr(request, "limit", None)
+    if symbol is not None:
+        out["symbol"] = symbol
+    if ticket is not None:
+        out["ticket"] = ticket
+    if limit is not None:
+        out["limit"] = limit
+
+    if isinstance(rows, list) and len(rows) == 1 and isinstance(rows[0], dict):
+        first = rows[0]
+        error_text = str(first.get("error", "")).strip()
+        if error_text:
+            out["success"] = False
+            out["error"] = error_text
+            return out
+        message_text = str(first.get("message", "")).strip()
+        if message_text:
+            out["message"] = message_text
+            out["no_action"] = True
+            return out
+
+    if not isinstance(rows, list):
+        out["success"] = False
+        out["error"] = f"Unexpected {kind} payload type: {type(rows).__name__}"
+        return out
+
+    out["items"] = rows
+    out["count"] = len(rows)
+    return out
+
+
 def _select_position_candidate(
     rows: List[Any],
     *,
@@ -172,22 +226,26 @@ def _resolve_open_position(
 @mcp.tool()
 def trade_get_open(
     request: TradeGetOpenRequest,
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """Get open positions."""
     return run_logged_operation(
         logger,
         operation="trade_get_open",
         symbol=request.symbol,
         limit=request.limit,
-        func=lambda: run_trade_get_open(
-            request,
-            gateway=create_trading_gateway(),
-            use_client_tz=_use_client_tz,
-            format_time_minimal=_format_time_minimal,
-            format_time_minimal_local=_format_time_minimal_local,
-            mt5_epoch_to_utc=_mt5_epoch_to_utc,
-            normalize_limit=_normalize_limit,
-            comment_row_metadata=trading_comments._comment_row_metadata,
+        func=lambda: _normalize_trade_read_output(
+            run_trade_get_open(
+                request,
+                gateway=create_trading_gateway(),
+                use_client_tz=_use_client_tz,
+                format_time_minimal=_format_time_minimal,
+                format_time_minimal_local=_format_time_minimal_local,
+                mt5_epoch_to_utc=_mt5_epoch_to_utc,
+                normalize_limit=_normalize_limit,
+                comment_row_metadata=trading_comments._comment_row_metadata,
+            ),
+            request=request,
+            kind="open_positions",
         ),
     )
 
@@ -195,21 +253,25 @@ def trade_get_open(
 @mcp.tool()
 def trade_get_pending(
     request: TradeGetPendingRequest,
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """Get pending orders (open orders)."""
     return run_logged_operation(
         logger,
         operation="trade_get_pending",
         symbol=request.symbol,
         limit=request.limit,
-        func=lambda: run_trade_get_pending(
-            request,
-            gateway=create_trading_gateway(),
-            use_client_tz=_use_client_tz,
-            format_time_minimal=_format_time_minimal,
-            format_time_minimal_local=_format_time_minimal_local,
-            mt5_epoch_to_utc=_mt5_epoch_to_utc,
-            normalize_limit=_normalize_limit,
-            comment_row_metadata=trading_comments._comment_row_metadata,
+        func=lambda: _normalize_trade_read_output(
+            run_trade_get_pending(
+                request,
+                gateway=create_trading_gateway(),
+                use_client_tz=_use_client_tz,
+                format_time_minimal=_format_time_minimal,
+                format_time_minimal_local=_format_time_minimal_local,
+                mt5_epoch_to_utc=_mt5_epoch_to_utc,
+                normalize_limit=_normalize_limit,
+                comment_row_metadata=trading_comments._comment_row_metadata,
+            ),
+            request=request,
+            kind="pending_orders",
         ),
     )

@@ -715,12 +715,20 @@ class TestFormatResultForCli:
 
     def test_toon_format_preserves_pending_orders_message_shape(self):
         result = _format_result_for_cli(
-            [{"message": "No pending orders"}],
+            {
+                "success": True,
+                "kind": "pending_orders",
+                "count": 0,
+                "items": [],
+                "message": "No pending orders",
+                "no_action": True,
+            },
             fmt="toon",
             verbose=False,
             cmd_name="trade_get_pending",
         )
-        assert "items[1]{message}:" in result
+        assert "message: No pending orders" in result
+        assert "count: 0" in result
         assert "No pending orders" in result
 
 
@@ -3020,6 +3028,26 @@ class TestMain:
         with patch("sys.argv", ["cli.py", "noop_tool", "X"]):
             result = main()
         assert result == 1
+
+    @patch("mtdata.core.cli.discover_tools")
+    def test_command_successful_no_action_result_returns_zero(self, mock_discover, capsys):
+        mock_fn = MagicMock(return_value={"success": True, "message": "No open positions", "no_action": True, "count": 0, "items": []})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "noop_tool"
+        mock_fn.__doc__ = "No-op tool."
+
+        def noop_tool(symbol: str, __cli_raw: bool = False):
+            """No-op tool."""
+            return {"success": True}
+
+        info = get_function_info(noop_tool)
+        info["func"] = mock_fn
+        mock_discover.return_value = {
+            "noop_tool": {"func": mock_fn, "meta": {"description": "No-op tool"}, "_cli_func_info": info},
+        }
+        with patch("sys.argv", ["cli.py", "noop_tool", "X"]):
+            result = main()
+        assert result == 0
 
     @patch("mtdata.core.cli.discover_tools")
     def test_keyboard_interrupt(self, mock_discover, capsys):

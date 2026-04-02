@@ -271,8 +271,29 @@ def test_trade_get_open_logs_finish_event(caplog) -> None:
     ), caplog.at_level(logging.INFO, logger=core_trading_positions.logger.name):
         out = raw(TradeGetOpenRequest(symbol="EURUSD", limit=10))
 
-    assert out[0]["ticket"] == 1
+    assert out["success"] is True
+    assert out["count"] == 1
+    assert out["items"][0]["ticket"] == 1
     assert any(
         "event=finish operation=trade_get_open success=True" in record.message
+        for record in caplog.records
+    )
+
+
+def test_trade_get_pending_logs_finish_event(caplog) -> None:
+    raw = _unwrap(core_trading_positions.trade_get_pending)
+
+    with patch.object(core_trading_positions, "create_trading_gateway", return_value=object()), patch.object(
+        core_trading_positions,
+        "run_trade_get_pending",
+        return_value=[{"ticket": 2, "symbol": "EURUSD"}],
+    ), caplog.at_level(logging.INFO, logger=core_trading_positions.logger.name):
+        out = raw(TradeGetPendingRequest(symbol="EURUSD", limit=10))
+
+    assert out["success"] is True
+    assert out["count"] == 1
+    assert out["items"][0]["ticket"] == 2
+    assert any(
+        "event=finish operation=trade_get_pending success=True" in record.message
         for record in caplog.records
     )
