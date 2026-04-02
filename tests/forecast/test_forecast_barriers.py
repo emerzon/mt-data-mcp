@@ -1190,9 +1190,10 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertTrue(result.get("no_action"))
         self.assertTrue(result.get("viable_only"))
         self.assertTrue(result.get("concise"))
-        self.assertEqual(result.get("results_total"), 1)
+        self.assertEqual(result.get("results_total"), 0)
         self.assertEqual(result.get("viable_results_total"), 0)
-        self.assertEqual(len(result.get("results", [])), 1)
+        self.assertEqual(len(result.get("results", [])), 0)
+        self.assertIsNone(result.get("best"))
         self.assertIsNone(result.get("grid"))
         self.assertEqual(result.get("actionability"), "blocked")
         self.assertFalse(result.get("trade_gate_passed"))
@@ -1348,6 +1349,165 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
             float(no_cost["best"]["utility"]),
             float(with_cost["best"]["utility"]),
         )
+
+    def test_short_cost_adjusted_metrics_decline_when_spread_is_applied(self):
+        dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
+        prices = np.full(500, 1.0)
+        self._set_barrier_history(pd.DataFrame({'time': dates, 'close': prices}))
+        paths = np.array([
+            [0.994, 0.992, 0.990],
+            [0.994, 0.992, 0.990],
+            [0.994, 0.992, 0.990],
+            [1.006, 1.008, 1.010],
+            [1.006, 1.008, 1.010],
+        ])
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            no_cost = forecast_barrier_optimize(
+                symbol="EURUSD", timeframe="H1", horizon=3,
+                method="mc_gbm", direction="short", mode="pct",
+                tp_min=0.5, tp_max=0.5, tp_steps=1,
+                sl_min=0.5, sl_max=0.5, sl_steps=1,
+            )
+            with_cost = forecast_barrier_optimize(
+                symbol="EURUSD", timeframe="H1", horizon=3,
+                method="mc_gbm", direction="short", mode="pct",
+                tp_min=0.5, tp_max=0.5, tp_steps=1,
+                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                params={"spread_pct": 0.05},
+            )
+
+        self.assertTrue(no_cost.get("success"))
+        self.assertTrue(with_cost.get("success"))
+        no_cost_best = no_cost["best"]
+        with_cost_best = with_cost["best"]
+        self.assertAlmostEqual(no_cost_best["prob_tp_first"], with_cost_best["prob_tp_first"], places=7)
+        self.assertLess(float(with_cost_best["ev"]), float(no_cost_best["ev"]))
+        self.assertLess(float(with_cost_best["ev_cond"]), float(no_cost_best["ev_cond"]))
+        self.assertLess(float(with_cost_best["kelly"]), float(no_cost_best["kelly"]))
+        self.assertLess(float(with_cost_best["kelly_cond"]), float(no_cost_best["kelly_cond"]))
+        self.assertLess(float(with_cost_best["profit_factor"]), float(no_cost_best["profit_factor"]))
+
+    def test_long_and_short_cost_adjusted_ev_stay_symmetric_on_mirrored_paths(self):
+        dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
+        prices = np.full(500, 1.0)
+        self._set_barrier_history(pd.DataFrame({'time': dates, 'close': prices}))
+        long_paths = np.array([
+            [1.006, 1.008, 1.010],
+            [1.006, 1.008, 1.010],
+            [1.006, 1.008, 1.010],
+            [0.994, 0.992, 0.990],
+            [0.994, 0.992, 0.990],
+        ])
+        short_paths = np.array([
+            [0.994, 0.992, 0.990],
+            [0.994, 0.992, 0.990],
+            [0.994, 0.992, 0.990],
+            [1.006, 1.008, 1.010],
+            [1.006, 1.008, 1.010],
+        ])
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": long_paths}
+            long_result = forecast_barrier_optimize(
+                symbol="EURUSD", timeframe="H1", horizon=3,
+                method="mc_gbm", direction="long", mode="pct",
+                tp_min=0.5, tp_max=0.5, tp_steps=1,
+                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                params={"spread_pct": 0.05},
+            )
+            mock_sim.return_value = {"price_paths": short_paths}
+            short_result = forecast_barrier_optimize(
+                symbol="EURUSD", timeframe="H1", horizon=3,
+                method="mc_gbm", direction="short", mode="pct",
+                tp_min=0.5, tp_max=0.5, tp_steps=1,
+                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                params={"spread_pct": 0.05},
+            )
+
+        self.assertTrue(long_result.get("success"))
+        self.assertTrue(short_result.get("success"))
+        self.assertAlmostEqual(float(long_result["best"]["ev"]), float(short_result["best"]["ev"]), places=7)
+        self.assertAlmostEqual(float(long_result["best"]["kelly"]), float(short_result["best"]["kelly"]), places=7)
+        self.assertAlmostEqual(float(long_result["best"]["profit_factor"]), float(short_result["best"]["profit_factor"]), places=7)
+
+    def test_ev_per_bar_uses_unconditional_time_in_trade(self):
+        dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
+        prices = np.full(500, 1.0)
+        self._set_barrier_history(pd.DataFrame({'time': dates, 'close': prices}))
+        paths = np.array([
+            [1.006, 1.006, 1.006, 1.006],
+            [1.001, 1.001, 1.001, 1.001],
+            [1.001, 1.001, 1.001, 1.001],
+        ])
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD", timeframe="H1", horizon=4,
+                method="mc_gbm", direction="long", mode="pct",
+                tp_min=0.5, tp_max=0.5, tp_steps=1,
+                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                return_grid=True,
+            )
+
+        self.assertTrue(result.get("success"))
+        best = result["best"]
+        self.assertAlmostEqual(float(best["t_hit_resolve_mean"]), 1.0, places=7)
+        self.assertAlmostEqual(float(best["t_hit_resolve_mean_all"]), 3.0, places=7)
+        self.assertAlmostEqual(float(best["ev_per_bar"]), float(best["ev"]) / 3.0, places=7)
+
+    def test_ensemble_weighted_mean_defaults_to_equal_member_weights(self):
+        self._set_barrier_history(pd.DataFrame({
+            'time': pd.date_range(start='2023-01-01', periods=500, freq='h'),
+            'close': np.full(500, 1.0),
+        }))
+        positive_paths = np.array([
+            [1.0060, 1.0060, 1.0060],
+            [1.0060, 1.0060, 1.0060],
+            [1.0060, 1.0060, 1.0060],
+            [0.9940, 0.9940, 0.9940],
+        ])
+        negative_paths = np.array([
+            [1.0060, 1.0060, 1.0060],
+            [0.9940, 0.9940, 0.9940],
+            [0.9940, 0.9940, 0.9940],
+            [0.9940, 0.9940, 0.9940],
+        ])
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_gbm, \
+             patch(f'{_BARRIER_OPT_ROOT}._simulate_bootstrap_mc') as mock_bootstrap, \
+             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(None, None)):
+            mock_gbm.return_value = {"price_paths": positive_paths}
+            mock_bootstrap.return_value = {"price_paths": negative_paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=3,
+                method="ensemble",
+                direction="long",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
+                objective="ev",
+                params={
+                    "ensemble_methods": ["mc_gbm", "bootstrap"],
+                    "ensemble_agg": "weighted_mean",
+                    "optimizer": "grid",
+                    "n_sims": 50,
+                    "n_seeds": 1,
+                },
+                return_grid=False,
+                output="summary",
+            )
+
+        self.assertTrue(result.get("success"))
+        member_evs = [float(m["ev"]) for m in result["ensemble"]["members"]]
+        self.assertTrue(any(ev > 0 for ev in member_evs))
+        self.assertTrue(any(ev < 0 for ev in member_evs))
+        aggregate_ev = float(result["ensemble"]["aggregate_metrics"]["ev"])
+        self.assertAlmostEqual(aggregate_ev, sum(member_evs) / len(member_evs), places=7)
 
     def test_ensemble_preserves_cost_adjusted_viability_metrics(self):
         self._set_barrier_history(pd.DataFrame({

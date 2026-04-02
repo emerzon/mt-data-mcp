@@ -125,13 +125,15 @@ def forecast_barrier_optimize(
     - mode="pips": tp/sl are ticks (trade_tick_size units).
 
     Grid styles:
-    - fixed/preset/volatility generate tp/sl directly in the selected `mode`.
+    - fixed/volatility generate tp/sl directly in the selected `mode`.
+    - preset ranges are defined in pct terms and converted when `mode="pips"`.
     - ratio treats `ratio_min/max` as reward/risk = tp/sl (TP distance divided
       by SL distance), with SL sampled from `sl_min/max`.
 
     Metrics:
     - ev/ev_cond/ev_per_bar are reported in the same units as tp/sl (pct points
-      or ticks). `ev_per_bar` divides by mean resolution time (bars).
+      or ticks). `ev_per_bar` divides by unconditional mean time-in-trade
+      (bars), counting unresolved paths at horizon expiry.
     
     Statistical Robustness:
     - statistical_robustness: Enable comprehensive statistical analysis
@@ -527,17 +529,8 @@ def forecast_barrier_optimize(
             cost_commission = commission_pct_val * pct_to_pips
         dir_long = (direction_norm == 'long')
 
-        # Define separated costs for precise modeling
-        if dir_long:
-            ev_deduct_cost = max(0.0, cost_spread + cost_slippage + cost_commission)
-            hit_adjust_spread = 0.0
-        else:
-            ev_deduct_cost = max(0.0, cost_slippage + cost_commission)
-            # For short, hit conditions need spread in absolute price terms
-            if mode_val == 'pct':
-                hit_adjust_spread = (cost_spread / 100.0) * last_price if last_price > 0 else 0.0
-            else:
-                hit_adjust_spread = cost_spread * float(pip_size) if pip_size else 0.0
+        # Costs are applied symmetrically to net payoffs for both directions.
+        ev_deduct_cost = max(0.0, cost_spread + cost_slippage + cost_commission)
 
         # Keep old cost_per_trade for backwards compatibility in outputs
         cost_per_trade = max(0.0, cost_spread + cost_slippage + cost_commission)
@@ -700,14 +693,7 @@ def forecast_barrier_optimize(
                 member_key = str(row.get('method', '')).strip().lower()
                 if member_key in ensemble_weight_map:
                     return float(ensemble_weight_map[member_key])
-                ev_raw = row.get('best', {}).get('ev') if isinstance(row.get('best'), dict) else None
-                try:
-                    ev_f = float(ev_raw)
-                except Exception:
-                    return 1.0
-                if not np.isfinite(ev_f):
-                    return 1.0
-                return float(max(0.0, ev_f))
+                return 1.0
 
             def _agg_metric(metric_name: str) -> Optional[float]:
                 vals: List[float] = []
@@ -765,12 +751,12 @@ def forecast_barrier_optimize(
                 if _candidate_is_viable(row, cost_per_trade=cost_per_trade)
             ]
             if viable_only_val:
-                candidates = viable_candidates if viable_candidates else ranked_candidates
+                candidates = viable_candidates
             else:
                 candidates = ranked_candidates
             if top_k_val is not None:
                 candidates = candidates[:top_k_val]
-            elif (concise_val or viable_only_val) and not viable_candidates and len(candidates) > 5:
+            elif concise_val and not viable_candidates and len(candidates) > 5:
                 candidates = candidates[:5]
 
             grid_out = candidates if (return_grid and not concise_val) else None
@@ -804,14 +790,17 @@ def forecast_barrier_optimize(
                 if member_close_prices else float(last_price_close)
             )
 
+            viability_filtered_out = bool(viable_only_val and not viable_candidates and ranked_candidates)
             selected_best = candidates[0] if candidates else None
             if isinstance(selected_best, dict):
                 _annotate_candidate_metrics(selected_best, cost_per_trade=cost_per_trade)
             viable = _candidate_is_viable(selected_best, cost_per_trade=cost_per_trade)
             viable_results_total = int(len(viable_candidates))
-            status = "ok" if viable else ("no_candidates" if not selected_best else "non_viable")
+            status = "ok" if viable else ("non_viable" if viability_filtered_out else ("no_candidates" if not selected_best else "non_viable"))
             status_reason = None
-            if status == "no_candidates":
+            if viability_filtered_out:
+                status_reason = "No viable ensemble candidate satisfied the viability filter."
+            elif status == "no_candidates":
                 status_reason = "No valid ensemble candidate was produced."
             elif status == "non_viable":
                 status_reason = _candidate_status_reason(
@@ -1252,9 +1241,8 @@ def forecast_barrier_optimize(
                                 invalid_barrier_candidates += 1
                             continue
 
-                # Adjust short trigger levels for Bid/Ask spread
-                tp_trigger = tp_p - hit_adjust_spread if not dir_long else tp_p
-                sl_trigger = sl_p - hit_adjust_spread if not dir_long else sl_p
+                tp_trigger = tp_p
+                sl_trigger = sl_p
 
                 # Vectorized hit detection
                 if dir_long:
@@ -1326,10 +1314,14 @@ def forecast_barrier_optimize(
                 if rr_max_val and rr > rr_max_val:
                     continue
 
+                net_reward = reward - ev_deduct_cost if has_trading_costs else reward
+                net_risk = risk + ev_deduct_cost if has_trading_costs else risk
+                net_rr = net_reward / net_risk if net_risk > 0 else 0.0
+
                 # Resolve tie paths by splitting expected outcome 50/50.
                 ev_gross = effective_prob_win * reward - effective_prob_loss * risk
                 if has_trading_costs:
-                    ev_val = effective_prob_win * (reward - ev_deduct_cost) - effective_prob_loss * (risk + ev_deduct_cost)
+                    ev_val = effective_prob_win * net_reward - effective_prob_loss * net_risk
                 else:
                     ev_val = ev_gross
                 edge = prob_win - prob_loss
@@ -1339,21 +1331,24 @@ def forecast_barrier_optimize(
                 no_hit_lo, no_hit_hi = _binomial_wilson_95(prob_neutral, int(sims_total))
 
                 kelly_val = 0.0
-                if rr > 0:
-                    kelly_val = effective_prob_win - (effective_prob_loss / rr)
+                if net_rr > 0:
+                    kelly_val = effective_prob_win - (effective_prob_loss / net_rr)
 
                 # Conditional metrics (ignore neutral paths)
                 active = effective_prob_win + effective_prob_loss
                 if active > 0:
                     prob_win_c = effective_prob_win / active
                     prob_loss_c = effective_prob_loss / active
-                    ev_cond = prob_win_c * reward - prob_loss_c * risk
-                    kelly_cond = prob_win_c - (prob_loss_c / rr if rr > 0 else 0.0)
+                    ev_cond = prob_win_c * net_reward - prob_loss_c * net_risk
+                    kelly_cond = prob_win_c - (prob_loss_c / net_rr if net_rr > 0 else 0.0)
                 else:
                     ev_cond = 0.0
                     kelly_cond = 0.0
 
                 resolve_mask = (first_tp < horizon_total) | (first_sl < horizon_total)
+                time_in_trade = np.minimum(np.minimum(first_tp, first_sl) + 1, horizon_total)
+                t_res_mean_all = float(np.mean(time_in_trade)) if time_in_trade.size else None
+                t_res_med_all = float(np.median(time_in_trade)) if time_in_trade.size else None
                 if np.any(resolve_mask):
                     resolve_times = np.minimum(first_tp, first_sl)[resolve_mask] + 1
                     t_res_mean = float(np.mean(resolve_times)) if resolve_times.size else None
@@ -1363,18 +1358,16 @@ def forecast_barrier_optimize(
                     t_res_med = None
 
                 ev_per_bar = 0.0
-                if t_res_mean and t_res_mean > 0:
-                    ev_per_bar = ev_val / t_res_mean
+                if t_res_mean_all and t_res_mean_all > 0:
+                    ev_per_bar = ev_val / t_res_mean_all
 
                 profit_factor = 0.0
-                denom = prob_loss * risk
+                denom = prob_loss * net_risk
                 if denom > 0:
-                    profit_factor = (prob_win * reward) / denom
-                elif prob_win > 0:
+                    profit_factor = (prob_win * net_reward) / denom
+                elif prob_win > 0 and net_reward > 0:
                     profit_factor = 1e9
 
-                net_reward = reward - ev_deduct_cost if has_trading_costs else reward
-                net_risk = risk + ev_deduct_cost if has_trading_costs else risk
                 reward_frac = 0.0
                 risk_frac = 0.0
                 if mode_val == 'pct':
@@ -1441,8 +1434,12 @@ def forecast_barrier_optimize(
                     'utility': utility_val,
                     't_hit_tp_median': t_tp_med,
                     't_hit_sl_median': t_sl_med,
+                    't_hit_tp_median_cond': t_tp_med,
+                    't_hit_sl_median_cond': t_sl_med,
                     't_hit_resolve_mean': t_res_mean,
                     't_hit_resolve_median': t_res_med,
+                    't_hit_resolve_mean_all': t_res_mean_all,
+                    't_hit_resolve_median_all': t_res_med_all,
                 }
                 _annotate_candidate_metrics(res, cost_per_trade=cost_per_trade)
                 out.append(res)
@@ -1757,13 +1754,13 @@ def forecast_barrier_optimize(
                 viable_candidates.append(row)
 
         if viable_only_val:
-            candidates = viable_candidates if viable_candidates else ranked_candidates
+            candidates = viable_candidates
         else:
             candidates = ranked_candidates
 
         if top_k_val is not None:
             candidates = candidates[:top_k_val]
-        elif (concise_val or viable_only_val) and not viable_candidates and len(candidates) > 5:
+        elif concise_val and not viable_candidates and len(candidates) > 5:
             candidates = candidates[:5]
 
         grid_out = candidates if (return_grid and not concise_val) else None
@@ -1781,10 +1778,14 @@ def forecast_barrier_optimize(
                 results_limit = min(10, len(candidates))
         summary_results = candidates[:results_limit]
 
+        viability_filtered_out = bool(viable_only_val and not viable_candidates and ranked_candidates)
         no_candidates = len(candidates) == 0
         warning = None
         if no_candidates:
-            warning = "No valid TP/SL candidates after applying grid generation and constraints."
+            if viability_filtered_out:
+                warning = "No viable TP/SL candidates satisfied the viability filter."
+            else:
+                warning = "No valid TP/SL candidates after applying grid generation and constraints."
             
         best = candidates[0] if candidates else None
         if isinstance(best, dict):
@@ -1793,7 +1794,10 @@ def forecast_barrier_optimize(
         viable_results_total = int(len(viable_candidates))
         status = "ok"
         status_reason = None
-        if no_candidates:
+        if viability_filtered_out:
+            status = "non_viable"
+            status_reason = warning
+        elif no_candidates:
             status = "no_candidates"
             status_reason = warning
         elif not viable:
@@ -1877,24 +1881,25 @@ def forecast_barrier_optimize(
                 if 'error' not in power_result:
                     statistical_analysis['power_analysis'] = power_result
             
-            if enable_convergence_check_val:
+            if enable_convergence_check_val and isinstance(best, dict):
                 n_sims_total = paths.shape[0]
-                favorable_threshold = last_price * (1.001 if dir_long else 0.999)
-                cumulative_successes = np.cumsum(
-                    (
-                        (paths >= favorable_threshold)
-                        if dir_long
-                        else (paths <= favorable_threshold)
-                    ).any(axis=1)
-                )
-                cumulative_trials = np.arange(1, n_sims_total + 1)
-                convergence_result = _mc_convergence(
-                    cumulative_successes,
-                    cumulative_trials,
-                    window_size=convergence_window_val,
-                    threshold=convergence_threshold_val,
-                )
-                statistical_analysis['convergence_diagnostic'] = convergence_result
+                tp_trigger = _safe_float(best.get('tp_price'))
+                sl_trigger = _safe_float(best.get('sl_price'))
+                if tp_trigger and sl_trigger:
+                    hit_tp = (paths >= tp_trigger) if dir_long else (paths <= tp_trigger)
+                    hit_sl = (paths <= sl_trigger) if dir_long else (paths >= sl_trigger)
+                    cumulative_successes = np.cumsum((hit_tp.any(axis=1) | hit_sl.any(axis=1)).astype(int))
+                    cumulative_trials = np.arange(1, n_sims_total + 1)
+                    convergence_result = _mc_convergence(
+                        cumulative_successes,
+                        cumulative_trials,
+                        window_size=convergence_window_val,
+                        threshold=convergence_threshold_val,
+                    )
+                    convergence_result["event"] = "selected_barrier_resolve"
+                    convergence_result["tp_price"] = float(tp_trigger)
+                    convergence_result["sl_price"] = float(sl_trigger)
+                    statistical_analysis['convergence_diagnostic'] = convergence_result
             
             if enable_bootstrap_val:
                 try:

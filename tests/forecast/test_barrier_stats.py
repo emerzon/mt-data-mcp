@@ -448,8 +448,8 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
         self.assertEqual(stability['n_seeds'], 3)
         self.assertEqual(stability['seeds_succeeded'], 3)
 
-    def test_barrier_optimize_short_convergence_uses_short_threshold(self):
-        """Short-side convergence should count only favorable downside moves."""
+    def test_barrier_optimize_convergence_tracks_selected_barrier_resolution(self):
+        """Convergence should use the selected TP/SL pair rather than an arbitrary move threshold."""
         from unittest.mock import patch
         from mtdata.forecast.barriers import forecast_barrier_optimize
 
@@ -457,9 +457,9 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
 
         def fake_sim(prices, horizon, n_sims, seed, **kwargs):
             base = float(prices[-1])
-            favorable = np.full((40, horizon), base * 0.998)
-            unfavorable = np.full((n_sims - 40, horizon), base * 1.002)
-            return {'price_paths': np.vstack([favorable, unfavorable])}
+            resolves = np.full((40, horizon), base * 0.994)
+            unresolved = np.full((n_sims - 40, horizon), base * 1.002)
+            return {'price_paths': np.vstack([resolves, unresolved])}
 
         def fake_convergence(cumulative_successes, cumulative_trials, window_size, threshold):
             captured['successes'] = cumulative_successes
@@ -501,6 +501,8 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
         self.assertTrue(result['success'])
         self.assertEqual(int(captured['successes'][-1]), 40)
         self.assertEqual(int(captured['trials'][-1]), 100)
+        conv = result['statistical_robustness']['convergence_diagnostic']
+        self.assertEqual(conv['event'], 'selected_barrier_resolve')
 
     def test_barrier_optimize_with_sensitivity_analysis(self):
         """Sensitivity analysis should be present when explicitly enabled."""

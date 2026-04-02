@@ -503,6 +503,8 @@ sl_end = sl_start * vol_sl_multiplier
 
 **Use case**: Adapts to current market volatility
 
+`vol_sl_extra` is a legacy alias for `vol_sl_multiplier`.
+
 **Example**:
 ```bash
 mtdata-cli forecast_barrier_optimize \
@@ -547,6 +549,11 @@ Pre-configured ranges for trading styles
 
 **Use case**: Quick setup for standard trading styles
 
+Note:
+- Presets are stored in percentage terms.
+- In `mode=pips`, the optimizer converts those preset percentages to pips using the current reference price.
+- That means named presets in pips mode are not portable across different price levels.
+
 **Example**:
 ```bash
 mtdata-cli forecast_barrier_optimize \
@@ -568,12 +575,12 @@ Choose what to optimize. Each objective answers a different trading question:
 | `edge` | `P(win) - P(loss)` | General purpose, consistent win rate |
 | `prob_tp_first` | `P(win)` | Maximize win rate only |
 | `prob_resolve` | `1 - P(no hit)` | Ensure trades complete |
-| `kelly` | `P(win) - P(loss)/RR` | Position sizing |
+| `kelly` | `P(tp_first) - P(sl_first)/net_RR` | Position sizing |
 | `kelly_cond` | Kelly on resolved trades only | Position sizing (ignoring timeouts) |
-| `ev` | `P(win)*TP - P(loss)*SL` | Maximize profit per trade |
+| `ev` | `P(tp_first)*net_TP - P(sl_first)*net_SL` | Maximize profit per trade |
 | `ev_cond` | EV on resolved trades only | Profit per trade (ignoring timeouts) |
-| `ev_per_bar` | `EV / mean_resolve_time` | Fast trades, capital turnover |
-| `profit_factor` | `(P(win)*TP) / (P(loss)*SL)` | Risk/reward ratio focus |
+| `ev_per_bar` | `EV / mean_time_in_trade_all_paths` | Fast trades, capital turnover |
+| `profit_factor` | `(P(win)*net_TP) / (P(loss)*net_SL)` | Risk/reward ratio focus |
 | `min_loss_prob` | Minimize `P(loss)` | Capital preservation |
 | `utility` | `P(win)*log(1+TP) + P(loss)*log(1-SL)` | Risk-averse trading |
 
@@ -587,18 +594,21 @@ Choose what to optimize. Each objective answers a different trading question:
 
 **`ev` (Expected Value)** — *"What's my average profit per trade?"*
 - Accounts for both probability AND payoff size
+- When spread, slippage, or commission inputs are supplied, EV is net of those costs
 - EV = 0.15% means you expect to gain 0.15% per trade on average
 - **Use when:** Payoff asymmetry matters (e.g., small wins, big losses)
 - **Limitation:** Doesn't account for trade duration
 
 **`ev_per_bar`** — *"What's my profit per unit of time?"*
 - Normalizes EV by how long trades take
+- Uses unconditional time-in-trade, so unresolved paths count at full horizon
 - Favors fast trades over slow ones with same total EV
 - **Use when:** Capital turnover matters (reinvesting profits)
 - **Limitation:** May favor trades with higher transaction costs
 
 **`kelly`** — *"How much should I bet?"*
 - Optimal fraction of capital for maximum long-term growth
+- Uses net reward/risk when trading costs are supplied
 - Kelly = 0.25 means bet 25% of capital (but use fractional Kelly in practice)
 - **Use when:** Position sizing decisions
 - **Limitation:** Full Kelly leads to large drawdowns; use 0.25× Kelly
@@ -611,6 +621,7 @@ Choose what to optimize. Each objective answers a different trading question:
 
 **`profit_factor`** — *"What's my gains-to-losses ratio?"*
 - Profit factor > 1 means profitable; > 2 is very good
+- Uses net wins/net losses when trading costs are supplied
 - Common metric in backtesting reports
 - **Use when:** Comparing strategies by risk/reward
 - **Limitation:** Doesn't account for trade frequency
@@ -627,8 +638,9 @@ Choose what to optimize. Each objective answers a different trading question:
 - **Limitation:** More theoretical than practical
 
 Notes:
-- `_cond` variants (e.g., `ev_cond`, `kelly_cond`) calculate metrics only on trades that resolved (hit TP or SL), ignoring timeouts.
-- `ev_per_bar` uses mean resolution time (`t_hit_resolve_mean`) when available.
+- `_cond` variants (e.g., `ev_cond`, `kelly_cond`) calculate metrics only on trades that resolved (hit TP or SL), ignoring timeouts, and remain cost-adjusted when trading costs are supplied.
+- `ev_per_bar` uses unconditional time-in-trade (`t_hit_resolve_mean_all`), counting unresolved paths at horizon expiry.
+- `t_hit_tp_median` and `t_hit_sl_median` are conditional medians for paths that hit that barrier; `t_hit_tp_median_cond` and `t_hit_sl_median_cond` are aliases.
 
 ---
 
@@ -1016,7 +1028,7 @@ done
 - **Edge**: 26% raw (TP prob − SL prob)
 - **Resolve prob**: 90% of paths hit TP/SL within the horizon
 - **Kelly**: 34% (raw), 47% conditional on resolution
-- **EV**: 0.22% per trade; **EV per bar**: 0.03% based on mean resolve time
+- **EV**: 0.22% per trade; **EV per bar**: 0.03% based on unconditional time in trade
 - **Profit factor**: 2.45 (wins/losses ratio)
 - **Utility**: 0.18 (risk‑averse log utility)
 - **Resolve time**: mean 6.8 bars, median 6 bars
