@@ -753,6 +753,37 @@ class TestWriteCliText:
         _write_cli_text("Price $267 → $268", stream=stream)
         assert "".join(stream.parts) == "Price $267 -> $268\n"
 
+    def test_non_tty_stream_writes_utf8_bytes(self):
+        class _FakeBuffer:
+            def __init__(self) -> None:
+                self.parts: List[bytes] = []
+
+            def write(self, data: bytes) -> int:
+                self.parts.append(data)
+                return len(data)
+
+        class _FakeStream:
+            encoding = "cp1252"
+
+            def __init__(self) -> None:
+                self.buffer = _FakeBuffer()
+                self.parts: List[str] = []
+
+            def isatty(self) -> bool:
+                return False
+
+            def write(self, text: str) -> int:
+                self.parts.append(text)
+                return len(text)
+
+            def flush(self) -> None:
+                return None
+
+        stream = _FakeStream()
+        _write_cli_text("Lundi de Pâques 清明节", stream=stream)
+        assert stream.parts == []
+        assert b"".join(stream.buffer.parts).decode("utf-8") == "Lundi de Pâques 清明节\n"
+
 
 # ========================================================================
 # _safe_tz_name

@@ -421,10 +421,32 @@ def _normalize_console_text(text: str) -> str:
     return normalized
 
 
+def _should_force_utf8_stream(target: Any) -> bool:
+    buffer = getattr(target, "buffer", None)
+    if buffer is None or not hasattr(buffer, "write"):
+        return False
+    try:
+        return not bool(target.isatty())
+    except Exception:
+        return False
+
+
 def _write_cli_text(text: str, *, stream: Any = None) -> None:
     target = stream if stream is not None else sys.stdout
     payload = str(text)
     rendered = payload if payload.endswith("\n") else f"{payload}\n"
+    if _should_force_utf8_stream(target):
+        buffer = getattr(target, "buffer", None)
+        try:
+            buffer.write(rendered.encode("utf-8"))
+            if hasattr(target, "flush"):
+                try:
+                    target.flush()
+                except Exception:
+                    pass
+            return
+        except Exception:
+            pass
     try:
         target.write(rendered)
     except UnicodeEncodeError:
