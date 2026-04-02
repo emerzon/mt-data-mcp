@@ -783,6 +783,8 @@ def _normalize_trade_payload(
     if "retcode_name" not in out:
         _maybe_add_trade_key(out, "retcode", payload.get("retcode"))
     _maybe_add_trade_key(out, "dry_run", payload.get("dry_run"))
+    _maybe_add_trade_key(out, "trade_gate_passed", payload.get("trade_gate_passed"))
+    _maybe_add_trade_key(out, "actionability", payload.get("actionability"))
     _maybe_add_trade_key(out, "symbol", payload.get("symbol"))
     _maybe_add_trade_key(out, "order_type", payload.get("order_type"))
     _maybe_add_trade_key(out, "pending", payload.get("pending"))
@@ -826,12 +828,14 @@ def _normalize_trade_payload(
     _maybe_add_trade_key(out, "protection_status", payload.get("protection_status"))
     _maybe_add_trade_key(out, "protection_error", protection_error)
     _maybe_add_trade_key(out, "validation_scope", payload.get("validation_scope"))
+    _maybe_add_trade_key(out, "preview_scope_summary", payload.get("preview_scope_summary"))
     _maybe_add_trade_key(out, "require_sl_tp", payload.get("require_sl_tp"))
     _maybe_add_trade_key(out, "auto_close_on_sl_tp_fail", payload.get("auto_close_on_sl_tp_fail"))
     _maybe_add_trade_key(out, "pnl", payload.get("pnl"))
     _maybe_add_trade_key(out, "remaining_volume", payload.get("position_volume_remaining_estimate"))
     _maybe_add_trade_key(out, "no_action", payload.get("no_action"))
     _maybe_add_trade_key(out, "message", payload.get("message"))
+    _maybe_add_trade_key(out, "actionability_reason", payload.get("actionability_reason"))
 
     warnings_out = _compact_trade_warnings(payload.get("warnings"), verbose=verbose)
     if warnings_out:
@@ -846,6 +850,8 @@ def _normalize_trade_payload(
             "bid",
             "ask",
             "type_filling_used",
+            "validation_passed",
+            "validation_not_performed",
             "position_ticket_candidates",
             "position_ticket_resolution",
             "ticket_requested",

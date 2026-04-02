@@ -131,18 +131,40 @@ def run_trade_place(
         normalized_expiration: Any,
         expiration_provided: bool,
     ) -> Dict[str, Any]:
+        validation_scope = "request_routing_only"
+        validation_not_performed = [
+            "broker_acceptance",
+            "live_price_distance_rules",
+            "margin_and_funds",
+            "fillability",
+            "sl_tp_attachment",
+        ]
         preview: Dict[str, Any] = {
             "success": True,
             "dry_run": True,
+            "no_action": True,
             "symbol": symbol_norm,
             "order_type": order_type,
             "pending": pending,
             "action": "place_pending_order" if pending else "place_market_order",
             "volume": float(request.volume),
             "message": "Dry run only. No order was sent to MT5.",
-            "validation_scope": "request_routing_only",
+            "validation_scope": validation_scope,
+            "validation_passed": True,
+            "trade_gate_passed": False,
+            "actionability": "preview_only",
+            "actionability_reason": (
+                "Dry run did not execute MT5 or broker-side validation. "
+                "Use this preview for request routing only."
+            ),
+            "preview_scope_summary": "Routing and local request checks only.",
+            "validation_not_performed": list(validation_not_performed),
             "warnings": [
                 "Dry run only. Routing and local safety checks passed; MT5/broker validation was not executed.",
+                (
+                    "Not validated in dry run: broker acceptance, live price-distance rules, "
+                    "margin/funds, fillability, and SL/TP attachment."
+                ),
             ],
             "require_sl_tp": bool(request.require_sl_tp),
             "auto_close_on_sl_tp_fail": bool(request.auto_close_on_sl_tp_fail),

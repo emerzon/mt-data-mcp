@@ -189,8 +189,13 @@ def test_trade_place_dry_run_market_preview_skips_order_send() -> None:
 
     assert out.get("success") is True
     assert out.get("dry_run") is True
+    assert out.get("no_action") is True
     assert out.get("pending") is False
     assert out.get("action") == "place_market_order"
+    assert out.get("trade_gate_passed") is False
+    assert out.get("actionability") == "preview_only"
+    assert out.get("validation_scope") == "request_routing_only"
+    assert "fillability" in (out.get("validation_not_performed") or [])
     assert out.get("message") == "Dry run only. No order was sent to MT5."
     mock_market.assert_not_called()
 
@@ -209,8 +214,11 @@ def test_trade_place_dry_run_pending_preview_skips_order_send() -> None:
 
     assert out.get("success") is True
     assert out.get("dry_run") is True
+    assert out.get("no_action") is True
     assert out.get("pending") is True
     assert out.get("action") == "place_pending_order"
+    assert out.get("trade_gate_passed") is False
+    assert out.get("actionability") == "preview_only"
     assert out.get("requested_price") == 64500
     assert out.get("expiration") == "GTC"
     mock_pending.assert_not_called()

@@ -839,6 +839,9 @@ class TestFormatResultMinimal:
         payload = {
             "success": True,
             "dry_run": True,
+            "no_action": True,
+            "trade_gate_passed": False,
+            "actionability": "preview_only",
             "symbol": "BTCUSD",
             "order_type": "BUY_LIMIT",
             "pending": True,
@@ -848,20 +851,30 @@ class TestFormatResultMinimal:
             "requested_sl": 64000.0,
             "requested_tp": 67200.0,
             "expiration": "GTC",
+            "validation_scope": "request_routing_only",
+            "preview_scope_summary": "Routing and local request checks only.",
             "message": "Dry run only. No order was sent to MT5.",
+            "actionability_reason": "Dry run did not execute MT5 or broker-side validation. Use this preview for request routing only.",
             "warnings": [
                 "Dry run only. Routing and local safety checks passed; MT5/broker validation was not executed.",
+                "Not validated in dry run: broker acceptance, live price-distance rules, margin/funds, fillability, and SL/TP attachment.",
             ],
         }
         result = format_result_minimal(payload, verbose=False, tool_name="trade_place")
         assert "dry_run: true" in result
+        assert "trade_gate_passed: false" in result
+        assert "actionability: preview_only" in result
         assert "symbol: BTCUSD" in result
         assert "order_type: BUY_LIMIT" in result
         assert "pending: true" in result
         assert "action: place_pending_order" in result
         assert "price: 64500" in result
+        assert "validation_scope: request_routing_only" in result
+        assert "preview_scope_summary: Routing and local request checks only." in result
         assert "message: Dry run only. No order was sent to MT5." in result
+        assert "actionability_reason: Dry run did not execute MT5 or broker-side validation. Use this preview for request routing only." in result
         assert "warnings[1]:" in result
+        assert "MT5/broker validation was not executed" in result
 
 
 class TestFormatComplexValue:
