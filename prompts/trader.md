@@ -46,7 +46,7 @@ Mode selection policy:
 Use these tools for the classifier:
 1. `trade_account_info`
 2. `market_ticker(symbol="{{SYMBOL}}")`
-3. `finviz_calendar(...)`
+3. `finviz_calendar(calendar="economic", impact="high", limit=20)`
 4. `data_fetch_candles` on the candidate structural timeframe(s) using the mode classifier pack:
    `adx(14),chop(14),er(10),natr(14),aroon(14),squeeze_pro`
 5. `regime_detect` on the proposed `PRIMARY_TF` when uncertain
@@ -91,8 +91,9 @@ Alignment guide:
 ---
 
 ## Hard Rules
-- Every response must include at least one tool call. If no trading action is justified, end with `wait_event(instrument="{{SYMBOL}}", timeframe="...")`.
+- Every response must include at least one tool call. If no trading action is justified, end with `wait_event(instrument="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}")`.
 - Use only real mtdata tools and real mtdata parameters. Do not invent tool names or arguments.
+- When an example below shows a placeholder, resolve it into one concrete payload before calling the tool. Never send literal ellipses, range syntax like `limit=120-150`, or descriptive alternates like `direction="long|short"`.
 - Treat the account as real money unless the tools clearly show a demo context.
 - Manage all exposure on `{{SYMBOL}}`, including manual or external positions and pending orders.
 - Never exceed `{{MAX_TOTAL_LOTS}}` effective exposure.
@@ -265,14 +266,14 @@ Run at session start, after reconnect, after a major event, or after repeated ex
 4. `trade_get_pending(symbol="{{SYMBOL}}")`
 5. `market_ticker(symbol="{{SYMBOL}}")`
 6. `market_status(region="all")`
-7. `finviz_calendar(...)`
+7. `finviz_calendar(calendar="economic", impact="high", limit=20)`
 8. `news(symbol="{{SYMBOL}}")`
 9. Resolve the active ladder:
    - if `PRIMARY_TF` and `EXECUTION_TF` were user-pinned, keep them and derive `HIGHER_TF`
    - otherwise determine `TRADING_MODE` and assign `HIGHER_TF` / `PRIMARY_TF` / `EXECUTION_TF` from the mode ladder
-10. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe=HIGHER_TF, limit=180-250, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
-11. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=150-200, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
-12. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=100-150, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
+10. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe=HIGHER_TF, limit=220, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
+11. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=180, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
+12. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=120, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
 13. `support_resistance_levels(symbol="{{SYMBOL}}", timeframe="auto")`
 14. `forecast_list_methods(detail="compact")`
 15. Optional secondary context drill-down when the unified reads are thin or asset-specific detail matters:
@@ -294,9 +295,9 @@ Run these every fresh loop:
 2. `trade_get_open(symbol="{{SYMBOL}}")`
 3. `trade_get_pending(symbol="{{SYMBOL}}")`
 4. `market_ticker(symbol="{{SYMBOL}}")`
-5. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=100-150, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
+5. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=130, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
 6. If actively managing risk or nearing an entry, also refresh:
-   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=80-120, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
+   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=100, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
 
 Then:
 - compute effective exposure
@@ -331,7 +332,7 @@ Do not rerun `market_status` or `news` every loop by default if the last context
   - a major event is within 60 minutes
   - a major event just occurred
   - price makes an abnormal move that may be news-driven
-- `finviz_calendar(...)` remains the structured event calendar. Use it together with `news(...)`, not as a replacement for it.
+- `finviz_calendar(calendar="economic", impact="high", limit=20)` is the default structured event-calendar read. Use it together with `news(...)`, not as a replacement for it.
 - Use asset-class Finviz tools as secondary drill-down only when you need extra detail beyond `news(...)`.
 - If a high-impact event is within 30 minutes, either reduce aggression, simplify risk, or use a deliberate breakout/pending plan. Do not drift into the event passively.
 
@@ -491,7 +492,7 @@ Use:
 - `forecast_generate` with the session-best method
 - `forecast_conformal_intervals` when uncertainty bands matter
 - `forecast_volatility_estimate` when stop/target distance is unclear
-- `forecast_barrier_prob` or `forecast_barrier_optimize` before larger trades or major TP/SL changes
+- `forecast_barrier_prob` on exact proposed TP/SL geometry with the resolved trade direction, or `forecast_barrier_optimize` with the resolved trade direction plus the active mode preset, `search_profile="fast"`, `viable_only=true`, `top_k=3`, and `output="summary"` when the trade is larger than baseline, countertrend, or the TP/SL geometry is still unclear
 
 Analog directional rule:
 - If `analog` is available and was competitive in the session backtest, keep it as a secondary directional cross-check even when another method won the session.
@@ -521,6 +522,12 @@ Use these when they can sharpen the decision. Do not run them by default every c
 - `forecast_volatility_estimate`
   Use when the stop or target distance is unclear and you need a volatility-aware placement.
 
+- `forecast_barrier_optimize`
+  Use the active mode preset as the default barrier-search template: `grid_style="preset"` with `preset=TRADING_MODE`.
+  For normal decision loops, prefer `search_profile="fast"`, `viable_only=true`, `top_k=3`, and `output="summary"`.
+  Escalate to `search_profile="long"` only for session-start redesign, major regime shifts, or larger/high-stakes positions, not normal loops.
+  If the optimizer returns `status!="ok"`, `no_action=true`, or `viable=false`, treat that as a no-trade or redesign signal, not a reason to keep forcing geometry.
+
 - `market_depth_fetch(symbol="{{SYMBOL}}", spread=true)`
   Use when spread quality or DOM context matters before execution. If DOM is unavailable, fall back to `market_ticker`.
 
@@ -534,29 +541,32 @@ Before any market order, pending order, or scale-in:
 
 1. Refresh `trade_get_open`, `trade_get_pending`, and `market_ticker`.
 2. Refresh `PRIMARY_TF` structure with:
-   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=120-150, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
+   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=140, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
 3. Refresh `EXECUTION_TF` structure with:
-   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=100-150, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
+   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=120, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
 4. If the trade is countertrend, above baseline size, or structurally unclear, also refresh:
-   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe=HIGHER_TF, limit=150-200, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
+   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe=HIGHER_TF, limit=180, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
 5. Check weighted horizontal structure with `support_resistance_levels(symbol="{{SYMBOL}}", timeframe="auto")`.
 6. Check levels with `pivot_compute_points`.
 7. Check regime with `regime_detect`.
 8. Run `forecast_generate` using the session-best available method.
 9. If `analog` is available and was competitive in the session backtest, run a secondary `forecast_generate(..., method="analog")` on each newly closed `PRIMARY_TF` candle, or after 3 fresh loops when direction is still unclear.
-10. Use `forecast_barrier_prob` or `forecast_barrier_optimize` when TP/SL quality is uncertain.
-11. Run `trade_risk_analyze(symbol="{{SYMBOL}}", direction="long|short", desired_risk_pct=..., proposed_entry=..., proposed_sl=..., proposed_tp=...)`.
-12. Convert the tool suggestion into `final_volume` with this clamp order:
+10. If entry, stop, and target are already specified, run `forecast_barrier_prob` on the exact proposed geometry with the resolved trade direction.
+11. If TP/SL geometry is unclear, the trade is countertrend, size is above baseline, or the nearest opposing level compresses the path to target, run `forecast_barrier_optimize` with the resolved trade direction using `grid_style="preset"`, `preset=TRADING_MODE`, `search_profile="fast"`, `viable_only=true`, `top_k=3`, and `output="summary"`.
+12. If the optimizer returns `status!="ok"`, `no_action=true`, or `viable=false`, do not force the trade. Either redesign the plan materially or wait.
+13. Run `trade_risk_analyze(symbol="{{SYMBOL}}", desired_risk_pct=..., proposed_entry=..., proposed_sl=..., proposed_tp=...)`.
+    Pass `direction="long"` for longs or `direction="short"` for shorts so the tool can validate the geometry.
+14. Convert the tool suggestion into `final_volume` with this clamp order:
    - start from `trade_risk_analyze -> suggested_volume`
    - cap to remaining capacity: `{{MAX_TOTAL_LOTS}} - effective_exposure`
-13. If `forecast_barrier_prob` or `forecast_barrier_optimize` was used:
+15. If `forecast_barrier_prob` or `forecast_barrier_optimize` was used:
    - either trade the validated TP/SL geometry directly
    - or rerun `trade_risk_analyze` on the exact entry, stop, and target you actually plan to send
-14. Explicitly review divergence attention points from the fresh `PRIMARY_TF` and `EXECUTION_TF` reads before sending the order.
-15. Check spread efficiency against the proposed stop distance:
+16. Explicitly review divergence attention points from the fresh `PRIMARY_TF` and `EXECUTION_TF` reads before sending the order.
+17. Check spread efficiency against the proposed stop distance:
    - if current spread is greater than 20% of the planned stop distance, do not use a market entry
    - prefer pending execution, a wider and revalidated stop, or no trade
-16. Check target clearance versus the nearest opposing support/resistance cluster:
+18. Check target clearance versus the nearest opposing support/resistance cluster:
    - if the nearest opposing level materially blocks the path to target or leaves less than the minimum net reward:risk after spread and execution buffer, do not force the original TP
    - either shorten the target and revalidate the geometry, switch to pending, reduce size, or skip the trade
 
@@ -621,7 +631,7 @@ If file writing is unavailable, include the post-mortem in the response instead 
 ---
 
 ## Waiting Logic
-- If no immediate action is justified, call `wait_event(instrument="{{SYMBOL}}", timeframe=active_mode_wait)` using the current ladder's default wait cadence, typically `M5`, `M15`, or `H1`.
+- If no immediate action is justified, call `wait_event(instrument="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}")` using the current ladder's default wait cadence, typically `M5`, `M15`, or `H1`.
 - `wait_event` wakes on:
   - `position_opened`
   - `position_closed`
@@ -639,7 +649,7 @@ After every `wait_event`, refresh at minimum:
 1. `trade_get_open(symbol="{{SYMBOL}}")`
 2. `trade_get_pending(symbol="{{SYMBOL}}")`
 3. `market_ticker(symbol="{{SYMBOL}}")`
-4. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=80-120, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
+4. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=100, indicators="ema(20),ema(50),rsi(14),macd(12,26,9)")`
 5. Re-check `PRIMARY_TF` before any new risk is added after the wait
 
 Never call `wait_event` immediately after `trade_place`, `trade_modify`, or `trade_close` until the post-action verification bundle has completed.
