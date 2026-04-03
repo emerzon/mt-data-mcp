@@ -976,16 +976,16 @@ def forecast_barrier_optimize(
                     "Widen TP/SL search ranges or switch grid_style to volatility/ratio.",
                     "Skip this setup if edge and EV remain unattractive.",
                 ]
-            out.update(
-                _build_actionability_payload(
-                    status=status,
-                    status_reason=status_reason,
-                    row=selected_best,
-                    diagnostics=diagnostics,
-                    warning=out.get("warning"),
-                    ensemble_degraded=ensemble_degraded,
-                )
+            actionability_payload = _build_actionability_payload(
+                status=status,
+                status_reason=status_reason,
+                row=selected_best,
+                diagnostics=diagnostics,
+                warning=out.get("warning"),
+                ensemble_degraded=ensemble_degraded,
             )
+            out.update(actionability_payload)
+            out["no_action"] = not bool(actionability_payload.get("trade_gate_passed"))
             return out
 
         if method_name == 'auto':
@@ -1433,7 +1433,7 @@ def forecast_barrier_optimize(
                     + (effective_prob_loss * math.log1p(-risk_frac))
                 )
 
-                if min_prob_win_val is not None and prob_win < min_prob_win_val:
+                if min_prob_win_val is not None and effective_prob_win < min_prob_win_val:
                     continue
                 if max_prob_no_hit_val is not None and prob_neutral > max_prob_no_hit_val:
                     continue
@@ -2240,15 +2240,15 @@ def forecast_barrier_optimize(
                 "Widen TP/SL search ranges or switch grid_style to volatility/ratio.",
                 "Skip this setup if edge and EV remain unattractive.",
             ]
-        out.update(
-            _build_actionability_payload(
-                status=status,
-                status_reason=status_reason,
-                row=best,
-                diagnostics=diagnostics,
-                warning=out.get("warning"),
-            )
+        actionability_payload = _build_actionability_payload(
+            status=status,
+            status_reason=status_reason,
+            row=best,
+            diagnostics=diagnostics,
+            warning=out.get("warning"),
         )
+        out.update(actionability_payload)
+        out["no_action"] = not bool(actionability_payload.get("trade_gate_passed"))
         if invalid_barrier_candidates > 0:
             out["barrier_sanity_filtered"] = int(invalid_barrier_candidates)
         if min_prob_resolve_val is not None:

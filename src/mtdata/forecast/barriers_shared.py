@@ -147,11 +147,15 @@ def _annotate_candidate_metrics(row: Optional[Dict[str, Any]], cost_per_trade: f
     rr = _safe_float(row.get("rr"))
     prob_win = _safe_float(row.get("prob_win"))
     prob_loss = _safe_float(row.get("prob_loss"))
+    prob_tp_first = _safe_float(row.get("prob_tp_first"))
+    prob_sl_first = _safe_float(row.get("prob_sl_first"))
     prob_no_hit = _safe_float(row.get("prob_no_hit"))
     prob_resolve = _safe_float(row.get("prob_resolve"))
     tp = _safe_float(row.get("tp"))
     sl = _safe_float(row.get("sl"))
     cost = max(0.0, float(cost_per_trade))
+    effective_prob_win = prob_tp_first if prob_tp_first is not None else prob_win
+    effective_prob_loss = prob_sl_first if prob_sl_first is not None else prob_loss
 
     if prob_resolve is None and prob_no_hit is not None:
         prob_resolve = float(max(0.0, min(1.0, 1.0 - prob_no_hit)))
@@ -178,15 +182,15 @@ def _annotate_candidate_metrics(row: Optional[Dict[str, Any]], cost_per_trade: f
 
     edge_vs_breakeven: Optional[float] = None
     effective_breakeven = breakeven_win_rate_net if breakeven_win_rate_net is not None else breakeven_win_rate
-    if prob_win is not None and effective_breakeven is not None:
-        edge_vs_breakeven = float(prob_win - effective_breakeven)
+    if effective_prob_win is not None and effective_breakeven is not None:
+        edge_vs_breakeven = float(effective_prob_win - effective_breakeven)
         row["edge_vs_breakeven"] = edge_vs_breakeven
 
     phantom_profit_risk = bool(
-        prob_loss is not None
+        effective_prob_loss is not None
         and prob_no_hit is not None
         and edge_vs_breakeven is not None
-        and prob_loss < PHANTOM_PROFIT_LOSS_THRESHOLD
+        and effective_prob_loss < PHANTOM_PROFIT_LOSS_THRESHOLD
         and prob_no_hit > PHANTOM_PROFIT_NO_HIT_THRESHOLD
         and edge_vs_breakeven < 0.0
     )
@@ -258,7 +262,9 @@ def _build_selection_diagnostics(row: Optional[Dict[str, Any]], cost_per_trade: 
         )
 
     best_edge = _safe_float(row.get("edge"))
-    win_rate = _safe_float(row.get("prob_win"))
+    win_rate = _safe_float(row.get("prob_tp_first"))
+    if win_rate is None:
+        win_rate = _safe_float(row.get("prob_win"))
     if best_edge is not None and best_edge < 0.0:
         if win_rate is not None:
             warnings_out.append(
@@ -272,7 +278,9 @@ def _build_selection_diagnostics(row: Optional[Dict[str, Any]], cost_per_trade: 
                 "positive EV may depend on reward/risk skew."
             )
 
-    breakeven_win_rate = _safe_float(row.get("breakeven_win_rate"))
+    breakeven_win_rate = _safe_float(row.get("breakeven_win_rate_net"))
+    if breakeven_win_rate is None:
+        breakeven_win_rate = _safe_float(row.get("breakeven_win_rate"))
     edge_vs_breakeven = _safe_float(row.get("edge_vs_breakeven"))
     if edge_vs_breakeven is not None and edge_vs_breakeven < 0.0 and breakeven_win_rate is not None:
         if win_rate is not None:

@@ -580,9 +580,9 @@ Choose what to optimize. Each objective answers a different trading question:
 | `ev` | `P(tp_first)*net_TP - P(sl_first)*net_SL` | Maximize profit per trade |
 | `ev_cond` | EV on resolved trades only | Profit per trade (ignoring timeouts) |
 | `ev_per_bar` | `EV / mean_time_in_trade_all_paths` | Fast trades, capital turnover |
-| `profit_factor` | `(P(win)*net_TP) / (P(loss)*net_SL)` | Risk/reward ratio focus |
+| `profit_factor` | `(P(tp_first)*net_TP) / (P(sl_first)*net_SL)` | Risk/reward ratio focus |
 | `min_loss_prob` | Minimize `P(loss)` | Capital preservation |
-| `utility` | `P(win)*log(1+TP) + P(loss)*log(1-SL)` | Risk-averse trading |
+| `utility` | `P(tp_first)*log(1+TP) + P(sl_first)*log(1-SL)` | Risk-averse trading |
 
 #### Detailed Descriptions
 
@@ -676,7 +676,7 @@ Filter candidates before ranking:
 
 | Constraint | Description | Example |
 |------------|-------------|---------|
-| `min_prob_win` | Minimum win probability | `0.5` (50%) |
+| `min_prob_win` | Minimum tie-adjusted TP-first probability | `0.5` (50%) |
 | `max_prob_no_hit` | Maximum no-hit probability | `0.2` (20%) |
 | `max_median_time` | Maximum resolution time (bars) | `10` |
 

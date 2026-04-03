@@ -846,7 +846,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         grid = result.get("grid")
         self.assertTrue(grid)
         for entry in grid:
-            self.assertGreaterEqual(entry["prob_win"], 0.5)
+            self.assertGreaterEqual(entry["prob_tp_first"], 0.5)
             self.assertLessEqual(entry["prob_no_hit"], 0.2)
             if entry.get("t_hit_resolve_median") is not None:
                 self.assertLessEqual(entry["t_hit_resolve_median"], 2)
@@ -948,6 +948,83 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 + entry["prob_sl_first"] * np.log1p(-risk_frac)
             )
             self.assertAlmostEqual(entry["utility"], expected_utility, places=7)
+
+    def test_forecast_barrier_optimize_min_prob_win_uses_tie_adjusted_probability(self):
+        paths = np.repeat(np.array([[1.0, 1.01, 1.02, 1.03]]), 100, axis=0)
+
+        def _force_bridge_ties(*args, **kwargs):
+            uniform = kwargs.get("uniform")
+            return np.ones_like(uniform, dtype=bool)
+
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim, \
+             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(None, None)), \
+             patch(f'{_BARRIER_OPT_ROOT}._brownian_bridge_hits', side_effect=_force_bridge_ties):
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm_bb",
+                direction="long",
+                mode="pct",
+                tp_min=0.75,
+                tp_max=0.75,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
+                min_prob_win=0.5,
+                objective="ev",
+                return_grid=True,
+            )
+
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("status"), "ok")
+        self.assertFalse(result.get("no_candidates"))
+        self.assertTrue(result.get("viable"))
+        self.assertFalse(result.get("no_action"))
+        self.assertTrue(result.get("trade_gate_passed"))
+        self.assertEqual(result.get("actionability"), "actionable")
+        self.assertNotIn("ev_edge_conflict", result)
+        best = result["best"]
+        self.assertAlmostEqual(best["prob_win"], 0.0, places=7)
+        self.assertAlmostEqual(best["prob_tp_first"], 0.5, places=7)
+        self.assertGreater(float(best["edge_vs_breakeven"]), 0.0)
+
+    def test_forecast_barrier_optimize_no_action_follows_trade_gate_when_status_ok(self):
+        self._set_flat_history(1.0)
+        wins = np.repeat(np.array([[1.0, 1.01]]), 20, axis=0)
+        losses = np.repeat(np.array([[1.0, 0.995]]), 10, axis=0)
+        unresolved = np.repeat(np.array([[1.0, 1.002]]), 70, axis=0)
+        paths = np.vstack([wins, losses, unresolved])
+
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=2,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=1.0,
+                tp_max=1.0,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
+                objective="ev",
+                return_grid=True,
+            )
+
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("status"), "ok")
+        self.assertTrue(result.get("viable"))
+        self.assertTrue(result.get("ev_edge_conflict"))
+        self.assertEqual(result.get("actionability"), "blocked")
+        self.assertFalse(result.get("trade_gate_passed"))
+        self.assertTrue(result.get("no_action"))
+        self.assertIn("ev_edge_conflict", result.get("actionability_flags", []))
 
     def test_forecast_barrier_hit_probabilities_rejects_non_positive_horizon(self):
         result = forecast_barrier_hit_probabilities(
@@ -1269,6 +1346,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertEqual(result.get("status"), "ok")
         self.assertEqual(result.get("actionability"), "review")
         self.assertFalse(result.get("trade_gate_passed"))
+        self.assertTrue(result.get("no_action"))
         self.assertIn("low_confidence", result.get("actionability_flags", []))
         self.assertIn("confidence_warning", result)
 
@@ -1669,6 +1747,23 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
         row = {"tp": 0.5, "sl": 0.5, "rr": 1.0, "prob_win": 0.55, "prob_loss": 0.45, "prob_no_hit": 0.0}
         _annotate_candidate_metrics(row, cost_per_trade=0.0)
         self.assertNotIn("breakeven_win_rate_net", row)
+
+    def test_edge_vs_breakeven_uses_tie_adjusted_tp_first_probability(self):
+        from mtdata.forecast.barriers_shared import _annotate_candidate_metrics
+        row = {
+            "tp": 0.75,
+            "sl": 0.5,
+            "rr": 1.5,
+            "prob_win": 0.0,
+            "prob_loss": 0.0,
+            "prob_tp_first": 0.5,
+            "prob_sl_first": 0.5,
+            "prob_no_hit": 0.0,
+        }
+        _annotate_candidate_metrics(row, cost_per_trade=0.0)
+        self.assertAlmostEqual(row["breakeven_win_rate"], 0.4, places=7)
+        self.assertAlmostEqual(row["edge_vs_breakeven"], 0.1, places=7)
+        self.assertFalse(row["phantom_profit_risk"])
 
     def test_breakeven_win_rate_net_is_1_when_cost_exceeds_tp(self):
         """If cost >= tp, net reward <= 0, breakeven_win_rate_net should be 1.0."""

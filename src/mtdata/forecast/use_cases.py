@@ -713,15 +713,20 @@ def run_forecast_barrier_optimize(
     if not isinstance(params_norm, dict):
         params_norm = {}
     defaults = {
-        "optimizer": "optuna",
-        "sampler": "tpe",
-        "pruner": "median",
-        "n_jobs": int((cpu_count() or 1)),
         "seed": 42,
     }
     for key, value in defaults.items():
         if key not in params_norm:
             params_norm[key] = value
+    if str(params_norm.get("optimizer", "")).strip().lower() == "optuna":
+        optuna_defaults = {
+            "sampler": "tpe",
+            "pruner": "median",
+            "n_jobs": int((cpu_count() or 1)),
+        }
+        for key, value in optuna_defaults.items():
+            if key not in params_norm:
+                params_norm[key] = value
 
     try:
         result = barrier_optimize_impl(
