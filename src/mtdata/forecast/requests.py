@@ -154,10 +154,10 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     mode: str = "pct"
     tp_min: float = 0.25
     tp_max: float = 1.5
-    tp_steps: int = Field(7, ge=1)
+    tp_steps: Optional[int] = Field(None, ge=1)
     sl_min: float = 0.25
     sl_max: float = 2.5
-    sl_steps: int = Field(9, ge=1)
+    sl_steps: Optional[int] = Field(None, ge=1)
     params: Optional[Dict[str, Any]] = None
     denoise: Optional[DenoiseSpec] = None
     objective: str = "ev"
@@ -171,14 +171,14 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     vol_window: int = Field(250, ge=1)
     vol_min_mult: float = 0.5
     vol_max_mult: float = 4.0
-    vol_steps: int = Field(7, ge=1)
+    vol_steps: Optional[int] = Field(None, ge=1)
     vol_sl_extra: float = 1.8
     vol_floor_pct: float = 0.15
     vol_floor_pips: float = 8.0
     ratio_min: float = 0.5
     ratio_max: float = 4.0
-    ratio_steps: int = Field(8, ge=1)
-    refine: bool = False
+    ratio_steps: Optional[int] = Field(None, ge=1)
+    refine: Optional[bool] = None
     refine_radius: float = 0.3
     refine_steps: int = Field(5, ge=1)
     min_prob_win: Optional[float] = None
@@ -186,6 +186,18 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     max_median_time: Optional[float] = None
     fast_defaults: bool = False
     search_profile: str = "medium"
+    statistical_robustness: bool = False
+    target_ci_width: float = 0.05
+    n_seeds_stability: int = Field(3, ge=1)
+    enable_bootstrap: bool = False
+    n_bootstrap: int = Field(200, ge=1)
+    enable_convergence_check: bool = True
+    convergence_window: int = Field(100, ge=2)
+    convergence_threshold: float = 0.01
+    enable_power_analysis: bool = False
+    power_effect_size: float = 0.05
+    enable_sensitivity_analysis: bool = False
+    sensitivity_params: Optional[List[str]] = None
 
 
 class ForecastVolatilityEstimateRequest(BaseModel):

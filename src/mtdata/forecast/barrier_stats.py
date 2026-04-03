@@ -459,6 +459,9 @@ def bootstrap_metric_uncertainty(
     sl_trigger: float,
     direction: str = 'long',
     entry_price: Optional[float] = None,
+    reward: Optional[float] = None,
+    risk: Optional[float] = None,
+    cost_per_trade: float = 0.0,
     n_bootstrap: int = 500,
     metrics: Optional[List[str]] = None,
     seed: Optional[int] = None,
@@ -471,6 +474,9 @@ def bootstrap_metric_uncertainty(
         sl_trigger: Stop loss trigger price
         direction: 'long' or 'short'
         entry_price: Entry/reference price used to define TP/SL distances
+        reward: Optional TP distance in optimizer output units
+        risk: Optional SL distance in optimizer output units
+        cost_per_trade: Optional trading cost in the same units as reward/risk
         n_bootstrap: Number of bootstrap samples
         metrics: Metrics to estimate (default: all key metrics)
         seed: Random seed
@@ -527,12 +533,20 @@ def bootstrap_metric_uncertainty(
         prob_no_hit = 1.0 - (any_tp | any_sl).sum() / n_sims
         
         edge = prob_win - prob_loss
-        
-        tp_dist = abs(tp_trigger - anchor_price)
-        sl_dist = abs(sl_trigger - anchor_price)
-        ev = prob_tp_first * tp_dist - prob_sl_first * sl_dist
-        
-        kelly = prob_win - (prob_loss / (tp_dist / sl_dist)) if tp_dist / sl_dist > 0 else 0.0
+
+        if reward is not None and risk is not None:
+            gross_reward = float(reward)
+            gross_risk = float(risk)
+        else:
+            gross_reward = abs(tp_trigger - anchor_price)
+            gross_risk = abs(sl_trigger - anchor_price)
+
+        net_reward = gross_reward - max(0.0, float(cost_per_trade or 0.0))
+        net_risk = gross_risk + max(0.0, float(cost_per_trade or 0.0))
+        net_rr = net_reward / net_risk if net_risk > 0 else 0.0
+        ev = prob_tp_first * net_reward - prob_sl_first * net_risk
+
+        kelly = prob_tp_first - (prob_sl_first / net_rr) if net_rr > 0 else 0.0
         
         for metric in metrics:
             val = locals().get(metric)

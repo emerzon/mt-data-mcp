@@ -250,6 +250,42 @@ class TestBarrierStats(unittest.TestCase):
 
         self.assertAlmostEqual(result['ev']['mean'], 0.0, places=12)
         self.assertAlmostEqual(result['kelly']['mean'], 0.0, places=12)
+
+    def test_bootstrap_metric_uncertainty_matches_optimizer_units_and_costs(self):
+        """Bootstrap EV/Kelly should match optimizer semantics when reward/risk units are supplied."""
+        from unittest.mock import patch
+
+        class FakeRandomState:
+            def __init__(self, seed=None):
+                self.seed = seed
+
+            def choice(self, n_sims, size, replace=True):
+                return np.array([0, 0, 0, 1])
+
+        paths = np.array([
+            [105.0, 111.0],
+            [95.0, 89.0],
+            [95.0, 89.0],
+            [95.0, 89.0],
+        ])
+
+        with patch('mtdata.forecast.barrier_stats.np.random.RandomState', FakeRandomState):
+            result = bootstrap_metric_uncertainty(
+                paths=paths,
+                tp_trigger=110.0,
+                sl_trigger=90.0,
+                direction='long',
+                entry_price=100.0,
+                reward=0.5,
+                risk=0.5,
+                cost_per_trade=0.1,
+                n_bootstrap=2,
+                metrics=['ev', 'kelly'],
+                seed=42,
+            )
+
+        self.assertAlmostEqual(result['ev']['mean'], 0.15, places=12)
+        self.assertAlmostEqual(result['kelly']['mean'], 0.375, places=12)
     
     def test_statistical_power_analysis_high_power(self):
         """Test power analysis with high power scenario."""
@@ -409,7 +445,10 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
         from unittest.mock import patch
         from mtdata.forecast.barriers import forecast_barrier_optimize
 
+        seen_seeds = []
+
         def fake_sim(prices, horizon, n_sims, seed, **kwargs):
+            seen_seeds.append(int(seed))
             base = float(prices[-1])
             win_path = np.full((1, horizon), base * 1.01)
             loss_path = np.full((1, horizon), base * 0.99)
@@ -447,9 +486,13 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
         self.assertFalse(stability['stable'])
         self.assertEqual(stability['n_seeds'], 3)
         self.assertEqual(stability['seeds_succeeded'], 3)
+        self.assertEqual(seen_seeds.count(42), 1)
+        self.assertIn(43, seen_seeds)
+        self.assertIn(44, seen_seeds)
+        self.assertIn(45, seen_seeds)
 
-    def test_barrier_optimize_convergence_tracks_selected_barrier_resolution(self):
-        """Convergence should use the selected TP/SL pair rather than an arbitrary move threshold."""
+    def test_barrier_optimize_convergence_tracks_selected_objective(self):
+        """Convergence should track the running estimate for the selected objective."""
         from unittest.mock import patch
         from mtdata.forecast.barriers import forecast_barrier_optimize
 
@@ -499,10 +542,11 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
                 )
 
         self.assertTrue(result['success'])
-        self.assertEqual(int(captured['successes'][-1]), 40)
+        self.assertAlmostEqual(float(captured['successes'][-1] / captured['trials'][-1]), 0.2, places=12)
         self.assertEqual(int(captured['trials'][-1]), 100)
         conv = result['statistical_robustness']['convergence_diagnostic']
-        self.assertEqual(conv['event'], 'selected_barrier_resolve')
+        self.assertEqual(conv['event'], 'selected_objective_ev')
+        self.assertEqual(conv['objective'], 'ev')
 
     def test_barrier_optimize_with_sensitivity_analysis(self):
         """Sensitivity analysis should be present when explicitly enabled."""

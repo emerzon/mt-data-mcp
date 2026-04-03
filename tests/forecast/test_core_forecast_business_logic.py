@@ -888,6 +888,49 @@ def test_forecast_barrier_optimize_routes_profile_args(monkeypatch):
     assert called["search_profile"] == "long"
 
 
+def test_forecast_barrier_optimize_routes_statistical_robustness_args(monkeypatch):
+    raw_opt = _unwrap(cf.forecast_barrier_optimize)
+    called = {}
+
+    import mtdata.forecast.barriers as barriers_mod
+
+    def fake_optimize(**kwargs):
+        called.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(barriers_mod, "forecast_barrier_optimize", fake_optimize)
+    out = raw_opt(
+        request=ForecastBarrierOptimizeRequest(
+            symbol="EURUSD",
+            statistical_robustness=True,
+            target_ci_width=0.02,
+            n_seeds_stability=4,
+            enable_bootstrap=True,
+            n_bootstrap=250,
+            enable_convergence_check=False,
+            convergence_window=80,
+            convergence_threshold=0.005,
+            enable_power_analysis=True,
+            power_effect_size=0.02,
+            enable_sensitivity_analysis=True,
+            sensitivity_params=["tp", "sl"],
+        )
+    )
+    assert out["ok"] is True
+    assert called["statistical_robustness"] is True
+    assert called["target_ci_width"] == 0.02
+    assert called["n_seeds_stability"] == 4
+    assert called["enable_bootstrap"] is True
+    assert called["n_bootstrap"] == 250
+    assert called["enable_convergence_check"] is False
+    assert called["convergence_window"] == 80
+    assert called["convergence_threshold"] == 0.005
+    assert called["enable_power_analysis"] is True
+    assert called["power_effect_size"] == 0.02
+    assert called["enable_sensitivity_analysis"] is True
+    assert called["sensitivity_params"] == ["tp", "sl"]
+
+
 def test_forecast_barrier_optimize_applies_default_optuna_config(monkeypatch):
     raw_opt = _unwrap(cf.forecast_barrier_optimize)
     called = {}

@@ -765,6 +765,18 @@ def run_forecast_barrier_optimize(
             max_median_time=request.max_median_time,
             fast_defaults=request.fast_defaults,
             search_profile=request.search_profile,
+            statistical_robustness=request.statistical_robustness,
+            target_ci_width=request.target_ci_width,
+            n_seeds_stability=request.n_seeds_stability,
+            enable_bootstrap=request.enable_bootstrap,
+            n_bootstrap=request.n_bootstrap,
+            enable_convergence_check=request.enable_convergence_check,
+            convergence_window=request.convergence_window,
+            convergence_threshold=request.convergence_threshold,
+            enable_power_analysis=request.enable_power_analysis,
+            power_effect_size=request.power_effect_size,
+            enable_sensitivity_analysis=request.enable_sensitivity_analysis,
+            sensitivity_params=request.sensitivity_params,
         )
     except Exception as exc:
         log_operation_exception(

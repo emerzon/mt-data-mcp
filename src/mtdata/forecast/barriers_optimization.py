@@ -61,10 +61,10 @@ def forecast_barrier_optimize(
     mode: Literal['pct','pips'] = 'pct',
     tp_min: float = 0.25,
     tp_max: float = 1.5,
-    tp_steps: int = 7,
+    tp_steps: Optional[int] = None,
     sl_min: float = 0.25,
     sl_max: float = 2.5,
-    sl_steps: int = 9,
+    sl_steps: Optional[int] = None,
     params: Optional[Dict[str, Any]] = None,
     denoise: Optional[DenoiseSpec] = None,
     objective: Literal[
@@ -90,14 +90,14 @@ def forecast_barrier_optimize(
     vol_window: int = 250,
     vol_min_mult: float = 0.5,
     vol_max_mult: float = 4.0,
-    vol_steps: int = 7,
+    vol_steps: Optional[int] = None,
     vol_sl_extra: float = 1.8,
     vol_floor_pct: float = 0.15,
     vol_floor_pips: float = 8.0,
     ratio_min: float = 0.5,
     ratio_max: float = 4.0,
-    ratio_steps: int = 8,
-    refine: bool = False,
+    ratio_steps: Optional[int] = None,
+    refine: Optional[bool] = None,
     refine_radius: float = 0.3,
     refine_steps: int = 5,
     min_prob_win: Optional[float] = None,
@@ -227,7 +227,7 @@ def forecast_barrier_optimize(
         def _profile_default(param_key: str, arg_value: Any, medium_default: Any, profile_key: str) -> Any:
             if param_key in params_dict:
                 return params_dict[param_key]
-            if arg_value != medium_default:
+            if arg_value is not None:
                 return arg_value
             return profile_cfg[profile_key]
 
@@ -321,14 +321,14 @@ def forecast_barrier_optimize(
         preset_candidate = params_dict.get('grid_preset', params_dict.get('preset', preset))
         preset_val = str(preset_candidate).lower() if isinstance(preset_candidate, str) and preset_candidate else None
 
-        refine_default = _profile_default('refine', bool(refine), False, 'refine')
+        refine_default = _profile_default('refine', refine, None, 'refine')
         refine_flag = bool(params_dict.get('refine', refine_default))
         refine_radius_val = max(0.0, float(params_dict.get('refine_radius', refine_radius)))
         refine_steps_val = max(2, int(params_dict.get('refine_steps', refine_steps)))
 
         ratio_min_val = float(params_dict.get('ratio_min', ratio_min))
         ratio_max_val = float(params_dict.get('ratio_max', ratio_max))
-        ratio_steps_default = int(_profile_default('ratio_steps', int(ratio_steps), 8, 'ratio_steps'))
+        ratio_steps_default = int(_profile_default('ratio_steps', ratio_steps, None, 'ratio_steps'))
         ratio_steps_val = max(2, int(params_dict.get('ratio_steps', ratio_steps_default)))
         if ratio_min_val <= 0:
             ratio_min_val = ratio_min
@@ -338,7 +338,7 @@ def forecast_barrier_optimize(
         vol_window_val = int(params_dict.get('vol_window', vol_window))
         vol_min_mult_val = float(params_dict.get('vol_min_mult', vol_min_mult))
         vol_max_mult_val = float(params_dict.get('vol_max_mult', vol_max_mult))
-        vol_steps_default = int(_profile_default('vol_steps', int(vol_steps), 7, 'vol_steps'))
+        vol_steps_default = int(_profile_default('vol_steps', vol_steps, None, 'vol_steps'))
         vol_steps_val = max(2, int(params_dict.get('vol_steps', vol_steps_default)))
         vol_sl_extra_val = float(params_dict.get('vol_sl_extra', vol_sl_extra))
         vol_sl_multiplier_val = float(params_dict.get('vol_sl_multiplier', vol_sl_extra_val))
@@ -405,11 +405,11 @@ def forecast_barrier_optimize(
 
         tp_min_val = float(params_dict.get('tp_min', tp_min))
         tp_max_val = float(params_dict.get('tp_max', tp_max))
-        tp_steps_default = int(_profile_default('tp_steps', int(tp_steps), 7, 'tp_steps'))
+        tp_steps_default = int(_profile_default('tp_steps', tp_steps, None, 'tp_steps'))
         tp_steps_val = max(1, int(params_dict.get('tp_steps', tp_steps_default)))
         sl_min_val = float(params_dict.get('sl_min', sl_min))
         sl_max_val = float(params_dict.get('sl_max', sl_max))
-        sl_steps_default = int(_profile_default('sl_steps', int(sl_steps), 9, 'sl_steps'))
+        sl_steps_default = int(_profile_default('sl_steps', sl_steps, None, 'sl_steps'))
         sl_steps_val = max(1, int(params_dict.get('sl_steps', sl_steps_default)))
         
         statistical_robustness_requested = _coerce_bool_flag(
@@ -645,6 +645,18 @@ def forecast_barrier_optimize(
                     max_median_time=max_median_time_val,
                     fast_defaults=bool(search_profile_val == 'fast'),
                     search_profile=search_profile_val,  # type: ignore[arg-type]
+                    statistical_robustness=bool(statistical_robustness_requested),
+                    target_ci_width=target_ci_width_val,
+                    n_seeds_stability=n_seeds_stability_val,
+                    enable_bootstrap=bool(enable_bootstrap_val),
+                    n_bootstrap=n_bootstrap_val,
+                    enable_convergence_check=bool(enable_convergence_check_val),
+                    convergence_window=convergence_window_val,
+                    convergence_threshold=convergence_threshold_val,
+                    enable_power_analysis=bool(enable_power_analysis_val),
+                    power_effect_size=power_effect_size_val,
+                    enable_sensitivity_analysis=bool(enable_sensitivity_analysis_val),
+                    sensitivity_params=sensitivity_params_requested,
                 )
                 if not isinstance(member_out, dict) or not member_out.get('success'):
                     err_msg = None
@@ -855,6 +867,19 @@ def forecast_barrier_optimize(
                     "ratio_steps": int(ratio_steps_val),
                     "vol_steps": int(vol_steps_val),
                     "refine": bool(refine_flag),
+                    "statistical_robustness": {
+                        "enabled": bool(statistical_robustness_requested),
+                        "target_ci_width": target_ci_width_val,
+                        "n_seeds_stability": n_seeds_stability_val,
+                        "bootstrap_enabled": bool(enable_bootstrap_val),
+                        "n_bootstrap": n_bootstrap_val,
+                        "convergence_check_enabled": bool(enable_convergence_check_val),
+                        "convergence_window": convergence_window_val,
+                        "convergence_threshold": convergence_threshold_val,
+                        "power_analysis_enabled": bool(enable_power_analysis_val),
+                        "power_effect_size": power_effect_size_val,
+                        "sensitivity_analysis_enabled": bool(enable_sensitivity_analysis_val),
+                    } if statistical_robustness_requested else None,
                 },
                 "results": summary_results,
                 "results_total": len(candidates),
@@ -912,6 +937,26 @@ def forecast_barrier_optimize(
                     cost_per_trade=cost_per_trade,
                 )
                 out.update(diagnostics)
+            if statistical_robustness_requested and isinstance(selected_best, dict):
+                selected_output = next(
+                    (
+                        row.get("output")
+                        for row in member_runs
+                        if isinstance(row.get("best"), dict)
+                        and str(row.get("method")) == str(selected_best.get("member_method"))
+                    ),
+                    None,
+                )
+                if isinstance(selected_output, dict):
+                    selected_stats = selected_output.get("statistical_robustness")
+                    if isinstance(selected_stats, dict):
+                        stats_copy = dict(selected_stats)
+                        stats_copy["source"] = "selected_member"
+                        stats_copy["member_method"] = str(selected_best.get("member_method"))
+                        out["statistical_robustness"] = stats_copy
+                    min_sims_member = selected_output.get("min_sims_recommended")
+                    if min_sims_member is not None:
+                        out["min_sims_recommended"] = min_sims_member
             if min_prob_resolve_val is not None:
                 out["min_prob_resolve"] = float(min_prob_resolve_val)
             if has_trading_costs:
@@ -1362,10 +1407,10 @@ def forecast_barrier_optimize(
                     ev_per_bar = ev_val / t_res_mean_all
 
                 profit_factor = 0.0
-                denom = prob_loss * net_risk
+                denom = effective_prob_loss * net_risk
                 if denom > 0:
-                    profit_factor = (prob_win * net_reward) / denom
-                elif prob_win > 0 and net_reward > 0:
+                    profit_factor = (effective_prob_win * net_reward) / denom
+                elif effective_prob_win > 0 and net_reward > 0:
                     profit_factor = 1e9
 
                 reward_frac = 0.0
@@ -1383,7 +1428,10 @@ def forecast_barrier_optimize(
                 reward_frac = max(reward_frac, -0.999)
                 if risk_frac >= 1.0:
                     risk_frac = 0.999
-                utility_val = (prob_win * math.log1p(reward_frac)) + (prob_loss * math.log1p(-risk_frac))
+                utility_val = (
+                    (effective_prob_win * math.log1p(reward_frac))
+                    + (effective_prob_loss * math.log1p(-risk_frac))
+                )
 
                 if min_prob_win_val is not None and prob_win < min_prob_win_val:
                     continue
@@ -1444,6 +1492,156 @@ def forecast_barrier_optimize(
                 _annotate_candidate_metrics(res, cost_per_trade=cost_per_trade)
                 out.append(res)
             return out
+
+        def _objective_convergence_inputs(
+            eval_paths: np.ndarray,
+            *,
+            best_row: Dict[str, Any],
+        ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[str]]:
+            _, horizon_total = eval_paths.shape
+            tp_trigger = _safe_float(best_row.get('tp_price'))
+            sl_trigger = _safe_float(best_row.get('sl_price'))
+            reward = _safe_float(best_row.get('tp'))
+            risk = _safe_float(best_row.get('sl'))
+            if tp_trigger is None or sl_trigger is None or reward is None or risk is None:
+                return None, None, None
+
+            hit_tp = (eval_paths >= tp_trigger) if dir_long else (eval_paths <= tp_trigger)
+            hit_sl = (eval_paths <= sl_trigger) if dir_long else (eval_paths >= sl_trigger)
+            any_tp = hit_tp.any(axis=1)
+            any_sl = hit_sl.any(axis=1)
+
+            first_tp = hit_tp.argmax(axis=1)
+            first_sl = hit_sl.argmax(axis=1)
+            first_tp[~any_tp] = horizon_total
+            first_sl[~any_sl] = horizon_total
+
+            wins = (first_tp < first_sl).astype(float)
+            losses = (first_sl < first_tp).astype(float)
+            ties = ((first_tp == first_sl) & (first_tp < horizon_total)).astype(float)
+            resolves = wins + losses + ties
+
+            trials = np.arange(1, eval_paths.shape[0] + 1, dtype=float)
+            cum_wins = np.cumsum(wins)
+            cum_losses = np.cumsum(losses)
+            cum_ties = np.cumsum(ties)
+            cum_resolves = np.cumsum(resolves)
+
+            prob_win_series = cum_wins / trials
+            prob_loss_series = cum_losses / trials
+            prob_tp_first_series = (cum_wins + 0.5 * cum_ties) / trials
+            prob_sl_first_series = (cum_losses + 0.5 * cum_ties) / trials
+            prob_resolve_series = cum_resolves / trials
+
+            net_reward = reward - cost_per_trade if has_trading_costs else reward
+            net_risk = risk + cost_per_trade if has_trading_costs else risk
+            net_rr = net_reward / net_risk if net_risk > 0 else 0.0
+
+            reward_frac = 0.0
+            risk_frac = 0.0
+            if mode_val == 'pct':
+                reward_frac = net_reward / 100.0
+                risk_frac = net_risk / 100.0
+            elif last_price > 0 and pip_size:
+                unit_to_return = float(pip_size) / float(last_price)
+                reward_frac = net_reward * unit_to_return
+                risk_frac = net_risk * unit_to_return
+            elif last_price > 0:
+                reward_frac = abs(tp_trigger - last_price) / last_price
+                risk_frac = abs(sl_trigger - last_price) / last_price
+            reward_frac = max(reward_frac, -0.999)
+            if risk_frac >= 1.0:
+                risk_frac = 0.999
+
+            event = f"selected_objective_{objective_val}"
+            if objective_val == 'prob_tp_first':
+                estimate_series = prob_tp_first_series
+            elif objective_val == 'prob_resolve':
+                estimate_series = prob_resolve_series
+            elif objective_val == 'min_loss_prob':
+                estimate_series = prob_loss_series
+            elif objective_val == 'edge':
+                estimate_series = prob_win_series - prob_loss_series
+            elif objective_val == 'ev':
+                estimate_series = (
+                    prob_tp_first_series * net_reward
+                    - prob_sl_first_series * net_risk
+                )
+            elif objective_val == 'ev_per_bar':
+                time_in_trade = np.minimum(np.minimum(first_tp, first_sl) + 1, horizon_total).astype(float)
+                mean_time_series = np.cumsum(time_in_trade) / trials
+                ev_series = (
+                    prob_tp_first_series * net_reward
+                    - prob_sl_first_series * net_risk
+                )
+                estimate_series = np.divide(
+                    ev_series,
+                    mean_time_series,
+                    out=np.zeros_like(ev_series),
+                    where=mean_time_series > 0,
+                )
+            elif objective_val == 'kelly':
+                estimate_series = (
+                    prob_tp_first_series - (prob_sl_first_series / net_rr)
+                    if net_rr > 0 else np.zeros_like(prob_tp_first_series)
+                )
+            elif objective_val == 'ev_cond':
+                active = cum_wins + cum_losses + cum_ties
+                active_mask = active > 0
+                estimate_series = np.zeros_like(prob_tp_first_series)
+                if np.any(active_mask):
+                    win_c = np.divide(
+                        cum_wins + 0.5 * cum_ties,
+                        active,
+                        out=np.zeros_like(active, dtype=float),
+                        where=active_mask,
+                    )
+                    loss_c = np.divide(
+                        cum_losses + 0.5 * cum_ties,
+                        active,
+                        out=np.zeros_like(active, dtype=float),
+                        where=active_mask,
+                    )
+                    estimate_series[active_mask] = (
+                        win_c[active_mask] * net_reward
+                        - loss_c[active_mask] * net_risk
+                    )
+            elif objective_val == 'kelly_cond':
+                active = cum_wins + cum_losses + cum_ties
+                active_mask = active > 0
+                estimate_series = np.zeros_like(prob_tp_first_series)
+                if np.any(active_mask) and net_rr > 0:
+                    win_c = np.divide(
+                        cum_wins + 0.5 * cum_ties,
+                        active,
+                        out=np.zeros_like(active, dtype=float),
+                        where=active_mask,
+                    )
+                    loss_c = np.divide(
+                        cum_losses + 0.5 * cum_ties,
+                        active,
+                        out=np.zeros_like(active, dtype=float),
+                        where=active_mask,
+                    )
+                    estimate_series[active_mask] = (
+                        win_c[active_mask] - (loss_c[active_mask] / net_rr)
+                    )
+            elif objective_val == 'profit_factor':
+                denom = prob_sl_first_series * net_risk
+                estimate_series = np.zeros_like(prob_tp_first_series)
+                valid = denom > 0
+                estimate_series[valid] = (prob_tp_first_series[valid] * net_reward) / denom[valid]
+                positive_no_loss = (~valid) & (prob_tp_first_series > 0) & (net_reward > 0)
+                estimate_series[positive_no_loss] = 1e9
+            elif objective_val == 'utility':
+                estimate_series = (
+                    prob_tp_first_series * math.log1p(reward_frac)
+                    + prob_sl_first_series * math.log1p(-risk_frac)
+                )
+            else:
+                estimate_series = prob_resolve_series
+
+            return estimate_series * trials, trials, event
 
         pareto_front: Optional[List[Dict[str, Any]]] = None
         if optimizer_val == 'optuna':
@@ -1882,23 +2080,25 @@ def forecast_barrier_optimize(
                     statistical_analysis['power_analysis'] = power_result
             
             if enable_convergence_check_val and isinstance(best, dict):
-                n_sims_total = paths.shape[0]
-                tp_trigger = _safe_float(best.get('tp_price'))
-                sl_trigger = _safe_float(best.get('sl_price'))
-                if tp_trigger and sl_trigger:
-                    hit_tp = (paths >= tp_trigger) if dir_long else (paths <= tp_trigger)
-                    hit_sl = (paths <= sl_trigger) if dir_long else (paths >= sl_trigger)
-                    cumulative_successes = np.cumsum((hit_tp.any(axis=1) | hit_sl.any(axis=1)).astype(int))
-                    cumulative_trials = np.arange(1, n_sims_total + 1)
+                cumulative_metric, cumulative_trials, convergence_event = _objective_convergence_inputs(
+                    paths,
+                    best_row=best,
+                )
+                if (
+                    cumulative_metric is not None
+                    and cumulative_trials is not None
+                    and convergence_event is not None
+                ):
                     convergence_result = _mc_convergence(
-                        cumulative_successes,
+                        cumulative_metric,
                         cumulative_trials,
                         window_size=convergence_window_val,
                         threshold=convergence_threshold_val,
                     )
-                    convergence_result["event"] = "selected_barrier_resolve"
-                    convergence_result["tp_price"] = float(tp_trigger)
-                    convergence_result["sl_price"] = float(sl_trigger)
+                    convergence_result["event"] = convergence_event
+                    convergence_result["objective"] = objective_val
+                    convergence_result["tp_price"] = float(best.get('tp_price'))
+                    convergence_result["sl_price"] = float(best.get('sl_price'))
                     statistical_analysis['convergence_diagnostic'] = convergence_result
             
             if enable_bootstrap_val:
@@ -1912,6 +2112,9 @@ def forecast_barrier_optimize(
                             sl_trigger=sl_trigger,
                             direction=direction_norm,
                             entry_price=last_price,
+                            reward=float(best.get('tp', 0.0)),
+                            risk=float(best.get('sl', 0.0)),
+                            cost_per_trade=float(cost_per_trade),
                             n_bootstrap=n_bootstrap_val,
                             seed=seed,
                         )
@@ -1922,7 +2125,7 @@ def forecast_barrier_optimize(
             
             if n_seeds_stability_val > 1:
                 results_by_seed: Dict[int, Dict[str, Any]] = {}
-                for seed_offset in range(min(n_seeds_stability_val, 5)):
+                for seed_offset in range(1, min(n_seeds_stability_val, 5) + 1):
                     seed_key = int(seed + seed_offset)
                     try:
                         (

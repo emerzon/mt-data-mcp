@@ -433,6 +433,35 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertEqual(profile.get("vol_steps"), 18)
         self.assertTrue(profile.get("refine"))
 
+    def test_forecast_barrier_optimize_preserves_explicit_medium_defaults_under_fast_profile(self):
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_steps=7,
+                sl_steps=9,
+                ratio_steps=8,
+                vol_steps=7,
+                refine=False,
+                search_profile="fast",
+                return_grid=True,
+            )
+        self.assertTrue(result.get("success"))
+        profile = result.get("compute_profile", {})
+        self.assertEqual(profile.get("profile"), "fast")
+        self.assertEqual(profile.get("tp_steps"), 7)
+        self.assertEqual(profile.get("sl_steps"), 9)
+        self.assertEqual(profile.get("ratio_steps"), 8)
+        self.assertEqual(profile.get("vol_steps"), 7)
+        self.assertFalse(profile.get("refine"))
+
     def test_forecast_barrier_optimize_ensemble_method(self):
         self._set_flat_history(1.0)
         paths = self._sample_paths()
@@ -907,6 +936,18 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             self.assertAlmostEqual(entry["kelly"], expected_kelly, places=7)
             self.assertAlmostEqual(entry["ev_cond"], expected_ev, places=7)
             self.assertAlmostEqual(entry["kelly_cond"], expected_kelly, places=7)
+            expected_profit_factor = (
+                (entry["prob_tp_first"] * entry["tp"])
+                / (entry["prob_sl_first"] * entry["sl"])
+            )
+            self.assertAlmostEqual(entry["profit_factor"], expected_profit_factor, places=7)
+            reward_frac = entry["tp"] / 100.0
+            risk_frac = entry["sl"] / 100.0
+            expected_utility = (
+                entry["prob_tp_first"] * np.log1p(reward_frac)
+                + entry["prob_sl_first"] * np.log1p(-risk_frac)
+            )
+            self.assertAlmostEqual(entry["utility"], expected_utility, places=7)
 
     def test_forecast_barrier_hit_probabilities_rejects_non_positive_horizon(self):
         result = forecast_barrier_hit_probabilities(
@@ -1508,6 +1549,58 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertTrue(any(ev < 0 for ev in member_evs))
         aggregate_ev = float(result["ensemble"]["aggregate_metrics"]["ev"])
         self.assertAlmostEqual(aggregate_ev, sum(member_evs) / len(member_evs), places=7)
+
+    def test_ensemble_surfaces_selected_member_statistical_robustness(self):
+        self._set_barrier_history(pd.DataFrame({
+            'time': pd.date_range(start='2023-01-01', periods=500, freq='h'),
+            'close': np.full(500, 1.0),
+        }))
+        paths = np.array([
+            [1.0070, 1.0070, 1.0070],
+            [1.0070, 1.0070, 1.0070],
+            [0.9930, 0.9930, 0.9930],
+            [1.0010, 1.0010, 1.0010],
+        ])
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_gbm, \
+             patch(f'{_BARRIER_OPT_ROOT}._simulate_bootstrap_mc') as mock_bootstrap, \
+             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(None, None)):
+            mock_gbm.return_value = {"price_paths": paths}
+            mock_bootstrap.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=3,
+                method="ensemble",
+                direction="long",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
+                objective="ev",
+                statistical_robustness=True,
+                target_ci_width=0.90,
+                enable_bootstrap=False,
+                enable_convergence_check=False,
+                n_seeds_stability=2,
+                params={
+                    "ensemble_methods": ["mc_gbm", "bootstrap"],
+                    "ensemble_agg": "median",
+                    "optimizer": "grid",
+                    "n_sims": 50,
+                    "n_seeds": 1,
+                },
+                return_grid=False,
+                output="summary",
+            )
+
+        self.assertTrue(result.get("success"))
+        self.assertIn("statistical_robustness", result)
+        self.assertEqual(result["statistical_robustness"].get("source"), "selected_member")
+        self.assertIn("minimum_simulations", result["statistical_robustness"])
+        self.assertIn("min_sims_recommended", result)
 
     def test_ensemble_preserves_cost_adjusted_viability_metrics(self):
         self._set_barrier_history(pd.DataFrame({
