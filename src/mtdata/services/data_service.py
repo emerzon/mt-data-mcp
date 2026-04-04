@@ -17,7 +17,7 @@ from ..shared.constants import (
     TIMEFRAME_MAP, TIMEFRAME_SECONDS, FETCH_RETRY_ATTEMPTS, FETCH_RETRY_DELAY,
     SANITY_BARS_TOLERANCE, TI_NAN_WARMUP_FACTOR, TI_NAN_WARMUP_MIN_ADD,
     SIMPLIFY_DEFAULT_METHOD, SIMPLIFY_DEFAULT_MODE, SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT, TICKS_LOOKBACK_DAYS,
-    DEFAULT_ROW_LIMIT
+    DEFAULT_ROW_LIMIT, TIME_DISPLAY_FORMAT
 )
 from ..bootstrap.settings import mt5_config
 from ..core.runtime_metadata import build_runtime_timezone_meta
@@ -702,15 +702,12 @@ def _format_candle_times(
         return
 
     epochs = pd.to_numeric(df['__epoch'], errors='coerce').astype(float)
-    epochs_list = epochs.tolist()
     if time_as_epoch:
         df['time'] = epochs
         df.__dict__['_tz_used_name'] = 'UTC'
         return
 
-    fmt = _time_format_from_epochs(epochs_list)
-    fmt = _maybe_strip_year(fmt, epochs_list)
-    fmt = _style_time_format(fmt)
+    fmt = TIME_DISPLAY_FORMAT
     tz_used_name = 'UTC'
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

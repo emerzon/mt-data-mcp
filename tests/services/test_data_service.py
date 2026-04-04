@@ -257,7 +257,7 @@ class TestDataService(unittest.TestCase):
             )
 
         self.assertEqual(df.__dict__['_tz_used_name'], 'UTC')
-        self.assertTrue(all(isinstance(value, str) for value in df['time']))
+        self.assertEqual(list(df['time']), ['2024-01-01 00:00', '2024-01-01 00:01', '2024-01-01 00:02'])
 
     def test_format_candle_times_vectorizes_client_tz_formatting(self):
         import pandas as pd
@@ -280,7 +280,7 @@ class TestDataService(unittest.TestCase):
             )
 
         self.assertEqual(df.__dict__['_tz_used_name'], str(client_tz))
-        self.assertTrue(all(isinstance(value, str) for value in df['time']))
+        self.assertEqual(list(df['time']), ['2023-12-31 18:00', '2023-12-31 18:01', '2023-12-31 18:02'])
  
 if __name__ == '__main__':
     try:
