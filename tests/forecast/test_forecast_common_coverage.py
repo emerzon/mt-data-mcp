@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -16,6 +15,7 @@ import pytest
 from mtdata.forecast.common import (
     edge_pad_to_length,
     log_returns_from_prices,
+    _normalize_weights,
     _extract_forecast_values,
     _create_training_dataframes,
     default_seasonality,
@@ -23,7 +23,6 @@ from mtdata.forecast.common import (
     pd_freq_from_timeframe,
 )
 from mtdata.forecast.forecast_engine import (
-    _normalize_weights,
     _calculate_lookback_bars,
     _format_forecast_output,
 )

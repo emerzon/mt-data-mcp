@@ -97,3 +97,7 @@ def test_ensemble_prepare_forecast_call_injects_engine_helpers():
     assert kwargs["prepare_ensemble_cv"] is fe._prepare_ensemble_cv
     assert kwargs["normalize_weights"] is fe._normalize_weights
     assert kwargs["get_available_methods"] is fe._get_available_methods
+
+
+def test_ensemble_default_normalize_weights_reuses_shared_helper():
+    assert em._normalize_weights_default is fe._normalize_weights
