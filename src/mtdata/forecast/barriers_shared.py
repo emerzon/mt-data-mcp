@@ -4,6 +4,7 @@ import warnings
 import numpy as np
 from ..shared.schema import TimeframeLiteral, DenoiseSpec
 from ..shared.constants import TIMEFRAME_SECONDS
+from ..shared.symbols import is_probably_crypto_symbol
 from .common import fetch_history as _fetch_history, log_returns_from_prices as _log_returns_from_prices
 from ..utils.utils import _safe_float, parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import (
@@ -456,12 +457,7 @@ def _build_actionability_payload(
 
 
 def _is_crypto_symbol(symbol: str) -> bool:
-    sym = str(symbol or "").upper()
-    crypto_tokens = {
-        "BTC", "ETH", "XRP", "LTC", "SOL", "ADA", "DOGE", "BNB", "DOT",
-        "AVAX", "LINK", "TRX", "MATIC", "NEAR", "ATOM", "FIL", "UNI",
-    }
-    return any(tok in sym for tok in crypto_tokens)
+    return is_probably_crypto_symbol(symbol)
 
 
 def _auto_barrier_method(
