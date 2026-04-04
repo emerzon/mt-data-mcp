@@ -49,6 +49,48 @@ def _pattern_label(row: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _pattern_status_value(row: Any) -> str:
+    try:
+        return str(row.get("status", "")).strip().lower()
+    except Exception:
+        return ""
+
+
+def _pattern_has_status(row: Any, status: str) -> bool:
+    return _pattern_status_value(row) == str(status).strip().lower()
+
+
+def _count_patterns_with_status(rows: List[Dict[str, Any]], status: str) -> int:
+    return int(sum(1 for row in rows if _pattern_has_status(row, status)))
+
+
+def _visible_pattern_rows(
+    rows: List[Dict[str, Any]],
+    *,
+    include_completed: bool,
+) -> List[Dict[str, Any]]:
+    if include_completed:
+        return rows
+    return [row for row in rows if _pattern_has_status(row, "forming")]
+
+
+def _resolve_elliott_pattern_status(
+    end_index: Any,
+    *,
+    n_bars: int,
+    recent_bars: int,
+) -> str:
+    try:
+        recent = max(1, int(recent_bars))
+    except Exception:
+        recent = 1
+    try:
+        end_idx = int(end_index)
+    except Exception:
+        end_idx = -1
+    return "forming" if end_idx >= int(max(0, n_bars - recent)) else "completed"
+
+
 def _elliott_preview_sort_key(row: Dict[str, Any]) -> Tuple[float, float, str]:
     conf = _safe_float(row.get("confidence")) or 0.0
     end_idx = _safe_float(row.get("end_index"))
@@ -67,7 +109,7 @@ def _elliott_completed_preview(
     completed_rows = [
         row
         for row in patterns
-        if isinstance(row, dict) and str(row.get("status", "")).strip().lower() == "completed"
+        if isinstance(row, dict) and _pattern_has_status(row, "completed")
     ]
     preview: List[Dict[str, Any]] = []
     for row in sorted(completed_rows, key=_elliott_preview_sort_key, reverse=True)[: int(limit)]:
@@ -1143,8 +1185,8 @@ def _summarize_engine_findings(
     for engine in engines:
         rows = [row for row in per_engine.get(engine, []) if isinstance(row, dict)]
         n_total = int(len(rows))
-        n_forming = int(sum(1 for row in rows if str(row.get("status", "")).lower() == "forming"))
-        n_completed = int(sum(1 for row in rows if str(row.get("status", "")).lower() == "completed"))
+        n_forming = _count_patterns_with_status(rows, "forming")
+        n_completed = _count_patterns_with_status(rows, "completed")
         n_shown = n_total if include_completed else n_forming
         item: Dict[str, Any] = {
             "engine": engine,

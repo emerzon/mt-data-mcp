@@ -1,10 +1,9 @@
 """Tests for mtdata.core.patterns — pattern detection helpers and tool wrappers."""
 
-import copy
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Tuple
-from unittest.mock import MagicMock, patch, PropertyMock
+from typing import Any, Dict
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
@@ -140,6 +139,32 @@ class TestParseEngineList:
 
     def test_scalar_fallback(self):
         assert self._call(42) == ["42"]
+
+
+# ── pattern status helpers ─────────────────────────────────────────────────
+
+class TestPatternStatusHelpers:
+
+    def test_visible_pattern_rows_and_counts_share_status_normalization(self):
+        from mtdata.core.patterns_support import _count_patterns_with_status, _visible_pattern_rows
+
+        rows = [
+            {"status": " forming "},
+            {"status": "COMPLETED"},
+            {"status": "other"},
+        ]
+
+        visible = _visible_pattern_rows(rows, include_completed=False)
+
+        assert visible == [rows[0]]
+        assert _count_patterns_with_status(rows, "forming") == 1
+        assert _count_patterns_with_status(rows, "completed") == 1
+
+    def test_resolve_elliott_pattern_status_uses_recent_window(self):
+        from mtdata.core.patterns_support import _resolve_elliott_pattern_status
+
+        assert _resolve_elliott_pattern_status(8, n_bars=10, recent_bars=3) == "forming"
+        assert _resolve_elliott_pattern_status(6, n_bars=10, recent_bars=3) == "completed"
 
 
 # ── _select_classic_engines ───────────────────────────────────────────────
@@ -629,7 +654,6 @@ class TestEnrichClassicPatterns:
 
     def test_forming_patterns_project_line_levels_to_current_bar(self):
         from mtdata.core.patterns_support import _enrich_classic_patterns
-        from mtdata.patterns.classic import ClassicDetectorConfig
 
         df = _make_ohlcv_df(6)
         rows = [
@@ -1261,7 +1285,7 @@ class TestPatternsDetect:
     @patch("mtdata.core.patterns._detect_candlestick_patterns")
     def test_candlestick_mode(self, mock_detect):
         mock_detect.return_value = {"success": True, "patterns": []}
-        result = _call_patterns_detect(symbol="EURUSD", mode="candlestick")
+        _call_patterns_detect(symbol="EURUSD", mode="candlestick")
         mock_detect.assert_called_once()
 
     def test_unknown_mode(self):
