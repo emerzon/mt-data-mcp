@@ -210,27 +210,46 @@ def test_prepare_ensemble_cv_uses_all_horizon_steps(monkeypatch):
     assert y.tolist() == [7.0, 8.0, 8.0, 9.0]
 
 
-def test_prepare_ensemble_cv_uses_all_horizon_steps(monkeypatch):
-    series = pd.Series(np.arange(1.0, 11.0))
+def test_prepare_ensemble_cv_records_dispatch_errors_without_function_state(monkeypatch):
+    class GoodForecaster:
+        def forecast(self, series, horizon, seasonality, params):
+            return ForecastResult(
+                forecast=np.array([float(series.iloc[-1] + 1.0)], dtype=float),
+                params_used={},
+                metadata={},
+            )
 
-    def fake_dispatch(method_name, train, horizon, seasonality, params):
-        base = float(train.iloc[-1])
-        return np.array([base + 1.0, base + 2.0], dtype=float)
+    class BadForecaster:
+        def forecast(self, series, horizon, seasonality, params):
+            raise RuntimeError("boom")
 
-    monkeypatch.setattr(fe, "_ensemble_dispatch_method", fake_dispatch)
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            if name == "bad":
+                return BadForecaster()
+            return GoodForecaster()
 
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+
+    failures = []
     x, y = fe._prepare_ensemble_cv(
-        series=series,
-        methods=["naive", "theta"],
-        horizon=2,
+        series=pd.Series(np.arange(1.0, 10.0)),
+        methods=["bad", "naive"],
+        horizon=1,
         seasonality=1,
         params_map={},
-        cv_points=2,
+        cv_points=1,
         min_train=3,
+        failure_sink=failures,
     )
 
-    assert x.shape == (4, 2)
-    assert y.tolist() == [7.0, 8.0, 8.0, 9.0]
+    assert x.shape == (0, 2)
+    assert y.shape == (0,)
+    assert failures[0]["method"] == "bad"
+    assert failures[0]["error"] == "boom"
+    assert failures[0]["error_type"] == "RuntimeError"
+    assert getattr(fe._ensemble_dispatch_method, "_last_error", None) is None
 
 
 def test_forecast_engine_validation_and_top_level_errors(monkeypatch):

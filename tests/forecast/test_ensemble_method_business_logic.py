@@ -71,6 +71,30 @@ def test_ensemble_reports_component_failures():
     assert out.metadata["component_failures"][0]["error"] == "boom"
 
 
+def test_ensemble_reports_component_failures_from_dispatch_exceptions():
+    series = pd.Series(np.linspace(1.0, 20.0, 20))
+    method = em.EnsembleMethod()
+
+    def dispatch(method_name, series_in, horizon, seasonality, params):
+        if method_name == "bad":
+            raise RuntimeError("boom")
+        return np.array([5.0, 6.0], dtype=float)
+
+    out = method.forecast(
+        series,
+        horizon=2,
+        seasonality=1,
+        params={"methods": ["naive", "bad"], "mode": "average"},
+        ensemble_dispatch_method=dispatch,
+        get_available_methods=lambda: ("naive", "bad"),
+    )
+
+    assert np.allclose(out.forecast, [5.0, 6.0])
+    assert out.metadata["component_failures"][0]["method"] == "bad"
+    assert out.metadata["component_failures"][0]["error"] == "boom"
+    assert out.metadata["component_failures"][0]["error_type"] == "RuntimeError"
+
+
 def test_ensemble_prepare_forecast_call_injects_engine_helpers():
     method = em.EnsembleMethod()
     context = ForecastCallContext(
@@ -94,6 +118,7 @@ def test_ensemble_prepare_forecast_call_injects_engine_helpers():
 
     assert params == {"methods": ["naive"]}
     assert kwargs["ensemble_dispatch_method"] is fe._ensemble_dispatch_method
+    assert kwargs["ensemble_dispatch_with_error"] is fe._ensemble_dispatch_with_error
     assert kwargs["prepare_ensemble_cv"] is fe._prepare_ensemble_cv
     assert kwargs["normalize_weights"] is fe._normalize_weights
     assert kwargs["get_available_methods"] is fe._get_available_methods
