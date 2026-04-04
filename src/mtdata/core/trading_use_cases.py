@@ -1769,15 +1769,11 @@ def _run_trade_get_pending_impl(
 
         limit_value = normalize_limit(request.limit)
         if limit_value and len(out_df) > limit_value:
-            out_df = (
-                out_df.sort_values(
-                    "__time_utc",
-                    kind="stable",
-                    na_position="first",
-                ).tail(limit_value)
-                if "__time_utc" in out_df.columns
-                else out_df.head(limit_value)
-            )
+            out_df = out_df.sort_values(
+                "__time_utc",
+                kind="stable",
+                na_position="first",
+            ).tail(limit_value)
         if "__time_utc" in out_df.columns:
             out_df = out_df.drop(columns=["__time_utc"])
         return out_df.to_dict(orient="records")
