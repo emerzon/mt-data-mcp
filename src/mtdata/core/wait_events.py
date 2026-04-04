@@ -1971,15 +1971,13 @@ def _merge_market_ticks(existing: List[Dict[str, Any]], new_ticks: List[Dict[str
     if not existing:
         return list(new_ticks)
     out = list(existing)
-    seen = {tuple(item["key"]) for item in existing[-_MARKET_BUFFER_EXTRA_TICKS:]}
+    seen = {tuple(item["key"]) for item in existing}
     for tick in new_ticks:
         key = tuple(tick["key"])
         if key in seen:
             continue
         out.append(tick)
         seen.add(key)
-        if len(seen) > _MARKET_BUFFER_EXTRA_TICKS * 4:
-            seen = {tuple(item["key"]) for item in out[-_MARKET_BUFFER_EXTRA_TICKS:]}
     return out
 
 
