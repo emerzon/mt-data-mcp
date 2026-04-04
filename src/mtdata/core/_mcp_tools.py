@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Union, cast, get_args, get_origin
 from pydantic import BaseModel
 
 from .error_envelope import build_error_payload, log_transport_exception, normalize_error_payload
-from ..utils.utils import _coerce_scalar
+from ..utils.utils import _coerce_scalar, _parse_bool_like, _UNPARSED_BOOL
 
 try:
     import annotationlib
@@ -103,25 +103,10 @@ def _unwrap_optional_annotation(annotation: Any) -> tuple[Any, bool]:
 
 
 def _coerce_bool(value: Any, *, allow_none: bool, name: str) -> Any:
-    if value is None:
-        if allow_none:
-            return None
+    parsed = _parse_bool_like(value, allow_none=allow_none)
+    if parsed is _UNPARSED_BOOL:
         raise ValueError(f"Invalid value for '{name}': expected boolean, got {value!r}")
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return bool(value)
-    if isinstance(value, str):
-        s = value.strip().lower()
-        if s in ("none", "null"):
-            if allow_none:
-                return None
-            raise ValueError(f"Invalid value for '{name}': expected boolean, got {value!r}")
-        if s in ("true", "1", "yes", "y", "on"):
-            return True
-        if s in ("false", "0", "no", "n", "off"):
-            return False
-    raise ValueError(f"Invalid value for '{name}': expected boolean, got {value!r}")
+    return parsed
 
 
 def _coerce_int(value: Any, *, allow_none: bool, name: str) -> Any:
