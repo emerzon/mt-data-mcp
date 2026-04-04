@@ -7,8 +7,6 @@ Covers:
   - mtdata.core.schema        (schema validation/parsing)
 """
 
-import math
-import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Literal, Union
@@ -69,7 +67,6 @@ from mtdata.core.schema import (
     _SIMPLIFY_MODES,
     _SIMPLIFY_METHODS,
     _PIVOT_METHODS,
-    VolatilityParams,
 )
 
 
@@ -874,18 +871,12 @@ class TestComplexDefs:
         assert "IndicatorSpec" in defs
         assert "DenoiseSpec" in defs
         assert "SimplifySpec" in defs
-        assert "VolatilityParams" in defs
 
     def test_indicator_spec_structure(self):
         defs = complex_defs()
         spec = defs["IndicatorSpec"]
         assert spec["type"] == "object"
         assert "name" in spec["properties"]
-
-    def test_volatility_params_schema_matches_typed_dict_keys(self):
-        defs = complex_defs()
-
-        assert set(defs["VolatilityParams"]["properties"]) == set(VolatilityParams.__annotations__)
 
 
 class TestEnsureDefs:
