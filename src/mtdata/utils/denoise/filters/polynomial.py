@@ -40,6 +40,11 @@ def _denoise_savgol_series(
     if window % 2 == 0:
         window += 1
     if window > len(x):
+        _logger.warning(
+            "savgol window_length (%d) must not exceed series length (%d)",
+            window,
+            len(x),
+        )
         raise ValueError(
             f"savgol window_length ({window}) must not exceed series length ({len(x)})"
         )
