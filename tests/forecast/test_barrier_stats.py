@@ -106,7 +106,13 @@ class TestBarrierStats(unittest.TestCase):
 
         self.assertAlmostEqual(lo, shared_lo, places=12)
         self.assertAlmostEqual(hi, shared_hi, places=12)
-    
+
+    def test_wilson_proportion_invalid_confidence_raises(self):
+        """Confidence outside (0, 1) must raise ValueError, not return nonsensical intervals."""
+        for bad in (0.0, 1.0, -0.1, 1.5):
+            with self.assertRaises(ValueError, msg=f"confidence={bad} should raise"):
+                _confidence_interval_wilson_proportion(0.5, 100, confidence=bad)
+
     def test_confidence_interval_agresti_coull(self):
         """Test Agresti-Coull interval."""
         lo, hi = confidence_interval_agresti_coull(successes=50, n_trials=100)

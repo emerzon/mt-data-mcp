@@ -53,6 +53,8 @@ def _confidence_interval_wilson_proportion(
     confidence: float = 0.95,
 ) -> Tuple[float, float]:
     """Wilson score interval from a probability estimate and trial count."""
+    if not 0 < confidence < 1:
+        raise ValueError(f"confidence must be in (0, 1), got {confidence}")
     if n_trials <= 0:
         return float("nan"), float("nan")
 
