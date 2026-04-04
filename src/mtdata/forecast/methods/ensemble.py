@@ -6,34 +6,18 @@ import math
 import numpy as np
 import pandas as pd
 
+from ..common import _normalize_weights as _normalize_weights_default
 from ..interface import ForecastCallContext, ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 
 _FAILURE_DETAIL_LIMIT = 12
 
 
-def _normalize_weights_default(weights: Any, size: int) -> Optional[np.ndarray]:
-    if weights is None:
-        return None
-    vals: List[float] = []
-    if isinstance(weights, (list, tuple)):
-        vals = [float(v) for v in list(weights)[:size]]
-    elif isinstance(weights, str):
-        parts = [p.strip() for p in weights.split(',') if p.strip()]
-        vals = [float(p) for p in parts[:size]]
-    else:
-        return None
-    if len(vals) != size:
-        return None
-    arr = np.asarray(vals, dtype=float)
-    if not np.all(np.isfinite(arr)):
-        return None
-    arr = np.clip(arr, a_min=0.0, a_max=None)
-    total = float(np.sum(arr))
-    if total <= 0:
-        return None
-    return arr / total
-
+def _clear_dispatch_error(dispatch_method: Any) -> None:
+    try:
+        setattr(dispatch_method, "_last_error", None)
+    except Exception:
+        pass
 
 def _build_dispatch_error(method_name: str, exc: BaseException) -> Dict[str, Any]:
     return {
