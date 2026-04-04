@@ -5,15 +5,14 @@ private helpers, data transformation, validation, and error handling.
 """
 
 import unittest
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import patch, MagicMock
 from contextlib import contextmanager
-from typing import Any, Iterator, Tuple, Optional
+from typing import Any, Iterator, Tuple
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 import sys
 import os
-import math
 
 # Ensure src is importable
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
@@ -22,10 +21,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 _mt5_mock = MagicMock()
 sys.modules['MetaTrader5'] = _mt5_mock
 
-import numpy as np
-import pandas as pd
+import pandas as pd  # noqa: E402
 
-from mtdata.services.data_service import (
+from mtdata.services.data_service import (  # noqa: E402
     _fetch_rates_with_warmup,
     _build_rates_df,
     _trim_df_to_target,
@@ -1152,6 +1150,33 @@ class TestFetchCandles(unittest.TestCase):
         self.assertTrue(result.get('success'))
         if result.get('denoise'):
             self.assertTrue(result['denoise']['applications'])
+
+    @patch(_MT5_CONFIG)
+    @patch(f'{_DS}._normalize_denoise_spec')
+    @patch(_SIMPLIFY_EXT, side_effect=lambda df, h, s: (df, None))
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_denoise_warning_is_surfaced(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_simp,
+                                         mock_norm_dn, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10)
+        mock_norm_dn.return_value = {'method': 'wavelet', 'when': 'pre_ti', 'params': {}}
+
+        def add_warning(df, spec, **kwargs):
+            df.attrs["denoise_warnings"] = [
+                "Denoise method 'wavelet' requires PyWavelets, but it is not installed."
+            ]
+            return []
+
+        with patch(f'{_DS}._apply_denoise_util', side_effect=add_warning):
+            result = fetch_candles('EURUSD', limit=5, denoise={'method': 'wavelet'})
+
+        self.assertTrue(result.get('success'))
+        self.assertIn('warnings', result)
+        self.assertIn("requires PyWavelets", result['warnings'][0])
 
     # -- Start / End datetime ------------------------------------------------
 

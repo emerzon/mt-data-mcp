@@ -1,7 +1,5 @@
 """Comprehensive tests for mtdata.utils.denoise module."""
 
-import math
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -191,7 +189,10 @@ class TestNormalizeDenoiseSec:
         assert normalize_denoise_spec("none") is None
 
     def test_unknown_method_returns_none(self):
-        assert normalize_denoise_spec("nonexistent_filter") is None
+        out = normalize_denoise_spec("nonexistent_filter")
+        assert out is not None
+        assert out["method"] == "nonexistent_filter"
+        assert out["params"] == {}
 
     def test_default_when(self):
         out = normalize_denoise_spec("ema", default_when="post_ti")
@@ -226,6 +227,18 @@ class TestDenoiseSeriesDispatch:
         s = _make_series(np.array([1.0, 2.0]))
         result = _denoise_series(s, method="ema")
         pd.testing.assert_series_equal(result, s)
+
+    def test_short_series_unknown_method_still_raises(self):
+        s = _make_series(np.array([1.0, 2.0]))
+        with pytest.raises(ValueError, match="Unknown denoise method"):
+            _denoise_series(s, method="nonexistent_method")
+
+    def test_short_series_missing_optional_dependency_still_raises(self, monkeypatch):
+        s = _make_series(np.array([1.0, 2.0]))
+        monkeypatch.setattr("mtdata.utils.denoise._pywt", None)
+
+        with pytest.raises(RuntimeError, match="requires PyWavelets"):
+            _denoise_series(s, method="wavelet", params={"wavelet": "db4"})
 
     def test_ema(self):
         s = _make_series(NOISY_SIGNAL)
@@ -328,13 +341,13 @@ class TestDenoiseSeriesDispatch:
         _check_basic(result.values, N)
 
     def test_wavelet(self):
-        pywt = pytest.importorskip("pywt")
+        pytest.importorskip("pywt")
         s = _make_series(NOISY_SIGNAL)
         result = _denoise_series(s, method="wavelet", params={"wavelet": "db4"})
         _check_basic(result.values, N)
 
     def test_wavelet_packet(self):
-        pywt = pytest.importorskip("pywt")
+        pytest.importorskip("pywt")
         s = _make_series(NOISY_SIGNAL)
         result = _denoise_series(s, method="wavelet_packet", params={"wavelet": "db4"})
         _check_basic(result.values, N)
@@ -410,8 +423,15 @@ class TestDenoiseSeriesDispatch:
 
     def test_unknown_method_returns_identity(self):
         s = _make_series(NOISY_SIGNAL)
-        result = _denoise_series(s, method="nonexistent_method")
-        pd.testing.assert_series_equal(result, s)
+        with pytest.raises(ValueError, match="Unknown denoise method"):
+            _denoise_series(s, method="nonexistent_method")
+
+    def test_missing_optional_dependency_raises_clear_error(self, monkeypatch):
+        s = _make_series(NOISY_SIGNAL)
+        monkeypatch.setattr("mtdata.utils.denoise._pywt", None)
+
+        with pytest.raises(RuntimeError, match="requires PyWavelets"):
+            _denoise_series(s, method="wavelet", params={"wavelet": "db4"})
 
     def test_ema_causal(self):
         s = _make_series(NOISY_SIGNAL)
@@ -508,6 +528,17 @@ class TestApplyDenoise:
         spec = {"method": "sma", "params": {"window": 5}, "columns": "all", "keep_original": True}
         added = _apply_denoise(df, spec)
         assert len(added) >= 4
+
+    def test_unknown_method_records_warning_and_returns_raw_data(self):
+        df = self._make_df()
+        original = df["close"].copy()
+
+        added = _apply_denoise(df, {"method": "nonexistent_method", "columns": ["close"], "keep_original": False})
+
+        assert added == []
+        pd.testing.assert_series_equal(df["close"], original)
+        assert "denoise_warnings" in df.attrs
+        assert "Unknown denoise method 'nonexistent_method'" in df.attrs["denoise_warnings"][0]
 
 
 # ======================================================================

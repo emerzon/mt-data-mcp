@@ -7,7 +7,6 @@ from typing import Any, Dict, Literal, Optional, Tuple, Union
 
 from .trading_gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from ..utils.utils import _coerce_finite_float, _coerce_scalar
-from ..utils.mt5 import ensure_mt5_connection_or_raise
 
 
 MarketOrderTypeLiteral = Literal["BUY", "SELL"]
@@ -187,6 +186,20 @@ def _safe_int_attr(obj: Any, name: str, default: int) -> int:
     return int(numeric)
 
 
+def _candidate_fill_modes(mt5: Any) -> list[int]:
+    """Return deduplicated fill-mode candidates with stable MT5-compatible fallbacks."""
+    fill_modes: list[int] = []
+    for fill_attr, default in (
+        ("ORDER_FILLING_IOC", 1),
+        ("ORDER_FILLING_FOK", 0),
+        ("ORDER_FILLING_RETURN", 2),
+    ):
+        fill_mode = _safe_int_attr(mt5, fill_attr, default)
+        if fill_mode not in fill_modes:
+            fill_modes.append(fill_mode)
+    return fill_modes
+
+
 def _safe_last_error(mt5: Any) -> Any:
     """Best-effort access to mt5.last_error()."""
     try:
@@ -219,6 +232,32 @@ def _normalize_price_for_symbol(
     if not math.isfinite(numeric) or numeric == 0.0:
         return None
     return float(numeric)
+
+
+def _zero_price_requested(value: Optional[Union[int, float]]) -> bool:
+    if value is None or isinstance(value, bool):
+        return False
+    try:
+        numeric = float(value)
+    except Exception:
+        return False
+    return math.isfinite(numeric) and math.isclose(numeric, 0.0, abs_tol=1e-9)
+
+
+def _normalize_requested_protection_price(
+    value: Optional[Union[int, float]],
+    *,
+    field_name: str,
+    point: float,
+    digits: int,
+) -> Tuple[Optional[float], bool, Optional[str]]:
+    explicit_remove = _zero_price_requested(value)
+    if value is None or explicit_remove:
+        return None, explicit_remove, None
+    normalized = _normalize_price_for_symbol(value, point=point, digits=digits)
+    if normalized is None:
+        return None, explicit_remove, f"{field_name} must be a non-zero finite price after symbol normalization."
+    return float(normalized), explicit_remove, None
 
 
 def _broker_distance_metadata(symbol_info: Any) -> Dict[str, float]:

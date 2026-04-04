@@ -1,4 +1,6 @@
 """Tests for forecast/monte_carlo.py — pure NumPy simulation functions."""
+from typing import get_args, get_origin, get_type_hints
+
 import numpy as np
 import pytest
 import warnings
@@ -216,6 +218,17 @@ class TestSimulateHmmMc:
     def _prices(self, n=200, seed=42):
         rng = np.random.RandomState(seed)
         return 100.0 * np.exp(np.cumsum(rng.normal(0, 0.01, n)))
+
+    def test_return_annotation_allows_arrays_and_model_type_string(self):
+        return_hint = get_type_hints(simulate_hmm_mc)["return"]
+        origin = get_origin(return_hint)
+        key_type, value_type = get_args(return_hint)
+        value_types = set(get_args(value_type))
+
+        assert origin is dict
+        assert key_type is str
+        assert np.ndarray in value_types
+        assert str in value_types
 
     def test_output_keys(self):
         result = simulate_hmm_mc(self._prices(), horizon=10, n_sims=30, seed=1)

@@ -1,5 +1,5 @@
 """Regime detection implementation."""
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional
 import logging
 import time
 import numpy as np
@@ -8,7 +8,6 @@ from .._mcp_instance import mcp
 from ..execution_logging import infer_result_success, log_operation_finish, log_operation_start
 from ..mt5_gateway import get_mt5_gateway, mt5_connection_error
 from ..schema import TimeframeLiteral, DenoiseSpec
-from ..constants import TIMEFRAME_SECONDS
 from ..features import extract_rolling_features
 from .. import features as _features_module
 from ...forecast.common import fetch_history as _fetch_history
@@ -433,12 +432,17 @@ def regime_detect(
 
         elif method == 'hmm':  # 'hmm' (mixture/HMM-lite)
             try:
+                n_states = int(p.get('n_states', 2))
+            except Exception:
+                return _finish({"error": "n_states must be an integer >= 2 for hmm."})
+            if n_states < 2:
+                return _finish({"error": "n_states must be >= 2 for hmm."})
+            try:
                 from ...forecast.monte_carlo import fit_gaussian_mixture_1d
             except Exception as ex:
                 return _finish({"error": f"HMM-lite import error: {ex}"})
             fit_gaussian_mixture_1d = globals().get("fit_gaussian_mixture_1d", fit_gaussian_mixture_1d)
-            n_states = int(p.get('n_states', 2))
-            w, mu, sigma, gamma, _ = fit_gaussian_mixture_1d(x, n_states=max(2, n_states))
+            w, mu, sigma, gamma, _ = fit_gaussian_mixture_1d(x, n_states=n_states)
             gamma_matrix = _normalize_state_probability_matrix(
                 gamma,
                 rows=x.size,
