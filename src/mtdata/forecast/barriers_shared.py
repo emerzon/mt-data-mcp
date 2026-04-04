@@ -21,6 +21,7 @@ from .monte_carlo import (
     simulate_jump_diffusion_mc as _simulate_jump_diffusion_mc,
     gbm_single_barrier_upcross_prob as _gbm_upcross_prob
 )
+from .barrier_stats import _confidence_interval_wilson_proportion
 
 BARRIER_GRID_PRESETS = {
     'scalp': {
@@ -49,18 +50,7 @@ LOW_CONFIDENCE_CI_THRESHOLD = 0.10
 
 def _binomial_wilson_95(p_hat: float, n: int) -> Tuple[float, float]:
     """Wilson 95% interval for a Bernoulli proportion."""
-    n_i = int(n)
-    if n_i <= 0:
-        return float("nan"), float("nan")
-    p = float(np.clip(float(p_hat), 0.0, 1.0))
-    z = 1.959963984540054
-    z2 = z * z
-    denom = 1.0 + z2 / n_i
-    center = (p + z2 / (2.0 * n_i)) / denom
-    margin = (z / denom) * math.sqrt((p * (1.0 - p) / n_i) + (z2 / (4.0 * n_i * n_i)))
-    lo = max(0.0, center - margin)
-    hi = min(1.0, center + margin)
-    return float(lo), float(hi)
+    return _confidence_interval_wilson_proportion(float(p_hat), int(n), confidence=0.95)
 
 
 def _binomial_se(p_hat: float, n: int) -> float:

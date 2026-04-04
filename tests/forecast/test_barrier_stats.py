@@ -13,6 +13,7 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from mtdata.forecast.barrier_stats import (
+    _confidence_interval_wilson_proportion,
     minimum_simulations_for_ci_width,
     confidence_interval_wilson,
     confidence_interval_agresti_coull,
@@ -24,6 +25,7 @@ from mtdata.forecast.barrier_stats import (
     statistical_power_analysis,
     ensemble_ci_from_multiple_methods,
 )
+from mtdata.forecast.barriers_shared import _binomial_wilson_95
 
 _BARRIER_OPT_ROOT = "mtdata.forecast.barriers_optimization"
 
@@ -97,6 +99,13 @@ class TestBarrierStats(unittest.TestCase):
         lo_full, hi_full = confidence_interval_wilson(successes=10, n_trials=10)
         self.assertLess(lo_full, 1.0)
         self.assertAlmostEqual(hi_full, 1.0, places=12)
+
+    def test_binomial_wilson_95_matches_shared_proportion_helper(self):
+        lo, hi = _binomial_wilson_95(0.37, 200)
+        shared_lo, shared_hi = _confidence_interval_wilson_proportion(0.37, 200, confidence=0.95)
+
+        self.assertAlmostEqual(lo, shared_lo, places=12)
+        self.assertAlmostEqual(hi, shared_hi, places=12)
     
     def test_confidence_interval_agresti_coull(self):
         """Test Agresti-Coull interval."""
