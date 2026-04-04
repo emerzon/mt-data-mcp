@@ -8,7 +8,11 @@ from pathlib import Path
 # with the parent directory on `sys.path`), expose the real src-layout package.
 _src_pkg = Path(__file__).resolve().parent / "src" / "mtdata"
 if _src_pkg.is_dir():
-    __path__.append(str(_src_pkg))  # type: ignore[name-defined]
+    try:
+        __path__.append(str(_src_pkg))  # type: ignore[name-defined]
+    except NameError:
+        # __path__ doesn't exist in non-package contexts
+        pass
 
 __version__ = "0.1.0"
 __author__ = "MCP MetaTrader5 Server"

@@ -393,6 +393,10 @@ def forecast_volatility(
         else:
             p = {}
 
+        # Backward-compatible alias: callers passing 'lambda' are normalised to 'lambda_'
+        if 'lambda' in p and 'lambda_' not in p:
+            p['lambda_'] = p.pop('lambda')
+
         if method_l == 'ensemble':
             default_methods = ['ewma', 'parkinson', 'rolling_std']
             base_methods_in = p.get('methods')
