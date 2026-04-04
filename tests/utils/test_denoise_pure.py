@@ -228,6 +228,18 @@ class TestDenoiseSeriesDispatch:
         result = _denoise_series(s, method="ema")
         pd.testing.assert_series_equal(result, s)
 
+    def test_short_series_unknown_method_still_raises(self):
+        s = _make_series(np.array([1.0, 2.0]))
+        with pytest.raises(ValueError, match="Unknown denoise method"):
+            _denoise_series(s, method="nonexistent_method")
+
+    def test_short_series_missing_optional_dependency_still_raises(self, monkeypatch):
+        s = _make_series(np.array([1.0, 2.0]))
+        monkeypatch.setattr("mtdata.utils.denoise._pywt", None)
+
+        with pytest.raises(RuntimeError, match="requires PyWavelets"):
+            _denoise_series(s, method="wavelet", params={"wavelet": "db4"})
+
     def test_ema(self):
         s = _make_series(NOISY_SIGNAL)
         result = _denoise_series(s, method="ema", params={"span": 10})

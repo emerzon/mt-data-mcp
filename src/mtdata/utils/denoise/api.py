@@ -206,12 +206,12 @@ def _denoise_series(
     if params is None:
         params = {}
     method = (method or 'none').lower().strip()
-    n = len(s)
-    if n < 3:
-        return s
     if method == 'none':
         return s
     handler = _resolve_denoise_handler(method)
+    n = len(s)
+    if n < 3:
+        return s
     return _run_denoise_handler(s, handler, params, causality)
 
 
