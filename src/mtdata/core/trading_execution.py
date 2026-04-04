@@ -91,17 +91,24 @@ def _trade_done_codes(mt5: Any) -> set[int]:
     }
 
 
-def _retcode_is_done(mt5: Any, retcode: Any) -> bool:
+def _retcode_is_done(
+    mt5: Any,
+    retcode: Any,
+    done_codes: Optional[set[int]] = None,
+) -> bool:
     try:
-        return int(retcode) in _trade_done_codes(mt5)
+        if done_codes is None:
+            done_codes = _trade_done_codes(mt5)
+        return int(retcode) in done_codes
     except Exception:
         return False
 
 
 def _count_done_results(mt5: Any, results: List[Dict[str, Any]]) -> int:
     success_count = 0
+    done_codes = _trade_done_codes(mt5)
     for item in results:
-        if _retcode_is_done(mt5, item.get("retcode")):
+        if _retcode_is_done(mt5, item.get("retcode"), done_codes):
             success_count += 1
     return success_count
 
