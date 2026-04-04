@@ -38,6 +38,7 @@ from .patterns_support import (
     _to_float_safe,
     _to_jsonable,
 )
+from ..utils.utils import _parse_bool_like, _UNPARSED_BOOL
 from ..utils.mt5 import _mt5_copy_rates_from
 from ..utils.utils import _format_time_minimal, to_float_np as __to_float_np
 from ..patterns.candlestick import detect_candlestick_patterns as _detect_candlestick_patterns
@@ -651,21 +652,9 @@ def _run_classic_engine(
 def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> List[str]:
     """Apply config dict values to a config object's attributes.
 
-    Returns any unknown keys that were not applied to the target object.
+    Returns keys that were not applied to the target object, including both
+    unknown keys and keys whose values were invalid or could not be coerced.
     """
-
-    def _coerce_bool(value: Any) -> Any:
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, (int, float)):
-            return bool(value)
-        if isinstance(value, str):
-            s = value.strip().lower()
-            if s in {"true", "1", "yes", "y", "on"}:
-                return True
-            if s in {"false", "0", "no", "n", "off"}:
-                return False
-        return value
 
     if not isinstance(config, dict):
         return []
@@ -686,8 +675,8 @@ def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> List[str
                 else:
                     setattr(cfg, k, [v])
             elif isinstance(current, bool):
-                coerced = _coerce_bool(v)
-                if not isinstance(coerced, bool):
+                coerced = _parse_bool_like(v)
+                if coerced is _UNPARSED_BOOL:
                     invalid_keys.append(str(k))
                     continue
                 setattr(cfg, k, bool(coerced))

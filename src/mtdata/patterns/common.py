@@ -4,28 +4,11 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
+from ..shared.symbols import is_probably_crypto_symbol
+
 
 def _is_probably_crypto_symbol(symbol: Any) -> bool:
-    sym = str(symbol or "").upper()
-    if not sym:
-        return False
-    crypto_tokens = {
-        "BTC",
-        "ETH",
-        "XRP",
-        "SOL",
-        "DOGE",
-        "ADA",
-        "LTC",
-        "BCH",
-        "DOT",
-        "AVAX",
-        "MATIC",
-        "LINK",
-        "ATOM",
-        "UNI",
-    }
-    return any(token in sym for token in crypto_tokens)
+    return is_probably_crypto_symbol(symbol)
 
 
 @dataclass

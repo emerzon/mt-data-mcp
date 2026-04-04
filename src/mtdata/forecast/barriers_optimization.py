@@ -6,7 +6,7 @@ import numpy as np
 from ..shared.schema import TimeframeLiteral, DenoiseSpec
 from ..shared.constants import TIMEFRAME_SECONDS
 from .common import fetch_history as _fetch_history, log_returns_from_prices as _log_returns_from_prices
-from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
+from ..utils.utils import _parse_bool_like, _UNPARSED_BOOL, parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import (
     get_pip_size as _get_pip_size,
     resolve_barrier_prices as _resolve_barrier_prices,
@@ -171,17 +171,10 @@ def forecast_barrier_optimize(
             output_mode = 'summary'
 
         def _coerce_bool_flag(value: Any, default: bool = False) -> bool:
-            if isinstance(value, bool):
-                return value
-            if isinstance(value, (int, float)):
-                return bool(value)
-            if isinstance(value, str):
-                v = value.strip().lower()
-                if v in {"1", "true", "yes", "y", "on"}:
-                    return True
-                if v in {"0", "false", "no", "n", "off"}:
-                    return False
-            return bool(default)
+            parsed = _parse_bool_like(value)
+            if parsed is _UNPARSED_BOOL:
+                return bool(default)
+            return bool(parsed)
 
         search_profile_requested = str(
             params_dict.get('search_profile', params_dict.get('profile', search_profile))

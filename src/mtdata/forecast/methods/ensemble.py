@@ -35,35 +35,46 @@ def _normalize_weights_default(weights: Any, size: int) -> Optional[np.ndarray]:
     return arr / total
 
 
-def _clear_dispatch_error(dispatch_method: Any) -> None:
-    try:
-        setattr(dispatch_method, "_last_error", None)
-    except Exception:
-        pass
+def _build_dispatch_error(method_name: str, exc: BaseException) -> Dict[str, Any]:
+    return {
+        "method": str(method_name),
+        "error": str(exc),
+        "error_type": type(exc).__name__,
+    }
 
 
-def _record_dispatch_error(dispatch_method: Any, method_name: str, exc: BaseException) -> None:
-    try:
-        setattr(
-            dispatch_method,
-            "_last_error",
-            {
-                "method": str(method_name),
-                "error": str(exc),
-                "error_type": type(exc).__name__,
-            },
-        )
-    except Exception:
-        pass
-
-
-def _consume_dispatch_error(dispatch_method: Any) -> Optional[Dict[str, Any]]:
+def _consume_dispatch_error(dispatch_method: Any, *, method_name: str) -> Optional[Dict[str, Any]]:
     try:
         error = getattr(dispatch_method, "_last_error", None)
     except Exception:
         return None
-    _clear_dispatch_error(dispatch_method)
-    return dict(error) if isinstance(error, dict) else None
+    try:
+        setattr(dispatch_method, "_last_error", None)
+    except Exception:
+        pass
+    if not isinstance(error, dict):
+        return None
+    payload = dict(error)
+    payload.setdefault("method", str(method_name))
+    return payload
+
+
+def _dispatch_callback_with_error(
+    dispatch_method: Callable[[str, pd.Series, int, Optional[int], Optional[Dict[str, Any]]], Optional[np.ndarray]],
+    method_name: str,
+    series: pd.Series,
+    horizon: int,
+    seasonality: Optional[int],
+    params: Optional[Dict[str, Any]],
+) -> Tuple[Optional[np.ndarray], Optional[Dict[str, Any]]]:
+    method_l = str(method_name).lower().strip()
+    try:
+        forecast = dispatch_method(method_l, series, horizon, seasonality, params)
+    except Exception as ex:
+        return None, _build_dispatch_error(method_l, ex)
+    if forecast is None:
+        return None, _consume_dispatch_error(dispatch_method, method_name=method_l)
+    return forecast, None
 
 
 def _append_failure(
@@ -107,6 +118,22 @@ def _stabilized_bma_weights(rmse: np.ndarray) -> Optional[np.ndarray]:
     return weights / total
 
 
+def _ensemble_dispatch_method_default_impl(
+    method_name: str,
+    series: pd.Series,
+    horizon: int,
+    seasonality: Optional[int],
+    params: Optional[Dict[str, Any]],
+) -> Tuple[Optional[np.ndarray], Optional[Dict[str, Any]]]:
+    method_l = str(method_name).lower().strip()
+    try:
+        forecaster = ForecastRegistry.get(method_l)
+        res = forecaster.forecast(series, horizon, seasonality or 1, dict(params or {}))
+        return res.forecast, None
+    except Exception as ex:
+        return None, _build_dispatch_error(method_l, ex)
+
+
 def _ensemble_dispatch_method_default(
     method_name: str,
     series: pd.Series,
@@ -114,15 +141,33 @@ def _ensemble_dispatch_method_default(
     seasonality: Optional[int],
     params: Optional[Dict[str, Any]],
 ) -> Optional[np.ndarray]:
-    method_l = str(method_name).lower().strip()
-    _clear_dispatch_error(_ensemble_dispatch_method_default)
-    try:
-        forecaster = ForecastRegistry.get(method_l)
-        res = forecaster.forecast(series, horizon, seasonality or 1, dict(params or {}))
-        return res.forecast
-    except Exception as ex:
-        _record_dispatch_error(_ensemble_dispatch_method_default, method_l, ex)
-        return None
+    forecast, _ = _ensemble_dispatch_method_default_impl(
+        method_name,
+        series,
+        horizon,
+        seasonality,
+        params,
+    )
+    return forecast
+
+
+_DEFAULT_DISPATCH_METHOD = _ensemble_dispatch_method_default
+
+
+def _ensemble_dispatch_method_default_with_error(
+    method_name: str,
+    series: pd.Series,
+    horizon: int,
+    seasonality: Optional[int],
+    params: Optional[Dict[str, Any]],
+) -> Tuple[Optional[np.ndarray], Optional[Dict[str, Any]]]:
+    return _ensemble_dispatch_method_default_impl(
+        method_name,
+        series,
+        horizon,
+        seasonality,
+        params,
+    )
 
 
 def _prepare_ensemble_cv_default(
@@ -133,7 +178,10 @@ def _prepare_ensemble_cv_default(
     params_map: Dict[str, Dict[str, Any]],
     cv_points: int,
     min_train: int,
-    dispatch_method: Callable[[str, pd.Series, int, Optional[int], Optional[Dict[str, Any]]], Optional[np.ndarray]],
+    dispatch_with_error: Callable[
+        [str, pd.Series, int, Optional[int], Optional[Dict[str, Any]]],
+        Tuple[Optional[np.ndarray], Optional[Dict[str, Any]]],
+    ],
     failure_sink: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     n = len(series)
@@ -157,14 +205,20 @@ def _prepare_ensemble_cv_default(
         row_forecasts: List[np.ndarray] = []
         success = True
         for method_name in methods:
-            fc = dispatch_method(method_name, train, horizon, seasonality, params_map.get(method_name, {}))
+            fc, error_detail = dispatch_with_error(
+                method_name,
+                train,
+                horizon,
+                seasonality,
+                params_map.get(method_name, {}),
+            )
             if fc is None:
                 _append_failure(
                     failure_sink,
                     stage="cv",
                     method_name=method_name,
                     anchor_index=idx,
-                    error_detail=_consume_dispatch_error(dispatch_method)
+                    error_detail=error_detail
                     or {"error": "Component forecast unavailable", "error_type": "forecast_unavailable"},
                 )
                 success = False
@@ -243,6 +297,7 @@ class EnsembleMethod(ForecastMethod):
 
         call_kwargs_out = dict(call_kwargs)
         call_kwargs_out["ensemble_dispatch_method"] = _forecast_engine._ensemble_dispatch_method
+        call_kwargs_out["ensemble_dispatch_with_error"] = _forecast_engine._ensemble_dispatch_with_error
         call_kwargs_out["prepare_ensemble_cv"] = _forecast_engine._prepare_ensemble_cv
         call_kwargs_out["normalize_weights"] = _forecast_engine._normalize_weights
         call_kwargs_out["get_available_methods"] = _forecast_engine._get_available_methods
@@ -260,6 +315,28 @@ class EnsembleMethod(ForecastMethod):
         dispatch_method = kwargs.get("ensemble_dispatch_method")
         if not callable(dispatch_method):
             dispatch_method = _ensemble_dispatch_method_default
+        dispatch_with_error = kwargs.get("ensemble_dispatch_with_error")
+        if not callable(dispatch_with_error):
+            if dispatch_method is _DEFAULT_DISPATCH_METHOD:
+                dispatch_with_error = _ensemble_dispatch_method_default_with_error
+            else:
+                def _dispatch_with_error(
+                    method_name: str,
+                    series_in: pd.Series,
+                    horizon_in: int,
+                    seasonality_in: Optional[int],
+                    params_in: Optional[Dict[str, Any]],
+                ) -> Tuple[Optional[np.ndarray], Optional[Dict[str, Any]]]:
+                    return _dispatch_callback_with_error(
+                        dispatch_method,
+                        method_name,
+                        series_in,
+                        horizon_in,
+                        seasonality_in,
+                        params_in,
+                    )
+
+                dispatch_with_error = _dispatch_with_error
 
         cv_failures: List[Dict[str, Any]] = []
         component_failures: List[Dict[str, Any]] = []
@@ -270,14 +347,14 @@ class EnsembleMethod(ForecastMethod):
                 return _prepare_ensemble_cv_default(
                     series_in,
                     methods,
-                    horizon_in,
-                    seasonality_in,
-                    params_map,
-                    cv_points,
-                    min_train,
-                    dispatch_method,
-                    failure_sink=cv_failures,
-                )
+                        horizon_in,
+                        seasonality_in,
+                        params_map,
+                        cv_points,
+                        min_train,
+                        dispatch_with_error,
+                        failure_sink=cv_failures,
+                    )
             prepare_cv = _prepare
 
         normalize_weights = kwargs.get("normalize_weights")
@@ -369,13 +446,19 @@ class EnsembleMethod(ForecastMethod):
         component_methods: List[str] = []
         component_forecasts: List[np.ndarray] = []
         for method_name in base_methods:
-            fc = dispatch_method(method_name, series, horizon, seasonality, params_map.get(method_name, {}))
+            fc, error_detail = dispatch_with_error(
+                method_name,
+                series,
+                horizon,
+                seasonality,
+                params_map.get(method_name, {}),
+            )
             if fc is None:
                 _append_failure(
                     component_failures,
                     stage="component",
                     method_name=method_name,
-                    error_detail=_consume_dispatch_error(dispatch_method)
+                    error_detail=error_detail
                     or {"error": "Component forecast unavailable", "error_type": "forecast_unavailable"},
                 )
                 continue

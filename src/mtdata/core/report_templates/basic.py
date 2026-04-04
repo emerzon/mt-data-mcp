@@ -186,12 +186,6 @@ def _parse_table_data(table_lines: List[str]) -> Any:
     except Exception:
         return table_lines
 
-
-def _unwrap_mcp_function(func):
-    """Legacy function - now just returns the original function."""
-    return func
-
-
 def _ema(values: List[float], length: int) -> List[float]:
     if length <= 1 or not values:
         return list(values)

@@ -2,11 +2,10 @@
 Forecast engine core logic and orchestration.
 """
 
-from typing import Any, Dict, Optional, List, Literal, Tuple
+from typing import Any, Callable, Dict, Optional, List, Literal, Tuple
 import logging
 import numpy as np
 import pandas as pd
-import math
 
 from ..bootstrap.settings import mt5_config
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
@@ -75,35 +74,50 @@ _ENSEMBLE_BASE_METHODS = (
 logger = logging.getLogger(__name__)
 
 
-def _clear_ensemble_dispatch_error() -> None:
+def _build_ensemble_dispatch_error(method_name: str, exc: BaseException) -> Dict[str, Any]:
+    return {
+        "method": str(method_name),
+        "error": str(exc),
+        "error_type": type(exc).__name__,
+    }
+
+
+def _consume_dispatch_callback_error(
+    dispatch_method: Any,
+    *,
+    method_name: str,
+) -> Optional[Dict[str, Any]]:
     try:
-        setattr(_ensemble_dispatch_method, "_last_error", None)
-    except Exception:
-        pass
-
-
-def _record_ensemble_dispatch_error(method_name: str, exc: BaseException) -> None:
-    try:
-        setattr(
-            _ensemble_dispatch_method,
-            "_last_error",
-            {
-                "method": str(method_name),
-                "error": str(exc),
-                "error_type": type(exc).__name__,
-            },
-        )
-    except Exception:
-        pass
-
-
-def _consume_ensemble_dispatch_error() -> Optional[Dict[str, Any]]:
-    try:
-        error = getattr(_ensemble_dispatch_method, "_last_error", None)
+        error = getattr(dispatch_method, "_last_error", None)
     except Exception:
         return None
-    _clear_ensemble_dispatch_error()
-    return dict(error) if isinstance(error, dict) else None
+    try:
+        setattr(dispatch_method, "_last_error", None)
+    except Exception:
+        pass
+    if not isinstance(error, dict):
+        return None
+    payload = dict(error)
+    payload.setdefault("method", str(method_name))
+    return payload
+
+
+def _dispatch_ensemble_callback_with_error(
+    dispatch_method: Callable[[str, pd.Series, int, Optional[int], Optional[Dict[str, Any]]], Optional[np.ndarray]],
+    method_name: str,
+    series: pd.Series,
+    horizon: int,
+    seasonality: Optional[int],
+    params: Optional[Dict[str, Any]],
+) -> Tuple[Optional[np.ndarray], Optional[Dict[str, Any]]]:
+    method_l = str(method_name).lower().strip()
+    try:
+        forecast = dispatch_method(method_l, series, horizon, seasonality, params)
+    except Exception as ex:
+        return None, _build_ensemble_dispatch_error(method_l, ex)
+    if forecast is None:
+        return None, _consume_dispatch_callback_error(dispatch_method, method_name=method_l)
+    return forecast, None
 
 
 def _append_ensemble_failure(
@@ -150,6 +164,25 @@ def _normalize_weights(weights: Any, size: int) -> Optional[np.ndarray]:
     return arr / total
 
 
+def _ensemble_dispatch_method_impl(
+    method_name: str,
+    series: pd.Series,
+    horizon: int,
+    seasonality: Optional[int],
+    params: Optional[Dict[str, Any]],
+) -> Tuple[Optional[np.ndarray], Optional[Dict[str, Any]]]:
+    """Run a supported ensemble base method with safe fallbacks."""
+
+    m = str(method_name).lower().strip()
+    method_params = dict(params or {})
+    try:
+        forecaster = ForecastRegistry.get(m)
+        res = forecaster.forecast(series, horizon, seasonality or 1, method_params)
+        return res.forecast, None
+    except Exception as ex:
+        return None, _build_ensemble_dispatch_error(m, ex)
+
+
 def _ensemble_dispatch_method(
     method_name: str,
     series: pd.Series,
@@ -157,20 +190,43 @@ def _ensemble_dispatch_method(
     seasonality: Optional[int],
     params: Optional[Dict[str, Any]],
 ) -> Optional[np.ndarray]:
-    """Run a supported ensemble base method with safe fallbacks."""
+    forecast, _ = _ensemble_dispatch_method_impl(
+        method_name,
+        series,
+        horizon,
+        seasonality,
+        params,
+    )
+    return forecast
 
-    m = str(method_name).lower().strip()
-    # Allow any registered method in ensemble if it supports what we need
-    # But for safety/speed, we might restrict to fast methods or check registry
-    _clear_ensemble_dispatch_error()
-    method_params = dict(params or {})
-    try:
-        forecaster = ForecastRegistry.get(m)
-        res = forecaster.forecast(series, horizon, seasonality or 1, method_params)
-        return res.forecast
-    except Exception as ex:
-        _record_ensemble_dispatch_error(m, ex)
-        return None
+
+_DEFAULT_ENSEMBLE_DISPATCH_METHOD = _ensemble_dispatch_method
+
+
+def _ensemble_dispatch_with_error(
+    method_name: str,
+    series: pd.Series,
+    horizon: int,
+    seasonality: Optional[int],
+    params: Optional[Dict[str, Any]],
+) -> Tuple[Optional[np.ndarray], Optional[Dict[str, Any]]]:
+    dispatch_method = globals().get("_ensemble_dispatch_method")
+    if callable(dispatch_method) and dispatch_method is not _DEFAULT_ENSEMBLE_DISPATCH_METHOD:
+        return _dispatch_ensemble_callback_with_error(
+            dispatch_method,
+            method_name,
+            series,
+            horizon,
+            seasonality,
+            params,
+        )
+    return _ensemble_dispatch_method_impl(
+        method_name,
+        series,
+        horizon,
+        seasonality,
+        params,
+    )
 
 
 def _prepare_ensemble_cv(
@@ -206,13 +262,19 @@ def _prepare_ensemble_cv(
         row_forecasts: List[np.ndarray] = []
         success = True
         for m in methods:
-            fc = _ensemble_dispatch_method(m, train, horizon, seasonality, params_map.get(m, {}))
+            fc, error_detail = _ensemble_dispatch_with_error(
+                m,
+                train,
+                horizon,
+                seasonality,
+                params_map.get(m, {}),
+            )
             if fc is None:
                 _append_ensemble_failure(
                     failure_sink,
                     method_name=m,
                     anchor_index=idx,
-                    error_detail=_consume_ensemble_dispatch_error()
+                    error_detail=error_detail
                     or {"error": "Component forecast unavailable", "error_type": "forecast_unavailable"},
                 )
                 success = False
@@ -689,7 +751,6 @@ def forecast_engine(
     """
     try:
         ci_values = None
-        ensemble_meta: Dict[str, Any] = {}
         # Coerce CLI string inputs to proper types
         try:
             horizon = int(horizon) if horizon is not None else 12

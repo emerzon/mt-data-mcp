@@ -83,6 +83,35 @@ def _unexpected_operation_error(
     return payload
 
 
+def _trade_done_codes(mt5: Any) -> set[int]:
+    return {
+        int(getattr(mt5, "TRADE_RETCODE_DONE", 10009)),
+        int(getattr(mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010)),
+    }
+
+
+def _retcode_is_done(
+    mt5: Any,
+    retcode: Any,
+    done_codes: Optional[set[int]] = None,
+) -> bool:
+    try:
+        if done_codes is None:
+            done_codes = _trade_done_codes(mt5)
+        return int(retcode) in done_codes
+    except Exception:
+        return False
+
+
+def _count_done_results(mt5: Any, results: List[Dict[str, Any]]) -> int:
+    success_count = 0
+    done_codes = _trade_done_codes(mt5)
+    for item in results:
+        if _retcode_is_done(mt5, item.get("retcode"), done_codes):
+            success_count += 1
+    return success_count
+
+
 def _modify_position(
     ticket: Union[int, str],
     stop_loss: Optional[Union[int, float]] = None,
@@ -631,10 +660,6 @@ def _close_positions(
                 attempts: List[Dict[str, Any]] = []
                 close_type_buy = getattr(mt5, "ORDER_TYPE_BUY", 0)
                 close_type_sell = getattr(mt5, "ORDER_TYPE_SELL", 1)
-                done_codes = {
-                    int(getattr(mt5, "TRADE_RETCODE_DONE", 10009)),
-                    int(getattr(mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010)),
-                }
                 position_side = _resolve_position_side(position, mt5)
                 if position_side is None:
                     results.append(
@@ -726,11 +751,8 @@ def _close_positions(
                                 break
                             if recovered:
                                 retcode_val = getattr(result, "retcode", None)
-                                try:
-                                    if retcode_val is not None and int(retcode_val) in done_codes:
-                                        break
-                                except Exception:
-                                    pass
+                                if _retcode_is_done(mt5, retcode_val):
+                                    break
                                 time.sleep(0.15)
                                 continue
                         attempts.append(
@@ -752,19 +774,11 @@ def _close_positions(
                             "comment": getattr(result, "comment", None),
                         }
                     )
-                    try:
-                        if retcode_val is not None and int(retcode_val) in done_codes:
-                            break
-                    except Exception:
-                        pass
+                    if _retcode_is_done(mt5, retcode_val):
+                        break
                     time.sleep(0.15)
 
-                close_ok = False
-                if result is not None:
-                    try:
-                        close_ok = int(getattr(result, "retcode", -1)) in done_codes
-                    except Exception:
-                        close_ok = False
+                close_ok = _retcode_is_done(mt5, getattr(result, "retcode", None)) if result is not None else False
 
                 if not close_ok:
                     last_error = trading_validation._safe_last_error(mt5)
@@ -855,17 +869,7 @@ def _close_positions(
             # If only one position was targeted by ticket, return single result
             if ticket is not None and len(results) == 1:
                 return results[0]
-            success_count = 0
-            done_codes = {
-                int(getattr(mt5, "TRADE_RETCODE_DONE", 10009)),
-                int(getattr(mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010)),
-            }
-            for item in results:
-                try:
-                    if int(item.get("retcode")) in done_codes:
-                        success_count += 1
-                except Exception:
-                    continue
+            success_count = _count_done_results(mt5, results)
             return {"closed_count": success_count, "attempted_count": len(results), "results": results}
 
         except Exception as e:
@@ -935,17 +939,7 @@ def _cancel_pending(
             # If only one order was targeted by ticket, return single result
             if ticket is not None and len(results) == 1:
                 return results[0]
-            success_count = 0
-            done_codes = {
-                int(getattr(mt5, "TRADE_RETCODE_DONE", 10009)),
-                int(getattr(mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010)),
-            }
-            for item in results:
-                try:
-                    if int(item.get("retcode")) in done_codes:
-                        success_count += 1
-                except Exception:
-                    continue
+            success_count = _count_done_results(mt5, results)
             return {"cancelled_count": success_count, "attempted_count": len(results), "results": results}
 
         except Exception as e:

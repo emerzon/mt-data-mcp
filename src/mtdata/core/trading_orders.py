@@ -76,6 +76,18 @@ def _send_order_with_comment_fallback(
     return trading_comments._send_order_with_comment_fallback(mt5, request)
 
 
+def _trade_done_codes(mt5: Any) -> set[int]:
+    return {
+        trading_validation._safe_int_attr(mt5, "TRADE_RETCODE_DONE", 10009),
+        trading_validation._safe_int_attr(mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010),
+    }
+
+
+def _retcode_is_done(mt5: Any, retcode: Any) -> bool:
+    try:
+        return int(retcode) in _trade_done_codes(mt5)
+    except Exception:
+        return False
 def _send_order_with_fill_mode_retry(
     mt5: Any,
     request: Dict[str, Any],
@@ -85,7 +97,6 @@ def _send_order_with_fill_mode_retry(
     last_comment_fallback = None
     last_error = None
     last_request = dict(request)
-    done_code = trading_validation._safe_int_attr(mt5, "TRADE_RETCODE_DONE", 10009)
     for fill_mode in trading_validation._candidate_fill_modes(mt5):
         attempt_request = dict(request)
         attempt_request["type_filling"] = int(fill_mode)
@@ -111,7 +122,7 @@ def _send_order_with_fill_mode_retry(
             else attempt_request
         )
         try:
-            if result is not None and int(getattr(result, "retcode", -1)) == int(done_code):
+            if result is not None and _retcode_is_done(mt5, getattr(result, "retcode", -1)):
                 return result, comment_fallback, last_error, attempts, last_request
         except Exception:
             pass
@@ -268,7 +279,7 @@ def _place_market_order(
                     "comment_fallback": comment_fallback,
                     "fill_mode_attempts": fill_mode_attempts,
                 }
-            if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
+            if not _retcode_is_done(mt5, getattr(result, "retcode", None)):
                 error_message = "Failed to send order"
                 invalid_comment = (
                     comment_fallback.get("invalid_comment_error")
@@ -760,7 +771,7 @@ def _place_pending_order(
                     "fill_mode_attempts": fill_mode_attempts,
                 }
 
-            if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
+            if not _retcode_is_done(mt5, getattr(result, "retcode", None)):
                 error_message = "Failed to send pending order"
                 invalid_comment = (
                     comment_fallback.get("invalid_comment_error")

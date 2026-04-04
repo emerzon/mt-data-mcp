@@ -39,6 +39,15 @@ def _denoise_savgol_series(
         return s
     if window % 2 == 0:
         window += 1
+    if window > len(x):
+        _logger.warning(
+            "savgol window_length (%d) must not exceed series length (%d)",
+            window,
+            len(x),
+        )
+        raise ValueError(
+            f"savgol window_length ({window}) must not exceed series length ({len(x)})"
+        )
     polyorder = int(params.get('polyorder', 2))
     polyorder = max(0, min(polyorder, window - 1))
     mode = str(params.get('mode', 'interp'))

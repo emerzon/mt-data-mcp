@@ -393,6 +393,10 @@ def forecast_volatility(
         else:
             p = {}
 
+        # Backward-compatible alias: callers passing 'lambda' are normalised to 'lambda_'
+        if 'lambda' in p and 'lambda_' not in p:
+            p['lambda_'] = p.pop('lambda')
+
         if method_l == 'ensemble':
             default_methods = ['ewma', 'parkinson', 'rolling_std']
             base_methods_in = p.get('methods')
@@ -823,7 +827,7 @@ def forecast_volatility(
                 co_var = pd.Series(co).rolling(window=window, min_periods=window).var(ddof=0).to_numpy()
                 oc_var = pd.Series(oc).rolling(window=window, min_periods=window).var(ddof=0).to_numpy()
                 rs_mean = pd.Series(rs).rolling(window=window, min_periods=window).mean().to_numpy()
-                v = (co_var + k*oc_var + (1-k)*rs_mean)
+                v = (oc_var + k*co_var + (1-k)*rs_mean)
             else:
                 v = pd.Series(r*r).rolling(window=window, min_periods=window).mean().to_numpy()
             sigma2 = float(v[-1]) if np.isfinite(v[-1]) else float(np.nanmean(v[-window:]))
@@ -904,20 +908,13 @@ def forecast_volatility(
             except Exception as ex:
                 return {"error": f"{method_l} error: {ex}"}
 
-        # Backward compatibility for 'lambda' -> 'lambda_'
-        if 'lambda' in p and 'lambda_' not in p:
-            p['lambda_'] = p['lambda']
+        if method_l != 'har_rv':
+            return {"error": f"Unsupported direct volatility method: {method_l}"}
 
-        # Determine bars required
-        if method_l == 'ewma':
-            lookback = int(p.get('lookback', 1500))
-            need = max(lookback + 2, 100)
-        elif method_l in ('parkinson','gk','rs'):
-            window = int(p.get('window', 20))
-            need = max(window + 2, 50)
-        else:  # garch
-            fit_bars = int(p.get('fit_bars', 2000))
-            need = max(fit_bars + 2, 500)
+        # HAR-RV is the only direct method that still uses the legacy second-stage
+        # fetch path before its dedicated intraday RV fetch below.
+        fit_bars = int(p.get('fit_bars', 2000))
+        need = max(fit_bars + 2, 500)
 
         # Ensure symbol is ready; remember original visibility to restore later
         _info_before = mt5.symbol_info(symbol)
@@ -974,221 +971,99 @@ def forecast_volatility(
                 # Fail-safe: ignore denoise errors and proceed with raw data
                 pass
 
-        # Prefer denoised columns if user asked to keep originals
-        def _col(name: str) -> str:
-            dn = f"{name}_dn"
-            return dn if dn in df.columns else name
-
-        closes = df[_col('close')].to_numpy(dtype=float)
-        highs = df[_col('high')].to_numpy(dtype=float) if 'high' in df.columns else None
-        lows = df[_col('low')].to_numpy(dtype=float) if 'low' in df.columns else None
-        opens = df[_col('open')].to_numpy(dtype=float) if 'open' in df.columns else None
-        last_close = float(closes[-1])
-
-        bars_per_year = _bars_per_year(timeframe)
-        ann_factor = math.sqrt(bars_per_year) if bars_per_year > 0 else float('nan')
-
-        sigma_bar = float('nan')
-        sigma_ann = float('nan')
-        sigma_h_bar = float('nan')  # horizon sigma of sum of returns over k bars
-        params_used: Dict[str, Any] = {}
-
-        if method_l == 'ewma':
-            r = _log_returns_from_prices(closes)
-            if r.size < 5:
-                return {"error": "Not enough return observations for EWMA"}
-            lam = p.get('lambda_')
-            hl = p.get('halflife')
-            if hl is not None:
-                try:
-                    hl = float(hl)
-                except Exception:
-                    hl = None
-            if lam is not None:
-                try:
-                    lam = float(lam)
-                except Exception:
-                    lam = None
-            if lam is not None and (hl is None):
-                alpha = 1.0 - float(lam)
-                var_series = pd.Series(r).ewm(alpha=alpha, adjust=False).var(bias=False)
-                params_used['lambda_'] = float(lam)
-                params_used['lambda_source'] = 'lambda_'
-            else:
-                # default halflife if not provided
-                if hl is None:
-                    # heuristic per timeframe
-                    default_hl = 60 if timeframe.startswith('H') else (11 if timeframe == 'D1' else 180)
-                    hl = float(p.get('halflife', default_hl))
-                var_series = pd.Series(r).ewm(halflife=float(hl), adjust=False).var(bias=False)
-                params_used['halflife'] = float(hl)
-                params_used['lambda_source'] = 'halflife'
-            v = float(var_series.iloc[-1])
-            v = v if math.isfinite(v) and v >= 0 else float('nan')
-            sigma_bar = math.sqrt(v) if math.isfinite(v) and v >= 0 else float('nan')
-            sigma_h_bar = math.sqrt(max(1, int(horizon)) * v) if math.isfinite(v) and v >= 0 else float('nan')
-        elif method_l in ('parkinson','gk','rs'):
-            if highs is None or lows is None:
-                return {"error": "High/Low data required for range-based estimators"}
-            window = int(p.get('window', 20))
-            params_used['window'] = window
-            if method_l == 'parkinson':
-                var_bars = _parkinson_sigma_sq(highs, lows)
-            elif method_l == 'gk':
-                if opens is None:
-                    return {"error": "Open data required for Garman–Klass"}
-                var_bars = _garman_klass_sigma_sq(opens, highs, lows, closes)
-            else:  # rs
-                if opens is None:
-                    return {"error": "Open data required for Rogers–Satchell"}
-                var_bars = _rogers_satchell_sigma_sq(opens, highs, lows, closes)
-            s = pd.Series(var_bars)
-            v = float(s.tail(window).mean(skipna=True))
-            v = v if math.isfinite(v) and v >= 0 else float('nan')
-            sigma_bar = math.sqrt(v) if math.isfinite(v) and v >= 0 else float('nan')
-            sigma_h_bar = math.sqrt(max(1, int(horizon)) * v) if math.isfinite(v) and v >= 0 else float('nan')
-        elif method_l == 'har_rv':
-            # HAR-RV on daily realized variance computed from intraday returns
+        # HAR-RV on daily realized variance computed from intraday returns
+        try:
+            rv_tf = str(p.get('rv_timeframe', 'M5')).upper()
+            rv_mt5_tf = TIMEFRAME_MAP.get(rv_tf)
+            if rv_mt5_tf is None:
+                return {"error": f"Invalid rv_timeframe: {rv_tf}"}
+            days = int(p.get('days', 120))
+            w = int(p.get('window_w', 5))
+            m = int(p.get('window_m', 22))
+            rv_tf_secs = TIMEFRAME_SECONDS.get(rv_tf, 300)
+            bars_needed = int(days * max(1, (86400 // max(1, rv_tf_secs))) + 50)
+            _info_before = mt5.symbol_info(symbol)
+            _was_visible = bool(_info_before.visible) if _info_before is not None else None
+            err = _ensure_symbol_ready(symbol)
+            if err:
+                return {"error": err}
             try:
-                rv_tf = str(p.get('rv_timeframe', 'M5')).upper()
-                rv_mt5_tf = TIMEFRAME_MAP.get(rv_tf)
-                if rv_mt5_tf is None:
-                    return {"error": f"Invalid rv_timeframe: {rv_tf}"}
-                days = int(p.get('days', 120))
-                w = int(p.get('window_w', 5))
-                m = int(p.get('window_m', 22))
-                rv_tf_secs = TIMEFRAME_SECONDS.get(rv_tf, 300)
-                bars_needed = int(days * max(1, (86400 // max(1, rv_tf_secs))) + 50)
-                _info_before = mt5.symbol_info(symbol)
-                _was_visible = bool(_info_before.visible) if _info_before is not None else None
-                err = _ensure_symbol_ready(symbol)
-                if err:
-                    return {"error": err}
-                try:
-                    if as_of:
-                        to_dt = _parse_start_datetime(as_of)
-                        if not to_dt:
-                            return {"error": "Invalid as_of time."}
-                        rates_rv = _mt5_copy_rates_from(symbol, rv_mt5_tf, to_dt, bars_needed)
+                if as_of:
+                    to_dt = _parse_start_datetime(as_of)
+                    if not to_dt:
+                        return {"error": "Invalid as_of time."}
+                    rates_rv = _mt5_copy_rates_from(symbol, rv_mt5_tf, to_dt, bars_needed)
+                else:
+                    _tick = mt5.symbol_info_tick(symbol)
+                    if _tick is not None and getattr(_tick, 'time', None):
+                        t_utc = _mt5_epoch_to_utc(float(_tick.time))
+                        server_now_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc)
                     else:
-                        _tick = mt5.symbol_info_tick(symbol)
-                        if _tick is not None and getattr(_tick, 'time', None):
-                            t_utc = _mt5_epoch_to_utc(float(_tick.time))
-                            server_now_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc)
-                        else:
-                            server_now_dt = datetime.now(timezone.utc)
-                        rates_rv = _mt5_copy_rates_from(symbol, rv_mt5_tf, server_now_dt, bars_needed)
-                finally:
-                    if _was_visible is False:
-                        try:
-                            mt5.symbol_select(symbol, False)
-                        except Exception:
-                            pass
-                if rates_rv is None or len(rates_rv) < 50:
-                    return {"error": f"Failed to get intraday rates for RV: {mt5.last_error()}"}
-                dfrv = pd.DataFrame(rates_rv)
-                if as_of is None and len(dfrv) >= 2:
-                    dfrv = dfrv.iloc[:-1]
-                c = dfrv['close'].astype(float).to_numpy()
-                if c.size < 10:
-                    return {"error": "Insufficient intraday bars for RV"}
-                rr = _log_returns_from_prices(c)
-                rr = rr[np.isfinite(rr)]
-                dt = pd.to_datetime(dfrv['time'].iloc[1:].astype(float), unit='s', utc=True)
-                days_idx = pd.DatetimeIndex(dt).floor('D')
-                df_r = pd.DataFrame({'day': days_idx, 'r2': rr * rr})
-                daily_rv = df_r.groupby('day')['r2'].sum().astype(float)
-                if len(daily_rv) < max(30, m + 5):
-                    return {"error": "Not enough daily RV observations for HAR-RV"}
-                RV = daily_rv.to_numpy(dtype=float)
-                # Lagged features
-                Dlag = RV[:-1]
-                def rmean(arr, k):
-                    s = pd.Series(arr)
-                    return s.rolling(window=k, min_periods=k).mean().to_numpy()
-                Wlag_full = rmean(RV, w)  # aligned to current index
-                Mlag_full = rmean(RV, m)
-                # Build design for y=RV[1:]
-                y = RV[1:]
-                Wlag = Wlag_full[:-1]
-                Mlag = Mlag_full[:-1]
-                Xd = Dlag
-                mask = np.isfinite(Xd) & np.isfinite(Wlag) & np.isfinite(Mlag) & np.isfinite(y)
-                X = np.vstack([np.ones_like(Xd[mask]), Xd[mask], Wlag[mask], Mlag[mask]]).T
-                yv = y[mask]
-                if X.shape[0] < 20:
-                    return {"error": "Insufficient samples after alignment for HAR-RV"}
-                beta, *_ = np.linalg.lstsq(X, yv, rcond=None)
-                # Next-day forecast from last lags
-                D_last = RV[-1]
-                W_last = float(pd.Series(RV).tail(w).mean())
-                M_last = float(pd.Series(RV).tail(m).mean())
-                rv_next = float(beta[0] + beta[1]*D_last + beta[2]*W_last + beta[3]*M_last)
-                rv_next = max(0.0, rv_next)
-                # Map to per-bar and horizon sigma for requested timeframe
-                tf_secs = TIMEFRAME_SECONDS.get(timeframe)
-                if not tf_secs:
-                    return {"error": unsupported_timeframe_seconds_error(timeframe)}
-                bars_per_day = float(86400.0 / float(tf_secs))
-                sbar = float(math.sqrt(rv_next / bars_per_day))
-                h_days = float(int(horizon)) / bars_per_day
-                hsig = float(math.sqrt(rv_next * max(h_days, 0.0)))
-                bpy = annualization_bars_per_year
-                return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
-                        "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
-                        "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
-                        "params_used": {"rv_timeframe": rv_tf, "window_w": w, "window_m": m,
-                                         "beta": [float(b) for b in beta.tolist()],
-                                         "days": days},
-                        "denoise_used": dn_spec_used}
-            except Exception as ex:
-                return {"error": f"HAR-RV error: {ex}"}
-        else:  # garch
-            r = _log_returns_from_prices(closes)
-            if r.size < 100:
-                return {"error": "Not enough return observations for GARCH (need >=100)"}
-            fit_bars = int(p.get('fit_bars', min(2000, r.size)))
-            mean_model = str(p.get('mean', 'Zero'))
-            dist = str(p.get('dist', 'normal'))
-            params_used.update({'fit_bars': fit_bars, 'mean': mean_model, 'dist': dist})
-            r_fit = pd.Series(r[-fit_bars:]) * 100.0  # scale to percent
-            try:
-                am = _arch_model(r_fit, mean=mean_model.lower(), vol='GARCH', p=1, q=1, dist=dist)
-                res = am.fit(disp='off')
-                # Current conditional variance (percent^2)
-                cond_vol = float(res.conditional_volatility.iloc[-1])  # percent
-                sigma_bar = cond_vol / 100.0
-                # k-step ahead variance forecasts (percent^2)
-                fc = res.forecast(horizon=max(1, int(horizon)), reindex=False)
-                var_path = np.array(fc.variance.iloc[-1].values, dtype=float)  # shape (horizon,)
-                var_sum = float(np.nansum(var_path))  # percent^2
-                sigma_h_bar = math.sqrt(var_sum) / 100.0
-            except Exception as ex:
-                return {"error": f"GARCH fitting error: {ex}"}
+                        server_now_dt = datetime.now(timezone.utc)
+                    rates_rv = _mt5_copy_rates_from(symbol, rv_mt5_tf, server_now_dt, bars_needed)
+            finally:
+                if _was_visible is False:
+                    try:
+                        mt5.symbol_select(symbol, False)
+                    except Exception:
+                        pass
+            if rates_rv is None or len(rates_rv) < 50:
+                return {"error": f"Failed to get intraday rates for RV: {mt5.last_error()}"}
+            dfrv = pd.DataFrame(rates_rv)
+            if as_of is None and len(dfrv) >= 2:
+                dfrv = dfrv.iloc[:-1]
+            c = dfrv['close'].astype(float).to_numpy()
+            if c.size < 10:
+                return {"error": "Insufficient intraday bars for RV"}
+            rr = _log_returns_from_prices(c)
+            rr = rr[np.isfinite(rr)]
+            dt = pd.to_datetime(dfrv['time'].iloc[1:].astype(float), unit='s', utc=True)
+            days_idx = pd.DatetimeIndex(dt).floor('D')
+            df_r = pd.DataFrame({'day': days_idx, 'r2': rr * rr})
+            daily_rv = df_r.groupby('day')['r2'].sum().astype(float)
+            if len(daily_rv) < max(30, m + 5):
+                return {"error": "Not enough daily RV observations for HAR-RV"}
+            RV = daily_rv.to_numpy(dtype=float)
+            Dlag = RV[:-1]
 
-        sigma_ann = sigma_bar * ann_factor if math.isfinite(sigma_bar) and math.isfinite(ann_factor) else float('nan')
-        sigma_h_ann = sigma_h_bar * ann_factor if math.isfinite(sigma_h_bar) and math.isfinite(ann_factor) else float('nan')
+            def rmean(arr, k):
+                s = pd.Series(arr)
+                return s.rolling(window=k, min_periods=k).mean().to_numpy()
 
-        out = {
-            "success": True,
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "method": method_l,
-            "params_used": params_used,
-            "bars_used": int(len(df)),
-            "horizon": int(horizon),
-            "last_close": last_close,
-            "sigma_bar_return": sigma_bar,
-            "sigma_annual_return": sigma_ann,
-            "horizon_sigma_return": sigma_h_bar,
-            "horizon_sigma_annual": sigma_h_ann,
-            "as_of": as_of or None,
-            "denoise_used": dn_spec_used,
-        }
-        if method_l == 'ewma':
-            lam_src = str(params_used.get('lambda_source', 'lambda_'))
-            out["params_explained"] = _ewma_param_explanations(lam_src)
-        return out
+            Wlag_full = rmean(RV, w)
+            Mlag_full = rmean(RV, m)
+            y = RV[1:]
+            Wlag = Wlag_full[:-1]
+            Mlag = Mlag_full[:-1]
+            Xd = Dlag
+            mask = np.isfinite(Xd) & np.isfinite(Wlag) & np.isfinite(Mlag) & np.isfinite(y)
+            X = np.vstack([np.ones_like(Xd[mask]), Xd[mask], Wlag[mask], Mlag[mask]]).T
+            yv = y[mask]
+            if X.shape[0] < 20:
+                return {"error": "Insufficient samples after alignment for HAR-RV"}
+            beta, *_ = np.linalg.lstsq(X, yv, rcond=None)
+            D_last = RV[-1]
+            W_last = float(pd.Series(RV).tail(w).mean())
+            M_last = float(pd.Series(RV).tail(m).mean())
+            rv_next = float(beta[0] + beta[1]*D_last + beta[2]*W_last + beta[3]*M_last)
+            rv_next = max(0.0, rv_next)
+            tf_secs = TIMEFRAME_SECONDS.get(timeframe)
+            if not tf_secs:
+                return {"error": unsupported_timeframe_seconds_error(timeframe)}
+            bars_per_day = float(86400.0 / float(tf_secs))
+            sbar = float(math.sqrt(rv_next / bars_per_day))
+            h_days = float(int(horizon)) / bars_per_day
+            hsig = float(math.sqrt(rv_next * max(h_days, 0.0)))
+            bpy = annualization_bars_per_year
+            return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
+                    "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
+                    "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
+                    "params_used": {"rv_timeframe": rv_tf, "window_w": w, "window_m": m,
+                                     "beta": [float(b) for b in beta.tolist()],
+                                     "days": days},
+                    "denoise_used": dn_spec_used}
+        except Exception as ex:
+            return {"error": f"HAR-RV error: {ex}"}
     except Exception as e:
         return {"error": f"Error computing volatility forecast: {str(e)}"}
 

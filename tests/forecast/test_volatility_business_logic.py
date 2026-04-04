@@ -162,6 +162,74 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     assert "Insufficient returns" in out["error"]
 
 
+def test_forecast_volatility_yang_zhang_weights_overnight_variance(monkeypatch):
+    monkeypatch.setattr(vol, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(vol, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(vol, "_ensure_symbol_ready", lambda _symbol: None)
+    monkeypatch.setattr(vol.mt5, "symbol_info", lambda _symbol: SimpleNamespace(visible=True))
+    monkeypatch.setattr(vol.mt5, "symbol_info_tick", lambda _symbol: SimpleNamespace(time=1_700_100_000))
+    monkeypatch.setattr(vol, "_mt5_epoch_to_utc", lambda t: float(t))
+    monkeypatch.setattr(vol.mt5, "last_error", lambda: (0, "ok"))
+
+    rows = [
+        (100.0, 110.0),
+        (130.0, 140.0),
+        (126.0, 128.0),
+        (150.0, 151.0),
+        (149.0, 170.0),
+        (171.0, 172.0),
+        (173.0, 174.0),
+    ]
+    bars = []
+    for idx, (open_, close) in enumerate(rows):
+        bars.append(
+            {
+                "time": float(1_700_000_000 + idx * 3600),
+                "open": open_,
+                "high": max(open_, close),
+                "low": min(open_, close),
+                "close": close,
+                "tick_volume": 100,
+                "spread": 1,
+                "real_volume": 100,
+            }
+        )
+    monkeypatch.setattr(vol, "_mt5_copy_rates_from", lambda *args, **kwargs: bars)
+
+    out = vol.forecast_volatility(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="yang_zhang",
+        params={"window": 4},
+    )
+
+    used_bars = bars[:-1]
+    open_ = np.array([bar["open"] for bar in used_bars], dtype=float)
+    high = np.array([bar["high"] for bar in used_bars], dtype=float)
+    low = np.array([bar["low"] for bar in used_bars], dtype=float)
+    close = np.array([bar["close"] for bar in used_bars], dtype=float)
+    oc = np.log(np.maximum(open_[1:], 1e-12)) - np.log(np.maximum(close[:-1], 1e-12))
+    co = np.log(np.maximum(close[1:], 1e-12)) - np.log(np.maximum(open_[1:], 1e-12))
+    rs = (
+        (np.log(np.maximum(high[1:], 1e-12)) - np.log(np.maximum(close[1:], 1e-12)))
+        * (np.log(np.maximum(high[1:], 1e-12)) - np.log(np.maximum(open_[1:], 1e-12)))
+        + (np.log(np.maximum(low[1:], 1e-12)) - np.log(np.maximum(close[1:], 1e-12)))
+        * (np.log(np.maximum(low[1:], 1e-12)) - np.log(np.maximum(open_[1:], 1e-12)))
+    )
+    window = 4
+    k = 0.34 / (1.34 + (window + 1) / (window - 1))
+    oc_var = float(np.var(oc[-window:], ddof=0))
+    co_var = float(np.var(co[-window:], ddof=0))
+    rs_mean = float(np.mean(rs[-window:]))
+    expected_sigma2 = oc_var + k * co_var + (1 - k) * rs_mean
+    wrong_sigma2 = co_var + k * oc_var + (1 - k) * rs_mean
+
+    assert out["success"] is True
+    assert rs_mean == pytest.approx(0.0)
+    assert expected_sigma2 > wrong_sigma2
+    assert out["sigma_bar_return"] == pytest.approx(math.sqrt(expected_sigma2))
+
+
 def test_forecast_volatility_ensemble_aggregates_component_methods(monkeypatch):
     monkeypatch.setattr(vol, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(vol, "TIMEFRAME_SECONDS", {"H1": 3600})
