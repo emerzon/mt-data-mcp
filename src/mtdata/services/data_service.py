@@ -17,7 +17,7 @@ from ..shared.constants import (
     TIMEFRAME_MAP, TIMEFRAME_SECONDS, FETCH_RETRY_ATTEMPTS, FETCH_RETRY_DELAY,
     SANITY_BARS_TOLERANCE, TI_NAN_WARMUP_FACTOR, TI_NAN_WARMUP_MIN_ADD,
     SIMPLIFY_DEFAULT_METHOD, SIMPLIFY_DEFAULT_MODE, SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT, TICKS_LOOKBACK_DAYS,
-    DEFAULT_ROW_LIMIT
+    DEFAULT_ROW_LIMIT, TIME_DISPLAY_FORMAT
 )
 from ..bootstrap.settings import mt5_config
 from ..core.runtime_metadata import build_runtime_timezone_meta
@@ -701,29 +701,21 @@ def _format_candle_times(
     if 'time' not in headers or len(df) <= 0:
         return
 
-    epochs_list = df['__epoch'].tolist()
+    epochs = pd.to_numeric(df['__epoch'], errors='coerce').astype(float)
     if time_as_epoch:
-        df['time'] = [float(value) for value in epochs_list]
+        df['time'] = epochs
         df.__dict__['_tz_used_name'] = 'UTC'
         return
 
-    fmt = _time_format_from_epochs(epochs_list)
-    fmt = _maybe_strip_year(fmt, epochs_list)
-    fmt = _style_time_format(fmt)
+    fmt = TIME_DISPLAY_FORMAT
     tz_used_name = 'UTC'
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
+        time_values = pd.to_datetime(epochs, unit='s', utc=True)
         if use_client_tz:
             tz_used_name = getattr(client_tz, 'zone', None) or str(client_tz)
-            df['time'] = [
-                datetime.fromtimestamp(value, tz=dt_timezone.utc).astimezone(client_tz).strftime(fmt)
-                for value in epochs_list
-            ]
-        else:
-            df['time'] = [
-                datetime.fromtimestamp(value, tz=dt_timezone.utc).strftime(fmt)
-                for value in epochs_list
-            ]
+            time_values = time_values.dt.tz_convert(client_tz)
+        df['time'] = time_values.dt.strftime(fmt)
     df.__dict__['_tz_used_name'] = tz_used_name
 
 
