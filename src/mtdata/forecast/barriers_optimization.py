@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Any, Dict, Optional, List, Literal, Tuple, Set
 import math
 import traceback
@@ -9,9 +10,7 @@ from .common import fetch_history as _fetch_history, log_returns_from_prices as 
 from ..utils.utils import _parse_bool_like, _UNPARSED_BOOL, parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import (
     get_pip_size as _get_pip_size,
-    resolve_barrier_prices as _resolve_barrier_prices,
     normalize_trade_direction,
-    barrier_prices_are_valid as _barrier_prices_are_valid,
 )
 from .monte_carlo import (
     simulate_gbm_mc as _simulate_gbm_mc, 
@@ -20,7 +19,6 @@ from .monte_carlo import (
     simulate_bootstrap_mc as _simulate_bootstrap_mc,
     simulate_heston_mc as _simulate_heston_mc,
     simulate_jump_diffusion_mc as _simulate_jump_diffusion_mc,
-    gbm_single_barrier_upcross_prob as _gbm_upcross_prob
 )
 
 from .barriers_shared import (
@@ -50,6 +48,508 @@ from .barrier_stats import (
     sensitivity_analysis_single_parameter as _sensitivity_analysis,
     statistical_power_analysis as _power_analysis,
 )
+
+
+_BARRIER_SEARCH_PROFILE_DEFAULTS: Dict[str, Dict[str, Any]] = {
+    "fast": {
+        "n_sims": 1200,
+        "n_trials": 24,
+        "tp_steps": 4,
+        "sl_steps": 4,
+        "ratio_steps": 4,
+        "vol_steps": 4,
+        "refine": False,
+    },
+    "medium": {
+        "n_sims": 4000,
+        "n_trials": 63,
+        "tp_steps": 7,
+        "sl_steps": 9,
+        "ratio_steps": 8,
+        "vol_steps": 7,
+        "refine": False,
+    },
+    "long": {
+        "n_sims": 10000,
+        "n_trials": 600,
+        "tp_steps": 41,
+        "sl_steps": 51,
+        "ratio_steps": 24,
+        "vol_steps": 18,
+        "refine": True,
+    },
+}
+
+
+@dataclass(frozen=True)
+class _BarrierEvaluationContext:
+    mode_val: str
+    dir_long: bool
+    last_price: float
+    pip_size: float
+    rr_min_val: Optional[float]
+    rr_max_val: Optional[float]
+    has_trading_costs: bool
+    ev_deduct_cost: float
+    cost_per_trade: float
+    min_prob_win_val: Optional[float]
+    max_prob_no_hit_val: Optional[float]
+    min_prob_resolve_val: Optional[float]
+    max_median_time_val: Optional[float]
+
+
+@dataclass(frozen=True)
+class _BarrierBridgeInputs:
+    enabled: bool
+    sigma: float
+    log_paths: Optional[np.ndarray]
+    uniform_tp: Optional[np.ndarray]
+    uniform_sl: Optional[np.ndarray]
+
+
+def _coerce_barrier_bool_flag(value: Any, default: bool = False) -> bool:
+    parsed = _parse_bool_like(value)
+    if parsed is _UNPARSED_BOOL:
+        return bool(default)
+    return bool(parsed)
+
+
+def _resolve_barrier_search_profile_config(
+    params_dict: Dict[str, Any],
+    *,
+    search_profile: Any,
+    fast_defaults: Any,
+) -> Tuple[str, Dict[str, Any]]:
+    search_profile_requested = str(
+        params_dict.get("search_profile", params_dict.get("profile", search_profile))
+    ).strip().lower()
+    if search_profile_requested not in _BARRIER_SEARCH_PROFILE_DEFAULTS:
+        search_profile_requested = "medium"
+    fast_defaults_requested = _coerce_barrier_bool_flag(
+        params_dict.get("fast_defaults", fast_defaults),
+        default=bool(fast_defaults),
+    )
+    search_profile_val = "fast" if fast_defaults_requested else search_profile_requested
+    return search_profile_val, dict(_BARRIER_SEARCH_PROFILE_DEFAULTS[search_profile_val])
+
+
+def _resolve_profile_param(
+    params_dict: Dict[str, Any],
+    profile_cfg: Dict[str, Any],
+    *,
+    param_key: str,
+    arg_value: Any,
+) -> Any:
+    if param_key in params_dict:
+        return params_dict[param_key]
+    if arg_value is not None:
+        return arg_value
+    return profile_cfg[param_key]
+
+
+def _candidate_barrier_prices(
+    tp_unit: float,
+    sl_unit: float,
+    *,
+    context: _BarrierEvaluationContext,
+) -> Tuple[float, float]:
+    if context.mode_val == "pct":
+        if context.dir_long:
+            tp_price = context.last_price * (1.0 + tp_unit / 100.0)
+            sl_price = context.last_price * (1.0 - sl_unit / 100.0)
+        else:
+            tp_price = context.last_price * (1.0 - tp_unit / 100.0)
+            sl_price = context.last_price * (1.0 + sl_unit / 100.0)
+    else:
+        if context.dir_long:
+            tp_price = context.last_price + tp_unit * context.pip_size
+            sl_price = context.last_price - sl_unit * context.pip_size
+        else:
+            tp_price = context.last_price - tp_unit * context.pip_size
+            sl_price = context.last_price + sl_unit * context.pip_size
+    return float(tp_price), float(sl_price)
+
+
+def _candidate_barrier_geometry_is_valid(
+    tp_price: float,
+    sl_price: float,
+    *,
+    context: _BarrierEvaluationContext,
+) -> bool:
+    if not np.isfinite(tp_price) or not np.isfinite(sl_price):
+        return False
+    if np.isfinite(context.last_price) and context.last_price > 0.0:
+        if tp_price <= 0.0 or sl_price <= 0.0:
+            return False
+        if context.dir_long:
+            return sl_price < context.last_price < tp_price
+        return tp_price < context.last_price < sl_price
+    return True
+
+
+def _candidate_hit_arrays(
+    eval_paths: np.ndarray,
+    *,
+    tp_trigger: float,
+    sl_trigger: float,
+    context: _BarrierEvaluationContext,
+    bridge_inputs: _BarrierBridgeInputs,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    _, horizon_total = eval_paths.shape
+    if context.dir_long:
+        hit_tp = eval_paths >= tp_trigger
+        hit_sl = eval_paths <= sl_trigger
+    else:
+        hit_tp = eval_paths <= tp_trigger
+        hit_sl = eval_paths >= sl_trigger
+    if (
+        bridge_inputs.enabled
+        and bridge_inputs.log_paths is not None
+        and bridge_inputs.uniform_tp is not None
+        and bridge_inputs.uniform_sl is not None
+    ):
+        tp_dir = "up" if context.dir_long else "down"
+        sl_dir = "down" if context.dir_long else "up"
+        tp_bridge = _brownian_bridge_hits(
+            bridge_inputs.log_paths,
+            float(np.log(max(1e-12, tp_trigger))),
+            bridge_inputs.sigma,
+            direction=tp_dir,
+            uniform=bridge_inputs.uniform_tp,
+        )
+        sl_bridge = _brownian_bridge_hits(
+            bridge_inputs.log_paths,
+            float(np.log(max(1e-12, sl_trigger))),
+            bridge_inputs.sigma,
+            direction=sl_dir,
+            uniform=bridge_inputs.uniform_sl,
+        )
+        hit_tp = hit_tp | tp_bridge
+        hit_sl = hit_sl | sl_bridge
+    any_tp = hit_tp.any(axis=1)
+    any_sl = hit_sl.any(axis=1)
+    first_tp = hit_tp.argmax(axis=1)
+    first_sl = hit_sl.argmax(axis=1)
+    first_tp[~any_tp] = horizon_total
+    first_sl[~any_sl] = horizon_total
+    wins = first_tp < first_sl
+    losses = first_sl < first_tp
+    ties = (first_tp == first_sl) & (first_tp < horizon_total)
+    return first_tp, first_sl, wins, losses, ties
+
+
+def _barrier_return_fractions(
+    net_reward: float,
+    net_risk: float,
+    *,
+    tp_price: float,
+    sl_price: float,
+    context: _BarrierEvaluationContext,
+) -> Tuple[float, float]:
+    if context.mode_val == "pct":
+        reward_frac = net_reward / 100.0
+        risk_frac = net_risk / 100.0
+    elif context.last_price > 0 and context.pip_size:
+        unit_to_return = float(context.pip_size) / float(context.last_price)
+        reward_frac = net_reward * unit_to_return
+        risk_frac = net_risk * unit_to_return
+    elif context.last_price > 0:
+        reward_frac = abs(tp_price - context.last_price) / context.last_price
+        risk_frac = abs(sl_price - context.last_price) / context.last_price
+    else:
+        reward_frac = 0.0
+        risk_frac = 0.0
+    reward_frac = max(reward_frac, -0.999)
+    if risk_frac >= 1.0:
+        risk_frac = 0.999
+    return reward_frac, risk_frac
+
+
+def _evaluate_barrier_candidate(
+    tp_unit: float,
+    sl_unit: float,
+    eval_paths: np.ndarray,
+    *,
+    context: _BarrierEvaluationContext,
+    bridge_inputs: _BarrierBridgeInputs,
+) -> Tuple[Optional[Dict[str, Any]], bool]:
+    sims_total, horizon_total = eval_paths.shape
+    tp_price, sl_price = _candidate_barrier_prices(tp_unit, sl_unit, context=context)
+    if not _candidate_barrier_geometry_is_valid(tp_price, sl_price, context=context):
+        return None, True
+
+    first_tp, first_sl, wins, losses, ties = _candidate_hit_arrays(
+        eval_paths,
+        tp_trigger=tp_price,
+        sl_trigger=sl_price,
+        context=context,
+        bridge_inputs=bridge_inputs,
+    )
+    n_wins = int(wins.sum())
+    n_losses = int(losses.sum())
+    n_ties = int(ties.sum())
+
+    prob_win = n_wins / sims_total
+    prob_loss = n_losses / sims_total
+    prob_tie = n_ties / sims_total
+    prob_neutral = max(0.0, 1.0 - prob_win - prob_loss - prob_tie)
+    prob_resolve = 1.0 - prob_neutral
+    prob_tp_first = (n_wins + 0.5 * n_ties) / sims_total
+    prob_sl_first = (n_losses + 0.5 * n_ties) / sims_total
+    effective_prob_win = prob_tp_first
+    effective_prob_loss = prob_sl_first
+
+    risk = sl_unit
+    reward = tp_unit
+    rr = reward / risk if risk > 0 else 0
+    if context.rr_min_val and rr < context.rr_min_val:
+        return None, False
+    if context.rr_max_val and rr > context.rr_max_val:
+        return None, False
+
+    net_reward = reward - context.ev_deduct_cost if context.has_trading_costs else reward
+    net_risk = risk + context.ev_deduct_cost if context.has_trading_costs else risk
+    net_rr = net_reward / net_risk if net_risk > 0 else 0.0
+
+    ev_gross = effective_prob_win * reward - effective_prob_loss * risk
+    ev_val = (
+        effective_prob_win * net_reward - effective_prob_loss * net_risk
+        if context.has_trading_costs
+        else ev_gross
+    )
+    edge = prob_win - prob_loss
+    win_lo, win_hi = _binomial_wilson_95(prob_win, int(sims_total))
+    loss_lo, loss_hi = _binomial_wilson_95(prob_loss, int(sims_total))
+    tie_lo, tie_hi = _binomial_wilson_95(prob_tie, int(sims_total))
+    no_hit_lo, no_hit_hi = _binomial_wilson_95(prob_neutral, int(sims_total))
+
+    kelly_val = 0.0
+    if net_rr > 0:
+        kelly_val = effective_prob_win - (effective_prob_loss / net_rr)
+
+    active = effective_prob_win + effective_prob_loss
+    if active > 0:
+        prob_win_c = effective_prob_win / active
+        prob_loss_c = effective_prob_loss / active
+        ev_cond = prob_win_c * net_reward - prob_loss_c * net_risk
+        kelly_cond = prob_win_c - (prob_loss_c / net_rr if net_rr > 0 else 0.0)
+    else:
+        ev_cond = 0.0
+        kelly_cond = 0.0
+
+    resolve_mask = (first_tp < horizon_total) | (first_sl < horizon_total)
+    time_in_trade = np.minimum(np.minimum(first_tp, first_sl) + 1, horizon_total)
+    t_res_mean_all = float(np.mean(time_in_trade)) if time_in_trade.size else None
+    t_res_med_all = float(np.median(time_in_trade)) if time_in_trade.size else None
+    if np.any(resolve_mask):
+        resolve_times = np.minimum(first_tp, first_sl)[resolve_mask] + 1
+        t_res_mean = float(np.mean(resolve_times)) if resolve_times.size else None
+        t_res_med = float(np.median(resolve_times)) if resolve_times.size else None
+    else:
+        t_res_mean = None
+        t_res_med = None
+
+    ev_per_bar = 0.0
+    if t_res_mean_all and t_res_mean_all > 0:
+        ev_per_bar = ev_val / t_res_mean_all
+
+    profit_factor = 0.0
+    denom = effective_prob_loss * net_risk
+    if denom > 0:
+        profit_factor = (effective_prob_win * net_reward) / denom
+    elif effective_prob_win > 0 and net_reward > 0:
+        profit_factor = 1e9
+
+    reward_frac, risk_frac = _barrier_return_fractions(
+        net_reward,
+        net_risk,
+        tp_price=tp_price,
+        sl_price=sl_price,
+        context=context,
+    )
+    utility_val = (
+        (effective_prob_win * math.log1p(reward_frac))
+        + (effective_prob_loss * math.log1p(-risk_frac))
+    )
+
+    if context.min_prob_win_val is not None and effective_prob_win < context.min_prob_win_val:
+        return None, False
+    if context.max_prob_no_hit_val is not None and prob_neutral > context.max_prob_no_hit_val:
+        return None, False
+    if context.min_prob_resolve_val is not None and prob_resolve < context.min_prob_resolve_val:
+        return None, False
+    if context.max_median_time_val is not None:
+        if t_res_med is None or t_res_med > context.max_median_time_val:
+            return None, False
+
+    t_hit_tp = first_tp[wins | ties] + 1
+    t_hit_sl = first_sl[losses | ties] + 1
+    t_tp_med = float(np.median(t_hit_tp)) if t_hit_tp.size else None
+    t_sl_med = float(np.median(t_hit_sl)) if t_hit_sl.size else None
+
+    result = {
+        "tp": tp_unit,
+        "sl": sl_unit,
+        "rr": rr,
+        "tp_price": float(tp_price),
+        "sl_price": float(sl_price),
+        "prob_win": prob_win,
+        "prob_loss": prob_loss,
+        "prob_tp_first": prob_tp_first,
+        "prob_sl_first": prob_sl_first,
+        "prob_no_hit": prob_neutral,
+        "prob_tie": prob_tie,
+        "prob_win_se": _binomial_se(prob_win, int(sims_total)),
+        "prob_loss_se": _binomial_se(prob_loss, int(sims_total)),
+        "prob_tie_se": _binomial_se(prob_tie, int(sims_total)),
+        "prob_no_hit_se": _binomial_se(prob_neutral, int(sims_total)),
+        "prob_win_ci95": {"low": float(win_lo), "high": float(win_hi)},
+        "prob_loss_ci95": {"low": float(loss_lo), "high": float(loss_hi)},
+        "prob_tie_ci95": {"low": float(tie_lo), "high": float(tie_hi)},
+        "prob_no_hit_ci95": {"low": float(no_hit_lo), "high": float(no_hit_hi)},
+        "prob_resolve": prob_resolve,
+        "ev": ev_val,
+        "ev_gross": ev_gross if context.has_trading_costs else None,
+        "ev_net": ev_val if context.has_trading_costs else None,
+        "ev_cond": ev_cond,
+        "edge": edge,
+        "kelly": kelly_val,
+        "kelly_cond": kelly_cond,
+        "ev_per_bar": ev_per_bar,
+        "profit_factor": profit_factor,
+        "utility": utility_val,
+        "t_hit_tp_median": t_tp_med,
+        "t_hit_sl_median": t_sl_med,
+        "t_hit_tp_median_cond": t_tp_med,
+        "t_hit_sl_median_cond": t_sl_med,
+        "t_hit_resolve_mean": t_res_mean,
+        "t_hit_resolve_median": t_res_med,
+        "t_hit_resolve_mean_all": t_res_mean_all,
+        "t_hit_resolve_median_all": t_res_med_all,
+    }
+    _annotate_candidate_metrics(result, cost_per_trade=context.cost_per_trade)
+    return result, False
+
+
+def _evaluate_barrier_bucket(
+    bucket: List[Tuple[float, float]],
+    eval_paths: np.ndarray,
+    *,
+    context: _BarrierEvaluationContext,
+    bridge_inputs: _BarrierBridgeInputs,
+    count_invalid: bool = True,
+) -> Tuple[List[Dict[str, Any]], int]:
+    rows: List[Dict[str, Any]] = []
+    invalid_candidates = 0
+    for tp_unit, sl_unit in bucket:
+        row, is_invalid = _evaluate_barrier_candidate(
+            tp_unit,
+            sl_unit,
+            eval_paths,
+            context=context,
+            bridge_inputs=bridge_inputs,
+        )
+        if row is not None:
+            rows.append(row)
+        elif count_invalid and is_invalid:
+            invalid_candidates += 1
+    return rows, invalid_candidates
+
+
+def _dedupe_ranked_barrier_candidates(
+    ranked_candidates: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    deduped_ranked: List[Dict[str, Any]] = []
+    seen_ranked: Set[Tuple[Any, ...]] = set()
+    for row in ranked_candidates:
+        if not isinstance(row, dict):
+            continue
+
+        def _rounded(value: Any, decimals: int = 6) -> Any:
+            try:
+                if value is None:
+                    return None
+                num = float(value)
+                if not np.isfinite(num):
+                    return str(value)
+                return round(num, decimals)
+            except Exception:
+                return value
+
+        row_key = (
+            _rounded(row.get("tp"), 6),
+            _rounded(row.get("sl"), 6),
+            _rounded(row.get("tp_price"), 6),
+            _rounded(row.get("sl_price"), 6),
+            _rounded(row.get("ev"), 6),
+            _rounded(row.get("edge"), 6),
+            _rounded(row.get("kelly"), 6),
+            _rounded(row.get("prob_tp_first"), 6),
+            _rounded(row.get("prob_sl_first"), 6),
+            _rounded(row.get("prob_no_hit"), 6),
+        )
+        if row_key in seen_ranked:
+            continue
+        seen_ranked.add(row_key)
+        deduped_ranked.append(row)
+    return deduped_ranked
+
+
+def _select_barrier_candidate_views(
+    ranked_candidates: List[Dict[str, Any]],
+    *,
+    cost_per_trade: float,
+    viable_only_val: bool,
+    concise_val: bool,
+    top_k_val: Optional[int],
+    return_grid: bool,
+    output_mode: str,
+) -> Dict[str, Any]:
+    ranked_candidates = _dedupe_ranked_barrier_candidates(ranked_candidates)
+    viable_candidates = [
+        row
+        for row in ranked_candidates
+        if _candidate_is_viable(row, cost_per_trade=cost_per_trade)
+    ]
+
+    candidates = viable_candidates if viable_only_val else ranked_candidates
+    if top_k_val is not None:
+        candidates = candidates[:top_k_val]
+    elif concise_val and not viable_candidates and len(candidates) > 5:
+        candidates = candidates[:5]
+
+    grid_out = candidates if (return_grid and not concise_val) else None
+    if output_mode == "summary" and grid_out is not None:
+        limit = top_k_val or min(10, len(grid_out))
+        grid_out = grid_out[:limit]
+
+    results_limit = min(10, len(candidates))
+    if output_mode == "summary":
+        if top_k_val is not None:
+            results_limit = top_k_val
+        elif concise_val:
+            results_limit = min(5, len(candidates))
+        else:
+            results_limit = min(10, len(candidates))
+    summary_results = candidates[:results_limit]
+
+    viability_filtered_out = bool(viable_only_val and not viable_candidates and ranked_candidates)
+    warning = None
+    if not candidates:
+        if viability_filtered_out:
+            warning = "No viable TP/SL candidates satisfied the viability filter."
+        else:
+            warning = "No valid TP/SL candidates after applying grid generation and constraints."
+
+    return {
+        "ranked_candidates": ranked_candidates,
+        "viable_candidates": viable_candidates,
+        "candidates": candidates,
+        "grid_out": grid_out,
+        "summary_results": summary_results,
+        "viability_filtered_out": viability_filtered_out,
+        "warning": warning,
+    }
 
 
 def forecast_barrier_optimize(
@@ -170,62 +670,20 @@ def forecast_barrier_optimize(
         if output_mode not in {'full', 'summary'}:
             output_mode = 'summary'
 
-        def _coerce_bool_flag(value: Any, default: bool = False) -> bool:
-            parsed = _parse_bool_like(value)
-            if parsed is _UNPARSED_BOOL:
-                return bool(default)
-            return bool(parsed)
-
-        search_profile_requested = str(
-            params_dict.get('search_profile', params_dict.get('profile', search_profile))
-        ).strip().lower()
-        if search_profile_requested not in {'fast', 'medium', 'long'}:
-            search_profile_requested = 'medium'
-        fast_defaults_requested = _coerce_bool_flag(
-            params_dict.get('fast_defaults', fast_defaults),
-            default=bool(fast_defaults),
+        search_profile_val, profile_cfg = _resolve_barrier_search_profile_config(
+            params_dict,
+            search_profile=search_profile,
+            fast_defaults=fast_defaults,
         )
-        search_profile_val = 'fast' if fast_defaults_requested else search_profile_requested
-        profile_defaults: Dict[str, Dict[str, Any]] = {
-            'fast': {
-                'n_sims': 1200,
-                'n_trials': 24,
-                'tp_steps': 4,
-                'sl_steps': 4,
-                'ratio_steps': 4,
-                'vol_steps': 4,
-                'refine': False,
-            },
-            'medium': {
-                'n_sims': 4000,
-                'n_trials': 63,
-                'tp_steps': 7,
-                'sl_steps': 9,
-                'ratio_steps': 8,
-                'vol_steps': 7,
-                'refine': False,
-            },
-            'long': {
-                'n_sims': 10000,
-                'n_trials': 600,
-                'tp_steps': 41,
-                'sl_steps': 51,
-                'ratio_steps': 24,
-                'vol_steps': 18,
-                'refine': True,
-            },
-        }
-        profile_cfg = profile_defaults[search_profile_val]
 
-        def _profile_default(param_key: str, arg_value: Any, medium_default: Any, profile_key: str) -> Any:
-            if param_key in params_dict:
-                return params_dict[param_key]
-            if arg_value is not None:
-                return arg_value
-            return profile_cfg[profile_key]
-
-        viable_only_val = _coerce_bool_flag(params_dict.get('viable_only', viable_only), default=bool(viable_only))
-        concise_val = _coerce_bool_flag(params_dict.get('concise', concise), default=bool(concise))
+        viable_only_val = _coerce_barrier_bool_flag(
+            params_dict.get('viable_only', viable_only),
+            default=bool(viable_only),
+        )
+        concise_val = _coerce_barrier_bool_flag(
+            params_dict.get('concise', concise),
+            default=bool(concise),
+        )
         if concise_val:
             output_mode = 'summary'
         objective_val = str(objective).lower()
@@ -266,7 +724,7 @@ def forecast_barrier_optimize(
         optuna_pruner_val = str(params_dict.get('pruner', 'median')).strip().lower()
         if optuna_pruner_val not in {'median', 'none', 'hyperband', 'percentile'}:
             optuna_pruner_val = 'median'
-        optuna_pareto_val = _coerce_bool_flag(params_dict.get('optuna_pareto', False), default=False)
+        optuna_pareto_val = _coerce_barrier_bool_flag(params_dict.get('optuna_pareto', False), default=False)
         try:
             pareto_limit_val = int(params_dict.get('pareto_limit', 20))
         except Exception:
@@ -314,14 +772,26 @@ def forecast_barrier_optimize(
         preset_candidate = params_dict.get('grid_preset', params_dict.get('preset', preset))
         preset_val = str(preset_candidate).lower() if isinstance(preset_candidate, str) and preset_candidate else None
 
-        refine_default = _profile_default('refine', refine, None, 'refine')
+        refine_default = _resolve_profile_param(
+            params_dict,
+            profile_cfg,
+            param_key='refine',
+            arg_value=refine,
+        )
         refine_flag = bool(params_dict.get('refine', refine_default))
         refine_radius_val = max(0.0, float(params_dict.get('refine_radius', refine_radius)))
         refine_steps_val = max(2, int(params_dict.get('refine_steps', refine_steps)))
 
         ratio_min_val = float(params_dict.get('ratio_min', ratio_min))
         ratio_max_val = float(params_dict.get('ratio_max', ratio_max))
-        ratio_steps_default = int(_profile_default('ratio_steps', ratio_steps, None, 'ratio_steps'))
+        ratio_steps_default = int(
+            _resolve_profile_param(
+                params_dict,
+                profile_cfg,
+                param_key='ratio_steps',
+                arg_value=ratio_steps,
+            )
+        )
         ratio_steps_val = max(2, int(params_dict.get('ratio_steps', ratio_steps_default)))
         if ratio_min_val <= 0:
             ratio_min_val = ratio_min
@@ -331,7 +801,14 @@ def forecast_barrier_optimize(
         vol_window_val = int(params_dict.get('vol_window', vol_window))
         vol_min_mult_val = float(params_dict.get('vol_min_mult', vol_min_mult))
         vol_max_mult_val = float(params_dict.get('vol_max_mult', vol_max_mult))
-        vol_steps_default = int(_profile_default('vol_steps', vol_steps, None, 'vol_steps'))
+        vol_steps_default = int(
+            _resolve_profile_param(
+                params_dict,
+                profile_cfg,
+                param_key='vol_steps',
+                arg_value=vol_steps,
+            )
+        )
         vol_steps_val = max(2, int(params_dict.get('vol_steps', vol_steps_default)))
         vol_sl_extra_val = float(params_dict.get('vol_sl_extra', vol_sl_extra))
         vol_sl_multiplier_val = float(params_dict.get('vol_sl_multiplier', vol_sl_extra_val))
@@ -398,14 +875,28 @@ def forecast_barrier_optimize(
 
         tp_min_val = float(params_dict.get('tp_min', tp_min))
         tp_max_val = float(params_dict.get('tp_max', tp_max))
-        tp_steps_default = int(_profile_default('tp_steps', tp_steps, None, 'tp_steps'))
+        tp_steps_default = int(
+            _resolve_profile_param(
+                params_dict,
+                profile_cfg,
+                param_key='tp_steps',
+                arg_value=tp_steps,
+            )
+        )
         tp_steps_val = max(1, int(params_dict.get('tp_steps', tp_steps_default)))
         sl_min_val = float(params_dict.get('sl_min', sl_min))
         sl_max_val = float(params_dict.get('sl_max', sl_max))
-        sl_steps_default = int(_profile_default('sl_steps', sl_steps, None, 'sl_steps'))
+        sl_steps_default = int(
+            _resolve_profile_param(
+                params_dict,
+                profile_cfg,
+                param_key='sl_steps',
+                arg_value=sl_steps,
+            )
+        )
         sl_steps_val = max(1, int(params_dict.get('sl_steps', sl_steps_default)))
         
-        statistical_robustness_requested = _coerce_bool_flag(
+        statistical_robustness_requested = _coerce_barrier_bool_flag(
             params_dict.get('statistical_robustness', statistical_robustness),
             default=bool(statistical_robustness),
         )
@@ -413,12 +904,12 @@ def forecast_barrier_optimize(
         if not 0 < target_ci_width_val < 1:
             target_ci_width_val = 0.05
         n_seeds_stability_val = max(2, int(params_dict.get('n_seeds_stability', n_seeds_stability)))
-        enable_bootstrap_val = _coerce_bool_flag(
+        enable_bootstrap_val = _coerce_barrier_bool_flag(
             params_dict.get('enable_bootstrap', enable_bootstrap),
             default=bool(enable_bootstrap),
         )
         n_bootstrap_val = max(50, int(params_dict.get('n_bootstrap', n_bootstrap)))
-        enable_convergence_check_val = _coerce_bool_flag(
+        enable_convergence_check_val = _coerce_barrier_bool_flag(
             params_dict.get('enable_convergence_check', enable_convergence_check),
             default=bool(enable_convergence_check),
         )
@@ -426,14 +917,14 @@ def forecast_barrier_optimize(
         convergence_threshold_val = float(params_dict.get('convergence_threshold', convergence_threshold))
         if convergence_threshold_val <= 0:
             convergence_threshold_val = 0.01
-        enable_power_analysis_val = _coerce_bool_flag(
+        enable_power_analysis_val = _coerce_barrier_bool_flag(
             params_dict.get('enable_power_analysis', enable_power_analysis),
             default=bool(enable_power_analysis),
         )
         power_effect_size_val = float(params_dict.get('power_effect_size', power_effect_size))
         if power_effect_size_val <= 0:
             power_effect_size_val = 0.05
-        enable_sensitivity_analysis_val = _coerce_bool_flag(
+        enable_sensitivity_analysis_val = _coerce_barrier_bool_flag(
             params_dict.get('enable_sensitivity_analysis', enable_sensitivity_analysis),
             default=bool(enable_sensitivity_analysis),
         )
@@ -1227,6 +1718,21 @@ def forecast_barrier_optimize(
         optuna_meta: Optional[Dict[str, Any]] = None
         dir_long = direction_norm == 'long'
         invalid_barrier_candidates = 0
+        eval_context = _BarrierEvaluationContext(
+            mode_val=mode_val,
+            dir_long=dir_long,
+            last_price=float(last_price),
+            pip_size=float(pip_size),
+            rr_min_val=rr_min_val,
+            rr_max_val=rr_max_val,
+            has_trading_costs=has_trading_costs,
+            ev_deduct_cost=float(ev_deduct_cost),
+            cost_per_trade=float(cost_per_trade),
+            min_prob_win_val=min_prob_win_val,
+            max_prob_no_hit_val=max_prob_no_hit_val,
+            min_prob_resolve_val=min_prob_resolve_val,
+            max_median_time_val=max_median_time_val,
+        )
 
         def _evaluate(
             bucket: List[Tuple[float, float]],
@@ -1238,253 +1744,22 @@ def forecast_barrier_optimize(
             eval_bb_uniform_sl: Optional[np.ndarray],
             count_invalid: bool = True,
         ) -> List[Dict[str, Any]]:
-            out: List[Dict[str, Any]] = []
             nonlocal invalid_barrier_candidates
-            sims_total, horizon_total = eval_paths.shape
-            for tp_unit, sl_unit in bucket:
-                # Convert to price levels
-                if mode_val == 'pct':
-                    if dir_long:
-                        tp_p = last_price * (1.0 + tp_unit/100.0)
-                        sl_p = last_price * (1.0 - sl_unit/100.0)
-                    else:
-                        tp_p = last_price * (1.0 - tp_unit/100.0)
-                        sl_p = last_price * (1.0 + sl_unit/100.0)
-                else: # pips
-                    if dir_long:
-                        tp_p = last_price + tp_unit * pip_size
-                        sl_p = last_price - sl_unit * pip_size
-                    else:
-                        tp_p = last_price - tp_unit * pip_size
-                        sl_p = last_price + sl_unit * pip_size
-
-                # Hard sanity check for trade geometry and price validity.
-                if not np.isfinite(tp_p) or not np.isfinite(sl_p):
-                    if count_invalid:
-                        invalid_barrier_candidates += 1
-                    continue
-                if np.isfinite(last_price) and last_price > 0.0:
-                    if tp_p <= 0.0 or sl_p <= 0.0:
-                        if count_invalid:
-                            invalid_barrier_candidates += 1
-                        continue
-                    if dir_long:
-                        if not (sl_p < last_price < tp_p):
-                            if count_invalid:
-                                invalid_barrier_candidates += 1
-                            continue
-                    else:
-                        if not (tp_p < last_price < sl_p):
-                            if count_invalid:
-                                invalid_barrier_candidates += 1
-                            continue
-
-                tp_trigger = tp_p
-                sl_trigger = sl_p
-
-                # Vectorized hit detection
-                if dir_long:
-                    hit_tp = (eval_paths >= tp_trigger)
-                    hit_sl = (eval_paths <= sl_trigger)
-                else:
-                    hit_tp = (eval_paths <= tp_trigger)
-                    hit_sl = (eval_paths >= sl_trigger)
-                if (
-                    eval_bb_enabled
-                    and eval_bb_log_paths is not None
-                    and eval_bb_uniform_tp is not None
-                    and eval_bb_uniform_sl is not None
-                ):
-                    tp_dir = "up" if dir_long else "down"
-                    sl_dir = "down" if dir_long else "up"
-                    tp_bridge = _brownian_bridge_hits(
-                        eval_bb_log_paths,
-                        float(np.log(max(1e-12, tp_trigger))),
-                        eval_bb_sigma,
-                        direction=tp_dir,
-                        uniform=eval_bb_uniform_tp,
-                    )
-                    sl_bridge = _brownian_bridge_hits(
-                        eval_bb_log_paths,
-                        float(np.log(max(1e-12, sl_trigger))),
-                        eval_bb_sigma,
-                        direction=sl_dir,
-                        uniform=eval_bb_uniform_sl,
-                    )
-                    hit_tp = hit_tp | tp_bridge
-                    hit_sl = hit_sl | sl_bridge
-
-                any_tp = hit_tp.any(axis=1)
-                any_sl = hit_sl.any(axis=1)
-                
-                first_tp = hit_tp.argmax(axis=1)
-                first_sl = hit_sl.argmax(axis=1)
-
-                first_tp[~any_tp] = horizon_total
-                first_sl[~any_sl] = horizon_total
-
-                wins = (first_tp < first_sl)
-                losses = (first_sl < first_tp)
-                ties = (first_tp == first_sl) & (first_tp < horizon_total)
-
-                n_wins = wins.sum()
-                n_losses = losses.sum()
-                n_ties = ties.sum()
-
-                prob_win = n_wins / sims_total
-                prob_loss = n_losses / sims_total
-                prob_tie = n_ties / sims_total
-                prob_neutral = max(0.0, 1.0 - prob_win - prob_loss - prob_tie)
-                prob_resolve = 1.0 - prob_neutral
-                # Keep strict win/loss metrics and add first-hit probabilities with
-                # 50/50 tie splitting to match forecast_barrier_hit_probabilities.
-                prob_tp_first = (n_wins + 0.5 * n_ties) / sims_total
-                prob_sl_first = (n_losses + 0.5 * n_ties) / sims_total
-                effective_prob_win = prob_tp_first
-                effective_prob_loss = prob_sl_first
-
-                risk = sl_unit
-                reward = tp_unit
-                rr = reward / risk if risk > 0 else 0
-
-                if rr_min_val and rr < rr_min_val:
-                    continue
-                if rr_max_val and rr > rr_max_val:
-                    continue
-
-                net_reward = reward - ev_deduct_cost if has_trading_costs else reward
-                net_risk = risk + ev_deduct_cost if has_trading_costs else risk
-                net_rr = net_reward / net_risk if net_risk > 0 else 0.0
-
-                # Resolve tie paths by splitting expected outcome 50/50.
-                ev_gross = effective_prob_win * reward - effective_prob_loss * risk
-                if has_trading_costs:
-                    ev_val = effective_prob_win * net_reward - effective_prob_loss * net_risk
-                else:
-                    ev_val = ev_gross
-                edge = prob_win - prob_loss
-                win_lo, win_hi = _binomial_wilson_95(prob_win, int(sims_total))
-                loss_lo, loss_hi = _binomial_wilson_95(prob_loss, int(sims_total))
-                tie_lo, tie_hi = _binomial_wilson_95(prob_tie, int(sims_total))
-                no_hit_lo, no_hit_hi = _binomial_wilson_95(prob_neutral, int(sims_total))
-
-                kelly_val = 0.0
-                if net_rr > 0:
-                    kelly_val = effective_prob_win - (effective_prob_loss / net_rr)
-
-                # Conditional metrics (ignore neutral paths)
-                active = effective_prob_win + effective_prob_loss
-                if active > 0:
-                    prob_win_c = effective_prob_win / active
-                    prob_loss_c = effective_prob_loss / active
-                    ev_cond = prob_win_c * net_reward - prob_loss_c * net_risk
-                    kelly_cond = prob_win_c - (prob_loss_c / net_rr if net_rr > 0 else 0.0)
-                else:
-                    ev_cond = 0.0
-                    kelly_cond = 0.0
-
-                resolve_mask = (first_tp < horizon_total) | (first_sl < horizon_total)
-                time_in_trade = np.minimum(np.minimum(first_tp, first_sl) + 1, horizon_total)
-                t_res_mean_all = float(np.mean(time_in_trade)) if time_in_trade.size else None
-                t_res_med_all = float(np.median(time_in_trade)) if time_in_trade.size else None
-                if np.any(resolve_mask):
-                    resolve_times = np.minimum(first_tp, first_sl)[resolve_mask] + 1
-                    t_res_mean = float(np.mean(resolve_times)) if resolve_times.size else None
-                    t_res_med = float(np.median(resolve_times)) if resolve_times.size else None
-                else:
-                    t_res_mean = None
-                    t_res_med = None
-
-                ev_per_bar = 0.0
-                if t_res_mean_all and t_res_mean_all > 0:
-                    ev_per_bar = ev_val / t_res_mean_all
-
-                profit_factor = 0.0
-                denom = effective_prob_loss * net_risk
-                if denom > 0:
-                    profit_factor = (effective_prob_win * net_reward) / denom
-                elif effective_prob_win > 0 and net_reward > 0:
-                    profit_factor = 1e9
-
-                reward_frac = 0.0
-                risk_frac = 0.0
-                if mode_val == 'pct':
-                    reward_frac = net_reward / 100.0
-                    risk_frac = net_risk / 100.0
-                elif last_price > 0 and pip_size:
-                    unit_to_return = float(pip_size) / float(last_price)
-                    reward_frac = net_reward * unit_to_return
-                    risk_frac = net_risk * unit_to_return
-                elif last_price > 0:
-                    reward_frac = abs(tp_p - last_price) / last_price
-                    risk_frac = abs(sl_p - last_price) / last_price
-                reward_frac = max(reward_frac, -0.999)
-                if risk_frac >= 1.0:
-                    risk_frac = 0.999
-                utility_val = (
-                    (effective_prob_win * math.log1p(reward_frac))
-                    + (effective_prob_loss * math.log1p(-risk_frac))
-                )
-
-                if min_prob_win_val is not None and effective_prob_win < min_prob_win_val:
-                    continue
-                if max_prob_no_hit_val is not None and prob_neutral > max_prob_no_hit_val:
-                    continue
-                if min_prob_resolve_val is not None and prob_resolve < min_prob_resolve_val:
-                    continue
-                if max_median_time_val is not None:
-                    if t_res_med is None or t_res_med > max_median_time_val:
-                        continue
-
-                # Hit time medians (bars, 1-based) for transparency
-                t_hit_tp = (first_tp[wins | ties] + 1)
-                t_hit_sl = (first_sl[losses | ties] + 1)
-                t_tp_med = float(np.median(t_hit_tp)) if t_hit_tp.size else None
-                t_sl_med = float(np.median(t_hit_sl)) if t_hit_sl.size else None
-
-                res = {
-                    'tp': tp_unit,
-                    'sl': sl_unit,
-                    'rr': rr,
-                    'tp_price': float(tp_p),
-                    'sl_price': float(sl_p),
-                    'prob_win': prob_win,
-                    'prob_loss': prob_loss,
-                    'prob_tp_first': prob_tp_first,
-                    'prob_sl_first': prob_sl_first,
-                    'prob_no_hit': prob_neutral,
-                    'prob_tie': prob_tie,
-                    'prob_win_se': _binomial_se(prob_win, int(sims_total)),
-                    'prob_loss_se': _binomial_se(prob_loss, int(sims_total)),
-                    'prob_tie_se': _binomial_se(prob_tie, int(sims_total)),
-                    'prob_no_hit_se': _binomial_se(prob_neutral, int(sims_total)),
-                    'prob_win_ci95': {'low': float(win_lo), 'high': float(win_hi)},
-                    'prob_loss_ci95': {'low': float(loss_lo), 'high': float(loss_hi)},
-                    'prob_tie_ci95': {'low': float(tie_lo), 'high': float(tie_hi)},
-                    'prob_no_hit_ci95': {'low': float(no_hit_lo), 'high': float(no_hit_hi)},
-                    'prob_resolve': prob_resolve,
-                    'ev': ev_val,
-                    'ev_gross': ev_gross if has_trading_costs else None,
-                    'ev_net': ev_val if has_trading_costs else None,
-                    'ev_cond': ev_cond,
-                    'edge': edge,
-                    'kelly': kelly_val,
-                    'kelly_cond': kelly_cond,
-                    'ev_per_bar': ev_per_bar,
-                    'profit_factor': profit_factor,
-                    'utility': utility_val,
-                    't_hit_tp_median': t_tp_med,
-                    't_hit_sl_median': t_sl_med,
-                    't_hit_tp_median_cond': t_tp_med,
-                    't_hit_sl_median_cond': t_sl_med,
-                    't_hit_resolve_mean': t_res_mean,
-                    't_hit_resolve_median': t_res_med,
-                    't_hit_resolve_mean_all': t_res_mean_all,
-                    't_hit_resolve_median_all': t_res_med_all,
-                }
-                _annotate_candidate_metrics(res, cost_per_trade=cost_per_trade)
-                out.append(res)
-            return out
+            rows, invalid_count = _evaluate_barrier_bucket(
+                bucket,
+                eval_paths,
+                context=eval_context,
+                bridge_inputs=_BarrierBridgeInputs(
+                    enabled=eval_bb_enabled,
+                    sigma=float(eval_bb_sigma),
+                    log_paths=eval_bb_log_paths,
+                    uniform_tp=eval_bb_uniform_tp,
+                    uniform_sl=eval_bb_uniform_sl,
+                ),
+                count_invalid=count_invalid,
+            )
+            invalid_barrier_candidates += invalid_count
+            return rows
 
         def _objective_convergence_inputs(
             eval_paths: np.ndarray,
@@ -1906,77 +2181,23 @@ def forecast_barrier_optimize(
             )
             _sort_candidate_results(results, objective_val)
 
-        ranked_candidates = list(results)
-        deduped_ranked: List[Dict[str, Any]] = []
-        seen_ranked: Set[Tuple[Any, ...]] = set()
-        for row in ranked_candidates:
-            if not isinstance(row, dict):
-                continue
-            def _r(value: Any, decimals: int = 6) -> Any:
-                try:
-                    if value is None:
-                        return None
-                    num = float(value)
-                    if not np.isfinite(num):
-                        return str(value)
-                    return round(num, decimals)
-                except Exception:
-                    return value
-            row_key = (
-                _r(row.get('tp'), 6),
-                _r(row.get('sl'), 6),
-                _r(row.get('tp_price'), 6),
-                _r(row.get('sl_price'), 6),
-                _r(row.get('ev'), 6),
-                _r(row.get('edge'), 6),
-                _r(row.get('kelly'), 6),
-                _r(row.get('prob_tp_first'), 6),
-                _r(row.get('prob_sl_first'), 6),
-                _r(row.get('prob_no_hit'), 6),
-            )
-            if row_key in seen_ranked:
-                continue
-            seen_ranked.add(row_key)
-            deduped_ranked.append(row)
-        ranked_candidates = deduped_ranked
-        viable_candidates: List[Dict[str, Any]] = []
-        for row in ranked_candidates:
-            if _candidate_is_viable(row, cost_per_trade=cost_per_trade):
-                viable_candidates.append(row)
-
-        if viable_only_val:
-            candidates = viable_candidates
-        else:
-            candidates = ranked_candidates
-
-        if top_k_val is not None:
-            candidates = candidates[:top_k_val]
-        elif concise_val and not viable_candidates and len(candidates) > 5:
-            candidates = candidates[:5]
-
-        grid_out = candidates if (return_grid and not concise_val) else None
-        if output_mode == 'summary' and grid_out is not None:
-            limit = top_k_val or min(10, len(grid_out))
-            grid_out = grid_out[:limit]
-
-        results_limit = min(10, len(candidates))
-        if output_mode == 'summary':
-            if top_k_val is not None:
-                results_limit = top_k_val
-            elif concise_val:
-                results_limit = min(5, len(candidates))
-            else:
-                results_limit = min(10, len(candidates))
-        summary_results = candidates[:results_limit]
-
-        viability_filtered_out = bool(viable_only_val and not viable_candidates and ranked_candidates)
+        candidate_views = _select_barrier_candidate_views(
+            list(results),
+            cost_per_trade=cost_per_trade,
+            viable_only_val=viable_only_val,
+            concise_val=concise_val,
+            top_k_val=top_k_val,
+            return_grid=return_grid,
+            output_mode=output_mode,
+        )
+        ranked_candidates = candidate_views["ranked_candidates"]
+        viable_candidates = candidate_views["viable_candidates"]
+        candidates = candidate_views["candidates"]
+        grid_out = candidate_views["grid_out"]
+        summary_results = candidate_views["summary_results"]
+        viability_filtered_out = candidate_views["viability_filtered_out"]
         no_candidates = len(candidates) == 0
-        warning = None
-        if no_candidates:
-            if viability_filtered_out:
-                warning = "No viable TP/SL candidates satisfied the viability filter."
-            else:
-                warning = "No valid TP/SL candidates after applying grid generation and constraints."
+        warning = candidate_views["warning"]
             
         best = candidates[0] if candidates else None
         if isinstance(best, dict):
