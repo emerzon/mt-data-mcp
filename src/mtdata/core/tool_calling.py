@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from ._mcp_tools import _get_pydantic_model_fields
+
 
 def unwrap_tool_callable(func: Any) -> Any:
     raw = getattr(func, "__wrapped__", None)
@@ -55,12 +57,8 @@ def _coerce_tool_kwargs(target: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
                 and isinstance(request_type, type)
                 and issubclass(request_type, BaseModel)
             ):
-                model_fields = getattr(request_type, "model_fields", None)
-                if isinstance(model_fields, dict):
-                    field_names = set(model_fields.keys())
-                else:
-                    legacy_fields = getattr(request_type, "__fields__", None)
-                    field_names = set(legacy_fields.keys()) if isinstance(legacy_fields, dict) else set()
+                model_fields, _ = _get_pydantic_model_fields(request_type)
+                field_names = set(model_fields.keys())
                 payload = {key: coerced.pop(key) for key in list(coerced.keys()) if key in field_names}
                 if payload:
                     model_validate = getattr(request_type, "model_validate", None)

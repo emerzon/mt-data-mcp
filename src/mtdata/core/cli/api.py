@@ -22,7 +22,7 @@ from ...bootstrap.tools import bootstrap_tools
 from ...forecast.requests import ForecastGenerateRequest
 from ...utils.minimal_output import format_result_minimal as _shared_minimal
 from .._mcp_instance import mcp
-from .._mcp_tools import get_tool_registry as get_registered_tools
+from .._mcp_tools import _get_pydantic_model_fields, get_tool_registry as get_registered_tools
 from ..cli_formatting import (
     CLI_FORMAT_JSON,
     CLI_FORMAT_TOON,
@@ -179,8 +179,8 @@ def _is_pydantic_model_type(value: Any) -> bool:
 
 
 def _iter_request_model_params(model_type: type[BaseModel]) -> List[Dict[str, Any]]:
-    fields = getattr(model_type, "model_fields", None)
-    if isinstance(fields, dict):
+    fields, modern_fields = _get_pydantic_model_fields(model_type)
+    if modern_fields:
         params: List[Dict[str, Any]] = []
         for name, field in fields.items():
             required = bool(field.is_required()) if callable(getattr(field, "is_required", None)) else False
@@ -197,8 +197,7 @@ def _iter_request_model_params(model_type: type[BaseModel]) -> List[Dict[str, An
             )
         return params
 
-    legacy_fields = getattr(model_type, "__fields__", None)
-    if isinstance(legacy_fields, dict):
+    if fields:
         return [
             {
                 "name": name,
@@ -206,7 +205,7 @@ def _iter_request_model_params(model_type: type[BaseModel]) -> List[Dict[str, An
                 "default": None if getattr(field, "required", False) else getattr(field, "default", None),
                 "type": getattr(field, "outer_type_", Any) or Any,
             }
-            for name, field in legacy_fields.items()
+            for name, field in fields.items()
         ]
 
     return []
