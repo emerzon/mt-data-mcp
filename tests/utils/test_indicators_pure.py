@@ -7,8 +7,6 @@ Covers:
   - mtdata.core.schema        (schema validation/parsing)
 """
 
-import math
-import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Literal, Union
@@ -69,7 +67,6 @@ from mtdata.core.schema import (
     _SIMPLIFY_MODES,
     _SIMPLIFY_METHODS,
     _PIVOT_METHODS,
-    VolatilityParams,
 )
 
 
@@ -216,6 +213,16 @@ class TestParseTiSpecs:
         name, args, kwargs = specs[0]
         assert name == "ema"
         assert kwargs.get("length") == 21
+
+    def test_cdl_name_with_trailing_digits_is_not_rewritten(self):
+        specs = _parse_ti_specs("CDL_FAKE12")
+        name, args, kwargs = specs[0]
+        assert name == "cdl_fake12"
+        assert args == []
+        assert kwargs == {}
+
+    def test_cdl_name_with_trailing_digits_is_reported_as_unknown(self):
+        assert _find_unknown_ta_indicators("CDL_FAKE12") == ["cdl_fake12"]
 
     def test_nested_parens_not_split(self):
         specs = _parse_ti_specs("rsi(14),macd(12,26,9)")
@@ -874,18 +881,12 @@ class TestComplexDefs:
         assert "IndicatorSpec" in defs
         assert "DenoiseSpec" in defs
         assert "SimplifySpec" in defs
-        assert "VolatilityParams" in defs
 
     def test_indicator_spec_structure(self):
         defs = complex_defs()
         spec = defs["IndicatorSpec"]
         assert spec["type"] == "object"
         assert "name" in spec["properties"]
-
-    def test_volatility_params_schema_matches_typed_dict_keys(self):
-        defs = complex_defs()
-
-        assert set(defs["VolatilityParams"]["properties"]) == set(VolatilityParams.__annotations__)
 
 
 class TestEnsureDefs:

@@ -286,6 +286,13 @@ class TestDenoiseSeriesDispatch:
         _check_basic(result.values, N)
         assert _smoothness(result.values) <= _smoothness(NOISY_SIGNAL)
 
+    def test_savgol_rejects_window_longer_than_series(self):
+        pytest.importorskip("scipy.signal")
+        s = _make_series(np.array([1.0, 2.0, 3.0, 4.0, 5.0]))
+
+        with pytest.raises(ValueError, match="window_length"):
+            _denoise_series(s, method="savgol", params={"window": 9, "polyorder": 2})
+
     def test_gaussian(self):
         pytest.importorskip("scipy.ndimage")
         s = _make_series(NOISY_SIGNAL)

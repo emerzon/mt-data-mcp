@@ -734,6 +734,18 @@ class TestRegimeDetectHMM:
                       params={"n_states": 3}, output="full")
         assert isinstance(res, dict)
 
+    @patch(_FMT, side_effect=_time_fmt_stub)
+    @patch(_DENOISE, return_value="close")
+    @patch(_FETCH)
+    def test_hmm_rejects_single_state_request(self, mock_fetch, mock_denoise, mock_fmt):
+        df = _make_df(60)
+        mock_fetch.return_value = df
+        with patch("mtdata.forecast.monte_carlo.fit_gaussian_mixture_1d", create=True) as mock_fit:
+            fn = _get_regime_detect()
+            res = fn("EURUSD", limit=60, method="hmm", params={"n_states": 1}, output="full")
+        assert res == {"error": "n_states must be >= 2 for hmm."}
+        mock_fit.assert_not_called()
+
 
 class TestRegimeDetectClustering:
 

@@ -133,6 +133,65 @@ class TestDataService(unittest.TestCase):
         self.assertEqual(result.get('count'), 5)
 
     @patch('mtdata.services.data_service._mt5_copy_ticks_range')
+    @patch('mtdata.services.data_service._resolve_client_tz', return_value=None)
+    @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
+    def test_fetch_ticks_select_simplify_reuses_cached_tick_fields(self, mock_ctz, mock_copy_ticks):
+        now = datetime.now(timezone.utc)
+        ticks = []
+        for i in range(20):
+            t = now - timedelta(seconds=20 - i)
+            ticks.append({
+                'time': t.timestamp(),
+                'bid': 1.1 + i * 0.0001,
+                'ask': 1.1001 + i * 0.0001,
+                'last': 1.10005 + i * 0.0001,
+                'volume': 1.0,
+                'time_msc': t.timestamp() * 1000,
+                'flags': 0,
+                'volume_real': 0.0,
+            })
+        mock_copy_ticks.return_value = ticks
+
+        from mtdata.services import data_service as data_service_mod
+
+        original_tick_field_value = data_service_mod._tick_field_value
+        call_count = {"value": 0}
+
+        def counting_tick_field_value(tick, name):
+            call_count["value"] += 1
+            return original_tick_field_value(tick, name)
+
+        with patch(
+            'mtdata.services.data_service._select_indices_for_timeseries',
+            return_value=([0, 19], 'lttb', {}),
+        ), patch(
+            'mtdata.services.data_service._lttb_select_indices',
+            return_value=[0, 5, 10, 15, 19],
+        ), patch(
+            'mtdata.services.data_service._tick_field_value',
+            side_effect=counting_tick_field_value,
+        ):
+            result = fetch_ticks(
+                symbol="EURUSD",
+                limit=20,
+                output="rows",
+                simplify={'mode': 'select', 'points': 5},
+            )
+
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result.get('count'), 5)
+        field_reads_per_tick = len(ticks[0]) if ticks else 0
+        selected_row_count = 5
+        # Budget for one baseline scan, one simplify/caching pass, and one
+        # output-row pass over the selected rows. Deriving this from the test
+        # fixture keeps the regression stable if optional tick fields change.
+        expected_max_field_reads = (
+            (len(ticks) * field_reads_per_tick * 2) +
+            (selected_row_count * field_reads_per_tick)
+        )
+        self.assertLessEqual(call_count["value"], expected_max_field_reads)
+
+    @patch('mtdata.services.data_service._mt5_copy_ticks_range')
     @patch('mtdata.services.data_service._mt5_epoch_to_utc', side_effect=AssertionError("unexpected extra UTC conversion"))
     @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
     def test_fetch_ticks_does_not_double_convert_normalized_times(self, _mock_epoch_to_utc, mock_copy_ticks):
@@ -237,6 +296,51 @@ class TestDataService(unittest.TestCase):
         self.assertEqual(result.get("spread_change_pct_note"), "first spread was zero")
         self.assertIsNone(result.get("stats", {}).get("spread", {}).get("change_pct"))
 
+    def test_format_candle_times_vectorizes_utc_formatting(self):
+        import pandas as pd
+        from mtdata.services import data_service as data_service_mod
+
+        df = pd.DataFrame({
+            '__epoch': [1704067200.0, 1704067260.0, 1704067320.0],
+            'time': [None, None, None],
+        })
+
+        with patch('mtdata.services.data_service.datetime') as mock_datetime:
+            mock_datetime.fromtimestamp.side_effect = AssertionError("should not format rows one by one")
+            data_service_mod._format_candle_times(
+                df,
+                ['time'],
+                time_as_epoch=False,
+                use_client_tz=False,
+                client_tz=None,
+            )
+
+        self.assertEqual(df.__dict__['_tz_used_name'], 'UTC')
+        self.assertEqual(list(df['time']), ['2024-01-01 00:00', '2024-01-01 00:01', '2024-01-01 00:02'])
+
+    def test_format_candle_times_vectorizes_client_tz_formatting(self):
+        import pandas as pd
+        from mtdata.services import data_service as data_service_mod
+
+        df = pd.DataFrame({
+            '__epoch': [1704067200.0, 1704067260.0, 1704067320.0],
+            'time': [None, None, None],
+        })
+        client_tz = timezone(timedelta(hours=-6))
+
+        with patch('mtdata.services.data_service.datetime') as mock_datetime:
+            mock_datetime.fromtimestamp.side_effect = AssertionError("should not format rows one by one")
+            data_service_mod._format_candle_times(
+                df,
+                ['time'],
+                time_as_epoch=False,
+                use_client_tz=True,
+                client_tz=client_tz,
+            )
+
+        self.assertEqual(df.__dict__['_tz_used_name'], str(client_tz))
+        self.assertEqual(list(df['time']), ['2023-12-31 18:00', '2023-12-31 18:01', '2023-12-31 18:02'])
+ 
 if __name__ == '__main__':
     try:
         unittest.main(exit=False)

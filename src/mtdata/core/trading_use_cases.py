@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from ..utils.barriers import normalize_trade_direction
 from ..utils.mt5 import MT5ConnectionError
+from . import trading_validation
 from .execution_logging import (
     infer_result_success,
     log_operation_finish,
@@ -49,6 +50,7 @@ def _resolve_trade_risk_direction(
     direction: Any,
     entry: float,
     stop_loss: float,
+    take_profit: float | None = None,
 ) -> tuple[str | None, str | None, str]:
     direction_text = str(direction).strip() if direction is not None else ""
     if direction_text:
@@ -58,11 +60,17 @@ def _resolve_trade_risk_direction(
         return "long", None, "inferred_from_stop_loss"
     if stop_loss > entry:
         return "short", None, "inferred_from_stop_loss"
+    if take_profit is not None:
+        if take_profit > entry:
+            return "long", None, "inferred_from_take_profit"
+        if take_profit < entry:
+            return "short", None, "inferred_from_take_profit"
     return (
         None,
-        "Unable to infer trade direction when proposed_sl equals proposed_entry. "
+        "Unable to infer trade direction when proposed_sl equals proposed_entry "
+        "and proposed_tp is missing or also equals proposed_entry. "
         "Provide direction='long' or direction='short'.",
-        "inferred_from_stop_loss",
+        "unable_to_infer",
     )
 
 
@@ -74,12 +82,12 @@ def _validate_trade_risk_levels(
     take_profit: float | None,
 ) -> str | None:
     if direction == "long":
-        if stop_loss >= entry:
+        if stop_loss > entry:
             return "For long trades, proposed_sl must be below proposed_entry."
         if take_profit is not None and take_profit <= entry:
             return "For long trades, proposed_tp must be above proposed_entry."
         return None
-    if stop_loss <= entry:
+    if stop_loss < entry:
         return "For short trades, proposed_sl must be above proposed_entry."
     if take_profit is not None and take_profit >= entry:
         return "For short trades, proposed_tp must be below proposed_entry."
@@ -1071,6 +1079,16 @@ def run_trade_risk_analyze(
             if positions is None:
                 positions = []
 
+            position_type_buy = trading_validation._safe_int_attr(
+                gateway,
+                "POSITION_TYPE_BUY",
+                trading_validation._safe_int_attr(gateway, "ORDER_TYPE_BUY", 0),
+            )
+            position_type_sell = trading_validation._safe_int_attr(
+                gateway,
+                "POSITION_TYPE_SELL",
+                trading_validation._safe_int_attr(gateway, "ORDER_TYPE_SELL", 1),
+            )
             position_risks: List[Dict[str, Any]] = []
             risk_calculation_failures: List[Dict[str, Any]] = []
             total_risk_currency = 0.0
@@ -1114,11 +1132,13 @@ def run_trade_risk_analyze(
                     reward_currency = None
                     rr_ratio = None
                     risk_status = "undefined"
+                    position_type = trading_validation._safe_int_attr(pos, "type", position_type_sell)
+                    is_buy_position = int(position_type) == int(position_type_buy)
 
                     if sl_price and tick_size > 0 and tick_value_valid:
                         risk_ticks = (
                             (entry_price - sl_price) / tick_size
-                            if pos.type == 0
+                            if is_buy_position
                             else (sl_price - entry_price) / tick_size
                         )
                         risk_currency = abs(risk_ticks * tick_value * volume)
@@ -1129,7 +1149,7 @@ def run_trade_risk_analyze(
                         if tp_price:
                             reward_ticks = (
                                 (tp_price - entry_price) / tick_size
-                                if pos.type == 0
+                                if is_buy_position
                                 else (entry_price - tp_price) / tick_size
                             )
                             reward_currency = abs(reward_ticks * tick_value * volume)
@@ -1153,7 +1173,7 @@ def run_trade_risk_analyze(
                         {
                             "ticket": pos.ticket,
                             "symbol": pos.symbol,
-                            "type": "BUY" if pos.type == 0 else "SELL",
+                            "type": "BUY" if is_buy_position else "SELL",
                             "volume": volume,
                             "entry": entry_price,
                             "sl": sl_price,
@@ -1264,6 +1284,9 @@ def run_trade_risk_analyze(
                     direction=request.direction,
                     entry=float(request.proposed_entry),
                     stop_loss=float(request.proposed_sl),
+                    take_profit=float(request.proposed_tp)
+                    if request.proposed_tp is not None
+                    else None,
                 )
                 if direction_error or direction_norm is None:
                     result["position_sizing_error"] = (
@@ -1318,6 +1341,10 @@ def run_trade_risk_analyze(
                     if direction_source == "inferred_from_stop_loss":
                         sizing_notes.append(
                             "Direction was inferred from stop-loss placement."
+                        )
+                    elif direction_source == "inferred_from_take_profit":
+                        sizing_notes.append(
+                            "Direction was inferred from take-profit placement because stop-loss matched entry."
                         )
 
                     step_txt = f"{volume_step:.10f}".rstrip("0")

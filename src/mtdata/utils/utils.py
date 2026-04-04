@@ -36,6 +36,28 @@ def _coerce_scalar(s: str):
         return s
 
 
+_UNPARSED_BOOL = object()
+
+
+def _parse_bool_like(value: Any, *, allow_none: bool = False) -> Any:
+    """Parse common boolean spellings and return a sentinel when unrecognized."""
+    if value is None:
+        return None if allow_none else _UNPARSED_BOOL
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in ("none", "null"):
+            return None if allow_none else _UNPARSED_BOOL
+        if text in ("true", "1", "yes", "y", "on"):
+            return True
+        if text in ("false", "0", "no", "n", "off"):
+            return False
+    return _UNPARSED_BOOL
+
+
 def _coerce_finite_float(value: Any) -> Optional[float]:
     """Best-effort float coercion that rejects NaN and infinity."""
     try:

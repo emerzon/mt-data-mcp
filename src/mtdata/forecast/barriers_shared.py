@@ -4,6 +4,7 @@ import warnings
 import numpy as np
 from ..shared.schema import TimeframeLiteral, DenoiseSpec
 from ..shared.constants import TIMEFRAME_SECONDS
+from ..shared.symbols import is_probably_crypto_symbol
 from .common import fetch_history as _fetch_history, log_returns_from_prices as _log_returns_from_prices
 from ..utils.utils import _safe_float, parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import (
@@ -21,6 +22,7 @@ from .monte_carlo import (
     simulate_jump_diffusion_mc as _simulate_jump_diffusion_mc,
     gbm_single_barrier_upcross_prob as _gbm_upcross_prob
 )
+from .barrier_stats import _confidence_interval_wilson_proportion
 
 BARRIER_GRID_PRESETS = {
     'scalp': {
@@ -49,18 +51,7 @@ LOW_CONFIDENCE_CI_THRESHOLD = 0.10
 
 def _binomial_wilson_95(p_hat: float, n: int) -> Tuple[float, float]:
     """Wilson 95% interval for a Bernoulli proportion."""
-    n_i = int(n)
-    if n_i <= 0:
-        return float("nan"), float("nan")
-    p = float(np.clip(float(p_hat), 0.0, 1.0))
-    z = 1.959963984540054
-    z2 = z * z
-    denom = 1.0 + z2 / n_i
-    center = (p + z2 / (2.0 * n_i)) / denom
-    margin = (z / denom) * math.sqrt((p * (1.0 - p) / n_i) + (z2 / (4.0 * n_i * n_i)))
-    lo = max(0.0, center - margin)
-    hi = min(1.0, center + margin)
-    return float(lo), float(hi)
+    return _confidence_interval_wilson_proportion(float(p_hat), int(n), confidence=0.95)
 
 
 def _binomial_se(p_hat: float, n: int) -> float:
@@ -456,12 +447,7 @@ def _build_actionability_payload(
 
 
 def _is_crypto_symbol(symbol: str) -> bool:
-    sym = str(symbol or "").upper()
-    crypto_tokens = {
-        "BTC", "ETH", "XRP", "LTC", "SOL", "ADA", "DOGE", "BNB", "DOT",
-        "AVAX", "LINK", "TRX", "MATIC", "NEAR", "ATOM", "FIL", "UNI",
-    }
-    return any(tok in sym for tok in crypto_tokens)
+    return is_probably_crypto_symbol(symbol)
 
 
 def _auto_barrier_method(

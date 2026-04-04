@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from ..utils.constants import TIMEFRAME_SECONDS as _TIMEFRAME_SECONDS
+
 _METHOD_NAME = "weighted_retests"
 _DEFAULT_REACTION_BARS = 6
 _DEFAULT_ADX_PERIOD = 14
@@ -37,19 +39,6 @@ _TIMEFRAME_WEIGHTS = {
     "H4": 1.15,
     "D1": 1.3,
 }
-_TIMEFRAME_SECONDS = {
-    "M1": 60,
-    "M5": 300,
-    "M15": 900,
-    "M30": 1800,
-    "H1": 3600,
-    "H4": 14400,
-    "D1": 86400,
-    "W1": 604800,
-    "MN1": 2592000,
-}
-
-
 def get_auto_support_resistance_timeframes() -> tuple[str, ...]:
     return _AUTO_TIMEFRAMES
 

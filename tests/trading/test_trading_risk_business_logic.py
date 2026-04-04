@@ -8,7 +8,7 @@ import sys
 from mtdata.core import trading_risk as core_trading_risk
 from mtdata.core.trading import trade_risk_analyze as _trade_risk_analyze_tool
 from mtdata.core.trading_requests import TradeRiskAnalyzeRequest
-from mtdata.core.trading_use_cases import run_trade_risk_analyze
+from mtdata.core.trading_use_cases import _resolve_trade_risk_direction, run_trade_risk_analyze
 from mtdata.utils.mt5 import MT5ConnectionError
 
 
@@ -126,6 +126,61 @@ def test_trade_risk_analyze_accepts_explicit_short_direction() -> None:
     assert sizing["rr_ratio"] == 1.0
 
 
+def test_resolve_trade_risk_direction_uses_take_profit_when_stop_equals_entry() -> None:
+    direction_norm, direction_error, direction_source = _resolve_trade_risk_direction(
+        direction=None,
+        entry=100.0,
+        stop_loss=100.0,
+        take_profit=110.0,
+    )
+
+    assert direction_norm == "long"
+    assert direction_error is None
+    assert direction_source == "inferred_from_take_profit"
+
+
+def test_resolve_trade_risk_direction_uses_take_profit_when_stop_equals_entry_short() -> None:
+    direction_norm, direction_error, direction_source = _resolve_trade_risk_direction(
+        direction=None,
+        entry=100.0,
+        stop_loss=100.0,
+        take_profit=90.0,
+    )
+
+    assert direction_norm == "short"
+    assert direction_error is None
+    assert direction_source == "inferred_from_take_profit"
+
+
+def test_trade_risk_analyze_falls_back_to_take_profit_direction_for_break_even_stop() -> None:
+    mt5 = MagicMock()
+    prev = sys.modules.get("MetaTrader5")
+    sys.modules["MetaTrader5"] = mt5
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+
+    try:
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            desired_risk_pct=1.0,
+            proposed_entry=100.0,
+            proposed_sl=100.0,
+            proposed_tp=110.0,
+        )
+    finally:
+        if prev is not None:
+            sys.modules["MetaTrader5"] = prev
+        else:
+            sys.modules.pop("MetaTrader5", None)
+
+    assert (
+        out["position_sizing_error"]
+        == "SL distance must be greater than 0"
+    )
+    assert "Unable to infer trade direction" not in out["position_sizing_error"]
+
+
 def test_trade_risk_analyze_rejects_wrong_side_stop_for_short_trade() -> None:
     mt5 = MagicMock()
     prev = sys.modules.get("MetaTrader5")
@@ -223,6 +278,35 @@ def test_trade_risk_analyze_logs_finish_event(caplog) -> None:
         "event=finish operation=trade_risk_analyze success=True" in record.message
         for record in caplog.records
     )
+
+
+def test_run_trade_risk_analyze_uses_gateway_position_type_constants() -> None:
+    gateway = SimpleNamespace(
+        POSITION_TYPE_BUY=7,
+        POSITION_TYPE_SELL=9,
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
+        positions_get=lambda symbol=None: [
+            SimpleNamespace(
+                ticket=11,
+                symbol="EURUSD",
+                type=7,
+                volume=0.1,
+                price_open=100.0,
+                sl=90.0,
+                tp=120.0,
+            )
+        ],
+        symbol_info=lambda symbol: _make_symbol_info(),
+    )
+
+    out = run_trade_risk_analyze(
+        TradeRiskAnalyzeRequest(symbol="EURUSD"),
+        gateway=gateway,
+    )
+
+    assert out["success"] is True
+    assert out["positions"][0]["type"] == "BUY"
 
 
 def test_trade_risk_analyze_reports_calculation_failures() -> None:

@@ -202,9 +202,6 @@ PARAM_HINTS = {
 _TIMEFRAME_CHOICES = tuple(sorted(TIMEFRAME_MAP.keys()))
 TimeframeLiteral = Literal[_TIMEFRAME_CHOICES]  # type: ignore
 
-# Build a Literal for single OHLCV letters; the parameter will be a list of these
-OhlcvCharLiteral = Literal['O', 'H', 'L', 'C', 'V']  # type: ignore
-
 # ---- Technical Indicators (dynamic discovery and application) ----
 def _load_indicator_doc_choices(
     list_ta_indicators_docs: Optional[Any] = None,
@@ -350,19 +347,6 @@ class SimplifySpec(TypedDict, total=False):
     # Symbolic specifics
     paa: int
     znorm: bool
-
-# Volatility params (concise)
-class VolatilityParams(TypedDict, total=False):
-    # EWMA
-    halflife: Optional[float]
-    lambda_: Optional[float]  # use 'lambda_' to avoid reserved word in schema
-    lookback: int
-    # Parkinson/GK/RS
-    window: int
-    # GARCH
-    fit_bars: int
-    mean: Literal['Zero','Constant']  # type: ignore
-    dist: Literal['normal']  # type: ignore
 
 # ---- Pivot Point methods (enums) ----
 _PIVOT_METHODS = (
@@ -515,20 +499,6 @@ def complex_defs() -> Dict[str, Any]:
             "additionalProperties": False,
             "description": "Simplify/segment/encode spec for outputs.",
         },
-        "VolatilityParams": {
-            "type": "object",
-            "properties": {
-                "halflife": {"type": ["number", "null"]},
-                "lambda_": {"type": ["number", "null"], "description": "EWMA smoothing weight"},
-                "lookback": {"type": "integer"},
-                "window": {"type": "integer"},
-                "fit_bars": {"type": "integer"},
-                "mean": {"type": "string", "enum": ["Zero", "Constant"]},
-                "dist": {"type": "string", "enum": ["normal"]},
-            },
-            "additionalProperties": False,
-            "description": "Volatility estimator parameters.",
-        },
     }
 
 
@@ -604,7 +574,6 @@ _TYPED_DICT_REFS = {
     "IndicatorSpec": "#/$defs/IndicatorSpec",
     "DenoiseSpec": "#/$defs/DenoiseSpec",
     "SimplifySpec": "#/$defs/SimplifySpec",
-    "VolatilityParams": "#/$defs/VolatilityParams",
 }
 
 _ANNOTATION_VALUE_FORMAT = getattr(getattr(annotationlib, "Format", None), "VALUE", None)

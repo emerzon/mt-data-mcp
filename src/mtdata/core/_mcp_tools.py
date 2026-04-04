@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Union, cast, get_args, get_origin
 from pydantic import BaseModel
 
 from .error_envelope import build_error_payload, log_transport_exception, normalize_error_payload
-from ..utils.utils import _coerce_scalar
+from ..utils.utils import _coerce_scalar, _parse_bool_like, _UNPARSED_BOOL
 
 try:
     import annotationlib
@@ -103,25 +103,10 @@ def _unwrap_optional_annotation(annotation: Any) -> tuple[Any, bool]:
 
 
 def _coerce_bool(value: Any, *, allow_none: bool, name: str) -> Any:
-    if value is None:
-        if allow_none:
-            return None
+    parsed = _parse_bool_like(value, allow_none=allow_none)
+    if parsed is _UNPARSED_BOOL:
         raise ValueError(f"Invalid value for '{name}': expected boolean, got {value!r}")
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return bool(value)
-    if isinstance(value, str):
-        s = value.strip().lower()
-        if s in ("none", "null"):
-            if allow_none:
-                return None
-            raise ValueError(f"Invalid value for '{name}': expected boolean, got {value!r}")
-        if s in ("true", "1", "yes", "y", "on"):
-            return True
-        if s in ("false", "0", "no", "n", "off"):
-            return False
-    raise ValueError(f"Invalid value for '{name}': expected boolean, got {value!r}")
+    return parsed
 
 
 def _coerce_int(value: Any, *, allow_none: bool, name: str) -> Any:
@@ -180,6 +165,18 @@ def _coerce_float(value: Any, *, allow_none: bool, name: str) -> Any:
     raise ValueError(f"Invalid value for '{name}': expected number, got {value!r}")
 
 
+def _get_pydantic_model_fields(model_type: type[BaseModel]) -> tuple[Dict[str, Any], bool]:
+    model_fields = getattr(model_type, "model_fields", None)
+    if isinstance(model_fields, dict):
+        return model_fields, True
+
+    legacy_fields = getattr(model_type, "__fields__", None)
+    if isinstance(legacy_fields, dict):
+        return legacy_fields, False
+
+    return {}, False
+
+
 def _coerce_kwargs_for_callable(func: Any, kwargs: Dict[str, Any]) -> Dict[str, Any]:
     """Coerce common scalar string inputs (from MCP clients) based on annotations."""
     try:
@@ -194,12 +191,8 @@ def _coerce_kwargs_for_callable(func: Any, kwargs: Dict[str, Any]) -> Dict[str, 
         if not (isinstance(base_ann, type) and issubclass(base_ann, BaseModel)):
             continue
         try:
-            model_fields = getattr(base_ann, "model_fields", None)
-            if isinstance(model_fields, dict):
-                field_names = set(model_fields.keys())
-            else:
-                legacy_fields = getattr(base_ann, "__fields__", None)
-                field_names = set(legacy_fields.keys()) if isinstance(legacy_fields, dict) else set()
+            model_fields, _ = _get_pydantic_model_fields(base_ann)
+            field_names = set(model_fields.keys())
         except Exception:
             field_names = set()
         if not field_names:
@@ -258,8 +251,8 @@ def _request_model_signature_fields(func: Any) -> List[inspect.Parameter]:
     if not (isinstance(base_ann, type) and issubclass(base_ann, BaseModel)):
         return []
 
-    model_fields = getattr(base_ann, "model_fields", None)
-    if isinstance(model_fields, dict):
+    model_fields, modern_fields = _get_pydantic_model_fields(base_ann)
+    if modern_fields:
         flattened: List[inspect.Parameter] = []
         for field_name, field in model_fields.items():
             annotation = inspect._empty
@@ -283,10 +276,9 @@ def _request_model_signature_fields(func: Any) -> List[inspect.Parameter]:
             )
         return flattened
 
-    legacy_fields = getattr(base_ann, "__fields__", None)
-    if isinstance(legacy_fields, dict):
+    if model_fields:
         flattened = []
-        for field_name, field in legacy_fields.items():
+        for field_name, field in model_fields.items():
             annotation = getattr(field, "outer_type_", getattr(field, "type_", inspect._empty))
             is_required = bool(getattr(field, "required", False))
             default = inspect._empty if is_required else _signature_default_for_model_field(field)

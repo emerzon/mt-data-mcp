@@ -487,30 +487,38 @@ class TestTheta:
 
 
 # ===================================================================
-# 10. HAR-RV – second-section error/branch paths  (lines 946-1012)
+# 10. HAR-RV – second-section error/branch paths
 # ===================================================================
 
 class TestHarRvSecondSection:
     """har_rv is the only method that falls through the first direct-methods
-    section into the second code section (lines 944+)."""
+    section into the legacy second-stage fetch section."""
 
-    def test_lambda_backward_compat(self):
-        """Line 945-946: 'lambda' key renamed to 'lambda_'."""
+    def test_ewma_does_not_fall_through_to_second_section(self):
         std = _make_rates(200)
-        intraday = _make_rates(15000, bar_secs=300, seed=99)
-        with _mock_env(rates_side_effect=[std, std, intraday]):
-            r = forecast_volatility("EURUSD", "H1", 5, method="har_rv",
-                                    params={"lambda": "0.94"})
-            assert r.get("success") is True or "error" in r
+        with _mock_env(rates_side_effect=[std]):
+            r = forecast_volatility("EURUSD", "H1", 5, method="ewma")
+            assert r.get("success") is True
+
+    def test_lambda_backward_compat_ewma(self):
+        """'lambda' key (legacy alias) is normalised to 'lambda_' before dispatch
+        and must affect the EWMA result reflected in params_used."""
+        custom_lam = 0.80
+        std = _make_rates(200)
+        with _mock_env(rates_side_effect=[std]):
+            r = forecast_volatility("EURUSD", "H1", 5, method="ewma",
+                                    params={"lambda": custom_lam})
+        assert r.get("success") is True
+        assert abs(r["params_used"]["lambda_"] - custom_lam) < 1e-9
 
     def test_second_section_ensure_error(self):
-        """Line 964: _ensure_symbol_ready error in second fetch."""
+        """_ensure_symbol_ready error in the HAR-RV second fetch returns an error."""
         with _mock_env(ensure_side_effect=[None, "Symbol locked"]):
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
             assert "error" in r
 
     def test_second_section_as_of(self):
-        """Lines 968-972: as_of triggers historical copy path."""
+        """as_of triggers the historical copy path inside the HAR-RV second fetch."""
         std = _make_rates(200)
         intraday = _make_rates(15000, bar_secs=300, seed=99)
         with _mock_env(rates_side_effect=[std, std, intraday],
@@ -520,14 +528,14 @@ class TestHarRvSecondSection:
             assert r.get("success") is True or "error" in r
 
     def test_second_section_invalid_as_of(self):
-        """Lines 970-971: _parse_start_datetime returns None."""
+        """_parse_start_datetime returning None yields an error response."""
         with _mock_env(parse_dt_return=None):
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv",
                                     as_of="bad-date")
             assert "error" in r
 
     def test_second_section_tick_no_time(self):
-        """Line 979: tick.time is None → datetime.now fallback."""
+        """tick.time being None causes a fallback to datetime.now."""
         std = _make_rates(200)
         intraday = _make_rates(15000, bar_secs=300, seed=99)
         with _mock_env(tick_time=None,
@@ -536,7 +544,7 @@ class TestHarRvSecondSection:
             assert r.get("success") is True or "error" in r
 
     def test_second_section_visibility_restore(self):
-        """Lines 982-986: _was_visible is False → symbol_select called."""
+        """When symbol was not visible, symbol_select is called to restore state."""
         std = _make_rates(200)
         intraday = _make_rates(15000, bar_secs=300, seed=99)
         with _mock_env(info_visible=False,
@@ -545,7 +553,7 @@ class TestHarRvSecondSection:
             assert env["mt5"].symbol_select.called
 
     def test_second_section_visibility_restore_exc(self):
-        """Lines 983-986: except pass when symbol_select raises."""
+        """An exception from symbol_select during visibility restore is silently ignored."""
         std = _make_rates(200)
         intraday = _make_rates(15000, bar_secs=300, seed=99)
         with _mock_env(info_visible=False,
@@ -556,14 +564,14 @@ class TestHarRvSecondSection:
             assert isinstance(r, dict)
 
     def test_second_section_insufficient_rates(self):
-        """Line 988-989: rates is None."""
+        """None returned from the intraday rate fetch produces an error response."""
         std = _make_rates(200)
         with _mock_env(rates_side_effect=[std, None]):
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
             assert "error" in r
 
     def test_second_section_few_bars(self):
-        """Line 995-996: < 3 bars after dropping forming bar."""
+        """Fewer than 3 bars after dropping the forming bar yields an error."""
         std = _make_rates(200)
         tiny = _make_rates(3)
         with _mock_env(rates_side_effect=[std, tiny]):
@@ -571,7 +579,7 @@ class TestHarRvSecondSection:
             assert "error" in r
 
     def test_second_section_denoise(self):
-        """Lines 1001-1012: denoise spec applied in second section."""
+        """A denoise spec is applied during the HAR-RV second section."""
         std = _make_rates(200)
         intraday = _make_rates(15000, bar_secs=300, seed=99)
         with _mock_env(rates_side_effect=[std, std, intraday]):
@@ -581,7 +589,7 @@ class TestHarRvSecondSection:
                 assert isinstance(r, dict)
 
     def test_second_section_denoise_error(self):
-        """Lines 1010-1012: denoise raises → silently ignored."""
+        """A denoise error in the HAR-RV second section is silently ignored."""
         std = _make_rates(200)
         intraday = _make_rates(15000, bar_secs=300, seed=99)
         with _mock_env(rates_side_effect=[std, std, intraday]):
@@ -616,8 +624,9 @@ class TestHarRvBlock:
             expected_bpy = _bars_per_year("H1")
             assert r["sigma_annual_return"] == pytest.approx(r["sigma_bar_return"] * math.sqrt(expected_bpy))
             assert r["horizon_sigma_annual"] == pytest.approx(
-                r["horizon_sigma_return"] * math.sqrt(expected_bpy / 5.0)
+                r["horizon_sigma_return"] * math.sqrt(expected_bpy)
             )
+            assert r["horizon_sigma_annual"] > r["sigma_annual_return"]
             assert "beta" in r["params_used"]
 
     def test_invalid_rv_timeframe(self):

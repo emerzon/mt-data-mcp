@@ -186,12 +186,6 @@ def _parse_table_data(table_lines: List[str]) -> Any:
     except Exception:
         return table_lines
 
-
-def _unwrap_mcp_function(func):
-    """Legacy function - now just returns the original function."""
-    return func
-
-
 def _ema(values: List[float], length: int) -> List[float]:
     if length <= 1 or not values:
         return list(values)
@@ -895,6 +889,19 @@ def template_basic(
     rr_max_default = p.get('rr_max', 2.0)
     base_params.setdefault('rr_min', rr_min_default)
     base_params.setdefault('rr_max', rr_max_default)
+    for barrier_key in (
+        'vol_window',
+        'vol_min_mult',
+        'vol_max_mult',
+        'vol_steps',
+        'vol_sl_extra',
+        'vol_sl_multiplier',
+        'vol_sl_steps',
+        'vol_floor_pct',
+        'vol_floor_pips',
+    ):
+        if barrier_key in p:
+            base_params.setdefault(barrier_key, p.get(barrier_key))
     p['params'] = base_params
 
     mode_val = str(p.get('mode', 'pct'))
