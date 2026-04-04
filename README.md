@@ -42,13 +42,17 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 
 ## Quick Start
 
-**Prerequisites:** Windows + Python 3.14 + MetaTrader 5 installed and running (demo account recommended).
+**Prerequisites:** Windows + Python 3.14 + MetaTrader 5 installed and running (demo account recommended). For the full install on Windows, also install Visual Studio Build Tools 2022 with the **Desktop development with C++** workload.
 
 ```bash
+# Optional but recommended: create an isolated conda environment first
+conda create -n mtdata python=3.14 -y
+conda activate mtdata
+
 # Lean core install
 pip install -e .
 
-# Full research/web install
+# Full stable research/web install
 pip install -r requirements.txt
 
 # Verify MT5 connection (lists symbols from the running terminal)
@@ -66,7 +70,9 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta
 
 Notes:
 - `pip install -e .` now installs the lean core package only.
-- `pip install -r requirements.txt` installs the full validated Python 3.14 stack, including Chronos/TimesFM, StatsForecast, sktime, mlforecast, and the Web API.
+- `pip install -r requirements.txt` installs the validated Python 3.14 stack from package-index releases, including Chronos, StatsForecast, sktime, mlforecast, news embeddings, and the Web API.
+- Conda is a supported way to isolate the install before running the pip commands above.
+- Git-backed add-ons stay explicit: `pip install -e .[forecast-timesfm]` for TimesFM, `pip install -e .[patterns-ext]` for `precise-patterns`, `pip install -e .[news-ycnbc]` for the CNBC adapter, or `pip install -e .[all-git]` for everything in one go.
 - `gluonts`/Lag-Llama, `hnswlib`, and `tsdownsample` are intentionally excluded from the default 3.14 environment because current wheel support is incomplete or incompatible.
 
 ## Documentation
