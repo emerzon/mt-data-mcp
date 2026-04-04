@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, Tuple, List
 import json
+import logging
 import warnings
 import numpy as np
 import pandas as pd
 import inspect
 
-from ..common import edge_pad_to_length as _edge_pad_to_length
+from ..common import build_ci_diagnostics as _build_ci_diagnostics, edge_pad_to_length as _edge_pad_to_length
 from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
+
+logger = logging.getLogger(__name__)
 
 
 def _coerce_param_value(value: Any) -> Any:
@@ -138,6 +141,7 @@ class StatsForecastMethod(ForecastMethod):
             
             # CI extraction
             ci_values = None
+            metadata: Dict[str, Any] = {}
             if level:
                 lev_val = level[0]
                 cols = Yf.columns
@@ -157,6 +161,31 @@ class StatsForecastMethod(ForecastMethod):
                     hi_vals = _edge_pad_to_length(hi_vals, int(horizon))
                         
                     ci_values = (lo_vals.astype(float), hi_vals.astype(float))
+                    metadata = _build_ci_diagnostics(
+                        provider=self.name,
+                        requested=True,
+                        available=True,
+                        status="available",
+                        alpha=alpha_val,
+                        level=lev_val,
+                    )
+                else:
+                    interval_columns = [str(col) for col in cols]
+                    warning_text = (
+                        f"StatsForecast {self.name} did not return matching interval columns for level "
+                        f"{lev_val}; returning point forecast only."
+                    )
+                    logger.warning("%s Columns=%s", warning_text, interval_columns)
+                    metadata = _build_ci_diagnostics(
+                        provider=self.name,
+                        requested=True,
+                        available=False,
+                        status="unavailable",
+                        alpha=alpha_val,
+                        level=lev_val,
+                        warning=warning_text,
+                        interval_columns=interval_columns,
+                    )
 
             # Filter out internal context params and build clean params_used
             internal_keys = {'symbol', 'timeframe', 'as_of', 'exog_used', 'exog_future', 'seasonality'}
@@ -166,7 +195,8 @@ class StatsForecastMethod(ForecastMethod):
             return ForecastResult(
                 forecast=f_vals,
                 ci_values=ci_values,
-                params_used=params_used
+                params_used=params_used,
+                metadata=metadata or None,
             )
             
         except Exception as ex:

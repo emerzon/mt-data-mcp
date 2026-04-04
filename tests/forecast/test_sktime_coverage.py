@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import importlib
 import sys
 import types
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock
 
 import numpy as np
 import pandas as pd
@@ -80,18 +79,17 @@ for name, mod in _STUBS.items():
     sys.modules[name] = mod
 
 # Patch _HAS_SKTIME before importing sktime module
-import mtdata.forecast.methods.sktime as _sktime_mod
+import mtdata.forecast.methods.sktime as _sktime_mod  # noqa: E402
 _orig_has_sktime = _sktime_mod._HAS_SKTIME
 _sktime_mod._HAS_SKTIME = True
 
-from mtdata.forecast.methods.sktime import (
-    SktimeMethod,
+from mtdata.forecast.methods.sktime import (  # noqa: E402
     GenericSktimeMethod,
     SktThetaMethod,
     SktNaiveMethod,
     SktAutoETSMethod,
 )
-from mtdata.forecast.interface import ForecastResult
+from mtdata.forecast.interface import ForecastResult  # noqa: E402
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -150,7 +148,6 @@ class TestGenericSktimeGetEstimator:
 
     def test_sp_injection(self):
         """sp should be injected if estimator accepts it."""
-        import inspect
         # Patch signature to accept sp
         _FakeThetaForecaster.__init__ = lambda self, sp=1, **kw: _FakeForecaster.__init__(self, sp=sp, **kw)
         try:
@@ -257,6 +254,8 @@ class TestSktimeMethodForecast:
         lo, hi = res.ci_values
         assert len(lo) == 5
         assert len(hi) == 5
+        assert res.metadata["diagnostics"]["ci"]["available"] is True
+        assert res.metadata["diagnostics"]["ci"]["status"] == "available"
 
     def test_forecast_ci_in_params(self):
         m = GenericSktimeMethod()
@@ -271,6 +270,36 @@ class TestSktimeMethodForecast:
             m = GenericSktimeMethod()
             res = m.forecast(_series(), horizon=5, seasonality=12, params={"ci_alpha": 0.1})
             assert res.ci_values is None
+            assert res.metadata["diagnostics"]["ci"]["available"] is False
+            assert res.metadata["diagnostics"]["ci"]["status"] == "error"
+            assert res.metadata["diagnostics"]["ci"]["error_type"] == "RuntimeError"
+        finally:
+            _FakeThetaForecaster.predict_interval = orig
+
+    def test_forecast_ci_missing_interval_columns_sets_diagnostics(self):
+        orig = _FakeThetaForecaster.predict_interval
+
+        def _mismatched_intervals(self, fh, X=None, coverage=0.9):
+            h = len(fh)
+            idx = pd.RangeIndex(h)
+            cols = pd.MultiIndex.from_tuples([
+                ("y", 0.8, "lower"),
+                ("y", 0.8, "upper"),
+            ])
+            data = np.column_stack([np.ones(h) * 40.0, np.ones(h) * 44.0])
+            return pd.DataFrame(data, index=idx, columns=cols)
+
+        _FakeThetaForecaster.predict_interval = _mismatched_intervals
+        try:
+            m = GenericSktimeMethod()
+            res = m.forecast(_series(), horizon=5, seasonality=12, params={"ci_alpha": 0.1})
+            assert res.ci_values is None
+            assert res.metadata["diagnostics"]["ci"]["available"] is False
+            assert res.metadata["diagnostics"]["ci"]["status"] == "unavailable"
+            assert res.metadata["diagnostics"]["ci"]["interval_columns"] == [
+                "('y', 0.8, 'lower')",
+                "('y', 0.8, 'upper')",
+            ]
         finally:
             _FakeThetaForecaster.predict_interval = orig
 
