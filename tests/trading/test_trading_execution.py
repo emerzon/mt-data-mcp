@@ -582,6 +582,37 @@ def test_place_market_order_retries_fill_modes_when_first_mode_fails(mock_mt5):
     assert second_req["type_filling"] == mock_mt5.ORDER_FILLING_FOK
 
 
+def test_place_market_order_accepts_done_partial_without_retry(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.TRADE_RETCODE_DONE_PARTIAL = 10010
+    mock_mt5.order_send.return_value = MagicMock(
+        retcode=10010,
+        deal=123,
+        order=456,
+        volume=0.05,
+        price=1.05010,
+        bid=1.05000,
+        ask=1.05010,
+        comment="partial fill",
+        request_id=702,
+    )
+
+    res = _place_market_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+    )
+
+    assert "error" not in res
+    assert res["retcode"] == 10010
+    assert len(res["fill_mode_attempts"]) == 1
+    assert res["type_filling_used"] == mock_mt5.ORDER_FILLING_IOC
+    assert mock_mt5.order_send.call_count == 1
+
+
 def test_place_pending_order_retries_fill_modes_when_first_mode_fails(mock_mt5):
     mock_mt5.ORDER_FILLING_IOC = 1
     mock_mt5.ORDER_FILLING_FOK = 0
@@ -626,6 +657,39 @@ def test_place_pending_order_retries_fill_modes_when_first_mode_fails(mock_mt5):
     second_req = mock_mt5.order_send.call_args_list[1].args[0]
     assert first_req["type_filling"] == mock_mt5.ORDER_FILLING_IOC
     assert second_req["type_filling"] == mock_mt5.ORDER_FILLING_FOK
+
+
+def test_place_pending_order_accepts_done_partial_without_retry(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.TRADE_RETCODE_DONE_PARTIAL = 10010
+    mock_mt5.order_send.return_value = MagicMock(
+        retcode=10010,
+        deal=0,
+        order=456,
+        volume=0.05,
+        price=1.04000,
+        bid=1.05000,
+        ask=1.05010,
+        comment="partial fill",
+        request_id=802,
+    )
+
+    res = _place_pending_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY_LIMIT",
+        price=1.04000,
+    )
+
+    assert "error" not in res
+    assert res["success"] is True
+    assert res["retcode"] == 10010
+    assert len(res["fill_mode_attempts"]) == 1
+    assert res["type_filling_used"] == mock_mt5.ORDER_FILLING_IOC
+    assert mock_mt5.order_send.call_count == 1
 
 
 def test_place_market_order_preserves_existing_position_magic_on_sltp_follow_up(mock_mt5):
