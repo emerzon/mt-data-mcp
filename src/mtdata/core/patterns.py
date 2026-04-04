@@ -652,7 +652,8 @@ def _run_classic_engine(
 def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> List[str]:
     """Apply config dict values to a config object's attributes.
 
-    Returns any unknown keys that were not applied to the target object.
+    Returns keys that were not applied to the target object, including both
+    unknown keys and keys whose values were invalid or could not be coerced.
     """
 
     if not isinstance(config, dict):
