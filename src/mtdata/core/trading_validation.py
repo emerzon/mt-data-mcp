@@ -7,7 +7,6 @@ from typing import Any, Dict, Literal, Optional, Tuple, Union
 
 from .trading_gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from ..utils.utils import _coerce_finite_float, _coerce_scalar
-from ..utils.mt5 import ensure_mt5_connection_or_raise
 
 
 MarketOrderTypeLiteral = Literal["BUY", "SELL"]
@@ -219,6 +218,32 @@ def _normalize_price_for_symbol(
     if not math.isfinite(numeric) or numeric == 0.0:
         return None
     return float(numeric)
+
+
+def _zero_price_requested(value: Optional[Union[int, float]]) -> bool:
+    if value is None or isinstance(value, bool):
+        return False
+    try:
+        numeric = float(value)
+    except Exception:
+        return False
+    return math.isfinite(numeric) and math.isclose(numeric, 0.0, abs_tol=1e-9)
+
+
+def _normalize_requested_protection_price(
+    value: Optional[Union[int, float]],
+    *,
+    field_name: str,
+    point: float,
+    digits: int,
+) -> Tuple[Optional[float], bool, Optional[str]]:
+    explicit_remove = _zero_price_requested(value)
+    if value is None or explicit_remove:
+        return None, explicit_remove, None
+    normalized = _normalize_price_for_symbol(value, point=point, digits=digits)
+    if normalized is None:
+        return None, explicit_remove, f"{field_name} must be a non-zero finite price after symbol normalization."
+    return float(normalized), explicit_remove, None
 
 
 def _broker_distance_metadata(symbol_info: Any) -> Dict[str, float]:

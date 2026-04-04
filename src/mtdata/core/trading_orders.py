@@ -204,20 +204,26 @@ def _place_market_order(
             point = float(symbol_info.point or 0.0) if hasattr(symbol_info, "point") else 0.0
             digits = trading_validation._safe_int_attr(symbol_info, "digits", 5)
 
-            norm_sl = (
-                trading_validation._normalize_price_for_symbol(stop_loss, point=point, digits=digits)
-                if stop_loss not in (None, 0)
-                else None
+            norm_sl, _explicit_remove_sl, sl_error = (
+                trading_validation._normalize_requested_protection_price(
+                    stop_loss,
+                    field_name="stop_loss",
+                    point=point,
+                    digits=digits,
+                )
             )
-            norm_tp = (
-                trading_validation._normalize_price_for_symbol(take_profit, point=point, digits=digits)
-                if take_profit not in (None, 0)
-                else None
+            if sl_error is not None:
+                return {"error": sl_error}
+            norm_tp, _explicit_remove_tp, tp_error = (
+                trading_validation._normalize_requested_protection_price(
+                    take_profit,
+                    field_name="take_profit",
+                    point=point,
+                    digits=digits,
+                )
             )
-            if stop_loss not in (None, 0) and norm_sl is None:
-                return {"error": "stop_loss must be a non-zero finite price after symbol normalization."}
-            if take_profit not in (None, 0) and norm_tp is None:
-                return {"error": "take_profit must be a non-zero finite price after symbol normalization."}
+            if tp_error is not None:
+                return {"error": tp_error}
 
             # Validate against a recent quote, then refresh again right before send.
             validate_tick = mt5.symbol_info_tick(symbol)
@@ -687,20 +693,26 @@ def _place_pending_order(
             norm_price = trading_validation._normalize_price_for_symbol(price, point=point, digits=digits)
             if norm_price is None:
                 return {"error": "price must be a non-zero finite number after symbol normalization."}
-            norm_sl = (
-                trading_validation._normalize_price_for_symbol(stop_loss, point=point, digits=digits)
-                if stop_loss not in (None, 0)
-                else None
+            norm_sl, _explicit_remove_sl, sl_error = (
+                trading_validation._normalize_requested_protection_price(
+                    stop_loss,
+                    field_name="stop_loss",
+                    point=point,
+                    digits=digits,
+                )
             )
-            norm_tp = (
-                trading_validation._normalize_price_for_symbol(take_profit, point=point, digits=digits)
-                if take_profit not in (None, 0)
-                else None
+            if sl_error is not None:
+                return {"error": sl_error}
+            norm_tp, _explicit_remove_tp, tp_error = (
+                trading_validation._normalize_requested_protection_price(
+                    take_profit,
+                    field_name="take_profit",
+                    point=point,
+                    digits=digits,
+                )
             )
-            if stop_loss not in (None, 0) and norm_sl is None:
-                return {"error": "stop_loss must be a non-zero finite price after symbol normalization."}
-            if take_profit not in (None, 0) and norm_tp is None:
-                return {"error": "take_profit must be a non-zero finite price after symbol normalization."}
+            if tp_error is not None:
+                return {"error": tp_error}
 
             normalized_expiration, expiration_specified = trading_time._normalize_pending_expiration(expiration)
             live_tick = mt5.symbol_info_tick(symbol) or initial_tick
