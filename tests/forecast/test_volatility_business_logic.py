@@ -96,6 +96,7 @@ def test_forecast_volatility_general_theta_and_proxy_errors(monkeypatch):
     out = vol.forecast_volatility(
         symbol="EURUSD",
         timeframe="H1",
+        horizon=4,
         method="theta",
         proxy="squared_return",
         params={"alpha": 0.3},
@@ -107,8 +108,9 @@ def test_forecast_volatility_general_theta_and_proxy_errors(monkeypatch):
     expected_bpy = vol._bars_per_year("H1")
     assert out["sigma_annual_return"] == pytest.approx(out["sigma_bar_return"] * math.sqrt(expected_bpy))
     assert out["horizon_sigma_annual"] == pytest.approx(
-        out["horizon_sigma_return"] * math.sqrt(expected_bpy / max(1, int(out["horizon"])))
+        out["horizon_sigma_return"] * math.sqrt(expected_bpy)
     )
+    assert out["horizon_sigma_annual"] > out["sigma_annual_return"]
 
 
 def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
@@ -124,6 +126,7 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     out = vol.forecast_volatility(
         symbol="EURUSD",
         timeframe="H1",
+        horizon=5,
         method="ewma",
         params='{"lookback": 80, "lambda_": 0.9}',
     )
@@ -136,8 +139,9 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     expected_bpy = vol._bars_per_year("H1")
     assert out["sigma_annual_return"] == pytest.approx(out["sigma_bar_return"] * math.sqrt(expected_bpy))
     assert out["horizon_sigma_annual"] == pytest.approx(
-        out["horizon_sigma_return"] * math.sqrt(expected_bpy / max(1, int(out["horizon"])))
+        out["horizon_sigma_return"] * math.sqrt(expected_bpy)
     )
+    assert out["horizon_sigma_annual"] > out["sigma_annual_return"]
 
     out = vol.forecast_volatility(
         symbol="EURUSD",
@@ -240,11 +244,12 @@ def test_forecast_volatility_ensemble_aggregates_component_methods(monkeypatch):
     monkeypatch.setattr(vol.mt5, "last_error", lambda: (0, "ok"))
     monkeypatch.setattr(vol, "_mt5_copy_rates_from", lambda *args, **kwargs: _rates(240))
 
-    ewma = vol.forecast_volatility(symbol="EURUSD", timeframe="H1", method="ewma")
-    rolling_std = vol.forecast_volatility(symbol="EURUSD", timeframe="H1", method="rolling_std")
+    ewma = vol.forecast_volatility(symbol="EURUSD", timeframe="H1", horizon=5, method="ewma")
+    rolling_std = vol.forecast_volatility(symbol="EURUSD", timeframe="H1", horizon=5, method="rolling_std")
     ensemble = vol.forecast_volatility(
         symbol="EURUSD",
         timeframe="H1",
+        horizon=5,
         method="ensemble",
         params={
             "methods": ["ewma", "rolling_std"],
@@ -270,5 +275,6 @@ def test_forecast_volatility_ensemble_aggregates_component_methods(monkeypatch):
         ensemble["sigma_bar_return"] * math.sqrt(expected_bpy)
     )
     assert ensemble["horizon_sigma_annual"] == pytest.approx(
-        ensemble["horizon_sigma_return"] * math.sqrt(expected_bpy / max(1, int(ensemble["horizon"])))
+        ensemble["horizon_sigma_return"] * math.sqrt(expected_bpy)
     )
+    assert ensemble["horizon_sigma_annual"] > ensemble["sigma_annual_return"]
