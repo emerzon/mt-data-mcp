@@ -713,12 +713,13 @@ def forecast_volatility(
 
         if method_l == 'har_rv':
             dn_spec_used = None
+            denoise_columns_provided = isinstance(denoise, dict) and 'columns' in denoise
             if denoise is not None:
                 try:
                     dn_spec_used = _normalize_denoise_spec(denoise, default_when='pre_ti')
                 except Exception:
                     dn_spec_used = None
-                if dn_spec_used and not dn_spec_used.get('columns'):
+                if dn_spec_used and not denoise_columns_provided:
                     dn_spec_used['columns'] = ['open', 'high', 'low', 'close']
 
             try:

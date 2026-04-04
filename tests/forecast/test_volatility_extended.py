@@ -491,8 +491,8 @@ class TestTheta:
 # ===================================================================
 
 class TestHarRvSecondSection:
-    """har_rv is the only method that falls through the first direct-methods
-    section into the legacy second-stage fetch section."""
+    """har_rv uses a single dedicated intraday-fetch path; these tests cover the
+    branching logic within that path (ensure errors, as_of, tick fallback, etc.)."""
 
     def test_ewma_does_not_fall_through_to_second_section(self):
         std = _make_rates(200)
@@ -512,8 +512,8 @@ class TestHarRvSecondSection:
         assert abs(r["params_used"]["lambda_"] - custom_lam) < 1e-9
 
     def test_second_section_ensure_error(self):
-        """_ensure_symbol_ready error in the HAR-RV second fetch returns an error."""
-        with _mock_env(ensure_side_effect=[None, "Symbol locked"]):
+        """_ensure_symbol_ready error in the HAR-RV intraday fetch returns an error."""
+        with _mock_env(ensure_side_effect=["Symbol locked"]):
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
             assert "error" in r
 
