@@ -928,6 +928,54 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
     @patch(f"{_BASIC_MODULE}.parse_table_tail")
+    @patch(f"{_BASIC_MODULE}.pick_best_forecast_method", return_value=None)
+    @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
+    @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
+    def test_basic_barriers_forward_template_volatility_defaults(
+        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
+        mock_now, mock_raw,
+    ):
+        candle_rows = _mock_candle_data()["rows"]
+        mock_tail.return_value = candle_rows[-40:]
+        mock_sum_bar.return_value = {"best": {"tp": 1.0, "sl": 0.5, "edge": 0.3}, "top": []}
+        barrier_params = []
+
+        def raw_side_effect(func, *args, **kwargs):
+            name = func.__name__ if hasattr(func, "__name__") else str(func)
+            if "candle" in name.lower() or "data_fetch" in name.lower():
+                return _mock_candle_data()
+            if "pivot" in name.lower():
+                return _mock_pivot_data()
+            if "volatility" in name.lower():
+                return _mock_vol_data()
+            if "backtest" in name.lower():
+                return {"results": {}}
+            if "forecast_generate" in name.lower() or "generate" in name.lower():
+                return _mock_forecast_data()
+            if "barrier" in name.lower():
+                barrier_params.append(dict(kwargs.get("params") or {}))
+                return _mock_barrier_data()
+            if "pattern" in name.lower():
+                return _mock_patterns_data()
+            return {"data": "ok"}
+
+        mock_raw.side_effect = raw_side_effect
+
+        from mtdata.core.report_templates.basic import template_basic
+        _ = template_basic("EURUSD", 12, None, {})
+
+        assert len(barrier_params) == 2
+        for params in barrier_params:
+            assert params["vol_window"] == 250
+            assert params["vol_min_mult"] == 0.6
+            assert params["vol_max_mult"] == 2.2
+            assert params["vol_sl_multiplier"] == 1.7
+            assert params["vol_sl_steps"] == 9
+            assert params["vol_floor_pct"] == 0.2
+
+    @patch(f"{_BASIC_MODULE}._get_raw_result")
+    @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
+    @patch(f"{_BASIC_MODULE}.parse_table_tail")
     @patch(f"{_BASIC_MODULE}.pick_best_forecast_method")
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")

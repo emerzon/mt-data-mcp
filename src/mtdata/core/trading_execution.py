@@ -11,7 +11,6 @@ from .trading_gateway import MT5TradingGateway, create_trading_gateway, trading_
 from .trading_positions import _resolve_open_position
 from .trading_time import ExpirationValue
 from ..utils.mt5 import _mt5_epoch_to_utc
-from ..utils.mt5 import ensure_mt5_connection_or_raise
 
 def _zero_price_requested(value: Optional[Union[int, float]]) -> bool:
     if value is None or isinstance(value, bool):
@@ -654,17 +653,7 @@ def _close_positions(
                             })
                             continue
 
-                fill_modes: List[int] = []
-                for fill_attr in ("ORDER_FILLING_IOC", "ORDER_FILLING_FOK", "ORDER_FILLING_RETURN"):
-                    if hasattr(mt5, fill_attr):
-                        try:
-                            fill_val = int(getattr(mt5, fill_attr))
-                        except Exception:
-                            continue
-                        if fill_val not in fill_modes:
-                            fill_modes.append(fill_val)
-                if not fill_modes:
-                    fill_modes = [1, 0, 2]
+                fill_modes = trading_validation._candidate_fill_modes(mt5)
 
                 result = None
                 request = None

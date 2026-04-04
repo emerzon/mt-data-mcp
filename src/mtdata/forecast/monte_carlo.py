@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Monte Carlo simulation utilities, including a Gaussian-HMM regime model.
 
 This module provides two primary helpers:
@@ -15,7 +13,9 @@ This module relies on numpy/pandas plus sklearn (GaussianMixture), hmmlearn
 (Gaussian HMM), and arch (bootstrap/GARCH).
 """
 
-from typing import Dict, Tuple, Optional
+from __future__ import annotations
+
+from typing import Dict, Tuple, Optional, Union
 import numpy as np
 import warnings
 from sklearn.mixture import GaussianMixture
@@ -23,6 +23,8 @@ try:
     from sklearn.exceptions import ConvergenceWarning as _SklearnConvergenceWarning
 except Exception:  # pragma: no cover - defensive fallback
     _SklearnConvergenceWarning = Warning
+
+HmmSimulationValue = Union[np.ndarray, str]
 
 
 def _load_circular_block_bootstrap():
@@ -241,7 +243,7 @@ def simulate_hmm_mc(
     n_states: int = 2,
     n_sims: int = 500,
     seed: Optional[int] = 42,
-) -> Dict[str, np.ndarray]:
+) -> Dict[str, HmmSimulationValue]:
     """Fit a regime model to log-returns and simulate future price paths.
 
     Calibration backend:

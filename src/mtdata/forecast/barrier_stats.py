@@ -15,6 +15,8 @@ import math
 import numpy as np
 from scipy import stats as scipy_stats
 
+BarrierPowerAnalysisValue = Union[float, int, str]
+
 
 def minimum_simulations_for_ci_width(
     target_width: float = 0.05,
@@ -589,7 +591,7 @@ def statistical_power_analysis(
     effect_size: float,
     n_sims: int,
     alpha: float = 0.05,
-) -> Dict[str, float]:
+) -> Dict[str, BarrierPowerAnalysisValue]:
     """Calculate statistical power to detect an effect in barrier probabilities.
     
     Args:
