@@ -1,0 +1,338 @@
+"""Canonical denoising API."""
+from typing import Any, Dict, List, Optional
+from copy import deepcopy
+import pandas as pd
+import numpy as np
+import logging
+
+# Import optional dependencies for availability checking
+try:
+    import pywt as _pywt
+except Exception:
+    _pywt = None  # type: ignore
+
+try:
+    from PyEMD import EMD as _EMD, EEMD as _EEMD, CEEMDAN as _CEEMDAN
+except Exception:
+    _EMD = _EEMD = _CEEMDAN = None  # type: ignore
+
+try:
+    from scipy import sparse as _sps
+    from scipy.sparse import linalg as _sps_linalg
+except Exception:
+    _sps = _sps_linalg = None  # type: ignore
+
+try:
+    from scipy.signal import savgol_filter as _savgol_filter
+except Exception:
+    _savgol_filter = None  # type: ignore
+
+try:
+    from scipy.signal import butter as _butter
+except Exception:
+    _butter = None  # type: ignore
+
+try:
+    from scipy.ndimage import gaussian_filter1d as _gaussian_filter1d
+except Exception:
+    _gaussian_filter1d = None  # type: ignore
+
+try:
+    from statsmodels.nonparametric.smoothers_lowess import lowess as _lowess
+except Exception:
+    _lowess = None  # type: ignore
+
+try:
+    from statsmodels.tsa.seasonal import STL as _STL
+except Exception:
+    _STL = None  # type: ignore
+
+try:
+    from vmdpy import VMD as _VMD
+except Exception:
+    _VMD = None  # type: ignore
+
+from .base import get_filter, list_filters, _series_like
+from . import filters  # noqa: F401 - registers all filters
+
+_logger = logging.getLogger(__name__)
+
+# Default parameters for each method
+_DENOISE_BASE_DEFAULTS = {"columns": ["close"], "keep_original": False, "suffix": "_dn"}
+
+_DENOISE_METHOD_DEFAULT_PARAMS: Dict[str, Dict[str, Any]] = {
+    "ema": {"span": 10},
+    "sma": {"window": 10},
+    "median": {"window": 7},
+    "lowpass_fft": {"cutoff_ratio": 0.1},
+    "butterworth": {"cutoff": 0.1, "order": 4, "btype": "low", "padlen": None},
+    "hp": {"lamb": 1600.0},
+    "savgol": {"window": 11, "polyorder": 2, "mode": "interp"},
+    "tv": {"weight": "auto", "n_iter": 50, "tol": 1e-4},
+    "kalman": {"process_var": "auto", "measurement_var": "auto", "initial_state": None, "initial_cov": None},
+    "hampel": {"window": 7, "n_sigmas": 3.0},
+    "bilateral": {"sigma_s": 2.0, "sigma_r": 0.5, "truncate": 3.0},
+    "wavelet_packet": {"wavelet": "db4", "level": None, "threshold": "auto", "mode": "soft", "threshold_scale": "auto"},
+    "ssa": {"window": 10, "components": 2},
+    "l1_trend": {"lamb": "auto", "n_iter": 50, "rho": "auto"},
+    "lms": {"order": 5, "mu": "auto", "eps": 1e-6, "leak": 0.0, "bias": True},
+    "rls": {"order": 5, "lambda_": "auto", "delta": 1.0, "bias": True},
+    "beta": {"window": 9, "beta": 1.3, "n_iter": 20, "eps": 1e-6},
+    "vmd": {"alpha": 2000.0, "tau": 0.0, "k": 5, "dc": 0, "init": 1, "tol": 1e-7, "keep_modes": None, "drop_modes": None, "keep_ratio": "auto"},
+    "loess": {"frac": 0.2, "it": 0, "delta": 0.0},
+    "stl": {"period": None, "seasonal": None, "trend": None, "low_pass": None, "robust": False, "component": "trend"},
+    "whittaker": {"lamb": 1000.0, "order": 2},
+    "gaussian": {"sigma": 2.0, "truncate": 4.0, "mode": "nearest"},
+    "wavelet": {"wavelet": "db4", "level": None, "threshold": "auto", "mode": "soft"},
+    "emd": {"drop_imfs": [0], "keep_imfs": None, "max_imfs": "auto"},
+    "eemd": {"drop_imfs": [0], "keep_imfs": None, "max_imfs": "auto", "noise_strength": 0.2, "trials": 100},
+    "ceemdan": {"drop_imfs": [0], "keep_imfs": None, "max_imfs": "auto", "noise_strength": 0.2, "trials": 100},
+}
+
+_DENOISE_METHOD_DESCRIPTIONS: Dict[str, str] = {
+    "none": "Do not modify the input series.",
+    "ema": "Exponential moving average smoothing.",
+    "sma": "Simple moving average smoothing.",
+    "median": "Rolling median smoothing.",
+    "lowpass_fft": "Low-pass filtering in the frequency domain.",
+    "butterworth": "Butterworth low-pass filter.",
+    "hp": "Hodrick-Prescott trend extraction.",
+    "savgol": "Savitzky-Golay polynomial smoothing.",
+    "tv": "Total variation denoising.",
+    "kalman": "1D Kalman filter smoothing.",
+    "hampel": "Hampel outlier suppression filter.",
+    "bilateral": "Edge-preserving bilateral smoothing.",
+    "wavelet_packet": "Wavelet packet threshold denoising.",
+    "ssa": "Singular spectrum analysis denoising.",
+    "l1_trend": "L1 trend filtering.",
+    "lms": "Adaptive least-mean-squares filter.",
+    "rls": "Adaptive recursive least-squares filter.",
+    "beta": "Robust beta smoother.",
+    "vmd": "Variational mode decomposition denoising.",
+    "loess": "Local polynomial regression smoothing.",
+    "stl": "Seasonal-trend decomposition with LOESS.",
+    "whittaker": "Whittaker smoother.",
+    "gaussian": "Gaussian kernel smoothing.",
+    "wavelet": "Wavelet threshold denoising.",
+    "emd": "Empirical mode decomposition denoising.",
+    "eemd": "Ensemble empirical mode decomposition denoising.",
+    "ceemdan": "Complete ensemble empirical mode decomposition denoising.",
+}
+
+_DENOISE_METHOD_SUPPORTS = {
+    "causality": ["causal", "zero_phase"],
+}
+
+
+def _denoise_series(
+    s: pd.Series,
+    method: str = 'none',
+    params: Optional[Dict[str, Any]] = None,
+    causality: str = 'zero_phase',
+) -> pd.Series:
+    """Apply denoising to a single series."""
+    if params is None:
+        params = {}
+    method = (method or 'none').lower().strip()
+    n = len(s)
+    if n < 3:
+        return s
+    if method == 'none':
+        return s
+    handler = get_filter(method)
+    if handler is None:
+        return s
+    # Materialize a writable contiguous buffer
+    x = np.array(s.astype(float).ffill().bfill().to_numpy(copy=True), dtype=float, copy=True, order='C')
+    return handler(s, x, params, causality)
+
+
+def _apply_denoise(
+    df: pd.DataFrame,
+    spec: Optional[Dict[str, Any]],
+    default_when: str = 'post_ti',
+) -> List[str]:
+    """Apply denoising to DataFrame columns. Returns list of added column names."""
+    added_cols: List[str] = []
+    if not spec or not isinstance(spec, dict):
+        return added_cols
+    method = str(spec.get('method', 'none')).lower()
+    if method == 'none':
+        return added_cols
+    params = spec.get('params') or {}
+    cols = spec.get('columns') or 'ohlcv'
+    # Normalize columns selection
+    if isinstance(cols, str):
+        key = cols.strip().lower()
+        if key in ('ohlcv', 'ohlc', 'price'):
+            selected = []
+            for name in ('open', 'high', 'low', 'close'):
+                if name in df.columns:
+                    selected.append(name)
+            if 'volume' in df.columns:
+                selected.append('volume')
+            elif 'tick_volume' in df.columns:
+                selected.append('tick_volume')
+            cols = selected if selected else ['close']
+        elif key in ('all', '*', 'numeric'):
+            try:
+                cols = [
+                    c for c in df.columns
+                    if c != 'time' and not str(c).startswith('_') and pd.api.types.is_numeric_dtype(df[c])
+                ]
+            except Exception:
+                cols = ['close']
+        else:
+            parts = [p.strip() for p in cols.replace(',', ' ').split() if p.strip()]
+            cols = parts if parts else ['close']
+    when = str(spec.get('when') or default_when)
+    causality = str(spec.get('causality') or ('causal' if when == 'pre_ti' else 'zero_phase'))
+    keep_original = bool(spec.get('keep_original')) if 'keep_original' in spec else (when != 'pre_ti')
+    suffix = str(spec.get('suffix') or '_dn')
+
+    for col in cols:
+        if col not in df.columns:
+            continue
+        try:
+            y = _denoise_series(df[col], method=method, params=params, causality=causality)
+        except Exception:
+            continue
+        if keep_original:
+            new_col = f"{col}{suffix}"
+            df[new_col] = y
+            added_cols.append(new_col)
+        else:
+            df[col] = y
+    return added_cols
+
+
+def _resolve_denoise_base_col(
+    df: pd.DataFrame,
+    denoise: Optional[Dict[str, Any]],
+    *,
+    base_col: str = "close",
+    default_when: str = "pre_ti",
+) -> str:
+    """Apply denoise when requested and return the effective base column name."""
+    if not denoise:
+        return base_col
+    try:
+        added = _apply_denoise(df, denoise, default_when=default_when)
+        if f"{base_col}_dn" in added:
+            return f"{base_col}_dn"
+    except Exception:
+        pass
+    return base_col
+
+
+def _denoise_base_defaults(default_when: str = "pre_ti") -> Dict[str, Any]:
+    """Get base defaults for denoise spec."""
+    base = deepcopy(_DENOISE_BASE_DEFAULTS)
+    base["when"] = default_when
+    return base
+
+
+def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[Dict[str, Any]]:
+    """Normalize a denoise spec. Accepts dict-like or a method name string."""
+    base = _denoise_base_defaults(default_when)
+    if not spec:
+        return None
+    if isinstance(spec, dict):
+        out = dict(base)
+        out.update({k: v for k, v in spec.items() if v is not None})
+        cols = out.get('columns')
+        if isinstance(cols, str):
+            parts = [p.strip() for p in cols.replace(',', ' ').split() if p.strip()]
+            out['columns'] = parts if parts else ['close']
+        if 'params' not in out or out['params'] is None:
+            out['params'] = {}
+        return out
+    # String method name
+    try:
+        method = str(spec).strip().lower()
+    except Exception:
+        return None
+    if method == '' or method == 'none':
+        return None
+    params = deepcopy(_DENOISE_METHOD_DEFAULT_PARAMS.get(method))
+    if params is None:
+        return None
+    out = dict(base)
+    out.update({"method": method, "params": params})
+    return out
+
+
+def get_denoise_methods_data() -> Dict[str, Any]:
+    """Get metadata about all available denoise methods."""
+    def avail_requires(name: str):
+        if name == 'wavelet':
+            return (_pywt is not None, 'PyWavelets')
+        if name in ('emd', 'eemd', 'ceemdan'):
+            return (any(x is not None for x in (_EMD, _EEMD, _CEEMDAN)), 'EMD-signal')
+        if name in ('hp', 'whittaker'):
+            return (_sps is not None and _sps_linalg is not None, 'scipy.sparse')
+        if name == 'savgol':
+            return (_savgol_filter is not None, 'scipy.signal')
+        if name == 'butterworth':
+            return (_butter is not None, 'scipy.signal')
+        if name == 'gaussian':
+            return (_gaussian_filter1d is not None, 'scipy.ndimage')
+        if name == 'wavelet_packet':
+            return (_pywt is not None, 'PyWavelets')
+        if name == 'loess':
+            return (_lowess is not None, 'statsmodels')
+        if name == 'stl':
+            return (_STL is not None, 'statsmodels')
+        if name == 'vmd':
+            return (_VMD is not None, 'vmdpy')
+        return (True, '')
+
+    base_defaults = _denoise_base_defaults("pre_ti")
+    methods: List[Dict[str, Any]] = [
+        {
+            "method": "none",
+            "available": True,
+            "description": _DENOISE_METHOD_DESCRIPTIONS["none"],
+            "requires": "",
+            "params": [],
+            "supports": dict(_DENOISE_METHOD_SUPPORTS),
+            "defaults": base_defaults,
+        }
+    ]
+
+    registry = list_filters()
+    for method_name in sorted(registry.keys()):
+        available, requires = avail_requires(method_name)
+        default_params = _DENOISE_METHOD_DEFAULT_PARAMS.get(method_name, {})
+        methods.append({
+            "method": method_name,
+            "available": bool(available),
+            "description": _DENOISE_METHOD_DESCRIPTIONS.get(
+                method_name,
+                method_name.replace("_", " ").capitalize(),
+            ),
+            "requires": requires,
+            "params": list(default_params.keys()),
+            "supports": dict(_DENOISE_METHOD_SUPPORTS),
+            "defaults": base_defaults,
+        })
+
+    return {"success": True, "schema_version": 1, "methods": methods}
+
+
+def denoise_list_methods() -> Dict[str, Any]:
+    """List available denoise methods and their parameters."""
+    try:
+        return get_denoise_methods_data()
+    except Exception as e:
+        return {"error": f"Error listing denoise methods: {e}"}
+
+
+__all__ = [
+    "_denoise_series",
+    "_apply_denoise",
+    "_resolve_denoise_base_col",
+    "normalize_denoise_spec",
+    "get_denoise_methods_data",
+    "denoise_list_methods",
+]

@@ -1,12 +1,4 @@
-"""
-Finviz data service wrapper.
-
-Provides structured access to finvizfinance library for stock fundamentals,
-news, insider trades, ratings, and screening.
-
-Note: Finviz data is delayed 15-20 minutes; not suitable for real-time trading.
-"""
-
+"""Finviz service implementation."""
 import logging
 import datetime
 from typing import Any, Dict, List, Optional, Literal
@@ -17,6 +9,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+# Configuration constants
 _FINVIZ_HTTP_TIMEOUT = float(os.getenv("FINVIZ_HTTP_TIMEOUT", "15"))
 _FINVIZ_SCREENER_MAX_ROWS = int(os.getenv("FINVIZ_SCREENER_MAX_ROWS", "5000"))
 _FINVIZ_PAGE_LIMIT_MAX = int(os.getenv("FINVIZ_PAGE_LIMIT_MAX", "500"))

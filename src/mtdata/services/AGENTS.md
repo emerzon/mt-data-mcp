@@ -7,7 +7,7 @@ Thin service layer for external data sources. No business logic — data retriev
 | File | Lines | Purpose |
 |------|-------|---------|
 | `data_service.py` | 1209 | **Single gateway** for all MT5 data: candles, ticks, market depth, symbols, account info |
-| `finviz_service.py` | 997 | Finviz web scraping: fundamentals, screening, news, economic calendar |
+| `finviz/` | package | Finviz web scraping: fundamentals, screening, news, economic calendar |
 | `options_service.py` | — | Options chain data retrieval |
 | `__init__.py` | — | Empty |
 
@@ -15,7 +15,7 @@ Thin service layer for external data sources. No business logic — data retriev
 
 - Services are consumed by `core/` tool modules (`core/data.py`, `core/finviz.py`, etc.) — never called directly by end users.
 - `data_service.py` handles MT5 connection init, credential loading from `.env`, and all MetaTrader5 API calls.
-- `finviz_service.py` uses `finvizfinance` library for web scraping — no API key required.
+- `finviz/` uses the `finvizfinance` library for web scraping — no API key required.
 
 ## ANTI-PATTERNS
 

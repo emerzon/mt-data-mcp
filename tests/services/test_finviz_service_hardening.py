@@ -3,7 +3,7 @@ import types
 
 import pandas as pd
 
-from src.mtdata.services import finviz_service as svc
+from mtdata.services import finviz as svc
 
 
 def test_compute_screener_fetch_limit_is_bounded(monkeypatch):

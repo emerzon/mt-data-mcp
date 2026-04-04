@@ -7,29 +7,31 @@ import pandas as pd
 import pytest
 
 from mtdata.utils.denoise import (
-    _adaptive_lms_filter,
-    _adaptive_rls_filter,
     _apply_denoise,
-    _beta_irls_mean,
-    _beta_smooth,
-    _bilateral_filter_1d,
-    _butterworth_filter,
     _denoise_series,
-    _hampel_filter,
-    _hp_filter,
-    _kalman_filter_1d,
-    _l1_trend_filter,
     _resolve_denoise_base_col,
-    _soft_threshold,
-    _ssa_denoise,
-    _tv_denoise_1d,
-    _vmd_denoise,
-    _wavelet_packet_denoise,
-    _whittaker_smooth,
     denoise_list_methods,
     get_denoise_methods_data,
     normalize_denoise_spec,
 )
+from mtdata.utils.denoise.filters.adaptive import _adaptive_lms_filter, _adaptive_rls_filter
+from mtdata.utils.denoise.filters.decomposition import _ssa_denoise, _vmd_denoise
+from mtdata.utils.denoise.filters.specialized import (
+    _bilateral_filter_1d,
+    _hampel_filter,
+    _kalman_filter_1d,
+    _tv_denoise_1d,
+)
+from mtdata.utils.denoise.filters.spectral import _butterworth_filter
+from mtdata.utils.denoise.filters.trend import (
+    _beta_irls_mean,
+    _beta_smooth,
+    _hp_filter,
+    _l1_trend_filter,
+    _soft_threshold,
+    _whittaker_smooth,
+)
+from mtdata.utils.denoise.filters.wavelet import _wavelet_packet_denoise
 
 # ---------------------------------------------------------------------------
 # Deterministic fixtures

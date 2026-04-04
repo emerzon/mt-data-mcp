@@ -1,4 +1,3 @@
-import importlib.util
 import sys
 from pathlib import Path
 
@@ -11,13 +10,8 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-DENOISE_PATH = SRC / "mtdata" / "utils" / "denoise.py"
-spec = importlib.util.spec_from_file_location("mtdata.utils.denoise", DENOISE_PATH)
-if spec is None or spec.loader is None:
-    raise ImportError(f"Cannot load denoise module from {DENOISE_PATH}")
-denoise = importlib.util.module_from_spec(spec)
-sys.modules["mtdata.utils.denoise"] = denoise
-spec.loader.exec_module(denoise)
+import mtdata.utils.denoise as denoise
+
 _denoise_series = denoise._denoise_series
 
 def test_denoise_series_none():

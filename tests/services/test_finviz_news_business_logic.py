@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from mtdata.core import finviz as core_finviz
 from mtdata.core.finviz import finviz_market_news, finviz_news
-from mtdata.services.finviz_service import get_stock_news
+from mtdata.services.finviz import get_stock_news
 
 
 def _unwrap(fn):
@@ -29,7 +29,7 @@ def test_get_stock_news_returns_clean_message_for_404_like_errors() -> None:
         def __init__(self, *_args, **_kwargs):
             raise RuntimeError("404 Client Error: Not Found for url: https://finviz.com/quote.ashx?t=BTCUSD")
 
-    with patch("mtdata.services.finviz_service._apply_finvizfinance_timeout_patch", lambda: None), patch.dict(
+    with patch("mtdata.services.finviz._apply_finvizfinance_timeout_patch", lambda: None), patch.dict(
         "sys.modules",
         {"finvizfinance.quote": type("Q", (), {"finvizfinance": Boom})},
     ):

@@ -1,0 +1,39 @@
+"""Denoising filters package - refactored from monolithic denoise.py."""
+
+from typing import Any, Callable, Dict, Optional
+import pandas as pd
+import numpy as np
+
+# Registry of filter methods
+_FILTER_REGISTRY: Dict[str, Callable[[pd.Series, np.ndarray, Dict[str, Any], str], pd.Series]] = {}
+
+
+def register_filter(name: str) -> Callable:
+    """Decorator to register a filter method."""
+    def decorator(func: Callable) -> Callable:
+        _FILTER_REGISTRY[name] = func
+        return func
+    return decorator
+
+
+def get_filter(name: str) -> Optional[Callable]:
+    """Get a registered filter by name."""
+    return _FILTER_REGISTRY.get(name)
+
+
+def list_filters() -> Dict[str, Callable]:
+    """Return all registered filters."""
+    return dict(_FILTER_REGISTRY)
+
+
+def _series_like(s: pd.Series, values: np.ndarray) -> pd.Series:
+    """Create a Series with same index as input."""
+    return pd.Series(values, index=s.index)
+
+
+__all__ = [
+    "register_filter",
+    "get_filter", 
+    "list_filters",
+    "_series_like",
+]

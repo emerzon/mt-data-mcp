@@ -16,14 +16,14 @@ import sys
 import types
 from typing import get_origin, get_args, Optional, Dict, Any, List, Tuple, Literal, Union, is_typeddict
 from pydantic import BaseModel
-from .config import load_environment
+from ..config import load_environment
 
-from ..bootstrap.tools import bootstrap_tools
-from ..forecast.requests import ForecastGenerateRequest
-from ..utils.minimal_output import format_result_minimal as _shared_minimal
-from ._mcp_instance import mcp
-from ._mcp_tools import get_tool_registry as get_registered_tools
-from .cli_formatting import (
+from ...bootstrap.tools import bootstrap_tools
+from ...forecast.requests import ForecastGenerateRequest
+from ...utils.minimal_output import format_result_minimal as _shared_minimal
+from .._mcp_instance import mcp
+from .._mcp_tools import get_tool_registry as get_registered_tools
+from ..cli_formatting import (
     CLI_FORMAT_JSON,
     CLI_FORMAT_TOON,
     _attach_cli_meta,
@@ -38,7 +38,7 @@ from .cli_formatting import (
     _safe_tz_name,
     _sanitize_json_compat,
 )
-from .cli_discovery import (
+from ..cli_discovery import (
     add_dynamic_arguments as _add_dynamic_arguments_impl,
     apply_schema_overrides as _apply_schema_overrides_impl,
     discover_tools as _discover_tools_impl,
@@ -48,7 +48,7 @@ from .cli_discovery import (
     resolve_param_kwargs as _resolve_param_kwargs_impl,
     should_expose_cli_param as _should_expose_cli_param_impl,
 )
-from .cli_runtime import (
+from ..cli_runtime import (
     coerce_cli_scalar as _coerce_cli_scalar_impl,
     create_command_function as _create_command_function_impl,
     merge_dict as _merge_dict_impl,
@@ -164,9 +164,9 @@ def _invoke_cli_tool_function(func: Any, *, args: Any, cmd_name: str, kwargs: Di
     with _suppress_cli_side_output(enabled=bool(getattr(args, "json", False))):
         return func(**kwargs)
 
-from .unified_params import add_global_args_to_parser
-from .server_utils import get_mcp_registry
-from .schema import enrich_schema_with_shared_defs, get_function_info as _schema_get_function_info, PARAM_HINTS as _PARAM_HINTS
+from ..unified_params import add_global_args_to_parser
+from ..server_utils import get_mcp_registry
+from ..schema import enrich_schema_with_shared_defs, get_function_info as _schema_get_function_info, PARAM_HINTS as _PARAM_HINTS
 
 # Types for discovered metadata
 ToolInfo = Dict[str, Any]
@@ -493,29 +493,58 @@ def _result_has_tool_error(result: Any) -> bool:
 
 
 def _safe_argument_parser(*args: Any, **kwargs: Any) -> argparse.ArgumentParser:
+    original_kwargs = dict(kwargs)
     try:
         signature = inspect.signature(argparse.ArgumentParser)
         if not any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values()):
             kwargs = {key: value for key, value in kwargs.items() if key in signature.parameters}
     except Exception:
-        fallback = dict(kwargs)
+        fallback = dict(original_kwargs)
         fallback.pop("suggest_on_error", None)
         fallback.pop("color", None)
         kwargs = fallback
-    return argparse.ArgumentParser(*args, **kwargs)
+    try:
+        return argparse.ArgumentParser(*args, **kwargs)
+    except TypeError:
+        fallback = dict(kwargs)
+        fallback.pop("suggest_on_error", None)
+        fallback.pop("color", None)
+        if fallback == kwargs:
+            raise
+        return argparse.ArgumentParser(*args, **fallback)
 
 
 def _safe_add_subparser(subparsers: Any, name: str, **kwargs: Any) -> argparse.ArgumentParser:
+    original_kwargs = dict(kwargs)
     try:
         signature = inspect.signature(subparsers.add_parser)
         if not any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values()):
             kwargs = {key: value for key, value in kwargs.items() if key in signature.parameters}
     except Exception:
-        fallback = dict(kwargs)
+        fallback = dict(original_kwargs)
         fallback.pop("suggest_on_error", None)
         fallback.pop("color", None)
         kwargs = fallback
-    return subparsers.add_parser(name, **kwargs)
+    try:
+        parser_class = getattr(subparsers, "_parser_class", argparse.ArgumentParser)
+        parser_signature = inspect.signature(parser_class)
+        if not any(param.kind == inspect.Parameter.VAR_KEYWORD for param in parser_signature.parameters.values()):
+            if "suggest_on_error" not in parser_signature.parameters:
+                kwargs.pop("suggest_on_error", None)
+            if "color" not in parser_signature.parameters:
+                kwargs.pop("color", None)
+    except Exception:
+        kwargs.pop("suggest_on_error", None)
+        kwargs.pop("color", None)
+    try:
+        return subparsers.add_parser(name, **kwargs)
+    except TypeError:
+        fallback = dict(kwargs)
+        fallback.pop("suggest_on_error", None)
+        fallback.pop("color", None)
+        if fallback == kwargs:
+            raise
+        return subparsers.add_parser(name, **fallback)
 
 def get_function_info(func):
     """Thin wrapper around schema.get_function_info that attaches the callable.
@@ -927,9 +956,9 @@ def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
                 arg_strs.append(rendered)
         meta = tool.get('meta') or {}
         desc = meta.get('description') or _first_line(func_info.get('doc'))
-        lines.append(f"  {cmd_name}: {' '.join(arg_strs) if arg_strs else '(no args)'}")
+        lines.append(f"- {cmd_name}: {' '.join(arg_strs) if arg_strs else '(no args)'}")
         if desc:
-            lines.append(f"    - {desc}")
+            lines.append(f"  {desc}")
     lines.append("")
     lines.append("Tip: Use `--help <keyword>` to search commands and examples.")
     lines.append("Aliases: commands also accept kebab-case spellings (e.g. market-ticker).")

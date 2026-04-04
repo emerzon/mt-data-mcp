@@ -37,16 +37,16 @@ mtdata/
 | Add/modify MCP tool | `src/mtdata/core/` | Each domain has its own file (data.py, forecast.py, trading.py, etc.) |
 | Add forecast method | `src/mtdata/forecast/methods/` + `forecast_registry.py` | Register in registry, implement interface |
 | Fix MT5 data access | `src/mtdata/services/data_service.py` | 1209 lines, main data gateway |
-| Fix Finviz integration | `src/mtdata/services/finviz_service.py` | 997 lines, web scraping |
+| Fix Finviz integration | `src/mtdata/services/finviz/` | Package implementation for web scraping |
 | Modify pattern detection | `src/mtdata/patterns/` | `classic.py` delegates to `classic_impl/` |
 | Change indicators | `src/mtdata/utils/indicators.py` | 100+ technical indicators |
-| Edit denoising filters | `src/mtdata/utils/denoise.py` | 1285 lines, 10+ filter methods |
+| Edit denoising filters | `src/mtdata/utils/denoise/` | Package implementation for denoising filters |
 | Modify web UI | `webui/src/` | App.tsx (547 lines) is main, 4 components |
 | Server/transport config | `src/mtdata/core/server.py` | SSE, stdio, streamable-HTTP modes |
-| CLI changes | `src/mtdata/core/cli.py` | 1514 lines, dynamic tool discovery |
+| CLI changes | `src/mtdata/core/cli/` | Package surface for dynamic tool discovery |
 | Trading logic | `src/mtdata/core/trading_*.py` | Split across ~12 files by concern |
 | Report generation | `src/mtdata/core/report_*.py` + `report_templates/` | Templates in subdirectory |
-| Regime detection | `src/mtdata/core/regime.py` | 1264 lines, HMM + rule-based |
+| Regime detection | `src/mtdata/core/regime/` | Package implementation for HMM + rule-based detection |
 | Shared schemas | `src/mtdata/shared/schema.py` | 791 lines, Pydantic models |
 | Runtime/env setup | `src/mtdata/bootstrap/` | Settings, tool bootstrap, runtime init |
 

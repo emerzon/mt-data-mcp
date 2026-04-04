@@ -7,12 +7,12 @@ import pandas as pd
 
 
 class TestFinvizService:
-    """Tests for finviz_service.py functions."""
+    """Tests for the canonical finviz package functions."""
 
     @patch('finvizfinance.quote.finvizfinance')
     def test_get_stock_fundamentals_success(self, mock_finviz):
         """Test successful fundamentals fetch."""
-        from mtdata.services.finviz_service import get_stock_fundamentals
+        from mtdata.services.finviz import get_stock_fundamentals
         
         mock_stock = MagicMock()
         mock_stock.ticker_fundament.return_value = {
@@ -32,7 +32,7 @@ class TestFinvizService:
     @patch('finvizfinance.quote.finvizfinance')
     def test_get_stock_fundamentals_error(self, mock_finviz):
         """Test fundamentals fetch with error."""
-        from mtdata.services.finviz_service import get_stock_fundamentals
+        from mtdata.services.finviz import get_stock_fundamentals
         
         mock_finviz.side_effect = Exception("Network error")
         
@@ -43,7 +43,7 @@ class TestFinvizService:
     @patch('finvizfinance.quote.finvizfinance')
     def test_get_stock_news_success(self, mock_finviz):
         """Test successful news fetch."""
-        from mtdata.services.finviz_service import get_stock_news
+        from mtdata.services.finviz import get_stock_news
         
         mock_stock = MagicMock()
         mock_df = pd.DataFrame([
@@ -66,7 +66,7 @@ class TestFinvizService:
     @patch('finvizfinance.quote.finvizfinance')
     def test_get_stock_insider_trades_success(self, mock_finviz):
         """Test successful insider trades fetch."""
-        from mtdata.services.finviz_service import get_stock_insider_trades
+        from mtdata.services.finviz import get_stock_insider_trades
         
         mock_stock = MagicMock()
         mock_df = pd.DataFrame([
@@ -84,7 +84,7 @@ class TestFinvizService:
     @patch('finvizfinance.quote.finvizfinance')
     def test_get_stock_ratings_success(self, mock_finviz):
         """Test successful ratings fetch."""
-        from mtdata.services.finviz_service import get_stock_ratings
+        from mtdata.services.finviz import get_stock_ratings
         
         mock_stock = MagicMock()
         mock_df = pd.DataFrame([
@@ -101,7 +101,7 @@ class TestFinvizService:
     @patch('finvizfinance.screener.overview.Overview')
     def test_screen_stocks_success(self, mock_overview_class):
         """Test successful stock screening."""
-        from mtdata.services.finviz_service import screen_stocks
+        from mtdata.services.finviz import screen_stocks
         
         mock_screener = MagicMock()
         mock_df = pd.DataFrame([
@@ -122,7 +122,7 @@ class TestFinvizService:
     @patch('finvizfinance.screener.overview.Overview')
     def test_screen_stocks_no_results(self, mock_overview_class):
         """Test screening with no results."""
-        from mtdata.services.finviz_service import screen_stocks
+        from mtdata.services.finviz import screen_stocks
         
         mock_screener = MagicMock()
         mock_screener.screener_view.return_value = pd.DataFrame()
@@ -136,7 +136,7 @@ class TestFinvizService:
     @patch('finvizfinance.forex.Forex')
     def test_get_forex_performance(self, mock_forex_class):
         """Test forex performance fetch."""
-        from mtdata.services.finviz_service import get_forex_performance
+        from mtdata.services.finviz import get_forex_performance
         
         mock_forex = MagicMock()
         mock_df = pd.DataFrame([
@@ -153,7 +153,7 @@ class TestFinvizService:
     @patch('finvizfinance.crypto.Crypto')
     def test_get_crypto_performance(self, mock_crypto_class):
         """Test crypto performance fetch."""
-        from mtdata.services.finviz_service import get_crypto_performance       
+        from mtdata.services.finviz import get_crypto_performance
         
         mock_crypto = MagicMock()
         mock_df = pd.DataFrame([
@@ -172,7 +172,7 @@ class TestFinvizService:
     @patch('finvizfinance.crypto.Crypto')
     def test_get_crypto_performance_preserves_subcent_price_display(self, mock_crypto_class):
         """Sub-cent tokens should include a non-truncated display price."""
-        from mtdata.services.finviz_service import get_crypto_performance
+        from mtdata.services.finviz import get_crypto_performance
 
         mock_crypto = MagicMock()
         mock_df = pd.DataFrame([
@@ -190,7 +190,7 @@ class TestFinvizService:
     @patch('finvizfinance.crypto.Crypto')
     def test_get_crypto_performance_adds_wtd_alias_when_day_week_identical(self, mock_crypto_class):
         """When day/week values are identical for all rows, add WTD alias and warning."""
-        from mtdata.services.finviz_service import get_crypto_performance
+        from mtdata.services.finviz import get_crypto_performance
 
         mock_crypto = MagicMock()
         mock_df = pd.DataFrame([
@@ -211,7 +211,7 @@ class TestFinvizService:
     @patch('finvizfinance.crypto.Crypto')
     def test_get_crypto_performance_no_wtd_alias_when_values_differ(self, mock_crypto_class):
         """Do not add WTD alias when day/week values differ."""
-        from mtdata.services.finviz_service import get_crypto_performance
+        from mtdata.services.finviz import get_crypto_performance
 
         mock_crypto = MagicMock()
         mock_df = pd.DataFrame([
@@ -231,7 +231,7 @@ class TestFinvizService:
     @patch("finvizfinance.earnings.Earnings")
     def test_get_earnings_calendar_success(self, mock_earnings_class):
         """Test earnings calendar fetch."""
-        from mtdata.services.finviz_service import get_earnings_calendar
+        from mtdata.services.finviz import get_earnings_calendar
 
         mock_earnings = MagicMock()
         mock_df = pd.DataFrame(
@@ -254,7 +254,7 @@ class TestFinvizService:
     @patch("finvizfinance.earnings.Earnings")
     def test_get_earnings_calendar_invalid_period(self, mock_earnings_class):
         """Test earnings calendar with invalid period."""
-        from mtdata.services.finviz_service import get_earnings_calendar
+        from mtdata.services.finviz import get_earnings_calendar
 
         mock_earnings_class.side_effect = ValueError(
             "Invalid period 'Bad'. Available period: ['This Week', 'Next Week']"
@@ -264,10 +264,10 @@ class TestFinvizService:
 
         assert "error" in result
 
-    @patch("mtdata.services.finviz_service._fetch_finviz_economic_calendar_items")
+    @patch("mtdata.services.finviz._fetch_finviz_economic_calendar_items")
     def test_get_economic_calendar_success(self, mock_fetch_items):
         """Test economic calendar fetch."""
-        from mtdata.services.finviz_service import get_economic_calendar
+        from mtdata.services.finviz import get_economic_calendar
 
         mock_fetch_items.return_value = [
             {
@@ -326,10 +326,10 @@ class TestFinvizService:
         assert result_high["total"] == 1
         assert len(result_high["items"]) == 1
 
-    @patch("mtdata.services.finviz_service._fetch_finviz_economic_calendar_items")
+    @patch("mtdata.services.finviz._fetch_finviz_economic_calendar_items")
     def test_get_economic_calendar_invalid_impact(self, mock_fetch_items):
         """Test economic calendar with invalid impact filter."""
-        from mtdata.services.finviz_service import get_economic_calendar
+        from mtdata.services.finviz import get_economic_calendar
 
         mock_fetch_items.return_value = []
 
@@ -337,10 +337,10 @@ class TestFinvizService:
 
         assert "error" in result
 
-    @patch("mtdata.services.finviz_service._fetch_finviz_economic_calendar_items")
+    @patch("mtdata.services.finviz._fetch_finviz_economic_calendar_items")
     def test_get_economic_calendar_date_from_defaults_to_week(self, mock_fetch_items):
         """If date_from is provided without date_to, default to a 7-day window."""
-        from mtdata.services.finviz_service import get_economic_calendar
+        from mtdata.services.finviz import get_economic_calendar
 
         mock_fetch_items.return_value = []
 
@@ -350,10 +350,10 @@ class TestFinvizService:
         assert kwargs["date_from"] == "2026-01-05"
         assert kwargs["date_to"] == "2026-01-12"
 
-    @patch("mtdata.services.finviz_service._fetch_finviz_economic_calendar_items")
+    @patch("mtdata.services.finviz._fetch_finviz_economic_calendar_items")
     def test_get_economic_calendar_weekend_anchor_shifts_to_monday(self, mock_fetch_items):
         """If date_from is a weekend, shift the API anchor to the next Monday but keep the requested range."""
-        from mtdata.services.finviz_service import get_economic_calendar
+        from mtdata.services.finviz import get_economic_calendar
 
         mock_fetch_items.return_value = [
             {
@@ -378,10 +378,10 @@ class TestFinvizService:
         _, kwargs = mock_fetch_items.call_args
         assert kwargs["date_from"] == "2025-01-06"
 
-    @patch("mtdata.services.finviz_service._fetch_finviz_calendar_paged")
+    @patch("mtdata.services.finviz._fetch_finviz_calendar_paged")
     def test_get_earnings_calendar_api_success(self, mock_fetch_paged):
         """Test earnings calendar API fetch."""
-        from mtdata.services.finviz_service import get_earnings_calendar_api
+        from mtdata.services.finviz import get_earnings_calendar_api
 
         mock_fetch_paged.return_value = {
             "items": [{"ticker": "AAPL", "date": "2026-01-05", "eps": "2.10"}],
@@ -402,10 +402,10 @@ class TestFinvizService:
         assert len(result["items"]) == 1
         assert "earnings" not in result
 
-    @patch("mtdata.services.finviz_service._fetch_finviz_calendar_paged")
+    @patch("mtdata.services.finviz._fetch_finviz_calendar_paged")
     def test_get_dividends_calendar_api_success(self, mock_fetch_paged):
         """Test dividends calendar API fetch."""
-        from mtdata.services.finviz_service import get_dividends_calendar_api
+        from mtdata.services.finviz import get_dividends_calendar_api
 
         mock_fetch_paged.return_value = {
             "items": [{"ticker": "MSFT", "exDate": "2026-01-06", "amount": "0.75"}],
@@ -467,7 +467,7 @@ class TestFinvizTools:
             "finviz_news only supports US equities."
         )
 
-    @patch('mtdata.services.finviz_service.get_stock_fundamentals')
+    @patch('mtdata.services.finviz.get_stock_fundamentals')
     def test_finviz_fundamentals_tool(self, mock_get_fundamentals):
         """Test finviz_fundamentals tool."""
         # Import the service function directly to test logic without MCP server init
@@ -484,7 +484,7 @@ class TestFinvizTools:
         mock_get_fundamentals.assert_called_once_with("AAPL")
         assert result["success"] is True
 
-    @patch('mtdata.services.finviz_service.screen_stocks')
+    @patch('mtdata.services.finviz.screen_stocks')
     def test_finviz_screen_tool_with_filters(self, mock_screen):
         """Test finviz_screen tool with JSON filters."""
         import json

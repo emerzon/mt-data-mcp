@@ -12,7 +12,7 @@ from urllib.parse import parse_qs
 
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
-from ..services.finviz_service import (
+from ..services.finviz import (
     get_stock_fundamentals,
     get_stock_description,
     get_stock_news,

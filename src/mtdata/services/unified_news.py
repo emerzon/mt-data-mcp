@@ -13,7 +13,7 @@ from enum import IntEnum
 from time import monotonic
 from typing import Any, Collection, Dict, Iterable, List, Optional, Protocol, runtime_checkable
 
-from .finviz_service import (
+from .finviz import (
     get_crypto_performance,
     get_economic_calendar,
     get_forex_performance,
