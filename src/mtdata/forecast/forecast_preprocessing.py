@@ -221,10 +221,25 @@ def _apply_features_and_target_spec(
             except Exception:
                 ti_list = None
             if ti_list:
+                def _apply_ti_on_copy(spec_value: Any, **apply_kwargs: Any) -> List[str]:
+                    ti_df = df.copy()
+                    ti_cols_local = apply_ta_indicators(ti_df, spec_value, **apply_kwargs)
+                    if not ti_cols_local:
+                        return []
+                    for col in ti_cols_local:
+                        if col in ti_df.columns:
+                            df[col] = ti_df[col]
+                    return [str(col) for col in ti_cols_local]
+
                 try:
-                    ti_cols = apply_ta_indicators(df, ti_spec)
+                    ti_cols = _apply_ti_on_copy(ti_spec)
                 except TypeError:
-                    ti_cols = apply_ta_indicators(df, ti_list, default_when="pre_ti")
+                    try:
+                        ti_cols = _apply_ti_on_copy(ti_list, default_when="pre_ti")
+                    except TypeError:
+                        ti_cols = []
+                    except Exception:
+                        ti_cols = []
                 except Exception:
                     ti_cols = []
                 if target_spec and isinstance(target_spec, dict) and target_spec.get("column") in ti_cols:

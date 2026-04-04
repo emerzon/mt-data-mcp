@@ -246,6 +246,33 @@ class TestApplyFeaturesAndTargetSpec:
         )
         assert col == "close"
 
+    def test_ti_apply_type_error_fallback_uses_fresh_copy(self):
+        df = self._df()
+        call_count = [0]
+        indicator_col = "retry_indicator"
+
+        def flaky_apply(df_, spec, **kw):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                df_[indicator_col] = 1.0
+                raise TypeError("old sig")
+            assert indicator_col not in df_.columns
+            df_[indicator_col] = 2.0
+            return [indicator_col]
+
+        col = _apply_features_and_target_spec(
+            df,
+            {"ti": "rsi"},
+            {"column": indicator_col},
+            "close",
+            parse_ti_specs=MagicMock(return_value=["rsi"]),
+            apply_ta_indicators=flaky_apply,
+        )
+
+        assert col == indicator_col
+        assert indicator_col in df.columns
+        assert float(df[indicator_col].iloc[0]) == 2.0
+
     def test_ti_apply_generic_exception(self):
         """Lines 228-229: generic Exception branch."""
         df = self._df()
