@@ -456,6 +456,27 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertEqual(profile.get("vol_steps"), 18)
         self.assertTrue(profile.get("refine"))
 
+    def test_forecast_barrier_optimize_parses_refine_flag_from_params(self):
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                search_profile="long",
+                params={"refine": "false"},
+                return_grid=True,
+            )
+        self.assertTrue(result.get("success"))
+        profile = result.get("compute_profile", {})
+        self.assertEqual(profile.get("profile"), "long")
+        self.assertFalse(profile.get("refine"))
+
     def test_forecast_barrier_optimize_preserves_explicit_medium_defaults_under_fast_profile(self):
         self._set_flat_history(1.0)
         paths = self._sample_paths()

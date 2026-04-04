@@ -456,6 +456,18 @@ def _evaluate_barrier_bucket(
     return rows, invalid_candidates
 
 
+def _rounded_ranked_barrier_value(value: Any, decimals: int = 6) -> Any:
+    try:
+        if value is None:
+            return None
+        num = float(value)
+        if not np.isfinite(num):
+            return str(value)
+        return round(num, decimals)
+    except Exception:
+        return value
+
+
 def _dedupe_ranked_barrier_candidates(
     ranked_candidates: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
@@ -465,28 +477,17 @@ def _dedupe_ranked_barrier_candidates(
         if not isinstance(row, dict):
             continue
 
-        def _rounded(value: Any, decimals: int = 6) -> Any:
-            try:
-                if value is None:
-                    return None
-                num = float(value)
-                if not np.isfinite(num):
-                    return str(value)
-                return round(num, decimals)
-            except Exception:
-                return value
-
         row_key = (
-            _rounded(row.get("tp"), 6),
-            _rounded(row.get("sl"), 6),
-            _rounded(row.get("tp_price"), 6),
-            _rounded(row.get("sl_price"), 6),
-            _rounded(row.get("ev"), 6),
-            _rounded(row.get("edge"), 6),
-            _rounded(row.get("kelly"), 6),
-            _rounded(row.get("prob_tp_first"), 6),
-            _rounded(row.get("prob_sl_first"), 6),
-            _rounded(row.get("prob_no_hit"), 6),
+            _rounded_ranked_barrier_value(row.get("tp"), 6),
+            _rounded_ranked_barrier_value(row.get("sl"), 6),
+            _rounded_ranked_barrier_value(row.get("tp_price"), 6),
+            _rounded_ranked_barrier_value(row.get("sl_price"), 6),
+            _rounded_ranked_barrier_value(row.get("ev"), 6),
+            _rounded_ranked_barrier_value(row.get("edge"), 6),
+            _rounded_ranked_barrier_value(row.get("kelly"), 6),
+            _rounded_ranked_barrier_value(row.get("prob_tp_first"), 6),
+            _rounded_ranked_barrier_value(row.get("prob_sl_first"), 6),
+            _rounded_ranked_barrier_value(row.get("prob_no_hit"), 6),
         )
         if row_key in seen_ranked:
             continue
@@ -778,7 +779,10 @@ def forecast_barrier_optimize(
             param_key='refine',
             arg_value=refine,
         )
-        refine_flag = bool(params_dict.get('refine', refine_default))
+        refine_flag = _coerce_barrier_bool_flag(
+            params_dict.get('refine', refine_default),
+            default=bool(refine_default),
+        )
         refine_radius_val = max(0.0, float(params_dict.get('refine_radius', refine_radius)))
         refine_steps_val = max(2, int(params_dict.get('refine_steps', refine_steps)))
 
