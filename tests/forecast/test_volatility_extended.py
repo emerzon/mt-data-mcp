@@ -494,6 +494,12 @@ class TestHarRvSecondSection:
     """har_rv is the only method that falls through the first direct-methods
     section into the second code section (lines 944+)."""
 
+    def test_ewma_does_not_fall_through_to_second_section(self):
+        std = _make_rates(200)
+        with _mock_env(rates_side_effect=[std]):
+            r = forecast_volatility("EURUSD", "H1", 5, method="ewma")
+            assert r.get("success") is True
+
     def test_lambda_backward_compat(self):
         """Line 945-946: 'lambda' key renamed to 'lambda_'."""
         std = _make_rates(200)
