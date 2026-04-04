@@ -491,8 +491,8 @@ class TestTheta:
 # ===================================================================
 
 class TestHarRvSecondSection:
-    """har_rv is the only method that falls through the first direct-methods
-    section into the legacy second-stage fetch section."""
+    """har_rv uses a single dedicated intraday-fetch path; these tests cover the
+    branching logic within that path (ensure errors, as_of, tick fallback, etc.)."""
 
     def test_ewma_does_not_fall_through_to_second_section(self):
         std = _make_rates(200)
@@ -512,16 +512,15 @@ class TestHarRvSecondSection:
         assert abs(r["params_used"]["lambda_"] - custom_lam) < 1e-9
 
     def test_second_section_ensure_error(self):
-        """_ensure_symbol_ready error in the HAR-RV second fetch returns an error."""
-        with _mock_env(ensure_side_effect=[None, "Symbol locked"]):
+        """_ensure_symbol_ready error in the HAR-RV intraday fetch returns an error."""
+        with _mock_env(ensure_side_effect=["Symbol locked"]):
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
             assert "error" in r
 
     def test_second_section_as_of(self):
         """as_of triggers the historical copy path inside the HAR-RV second fetch."""
-        std = _make_rates(200)
         intraday = _make_rates(15000, bar_secs=300, seed=99)
-        with _mock_env(rates_side_effect=[std, std, intraday],
+        with _mock_env(rates_side_effect=[intraday],
                        parse_dt_return=datetime(2024, 6, 1, tzinfo=timezone.utc)):
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv",
                                     as_of="2024-06-01")
@@ -536,28 +535,25 @@ class TestHarRvSecondSection:
 
     def test_second_section_tick_no_time(self):
         """tick.time being None causes a fallback to datetime.now."""
-        std = _make_rates(200)
         intraday = _make_rates(15000, bar_secs=300, seed=99)
         with _mock_env(tick_time=None,
-                       rates_side_effect=[std, std, intraday]):
+                       rates_side_effect=[intraday]):
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
             assert r.get("success") is True or "error" in r
 
     def test_second_section_visibility_restore(self):
         """When symbol was not visible, symbol_select is called to restore state."""
-        std = _make_rates(200)
         intraday = _make_rates(15000, bar_secs=300, seed=99)
         with _mock_env(info_visible=False,
-                       rates_side_effect=[std, std, intraday]) as env:
+                       rates_side_effect=[intraday]) as env:
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
             assert env["mt5"].symbol_select.called
 
     def test_second_section_visibility_restore_exc(self):
         """An exception from symbol_select during visibility restore is silently ignored."""
-        std = _make_rates(200)
         intraday = _make_rates(15000, bar_secs=300, seed=99)
         with _mock_env(info_visible=False,
-                       rates_side_effect=[std, std, intraday],
+                       rates_side_effect=[intraday],
                        select_side_effect=RuntimeError("boom")):
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
             # Function should not crash
@@ -565,24 +561,21 @@ class TestHarRvSecondSection:
 
     def test_second_section_insufficient_rates(self):
         """None returned from the intraday rate fetch produces an error response."""
-        std = _make_rates(200)
-        with _mock_env(rates_side_effect=[std, None]):
+        with _mock_env(rates_side_effect=[None]):
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
             assert "error" in r
 
     def test_second_section_few_bars(self):
         """Fewer than 3 bars after dropping the forming bar yields an error."""
-        std = _make_rates(200)
         tiny = _make_rates(3)
-        with _mock_env(rates_side_effect=[std, tiny]):
+        with _mock_env(rates_side_effect=[tiny]):
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
             assert "error" in r
 
     def test_second_section_denoise(self):
         """A denoise spec is applied during the HAR-RV second section."""
-        std = _make_rates(200)
         intraday = _make_rates(15000, bar_secs=300, seed=99)
-        with _mock_env(rates_side_effect=[std, std, intraday]):
+        with _mock_env(rates_side_effect=[intraday]):
             with patch(f"{MOD}._apply_denoise"):
                 r = forecast_volatility("EURUSD", "H1", 5, method="har_rv",
                                         denoise={"method": "wavelet"})
@@ -590,9 +583,8 @@ class TestHarRvSecondSection:
 
     def test_second_section_denoise_error(self):
         """A denoise error in the HAR-RV second section is silently ignored."""
-        std = _make_rates(200)
         intraday = _make_rates(15000, bar_secs=300, seed=99)
-        with _mock_env(rates_side_effect=[std, std, intraday]):
+        with _mock_env(rates_side_effect=[intraday]):
             with patch(f"{MOD}._apply_denoise", side_effect=RuntimeError("x")):
                 r = forecast_volatility("EURUSD", "H1", 5, method="har_rv",
                                         denoise={"method": "wavelet"})
@@ -609,10 +601,9 @@ class TestHarRvBlock:
 
     @staticmethod
     def _har_rv_side_effect(n_intraday=15000):
-        """Standard side_effect list for the three _mt5_copy_rates_from calls."""
-        std = _make_rates(200, seed=42)
+        """Standard intraday side effect for the HAR-RV fetch."""
         intraday = _make_rates(n_intraday, bar_secs=300, seed=99)
-        return [std, std, intraday]
+        return [intraday]
 
     def test_success(self):
         """Lines 1085-1178: HAR-RV happy path."""
@@ -638,7 +629,7 @@ class TestHarRvBlock:
 
     def test_ensure_error_intraday(self):
         """Line 1100-1101: ensure error during intraday fetch."""
-        with _mock_env(ensure_side_effect=[None, None, "RV symbol err"],
+        with _mock_env(ensure_side_effect=["RV symbol err"],
                        rates_side_effect=self._har_rv_side_effect()):
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
             assert "error" in r
@@ -653,16 +644,9 @@ class TestHarRvBlock:
 
     def test_invalid_as_of_intraday(self):
         """Lines 1105-1106: invalid as_of returns error in intraday fetch."""
-        std = _make_rates(200)
         intraday = _make_rates(15000, bar_secs=300, seed=99)
-        # First two fetches succeed (they use as_of and parse_dt_return),
-        # but the third fetch uses as_of again.
-        # We mock parse_dt to return a valid datetime for the first two calls
-        # and None for the third. Use side_effect:
-        dt_ok = datetime(2024, 3, 1, tzinfo=timezone.utc)
-        with _mock_env(rates_side_effect=[std, std, intraday]):
-            with patch(f"{MOD}._parse_start_datetime",
-                       side_effect=[dt_ok, dt_ok, None]):
+        with _mock_env(rates_side_effect=[intraday]):
+            with patch(f"{MOD}._parse_start_datetime", return_value=None):
                 r = forecast_volatility("EURUSD", "H1", 5, method="har_rv",
                                         as_of="2024-03-01")
                 assert "error" in r
@@ -691,41 +675,36 @@ class TestHarRvBlock:
 
     def test_insufficient_intraday_rates(self):
         """Line 1122-1123: < 50 intraday bars."""
-        std = _make_rates(200)
         tiny = _make_rates(30, bar_secs=300)
-        with _mock_env(rates_side_effect=[std, std, tiny]):
+        with _mock_env(rates_side_effect=[tiny]):
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
             assert "error" in r
 
     def test_insufficient_intraday_rates_none(self):
         """Line 1122: rates_rv is None."""
-        std = _make_rates(200)
-        with _mock_env(rates_side_effect=[std, std, None]):
+        with _mock_env(rates_side_effect=[None]):
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
             assert "error" in r
 
     def test_insufficient_daily_rv(self):
         """Line 1136-1137: not enough daily RV observations."""
-        std = _make_rates(200)
         # 100 M5 bars ≈ 0.35 day → 1 daily group < 30
         tiny_intra = _make_rates(100, bar_secs=300)
-        with _mock_env(rates_side_effect=[std, std, tiny_intra]):
+        with _mock_env(rates_side_effect=[tiny_intra]):
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
             assert "error" in r and "daily RV" in r.get("error", "")
 
     def test_insufficient_alignment_samples(self):
         """Line 1154-1155: < 20 usable samples after NaN masking."""
-        std = _make_rates(200)
         # 9000 M5 bars ≈ 31 days; with default window_m=22, only ~9 aligned.
         short_intra = _make_rates(9000, bar_secs=300, seed=77)
-        with _mock_env(rates_side_effect=[std, std, short_intra]):
+        with _mock_env(rates_side_effect=[short_intra]):
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
             assert "error" in r
 
     def test_exception_handler(self):
         """Lines 1179-1180: generic exception caught."""
-        std = _make_rates(200)
-        with _mock_env(rates_side_effect=[std, std, _make_rates(15000, bar_secs=300)]):
+        with _mock_env(rates_side_effect=[_make_rates(15000, bar_secs=300)]):
             with patch(f"{MOD}.TIMEFRAME_MAP") as mock_map:
                 # Make TIMEFRAME_MAP.get succeed for 'H1' but return None
                 # for the rv_timeframe lookup after validation
@@ -739,15 +718,20 @@ class TestHarRvBlock:
 
     def test_custom_rv_params(self):
         """Custom rv_timeframe, days, window_w, window_m."""
-        std = _make_rates(200)
         intraday = _make_rates(15000, bar_secs=300, seed=99)
-        with _mock_env(rates_side_effect=[std, std, intraday]):
+        with _mock_env(rates_side_effect=[intraday]):
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv",
                                     params={"rv_timeframe": "M5",
                                             "days": 60,
                                             "window_w": 3,
                                             "window_m": 10})
             assert r.get("success") is True or "error" in r
+
+    def test_har_rv_uses_single_rate_fetch(self):
+        with _mock_env(rates_side_effect=self._har_rv_side_effect()) as env:
+            r = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
+            assert isinstance(r, dict)
+            assert env["copy_rates"].call_count == 1
 
     def test_as_of_keeps_all_bars(self):
         """Lines 1125-1126: as_of set → last bar NOT dropped."""
@@ -759,7 +743,7 @@ class TestHarRvBlock:
 
     def test_horizon_sigma_scaling(self):
         """Lines 1169-1170: horizon sigma scales with horizon."""
-        with _mock_env(rates_side_effect=self._har_rv_side_effect()):
+        with _mock_env(rates_side_effect=self._har_rv_side_effect() * 2):
             r1 = forecast_volatility("EURUSD", "H1", 1, method="har_rv")
             r5 = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
             if r1.get("success") and r5.get("success"):
@@ -774,9 +758,8 @@ class TestSecondSectionDenoiseDetails:
     """Denoise column-defaulting logic in the second fetch section."""
 
     def _make_side_effect(self):
-        std = _make_rates(200)
         intraday = _make_rates(15000, bar_secs=300, seed=99)
-        return [std, std, intraday]
+        return [intraday]
 
     def test_denoise_spec_columns_default_for_har_rv(self):
         """Lines 1004-1008: columns default to OHLC for non-ewma, non-garch."""
