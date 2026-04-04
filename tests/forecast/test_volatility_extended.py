@@ -285,7 +285,6 @@ class TestGeneralMethodErrors:
                                     proxy="squared_return")
             # Should still succeed (exception silenced)
             assert r.get("success") is True
-
     def test_few_bars_after_drop(self):
         """Line 428: Not enough closed bars (< 5 after dropping forming bar)."""
         with _mock_env(n_bars=5):
@@ -323,6 +322,26 @@ class TestGeneralMethodErrors:
                                         denoise={"method": "wavelet"})
                 assert r.get("success") is True
                 assert mock_dn.called
+
+
+class TestFetchMt5RatesGuarded:
+
+    def test_invalid_as_of_restores_symbol_visibility(self):
+        with _mock_env(info_visible=False, parse_dt_return=None) as env:
+            rates, err = vol_mod._fetch_mt5_rates_guarded("EURUSD", object(), 25, as_of="bad-date")
+
+        assert rates is None
+        assert err == "Invalid as_of time."
+        env["copy_rates"].assert_not_called()
+        env["mt5"].symbol_select.assert_called_once_with("EURUSD", False)
+
+    def test_ensure_error_short_circuits_before_copy(self):
+        with _mock_env(ensure_err="Symbol not available") as env:
+            rates, err = vol_mod._fetch_mt5_rates_guarded("EURUSD", object(), 25)
+
+        assert rates is None
+        assert err == "Symbol not available"
+        env["copy_rates"].assert_not_called()
 
 
 # ===================================================================
