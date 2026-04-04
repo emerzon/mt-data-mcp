@@ -47,6 +47,32 @@ def minimum_simulations_for_ci_width(
     return max(int(math.ceil(n)), 100)
 
 
+def _confidence_interval_wilson_proportion(
+    p_hat: float,
+    n_trials: int,
+    confidence: float = 0.95,
+) -> Tuple[float, float]:
+    """Wilson score interval from a probability estimate and trial count."""
+    if not 0 < confidence < 1:
+        raise ValueError(f"confidence must be in (0, 1), got {confidence}")
+    if n_trials <= 0:
+        return float("nan"), float("nan")
+
+    p_hat = float(np.clip(p_hat, 0.0, 1.0))
+    z = scipy_stats.norm.ppf(1 - (1 - confidence) / 2)
+    z2 = z * z
+
+    denom = 1.0 + z2 / n_trials
+    center = (p_hat + z2 / (2.0 * n_trials)) / denom
+    margin = (z / denom) * math.sqrt(
+        (p_hat * (1.0 - p_hat) / n_trials) + (z2 / (4.0 * n_trials * n_trials))
+    )
+
+    lo = max(0.0, center - margin)
+    hi = min(1.0, center + margin)
+    return float(lo), float(hi)
+
+
 def confidence_interval_wilson(
     successes: int,
     n_trials: int,
@@ -66,20 +92,9 @@ def confidence_interval_wilson(
     """
     if n_trials <= 0:
         return float("nan"), float("nan")
-    
+
     p_hat = float(np.clip(successes / n_trials, 0.0, 1.0))
-    z = scipy_stats.norm.ppf(1 - (1 - confidence) / 2)
-    z2 = z * z
-    
-    denom = 1.0 + z2 / n_trials
-    center = (p_hat + z2 / (2.0 * n_trials)) / denom
-    margin = (z / denom) * math.sqrt(
-        (p_hat * (1.0 - p_hat) / n_trials) + (z2 / (4.0 * n_trials * n_trials))
-    )
-    
-    lo = max(0.0, center - margin)
-    hi = min(1.0, center + margin)
-    return float(lo), float(hi)
+    return _confidence_interval_wilson_proportion(p_hat, n_trials, confidence=confidence)
 
 
 def confidence_interval_agresti_coull(
