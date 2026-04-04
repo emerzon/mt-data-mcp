@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from ..shared.constants import TIMEFRAME_SECONDS as _TIMEFRAME_SECONDS
+from ..utils.constants import TIMEFRAME_SECONDS as _TIMEFRAME_SECONDS
 
 _METHOD_NAME = "weighted_retests"
 _DEFAULT_REACTION_BARS = 6
