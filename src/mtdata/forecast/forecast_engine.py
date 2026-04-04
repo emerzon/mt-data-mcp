@@ -11,7 +11,11 @@ from ..bootstrap.settings import mt5_config
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
 from ..shared.validators import invalid_timeframe_error, unsupported_timeframe_seconds_error
-from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
+from ..utils.denoise import (
+    _apply_denoise,
+    _consume_denoise_warnings,
+    normalize_denoise_spec as _normalize_denoise_spec,
+)
 from ..utils.mt5 import get_cached_mt5_time_alignment, get_symbol_info_cached
 from ..utils.utils import (
     _format_time_minimal,
@@ -784,6 +788,7 @@ def forecast_engine(
             return {"error": str(ex)}
         except Exception as ex:
             return {"error": str(ex)}
+        denoise_warnings = _consume_denoise_warnings(df)
 
         # Track last close for potential price reconstruction
         try:
@@ -935,6 +940,15 @@ def forecast_engine(
                     warnings.append(warning_text)
                 if warnings:
                     result["warnings"] = warnings
+        if denoise_warnings:
+            warnings = result.get("warnings")
+            if not isinstance(warnings, list):
+                warnings = []
+            for warning_text in denoise_warnings:
+                if warning_text not in warnings:
+                    warnings.append(warning_text)
+            if warnings:
+                result["warnings"] = warnings
         if method_l == 'ensemble' and metadata:
             result['ensemble'] = metadata
         return result

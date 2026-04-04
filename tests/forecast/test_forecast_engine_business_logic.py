@@ -492,6 +492,51 @@ def test_forecast_engine_applies_denoise_to_prefetched_raw_history(monkeypatch):
     assert captured["last_value"] == float(df["close"].iloc[-1] * 10.0)
 
 
+def test_forecast_engine_surfaces_denoise_warnings(monkeypatch):
+    class CaptureForecaster:
+        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+            return ForecastResult(
+                forecast=np.array([float(series.iloc[-1])], dtype=float),
+                params_used={},
+                metadata={},
+            )
+
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return CaptureForecaster()
+
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("naive",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
+
+    df = _df(20)
+    df.attrs["denoise_warnings"] = [
+        "Denoise method 'wavelet' requires PyWavelets, but it is not installed."
+    ]
+
+    monkeypatch.setattr(
+        fe,
+        "_resolve_history_context",
+        lambda **kwargs: (df, "close", {"method": "wavelet"}),
+    )
+
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="naive",
+        horizon=1,
+        denoise={"method": "wavelet"},
+    )
+
+    assert out["success"] is True
+    assert "warnings" in out
+    assert any("requires PyWavelets" in warning for warning in out["warnings"])
+
+
 def test_forecast_engine_builds_exog_and_aligns_for_returns(monkeypatch):
     captured = {}
 

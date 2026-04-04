@@ -52,7 +52,7 @@ try:
 except Exception:
     _VMD = None  # type: ignore
 
-from .base import get_filter, list_filters, _series_like
+from .base import get_filter, list_filters
 from . import filters  # noqa: F401 - registers all filters
 
 _logger = logging.getLogger(__name__)
@@ -124,6 +124,78 @@ _DENOISE_METHOD_SUPPORTS = {
 }
 
 
+def _denoise_availability(name: str) -> tuple[bool, str]:
+    if name == 'wavelet':
+        return (_pywt is not None, 'PyWavelets')
+    if name in ('emd', 'eemd', 'ceemdan'):
+        return (any(x is not None for x in (_EMD, _EEMD, _CEEMDAN)), 'EMD-signal')
+    if name in ('hp', 'whittaker'):
+        return (_sps is not None and _sps_linalg is not None, 'scipy.sparse')
+    if name == 'savgol':
+        return (_savgol_filter is not None, 'scipy.signal')
+    if name == 'butterworth':
+        return (_butter is not None, 'scipy.signal')
+    if name == 'gaussian':
+        return (_gaussian_filter1d is not None, 'scipy.ndimage')
+    if name == 'wavelet_packet':
+        return (_pywt is not None, 'PyWavelets')
+    if name == 'loess':
+        return (_lowess is not None, 'statsmodels')
+    if name == 'stl':
+        return (_STL is not None, 'statsmodels')
+    if name == 'vmd':
+        return (_VMD is not None, 'vmdpy')
+    return (True, '')
+
+
+def _append_denoise_warning(df: pd.DataFrame, message: str) -> None:
+    warning_text = str(message).strip()
+    if not warning_text:
+        return
+    warnings_out = df.attrs.get("denoise_warnings")
+    if not isinstance(warnings_out, list):
+        warnings_out = []
+    if warning_text not in warnings_out:
+        warnings_out.append(warning_text)
+    df.attrs["denoise_warnings"] = warnings_out
+    _logger.warning("%s", warning_text)
+
+
+def _consume_denoise_warnings(df: pd.DataFrame) -> List[str]:
+    warnings_out = df.attrs.get("denoise_warnings")
+    if not isinstance(warnings_out, list):
+        return []
+    cleaned = [str(item).strip() for item in warnings_out if str(item).strip()]
+    df.attrs["denoise_warnings"] = []
+    return cleaned
+
+
+def _resolve_denoise_handler(method: str):
+    handler = get_filter(method)
+    if handler is None:
+        available = sorted(list_filters().keys())
+        raise ValueError(
+            f"Unknown denoise method '{method}'. Available methods: {', '.join(available)}."
+        )
+    available, requires = _denoise_availability(method)
+    if not available:
+        raise RuntimeError(
+            f"Denoise method '{method}' requires {requires}, but it is not installed."
+        )
+    return handler
+
+
+def _run_denoise_handler(
+    s: pd.Series,
+    handler,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    # Materialize a writable contiguous buffer
+    x = np.array(s.astype(float).ffill().bfill().to_numpy(copy=True), dtype=float, copy=True, order='C')
+    return handler(s, x, params, causality)
+
+
 def _denoise_series(
     s: pd.Series,
     method: str = 'none',
@@ -134,17 +206,13 @@ def _denoise_series(
     if params is None:
         params = {}
     method = (method or 'none').lower().strip()
+    if method == 'none':
+        return s
+    handler = _resolve_denoise_handler(method)
     n = len(s)
     if n < 3:
         return s
-    if method == 'none':
-        return s
-    handler = get_filter(method)
-    if handler is None:
-        return s
-    # Materialize a writable contiguous buffer
-    x = np.array(s.astype(float).ffill().bfill().to_numpy(copy=True), dtype=float, copy=True, order='C')
-    return handler(s, x, params, causality)
+    return _run_denoise_handler(s, handler, params, causality)
 
 
 def _apply_denoise(
@@ -189,13 +257,22 @@ def _apply_denoise(
     causality = str(spec.get('causality') or ('causal' if when == 'pre_ti' else 'zero_phase'))
     keep_original = bool(spec.get('keep_original')) if 'keep_original' in spec else (when != 'pre_ti')
     suffix = str(spec.get('suffix') or '_dn')
+    try:
+        handler = _resolve_denoise_handler(method)
+    except Exception as ex:
+        _append_denoise_warning(df, str(ex))
+        return added_cols
 
     for col in cols:
         if col not in df.columns:
             continue
         try:
-            y = _denoise_series(df[col], method=method, params=params, causality=causality)
-        except Exception:
+            y = _run_denoise_handler(df[col], handler, params, causality)
+        except Exception as ex:
+            _append_denoise_warning(
+                df,
+                f"Denoise method '{method}' failed on column '{col}': {ex}",
+            )
             continue
         if keep_original:
             new_col = f"{col}{suffix}"
@@ -220,8 +297,11 @@ def _resolve_denoise_base_col(
         added = _apply_denoise(df, denoise, default_when=default_when)
         if f"{base_col}_dn" in added:
             return f"{base_col}_dn"
-    except Exception:
-        pass
+    except Exception as ex:
+        _append_denoise_warning(
+            df,
+            f"Denoise request for base column '{base_col}' failed: {ex}",
+        )
     return base_col
 
 
@@ -254,9 +334,7 @@ def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[
         return None
     if method == '' or method == 'none':
         return None
-    params = deepcopy(_DENOISE_METHOD_DEFAULT_PARAMS.get(method))
-    if params is None:
-        return None
+    params = deepcopy(_DENOISE_METHOD_DEFAULT_PARAMS.get(method, {}))
     out = dict(base)
     out.update({"method": method, "params": params})
     return out
@@ -264,29 +342,6 @@ def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[
 
 def get_denoise_methods_data() -> Dict[str, Any]:
     """Get metadata about all available denoise methods."""
-    def avail_requires(name: str):
-        if name == 'wavelet':
-            return (_pywt is not None, 'PyWavelets')
-        if name in ('emd', 'eemd', 'ceemdan'):
-            return (any(x is not None for x in (_EMD, _EEMD, _CEEMDAN)), 'EMD-signal')
-        if name in ('hp', 'whittaker'):
-            return (_sps is not None and _sps_linalg is not None, 'scipy.sparse')
-        if name == 'savgol':
-            return (_savgol_filter is not None, 'scipy.signal')
-        if name == 'butterworth':
-            return (_butter is not None, 'scipy.signal')
-        if name == 'gaussian':
-            return (_gaussian_filter1d is not None, 'scipy.ndimage')
-        if name == 'wavelet_packet':
-            return (_pywt is not None, 'PyWavelets')
-        if name == 'loess':
-            return (_lowess is not None, 'statsmodels')
-        if name == 'stl':
-            return (_STL is not None, 'statsmodels')
-        if name == 'vmd':
-            return (_VMD is not None, 'vmdpy')
-        return (True, '')
-
     base_defaults = _denoise_base_defaults("pre_ti")
     methods: List[Dict[str, Any]] = [
         {
@@ -302,7 +357,7 @@ def get_denoise_methods_data() -> Dict[str, Any]:
 
     registry = list_filters()
     for method_name in sorted(registry.keys()):
-        available, requires = avail_requires(method_name)
+        available, requires = _denoise_availability(method_name)
         default_params = _DENOISE_METHOD_DEFAULT_PARAMS.get(method_name, {})
         methods.append({
             "method": method_name,
@@ -331,6 +386,7 @@ def denoise_list_methods() -> Dict[str, Any]:
 __all__ = [
     "_denoise_series",
     "_apply_denoise",
+    "_consume_denoise_warnings",
     "_resolve_denoise_base_col",
     "normalize_denoise_spec",
     "get_denoise_methods_data",

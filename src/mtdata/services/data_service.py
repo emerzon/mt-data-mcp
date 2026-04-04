@@ -26,7 +26,7 @@ from ..shared.validators import invalid_timeframe_error
 # Imports from utils
 from ..utils.mt5 import (
     _mt5_copy_rates_from, _mt5_copy_rates_range,
-    _mt5_copy_ticks_range, _mt5_epoch_to_utc, _rates_to_df, _symbol_ready_guard,
+    _mt5_copy_ticks_range, _rates_to_df, _symbol_ready_guard,
     get_cached_mt5_time_alignment, get_symbol_info_cached, mt5
 )
 from ..utils.utils import (
@@ -41,7 +41,11 @@ from ..utils.indicators import (
     _find_unknown_ta_indicators_util,
     _parse_ti_specs,
 )
-from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
+from ..utils.denoise import (
+    _apply_denoise as _apply_denoise_util,
+    _consume_denoise_warnings,
+    normalize_denoise_spec as _normalize_denoise_spec,
+)
 
 # Simplify entrypoint and helpers.
 from ..utils.simplify import (
@@ -851,8 +855,11 @@ def fetch_candles(
 
         # Track denoise metadata if applied
         denoise_apps: List[Dict[str, Any]] = []
+        denoise_warnings: List[str] = []
         _apply_pre_ti_denoise(df, headers, denoise, denoise_apps)
+        denoise_warnings.extend(_consume_denoise_warnings(df))
         ti_cols = _apply_indicator_stage(df, headers, ti_spec, denoise)
+        denoise_warnings.extend(_consume_denoise_warnings(df))
 
         # Filter out warmup region to return the intended target window only
         df = _trim_df_to_target(df, start_datetime, end_datetime, candles, copy_rows=True)
@@ -895,6 +902,7 @@ def fetch_candles(
                             ti_spec=ti_spec,
                             headers=headers,
                         )
+                        denoise_warnings.extend(_consume_denoise_warnings(df))
                         # Re-trim to target window
                         df = _trim_df_to_target(df, start_datetime, end_datetime, candles, copy_rows=False)
                         rows_after_target_trim = int(len(df))
@@ -903,6 +911,7 @@ def fetch_candles(
 
         # Optional post-TI denoising (adds new columns by default)
         _apply_post_ti_denoise(df, headers, denoise, denoise_apps)
+        denoise_warnings.extend(_consume_denoise_warnings(df))
 
         # Ensure headers are unique and exist in df
         headers = [h for h in headers if h in df.columns]
@@ -1011,6 +1020,14 @@ def fetch_candles(
         # Attach denoise applications metadata if any
         if denoise_apps:
             payload['denoise'] = {'applications': denoise_apps}
+        if denoise_warnings:
+            warns = payload.get('warnings')
+            if not isinstance(warns, list):
+                warns = []
+            for warning_text in denoise_warnings:
+                if warning_text not in warns:
+                    warns.append(warning_text)
+            payload['warnings'] = warns
         if session_gaps:
             payload['session_gaps'] = session_gaps
             warns = payload.get('warnings')
