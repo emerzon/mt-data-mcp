@@ -1,5 +1,5 @@
 """Regime detection implementation."""
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional
 import logging
 import time
 import numpy as np
@@ -8,24 +8,17 @@ from .._mcp_instance import mcp
 from ..execution_logging import infer_result_success, log_operation_finish, log_operation_start
 from ..mt5_gateway import get_mt5_gateway, mt5_connection_error
 from ..schema import TimeframeLiteral, DenoiseSpec
-from ..constants import TIMEFRAME_SECONDS
 from ..features import extract_rolling_features
 from .. import features as _features_module
 from ...forecast.common import fetch_history as _fetch_history
 from ...utils.utils import _format_time_minimal
 from ...utils.denoise import _resolve_denoise_base_col
-from ...utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
+from ...utils.mt5 import ensure_mt5_connection_or_raise
 
 # Import from package submodules directly to avoid circular imports
 from .smoothing import (
-    _count_state_transitions,
-    _state_runs,
     _smooth_short_state_runs,
     _normalize_state_probability_matrix,
-)
-from .crypto import (
-    _is_probably_crypto_symbol,
-    _CRYPTO_SYMBOL_HINTS,
 )
 from .payload import (
     _consolidate_payload,
@@ -437,8 +430,13 @@ def regime_detect(
             except Exception as ex:
                 return _finish({"error": f"HMM-lite import error: {ex}"})
             fit_gaussian_mixture_1d = globals().get("fit_gaussian_mixture_1d", fit_gaussian_mixture_1d)
-            n_states = int(p.get('n_states', 2))
-            w, mu, sigma, gamma, _ = fit_gaussian_mixture_1d(x, n_states=max(2, n_states))
+            try:
+                n_states = int(p.get('n_states', 2))
+            except Exception:
+                return _finish({"error": "n_states must be an integer >= 2 for hmm."})
+            if n_states < 2:
+                return _finish({"error": "n_states must be >= 2 for hmm."})
+            w, mu, sigma, gamma, _ = fit_gaussian_mixture_1d(x, n_states=n_states)
             gamma_matrix = _normalize_state_probability_matrix(
                 gamma,
                 rows=x.size,
