@@ -197,7 +197,7 @@ def _candidate_fill_modes(mt5: Any) -> list[int]:
         fill_mode = _safe_int_attr(mt5, fill_attr, default)
         if fill_mode not in fill_modes:
             fill_modes.append(fill_mode)
-    return fill_modes or [1, 0, 2]
+    return fill_modes
 
 
 def _safe_last_error(mt5: Any) -> Any:
