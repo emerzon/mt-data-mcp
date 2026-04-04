@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from ..utils.barriers import normalize_trade_direction
 from ..utils.mt5 import MT5ConnectionError
+from . import trading_validation
 from .execution_logging import (
     infer_result_success,
     log_operation_finish,
@@ -1071,6 +1072,16 @@ def run_trade_risk_analyze(
             if positions is None:
                 positions = []
 
+            position_type_buy = trading_validation._safe_int_attr(
+                gateway,
+                "POSITION_TYPE_BUY",
+                trading_validation._safe_int_attr(gateway, "ORDER_TYPE_BUY", 0),
+            )
+            position_type_sell = trading_validation._safe_int_attr(
+                gateway,
+                "POSITION_TYPE_SELL",
+                trading_validation._safe_int_attr(gateway, "ORDER_TYPE_SELL", 1),
+            )
             position_risks: List[Dict[str, Any]] = []
             risk_calculation_failures: List[Dict[str, Any]] = []
             total_risk_currency = 0.0
@@ -1114,11 +1125,13 @@ def run_trade_risk_analyze(
                     reward_currency = None
                     rr_ratio = None
                     risk_status = "undefined"
+                    position_type = trading_validation._safe_int_attr(pos, "type", position_type_sell)
+                    is_buy_position = int(position_type) == int(position_type_buy)
 
                     if sl_price and tick_size > 0 and tick_value_valid:
                         risk_ticks = (
                             (entry_price - sl_price) / tick_size
-                            if pos.type == 0
+                            if is_buy_position
                             else (sl_price - entry_price) / tick_size
                         )
                         risk_currency = abs(risk_ticks * tick_value * volume)
@@ -1129,7 +1142,7 @@ def run_trade_risk_analyze(
                         if tp_price:
                             reward_ticks = (
                                 (tp_price - entry_price) / tick_size
-                                if pos.type == 0
+                                if is_buy_position
                                 else (entry_price - tp_price) / tick_size
                             )
                             reward_currency = abs(reward_ticks * tick_value * volume)
@@ -1153,7 +1166,7 @@ def run_trade_risk_analyze(
                         {
                             "ticket": pos.ticket,
                             "symbol": pos.symbol,
-                            "type": "BUY" if pos.type == 0 else "SELL",
+                            "type": "BUY" if is_buy_position else "SELL",
                             "volume": volume,
                             "entry": entry_price,
                             "sl": sl_price,

@@ -225,6 +225,35 @@ def test_trade_risk_analyze_logs_finish_event(caplog) -> None:
     )
 
 
+def test_run_trade_risk_analyze_uses_gateway_position_type_constants() -> None:
+    gateway = SimpleNamespace(
+        POSITION_TYPE_BUY=7,
+        POSITION_TYPE_SELL=9,
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
+        positions_get=lambda symbol=None: [
+            SimpleNamespace(
+                ticket=11,
+                symbol="EURUSD",
+                type=7,
+                volume=0.1,
+                price_open=100.0,
+                sl=90.0,
+                tp=120.0,
+            )
+        ],
+        symbol_info=lambda symbol: _make_symbol_info(),
+    )
+
+    out = run_trade_risk_analyze(
+        TradeRiskAnalyzeRequest(symbol="EURUSD"),
+        gateway=gateway,
+    )
+
+    assert out["success"] is True
+    assert out["positions"][0]["type"] == "BUY"
+
+
 def test_trade_risk_analyze_reports_calculation_failures() -> None:
     mt5 = MagicMock()
     prev = sys.modules.get("MetaTrader5")
