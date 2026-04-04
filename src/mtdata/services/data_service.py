@@ -256,20 +256,29 @@ def _shift_rate_times(rates: Any, shift_seconds: int) -> Any:
 
     if names and "time" in names:
         try:
-            for idx in range(len(rates)):
-                rates[idx]["time"] = float(rates[idx]["time"]) + shift_value
+            shifted_rates = rates.copy()
+            for idx in range(len(shifted_rates)):
+                shifted_rates[idx]["time"] = float(shifted_rates[idx]["time"]) + shift_value
         except Exception:
-            pass
-        return rates
+            return rates
+        return shifted_rates
 
     if isinstance(rates, list):
+        shifted_rows = []
         for row in rates:
-            if not isinstance(row, dict) or "time" not in row:
+            if not isinstance(row, dict):
+                shifted_rows.append(row)
+                continue
+            shifted_row = dict(row)
+            if "time" not in shifted_row:
+                shifted_rows.append(shifted_row)
                 continue
             try:
-                row["time"] = float(row["time"]) + shift_value
+                shifted_row["time"] = float(shifted_row["time"]) + shift_value
             except Exception:
-                continue
+                pass
+            shifted_rows.append(shifted_row)
+        return shifted_rows
     return rates
 
 
