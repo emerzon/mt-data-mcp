@@ -261,6 +261,112 @@ def test_run_trade_get_pending_logs_finish_event(caplog) -> None:
     )
 
 
+def test_run_trade_get_open_limit_prefers_latest_valid_timestamps() -> None:
+    Position = namedtuple(
+        "Position",
+        [
+            "ticket",
+            "symbol",
+            "time_update",
+            "type",
+            "volume",
+            "price_open",
+            "sl",
+            "tp",
+            "price_current",
+            "swap",
+            "profit",
+            "comment",
+            "magic",
+        ],
+    )
+    rows = [
+        Position(1, "EURUSD", 100, 0, 0.1, 1.1, 1.0, 1.2, 1.15, 0.0, 1.0, "old", 7),
+        Position(2, "EURUSD", None, 0, 0.1, 1.1, 1.0, 1.2, 1.15, 0.0, 2.0, "missing", 7),
+        Position(3, "EURUSD", 200, 0, 0.1, 1.1, 1.0, 1.2, 1.15, 0.0, 3.0, "mid", 7),
+        Position(4, "EURUSD", 300, 0, 0.1, 1.1, 1.0, 1.2, 1.15, 0.0, 4.0, "new", 7),
+    ]
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        positions_get=lambda ticket=None, symbol=None: rows,
+        POSITION_TYPE_BUY=0,
+        POSITION_TYPE_SELL=1,
+    )
+
+    out = run_trade_get_open(
+        TradeGetOpenRequest(limit=2),
+        gateway=gateway,
+        use_client_tz=lambda: False,
+        format_time_minimal=lambda ts: f"t{int(ts)}",
+        format_time_minimal_local=lambda ts: f"lt{int(ts)}",
+        mt5_epoch_to_utc=lambda ts: ts,
+        normalize_limit=lambda value: value,
+        comment_row_metadata=lambda comment: {
+            "comment_visible_length": len(comment or ""),
+            "comment_max_length": 31,
+            "comment_may_be_truncated": False,
+        },
+    )
+
+    assert [row["Ticket"] for row in out] == [3, 4]
+    assert [row["Time"] for row in out] == ["t200", "t300"]
+
+
+def test_run_trade_get_pending_limit_prefers_latest_valid_timestamps() -> None:
+    Order = namedtuple(
+        "Order",
+        [
+            "ticket",
+            "symbol",
+            "time_setup",
+            "type",
+            "volume",
+            "price_open",
+            "sl",
+            "tp",
+            "price_current",
+            "comment",
+            "magic",
+        ],
+    )
+    rows = [
+        Order(11, "EURUSD", 100, 2, 0.1, 1.1, 1.0, 1.2, 1.15, "old", 7),
+        Order(12, "EURUSD", None, 2, 0.1, 1.1, 1.0, 1.2, 1.15, "missing", 7),
+        Order(13, "EURUSD", 200, 2, 0.1, 1.1, 1.0, 1.2, 1.15, "mid", 7),
+        Order(14, "EURUSD", 300, 2, 0.1, 1.1, 1.0, 1.2, 1.15, "new", 7),
+    ]
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        orders_get=lambda ticket=None, symbol=None: rows,
+        ORDER_TYPE_BUY=0,
+        ORDER_TYPE_SELL=1,
+        ORDER_TYPE_BUY_LIMIT=2,
+        ORDER_TYPE_SELL_LIMIT=3,
+        ORDER_TYPE_BUY_STOP=4,
+        ORDER_TYPE_SELL_STOP=5,
+        ORDER_TYPE_BUY_STOP_LIMIT=6,
+        ORDER_TYPE_SELL_STOP_LIMIT=7,
+    )
+
+    out = run_trade_get_pending(
+        TradeGetPendingRequest(limit=2),
+        gateway=gateway,
+        use_client_tz=lambda: False,
+        format_time_minimal=lambda ts: f"t{int(ts)}",
+        format_time_minimal_local=lambda ts: f"lt{int(ts)}",
+        mt5_epoch_to_utc=lambda ts: ts,
+        normalize_limit=lambda value: value,
+        comment_row_metadata=lambda comment: {
+            "comment_visible_length": len(comment or ""),
+            "comment_max_length": 31,
+            "comment_may_be_truncated": False,
+        },
+    )
+
+    assert [row["Ticket"] for row in out] == [13, 14]
+    assert [row["Time"] for row in out] == ["t200", "t300"]
+
+
 def test_trade_get_open_logs_finish_event(caplog) -> None:
     raw = _unwrap(core_trading_positions.trade_get_open)
 
