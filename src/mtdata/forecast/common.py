@@ -31,6 +31,44 @@ def edge_pad_to_length(values: np.ndarray, length: int) -> np.ndarray:
     return np.pad(vals, (0, target - vals.size), mode='edge').astype(float, copy=False)
 
 
+def build_ci_diagnostics(
+    *,
+    provider: str,
+    requested: bool,
+    available: bool,
+    status: str,
+    alpha: Optional[float] = None,
+    coverage: Optional[float] = None,
+    level: Optional[int] = None,
+    warning: Optional[str] = None,
+    error: Optional[str] = None,
+    error_type: Optional[str] = None,
+    interval_columns: Optional[List[Any]] = None,
+) -> Dict[str, Any]:
+    """Build standardized CI diagnostics metadata for forecast method results."""
+    ci_diag: Dict[str, Any] = {
+        "provider": str(provider),
+        "requested": bool(requested),
+        "available": bool(available),
+        "status": str(status),
+    }
+    if alpha is not None:
+        ci_diag["alpha"] = float(alpha)
+    if coverage is not None:
+        ci_diag["coverage"] = float(coverage)
+    if level is not None:
+        ci_diag["level"] = int(level)
+    if warning:
+        ci_diag["warning"] = str(warning)
+    if error:
+        ci_diag["error"] = str(error)
+    if error_type:
+        ci_diag["error_type"] = str(error_type)
+    if interval_columns:
+        ci_diag["interval_columns"] = [str(col) for col in interval_columns]
+    return {"diagnostics": {"ci": ci_diag}}
+
+
 def log_returns_from_prices(prices: np.ndarray, eps: float = 1e-12) -> np.ndarray:
     """Compute consecutive log-returns from a price array."""
     arr = np.asarray(prices, dtype=float).ravel()

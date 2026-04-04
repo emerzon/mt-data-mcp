@@ -55,3 +55,41 @@ def test_statsforecast_forecast_requires_unique_id_rows(monkeypatch):
 
     with pytest.raises(RuntimeError, match="StatsForecast dummy_stats error: StatsForecast output missing unique_id column"):
         _DummyStatsMethod().forecast(pd.Series([1.0, 2.0, 3.0]), horizon=1, seasonality=1, params={})
+
+
+def test_statsforecast_forecast_records_ci_diagnostics_when_columns_missing(monkeypatch):
+    class FakeStatsForecast:
+        def __init__(self, models, freq):
+            pass
+
+        def fit(self, Y_df, X_df=None):
+            return None
+
+        def predict(self, h, X_df=None, level=None):
+            return pd.DataFrame(
+                {
+                    "unique_id": ["ts"],
+                    "dummy_stats": [1.0],
+                }
+            )
+
+    fake_stats_mod = ModuleType("statsforecast")
+    fake_stats_mod.StatsForecast = FakeStatsForecast
+    monkeypatch.setitem(sys.modules, "statsforecast", fake_stats_mod)
+    monkeypatch.setattr(
+        common_mod,
+        "_create_training_dataframes",
+        lambda *args, **kwargs: (pd.DataFrame({"y": [1.0]}), None, None),
+    )
+    monkeypatch.setattr(
+        common_mod,
+        "_extract_forecast_values",
+        lambda *args, **kwargs: pd.Series([1.0]).to_numpy(),
+    )
+
+    res = _DummyStatsMethod().forecast(pd.Series([1.0, 2.0, 3.0]), horizon=1, seasonality=1, params={}, ci_alpha=0.05)
+
+    assert res.ci_values is None
+    assert res.metadata["diagnostics"]["ci"]["available"] is False
+    assert res.metadata["diagnostics"]["ci"]["status"] == "unavailable"
+    assert res.metadata["diagnostics"]["ci"]["level"] == 95
